@@ -322,6 +322,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"player_max_hp": character.max_hp,
 		"player_hp_percent": int((float(character.current_hp) / character.max_hp) * 100),
 		"monster_name": monster.name,
+		"monster_level": monster.level,
 		"monster_hp": monster.current_hp,
 		"monster_max_hp": monster.max_hp,
 		"monster_hp_percent": int((float(monster.current_hp) / monster.max_hp) * 100),
@@ -330,15 +331,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 
 func generate_combat_start_message(character: Character, monster: Dictionary) -> String:
 	"""Generate the initial combat message"""
-	var msg = ""
-	msg += "[b][color=#FF6B6B]═══ COMBAT! ═══[/color][/b]\n"
-	msg += "[color=#FFD700]You encounter a %s (Level %d)![/color]\n" % [monster.name, monster.level]
-	msg += "%s\n" % monster.description
-	msg += "\n"
-	msg += "[color=#87CEEB]Your HP:[/color] %d/%d\n" % [character.current_hp, character.max_hp]
-	msg += "[color=#FF6B6B]Enemy HP:[/color] %d/%d\n" % [monster.current_hp, monster.max_hp]
-	msg += "\n"
-	msg += "[b]Commands:[/b] attack, defend, flee\n"
+	var msg = "[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
 	return msg
 
 func to_dict() -> Dictionary:

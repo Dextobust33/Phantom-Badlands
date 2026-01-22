@@ -249,31 +249,31 @@ func get_location_description(x: int, y: int) -> String:
 
 func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String:
 	"""Generate ASCII map centered on player (P4 style with proper spacing)"""
-	var map_lines = []
-	
+	var map_lines: PackedStringArray = PackedStringArray()
+
 	# Generate map from top to bottom
 	for dy in range(radius, -radius - 1, -1):
-		var line = ""
+		var line_parts: PackedStringArray = PackedStringArray()
 		for dx in range(-radius, radius + 1):
 			var x = center_x + dx
 			var y = center_y + dy
-			
+
 			# Check bounds
 			if x < WORLD_MIN_X or x > WORLD_MAX_X or y < WORLD_MIN_Y or y > WORLD_MAX_Y:
-				line += "  "  # Two spaces for out of bounds
+				line_parts.append("  ")  # Two spaces for out of bounds
 				continue
-			
+
 			# Player position
 			if dx == 0 and dy == 0:
-				line += "[color=#FFFF00] @[/color]"  # Space before @ for even spacing
+				line_parts.append("[color=#FFFF00] @[/color]")  # Space before @ for even spacing
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
 				# Add space BEFORE each character for even grid spacing
-				line += "[color=%s] %s[/color]" % [info.color, info.char]
-		
-		map_lines.append(line)
-	
+				line_parts.append("[color=%s] %s[/color]" % [info.color, info.char])
+
+		map_lines.append("".join(line_parts))
+
 	return "\n".join(map_lines)
 
 func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> String:

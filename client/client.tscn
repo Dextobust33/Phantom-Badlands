@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://dbwq54oox3iif"]
+[gd_scene load_steps=16 format=3 uid="uid://dbwq54oox3iif"]
 
 [ext_resource type="Script" uid="uid://dqt7egmp3w0c3" path="res://client/client.gd" id="1_6t3qf"]
 [ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
@@ -15,6 +15,60 @@ bg_color = Color(0, 0, 0, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hlfbj"]
 bg_color = Color(0.101960786, 0.101960786, 0.101960786, 1)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
+bg_color = Color(0.2, 0.05, 0.05, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_fill"]
+bg_color = Color(0.8, 0.1, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_bg"]
+bg_color = Color(0.1, 0.1, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_fill"]
+bg_color = Color(0.2, 0.8, 0.2, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_margin"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel_bg"]
+bg_color = Color(0.12, 0.12, 0.15, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.3, 0.3, 0.4, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_death_bg"]
+bg_color = Color(0.15, 0.05, 0.05, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.6, 0.1, 0.1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_bg"]
+bg_color = Color(0.08, 0.08, 0.12, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.35, 0.2, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
 [node name="ClientScene" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -25,26 +79,85 @@ grow_vertical = 2
 script = ExtResource("1_6t3qf")
 
 [node name="RootContainer" type="VBoxContainer" parent="."]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
 
 [node name="MainContainer" type="HBoxContainer" parent="RootContainer"]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
 
 [node name="LeftPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
-custom_minimum_size = Vector2(800, 0)
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.6
+theme_override_constants/separation = 4
 
 [node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
 theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
 bbcode_enabled = true
 scroll_following = true
+
+[node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
+visible = false
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Enemy:"
+vertical_alignment = 1
+
+[node name="BarContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_bg")
+
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_fill")
+
+[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 14
+text = "???"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ActionBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
 custom_minimum_size = Vector2(0, 60)
@@ -205,20 +318,65 @@ horizontal_alignment = 1
 text = "5"
 
 [node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
-custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_korgu")
 bbcode_enabled = true
 scroll_following = true
 
 [node name="RightPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
-custom_minimum_size = Vector2(450, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="PlayerLevel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.84, 0, 1)
+theme_override_font_sizes/font_size = 16
+text = "Level 1"
+horizontal_alignment = 1
+
+[node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_bg")
+
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_fill")
+
+[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "HP: 100/100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(400, 600)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(1, 1, 1, 1)
@@ -230,18 +388,348 @@ bbcode_enabled = true
 [node name="BottomBar" type="HBoxContainer" parent="RootContainer"]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="InputField" type="LineEdit" parent="RootContainer/BottomBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_placeholder_color = Color(0.5019608, 0.5019608, 0.5019608, 1)
+theme_override_font_sizes/font_size = 16
 theme_override_styles/normal = SubResource("StyleBoxFlat_hlfbj")
-placeholder_text = "\"Type message or command...\""
+placeholder_text = "Type message or command..."
 keep_editing_on_text_submit = true
 caret_blink = true
 
 [node name="SendButton" type="Button" parent="RootContainer/BottomBar"]
-custom_minimum_size = Vector2(80, 0)
+custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 text = "Send"
+
+[node name="LoginPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -150.0
+offset_right = 200.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
+
+[node name="VBox" type="VBoxContainer" parent="LoginPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="LoginPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_font_sizes/font_size = 24
+text = "Phantasia Revival"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="LoginPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "Login or Register"
+horizontal_alignment = 1
+
+[node name="UsernameLabel" type="Label" parent="LoginPanel/VBox"]
+layout_mode = 2
+text = "Username:"
+
+[node name="UsernameField" type="LineEdit" parent="LoginPanel/VBox"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+placeholder_text = "Enter username..."
+
+[node name="PasswordLabel" type="Label" parent="LoginPanel/VBox"]
+layout_mode = 2
+text = "Password:"
+
+[node name="PasswordField" type="LineEdit" parent="LoginPanel/VBox"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+placeholder_text = "Enter password..."
+secret = true
+
+[node name="ButtonContainer" type="HBoxContainer" parent="LoginPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="LoginButton" type="Button" parent="LoginPanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Login"
+
+[node name="RegisterButton" type="Button" parent="LoginPanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Register"
+
+[node name="StatusLabel" type="RichTextLabel" parent="LoginPanel/VBox"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="CharacterSelectPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -200.0
+offset_right = 220.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
+
+[node name="VBox" type="VBoxContainer" parent="CharacterSelectPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="CharacterSelectPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_font_sizes/font_size = 20
+text = "Select Character"
+horizontal_alignment = 1
+
+[node name="CharacterList" type="VBoxContainer" parent="CharacterSelectPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="ButtonContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CreateButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Create New Character"
+
+[node name="LeaderboardButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Leaderboard"
+
+[node name="StatusLabel" type="RichTextLabel" parent="CharacterSelectPanel/VBox"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="CharacterCreatePanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -180.0
+offset_right = 200.0
+offset_bottom = 180.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
+
+[node name="VBox" type="VBoxContainer" parent="CharacterCreatePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_font_sizes/font_size = 20
+text = "Create Character"
+horizontal_alignment = 1
+
+[node name="NameLabel" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+text = "Character Name:"
+
+[node name="NameField" type="LineEdit" parent="CharacterCreatePanel/VBox"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+placeholder_text = "Enter character name..."
+
+[node name="ClassLabel" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+text = "Class:"
+
+[node name="ClassOption" type="OptionButton" parent="CharacterCreatePanel/VBox"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+
+[node name="Warning" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+theme_override_font_sizes/font_size = 11
+text = "WARNING: Permadeath is enabled!"
+horizontal_alignment = 1
+
+[node name="ButtonContainer" type="HBoxContainer" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ConfirmButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Create"
+
+[node name="CancelButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"
+
+[node name="StatusLabel" type="RichTextLabel" parent="CharacterCreatePanel/VBox"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="DeathPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -180.0
+offset_right = 250.0
+offset_bottom = 180.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_death_bg")
+
+[node name="VBox" type="VBoxContainer" parent="DeathPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 30.0
+offset_top = 30.0
+offset_right = -30.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="DeathMessage" type="RichTextLabel" parent="DeathPanel/VBox"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 18
+bbcode_enabled = true
+text = "[center][color=#FF0000][b]CHARACTER NAME HAS FALLEN[/b][/color]
+
+Slain by Monster[/center]"
+fit_content = true
+
+[node name="DeathStats" type="RichTextLabel" parent="DeathPanel/VBox"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+text = "[center]Level: 1
+Experience: 0
+Leaderboard Rank: #1[/center]"
+fit_content = true
+
+[node name="ContinueButton" type="Button" parent="DeathPanel/VBox"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "Continue"
+
+[node name="LeaderboardPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -250.0
+offset_right = 300.0
+offset_bottom = 250.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard_bg")
+
+[node name="VBox" type="VBoxContainer" parent="LeaderboardPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="LeaderboardList" type="RichTextLabel" parent="LeaderboardPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.9, 0.9, 0.9, 1)
+theme_override_font_sizes/normal_font_size = 13
+bbcode_enabled = true
+text = "[center][b]HALL OF FALLEN HEROES[/b][/center]"
+scroll_following = true
+
+[node name="CloseButton" type="Button" parent="LeaderboardPanel/VBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "Close"

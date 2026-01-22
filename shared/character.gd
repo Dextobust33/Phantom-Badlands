@@ -33,6 +33,11 @@ extends Resource
 # Combat
 @export var in_combat: bool = false
 
+# Tracking / Persistence
+@export var created_at: int = 0
+@export var played_time_seconds: int = 0
+@export var monsters_killed: int = 0
+
 func _init():
 	# Constructor
 	pass
@@ -43,7 +48,7 @@ func initialize(char_name: String, char_class: String):
 	class_type = char_class
 	level = 1
 	experience = 0
-	
+
 	# Set starting stats based on class
 	var starting_stats = get_starting_stats_for_class(char_class)
 	strength = starting_stats.strength
@@ -52,18 +57,23 @@ func initialize(char_name: String, char_class: String):
 	intelligence = starting_stats.intelligence
 	wisdom = starting_stats.wisdom
 	charisma = starting_stats.charisma
-	
+
 	# Calculate derived stats
 	calculate_derived_stats()
-	
+
 	# Start with full health and mana
 	current_hp = max_hp
 	current_mana = max_mana
-	
+
 	# Starting location - Sanctuary (0, 10) like Phantasia 4
 	x = 0
 	y = 10
 	gold = 100
+
+	# Tracking fields
+	created_at = int(Time.get_unix_time_from_system())
+	played_time_seconds = 0
+	monsters_killed = 0
 
 func get_starting_stats_for_class(char_class: String) -> Dictionary:
 	"""Get starting stats based on character class"""
@@ -225,7 +235,10 @@ func to_dict() -> Dictionary:
 		"y": y,
 		"health_state": get_health_state(),
 		"gold": gold,
-		"in_combat": in_combat
+		"in_combat": in_combat,
+		"created_at": created_at,
+		"played_time_seconds": played_time_seconds,
+		"monsters_killed": monsters_killed
 	}
 
 func from_dict(data: Dictionary):
@@ -235,7 +248,7 @@ func from_dict(data: Dictionary):
 	class_type = data.get("class", "Fighter")
 	level = data.get("level", 1)
 	experience = data.get("experience", 0)
-	
+
 	var stats = data.get("stats", {})
 	strength = stats.get("strength", 10)
 	constitution = stats.get("constitution", 10)
@@ -243,17 +256,22 @@ func from_dict(data: Dictionary):
 	intelligence = stats.get("intelligence", 10)
 	wisdom = stats.get("wisdom", 10)
 	charisma = stats.get("charisma", 10)
-	
+
 	current_hp = data.get("current_hp", 100)
 	max_hp = data.get("max_hp", 100)
 	current_mana = data.get("current_mana", 50)
 	max_mana = data.get("max_mana", 50)
-	
+
 	x = data.get("x", 0)
 	y = data.get("y", 10)
 	gold = data.get("gold", 100)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
+
+	# Tracking fields
+	created_at = data.get("created_at", 0)
+	played_time_seconds = data.get("played_time_seconds", 0)
+	monsters_killed = data.get("monsters_killed", 0)
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up"""
