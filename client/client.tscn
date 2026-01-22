@@ -1,0 +1,247 @@
+[gd_scene load_steps=7 format=3 uid="uid://dbwq54oox3iif"]
+
+[ext_resource type="Script" uid="uid://dqt7egmp3w0c3" path="res://client/client.gd" id="1_6t3qf"]
+[ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3bj3m"]
+bg_color = Color(0.16862746, 0.16862746, 0.16862746, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_korgu"]
+bg_color = Color(0.11764706, 0.11764706, 0.11764706, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n07ed"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hlfbj"]
+bg_color = Color(0.101960786, 0.101960786, 0.101960786, 1)
+
+[node name="ClientScene" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_6t3qf")
+
+[node name="RootContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="MainContainer" type="HBoxContainer" parent="RootContainer"]
+layout_mode = 2
+
+[node name="LeftPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
+custom_minimum_size = Vector2(800, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 3.0
+theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ActionBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Action1" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "Q"
+
+[node name="Action2" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "W"
+
+[node name="Action3" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "E"
+
+[node name="Action4" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "R"
+
+[node name="Action5" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "1"
+
+[node name="Action6" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "2"
+
+[node name="Action7" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "3"
+
+[node name="Action8" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "4"
+
+[node name="Action9" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+text = "5"
+
+[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_styles/background = SubResource("StyleBoxFlat_korgu")
+bbcode_enabled = true
+scroll_following = true
+
+[node name="RightPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
+custom_minimum_size = Vector2(450, 0)
+layout_mode = 2
+
+[node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
+custom_minimum_size = Vector2(400, 600)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_fonts/normal_font = ExtResource("2_gdxsl")
+theme_override_font_sizes/normal_font_size = 14
+theme_override_styles/background = SubResource("StyleBoxFlat_n07ed")
+bbcode_enabled = true
+
+[node name="BottomBar" type="HBoxContainer" parent="RootContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+
+[node name="InputField" type="LineEdit" parent="RootContainer/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_placeholder_color = Color(0.5019608, 0.5019608, 0.5019608, 1)
+theme_override_styles/normal = SubResource("StyleBoxFlat_hlfbj")
+placeholder_text = "\"Type message or command...\""
+keep_editing_on_text_submit = true
+caret_blink = true
+
+[node name="SendButton" type="Button" parent="RootContainer/BottomBar"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "Send"

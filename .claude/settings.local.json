@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(godot:*)",
+      "Bash(cmd.exe /c \"where /r C:\\\\Users\\\\Dexto godot*.exe 2>nul\")",
+      "Bash(taskkill:*)",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --path \"C:/Users/Dexto/Documents/phantasia-revival\" --verbose server/server.tscn)",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --path \"C:/Users/Dexto/Documents/phantasia-revival\" --verbose client/client.tscn)",
+      "Bash(cmd.exe /c \"taskkill /F /IM godot.windows.opt.tools.64.exe\")",
+      "Bash(powershell.exe -Command \"Get-Process | Where-Object {$_Name -like ''*godot*''} | Stop-Process -Force\")",
+      "Bash(powershell.exe:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
