@@ -11,7 +11,6 @@ Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScr
 Open the project in Godot 4.5 editor, then:
 - **Run client:** Execute `client/client.tscn` as main scene
 - **Run server:** Execute `server/server.tscn` for dedicated server
-- **Combined testing:** Execute `test_combined.tscn` to run server and client together in one scene for development testing
 
 Export is configured for Windows Desktop via `export_presets.cfg`.
 
