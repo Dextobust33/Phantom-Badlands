@@ -46,17 +46,28 @@ func _ready():
 func generate_monster(min_level: int, max_level: int) -> Dictionary:
 	"""Generate a random monster appropriate for the level range"""
 	var target_level = randi_range(min_level, max_level)
-	
+
 	# Select monster type based on level
 	var monster_type = select_monster_type(target_level)
-	
+
 	# Get base stats for this monster type
 	var base_stats = get_monster_base_stats(monster_type)
-	
+
 	# Scale to target level
 	var monster = scale_monster_to_level(base_stats, target_level)
-	
+
 	return monster
+
+func generate_monster_by_name(monster_name: String, target_level: int) -> Dictionary:
+	"""Generate a specific monster type by name at the given level"""
+	# Find the monster type by name
+	for type_id in MonsterType.values():
+		var base_stats = get_monster_base_stats(type_id)
+		if base_stats.name == monster_name:
+			return scale_monster_to_level(base_stats, target_level)
+
+	# Fallback if name not found - generate random monster
+	return generate_monster(target_level, target_level)
 
 func select_monster_type(level: int) -> MonsterType:
 	"""Select an appropriate monster type for the level"""
@@ -118,6 +129,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 12,
 				"base_experience": 25,
 				"base_gold": 5,
+				"flock_chance": 35,  # Goblins travel in groups
 				"description": "A small, green-skinned creature with sharp teeth"
 			}
 		MonsterType.GIANT_RAT:
@@ -130,6 +142,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 14,
 				"base_experience": 15,
 				"base_gold": 2,
+				"flock_chance": 40,  # Rats swarm together
 				"description": "A rat the size of a large dog"
 			}
 		MonsterType.KOBOLD:
@@ -142,6 +155,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 11,
 				"base_experience": 30,
 				"base_gold": 8,
+				"flock_chance": 30,  # Kobolds work in packs
 				"description": "A small reptilian humanoid with crude weapons"
 			}
 		MonsterType.SKELETON:
@@ -154,6 +168,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 8,
 				"base_experience": 40,
 				"base_gold": 3,
+				"flock_chance": 25,  # Often rise in groups
 				"description": "Animated bones held together by dark magic"
 			}
 		MonsterType.WOLF:
@@ -166,6 +181,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 15,
 				"base_experience": 35,
 				"base_gold": 0,
+				"flock_chance": 45,  # Hunt in packs
 				"description": "A fierce predator with sharp fangs"
 			}
 		
@@ -180,6 +196,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 9,
 				"base_experience": 120,
 				"base_gold": 25,
+				"flock_chance": 30,  # War bands
 				"description": "A brutish humanoid warrior"
 			}
 		MonsterType.HOBGOBLIN:
@@ -192,6 +209,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 10,
 				"base_experience": 150,
 				"base_gold": 35,
+				"flock_chance": 35,  # Military formations
 				"description": "A large, disciplined goblinoid soldier"
 			}
 		MonsterType.GNOLL:
@@ -204,6 +222,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 12,
 				"base_experience": 130,
 				"base_gold": 20,
+				"flock_chance": 40,  # Pack hunters
 				"description": "A hyena-like humanoid scavenger"
 			}
 		MonsterType.ZOMBIE:
@@ -216,6 +235,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 5,
 				"base_experience": 80,
 				"base_gold": 0,
+				"flock_chance": 50,  # Hordes of undead
 				"description": "A shambling corpse animated by necromancy"
 			}
 		MonsterType.GIANT_SPIDER:
@@ -228,6 +248,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 16,
 				"base_experience": 100,
 				"base_gold": 15,
+				"flock_chance": 25,  # Nest clusters
 				"description": "A spider large enough to prey on humans"
 			}
 		MonsterType.WIGHT:
@@ -240,6 +261,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 8,
 				"base_experience": 200,
 				"base_gold": 40,
+				"flock_chance": 15,  # Usually solitary
 				"description": "An undead warrior with life-draining abilities"
 			}
 		
@@ -254,6 +276,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 7,
 				"base_experience": 400,
 				"base_gold": 80,
+				"flock_chance": 10,  # Solitary brutes
 				"description": "A huge, dim-witted giant"
 			}
 		MonsterType.TROLL:
@@ -266,6 +289,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 10,
 				"base_experience": 500,
 				"base_gold": 60,
+				"flock_chance": 15,  # Territorial loners
 				"description": "A regenerating monster with terrible claws"
 			}
 		MonsterType.WRAITH:
@@ -278,6 +302,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 12,
 				"base_experience": 600,
 				"base_gold": 100,
+				"flock_chance": 20,  # Haunted places
 				"description": "A ghostly spirit that feeds on life force"
 			}
 		MonsterType.WYVERN:
@@ -290,6 +315,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 15,
 				"base_experience": 800,
 				"base_gold": 150,
+				"flock_chance": 5,  # Rare apex predator
 				"description": "A two-legged dragon with a venomous tail"
 			}
 		MonsterType.MINOTAUR:
@@ -302,6 +328,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 11,
 				"base_experience": 700,
 				"base_gold": 120,
+				"flock_chance": 10,  # Labyrinth guardians
 				"description": "A bull-headed humanoid warrior"
 			}
 		
@@ -316,6 +343,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 8,
 				"base_experience": 1500,
 				"base_gold": 300,
+				"flock_chance": 5,  # Solitary titans
 				"description": "A towering humanoid of immense power"
 			}
 		MonsterType.DRAGON_WYRMLING:
@@ -328,6 +356,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 14,
 				"base_experience": 2000,
 				"base_gold": 500,
+				"flock_chance": 0,  # Unique encounter
 				"description": "A young but deadly dragon"
 			}
 		MonsterType.DEMON:
@@ -340,6 +369,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 13,
 				"base_experience": 1800,
 				"base_gold": 400,
+				"flock_chance": 15,  # Summoned in pairs
 				"description": "A fiend from the lower planes"
 			}
 		MonsterType.VAMPIRE:
@@ -352,6 +382,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 16,
 				"base_experience": 2200,
 				"base_gold": 600,
+				"flock_chance": 0,  # Lone predators
 				"description": "An undead noble with supernatural powers"
 			}
 		
@@ -366,6 +397,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 18,
 				"base_experience": 10000,
 				"base_gold": 5000,
+				"flock_chance": 0,  # Legendary unique
 				"description": "A legendary wyrm of immense age and power"
 			}
 		MonsterType.DEMON_LORD:
@@ -378,6 +410,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 17,
 				"base_experience": 12000,
 				"base_gold": 6000,
+				"flock_chance": 0,  # Supreme evil
 				"description": "A ruler of the infernal realms"
 			}
 		MonsterType.LICH:
@@ -390,6 +423,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 12,
 				"base_experience": 15000,
 				"base_gold": 8000,
+				"flock_chance": 0,  # Solitary mastermind
 				"description": "An undead sorcerer of terrible power"
 			}
 		MonsterType.TITAN:
@@ -402,6 +436,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"base_speed": 15,
 				"base_experience": 18000,
 				"base_gold": 10000,
+				"flock_chance": 0,  # Primordial deity
 				"description": "A godlike being from the dawn of time"
 			}
 	
@@ -415,24 +450,43 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 		"base_speed": 10,
 		"base_experience": 10,
 		"base_gold": 1,
+		"flock_chance": 0,
 		"description": "A mysterious creature"
 	}
 
 func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictionary:
 	"""Scale monster stats to match target level"""
 	var level_diff = target_level - base_stats.base_level
-	var scale_factor = 1.0 + (level_diff * 0.15)  # 15% per level
-	
+
+	# Scale factor for stats - minimum 0.25 to prevent negative/zero stats
+	var stat_scale = max(0.25, 1.0 + (level_diff * 0.12))
+
+	# Calculate scaled combat stats
+	var scaled_hp = max(5, int(base_stats.base_hp * stat_scale))
+	var scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
+	var scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
+
+	# Experience based on lethality: (HP + Strength*3 + Defense) * Level / 10
+	# This rewards fighting dangerous, high-level monsters
+	var lethality = scaled_hp + (scaled_strength * 3) + scaled_defense
+	var experience_reward = max(10, int((lethality * target_level) / 10))
+
+	# Gold based on monster tier with some variance, minimum 1
+	var base_gold = base_stats.base_gold
+	var gold_scale = max(0.5, stat_scale)
+	var gold_reward = max(1, int(base_gold * gold_scale * randf_range(0.8, 1.2)))
+
 	return {
 		"name": base_stats.name,
 		"level": target_level,
-		"max_hp": int(base_stats.base_hp * scale_factor),
-		"current_hp": int(base_stats.base_hp * scale_factor),
-		"strength": int(base_stats.base_strength * scale_factor),
-		"defense": int(base_stats.base_defense * scale_factor),
+		"max_hp": scaled_hp,
+		"current_hp": scaled_hp,
+		"strength": scaled_strength,
+		"defense": scaled_defense,
 		"speed": base_stats.base_speed,  # Speed doesn't scale
-		"experience_reward": int(base_stats.base_experience * scale_factor),
-		"gold_reward": int(base_stats.base_gold * scale_factor),
+		"experience_reward": experience_reward,
+		"gold_reward": gold_reward,
+		"flock_chance": base_stats.get("flock_chance", 0),
 		"description": base_stats.description
 	}
 

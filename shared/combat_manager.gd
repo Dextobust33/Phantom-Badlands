@@ -141,16 +141,19 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
 			messages.append("[color=#FFD700]You gain %d experience![/color]" % monster.experience_reward)
 			messages.append("[color=#FFD700]You gain %d gold![/color]" % monster.gold_reward)
-			
+
 			# Award experience and gold
 			character.add_experience(monster.experience_reward)
 			character.gold += monster.gold_reward
-			
+
 			return {
 				"success": true,
 				"messages": messages,
 				"combat_ended": true,
-				"victory": true
+				"victory": true,
+				"monster_name": monster.name,
+				"monster_level": monster.level,
+				"flock_chance": monster.get("flock_chance", 0)
 			}
 	else:
 		# Miss

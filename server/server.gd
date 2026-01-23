@@ -9,6 +9,7 @@ var server = TCPServer.new()
 var peers = {}
 var next_peer_id = 1
 var characters = {}
+var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -154,8 +155,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_move(peer_id, message)
 		"combat":
 			handle_combat_command(peer_id, message)
+		"continue_flock":
+			handle_continue_flock(peer_id)
 		"rest":
 			handle_rest(peer_id)
+		"get_players":
+			handle_get_players(peer_id)
+		"examine_player":
+			handle_examine_player(peer_id, message)
 		"logout_character":
 			handle_logout_character(peer_id)
 		"logout_account":
@@ -265,6 +272,9 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		"message": "Welcome back, %s!" % char_name
 	})
 
+	# Broadcast join message to other players
+	broadcast_chat("[color=#90EE90]%s has entered the realm.[/color]" % char_name)
+
 	send_location_update(peer_id)
 
 func handle_create_character(peer_id: int, message: Dictionary):
@@ -358,6 +368,9 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"message": "Welcome to the world, %s!" % char_name
 	})
 
+	# Broadcast join message to other players
+	broadcast_chat("[color=#90EE90]%s has entered the realm.[/color]" % char_name)
+
 	send_location_update(peer_id)
 
 func handle_delete_character(peer_id: int, message: Dictionary):
@@ -408,6 +421,62 @@ func handle_get_leaderboard(peer_id: int, message: Dictionary):
 		"entries": entries
 	})
 
+func handle_get_players(peer_id: int):
+	"""Get list of all online players"""
+	var player_list = []
+
+	for pid in characters.keys():
+		var char = characters[pid]
+		player_list.append({
+			"name": char.name,
+			"level": char.level,
+			"class": char.class_type
+		})
+
+	send_to_peer(peer_id, {
+		"type": "player_list",
+		"players": player_list,
+		"count": player_list.size()
+	})
+
+func handle_examine_player(peer_id: int, message: Dictionary):
+	"""Examine another player's character"""
+	var target_name = message.get("name", "")
+
+	if target_name.is_empty():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Specify a player name to examine"
+		})
+		return
+
+	# Find the target player
+	for pid in characters.keys():
+		var char = characters[pid]
+		if char.name.to_lower() == target_name.to_lower():
+			send_to_peer(peer_id, {
+				"type": "examine_result",
+				"name": char.name,
+				"level": char.level,
+				"class": char.class_type,
+				"hp": char.current_hp,
+				"max_hp": char.max_hp,
+				"strength": char.get_stat("strength"),
+				"constitution": char.get_stat("constitution"),
+				"dexterity": char.get_stat("dexterity"),
+				"intelligence": char.get_stat("intelligence"),
+				"wisdom": char.get_stat("wisdom"),
+				"charisma": char.get_stat("charisma"),
+				"monsters_killed": char.monsters_killed,
+				"in_combat": combat_mgr.is_in_combat(pid)
+			})
+			return
+
+	send_to_peer(peer_id, {
+		"type": "error",
+		"message": "Player '%s' not found online" % target_name
+	})
+
 func handle_logout_character(peer_id: int):
 	"""Logout of current character, return to character select"""
 	if not peers[peer_id].authenticated:
@@ -420,10 +489,17 @@ func handle_logout_character(peer_id: int):
 	if combat_mgr.is_in_combat(peer_id):
 		combat_mgr.end_combat(peer_id, false)
 
+	# Clear pending flock if any
+	if pending_flocks.has(peer_id):
+		pending_flocks.erase(peer_id)
+
 	# Remove character from active characters
 	if characters.has(peer_id):
-		print("Character logout: %s" % characters[peer_id].name)
+		var char_name = characters[peer_id].name
+		print("Character logout: %s" % char_name)
 		characters.erase(peer_id)
+		# Broadcast after removal
+		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
 
 	peers[peer_id].character_name = ""
 
@@ -445,10 +521,17 @@ func handle_logout_account(peer_id: int):
 	if combat_mgr.is_in_combat(peer_id):
 		combat_mgr.end_combat(peer_id, false)
 
+	# Clear pending flock if any
+	if pending_flocks.has(peer_id):
+		pending_flocks.erase(peer_id)
+
 	# Remove character
 	if characters.has(peer_id):
-		print("Character logout: %s" % characters[peer_id].name)
+		var char_name = characters[peer_id].name
+		print("Character logout: %s" % char_name)
 		characters.erase(peer_id)
+		# Broadcast after removal
+		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
 
 	var username = peers[peer_id].username
 	print("Account logout: %s" % username)
@@ -496,6 +579,14 @@ func handle_move(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {
 			"type": "error",
 			"message": "You cannot move while in combat!"
+		})
+		return
+
+	# Check if flock encounter pending
+	if pending_flocks.has(peer_id):
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "More enemies are approaching! Press Q to continue."
 		})
 		return
 
@@ -559,6 +650,15 @@ func handle_rest(peer_id: int):
 		"character": character.to_dict()
 	})
 
+	# Chance to be ambushed while resting (15%)
+	var ambush_roll = randi() % 100
+	if ambush_roll < 15:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF6B6B]You are ambushed while resting![/color]"
+		})
+		trigger_encounter(peer_id)
+
 func handle_combat_command(peer_id: int, message: Dictionary):
 	"""Handle combat commands from player"""
 	var command = message.get("command", "")
@@ -589,15 +689,41 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
 
-			# Send updated character
-			send_to_peer(peer_id, {
-				"type": "combat_end",
-				"victory": true,
-				"character": characters[peer_id].to_dict()
-			})
+			# Check for flock encounter (chain combat)
+			var flock_chance = result.get("flock_chance", 0)
+			var flock_roll = randi() % 100
 
-			# Save character after combat
-			save_character(peer_id)
+			if flock_chance > 0 and flock_roll < flock_chance:
+				# Flock triggered! Send info to client and wait for continue
+				var monster_name = result.get("monster_name", "")
+				var monster_level = result.get("monster_level", 1)
+
+				# Store pending flock data for this peer
+				pending_flocks[peer_id] = {
+					"monster_name": monster_name,
+					"monster_level": monster_level
+				}
+
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"victory": true,
+					"character": characters[peer_id].to_dict(),
+					"flock_incoming": true,
+					"flock_monster": monster_name
+				})
+
+				# Save character
+				save_character(peer_id)
+			else:
+				# Normal victory, no flock
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"victory": true,
+					"character": characters[peer_id].to_dict()
+				})
+
+				# Save character after combat
+				save_character(peer_id)
 
 		elif result.has("fled") and result.fled:
 			# Fled successfully
@@ -684,6 +810,15 @@ func send_to_peer(peer_id: int, data: Dictionary):
 
 	connection.put_data(bytes)
 
+func broadcast_chat(message: String, sender: String = "System"):
+	"""Send a chat message to all connected players with characters"""
+	for peer_id in characters.keys():
+		send_to_peer(peer_id, {
+			"type": "chat",
+			"sender": sender,
+			"message": message
+		})
+
 func save_character(peer_id: int):
 	"""Save a single character"""
 	if not characters.has(peer_id):
@@ -704,6 +839,10 @@ func save_all_active_characters():
 
 func handle_disconnect(peer_id: int):
 	var username = peers[peer_id].get("username", "Unknown")
+	var char_name = ""
+	if characters.has(peer_id):
+		char_name = characters[peer_id].name
+
 	print("Peer %d (%s) disconnected" % [peer_id, username])
 
 	# Save character before removing
@@ -713,10 +852,18 @@ func handle_disconnect(peer_id: int):
 	if combat_mgr.is_in_combat(peer_id):
 		combat_mgr.end_combat(peer_id, false)
 
+	# Clear pending flock if any
+	if pending_flocks.has(peer_id):
+		pending_flocks.erase(peer_id)
+
 	if characters.has(peer_id):
 		characters.erase(peer_id)
 
 	peers.erase(peer_id)
+
+	# Broadcast disconnect message (after cleanup so they don't get their own message)
+	if char_name != "":
+		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
 
 func _exit_tree():
 	print("Server shutting down...")
@@ -747,3 +894,36 @@ func trigger_encounter(peer_id: int):
 			"message": result.message,
 			"combat_state": result.combat_state
 		})
+
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int):
+	"""Trigger a flock encounter with the same monster type"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Generate another monster of the same type at the same level
+	var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
+
+	# Start combat
+	var result = combat_mgr.start_combat(peer_id, character, monster)
+
+	if result.success:
+		# Send flock encounter message with clear_output flag
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"message": "[color=#FF6B6B]Another %s appears![/color]\n%s" % [monster.name, result.message],
+			"combat_state": result.combat_state,
+			"is_flock": true,
+			"clear_output": true
+		})
+
+func handle_continue_flock(peer_id: int):
+	"""Handle player continuing into a flock encounter"""
+	if not pending_flocks.has(peer_id):
+		return
+
+	var flock_data = pending_flocks[peer_id]
+	pending_flocks.erase(peer_id)
+
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level)

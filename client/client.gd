@@ -26,7 +26,9 @@ var game_state = GameState.DISCONNECTED
 @onready var action_bar = $RootContainer/MainContainer/LeftPanel/ActionBar
 @onready var enemy_health_bar = $RootContainer/MainContainer/LeftPanel/EnemyHealthBar
 @onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
+@onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
 @onready var player_level_label = $RootContainer/MainContainer/RightPanel/PlayerLevel
+@onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
 
 # UI References - Login Panel
 @onready var login_panel = $LoginPanel
@@ -76,6 +78,8 @@ const MOVE_COOLDOWN = 0.5
 
 # Combat state
 var in_combat = false
+var flock_pending = false
+var flock_monster_name = ""
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -174,8 +178,8 @@ func _process(_delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
-	# Numpad movement (only when playing and not in combat)
-	if connected and has_character and not input_field.has_focus() and not in_combat:
+	# Numpad movement (only when playing and not in combat or flock pending)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -332,6 +336,53 @@ func update_leaderboard_display(entries: Array):
 		leaderboard_list.append_text("   Level %d %s - %d XP\n" % [level, cls, exp])
 		leaderboard_list.append_text("   [color=#666666]Slain by: %s[/color]\n\n" % cause)
 
+func update_online_players(players: Array):
+	"""Update the online players list display"""
+	if not online_players_list:
+		return
+
+	online_players_list.clear()
+
+	if players.is_empty():
+		online_players_list.append_text("[color=#666666]No players online[/color]")
+		return
+
+	for player in players:
+		var pname = player.get("name", "Unknown")
+		var plevel = player.get("level", 1)
+		var pclass = player.get("class", "Unknown")
+		online_players_list.append_text("[color=#90EE90]%s[/color] Lv%d %s\n" % [pname, plevel, pclass])
+
+func display_examine_result(data: Dictionary):
+	"""Display examined player info in game output"""
+	var name = data.get("name", "Unknown")
+	var level = data.get("level", 1)
+	var cls = data.get("class", "Unknown")
+	var hp = data.get("hp", 0)
+	var max_hp = data.get("max_hp", 1)
+	var in_combat = data.get("in_combat", false)
+	var kills = data.get("monsters_killed", 0)
+
+	var str_stat = data.get("strength", 0)
+	var con_stat = data.get("constitution", 0)
+	var dex_stat = data.get("dexterity", 0)
+	var int_stat = data.get("intelligence", 0)
+	var wis_stat = data.get("wisdom", 0)
+	var cha_stat = data.get("charisma", 0)
+
+	var status = "[color=#90EE90]Exploring[/color]" if not in_combat else "[color=#FF6B6B]In Combat[/color]"
+
+	display_game("[color=#FFD700]===== %s =====[/color]" % name)
+	display_game("Level %d %s - %s" % [level, cls, status])
+	display_game("HP: %d/%d" % [hp, max_hp])
+	display_game("STR:%d CON:%d DEX:%d INT:%d WIS:%d CHA:%d" % [str_stat, con_stat, dex_stat, int_stat, wis_stat, cha_stat])
+	display_game("Monsters Slain: %d" % kills)
+
+func request_player_list():
+	"""Request updated player list from server"""
+	if connected:
+		send_to_server({"type": "get_players"})
+
 # ===== LOGIN/REGISTER HANDLERS =====
 
 func _on_login_button_pressed():
@@ -452,13 +503,25 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif flock_pending:
+		current_actions = [
+			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif has_character:
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Rest", "action_type": "server", "action_data": "rest", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Players", "action_type": "server", "action_data": "get_players", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
@@ -501,6 +564,8 @@ func trigger_action(index: int):
 			execute_local_action(action.action_data)
 		"server":
 			send_to_server({"type": action.action_data})
+		"flock":
+			continue_flock_encounter()
 
 func send_combat_command(command: String):
 	if not connected:
@@ -512,6 +577,15 @@ func send_combat_command(command: String):
 
 	display_game("[color=#F39C12]> %s[/color]" % command)
 	send_to_server({"type": "combat", "command": command})
+
+func continue_flock_encounter():
+	"""Continue into a pending flock encounter"""
+	if not flock_pending:
+		return
+
+	flock_pending = false
+	flock_monster_name = ""
+	send_to_server({"type": "continue_flock"})
 
 func execute_local_action(action: String):
 	match action:
@@ -575,6 +649,18 @@ func update_player_hp_bar():
 
 	if label:
 		label.text = "HP: %d/%d" % [current_hp, max_hp]
+
+func update_player_xp_bar():
+	if not player_xp_bar or not has_character:
+		return
+
+	var current_xp = character_data.get("experience", 0)
+	var xp_needed = character_data.get("experience_to_next_level", 100)
+	var percent = (float(current_xp) / float(max(xp_needed, 1))) * 100.0
+
+	var fill = player_xp_bar.get_node("Fill")
+	if fill:
+		fill.anchor_right = percent / 100.0
 
 func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int):
 	if not enemy_health_bar:
@@ -673,8 +759,10 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 			update_player_level()
 			update_player_hp_bar()
+			update_player_xp_bar()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
 			display_character_status()
+			request_player_list()
 
 		"character_created":
 			has_character = true
@@ -683,8 +771,10 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 			update_player_level()
 			update_player_hp_bar()
+			update_player_xp_bar()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
 			display_character_status()
+			request_player_list()
 
 		"character_deleted":
 			display_game("[color=#F39C12]%s[/color]" % message.get("message", "Character deleted"))
@@ -728,6 +818,12 @@ func handle_server_message(message: Dictionary):
 		"leaderboard":
 			update_leaderboard_display(message.get("entries", []))
 
+		"player_list":
+			update_online_players(message.get("players", []))
+
+		"examine_result":
+			display_examine_result(message)
+
 		"location":
 			var desc = message.get("description", "")
 			if not in_combat:
@@ -738,6 +834,9 @@ func handle_server_message(message: Dictionary):
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
 			display_chat("[color=#4A90E2]%s:[/color] %s" % [sender, text])
+			# Refresh player list when someone joins or leaves
+			if "entered the realm" in text or "left the realm" in text:
+				request_player_list()
 
 		"text":
 			display_game(message.get("message", ""))
@@ -747,6 +846,7 @@ func handle_server_message(message: Dictionary):
 				character_data = message.character
 				update_player_level()
 				update_player_hp_bar()
+				update_player_xp_bar()
 
 		"error":
 			var error_msg = message.get("message", "Unknown error")
@@ -759,7 +859,14 @@ func handle_server_message(message: Dictionary):
 
 		"combat_start":
 			in_combat = true
+			flock_pending = false
+			flock_monster_name = ""
 			update_action_bar()
+
+			# Clear game output for flock encounters
+			if message.get("clear_output", false):
+				game_output.clear()
+
 			display_game(message.get("message", ""))
 
 			var combat_state = message.get("combat_state", {})
@@ -797,6 +904,14 @@ func handle_server_message(message: Dictionary):
 					character_data = message.character
 					update_player_level()
 					update_player_hp_bar()
+					update_player_xp_bar()
+				# Check for incoming flock encounter
+				if message.get("flock_incoming", false):
+					flock_pending = true
+					flock_monster_name = message.get("flock_monster", "enemy")
+					display_game("[color=#FF6B6B]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
+					display_game("[color=#FFD700]Press Q to continue...[/color]")
+					update_action_bar()
 			elif message.get("fled", false):
 				display_game("[color=#FFD700]You escaped from combat![/color]")
 			else:
@@ -839,7 +954,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -882,6 +997,15 @@ func process_command(text: String):
 			send_to_server({"type": "combat", "command": "defend"})
 		"flee", "f", "run":
 			send_to_server({"type": "combat", "command": "flee"})
+		"who", "players":
+			request_player_list()
+			display_game("[color=#95A5A6]Refreshing player list...[/color]")
+		"examine", "ex":
+			if parts.size() > 1:
+				var target = parts[1]
+				send_to_server({"type": "examine_player", "name": target})
+			else:
+				display_game("[color=#E74C3C]Usage: examine <playername>[/color]")
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -897,10 +1021,10 @@ func connect_to_server():
 	if status == StreamPeerTCP.STATUS_CONNECTING:
 		display_game("[color=#F39C12]Connection in progress...[/color]")
 		return
-
-	display_game("Connecting to 127.0.0.1:9080...")
-
-	var error = connection.connect_to_host("127.0.0.1", 9080)
+#changed from 127.0.0.1
+	display_game("Connecting to 24.158.80.95:9080...")
+#changed from 127.0.0.1
+	var error = connection.connect_to_host("24.158.80.95", 9080)
 	if error != OK:
 		display_game("[color=#E74C3C]Failed! Error: %d[/color]" % error)
 		return
@@ -992,6 +1116,10 @@ func show_help():
 
 [color=#4A90E2]Actions:[/color]
   Q/W/E/R or 1-5 for action bar
+
+[color=#4A90E2]Social:[/color]
+  who/players - Refresh player list
+  examine <name> - View player stats
 
 [color=#4A90E2]Other:[/color]
   help - This help

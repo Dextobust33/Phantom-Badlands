@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://dbwq54oox3iif"]
+[gd_scene load_steps=14 format=3 uid="uid://dbwq54oox3iif"]
 
 [ext_resource type="Script" uid="uid://dqt7egmp3w0c3" path="res://client/client.gd" id="1_6t3qf"]
 [ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
@@ -6,20 +6,14 @@
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3bj3m"]
 bg_color = Color(0.16862746, 0.16862746, 0.16862746, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_korgu"]
-bg_color = Color(0.11764706, 0.11764706, 0.11764706, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n07ed"]
-bg_color = Color(0, 0, 0, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hlfbj"]
-bg_color = Color(0.101960786, 0.101960786, 0.101960786, 1)
-
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.2, 0.05, 0.05, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_fill"]
 bg_color = Color(0.8, 0.1, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_korgu"]
+bg_color = Color(0.11764706, 0.11764706, 0.11764706, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_bg"]
 bg_color = Color(0.1, 0.1, 0.1, 1)
@@ -27,11 +21,11 @@ bg_color = Color(0.1, 0.1, 0.1, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_fill"]
 bg_color = Color(0.2, 0.8, 0.2, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_margin"]
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n07ed"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hlfbj"]
+bg_color = Color(0.101960786, 0.101960786, 0.101960786, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel_bg"]
 bg_color = Color(0.12, 0.12, 0.15, 0.95)
@@ -68,6 +62,12 @@ corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_bg"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
+bg_color = Color(0.4, 0.4, 0.4, 1)
 
 [node name="ClientScene" type="Control"]
 layout_mode = 3
@@ -178,8 +178,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "Q"
+horizontal_alignment = 1
 
 [node name="Action2" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -195,8 +195,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "W"
+horizontal_alignment = 1
 
 [node name="Action3" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -212,8 +212,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "E"
+horizontal_alignment = 1
 
 [node name="Action4" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -229,8 +229,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "R"
+horizontal_alignment = 1
 
 [node name="Action5" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -246,8 +246,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "1"
+horizontal_alignment = 1
 
 [node name="Action6" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -263,8 +263,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "2"
+horizontal_alignment = 1
 
 [node name="Action7" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -280,8 +280,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "3"
+horizontal_alignment = 1
 
 [node name="Action8" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -297,8 +297,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "4"
+horizontal_alignment = 1
 
 [node name="Action9" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
 layout_mode = 2
@@ -314,8 +314,8 @@ text = "---"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
-horizontal_alignment = 1
 text = "5"
+horizontal_alignment = 1
 
 [node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
 layout_mode = 2
@@ -337,6 +337,29 @@ theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 16
 text = "Level 1"
 horizontal_alignment = 1
+
+[node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_xp_bg")
+
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+layout_mode = 1
+anchors_preset = 13
+anchor_left = 0.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_xp_fill")
 
 [node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
 custom_minimum_size = Vector2(0, 40)
@@ -379,11 +402,29 @@ vertical_alignment = 1
 [node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
 layout_mode = 2
 size_flags_vertical = 3
+size_flags_stretch_ratio = 3.0
 theme_override_colors/default_color = Color(1, 1, 1, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_n07ed")
 bbcode_enabled = true
+
+[node name="OnlinePlayersLabel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.8, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "Online Players"
+horizontal_alignment = 1
+
+[node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/normal_font_size = 11
+theme_override_styles/background = SubResource("StyleBoxFlat_hlfbj")
+bbcode_enabled = true
+text = "[color=#666666]No players online[/color]"
 
 [node name="BottomBar" type="HBoxContainer" parent="RootContainer"]
 custom_minimum_size = Vector2(0, 40)

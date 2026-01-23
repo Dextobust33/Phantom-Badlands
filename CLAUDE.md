@@ -15,6 +15,22 @@ Open the project in Godot 4.5 editor, then:
 
 Export is configured for Windows Desktop via `export_presets.cfg`.
 
+## Quick Launch (Command Line)
+
+Godot executable location: `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`
+
+**Launch server:**
+```bash
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" server/server.tscn &
+```
+
+**Launch client (after server is running):**
+```bash
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" client/client.tscn &
+```
+
+Run server first, then client. Both commands run in background (`&`).
+
 ## Architecture
 
 ```
