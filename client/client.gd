@@ -64,6 +64,11 @@ var game_state = GameState.DISCONNECTED
 @onready var leaderboard_list = $LeaderboardPanel/VBox/LeaderboardList
 @onready var close_leaderboard_button = $LeaderboardPanel/VBox/CloseButton
 
+# UI References - Player Info Popup
+@onready var player_info_panel = $PlayerInfoPanel
+@onready var player_info_content = $PlayerInfoPanel/VBox/PlayerInfoContent
+@onready var close_player_info_button = $PlayerInfoPanel/VBox/CloseButton
+
 # Account data
 var username = ""
 var account_id = ""
@@ -91,6 +96,16 @@ var known_enemy_hp: Dictionary = {}
 var current_enemy_name: String = ""
 var current_enemy_level: int = 0
 var damage_dealt_to_current_enemy: int = 0
+
+# Player list auto-refresh
+var player_list_refresh_timer: float = 0.0
+const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
+
+# Player name click tracking for double-click
+var last_player_click_name: String = ""
+var last_player_click_time: float = 0.0
+const DOUBLE_CLICK_THRESHOLD: float = 0.4  # 400ms for double-click
+var pending_player_info_request: String = ""  # Track pending popup request
 
 func _ready():
 	# Setup action bar
@@ -138,6 +153,14 @@ func _ready():
 	# Connect leaderboard signals
 	if close_leaderboard_button:
 		close_leaderboard_button.pressed.connect(_on_close_leaderboard_pressed)
+
+	# Connect player info panel signals
+	if close_player_info_button:
+		close_player_info_button.pressed.connect(_on_close_player_info_pressed)
+
+	# Connect online players list for clickable names
+	if online_players_list:
+		online_players_list.meta_clicked.connect(_on_player_name_clicked)
 
 	# Setup class options
 	if class_option:
@@ -221,6 +244,13 @@ func _process(_delta):
 				buffer += data[1].get_string_from_utf8()
 				process_buffer()
 
+		# Auto-refresh player list every 60 seconds while playing
+		if game_state == GameState.PLAYING and has_character:
+			player_list_refresh_timer += _delta
+			if player_list_refresh_timer >= PLAYER_LIST_REFRESH_INTERVAL:
+				player_list_refresh_timer = 0.0
+				request_player_list()
+
 	elif status == StreamPeerTCP.STATUS_ERROR:
 		if connected:
 			display_game("[color=#E74C3C]Connection error![/color]")
@@ -239,6 +269,8 @@ func hide_all_panels():
 		death_panel.visible = false
 	if leaderboard_panel:
 		leaderboard_panel.visible = false
+	if player_info_panel:
+		player_info_panel.visible = false
 
 func show_login_panel():
 	hide_all_panels()
@@ -337,7 +369,7 @@ func update_leaderboard_display(entries: Array):
 		leaderboard_list.append_text("   [color=#666666]Slain by: %s[/color]\n\n" % cause)
 
 func update_online_players(players: Array):
-	"""Update the online players list display"""
+	"""Update the online players list display with clickable names"""
 	if not online_players_list:
 		return
 
@@ -351,7 +383,8 @@ func update_online_players(players: Array):
 		var pname = player.get("name", "Unknown")
 		var plevel = player.get("level", 1)
 		var pclass = player.get("class", "Unknown")
-		online_players_list.append_text("[color=#90EE90]%s[/color] Lv%d %s\n" % [pname, plevel, pclass])
+		# Use URL tags to make names clickable (double-click shows stats)
+		online_players_list.append_text("[url=%s][color=#90EE90]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
 
 func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
@@ -475,6 +508,63 @@ func _on_continue_pressed():
 func _on_close_leaderboard_pressed():
 	if leaderboard_panel:
 		leaderboard_panel.visible = false
+
+# ===== PLAYER INFO POPUP HANDLERS =====
+
+func _on_player_name_clicked(meta):
+	"""Handle click on player name in online players list - double-click shows popup"""
+	var player_name = str(meta)
+	var current_time = Time.get_ticks_msec() / 1000.0
+
+	# Check for double-click
+	if player_name == last_player_click_name and (current_time - last_player_click_time) <= DOUBLE_CLICK_THRESHOLD:
+		# Double-click detected - request player info for popup
+		pending_player_info_request = player_name
+		send_to_server({"type": "examine_player", "name": player_name})
+		last_player_click_name = ""
+		last_player_click_time = 0.0
+	else:
+		# First click - store for potential double-click
+		last_player_click_name = player_name
+		last_player_click_time = current_time
+
+func _on_close_player_info_pressed():
+	if player_info_panel:
+		player_info_panel.visible = false
+
+func show_player_info_popup(data: Dictionary):
+	"""Display player stats in a popup panel"""
+	if not player_info_panel or not player_info_content:
+		return
+
+	var pname = data.get("name", "Unknown")
+	var level = data.get("level", 1)
+	var cls = data.get("class", "Unknown")
+	var hp = data.get("hp", 0)
+	var max_hp = data.get("max_hp", 1)
+	var in_combat_status = data.get("in_combat", false)
+	var kills = data.get("monsters_killed", 0)
+
+	var str_stat = data.get("strength", 0)
+	var con_stat = data.get("constitution", 0)
+	var dex_stat = data.get("dexterity", 0)
+	var int_stat = data.get("intelligence", 0)
+	var wis_stat = data.get("wisdom", 0)
+	var cha_stat = data.get("charisma", 0)
+
+	var status_text = "[color=#90EE90]Exploring[/color]" if not in_combat_status else "[color=#FF6B6B]In Combat[/color]"
+
+	player_info_content.clear()
+	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
+	player_info_content.append_text("[center]Level %d %s[/center]\n" % [level, cls])
+	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
+	player_info_content.append_text("[color=#4A90E2]HP:[/color] %d / %d\n\n" % [hp, max_hp])
+	player_info_content.append_text("[color=#9B59B6]Stats:[/color]\n")
+	player_info_content.append_text("  STR: %d  CON: %d  DEX: %d\n" % [str_stat, con_stat, dex_stat])
+	player_info_content.append_text("  INT: %d  WIS: %d  CHA: %d\n\n" % [int_stat, wis_stat, cha_stat])
+	player_info_content.append_text("[color=#E67E22]Monsters Slain:[/color] %d" % kills)
+
+	player_info_panel.visible = true
 
 # ===== ACTION BAR FUNCTIONS =====
 
@@ -822,7 +912,13 @@ func handle_server_message(message: Dictionary):
 			update_online_players(message.get("players", []))
 
 		"examine_result":
-			display_examine_result(message)
+			# Check if this was triggered by double-click on player list
+			var examined_name = message.get("name", "")
+			if pending_player_info_request != "" and examined_name.to_lower() == pending_player_info_request.to_lower():
+				show_player_info_popup(message)
+				pending_player_info_request = ""
+			else:
+				display_examine_result(message)
 
 		"location":
 			var desc = message.get("description", "")
