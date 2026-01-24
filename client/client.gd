@@ -95,7 +95,7 @@ const MAP_MIN_FONT_SIZE = 10
 const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for fullscreen
 const GAME_OUTPUT_BASE_FONT_SIZE = 14
 const GAME_OUTPUT_MIN_FONT_SIZE = 12
-const GAME_OUTPUT_MAX_FONT_SIZE = 32
+const GAME_OUTPUT_MAX_FONT_SIZE = 20
 
 # Combat state
 var in_combat = false
@@ -1359,11 +1359,12 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_combat:
-		# Combat mode: Space=Attack, Q=Defend, W=Flee, E/R/1-4=Path abilities
+		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E/R/1-4=Path abilities
 		var ability_actions = _get_combat_ability_actions()
+		var has_items = _has_usable_combat_items()
 		current_actions = [
 			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
-			{"label": "Defend", "action_type": "combat", "action_data": "defend", "enabled": true},
+			{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
 		]
 		# Add 6 ability slots (E, R, 1, 2, 3, 4)
@@ -3763,20 +3764,26 @@ func show_help():
   • Triggers once per combat
   • Great for risky fights
 
+[color=#8B4513]Ogre[/color] - Massive and regenerative
+  • All healing effects are doubled (2x)
+  • Includes potions, regen, and other heals
+  • Great for sustained combat
+
 [b][color=#FFD700]== WARRIOR ABILITIES (STR Path) ==[/color][/b]
 Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4, regens 10% when defending
+Damage abilities use [color=#FFCC00]Attack[/color] = STR + weapon bonuses
 
 [color=#FF6666]Lv 1 - Power Strike[/color] (10 Stamina)
-  Deal STR × 1.5 damage
+  Deal Attack × 1.5 damage
 
 [color=#FF6666]Lv 10 - War Cry[/color] (15 Stamina)
   +25% damage for 3 rounds
 
 [color=#FF6666]Lv 25 - Shield Bash[/color] (20 Stamina)
-  Deal STR damage + stun (enemy skips turn)
+  Deal Attack damage + stun (enemy skips turn)
 
 [color=#FF6666]Lv 40 - Cleave[/color] (30 Stamina)
-  Deal STR × 2 damage
+  Deal Attack × 2 damage
 
 [color=#FF6666]Lv 60 - Berserk[/color] (40 Stamina)
   +100% damage, -50% defense for 3 rounds
@@ -3785,10 +3792,11 @@ Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4, regens 10% when defending
   Block 50% damage for 3 rounds
 
 [color=#FF6666]Lv 100 - Devastate[/color] (50 Stamina)
-  Deal STR × 4 damage
+  Deal Attack × 4 damage
 
 [b][color=#FFD700]== MAGE ABILITIES (INT Path) ==[/color][/b]
 Uses [color=#66CCCC]Mana[/color] = INT×8 + WIS×4
+Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
 
 [color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)
   Deal damage equal to mana spent (1:1 ratio)
@@ -3800,7 +3808,7 @@ Uses [color=#66CCCC]Mana[/color] = INT×8 + WIS×4
   50% chance enemy misses next attack
 
 [color=#66FFFF]Lv 40 - Blast[/color] (50 Mana)
-  Deal INT × 2 damage
+  Deal Magic × 2 damage
 
 [color=#66FFFF]Lv 60 - Forcefield[/color] (75 Mana)
   Block next 2 attacks completely
@@ -3809,10 +3817,11 @@ Uses [color=#66CCCC]Mana[/color] = INT×8 + WIS×4
   Guaranteed flee (always succeeds)
 
 [color=#66FFFF]Lv 100 - Meteor[/color] (100 Mana)
-  Deal INT × 5 damage
+  Deal Magic × 5 damage
 
 [b][color=#FFD700]== TRICKSTER ABILITIES (WITS Path) ==[/color][/b]
 Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4, regens 15% per round
+WITS abilities include equipment bonuses
 
 [color=#FFA500]Lv 1 - Analyze[/color] (5 Energy)
   Reveal monster stats (HP, damage, intelligence)
@@ -3824,7 +3833,7 @@ Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4, regens 15% per round
   Steal WITS × 10 gold (fail = monster attacks)
 
 [color=#FFA500]Lv 40 - Ambush[/color] (30 Energy)
-  Deal WITS × 1.5 damage + 50% crit chance
+  Deal (Attack + WITS/2) × 1.5 damage + 50% crit chance
 
 [color=#FFA500]Lv 60 - Vanish[/color] (40 Energy)
   Invisible, guaranteed crit on next attack

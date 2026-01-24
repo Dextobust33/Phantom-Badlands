@@ -118,7 +118,8 @@ func _process(delta):
 			"buffer": ""
 		}
 
-		log_message("New connection! Peer ID: %d" % peer_id)
+		var peer_ip = peer.get_connected_host()
+		log_message("New connection! Peer ID: %d from %s" % [peer_id, peer_ip])
 
 		# Send welcome message
 		send_to_peer(peer_id, {
@@ -276,7 +277,7 @@ func handle_login(peer_id: int, message: Dictionary):
 		peers[peer_id].account_id = result.account_id
 		peers[peer_id].username = result.username
 
-		print("Player logged in: %s (Peer %d)" % [username, peer_id])
+		log_message("Account authenticated: %s (Peer %d)" % [username, peer_id])
 
 		send_to_peer(peer_id, {
 			"type": "login_success",
@@ -426,7 +427,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 
 	# Validate race
 	var char_race = message.get("race", "Human")
-	var valid_races = ["Human", "Elf", "Dwarf"]
+	var valid_races = ["Human", "Elf", "Dwarf", "Ogre"]
 	if char_race not in valid_races:
 		send_to_peer(peer_id, {
 			"type": "error",

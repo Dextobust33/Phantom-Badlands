@@ -690,7 +690,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"blast":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF6B6B]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			var damage = character.get_stat("intelligence") * 2
+			var base_damage = character.get_effective_stat("intelligence") * 2
+			var damage_buff = character.get_buff_value("damage")
+			var damage = int(base_damage * (1.0 + damage_buff / 100.0))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#9B59B6]You cast Blast![/color]")
@@ -717,7 +719,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"meteor":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF6B6B]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			var damage = character.get_stat("intelligence") * 5
+			var base_damage = character.get_effective_stat("intelligence") * 5
+			var damage_buff = character.get_buff_value("damage")
+			var damage = int(base_damage * (1.0 + damage_buff / 100.0))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
@@ -753,9 +757,16 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	if not character.use_stamina(stamina_cost):
 		return {"success": false, "messages": ["[color=#FF6B6B]Not enough stamina! (Need %d)[/color]" % stamina_cost], "combat_ended": false, "skip_monster_turn": true}
 
+	# Use total attack (includes weapon) for physical abilities
+	var total_attack = character.get_total_attack()
+
+	# Get damage buff (War Cry, Berserk) to apply to ability damage
+	var damage_buff = character.get_buff_value("damage")
+	var damage_multiplier = 1.0 + (damage_buff / 100.0)
+
 	match ability_name:
 		"power_strike":
-			var damage = int(character.get_stat("strength") * 1.5)
+			var damage = int(total_attack * 1.5 * damage_multiplier)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF6B6B]POWER STRIKE![/color]")
@@ -767,7 +778,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFD700]+25%% damage for 3 rounds![/color]" % [])
 
 		"shield_bash":
-			var damage = character.get_stat("strength")
+			var damage = int(total_attack * damage_multiplier)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			combat["monster_stunned"] = true  # Enemy skips next turn
@@ -775,7 +786,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 
 		"cleave":
-			var damage = character.get_stat("strength") * 2
+			var damage = int(total_attack * 2 * damage_multiplier)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF6B6B]CLEAVE![/color]")
@@ -793,7 +804,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#90EE90]Block 50%% damage for 3 rounds![/color]" % [])
 
 		"devastate":
-			var damage = character.get_stat("strength") * 4
+			var damage = int(total_attack * 4 * damage_multiplier)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color]")
@@ -845,7 +856,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#95A5A6]The enemy is distracted! (-50%% accuracy)[/color]" % [])
 
 		"pickpocket":
-			var wits = character.get_stat("wits")
+			var wits = character.get_effective_stat("wits")
 			var success_chance = 50 + wits - monster.get("intelligence", 15)
 			success_chance = clampi(success_chance, 10, 90)
 			var roll = randi() % 100
@@ -872,8 +883,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			var wits = character.get_stat("wits")
-			var damage = int(wits * 1.5)
+			# Ambush uses weapon damage + wits bonus, affected by damage buffs
+			var base_damage = character.get_total_attack()
+			var wits_bonus = character.get_stat("wits") / 2
+			var damage_buff = character.get_buff_value("damage")
+			var damage_multiplier = 1.0 + (damage_buff / 100.0)
+			var damage = int((base_damage + wits_bonus) * 1.5 * damage_multiplier)
 			# 50% crit chance
 			if randi() % 100 < 50:
 				damage = int(damage * 1.5)
@@ -1809,86 +1824,81 @@ func get_monster_ascii_art(monster_name: String) -> String:
 "     .....","[/color]"]
 	}
 
-	# Return matching art - pad with spaces to push right
-	var padding = "                              "  # 30 spaces to push art right
+	# Return matching art - extract color and center properly
 	if art_map.has(monster_name):
 		var lines = art_map[monster_name]
-		var result = ""
+		var color_tag = "[color=#888888]"
+		var art_lines = []
+
+		# Extract color tag and art content
 		for line in lines:
-			if line.begins_with("[color=") or line == "[/color]":
-				result += line
+			if line.begins_with("[color="):
+				color_tag = line
+			elif line == "[/color]":
+				continue
 			else:
-				result += padding + line + "\n"
+				art_lines.append(line)
+
+		# Find max width for centering
+		var max_width = 0
+		for line in art_lines:
+			max_width = max(max_width, line.length())
+
+		# Build result with consistent centering
+		var result = color_tag
+		var target_width = 20  # Fixed art width for consistency
+		for line in art_lines:
+			# Center the line within target width, then add padding
+			var stripped = line.strip_edges(true, true)
+			var padding_needed = max(0, (target_width - stripped.length()) / 2)
+			var centered_line = " ".repeat(padding_needed) + stripped
+			result += "                         " + centered_line + "\n"  # 25 space base padding
+		result += "[/color]"
 		return result
 	else:
 		# Generic monster fallback
-		return padding + "[color=#888888]     ?????[/color]\n" + padding + "[color=#888888]    ( o.o )[/color]\n" + padding + "[color=#888888]     \\ = /[/color]\n" + padding + "[color=#888888]    /|   |\\[/color]\n" + padding + "[color=#888888]      ~~~[/color]\n"
+		var padding = "                         "
+		return "[color=#888888]" + padding + "    ?????\n" + padding + "   ( o.o )\n" + padding + "    \\ = /\n" + padding + "   /|   |\\\n" + padding + "     ~~~\n[/color]"
 
 func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
-	"""Add a black and white border around ASCII art - full width"""
-	# Fixed width for full GameOutput width (accounting for margins)
-	var border_width = 54  # Characters inside the border
+	"""Add a simple border around ASCII art"""
+	var border_width = 50  # Total width including border chars
 
-	# Parse out the color tag and content
+	# Parse out the color tag and content lines
 	var lines = ascii_art.split("\n")
 	var content_lines = []
 	var color_tag = "[color=#888888]"
-	var color_end = "[/color]"
-	var base_padding = 30  # Original padding used in get_monster_ascii_art
 
 	for line in lines:
-		if line.strip_edges() == "":
-			continue
-
-		var working_line = line
-
-		# Check if this line starts with a color tag (possibly after padding)
 		var stripped = line.strip_edges()
+		if stripped == "" or stripped == "[/color]":
+			continue
 		if stripped.begins_with("[color="):
 			var end_bracket = stripped.find("]")
 			if end_bracket > 0:
 				color_tag = stripped.substr(0, end_bracket + 1)
-				# Check if there's content after the color tag
-				var after_tag = stripped.substr(end_bracket + 1)
-				if after_tag.strip_edges() == "" or after_tag.strip_edges() == "[/color]":
-					continue
-				working_line = after_tag
-
-		# Skip if just closing tag
-		if stripped == "[/color]" or stripped.ends_with("[/color]"):
-			var content_part = stripped.replace("[/color]", "").strip_edges()
-			if content_part == "":
-				continue
-			working_line = content_part
-
-		# Remove the base padding from the start
-		var content = working_line
-		var leading_spaces = 0
-		for c in content:
-			if c == ' ':
-				leading_spaces += 1
-			else:
-				break
-
-		if leading_spaces >= base_padding:
-			content = content.substr(base_padding)
-		content = content.rstrip(" \t\n\r")
-		content = content.replace(color_end, "")
-		if content != "":
-			content_lines.append(content)
+				var after_tag = stripped.substr(end_bracket + 1).strip_edges()
+				if after_tag != "" and after_tag != "[/color]":
+					content_lines.append(after_tag)
+			continue
+		# Remove [/color] from end if present
+		var clean_line = stripped.replace("[/color]", "").rstrip(" ")
+		if clean_line != "":
+			content_lines.append(clean_line)
 
 	if content_lines.is_empty():
 		return ascii_art
 
-	# Find the maximum width of art content for centering
+	# Find max width for centering
 	var max_art_width = 0
 	for line in content_lines:
 		max_art_width = max(max_art_width, line.length())
 
-	# Build bordered art - full width
+	# Build bordered art
 	var result = ""
+	var color_end = "[/color]"
 
-	# Top border - full width
+	# Top border
 	result += "[color=#AAAAAA]╔" + "═".repeat(border_width) + "╗[/color]\n"
 
 	# Content lines centered within the border
@@ -1897,7 +1907,7 @@ func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
 		var right_pad = border_width - line.length() - left_pad
 		result += "[color=#AAAAAA]║[/color]" + " ".repeat(left_pad) + color_tag + line + color_end + " ".repeat(right_pad) + "[color=#AAAAAA]║[/color]\n"
 
-	# Bottom border - full width
+	# Bottom border
 	result += "[color=#AAAAAA]╚" + "═".repeat(border_width) + "╝[/color]"
 
 	return result
