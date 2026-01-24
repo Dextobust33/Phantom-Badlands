@@ -1,6 +1,95 @@
-[gd_scene load_steps=2 format=3 uid="uid://cd1kavjk5igmr"]
+[gd_scene load_steps=3 format=3 uid="uid://cd1kavjk5igmr"]
 
 [ext_resource type="Script" uid="uid://bu1youbs45e2o" path="res://server/server.gd" id="1_pcfvm"]
 
-[node name="Server" type="Node"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.1, 0.1, 0.12, 1)
+
+[node name="Server" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_pcfvm")
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_font_sizes/font_size = 24
+text = "Phantasia Revival Server"
+horizontal_alignment = 1
+
+[node name="StatusRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="StatusIndicator" type="Label" parent="VBox/StatusRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.2, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 16
+text = "● ONLINE"
+
+[node name="PortLabel" type="Label" parent="VBox/StatusRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "Port: 9080"
+
+[node name="PlayerCountLabel" type="Label" parent="VBox/StatusRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.84, 0, 1)
+theme_override_font_sizes/font_size = 14
+text = "Players: 0"
+horizontal_alignment = 2
+
+[node name="Separator" type="HSeparator" parent="VBox"]
+layout_mode = 2
+
+[node name="PlayersTitle" type="Label" parent="VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/font_size = 14
+text = "Connected Players:"
+
+[node name="PlayerList" type="RichTextLabel" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.9, 0.9, 0.9, 1)
+theme_override_font_sizes/normal_font_size = 13
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+bbcode_enabled = true
+text = "[color=#666666]No players connected[/color]"
+scroll_following = true
+
+[node name="LogTitle" type="Label" parent="VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/font_size = 14
+text = "Server Log:"
+
+[node name="ServerLog" type="RichTextLabel" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 2.0
+theme_override_colors/default_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_font_sizes/normal_font_size = 11
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+bbcode_enabled = true
+text = "[color=#666666]Server starting...[/color]"
+scroll_following = true

@@ -60,6 +60,9 @@ const MAX_INVENTORY_SIZE = 20
 # Active combat buffs - array of {type: String, value: int, duration: int}
 @export var active_buffs: Array = []
 
+# Persistent buffs that last multiple battles - array of {type: String, value: int, battles_remaining: int}
+@export var persistent_buffs: Array = []
+
 func _init():
 	# Constructor
 	pass
@@ -392,7 +395,8 @@ func to_dict() -> Dictionary:
 		"created_at": created_at,
 		"played_time_seconds": played_time_seconds,
 		"monsters_killed": monsters_killed,
-		"active_buffs": active_buffs
+		"active_buffs": active_buffs,
+		"persistent_buffs": persistent_buffs
 	}
 
 func from_dict(data: Dictionary):
@@ -443,8 +447,11 @@ func from_dict(data: Dictionary):
 	played_time_seconds = data.get("played_time_seconds", 0)
 	monsters_killed = data.get("monsters_killed", 0)
 
-	# Active buffs (clear on load - buffs don't persist between sessions)
+	# Active buffs (clear on load - combat buffs don't persist between sessions)
 	active_buffs = []
+
+	# Persistent buffs DO persist between sessions (battle-based potions)
+	persistent_buffs = data.get("persistent_buffs", [])
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus."""
@@ -540,7 +547,7 @@ func unequip_slot(slot: String) -> Dictionary:
 # ===== BUFF SYSTEM =====
 
 func add_buff(buff_type: String, value: int, duration: int):
-	"""Add or refresh a buff. If buff already exists, refreshes duration and uses higher value."""
+	"""Add or refresh a combat buff (lasts rounds). If buff already exists, refreshes duration and uses higher value."""
 	for buff in active_buffs:
 		if buff.type == buff_type:
 			buff.value = max(buff.value, value)
@@ -548,12 +555,25 @@ func add_buff(buff_type: String, value: int, duration: int):
 			return
 	active_buffs.append({"type": buff_type, "value": value, "duration": duration})
 
+func add_persistent_buff(buff_type: String, value: int, battles: int):
+	"""Add or refresh a persistent buff (lasts multiple battles). If buff already exists, refreshes battles and uses higher value."""
+	for buff in persistent_buffs:
+		if buff.type == buff_type:
+			buff.value = max(buff.value, value)
+			buff.battles_remaining = max(buff.battles_remaining, battles)
+			return
+	persistent_buffs.append({"type": buff_type, "value": value, "battles_remaining": battles})
+
 func get_buff_value(buff_type: String) -> int:
-	"""Get the current value of a buff type. Returns 0 if not active."""
+	"""Get the current value of a buff type (combines combat and persistent buffs). Returns 0 if not active."""
+	var total = 0
 	for buff in active_buffs:
 		if buff.type == buff_type:
-			return buff.value
-	return 0
+			total += buff.value
+	for buff in persistent_buffs:
+		if buff.type == buff_type:
+			total += buff.value
+	return total
 
 func tick_buffs():
 	"""Decrement buff durations by 1. Call at end of each combat round."""
@@ -566,16 +586,39 @@ func tick_buffs():
 	for i in range(expired.size() - 1, -1, -1):
 		active_buffs.remove_at(expired[i])
 
+func tick_persistent_buffs():
+	"""Decrement persistent buff battles by 1. Call when combat ends."""
+	var expired = []
+	for i in range(persistent_buffs.size()):
+		persistent_buffs[i].battles_remaining -= 1
+		if persistent_buffs[i].battles_remaining <= 0:
+			expired.append(i)
+	# Remove expired buffs (reverse order to preserve indices)
+	for i in range(expired.size() - 1, -1, -1):
+		persistent_buffs.remove_at(expired[i])
+
 func clear_buffs():
-	"""Clear all active buffs. Call when combat ends."""
+	"""Clear all active combat buffs. Call when combat ends. Does NOT clear persistent buffs."""
 	active_buffs.clear()
 
 func get_active_buff_names() -> Array:
-	"""Get list of active buff type names for display."""
+	"""Get list of active buff type names for display (combines combat and persistent)."""
 	var names = []
 	for buff in active_buffs:
 		names.append(buff.type)
+	for buff in persistent_buffs:
+		if buff.type not in names:
+			names.append(buff.type)
 	return names
+
+func get_persistent_buff_display() -> String:
+	"""Get display string for persistent buffs."""
+	if persistent_buffs.is_empty():
+		return ""
+	var parts = []
+	for buff in persistent_buffs:
+		parts.append("+%d %s (%d battles)" % [buff.value, buff.type, buff.battles_remaining])
+	return "[color=#00FFFF]Buffs: %s[/color]" % ", ".join(parts)
 
 # ===== RACIAL PASSIVE ABILITIES =====
 

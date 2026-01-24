@@ -1,8 +1,13 @@
 # server.gd
 # Server with persistence, account system, and permadeath
-extends Node
+extends Control
 
 const PORT = 9080
+
+# UI References
+@onready var player_count_label = $VBox/StatusRow/PlayerCountLabel
+@onready var player_list = $VBox/PlayerList
+@onready var server_log = $VBox/ServerLog
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 
@@ -55,11 +60,40 @@ func _ready():
 		print("Error code: %d" % error)
 		return
 
-	print("Persistence system loaded")
-	print("Server started successfully!")
-	print("Listening on port: %d" % PORT)
-	print("Waiting for connections...")
-	print("========================================")
+	log_message("Persistence system loaded")
+	log_message("Server started successfully!")
+	log_message("Listening on port: %d" % PORT)
+	log_message("Waiting for connections...")
+	update_player_list()
+
+func log_message(msg: String):
+	"""Log a message to console and server UI."""
+	print(msg)
+	if server_log:
+		var timestamp = Time.get_time_string_from_system()
+		server_log.append_text("[color=#888888][%s][/color] %s\n" % [timestamp, msg])
+
+func update_player_list():
+	"""Update the player list UI with connected players."""
+	if player_count_label:
+		player_count_label.text = "Players: %d" % characters.size()
+
+	if player_list:
+		player_list.clear()
+		if characters.size() == 0:
+			player_list.append_text("[color=#666666]No players connected[/color]")
+		else:
+			for peer_id in characters:
+				var char = characters[peer_id]
+				var peer_info = peers.get(peer_id, {})
+				var username = peer_info.get("username", "Unknown")
+				var char_name = char.name
+				var level = char.level
+				var race = char.race
+				var cls = char.class_type
+				player_list.append_text("[color=#4A90E2]%s[/color] - %s %s Lv.%d [color=#666666](%s)[/color]\n" % [
+					char_name, race, cls, level, username
+				])
 
 func _process(delta):
 	# Auto-save timer
@@ -83,7 +117,7 @@ func _process(delta):
 			"buffer": ""
 		}
 
-		print("New connection! Peer ID: %d" % peer_id)
+		log_message("New connection! Peer ID: %d" % peer_id)
 
 		# Send welcome message
 		send_to_peer(peer_id, {
@@ -201,6 +235,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_merchant_gamble(peer_id, message)
 		"merchant_buy":
 			handle_merchant_buy(peer_id, message)
+		"merchant_recharge":
+			handle_merchant_recharge(peer_id)
 		"merchant_leave":
 			handle_merchant_leave(peer_id)
 		"change_password":
@@ -302,7 +338,8 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
-	print("Character loaded: %s for peer %d" % [char_name, peer_id])
+	log_message("Character loaded: %s for peer %d" % [char_name, peer_id])
+	update_player_list()
 
 	send_to_peer(peer_id, {
 		"type": "character_loaded",
@@ -408,7 +445,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
-	print("Character created: %s (%s %s) for peer %d" % [char_name, char_race, char_class, peer_id])
+	log_message("Character created: %s (%s %s) for peer %d" % [char_name, char_race, char_class, peer_id])
+	update_player_list()
 
 	send_to_peer(peer_id, {
 		"type": "character_created",
@@ -658,8 +696,17 @@ func handle_move(peer_id: int, message: Dictionary):
 	character.x = new_pos.x
 	character.y = new_pos.y
 
-	# Send location update
+	# Regenerate health and resources on movement (small amount per step)
+	var regen_percent = 0.02  # 2% per move for resources
+	var hp_regen_percent = 0.01  # 1% per move for health
+	character.current_hp = min(character.max_hp, character.current_hp + max(1, int(character.max_hp * hp_regen_percent)))
+	character.current_mana = min(character.max_mana, character.current_mana + int(character.max_mana * regen_percent))
+	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
+	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
+
+	# Send location and character updates
 	send_location_update(peer_id)
+	send_character_update(peer_id)
 
 	# Check for merchant first
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
@@ -1086,7 +1133,7 @@ func handle_disconnect(peer_id: int):
 	if characters.has(peer_id):
 		char_name = characters[peer_id].name
 
-	print("Peer %d (%s) disconnected" % [peer_id, username])
+	log_message("Peer %d (%s) disconnected" % [peer_id, username])
 
 	# Save character before removing
 	save_character(peer_id)
@@ -1104,6 +1151,9 @@ func handle_disconnect(peer_id: int):
 
 	peers.erase(peer_id)
 
+	# Update UI
+	update_player_list()
+
 	# Broadcast disconnect message (after cleanup so they don't get their own message)
 	if char_name != "":
 		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
@@ -1115,28 +1165,172 @@ func _exit_tree():
 	server.stop()
 
 func trigger_encounter(peer_id: int):
-	"""Trigger a random monster encounter"""
+	"""Trigger a random encounter - usually monster, but rarely loot or legendary adventurer"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
 
-	# Get monster level range for this location
+	# Get monster level range for this location (indicates danger level)
 	var level_range = world_system.get_monster_level_range(character.x, character.y)
+	var area_level = (level_range.min + level_range.max) / 2
 
-	# Generate random monster
+	# Roll for rare encounters (checked before normal combat)
+	var rare_roll = randi() % 1000  # 0-999 for finer control
+
+	# 1% chance (10/1000) for legendary adventurer training
+	if rare_roll < 10:
+		trigger_legendary_adventurer(peer_id, character, area_level)
+		return
+
+	# 3% chance (30/1000) for loot find
+	if rare_roll < 40:  # 10-39 = 30/1000
+		trigger_loot_find(peer_id, character, area_level)
+		return
+
+	# Normal monster encounter
 	var monster = monster_db.generate_monster(level_range.min, level_range.max)
-
-	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
-		# Send combat start message
 		send_to_peer(peer_id, {
 			"type": "combat_start",
 			"message": result.message,
 			"combat_state": result.combat_state
 		})
+
+func trigger_loot_find(peer_id: int, character: Character, area_level: int):
+	"""Trigger a rare loot find instead of combat"""
+	# Generate loot scaled to area difficulty
+	var loot_tier = "common"
+	if area_level >= 5000:
+		loot_tier = "legendary"
+	elif area_level >= 2000:
+		loot_tier = "epic"
+	elif area_level >= 500:
+		loot_tier = "rare"
+	elif area_level >= 100:
+		loot_tier = "uncommon"
+
+	# Roll for item using drop tables
+	var items = drop_tables.roll_drops(loot_tier, 100, area_level)  # 100% drop chance
+
+	if items.is_empty():
+		# Fallback to gold
+		var gold_amount = max(10, area_level * (randi() % 10 + 5))
+		character.gold += gold_amount
+		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
+		msg += "[color=#FFD700]║[/color]     [color=#90EE90]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
+		msg += "[color=#FFD700]║[/color] You discover a hidden cache!       [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color] [color=#FFD700]Found %d gold![/color]            [color=#FFD700]║[/color]\n" % gold_amount
+		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": msg,
+			"clear_output": true
+		})
+	else:
+		# Add items to inventory
+		var item = items[0]
+		character.add_item(item)
+		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
+		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
+		msg += "[color=#FFD700]║[/color]     [color=#90EE90]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
+		msg += "[color=#FFD700]║[/color] You discover something valuable!   [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, item.get("name", "Unknown Item")]
+		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": msg,
+			"clear_output": true
+		})
+
+	# Send updated character data
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	persistence.save_character(character)
+
+func trigger_legendary_adventurer(peer_id: int, character: Character, area_level: int):
+	"""Trigger a legendary adventurer training encounter"""
+	# Pick a random stat to train
+	var stats = ["str", "con", "dex", "int", "wis", "wits"]
+	var stat_names = {
+		"str": "Strength",
+		"con": "Constitution",
+		"dex": "Dexterity",
+		"int": "Intelligence",
+		"wis": "Wisdom",
+		"wits": "Wits"
+	}
+	var stat = stats[randi() % stats.size()]
+	var stat_name = stat_names[stat]
+
+	# Bonus scales with area difficulty (1-5 points)
+	var bonus = max(1, min(5, area_level / 500 + 1))
+
+	# Apply the bonus
+	match stat:
+		"str":
+			character.strength += bonus
+		"con":
+			character.constitution += bonus
+			character.update_derived_stats()
+		"dex":
+			character.dexterity += bonus
+		"int":
+			character.intelligence += bonus
+			character.update_derived_stats()
+		"wis":
+			character.wisdom += bonus
+			character.update_derived_stats()
+		"wits":
+			character.wits += bonus
+
+	# Legendary adventurer names
+	var adventurer_names = [
+		"Gandrik the Wise",
+		"Lady Seraphina",
+		"Thorin Ironfoot",
+		"Zephyr Shadowblade",
+		"Magnus the Eternal",
+		"Lyra Starweaver",
+		"Orin Battleborn",
+		"Celeste Moonwhisper"
+	]
+	var adventurer = adventurer_names[randi() % adventurer_names.size()]
+
+	# Training descriptions
+	var training_msgs = {
+		"str": "teaches you ancient combat techniques",
+		"con": "shares secrets of endurance and resilience",
+		"dex": "demonstrates masterful footwork and reflexes",
+		"int": "reveals arcane knowledge long forgotten",
+		"wis": "imparts spiritual wisdom and insight",
+		"wits": "shows you how to read your opponents"
+	}
+
+	var msg = "[color=#FFD700]╔════════════════════════════════════════╗[/color]\n"
+	msg += "[color=#FFD700]║[/color]  [color=#FF69B4]✦ LEGENDARY ENCOUNTER ✦[/color]  [color=#FFD700]║[/color]\n"
+	msg += "[color=#FFD700]╠════════════════════════════════════════╣[/color]\n"
+	msg += "[color=#FFD700]║[/color] [color=#E6CC80]%s[/color] [color=#FFD700]║[/color]\n" % adventurer
+	msg += "[color=#FFD700]║[/color] %s! [color=#FFD700]║[/color]\n" % training_msgs[stat]
+	msg += "[color=#FFD700]╠════════════════════════════════════════╣[/color]\n"
+	msg += "[color=#FFD700]║[/color] [color=#90EE90]+%d %s permanently![/color] [color=#FFD700]║[/color]\n" % [bonus, stat_name]
+	msg += "[color=#FFD700]╚════════════════════════════════════════╝[/color]"
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": msg,
+		"clear_output": true
+	})
+
+	# Send updated character data
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	persistence.save_character(character)
+	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int):
 	"""Trigger a flock encounter with the same monster type"""
@@ -1384,6 +1578,9 @@ func trigger_merchant_encounter(peer_id: int):
 		services_text.append("[W] Upgrade equipment")
 	if "gamble" in merchant.services:
 		services_text.append("[E] Gamble")
+	# Recharge option - show cost based on player level
+	var recharge_cost = _get_recharge_cost(character.level)
+	services_text.append("[2] Recharge resources (%d gold)" % recharge_cost)
 	services_text.append("[Space] Leave")
 
 	send_to_peer(peer_id, {
@@ -1702,6 +1899,57 @@ func handle_merchant_leave(peer_id: int):
 			"type": "merchant_end",
 			"message": "[color=#95A5A6]%s waves goodbye. \"Safe travels, adventurer!\"[/color]" % merchant_name
 		})
+
+func _get_recharge_cost(player_level: int) -> int:
+	"""Calculate recharge cost based on player level"""
+	# Base cost 50 gold, scales with level
+	return 50 + (player_level * 10)
+
+func handle_merchant_recharge(peer_id: int):
+	"""Handle recharging resources at a merchant"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var cost = _get_recharge_cost(character.level)
+
+	# Check if already at full resources
+	var needs_recharge = (character.current_mana < character.max_mana or
+						  character.current_stamina < character.max_stamina or
+						  character.current_energy < character.max_energy)
+
+	if not needs_recharge:
+		send_to_peer(peer_id, {
+			"type": "merchant_message",
+			"message": "[color=#95A5A6]\"You look fully rested already, traveler!\"[/color]"
+		})
+		return
+
+	# Check if player has enough gold
+	if character.gold < cost:
+		send_to_peer(peer_id, {
+			"type": "merchant_message",
+			"message": "[color=#E74C3C]\"You don't have enough gold! Recharge costs %d gold.\"[/color]" % cost
+		})
+		return
+
+	# Deduct gold and restore resources
+	character.gold -= cost
+	character.current_mana = character.max_mana
+	character.current_stamina = character.max_stamina
+	character.current_energy = character.max_energy
+
+	send_to_peer(peer_id, {
+		"type": "merchant_message",
+		"message": "[color=#2ECC71]The merchant provides you with a revitalizing tonic![/color]\n[color=#90EE90]All resources fully restored! (-%d gold)[/color]" % cost
+	})
+
+	send_character_update(peer_id)
+	persistence.save_character(character)
 
 func _send_merchant_inventory(peer_id: int):
 	"""Send inventory list to player at merchant"""

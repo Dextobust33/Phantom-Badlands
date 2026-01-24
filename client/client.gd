@@ -26,6 +26,7 @@ var game_state = GameState.DISCONNECTED
 @onready var action_bar = $RootContainer/MainContainer/LeftPanel/ActionBar
 @onready var enemy_health_bar = $RootContainer/MainContainer/LeftPanel/EnemyHealthBar
 @onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
+@onready var resource_bar = $RootContainer/MainContainer/RightPanel/ResourceBar
 @onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
 @onready var player_level_label = $RootContainer/MainContainer/RightPanel/LevelRow/PlayerLevel
 @onready var gold_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer/GoldLabel
@@ -56,6 +57,7 @@ var game_state = GameState.DISCONNECTED
 @onready var char_create_panel = $CharacterCreatePanel
 @onready var new_char_name_field = $CharacterCreatePanel/VBox/NameField
 @onready var race_option = $CharacterCreatePanel/VBox/RaceOption
+@onready var race_description = $CharacterCreatePanel/VBox/RaceDescription
 @onready var class_option = $CharacterCreatePanel/VBox/ClassOption
 @onready var confirm_create_button = $CharacterCreatePanel/VBox/ButtonContainer/ConfirmButton
 @onready var cancel_create_button = $CharacterCreatePanel/VBox/ButtonContainer/CancelButton
@@ -103,6 +105,7 @@ var combat_item_mode = false  # Selecting item to use in combat
 
 # Action bar
 var action_buttons: Array[Button] = []
+var action_cost_labels: Array[Label] = []  # Labels showing resource cost below hotkey
 # Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4 (removed 5)
 var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4]
 var current_actions: Array[Dictionary] = []
@@ -163,6 +166,13 @@ var last_known_level: int = 0  # Track level changes for sound
 
 # Top 5 leaderboard sound
 var top5_player: AudioStreamPlayer = null
+
+# ===== RACE DESCRIPTIONS =====
+const RACE_DESCRIPTIONS = {
+	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
+	"Elf": "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",
+	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat)."
+}
 
 # ===== ABILITY SYSTEM CONSTANTS =====
 const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
@@ -260,6 +270,8 @@ func _ready():
 		race_option.clear()
 		for r in ["Human", "Elf", "Dwarf"]:
 			race_option.add_item(r)
+		race_option.item_selected.connect(_on_race_selected)
+		_update_race_description()  # Set initial description
 
 	# Setup class options (6 classes: 2 Warrior, 2 Mage, 2 Trickster)
 	if class_option:
@@ -1148,6 +1160,15 @@ func _on_char_select_logout_pressed():
 
 # ===== CHARACTER CREATION HANDLERS =====
 
+func _on_race_selected(_index: int):
+	_update_race_description()
+
+func _update_race_description():
+	if not race_option or not race_description:
+		return
+	var selected_race = race_option.get_item_text(race_option.selected)
+	race_description.text = RACE_DESCRIPTIONS.get(selected_race, "")
+
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
 	var char_race = race_option.get_item_text(race_option.selected) if race_option else "Human"
@@ -1297,6 +1318,7 @@ func show_player_info_popup(data: Dictionary):
 
 func setup_action_bar():
 	action_buttons.clear()
+	action_cost_labels.clear()
 	for i in range(9):
 		var action_container = action_bar.get_node("Action%d" % (i + 1))
 		if action_container:
@@ -1304,6 +1326,17 @@ func setup_action_bar():
 			if button:
 				action_buttons.append(button)
 				button.pressed.connect(_on_action_button_pressed.bind(i))
+
+			# Create cost label dynamically if it doesn't exist
+			var cost_label = action_container.get_node_or_null("Cost")
+			if cost_label == null:
+				cost_label = Label.new()
+				cost_label.name = "Cost"
+				cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				cost_label.add_theme_font_size_override("font_size", 9)
+				cost_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+				action_container.add_child(cost_label)
+			action_cost_labels.append(cost_label)
 
 func update_action_bar():
 	current_actions.clear()
@@ -1437,7 +1470,7 @@ func update_action_bar():
 				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
 				{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
 				{"label": "SellGems", "action_type": "local", "action_data": "merchant_sell_gems", "enabled": player_gems > 0},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Recharge", "action_type": "local", "action_data": "merchant_recharge", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -1500,6 +1533,28 @@ func update_action_bar():
 		var action = current_actions[i]
 		button.text = action.label
 		button.disabled = not action.enabled
+
+		# Update cost label if it exists
+		if i < action_cost_labels.size():
+			var cost_label = action_cost_labels[i]
+			var cost = action.get("cost", 0)
+			var resource_type = action.get("resource_type", "")
+			if cost > 0 and resource_type != "":
+				cost_label.text = "%d" % cost
+				# Color based on resource type
+				match resource_type:
+					"stamina":
+						cost_label.add_theme_color_override("font_color", Color(0.9, 0.75, 0.1, 1))  # Yellow
+					"mana":
+						cost_label.add_theme_color_override("font_color", Color(0.2, 0.7, 0.8, 1))  # Teal
+					"energy":
+						cost_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.3, 1))  # Green
+					_:
+						cost_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+				cost_label.visible = true
+			else:
+				cost_label.text = ""
+				cost_label.visible = false
 
 func _on_action_button_pressed(index: int):
 	# Release button focus so Space key works correctly
@@ -1612,16 +1667,13 @@ func _get_combat_ability_actions() -> Array:
 				elif resource_type == "energy":
 					has_resource = current_energy >= cost
 
-				# Show cost in label if ability uses resources
-				var label = display_name
-				if cost > 0:
-					label = "%s(%d)" % [display_name, cost]
-
 				abilities.append({
-					"label": label,
+					"label": display_name,
 					"action_type": "combat",
 					"action_data": command,
-					"enabled": has_resource
+					"enabled": has_resource,
+					"cost": cost,
+					"resource_type": resource_type
 				})
 			else:
 				# Ability not unlocked yet - show locked
@@ -1629,7 +1681,9 @@ func _get_combat_ability_actions() -> Array:
 					"label": "Lv%d" % required_level,
 					"action_type": "none",
 					"action_data": "",
-					"enabled": false
+					"enabled": false,
+					"cost": 0,
+					"resource_type": ""
 				})
 		else:
 			# No ability for this slot
@@ -1637,7 +1691,9 @@ func _get_combat_ability_actions() -> Array:
 				"label": "---",
 				"action_type": "none",
 				"action_data": "",
-				"enabled": false
+				"enabled": false,
+				"cost": 0,
+				"resource_type": ""
 			})
 
 	return abilities
@@ -1750,6 +1806,8 @@ func execute_local_action(action: String):
 			prompt_merchant_action("buy")
 		"merchant_sell_gems":
 			prompt_merchant_action("sell_gems")
+		"merchant_recharge":
+			send_to_server({"type": "merchant_recharge"})
 		"sell_all_gems":
 			sell_all_gems()
 		"sell_all_items":
@@ -2607,6 +2665,53 @@ func update_player_hp_bar():
 	if label:
 		label.text = "HP: %d/%d" % [current_hp, max_hp]
 
+func update_resource_bar():
+	if not resource_bar or not has_character:
+		return
+
+	var path = _get_player_active_path()
+	var current_val = 0
+	var max_val = 1
+	var resource_name = ""
+	var bar_color = Color(0.5, 0.5, 0.5)
+
+	match path:
+		"warrior":
+			current_val = character_data.get("current_stamina", 0)
+			max_val = max(character_data.get("max_stamina", 1), 1)
+			resource_name = "Stamina"
+			bar_color = Color(0.9, 0.75, 0.1)  # Yellow
+		"mage":
+			current_val = character_data.get("current_mana", 0)
+			max_val = max(character_data.get("max_mana", 1), 1)
+			resource_name = "Mana"
+			bar_color = Color(0.2, 0.7, 0.8)  # Teal
+		"trickster":
+			current_val = character_data.get("current_energy", 0)
+			max_val = max(character_data.get("max_energy", 1), 1)
+			resource_name = "Energy"
+			bar_color = Color(0.2, 0.8, 0.3)  # Green
+		_:
+			# No path - show mana by default
+			current_val = character_data.get("current_mana", 0)
+			max_val = max(character_data.get("max_mana", 1), 1)
+			resource_name = "Mana"
+			bar_color = Color(0.2, 0.7, 0.8)
+
+	var percent = (float(current_val) / float(max_val)) * 100.0
+
+	var fill = resource_bar.get_node("Fill")
+	var label = resource_bar.get_node("ResourceLabel")
+
+	if fill:
+		fill.anchor_right = percent / 100.0
+		var style = fill.get_theme_stylebox("panel").duplicate()
+		style.bg_color = bar_color
+		fill.add_theme_stylebox_override("panel", style)
+
+	if label:
+		label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
+
 func update_currency_display():
 	if not has_character:
 		return
@@ -2675,7 +2780,7 @@ func update_player_xp_bar():
 	var xp_label = player_xp_bar.get_node("XPLabel")
 	if xp_label:
 		if recent_xp_gain > 0:
-			xp_label.text = "XP: %d / %d [color=#FFD700](+%d)[/color]" % [current_xp, xp_needed, recent_xp_gain]
+			xp_label.text = "XP: %d / %d (+%d)" % [current_xp, xp_needed, recent_xp_gain]
 		else:
 			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
@@ -2784,6 +2889,7 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 			update_player_level()
 			update_player_hp_bar()
+			update_resource_bar()
 			update_player_xp_bar()
 			update_currency_display()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
@@ -2800,6 +2906,7 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 			update_player_level()
 			update_player_hp_bar()
+			update_resource_bar()
 			update_player_xp_bar()
 			update_currency_display()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
@@ -2901,6 +3008,7 @@ func handle_server_message(message: Dictionary):
 				character_data = message.character
 				update_player_level()
 				update_player_hp_bar()
+				update_resource_bar()
 				update_player_xp_bar()
 				update_currency_display()
 				# Re-display inventory if in inventory mode (after use/equip/discard)
@@ -2974,6 +3082,7 @@ func handle_server_message(message: Dictionary):
 				character_data["current_energy"] = state.get("player_energy", character_data.get("current_energy", 0))
 				character_data["max_energy"] = state.get("player_max_energy", character_data.get("max_energy", 0))
 				update_player_hp_bar()
+				update_resource_bar()
 				update_action_bar()  # Refresh action bar for ability availability
 
 		"combat_end":
@@ -2987,6 +3096,7 @@ func handle_server_message(message: Dictionary):
 					character_data = message.character
 					update_player_level()
 					update_player_hp_bar()
+					update_resource_bar()
 					update_player_xp_bar()
 					update_currency_display()
 				# Check for incoming flock encounter
@@ -3620,6 +3730,102 @@ func show_help():
   • Special attacks cost mana but deal bonus damage
   • Monster level affects all their stats
   • Higher tier monsters are tougher but give better rewards
+
+[b][color=#FFD700]== RACE PASSIVES ==[/color][/b]
+
+[color=#FFFFFF]Human[/color] - Adaptable and ambitious
+  • +10% bonus XP from all sources
+  • Best for leveling quickly
+
+[color=#66FF99]Elf[/color] - Ancient and resilient
+  • 50% reduced poison damage
+  • Immune to poison debuffs
+  • Good against venomous creatures
+
+[color=#FFA366]Dwarf[/color] - Sturdy and determined
+  • Last Stand: 25% chance to survive lethal damage with 1 HP
+  • Triggers once per combat
+  • Great for risky fights
+
+[b][color=#FFD700]== WARRIOR ABILITIES (STR Path) ==[/color][/b]
+Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4, regens 10% when defending
+
+[color=#FF6666]Lv 1 - Power Strike[/color] (10 Stamina)
+  Deal STR × 1.5 damage
+
+[color=#FF6666]Lv 10 - War Cry[/color] (15 Stamina)
+  +25% damage for 3 rounds
+
+[color=#FF6666]Lv 25 - Shield Bash[/color] (20 Stamina)
+  Deal STR damage + stun (enemy skips turn)
+
+[color=#FF6666]Lv 40 - Cleave[/color] (30 Stamina)
+  Deal STR × 2 damage
+
+[color=#FF6666]Lv 60 - Berserk[/color] (40 Stamina)
+  +100% damage, -50% defense for 3 rounds
+
+[color=#FF6666]Lv 80 - Iron Skin[/color] (35 Stamina)
+  Block 50% damage for 3 rounds
+
+[color=#FF6666]Lv 100 - Devastate[/color] (50 Stamina)
+  Deal STR × 4 damage
+
+[b][color=#FFD700]== MAGE ABILITIES (INT Path) ==[/color][/b]
+Uses [color=#66CCCC]Mana[/color] = INT×8 + WIS×4
+
+[color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)
+  Deal damage equal to mana spent (1:1 ratio)
+
+[color=#66FFFF]Lv 10 - Shield[/color] (20 Mana)
+  +50% defense for 3 rounds
+
+[color=#66FFFF]Lv 25 - Cloak[/color] (30 Mana)
+  50% chance enemy misses next attack
+
+[color=#66FFFF]Lv 40 - Blast[/color] (50 Mana)
+  Deal INT × 2 damage
+
+[color=#66FFFF]Lv 60 - Forcefield[/color] (75 Mana)
+  Block next 2 attacks completely
+
+[color=#66FFFF]Lv 80 - Teleport[/color] (40 Mana)
+  Guaranteed flee (always succeeds)
+
+[color=#66FFFF]Lv 100 - Meteor[/color] (100 Mana)
+  Deal INT × 5 damage
+
+[b][color=#FFD700]== TRICKSTER ABILITIES (WITS Path) ==[/color][/b]
+Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4, regens 15% per round
+
+[color=#FFA500]Lv 1 - Analyze[/color] (5 Energy)
+  Reveal monster stats (HP, damage, intelligence)
+
+[color=#FFA500]Lv 10 - Distract[/color] (15 Energy)
+  Enemy has -50% accuracy on next attack
+
+[color=#FFA500]Lv 25 - Pickpocket[/color] (20 Energy)
+  Steal WITS × 10 gold (fail = monster attacks)
+
+[color=#FFA500]Lv 40 - Ambush[/color] (30 Energy)
+  Deal WITS × 1.5 damage + 50% crit chance
+
+[color=#FFA500]Lv 60 - Vanish[/color] (40 Energy)
+  Invisible, guaranteed crit on next attack
+
+[color=#FFA500]Lv 80 - Exploit[/color] (35 Energy)
+  Deal 10% of monster's current HP as damage
+
+[color=#FFA500]Lv 100 - Perfect Heist[/color] (50 Energy)
+  Instant win + double gold/gems
+
+[b][color=#FFD700]== OUTSMART (WITS-based) ==[/color][/b]
+
+[color=#FFA500]Outsmart[/color] - Trick dumb monsters
+  Success = (Your WITS - Monster INT) × 5 + 30%
+  Clamped between 5% and 95%
+  Success: Instant win with full rewards
+  Failure: Monster gets free attack, can't retry
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!

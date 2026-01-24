@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://dbwq54oox3iif"]
+[gd_scene load_steps=19 format=3 uid="uid://dbwq54oox3iif"]
 
 [ext_resource type="Script" uid="uid://dqt7egmp3w0c3" path="res://client/client.gd" id="1_6t3qf"]
 [ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
@@ -26,6 +26,15 @@ bg_color = Color(0.1, 0.1, 0.1, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_fill"]
 bg_color = Color(0.2, 0.8, 0.2, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_stamina_fill"]
+bg_color = Color(0.9, 0.75, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_energy_fill"]
+bg_color = Color(0.2, 0.8, 0.3, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mana_fill"]
+bg_color = Color(0.2, 0.7, 0.8, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n07ed"]
 bg_color = Color(0, 0, 0, 1)
@@ -388,7 +397,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
 
 [node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
@@ -418,10 +427,48 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_offset_x = 2
-theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 20
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 12
 text = "HP: 100/100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ResourceBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_bg")
+
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_stamina_fill")
+
+[node name="ResourceLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 12
+text = "Stamina: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -803,6 +850,14 @@ text = "Race:"
 [node name="RaceOption" type="OptionButton" parent="CharacterCreatePanel/VBox"]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
+
+[node name="RaceDescription" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.5, 1)
+theme_override_font_sizes/font_size = 11
+text = "Adaptable and ambitious. Gains +10% bonus experience."
+horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="ClassLabel" type="Label" parent="CharacterCreatePanel/VBox"]
 layout_mode = 2

@@ -94,10 +94,18 @@ const POTION_EFFECTS = {
 	"elixir_minor": {"heal": true, "base": 500, "per_level": 40},
 	"elixir_greater": {"heal": true, "base": 1000, "per_level": 60},
 	"elixir_divine": {"heal": true, "base": 2000, "per_level": 100},
-	# Buff potions
-	"potion_strength": {"buff": "strength", "base": 5, "per_level": 1, "duration": 5},
-	"potion_defense": {"buff": "defense", "base": 5, "per_level": 1, "duration": 5},
-	"potion_speed": {"buff": "speed", "base": 10, "per_level": 2, "duration": 5},
+	# Basic buff potions - last rounds (single combat), scale with level
+	"potion_strength": {"buff": "strength", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"potion_defense": {"buff": "defense", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"potion_speed": {"buff": "speed", "base": 5, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	# Power potions - last multiple battles
+	"potion_power": {"buff": "strength", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
+	"potion_iron": {"buff": "defense", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
+	"potion_haste": {"buff": "speed", "base": 15, "per_level": 3, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
+	# Elixirs - powerful multi-battle buffs
+	"elixir_might": {"buff": "strength", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"elixir_fortress": {"buff": "defense", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"elixir_swiftness": {"buff": "speed", "base": 25, "per_level": 5, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
 }
 
 # Rarity colors for display

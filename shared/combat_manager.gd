@@ -951,12 +951,21 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		var actual_heal = character.heal(heal_amount)
 		messages.append("[color=#90EE90]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
 	elif effect.has("buff"):
-		# Buff potion
+		# Buff potion - can be round-based or battle-based
 		var buff_type = effect.buff
 		var buff_value = effect.base + (effect.per_level * item_level)
-		var duration = effect.get("duration", 5)
-		character.add_buff(buff_type, buff_value, duration)
-		messages.append("[color=#00FFFF]You drink %s! +%d %s for %d rounds![/color]" % [item_name, buff_value, buff_type, duration])
+		var base_duration = effect.get("base_duration", 5)
+		var duration_per_10 = effect.get("duration_per_10_levels", 1)
+		var duration = base_duration + (item_level / 10) * duration_per_10
+
+		if effect.get("battles", false):
+			# Battle-based buff (persists across combats)
+			character.add_persistent_buff(buff_type, buff_value, duration)
+			messages.append("[color=#00FFFF]You drink %s! +%d %s for %d battles![/color]" % [item_name, buff_value, buff_type, duration])
+		else:
+			# Round-based buff (single combat only)
+			character.add_buff(buff_type, buff_value, duration)
+			messages.append("[color=#00FFFF]You drink %s! +%d %s for %d rounds![/color]" % [item_name, buff_value, buff_type, duration])
 
 	# Remove item from inventory
 	character.remove_item(item_index)
@@ -1120,8 +1129,11 @@ func end_combat(peer_id: int, victory: bool):
 		# Mark character as not in combat
 		character.in_combat = false
 
-		# Clear combat buffs
+		# Clear combat buffs (round-based)
 		character.clear_buffs()
+
+		# Tick persistent buffs (battle-based) - reduces remaining battles by 1
+		character.tick_persistent_buffs()
 
 		# Remove from active combats
 		active_combats.erase(peer_id)
@@ -1549,10 +1561,89 @@ func get_monster_ascii_art(monster_name: String) -> String:
 		# Generic monster fallback
 		return padding + "[color=#888888]     ?????[/color]\n" + padding + "[color=#888888]    ( o.o )[/color]\n" + padding + "[color=#888888]     \\ = /[/color]\n" + padding + "[color=#888888]    /|   |\\[/color]\n" + padding + "[color=#888888]      ~~~[/color]\n"
 
+func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
+	"""Add a black and white border around ASCII art - full width"""
+	# Fixed width for full GameOutput width (accounting for margins)
+	var border_width = 54  # Characters inside the border
+
+	# Parse out the color tag and content
+	var lines = ascii_art.split("\n")
+	var content_lines = []
+	var color_tag = "[color=#888888]"
+	var color_end = "[/color]"
+	var base_padding = 30  # Original padding used in get_monster_ascii_art
+
+	for line in lines:
+		if line.strip_edges() == "":
+			continue
+
+		var working_line = line
+
+		# Check if this line starts with a color tag (possibly after padding)
+		var stripped = line.strip_edges()
+		if stripped.begins_with("[color="):
+			var end_bracket = stripped.find("]")
+			if end_bracket > 0:
+				color_tag = stripped.substr(0, end_bracket + 1)
+				# Check if there's content after the color tag
+				var after_tag = stripped.substr(end_bracket + 1)
+				if after_tag.strip_edges() == "" or after_tag.strip_edges() == "[/color]":
+					continue
+				working_line = after_tag
+
+		# Skip if just closing tag
+		if stripped == "[/color]" or stripped.ends_with("[/color]"):
+			var content_part = stripped.replace("[/color]", "").strip_edges()
+			if content_part == "":
+				continue
+			working_line = content_part
+
+		# Remove the base padding from the start
+		var content = working_line
+		var leading_spaces = 0
+		for c in content:
+			if c == ' ':
+				leading_spaces += 1
+			else:
+				break
+
+		if leading_spaces >= base_padding:
+			content = content.substr(base_padding)
+		content = content.rstrip(" \t\n\r")
+		content = content.replace(color_end, "")
+		if content != "":
+			content_lines.append(content)
+
+	if content_lines.is_empty():
+		return ascii_art
+
+	# Find the maximum width of art content for centering
+	var max_art_width = 0
+	for line in content_lines:
+		max_art_width = max(max_art_width, line.length())
+
+	# Build bordered art - full width
+	var result = ""
+
+	# Top border - full width
+	result += "[color=#AAAAAA]╔" + "═".repeat(border_width) + "╗[/color]\n"
+
+	# Content lines centered within the border
+	for line in content_lines:
+		var left_pad = (border_width - line.length()) / 2
+		var right_pad = border_width - line.length() - left_pad
+		result += "[color=#AAAAAA]║[/color]" + " ".repeat(left_pad) + color_tag + line + color_end + " ".repeat(right_pad) + "[color=#AAAAAA]║[/color]\n"
+
+	# Bottom border - full width
+	result += "[color=#AAAAAA]╚" + "═".repeat(border_width) + "╝[/color]"
+
+	return result
+
 func generate_combat_start_message(character: Character, monster: Dictionary) -> String:
 	"""Generate the initial combat message with ASCII art"""
 	var ascii_art = get_monster_ascii_art(monster.name)
-	var msg = ascii_art + "\n[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
+	var bordered_art = add_border_to_ascii_art(ascii_art, monster.name)
+	var msg = bordered_art + "\n[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
 	return msg
 
 func to_dict() -> Dictionary:
