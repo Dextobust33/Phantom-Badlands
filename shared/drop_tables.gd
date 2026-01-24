@@ -137,26 +137,69 @@ func _roll_item_from_table(table: Array) -> Dictionary:
 	return table[-1]  # Fallback to last entry
 
 func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
-	"""Generate an actual item from a drop table entry. Stub for future implementation."""
-	# This is a placeholder - actual item generation will be implemented later
+	"""Generate an actual item from a drop table entry with chance for rarity upgrade."""
+	var item_type = drop_entry.get("item_type", "unknown")
+	var base_rarity = drop_entry.get("rarity", "common")
+
+	# Small chance for rarity upgrade - adds excitement to loot drops!
+	var final_rarity = _maybe_upgrade_rarity(base_rarity)
+
+	# If rarity was upgraded, slightly boost the item level too
+	var final_level = monster_level
+	if final_rarity != base_rarity:
+		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
+
 	return {
 		"id": randi(),
-		"type": drop_entry.get("item_type", "unknown"),
-		"rarity": drop_entry.get("rarity", "common"),
-		"level": monster_level,
-		"name": _get_item_name(drop_entry.get("item_type", "unknown")),
+		"type": item_type,
+		"rarity": final_rarity,
+		"level": final_level,
+		"name": _get_item_name(item_type, final_rarity),
 		"stats": {},  # Placeholder for item stats
-		"value": _calculate_item_value(drop_entry.get("rarity", "common"), monster_level)
+		"value": _calculate_item_value(final_rarity, final_level)
 	}
 
-func _get_item_name(item_type: String) -> String:
-	"""Get display name for an item type. Placeholder."""
+func _maybe_upgrade_rarity(base_rarity: String) -> String:
+	"""Small chance to upgrade item rarity for exciting drops"""
+	var rarity_order = ["common", "uncommon", "rare", "epic", "legendary", "artifact"]
+	var current_index = rarity_order.find(base_rarity)
+
+	if current_index < 0 or current_index >= rarity_order.size() - 1:
+		return base_rarity  # Already max or unknown
+
+	# Roll for upgrade - decreasing chance for higher tiers
+	# Common->Uncommon: 8%, Uncommon->Rare: 5%, Rare->Epic: 3%, Epic->Legendary: 1.5%, Legendary->Artifact: 0.5%
+	var upgrade_chances = [8.0, 5.0, 3.0, 1.5, 0.5]
+	var chance = upgrade_chances[current_index] if current_index < upgrade_chances.size() else 0.5
+
+	var roll = randf() * 100.0
+	if roll < chance:
+		return rarity_order[current_index + 1]
+
+	return base_rarity
+
+func _get_item_name(item_type: String, rarity: String = "common") -> String:
+	"""Get display name for an item type, with prefix for high rarity."""
 	# Convert item_type like "weapon_rusty" to "Rusty Weapon"
 	var parts = item_type.split("_")
 	var name_parts = []
 	for i in range(parts.size() - 1, -1, -1):
 		name_parts.append(parts[i].capitalize())
-	return " ".join(name_parts)
+	var base_name = " ".join(name_parts)
+
+	# Add exciting prefix for upgraded/high rarity items
+	var prefixes = {
+		"epic": ["Masterwork", "Pristine", "Exquisite", "Superior"],
+		"legendary": ["Ancient", "Mythical", "Heroic", "Fabled"],
+		"artifact": ["Divine", "Celestial", "Primordial", "Eternal"]
+	}
+
+	if prefixes.has(rarity):
+		var prefix_list = prefixes[rarity]
+		var prefix = prefix_list[randi() % prefix_list.size()]
+		return prefix + " " + base_name
+
+	return base_name
 
 func _calculate_item_value(rarity: String, level: int) -> int:
 	"""Calculate gold value of an item based on rarity and level"""

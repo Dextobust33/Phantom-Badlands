@@ -819,7 +819,8 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var stat_scale = _calculate_tiered_stat_scale(base_stats.base_level, target_level)
 
 	# Calculate expected player equipment bonuses at this level
-	# Assumes player has level-appropriate gear with average (uncommon) rarity
+	# Uses CONSERVATIVE estimates so exceptional gear feels powerful
+	# Assumes ~60% of level with common-uncommon gear (below average)
 	var expected_player_attack_bonus = _estimate_player_equipment_attack(target_level)
 	var expected_player_defense_bonus = _estimate_player_equipment_defense(target_level)
 
@@ -828,14 +829,14 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var base_scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
 	var base_scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
 
-	# Adjust HP upward to account for player's equipment attack bonus
-	# This makes fights take a reasonable number of turns even with good gear
-	var hp_multiplier = 1.0 + (expected_player_attack_bonus / 20.0)
+	# Adjust HP modestly - we want players with great gear to feel OVERPOWERED
+	# Only account for ~40% of expected attack bonus so good gear shreds monsters
+	var hp_multiplier = 1.0 + (expected_player_attack_bonus / 40.0)
 	var scaled_hp = max(5, int(base_scaled_hp * hp_multiplier))
 
-	# Adjust strength to make player defense meaningful
-	# Monster should deal enough damage that armor matters
-	var strength_bonus = int(expected_player_defense_bonus * 0.6)
+	# Adjust strength modestly - armor should reduce damage but not negate it
+	# Only account for ~30% of expected defense so good armor feels impactful
+	var strength_bonus = int(expected_player_defense_bonus * 0.3)
 	var scaled_strength = max(3, base_scaled_strength + strength_bonus)
 
 	# Defense scales normally but with a small boost at higher levels
@@ -863,32 +864,28 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	}
 
 func _estimate_player_equipment_attack(player_level: int) -> int:
-	"""Estimate expected player attack bonus from equipment at given level"""
-	# Assume player has weapon and ring at ~80% of current level with uncommon rarity
-	var effective_item_level = int(player_level * 0.8)
-	var rarity_mult = 1.5  # Uncommon average
+	"""Estimate BASELINE player attack bonus - intentionally conservative.
+	This ensures players with good gear feel overpowered, not just 'normal'."""
+	# Assume player has weapon at ~50% of level with common rarity (worst case baseline)
+	var effective_item_level = int(player_level * 0.5)
+	var rarity_mult = 1.0  # Common baseline
 
-	# Weapon: level × rarity × 2 attack
+	# Only weapon assumed (some players may not have ring)
 	var weapon_attack = int(effective_item_level * rarity_mult * 2)
-	# Ring: level × rarity × 0.5 attack
-	var ring_attack = int(effective_item_level * rarity_mult * 0.5)
 
-	return weapon_attack + ring_attack
+	return weapon_attack
 
 func _estimate_player_equipment_defense(player_level: int) -> int:
-	"""Estimate expected player defense bonus from equipment at given level"""
-	# Assume player has armor, helm, shield at ~80% of current level with uncommon rarity
-	var effective_item_level = int(player_level * 0.8)
-	var rarity_mult = 1.5  # Uncommon average
+	"""Estimate BASELINE player defense bonus - intentionally conservative.
+	This ensures players with good armor feel tanky, not just 'adequate'."""
+	# Assume player has only armor at ~50% of level with common rarity
+	var effective_item_level = int(player_level * 0.5)
+	var rarity_mult = 1.0  # Common baseline
 
-	# Armor: level × rarity × 2 defense
+	# Only armor assumed (some players may not have full set)
 	var armor_defense = int(effective_item_level * rarity_mult * 2)
-	# Helm: level × rarity × 1 defense
-	var helm_defense = int(effective_item_level * rarity_mult * 1)
-	# Shield: level × rarity × 1.5 defense
-	var shield_defense = int(effective_item_level * rarity_mult * 1.5)
 
-	return armor_defense + helm_defense + shield_defense
+	return armor_defense
 
 func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	"""Calculate stat scaling using tiered percentages"""
