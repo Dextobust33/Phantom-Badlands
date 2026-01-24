@@ -53,6 +53,7 @@ func _ready():
 	drop_tables = DropTablesScript.new()
 	add_child(drop_tables)
 	combat_mgr.set_drop_tables(drop_tables)
+	combat_mgr.set_monster_database(monster_db)
 
 	var error = server.listen(PORT)
 	if error != OK:
@@ -848,6 +849,40 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
 
+			# Check for summoner ability - force a follow-up encounter
+			var summon_next = result.get("summon_next_fight", "")
+			if summon_next != "":
+				# Summoner called reinforcements - force a flock encounter
+				var monster_level = result.get("monster_level", 1)
+				# Store drops for later (current_drops already defined above)
+				if not pending_flock_drops.has(peer_id):
+					pending_flock_drops[peer_id] = []
+				pending_flock_drops[peer_id].append_array(current_drops)
+
+				# Store gems
+				var gems_this_combat = result.get("gems_earned", 0)
+				if not pending_flock_gems.has(peer_id):
+					pending_flock_gems[peer_id] = 0
+				pending_flock_gems[peer_id] += gems_this_combat
+
+				# Queue the summoned monster
+				pending_flocks[peer_id] = {
+					"monster_name": summon_next,
+					"monster_level": monster_level
+				}
+
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"victory": true,
+					"character": characters[peer_id].to_dict(),
+					"flock_incoming": true,
+					"flock_monster": summon_next,
+					"drops_pending": true,
+					"summoned": true  # Flag to show different message
+				})
+				save_character(peer_id)
+				return
+
 			# Check for flock encounter (chain combat)
 			var flock_chance = result.get("flock_chance", 0)
 			var flock_roll = randi() % 100
@@ -941,6 +976,18 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				"type": "combat_end",
 				"fled": true
 			})
+		elif result.get("monster_fled", false):
+			# Monster fled (coward ability) - combat ends, no loot
+			if pending_flock_drops.has(peer_id):
+				pending_flock_drops.erase(peer_id)
+			if pending_flock_gems.has(peer_id):
+				pending_flock_gems.erase(peer_id)
+			send_to_peer(peer_id, {
+				"type": "combat_end",
+				"monster_fled": true,
+				"character": characters[peer_id].to_dict()
+			})
+			save_character(peer_id)
 		else:
 			# Defeated - PERMADEATH! Clear any pending drops and gems
 			if pending_flock_drops.has(peer_id):

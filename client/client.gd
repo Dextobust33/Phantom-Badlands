@@ -137,6 +137,7 @@ var temp_new_password: String = ""
 var known_enemy_hp: Dictionary = {}
 var current_enemy_name: String = ""
 var current_enemy_level: int = 0
+var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class affinity
 var damage_dealt_to_current_enemy: int = 0
 
 # Player list auto-refresh
@@ -2793,7 +2794,18 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	var bar_container = enemy_health_bar.get_node("BarContainer")
 
 	if label_node:
-		label_node.text = "%s:" % enemy_name
+		# Display enemy name with level (color is shown in main combat text)
+		label_node.text = "%s (Lvl %d):" % [enemy_name, enemy_level]
+		# Set label color based on class affinity
+		match current_enemy_color:
+			"#FFFF00":  # Yellow - Physical
+				label_node.add_theme_color_override("font_color", Color(1, 1, 0))
+			"#00BFFF":  # Blue - Magical
+				label_node.add_theme_color_override("font_color", Color(0, 0.75, 1))
+			"#00FF00":  # Green - Cunning
+				label_node.add_theme_color_override("font_color", Color(0, 1, 0))
+			_:  # White - Neutral
+				label_node.add_theme_color_override("font_color", Color(1, 1, 1))
 
 	if not bar_container:
 		return
@@ -3044,6 +3056,7 @@ func handle_server_message(message: Dictionary):
 			var combat_state = message.get("combat_state", {})
 			current_enemy_name = combat_state.get("monster_name", "Enemy")
 			current_enemy_level = combat_state.get("monster_level", 1)
+			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
 			damage_dealt_to_current_enemy = 0
 
 			# Sync resources from combat state for ability availability

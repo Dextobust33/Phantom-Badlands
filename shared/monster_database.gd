@@ -3,6 +3,42 @@
 class_name MonsterDatabase
 extends Node
 
+# Class affinity types - determines which player class has advantage
+enum ClassAffinity {
+	NEUTRAL,    # No advantage - white/gray name (majority)
+	PHYSICAL,   # Weak to Warriors, resistant to Mages - yellow name
+	MAGICAL,    # Weak to Mages, resistant to Warriors - blue name
+	CUNNING     # Weak to Tricksters, resistant to other paths - green name
+}
+
+# Monster ability flags
+const ABILITY_GLASS_CANNON = "glass_cannon"      # 3x damage but 50% HP
+const ABILITY_MULTI_STRIKE = "multi_strike"      # Attacks 2-3 times per turn
+const ABILITY_POISON = "poison"                  # Damage over time
+const ABILITY_MANA_DRAIN = "mana_drain"          # Steals player mana
+const ABILITY_STAMINA_DRAIN = "stamina_drain"    # Drains stamina
+const ABILITY_ENERGY_DRAIN = "energy_drain"      # Drains energy
+const ABILITY_REGENERATION = "regeneration"      # Heals 10% HP per turn
+const ABILITY_DAMAGE_REFLECT = "damage_reflect"  # Reflects 25% of damage taken
+const ABILITY_ETHEREAL = "ethereal"              # 50% chance to dodge
+const ABILITY_ARMORED = "armored"                # Reduces incoming damage by 50%
+const ABILITY_SUMMONER = "summoner"              # Can call another monster
+const ABILITY_PACK_LEADER = "pack_leader"        # High flock chance, stronger pack
+const ABILITY_GOLD_HOARDER = "gold_hoarder"      # 3x gold drops
+const ABILITY_GEM_BEARER = "gem_bearer"          # Always drops gems
+const ABILITY_CURSE = "curse"                    # Reduces stats during combat
+const ABILITY_DISARM = "disarm"                  # Reduces weapon damage
+const ABILITY_UNPREDICTABLE = "unpredictable"    # Wild damage variance
+const ABILITY_WISH_GRANTER = "wish_granter"      # Grants buff on death
+const ABILITY_DEATH_CURSE = "death_curse"        # Deals damage when killed
+const ABILITY_BERSERKER = "berserker"            # Damage scales with missing HP
+const ABILITY_COWARD = "coward"                  # Flees at low HP (no loot)
+const ABILITY_LIFE_STEAL = "life_steal"          # Heals for damage dealt
+const ABILITY_ENRAGE = "enrage"                  # Gets stronger each round
+const ABILITY_AMBUSHER = "ambusher"              # First attack always crits
+const ABILITY_EASY_PREY = "easy_prey"            # Low stats but no special rewards
+const ABILITY_THORNS = "thorns"                  # Damages attacker on melee
+
 # Monster types by difficulty tier
 enum MonsterType {
 	# Tier 1 (Level 1-5)
@@ -193,7 +229,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 35,
 				"drop_table_id": "tier1",
 				"drop_chance": 5,
-				"description": "A small, green-skinned creature with sharp teeth"
+				"description": "A small, green-skinned creature with sharp teeth",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_PACK_LEADER],
+				"death_message": "The goblin squeaks 'Not the face!' as it falls."
 			}
 		MonsterType.GIANT_RAT:
 			return {
@@ -208,7 +247,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 40,
 				"drop_table_id": "tier1",
 				"drop_chance": 3,
-				"description": "A rat the size of a large dog"
+				"description": "A rat the size of a large dog",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_EASY_PREY],
+				"death_message": ""
 			}
 		MonsterType.KOBOLD:
 			return {
@@ -223,7 +265,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 30,
 				"drop_table_id": "tier1",
 				"drop_chance": 5,
-				"description": "A small reptilian humanoid with crude weapons"
+				"description": "A small reptilian humanoid with crude weapons",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_GOLD_HOARDER],
+				"death_message": "The kobold drops its treasure pouch as it expires."
 			}
 		MonsterType.SKELETON:
 			return {
@@ -238,7 +283,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 25,
 				"drop_table_id": "tier1",
 				"drop_chance": 5,
-				"description": "Animated bones held together by dark magic"
+				"description": "Animated bones held together by dark magic",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [],
+				"death_message": "The skeleton collapses into a pile of bones."
 			}
 		MonsterType.WOLF:
 			return {
@@ -253,7 +301,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 45,
 				"drop_table_id": "tier1",
 				"drop_chance": 5,
-				"description": "A fierce predator with sharp fangs"
+				"description": "A fierce predator with sharp fangs",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_PACK_LEADER, ABILITY_AMBUSHER],
+				"death_message": ""
 			}
 		
 		# Tier 2
@@ -270,7 +321,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 30,
 				"drop_table_id": "tier2",
 				"drop_chance": 8,
-				"description": "A brutish humanoid warrior"
+				"description": "A brutish humanoid warrior",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_BERSERKER],
+				"death_message": "The orc grunts 'Me... not... weak...' and collapses."
 			}
 		MonsterType.HOBGOBLIN:
 			return {
@@ -285,7 +339,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 35,
 				"drop_table_id": "tier2",
 				"drop_chance": 8,
-				"description": "A large, disciplined goblinoid soldier"
+				"description": "A large, disciplined goblinoid soldier",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_SUMMONER],
+				"death_message": "The hobgoblin salutes as it falls, maintaining military bearing."
 			}
 		MonsterType.GNOLL:
 			return {
@@ -300,7 +357,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 40,
 				"drop_table_id": "tier2",
 				"drop_chance": 8,
-				"description": "A hyena-like humanoid scavenger"
+				"description": "A hyena-like humanoid scavenger",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_PACK_LEADER],
+				"death_message": "The gnoll lets out a final, mocking laugh."
 			}
 		MonsterType.ZOMBIE:
 			return {
@@ -315,7 +375,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 50,
 				"drop_table_id": "tier2",
 				"drop_chance": 5,
-				"description": "A shambling corpse animated by necromancy"
+				"description": "A shambling corpse animated by necromancy",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_EASY_PREY],
+				"death_message": "The zombie finally finds peace... probably."
 			}
 		MonsterType.GIANT_SPIDER:
 			return {
@@ -330,7 +393,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 25,
 				"drop_table_id": "tier2",
 				"drop_chance": 8,
-				"description": "A spider large enough to prey on humans"
+				"description": "A spider large enough to prey on humans",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_POISON, ABILITY_AMBUSHER],
+				"death_message": "The spider curls up its legs in defeat."
 			}
 		MonsterType.WIGHT:
 			return {
@@ -345,7 +411,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 15,
 				"drop_table_id": "tier2",
 				"drop_chance": 10,
-				"description": "An undead warrior with life-draining abilities"
+				"description": "An undead warrior with life-draining abilities",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_LIFE_STEAL, ABILITY_CURSE],
+				"death_message": "The wight's eyes fade as the dark magic releases it."
 			}
 		
 		# Tier 3
@@ -362,7 +431,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 10,
 				"drop_table_id": "tier3",
 				"drop_chance": 10,
-				"description": "A huge, dim-witted giant"
+				"description": "A huge, dim-witted giant",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_GLASS_CANNON],
+				"death_message": "The ogre falls with ground-shaking force. You find its lunch pouch... ew."
 			}
 		MonsterType.TROLL:
 			return {
@@ -377,7 +449,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 15,
 				"drop_table_id": "tier3",
 				"drop_chance": 12,
-				"description": "A regenerating monster with terrible claws"
+				"description": "A regenerating monster with terrible claws",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_REGENERATION],
+				"death_message": "The troll stops regenerating. Finally."
 			}
 		MonsterType.WRAITH:
 			return {
@@ -392,7 +467,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 20,
 				"drop_table_id": "tier3",
 				"drop_chance": 12,
-				"description": "A ghostly spirit that feeds on life force"
+				"description": "A ghostly spirit that feeds on life force",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_ETHEREAL, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN],
+				"death_message": "The wraith dissipates with an ethereal wail."
 			}
 		MonsterType.WYVERN:
 			return {
@@ -407,7 +485,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 5,
 				"drop_table_id": "tier3",
 				"drop_chance": 15,
-				"description": "A two-legged dragon with a venomous tail"
+				"description": "A two-legged dragon with a venomous tail",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_POISON, ABILITY_AMBUSHER],
+				"death_message": "The wyvern crashes to the ground, its wings folding."
 			}
 		MonsterType.MINOTAUR:
 			return {
@@ -422,7 +503,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 10,
 				"drop_table_id": "tier3",
 				"drop_chance": 12,
-				"description": "A bull-headed humanoid warrior"
+				"description": "A bull-headed humanoid warrior",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_BERSERKER, ABILITY_ENRAGE],
+				"death_message": "The minotaur's labyrinthine rage finally ends."
 			}
 		
 		# Tier 4
@@ -439,7 +523,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 5,
 				"drop_table_id": "tier4",
 				"drop_chance": 15,
-				"description": "A towering humanoid of immense power"
+				"description": "A towering humanoid of immense power",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_GLASS_CANNON, ABILITY_GOLD_HOARDER],
+				"death_message": "The giant falls like a mighty oak, scattering its treasure."
 			}
 		MonsterType.DRAGON_WYRMLING:
 			return {
@@ -454,7 +541,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier4",
 				"drop_chance": 20,
-				"description": "A young but deadly dragon"
+				"description": "A young but deadly dragon",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_GEM_BEARER, ABILITY_MULTI_STRIKE],
+				"death_message": "The young dragon's hoard is yours... along with its pride."
 			}
 		MonsterType.DEMON:
 			return {
@@ -469,7 +559,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 15,
 				"drop_table_id": "tier4",
 				"drop_chance": 15,
-				"description": "A fiend from the lower planes"
+				"description": "A fiend from the lower planes",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE],
+				"death_message": "The demon curses your bloodline as it's banished."
 			}
 		MonsterType.VAMPIRE:
 			return {
@@ -484,7 +577,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier4",
 				"drop_chance": 18,
-				"description": "An undead noble with supernatural powers"
+				"description": "An undead noble with supernatural powers",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_LIFE_STEAL, ABILITY_ETHEREAL, ABILITY_DISARM],
+				"death_message": "The vampire crumbles to dust. 'I'll... be... back...' he whispers."
 			}
 		
 		# Tier 5
@@ -501,7 +597,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier5",
 				"drop_chance": 20,
-				"description": "A legendary wyrm of immense age and power"
+				"description": "A legendary wyrm of immense age and power",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER],
+				"death_message": "The ancient dragon's eyes dim as centuries of wisdom fade."
 			}
 		MonsterType.DEMON_LORD:
 			return {
@@ -516,7 +615,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier5",
 				"drop_chance": 22,
-				"description": "A ruler of the infernal realms"
+				"description": "A ruler of the infernal realms",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER],
+				"death_message": "'This changes nothing! My armies will-' The portal closes."
 			}
 		MonsterType.LICH:
 			return {
@@ -531,7 +633,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier5",
 				"drop_chance": 22,
-				"description": "An undead sorcerer of terrible power"
+				"description": "An undead sorcerer of terrible power",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_MANA_DRAIN, ABILITY_CURSE, ABILITY_SUMMONER, ABILITY_REGENERATION],
+				"death_message": "The lich's phylactery shatters. 'Impossible...' it whispers."
 			}
 		MonsterType.TITAN:
 			return {
@@ -546,7 +651,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier5",
 				"drop_chance": 25,
-				"description": "A godlike being from the dawn of time"
+				"description": "A godlike being from the dawn of time",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GLASS_CANNON, ABILITY_GEM_BEARER],
+				"death_message": "The titan grants you a final gift as it returns to the cosmos."
 			}
 
 		# Tier 6 (Level 101-500)
@@ -563,7 +671,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 10,
 				"drop_table_id": "tier6",
 				"drop_chance": 8,
-				"description": "A being of pure elemental energy"
+				"description": "A being of pure elemental energy",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_DAMAGE_REFLECT],
+				"death_message": "The elemental disperses into raw mana."
 			}
 		MonsterType.IRON_GOLEM:
 			return {
@@ -578,7 +689,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 10,
-				"description": "An animated construct of living metal"
+				"description": "An animated construct of living metal",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_ARMORED, ABILITY_THORNS],
+				"death_message": "The golem's core shatters. It salutes you... wait, that's new."
 			}
 		MonsterType.SPHINX:
 			return {
@@ -593,7 +707,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 12,
-				"description": "An ancient guardian of forbidden knowledge"
+				"description": "An ancient guardian of forbidden knowledge",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER],
+				"death_message": "'Your riddle... was superior...' the sphinx admits gracefully."
 			}
 		MonsterType.HYDRA:
 			return {
@@ -608,7 +725,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 15,
-				"description": "A many-headed serpent that regenerates"
+				"description": "A many-headed serpent that regenerates",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_ENRAGE],
+				"death_message": "All seven heads finally stop bickering. Permanently."
 			}
 		MonsterType.PHOENIX:
 			return {
@@ -623,7 +743,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 18,
-				"description": "An immortal bird of fire and rebirth"
+				"description": "An immortal bird of fire and rebirth",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"death_message": "The phoenix erupts in flame... but this time, it doesn't rise."
 			}
 
 		# Tier 7 (Level 501-2000)
@@ -640,7 +763,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 5,
 				"drop_table_id": "tier7",
 				"drop_chance": 10,
-				"description": "A creature from between dimensions"
+				"description": "A creature from between dimensions",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_ETHEREAL, ABILITY_UNPREDICTABLE, ABILITY_MANA_DRAIN, ABILITY_ENERGY_DRAIN],
+				"death_message": "Reality snaps back as the Void Walker is erased from existence."
 			}
 		MonsterType.WORLD_SERPENT:
 			return {
@@ -655,7 +781,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier7",
 				"drop_chance": 15,
-				"description": "A serpent large enough to encircle the world"
+				"description": "A serpent large enough to encircle the world",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_POISON, ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER],
+				"death_message": "The World Serpent releases its tail. The cosmos trembles."
 			}
 		MonsterType.ELDER_LICH:
 			return {
@@ -670,7 +799,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier7",
 				"drop_chance": 18,
-				"description": "An undead sorcerer of unfathomable age"
+				"description": "An undead sorcerer of unfathomable age",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_MANA_DRAIN, ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER],
+				"death_message": "'I have seen the end times... you are not it.' *crumbles*"
 			}
 		MonsterType.PRIMORDIAL_DRAGON:
 			return {
@@ -685,7 +817,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier7",
 				"drop_chance": 20,
-				"description": "A dragon from before recorded history"
+				"description": "A dragon from before recorded history",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_BERSERKER, ABILITY_ARMORED, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"death_message": "The Primordial Dragon's final breath shapes new constellations."
 			}
 
 		# Tier 8 (Level 2001-5000)
@@ -702,7 +837,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier8",
 				"drop_chance": 12,
-				"description": "An incomprehensible entity from beyond the stars"
+				"description": "An incomprehensible entity from beyond the stars",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_CURSE, ABILITY_MANA_DRAIN, ABILITY_STAMINA_DRAIN, ABILITY_ENERGY_DRAIN, ABILITY_GEM_BEARER],
+				"death_message": "The Cosmic Horror's form unravels. Your sanity... mostly intact."
 			}
 		MonsterType.TIME_WEAVER:
 			return {
@@ -717,7 +855,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier8",
 				"drop_chance": 15,
-				"description": "A being that exists across all timelines"
+				"description": "A being that exists across all timelines",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_ETHEREAL, ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"death_message": "'We will meet again... in another timeline...' Time resumes."
 			}
 		MonsterType.DEATH_INCARNATE:
 			return {
@@ -732,7 +873,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier8",
 				"drop_chance": 18,
-				"description": "The physical manifestation of death itself"
+				"description": "The physical manifestation of death itself",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER],
+				"death_message": "'Impossible... I AM death...' Life, it seems, finds a way."
 			}
 
 		# Tier 9 (Level 5001-10000)
@@ -749,7 +893,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier9",
 				"drop_chance": 15,
-				"description": "Pure entropy given form and purpose"
+				"description": "Pure entropy given form and purpose",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_MULTI_STRIKE, ABILITY_ENRAGE, ABILITY_CURSE, ABILITY_GEM_BEARER],
+				"death_message": "Chaos screams as order is restored. The universe sighs in relief."
 			}
 		MonsterType.THE_NAMELESS_ONE:
 			return {
@@ -764,7 +911,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier9",
 				"drop_chance": 18,
-				"description": "An entity so ancient its name has been forgotten"
+				"description": "An entity so ancient its name has been forgotten",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER],
+				"death_message": "At last... a name... *You hear your own name whispered eternally*"
 			}
 		MonsterType.GOD_SLAYER:
 			return {
@@ -779,7 +929,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier9",
 				"drop_chance": 20,
-				"description": "A being that has killed gods and taken their power"
+				"description": "A being that has killed gods and taken their power",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_BERSERKER, ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"death_message": "The God Slayer bows. 'Finally... a worthy successor.'"
 			}
 		MonsterType.ENTROPY:
 			return {
@@ -794,7 +947,10 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier9",
 				"drop_chance": 25,
-				"description": "The end of all things made manifest"
+				"description": "The end of all things made manifest",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_ARMORED, ABILITY_REGENERATION, ABILITY_DEATH_CURSE, ABILITY_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"death_message": "You have defeated the end itself. What lies beyond is... new beginnings."
 			}
 
 	# Fallback
@@ -850,6 +1006,16 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	# Calculate monster intelligence based on level tier (for Outsmart mechanic)
 	var intelligence = _calculate_monster_intelligence(target_level)
 
+	# Apply glass cannon ability (3x damage but 50% HP)
+	var abilities = base_stats.get("abilities", [])
+	if ABILITY_GLASS_CANNON in abilities:
+		scaled_hp = max(5, int(scaled_hp * 0.5))
+		scaled_strength = int(scaled_strength * 3)
+
+	# Apply armored ability (50% more defense)
+	if ABILITY_ARMORED in abilities:
+		scaled_defense = int(scaled_defense * 1.5)
+
 	return {
 		"name": base_stats.name,
 		"level": target_level,
@@ -864,7 +1030,11 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"flock_chance": base_stats.get("flock_chance", 0),
 		"drop_table_id": base_stats.get("drop_table_id", "common"),
 		"drop_chance": base_stats.get("drop_chance", 5),
-		"description": base_stats.description
+		"description": base_stats.description,
+		# New fields for ability system
+		"class_affinity": base_stats.get("class_affinity", ClassAffinity.NEUTRAL),
+		"abilities": abilities,
+		"death_message": base_stats.get("death_message", "")
 	}
 
 func _estimate_player_equipment_attack(player_level: int) -> int:
@@ -1015,3 +1185,65 @@ func _calculate_monster_intelligence(level: int) -> int:
 
 func to_dict() -> Dictionary:
 	return {"initialized": true}
+
+# ===== CLASS AFFINITY HELPERS =====
+
+func get_affinity_color(affinity: int) -> String:
+	"""Get the color code for a class affinity"""
+	match affinity:
+		ClassAffinity.PHYSICAL:
+			return "#FFFF00"  # Yellow - weak to Warriors
+		ClassAffinity.MAGICAL:
+			return "#00BFFF"  # Blue - weak to Mages
+		ClassAffinity.CUNNING:
+			return "#00FF00"  # Green - weak to Tricksters
+		_:
+			return "#FFFFFF"  # White - neutral
+
+func get_affinity_name(affinity: int) -> String:
+	"""Get the name of a class affinity for display"""
+	match affinity:
+		ClassAffinity.PHYSICAL:
+			return "Physical"
+		ClassAffinity.MAGICAL:
+			return "Magical"
+		ClassAffinity.CUNNING:
+			return "Cunning"
+		_:
+			return "Neutral"
+
+func get_player_class_path(character_class: String) -> String:
+	"""Determine the combat path of a character class"""
+	match character_class.to_lower():
+		"fighter", "barbarian", "paladin":
+			return "warrior"
+		"wizard", "sorcerer", "sage":
+			return "mage"
+		"thief", "ranger", "ninja":
+			return "trickster"
+		_:
+			return "warrior"  # Default to warrior
+
+func calculate_class_advantage_multiplier(affinity: int, player_class_path: String) -> float:
+	"""Calculate damage multiplier based on class affinity.
+	Returns: 1.0 (neutral), 1.5 (advantage), 0.75 (disadvantage)"""
+	match affinity:
+		ClassAffinity.PHYSICAL:
+			# Warriors do +50% damage, Mages do -25%
+			if player_class_path == "warrior":
+				return 1.5
+			elif player_class_path == "mage":
+				return 0.75
+		ClassAffinity.MAGICAL:
+			# Mages do +50% damage, Warriors do -25%
+			if player_class_path == "mage":
+				return 1.5
+			elif player_class_path == "warrior":
+				return 0.75
+		ClassAffinity.CUNNING:
+			# Tricksters do +50% damage, others do -25%
+			if player_class_path == "trickster":
+				return 1.5
+			else:
+				return 0.75
+	return 1.0  # Neutral

@@ -160,3 +160,62 @@ Run server first, then client. Both commands run in background (`&`).
 - `client/client.tscn` - Added CurrencyDisplay panel (GoldLabel, GemLabel)
 - `client/client.gd` - Currency display, shop buy UI, gem selling UI
 - `server/server.gd` - Shop inventory generation, buy/sell_gems handlers, multi-upgrade
+
+## Monster Ability & Class Affinity System (COMPLETE)
+
+**Class Affinity System:**
+Monsters have a class affinity that determines which player class is strong/weak against them:
+- **Neutral (White)** - No advantage/disadvantage. Majority of monsters (~60%)
+- **Physical (Yellow)** - Weak to Warriors (+50% damage), resistant to Mages (-25% damage)
+- **Magical (Blue)** - Weak to Mages (+50% damage), resistant to Warriors (-25% damage)
+- **Cunning (Green)** - Weak to Tricksters (+50% damage), resistant to other paths (-25% damage)
+
+Monster names are color-coded in combat based on affinity. The encounter message shows which class has advantage.
+
+**Monster Unique Abilities:**
+Each monster can have one or more special abilities:
+
+| Ability | Effect |
+|---------|--------|
+| `glass_cannon` | 3x damage but 50% HP |
+| `multi_strike` | Attacks 2-3 times per turn |
+| `poison` | 40% chance to poison player (-X HP/round) |
+| `mana_drain` | Steals player mana on hit |
+| `stamina_drain` | Drains stamina on hit |
+| `energy_drain` | Drains energy on hit |
+| `regeneration` | Heals 10% HP per turn |
+| `damage_reflect` | Reflects 25% of damage taken |
+| `ethereal` | 50% chance to dodge player attacks |
+| `armored` | +50% defense |
+| `summoner` | 20% chance to call reinforcements (forced follow-up fight) |
+| `pack_leader` | +25% flock chance, stronger pack encounters |
+| `gold_hoarder` | Drops 3x gold |
+| `gem_bearer` | Always drops gems (2x normal amount) |
+| `curse` | 30% chance to reduce player defense by 25% for combat |
+| `disarm` | 25% chance to reduce player damage by 30% for 3 rounds |
+| `unpredictable` | Damage varies wildly (0.5x to 2.5x) |
+| `wish_granter` | Grants a random powerful buff (10 battles) on death |
+| `death_curse` | Deals 25% of its max HP as damage when killed |
+| `berserker` | +50% damage when below 50% HP |
+| `coward` | Flees at 20% HP (no loot) |
+| `life_steal` | Heals for 50% of damage dealt |
+| `enrage` | +10% damage per round (stacking) |
+| `ambusher` | First attack always crits (2x damage) |
+| `easy_prey` | Low stats, 50% reduced rewards |
+| `thorns` | Reflects 25% melee damage back to attacker |
+
+**Custom Death Messages:**
+Many monsters have unique death messages that display when defeated, adding flavor to combat.
+
+**Notable Monster Highlights:**
+- **Titan** (Tier 5) - Wish granter + glass cannon + gem bearer
+- **Phoenix** (Tier 6) - Death curse + gem bearer + wish granter
+- **Hydra** (Tier 6) - Regeneration + multi-strike + enrage
+- **Primordial Dragon** (Tier 7) - Multi-strike + berserker + armored + gem bearer + wish granter
+- **Entropy** (Tier 9) - Armored + regeneration + death curse + curse + gem bearer + wish granter
+
+**Files Modified:**
+- `shared/monster_database.gd` - Added ClassAffinity enum, ability constants, monster definitions with abilities/affinity/death_message
+- `shared/combat_manager.gd` - Class advantage damage multipliers, monster ability processing, death message display
+- `client/client.gd` - Monster name color coding in HP bar based on affinity
+- `server/server.gd` - Summoner follow-up fights, monster fled handling

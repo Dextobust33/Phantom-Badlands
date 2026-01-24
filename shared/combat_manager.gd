@@ -25,12 +25,51 @@ var active_combats = {}
 # Using Node type to avoid compile-time dependency on DropTables class
 var drop_tables: Node = null
 
+# Monster database reference (for class affinity helpers)
+var monster_database: Node = null
+
+# Monster ability constants (duplicated from MonsterDatabase for easy access)
+const ABILITY_GLASS_CANNON = "glass_cannon"
+const ABILITY_MULTI_STRIKE = "multi_strike"
+const ABILITY_POISON = "poison"
+const ABILITY_MANA_DRAIN = "mana_drain"
+const ABILITY_STAMINA_DRAIN = "stamina_drain"
+const ABILITY_ENERGY_DRAIN = "energy_drain"
+const ABILITY_REGENERATION = "regeneration"
+const ABILITY_DAMAGE_REFLECT = "damage_reflect"
+const ABILITY_ETHEREAL = "ethereal"
+const ABILITY_ARMORED = "armored"
+const ABILITY_SUMMONER = "summoner"
+const ABILITY_PACK_LEADER = "pack_leader"
+const ABILITY_GOLD_HOARDER = "gold_hoarder"
+const ABILITY_GEM_BEARER = "gem_bearer"
+const ABILITY_CURSE = "curse"
+const ABILITY_DISARM = "disarm"
+const ABILITY_UNPREDICTABLE = "unpredictable"
+const ABILITY_WISH_GRANTER = "wish_granter"
+const ABILITY_DEATH_CURSE = "death_curse"
+const ABILITY_BERSERKER = "berserker"
+const ABILITY_COWARD = "coward"
+const ABILITY_LIFE_STEAL = "life_steal"
+const ABILITY_ENRAGE = "enrage"
+const ABILITY_AMBUSHER = "ambusher"
+const ABILITY_EASY_PREY = "easy_prey"
+const ABILITY_THORNS = "thorns"
+
+func set_monster_database(db: Node):
+	"""Set the monster database reference"""
+	monster_database = db
+
 func _ready():
 	print("Combat Manager initialized")
 
 func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Dictionary:
 	"""Initialize a new combat encounter"""
-	
+
+	# Check for ambusher ability (first attack always crits)
+	var monster_abilities = monster.get("abilities", [])
+	var ambusher_active = ABILITY_AMBUSHER in monster_abilities
+
 	# Create combat state
 	var combat_state = {
 		"peer_id": peer_id,
@@ -40,19 +79,28 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"player_can_act": true,
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
-		"outsmart_failed": false  # Can only attempt outsmart once per combat
+		"outsmart_failed": false,  # Can only attempt outsmart once per combat
+		# Monster ability tracking
+		"ambusher_active": ambusher_active,  # Monster's first attack crits
+		"poison_active": false,
+		"poison_damage": 0,
+		"enrage_stacks": 0,  # Damage bonus per round
+		"thorns_damage": 0,  # Damage reflected on hit
+		"curse_applied": false,  # Stat curse active
+		"disarm_applied": false,  # Weapon damage reduced
+		"summoner_triggered": false  # Already called reinforcements
 	}
-	
+
 	active_combats[peer_id] = combat_state
 
 	# Mark character as in combat and reset per-combat flags
 	character.in_combat = true
 	character.reset_combat_flags()  # Reset Dwarf Last Stand etc.
-	
+
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
 	combat_state.combat_log.append(msg)
-	
+
 	return {
 		"success": true,
 		"message": msg,
@@ -145,10 +193,18 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	return result
 
 func process_attack(combat: Dictionary) -> Dictionary:
-	"""Process player attack action"""
+	"""Process player attack action with monster ability interactions"""
 	var character = combat.character
 	var monster = combat.monster
+	var abilities = monster.get("abilities", [])
 	var messages = []
+
+	# === POISON TICK (at start of player turn) ===
+	if combat.get("poison_active", false):
+		var poison_dmg = combat.get("poison_damage", 1)
+		character.current_hp -= poison_dmg
+		character.current_hp = max(1, character.current_hp)  # Poison can't kill
+		messages.append("[color=#9B59B6]Poison deals %d damage![/color]" % poison_dmg)
 
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
@@ -162,6 +218,13 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var level_diff = max(0, monster_level - player_level)
 	var hit_chance = 95 - (level_diff / 2)
 	hit_chance = max(70, hit_chance)  # Never below 70%
+
+	# Ethereal ability: 50% dodge chance for monster
+	var ethereal_dodge = ABILITY_ETHEREAL in abilities and not is_vanished
+	if ethereal_dodge and randi() % 100 < 50:
+		messages.append("[color=#9B59B6]Your attack passes through the ethereal %s![/color]" % monster.name)
+		combat.player_can_act = false
+		return {"success": true, "messages": messages, "combat_ended": false}
 
 	var hit_roll = randi() % 100
 
@@ -183,72 +246,143 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		messages.append("[color=#90EE90]You attack the %s![/color]" % monster.name)
 		messages.append("You deal [color=#FFFF00]%d[/color] damage!" % damage)
 
+		# Thorns ability: reflect damage back to attacker
+		if ABILITY_THORNS in abilities:
+			var thorn_damage = max(1, int(damage * 0.25))
+			character.current_hp -= thorn_damage
+			character.current_hp = max(1, character.current_hp)
+			messages.append("[color=#FF6B6B]Thorns deal %d damage to you![/color]" % thorn_damage)
+
+		# Damage reflect ability: reflect 25% of damage
+		if ABILITY_DAMAGE_REFLECT in abilities:
+			var reflect_damage = max(1, int(damage * 0.25))
+			character.current_hp -= reflect_damage
+			character.current_hp = max(1, character.current_hp)
+			messages.append("[color=#9B59B6]The %s reflects %d damage![/color]" % [monster.name, reflect_damage])
+
 		if monster.current_hp <= 0:
-			# Monster defeated!
-			messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
-
-			# Calculate XP with level difference bonus
-			var base_xp = monster.experience_reward
-			var xp_level_diff = monster.level - character.level
-			var xp_multiplier = 1.0
-
-			# Bonus XP for fighting stronger monsters (risk vs reward)
-			if xp_level_diff > 0:
-				# +10% per level above, up to +500% at 50 levels above
-				# Then +5% per level beyond 50, uncapped
-				if xp_level_diff <= 50:
-					xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-				else:
-					xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
-
-			var final_xp = int(base_xp * xp_multiplier)
-
-			if xp_level_diff >= 10:
-				messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
-			else:
-				messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
-			messages.append("[color=#FFD700]You gain %d gold![/color]" % monster.gold_reward)
-
-			# Award experience and gold
-			character.add_experience(final_xp)
-			character.gold += monster.gold_reward
-
-			# Roll for gem drops (from high-level monsters)
-			var gems_earned = roll_gem_drops(monster, character)
-			if gems_earned > 0:
-				character.gems += gems_earned
-				messages.append("[color=#00FFFF]You found %d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
-
-			# Roll for item drops
-			var dropped_items = roll_combat_drops(monster, character)
-			for item in dropped_items:
-				messages.append("[color=%s]%s dropped: %s![/color]" % [
-					_get_rarity_color(item.get("rarity", "common")),
-					monster.name,
-					item.get("name", "Unknown Item")
-				])
-
-			return {
-				"success": true,
-				"messages": messages,
-				"combat_ended": true,
-				"victory": true,
-				"monster_name": monster.name,
-				"monster_level": monster.level,
-				"flock_chance": monster.get("flock_chance", 0),
-				"dropped_items": dropped_items,
-				"gems_earned": gems_earned
-			}
+			# Monster defeated - process victory with ability bonuses
+			return _process_victory_with_abilities(combat, messages)
 	else:
 		# Miss
 		messages.append("[color=#FF6B6B]You swing at the %s but miss![/color]" % monster.name)
-	
+
 	combat.player_can_act = false
-	
+
 	return {
 		"success": true,
 		"messages": messages,
 		"combat_ended": false
+	}
+
+func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dictionary:
+	"""Process monster defeat with all ability effects (death message, bonuses, curses)"""
+	var character = combat.character
+	var monster = combat.monster
+	var abilities = monster.get("abilities", [])
+
+	# Custom death message
+	var death_msg = monster.get("death_message", "")
+	if death_msg != "":
+		messages.append("[color=#FFD700]%s[/color]" % death_msg)
+	else:
+		messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
+
+	# Death curse ability: deal damage on death
+	if ABILITY_DEATH_CURSE in abilities:
+		var curse_damage = int(monster.max_hp * 0.25)
+		character.current_hp -= curse_damage
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#9B59B6]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
+
+	# Calculate XP with level difference bonus
+	var base_xp = monster.experience_reward
+	var xp_level_diff = monster.level - character.level
+	var xp_multiplier = 1.0
+
+	if xp_level_diff > 0:
+		if xp_level_diff <= 50:
+			xp_multiplier = 1.0 + (xp_level_diff * 0.10)
+		else:
+			xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+
+	var final_xp = int(base_xp * xp_multiplier)
+
+	# Gold calculation with gold hoarder bonus
+	var gold = monster.gold_reward
+	if ABILITY_GOLD_HOARDER in abilities:
+		gold = gold * 3
+		messages.append("[color=#FFD700]The gold hoarder drops a massive treasure![/color]")
+
+	# Easy prey: reduced rewards
+	if ABILITY_EASY_PREY in abilities:
+		final_xp = int(final_xp * 0.5)
+		gold = int(gold * 0.5)
+
+	if xp_level_diff >= 10:
+		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
+	else:
+		messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
+	messages.append("[color=#FFD700]You gain %d gold![/color]" % gold)
+
+	# Award experience and gold
+	character.add_experience(final_xp)
+	character.gold += gold
+
+	# Gem drops with gem bearer bonus
+	var gems_earned = roll_gem_drops(monster, character)
+	if ABILITY_GEM_BEARER in abilities:
+		gems_earned = max(1, gems_earned * 2) if gems_earned > 0 else randi_range(1, 3)
+		messages.append("[color=#00FFFF]The gem bearer's hoard glitters![/color]")
+
+	if gems_earned > 0:
+		character.gems += gems_earned
+		messages.append("[color=#00FFFF]You found %d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+
+	# Wish granter ability: grant a powerful buff
+	if ABILITY_WISH_GRANTER in abilities:
+		# Grant a random powerful buff for several battles
+		var wish_type = randi() % 4
+		match wish_type:
+			0:
+				character.add_persistent_buff("damage", 50, 10)
+				messages.append("[color=#FFD700]WISH GRANTED: +50%% damage for 10 battles![/color]")
+			1:
+				character.add_persistent_buff("defense", 50, 10)
+				messages.append("[color=#FFD700]WISH GRANTED: +50%% defense for 10 battles![/color]")
+			2:
+				character.add_persistent_buff("speed", 30, 10)
+				messages.append("[color=#FFD700]WISH GRANTED: +30 speed for 10 battles![/color]")
+			3:
+				# Heal to full and bonus max HP
+				character.current_hp = character.max_hp
+				messages.append("[color=#FFD700]WISH GRANTED: Full HP restored![/color]")
+
+	# Roll for item drops
+	var dropped_items = roll_combat_drops(monster, character)
+	for item in dropped_items:
+		messages.append("[color=%s]%s dropped: %s![/color]" % [
+			_get_rarity_color(item.get("rarity", "common")),
+			monster.name,
+			item.get("name", "Unknown Item")
+		])
+
+	# Pack leader: higher flock chance
+	var flock = monster.get("flock_chance", 0)
+	if ABILITY_PACK_LEADER in abilities:
+		flock = min(75, flock + 25)
+
+	return {
+		"success": true,
+		"messages": messages,
+		"combat_ended": true,
+		"victory": true,
+		"monster_name": monster.name,
+		"monster_level": monster.level,
+		"flock_chance": flock,
+		"dropped_items": dropped_items,
+		"gems_earned": gems_earned,
+		"summon_next_fight": combat.get("summon_next_fight", "")
 	}
 
 func process_defend(combat: Dictionary) -> Dictionary:
@@ -858,60 +992,8 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 	return {}
 
 func _process_victory(combat: Dictionary, messages: Array) -> Dictionary:
-	"""Process monster defeat and return victory result"""
-	var character = combat.character
-	var monster = combat.monster
-
-	messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
-
-	# Calculate XP with level difference bonus
-	var base_xp = monster.experience_reward
-	var xp_level_diff = monster.level - character.level
-	var xp_multiplier = 1.0
-
-	if xp_level_diff > 0:
-		if xp_level_diff <= 50:
-			xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-		else:
-			xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
-
-	var final_xp = int(base_xp * xp_multiplier)
-	var gold = monster.gold_reward
-
-	var level_result = character.add_experience(final_xp)
-	character.gold += gold
-
-	messages.append("[color=#9B59B6]+%d XP[/color] | [color=#FFD700]+%d gold[/color]" % [final_xp, gold])
-
-	if level_result.leveled_up:
-		messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
-
-	# Roll for item drops
-	var dropped_items = []
-	var gems_earned = 0
-	if drop_tables:
-		var drops_result = drop_tables.roll_drops(
-			monster.get("drop_table_id", "tier1"),
-			monster.get("drop_chance", 5),
-			monster.level
-		)
-		dropped_items = drops_result
-		gems_earned = roll_gem_drops(monster, character)
-		if gems_earned > 0:
-			character.gems += gems_earned
-			messages.append("[color=#00FFFF]+%d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
-
-	return {
-		"success": true,
-		"messages": messages,
-		"combat_ended": true,
-		"victory": true,
-		"monster_name": monster.name,
-		"monster_level": monster.level,
-		"flock_chance": monster.get("flock_chance", 0),
-		"dropped_items": dropped_items,
-		"gems_earned": gems_earned
-	}
+	"""Process monster defeat and return victory result - redirects to ability-aware version"""
+	return _process_victory_with_abilities(combat, messages)
 
 func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	"""Process using an item during combat. Returns result with messages."""
@@ -981,14 +1063,40 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	}
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
-	"""Process the monster's attack"""
+	"""Process the monster's attack with all ability effects"""
 	var character = combat.character
 	var monster = combat.monster
+	var abilities = monster.get("abilities", [])
+	var messages = []
 
 	# Check if monster is stunned (Shield Bash)
 	if combat.get("monster_stunned", false):
 		combat.erase("monster_stunned")
 		return {"success": true, "message": "[color=#95A5A6]The %s is stunned and cannot act![/color]" % monster.name}
+
+	# === PRE-ATTACK ABILITIES ===
+
+	# Coward ability: flee at 20% HP (no loot)
+	if ABILITY_COWARD in abilities:
+		var hp_percent = float(monster.current_hp) / float(monster.max_hp)
+		if hp_percent <= 0.2:
+			return {
+				"success": true,
+				"message": "[color=#FFD700]The %s flees in terror! It escapes with its loot...[/color]" % monster.name,
+				"monster_fled": true
+			}
+
+	# Regeneration ability: heal 10% HP per turn
+	if ABILITY_REGENERATION in abilities:
+		var heal_amount = max(1, int(monster.max_hp * 0.10))
+		monster.current_hp = min(monster.max_hp, monster.current_hp + heal_amount)
+		messages.append("[color=#90EE90]The %s regenerates %d HP![/color]" % [monster.name, heal_amount])
+
+	# Enrage ability: +10% damage per round
+	if ABILITY_ENRAGE in abilities:
+		combat["enrage_stacks"] = combat.get("enrage_stacks", 0) + 1
+		if combat.enrage_stacks > 1:
+			messages.append("[color=#FF6B6B]The %s grows more furious! (+%d%% damage)[/color]" % [monster.name, combat.enrage_stacks * 10])
 
 	# Check for Forcefield (blocks attacks completely)
 	var forcefield = combat.get("forcefield_charges", 0)
@@ -996,17 +1104,24 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		combat["forcefield_charges"] = forcefield - 1
 		var charges_left = forcefield - 1
 		if charges_left > 0:
-			return {"success": true, "message": "[color=#9B59B6]Your Forcefield absorbs the attack! (%d charge%s left)[/color]" % [charges_left, "s" if charges_left > 1 else ""]}
+			messages.append("[color=#9B59B6]Your Forcefield absorbs the attack! (%d charge%s left)[/color]" % [charges_left, "s" if charges_left > 1 else ""])
 		else:
-			return {"success": true, "message": "[color=#9B59B6]Your Forcefield absorbs the attack! (Shield breaks)[/color]"}
+			messages.append("[color=#9B59B6]Your Forcefield absorbs the attack! (Shield breaks)[/color]")
+		return {"success": true, "message": "\n".join(messages)}
+
+	# === ATTACK CALCULATION ===
 
 	# Monster hit chance: 85% base, +1% per monster level above player (cap 95%)
-	# Defending reduces hit chance by 15%
 	var player_level = character.level
 	var monster_level = monster.level
 	var level_diff = monster_level - player_level
 	var hit_chance = 85 + level_diff
 	hit_chance = clamp(hit_chance, 60, 95)
+
+	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
+	# but ethereal monsters also have lower hit chance
+	if ABILITY_ETHEREAL in abilities:
+		hit_chance -= 10  # Ethereal creatures are less precise
 
 	# Defending reduces monster hit chance
 	var is_defending = combat.get("defending", false)
@@ -1021,53 +1136,152 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if combat.get("cloak_active", false):
 		combat.erase("cloak_active")
 		if randi() % 100 < 50:
-			return {"success": true, "message": "[color=#9B59B6]Your Cloak causes the %s to miss![/color]" % monster.name}
+			messages.append("[color=#9B59B6]Your Cloak causes the %s to miss![/color]" % monster.name)
+			return {"success": true, "message": "\n".join(messages)}
 
 	# Distract: -50% accuracy (one time)
 	if combat.get("enemy_distracted", false):
 		combat.erase("enemy_distracted")
 		hit_chance = int(hit_chance * 0.5)
 
-	var hit_roll = randi() % 100
+	# === DETERMINE NUMBER OF ATTACKS ===
+	var num_attacks = 1
+	if ABILITY_MULTI_STRIKE in abilities:
+		num_attacks = randi_range(2, 3)
+		messages.append("[color=#FF6B6B]The %s attacks multiple times![/color]" % monster.name)
 
-	if hit_roll < hit_chance:
-		# Monster hits
-		var damage = calculate_monster_damage(monster, character)
+	var total_damage = 0
+	var hits = 0
 
-		# Apply damage reduction buff (Iron Skin)
-		var damage_reduction = character.get_buff_value("damage_reduction")
-		if damage_reduction > 0:
-			damage = int(damage * (1.0 - damage_reduction / 100.0))
-			damage = max(1, damage)
+	for attack_num in range(num_attacks):
+		var hit_roll = randi() % 100
 
-		# Apply defense buff (Shield spell)
-		var defense_buff = character.get_buff_value("defense")
-		if defense_buff > 0:
-			var reduction = 1.0 - (defense_buff / 100.0)
-			damage = int(damage * reduction)
-			damage = max(1, damage)
+		if hit_roll < hit_chance:
+			# Monster hits
+			var damage = calculate_monster_damage(monster, character)
 
-		character.current_hp -= damage
+			# Ambusher ability: first attack crits
+			if combat.get("ambusher_active", false):
+				combat["ambusher_active"] = false
+				damage = int(damage * 2.0)
+				messages.append("[color=#FF0000]AMBUSH! The %s strikes from the shadows![/color]" % monster.name)
+
+			# Berserker ability: +50% damage when below 50% HP
+			if ABILITY_BERSERKER in abilities:
+				var hp_percent = float(monster.current_hp) / float(monster.max_hp)
+				if hp_percent <= 0.5:
+					damage = int(damage * 1.5)
+					if attack_num == 0:
+						messages.append("[color=#FF6B6B]The %s enters a berserker rage![/color]" % monster.name)
+
+			# Enrage stacks
+			var enrage = combat.get("enrage_stacks", 0)
+			if enrage > 0:
+				damage = int(damage * (1.0 + enrage * 0.10))
+
+			# Unpredictable ability: wild damage variance (0.5x to 2.5x)
+			if ABILITY_UNPREDICTABLE in abilities:
+				var variance = randf_range(0.5, 2.5)
+				damage = int(damage * variance)
+				if variance > 1.8:
+					messages.append("[color=#FF0000]The %s strikes with unexpected ferocity![/color]" % monster.name)
+				elif variance < 0.7:
+					messages.append("[color=#90EE90]The %s's attack is feeble this time.[/color]" % monster.name)
+
+			# Apply damage reduction buff (Iron Skin)
+			var damage_reduction = character.get_buff_value("damage_reduction")
+			if damage_reduction > 0:
+				damage = int(damage * (1.0 - damage_reduction / 100.0))
+				damage = max(1, damage)
+
+			# Apply defense buff (Shield spell)
+			var defense_buff = character.get_buff_value("defense")
+			if defense_buff > 0:
+				var reduction = 1.0 - (defense_buff / 100.0)
+				damage = int(damage * reduction)
+				damage = max(1, damage)
+
+			total_damage += damage
+			hits += 1
+
+			# Life steal ability: heal for 50% of damage dealt
+			if ABILITY_LIFE_STEAL in abilities:
+				var heal = int(damage * 0.5)
+				monster.current_hp = min(monster.max_hp, monster.current_hp + heal)
+				messages.append("[color=#FF6B6B]The %s drains %d life from you![/color]" % [monster.name, heal])
+
+	if hits > 0:
+		character.current_hp -= total_damage
 
 		# Check for Dwarf Last Stand (survive lethal damage with 1 HP)
 		if character.current_hp <= 0:
 			if character.try_last_stand():
-				# Last Stand triggered! Survive with 1 HP
-				var msg = "[color=#FF6B6B]The %s attacks and deals %d damage![/color]\n" % [monster.name, damage]
-				msg += "[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]"
-				return {"success": true, "message": msg, "last_stand": true}
+				character.current_hp = 1
+				messages.append("[color=#FF6B6B]The %s attacks and deals %d damage![/color]" % [monster.name, total_damage])
+				messages.append("[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]")
+				return {"success": true, "message": "\n".join(messages), "last_stand": true}
 
 		character.current_hp = max(0, character.current_hp)
 
-		var msg = "[color=#FF6B6B]The %s attacks and deals %d damage![/color]" % [monster.name, damage]
-		return {"success": true, "message": msg}
+		if num_attacks > 1:
+			messages.append("[color=#FF6B6B]The %s hits %d times for %d total damage![/color]" % [monster.name, hits, total_damage])
+		else:
+			messages.append("[color=#FF6B6B]The %s attacks and deals %d damage![/color]" % [monster.name, total_damage])
 	else:
-		# Monster misses
-		var msg = "[color=#90EE90]The %s attacks but misses![/color]" % monster.name
-		return {"success": true, "message": msg}
+		messages.append("[color=#90EE90]The %s attacks but misses![/color]" % monster.name)
+
+	# === POST-ATTACK ABILITIES ===
+
+	# Poison ability: apply poison if not already active
+	if ABILITY_POISON in abilities and not combat.get("poison_active", false):
+		if randi() % 100 < 40:  # 40% chance to poison
+			combat["poison_active"] = true
+			combat["poison_damage"] = max(1, int(monster.strength * 0.2))
+			messages.append("[color=#9B59B6]You have been poisoned! (-%d HP/round)[/color]" % combat.poison_damage)
+
+	# Mana drain ability
+	if ABILITY_MANA_DRAIN in abilities and hits > 0:
+		var drain = randi_range(5, 20) + int(monster_level / 10)
+		character.current_mana = max(0, character.current_mana - drain)
+		messages.append("[color=#9B59B6]The %s drains %d mana![/color]" % [monster.name, drain])
+
+	# Stamina drain ability
+	if ABILITY_STAMINA_DRAIN in abilities and hits > 0:
+		var drain = randi_range(5, 15) + int(monster_level / 10)
+		character.current_stamina = max(0, character.current_stamina - drain)
+		messages.append("[color=#FF6B6B]The %s drains %d stamina![/color]" % [monster.name, drain])
+
+	# Energy drain ability
+	if ABILITY_ENERGY_DRAIN in abilities and hits > 0:
+		var drain = randi_range(5, 15) + int(monster_level / 10)
+		character.current_energy = max(0, character.current_energy - drain)
+		messages.append("[color=#FFA500]The %s drains %d energy![/color]" % [monster.name, drain])
+
+	# Curse ability: reduce a random stat for rest of combat (once)
+	if ABILITY_CURSE in abilities and not combat.get("curse_applied", false):
+		if randi() % 100 < 30:  # 30% chance
+			combat["curse_applied"] = true
+			character.add_buff("defense_penalty", -25, 999)  # Lasts entire combat
+			messages.append("[color=#9B59B6]The %s curses you! (-25%% defense)[/color]" % monster.name)
+
+	# Disarm ability: reduce weapon damage temporarily (once)
+	if ABILITY_DISARM in abilities and not combat.get("disarm_applied", false):
+		if randi() % 100 < 25:  # 25% chance
+			combat["disarm_applied"] = true
+			character.add_buff("damage", -30, 3)  # -30% damage for 3 rounds
+			messages.append("[color=#FF6B6B]The %s disarms you! (-30%% damage for 3 rounds)[/color]" % monster.name)
+
+	# Summoner ability: call reinforcements (once per combat)
+	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
+		if randi() % 100 < 20:  # 20% chance
+			combat["summoner_triggered"] = true
+			combat["summon_next_fight"] = monster.name  # Server will handle spawning
+			messages.append("[color=#FF6B6B]The %s calls for reinforcements![/color]" % monster.name)
+
+	return {"success": true, "message": "\n".join(messages)}
 
 func calculate_damage(character: Character, monster: Dictionary) -> int:
-	"""Calculate player damage to monster (includes equipment and buff bonuses)"""
+	"""Calculate player damage to monster (includes equipment, buffs, and class advantage)"""
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
 
@@ -1089,7 +1303,47 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
 	var total = int(raw_damage * (1.0 - damage_reduction))
 
+	# Apply class advantage multiplier
+	var affinity = monster.get("class_affinity", 0)
+	var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
+	total = int(total * class_multiplier)
+
 	return max(1, total)  # Minimum 1 damage
+
+func _get_class_advantage_multiplier(affinity: int, character_class: String) -> float:
+	"""Calculate damage multiplier based on class affinity.
+	Returns: 1.0 (neutral), 1.5 (advantage), 0.75 (disadvantage)"""
+	var player_path = _get_player_class_path(character_class)
+
+	match affinity:
+		1:  # PHYSICAL - Warriors do +50%, Mages do -25%
+			if player_path == "warrior":
+				return 1.5
+			elif player_path == "mage":
+				return 0.75
+		2:  # MAGICAL - Mages do +50%, Warriors do -25%
+			if player_path == "mage":
+				return 1.5
+			elif player_path == "warrior":
+				return 0.75
+		3:  # CUNNING - Tricksters do +50%, others do -25%
+			if player_path == "trickster":
+				return 1.5
+			else:
+				return 0.75
+	return 1.0  # Neutral
+
+func _get_player_class_path(character_class: String) -> String:
+	"""Determine the combat path of a character class"""
+	match character_class.to_lower():
+		"fighter", "barbarian", "paladin":
+			return "warrior"
+		"wizard", "sorcerer", "sage":
+			return "mage"
+		"thief", "ranger", "ninja":
+			return "trickster"
+		_:
+			return "warrior"  # Default
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	"""Calculate monster damage to player (reduced by equipment defense and buffs)"""
@@ -1148,11 +1402,15 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	"""Get formatted combat state for display"""
 	if not active_combats.has(peer_id):
 		return {}
-	
+
 	var combat = active_combats[peer_id]
 	var character = combat.character
 	var monster = combat.monster
-	
+
+	# Get monster's class affinity for color coding
+	var affinity = monster.get("class_affinity", 0)
+	var name_color = _get_affinity_color(affinity)
+
 	return {
 		"round": combat.round,
 		"player_name": character.name,
@@ -1170,7 +1428,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_hp": monster.current_hp,
 		"monster_max_hp": monster.max_hp,
 		"monster_hp_percent": int((float(monster.current_hp) / monster.max_hp) * 100),
-		"can_act": combat.player_can_act
+		"monster_name_color": name_color,  # Color based on class affinity
+		"monster_affinity": affinity,
+		"can_act": combat.player_can_act,
+		# Combat status effects
+		"poison_active": combat.get("poison_active", false),
+		"poison_damage": combat.get("poison_damage", 0)
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:
@@ -1640,11 +1903,61 @@ func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
 	return result
 
 func generate_combat_start_message(character: Character, monster: Dictionary) -> String:
-	"""Generate the initial combat message with ASCII art"""
+	"""Generate the initial combat message with ASCII art and color-coded name"""
 	var ascii_art = get_monster_ascii_art(monster.name)
 	var bordered_art = add_border_to_ascii_art(ascii_art, monster.name)
-	var msg = bordered_art + "\n[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
+
+	# Get class affinity color
+	var affinity = monster.get("class_affinity", 0)  # 0 = NEUTRAL
+	var name_color = _get_affinity_color(affinity)
+
+	# Build encounter message with colored monster name
+	var msg = bordered_art + "\n[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
+
+	# Add hint about class affinity if not neutral
+	if affinity != 0:
+		var hint = ""
+		match affinity:
+			1:  # PHYSICAL
+				hint = "[color=#FFFF00](Weak to Warriors)[/color]"
+			2:  # MAGICAL
+				hint = "[color=#00BFFF](Weak to Mages)[/color]"
+			3:  # CUNNING
+				hint = "[color=#00FF00](Weak to Tricksters)[/color]"
+		msg += "\n" + hint
+
+	# Show notable abilities
+	var abilities = monster.get("abilities", [])
+	var notable_abilities = []
+	if ABILITY_GLASS_CANNON in abilities:
+		notable_abilities.append("[color=#FF6B6B]Glass Cannon[/color]")
+	if ABILITY_REGENERATION in abilities:
+		notable_abilities.append("[color=#90EE90]Regenerates[/color]")
+	if ABILITY_POISON in abilities:
+		notable_abilities.append("[color=#9B59B6]Venomous[/color]")
+	if ABILITY_LIFE_STEAL in abilities:
+		notable_abilities.append("[color=#FF6B6B]Life Stealer[/color]")
+	if ABILITY_GEM_BEARER in abilities:
+		notable_abilities.append("[color=#00FFFF]Gem Bearer[/color]")
+	if ABILITY_WISH_GRANTER in abilities:
+		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
+
+	if notable_abilities.size() > 0:
+		msg += "\n[color=#95A5A6]Traits: %s[/color]" % ", ".join(notable_abilities)
+
 	return msg
+
+func _get_affinity_color(affinity: int) -> String:
+	"""Get the color code for a class affinity"""
+	match affinity:
+		1:  # PHYSICAL
+			return "#FFFF00"  # Yellow - weak to Warriors
+		2:  # MAGICAL
+			return "#00BFFF"  # Blue - weak to Mages
+		3:  # CUNNING
+			return "#00FF00"  # Green - weak to Tricksters
+		_:
+			return "#FFFFFF"  # White - neutral
 
 func to_dict() -> Dictionary:
 	return {
