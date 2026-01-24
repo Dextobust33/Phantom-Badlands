@@ -11,9 +11,9 @@ const WORLD_MAX_Y = 1000
 
 # Terrain types (matching P4)
 enum Terrain {
-	THRONE,          # (0,0) - King's throne
+	THRONE,          # (0,0) - King's throne (now part of Crossroads Trading Post)
 	CITY,            # Safe zone, shops
-	TRADING_POST,    # Buy/sell
+	TRADING_POST,    # Trading Post safe zones
 	PLAINS,          # Basic terrain, low danger
 	FOREST,          # Light encounters
 	DEEP_FOREST,     # Medium danger
@@ -25,34 +25,44 @@ enum Terrain {
 	VOID             # Beyond the edge
 }
 
-# Special locations (like P4)
+# Special locations - major landmarks only (Trading Posts handled separately)
 const SPECIAL_LOCATIONS = {
-	Vector2i(0, 0): {"terrain": Terrain.THRONE, "name": "Throne Room", "description": "The magnificent throne of the realm"},
-	Vector2i(0, 10): {"terrain": Terrain.CITY, "name": "Sanctuary", "description": "A safe haven for travelers"},
-	Vector2i(0, -10): {"terrain": Terrain.CITY, "name": "Northtown", "description": "A bustling northern city"},
 	Vector2i(400, 0): {"terrain": Terrain.DARK_CIRCLE, "name": "Dark Circle", "description": "A place of great danger and power"},
 	Vector2i(-400, 0): {"terrain": Terrain.VOLCANO, "name": "Fire Mountain", "description": "An active volcano"},
 }
 
+# Preload Trading Post database
+const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
+
+# Trading Post database reference
+var trading_post_db: Node = null
+
 func _ready():
 	print("World System initialized - Phantasia 4 style")
+	# Initialize trading post database
+	trading_post_db = TradingPostDatabaseScript.new()
+	add_child(trading_post_db)
 
 func get_terrain_at(x: int, y: int) -> Terrain:
 	"""Determine terrain based on coordinates (procedural like P4)"""
 	var pos = Vector2i(x, y)
-	
-	# Check special locations first
+
+	# Check Trading Posts first - they are safe zones
+	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+		return Terrain.TRADING_POST
+
+	# Check special locations
 	if SPECIAL_LOCATIONS.has(pos):
 		return SPECIAL_LOCATIONS[pos].terrain
-	
-	# Throne area (close to 0,0)
-	var distance_from_throne = sqrt(x * x + y * y)
-	
-	if distance_from_throne < 5:
-		return Terrain.CITY
-	elif distance_from_throne < 50:
+
+	# Distance-based terrain
+	var distance_from_center = sqrt(x * x + y * y)
+
+	if distance_from_center < 5:
+		return Terrain.PLAINS  # Near center is open plains
+	elif distance_from_center < 50:
 		return Terrain.PLAINS
-	elif distance_from_throne < 100:
+	elif distance_from_center < 100:
 		# Use coordinate hash for variety
 		var hash_val = abs(x * 7 + y * 13) % 100
 		if hash_val < 40:
@@ -61,7 +71,7 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 			return Terrain.PLAINS
 		else:
 			return Terrain.MOUNTAINS
-	elif distance_from_throne < 200:
+	elif distance_from_center < 200:
 		var hash_val = abs(x * 7 + y * 13) % 100
 		if hash_val < 30:
 			return Terrain.DEEP_FOREST
@@ -71,7 +81,7 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 			return Terrain.SWAMP
 		else:
 			return Terrain.FOREST
-	elif distance_from_throne < 400:
+	elif distance_from_center < 400:
 		var hash_val = abs(x * 7 + y * 13) % 100
 		if hash_val < 40:
 			return Terrain.DESERT
@@ -214,10 +224,15 @@ func get_terrain_info(terrain: Terrain) -> Dictionary:
 func get_location_name(x: int, y: int) -> String:
 	"""Get the name of a location"""
 	var pos = Vector2i(x, y)
-	
+
+	# Check Trading Posts first
+	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+		var tp = trading_post_db.get_trading_post_at(x, y)
+		return tp.get("name", "Trading Post")
+
 	if SPECIAL_LOCATIONS.has(pos):
 		return SPECIAL_LOCATIONS[pos].name
-	
+
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
 	return info.name
@@ -229,6 +244,15 @@ func get_location_description(x: int, y: int) -> String:
 	var info = get_terrain_info(terrain)
 
 	var desc = ""
+
+	# Trading Post description
+	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+		var tp = trading_post_db.get_trading_post_at(x, y)
+		desc += "[color=#FFD700][b]%s[/b][/color]\n" % tp.get("name", "Trading Post")
+		desc += "%s\n" % tp.get("description", "A trading hub")
+		desc += "[b]Quest Giver:[/b] %s\n" % tp.get("quest_giver", "Unknown")
+		desc += "[color=#90EE90]This is a safe area[/color]\n"
+		return desc
 
 	# Special location description
 	if SPECIAL_LOCATIONS.has(pos):
@@ -295,6 +319,18 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 	"""Generate complete map display with location info header"""
 	var output = ""
 
+	# Check if at Trading Post
+	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
+		var tp = trading_post_db.get_trading_post_at(center_x, center_y)
+		output += "[color=#FFD700][b]%s[/b][/color]\n" % tp.get("name", "Trading Post")
+		output += "[color=#B8860B]Location:[/color] [color=#5F9EA0][b](%d, %d)[/b][/color]\n" % [center_x, center_y]
+		output += "[color=#90EE90]Safe Zone[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
+		output += "\n"
+		output += "[center]"
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius)
+		output += "[/center]"
+		return output
+
 	# Get location info
 	var terrain = get_terrain_at(center_x, center_y)
 	var info = get_terrain_info(terrain)
@@ -306,7 +342,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 	output += "[color=#B8860B]Location:[/color] [color=#5F9EA0][b](%d, %d)[/b][/color]\n" % [center_x, center_y]
 	output += "[color=#B8860B]Terrain:[/color] %s\n" % info.name
 
-	# Merchant at current location
+	# Merchant at current location (not in Trading Posts)
 	if is_merchant_at(center_x, center_y):
 		var merchant = get_merchant_at(center_x, center_y)
 		output += "[color=#FFD700][b]%s nearby![/b][/color]\n" % merchant.name
@@ -532,6 +568,10 @@ func get_direction_name(direction: int) -> String:
 
 func is_merchant_at(x: int, y: int) -> bool:
 	"""Check if a traveling merchant is at this location"""
+	# No wandering merchants inside Trading Posts - they have built-in services
+	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+		return false
+
 	# Normal merchants: ~0.2% of tiles, move every hour
 	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
 	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
@@ -615,7 +655,7 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 	}
 
 func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7) -> String:
-	"""Generate ASCII map with merchants shown"""
+	"""Generate ASCII map with merchants and Trading Posts shown"""
 	var map_lines: PackedStringArray = PackedStringArray()
 
 	for dy in range(radius, -radius - 1, -1):
@@ -630,6 +670,24 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 
 			if dx == 0 and dy == 0:
 				line_parts.append("[color=#FFFF00] @[/color]")
+			elif trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+				# Trading Post tiles with special rendering
+				var tp_char = trading_post_db.get_tile_position_in_post(x, y)
+				if tp_char == "P":
+					# Center - gold P
+					line_parts.append("[color=#FFD700] P[/color]")
+				elif tp_char == "+":
+					# Corners - tan
+					line_parts.append("[color=#D2B48C] +[/color]")
+				elif tp_char == "-":
+					# Horizontal edges - tan
+					line_parts.append("[color=#D2B48C] -[/color]")
+				elif tp_char == "|":
+					# Vertical edges - tan
+					line_parts.append("[color=#D2B48C] |[/color]")
+				else:
+					# Interior - light background
+					line_parts.append("[color=#C4A84B] .[/color]")
 			elif is_merchant_at(x, y):
 				# Show merchant as $ in gold
 				line_parts.append("[color=#FFD700] $[/color]")
@@ -647,6 +705,70 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 		map_lines.append("".join(line_parts))
 
 	return "\n".join(map_lines)
+
+# ===== TRADING POST HELPERS =====
+
+func is_trading_post_tile(x: int, y: int) -> bool:
+	"""Check if tile is part of any Trading Post"""
+	if trading_post_db:
+		return trading_post_db.is_trading_post_tile(x, y)
+	return false
+
+func get_trading_post_at(x: int, y: int) -> Dictionary:
+	"""Get Trading Post data if at one, empty dict otherwise"""
+	if trading_post_db:
+		return trading_post_db.get_trading_post_at(x, y)
+	return {}
+
+func is_trading_post_center(x: int, y: int) -> bool:
+	"""Check if tile is the center of a Trading Post"""
+	if trading_post_db:
+		return trading_post_db.is_trading_post_center(x, y)
+	return false
+
+func find_nearby_hotzone(x: int, y: int, max_distance: float) -> Dictionary:
+	"""Find the nearest hotzone within the specified distance.
+	Returns {found: bool, x: int, y: int, distance: float, intensity: float} or {found: false}"""
+	# Search in a spiral pattern outward from the position
+	var search_radius = int(max_distance) + 1
+
+	var nearest_hotzone = {"found": false}
+	var nearest_dist = max_distance + 1
+
+	for check_x in range(x - search_radius, x + search_radius + 1):
+		for check_y in range(y - search_radius, y + search_radius + 1):
+			var dist = sqrt(float((check_x - x) * (check_x - x) + (check_y - y) * (check_y - y)))
+			if dist <= max_distance and dist < nearest_dist:
+				if _is_hotspot(check_x, check_y):
+					nearest_dist = dist
+					nearest_hotzone = {
+						"found": true,
+						"x": check_x,
+						"y": check_y,
+						"distance": dist,
+						"intensity": _get_hotspot_intensity(check_x, check_y)
+					}
+
+	return nearest_hotzone
+
+func find_hotzones_within_distance(x: int, y: int, max_distance: float) -> Array:
+	"""Find all hotzones within the specified distance.
+	Returns array of {x, y, distance, intensity}"""
+	var hotzones = []
+	var search_radius = int(max_distance) + 1
+
+	for check_x in range(x - search_radius, x + search_radius + 1):
+		for check_y in range(y - search_radius, y + search_radius + 1):
+			var dist = sqrt(float((check_x - x) * (check_x - x) + (check_y - y) * (check_y - y)))
+			if dist <= max_distance and _is_hotspot(check_x, check_y):
+				hotzones.append({
+					"x": check_x,
+					"y": check_y,
+					"distance": dist,
+					"intensity": _get_hotspot_intensity(check_x, check_y)
+				})
+
+	return hotzones
 
 func to_dict() -> Dictionary:
 	"""Serialize world system state"""

@@ -10,6 +10,9 @@ const PORT = 9080
 @onready var server_log = $VBox/ServerLog
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
+const QuestDatabaseScript = preload("res://shared/quest_database.gd")
+const QuestManagerScript = preload("res://shared/quest_manager.gd")
+const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
 
 var server = TCPServer.new()
 var peers = {}
@@ -19,11 +22,15 @@ var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
 var at_merchant = {}  # peer_id -> merchant_info dictionary
+var at_trading_post = {}  # peer_id -> trading_post_data dictionary
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
 var persistence: Node
 var drop_tables: Node
+var quest_db: Node
+var quest_mgr: Node
+var trading_post_db: Node
 
 # Auto-save timer
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
@@ -54,6 +61,16 @@ func _ready():
 	add_child(drop_tables)
 	combat_mgr.set_drop_tables(drop_tables)
 	combat_mgr.set_monster_database(monster_db)
+
+	# Initialize quest systems
+	quest_db = QuestDatabaseScript.new()
+	add_child(quest_db)
+	quest_mgr = QuestManagerScript.new()
+	add_child(quest_mgr)
+
+	# Initialize trading post database
+	trading_post_db = TradingPostDatabaseScript.new()
+	add_child(trading_post_db)
 
 	var error = server.listen(PORT)
 	if error != OK:
@@ -243,6 +260,24 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_merchant_leave(peer_id)
 		"change_password":
 			handle_change_password(peer_id, message)
+		# Trading Post handlers
+		"trading_post_shop":
+			handle_trading_post_shop(peer_id)
+		"trading_post_quests":
+			handle_trading_post_quests(peer_id)
+		"trading_post_recharge":
+			handle_trading_post_recharge(peer_id)
+		"trading_post_leave":
+			handle_trading_post_leave(peer_id)
+		# Quest handlers
+		"quest_accept":
+			handle_quest_accept(peer_id, message)
+		"quest_abandon":
+			handle_quest_abandon(peer_id, message)
+		"quest_turn_in":
+			handle_quest_turn_in(peer_id, message)
+		"get_quest_log":
+			handle_get_quest_log(peer_id)
 		_:
 			pass
 
@@ -711,6 +746,21 @@ func handle_move(peer_id: int, message: Dictionary):
 	send_location_update(peer_id)
 	send_character_update(peer_id)
 
+	# Check for Trading Post first (safe zone with services)
+	if world_system.is_trading_post_tile(new_pos.x, new_pos.y):
+		# Check exploration quest progress
+		check_exploration_quest_progress(peer_id, new_pos.x, new_pos.y)
+
+		# Auto-trigger Trading Post encounter if entering
+		if not at_trading_post.has(peer_id):
+			trigger_trading_post_encounter(peer_id)
+		return  # No other encounters in Trading Posts
+
+	# Leaving Trading Post
+	if at_trading_post.has(peer_id):
+		at_trading_post.erase(peer_id)
+		send_to_peer(peer_id, {"type": "trading_post_end"})
+
 	# Check for merchant first
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
 		trigger_merchant_encounter(peer_id)
@@ -829,10 +879,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	var result = combat_mgr.process_combat_command(peer_id, command)
 
 	if not result.success:
-		send_to_peer(peer_id, {
-			"type": "error",
-			"message": result.message
-		})
+		# Send all error messages
+		for msg in result.get("messages", []):
+			send_to_peer(peer_id, {
+				"type": "combat_message",
+				"message": msg
+			})
 		return
 
 	# Send all combat messages
@@ -847,6 +899,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if result.has("victory") and result.victory:
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
+
+			# Check quest progress for kill-based quests
+			var monster_level_for_quest = result.get("monster_level", 1)
+			check_kill_quest_progress(peer_id, monster_level_for_quest)
 
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
@@ -2276,3 +2332,376 @@ func handle_change_password(peer_id: int, message: Dictionary):
 			"type": "password_change_failed",
 			"reason": result.reason
 		})
+
+# ===== TRADING POST HANDLERS =====
+
+func trigger_trading_post_encounter(peer_id: int):
+	"""Trigger Trading Post encounter when player enters"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var tp = world_system.get_trading_post_at(character.x, character.y)
+
+	if tp.is_empty():
+		return
+
+	# Store Trading Post data for this player
+	at_trading_post[peer_id] = tp
+
+	# Get available quests at this Trading Post
+	var active_quest_ids = []
+	for q in character.active_quests:
+		active_quest_ids.append(q.quest_id)
+
+	var available_quests = quest_db.get_available_quests_for_player(
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+
+	# Check for quests ready to turn in
+	var quests_to_turn_in = []
+	for quest_data in character.active_quests:
+		var quest = quest_db.get_quest(quest_data.quest_id)
+		if not quest.is_empty() and quest.trading_post == tp.id:
+			if quest_data.progress >= quest_data.target:
+				quests_to_turn_in.append(quest_data.quest_id)
+
+	send_to_peer(peer_id, {
+		"type": "trading_post_start",
+		"name": tp.name,
+		"description": tp.description,
+		"quest_giver": tp.quest_giver,
+		"services": ["shop", "quests", "recharge"],
+		"available_quests": available_quests.size(),
+		"quests_to_turn_in": quests_to_turn_in.size()
+	})
+
+func handle_trading_post_shop(peer_id: int):
+	"""Access shop services at a Trading Post"""
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
+		return
+
+	var tp = at_trading_post[peer_id]
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Generate shop inventory for this Trading Post
+	var shop_items = generate_shop_inventory(character.level, hash(tp.id), "all")
+
+	# Create a merchant-like experience using the Trading Post
+	var merchant_info = {
+		"name": tp.name + " Merchant",
+		"services": ["buy", "sell", "upgrade", "gamble"],
+		"specialty": "all",
+		"x": tp.center.x,
+		"y": tp.center.y,
+		"hash": hash(tp.id),
+		"is_trading_post": true,
+		"shop_items": shop_items
+	}
+
+	at_merchant[peer_id] = merchant_info
+
+	# Build services message similar to regular merchants
+	var services_text = []
+	services_text.append("[Q] Sell items")
+	services_text.append("[W] Upgrade equipment")
+	services_text.append("[E] Gamble")
+	if shop_items.size() > 0:
+		services_text.append("[R] Buy items (%d available)" % shop_items.size())
+	if character.gems > 0:
+		services_text.append("[1] Sell gems (%d @ 1000g each)" % character.gems)
+	var recharge_cost = _get_recharge_cost(character.level) / 2  # 50% discount at Trading Posts
+	services_text.append("[2] Recharge resources (%d gold - 50%% off!)" % recharge_cost)
+	services_text.append("[Space] Leave shop")
+
+	send_to_peer(peer_id, {
+		"type": "merchant_start",
+		"merchant": merchant_info,
+		"message": "[color=#FFD700]===== %s MARKETPLACE =====[/color]\n\n%s" % [tp.name.to_upper(), "\n".join(services_text)]
+	})
+
+	_send_merchant_inventory(peer_id)
+	_send_shop_inventory(peer_id)
+
+func handle_trading_post_quests(peer_id: int):
+	"""Access quest giver at a Trading Post"""
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var tp = at_trading_post[peer_id]
+
+	# Get active quest IDs
+	var active_quest_ids = []
+	for q in character.active_quests:
+		active_quest_ids.append(q.quest_id)
+
+	# Get available quests
+	var available_quests = quest_db.get_available_quests_for_player(
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+
+	# Get quests ready to turn in at this Trading Post
+	var quests_to_turn_in = []
+	for quest_data in character.active_quests:
+		var quest = quest_db.get_quest(quest_data.quest_id)
+		if not quest.is_empty() and quest.trading_post == tp.id:
+			if quest_data.progress >= quest_data.target:
+				var rewards = quest_mgr.calculate_rewards(character, quest_data.quest_id)
+				quests_to_turn_in.append({
+					"quest_id": quest_data.quest_id,
+					"name": quest.name,
+					"rewards": rewards
+				})
+
+	send_to_peer(peer_id, {
+		"type": "quest_list",
+		"quest_giver": tp.quest_giver,
+		"trading_post": tp.name,
+		"available_quests": available_quests,
+		"quests_to_turn_in": quests_to_turn_in,
+		"active_count": character.active_quests.size(),
+		"max_quests": Character.MAX_ACTIVE_QUESTS
+	})
+
+func handle_trading_post_recharge(peer_id: int):
+	"""Recharge resources at Trading Post (50% discount)"""
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var tp = at_trading_post[peer_id]
+
+	# Trading Posts give 50% discount on recharge
+	var base_cost = _get_recharge_cost(character.level)
+	var cost = int(base_cost * 0.5)
+
+	# Check if already at full resources
+	var needs_recharge = (character.current_hp < character.max_hp or
+						  character.current_mana < character.max_mana or
+						  character.current_stamina < character.max_stamina or
+						  character.current_energy < character.max_energy)
+
+	if not needs_recharge:
+		send_to_peer(peer_id, {
+			"type": "trading_post_message",
+			"message": "[color=#95A5A6]You are already fully rested.[/color]"
+		})
+		return
+
+	if character.gold < cost:
+		send_to_peer(peer_id, {
+			"type": "trading_post_message",
+			"message": "[color=#E74C3C]You don't have enough gold! Recharge costs %d gold (50%% off).[/color]" % cost
+		})
+		return
+
+	# Deduct gold and restore ALL resources including HP
+	character.gold -= cost
+	character.current_hp = character.max_hp
+	character.current_mana = character.max_mana
+	character.current_stamina = character.max_stamina
+	character.current_energy = character.max_energy
+
+	send_to_peer(peer_id, {
+		"type": "trading_post_message",
+		"message": "[color=#2ECC71]The healers at %s restore you completely![/color]\n[color=#90EE90]All resources fully restored! (-%d gold, 50%% discount)[/color]" % [tp.name, cost]
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_trading_post_leave(peer_id: int):
+	"""Leave a Trading Post"""
+	if at_trading_post.has(peer_id):
+		var tp_name = at_trading_post[peer_id].get("name", "The Trading Post")
+		at_trading_post.erase(peer_id)
+		# Also clear merchant state if they were shopping
+		if at_merchant.has(peer_id):
+			at_merchant.erase(peer_id)
+		send_to_peer(peer_id, {
+			"type": "trading_post_end",
+			"message": "[color=#95A5A6]You leave %s behind.[/color]" % tp_name
+		})
+
+# ===== QUEST HANDLERS =====
+
+func handle_quest_accept(peer_id: int, message: Dictionary):
+	"""Handle quest acceptance"""
+	if not characters.has(peer_id):
+		return
+
+	var quest_id = message.get("quest_id", "")
+	if quest_id.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid quest"})
+		return
+
+	var character = characters[peer_id]
+
+	# Get origin coordinates (Trading Post location)
+	var origin_x = character.x
+	var origin_y = character.y
+
+	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y)
+
+	if result.success:
+		var quest = quest_db.get_quest(quest_id)
+		send_to_peer(peer_id, {
+			"type": "quest_accepted",
+			"quest_id": quest_id,
+			"quest_name": quest.get("name", "Quest"),
+			"message": result.message
+		})
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": result.message
+		})
+
+func handle_quest_abandon(peer_id: int, message: Dictionary):
+	"""Handle quest abandonment"""
+	if not characters.has(peer_id):
+		return
+
+	var quest_id = message.get("quest_id", "")
+	if quest_id.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid quest"})
+		return
+
+	var character = characters[peer_id]
+	var quest = quest_db.get_quest(quest_id)
+
+	if character.abandon_quest(quest_id):
+		send_to_peer(peer_id, {
+			"type": "quest_abandoned",
+			"quest_id": quest_id,
+			"message": "Quest '%s' abandoned." % quest.get("name", "Quest")
+		})
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Quest not found in your active quests"})
+
+func handle_quest_turn_in(peer_id: int, message: Dictionary):
+	"""Handle quest turn-in"""
+	if not characters.has(peer_id):
+		return
+
+	var quest_id = message.get("quest_id", "")
+	if quest_id.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid quest"})
+		return
+
+	var character = characters[peer_id]
+
+	# Check if at the right Trading Post
+	var quest = quest_db.get_quest(quest_id)
+	if quest.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Quest not found"})
+		return
+
+	if at_trading_post.has(peer_id):
+		var tp = at_trading_post[peer_id]
+		if quest.trading_post != tp.id:
+			var required_tp = trading_post_db.TRADING_POSTS.get(quest.trading_post, {})
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "You must return to %s to turn in this quest." % required_tp.get("name", "the quest giver")
+			})
+			return
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to turn in quests"})
+		return
+
+	var result = quest_mgr.turn_in_quest(character, quest_id)
+
+	if result.success:
+		send_to_peer(peer_id, {
+			"type": "quest_turned_in",
+			"quest_id": quest_id,
+			"quest_name": quest.get("name", "Quest"),
+			"message": result.message,
+			"rewards": result.rewards,
+			"leveled_up": result.leveled_up,
+			"new_level": result.new_level
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": result.message})
+
+func handle_get_quest_log(peer_id: int):
+	"""Send quest log to player"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var quest_log = quest_mgr.format_quest_log(character)
+
+	send_to_peer(peer_id, {
+		"type": "quest_log",
+		"log": quest_log,
+		"active_count": character.active_quests.size(),
+		"max_quests": Character.MAX_ACTIVE_QUESTS
+	})
+
+func check_exploration_quest_progress(peer_id: int, x: int, y: int):
+	"""Check and update exploration quest progress when entering a location"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var updates = quest_mgr.check_exploration_progress(character, x, y, world_system)
+
+	for update in updates:
+		send_to_peer(peer_id, {
+			"type": "quest_progress",
+			"quest_id": update.quest_id,
+			"progress": update.progress,
+			"target": update.target,
+			"completed": update.completed,
+			"message": update.message
+		})
+
+	if not updates.is_empty():
+		save_character(peer_id)
+
+func check_kill_quest_progress(peer_id: int, monster_level: int):
+	"""Check and update kill quest progress after combat victory"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Get hotzone info for the player's location
+	var hotspot_info = world_system.get_hotspot_at(character.x, character.y)
+	var hotzone_intensity = 0.0
+	if hotspot_info.in_hotspot:
+		hotzone_intensity = hotspot_info.intensity
+
+	var updates = quest_mgr.check_kill_progress(
+		character, monster_level, character.x, character.y, hotzone_intensity, world_system)
+
+	for update in updates:
+		send_to_peer(peer_id, {
+			"type": "quest_progress",
+			"quest_id": update.quest_id,
+			"progress": update.progress,
+			"target": update.target,
+			"completed": update.completed,
+			"message": update.message
+		})
+
+	if not updates.is_empty():
+		save_character(peer_id)

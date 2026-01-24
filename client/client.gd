@@ -79,6 +79,15 @@ var game_state = GameState.DISCONNECTED
 @onready var player_info_content = $PlayerInfoPanel/VBox/PlayerInfoContent
 @onready var close_player_info_button = $PlayerInfoPanel/VBox/CloseButton
 
+# UI References - Ability Input Popup (created dynamically)
+var ability_popup: Panel = null
+var ability_popup_title: Label = null
+var ability_popup_description: Label = null
+var ability_popup_resource_label: Label = null
+var ability_popup_input: LineEdit = null
+var ability_popup_confirm: Button = null
+var ability_popup_cancel: Button = null
+
 # Account data
 var username = ""
 var account_id = ""
@@ -102,6 +111,8 @@ var in_combat = false
 var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
+var pending_variable_ability: String = ""  # Ability waiting for resource amount input
+var pending_variable_resource: String = ""  # Resource type for pending ability (mana/stamina/energy)
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -126,6 +137,16 @@ var recent_xp_gain: int = 0    # XP gained in most recent combat
 var at_merchant: bool = false
 var merchant_data: Dictionary = {}
 var pending_merchant_action: String = ""
+
+# Trading Post mode
+var at_trading_post: bool = false
+var trading_post_data: Dictionary = {}
+var pending_trading_post_action: String = ""
+
+# Quest mode
+var quest_view_mode: bool = false
+var available_quests: Array = []
+var quests_to_turn_in: Array = []
 
 # Password change mode
 var changing_password: bool = false
@@ -167,6 +188,9 @@ var last_known_level: int = 0  # Track level changes for sound
 
 # Top 5 leaderboard sound
 var top5_player: AudioStreamPlayer = null
+
+# Quest complete sound
+var quest_complete_player: AudioStreamPlayer = null
 
 # ===== RACE DESCRIPTIONS =====
 const RACE_DESCRIPTIONS = {
@@ -263,6 +287,9 @@ func _ready():
 	if close_player_info_button:
 		close_player_info_button.pressed.connect(_on_close_player_info_pressed)
 
+	# Create ability input popup
+	_create_ability_popup()
+
 	# Connect online players list for clickable names
 	if online_players_list:
 		online_players_list.meta_clicked.connect(_on_player_name_clicked)
@@ -298,6 +325,12 @@ func _ready():
 	top5_player.volume_db = -19.0  # Match level up volume
 	add_child(top5_player)
 	_generate_top5_sound()
+
+	# Initialize quest complete sound player
+	quest_complete_player = AudioStreamPlayer.new()
+	quest_complete_player.volume_db = -15.0  # Quiet but noticeable
+	add_child(quest_complete_player)
+	_generate_quest_complete_sound()
 
 	# Initialize background music player
 	music_player = AudioStreamPlayer.new()
@@ -590,6 +623,80 @@ func play_top5_sound():
 	if top5_player and top5_player.stream:
 		top5_player.play()
 
+func _generate_quest_complete_sound():
+	"""Generate a quick, pleasant chime for quest completion"""
+	var sample_rate = 44100
+	var duration = 0.4  # Short and quick
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = true
+
+	var data = PackedByteArray()
+	data.resize(samples * 4)
+
+	# Two quick ascending notes (G5 -> C6) - bright and cheerful
+	var notes = [
+		{"freq": 784.0, "start": 0.0, "dur": 0.2},    # G5
+		{"freq": 1046.5, "start": 0.1, "dur": 0.3},   # C6
+	]
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var sample_l = 0.0
+		var sample_r = 0.0
+
+		for note in notes:
+			var freq = note.freq
+			var start = note.start
+			var dur = note.dur
+
+			if t >= start and t < start + dur:
+				var note_t = t - start
+				# Quick attack, gentle decay
+				var env = 0.0
+				var attack = 0.01
+				var decay_start = 0.05
+
+				if note_t < attack:
+					env = note_t / attack
+				elif note_t < decay_start:
+					env = 1.0
+				else:
+					env = pow(1.0 - ((note_t - decay_start) / (dur - decay_start)), 1.5)
+
+				env = max(0.0, env)
+
+				# Bell-like tone
+				var wave = sin(TAU * freq * t) * 0.4
+				wave += sin(TAU * freq * 2.0 * t) * 0.2
+				wave += sin(TAU * freq * 3.0 * t) * 0.1
+
+				sample_l += wave * env * 0.25
+				sample_r += wave * env * 0.25
+
+		# Soft limit
+		sample_l = clamp(sample_l, -0.9, 0.9)
+		sample_r = clamp(sample_r, -0.9, 0.9)
+
+		var int_l = int(sample_l * 32767)
+		var int_r = int(sample_r * 32767)
+
+		data[i * 4] = int_l & 0xFF
+		data[i * 4 + 1] = (int_l >> 8) & 0xFF
+		data[i * 4 + 2] = int_r & 0xFF
+		data[i * 4 + 3] = (int_r >> 8) & 0xFF
+
+	audio.data = data
+	quest_complete_player.stream = audio
+
+func play_quest_complete_sound():
+	"""Play the quest complete chime"""
+	if quest_complete_player and quest_complete_player.stream:
+		quest_complete_player.play()
+
 func _start_background_music():
 	"""Deferred music startup"""
 	_generate_ambient_music()
@@ -791,6 +898,17 @@ func _process(_delta):
 					select_merchant_buy_item(i)  # 0-based index
 			else:
 				set_meta("buykey_%d_pressed" % i, false)
+
+	# Quest selection with number keys (1-9) when in quest view mode
+	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
+		var quest_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+		for i in range(quest_keys.size()):
+			if Input.is_physical_key_pressed(quest_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+				if not get_meta("questkey_%d_pressed" % i, false):
+					set_meta("questkey_%d_pressed" % i, true)
+					select_quest_option(i)  # 0-based index
+			else:
+				set_meta("questkey_%d_pressed" % i, false)
 
 	# Combat item selection with number keys (1-9)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and combat_item_mode:
@@ -1507,6 +1625,36 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 			]
+	elif at_trading_post:
+		# Trading Post mode
+		if quest_view_mode:
+			# Quest selection sub-menu
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "trading_post_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Main Trading Post menu
+			var quests_available = trading_post_data.get("available_quests", 0) > 0
+			var quests_ready = trading_post_data.get("quests_to_turn_in", 0) > 0
+			current_actions = [
+				{"label": "Leave", "action_type": "local", "action_data": "trading_post_leave", "enabled": true},
+				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
+				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": quests_available or quests_ready},
+				{"label": "Recharge", "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif has_character:
 		# Normal movement mode: Spacebar=Status
 		current_actions = [
@@ -1514,7 +1662,7 @@ func update_action_bar():
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": "Rest", "action_type": "server", "action_data": "rest", "enabled": true},
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
-			{"label": "Players", "action_type": "server", "action_data": "get_players", "enabled": true},
+			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
@@ -1578,7 +1726,11 @@ func trigger_action(index: int):
 
 	match action.action_type:
 		"combat":
-			send_combat_command(action.action_data)
+			# Check for variable cost ability (cost = 0 means variable)
+			if action.get("cost", -1) == 0 and action.get("resource_type", "") != "":
+				prompt_variable_cost_ability(action.action_data, action.get("resource_type", "mana"))
+			else:
+				send_combat_command(action.action_data)
 		"local":
 			execute_local_action(action.action_data)
 		"server":
@@ -1596,6 +1748,202 @@ func send_combat_command(command: String):
 
 	display_game("[color=#F39C12]> %s[/color]" % command)
 	send_to_server({"type": "combat", "command": command})
+
+func prompt_variable_cost_ability(ability: String, resource_type: String):
+	"""Prompt player to enter resource amount for variable cost ability via popup."""
+	pending_variable_ability = ability
+	pending_variable_resource = resource_type
+
+	# Get current resource amount
+	var current_resource = 0
+	var resource_name = resource_type.capitalize()
+	match resource_type:
+		"mana":
+			current_resource = character_data.get("current_mana", 0)
+		"stamina":
+			current_resource = character_data.get("current_stamina", 0)
+		"energy":
+			current_resource = character_data.get("current_energy", 0)
+
+	# Show the popup
+	_show_ability_popup(ability, resource_name, current_resource)
+
+func cancel_variable_cost_ability():
+	"""Cancel pending variable cost ability."""
+	pending_variable_ability = ""
+	pending_variable_resource = ""
+	_hide_ability_popup()
+	update_action_bar()
+
+func execute_variable_cost_ability(amount: int):
+	"""Execute the pending variable cost ability with specified amount."""
+	if pending_variable_ability.is_empty():
+		return
+
+	var ability = pending_variable_ability
+	pending_variable_ability = ""
+	pending_variable_resource = ""
+
+	# Hide popup and send command
+	_hide_ability_popup()
+	send_combat_command("%s %d" % [ability, amount])
+	update_action_bar()
+
+func _create_ability_popup():
+	"""Create the ability input popup panel."""
+	ability_popup = Panel.new()
+	ability_popup.name = "AbilityPopup"
+	ability_popup.visible = false
+	ability_popup.custom_minimum_size = Vector2(300, 200)
+	ability_popup.size = Vector2(300, 200)
+
+	# Style the panel
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.15, 0.95)
+	style.border_color = Color(0.6, 0.5, 0.2, 1.0)  # Gold border
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	ability_popup.add_theme_stylebox_override("panel", style)
+
+	# Create VBox container
+	var vbox = VBoxContainer.new()
+	vbox.anchors_preset = Control.PRESET_FULL_RECT
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 15)
+	vbox.add_theme_constant_override("separation", 10)
+	ability_popup.add_child(vbox)
+
+	# Title label
+	ability_popup_title = Label.new()
+	ability_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ability_popup_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))  # Gold
+	ability_popup_title.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(ability_popup_title)
+
+	# Description label
+	ability_popup_description = Label.new()
+	ability_popup_description.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ability_popup_description.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	ability_popup_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(ability_popup_description)
+
+	# Resource label
+	ability_popup_resource_label = Label.new()
+	ability_popup_resource_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ability_popup_resource_label.add_theme_color_override("font_color", Color(0.6, 0.4, 0.8))  # Purple for mana
+	ability_popup_resource_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(ability_popup_resource_label)
+
+	# Spacer
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 5)
+	vbox.add_child(spacer)
+
+	# Input field
+	ability_popup_input = LineEdit.new()
+	ability_popup_input.placeholder_text = "Enter amount..."
+	ability_popup_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ability_popup_input.custom_minimum_size = Vector2(0, 35)
+	ability_popup_input.text_submitted.connect(_on_ability_popup_input_submitted)
+	vbox.add_child(ability_popup_input)
+
+	# Button container
+	var button_container = HBoxContainer.new()
+	button_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	button_container.add_theme_constant_override("separation", 20)
+	vbox.add_child(button_container)
+
+	# Confirm button
+	ability_popup_confirm = Button.new()
+	ability_popup_confirm.text = "Confirm"
+	ability_popup_confirm.custom_minimum_size = Vector2(80, 30)
+	ability_popup_confirm.pressed.connect(_on_ability_popup_confirm)
+	button_container.add_child(ability_popup_confirm)
+
+	# Cancel button
+	ability_popup_cancel = Button.new()
+	ability_popup_cancel.text = "Cancel"
+	ability_popup_cancel.custom_minimum_size = Vector2(80, 30)
+	ability_popup_cancel.pressed.connect(_on_ability_popup_cancel)
+	button_container.add_child(ability_popup_cancel)
+
+	# Add popup to the root
+	add_child(ability_popup)
+
+func _show_ability_popup(ability: String, resource_name: String, current_resource: int):
+	"""Show the ability input popup with the given information."""
+	if not ability_popup:
+		return
+
+	# Set popup content
+	ability_popup_title.text = ability.to_upper().replace("_", " ")
+	ability_popup_description.text = "Damage dealt equals %s spent." % resource_name.to_lower()
+	ability_popup_resource_label.text = "Current %s: %d" % [resource_name, current_resource]
+
+	# Color the resource label based on type
+	match pending_variable_resource:
+		"mana":
+			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.6, 0.4, 0.8))
+		"stamina":
+			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.3))
+		"energy":
+			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+
+	# Clear input and reset placeholder
+	ability_popup_input.text = ""
+	ability_popup_input.placeholder_text = "Enter amount..."
+
+	# Center the popup on screen
+	var viewport_size = get_viewport().get_visible_rect().size
+	ability_popup.position = (viewport_size - ability_popup.size) / 2
+
+	ability_popup.visible = true
+	ability_popup_input.grab_focus()
+
+func _hide_ability_popup():
+	"""Hide the ability input popup."""
+	if ability_popup:
+		ability_popup.visible = false
+		ability_popup_input.release_focus()
+
+func _on_ability_popup_input_submitted(text: String):
+	"""Handle Enter key in ability popup input field."""
+	_on_ability_popup_confirm()
+
+func _on_ability_popup_confirm():
+	"""Handle confirm button in ability popup."""
+	var text = ability_popup_input.text.strip_edges()
+
+	if not text.is_valid_int():
+		ability_popup_input.text = ""
+		ability_popup_input.placeholder_text = "Enter a number!"
+		return
+
+	var amount = int(text)
+	if amount <= 0:
+		ability_popup_input.text = ""
+		ability_popup_input.placeholder_text = "Must be > 0!"
+		return
+
+	# Check if player has enough resource
+	var current_resource = 0
+	match pending_variable_resource:
+		"mana":
+			current_resource = character_data.get("current_mana", 0)
+		"stamina":
+			current_resource = character_data.get("current_stamina", 0)
+		"energy":
+			current_resource = character_data.get("current_energy", 0)
+
+	if amount > current_resource:
+		ability_popup_input.text = ""
+		ability_popup_input.placeholder_text = "Not enough! Max: %d" % current_resource
+		return
+
+	execute_variable_cost_ability(amount)
+
+func _on_ability_popup_cancel():
+	"""Handle cancel button in ability popup."""
+	cancel_variable_cost_ability()
 
 func _has_usable_combat_items() -> bool:
 	"""Check if player has any usable items for combat (potions/elixirs)."""
@@ -1835,6 +2183,22 @@ func execute_local_action(action: String):
 			show_combat_item_menu()
 		"combat_item_cancel":
 			cancel_combat_item_mode()
+		# Trading Post actions
+		"trading_post_shop":
+			send_to_server({"type": "trading_post_shop"})
+		"trading_post_quests":
+			send_to_server({"type": "trading_post_quests"})
+		"trading_post_recharge":
+			send_to_server({"type": "trading_post_recharge"})
+		"trading_post_leave":
+			leave_trading_post()
+		"trading_post_cancel":
+			cancel_trading_post_action()
+		# Quest actions
+		"show_quests":
+			send_to_server({"type": "get_quest_log"})
+		"quest_cancel":
+			cancel_quest_action()
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -3188,6 +3552,39 @@ func handle_server_message(message: Dictionary):
 		"password_change_failed":
 			finish_password_change(false, message.get("reason", "Password change failed"))
 
+		# Trading Post messages
+		"trading_post_start":
+			handle_trading_post_start(message)
+
+		"trading_post_end":
+			handle_trading_post_end(message)
+
+		"trading_post_message":
+			display_game(message.get("message", ""))
+
+		# Quest messages
+		"quest_list":
+			handle_quest_list(message)
+
+		"quest_accepted":
+			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Quest accepted!"))
+			update_action_bar()
+
+		"quest_abandoned":
+			display_game("[color=#F39C12]%s[/color]" % message.get("message", "Quest abandoned."))
+
+		"quest_turned_in":
+			handle_quest_turned_in(message)
+
+		"quest_progress":
+			display_game(message.get("message", ""))
+			# Play sound if quest is now complete
+			if message.get("completed", false):
+				play_quest_complete_sound()
+
+		"quest_log":
+			handle_quest_log(message)
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -3880,3 +4277,209 @@ func update_map(map_text: String):
 	if map_display:
 		map_display.clear()
 		map_display.append_text(map_text)
+
+# ===== TRADING POST FUNCTIONS =====
+
+func handle_trading_post_start(message: Dictionary):
+	"""Handle entering a Trading Post"""
+	at_trading_post = true
+	trading_post_data = message
+	quest_view_mode = false
+	pending_trading_post_action = ""
+
+	var tp_name = message.get("name", "Trading Post")
+	var quest_giver = message.get("quest_giver", "Quest Giver")
+	var avail_quests = message.get("available_quests", 0)
+	var ready_quests = message.get("quests_to_turn_in", 0)
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
+	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
+	display_game("")
+	display_game("Services: [Q] Shop | [W] Quests | [E] Recharge (50%% off)")
+	if avail_quests > 0:
+		display_game("[color=#90EE90]%d quest(s) available[/color]" % avail_quests)
+	if ready_quests > 0:
+		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
+	display_game("")
+	display_game("[Space] Leave")
+
+	update_action_bar()
+
+func handle_trading_post_end(message: Dictionary):
+	"""Handle leaving a Trading Post"""
+	at_trading_post = false
+	trading_post_data = {}
+	quest_view_mode = false
+	pending_trading_post_action = ""
+	available_quests = []
+	quests_to_turn_in = []
+
+	var msg = message.get("message", "")
+	if msg != "":
+		display_game(msg)
+
+	update_action_bar()
+
+func leave_trading_post():
+	"""Leave a Trading Post"""
+	send_to_server({"type": "trading_post_leave"})
+
+func cancel_trading_post_action():
+	"""Cancel pending Trading Post action and return to main menu"""
+	quest_view_mode = false
+	pending_trading_post_action = ""
+	available_quests = []
+	quests_to_turn_in = []
+	update_action_bar()
+
+	# Re-display Trading Post menu
+	var tp_name = trading_post_data.get("name", "Trading Post")
+	game_output.clear()
+	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
+	display_game("")
+	display_game("Services: [Q] Shop | [W] Quests | [E] Recharge (50%% off)")
+	display_game("")
+	display_game("[Space] Leave")
+
+# ===== QUEST FUNCTIONS =====
+
+func handle_quest_list(message: Dictionary):
+	"""Handle quest list from quest giver"""
+	var quest_giver = message.get("quest_giver", "Quest Giver")
+	var tp_name = message.get("trading_post", "Trading Post")
+	available_quests = message.get("available_quests", [])
+	quests_to_turn_in = message.get("quests_to_turn_in", [])
+	var active_count = message.get("active_count", 0)
+	var max_quests = message.get("max_quests", 5)
+
+	quest_view_mode = true
+	update_action_bar()
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== %s - %s =====[/color]" % [quest_giver, tp_name])
+	display_game("[color=#888888]Active Quests: %d / %d[/color]" % [active_count, max_quests])
+	display_game("")
+
+	# Show quests ready to turn in first
+	if quests_to_turn_in.size() > 0:
+		display_game("[color=#FFD700]=== Ready to Turn In ===[/color]")
+		for i in range(quests_to_turn_in.size()):
+			var quest = quests_to_turn_in[i]
+			var rewards = quest.get("rewards", {})
+			var reward_str = _format_rewards(rewards)
+			display_game("[%d] [color=#00FF00]%s[/color] - %s" % [i + 1, quest.get("name", "Quest"), reward_str])
+		display_game("")
+		display_game("Type number to turn in quest")
+		display_game("")
+
+	# Show available quests
+	if available_quests.size() > 0:
+		display_game("[color=#90EE90]=== Available Quests ===[/color]")
+		var offset = quests_to_turn_in.size()
+		for i in range(available_quests.size()):
+			var quest = available_quests[i]
+			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
+			var rewards = quest.get("rewards", {})
+			var reward_str = _format_rewards(rewards)
+			display_game("[%d] [color=#FFD700]%s[/color]%s" % [offset + i + 1, quest.get("name", "Quest"), daily_tag])
+			display_game("    %s" % quest.get("description", ""))
+			display_game("    [color=#90EE90]Rewards: %s[/color]" % reward_str)
+			display_game("")
+		display_game("Type number to accept quest")
+	elif quests_to_turn_in.size() == 0:
+		display_game("[color=#888888]No quests available at this time.[/color]")
+
+	display_game("")
+	display_game("[Space] Back")
+
+func _format_rewards(rewards: Dictionary) -> String:
+	"""Format rewards dictionary for display"""
+	var parts = []
+	if rewards.get("xp", 0) > 0:
+		parts.append("%d XP" % rewards.xp)
+	if rewards.get("gold", 0) > 0:
+		parts.append("%d Gold" % rewards.gold)
+	if rewards.get("gems", 0) > 0:
+		parts.append("%d Gems" % rewards.gems)
+	return ", ".join(parts) if parts.size() > 0 else "None"
+
+func handle_quest_turned_in(message: Dictionary):
+	"""Handle quest turn-in result"""
+	var quest_name = message.get("quest_name", "Quest")
+	var rewards = message.get("rewards", {})
+	var leveled_up = message.get("leveled_up", false)
+	var new_level = message.get("new_level", 0)
+	var multiplier = rewards.get("multiplier", 1.0)
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== Quest Complete! =====[/color]")
+	display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Quest turned in!"))
+	display_game("")
+
+	if multiplier > 1.0:
+		display_game("[color=#FF6600]Hotzone Bonus: x%.1f[/color]" % multiplier)
+
+	display_game("[color=#9B59B6]+%d XP[/color]" % rewards.get("xp", 0))
+	display_game("[color=#FFD700]+%d Gold[/color]" % rewards.get("gold", 0))
+	if rewards.get("gems", 0) > 0:
+		display_game("[color=#00FFFF]+%d Gems[/color]" % rewards.gems)
+
+	if leveled_up:
+		display_game("")
+		display_game("[color=#FFD700][b]LEVEL UP! You are now level %d![/b][/color]" % new_level)
+		if levelup_player and levelup_player.stream:
+			levelup_player.play()
+
+	# Update UI
+	update_currency_display()
+	update_player_xp_bar()
+	update_player_level()
+
+	# Go back to Trading Post menu if still there
+	if at_trading_post:
+		display_game("")
+		display_game("[Space] Continue")
+		quest_view_mode = false
+		update_action_bar()
+
+func handle_quest_log(message: Dictionary):
+	"""Handle quest log display"""
+	var log_text = message.get("log", "No quests.")
+	var active_count = message.get("active_count", 0)
+	var max_quests = message.get("max_quests", 5)
+
+	game_output.clear()
+	display_game(log_text)
+	display_game("")
+	display_game("[color=#888888]Press [Space] to continue[/color]")
+
+	pending_continue = true
+	update_action_bar()
+
+func cancel_quest_action():
+	"""Cancel quest selection"""
+	quest_view_mode = false
+	update_action_bar()
+
+func select_quest_option(index: int):
+	"""Handle quest selection by number key"""
+	# First, check if selecting a quest to turn in
+	var turn_in_count = quests_to_turn_in.size()
+	var available_count = available_quests.size()
+
+	if index < turn_in_count:
+		# Turn in quest
+		var quest = quests_to_turn_in[index]
+		var quest_id = quest.get("quest_id", "")
+		if quest_id != "":
+			send_to_server({"type": "quest_turn_in", "quest_id": quest_id})
+	elif index < turn_in_count + available_count:
+		# Accept quest
+		var quest_index = index - turn_in_count
+		var quest = available_quests[quest_index]
+		var quest_id = quest.get("id", "")
+		if quest_id != "":
+			send_to_server({"type": "quest_accept", "quest_id": quest_id})
+	else:
+		display_game("[color=#E74C3C]Invalid selection[/color]")

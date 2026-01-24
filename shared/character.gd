@@ -63,6 +63,15 @@ const MAX_INVENTORY_SIZE = 20
 # Persistent buffs that last multiple battles - array of {type: String, value: int, battles_remaining: int}
 @export var persistent_buffs: Array = []
 
+# Quest System
+# active_quests: Array of {quest_id: String, progress: int, target: int, started_at: int, origin_x: int, origin_y: int, accumulated_intensity: float, kills_in_hotzone: int}
+@export var active_quests: Array = []
+# completed_quests: Array of quest IDs that have been turned in
+@export var completed_quests: Array = []
+# daily_quest_cooldowns: {quest_id: unix_timestamp} - when daily quests can be accepted again
+@export var daily_quest_cooldowns: Dictionary = {}
+const MAX_ACTIVE_QUESTS = 5
+
 func _init():
 	# Constructor
 	pass
@@ -397,7 +406,10 @@ func to_dict() -> Dictionary:
 		"played_time_seconds": played_time_seconds,
 		"monsters_killed": monsters_killed,
 		"active_buffs": active_buffs,
-		"persistent_buffs": persistent_buffs
+		"persistent_buffs": persistent_buffs,
+		"active_quests": active_quests,
+		"completed_quests": completed_quests,
+		"daily_quest_cooldowns": daily_quest_cooldowns
 	}
 
 func from_dict(data: Dictionary):
@@ -453,6 +465,11 @@ func from_dict(data: Dictionary):
 
 	# Persistent buffs DO persist between sessions (battle-based potions)
 	persistent_buffs = data.get("persistent_buffs", [])
+
+	# Quest system
+	active_quests = data.get("active_quests", [])
+	completed_quests = data.get("completed_quests", [])
+	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus."""
@@ -709,3 +726,102 @@ func restore_all_resources():
 	current_mana = max_mana
 	current_stamina = max_stamina
 	current_energy = max_energy
+
+# ===== QUEST SYSTEM =====
+
+func can_accept_quest() -> bool:
+	"""Check if player can accept another quest"""
+	return active_quests.size() < MAX_ACTIVE_QUESTS
+
+func has_quest(quest_id: String) -> bool:
+	"""Check if player has an active quest with this ID"""
+	for quest in active_quests:
+		if quest.quest_id == quest_id:
+			return true
+	return false
+
+func has_completed_quest(quest_id: String) -> bool:
+	"""Check if player has completed this quest"""
+	return quest_id in completed_quests
+
+func can_accept_daily_quest(quest_id: String) -> bool:
+	"""Check if daily quest cooldown has expired"""
+	if not daily_quest_cooldowns.has(quest_id):
+		return true
+	var cooldown_end = daily_quest_cooldowns[quest_id]
+	return Time.get_unix_time_from_system() >= cooldown_end
+
+func get_quest_progress(quest_id: String) -> Dictionary:
+	"""Get progress for an active quest. Returns empty dict if not found."""
+	for quest in active_quests:
+		if quest.quest_id == quest_id:
+			return quest
+	return {}
+
+func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int = 0) -> bool:
+	"""Add a new quest to active quests. Returns false if at max or already has quest."""
+	if not can_accept_quest() or has_quest(quest_id):
+		return false
+
+	active_quests.append({
+		"quest_id": quest_id,
+		"progress": 0,
+		"target": target,
+		"started_at": int(Time.get_unix_time_from_system()),
+		"origin_x": origin_x,
+		"origin_y": origin_y,
+		"accumulated_intensity": 0.0,  # For hotzone quests
+		"kills_in_hotzone": 0  # Track kills specifically in hotzones
+	})
+	return true
+
+func update_quest_progress(quest_id: String, amount: int = 1, hotzone_intensity: float = 0.0) -> Dictionary:
+	"""Increment quest progress. Returns {updated: bool, completed: bool, progress: int, target: int}"""
+	for quest in active_quests:
+		if quest.quest_id == quest_id:
+			quest.progress += amount
+			if hotzone_intensity > 0:
+				quest.kills_in_hotzone += amount
+				quest.accumulated_intensity += hotzone_intensity * amount
+			return {
+				"updated": true,
+				"completed": quest.progress >= quest.target,
+				"progress": quest.progress,
+				"target": quest.target
+			}
+	return {"updated": false, "completed": false, "progress": 0, "target": 0}
+
+func complete_quest(quest_id: String, is_daily: bool = false) -> bool:
+	"""Mark quest as completed and remove from active. Returns false if quest not found."""
+	for i in range(active_quests.size()):
+		if active_quests[i].quest_id == quest_id:
+			var quest = active_quests[i]
+			active_quests.remove_at(i)
+			if not is_daily:
+				completed_quests.append(quest_id)
+			else:
+				# Daily quests have 24 hour cooldown
+				daily_quest_cooldowns[quest_id] = int(Time.get_unix_time_from_system()) + 86400
+			return true
+	return false
+
+func abandon_quest(quest_id: String) -> bool:
+	"""Remove quest from active without completing. Returns false if quest not found."""
+	for i in range(active_quests.size()):
+		if active_quests[i].quest_id == quest_id:
+			active_quests.remove_at(i)
+			return true
+	return false
+
+func get_active_quest_count() -> int:
+	"""Get number of active quests"""
+	return active_quests.size()
+
+func get_average_hotzone_intensity(quest_id: String) -> float:
+	"""Get average hotzone intensity for a quest (for reward multiplier)"""
+	for quest in active_quests:
+		if quest.quest_id == quest_id:
+			if quest.kills_in_hotzone > 0:
+				return quest.accumulated_intensity / quest.kills_in_hotzone
+			return 0.0
+	return 0.0
