@@ -14,6 +14,10 @@ enum CombatAction {
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
+# Drop tables reference (set by server when initialized)
+# Using Node type to avoid compile-time dependency on DropTables class
+var drop_tables: Node = null
+
 func _ready():
 	print("Combat Manager initialized")
 
@@ -146,6 +150,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			character.add_experience(monster.experience_reward)
 			character.gold += monster.gold_reward
 
+			# Roll for item drops
+			var dropped_items = roll_combat_drops(monster, character)
+			for item in dropped_items:
+				messages.append("[color=%s]%s dropped: %s![/color]" % [
+					_get_rarity_color(item.get("rarity", "common")),
+					monster.name,
+					item.get("name", "Unknown Item")
+				])
+
 			return {
 				"success": true,
 				"messages": messages,
@@ -153,7 +166,8 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				"victory": true,
 				"monster_name": monster.name,
 				"monster_level": monster.level,
-				"flock_chance": monster.get("flock_chance", 0)
+				"flock_chance": monster.get("flock_chance", 0),
+				"dropped_items": dropped_items
 			}
 	else:
 		# Miss
@@ -268,27 +282,28 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		return {"success": true, "message": msg}
 
 func calculate_damage(character: Character, monster: Dictionary) -> int:
-	"""Calculate player damage to monster"""
-	var base_damage = character.get_stat("strength")
+	"""Calculate player damage to monster (includes equipment bonuses)"""
+	# Use total attack which includes equipment
+	var base_damage = character.get_total_attack()
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var total = base_damage + damage_roll
-	
+
 	# Reduce by monster defense
 	var defense_reduction = monster.defense / 4
 	total -= defense_reduction
-	
+
 	return max(1, total)  # Minimum 1 damage
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
-	"""Calculate monster damage to player"""
+	"""Calculate monster damage to player (reduced by equipment defense)"""
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var total = base_damage + damage_roll
-	
-	# Reduce by character defense
-	var defense_reduction = character.get_stat("constitution") / 4
+
+	# Reduce by character defense (includes equipment)
+	var defense_reduction = character.get_total_defense()
 	total -= defense_reduction
-	
+
 	return max(1, total)  # Minimum 1 damage
 
 func end_combat(peer_id: int, victory: bool):
@@ -341,3 +356,46 @@ func to_dict() -> Dictionary:
 	return {
 		"active_combats": active_combats.size()
 	}
+
+# Item Drop System Hooks
+
+func set_drop_tables(tables: Node):
+	"""Set the drop tables reference for item drops"""
+	drop_tables = tables
+
+func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
+	"""Roll for item drops after defeating a monster. Returns array of items."""
+	# If drop tables not initialized, return empty
+	if drop_tables == null:
+		return []
+
+	var drop_table_id = monster.get("drop_table_id", "common")
+	var drop_chance = monster.get("drop_chance", 5)
+	var monster_level = monster.get("level", 1)
+
+	# Roll for drops
+	var drops = drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)
+
+	# Try to add drops to character inventory
+	var added_items = []
+	for item in drops:
+		if character.can_add_item():
+			character.add_item(item)
+			added_items.append(item)
+		else:
+			# Inventory full - item is lost (could add ground drop system later)
+			pass
+
+	return added_items
+
+func _get_rarity_color(rarity: String) -> String:
+	"""Get display color for item rarity"""
+	var colors = {
+		"common": "#FFFFFF",
+		"uncommon": "#1EFF00",
+		"rare": "#0070DD",
+		"epic": "#A335EE",
+		"legendary": "#FF8000",
+		"artifact": "#E6CC80"
+	}
+	return colors.get(rarity, "#FFFFFF")

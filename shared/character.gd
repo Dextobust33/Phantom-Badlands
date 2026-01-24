@@ -33,6 +33,18 @@ extends Resource
 # Combat
 @export var in_combat: bool = false
 
+# Inventory System (stubs for future item drops)
+@export var inventory: Array = []  # Array of item dictionaries
+@export var equipped: Dictionary = {
+	"weapon": null,
+	"armor": null,
+	"helm": null,
+	"shield": null,
+	"ring": null,
+	"amulet": null
+}
+const MAX_INVENTORY_SIZE = 20
+
 # Tracking / Persistence
 @export var created_at: int = 0
 @export var played_time_seconds: int = 0
@@ -126,16 +138,113 @@ func get_stat(stat_name: String) -> int:
 		_:
 			return 0
 
+func get_equipment_bonuses() -> Dictionary:
+	"""Calculate total bonuses from all equipped items"""
+	var bonuses = {
+		"attack": 0,
+		"defense": 0,
+		"strength": 0,
+		"constitution": 0,
+		"dexterity": 0,
+		"intelligence": 0,
+		"wisdom": 0,
+		"charisma": 0,
+		"max_hp": 0,
+		"max_mana": 0
+	}
+
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+
+		var item_level = item.get("level", 1)
+		var item_type = item.get("type", "")
+		var rarity_mult = _get_rarity_multiplier(item.get("rarity", "common"))
+
+		# Base bonus scales with item level and rarity
+		var base_bonus = int(item_level * rarity_mult)
+
+		# Apply bonuses based on item type
+		if "weapon" in item_type:
+			bonuses.attack += base_bonus * 2  # Weapons give attack
+			bonuses.strength += int(base_bonus * 0.3)
+		elif "armor" in item_type:
+			bonuses.defense += base_bonus * 2  # Armor gives defense
+			bonuses.constitution += int(base_bonus * 0.3)
+			bonuses.max_hp += base_bonus * 3
+		elif "helm" in item_type:
+			bonuses.defense += base_bonus
+			bonuses.wisdom += int(base_bonus * 0.2)
+		elif "shield" in item_type:
+			bonuses.defense += int(base_bonus * 1.5)
+			bonuses.constitution += int(base_bonus * 0.2)
+		elif "ring" in item_type:
+			bonuses.attack += int(base_bonus * 0.5)
+			bonuses.dexterity += int(base_bonus * 0.3)
+			bonuses.intelligence += int(base_bonus * 0.2)
+		elif "amulet" in item_type:
+			bonuses.max_mana += base_bonus * 2
+			bonuses.wisdom += int(base_bonus * 0.3)
+			bonuses.charisma += int(base_bonus * 0.2)
+
+	return bonuses
+
+func _get_rarity_multiplier(rarity: String) -> float:
+	"""Get multiplier for item rarity"""
+	match rarity:
+		"common": return 1.0
+		"uncommon": return 1.5
+		"rare": return 2.0
+		"epic": return 3.0
+		"legendary": return 4.5
+		"artifact": return 6.0
+		_: return 1.0
+
+func get_total_attack() -> int:
+	"""Get total attack power including equipment"""
+	var bonuses = get_equipment_bonuses()
+	return strength + bonuses.strength + bonuses.attack
+
+func get_total_defense() -> int:
+	"""Get total defense including equipment"""
+	var bonuses = get_equipment_bonuses()
+	return (constitution / 2) + bonuses.defense
+
+func get_effective_stat(stat_name: String) -> int:
+	"""Get stat value including equipment bonuses"""
+	var base_stat = get_stat(stat_name)
+	var bonuses = get_equipment_bonuses()
+
+	match stat_name.to_lower():
+		"strength", "str":
+			return base_stat + bonuses.strength
+		"constitution", "con":
+			return base_stat + bonuses.constitution
+		"dexterity", "dex":
+			return base_stat + bonuses.dexterity
+		"intelligence", "int":
+			return base_stat + bonuses.intelligence
+		"wisdom", "wis":
+			return base_stat + bonuses.wisdom
+		"charisma", "cha":
+			return base_stat + bonuses.charisma
+		_:
+			return base_stat
+
 func get_attack_damage() -> Dictionary:
-	"""Calculate attack damage range"""
-	var base_damage = strength
+	"""Calculate attack damage range including equipment"""
+	var bonuses = get_equipment_bonuses()
+	var total_str = strength + bonuses.strength
+	var base_damage = total_str + bonuses.attack
 	var min_damage = int(base_damage * 0.8)
 	var max_damage = int(base_damage * 1.2)
-	
+
 	return {
 		"min": min_damage,
 		"max": max_damage,
-		"base": base_damage
+		"base": base_damage,
+		"from_equipment": bonuses.attack
 	}
 
 func take_damage(damage: int) -> Dictionary:
@@ -236,6 +345,8 @@ func to_dict() -> Dictionary:
 		"health_state": get_health_state(),
 		"gold": gold,
 		"in_combat": in_combat,
+		"inventory": inventory,
+		"equipped": equipped,
 		"created_at": created_at,
 		"played_time_seconds": played_time_seconds,
 		"monsters_killed": monsters_killed
@@ -267,6 +378,12 @@ func from_dict(data: Dictionary):
 	gold = data.get("gold", 100)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
+
+	# Inventory system
+	inventory = data.get("inventory", [])
+	var loaded_equipped = data.get("equipped", {})
+	for slot in equipped.keys():
+		equipped[slot] = loaded_equipped.get(slot, null)
 
 	# Tracking fields
 	created_at = data.get("created_at", 0)
@@ -316,3 +433,44 @@ func get_experience_progress() -> int:
 	if experience_to_next_level <= 0:
 		return 100
 	return int((float(experience) / experience_to_next_level) * 100)
+
+# Inventory System Stubs
+
+func can_add_item() -> bool:
+	"""Check if inventory has space for another item"""
+	return inventory.size() < MAX_INVENTORY_SIZE
+
+func add_item(item: Dictionary) -> bool:
+	"""Add an item to inventory. Returns true if successful."""
+	if not can_add_item():
+		return false
+	inventory.append(item)
+	return true
+
+func remove_item(index: int) -> Dictionary:
+	"""Remove and return item at index. Returns empty dict if invalid."""
+	if index < 0 or index >= inventory.size():
+		return {}
+	return inventory.pop_at(index)
+
+func get_inventory_count() -> int:
+	"""Get current number of items in inventory"""
+	return inventory.size()
+
+func equip_item(item: Dictionary, slot: String) -> Dictionary:
+	"""Equip an item to a slot. Returns previously equipped item or empty dict."""
+	if not equipped.has(slot):
+		return {}
+	var old_item = equipped[slot]
+	equipped[slot] = item
+	if old_item != null:
+		return old_item
+	return {}
+
+func unequip_slot(slot: String) -> Dictionary:
+	"""Unequip item from slot. Returns the item or empty dict."""
+	if not equipped.has(slot) or equipped[slot] == null:
+		return {}
+	var item = equipped[slot]
+	equipped[slot] = null
+	return item

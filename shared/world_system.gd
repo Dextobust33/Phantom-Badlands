@@ -227,24 +227,31 @@ func get_location_description(x: int, y: int) -> String:
 	var pos = Vector2i(x, y)
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
-	
+
 	var desc = ""
-	
+
 	# Special location description
 	if SPECIAL_LOCATIONS.has(pos):
 		desc += SPECIAL_LOCATIONS[pos].description + "\n"
-	
+
 	# Coordinate display (P4 style)
 	desc += "[b]Location:[/b] (%d, %d)\n" % [x, y]
 	desc += "[b]Terrain:[/b] %s\n" % info.name
-	
-	# Danger info
-	if not info.safe and info.monster_level_min > 0:
-		desc += "[color=#FF6B6B]Danger:[/color] Monsters level %d-%d\n" % [info.monster_level_min, info.monster_level_max]
+
+	# Get distance-based level range
+	var level_range = get_monster_level_range(x, y)
+
+	# Danger info based on distance from origin
+	if not info.safe and level_range.min > 0:
+		# Hotspot warning
+		if level_range.is_hotspot:
+			desc += "[color=#FF0000][b]!!! DANGER ZONE !!![/b][/color]\n"
+
+		desc += "[color=#FF6B6B]Danger:[/color] Monsters level %d-%d\n" % [level_range.min, level_range.max]
 		desc += "[color=#FF6B6B]Encounter Rate:[/color] %.0f%%\n" % (info.encounter_rate * 100)
 	else:
 		desc += "[color=#90EE90]This is a safe area[/color]\n"
-	
+
 	return desc
 
 func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String:
@@ -269,8 +276,16 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
-				# Add space BEFORE each character for even grid spacing
-				line_parts.append("[color=%s] %s[/color]" % [info.color, info.char])
+
+				# Check if this tile is a hotspot - show in red/orange
+				if _is_hotspot(x, y) and not info.safe:
+					var intensity = _get_hotspot_intensity(x, y)
+					# Gradient from orange (edge) to bright red (center)
+					var hotspot_color = "#FF4500" if intensity > 0.5 else "#FF6600"
+					line_parts.append("[color=%s] ![/color]" % hotspot_color)
+				else:
+					# Add space BEFORE each character for even grid spacing
+					line_parts.append("[color=%s] %s[/color]" % [info.color, info.char])
 
 		map_lines.append("".join(line_parts))
 
@@ -279,27 +294,32 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> String:
 	"""Generate complete map display with location info header"""
 	var output = ""
-	
+
 	# Get location info
-	var pos = Vector2i(center_x, center_y)
 	var terrain = get_terrain_at(center_x, center_y)
 	var info = get_terrain_info(terrain)
-	
+
+	# Get distance-based level range
+	var level_range = get_monster_level_range(center_x, center_y)
+
 	# Location header
 	output += "[b][color=#FFD700]Location:[/color][/b] (%d, %d)\n" % [center_x, center_y]
 	output += "[b][color=#FFD700]Terrain:[/color][/b] %s\n" % info.name
-	
-	# Danger info if applicable
-	if not info.safe and info.monster_level_min > 0:
-		output += "[color=#FF6B6B]Danger:[/color] Level %d-%d monsters\n" % [info.monster_level_min, info.monster_level_max]
+
+	# Danger info based on distance
+	if not info.safe and level_range.min > 0:
+		# Hotspot warning
+		if level_range.is_hotspot:
+			output += "[color=#FF0000][b]!!! DANGER ZONE !!![/b][/color]\n"
+		output += "[color=#FF6B6B]Danger:[/color] Level %d-%d monsters\n" % [level_range.min, level_range.max]
 	else:
 		output += "[color=#90EE90]Safe Zone[/color]\n"
-	
+
 	output += "\n"
-	
+
 	# Add the map
 	output += generate_ascii_map(center_x, center_y, radius)
-	
+
 	return output
 
 func is_safe_zone(x: int, y: int) -> bool:
@@ -319,14 +339,126 @@ func check_encounter(x: int, y: int) -> bool:
 	return randf() < info.encounter_rate
 
 func get_monster_level_range(x: int, y: int) -> Dictionary:
-	"""Get the monster level range for this location"""
+	"""Get the monster level range for this location based on distance from origin"""
+	# Check if safe zone first
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
-	
+	if info.safe:
+		return {
+			"min": 0,
+			"max": 0,
+			"is_hotspot": false
+		}
+
+	# Calculate Euclidean distance from origin (0,0)
+	var distance = sqrt(float(x * x + y * y))
+
+	# Get base level from distance formula
+	var base_level = _distance_to_level(distance)
+
+	# Check for hot spot (danger zone cluster)
+	var is_hotspot = _is_hotspot(x, y)
+	var hotspot_multiplier = 1.0
+	if is_hotspot:
+		# Hot spots have 50-150% level bonus based on intensity (center = stronger)
+		var intensity = _get_hotspot_intensity(x, y)
+		hotspot_multiplier = 1.5 + intensity  # 1.5x at edge, 2.5x at center
+
+	# Apply hotspot multiplier to base level
+	var adjusted_level = int(base_level * hotspot_multiplier)
+
+	# Calculate variance range (+/- 15%)
+	var variance = max(1, int(adjusted_level * 0.15))
+	var min_level = max(1, adjusted_level - variance)
+	var max_level = min(10000, adjusted_level + variance)
+
 	return {
-		"min": info.monster_level_min,
-		"max": info.monster_level_max
+		"min": min_level,
+		"max": max_level,
+		"base_level": adjusted_level,
+		"is_hotspot": is_hotspot,
+		"distance": distance
 	}
+
+func _distance_to_level(distance: float) -> int:
+	"""Convert distance from origin to monster level (0-1414 -> 1-10000)"""
+	# Safe zone (distance 0-5)
+	if distance <= 5:
+		return 1
+
+	# Distance 5-100: Levels 1-50 (gentle curve)
+	if distance <= 100:
+		var t = (distance - 5) / 95.0  # 0 to 1
+		return int(1 + t * 49)
+
+	# Distance 100-300: Levels 50-300 (moderate growth)
+	if distance <= 300:
+		var t = (distance - 100) / 200.0  # 0 to 1
+		return int(50 + t * 250)
+
+	# Distance 300-600: Levels 300-1500 (accelerating)
+	if distance <= 600:
+		var t = (distance - 300) / 300.0  # 0 to 1
+		return int(300 + t * 1200)
+
+	# Distance 600-900: Levels 1500-5000 (steep)
+	if distance <= 900:
+		var t = (distance - 600) / 300.0  # 0 to 1
+		return int(1500 + t * 3500)
+
+	# Distance 900+: Levels 5000-10000 (approaching max)
+	# Max distance is ~1414 (corners of 1000x1000 world)
+	var t = min(1.0, (distance - 900) / 514.0)  # 0 to 1
+	return int(5000 + t * 5000)
+
+func _is_hotspot(x: int, y: int) -> bool:
+	"""Check if coordinates are within a danger zone hot spot cluster"""
+	# Find the nearest cluster center and check if we're within its radius
+	# Clusters are seeded at ~0.3% of tiles but expand to 1-20 tiles each
+
+	# Check nearby potential cluster centers (within max cluster radius of 5)
+	for cx in range(x - 5, x + 6):
+		for cy in range(y - 5, y + 6):
+			if _is_cluster_center(cx, cy):
+				var cluster_radius = _get_cluster_radius(cx, cy)
+				var dist = sqrt(float((x - cx) * (x - cx) + (y - cy) * (y - cy)))
+				if dist <= cluster_radius:
+					return true
+	return false
+
+func _is_cluster_center(x: int, y: int) -> bool:
+	"""Check if this coordinate is a hotspot cluster center (~0.3% of tiles)"""
+	# Use a different hash to determine cluster centers
+	var hash_val = abs((x * 73 + y * 127) * 9311) % 1000
+	return hash_val < 3  # 0.3% chance to be a cluster center
+
+func _get_cluster_radius(x: int, y: int) -> float:
+	"""Get the radius of a hotspot cluster (results in 1-20 connected tiles)"""
+	# Use coordinate hash to determine cluster size (radius 0.5 to 2.5)
+	# radius 0.5 = ~1 tile, radius 2.5 = ~20 tiles
+	var hash_val = abs((x * 41 + y * 83) * 5717) % 100
+	return 0.5 + (hash_val / 100.0) * 2.0  # 0.5 to 2.5 radius
+
+func _get_hotspot_intensity(x: int, y: int) -> float:
+	"""Get the intensity of the hotspot (for level multiplier)"""
+	# Find the closest cluster center and calculate intensity based on distance
+	var min_dist = 999.0
+	var cluster_x = x
+	var cluster_y = y
+
+	for cx in range(x - 5, x + 6):
+		for cy in range(y - 5, y + 6):
+			if _is_cluster_center(cx, cy):
+				var dist = sqrt(float((x - cx) * (x - cx) + (y - cy) * (y - cy)))
+				if dist < min_dist:
+					min_dist = dist
+					cluster_x = cx
+					cluster_y = cy
+
+	# Intensity is higher at cluster center, decreases toward edges
+	var radius = _get_cluster_radius(cluster_x, cluster_y)
+	var intensity = 1.0 - (min_dist / (radius + 0.1))
+	return clamp(intensity, 0.0, 1.0)
 
 func move_player(current_x: int, current_y: int, direction: int) -> Vector2i:
 	"""Move player based on numpad direction (P4 style)

@@ -4,6 +4,7 @@ extends Node
 
 const PORT = 9080
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
+const DropTablesScript = preload("res://shared/drop_tables.gd")
 
 var server = TCPServer.new()
 var peers = {}
@@ -14,6 +15,7 @@ var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
 var persistence: Node
+var drop_tables: Node
 
 # Auto-save timer
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
@@ -38,6 +40,11 @@ func _ready():
 
 	combat_mgr = CombatManager.new()
 	add_child(combat_mgr)
+
+	# Initialize drop tables and connect to combat manager
+	drop_tables = DropTablesScript.new()
+	add_child(drop_tables)
+	combat_mgr.set_drop_tables(drop_tables)
 
 	var error = server.listen(PORT)
 	if error != OK:
@@ -167,6 +174,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_logout_character(peer_id)
 		"logout_account":
 			handle_logout_account(peer_id)
+		"inventory_use":
+			handle_inventory_use(peer_id, message)
+		"inventory_equip":
+			handle_inventory_equip(peer_id, message)
+		"inventory_unequip":
+			handle_inventory_unequip(peer_id, message)
+		"inventory_discard":
+			handle_inventory_discard(peer_id, message)
 		_:
 			pass
 
@@ -458,6 +473,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"type": "examine_result",
 				"name": char.name,
 				"level": char.level,
+				"experience": char.experience,
 				"class": char.class_type,
 				"hp": char.current_hp,
 				"max_hp": char.max_hp,
@@ -586,7 +602,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	if pending_flocks.has(peer_id):
 		send_to_peer(peer_id, {
 			"type": "error",
-			"message": "More enemies are approaching! Press Q to continue."
+			"message": "More enemies are approaching! Press Space to continue."
 		})
 		return
 
@@ -927,3 +943,184 @@ func handle_continue_flock(peer_id: int):
 	pending_flocks.erase(peer_id)
 
 	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level)
+
+# ===== INVENTORY HANDLERS =====
+
+func handle_inventory_use(peer_id: int, message: Dictionary):
+	"""Handle using an item from inventory"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var index = message.get("index", -1)
+	var inventory = character.inventory
+
+	if index < 0 or index >= inventory.size():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid item index"
+		})
+		return
+
+	var item = inventory[index]
+	var item_type = item.get("type", "")
+
+	# Handle consumables (potions, etc.)
+	if "potion" in item_type or "elixir" in item_type:
+		# Heal based on item level
+		var heal_amount = item.get("level", 1) * 10
+		var actual_heal = character.heal(heal_amount)
+
+		# Remove from inventory
+		character.remove_item(index)
+
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]You use %s and restore %d HP![/color]" % [item.get("name", "item"), actual_heal]
+		})
+
+		# Update character data
+		send_character_update(peer_id)
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#95A5A6]This item cannot be used directly. Try equipping it.[/color]"
+		})
+
+func handle_inventory_equip(peer_id: int, message: Dictionary):
+	"""Handle equipping an item"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var index = message.get("index", -1)
+	var inventory = character.inventory
+
+	if index < 0 or index >= inventory.size():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid item index"
+		})
+		return
+
+	var item = inventory[index]
+	var item_type = item.get("type", "")
+
+	# Determine slot based on item type
+	var slot = ""
+	if "weapon" in item_type:
+		slot = "weapon"
+	elif "armor" in item_type:
+		slot = "armor"
+	elif "helm" in item_type:
+		slot = "helm"
+	elif "shield" in item_type:
+		slot = "shield"
+	elif "ring" in item_type:
+		slot = "ring"
+	elif "amulet" in item_type:
+		slot = "amulet"
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#E74C3C]This item cannot be equipped.[/color]"
+		})
+		return
+
+	# Remove from inventory
+	var equip_item = character.remove_item(index)
+
+	# Equip and get old item
+	var old_item = character.equip_item(equip_item, slot)
+
+	# If there was an old item, add to inventory
+	if old_item != null and old_item.has("name"):
+		character.add_item(old_item)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]You equip %s and unequip %s.[/color]" % [equip_item.get("name", "item"), old_item.get("name", "item")]
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]You equip %s.[/color]" % equip_item.get("name", "item")
+		})
+
+	send_character_update(peer_id)
+
+func handle_inventory_unequip(peer_id: int, message: Dictionary):
+	"""Handle unequipping an item"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var slot = message.get("slot", "")
+
+	if not character.equipped.has(slot):
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid equipment slot"
+		})
+		return
+
+	if character.equipped[slot] == null:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#95A5A6]Nothing equipped in that slot.[/color]"
+		})
+		return
+
+	# Check inventory space
+	if not character.can_add_item():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Inventory is full!"
+		})
+		return
+
+	# Unequip and add to inventory
+	var item = character.unequip_slot(slot)
+	character.add_item(item)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#90EE90]You unequip %s.[/color]" % item.get("name", "item")
+	})
+
+	send_character_update(peer_id)
+
+func handle_inventory_discard(peer_id: int, message: Dictionary):
+	"""Handle discarding an item"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var index = message.get("index", -1)
+	var inventory = character.inventory
+
+	if index < 0 or index >= inventory.size():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid item index"
+		})
+		return
+
+	var item = character.remove_item(index)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF6B6B]You discard %s.[/color]" % item.get("name", "Unknown")
+	})
+
+	send_character_update(peer_id)
+
+func send_character_update(peer_id: int):
+	"""Send character data update to client"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	send_to_peer(peer_id, {
+		"type": "character_update",
+		"character": character.to_dict()
+	})

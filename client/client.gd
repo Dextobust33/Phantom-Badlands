@@ -88,8 +88,17 @@ var flock_monster_name = ""
 
 # Action bar
 var action_buttons: Array[Button] = []
-var action_hotkeys = [KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
+# Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4 (removed 5)
+var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4]
 var current_actions: Array[Dictionary] = []
+
+# Inventory mode
+var inventory_mode: bool = false
+var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)
+var pending_inventory_action: String = ""  # Action waiting for item selection
+
+# Pending continue state (prevents output clearing until player acknowledges)
+var pending_continue: bool = false
 
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
@@ -191,8 +200,19 @@ func _process(_delta):
 			else:
 				input_field.grab_focus()
 
-	# Action bar hotkeys (only when input NOT focused and playing)
-	if game_state == GameState.PLAYING and not input_field.has_focus():
+	# Inventory item selection with number keys (1-9) when action is pending
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "":
+		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+		for i in range(item_keys.size()):
+			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+				if not get_meta("itemkey_%d_pressed" % i, false):
+					set_meta("itemkey_%d_pressed" % i, true)
+					select_inventory_item(i)  # 0-based index
+			else:
+				set_meta("itemkey_%d_pressed" % i, false)
+
+	# Action bar hotkeys (only when input NOT focused and playing, and not selecting inventory item)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_inventory_action == "":
 		for i in range(action_hotkeys.size()):
 			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
@@ -201,8 +221,8 @@ func _process(_delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
-	# Numpad movement (only when playing and not in combat or flock pending)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending:
+	# Numpad movement (only when playing and not in combat, flock, pending continue, or inventory)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -228,6 +248,7 @@ func _process(_delta):
 
 				if move_dir > 0:
 					send_move(move_dir)
+					game_output.clear()
 					last_move_time = current_time
 
 	# Connection state
@@ -539,6 +560,7 @@ func show_player_info_popup(data: Dictionary):
 
 	var pname = data.get("name", "Unknown")
 	var level = data.get("level", 1)
+	var exp = data.get("experience", 1)
 	var cls = data.get("class", "Unknown")
 	var hp = data.get("hp", 0)
 	var max_hp = data.get("max_hp", 1)
@@ -557,6 +579,7 @@ func show_player_info_popup(data: Dictionary):
 	player_info_content.clear()
 	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
 	player_info_content.append_text("[center]Level %d %s[/center]\n" % [level, cls])
+	player_info_content.append_text("[center]Experience %s[/center]\n" % exp)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
 	player_info_content.append_text("[color=#4A90E2]HP:[/color] %d / %d\n\n" % [hp, max_hp])
 	player_info_content.append_text("[color=#9B59B6]Stats:[/color]\n")
@@ -582,6 +605,7 @@ func update_action_bar():
 	current_actions.clear()
 
 	if in_combat:
+		# Combat mode: Spacebar=Attack, Q=Defend, W=Flee, E=Special
 		current_actions = [
 			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
 			{"label": "Defend", "action_type": "combat", "action_data": "defend", "enabled": true},
@@ -605,14 +629,55 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif pending_continue:
+		# Waiting for player to acknowledge combat results
+		current_actions = [
+			{"label": "Continue", "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif inventory_mode:
+		if pending_inventory_action != "":
+			# Waiting for item selection - show cancel option
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Inventory sub-menu: Spacebar=Back, Q-R for inventory actions
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
+				{"label": "Inspect", "action_type": "local", "action_data": "inventory_inspect", "enabled": true},
+				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
+				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
+				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
+				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif has_character:
+		# Normal movement mode: Spacebar=Status
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
-			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
+			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": "Rest", "action_type": "server", "action_data": "rest", "enabled": true},
-			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Players", "action_type": "server", "action_data": "get_players", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
@@ -637,6 +702,10 @@ func update_action_bar():
 		button.disabled = not action.enabled
 
 func _on_action_button_pressed(index: int):
+	# Release button focus so Space key works correctly
+	var focused = get_viewport().gui_get_focus_owner()
+	if focused and focused is Button:
+		focused.release_focus()
 	trigger_action(index)
 
 func trigger_action(index: int):
@@ -689,6 +758,30 @@ func execute_local_action(action: String):
 			logout_character()
 		"logout_account":
 			logout_account()
+		"inventory":
+			open_inventory()
+		"inventory_back":
+			close_inventory()
+		"inventory_inspect":
+			prompt_inventory_action("inspect")
+		"inventory_use":
+			prompt_inventory_action("use")
+		"inventory_equip":
+			prompt_inventory_action("equip")
+		"inventory_unequip":
+			prompt_inventory_action("unequip")
+		"inventory_discard":
+			prompt_inventory_action("discard")
+		"inventory_cancel":
+			cancel_inventory_action()
+		"acknowledge_continue":
+			acknowledge_continue()
+
+func acknowledge_continue():
+	"""Clear pending continue state and allow game to proceed"""
+	pending_continue = false
+	game_output.clear()
+	update_action_bar()
 
 func logout_character():
 	"""Logout of current character, return to character select"""
@@ -703,6 +796,169 @@ func logout_account():
 		return
 	display_game("[color=#F39C12]Logging out...[/color]")
 	send_to_server({"type": "logout_account"})
+
+# ===== INVENTORY FUNCTIONS =====
+
+func open_inventory():
+	"""Open inventory view and switch to inventory mode"""
+	inventory_mode = true
+	update_action_bar()
+	display_inventory()
+
+func close_inventory():
+	"""Close inventory view and return to normal mode"""
+	inventory_mode = false
+	update_action_bar()
+	display_game("[color=#95A5A6]Inventory closed.[/color]")
+
+func display_inventory():
+	"""Display the player's inventory and equipped items"""
+	if not has_character:
+		return
+
+	var inventory = character_data.get("inventory", [])
+	var equipped = character_data.get("equipped", {})
+
+	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
+
+	# Show equipped items
+	display_game("[color=#4A90E2]Equipped:[/color]")
+	var has_equipped = false
+	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary:
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			display_game("  %s: [color=%s]%s[/color]" % [slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+			has_equipped = true
+	if not has_equipped:
+		display_game("  [color=#666666](nothing equipped)[/color]")
+
+	# Show inventory items
+	display_game("")
+	display_game("[color=#4A90E2]Backpack (%d/20):[/color]" % inventory.size())
+	if inventory.is_empty():
+		display_game("  [color=#666666](empty)[/color]")
+	else:
+		for i in range(inventory.size()):
+			var item = inventory[i]
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			display_game("  %d. [color=%s]%s[/color] (Lv%d)" % [i + 1, rarity_color, item.get("name", "Unknown"), item.get("level", 1)])
+
+	display_game("")
+	display_game("[color=#95A5A6]Actions: Q=Use, W=Equip, E=Unequip, R=Discard, Space=Back[/color]")
+
+func prompt_inventory_action(action_type: String):
+	"""Prompt user for item selection for inventory action"""
+	var inventory = character_data.get("inventory", [])
+	var equipped = character_data.get("equipped", {})
+
+	match action_type:
+		"inspect":
+			if inventory.is_empty() and _count_equipped_items(equipped) == 0:
+				display_game("[color=#E74C3C]No items to inspect.[/color]")
+				return
+			pending_inventory_action = "inspect_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]Press 1-%d to inspect an item, or type slot name (weapon, armor, etc.):[/color]" % max(1, inventory.size()))
+			update_action_bar()  # Show cancel option
+
+		"use":
+			if inventory.is_empty():
+				display_game("[color=#E74C3C]No items to use.[/color]")
+				return
+			pending_inventory_action = "use_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]Press 1-%d to use an item:[/color]" % inventory.size())
+			update_action_bar()
+
+		"equip":
+			if inventory.is_empty():
+				display_game("[color=#E74C3C]No items to equip.[/color]")
+				return
+			pending_inventory_action = "equip_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]Press 1-%d to equip an item:[/color]" % inventory.size())
+			update_action_bar()
+
+		"unequip":
+			var slots_with_items = []
+			for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+				if equipped.get(slot) != null:
+					slots_with_items.append(slot)
+			if slots_with_items.is_empty():
+				display_game("[color=#E74C3C]No items equipped.[/color]")
+				return
+			pending_inventory_action = "unequip_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]Type slot to unequip (%s):[/color]" % ", ".join(slots_with_items))
+			input_field.placeholder_text = "Slot name..."
+			input_field.grab_focus()
+
+		"discard":
+			if inventory.is_empty():
+				display_game("[color=#E74C3C]No items to discard.[/color]")
+				return
+			pending_inventory_action = "discard_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]Press 1-%d to discard an item:[/color]" % inventory.size())
+			update_action_bar()
+
+func _count_equipped_items(equipped: Dictionary) -> int:
+	"""Count number of equipped items"""
+	var count = 0
+	for slot in equipped.keys():
+		if equipped.get(slot) != null:
+			count += 1
+	return count
+
+func select_inventory_item(index: int):
+	"""Process inventory action with selected item index (0-based)"""
+	var inventory = character_data.get("inventory", [])
+
+	if index < 0 or index >= inventory.size():
+		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		display_inventory()  # Re-show inventory on error
+		return
+
+	var action = pending_inventory_action
+	pending_inventory_action = ""
+
+	# Process the action with the selected item
+	match action:
+		"inspect_item":
+			inspect_item(str(index + 1))  # Convert to 1-based for existing function
+			display_inventory()  # Re-show inventory after inspect
+		"use_item":
+			send_to_server({"type": "inventory_use", "index": index})
+			# Server will send character_update which triggers inventory refresh
+		"equip_item":
+			send_to_server({"type": "inventory_equip", "index": index})
+			# Server will send character_update which triggers inventory refresh
+		"discard_item":
+			var item = inventory[index]
+			send_to_server({"type": "inventory_discard", "index": index})
+			# Server will send character_update which triggers inventory refresh
+
+	update_action_bar()
+
+func cancel_inventory_action():
+	"""Cancel pending inventory action"""
+	if pending_inventory_action != "":
+		pending_inventory_action = ""
+		display_game("[color=#95A5A6]Action cancelled.[/color]")
+		display_inventory()  # Re-show inventory
+		update_action_bar()
+
+func _get_item_rarity_color(rarity: String) -> String:
+	"""Get display color for item rarity"""
+	match rarity:
+		"common": return "#FFFFFF"
+		"uncommon": return "#1EFF00"
+		"rare": return "#0070DD"
+		"epic": return "#A335EE"
+		"legendary": return "#FF8000"
+		"artifact": return "#E6CC80"
+		_: return "#FFFFFF"
 
 # ===== HP BAR FUNCTIONS =====
 
@@ -922,7 +1178,7 @@ func handle_server_message(message: Dictionary):
 
 		"location":
 			var desc = message.get("description", "")
-			if not in_combat:
+			if not in_combat and not pending_continue:
 				game_output.clear()
 			update_map(desc)
 
@@ -943,6 +1199,9 @@ func handle_server_message(message: Dictionary):
 				update_player_level()
 				update_player_hp_bar()
 				update_player_xp_bar()
+				# Re-display inventory if in inventory mode (after use/equip/discard)
+				if inventory_mode:
+					display_inventory()
 
 		"error":
 			var error_msg = message.get("message", "Unknown error")
@@ -991,7 +1250,6 @@ func handle_server_message(message: Dictionary):
 
 		"combat_end":
 			in_combat = false
-			update_action_bar()
 
 			if message.get("victory", false):
 				if damage_dealt_to_current_enemy > 0:
@@ -1006,14 +1264,20 @@ func handle_server_message(message: Dictionary):
 					flock_pending = true
 					flock_monster_name = message.get("flock_monster", "enemy")
 					display_game("[color=#FF6B6B]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
-					display_game("[color=#FFD700]Press Q to continue...[/color]")
-					update_action_bar()
+					display_game("[color=#FFD700]Press Space to continue...[/color]")
+				else:
+					# Victory without flock - pause to let player read rewards
+					pending_continue = true
+					display_game("[color=#95A5A6]Press Space to continue...[/color]")
 			elif message.get("fled", false):
 				display_game("[color=#FFD700]You escaped from combat![/color]")
+				pending_continue = true
+				display_game("[color=#95A5A6]Press Space to continue...[/color]")
 			else:
 				# Defeat handled by permadeath message
 				pass
 
+			update_action_bar()
 			show_enemy_hp_bar(false)
 			current_enemy_name = ""
 			current_enemy_level = 0
@@ -1045,12 +1309,21 @@ func _on_input_gui_input(event: InputEvent):
 func send_input():
 	var text = input_field.text.strip_edges()
 	input_field.clear()
+	input_field.placeholder_text = ""
 
 	if text.is_empty():
 		return
 
+	# Check for pending inventory action (text-based fallback for unequip)
+	if pending_inventory_action != "":
+		var action = pending_inventory_action
+		pending_inventory_action = ""
+		process_inventory_action(action, text)
+		update_action_bar()
+		return
+
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -1069,6 +1342,157 @@ func send_input():
 	display_game("[color=#F39C12]> %s[/color]" % text)
 	process_command(text)
 
+func process_inventory_action(action: String, input_text: String):
+	"""Process a pending inventory action with user input (text-based fallback)"""
+	match action:
+		"inspect_item":
+			inspect_item(input_text)
+
+		"use_item":
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1  # Convert to 0-based
+				send_to_server({"type": "inventory_use", "index": index})
+			else:
+				display_game("[color=#E74C3C]Invalid item number.[/color]")
+
+		"equip_item":
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1
+				send_to_server({"type": "inventory_equip", "index": index})
+			else:
+				display_game("[color=#E74C3C]Invalid item number.[/color]")
+
+		"unequip_item":
+			var slot = input_text.to_lower().strip_edges()
+			if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+				send_to_server({"type": "inventory_unequip", "slot": slot})
+			else:
+				display_game("[color=#E74C3C]Invalid slot. Use: weapon, armor, helm, shield, ring, amulet[/color]")
+
+		"discard_item":
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1
+				send_to_server({"type": "inventory_discard", "index": index})
+			else:
+				display_game("[color=#E74C3C]Invalid item number.[/color]")
+
+func inspect_item(input_text: String):
+	"""Inspect an item to see its details"""
+	var inventory = character_data.get("inventory", [])
+	var equipped = character_data.get("equipped", {})
+	var item = null
+	var source = ""
+
+	# Check if it's a slot name
+	var slot = input_text.to_lower().strip_edges()
+	if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		item = equipped.get(slot)
+		source = "equipped in %s slot" % slot
+		if item == null:
+			display_game("[color=#E74C3C]Nothing equipped in %s slot.[/color]" % slot)
+			return
+	elif input_text.is_valid_int():
+		var index = int(input_text) - 1
+		if index < 0 or index >= inventory.size():
+			display_game("[color=#E74C3C]Invalid item number.[/color]")
+			return
+		item = inventory[index]
+		source = "in backpack"
+	else:
+		display_game("[color=#E74C3C]Enter a number (1-%d) or slot name.[/color]" % inventory.size())
+		return
+
+	# Display item details
+	display_item_details(item, source)
+
+func display_item_details(item: Dictionary, source: String):
+	"""Display detailed information about an item"""
+	var name = item.get("name", "Unknown Item")
+	var item_type = item.get("type", "unknown")
+	var rarity = item.get("rarity", "common")
+	var level = item.get("level", 1)
+	var value = item.get("value", 0)
+	var rarity_color = _get_item_rarity_color(rarity)
+
+	display_game("")
+	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
+	display_game("[color=#95A5A6]%s[/color]" % source.capitalize())
+	display_game("")
+	display_game("[color=#4A90E2]Type:[/color] %s" % _get_item_type_description(item_type))
+	display_game("[color=#4A90E2]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
+	display_game("[color=#4A90E2]Level:[/color] %d" % level)
+	display_game("[color=#4A90E2]Value:[/color] %d gold" % value)
+	display_game("")
+	display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
+	display_game("")
+
+func _get_item_type_description(item_type: String) -> String:
+	"""Get a readable description of the item type"""
+	if "potion" in item_type:
+		return "Consumable - Healing Potion"
+	elif "elixir" in item_type:
+		return "Consumable - Powerful Elixir"
+	elif "weapon" in item_type:
+		return "Weapon - Increases attack damage"
+	elif "armor" in item_type:
+		return "Armor - Reduces damage taken"
+	elif "helm" in item_type:
+		return "Helm - Head protection"
+	elif "shield" in item_type:
+		return "Shield - Improves defense"
+	elif "ring" in item_type:
+		return "Ring - Magical accessory"
+	elif "amulet" in item_type:
+		return "Amulet - Enchanted necklace"
+	elif "gold_pouch" in item_type:
+		return "Currency - Contains gold"
+	elif "gem" in item_type:
+		return "Treasure - Valuable gem"
+	else:
+		return item_type.replace("_", " ").capitalize()
+
+func _get_item_effect_description(item_type: String, level: int, rarity: String) -> String:
+	"""Get a description of what the item does (matches character.gd bonuses)"""
+	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
+	var base_bonus = int(level * rarity_mult)
+
+	if "potion" in item_type or "elixir" in item_type:
+		var heal = level * 10
+		return "Restores %d HP when used" % heal
+	elif "weapon" in item_type:
+		var atk = base_bonus * 2
+		var str_bonus = int(base_bonus * 0.3)
+		return "+%d Attack, +%d STR" % [atk, str_bonus]
+	elif "armor" in item_type:
+		var def = base_bonus * 2
+		var con_bonus = int(base_bonus * 0.3)
+		var hp_bonus = base_bonus * 3
+		return "+%d Defense, +%d CON, +%d Max HP" % [def, con_bonus, hp_bonus]
+	elif "helm" in item_type:
+		var def = base_bonus
+		var wis_bonus = int(base_bonus * 0.2)
+		return "+%d Defense, +%d WIS" % [def, wis_bonus]
+	elif "shield" in item_type:
+		var def = int(base_bonus * 1.5)
+		var con_bonus = int(base_bonus * 0.2)
+		return "+%d Defense, +%d CON" % [def, con_bonus]
+	elif "ring" in item_type:
+		var atk = int(base_bonus * 0.5)
+		var dex_bonus = int(base_bonus * 0.3)
+		var int_bonus = int(base_bonus * 0.2)
+		return "+%d Attack, +%d DEX, +%d INT" % [atk, dex_bonus, int_bonus]
+	elif "amulet" in item_type:
+		var mana_bonus = base_bonus * 2
+		var wis_bonus = int(base_bonus * 0.3)
+		var cha_bonus = int(base_bonus * 0.2)
+		return "+%d Max Mana, +%d WIS, +%d CHA" % [mana_bonus, wis_bonus, cha_bonus]
+	elif "gold_pouch" in item_type:
+		return "Contains %d-%d gold" % [level * 10, level * 50]
+	elif "gem" in item_type:
+		return "Worth %d gold when sold" % int(level * 100 * rarity_mult)
+	else:
+		return "Unknown effect"
+
 func process_command(text: String):
 	var parts = text.split(" ", false)
 	if parts.is_empty():
@@ -1085,6 +1509,11 @@ func process_command(text: String):
 		"status":
 			if has_character:
 				display_character_status()
+			else:
+				display_game("You don't have a character yet")
+		"inventory", "inv", "i":
+			if has_character:
+				open_inventory()
 			else:
 				display_game("You don't have a character yet")
 		"attack", "a":
@@ -1160,42 +1589,119 @@ func display_character_status():
 
 	var char = character_data
 	var stats = char.get("stats", {})
-	var text = """
-[b]Character Status[/b]
-Name: %s
-Class: %s
-Level: %d
-HP: %d/%d (%s)
-Mana: %d/%d
-Gold: %d
-Position: (%d, %d)
-Monsters Killed: %d
+	var equipped = char.get("equipped", {})
+	var bonuses = _calculate_equipment_bonuses(equipped)
 
-Stats:
-  STR: %d  CON: %d  DEX: %d
-  INT: %d  WIS: %d  CHA: %d
-""" % [
-		char.get("name", "Unknown"),
-		char.get("class", "Unknown"),
-		char.get("level", 1),
-		char.get("current_hp", 0),
-		char.get("max_hp", 0),
-		char.get("health_state", "Unknown"),
-		char.get("current_mana", 0),
-		char.get("max_mana", 0),
-		char.get("gold", 0),
-		char.get("x", 0),
-		char.get("y", 0),
-		char.get("monsters_killed", 0),
-		stats.get("strength", 0),
-		stats.get("constitution", 0),
-		stats.get("dexterity", 0),
-		stats.get("intelligence", 0),
-		stats.get("wisdom", 0),
-		stats.get("charisma", 0)
-	]
+	var text = "[b][color=#FFD700]Character Status[/color][/b]\n"
+	text += "Name: %s\n" % char.get("name", "Unknown")
+	text += "Class: %s\n" % char.get("class", "Unknown")
+	text += "Level: %d\n" % char.get("level", 1)
+	text += "HP: %d/%d (%s)\n" % [char.get("current_hp", 0), char.get("max_hp", 0), char.get("health_state", "Unknown")]
+	text += "Mana: %d/%d\n" % [char.get("current_mana", 0), char.get("max_mana", 0)]
+	text += "Gold: %d\n" % char.get("gold", 0)
+	text += "Position: (%d, %d)\n" % [char.get("x", 0), char.get("y", 0)]
+	text += "Monsters Killed: %d\n\n" % char.get("monsters_killed", 0)
+
+	# Base stats with equipment bonuses shown
+	text += "[color=#4A90E2]Base Stats:[/color]\n"
+	text += "  STR: %d" % stats.get("strength", 0)
+	if bonuses.strength > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.strength
+	text += "  CON: %d" % stats.get("constitution", 0)
+	if bonuses.constitution > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.constitution
+	text += "  DEX: %d" % stats.get("dexterity", 0)
+	if bonuses.dexterity > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.dexterity
+	text += "\n"
+	text += "  INT: %d" % stats.get("intelligence", 0)
+	if bonuses.intelligence > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.intelligence
+	text += "  WIS: %d" % stats.get("wisdom", 0)
+	if bonuses.wisdom > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.wisdom
+	text += "  CHA: %d" % stats.get("charisma", 0)
+	if bonuses.charisma > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.charisma
+	text += "\n\n"
+
+	# Combat stats
+	var total_attack = stats.get("strength", 0) + bonuses.strength + bonuses.attack
+	var total_defense = (stats.get("constitution", 0) + bonuses.constitution) / 2 + bonuses.defense
+
+	text += "[color=#FF6666]Combat Stats:[/color]\n"
+	text += "  Attack Power: %d" % total_attack
+	if bonuses.attack > 0:
+		text += " [color=#90EE90](+%d from gear)[/color]" % bonuses.attack
+	text += "\n"
+	text += "  Defense: %d" % total_defense
+	if bonuses.defense > 0:
+		text += " [color=#90EE90](+%d from gear)[/color]" % bonuses.defense
+	text += "\n"
+	text += "  Damage: %d-%d\n" % [int(total_attack * 0.8), int(total_attack * 1.2)]
 
 	display_game(text)
+
+func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
+	"""Calculate total bonuses from equipped items (client-side mirror of Character method)"""
+	var bonuses = {
+		"attack": 0,
+		"defense": 0,
+		"strength": 0,
+		"constitution": 0,
+		"dexterity": 0,
+		"intelligence": 0,
+		"wisdom": 0,
+		"charisma": 0,
+		"max_hp": 0,
+		"max_mana": 0
+	}
+
+	for slot in equipped.keys():
+		var item = equipped.get(slot)
+		if item == null or not item is Dictionary:
+			continue
+
+		var item_level = item.get("level", 1)
+		var item_type = item.get("type", "")
+		var rarity_mult = _get_rarity_multiplier_for_status(item.get("rarity", "common"))
+
+		var base_bonus = int(item_level * rarity_mult)
+
+		if "weapon" in item_type:
+			bonuses.attack += base_bonus * 2
+			bonuses.strength += int(base_bonus * 0.3)
+		elif "armor" in item_type:
+			bonuses.defense += base_bonus * 2
+			bonuses.constitution += int(base_bonus * 0.3)
+			bonuses.max_hp += base_bonus * 3
+		elif "helm" in item_type:
+			bonuses.defense += base_bonus
+			bonuses.wisdom += int(base_bonus * 0.2)
+		elif "shield" in item_type:
+			bonuses.defense += int(base_bonus * 1.5)
+			bonuses.constitution += int(base_bonus * 0.2)
+		elif "ring" in item_type:
+			bonuses.attack += int(base_bonus * 0.5)
+			bonuses.dexterity += int(base_bonus * 0.3)
+			bonuses.intelligence += int(base_bonus * 0.2)
+		elif "amulet" in item_type:
+			bonuses.max_mana += base_bonus * 2
+			bonuses.wisdom += int(base_bonus * 0.3)
+			bonuses.charisma += int(base_bonus * 0.2)
+
+	return bonuses
+
+func _get_rarity_multiplier_for_status(rarity: String) -> float:
+	"""Get multiplier for item rarity"""
+	match rarity:
+		"common": return 1.0
+		"uncommon": return 1.5
+		"rare": return 2.0
+		"epic": return 3.0
+		"legendary": return 4.5
+		"artifact": return 6.0
+		_: return 1.0
 
 func show_help():
 	var help_text = """
@@ -1210,8 +1716,14 @@ func show_help():
 [color=#4A90E2]Chat:[/color]
   Just type and press Enter!
 
-[color=#4A90E2]Actions:[/color]
-  Q/W/E/R or 1-5 for action bar
+[color=#4A90E2]Action Bar:[/color]
+  [Space] = Primary action (Status/Attack)
+  [Q][W][E][R] = Quick actions
+  [1][2][3][4] = Additional actions
+
+[color=#4A90E2]Inventory:[/color]
+  inventory/inv/i - Open inventory
+  [Q] Inventory in movement mode
 
 [color=#4A90E2]Social:[/color]
   who/players - Refresh player list
@@ -1221,6 +1733,66 @@ func show_help():
   help - This help
   status - Show stats
   clear - Clear screens
+
+[color=#FF6600]! = Danger Zone[/color] (hotspot with boosted monster levels)
+
+[b][color=#FFD700]== CHARACTER STATS ==[/color][/b]
+
+[color=#FF6666]STR (Strength)[/color] - Primary damage stat
+  • Increases physical attack damage (+2% per point)
+  • Higher STR = hit harder in combat
+
+[color=#66FF66]CON (Constitution)[/color] - Health and defense
+  • Determines max HP (base 50 + CON × 5)
+  • Reduces damage taken (-1% per point, up to 30%)
+  • Essential for survival against tough monsters
+
+[color=#66FFFF]DEX (Dexterity)[/color] - Speed and evasion
+  • Increases hit chance (+1% per point)
+  • Improves flee success rate (+2% per point)
+  • Affects who strikes first in combat
+
+[color=#FF66FF]INT (Intelligence)[/color] - Magic power
+  • Increases spell damage (+3% per point)
+  • Determines max Mana (base 20 + INT × 3)
+  • Used for special abilities
+
+[color=#FFFF66]WIS (Wisdom)[/color] - Magic defense
+  • Reduces magic damage taken (-1.5% per point)
+  • Improves mana regeneration
+  • Helps resist special attacks
+
+[color=#FFA500]CHA (Charisma)[/color] - Social influence
+  • Affects encounter outcomes
+  • Better prices at shops
+  • Improves certain special abilities
+
+[b][color=#FFD700]== COMBAT MECHANICS ==[/color][/b]
+
+[color=#4A90E2]Attack Damage:[/color]
+  Base damage = STR × weapon modifier
+  Final damage = Base × (1 + level/50) - enemy defense
+  Critical hits deal 1.5x damage (chance based on DEX)
+
+[color=#4A90E2]Defense:[/color]
+  Damage reduction = CON% (max 30%)
+  Armor adds flat reduction
+  Block chance when defending = 25% + DEX/2
+
+[color=#4A90E2]Hit Chance:[/color]
+  Base hit = 75% + (your DEX - enemy DEX)
+  Minimum 50%, maximum 95%
+
+[color=#4A90E2]Flee Chance:[/color]
+  Base flee = 40% + (your DEX × 2) - (enemy level / 10)
+  Defending enemies: +20% flee chance
+  Failed flee = enemy gets free attack
+
+[color=#4A90E2]Combat Tips:[/color]
+  • Defend reduces damage by 50% and boosts next attack
+  • Special attacks cost mana but deal bonus damage
+  • Monster level affects all their stats
+  • Higher tier monsters are tougher but give better rewards
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
