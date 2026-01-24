@@ -3,8 +3,8 @@
 extends Control
 
 # CONFIGURE THESE FOR YOUR GITHUB REPO
-const GITHUB_OWNER = "YOUR_GITHUB_USERNAME"  # Change this!
-const GITHUB_REPO = "phantasia-revival"       # Change this!
+const GITHUB_OWNER = "Dextobust33"
+const GITHUB_REPO = "phantasia-revival"
 const GAME_EXECUTABLE = "phantasia-client.exe"
 
 @onready var status_label = $VBox/StatusLabel
