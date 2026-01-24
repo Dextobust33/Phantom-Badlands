@@ -302,9 +302,9 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 	# Get distance-based level range
 	var level_range = get_monster_level_range(center_x, center_y)
 
-	# Location header
-	output += "[b][color=#FFD700]Location:[/color][/b] (%d, %d)\n" % [center_x, center_y]
-	output += "[b][color=#FFD700]Terrain:[/color][/b] %s\n" % info.name
+	# Location header (left-aligned with emphasized coordinates)
+	output += "[color=#B8860B]Location:[/color] [color=#5F9EA0][b](%d, %d)[/b][/color]\n" % [center_x, center_y]
+	output += "[color=#B8860B]Terrain:[/color] %s\n" % info.name
 
 	# Merchant at current location
 	if is_merchant_at(center_x, center_y):
@@ -322,8 +322,10 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 
 	output += "\n"
 
-	# Add the map (with merchants visible)
+	# Add the map (centered)
+	output += "[center]"
 	output += generate_ascii_map_with_merchants(center_x, center_y, radius)
+	output += "[/center]"
 
 	return output
 
@@ -415,6 +417,14 @@ func _distance_to_level(distance: float) -> int:
 	# Max distance is ~1414 (corners of 1000x1000 world)
 	var t = min(1.0, (distance - 900) / 514.0)  # 0 to 1
 	return int(5000 + t * 5000)
+
+func get_hotspot_at(x: int, y: int) -> Dictionary:
+	"""Get hotspot info for a location. Returns {in_hotspot: bool, intensity: float}"""
+	var in_hotspot = _is_hotspot(x, y)
+	var intensity = 0.0
+	if in_hotspot:
+		intensity = _get_hotspot_intensity(x, y)
+	return {"in_hotspot": in_hotspot, "intensity": intensity}
 
 func _is_hotspot(x: int, y: int) -> bool:
 	"""Check if coordinates are within a danger zone hot spot cluster"""

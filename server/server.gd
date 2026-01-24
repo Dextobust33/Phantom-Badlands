@@ -163,6 +163,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_chat(peer_id, message)
 		"move":
 			handle_move(peer_id, message)
+		"hunt":
+			handle_hunt(peer_id)
 		"combat":
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
@@ -654,6 +656,54 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check for monster encounter (only if no merchant)
 	elif world_system.check_encounter(new_pos.x, new_pos.y):
 		trigger_encounter(peer_id)
+
+func handle_hunt(peer_id: int):
+	"""Handle hunt action - actively search for monsters with increased encounter chance"""
+	if not characters.has(peer_id):
+		return
+
+	# Check if in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot hunt while in combat!"})
+		return
+
+	# Check if flock encounter pending
+	if pending_flocks.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "More enemies are approaching! Press Space to continue."})
+		return
+
+	var character = characters[peer_id]
+
+	# Check if in safe zone (can't hunt there)
+	var terrain = world_system.get_terrain_at(character.x, character.y)
+	var terrain_info = world_system.get_terrain_info(terrain)
+	if terrain_info.safe:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#95A5A6]This is a safe area. No monsters can be found here.[/color]",
+			"clear_output": true
+		})
+		send_location_update(peer_id)
+		return
+
+	# Hunt has 60% base encounter chance (vs normal ~15-25%)
+	var hunt_roll = randi() % 100
+	var hunt_chance = 60
+
+	# Bonus chance based on location danger (hotspots)
+	var hotspot_info = world_system.get_hotspot_at(character.x, character.y)
+	if hotspot_info.in_hotspot:
+		hunt_chance += 20  # 80% in hotspots
+
+	if hunt_roll < hunt_chance:
+		trigger_encounter(peer_id)
+	else:
+		# Don't send location update - player hasn't moved, keep the message visible
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#95A5A6]You search the area but are unable to locate any monsters.[/color]",
+			"clear_output": true
+		})
 
 func handle_rest(peer_id: int):
 	"""Handle rest action to restore HP"""

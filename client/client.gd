@@ -32,6 +32,7 @@ var game_state = GameState.DISCONNECTED
 @onready var gem_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer/GemLabel
 @onready var music_toggle = $RootContainer/MainContainer/RightPanel/LevelRow/MusicToggle
 @onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
+@onready var movement_pad = $RootContainer/MainContainer/RightPanel/MovementPad
 
 # UI References - Login Panel
 @onready var login_panel = $LoginPanel
@@ -86,6 +87,12 @@ var character_data = {}
 var has_character = false
 var last_move_time = 0.0
 const MOVE_COOLDOWN = 0.5
+const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
+const MAP_MIN_FONT_SIZE = 10
+const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for fullscreen
+const GAME_OUTPUT_BASE_FONT_SIZE = 14
+const GAME_OUTPUT_MIN_FONT_SIZE = 12
+const GAME_OUTPUT_MAX_FONT_SIZE = 32
 
 # Combat state
 var in_combat = false
@@ -146,7 +153,7 @@ var rare_drop_player: AudioStreamPlayer = null
 
 # Background music
 var music_player: AudioStreamPlayer = null
-var music_muted: bool = false
+var music_muted: bool = true  # Start with music off
 const MUSIC_VOLUME_DB: float = -46.0  # Very quiet background
 
 # Level up sound
@@ -248,9 +255,29 @@ func _ready():
 	# Connect music toggle button
 	if music_toggle:
 		music_toggle.pressed.connect(_on_music_toggle_pressed)
+		# Set initial muted appearance
+		music_toggle.text = "♪"
+		music_toggle.modulate = Color(0.5, 0.5, 0.5)
+
+	# Connect movement pad buttons
+	if movement_pad:
+		movement_pad.get_node("NW").pressed.connect(_on_move_button.bind(7))
+		movement_pad.get_node("N").pressed.connect(_on_move_button.bind(8))
+		movement_pad.get_node("NE").pressed.connect(_on_move_button.bind(9))
+		movement_pad.get_node("W").pressed.connect(_on_move_button.bind(4))
+		movement_pad.get_node("Hunt").pressed.connect(_on_hunt_button)
+		movement_pad.get_node("E").pressed.connect(_on_move_button.bind(6))
+		movement_pad.get_node("SW").pressed.connect(_on_move_button.bind(1))
+		movement_pad.get_node("S").pressed.connect(_on_move_button.bind(2))
+		movement_pad.get_node("SE").pressed.connect(_on_move_button.bind(3))
 
 	# Defer music generation to not block startup
 	call_deferred("_start_background_music")
+
+	# Connect window resize for map scaling
+	get_tree().root.size_changed.connect(_on_window_resized)
+	# Initial map scale
+	call_deferred("_on_window_resized")
 
 	# Initial display
 	display_game("[b][color=#4A90E2]Welcome to Phantasia Revival[/color][/b]")
@@ -635,6 +662,33 @@ func _on_music_toggle_pressed():
 		if music_toggle:
 			music_toggle.text = "♫"
 			music_toggle.modulate = Color(1, 1, 1)
+	# Release focus so spacebar works for action bar
+	if music_toggle:
+		music_toggle.release_focus()
+
+func _on_window_resized():
+	"""Scale font sizes based on window height"""
+	var window_height = get_viewport().get_visible_rect().size.y
+	# Scale based on 720p as baseline
+	var scale_factor = window_height / 720.0
+
+	# Scale map display (more aggressive scaling with 1.3x multiplier)
+	if map_display:
+		var map_font_size = int(MAP_BASE_FONT_SIZE * scale_factor * 1.3)
+		map_font_size = clampi(map_font_size, MAP_MIN_FONT_SIZE, MAP_MAX_FONT_SIZE)
+		map_display.add_theme_font_size_override("normal_font_size", map_font_size)
+		map_display.add_theme_font_size_override("bold_font_size", map_font_size)
+		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
+		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
+
+	# Scale game output
+	if game_output:
+		var game_font_size = int(GAME_OUTPUT_BASE_FONT_SIZE * scale_factor)
+		game_font_size = clampi(game_font_size, GAME_OUTPUT_MIN_FONT_SIZE, GAME_OUTPUT_MAX_FONT_SIZE)
+		game_output.add_theme_font_size_override("normal_font_size", game_font_size)
+		game_output.add_theme_font_size_override("bold_font_size", game_font_size)
+		game_output.add_theme_font_size_override("italics_font_size", game_font_size)
+		game_output.add_theme_font_size_override("bold_italics_font_size", game_font_size)
 
 func _process(_delta):
 	connection.poll()
@@ -708,12 +762,13 @@ func _process(_delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
-	# Numpad movement (only when playing and not in combat, flock, pending continue, inventory, or merchant)
+	# Numpad movement and hunt (only when playing and not in combat, flock, pending continue, inventory, or merchant)
 	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
 				var move_dir = 0
+				var is_hunt = false
 				if Input.is_physical_key_pressed(KEY_KP_1):
 					move_dir = 1
 				elif Input.is_physical_key_pressed(KEY_KP_2):
@@ -723,7 +778,7 @@ func _process(_delta):
 				elif Input.is_physical_key_pressed(KEY_KP_4):
 					move_dir = 4
 				elif Input.is_physical_key_pressed(KEY_KP_5):
-					move_dir = 5
+					is_hunt = true
 				elif Input.is_physical_key_pressed(KEY_KP_6):
 					move_dir = 6
 				elif Input.is_physical_key_pressed(KEY_KP_7):
@@ -736,6 +791,10 @@ func _process(_delta):
 				if move_dir > 0:
 					send_move(move_dir)
 					game_output.clear()
+					last_move_time = current_time
+				elif is_hunt:
+					game_output.clear()
+					send_to_server({"type": "hunt"})
 					last_move_time = current_time
 
 	# Connection state
@@ -3130,6 +3189,32 @@ func send_move(direction: int):
 		return
 
 	send_to_server({"type": "move", "direction": direction})
+
+func _on_move_button(direction: int):
+	"""Handle movement pad button press"""
+	if not connected or not has_character:
+		return
+	if in_combat or flock_pending or pending_continue or inventory_mode or at_merchant:
+		return
+
+	var current_time = Time.get_ticks_msec() / 1000.0
+	if current_time - last_move_time >= MOVE_COOLDOWN:
+		send_move(direction)
+		game_output.clear()
+		last_move_time = current_time
+
+func _on_hunt_button():
+	"""Handle Hunt button press - searches for monsters with increased encounter chance"""
+	if not connected or not has_character:
+		return
+	if in_combat or flock_pending or pending_continue or inventory_mode or at_merchant:
+		return
+
+	var current_time = Time.get_ticks_msec() / 1000.0
+	if current_time - last_move_time >= MOVE_COOLDOWN:
+		game_output.clear()
+		send_to_server({"type": "hunt"})
+		last_move_time = current_time
 
 # ===== DISPLAY FUNCTIONS =====
 
