@@ -136,6 +136,12 @@ var last_player_click_time: float = 0.0
 const DOUBLE_CLICK_THRESHOLD: float = 0.4  # 400ms for double-click
 var pending_player_info_request: String = ""  # Track pending popup request
 
+# Rare drop sound effect
+var last_rare_sound_time: float = 0.0
+const RARE_SOUND_COOLDOWN: float = 120.0  # 2 minute cooldown
+var rare_sound_threshold: int = 0  # Increases if sound played recently
+var rare_drop_player: AudioStreamPlayer = null
+
 func _ready():
 	# Setup action bar
 	if action_bar:
@@ -201,6 +207,12 @@ func _ready():
 		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
 			class_option.add_item(cls)
 
+	# Initialize rare drop sound player
+	rare_drop_player = AudioStreamPlayer.new()
+	rare_drop_player.volume_db = -5.0  # Slightly quieter
+	add_child(rare_drop_player)
+	_generate_rare_drop_sound()
+
 	# Initial display
 	display_game("[b][color=#4A90E2]Welcome to Phantasia Revival[/color][/b]")
 	display_game("Connecting to server...")
@@ -211,6 +223,62 @@ func _ready():
 
 	# Auto-connect
 	connect_to_server()
+
+func _generate_rare_drop_sound():
+	"""Generate a pleasant chime sound for rare drops"""
+	var sample_rate = 44100
+	var duration = 0.4
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	# Create a pleasant rising chime (C5 -> E5 -> G5)
+	var frequencies = [523.25, 659.25, 783.99]  # C5, E5, G5
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var envelope = 1.0 - (t / duration)  # Fade out
+		envelope = envelope * envelope  # Exponential fade
+
+		var sample_val = 0.0
+		for j in range(frequencies.size()):
+			var freq = frequencies[j]
+			var note_start = j * 0.08  # Stagger notes
+			if t >= note_start:
+				var note_t = t - note_start
+				var note_env = max(0.0, 1.0 - (note_t / (duration - note_start)))
+				sample_val += sin(TAU * freq * t) * note_env * 0.3
+
+		var int_val = int(clamp(sample_val * envelope * 32767, -32768, 32767))
+		data[i * 2] = int_val & 0xFF
+		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+
+	audio.data = data
+	rare_drop_player.stream = audio
+
+func play_rare_drop_sound(drop_value: int):
+	"""Play sound for rare drops if cooldown allows and value is high enough"""
+	var current_time = Time.get_ticks_msec() / 1000.0
+	var time_since_last = current_time - last_rare_sound_time
+
+	# Reset threshold if enough time has passed
+	if time_since_last >= RARE_SOUND_COOLDOWN:
+		rare_sound_threshold = 0
+
+	# Threshold increases each time sound plays within cooldown
+	# Value needed: base 1 + threshold (so first is 1, then 2, then 3, etc.)
+	var required_value = 1 + rare_sound_threshold
+
+	if drop_value >= required_value:
+		if rare_drop_player and rare_drop_player.stream:
+			rare_drop_player.play()
+		last_rare_sound_time = current_time
+		rare_sound_threshold += 1
 
 func _process(_delta):
 	connection.poll()
@@ -1115,22 +1183,33 @@ func prompt_merchant_action(action_type: String):
 			update_action_bar()
 
 		"gamble":
-			pending_merchant_action = "gamble"
 			var gold = character_data.get("gold", 0)
+			var level = character_data.get("level", 1)
+			var min_bet = maxi(10, level * 10)  # Level-based minimum
 			var max_bet = gold / 2
-			display_game("[color=#FFD700]===== GAMBLING =====[/color]")
+
+			if max_bet < min_bet:
+				display_game("[color=#FF6B6B]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2))
+				return
+
+			pending_merchant_action = "gamble"
+			display_game("[color=#FFD700]===== GAMBLING - DICE GAME =====[/color]")
 			display_game("Your gold: %d" % gold)
-			display_game("Maximum bet: %d (half your gold)" % max_bet)
+			display_game("Bet range: %d - %d gold" % [min_bet, max_bet])
 			display_game("")
-			display_game("[color=#95A5A6]Odds:[/color]")
-			display_game("  50% - Lose your bet")
-			display_game("  35% - Win 1.5x your bet")
-			display_game("  12% - Win 3x your bet")
-			display_game("  3% - Win a mystery item!")
+			display_game("[color=#95A5A6]Rules: Both roll 3 dice. Higher total wins![/color]")
+			display_game("  Lose by 6+: Lose full bet")
+			display_game("  Lose by 1-5: Lose half bet")
+			display_game("  Tie: Bet returned")
+			display_game("  Win by 1-5: Win 1.5x")
+			display_game("  Win by 6-10: Win 2.5x")
+			display_game("  Win by 11+: Win 3x")
+			display_game("  Triple 6s: JACKPOT (item or 5x)!")
 			display_game("")
-			display_game("[color=#FFD700]Enter bet amount (50-%d):[/color]" % max_bet)
+			display_game("[color=#FFD700]Enter bet amount (%d-%d):[/color]" % [min_bet, max_bet])
 			input_field.placeholder_text = "Bet amount..."
 			input_field.grab_focus()
+			update_action_bar()
 
 		"buy":
 			var shop_items = merchant_data.get("shop_items", [])
@@ -1218,6 +1297,93 @@ func handle_shop_inventory(message: Dictionary):
 	if pending_merchant_action == "buy":
 		display_shop_inventory()
 	update_action_bar()
+
+func handle_gamble_result(message: Dictionary):
+	"""Handle gambling result from server"""
+	var success = message.get("success", false)
+	var gold = message.get("gold", 0)
+	var min_bet = message.get("min_bet", 10)
+	var max_bet = message.get("max_bet", gold / 2)
+
+	# Update local gold
+	character_data["gold"] = gold
+	update_currency_display()
+
+	if not success:
+		# Failed to gamble (not enough gold, etc.)
+		display_game(message.get("message", "Gambling failed."))
+		pending_merchant_action = ""
+		show_merchant_menu()
+		update_action_bar()
+		return
+
+	# Show dice rolls
+	display_game("")
+	display_game("[color=#FFD700]===== DICE ROLL =====[/color]")
+	display_game(message.get("dice_message", ""))
+	display_game(message.get("result_message", ""))
+
+	# Check if won an item (play rare sound)
+	var item_won = message.get("item_won")
+	if item_won != null:
+		var rarity = item_won.get("rarity", "common")
+		var drop_value = _get_rarity_value(rarity) + 1  # +1 for gambling jackpot
+		play_rare_drop_sound(drop_value)
+
+	# Show current gold and prompt for next bet
+	display_game("")
+	display_game("[color=#FFD700]Your gold: %d[/color]" % gold)
+
+	if max_bet >= min_bet:
+		display_game("[color=#95A5A6]Enter another bet (%d-%d) or press Space to stop:[/color]" % [min_bet, max_bet])
+		pending_merchant_action = "gamble"
+		input_field.placeholder_text = "Bet amount..."
+		input_field.grab_focus()
+	else:
+		display_game("[color=#FF6B6B]You don't have enough gold to continue gambling.[/color]")
+		pending_merchant_action = ""
+		show_merchant_menu()
+
+	update_action_bar()
+
+func _get_rarity_value(rarity: String) -> int:
+	"""Get numeric value for rarity (for sound threshold)"""
+	match rarity:
+		"common": return 0
+		"uncommon": return 1
+		"rare": return 2
+		"epic": return 3
+		"legendary": return 4
+		"artifact": return 5
+		_: return 0
+
+func _calculate_drop_value(message: Dictionary) -> int:
+	"""Calculate the 'rarity value' of drops for sound effect threshold"""
+	var total_value = 0
+
+	# Gems are valuable - each gem adds 1 value
+	var gems = message.get("total_gems", 0)
+	if gems >= 3:
+		total_value += gems  # 3+ gems is significant
+
+	# Check item drops
+	var drop_data = message.get("drop_data", [])
+	for item in drop_data:
+		var rarity = item.get("rarity", "common")
+		var rarity_val = _get_rarity_value(rarity)
+
+		# Rare+ items are significant
+		if rarity_val >= 2:  # rare or better
+			total_value += rarity_val
+
+		# Items way above level are significant (20+ levels)
+		var level_diff = item.get("level_diff", 0)
+		if level_diff >= 20:
+			total_value += 2
+		elif level_diff >= 10:
+			total_value += 1
+
+	return total_value
 
 func cancel_merchant_action():
 	"""Cancel pending merchant action"""
@@ -1761,14 +1927,14 @@ func update_currency_display():
 	if not has_character:
 		return
 
-	var gold = character_data.get("gold", 0)
-	var gems = character_data.get("gems", 0)
+	var gold = int(character_data.get("gold", 0))
+	var gems = int(character_data.get("gems", 0))
 
 	if gold_label:
 		gold_label.text = format_number(gold)
 
 	if gem_label:
-		gem_label.text = str(gems)
+		gem_label.text = "%d" % gems
 
 func format_number(num: int) -> String:
 	"""Format large numbers with K/M suffixes for readability"""
@@ -2122,6 +2288,12 @@ func handle_server_message(message: Dictionary):
 						display_game("[color=#FFD700]===== LOOT =====[/color]")
 						for drop_msg in flock_drops:
 							display_game(drop_msg)
+
+					# Check for rare drops and play sound effect
+					var drop_value = _calculate_drop_value(message)
+					if drop_value > 0:
+						play_rare_drop_sound(drop_value)
+
 					# Pause to let player read rewards
 					pending_continue = true
 					display_game("[color=#95A5A6]Press Space to continue...[/color]")
@@ -2159,6 +2331,9 @@ func handle_server_message(message: Dictionary):
 
 		"shop_inventory":
 			handle_shop_inventory(message)
+
+		"gamble_result":
+			handle_gamble_result(message)
 
 		"password_changed":
 			finish_password_change(true, message.get("message", "Password changed successfully!"))

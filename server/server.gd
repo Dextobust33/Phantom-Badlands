@@ -12,6 +12,7 @@ var next_peer_id = 1
 var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
+var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
@@ -739,6 +740,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var flock_chance = result.get("flock_chance", 0)
 			var flock_roll = randi() % 100
 
+			# Track gems earned this combat
+			var gems_this_combat = result.get("gems_earned", 0)
+
 			if flock_chance > 0 and flock_roll < flock_chance:
 				# Flock triggered! Store drops for later, don't give items yet
 				var monster_name = result.get("monster_name", "")
@@ -748,6 +752,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if not pending_flock_drops.has(peer_id):
 					pending_flock_drops[peer_id] = []
 				pending_flock_drops[peer_id].append_array(current_drops)
+
+				# Accumulate gems for this flock
+				if not pending_flock_gems.has(peer_id):
+					pending_flock_gems[peer_id] = 0
+				pending_flock_gems[peer_id] += gems_this_combat
 
 				# Store pending flock data for this peer
 				pending_flocks[peer_id] = {
@@ -774,8 +783,16 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					pending_flock_drops.erase(peer_id)
 				all_drops.append_array(current_drops)
 
+				# Collect total gems from flock
+				var total_gems = gems_this_combat
+				if pending_flock_gems.has(peer_id):
+					total_gems += pending_flock_gems[peer_id]
+					pending_flock_gems.erase(peer_id)
+
 				# Give all drops to player now
 				var drop_messages = []
+				var drop_data = []  # For client sound effects
+				var player_level = characters[peer_id].level
 				for item in all_drops:
 					if characters[peer_id].can_add_item():
 						characters[peer_id].add_item(item)
@@ -783,29 +800,41 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							_get_rarity_color(item.get("rarity", "common")),
 							item.get("name", "Unknown Item")
 						])
+						# Track rarity and level for sound effects
+						drop_data.append({
+							"rarity": item.get("rarity", "common"),
+							"level": item.get("level", 1),
+							"level_diff": item.get("level", 1) - player_level
+						})
 
 				send_to_peer(peer_id, {
 					"type": "combat_end",
 					"victory": true,
 					"character": characters[peer_id].to_dict(),
-					"flock_drops": drop_messages  # Send all drop messages at once
+					"flock_drops": drop_messages,  # Send all drop messages at once
+					"total_gems": total_gems,       # Total gems earned for sound
+					"drop_data": drop_data          # Item data for sound effects
 				})
 
 				# Save character after combat
 				save_character(peer_id)
 
 		elif result.has("fled") and result.fled:
-			# Fled successfully - lose any pending flock drops
+			# Fled successfully - lose any pending flock drops and gems
 			if pending_flock_drops.has(peer_id):
 				pending_flock_drops.erase(peer_id)
+			if pending_flock_gems.has(peer_id):
+				pending_flock_gems.erase(peer_id)
 			send_to_peer(peer_id, {
 				"type": "combat_end",
 				"fled": true
 			})
 		else:
-			# Defeated - PERMADEATH! Clear any pending drops
+			# Defeated - PERMADEATH! Clear any pending drops and gems
 			if pending_flock_drops.has(peer_id):
 				pending_flock_drops.erase(peer_id)
+			if pending_flock_gems.has(peer_id):
+				pending_flock_gems.erase(peer_id)
 			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
 	else:
 		# Combat continues - send updated state
@@ -1414,67 +1443,108 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var bet_amount = message.get("amount", 100)
 
-	# Minimum bet is 50, maximum is half your gold
-	bet_amount = clampi(bet_amount, 50, character.gold / 2)
+	# Minimum bet scales with level: level * 10 (level 1 = 10g, level 100 = 1000g)
+	var min_bet = maxi(10, character.level * 10)
+	var max_bet = character.gold / 2
 
-	if character.gold < bet_amount:
+	if max_bet < min_bet:
 		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF6B6B]You don't have enough gold! (Min bet: 50 gold)[/color]"
+			"type": "gamble_result",
+			"success": false,
+			"message": "[color=#FF6B6B]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2),
+			"gold": character.gold
 		})
 		return
 
-	# Gambling odds:
-	# 50% - lose your bet
-	# 35% - win 1.5x your bet
-	# 12% - win 3x your bet
-	# 3% - win a random item!
-	var roll = randi() % 100
+	bet_amount = clampi(bet_amount, min_bet, max_bet)
 
-	if roll < 50:
-		# Lose
-		character.gold -= bet_amount
+	if character.gold < bet_amount or bet_amount < min_bet:
 		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF6B6B]The merchant's dice roll against you! You lose %d gold.[/color]" % bet_amount
+			"type": "gamble_result",
+			"success": false,
+			"message": "[color=#FF6B6B]Invalid bet! Min: %d, Max: %d gold[/color]" % [min_bet, max_bet],
+			"gold": character.gold
 		})
-	elif roll < 85:
-		# Small win
+		return
+
+	# Simulate dice rolls for both merchant and player
+	var merchant_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
+	var player_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
+	var merchant_total = merchant_dice[0] + merchant_dice[1] + merchant_dice[2]
+	var player_total = player_dice[0] + player_dice[1] + player_dice[2]
+
+	# Build dice display
+	var dice_msg = "[color=#FF6B6B]Merchant:[/color] [%d][%d][%d] = %d\n" % [merchant_dice[0], merchant_dice[1], merchant_dice[2], merchant_total]
+	dice_msg += "[color=#90EE90]You:[/color] [%d][%d][%d] = %d\n" % [player_dice[0], player_dice[1], player_dice[2], player_total]
+
+	var result_msg = ""
+	var won = false
+	var item_won = null
+
+	# Determine outcome based on dice difference
+	var diff = player_total - merchant_total
+
+	if diff < -5:
+		# Bad loss - lose bet
+		character.gold -= bet_amount
+		result_msg = "[color=#FF6B6B]Crushing defeat! You lose %d gold.[/color]" % bet_amount
+	elif diff < 0:
+		# Small loss - lose half bet
+		var loss = bet_amount / 2
+		character.gold -= loss
+		result_msg = "[color=#FF6B6B]Close, but not enough. You lose %d gold.[/color]" % loss
+	elif diff == 0:
+		# Tie - push (no change)
+		result_msg = "[color=#FFD700]A tie! Your bet is returned.[/color]"
+	elif diff <= 5:
+		# Small win - win 1.5x
 		var winnings = int(bet_amount * 1.5)
 		character.gold += winnings - bet_amount
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#90EE90]Lucky! You win %d gold![/color]" % winnings
-		})
-	elif roll < 97:
-		# Big win
-		var winnings = bet_amount * 3
+		result_msg = "[color=#90EE90]Victory! You win %d gold![/color]" % winnings
+		won = true
+	elif diff <= 10:
+		# Big win - win 2.5x
+		var winnings = int(bet_amount * 2.5)
 		character.gold += winnings - bet_amount
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FFD700]JACKPOT! You win %d gold![/color]" % winnings
-		})
+		result_msg = "[color=#FFD700]Dominating! You win %d gold![/color]" % winnings
+		won = true
 	else:
-		# Item drop!
-		var item_level = max(1, character.level + randi() % 10 - 5)
-		var tier = _level_to_tier(item_level)
-		var item = drop_tables.roll_drops(tier, 100, item_level)  # 100% drop
+		# Jackpot - triple 6s or huge margin, win item or 5x
+		if player_dice[0] == 6 and player_dice[1] == 6 and player_dice[2] == 6:
+			# Triple 6s - guaranteed item!
+			var item_level = max(1, character.level + randi() % 20)
+			var tier = _level_to_tier(item_level)
+			var items = drop_tables.roll_drops(tier, 100, item_level)
 
-		if item.size() > 0 and character.can_add_item():
-			character.add_item(item[0])
-			var rarity_color = _get_rarity_color(item[0].get("rarity", "common"))
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FFD700]INCREDIBLE! The merchant gives you a mystery item![/color]\n[color=%s]You received: %s[/color]" % [rarity_color, item[0].get("name", "Unknown")]
-			})
+			if items.size() > 0 and character.can_add_item():
+				character.add_item(items[0])
+				item_won = items[0]
+				var rarity_color = _get_rarity_color(items[0].get("rarity", "common"))
+				result_msg = "[color=#FFD700]TRIPLE SIXES! JACKPOT![/color]\n[color=%s]You won: %s![/color]" % [rarity_color, items[0].get("name", "Unknown")]
+			else:
+				var winnings = bet_amount * 5
+				character.gold += winnings - bet_amount
+				result_msg = "[color=#FFD700]TRIPLE SIXES! You win %d gold![/color]" % winnings
+			won = true
 		else:
-			# Fallback to gold
-			var winnings = bet_amount * 5
+			# Big margin win - 3x
+			var winnings = bet_amount * 3
 			character.gold += winnings - bet_amount
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FFD700]INCREDIBLE! You win %d gold![/color]" % winnings
-			})
+			result_msg = "[color=#FFD700]CRUSHING VICTORY! You win %d gold![/color]" % winnings
+			won = true
+
+	# Send gamble result with prompt to continue
+	send_to_peer(peer_id, {
+		"type": "gamble_result",
+		"success": true,
+		"dice_message": dice_msg,
+		"result_message": result_msg,
+		"won": won,
+		"gold": character.gold,
+		"min_bet": min_bet,
+		"max_bet": character.gold / 2,
+		"item_won": item_won.duplicate() if item_won else null
+	})
 
 	send_character_update(peer_id)
 
