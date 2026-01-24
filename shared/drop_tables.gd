@@ -21,28 +21,40 @@ const DROP_TABLES = {
 		{"weight": 10, "item_type": "ring_silver", "rarity": "uncommon"}
 	],
 	"tier3": [
-		{"weight": 35, "item_type": "potion_standard", "rarity": "common"},
-		{"weight": 30, "item_type": "weapon_steel", "rarity": "uncommon"},
-		{"weight": 25, "item_type": "armor_plate", "rarity": "uncommon"},
-		{"weight": 10, "item_type": "amulet_bronze", "rarity": "rare"}
+		{"weight": 30, "item_type": "potion_standard", "rarity": "common"},
+		{"weight": 25, "item_type": "weapon_steel", "rarity": "uncommon"},
+		{"weight": 22, "item_type": "armor_plate", "rarity": "uncommon"},
+		{"weight": 8, "item_type": "amulet_bronze", "rarity": "rare"},
+		{"weight": 5, "item_type": "potion_strength", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "potion_defense", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "potion_speed", "rarity": "uncommon"}
 	],
 	"tier4": [
-		{"weight": 30, "item_type": "potion_greater", "rarity": "uncommon"},
-		{"weight": 30, "item_type": "weapon_enchanted", "rarity": "rare"},
-		{"weight": 25, "item_type": "armor_enchanted", "rarity": "rare"},
-		{"weight": 15, "item_type": "ring_gold", "rarity": "rare"}
+		{"weight": 25, "item_type": "potion_greater", "rarity": "uncommon"},
+		{"weight": 25, "item_type": "weapon_enchanted", "rarity": "rare"},
+		{"weight": 22, "item_type": "armor_enchanted", "rarity": "rare"},
+		{"weight": 12, "item_type": "ring_gold", "rarity": "rare"},
+		{"weight": 6, "item_type": "potion_strength", "rarity": "rare"},
+		{"weight": 5, "item_type": "potion_defense", "rarity": "rare"},
+		{"weight": 5, "item_type": "potion_speed", "rarity": "rare"}
 	],
 	"tier5": [
-		{"weight": 25, "item_type": "potion_superior", "rarity": "rare"},
-		{"weight": 30, "item_type": "weapon_magical", "rarity": "rare"},
-		{"weight": 25, "item_type": "armor_magical", "rarity": "rare"},
-		{"weight": 20, "item_type": "amulet_silver", "rarity": "epic"}
+		{"weight": 22, "item_type": "potion_superior", "rarity": "rare"},
+		{"weight": 26, "item_type": "weapon_magical", "rarity": "rare"},
+		{"weight": 22, "item_type": "armor_magical", "rarity": "rare"},
+		{"weight": 16, "item_type": "amulet_silver", "rarity": "epic"},
+		{"weight": 5, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 5, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_speed", "rarity": "epic"}
 	],
 	"tier6": [
-		{"weight": 20, "item_type": "potion_master", "rarity": "rare"},
-		{"weight": 30, "item_type": "weapon_elemental", "rarity": "epic"},
-		{"weight": 30, "item_type": "armor_elemental", "rarity": "epic"},
-		{"weight": 20, "item_type": "ring_elemental", "rarity": "epic"}
+		{"weight": 17, "item_type": "potion_master", "rarity": "rare"},
+		{"weight": 26, "item_type": "weapon_elemental", "rarity": "epic"},
+		{"weight": 26, "item_type": "armor_elemental", "rarity": "epic"},
+		{"weight": 17, "item_type": "ring_elemental", "rarity": "epic"},
+		{"weight": 5, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 5, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_speed", "rarity": "epic"}
 	],
 	"tier7": [
 		{"weight": 15, "item_type": "elixir_minor", "rarity": "epic"},
@@ -67,6 +79,25 @@ const DROP_TABLES = {
 		{"weight": 30, "item_type": "gold_pouch", "rarity": "common"},
 		{"weight": 10, "item_type": "gem_small", "rarity": "uncommon"}
 	]
+}
+
+# Potion effects for consumables
+# heal: restores HP, buff: applies temporary combat buff
+const POTION_EFFECTS = {
+	# Healing potions
+	"potion_minor": {"heal": true, "base": 10, "per_level": 10},
+	"potion_lesser": {"heal": true, "base": 20, "per_level": 12},
+	"potion_standard": {"heal": true, "base": 40, "per_level": 15},
+	"potion_greater": {"heal": true, "base": 80, "per_level": 20},
+	"potion_superior": {"heal": true, "base": 150, "per_level": 25},
+	"potion_master": {"heal": true, "base": 300, "per_level": 30},
+	"elixir_minor": {"heal": true, "base": 500, "per_level": 40},
+	"elixir_greater": {"heal": true, "base": 1000, "per_level": 60},
+	"elixir_divine": {"heal": true, "base": 2000, "per_level": 100},
+	# Buff potions
+	"potion_strength": {"buff": "strength", "base": 5, "per_level": 1, "duration": 5},
+	"potion_defense": {"buff": "defense", "base": 5, "per_level": 1, "duration": 5},
+	"potion_speed": {"buff": "speed", "base": 10, "per_level": 2, "duration": 5},
 }
 
 # Rarity colors for display
@@ -255,7 +286,8 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	return base_name
 
 func _calculate_item_value(rarity: String, level: int) -> int:
-	"""Calculate gold value of an item based on rarity and level"""
+	"""Calculate gold value of an item based on rarity and level.
+	Uses quadratic scaling so high-level gear is MUCH more valuable."""
 	var base_values = {
 		"common": 10,
 		"uncommon": 50,
@@ -265,11 +297,21 @@ func _calculate_item_value(rarity: String, level: int) -> int:
 		"artifact": 25000
 	}
 	var base = base_values.get(rarity, 10)
-	return int(base * (1.0 + level * 0.1))
+	# Quadratic scaling: level 1 = base, level 10 = base*2, level 50 = base*26, level 100 = base*101
+	var level_multiplier = 1.0 + (level * level) / 100.0
+	return int(base * level_multiplier)
 
 func get_rarity_color(rarity: String) -> String:
 	"""Get the display color for a rarity tier"""
 	return RARITY_COLORS.get(rarity, "#FFFFFF")
+
+func get_potion_effect(item_type: String) -> Dictionary:
+	"""Get the effect data for a potion type. Returns empty dict if not a potion."""
+	return POTION_EFFECTS.get(item_type, {})
+
+func is_usable_in_combat(item_type: String) -> bool:
+	"""Check if an item can be used during combat."""
+	return POTION_EFFECTS.has(item_type)
 
 func to_dict() -> Dictionary:
 	return {"initialized": true}

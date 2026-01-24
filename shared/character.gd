@@ -51,6 +51,9 @@ const MAX_INVENTORY_SIZE = 20
 @export var played_time_seconds: int = 0
 @export var monsters_killed: int = 0
 
+# Active combat buffs - array of {type: String, value: int, duration: int}
+@export var active_buffs: Array = []
+
 func _init():
 	# Constructor
 	pass
@@ -364,7 +367,8 @@ func to_dict() -> Dictionary:
 		"equipped": equipped,
 		"created_at": created_at,
 		"played_time_seconds": played_time_seconds,
-		"monsters_killed": monsters_killed
+		"monsters_killed": monsters_killed,
+		"active_buffs": active_buffs
 	}
 
 func from_dict(data: Dictionary):
@@ -405,6 +409,9 @@ func from_dict(data: Dictionary):
 	created_at = data.get("created_at", 0)
 	played_time_seconds = data.get("played_time_seconds", 0)
 	monsters_killed = data.get("monsters_killed", 0)
+
+	# Active buffs (clear on load - buffs don't persist between sessions)
+	active_buffs = []
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up"""
@@ -490,3 +497,43 @@ func unequip_slot(slot: String) -> Dictionary:
 	var item = equipped[slot]
 	equipped[slot] = null
 	return item
+
+# ===== BUFF SYSTEM =====
+
+func add_buff(buff_type: String, value: int, duration: int):
+	"""Add or refresh a buff. If buff already exists, refreshes duration and uses higher value."""
+	for buff in active_buffs:
+		if buff.type == buff_type:
+			buff.value = max(buff.value, value)
+			buff.duration = max(buff.duration, duration)
+			return
+	active_buffs.append({"type": buff_type, "value": value, "duration": duration})
+
+func get_buff_value(buff_type: String) -> int:
+	"""Get the current value of a buff type. Returns 0 if not active."""
+	for buff in active_buffs:
+		if buff.type == buff_type:
+			return buff.value
+	return 0
+
+func tick_buffs():
+	"""Decrement buff durations by 1. Call at end of each combat round."""
+	var expired = []
+	for i in range(active_buffs.size()):
+		active_buffs[i].duration -= 1
+		if active_buffs[i].duration <= 0:
+			expired.append(i)
+	# Remove expired buffs (reverse order to preserve indices)
+	for i in range(expired.size() - 1, -1, -1):
+		active_buffs.remove_at(expired[i])
+
+func clear_buffs():
+	"""Clear all active buffs. Call when combat ends."""
+	active_buffs.clear()
+
+func get_active_buff_names() -> Array:
+	"""Get list of active buff type names for display."""
+	var names = []
+	for buff in active_buffs:
+		names.append(buff.type)
+	return names

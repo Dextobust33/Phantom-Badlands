@@ -91,6 +91,7 @@ const MOVE_COOLDOWN = 0.5
 var in_combat = false
 var flock_pending = false
 var flock_monster_name = ""
+var combat_item_mode = false  # Selecting item to use in combat
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -151,6 +152,9 @@ const MUSIC_VOLUME_DB: float = -46.0  # Very quiet background
 # Level up sound
 var levelup_player: AudioStreamPlayer = null
 var last_known_level: int = 0  # Track level changes for sound
+
+# Top 5 leaderboard sound
+var top5_player: AudioStreamPlayer = null
 
 func _ready():
 	# Setup action bar
@@ -228,6 +232,12 @@ func _ready():
 	levelup_player.volume_db = -19.0  # 20% quieter than before
 	add_child(levelup_player)
 	_generate_levelup_sound()
+
+	# Initialize top 5 leaderboard sound player
+	top5_player = AudioStreamPlayer.new()
+	top5_player.volume_db = -19.0  # Match level up volume
+	add_child(top5_player)
+	_generate_top5_sound()
 
 	# Initialize background music player
 	music_player = AudioStreamPlayer.new()
@@ -405,6 +415,101 @@ func play_levelup_sound():
 	if levelup_player and levelup_player.stream:
 		levelup_player.play()
 
+func _generate_top5_sound():
+	"""Generate heroic fanfare for top 5 leaderboard entry (D major: D-F#-A-D-F#5)"""
+	var sample_rate = 44100
+	var duration = 1.5
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = true
+
+	var data = PackedByteArray()
+	data.resize(samples * 4)
+
+	# Heroic D major fanfare: D4, F#4, A4, D5, F#5
+	var notes = [
+		{"freq": 293.66, "start": 0.0, "dur": 0.5},   # D4
+		{"freq": 369.99, "start": 0.15, "dur": 0.5},  # F#4
+		{"freq": 440.00, "start": 0.30, "dur": 0.6},  # A4
+		{"freq": 587.33, "start": 0.45, "dur": 0.7},  # D5
+		{"freq": 739.99, "start": 0.65, "dur": 0.8},  # F#5 (high triumphant note)
+	]
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var sample_l = 0.0
+		var sample_r = 0.0
+
+		# Layer each note
+		for note in notes:
+			var freq = note.freq
+			var start = note.start
+			var dur = note.dur
+
+			if t >= start and t < start + dur:
+				var note_t = t - start
+				# Envelope: quick attack, sustain, fade out
+				var env = 0.0
+				var attack = 0.04
+				var release_start = dur - 0.25
+
+				if note_t < attack:
+					env = note_t / attack
+				elif note_t < release_start:
+					env = 1.0
+				else:
+					env = 1.0 - ((note_t - release_start) / 0.25)
+
+				env = max(0.0, env)
+
+				# Brass-like harmonic content
+				var wave = sin(TAU * freq * t) * 0.35
+				wave += sin(TAU * freq * 2.0 * t) * 0.25
+				wave += sin(TAU * freq * 3.0 * t) * 0.15
+				wave += sin(TAU * freq * 4.0 * t) * 0.08
+
+				# Stereo spread (slightly wider for heroic feel)
+				sample_l += wave * env * 0.3
+				sample_r += wave * env * 0.3 * (1.0 + sin(TAU * 3.0 * t) * 0.12)
+
+		# Add shimmer/sparkle at the peak
+		if t > 0.6 and t < 1.4:
+			var shimmer_env = 0.0
+			if t < 0.8:
+				shimmer_env = (t - 0.6) / 0.2
+			elif t < 1.2:
+				shimmer_env = 1.0
+			else:
+				shimmer_env = (1.4 - t) / 0.2
+
+			var shimmer = sin(TAU * 1175 * t) * 0.06  # D6
+			shimmer += sin(TAU * 1480 * t) * 0.04     # F#6
+			sample_l += shimmer * shimmer_env
+			sample_r += shimmer * shimmer_env
+
+		# Soft limit
+		sample_l = clamp(sample_l, -0.9, 0.9)
+		sample_r = clamp(sample_r, -0.9, 0.9)
+
+		var int_l = int(sample_l * 32767)
+		var int_r = int(sample_r * 32767)
+
+		data[i * 4] = int_l & 0xFF
+		data[i * 4 + 1] = (int_l >> 8) & 0xFF
+		data[i * 4 + 2] = int_r & 0xFF
+		data[i * 4 + 3] = (int_r >> 8) & 0xFF
+
+	audio.data = data
+	top5_player.stream = audio
+
+func play_top5_sound():
+	"""Play the top 5 leaderboard fanfare"""
+	if top5_player and top5_player.stream:
+		top5_player.play()
+
 func _start_background_music():
 	"""Deferred music startup"""
 	_generate_ambient_music()
@@ -429,13 +534,13 @@ func _generate_ambient_music():
 	var data = PackedByteArray()
 	data.resize(samples * 4)
 
-	# C major / A minor for bright adventure feel
-	# Melody notes (C major pentatonic)
+	# C major / A minor for mellow adventure feel
+	# Melody notes (C major pentatonic - lower octave, no high notes)
 	var melody = [
-		262, 294, 330, 392, 440,  # C4, D4, E4, G4, A4
-		392, 330, 294, 262, 294,  # G4, E4, D4, C4, D4
-		330, 392, 440, 523, 440,  # E4, G4, A4, C5, A4
-		392, 330, 294, 330, 262   # G4, E4, D4, E4, C4
+		196, 220, 247, 294, 330,  # G3, A3, B3, D4, E4
+		294, 247, 220, 196, 220,  # D4, B3, A3, G3, A3
+		247, 294, 330, 392, 330,  # B3, D4, E4, G4, E4
+		294, 247, 220, 247, 196   # D4, B3, A3, B3, G3
 	]
 
 	# Bass pattern (root notes)
@@ -472,15 +577,15 @@ func _generate_ambient_music():
 		sample_l += melody_wave * 0.08 * melody_env
 		sample_r += melody_wave * 0.08 * melody_env
 
-		# Layer 3: Arpeggio accompaniment (fast chiptune arps)
-		var arp_notes = [262, 330, 392, 523]  # C4, E4, G4, C5
+		# Layer 3: Arpeggio accompaniment (mellow arps - lower octave)
+		var arp_notes = [131, 165, 196, 262]  # C3, E3, G3, C4
 		var arp_idx = int(beat_16th) % arp_notes.size()
 		var arp_freq = float(arp_notes[arp_idx])
 
 		var arp_env = exp(-fmod(beat_16th, 1.0) * 6.0)
-		var arp_wave = sign(sin(TAU * arp_freq * t)) * 0.5 + sin(TAU * arp_freq * 2.0 * t) * 0.3
-		sample_l += arp_wave * 0.04 * arp_env
-		sample_r += arp_wave * 0.05 * arp_env
+		var arp_wave = sin(TAU * arp_freq * t) * 0.6  # Pure sine, no high harmonics
+		sample_l += arp_wave * 0.03 * arp_env
+		sample_r += arp_wave * 0.035 * arp_env
 
 		# Layer 4: Noise percussion (simple hi-hat style on 8ths)
 		var perc_phase = fmod(beat * 2.0, 1.0)
@@ -579,6 +684,17 @@ func _process(_delta):
 					select_merchant_buy_item(i)  # 0-based index
 			else:
 				set_meta("buykey_%d_pressed" % i, false)
+
+	# Combat item selection with number keys (1-9)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and combat_item_mode:
+		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+		for i in range(item_keys.size()):
+			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+				if not get_meta("combatitemkey_%d_pressed" % i, false):
+					set_meta("combatitemkey_%d_pressed" % i, true)
+					use_combat_item_by_number(i + 1)  # 1-based for user
+			else:
+				set_meta("combatitemkey_%d_pressed" % i, false)
 
 	# Action bar hotkeys (only when input NOT focused and playing)
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
@@ -1089,14 +1205,27 @@ func setup_action_bar():
 func update_action_bar():
 	current_actions.clear()
 
-	if in_combat:
-		# Combat mode: Spacebar=Attack, Q=Defend, W=Flee, E=Special
+	if combat_item_mode:
+		# Combat item selection mode - show cancel only, use number keys to select
+		current_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "combat_item_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif in_combat:
+		# Combat mode: Spacebar=Attack, Q=Defend, W=Flee, E=Item, R=Special
 		current_actions = [
 			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
 			{"label": "Defend", "action_type": "combat", "action_data": "defend", "enabled": true},
 			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+			{"label": "Item", "action_type": "local", "action_data": "combat_item", "enabled": _has_usable_combat_items()},
 			{"label": "Special", "action_type": "combat", "action_data": "special", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1135,9 +1264,10 @@ func update_action_bar():
 		var shop_items = merchant_data.get("shop_items", [])
 		if pending_merchant_action == "sell":
 			# Waiting for item selection (use number keys)
+			var has_items = character_data.get("inventory", []).size() > 0
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_items", "enabled": has_items},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1306,6 +1436,72 @@ func send_combat_command(command: String):
 	display_game("[color=#F39C12]> %s[/color]" % command)
 	send_to_server({"type": "combat", "command": command})
 
+func _has_usable_combat_items() -> bool:
+	"""Check if player has any usable items for combat (potions/elixirs)."""
+	var inventory = character_data.get("inventory", [])
+	for item in inventory:
+		var item_type = item.get("type", "")
+		if "potion" in item_type or "elixir" in item_type:
+			return true
+	return false
+
+func show_combat_item_menu():
+	"""Display usable items for combat selection."""
+	combat_item_mode = true
+	update_action_bar()
+
+	var inventory = character_data.get("inventory", [])
+	var usable_items = []
+
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		var item_type = item.get("type", "")
+		if "potion" in item_type or "elixir" in item_type:
+			usable_items.append({"index": i, "item": item})
+
+	if usable_items.is_empty():
+		display_game("[color=#E74C3C]You have no usable items![/color]")
+		combat_item_mode = false
+		update_action_bar()
+		return
+
+	display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
+	for j in range(usable_items.size()):
+		var entry = usable_items[j]
+		var item = entry.item
+		var item_name = item.get("name", "Unknown")
+		var rarity = item.get("rarity", "common")
+		var color = _get_rarity_color(rarity)
+		display_game("[%d] [color=%s]%s[/color]" % [j + 1, color, item_name])
+	display_game("[color=#95A5A6]Press 1-%d to use an item, or Space to cancel.[/color]" % usable_items.size())
+
+func cancel_combat_item_mode():
+	"""Cancel combat item selection mode."""
+	combat_item_mode = false
+	update_action_bar()
+	display_game("[color=#95A5A6]Item use cancelled.[/color]")
+
+func use_combat_item_by_number(number: int):
+	"""Use a combat item by its display number (1-indexed)."""
+	var inventory = character_data.get("inventory", [])
+	var usable_items = []
+
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		var item_type = item.get("type", "")
+		if "potion" in item_type or "elixir" in item_type:
+			usable_items.append(i)  # Store actual inventory index
+
+	if number < 1 or number > usable_items.size():
+		display_game("[color=#E74C3C]Invalid item number![/color]")
+		return
+
+	var actual_index = usable_items[number - 1]
+	combat_item_mode = false
+	update_action_bar()
+
+	send_to_server({"type": "combat_use_item", "index": actual_index})
+
 func continue_flock_encounter():
 	"""Continue into a pending flock encounter"""
 	if not flock_pending:
@@ -1359,6 +1555,8 @@ func execute_local_action(action: String):
 			prompt_merchant_action("sell_gems")
 		"sell_all_gems":
 			sell_all_gems()
+		"sell_all_items":
+			sell_all_items()
 		"merchant_cancel":
 			cancel_merchant_action()
 		"upgrade_weapon":
@@ -1373,6 +1571,10 @@ func execute_local_action(action: String):
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
 			send_upgrade_slot("amulet")
+		"combat_item":
+			show_combat_item_menu()
+		"combat_item_cancel":
+			cancel_combat_item_mode()
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -1496,6 +1698,16 @@ func sell_all_gems():
 		return
 	pending_merchant_action = ""
 	send_to_server({"type": "merchant_sell_gems", "amount": gems})
+	update_action_bar()
+
+func sell_all_items():
+	"""Sell all inventory items to merchant"""
+	var inventory = character_data.get("inventory", [])
+	if inventory.is_empty():
+		display_game("[color=#E74C3C]You have no items to sell.[/color]")
+		return
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_sell_all"})
 	update_action_bar()
 
 func display_shop_inventory():
@@ -2414,6 +2626,15 @@ func handle_server_message(message: Dictionary):
 		"leaderboard":
 			update_leaderboard_display(message.get("entries", []))
 
+		"leaderboard_top5":
+			# A player entered the Hall of Heroes (top 5)
+			var char_name = message.get("character_name", "Unknown")
+			var level = message.get("level", 1)
+			var hero_rank = message.get("rank", 1)
+			display_game("[color=#FFD700]*** %s (Level %d) has entered the Hall of Heroes at #%d! ***[/color]" % [char_name, level, hero_rank])
+			display_chat("[color=#FFD700]*** %s has entered the Hall of Heroes at #%d! ***[/color]" % [char_name, hero_rank])
+			play_top5_sound()
+
 		"player_list":
 			update_online_players(message.get("players", []))
 
@@ -2477,6 +2698,7 @@ func handle_server_message(message: Dictionary):
 			in_combat = true
 			flock_pending = false
 			flock_monster_name = ""
+			combat_item_mode = false
 			update_action_bar()
 
 			# Track XP before combat for two-color XP bar
@@ -2515,6 +2737,7 @@ func handle_server_message(message: Dictionary):
 
 		"combat_end":
 			in_combat = false
+			combat_item_mode = false
 
 			if message.get("victory", false):
 				if damage_dealt_to_current_enemy > 0:
@@ -3138,6 +3361,17 @@ func display_game(text: String):
 func display_chat(text: String):
 	if chat_output:
 		chat_output.append_text(text + "\n")
+
+func _get_rarity_color(rarity: String) -> String:
+	"""Get display color for item rarity"""
+	match rarity:
+		"common": return "#FFFFFF"
+		"uncommon": return "#1EFF00"
+		"rare": return "#0070DD"
+		"epic": return "#A335EE"
+		"legendary": return "#FF8000"
+		"artifact": return "#E6CC80"
+		_: return "#FFFFFF"
 
 func update_map(map_text: String):
 	if map_display:

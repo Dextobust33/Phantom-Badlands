@@ -522,11 +522,19 @@ func get_direction_name(direction: int) -> String:
 
 func is_merchant_at(x: int, y: int) -> bool:
 	"""Check if a traveling merchant is at this location"""
-	# Merchants appear at ~0.5% of tiles, using coordinate hash
-	# They move location every hour (based on time hash)
+	# Normal merchants: ~0.2% of tiles, move every hour
 	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
 	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
-	return hash_val < 5  # 0.5% chance
+	if hash_val < 2:  # 0.2% chance (reduced from 0.5%)
+		return true
+
+	# Wandering traders: ~0.1% of tiles, move every 12 minutes
+	var wanderer_seed = int(Time.get_unix_time_from_system() / 720)  # 12 minutes
+	var wanderer_hash = abs((x * 53 + y * 89 + wanderer_seed * 23) * 6131) % 1000
+	if wanderer_hash < 1:  # 0.1% chance
+		return true
+
+	return false
 
 func check_merchant_encounter(x: int, y: int) -> bool:
 	"""Check if player encounters a merchant at this location"""
@@ -539,30 +547,43 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 	if not is_merchant_at(x, y):
 		return {}
 
-	# Generate consistent merchant based on location + time
+	# Check if this is a wandering trader (fast-moving) vs normal merchant
 	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
-	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37))
+	var wanderer_seed = int(Time.get_unix_time_from_system() / 720)  # 12 minutes
 
-	# Merchant types based on hash
-	var merchant_types = ["Wandering Trader", "Mysterious Merchant", "Traveling Smith", "Fortune Teller"]
-	var merchant_type = merchant_types[hash_val % merchant_types.size()]
+	var normal_hash = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
+	var wanderer_hash = abs((x * 53 + y * 89 + wanderer_seed * 23) * 6131) % 1000
 
-	# Services available vary by type
+	var is_wanderer = wanderer_hash < 1 and normal_hash >= 2
+
+	# Generate consistent merchant based on location + appropriate time seed
+	var hash_val: int
+	var merchant_type: String
 	var services = ["buy", "sell"]  # All merchants buy/sell
-	if "Smith" in merchant_type:
+
+	if is_wanderer:
+		hash_val = abs((x * 53 + y * 89 + wanderer_seed * 23))
+		merchant_type = "Wandering Trader"
 		services.append("upgrade")
-	if "Fortune" in merchant_type or "Mysterious" in merchant_type:
 		services.append("gamble")
-	if "Trader" in merchant_type:
-		services.append("upgrade")
-		services.append("gamble")
+	else:
+		hash_val = abs((x * 97 + y * 61 + hour_seed * 37))
+		# Normal merchant types
+		var merchant_types = ["Mysterious Merchant", "Traveling Smith", "Fortune Teller"]
+		merchant_type = merchant_types[hash_val % merchant_types.size()]
+
+		if "Smith" in merchant_type:
+			services.append("upgrade")
+		if "Fortune" in merchant_type or "Mysterious" in merchant_type:
+			services.append("gamble")
 
 	return {
 		"name": merchant_type,
 		"services": services,
 		"x": x,
 		"y": y,
-		"hash": hash_val  # For consistent pricing
+		"hash": hash_val,  # For consistent pricing
+		"is_wanderer": is_wanderer
 	}
 
 func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7) -> String:

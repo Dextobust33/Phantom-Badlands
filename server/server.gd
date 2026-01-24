@@ -165,6 +165,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_move(peer_id, message)
 		"combat":
 			handle_combat_command(peer_id, message)
+		"combat_use_item":
+			handle_combat_use_item(peer_id, message)
 		"continue_flock":
 			handle_continue_flock(peer_id)
 		"rest":
@@ -187,6 +189,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_discard(peer_id, message)
 		"merchant_sell":
 			handle_merchant_sell(peer_id, message)
+		"merchant_sell_all":
+			handle_merchant_sell_all(peer_id)
 		"merchant_sell_gems":
 			handle_merchant_sell_gems(peer_id, message)
 		"merchant_upgrade":
@@ -843,6 +847,42 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"combat_state": combat_mgr.get_combat_display(peer_id)
 		})
 
+func handle_combat_use_item(peer_id: int, message: Dictionary):
+	"""Handle using an item during combat"""
+	var item_index = message.get("index", -1)
+
+	if item_index < 0:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item!"})
+		return
+
+	var result = combat_mgr.process_use_item(peer_id, item_index)
+
+	if not result.success:
+		send_to_peer(peer_id, {"type": "error", "message": result.message})
+		return
+
+	# Send all combat messages
+	for msg in result.messages:
+		send_to_peer(peer_id, {"type": "combat_message", "message": msg})
+
+	# Check if combat ended (player died)
+	if result.has("combat_ended") and result.combat_ended:
+		if not result.get("victory", false):
+			# Player died after using item
+			if pending_flock_drops.has(peer_id):
+				pending_flock_drops.erase(peer_id)
+			if pending_flock_gems.has(peer_id):
+				pending_flock_gems.erase(peer_id)
+			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
+	else:
+		# Combat continues - send updated state
+		send_to_peer(peer_id, {
+			"type": "combat_update",
+			"combat_state": combat_mgr.get_combat_display(peer_id)
+		})
+		# Also send character update for HP/inventory changes
+		send_character_update(peer_id)
+
 # ===== PERMADEATH =====
 
 func handle_permadeath(peer_id: int, cause_of_death: String):
@@ -858,6 +898,16 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 
 	# Add to leaderboard
 	var rank = persistence.add_to_leaderboard(character, cause_of_death, username)
+
+	# Broadcast top 5 achievement to all connected players
+	if rank <= 5:
+		for pid in peers.keys():
+			send_to_peer(pid, {
+				"type": "leaderboard_top5",
+				"character_name": character.name,
+				"level": character.level,
+				"rank": rank
+			})
 
 	# Send permadeath message to the player who died
 	send_to_peer(peer_id, {
@@ -1307,6 +1357,40 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#FFD700]You sell %s for %d gold.[/color]" % [item.get("name", "Unknown"), sell_price]
+	})
+
+	send_character_update(peer_id)
+	_send_merchant_inventory(peer_id)
+
+func handle_merchant_sell_all(peer_id: int):
+	"""Handle selling all inventory items to a merchant"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if character.inventory.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "You have nothing to sell!"})
+		return
+
+	var total_gold = 0
+	var item_count = character.inventory.size()
+
+	# Calculate total value and clear inventory
+	for item in character.inventory:
+		var sell_price = item.get("value", 10) / 2  # Sell for half value
+		total_gold += sell_price
+
+	character.inventory.clear()
+	character.gold += total_gold
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]You sell %d items for %d gold![/color]" % [item_count, total_gold]
 	})
 
 	send_character_update(peer_id)

@@ -118,7 +118,10 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	# Increment round
 	combat.round += 1
 	combat.player_can_act = true
-	
+
+	# Tick buff durations at end of round
+	combat.character.tick_buffs()
+
 	return result
 
 func process_attack(combat: Dictionary) -> Dictionary:
@@ -143,7 +146,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		monster.current_hp = max(0, monster.current_hp)
 		
 		messages.append("[color=#90EE90]You attack the %s![/color]" % monster.name)
-		messages.append("You deal [color=#FFFF00][b]%d[/b][/color] damage!" % damage)
+		messages.append("You deal [color=#FFFF00]%d[/color] damage!" % damage)
 
 		if monster.current_hp <= 0:
 			# Monster defeated!
@@ -166,10 +169,10 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			var final_xp = int(base_xp * xp_multiplier)
 
 			if xp_level_diff >= 10:
-				messages.append("[color=#FFD700]You gain [b]%d[/b] experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
+				messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
 			else:
-				messages.append("[color=#FFD700]You gain [b]%d[/b] experience![/color]" % final_xp)
-			messages.append("[color=#FFD700]You gain [b]%d[/b] gold![/color]" % monster.gold_reward)
+				messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
+			messages.append("[color=#FFD700]You gain %d gold![/color]" % monster.gold_reward)
 
 			# Award experience and gold
 			character.add_experience(final_xp)
@@ -244,9 +247,10 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
-	
-	# Flee chance based on speed difference
-	var flee_chance = 50 + (character.get_stat("dexterity") - monster.speed) * 5
+
+	# Flee chance based on speed difference (includes speed buff)
+	var player_speed = character.get_stat("dexterity") + character.get_buff_value("speed")
+	var flee_chance = 50 + (player_speed - monster.speed) * 5
 	flee_chance = clamp(flee_chance, 10, 95)  # 10-95% chance
 	
 	var roll = randi() % 100
@@ -275,9 +279,67 @@ func process_special(combat: Dictionary) -> Dictionary:
 	"""Process special action (class-specific)"""
 	var messages = []
 	messages.append("[color=#95A5A6]Special abilities coming soon![/color]")
-	
+
 	return {
 		"success": false,
+		"messages": messages,
+		"combat_ended": false
+	}
+
+func process_use_item(peer_id: int, item_index: int) -> Dictionary:
+	"""Process using an item during combat. Returns result with messages."""
+	if not active_combats.has(peer_id):
+		return {"success": false, "message": "You are not in combat!"}
+
+	var combat = active_combats[peer_id]
+
+	if not combat.player_can_act:
+		return {"success": false, "message": "Wait for your turn!"}
+
+	var character = combat.character
+	var inventory = character.inventory
+
+	if item_index < 0 or item_index >= inventory.size():
+		return {"success": false, "message": "Invalid item!"}
+
+	var item = inventory[item_index]
+	var item_type = item.get("type", "")
+
+	# Check if item is usable in combat
+	if drop_tables == null:
+		return {"success": false, "message": "Item system not available!"}
+
+	var effect = drop_tables.get_potion_effect(item_type)
+	if effect.is_empty():
+		return {"success": false, "message": "This item cannot be used in combat!"}
+
+	var messages = []
+	var item_name = item.get("name", "item")
+	var item_level = item.get("level", 1)
+
+	# Apply effect
+	if effect.has("heal"):
+		# Healing potion
+		var heal_amount = effect.base + (effect.per_level * item_level)
+		var actual_heal = character.heal(heal_amount)
+		messages.append("[color=#90EE90]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
+	elif effect.has("buff"):
+		# Buff potion
+		var buff_type = effect.buff
+		var buff_value = effect.base + (effect.per_level * item_level)
+		var duration = effect.get("duration", 5)
+		character.add_buff(buff_type, buff_value, duration)
+		messages.append("[color=#00FFFF]You drink %s! +%d %s for %d rounds![/color]" % [item_name, buff_value, buff_type, duration])
+
+	# Remove item from inventory
+	character.remove_item(item_index)
+
+	# Item use is a FREE ACTION - player can still act this turn
+	# No monster turn, no round increment, no buff tick
+	messages.append("[color=#95A5A6](Free action - you may still act)[/color]")
+
+	return {
+		"success": true,
 		"messages": messages,
 		"combat_ended": false
 	}
@@ -312,7 +374,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		character.current_hp -= damage
 		character.current_hp = max(0, character.current_hp)
 		
-		var msg = "[color=#FF6B6B]The %s attacks and deals [b]%d[/b] damage![/color]" % [monster.name, damage]
+		var msg = "[color=#FF6B6B]The %s attacks and deals %d damage![/color]" % [monster.name, damage]
 		return {"success": true, "message": msg}
 	else:
 		# Monster misses
@@ -320,9 +382,14 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		return {"success": true, "message": msg}
 
 func calculate_damage(character: Character, monster: Dictionary) -> int:
-	"""Calculate player damage to monster (includes equipment bonuses)"""
+	"""Calculate player damage to monster (includes equipment and buff bonuses)"""
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
+
+	# Add strength buff bonus
+	var strength_buff = character.get_buff_value("strength")
+	base_damage += strength_buff
+
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var raw_damage = base_damage + damage_roll
 
@@ -335,7 +402,7 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 	return max(1, total)  # Minimum 1 damage
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
-	"""Calculate monster damage to player (reduced by equipment defense)"""
+	"""Calculate monster damage to player (reduced by equipment defense and buffs)"""
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var raw_damage = base_damage + damage_roll
@@ -343,6 +410,11 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	# Player defense reduces damage by percentage (not flat)
 	# Defense 10 = 9% reduction, Defense 50 = 33% reduction, Defense 200 = 50% reduction
 	var player_defense = character.get_total_defense()
+
+	# Add defense buff bonus
+	var defense_buff = character.get_buff_value("defense")
+	player_defense += defense_buff
+
 	var defense_ratio = float(player_defense) / (float(player_defense) + 100.0)
 	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
 	var total = int(raw_damage * (1.0 - damage_reduction))
@@ -363,13 +435,16 @@ func end_combat(peer_id: int, victory: bool):
 	if active_combats.has(peer_id):
 		var combat = active_combats[peer_id]
 		var character = combat.character
-		
+
 		# Mark character as not in combat
 		character.in_combat = false
-		
+
+		# Clear combat buffs
+		character.clear_buffs()
+
 		# Remove from active combats
 		active_combats.erase(peer_id)
-		
+
 		print("Combat ended for peer %d - Victory: %s" % [peer_id, victory])
 
 func is_in_combat(peer_id: int) -> bool:
@@ -415,8 +490,9 @@ func set_drop_tables(tables: Node):
 	"""Set the drop tables reference for item drops"""
 	drop_tables = tables
 
-func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
-	"""Roll for item drops after defeating a monster. Returns array of items."""
+func roll_combat_drops(monster: Dictionary, _character: Character) -> Array:
+	"""Roll for item drops after defeating a monster. Returns array of items.
+	NOTE: Does NOT add items to inventory - server handles that to avoid duplication."""
 	# If drop tables not initialized, return empty
 	if drop_tables == null:
 		return []
@@ -425,20 +501,8 @@ func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
 	var drop_chance = monster.get("drop_chance", 5)
 	var monster_level = monster.get("level", 1)
 
-	# Roll for drops
-	var drops = drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)
-
-	# Try to add drops to character inventory
-	var added_items = []
-	for item in drops:
-		if character.can_add_item():
-			character.add_item(item)
-			added_items.append(item)
-		else:
-			# Inventory full - item is lost (could add ground drop system later)
-			pass
-
-	return added_items
+	# Roll for drops - server will handle adding to inventory
+	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
