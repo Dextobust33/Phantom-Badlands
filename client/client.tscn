@@ -523,6 +523,12 @@ layout_mode = 2
 placeholder_text = "Enter password..."
 secret = true
 
+[node name="ConfirmPasswordField" type="LineEdit" parent="LoginPanel/VBox"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+placeholder_text = "Confirm password (for registration)..."
+secret = true
+
 [node name="ButtonContainer" type="HBoxContainer" parent="LoginPanel/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 10

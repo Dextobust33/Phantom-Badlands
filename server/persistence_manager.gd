@@ -373,3 +373,67 @@ func get_leaderboard(limit: int = 10) -> Array:
 		result.append(leaderboard_data.entries[i])
 
 	return result
+
+# ===== ADMIN FUNCTIONS =====
+
+func admin_reset_password(username: String, new_password: String) -> Dictionary:
+	"""Admin function to reset a user's password"""
+	var username_lower = username.to_lower()
+
+	if not accounts_data.username_to_id.has(username_lower):
+		return {"success": false, "reason": "Account not found: %s" % username}
+
+	if new_password.length() < 4:
+		return {"success": false, "reason": "Password must be at least 4 characters"}
+
+	var account_id = accounts_data.username_to_id[username_lower]
+	var account = accounts_data.accounts[account_id]
+
+	# Generate new salt and hash
+	var new_salt = generate_salt()
+	var new_hash = hash_password(new_password, new_salt)
+
+	# Update account
+	account.password_hash = new_hash
+	account.password_salt = new_salt
+
+	save_accounts()
+
+	print("[ADMIN] Password reset for account: %s" % username)
+
+	return {"success": true, "message": "Password reset for %s" % username}
+
+func admin_list_accounts() -> Array:
+	"""Admin function to list all accounts"""
+	var result = []
+
+	for account_id in accounts_data.accounts.keys():
+		var account = accounts_data.accounts[account_id]
+		result.append({
+			"account_id": account_id,
+			"username": account.username,
+			"created_at": account.get("created_at", 0),
+			"character_count": account.character_slots.size(),
+			"characters": account.character_slots
+		})
+
+	return result
+
+func admin_get_account_info(username: String) -> Dictionary:
+	"""Admin function to get detailed account info"""
+	var username_lower = username.to_lower()
+
+	if not accounts_data.username_to_id.has(username_lower):
+		return {"success": false, "reason": "Account not found"}
+
+	var account_id = accounts_data.username_to_id[username_lower]
+	var account = accounts_data.accounts[account_id]
+
+	return {
+		"success": true,
+		"account_id": account_id,
+		"username": account.username,
+		"created_at": account.get("created_at", 0),
+		"max_characters": account.max_characters,
+		"characters": account.character_slots
+	}

@@ -34,6 +34,7 @@ var game_state = GameState.DISCONNECTED
 @onready var login_panel = $LoginPanel
 @onready var username_field = $LoginPanel/VBox/UsernameField
 @onready var password_field = $LoginPanel/VBox/PasswordField
+@onready var confirm_password_field = $LoginPanel/VBox/ConfirmPasswordField
 @onready var login_button = $LoginPanel/VBox/ButtonContainer/LoginButton
 @onready var register_button = $LoginPanel/VBox/ButtonContainer/RegisterButton
 @onready var login_status = $LoginPanel/VBox/StatusLabel
@@ -521,10 +522,21 @@ func _on_login_button_pressed():
 func _on_register_button_pressed():
 	var user = username_field.text.strip_edges()
 	var passwd = password_field.text
+	var confirm_passwd = confirm_password_field.text
 
 	if user.is_empty() or passwd.is_empty():
 		if login_status:
 			login_status.text = "[color=#E74C3C]Enter username and password[/color]"
+		return
+
+	if confirm_passwd.is_empty():
+		if login_status:
+			login_status.text = "[color=#E74C3C]Please confirm your password[/color]"
+		return
+
+	if passwd != confirm_passwd:
+		if login_status:
+			login_status.text = "[color=#E74C3C]Passwords do not match[/color]"
 		return
 
 	if login_status:
@@ -1516,6 +1528,11 @@ func handle_server_message(message: Dictionary):
 		"register_success":
 			if login_status:
 				login_status.text = "[color=#2ECC71]Account created! Please log in.[/color]"
+			# Clear password fields after successful registration
+			if password_field:
+				password_field.text = ""
+			if confirm_password_field:
+				confirm_password_field.text = ""
 
 		"register_failed":
 			if login_status:
