@@ -11,6 +11,7 @@ var peers = {}
 var next_peer_id = 1
 var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
+var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
@@ -664,7 +665,8 @@ func handle_rest(peer_id: int):
 	if character.current_hp >= character.max_hp:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]You are already at full health.[/color]"
+			"message": "[color=#95A5A6]You are already at full health.[/color]",
+			"clear_output": true
 		})
 		return
 
@@ -677,7 +679,8 @@ func handle_rest(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#90EE90]You rest and recover %d HP.[/color]" % heal_amount
+		"message": "[color=#90EE90]You rest and recover %d HP.[/color]" % heal_amount,
+		"clear_output": true
 	})
 
 	# Send updated character data
@@ -725,14 +728,22 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
 
+			# Get current drops
+			var current_drops = result.get("dropped_items", [])
+
 			# Check for flock encounter (chain combat)
 			var flock_chance = result.get("flock_chance", 0)
 			var flock_roll = randi() % 100
 
 			if flock_chance > 0 and flock_roll < flock_chance:
-				# Flock triggered! Send info to client and wait for continue
+				# Flock triggered! Store drops for later, don't give items yet
 				var monster_name = result.get("monster_name", "")
 				var monster_level = result.get("monster_level", 1)
+
+				# Accumulate drops for this flock
+				if not pending_flock_drops.has(peer_id):
+					pending_flock_drops[peer_id] = []
+				pending_flock_drops[peer_id].append_array(current_drops)
 
 				# Store pending flock data for this peer
 				pending_flocks[peer_id] = {
@@ -745,30 +756,52 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"victory": true,
 					"character": characters[peer_id].to_dict(),
 					"flock_incoming": true,
-					"flock_monster": monster_name
+					"flock_monster": monster_name,
+					"drops_pending": true  # Indicate drops will come later
 				})
 
 				# Save character
 				save_character(peer_id)
 			else:
-				# Normal victory, no flock
+				# Flock ended or no flock - collect all accumulated drops
+				var all_drops = []
+				if pending_flock_drops.has(peer_id):
+					all_drops = pending_flock_drops[peer_id]
+					pending_flock_drops.erase(peer_id)
+				all_drops.append_array(current_drops)
+
+				# Give all drops to player now
+				var drop_messages = []
+				for item in all_drops:
+					if characters[peer_id].can_add_item():
+						characters[peer_id].add_item(item)
+						drop_messages.append("[color=%s]Received: %s[/color]" % [
+							_get_rarity_color(item.get("rarity", "common")),
+							item.get("name", "Unknown Item")
+						])
+
 				send_to_peer(peer_id, {
 					"type": "combat_end",
 					"victory": true,
-					"character": characters[peer_id].to_dict()
+					"character": characters[peer_id].to_dict(),
+					"flock_drops": drop_messages  # Send all drop messages at once
 				})
 
 				# Save character after combat
 				save_character(peer_id)
 
 		elif result.has("fled") and result.fled:
-			# Fled successfully
+			# Fled successfully - lose any pending flock drops
+			if pending_flock_drops.has(peer_id):
+				pending_flock_drops.erase(peer_id)
 			send_to_peer(peer_id, {
 				"type": "combat_end",
 				"fled": true
 			})
 		else:
-			# Defeated - PERMADEATH!
+			# Defeated - PERMADEATH! Clear any pending drops
+			if pending_flock_drops.has(peer_id):
+				pending_flock_drops.erase(peer_id)
 			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
 	else:
 		# Combat continues - send updated state

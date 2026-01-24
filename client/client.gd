@@ -103,6 +103,10 @@ var pending_inventory_action: String = ""  # Action waiting for item selection
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
+# XP tracking for two-color bar
+var xp_before_combat: int = 0  # XP before starting combat
+var recent_xp_gain: int = 0    # XP gained in most recent combat
+
 # Merchant mode
 var at_merchant: bool = false
 var merchant_data: Dictionary = {}
@@ -218,10 +222,8 @@ func _process(_delta):
 			else:
 				input_field.grab_focus()
 
-	# Inventory item selection with number keys (1-9)
-	# When action is pending: select item for that action
-	# When no action pending: default to inspect
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode:
+	# Inventory item selection with number keys (1-9) when action is pending
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "":
 		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
 		for i in range(item_keys.size()):
 			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
@@ -231,12 +233,7 @@ func _process(_delta):
 					# KEY_1-4 map to hotkey indices 5-8
 					if i < 4:
 						set_meta("hotkey_%d_pressed" % (i + 5), true)
-					if pending_inventory_action != "":
-						select_inventory_item(i)  # 0-based index
-					else:
-						# Default to inspect when pressing number with no action pending
-						pending_inventory_action = "inspect_item"
-						select_inventory_item(i)
+					select_inventory_item(i)  # 0-based index
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
 
@@ -867,16 +864,17 @@ func update_action_bar():
 			]
 		else:
 			# Inventory sub-menu: Spacebar=Back, Q-R for inventory actions
+			# Discard moved to end (KEY_4) to prevent accidental use
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
 				{"label": "Inspect", "action_type": "local", "action_data": "inventory_inspect", "enabled": true},
 				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
 				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif has_character:
 		# Normal movement mode: Spacebar=Status
@@ -1011,6 +1009,9 @@ func execute_local_action(action: String):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
+	# Reset recent XP gain highlight
+	recent_xp_gain = 0
+	update_player_xp_bar()
 	game_output.clear()
 	update_action_bar()
 
@@ -1583,16 +1584,48 @@ func update_player_xp_bar():
 	var current_xp = character_data.get("experience", 0)
 	var xp_needed = character_data.get("experience_to_next_level", 100)
 	var xp_remaining = xp_needed - current_xp
-	var percent = (float(current_xp) / float(max(xp_needed, 1))) * 100.0
+	var total_percent = (float(current_xp) / float(max(xp_needed, 1))) * 100.0
 
 	var fill = player_xp_bar.get_node("Fill")
 	if fill:
-		fill.anchor_right = percent / 100.0
+		fill.anchor_right = total_percent / 100.0
+		# Set grey color for existing XP
+		fill.self_modulate = Color(0.5, 0.5, 0.5, 1.0)
+
+	# Handle recent XP gain highlight (yellow portion)
+	var recent_fill = player_xp_bar.get_node_or_null("RecentFill")
+	if recent_xp_gain > 0:
+		# Calculate where the recent gain starts and ends
+		var old_xp = current_xp - recent_xp_gain
+		var old_percent = (float(old_xp) / float(max(xp_needed, 1)))
+		var new_percent = total_percent / 100.0
+
+		# Create RecentFill bar if it doesn't exist
+		if recent_fill == null and fill:
+			recent_fill = fill.duplicate()
+			recent_fill.name = "RecentFill"
+			player_xp_bar.add_child(recent_fill)
+			# Move it above the grey fill
+			player_xp_bar.move_child(recent_fill, fill.get_index() + 1)
+
+		if recent_fill:
+			recent_fill.visible = true
+			recent_fill.anchor_left = old_percent
+			recent_fill.anchor_right = new_percent
+			# Yellow color for recent XP
+			recent_fill.self_modulate = Color(1.0, 0.85, 0.0, 1.0)
+	else:
+		# No recent gain - hide the yellow bar
+		if recent_fill:
+			recent_fill.visible = false
 
 	# Update XP label to show progress
 	var xp_label = player_xp_bar.get_node("XPLabel")
 	if xp_label:
-		xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
+		if recent_xp_gain > 0:
+			xp_label.text = "XP: %d / %d [color=#FFD700](+%d)[/color]" % [current_xp, xp_needed, recent_xp_gain]
+		else:
+			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
 func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int):
 	if not enemy_health_bar:
@@ -1789,6 +1822,9 @@ func handle_server_message(message: Dictionary):
 				display_game(text)
 
 		"text":
+			# Clear game output if requested (e.g., rest command)
+			if message.get("clear_output", false):
+				game_output.clear()
 			display_game(message.get("message", ""))
 
 		"character_update":
@@ -1816,9 +1852,13 @@ func handle_server_message(message: Dictionary):
 			flock_monster_name = ""
 			update_action_bar()
 
-			# Clear game output for flock encounters
-			if message.get("clear_output", false):
-				game_output.clear()
+			# Track XP before combat for two-color XP bar
+			# Only record at start of combat chain (not flock continuations)
+			if xp_before_combat == 0:
+				xp_before_combat = character_data.get("experience", 0)
+
+			# Always clear game output for fresh combat display
+			game_output.clear()
 
 			display_game(message.get("message", ""))
 
@@ -1864,10 +1904,25 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FF6B6B]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
 					display_game("[color=#FFD700]Press Space to continue...[/color]")
 				else:
-					# Victory without flock - pause to let player read rewards
+					# Combat chain complete - calculate total XP gain for bar display
+					var current_xp = character_data.get("experience", 0)
+					recent_xp_gain = current_xp - xp_before_combat
+					xp_before_combat = 0  # Reset for next combat
+					update_player_xp_bar()  # Update bar with new gain highlight
+
+					# Victory without flock - show all accumulated drops
+					var flock_drops = message.get("flock_drops", [])
+					if flock_drops.size() > 0:
+						display_game("[color=#FFD700]===== LOOT =====[/color]")
+						for drop_msg in flock_drops:
+							display_game(drop_msg)
+					# Pause to let player read rewards
 					pending_continue = true
 					display_game("[color=#95A5A6]Press Space to continue...[/color]")
 			elif message.get("fled", false):
+				# Fled - reset XP tracking
+				xp_before_combat = 0
+				recent_xp_gain = 0
 				display_game("[color=#FFD700]You escaped from combat![/color]")
 				pending_continue = true
 				display_game("[color=#95A5A6]Press Space to continue...[/color]")
