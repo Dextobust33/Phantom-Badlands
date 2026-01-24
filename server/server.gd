@@ -11,6 +11,7 @@ var peers = {}
 var next_peer_id = 1
 var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
+var at_merchant = {}  # peer_id -> merchant_info dictionary
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -182,6 +183,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_unequip(peer_id, message)
 		"inventory_discard":
 			handle_inventory_discard(peer_id, message)
+		"merchant_sell":
+			handle_merchant_sell(peer_id, message)
+		"merchant_upgrade":
+			handle_merchant_upgrade(peer_id, message)
+		"merchant_gamble":
+			handle_merchant_gamble(peer_id, message)
+		"merchant_leave":
+			handle_merchant_leave(peer_id)
 		_:
 			pass
 
@@ -475,6 +484,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"name": char.name,
 				"level": char.level,
 				"experience": char.experience,
+				"experience_to_next_level": char.experience_to_next_level,
 				"class": char.class_type,
 				"hp": char.current_hp,
 				"max_hp": char.max_hp,
@@ -626,8 +636,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Send location update
 	send_location_update(peer_id)
 
-	# Check for encounter
-	if world_system.check_encounter(new_pos.x, new_pos.y):
+	# Check for merchant first
+	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
+		trigger_merchant_encounter(peer_id)
+	# Check for monster encounter (only if no merchant)
+	elif world_system.check_encounter(new_pos.x, new_pos.y):
 		trigger_encounter(peer_id)
 
 func handle_rest(peer_id: int):
@@ -1129,3 +1142,278 @@ func send_character_update(peer_id: int):
 		"type": "character_update",
 		"character": character.to_dict()
 	})
+
+# ===== MERCHANT HANDLERS =====
+
+func trigger_merchant_encounter(peer_id: int):
+	"""Trigger a merchant encounter for the player"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var merchant = world_system.get_merchant_at(character.x, character.y)
+
+	if merchant.is_empty():
+		return
+
+	# Store merchant state
+	at_merchant[peer_id] = merchant
+
+	# Build services message
+	var services_text = []
+	if "sell" in merchant.services:
+		services_text.append("[Q] Sell items")
+	if "upgrade" in merchant.services:
+		services_text.append("[W] Upgrade equipment")
+	if "gamble" in merchant.services:
+		services_text.append("[E] Gamble")
+	services_text.append("[Space] Leave")
+
+	send_to_peer(peer_id, {
+		"type": "merchant_start",
+		"merchant": merchant,
+		"message": "[color=#FFD700]A %s approaches you![/color]\n\"Greetings, traveler! Care to do business?\"\n\n%s" % [merchant.name, "\n".join(services_text)]
+	})
+
+func handle_merchant_sell(peer_id: int, message: Dictionary):
+	"""Handle selling an item to a merchant"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var index = message.get("index", -1)
+
+	if index < 0 or index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index"})
+		return
+
+	var item = character.inventory[index]
+	var sell_price = item.get("value", 10) / 2  # Sell for half value
+
+	# Remove item and give gold
+	character.remove_item(index)
+	character.gold += sell_price
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]You sell %s for %d gold.[/color]" % [item.get("name", "Unknown"), sell_price]
+	})
+
+	send_character_update(peer_id)
+	_send_merchant_inventory(peer_id)
+
+func handle_merchant_upgrade(peer_id: int, message: Dictionary):
+	"""Handle upgrading an equipped item"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	var merchant = at_merchant[peer_id]
+	if not "upgrade" in merchant.services:
+		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer upgrades."})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var slot = message.get("slot", "")
+
+	if not slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment slot"})
+		return
+
+	var item = character.equipped.get(slot)
+	if item == null:
+		send_to_peer(peer_id, {"type": "error", "message": "Nothing equipped in that slot"})
+		return
+
+	# Calculate upgrade cost: (item level + 1)^2 * 10 gold
+	var current_level = item.get("level", 1)
+	var upgrade_cost = int(pow(current_level + 1, 2) * 10)
+
+	if character.gold < upgrade_cost:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF6B6B]You need %d gold to upgrade. You have %d gold.[/color]" % [upgrade_cost, character.gold]
+		})
+		return
+
+	# Perform upgrade
+	character.gold -= upgrade_cost
+	item["level"] = current_level + 1
+	item["value"] = int(item.get("value", 100) * 1.5)
+
+	# Recalculate item name if needed
+	var rarity = item.get("rarity", "common")
+	item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#90EE90]%s upgraded to level %d for %d gold![/color]\n[color=#95A5A6]New stats are now in effect.[/color]" % [item.get("name", "Item"), item["level"], upgrade_cost]
+	})
+
+	send_character_update(peer_id)
+
+func handle_merchant_gamble(peer_id: int, message: Dictionary):
+	"""Handle gambling with a merchant"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	var merchant = at_merchant[peer_id]
+	if not "gamble" in merchant.services:
+		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer gambling."})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var bet_amount = message.get("amount", 100)
+
+	# Minimum bet is 50, maximum is half your gold
+	bet_amount = clampi(bet_amount, 50, character.gold / 2)
+
+	if character.gold < bet_amount:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF6B6B]You don't have enough gold! (Min bet: 50 gold)[/color]"
+		})
+		return
+
+	# Gambling odds:
+	# 50% - lose your bet
+	# 35% - win 1.5x your bet
+	# 12% - win 3x your bet
+	# 3% - win a random item!
+	var roll = randi() % 100
+
+	if roll < 50:
+		# Lose
+		character.gold -= bet_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF6B6B]The merchant's dice roll against you! You lose %d gold.[/color]" % bet_amount
+		})
+	elif roll < 85:
+		# Small win
+		var winnings = int(bet_amount * 1.5)
+		character.gold += winnings - bet_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]Lucky! You win %d gold![/color]" % winnings
+		})
+	elif roll < 97:
+		# Big win
+		var winnings = bet_amount * 3
+		character.gold += winnings - bet_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]JACKPOT! You win %d gold![/color]" % winnings
+		})
+	else:
+		# Item drop!
+		var item_level = max(1, character.level + randi() % 10 - 5)
+		var tier = _level_to_tier(item_level)
+		var item = drop_tables.roll_drops(tier, 100, item_level)  # 100% drop
+
+		if item.size() > 0 and character.can_add_item():
+			character.add_item(item[0])
+			var rarity_color = _get_rarity_color(item[0].get("rarity", "common"))
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]INCREDIBLE! The merchant gives you a mystery item![/color]\n[color=%s]You received: %s[/color]" % [rarity_color, item[0].get("name", "Unknown")]
+			})
+		else:
+			# Fallback to gold
+			var winnings = bet_amount * 5
+			character.gold += winnings - bet_amount
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]INCREDIBLE! You win %d gold![/color]" % winnings
+			})
+
+	send_character_update(peer_id)
+
+func handle_merchant_leave(peer_id: int):
+	"""Handle leaving a merchant"""
+	if at_merchant.has(peer_id):
+		var merchant_name = at_merchant[peer_id].get("name", "The merchant")
+		at_merchant.erase(peer_id)
+		send_to_peer(peer_id, {
+			"type": "merchant_end",
+			"message": "[color=#95A5A6]%s waves goodbye. \"Safe travels, adventurer!\"[/color]" % merchant_name
+		})
+
+func _send_merchant_inventory(peer_id: int):
+	"""Send inventory list to player at merchant"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var items = []
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		items.append({
+			"index": i,
+			"name": item.get("name", "Unknown"),
+			"value": item.get("value", 10) / 2,  # Sell price
+			"rarity": item.get("rarity", "common")
+		})
+
+	send_to_peer(peer_id, {
+		"type": "merchant_inventory",
+		"items": items,
+		"gold": character.gold
+	})
+
+func _get_upgraded_item_name(item_type: String, rarity: String, level: int) -> String:
+	"""Generate name for upgraded item"""
+	var parts = item_type.split("_")
+	var name_parts = []
+	for i in range(parts.size() - 1, -1, -1):
+		name_parts.append(parts[i].capitalize())
+	var base_name = " ".join(name_parts)
+
+	var prefixes = {
+		"epic": ["Masterwork", "Pristine", "Exquisite", "Superior"],
+		"legendary": ["Ancient", "Mythical", "Heroic", "Fabled"],
+		"artifact": ["Divine", "Celestial", "Primordial", "Eternal"]
+	}
+
+	if prefixes.has(rarity):
+		var prefix_list = prefixes[rarity]
+		var prefix = prefix_list[randi() % prefix_list.size()]
+		return prefix + " " + base_name + " +%d" % (level - 1)
+	elif level > 1:
+		return base_name + " +%d" % (level - 1)
+
+	return base_name
+
+func _level_to_tier(level: int) -> String:
+	"""Convert level to drop table tier"""
+	if level <= 5: return "tier1"
+	if level <= 15: return "tier2"
+	if level <= 30: return "tier3"
+	if level <= 50: return "tier4"
+	if level <= 100: return "tier5"
+	if level <= 500: return "tier6"
+	if level <= 2000: return "tier7"
+	if level <= 5000: return "tier8"
+	return "tier9"
+
+func _get_rarity_color(rarity: String) -> String:
+	"""Get display color for item rarity"""
+	match rarity:
+		"common": return "#FFFFFF"
+		"uncommon": return "#1EFF00"
+		"rare": return "#0070DD"
+		"epic": return "#A335EE"
+		"legendary": return "#FF8000"
+		"artifact": return "#E6CC80"
+		_: return "#FFFFFF"

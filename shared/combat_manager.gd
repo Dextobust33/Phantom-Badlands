@@ -124,14 +124,17 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
-	
-	# Calculate hit chance
-	var hit_roll = randi() % 20 + 1  # 1d20
-	var hit_bonus = character.get_stat("strength") / 2
-	var hit_total = hit_roll + hit_bonus
-	var monster_ac = 10 + monster.defense / 2
-	
-	if hit_total >= monster_ac:
+
+	# Hit chance: 95% base, -1% per 2 monster levels above player (minimum 70%)
+	var player_level = character.level
+	var monster_level = monster.level
+	var level_diff = max(0, monster_level - player_level)
+	var hit_chance = 95 - (level_diff / 2)
+	hit_chance = max(70, hit_chance)  # Never below 70%
+
+	var hit_roll = randi() % 100
+
+	if hit_roll < hit_chance:
 		# Hit!
 		var damage = calculate_damage(character, monster)
 		monster.current_hp -= damage
@@ -254,21 +257,27 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	"""Process the monster's attack"""
 	var character = combat.character
 	var monster = combat.monster
-	
-	# Calculate monster hit
-	var hit_roll = randi() % 20 + 1
-	var hit_bonus = monster.strength / 2
-	var hit_total = hit_roll + hit_bonus
-	
-	# Calculate player AC (with defend bonus if defending)
-	var defense_bonus = combat.get("defense_bonus", 0) if combat.get("defending", false) else 0
-	var player_ac = 10 + (character.get_stat("constitution") / 2) + defense_bonus
-	
+
+	# Monster hit chance: 85% base, +1% per monster level above player (cap 95%)
+	# Defending reduces hit chance by 15%
+	var player_level = character.level
+	var monster_level = monster.level
+	var level_diff = monster_level - player_level
+	var hit_chance = 85 + level_diff
+	hit_chance = clamp(hit_chance, 60, 95)
+
+	# Defending reduces monster hit chance
+	var is_defending = combat.get("defending", false)
+	if is_defending:
+		hit_chance -= 15
+
 	# Clear defend status
 	combat.defending = false
 	combat.defense_bonus = 0
-	
-	if hit_total >= player_ac:
+
+	var hit_roll = randi() % 100
+
+	if hit_roll < hit_chance:
 		# Monster hits
 		var damage = calculate_monster_damage(monster, character)
 		character.current_hp -= damage
@@ -286,11 +295,13 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
 	var damage_roll = (randi() % 6) + 1  # 1d6
-	var total = base_damage + damage_roll
+	var raw_damage = base_damage + damage_roll
 
-	# Reduce by monster defense
-	var defense_reduction = monster.defense / 4
-	total -= defense_reduction
+	# Monster defense reduces damage by a percentage (not flat)
+	# Defense 10 = 5% reduction, Defense 100 = 33% reduction, Defense 500 = 50% reduction
+	var defense_ratio = float(monster.defense) / (float(monster.defense) + 100.0)
+	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
+	var total = int(raw_damage * (1.0 - damage_reduction))
 
 	return max(1, total)  # Minimum 1 damage
 
@@ -298,13 +309,25 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	"""Calculate monster damage to player (reduced by equipment defense)"""
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
-	var total = base_damage + damage_roll
+	var raw_damage = base_damage + damage_roll
 
-	# Reduce by character defense (includes equipment)
-	var defense_reduction = character.get_total_defense()
-	total -= defense_reduction
+	# Player defense reduces damage by percentage (not flat)
+	# Defense 10 = 9% reduction, Defense 50 = 33% reduction, Defense 200 = 50% reduction
+	var player_defense = character.get_total_defense()
+	var defense_ratio = float(player_defense) / (float(player_defense) + 100.0)
+	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
+	var total = int(raw_damage * (1.0 - damage_reduction))
 
-	return max(1, total)  # Minimum 1 damage
+	# Level difference bonus: monsters higher level deal extra damage
+	var level_diff = monster.level - character.level
+	if level_diff > 0:
+		# +5% damage per level above player, compounding
+		var level_multiplier = pow(1.05, min(level_diff, 50))  # Cap at 50 level diff
+		total = int(total * level_multiplier)
+
+	# Minimum damage based on monster level (higher level = higher floor)
+	var min_damage = max(1, monster.level / 5)
+	return max(min_damage, total)
 
 func end_combat(peer_id: int, victory: bool):
 	"""End combat and clean up"""

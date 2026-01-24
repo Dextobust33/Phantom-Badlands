@@ -100,6 +100,11 @@ var pending_inventory_action: String = ""  # Action waiting for item selection
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
+# Merchant mode
+var at_merchant: bool = false
+var merchant_data: Dictionary = {}
+var pending_merchant_action: String = ""
+
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
 var current_enemy_name: String = ""
@@ -211,8 +216,19 @@ func _process(_delta):
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
 
-	# Action bar hotkeys (only when input NOT focused and playing, and not selecting inventory item)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_inventory_action == "":
+	# Merchant item selection with number keys (1-9) when action is pending
+	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "sell":
+		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+		for i in range(item_keys.size()):
+			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+				if not get_meta("merchantkey_%d_pressed" % i, false):
+					set_meta("merchantkey_%d_pressed" % i, true)
+					select_merchant_sell_item(i)  # 0-based index
+			else:
+				set_meta("merchantkey_%d_pressed" % i, false)
+
+	# Action bar hotkeys (only when input NOT focused and playing, and not selecting item)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_inventory_action == "" and pending_merchant_action == "":
 		for i in range(action_hotkeys.size()):
 			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
@@ -221,8 +237,8 @@ func _process(_delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
-	# Numpad movement (only when playing and not in combat, flock, pending continue, or inventory)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode:
+	# Numpad movement (only when playing and not in combat, flock, pending continue, inventory, or merchant)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -414,8 +430,11 @@ func display_examine_result(data: Dictionary):
 	var cls = data.get("class", "Unknown")
 	var hp = data.get("hp", 0)
 	var max_hp = data.get("max_hp", 1)
-	var in_combat = data.get("in_combat", false)
+	var in_combat_flag = data.get("in_combat", false)
 	var kills = data.get("monsters_killed", 0)
+	var current_xp = data.get("experience", 0)
+	var xp_needed = data.get("experience_to_next_level", 100)
+	var xp_remaining = xp_needed - current_xp
 
 	var str_stat = data.get("strength", 0)
 	var con_stat = data.get("constitution", 0)
@@ -429,10 +448,11 @@ func display_examine_result(data: Dictionary):
 	var total_attack = data.get("total_attack", str_stat)
 	var total_defense = data.get("total_defense", con_stat / 2)
 
-	var status = "[color=#90EE90]Exploring[/color]" if not in_combat else "[color=#FF6B6B]In Combat[/color]"
+	var status = "[color=#90EE90]Exploring[/color]" if not in_combat_flag else "[color=#FF6B6B]In Combat[/color]"
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
 	display_game("Level %d %s - %s" % [level, cls, status])
+	display_game("[color=#9B59B6]XP:[/color] %d / %d ([color=#FFD700]%d to next level[/color])" % [current_xp, xp_needed, xp_remaining])
 	display_game("HP: %d/%d" % [hp, max_hp])
 
 	# Stats with bonuses
@@ -622,10 +642,14 @@ func show_player_info_popup(data: Dictionary):
 
 	var status_text = "[color=#90EE90]Exploring[/color]" if not in_combat_status else "[color=#FF6B6B]In Combat[/color]"
 
+	var xp_needed = data.get("experience_to_next_level", 100)
+	var xp_remaining = xp_needed - exp
+
 	player_info_content.clear()
 	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
 	player_info_content.append_text("[center]Level %d %s[/center]\n" % [level, cls])
-	player_info_content.append_text("[center]Experience %s[/center]\n" % exp)
+	player_info_content.append_text("[center][color=#9B59B6]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
+	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
 	player_info_content.append_text("[color=#4A90E2]HP:[/color] %d / %d\n\n" % [hp, max_hp])
 
@@ -729,6 +753,34 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif at_merchant:
+		# Merchant mode
+		var services = merchant_data.get("services", [])
+		if pending_merchant_action != "":
+			# Waiting for selection
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			current_actions = [
+				{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
+				{"label": "Sell", "action_type": "local", "action_data": "merchant_sell", "enabled": "sell" in services},
+				{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
+				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif inventory_mode:
 		if pending_inventory_action != "":
 			# Waiting for item selection - show cancel option
@@ -863,6 +915,16 @@ func execute_local_action(action: String):
 			cancel_inventory_action()
 		"acknowledge_continue":
 			acknowledge_continue()
+		"merchant_leave":
+			leave_merchant()
+		"merchant_sell":
+			prompt_merchant_action("sell")
+		"merchant_upgrade":
+			prompt_merchant_action("upgrade")
+		"merchant_gamble":
+			prompt_merchant_action("gamble")
+		"merchant_cancel":
+			cancel_merchant_action()
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -883,6 +945,188 @@ func logout_account():
 		return
 	display_game("[color=#F39C12]Logging out...[/color]")
 	send_to_server({"type": "logout_account"})
+
+# ===== MERCHANT FUNCTIONS =====
+
+func leave_merchant():
+	"""Leave the current merchant"""
+	send_to_server({"type": "merchant_leave"})
+	at_merchant = false
+	merchant_data = {}
+	pending_merchant_action = ""
+	update_action_bar()
+
+func prompt_merchant_action(action_type: String):
+	"""Prompt for merchant action selection"""
+	var inventory = character_data.get("inventory", [])
+	var equipped = character_data.get("equipped", {})
+
+	match action_type:
+		"sell":
+			if inventory.is_empty():
+				display_game("[color=#E74C3C]You have nothing to sell.[/color]")
+				return
+			pending_merchant_action = "sell"
+			display_merchant_sell_list()
+			display_game("[color=#FFD700]Press 1-%d to sell an item:[/color]" % inventory.size())
+			update_action_bar()
+
+		"upgrade":
+			var slots_with_items = []
+			for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+				if equipped.get(slot) != null:
+					slots_with_items.append(slot)
+			if slots_with_items.is_empty():
+				display_game("[color=#E74C3C]You have nothing equipped to upgrade.[/color]")
+				return
+			pending_merchant_action = "upgrade"
+			display_upgrade_options()
+			display_game("[color=#FFD700]Type slot name to upgrade (%s):[/color]" % ", ".join(slots_with_items))
+			input_field.placeholder_text = "Slot name..."
+			input_field.grab_focus()
+
+		"gamble":
+			pending_merchant_action = "gamble"
+			var gold = character_data.get("gold", 0)
+			var max_bet = gold / 2
+			display_game("[color=#FFD700]===== GAMBLING =====[/color]")
+			display_game("Your gold: %d" % gold)
+			display_game("Maximum bet: %d (half your gold)" % max_bet)
+			display_game("")
+			display_game("[color=#95A5A6]Odds:[/color]")
+			display_game("  50% - Lose your bet")
+			display_game("  35% - Win 1.5x your bet")
+			display_game("  12% - Win 3x your bet")
+			display_game("  3% - Win a mystery item!")
+			display_game("")
+			display_game("[color=#FFD700]Enter bet amount (50-%d):[/color]" % max_bet)
+			input_field.placeholder_text = "Bet amount..."
+			input_field.grab_focus()
+
+func cancel_merchant_action():
+	"""Cancel pending merchant action"""
+	pending_merchant_action = ""
+	display_game("[color=#95A5A6]Action cancelled.[/color]")
+	show_merchant_menu()
+	update_action_bar()
+
+func select_merchant_sell_item(index: int):
+	"""Sell item at index to merchant"""
+	var inventory = character_data.get("inventory", [])
+
+	if index < 0 or index >= inventory.size():
+		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		return
+
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_sell", "index": index})
+	update_action_bar()
+
+func show_merchant_menu():
+	"""Show merchant services menu"""
+	var services = merchant_data.get("services", [])
+	var name = merchant_data.get("name", "Merchant")
+
+	display_game("[color=#FFD700]===== %s =====[/color]" % name.to_upper())
+	display_game("\"What can I do for you, traveler?\"")
+	display_game("")
+
+	if "sell" in services:
+		display_game("[Q] Sell items")
+	if "upgrade" in services:
+		display_game("[W] Upgrade equipment")
+	if "gamble" in services:
+		display_game("[E] Gamble")
+	display_game("[Space] Leave")
+
+func display_merchant_sell_list():
+	"""Display items available for sale"""
+	var inventory = character_data.get("inventory", [])
+
+	display_game("[color=#FFD700]===== SELL ITEMS =====[/color]")
+	display_game("Your gold: %d" % character_data.get("gold", 0))
+	display_game("")
+
+	if inventory.is_empty():
+		display_game("[color=#666666](no items to sell)[/color]")
+	else:
+		for i in range(inventory.size()):
+			var item = inventory[i]
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			var sell_price = item.get("value", 10) / 2
+			display_game("%d. [color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
+				i + 1, rarity_color, item.get("name", "Unknown"), sell_price
+			])
+
+func display_upgrade_options():
+	"""Display equipped items that can be upgraded"""
+	var equipped = character_data.get("equipped", {})
+
+	display_game("[color=#FFD700]===== UPGRADE EQUIPMENT =====[/color]")
+	display_game("Your gold: %d" % character_data.get("gold", 0))
+	display_game("")
+
+	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary:
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			var current_level = item.get("level", 1)
+			var upgrade_cost = int(pow(current_level + 1, 2) * 10)
+			display_game("%s: [color=%s]%s[/color] (Lv%d)" % [
+				slot.capitalize(), rarity_color, item.get("name", "Unknown"), current_level
+			])
+			display_game("  [color=#FFD700]Upgrade to Lv%d: %d gold[/color]" % [current_level + 1, upgrade_cost])
+		else:
+			display_game("%s: [color=#666666](empty)[/color]" % slot.capitalize())
+
+func display_merchant_inventory(message: Dictionary):
+	"""Display inventory sent by server for merchant interaction"""
+	var items = message.get("items", [])
+	var gold = message.get("gold", 0)
+
+	display_game("[color=#FFD700]Your items for sale:[/color]")
+	display_game("Gold: %d" % gold)
+
+	for item in items:
+		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+		display_game("%d. [color=%s]%s[/color] - %d gold" % [
+			item.get("index", 0) + 1,
+			rarity_color,
+			item.get("name", "Unknown"),
+			item.get("value", 0)
+		])
+
+func process_merchant_input(input_text: String):
+	"""Process input during merchant interaction"""
+	var action = pending_merchant_action
+	pending_merchant_action = ""
+
+	match action:
+		"sell":
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1
+				send_to_server({"type": "merchant_sell", "index": index})
+			else:
+				display_game("[color=#E74C3C]Invalid item number.[/color]")
+				show_merchant_menu()
+
+		"upgrade":
+			var slot = input_text.to_lower().strip_edges()
+			if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+				send_to_server({"type": "merchant_upgrade", "slot": slot})
+			else:
+				display_game("[color=#E74C3C]Invalid slot name.[/color]")
+				show_merchant_menu()
+
+		"gamble":
+			if input_text.is_valid_int():
+				var amount = int(input_text)
+				send_to_server({"type": "merchant_gamble", "amount": amount})
+			else:
+				display_game("[color=#E74C3C]Invalid bet amount.[/color]")
+				show_merchant_menu()
+
+	update_action_bar()
 
 # ===== INVENTORY FUNCTIONS =====
 
@@ -1157,11 +1401,17 @@ func update_player_xp_bar():
 
 	var current_xp = character_data.get("experience", 0)
 	var xp_needed = character_data.get("experience_to_next_level", 100)
+	var xp_remaining = xp_needed - current_xp
 	var percent = (float(current_xp) / float(max(xp_needed, 1))) * 100.0
 
 	var fill = player_xp_bar.get_node("Fill")
 	if fill:
 		fill.anchor_right = percent / 100.0
+
+	# Update XP label to show progress
+	var xp_label = player_xp_bar.get_node("XPLabel")
+	if xp_label:
+		xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
 func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int):
 	if not enemy_health_bar:
@@ -1438,6 +1688,22 @@ func handle_server_message(message: Dictionary):
 			current_enemy_level = 0
 			damage_dealt_to_current_enemy = 0
 
+		"merchant_start":
+			at_merchant = true
+			merchant_data = message.get("merchant", {})
+			display_game(message.get("message", "A merchant appears!"))
+			update_action_bar()
+
+		"merchant_end":
+			at_merchant = false
+			merchant_data = {}
+			pending_merchant_action = ""
+			display_game(message.get("message", "The merchant departs."))
+			update_action_bar()
+
+		"merchant_inventory":
+			display_merchant_inventory(message)
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -1475,6 +1741,11 @@ func send_input():
 		pending_inventory_action = ""
 		process_inventory_action(action, text)
 		update_action_bar()
+		return
+
+	# Check for pending merchant action (upgrade slot or gamble amount)
+	if pending_merchant_action != "":
+		process_merchant_input(text)
 		return
 
 	# Commands
@@ -1747,10 +2018,15 @@ func display_character_status():
 	var equipped = char.get("equipped", {})
 	var bonuses = _calculate_equipment_bonuses(equipped)
 
+	var current_xp = char.get("experience", 0)
+	var xp_needed = char.get("experience_to_next_level", 100)
+	var xp_remaining = xp_needed - current_xp
+
 	var text = "[b][color=#FFD700]Character Status[/color][/b]\n"
 	text += "Name: %s\n" % char.get("name", "Unknown")
 	text += "Class: %s\n" % char.get("class", "Unknown")
 	text += "Level: %d\n" % char.get("level", 1)
+	text += "[color=#9B59B6]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
 	text += "HP: %d/%d (%s)\n" % [char.get("current_hp", 0), char.get("max_hp", 0), char.get("health_state", "Unknown")]
 	text += "Mana: %d/%d\n" % [char.get("current_mana", 0), char.get("max_mana", 0)]
 	text += "Gold: %d\n" % char.get("gold", 0)

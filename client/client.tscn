@@ -339,7 +339,7 @@ text = "Level 1"
 horizontal_alignment = 1
 
 [node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(0, 6)
+custom_minimum_size = Vector2(0, 18)
 layout_mode = 2
 
 [node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
@@ -358,6 +358,22 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_xp_fill")
+
+[node name="XPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 10
+text = "XP: 0 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
 custom_minimum_size = Vector2(0, 40)

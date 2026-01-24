@@ -306,6 +306,11 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 	output += "[b][color=#FFD700]Location:[/color][/b] (%d, %d)\n" % [center_x, center_y]
 	output += "[b][color=#FFD700]Terrain:[/color][/b] %s\n" % info.name
 
+	# Merchant at current location
+	if is_merchant_at(center_x, center_y):
+		var merchant = get_merchant_at(center_x, center_y)
+		output += "[color=#FFD700][b]%s nearby![/b][/color]\n" % merchant.name
+
 	# Danger info based on distance
 	if not info.safe and level_range.min > 0:
 		# Hotspot warning
@@ -317,8 +322,8 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 
 	output += "\n"
 
-	# Add the map
-	output += generate_ascii_map(center_x, center_y, radius)
+	# Add the map (with merchants visible)
+	output += generate_ascii_map_with_merchants(center_x, center_y, radius)
 
 	return output
 
@@ -512,6 +517,87 @@ func get_direction_name(direction: int) -> String:
 		8: return "north"
 		9: return "northeast"
 	return "unknown"
+
+# ===== TRAVELING MERCHANT SYSTEM =====
+
+func is_merchant_at(x: int, y: int) -> bool:
+	"""Check if a traveling merchant is at this location"""
+	# Merchants appear at ~0.5% of tiles, using coordinate hash
+	# They move location every hour (based on time hash)
+	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
+	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
+	return hash_val < 5  # 0.5% chance
+
+func check_merchant_encounter(x: int, y: int) -> bool:
+	"""Check if player encounters a merchant at this location"""
+	if is_merchant_at(x, y):
+		return true
+	return false
+
+func get_merchant_at(x: int, y: int) -> Dictionary:
+	"""Get merchant info for this location"""
+	if not is_merchant_at(x, y):
+		return {}
+
+	# Generate consistent merchant based on location + time
+	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
+	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37))
+
+	# Merchant types based on hash
+	var merchant_types = ["Wandering Trader", "Mysterious Merchant", "Traveling Smith", "Fortune Teller"]
+	var merchant_type = merchant_types[hash_val % merchant_types.size()]
+
+	# Services available vary by type
+	var services = ["buy", "sell"]  # All merchants buy/sell
+	if "Smith" in merchant_type:
+		services.append("upgrade")
+	if "Fortune" in merchant_type or "Mysterious" in merchant_type:
+		services.append("gamble")
+	if "Trader" in merchant_type:
+		services.append("upgrade")
+		services.append("gamble")
+
+	return {
+		"name": merchant_type,
+		"services": services,
+		"x": x,
+		"y": y,
+		"hash": hash_val  # For consistent pricing
+	}
+
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7) -> String:
+	"""Generate ASCII map with merchants shown"""
+	var map_lines: PackedStringArray = PackedStringArray()
+
+	for dy in range(radius, -radius - 1, -1):
+		var line_parts: PackedStringArray = PackedStringArray()
+		for dx in range(-radius, radius + 1):
+			var x = center_x + dx
+			var y = center_y + dy
+
+			if x < WORLD_MIN_X or x > WORLD_MAX_X or y < WORLD_MIN_Y or y > WORLD_MAX_Y:
+				line_parts.append("  ")
+				continue
+
+			if dx == 0 and dy == 0:
+				line_parts.append("[color=#FFFF00] @[/color]")
+			elif is_merchant_at(x, y):
+				# Show merchant as $ in gold
+				line_parts.append("[color=#FFD700] $[/color]")
+			else:
+				var terrain = get_terrain_at(x, y)
+				var info = get_terrain_info(terrain)
+
+				if _is_hotspot(x, y) and not info.safe:
+					var intensity = _get_hotspot_intensity(x, y)
+					var hotspot_color = "#FF4500" if intensity > 0.5 else "#FF6600"
+					line_parts.append("[color=%s] ![/color]" % hotspot_color)
+				else:
+					line_parts.append("[color=%s] %s[/color]" % [info.color, info.char])
+
+		map_lines.append("".join(line_parts))
+
+	return "\n".join(map_lines)
 
 func to_dict() -> Dictionary:
 	"""Serialize world system state"""
