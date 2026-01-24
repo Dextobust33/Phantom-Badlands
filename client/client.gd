@@ -409,7 +409,7 @@ func update_online_players(players: Array):
 
 func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
-	var name = data.get("name", "Unknown")
+	var pname = data.get("name", "Unknown")
 	var level = data.get("level", 1)
 	var cls = data.get("class", "Unknown")
 	var hp = data.get("hp", 0)
@@ -424,12 +424,53 @@ func display_examine_result(data: Dictionary):
 	var wis_stat = data.get("wisdom", 0)
 	var cha_stat = data.get("charisma", 0)
 
+	var bonuses = data.get("equipment_bonuses", {})
+	var equipped = data.get("equipped", {})
+	var total_attack = data.get("total_attack", str_stat)
+	var total_defense = data.get("total_defense", con_stat / 2)
+
 	var status = "[color=#90EE90]Exploring[/color]" if not in_combat else "[color=#FF6B6B]In Combat[/color]"
 
-	display_game("[color=#FFD700]===== %s =====[/color]" % name)
+	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
 	display_game("Level %d %s - %s" % [level, cls, status])
 	display_game("HP: %d/%d" % [hp, max_hp])
-	display_game("STR:%d CON:%d DEX:%d INT:%d WIS:%d CHA:%d" % [str_stat, con_stat, dex_stat, int_stat, wis_stat, cha_stat])
+
+	# Stats with bonuses
+	var stats_line = "STR:%d" % str_stat
+	if bonuses.get("strength", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.strength
+	stats_line += " CON:%d" % con_stat
+	if bonuses.get("constitution", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.constitution
+	stats_line += " DEX:%d" % dex_stat
+	if bonuses.get("dexterity", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.dexterity
+	display_game(stats_line)
+
+	stats_line = "INT:%d" % int_stat
+	if bonuses.get("intelligence", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.intelligence
+	stats_line += " WIS:%d" % wis_stat
+	if bonuses.get("wisdom", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
+	stats_line += " CHA:%d" % cha_stat
+	if bonuses.get("charisma", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.charisma
+	display_game(stats_line)
+
+	# Combat stats
+	display_game("[color=#FF6666]Attack:[/color] %d  [color=#66FFFF]Defense:[/color] %d" % [total_attack, total_defense])
+
+	# Equipment
+	var equip_text = ""
+	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary:
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			equip_text += "[color=%s]%s[/color] " % [rarity_color, item.get("name", "Unknown")]
+	if equip_text != "":
+		display_game("[color=#E67E22]Gear:[/color] %s" % equip_text.strip_edges())
+
 	display_game("Monsters Slain: %d" % kills)
 
 func request_player_list():
@@ -574,6 +615,11 @@ func show_player_info_popup(data: Dictionary):
 	var wis_stat = data.get("wisdom", 0)
 	var cha_stat = data.get("charisma", 0)
 
+	var bonuses = data.get("equipment_bonuses", {})
+	var equipped = data.get("equipped", {})
+	var total_attack = data.get("total_attack", str_stat)
+	var total_defense = data.get("total_defense", con_stat / 2)
+
 	var status_text = "[color=#90EE90]Exploring[/color]" if not in_combat_status else "[color=#FF6B6B]In Combat[/color]"
 
 	player_info_content.clear()
@@ -582,9 +628,50 @@ func show_player_info_popup(data: Dictionary):
 	player_info_content.append_text("[center]Experience %s[/center]\n" % exp)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
 	player_info_content.append_text("[color=#4A90E2]HP:[/color] %d / %d\n\n" % [hp, max_hp])
+
+	# Stats with equipment bonuses
 	player_info_content.append_text("[color=#9B59B6]Stats:[/color]\n")
-	player_info_content.append_text("  STR: %d  CON: %d  DEX: %d\n" % [str_stat, con_stat, dex_stat])
-	player_info_content.append_text("  INT: %d  WIS: %d  CHA: %d\n\n" % [int_stat, wis_stat, cha_stat])
+	var line1 = "  STR: %d" % str_stat
+	if bonuses.get("strength", 0) > 0:
+		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.strength
+	line1 += "  CON: %d" % con_stat
+	if bonuses.get("constitution", 0) > 0:
+		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.constitution
+	line1 += "  DEX: %d" % dex_stat
+	if bonuses.get("dexterity", 0) > 0:
+		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.dexterity
+	player_info_content.append_text(line1 + "\n")
+
+	var line2 = "  INT: %d" % int_stat
+	if bonuses.get("intelligence", 0) > 0:
+		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.intelligence
+	line2 += "  WIS: %d" % wis_stat
+	if bonuses.get("wisdom", 0) > 0:
+		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
+	line2 += "  CHA: %d" % cha_stat
+	if bonuses.get("charisma", 0) > 0:
+		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.charisma
+	player_info_content.append_text(line2 + "\n\n")
+
+	# Combat stats
+	player_info_content.append_text("[color=#FF6666]Attack:[/color] %d  [color=#66FFFF]Defense:[/color] %d\n\n" % [total_attack, total_defense])
+
+	# Equipment
+	var has_equipment = false
+	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary:
+			if not has_equipment:
+				player_info_content.append_text("[color=#E67E22]Equipment:[/color]\n")
+				has_equipment = true
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			player_info_content.append_text("  %s: [color=%s]%s[/color] (Lv%d)\n" % [
+				slot.capitalize(), rarity_color, item.get("name", "Unknown"), item.get("level", 1)
+			])
+
+	if has_equipment:
+		player_info_content.append_text("\n")
+
 	player_info_content.append_text("[color=#E67E22]Monsters Slain:[/color] %d" % kills)
 
 	player_info_panel.visible = true
@@ -821,19 +908,27 @@ func display_inventory():
 
 	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
 
-	# Show equipped items
+	# Show equipped items with level and stats
 	display_game("[color=#4A90E2]Equipped:[/color]")
-	var has_equipped = false
 	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			display_game("  %s: [color=%s]%s[/color]" % [slot.capitalize(), rarity_color, item.get("name", "Unknown")])
-			has_equipped = true
-	if not has_equipped:
-		display_game("  [color=#666666](nothing equipped)[/color]")
+			var item_level = item.get("level", 1)
+			var bonus_text = _get_item_bonus_summary(item)
+			display_game("  %s: [color=%s]%s[/color] (Lv%d) %s" % [
+				slot.capitalize(), rarity_color, item.get("name", "Unknown"), item_level, bonus_text
+			])
+		else:
+			display_game("  %s: [color=#666666](empty)[/color]" % slot.capitalize())
 
-	# Show inventory items
+	# Show total equipment bonuses
+	var bonuses = _calculate_equipment_bonuses(equipped)
+	if bonuses.attack > 0 or bonuses.defense > 0:
+		display_game("")
+		display_game("[color=#90EE90]Total Gear Bonuses: +%d Attack, +%d Defense[/color]" % [bonuses.attack, bonuses.defense])
+
+	# Show inventory items with comparison hints
 	display_game("")
 	display_game("[color=#4A90E2]Backpack (%d/20):[/color]" % inventory.size())
 	if inventory.is_empty():
@@ -842,10 +937,70 @@ func display_inventory():
 		for i in range(inventory.size()):
 			var item = inventory[i]
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			display_game("  %d. [color=%s]%s[/color] (Lv%d)" % [i + 1, rarity_color, item.get("name", "Unknown"), item.get("level", 1)])
+			var item_level = item.get("level", 1)
+			var item_type = item.get("type", "")
+
+			# Show comparison indicator if it's an equippable item
+			var compare_text = ""
+			var slot = _get_slot_for_item_type(item_type)
+			if slot != "":
+				var equipped_item = equipped.get(slot)
+				if equipped_item != null and equipped_item is Dictionary:
+					var equipped_level = equipped_item.get("level", 1)
+					if item_level > equipped_level:
+						compare_text = "[color=#90EE90]↑[/color]"
+					elif item_level < equipped_level:
+						compare_text = "[color=#FF6666]↓[/color]"
+					else:
+						compare_text = "[color=#FFFF66]=[/color]"
+				else:
+					compare_text = "[color=#90EE90]NEW[/color]"
+
+			display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
+				i + 1, rarity_color, item.get("name", "Unknown"), item_level, compare_text
+			])
 
 	display_game("")
-	display_game("[color=#95A5A6]Actions: Q=Use, W=Equip, E=Unequip, R=Discard, Space=Back[/color]")
+	display_game("[color=#95A5A6]Q=Inspect, W=Use, E=Equip, R=Unequip, 1=Discard, Space=Back[/color]")
+	display_game("[color=#95A5A6]Inspect equipped: type slot name (e.g., 'weapon')[/color]")
+
+func _get_item_bonus_summary(item: Dictionary) -> String:
+	"""Get a short summary of item bonuses"""
+	var item_type = item.get("type", "")
+	var level = item.get("level", 1)
+	var rarity = item.get("rarity", "common")
+	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
+	var base = int(level * rarity_mult)
+
+	if "weapon" in item_type:
+		return "[color=#FF6666]+%d Atk[/color]" % (base * 2)
+	elif "armor" in item_type:
+		return "[color=#66FFFF]+%d Def[/color]" % (base * 2)
+	elif "helm" in item_type:
+		return "[color=#66FFFF]+%d Def[/color]" % base
+	elif "shield" in item_type:
+		return "[color=#66FFFF]+%d Def[/color]" % int(base * 1.5)
+	elif "ring" in item_type:
+		return "[color=#FF6666]+%d Atk[/color]" % int(base * 0.5)
+	elif "amulet" in item_type:
+		return "[color=#FF66FF]+%d Mana[/color]" % (base * 2)
+	return ""
+
+func _get_slot_for_item_type(item_type: String) -> String:
+	"""Get equipment slot for an item type"""
+	if "weapon" in item_type:
+		return "weapon"
+	elif "armor" in item_type:
+		return "armor"
+	elif "helm" in item_type:
+		return "helm"
+	elif "shield" in item_type:
+		return "shield"
+	elif "ring" in item_type:
+		return "ring"
+	elif "amulet" in item_type:
+		return "amulet"
+	return ""
 
 func prompt_inventory_action(action_type: String):
 	"""Prompt user for item selection for inventory action"""

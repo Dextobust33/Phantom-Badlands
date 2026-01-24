@@ -812,22 +812,37 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 	}
 
 func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictionary:
-	"""Scale monster stats to match target level using tiered scaling"""
+	"""Scale monster stats to match target level, accounting for expected player equipment"""
 	var level_diff = target_level - base_stats.base_level
 
 	# Tiered scaling to prevent astronomical stats at high levels
-	# Levels 1-100:    12% per level (unchanged)
-	# Levels 101-500:  5% per level (slower growth)
-	# Levels 501-2000: 2% per level (diminishing)
-	# Levels 2000+:    0.5% per level (near-cap)
 	var stat_scale = _calculate_tiered_stat_scale(base_stats.base_level, target_level)
 
-	# Calculate scaled combat stats
-	var scaled_hp = max(5, int(base_stats.base_hp * stat_scale))
-	var scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
-	var scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
+	# Calculate expected player equipment bonuses at this level
+	# Assumes player has level-appropriate gear with average (uncommon) rarity
+	var expected_player_attack_bonus = _estimate_player_equipment_attack(target_level)
+	var expected_player_defense_bonus = _estimate_player_equipment_defense(target_level)
 
-	# Calculate XP and gold with tiered formulas
+	# Calculate base scaled stats
+	var base_scaled_hp = max(5, int(base_stats.base_hp * stat_scale))
+	var base_scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
+	var base_scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
+
+	# Adjust HP upward to account for player's equipment attack bonus
+	# This makes fights take a reasonable number of turns even with good gear
+	var hp_multiplier = 1.0 + (expected_player_attack_bonus / 20.0)
+	var scaled_hp = max(5, int(base_scaled_hp * hp_multiplier))
+
+	# Adjust strength to make player defense meaningful
+	# Monster should deal enough damage that armor matters
+	var strength_bonus = int(expected_player_defense_bonus * 0.6)
+	var scaled_strength = max(3, base_scaled_strength + strength_bonus)
+
+	# Defense scales normally but with a small boost at higher levels
+	var defense_bonus = int(target_level / 10)
+	var scaled_defense = max(1, base_scaled_defense + defense_bonus)
+
+	# Calculate XP and gold with tiered formulas (based on final stats)
 	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
 	var gold_reward = _calculate_gold_reward(base_stats, stat_scale, target_level)
 
@@ -846,6 +861,34 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"drop_chance": base_stats.get("drop_chance", 5),
 		"description": base_stats.description
 	}
+
+func _estimate_player_equipment_attack(player_level: int) -> int:
+	"""Estimate expected player attack bonus from equipment at given level"""
+	# Assume player has weapon and ring at ~80% of current level with uncommon rarity
+	var effective_item_level = int(player_level * 0.8)
+	var rarity_mult = 1.5  # Uncommon average
+
+	# Weapon: level × rarity × 2 attack
+	var weapon_attack = int(effective_item_level * rarity_mult * 2)
+	# Ring: level × rarity × 0.5 attack
+	var ring_attack = int(effective_item_level * rarity_mult * 0.5)
+
+	return weapon_attack + ring_attack
+
+func _estimate_player_equipment_defense(player_level: int) -> int:
+	"""Estimate expected player defense bonus from equipment at given level"""
+	# Assume player has armor, helm, shield at ~80% of current level with uncommon rarity
+	var effective_item_level = int(player_level * 0.8)
+	var rarity_mult = 1.5  # Uncommon average
+
+	# Armor: level × rarity × 2 defense
+	var armor_defense = int(effective_item_level * rarity_mult * 2)
+	# Helm: level × rarity × 1 defense
+	var helm_defense = int(effective_item_level * rarity_mult * 1)
+	# Shield: level × rarity × 1.5 defense
+	var shield_defense = int(effective_item_level * rarity_mult * 1.5)
+
+	return armor_defense + helm_defense + shield_defense
 
 func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	"""Calculate stat scaling using tiered percentages"""

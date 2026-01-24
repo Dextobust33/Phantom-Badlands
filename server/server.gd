@@ -469,6 +469,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 	for pid in characters.keys():
 		var char = characters[pid]
 		if char.name.to_lower() == target_name.to_lower():
+			var bonuses = char.get_equipment_bonuses()
 			send_to_peer(peer_id, {
 				"type": "examine_result",
 				"name": char.name,
@@ -483,6 +484,10 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"intelligence": char.get_stat("intelligence"),
 				"wisdom": char.get_stat("wisdom"),
 				"charisma": char.get_stat("charisma"),
+				"equipment_bonuses": bonuses,
+				"equipped": char.equipped,
+				"total_attack": char.get_total_attack(),
+				"total_defense": char.get_total_defense(),
 				"monsters_killed": char.monsters_killed,
 				"in_combat": combat_mgr.is_in_combat(pid)
 			})
