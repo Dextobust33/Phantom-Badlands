@@ -28,6 +28,8 @@ var game_state = GameState.DISCONNECTED
 @onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
 @onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
 @onready var player_level_label = $RootContainer/MainContainer/RightPanel/PlayerLevel
+@onready var gold_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer/GoldLabel
+@onready var gem_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer/GemLabel
 @onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
 
 # UI References - Login Panel
@@ -248,8 +250,21 @@ func _process(_delta):
 			else:
 				set_meta("merchantkey_%d_pressed" % i, false)
 
-	# Action bar hotkeys (only when input NOT focused and playing, and not selecting item)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_inventory_action == "" and pending_merchant_action == "":
+	# Merchant shop buy selection with number keys (1-9)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "buy":
+		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+		for i in range(item_keys.size()):
+			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+				if not get_meta("buykey_%d_pressed" % i, false):
+					set_meta("buykey_%d_pressed" % i, true)
+					select_merchant_buy_item(i)  # 0-based index
+			else:
+				set_meta("buykey_%d_pressed" % i, false)
+
+	# Action bar hotkeys (only when input NOT focused and playing)
+	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
+	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "sell", "gamble"]
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys:
 		for i in range(action_hotkeys.size()):
 			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
@@ -797,8 +812,23 @@ func update_action_bar():
 		# Merchant mode
 		var services = merchant_data.get("services", [])
 		var equipped = character_data.get("equipped", {})
+		var player_gems = character_data.get("gems", 0)
+		var shop_items = merchant_data.get("shop_items", [])
 		if pending_merchant_action == "sell":
 			# Waiting for item selection (use number keys)
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "buy":
+			# Waiting for item selection from shop (use number keys)
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -836,14 +866,27 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_merchant_action == "sell_gems":
+			# Waiting for gem amount input
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_gems", "enabled": player_gems > 0},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:
 			current_actions = [
 				{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
 				{"label": "Sell", "action_type": "local", "action_data": "merchant_sell", "enabled": "sell" in services},
 				{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
 				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
+				{"label": "SellGems", "action_type": "local", "action_data": "merchant_sell_gems", "enabled": player_gems > 0},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -991,6 +1034,12 @@ func execute_local_action(action: String):
 			prompt_merchant_action("upgrade")
 		"merchant_gamble":
 			prompt_merchant_action("gamble")
+		"merchant_buy":
+			prompt_merchant_action("buy")
+		"merchant_sell_gems":
+			prompt_merchant_action("sell_gems")
+		"sell_all_gems":
+			sell_all_gems()
 		"merchant_cancel":
 			cancel_merchant_action()
 		"upgrade_weapon":
@@ -1009,9 +1058,7 @@ func execute_local_action(action: String):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
-	# Reset recent XP gain highlight
-	recent_xp_gain = 0
-	update_player_xp_bar()
+	# Keep recent XP gain highlight visible until next XP gain
 	game_output.clear()
 	update_action_bar()
 
@@ -1085,6 +1132,93 @@ func prompt_merchant_action(action_type: String):
 			input_field.placeholder_text = "Bet amount..."
 			input_field.grab_focus()
 
+		"buy":
+			var shop_items = merchant_data.get("shop_items", [])
+			if shop_items.is_empty():
+				display_game("[color=#E74C3C]The merchant has nothing for sale.[/color]")
+				return
+			pending_merchant_action = "buy"
+			display_shop_inventory()
+			update_action_bar()
+
+		"sell_gems":
+			var gems = character_data.get("gems", 0)
+			if gems <= 0:
+				display_game("[color=#E74C3C]You have no gems to sell.[/color]")
+				return
+			pending_merchant_action = "sell_gems"
+			display_game("[color=#FFD700]===== SELL GEMS =====[/color]")
+			display_game("[color=#00FFFF]Your gems: %d[/color]" % gems)
+			display_game("Value: [color=#FFD700]1000 gold per gem[/color]")
+			display_game("")
+			display_game("[color=#95A5A6]Total value: %d gold[/color]" % (gems * 1000))
+			display_game("")
+			display_game("[color=#FFD700]Enter amount to sell (or press [Q] to sell all):[/color]")
+			input_field.placeholder_text = "Gems to sell..."
+			input_field.grab_focus()
+			update_action_bar()
+
+func sell_all_gems():
+	"""Sell all gems to merchant"""
+	var gems = character_data.get("gems", 0)
+	if gems <= 0:
+		display_game("[color=#E74C3C]You have no gems to sell.[/color]")
+		return
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_sell_gems", "amount": gems})
+	update_action_bar()
+
+func display_shop_inventory():
+	"""Display merchant's shop inventory for purchase"""
+	var shop_items = merchant_data.get("shop_items", [])
+	var gold = character_data.get("gold", 0)
+	var gems = character_data.get("gems", 0)
+
+	display_game("[color=#FFD700]===== MERCHANT SHOP =====[/color]")
+	display_game("Your gold: %d  |  Your gems: %d" % [gold, gems])
+	display_game("")
+
+	if shop_items.is_empty():
+		display_game("[color=#666666](nothing for sale)[/color]")
+	else:
+		for i in range(shop_items.size()):
+			var item = shop_items[i]
+			var rarity = item.get("rarity", "common")
+			var color = _get_item_rarity_color(rarity)
+			var level = item.get("level", 1)
+			var price = item.get("shop_price", 100)
+			var gem_price = int(ceil(price / 1000.0))
+			display_game("[%d] [color=%s]%s[/color] (Lv%d) - %d gold (or %d gems)" % [i + 1, color, item.get("name", "Unknown"), level, price, gem_price])
+
+	display_game("")
+	display_game("[color=#95A5A6]Press 1-%d to buy with gold[/color]" % shop_items.size())
+
+func handle_shop_inventory(message: Dictionary):
+	"""Handle shop inventory update from server"""
+	var items = message.get("items", [])
+	# Update local merchant data with shop items
+	if not merchant_data.is_empty():
+		var shop_items = []
+		for item in items:
+			shop_items.append({
+				"name": item.get("name", "Unknown"),
+				"type": item.get("type", ""),
+				"level": item.get("level", 1),
+				"rarity": item.get("rarity", "common"),
+				"shop_price": item.get("price", 100)
+			})
+		merchant_data["shop_items"] = shop_items
+
+	# Update currency display
+	character_data["gold"] = message.get("gold", character_data.get("gold", 0))
+	character_data["gems"] = message.get("gems", character_data.get("gems", 0))
+	update_currency_display()
+
+	# Show updated shop if still in buy mode
+	if pending_merchant_action == "buy":
+		display_shop_inventory()
+	update_action_bar()
+
 func cancel_merchant_action():
 	"""Cancel pending merchant action"""
 	pending_merchant_action = ""
@@ -1105,6 +1239,18 @@ func select_merchant_sell_item(index: int):
 	send_to_server({"type": "merchant_sell", "index": index})
 	update_action_bar()
 
+func select_merchant_buy_item(index: int):
+	"""Buy item at index from merchant shop"""
+	var shop_items = merchant_data.get("shop_items", [])
+
+	if index < 0 or index >= shop_items.size():
+		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		return
+
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_buy", "index": index})
+	update_action_bar()
+
 func send_upgrade_slot(slot: String):
 	"""Send upgrade request for a specific equipment slot"""
 	pending_merchant_action = ""
@@ -1115,6 +1261,8 @@ func show_merchant_menu():
 	"""Show merchant services menu"""
 	var services = merchant_data.get("services", [])
 	var name = merchant_data.get("name", "Merchant")
+	var shop_items = merchant_data.get("shop_items", [])
+	var gems = character_data.get("gems", 0)
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % name.to_upper())
 	display_game("\"What can I do for you, traveler?\"")
@@ -1126,6 +1274,10 @@ func show_merchant_menu():
 		display_game("[W] Upgrade equipment")
 	if "gamble" in services:
 		display_game("[E] Gamble")
+	if shop_items.size() > 0:
+		display_game("[R] Buy items (%d available)" % shop_items.size())
+	if gems > 0:
+		display_game("[1] Sell gems (%d @ 1000g each)" % gems)
 	display_game("[Space] Leave")
 
 func display_merchant_sell_list():
@@ -1186,19 +1338,47 @@ func display_merchant_inventory(message: Dictionary):
 		])
 
 func process_merchant_input(input_text: String):
-	"""Process input during merchant interaction (only for gamble bet amount)"""
+	"""Process input during merchant interaction (gamble bet, gem amount, buy item)"""
 	var action = pending_merchant_action
 	pending_merchant_action = ""
+	input_field.placeholder_text = ""  # Reset placeholder
 
 	match action:
 		"gamble":
-			input_field.placeholder_text = ""  # Reset placeholder
 			if input_text.is_valid_int():
 				var amount = int(input_text)
 				send_to_server({"type": "merchant_gamble", "amount": amount})
 			else:
 				display_game("[color=#E74C3C]Invalid bet amount.[/color]")
 				show_merchant_menu()
+
+		"sell_gems":
+			if input_text.is_valid_int():
+				var amount = int(input_text)
+				if amount > 0:
+					send_to_server({"type": "merchant_sell_gems", "amount": amount})
+				else:
+					display_game("[color=#E74C3C]Invalid gem amount.[/color]")
+					show_merchant_menu()
+			else:
+				display_game("[color=#E74C3C]Invalid gem amount. Enter a number.[/color]")
+				show_merchant_menu()
+
+		"buy":
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1  # Convert to 0-based
+				var shop_items = merchant_data.get("shop_items", [])
+				if index >= 0 and index < shop_items.size():
+					send_to_server({"type": "merchant_buy", "index": index})
+				else:
+					display_game("[color=#E74C3C]Invalid item number.[/color]")
+					display_shop_inventory()
+					pending_merchant_action = "buy"  # Keep in buy mode
+			else:
+				display_game("[color=#E74C3C]Invalid item number. Enter 1-%d.[/color]" % merchant_data.get("shop_items", []).size())
+				display_shop_inventory()
+				pending_merchant_action = "buy"  # Keep in buy mode
+
 		_:
 			# Other actions use action bar, not text input
 			display_game("[color=#E74C3C]Use the action bar to select.[/color]")
@@ -1577,6 +1757,28 @@ func update_player_hp_bar():
 	if label:
 		label.text = "HP: %d/%d" % [current_hp, max_hp]
 
+func update_currency_display():
+	if not has_character:
+		return
+
+	var gold = character_data.get("gold", 0)
+	var gems = character_data.get("gems", 0)
+
+	if gold_label:
+		gold_label.text = format_number(gold)
+
+	if gem_label:
+		gem_label.text = str(gems)
+
+func format_number(num: int) -> String:
+	"""Format large numbers with K/M suffixes for readability"""
+	if num >= 1000000:
+		return "%.1fM" % (num / 1000000.0)
+	elif num >= 10000:
+		return "%.1fK" % (num / 1000.0)
+	else:
+		return str(num)
+
 func update_player_xp_bar():
 	if not player_xp_bar or not has_character:
 		return
@@ -1730,6 +1932,7 @@ func handle_server_message(message: Dictionary):
 			update_player_level()
 			update_player_hp_bar()
 			update_player_xp_bar()
+			update_currency_display()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
 			display_character_status()
 			request_player_list()
@@ -1742,6 +1945,7 @@ func handle_server_message(message: Dictionary):
 			update_player_level()
 			update_player_hp_bar()
 			update_player_xp_bar()
+			update_currency_display()
 			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
 			display_character_status()
 			request_player_list()
@@ -1833,6 +2037,7 @@ func handle_server_message(message: Dictionary):
 				update_player_level()
 				update_player_hp_bar()
 				update_player_xp_bar()
+				update_currency_display()
 				# Re-display inventory if in inventory mode (after use/equip/discard)
 				if inventory_mode:
 					display_inventory()
@@ -1897,6 +2102,7 @@ func handle_server_message(message: Dictionary):
 					update_player_level()
 					update_player_hp_bar()
 					update_player_xp_bar()
+					update_currency_display()
 				# Check for incoming flock encounter
 				if message.get("flock_incoming", false):
 					flock_pending = true
@@ -1920,9 +2126,8 @@ func handle_server_message(message: Dictionary):
 					pending_continue = true
 					display_game("[color=#95A5A6]Press Space to continue...[/color]")
 			elif message.get("fled", false):
-				# Fled - reset XP tracking
+				# Fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
-				recent_xp_gain = 0
 				display_game("[color=#FFD700]You escaped from combat![/color]")
 				pending_continue = true
 				display_game("[color=#95A5A6]Press Space to continue...[/color]")
@@ -1951,6 +2156,9 @@ func handle_server_message(message: Dictionary):
 
 		"merchant_inventory":
 			display_merchant_inventory(message)
+
+		"shop_inventory":
+			handle_shop_inventory(message)
 
 		"password_changed":
 			finish_password_change(true, message.get("message", "Password changed successfully!"))

@@ -413,6 +413,46 @@ text = "HP: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="CurrencyDisplay" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="GoldContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="GoldIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.84, 0, 1)
+theme_override_font_sizes/font_size = 14
+text = "Gold:"
+
+[node name="GoldLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.84, 0, 1)
+theme_override_font_sizes/font_size = 14
+text = "0"
+
+[node name="GemContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="GemIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "Gems:"
+
+[node name="GemLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "0"
+
 [node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
 layout_mode = 2
 size_flags_vertical = 3

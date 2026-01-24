@@ -155,6 +155,12 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			character.add_experience(monster.experience_reward)
 			character.gold += monster.gold_reward
 
+			# Roll for gem drops (from high-level monsters)
+			var gems_earned = roll_gem_drops(monster, character)
+			if gems_earned > 0:
+				character.gems += gems_earned
+				messages.append("[color=#00FFFF]You found %d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+
 			# Roll for item drops
 			var dropped_items = roll_combat_drops(monster, character)
 			for item in dropped_items:
@@ -172,7 +178,8 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				"monster_name": monster.name,
 				"monster_level": monster.level,
 				"flock_chance": monster.get("flock_chance", 0),
-				"dropped_items": dropped_items
+				"dropped_items": dropped_items,
+				"gems_earned": gems_earned
 			}
 	else:
 		# Miss
@@ -424,3 +431,43 @@ func _get_rarity_color(rarity: String) -> String:
 		"artifact": "#E6CC80"
 	}
 	return colors.get(rarity, "#FFFFFF")
+
+func roll_gem_drops(monster: Dictionary, character: Character) -> int:
+	"""Roll for gem drops. Returns number of gems earned."""
+	var monster_level = monster.get("level", 1)
+	var player_level = character.level
+	var level_diff = monster_level - player_level
+
+	# No gem chance unless monster is higher level than player
+	if level_diff < 5:
+		return 0
+
+	# Gem drop chance based on level difference
+	var gem_chance = 0
+	if level_diff >= 100:
+		gem_chance = 50
+	elif level_diff >= 75:
+		gem_chance = 35
+	elif level_diff >= 50:
+		gem_chance = 25
+	elif level_diff >= 30:
+		gem_chance = 18
+	elif level_diff >= 20:
+		gem_chance = 12
+	elif level_diff >= 15:
+		gem_chance = 8
+	elif level_diff >= 10:
+		gem_chance = 5
+	else:  # level_diff >= 5
+		gem_chance = 2
+
+	# Roll for gem drop
+	var roll = randi() % 100
+	if roll >= gem_chance:
+		return 0
+
+	# Gem quantity formula: scales with monster lethality and level
+	var lethality = monster.get("lethality", 0)
+	var gem_count = max(1, int(lethality / 1000) + int(monster_level / 100))
+
+	return gem_count

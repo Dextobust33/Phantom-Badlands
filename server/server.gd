@@ -186,10 +186,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_discard(peer_id, message)
 		"merchant_sell":
 			handle_merchant_sell(peer_id, message)
+		"merchant_sell_gems":
+			handle_merchant_sell_gems(peer_id, message)
 		"merchant_upgrade":
 			handle_merchant_upgrade(peer_id, message)
 		"merchant_gamble":
 			handle_merchant_gamble(peer_id, message)
+		"merchant_buy":
+			handle_merchant_buy(peer_id, message)
 		"merchant_leave":
 			handle_merchant_leave(peer_id)
 		"change_password":
@@ -1221,13 +1225,21 @@ func trigger_merchant_encounter(peer_id: int):
 	if merchant.is_empty():
 		return
 
+	# Generate shop inventory based on player level
+	var shop_items = generate_shop_inventory(character.level, merchant.get("hash", 0))
+	merchant["shop_items"] = shop_items
+
 	# Store merchant state
 	at_merchant[peer_id] = merchant
 
 	# Build services message
 	var services_text = []
+	if shop_items.size() > 0:
+		services_text.append("[R] Buy items (%d available)" % shop_items.size())
 	if "sell" in merchant.services:
 		services_text.append("[Q] Sell items")
+	if character.gems > 0:
+		services_text.append("[1] Sell gems (%d @ 1000g each)" % character.gems)
 	if "upgrade" in merchant.services:
 		services_text.append("[W] Upgrade equipment")
 	if "gamble" in merchant.services:
@@ -1271,8 +1283,40 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	_send_merchant_inventory(peer_id)
 
+func handle_merchant_sell_gems(peer_id: int, message: Dictionary):
+	"""Handle selling gems to a merchant"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var amount = message.get("amount", 1)
+
+	# Can't sell more than you have
+	amount = mini(amount, character.gems)
+
+	if amount <= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have any gems to sell!"})
+		return
+
+	# 1000 gold per gem
+	var gold_value = amount * 1000
+
+	character.gems -= amount
+	character.gold += gold_value
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]You sell %d gem%s for %d gold![/color]" % [amount, "s" if amount > 1 else "", gold_value]
+	})
+
+	send_character_update(peer_id)
+
 func handle_merchant_upgrade(peer_id: int, message: Dictionary):
-	"""Handle upgrading an equipped item"""
+	"""Handle upgrading an equipped item (supports multi-upgrade)"""
 	if not at_merchant.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
 		return
@@ -1287,6 +1331,10 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 
 	var character = characters[peer_id]
 	var slot = message.get("slot", "")
+	var count = message.get("count", 1)  # Number of upgrades to perform
+	var use_gems = message.get("use_gems", false)  # Pay with gems instead of gold
+
+	count = clampi(count, 1, 100)  # Limit to 100 upgrades at once
 
 	if not slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment slot"})
@@ -1297,30 +1345,55 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Nothing equipped in that slot"})
 		return
 
-	# Calculate upgrade cost: (item level + 1)^2 * 10 gold
+	# Calculate total upgrade cost for all requested upgrades
 	var current_level = item.get("level", 1)
-	var upgrade_cost = int(pow(current_level + 1, 2) * 10)
+	var total_cost = 0
+	for i in range(count):
+		total_cost += int(pow(current_level + i + 1, 2) * 10)
 
-	if character.gold < upgrade_cost:
+	# Check if paying with gems
+	if use_gems:
+		var gem_cost = int(ceil(total_cost / 1000.0))
+		if character.gems < gem_cost:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF6B6B]You need %d gems for %d upgrade%s. You have %d gems.[/color]" % [gem_cost, count, "s" if count > 1 else "", character.gems]
+			})
+			return
+
+		# Perform upgrades with gem payment
+		character.gems -= gem_cost
+		item["level"] = current_level + count
+		item["value"] = int(item.get("value", 100) * pow(1.5, count))
+
+		var rarity = item.get("rarity", "common")
+		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
+
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FF6B6B]You need %d gold to upgrade. You have %d gold.[/color]" % [upgrade_cost, character.gold]
+			"message": "[color=#90EE90]%s upgraded %d level%s (now +%d) for %d gems![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, gem_cost]
 		})
-		return
+	else:
+		# Standard gold payment
+		if character.gold < total_cost:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF6B6B]You need %d gold for %d upgrade%s. You have %d gold.[/color]" % [total_cost, count, "s" if count > 1 else "", character.gold]
+			})
+			return
 
-	# Perform upgrade
-	character.gold -= upgrade_cost
-	item["level"] = current_level + 1
-	item["value"] = int(item.get("value", 100) * 1.5)
+		# Perform upgrades
+		character.gold -= total_cost
+		item["level"] = current_level + count
+		item["value"] = int(item.get("value", 100) * pow(1.5, count))
 
-	# Recalculate item name if needed
-	var rarity = item.get("rarity", "common")
-	item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
+		var rarity = item.get("rarity", "common")
+		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
 
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#90EE90]%s upgraded to level %d for %d gold![/color]\n[color=#95A5A6]New stats are now in effect.[/color]" % [item.get("name", "Item"), item["level"], upgrade_cost]
-	})
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]%s upgraded %d level%s (now +%d) for %d gold![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, total_cost]
+		})
 
 	send_character_update(peer_id)
 
@@ -1482,6 +1555,149 @@ func _get_rarity_color(rarity: String) -> String:
 		"legendary": return "#FF8000"
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
+
+func generate_shop_inventory(player_level: int, merchant_hash: int) -> Array:
+	"""Generate purchasable items for merchant shop"""
+	var items = []
+
+	# Use merchant hash for consistent inventory
+	var rng = RandomNumberGenerator.new()
+	rng.seed = merchant_hash
+
+	# Generate 3-6 items
+	var item_count = 3 + rng.randi() % 4
+
+	for i in range(item_count):
+		# Item level ranges around player level
+		var level_roll = rng.randi() % 100
+		var item_level = player_level
+
+		if level_roll < 50:
+			# Standard tier: player level -5 to +5
+			item_level = maxi(1, player_level + rng.randi_range(-5, 5))
+		elif level_roll < 80:
+			# Premium tier: player level +5 to +20
+			item_level = player_level + rng.randi_range(5, 20)
+		else:
+			# Legendary tier: player level +20 to +50
+			item_level = player_level + rng.randi_range(20, 50)
+
+		# Determine tier for drop tables
+		var tier = _level_to_tier(item_level)
+
+		# Roll for item (100% drop rate for shop)
+		var drops = drop_tables.roll_drops(tier, 100, item_level)
+		if drops.size() > 0:
+			var item = drops[0]
+			# Shop markup: 2.5x base value
+			item["shop_price"] = int(item.get("value", 100) * 2.5)
+			items.append(item)
+
+	return items
+
+func handle_merchant_buy(peer_id: int, message: Dictionary):
+	"""Handle buying an item from the merchant shop"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var item_index = message.get("index", -1)
+	var use_gems = message.get("use_gems", false)
+
+	# Get shop inventory
+	var merchant = at_merchant[peer_id]
+	var shop_items = merchant.get("shop_items", [])
+
+	if item_index < 0 or item_index >= shop_items.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item selection"})
+		return
+
+	var item = shop_items[item_index].duplicate(true)  # Deep copy
+	var price = item.get("shop_price", 100)
+
+	# Check inventory space
+	if not character.can_add_item():
+		send_to_peer(peer_id, {"type": "error", "message": "Your inventory is full!"})
+		return
+
+	if use_gems:
+		var gem_price = int(ceil(price / 1000.0))
+		if character.gems < gem_price:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF6B6B]You need %d gems. You have %d gems.[/color]" % [gem_price, character.gems]
+			})
+			return
+
+		character.gems -= gem_price
+		item.erase("shop_price")  # Remove shop metadata
+		character.add_item(item)
+
+		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]You purchased [/color][color=%s]%s[/color][color=#90EE90] for %d gems![/color]" % [rarity_color, item.get("name", "Unknown"), gem_price]
+		})
+	else:
+		if character.gold < price:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF6B6B]You need %d gold. You have %d gold.[/color]" % [price, character.gold]
+			})
+			return
+
+		character.gold -= price
+		item.erase("shop_price")  # Remove shop metadata
+		character.add_item(item)
+
+		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#90EE90]You purchased [/color][color=%s]%s[/color][color=#90EE90] for %d gold![/color]" % [rarity_color, item.get("name", "Unknown"), price]
+		})
+
+	# Remove item from shop (one-time purchase)
+	shop_items.remove_at(item_index)
+	merchant["shop_items"] = shop_items
+
+	send_character_update(peer_id)
+	_send_shop_inventory(peer_id)
+
+func _send_shop_inventory(peer_id: int):
+	"""Send shop inventory to player"""
+	if not at_merchant.has(peer_id):
+		return
+
+	var merchant = at_merchant[peer_id]
+	var shop_items = merchant.get("shop_items", [])
+	var items = []
+
+	for i in range(shop_items.size()):
+		var item = shop_items[i]
+		items.append({
+			"index": i,
+			"name": item.get("name", "Unknown"),
+			"type": item.get("type", ""),
+			"level": item.get("level", 1),
+			"rarity": item.get("rarity", "common"),
+			"price": item.get("shop_price", 100),
+			"gem_price": int(ceil(item.get("shop_price", 100) / 1000.0))
+		})
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	send_to_peer(peer_id, {
+		"type": "shop_inventory",
+		"items": items,
+		"gold": character.gold,
+		"gems": character.gems
+	})
 
 # ===== ACCOUNT MANAGEMENT =====
 

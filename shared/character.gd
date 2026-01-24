@@ -29,6 +29,7 @@ extends Resource
 @export var x: int = 0  # X coordinate
 @export var y: int = 10  # Y coordinate (start at Sanctuary)
 @export var gold: int = 100
+@export var gems: int = 0  # Premium currency from high-level monsters
 
 # Combat
 @export var in_combat: bool = false
@@ -357,6 +358,7 @@ func to_dict() -> Dictionary:
 		"y": y,
 		"health_state": get_health_state(),
 		"gold": gold,
+		"gems": gems,
 		"in_combat": in_combat,
 		"inventory": inventory,
 		"equipped": equipped,
@@ -389,6 +391,7 @@ func from_dict(data: Dictionary):
 	x = data.get("x", 0)
 	y = data.get("y", 10)
 	gold = data.get("gold", 100)
+	gems = data.get("gems", 0)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
 
