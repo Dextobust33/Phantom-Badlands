@@ -6,6 +6,7 @@ extends Resource
 # Basic Info
 @export var character_id: int = 0
 @export var name: String = ""
+@export var race: String = "Human"  # Human, Elf, or Dwarf
 @export var class_type: String = ""
 @export var level: int = 1
 @export var experience: int = 0
@@ -17,13 +18,17 @@ extends Resource
 @export var dexterity: int = 10
 @export var intelligence: int = 10
 @export var wisdom: int = 10
-@export var charisma: int = 10
+@export var wits: int = 10  # Renamed from charisma - used for outsmarting enemies
 
 # Current State
 @export var current_hp: int = 100
 @export var max_hp: int = 100
 @export var current_mana: int = 50
 @export var max_mana: int = 50
+@export var current_stamina: int = 80  # Warrior resource
+@export var max_stamina: int = 80      # STR*4 + CON*4
+@export var current_energy: int = 80   # Trickster resource
+@export var max_energy: int = 80       # WITS*4 + DEX*4
 
 # Location & Status (Phantasia 4 style coordinates)
 @export var x: int = 0  # X coordinate
@@ -33,6 +38,7 @@ extends Resource
 
 # Combat
 @export var in_combat: bool = false
+@export var last_stand_used: bool = false  # Dwarf racial - resets each combat
 
 # Inventory System (stubs for future item drops)
 @export var inventory: Array = []  # Array of item dictionaries
@@ -58,9 +64,10 @@ func _init():
 	# Constructor
 	pass
 
-func initialize(char_name: String, char_class: String):
+func initialize(char_name: String, char_class: String, char_race: String = "Human"):
 	"""Initialize a new character with starting values"""
 	name = char_name
+	race = char_race
 	class_type = char_class
 	level = 1
 	experience = 0
@@ -72,14 +79,16 @@ func initialize(char_name: String, char_class: String):
 	dexterity = starting_stats.dexterity
 	intelligence = starting_stats.intelligence
 	wisdom = starting_stats.wisdom
-	charisma = starting_stats.charisma
+	wits = starting_stats.wits
 
 	# Calculate derived stats
 	calculate_derived_stats()
 
-	# Start with full health and mana
+	# Start with full resources
 	current_hp = max_hp
 	current_mana = max_mana
+	current_stamina = max_stamina
+	current_energy = max_energy
 
 	# Starting location - Sanctuary (0, 10) like Phantasia 4
 	x = 0
@@ -94,23 +103,29 @@ func initialize(char_name: String, char_class: String):
 func get_starting_stats_for_class(char_class: String) -> Dictionary:
 	"""Get starting stats based on character class"""
 	var stats = {
-		"Fighter": {"strength": 14, "constitution": 13, "dexterity": 11, "intelligence": 8, "wisdom": 8, "charisma": 10},
-		"Barbarian": {"strength": 16, "constitution": 14, "dexterity": 10, "intelligence": 6, "wisdom": 8, "charisma": 8},
-		"Paladin": {"strength": 13, "constitution": 14, "dexterity": 10, "intelligence": 9, "wisdom": 12, "charisma": 12},
-		"Wizard": {"strength": 8, "constitution": 10, "dexterity": 11, "intelligence": 16, "wisdom": 13, "charisma": 10},
-		"Sorcerer": {"strength": 8, "constitution": 9, "dexterity": 10, "intelligence": 17, "wisdom": 11, "charisma": 11},
-		"Sage": {"strength": 8, "constitution": 11, "dexterity": 10, "intelligence": 12, "wisdom": 16, "charisma": 12},
-		"Thief": {"strength": 10, "constitution": 10, "dexterity": 17, "intelligence": 11, "wisdom": 10, "charisma": 10},
-		"Ranger": {"strength": 12, "constitution": 12, "dexterity": 15, "intelligence": 10, "wisdom": 12, "charisma": 10},
-		"Ninja": {"strength": 11, "constitution": 10, "dexterity": 17, "intelligence": 12, "wisdom": 11, "charisma": 10}
+		# Warrior Path (STR > 10 for Stamina abilities)
+		"Fighter": {"strength": 14, "constitution": 13, "dexterity": 11, "intelligence": 8, "wisdom": 8, "wits": 10},
+		"Barbarian": {"strength": 17, "constitution": 12, "dexterity": 10, "intelligence": 7, "wisdom": 8, "wits": 10},
+		# Mage Path (INT > 10 for Mana abilities)
+		"Wizard": {"strength": 8, "constitution": 10, "dexterity": 10, "intelligence": 17, "wisdom": 12, "wits": 9},
+		"Sage": {"strength": 8, "constitution": 12, "dexterity": 10, "intelligence": 13, "wisdom": 15, "wits": 9},
+		# Trickster Path (WITS > 10 for Energy abilities)
+		"Thief": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
+		"Ranger": {"strength": 13, "constitution": 11, "dexterity": 12, "intelligence": 9, "wisdom": 9, "wits": 13},
+		# Legacy classes (for existing characters)
+		"Paladin": {"strength": 13, "constitution": 14, "dexterity": 10, "intelligence": 9, "wisdom": 12, "wits": 12},
+		"Sorcerer": {"strength": 8, "constitution": 9, "dexterity": 10, "intelligence": 17, "wisdom": 11, "wits": 11},
+		"Ninja": {"strength": 11, "constitution": 10, "dexterity": 17, "intelligence": 12, "wisdom": 11, "wits": 10}
 	}
-	
+
 	return stats.get(char_class, stats["Fighter"])
 
 func calculate_derived_stats():
-	"""Calculate HP, mana, etc. from primary stats"""
+	"""Calculate HP, mana, stamina, energy from primary stats"""
 	max_hp = (constitution * 10) + (level * 5)
 	max_mana = (intelligence * 8) + (wisdom * 4)
+	max_stamina = (strength * 4) + (constitution * 4)  # Warrior resource
+	max_energy = (wits * 4) + (dexterity * 4)          # Trickster resource
 
 func get_health_state() -> String:
 	"""Get current health state description"""
@@ -137,8 +152,8 @@ func get_stat(stat_name: String) -> int:
 			return intelligence
 		"wisdom", "wis":
 			return wisdom
-		"charisma", "cha":
-			return charisma
+		"wits", "wit":
+			return wits
 		_:
 			return 0
 
@@ -152,7 +167,7 @@ func get_equipment_bonuses() -> Dictionary:
 		"dexterity": 0,
 		"intelligence": 0,
 		"wisdom": 0,
-		"charisma": 0,
+		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0
 	}
@@ -190,7 +205,7 @@ func get_equipment_bonuses() -> Dictionary:
 		elif "amulet" in item_type:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += int(base_bonus * 0.3)
-			bonuses.charisma += int(base_bonus * 0.2)
+			bonuses.wits += int(base_bonus * 0.2)
 
 		# Apply affix bonuses
 		var affixes = item.get("affixes", {})
@@ -244,8 +259,8 @@ func get_effective_stat(stat_name: String) -> int:
 			return base_stat + bonuses.intelligence
 		"wisdom", "wis":
 			return base_stat + bonuses.wisdom
-		"charisma", "cha":
-			return base_stat + bonuses.charisma
+		"wits", "wit":
+			return base_stat + bonuses.wits
 		_:
 			return base_stat
 
@@ -311,7 +326,7 @@ func level_up():
 	dexterity += gains.dexterity
 	intelligence += gains.intelligence
 	wisdom += gains.wisdom
-	charisma += gains.charisma
+	wits += gains.wits
 	
 	# Recalculate derived stats
 	calculate_derived_stats()
@@ -323,17 +338,21 @@ func level_up():
 func get_stat_gains_for_class() -> Dictionary:
 	"""Get stat increases per level based on class"""
 	var gains = {
-		"Fighter": {"strength": 3, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "charisma": 1},
-		"Barbarian": {"strength": 4, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "charisma": 0},
-		"Paladin": {"strength": 2, "constitution": 3, "dexterity": 1, "intelligence": 1, "wisdom": 2, "charisma": 2},
-		"Wizard": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 4, "wisdom": 2, "charisma": 1},
-		"Sorcerer": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 5, "wisdom": 1, "charisma": 1},
-		"Sage": {"strength": 0, "constitution": 2, "dexterity": 1, "intelligence": 2, "wisdom": 4, "charisma": 2},
-		"Thief": {"strength": 1, "constitution": 1, "dexterity": 5, "intelligence": 1, "wisdom": 1, "charisma": 1},
-		"Ranger": {"strength": 2, "constitution": 2, "dexterity": 4, "intelligence": 1, "wisdom": 2, "charisma": 1},
-		"Ninja": {"strength": 2, "constitution": 1, "dexterity": 5, "intelligence": 2, "wisdom": 1, "charisma": 1}
+		# Warrior Path (primary: STR, secondary: CON)
+		"Fighter": {"strength": 3, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "wits": 1},
+		"Barbarian": {"strength": 4, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "wits": 0},
+		# Mage Path (primary: INT, secondary: WIS)
+		"Wizard": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 4, "wisdom": 2, "wits": 0},
+		"Sage": {"strength": 0, "constitution": 2, "dexterity": 1, "intelligence": 2, "wisdom": 3, "wits": 0},
+		# Trickster Path (primary: WITS, secondary: DEX)
+		"Thief": {"strength": 1, "constitution": 1, "dexterity": 2, "intelligence": 0, "wisdom": 0, "wits": 4},
+		"Ranger": {"strength": 2, "constitution": 2, "dexterity": 2, "intelligence": 0, "wisdom": 0, "wits": 2},
+		# Legacy classes (for existing characters)
+		"Paladin": {"strength": 2, "constitution": 3, "dexterity": 1, "intelligence": 1, "wisdom": 2, "wits": 2},
+		"Sorcerer": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 5, "wisdom": 1, "wits": 1},
+		"Ninja": {"strength": 2, "constitution": 1, "dexterity": 5, "intelligence": 2, "wisdom": 1, "wits": 1}
 	}
-	
+
 	return gains.get(class_type, gains["Fighter"])
 
 func to_dict() -> Dictionary:
@@ -341,6 +360,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": character_id,
 		"name": name,
+		"race": race,
 		"class": class_type,
 		"level": level,
 		"experience": experience,
@@ -351,12 +371,16 @@ func to_dict() -> Dictionary:
 			"dexterity": dexterity,
 			"intelligence": intelligence,
 			"wisdom": wisdom,
-			"charisma": charisma
+			"wits": wits
 		},
 		"current_hp": current_hp,
 		"max_hp": max_hp,
 		"current_mana": current_mana,
 		"max_mana": max_mana,
+		"current_stamina": current_stamina,
+		"max_stamina": max_stamina,
+		"current_energy": current_energy,
+		"max_energy": max_energy,
 		"x": x,
 		"y": y,
 		"health_state": get_health_state(),
@@ -375,6 +399,7 @@ func from_dict(data: Dictionary):
 	"""Load character from dictionary"""
 	character_id = data.get("id", 0)
 	name = data.get("name", "")
+	race = data.get("race", "Human")  # Default to Human for legacy characters
 	class_type = data.get("class", "Fighter")
 	level = data.get("level", 1)
 	experience = data.get("experience", 0)
@@ -385,12 +410,20 @@ func from_dict(data: Dictionary):
 	dexterity = stats.get("dexterity", 10)
 	intelligence = stats.get("intelligence", 10)
 	wisdom = stats.get("wisdom", 10)
-	charisma = stats.get("charisma", 10)
+	wits = stats.get("wits", stats.get("charisma", 10))  # Support legacy save files with charisma
 
 	current_hp = data.get("current_hp", 100)
 	max_hp = data.get("max_hp", 100)
 	current_mana = data.get("current_mana", 50)
 	max_mana = data.get("max_mana", 50)
+
+	# Calculate max stamina/energy from stats for legacy characters, then load current values
+	var calc_max_stamina = (strength * 4) + (constitution * 4)
+	var calc_max_energy = (wits * 4) + (dexterity * 4)
+	max_stamina = data.get("max_stamina", calc_max_stamina)
+	max_energy = data.get("max_energy", calc_max_energy)
+	current_stamina = data.get("current_stamina", max_stamina)
+	current_energy = data.get("current_energy", max_energy)
 
 	x = data.get("x", 0)
 	y = data.get("y", 10)
@@ -414,8 +447,10 @@ func from_dict(data: Dictionary):
 	active_buffs = []
 
 func add_experience(amount: int) -> Dictionary:
-	"""Add experience and check for level up"""
-	experience += amount
+	"""Add experience and check for level up. Applies Human racial XP bonus."""
+	# Apply Human racial XP bonus (+10%)
+	var final_amount = int(amount * get_xp_multiplier())
+	experience += final_amount
 	var leveled_up = false
 	var levels_gained = 0
 	
@@ -432,16 +467,20 @@ func add_experience(amount: int) -> Dictionary:
 		dexterity += 1
 		intelligence += 1
 		wisdom += 1
-		charisma += 1
+		wits += 1
 		
-		# Increase HP and Mana
+		# Increase HP, Mana, Stamina, Energy
 		max_hp += 10 + (constitution / 2)
 		max_mana += 5 + (intelligence / 2)
-		
-		# Fully heal on level up
+		max_stamina = (strength * 4) + (constitution * 4)  # Recalculate from new stats
+		max_energy = (wits * 4) + (dexterity * 4)         # Recalculate from new stats
+
+		# Fully restore resources on level up
 		current_hp = max_hp
 		current_mana = max_mana
-		
+		current_stamina = max_stamina
+		current_energy = max_energy
+
 		# Calculate next level requirement (increases by 50% each level)
 		experience_to_next_level = int(experience_to_next_level * 1.5)
 	
@@ -537,3 +576,86 @@ func get_active_buff_names() -> Array:
 	for buff in active_buffs:
 		names.append(buff.type)
 	return names
+
+# ===== RACIAL PASSIVE ABILITIES =====
+
+func get_xp_multiplier() -> float:
+	"""Get XP multiplier from racial passive. Human gets +10%."""
+	if race == "Human":
+		return 1.10
+	return 1.0
+
+func has_poison_resistance() -> bool:
+	"""Check if character is resistant to poison (Elf racial)."""
+	return race == "Elf"
+
+func get_poison_damage_multiplier() -> float:
+	"""Get poison damage multiplier. Elf takes 50% poison damage."""
+	if race == "Elf":
+		return 0.5
+	return 1.0
+
+func try_last_stand() -> bool:
+	"""Dwarf racial: 25% chance to survive lethal damage with 1 HP.
+	Returns true if Last Stand triggered, false otherwise.
+	Can only trigger once per combat."""
+	if race != "Dwarf":
+		return false
+	if last_stand_used:
+		return false
+
+	# 25% chance to trigger
+	var roll = randi() % 100
+	if roll < 25:
+		last_stand_used = true
+		current_hp = 1
+		return true
+	return false
+
+func reset_combat_flags():
+	"""Reset per-combat flags. Call at start of each combat."""
+	last_stand_used = false
+
+# ===== RESOURCE MANAGEMENT =====
+
+func use_stamina(amount: int) -> bool:
+	"""Attempt to use stamina. Returns true if successful, false if insufficient."""
+	if current_stamina < amount:
+		return false
+	current_stamina -= amount
+	return true
+
+func use_energy(amount: int) -> bool:
+	"""Attempt to use energy. Returns true if successful, false if insufficient."""
+	if current_energy < amount:
+		return false
+	current_energy -= amount
+	return true
+
+func use_mana(amount: int) -> bool:
+	"""Attempt to use mana. Returns true if successful, false if insufficient."""
+	if current_mana < amount:
+		return false
+	current_mana -= amount
+	return true
+
+func regenerate_stamina_defending() -> int:
+	"""Regenerate 10% stamina while defending. Returns amount regenerated."""
+	var regen = int(max_stamina * 0.10)
+	regen = max(1, regen)  # At least 1
+	current_stamina = min(max_stamina, current_stamina + regen)
+	return regen
+
+func regenerate_energy() -> int:
+	"""Regenerate 15% energy each combat round automatically. Returns amount regenerated."""
+	var regen = int(max_energy * 0.15)
+	regen = max(1, regen)  # At least 1
+	current_energy = min(max_energy, current_energy + regen)
+	return regen
+
+func restore_all_resources():
+	"""Restore all resources to full (for resting or sanctuaries)."""
+	current_hp = max_hp
+	current_mana = max_mana
+	current_stamina = max_stamina
+	current_energy = max_energy

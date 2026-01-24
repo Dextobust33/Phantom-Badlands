@@ -847,6 +847,9 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
 	var gold_reward = _calculate_gold_reward(base_stats, stat_scale, target_level)
 
+	# Calculate monster intelligence based on level tier (for Outsmart mechanic)
+	var intelligence = _calculate_monster_intelligence(target_level)
+
 	return {
 		"name": base_stats.name,
 		"level": target_level,
@@ -855,6 +858,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"strength": scaled_strength,
 		"defense": scaled_defense,
 		"speed": base_stats.base_speed,  # Speed doesn't scale
+		"intelligence": intelligence,    # For Outsmart mechanic
 		"experience_reward": experience_reward,
 		"gold_reward": gold_reward,
 		"flock_chance": base_stats.get("flock_chance", 0),
@@ -956,6 +960,58 @@ func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: in
 	gold_reward *= randf_range(0.8, 1.2)
 
 	return max(1, int(gold_reward))
+
+func _calculate_monster_intelligence(level: int) -> int:
+	"""Calculate monster intelligence based on level tier.
+	Used for the Outsmart mechanic - higher intelligence = harder to outsmart.
+	Tier 1-2 (1-15): 5-15 - easy to outsmart
+	Tier 3-4 (16-50): 15-30 - moderate
+	Tier 5-6 (51-500): 30-50 - challenging
+	Tier 7-9 (500+): 50-80 - nearly impossible to outsmart"""
+
+	var base_intelligence: int
+	var variance: int
+
+	if level <= 5:
+		# Tier 1: Very dumb monsters
+		base_intelligence = 5
+		variance = 5
+	elif level <= 15:
+		# Tier 2: Simple-minded
+		base_intelligence = 10
+		variance = 5
+	elif level <= 30:
+		# Tier 3: Average intelligence
+		base_intelligence = 18
+		variance = 7
+	elif level <= 50:
+		# Tier 4: Cunning
+		base_intelligence = 25
+		variance = 5
+	elif level <= 100:
+		# Tier 5: Intelligent
+		base_intelligence = 35
+		variance = 10
+	elif level <= 500:
+		# Tier 6: Highly intelligent
+		base_intelligence = 45
+		variance = 5
+	elif level <= 2000:
+		# Tier 7: Genius-level
+		base_intelligence = 55
+		variance = 10
+	elif level <= 5000:
+		# Tier 8: Near-omniscient
+		base_intelligence = 65
+		variance = 10
+	else:
+		# Tier 9: Godlike intelligence
+		base_intelligence = 75
+		variance = 5
+
+	# Add some randomness to the intelligence within the tier
+	var final_intelligence = base_intelligence + (randi() % (variance + 1)) - (variance / 2)
+	return max(5, final_intelligence)
 
 func to_dict() -> Dictionary:
 	return {"initialized": true}

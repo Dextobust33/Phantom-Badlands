@@ -46,40 +46,113 @@ const MSG_PERMADEATH = "permadeath"
 const MSG_LEADERBOARD = "leaderboard"
 const MSG_ERROR = "error"
 
-# Character Classes
+# Character Classes (6 classes: 2 Warrior, 2 Mage, 2 Trickster)
 const CLASS_FIGHTER = "Fighter"
 const CLASS_BARBARIAN = "Barbarian"
-const CLASS_PALADIN = "Paladin"
 const CLASS_WIZARD = "Wizard"
-const CLASS_SORCERER = "Sorcerer"
 const CLASS_SAGE = "Sage"
 const CLASS_THIEF = "Thief"
 const CLASS_RANGER = "Ranger"
+
+# Legacy classes (kept for backwards compatibility with existing characters)
+const CLASS_PALADIN = "Paladin"
+const CLASS_SORCERER = "Sorcerer"
 const CLASS_NINJA = "Ninja"
 
 const AVAILABLE_CLASSES = [
 	CLASS_FIGHTER,
 	CLASS_BARBARIAN,
-	CLASS_PALADIN,
 	CLASS_WIZARD,
-	CLASS_SORCERER,
 	CLASS_SAGE,
 	CLASS_THIEF,
-	CLASS_RANGER,
+	CLASS_RANGER
+]
+
+# Legacy classes that existing characters may have
+const LEGACY_CLASSES = [
+	CLASS_PALADIN,
+	CLASS_SORCERER,
 	CLASS_NINJA
 ]
 
+# Character Races
+const RACE_HUMAN = "Human"
+const RACE_ELF = "Elf"
+const RACE_DWARF = "Dwarf"
+
+const AVAILABLE_RACES = [
+	RACE_HUMAN,
+	RACE_ELF,
+	RACE_DWARF
+]
+
+# Race Descriptions
+const RACE_DESCRIPTIONS = {
+	RACE_HUMAN: "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
+	RACE_ELF: "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",
+	RACE_DWARF: "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat)."
+}
+
+# Race Passive Abilities
+const RACE_PASSIVES = {
+	RACE_HUMAN: "xp_bonus",      # +10% XP gain
+	RACE_ELF: "poison_resist",   # 50% poison damage reduction, immune to poison debuffs
+	RACE_DWARF: "last_stand"     # 25% chance to survive lethal with 1 HP (once per combat)
+}
+
+# ===== ABILITY SYSTEM =====
+
+# Mage Abilities (INT-based, use Mana)
+const MAGE_ABILITIES = {
+	"magic_bolt": {"level": 1, "cost": 0, "name": "Magic Bolt", "desc": "Deal damage equal to mana spent"},
+	"shield": {"level": 10, "cost": 20, "name": "Shield", "desc": "+50% defense for 3 rounds"},
+	"cloak": {"level": 25, "cost": 30, "name": "Cloak", "desc": "50% chance enemy misses next attack"},
+	"blast": {"level": 40, "cost": 50, "name": "Blast", "desc": "Deal INT * 2 damage"},
+	"forcefield": {"level": 60, "cost": 75, "name": "Forcefield", "desc": "Block next 2 attacks completely"},
+	"teleport": {"level": 80, "cost": 40, "name": "Teleport", "desc": "Guaranteed flee (always succeeds)"},
+	"meteor": {"level": 100, "cost": 100, "name": "Meteor", "desc": "Deal INT * 5 damage"}
+}
+
+# Warrior Abilities (STR-based, use Stamina)
+const WARRIOR_ABILITIES = {
+	"power_strike": {"level": 1, "cost": 10, "name": "Power Strike", "desc": "Deal STR * 1.5 damage"},
+	"war_cry": {"level": 10, "cost": 15, "name": "War Cry", "desc": "+25% damage for 3 rounds"},
+	"shield_bash": {"level": 25, "cost": 20, "name": "Shield Bash", "desc": "STR damage + stun enemy 1 turn"},
+	"cleave": {"level": 40, "cost": 30, "name": "Cleave", "desc": "Deal STR * 2 damage"},
+	"berserk": {"level": 60, "cost": 40, "name": "Berserk", "desc": "+100% damage, -50% defense 3 rounds"},
+	"iron_skin": {"level": 80, "cost": 35, "name": "Iron Skin", "desc": "Block 50% damage for 3 rounds"},
+	"devastate": {"level": 100, "cost": 50, "name": "Devastate", "desc": "Deal STR * 4 damage"}
+}
+
+# Trickster Abilities (WITS-based, use Energy)
+const TRICKSTER_ABILITIES = {
+	"analyze": {"level": 1, "cost": 5, "name": "Analyze", "desc": "Reveal monster HP, damage, intelligence"},
+	"distract": {"level": 10, "cost": 15, "name": "Distract", "desc": "Enemy -50% accuracy next attack"},
+	"pickpocket": {"level": 25, "cost": 20, "name": "Pickpocket", "desc": "Steal WITS*10 gold (fail = attacked)"},
+	"ambush": {"level": 40, "cost": 30, "name": "Ambush", "desc": "WITS*1.5 damage + 50% crit chance"},
+	"vanish": {"level": 60, "cost": 40, "name": "Vanish", "desc": "Go invisible, next attack crits"},
+	"exploit": {"level": 80, "cost": 35, "name": "Exploit", "desc": "Deal 10% of monster's current HP"},
+	"perfect_heist": {"level": 100, "cost": 50, "name": "Perfect Heist", "desc": "Instant win + double rewards"}
+}
+
+# Path thresholds (which path is active based on highest stat)
+const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
+
 # Class Descriptions
 const CLASS_DESCRIPTIONS = {
-	CLASS_FIGHTER: "Balanced melee combatant with good defense and offense",
-	CLASS_BARBARIAN: "High damage warrior with low defense but devastating attacks",
-	CLASS_PALADIN: "Holy warrior with defense and healing magic",
-	CLASS_WIZARD: "Powerful offensive spellcaster",
-	CLASS_SORCERER: "Glass cannon mage with incredible magical power",
-	CLASS_SAGE: "Support caster focused on healing and buffs",
-	CLASS_THIEF: "Fast and agile, strikes from the shadows",
-	CLASS_RANGER: "Ranged fighter with tracking abilities",
-	CLASS_NINJA: "Master of evasion and critical strikes"
+	# Warrior Path (STR-focused, use Stamina)
+	CLASS_FIGHTER: "Balanced warrior with good STR and CON. Uses Stamina for powerful melee abilities.",
+	CLASS_BARBARIAN: "Offensive warrior with high STR but low defense. Devastating Stamina attacks.",
+	# Mage Path (INT-focused, use Mana)
+	CLASS_WIZARD: "Offensive spellcaster with high INT. Powerful Mana-based damage spells.",
+	CLASS_SAGE: "Utility mage with balanced INT/WIS. Support spells and high mana pool.",
+	# Trickster Path (WITS-focused, use Energy)
+	CLASS_THIEF: "Cunning trickster with high WITS and DEX. Energy abilities and outsmart tactics.",
+	CLASS_RANGER: "Versatile hybrid with STR/WITS. Mix of combat and trickster Energy abilities.",
+	# Legacy classes (for existing characters)
+	CLASS_PALADIN: "[Legacy] Holy warrior - no longer available for new characters",
+	CLASS_SORCERER: "[Legacy] Pure mage - no longer available for new characters",
+	CLASS_NINJA: "[Legacy] Shadow assassin - no longer available for new characters"
 }
 
 # Starting Locations

@@ -55,6 +55,7 @@ var game_state = GameState.DISCONNECTED
 # UI References - Character Creation Panel
 @onready var char_create_panel = $CharacterCreatePanel
 @onready var new_char_name_field = $CharacterCreatePanel/VBox/NameField
+@onready var race_option = $CharacterCreatePanel/VBox/RaceOption
 @onready var class_option = $CharacterCreatePanel/VBox/ClassOption
 @onready var confirm_create_button = $CharacterCreatePanel/VBox/ButtonContainer/ConfirmButton
 @onready var cancel_create_button = $CharacterCreatePanel/VBox/ButtonContainer/CancelButton
@@ -163,6 +164,38 @@ var last_known_level: int = 0  # Track level changes for sound
 # Top 5 leaderboard sound
 var top5_player: AudioStreamPlayer = null
 
+# ===== ABILITY SYSTEM CONSTANTS =====
+const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
+
+# Ability slots: [command, display_name, required_level, resource_cost, resource_type]
+# resource_type: "mana", "stamina", "energy"
+const MAGE_ABILITY_SLOTS = [
+	["magic_bolt", "Bolt", 1, 0, "mana"],
+	["shield", "Shield", 10, 20, "mana"],
+	["cloak", "Cloak", 25, 30, "mana"],
+	["blast", "Blast", 40, 50, "mana"],
+	["forcefield", "Field", 60, 75, "mana"],
+	["teleport", "Teleport", 80, 40, "mana"],
+]
+
+const WARRIOR_ABILITY_SLOTS = [
+	["power_strike", "Strike", 1, 10, "stamina"],
+	["war_cry", "Cry", 10, 15, "stamina"],
+	["shield_bash", "Bash", 25, 20, "stamina"],
+	["cleave", "Cleave", 40, 30, "stamina"],
+	["berserk", "Berserk", 60, 40, "stamina"],
+	["iron_skin", "Iron", 80, 35, "stamina"],
+]
+
+const TRICKSTER_ABILITY_SLOTS = [
+	["analyze", "Analyze", 1, 5, "energy"],
+	["distract", "Distract", 10, 15, "energy"],
+	["pickpocket", "Steal", 25, 20, "energy"],
+	["ambush", "Ambush", 40, 30, "energy"],
+	["vanish", "Vanish", 60, 40, "energy"],
+	["exploit", "Exploit", 80, 35, "energy"],
+]
+
 func _ready():
 	# Setup action bar
 	if action_bar:
@@ -222,10 +255,16 @@ func _ready():
 	if online_players_list:
 		online_players_list.meta_clicked.connect(_on_player_name_clicked)
 
-	# Setup class options
+	# Setup race options
+	if race_option:
+		race_option.clear()
+		for r in ["Human", "Elf", "Dwarf"]:
+			race_option.add_item(r)
+
+	# Setup class options (6 classes: 2 Warrior, 2 Mage, 2 Trickster)
 	if class_option:
 		class_option.clear()
-		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+		for cls in ["Fighter", "Barbarian", "Wizard", "Sage", "Thief", "Ranger"]:
 			class_option.add_item(cls)
 
 	# Initialize rare drop sound player
@@ -891,7 +930,8 @@ func update_character_list_display():
 	# Add character buttons
 	for char_info in character_list:
 		var btn = Button.new()
-		btn.text = "%s - Level %d %s" % [char_info.name, char_info.level, char_info["class"]]
+		var char_race = char_info.get("race", "Human")
+		btn.text = "%s - Level %d %s %s" % [char_info.name, char_info.level, char_race, char_info["class"]]
 		btn.custom_minimum_size = Vector2(0, 40)
 		btn.pressed.connect(_on_character_selected.bind(char_info.name))
 		char_list_container.add_child(btn)
@@ -957,6 +997,7 @@ func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
 	var pname = data.get("name", "Unknown")
 	var level = data.get("level", 1)
+	var char_race = data.get("race", "Human")
 	var cls = data.get("class", "Unknown")
 	var hp = data.get("hp", 0)
 	var max_hp = data.get("max_hp", 1)
@@ -971,7 +1012,7 @@ func display_examine_result(data: Dictionary):
 	var dex_stat = data.get("dexterity", 0)
 	var int_stat = data.get("intelligence", 0)
 	var wis_stat = data.get("wisdom", 0)
-	var cha_stat = data.get("charisma", 0)
+	var wit_stat = data.get("wits", data.get("charisma", 0))  # Support legacy
 
 	var bonuses = data.get("equipment_bonuses", {})
 	var equipped = data.get("equipped", {})
@@ -981,7 +1022,7 @@ func display_examine_result(data: Dictionary):
 	var status = "[color=#90EE90]Exploring[/color]" if not in_combat_flag else "[color=#FF6B6B]In Combat[/color]"
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
-	display_game("Level %d %s - %s" % [level, cls, status])
+	display_game("Level %d %s %s - %s" % [level, char_race, cls, status])
 	display_game("[color=#9B59B6]XP:[/color] %d / %d ([color=#FFD700]%d to next level[/color])" % [current_xp, xp_needed, xp_remaining])
 	display_game("HP: %d/%d" % [hp, max_hp])
 
@@ -1003,9 +1044,9 @@ func display_examine_result(data: Dictionary):
 	stats_line += " WIS:%d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
 		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
-	stats_line += " CHA:%d" % cha_stat
-	if bonuses.get("charisma", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.charisma
+	stats_line += " WIT:%d" % wit_stat
+	if bonuses.get("wits", 0) > 0:
+		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.wits
 	display_game(stats_line)
 
 	# Combat stats
@@ -1109,6 +1150,7 @@ func _on_char_select_logout_pressed():
 
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
+	var char_race = race_option.get_item_text(race_option.selected) if race_option else "Human"
 	var char_class = class_option.get_item_text(class_option.selected)
 
 	if char_name.is_empty():
@@ -1122,6 +1164,7 @@ func _on_confirm_create_pressed():
 	send_to_server({
 		"type": "create_character",
 		"name": char_name,
+		"race": char_race,
 		"class": char_class
 	})
 
@@ -1182,7 +1225,7 @@ func show_player_info_popup(data: Dictionary):
 	var dex_stat = data.get("dexterity", 0)
 	var int_stat = data.get("intelligence", 0)
 	var wis_stat = data.get("wisdom", 0)
-	var cha_stat = data.get("charisma", 0)
+	var wit_stat = data.get("wits", data.get("charisma", 0))  # Support legacy
 
 	var bonuses = data.get("equipment_bonuses", {})
 	var equipped = data.get("equipped", {})
@@ -1194,9 +1237,10 @@ func show_player_info_popup(data: Dictionary):
 	var xp_needed = data.get("experience_to_next_level", 100)
 	var xp_remaining = xp_needed - exp
 
+	var char_race = data.get("race", "Human")
 	player_info_content.clear()
 	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
-	player_info_content.append_text("[center]Level %d %s[/center]\n" % [level, cls])
+	player_info_content.append_text("[center]Level %d %s %s[/center]\n" % [level, char_race, cls])
 	player_info_content.append_text("[center][color=#9B59B6]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
@@ -1221,9 +1265,9 @@ func show_player_info_popup(data: Dictionary):
 	line2 += "  WIS: %d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
 		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
-	line2 += "  CHA: %d" % cha_stat
-	if bonuses.get("charisma", 0) > 0:
-		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.charisma
+	line2 += "  WIT: %d" % wit_stat
+	if bonuses.get("wits", 0) > 0:
+		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.wits
 	player_info_content.append_text(line2 + "\n\n")
 
 	# Combat stats
@@ -1278,18 +1322,16 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_combat:
-		# Combat mode: Spacebar=Attack, Q=Defend, W=Flee, E=Item, R=Special
+		# Combat mode: Space=Attack, Q=Defend, W=Flee, E/R/1-4=Path abilities
+		var ability_actions = _get_combat_ability_actions()
 		current_actions = [
 			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
 			{"label": "Defend", "action_type": "combat", "action_data": "defend", "enabled": true},
 			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-			{"label": "Item", "action_type": "local", "action_data": "combat_item", "enabled": _has_usable_combat_items()},
-			{"label": "Special", "action_type": "combat", "action_data": "special", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+		# Add 6 ability slots (E, R, 1, 2, 3, 4)
+		for ability in ability_actions:
+			current_actions.append(ability)
 	elif flock_pending:
 		current_actions = [
 			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
@@ -1503,6 +1545,102 @@ func _has_usable_combat_items() -> bool:
 		if "potion" in item_type or "elixir" in item_type:
 			return true
 	return false
+
+func _get_player_active_path() -> String:
+	"""Determine player's active path based on highest stat > threshold."""
+	var stats = character_data.get("stats", {})
+	var str_stat = stats.get("strength", 0)
+	var int_stat = stats.get("intelligence", 0)
+	var wits_stat = stats.get("wits", stats.get("charisma", 0))
+
+	# Find highest stat above threshold
+	var highest_stat = 0
+	var active_path = ""
+
+	if str_stat > PATH_STAT_THRESHOLD and str_stat > highest_stat:
+		highest_stat = str_stat
+		active_path = "warrior"
+	if int_stat > PATH_STAT_THRESHOLD and int_stat > highest_stat:
+		highest_stat = int_stat
+		active_path = "mage"
+	if wits_stat > PATH_STAT_THRESHOLD and wits_stat > highest_stat:
+		highest_stat = wits_stat
+		active_path = "trickster"
+
+	return active_path
+
+func _get_ability_slots_for_path(path: String) -> Array:
+	"""Get ability slots for a given path."""
+	match path:
+		"mage":
+			return MAGE_ABILITY_SLOTS
+		"warrior":
+			return WARRIOR_ABILITY_SLOTS
+		"trickster":
+			return TRICKSTER_ABILITY_SLOTS
+	return []
+
+func _get_combat_ability_actions() -> Array:
+	"""Build combat ability actions based on player's path and level."""
+	var abilities = []
+	var player_level = character_data.get("level", 1)
+	var path = _get_player_active_path()
+	var ability_slots = _get_ability_slots_for_path(path)
+
+	# Get current resources
+	var current_mana = character_data.get("current_mana", 0)
+	var current_stamina = character_data.get("current_stamina", 0)
+	var current_energy = character_data.get("current_energy", 0)
+
+	# Build 6 ability slots (E, R, 1, 2, 3, 4)
+	for i in range(6):
+		if i < ability_slots.size():
+			var slot = ability_slots[i]
+			var command = slot[0]
+			var display_name = slot[1]
+			var required_level = slot[2]
+			var cost = slot[3]
+			var resource_type = slot[4]
+
+			if player_level >= required_level:
+				# Check if player has enough resources
+				var has_resource = true
+				if resource_type == "mana" and cost > 0:
+					has_resource = current_mana >= cost
+				elif resource_type == "stamina":
+					has_resource = current_stamina >= cost
+				elif resource_type == "energy":
+					has_resource = current_energy >= cost
+
+				# Show cost in label if ability uses resources
+				var label = display_name
+				if cost > 0:
+					label = "%s(%d)" % [display_name, cost]
+
+				abilities.append({
+					"label": label,
+					"action_type": "combat",
+					"action_data": command,
+					"enabled": has_resource
+				})
+			else:
+				# Ability not unlocked yet - show locked
+				abilities.append({
+					"label": "Lv%d" % required_level,
+					"action_type": "none",
+					"action_data": "",
+					"enabled": false
+				})
+		else:
+			# No ability for this slot
+			abilities.append({
+				"label": "---",
+				"action_type": "none",
+				"action_data": "",
+				"enabled": false
+			})
+
+	return abilities
 
 func show_combat_item_menu():
 	"""Display usable items for combat selection."""
@@ -2639,6 +2777,9 @@ func handle_server_message(message: Dictionary):
 		"character_loaded":
 			has_character = true
 			character_data = message.get("character", {})
+			# Reset XP tracking for loaded character
+			recent_xp_gain = 0
+			xp_before_combat = 0
 			show_game_ui()
 			update_action_bar()
 			update_player_level()
@@ -2652,6 +2793,9 @@ func handle_server_message(message: Dictionary):
 		"character_created":
 			has_character = true
 			character_data = message.get("character", {})
+			# Reset XP tracking for new character
+			recent_xp_gain = 0
+			xp_before_combat = 0
 			show_game_ui()
 			update_action_bar()
 			update_player_level()
@@ -2794,6 +2938,17 @@ func handle_server_message(message: Dictionary):
 			current_enemy_level = combat_state.get("monster_level", 1)
 			damage_dealt_to_current_enemy = 0
 
+			# Sync resources from combat state for ability availability
+			if combat_state.has("player_mana"):
+				character_data["current_mana"] = combat_state.get("player_mana", 0)
+				character_data["max_mana"] = combat_state.get("player_max_mana", 0)
+			if combat_state.has("player_stamina"):
+				character_data["current_stamina"] = combat_state.get("player_stamina", 0)
+				character_data["max_stamina"] = combat_state.get("player_max_stamina", 0)
+			if combat_state.has("player_energy"):
+				character_data["current_energy"] = combat_state.get("player_energy", 0)
+				character_data["max_energy"] = combat_state.get("player_max_energy", 0)
+
 			show_enemy_hp_bar(true)
 			update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0)
 
@@ -2811,7 +2966,15 @@ func handle_server_message(message: Dictionary):
 			if not state.is_empty():
 				character_data["current_hp"] = state.get("player_hp", character_data.get("current_hp", 0))
 				character_data["max_hp"] = state.get("player_max_hp", character_data.get("max_hp", 1))
+				# Update resources for ability availability
+				character_data["current_mana"] = state.get("player_mana", character_data.get("current_mana", 0))
+				character_data["max_mana"] = state.get("player_max_mana", character_data.get("max_mana", 0))
+				character_data["current_stamina"] = state.get("player_stamina", character_data.get("current_stamina", 0))
+				character_data["max_stamina"] = state.get("player_max_stamina", character_data.get("max_stamina", 0))
+				character_data["current_energy"] = state.get("player_energy", character_data.get("current_energy", 0))
+				character_data["max_energy"] = state.get("player_max_energy", character_data.get("max_energy", 0))
 				update_player_hp_bar()
+				update_action_bar()  # Refresh action bar for ability availability
 
 		"combat_end":
 			in_combat = false
@@ -3112,8 +3275,8 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif "amulet" in item_type:
 		var mana_bonus = base_bonus * 2
 		var wis_bonus = int(base_bonus * 0.3)
-		var cha_bonus = int(base_bonus * 0.2)
-		return "+%d Max Mana, +%d WIS, +%d CHA" % [mana_bonus, wis_bonus, cha_bonus]
+		var wit_bonus = int(base_bonus * 0.2)
+		return "+%d Max Mana, +%d WIS, +%d WIT" % [mana_bonus, wis_bonus, wit_bonus]
 	elif "gold_pouch" in item_type:
 		return "Contains %d-%d gold" % [level * 10, level * 50]
 	elif "gem" in item_type:
@@ -3252,11 +3415,16 @@ func display_character_status():
 
 	var text = "[b][color=#FFD700]Character Status[/color][/b]\n"
 	text += "Name: %s\n" % char.get("name", "Unknown")
+	text += "Race: %s\n" % char.get("race", "Human")
 	text += "Class: %s\n" % char.get("class", "Unknown")
 	text += "Level: %d\n" % char.get("level", 1)
 	text += "[color=#9B59B6]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
 	text += "HP: %d/%d (%s)\n" % [char.get("current_hp", 0), char.get("max_hp", 0), char.get("health_state", "Unknown")]
-	text += "Mana: %d/%d\n" % [char.get("current_mana", 0), char.get("max_mana", 0)]
+	text += "[color=#FFD700]Mana:[/color] %d/%d  [color=#FF6B6B]Stamina:[/color] %d/%d  [color=#90EE90]Energy:[/color] %d/%d\n" % [
+		char.get("current_mana", 0), char.get("max_mana", 0),
+		char.get("current_stamina", 0), char.get("max_stamina", 0),
+		char.get("current_energy", 0), char.get("max_energy", 0)
+	]
 	text += "Gold: %d\n" % char.get("gold", 0)
 	text += "Position: (%d, %d)\n" % [char.get("x", 0), char.get("y", 0)]
 	text += "Monsters Killed: %d\n\n" % char.get("monsters_killed", 0)
@@ -3279,9 +3447,9 @@ func display_character_status():
 	text += "  WIS: %d" % stats.get("wisdom", 0)
 	if bonuses.wisdom > 0:
 		text += " [color=#90EE90](+%d)[/color]" % bonuses.wisdom
-	text += "  CHA: %d" % stats.get("charisma", 0)
-	if bonuses.charisma > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.charisma
+	text += "  WIT: %d" % stats.get("wits", stats.get("charisma", 0))
+	if bonuses.wits > 0:
+		text += " [color=#90EE90](+%d)[/color]" % bonuses.wits
 	text += "\n\n"
 
 	# Combat stats
@@ -3311,7 +3479,7 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		"dexterity": 0,
 		"intelligence": 0,
 		"wisdom": 0,
-		"charisma": 0,
+		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0
 	}
@@ -3347,7 +3515,7 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		elif "amulet" in item_type:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += int(base_bonus * 0.3)
-			bonuses.charisma += int(base_bonus * 0.2)
+			bonuses.wits += int(base_bonus * 0.2)
 
 	return bonuses
 
@@ -3421,10 +3589,10 @@ func show_help():
   • Improves mana regeneration
   • Helps resist special attacks
 
-[color=#FFA500]CHA (Charisma)[/color] - Social influence
-  • Affects encounter outcomes
-  • Better prices at shops
-  • Improves certain special abilities
+[color=#FFA500]WIT (Wits)[/color] - Outsmarting enemies
+  • Enables the Outsmart combat action
+  • Higher Wits vs monster Intelligence = more success
+  • Essential stat for Trickster builds
 
 [b][color=#FFD700]== COMBAT MECHANICS ==[/color][/b]
 

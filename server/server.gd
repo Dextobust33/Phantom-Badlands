@@ -376,8 +376,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Validate class
-	var valid_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+	# Validate class (6 available classes: 2 Warrior, 2 Mage, 2 Trickster)
+	var valid_classes = ["Fighter", "Barbarian", "Wizard", "Sage", "Thief", "Ranger"]
 	if char_class not in valid_classes:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -385,9 +385,19 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		})
 		return
 
+	# Validate race
+	var char_race = message.get("race", "Human")
+	var valid_races = ["Human", "Elf", "Dwarf"]
+	if char_race not in valid_races:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid race. Choose: " + ", ".join(valid_races)
+		})
+		return
+
 	# Create character
 	var character = Character.new()
-	character.initialize(char_name, char_class)
+	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
 
 	# Save character to persistence
@@ -398,7 +408,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
-	print("Character created: %s (%s) for peer %d" % [char_name, char_class, peer_id])
+	print("Character created: %s (%s %s) for peer %d" % [char_name, char_race, char_class, peer_id])
 
 	send_to_peer(peer_id, {
 		"type": "character_created",
@@ -496,6 +506,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {
 				"type": "examine_result",
 				"name": char.name,
+				"race": char.race,
 				"level": char.level,
 				"experience": char.experience,
 				"experience_to_next_level": char.experience_to_next_level,
@@ -507,7 +518,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"dexterity": char.get_stat("dexterity"),
 				"intelligence": char.get_stat("intelligence"),
 				"wisdom": char.get_stat("wisdom"),
-				"charisma": char.get_stat("charisma"),
+				"wits": char.get_stat("wits"),
 				"equipment_bonuses": bonuses,
 				"equipped": char.equipped,
 				"total_attack": char.get_total_attack(),
