@@ -33,6 +33,7 @@ var game_state = GameState.DISCONNECTED
 @onready var gem_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer/GemLabel
 @onready var music_toggle = $RootContainer/MainContainer/RightPanel/LevelRow/MusicToggle
 @onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
+@onready var online_players_label = $RootContainer/MainContainer/RightPanel/OnlinePlayersLabel
 @onready var movement_pad = $RootContainer/MainContainer/RightPanel/MovementPad
 
 # UI References - Login Panel
@@ -59,6 +60,7 @@ var game_state = GameState.DISCONNECTED
 @onready var race_option = $CharacterCreatePanel/VBox/RaceOption
 @onready var race_description = $CharacterCreatePanel/VBox/RaceDescription
 @onready var class_option = $CharacterCreatePanel/VBox/ClassOption
+@onready var class_description = $CharacterCreatePanel/VBox/ClassDescription
 @onready var confirm_create_button = $CharacterCreatePanel/VBox/ButtonContainer/ConfirmButton
 @onready var cancel_create_button = $CharacterCreatePanel/VBox/ButtonContainer/CancelButton
 @onready var char_create_status = $CharacterCreatePanel/VBox/StatusLabel
@@ -146,6 +148,18 @@ var at_trading_post: bool = false
 var trading_post_data: Dictionary = {}
 var pending_trading_post_action: String = ""
 
+# Watch/Inspect mode - observe another player's game output
+var watching_player: String = ""  # Name of player we're watching (empty = not watching)
+var watch_request_pending: String = ""  # Player who requested to watch us (waiting for approval)
+var watchers: Array = []  # Players currently watching us
+
+# Font size constants for responsive scaling
+const CHAT_BASE_FONT_SIZE = 12  # Base size in windowed mode
+const CHAT_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
+const ONLINE_PLAYERS_BASE_FONT_SIZE = 11  # Base size in windowed mode
+const ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
+const FULLSCREEN_HEIGHT_THRESHOLD = 900  # Window height above which we use fullscreen sizes
+
 # Quest mode
 var quest_view_mode: bool = false
 var available_quests: Array = []
@@ -194,6 +208,7 @@ var top5_player: AudioStreamPlayer = null
 
 # Quest complete sound
 var quest_complete_player: AudioStreamPlayer = null
+var quests_sound_played: Dictionary = {}  # Track which quests have played completion sound
 
 # ===== RACE DESCRIPTIONS =====
 const RACE_DESCRIPTIONS = {
@@ -201,6 +216,15 @@ const RACE_DESCRIPTIONS = {
 	"Elf": "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",
 	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat).",
 	"Ogre": "Massive and regenerative. All healing effects are doubled."
+}
+
+const CLASS_DESCRIPTIONS = {
+	"Fighter": "Warrior Path. Balanced melee fighter with solid defense and offense. Uses Stamina for powerful physical abilities.",
+	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina for devastating attacks.",
+	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana for versatile magical abilities.",
+	"Sage": "Mage Path. Wise scholar balancing offense and utility. Uses Mana with improved regeneration.",
+	"Thief": "Trickster Path. Cunning rogue excelling at evasion and critical hits. Uses Energy for tricks and ambushes.",
+	"Ranger": "Trickster Path. Versatile scout with balanced combat and survival skills. Uses Energy efficiently."
 }
 
 # ===== ABILITY SYSTEM CONSTANTS =====
@@ -310,6 +334,8 @@ func _ready():
 		class_option.clear()
 		for cls in ["Fighter", "Barbarian", "Wizard", "Sage", "Thief", "Ranger"]:
 			class_option.add_item(cls)
+		class_option.item_selected.connect(_on_class_selected)
+		_update_class_description()  # Set initial description
 
 	# Initialize rare drop sound player
 	rare_drop_player = AudioStreamPlayer.new()
@@ -834,6 +860,7 @@ func _on_window_resized():
 	var window_height = get_viewport().get_visible_rect().size.y
 	# Scale based on 720p as baseline
 	var scale_factor = window_height / 720.0
+	var is_large_window = window_height >= FULLSCREEN_HEIGHT_THRESHOLD
 
 	# Scale map display (more aggressive scaling with 1.3x multiplier)
 	if map_display:
@@ -853,14 +880,35 @@ func _on_window_resized():
 		game_output.add_theme_font_size_override("italics_font_size", game_font_size)
 		game_output.add_theme_font_size_override("bold_italics_font_size", game_font_size)
 
+	# Chat output - smaller in windowed, normal in fullscreen
+	if chat_output:
+		var chat_size = CHAT_FULLSCREEN_FONT_SIZE if is_large_window else CHAT_BASE_FONT_SIZE
+		chat_output.add_theme_font_size_override("normal_font_size", chat_size)
+
+	# Online players list - normal in windowed, larger in fullscreen
+	if online_players_list:
+		var online_size = ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE if is_large_window else ONLINE_PLAYERS_BASE_FONT_SIZE
+		online_players_list.add_theme_font_size_override("normal_font_size", online_size)
+
+	if online_players_label:
+		var label_size = (ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE + 1) if is_large_window else 12
+		online_players_label.add_theme_font_size_override("font_size", label_size)
+
 func _process(_delta):
 	connection.poll()
 	var status = connection.get_status()
 
-	# Escape to toggle focus (only in playing state)
+	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
 		if Input.is_action_just_pressed("ui_cancel"):
-			if input_field.has_focus():
+			# If watching another player, escape stops watching
+			if watching_player != "":
+				stop_watching()
+			# If there's a pending watch request, escape denies it
+			elif watch_request_pending != "":
+				deny_watch_request()
+			# Otherwise toggle input focus
+			elif input_field.has_focus():
 				input_field.release_focus()
 			else:
 				input_field.grab_focus()
@@ -924,10 +972,31 @@ func _process(_delta):
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
 
+	# Watch request approval (Q = approve, W = deny) - skip other hotkeys this frame
+	var watch_request_handled = false
+	if game_state == GameState.PLAYING and not input_field.has_focus() and watch_request_pending != "":
+		if Input.is_physical_key_pressed(KEY_Q):
+			if not get_meta("watch_q_pressed", false):
+				set_meta("watch_q_pressed", true)
+				set_meta("hotkey_1_pressed", true)  # Q is index 1 in action_hotkeys
+				approve_watch_request()
+				watch_request_handled = true
+		else:
+			set_meta("watch_q_pressed", false)
+
+		if Input.is_physical_key_pressed(KEY_W):
+			if not get_meta("watch_w_pressed", false):
+				set_meta("watch_w_pressed", true)
+				set_meta("hotkey_2_pressed", true)  # W is index 2 in action_hotkeys
+				deny_watch_request()
+				watch_request_handled = true
+		else:
+			set_meta("watch_w_pressed", false)
+
 	# Action bar hotkeys (only when input NOT focused and playing)
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "sell", "gamble"]
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled:
 		for i in range(action_hotkeys.size()):
 			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
@@ -1300,6 +1369,15 @@ func _update_race_description():
 		return
 	var selected_race = race_option.get_item_text(race_option.selected)
 	race_description.text = RACE_DESCRIPTIONS.get(selected_race, "")
+
+func _on_class_selected(_index: int):
+	_update_class_description()
+
+func _update_class_description():
+	if not class_option or not class_description:
+		return
+	var selected_class = class_option.get_item_text(class_option.selected)
+	class_description.text = CLASS_DESCRIPTIONS.get(selected_class, "")
 
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
@@ -3471,6 +3549,17 @@ func handle_server_message(message: Dictionary):
 				damage_dealt_to_current_enemy += damage
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
 
+		"enemy_hp_revealed":
+			# Analyze ability revealed enemy HP - update the health bar
+			var max_hp = message.get("max_hp", 0)
+			var current_hp = message.get("current_hp", max_hp)
+			if max_hp > 0 and current_enemy_name != "":
+				var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
+				known_enemy_hp[enemy_key] = max_hp
+				# Calculate damage dealt from revealed HP
+				damage_dealt_to_current_enemy = max_hp - current_hp
+				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+
 		"combat_update":
 			var state = message.get("combat_state", {})
 			if not state.is_empty():
@@ -3599,12 +3688,39 @@ func handle_server_message(message: Dictionary):
 
 		"quest_progress":
 			display_game(message.get("message", ""))
-			# Play sound if quest is now complete
-			if message.get("completed", false):
+			# Play sound if quest is now complete (only once per quest)
+			var quest_id = message.get("quest_id", "")
+			if message.get("completed", false) and quest_id != "" and not quests_sound_played.has(quest_id):
+				quests_sound_played[quest_id] = true
 				play_quest_complete_sound()
 
 		"quest_log":
 			handle_quest_log(message)
+
+		# Watch/Inspect messages
+		"watch_request":
+			handle_watch_request(message)
+
+		"watch_approved":
+			handle_watch_approved(message)
+
+		"watch_denied":
+			handle_watch_denied(message)
+
+		"watch_output":
+			handle_watch_output(message)
+
+		"watch_location":
+			handle_watch_location(message)
+
+		"watch_character":
+			handle_watch_character(message)
+
+		"watcher_left":
+			handle_watcher_left(message)
+
+		"watched_player_left":
+			handle_watched_player_left(message)
 
 # ===== INPUT HANDLING =====
 
@@ -3659,7 +3775,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -3867,6 +3983,15 @@ func process_command(text: String):
 				send_to_server({"type": "examine_player", "name": target})
 			else:
 				display_game("[color=#FF0000]Usage: examine <playername>[/color]")
+		"watch":
+			if parts.size() > 1:
+				var target = parts[1]
+				request_watch_player(target)
+			else:
+				display_game("[color=#FF0000]Usage: watch <playername>[/color]")
+				display_game("[color=#808080]Watch another player's game output (requires their approval).[/color]")
+		"unwatch":
+			stop_watching()
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -4100,6 +4225,8 @@ func show_help():
 [color=#00FFFF]Social:[/color]
   who/players - Refresh player list
   examine <name> - View player stats
+  watch <name> - Watch another player's game
+  unwatch - Stop watching
 
 [color=#00FFFF]Other:[/color]
   help - This help
@@ -4186,6 +4313,29 @@ func show_help():
   • All healing effects are doubled (2x)
   • Includes potions, regen, and other heals
   • Great for sustained combat
+
+[b][color=#FFD700]== CLASS OVERVIEW ==[/color][/b]
+
+[color=#FF6666]Warrior Path[/color] (STR > 10) - Uses Stamina
+  [color=#FFCC00]Fighter[/color] - Balanced melee with solid defense/offense
+  [color=#FFCC00]Barbarian[/color] - Aggressive berserker, high damage, low defense
+
+[color=#66FFFF]Mage Path[/color] (INT > 10) - Uses Mana
+  [color=#66CCCC]Wizard[/color] - Pure spellcaster, high magic damage
+  [color=#66CCCC]Sage[/color] - Balanced scholar with utility focus
+
+[color=#66FF66]Trickster Path[/color] (WITS > 10) - Uses Energy
+  [color=#90EE90]Thief[/color] - Cunning rogue, evasion and crits
+  [color=#90EE90]Ranger[/color] - Versatile scout, balanced combat
+
+[b][color=#FFD700]== WATCH FEATURE ==[/color][/b]
+
+Watch another player's game in real-time!
+  • Type [color=#FFFF00]watch <name>[/color] to request watching a player
+  • Watched player presses [Q] to approve, [W] to deny
+  • While watching, you see their game, map, and stats
+  • Press [color=#FFFF00][Escape][/color] to stop watching
+  • Type [color=#FFFF00]unwatch[/color] to stop watching
 
 [b][color=#FFD700]== WARRIOR ABILITIES (STR Path) ==[/color][/b]
 Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4, regens 10% when defending
@@ -4427,11 +4577,16 @@ func _format_rewards(rewards: Dictionary) -> String:
 
 func handle_quest_turned_in(message: Dictionary):
 	"""Handle quest turn-in result"""
+	var quest_id = message.get("quest_id", "")
 	var quest_name = message.get("quest_name", "Quest")
 	var rewards = message.get("rewards", {})
 	var leveled_up = message.get("leveled_up", false)
 	var new_level = message.get("new_level", 0)
 	var multiplier = rewards.get("multiplier", 1.0)
+
+	# Clear sound tracking for this quest
+	if quest_id != "" and quests_sound_played.has(quest_id):
+		quests_sound_played.erase(quest_id)
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== Quest Complete! =====[/color]")
@@ -4504,3 +4659,230 @@ func select_quest_option(index: int):
 			send_to_server({"type": "quest_accept", "quest_id": quest_id})
 	else:
 		display_game("[color=#FF0000]Invalid selection[/color]")
+
+# ===== WATCH/INSPECT MODE =====
+
+func request_watch_player(player_name: String):
+	"""Request to watch another player's game output"""
+	var my_name = character_data.get("name", "")
+	if player_name.to_lower() == my_name.to_lower():
+		display_game("[color=#FF4444]You can't watch yourself![/color]")
+		return
+
+	if watching_player != "":
+		display_game("[color=#FF4444]Already watching %s. Use 'unwatch' to stop first.[/color]" % watching_player)
+		return
+
+	send_to_server({"type": "watch_request", "target": player_name})
+	display_game("[color=#00FFFF]Requesting to watch %s...[/color]" % player_name)
+
+func stop_watching():
+	"""Stop watching the current player"""
+	if watching_player == "":
+		display_game("[color=#808080]You're not watching anyone.[/color]")
+		return
+
+	send_to_server({"type": "watch_stop"})
+	display_game("[color=#00FFFF]Stopped watching %s.[/color]" % watching_player)
+	watching_player = ""
+	game_output.clear()
+	display_game("[color=#00FF00]Returned to your own game.[/color]")
+	update_action_bar()
+	# Restore own character UI
+	restore_own_character_ui()
+
+func handle_watch_request(message: Dictionary):
+	"""Handle incoming watch request from another player"""
+	var requester = message.get("requester", "")
+	if requester == "":
+		return
+
+	watch_request_pending = requester
+	display_game("")
+	display_game("[color=#FFD700]===== Watch Request =====[/color]")
+	display_game("[color=#00FFFF]%s wants to watch your game.[/color]" % requester)
+	display_game("[color=#808080]They will see your GameOutput in real-time.[/color]")
+	display_game("")
+	display_game("[color=#00FF00][Q] Allow[/color]  [color=#FF4444][W] Deny[/color]")
+	update_action_bar()
+
+func approve_watch_request():
+	"""Allow the pending watch request"""
+	if watch_request_pending == "":
+		return
+
+	send_to_server({"type": "watch_approve", "requester": watch_request_pending})
+	display_game("[color=#00FF00]%s is now watching your game.[/color]" % watch_request_pending)
+	watchers.append(watch_request_pending)
+	watch_request_pending = ""
+	update_action_bar()
+
+func deny_watch_request():
+	"""Deny the pending watch request"""
+	if watch_request_pending == "":
+		return
+
+	send_to_server({"type": "watch_deny", "requester": watch_request_pending})
+	display_game("[color=#FF4444]Denied watch request from %s.[/color]" % watch_request_pending)
+	watch_request_pending = ""
+	update_action_bar()
+
+func handle_watch_approved(message: Dictionary):
+	"""Handle approval of our watch request"""
+	var target = message.get("target", "")
+	if target == "":
+		return
+
+	watching_player = target
+	game_output.clear()
+	display_game("[color=#FFD700]===== Watching %s =====[/color]" % target)
+	display_game("[color=#808080]You are now observing their game. Press [Escape] or type 'unwatch' to stop.[/color]")
+	display_game("")
+	update_action_bar()
+
+func handle_watch_denied(message: Dictionary):
+	"""Handle denial of our watch request"""
+	var target = message.get("target", "")
+	display_game("[color=#FF4444]%s declined your watch request.[/color]" % target)
+
+func handle_watch_output(message: Dictionary):
+	"""Handle forwarded game output from watched player"""
+	if watching_player == "":
+		return
+
+	var output = message.get("output", "")
+	if output != "":
+		display_game(output)
+
+func handle_watcher_left(message: Dictionary):
+	"""Handle notification that a watcher stopped watching us"""
+	var watcher = message.get("watcher", "")
+	if watcher in watchers:
+		watchers.erase(watcher)
+		display_game("[color=#808080]%s stopped watching your game.[/color]" % watcher)
+
+func handle_watched_player_left(message: Dictionary):
+	"""Handle notification that the player we're watching disconnected"""
+	var player = message.get("player", watching_player)
+	if watching_player != "":
+		display_game("[color=#FF4444]%s has disconnected.[/color]" % player)
+		watching_player = ""
+		game_output.clear()
+		display_game("[color=#00FF00]Returned to your own game.[/color]")
+		update_action_bar()
+		restore_own_character_ui()
+
+func restore_own_character_ui():
+	"""Restore UI to show own character data after stopping watch"""
+	if not has_character or character_data.is_empty():
+		return
+
+	# Restore all bars using existing functions that read from character_data
+	update_player_hp_bar()
+	update_resource_bar()
+	update_player_xp_bar()
+
+	# Restore level label
+	var level = character_data.get("level", 1)
+	if player_level_label:
+		player_level_label.text = "Level %d" % level
+
+	# Restore currency
+	update_currency_display()
+
+	# Request location update to restore own map
+	send_to_server({"type": "move", "direction": 0})
+
+func handle_watch_location(message: Dictionary):
+	"""Handle location/map update from watched player"""
+	if watching_player == "":
+		return
+
+	var description = message.get("description", "")
+	if map_display and description != "":
+		map_display.text = description
+
+func handle_watch_character(message: Dictionary):
+	"""Handle character data update from watched player - update health/resource/XP bars"""
+	if watching_player == "":
+		return
+
+	var char_data = message.get("character", {})
+	if char_data.is_empty():
+		return
+
+	# Update health bar directly with watched player's data
+	var current_hp = char_data.get("current_hp", 0)
+	var max_hp = char_data.get("max_hp", 1)
+	if player_health_bar:
+		var percent = (float(current_hp) / float(max(max_hp, 1))) * 100.0
+		var fill = player_health_bar.get_node_or_null("Fill")
+		var label = player_health_bar.get_node_or_null("HPLabel")
+		if fill:
+			fill.anchor_right = percent / 100.0
+			var style = fill.get_theme_stylebox("panel").duplicate()
+			style.bg_color = get_hp_color(percent)
+			fill.add_theme_stylebox_override("panel", style)
+		if label:
+			label.text = "HP: %d/%d" % [current_hp, max_hp]
+
+	# Update resource bar with watched player's class and resources
+	var char_class = char_data.get("class", "Fighter")
+	var current_val = 0
+	var max_val = 1
+	var resource_name = ""
+	var bar_color = Color(0.5, 0.5, 0.5)
+
+	# Determine resource type based on class
+	if char_class in ["Fighter", "Barbarian", "Paladin"]:
+		current_val = char_data.get("current_stamina", 0)
+		max_val = max(char_data.get("max_stamina", 1), 1)
+		resource_name = "Stamina"
+		bar_color = Color(0.9, 0.75, 0.1)  # Yellow
+	elif char_class in ["Wizard", "Sorcerer", "Sage"]:
+		current_val = char_data.get("current_mana", 0)
+		max_val = max(char_data.get("max_mana", 1), 1)
+		resource_name = "Mana"
+		bar_color = Color(0.2, 0.7, 0.8)  # Teal
+	else:  # Trickster classes: Thief, Ranger, Ninja
+		current_val = char_data.get("current_energy", 0)
+		max_val = max(char_data.get("max_energy", 1), 1)
+		resource_name = "Energy"
+		bar_color = Color(0.2, 0.8, 0.3)  # Green
+
+	if resource_bar:
+		var percent = (float(current_val) / float(max_val)) * 100.0
+		var fill = resource_bar.get_node_or_null("Fill")
+		var label = resource_bar.get_node_or_null("ResourceLabel")
+		if fill:
+			fill.anchor_right = percent / 100.0
+			var style = fill.get_theme_stylebox("panel").duplicate()
+			style.bg_color = bar_color
+			fill.add_theme_stylebox_override("panel", style)
+		if label:
+			label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
+
+	# Update XP bar with watched player's data
+	var experience = char_data.get("experience", 0)
+	var exp_to_next = char_data.get("experience_to_next_level", 100)
+	if player_xp_bar:
+		var total_percent = (float(experience) / float(max(exp_to_next, 1))) * 100.0
+		var fill = player_xp_bar.get_node_or_null("Fill")
+		if fill:
+			fill.anchor_right = total_percent / 100.0
+		var label = player_xp_bar.get_node_or_null("XPLabel")
+		if label:
+			label.text = "XP: %d/%d" % [experience, exp_to_next]
+
+	# Update level label
+	var level = char_data.get("level", 1)
+	if player_level_label:
+		player_level_label.text = "[Watching] Lv %d" % level
+
+	# Update currency display
+	var gold = char_data.get("gold", 0)
+	var gems = char_data.get("gems", 0)
+	if gold_label:
+		gold_label.text = str(gold)
+	if gem_label:
+		gem_label.text = str(gems)

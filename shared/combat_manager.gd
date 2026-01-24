@@ -662,18 +662,35 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 	match ability_name:
 		"magic_bolt":
-			# Variable mana cost - damage equals mana spent
+			# Variable mana cost - damage scales with INT
+			# Formula: damage = mana * (1 + INT/50), reduced by monster WIS
 			var bolt_amount = arg.to_int() if arg.is_valid_int() else 0
 			if bolt_amount <= 0:
-				return {"success": false, "messages": ["[color=#808080]Usage: bolt <amount> - deals damage equal to mana spent[/color]"], "combat_ended": false, "skip_monster_turn": true}
+				return {"success": false, "messages": ["[color=#808080]Usage: bolt <amount> - deals mana × INT damage[/color]"], "combat_ended": false, "skip_monster_turn": true}
 			bolt_amount = mini(bolt_amount, character.current_mana)
 			if bolt_amount <= 0:
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana![/color]"], "combat_ended": false, "skip_monster_turn": true}
 			character.current_mana -= bolt_amount
-			monster.current_hp -= bolt_amount
+
+			# Calculate INT-based damage
+			var int_stat = character.get_effective_stat("intelligence")
+			var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x, INT 100 = 3x
+			var base_damage = int(bolt_amount * int_multiplier)
+
+			# Apply damage buff (from War Cry, potions, etc.)
+			var damage_buff = character.get_buff_value("damage")
+			if damage_buff > 0:
+				base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
+
+			# Monster WIS reduces damage (up to 30% reduction)
+			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
+			var wis_reduction = min(0.30, float(monster_wis) / 500.0)  # WIS 150 = 30% reduction
+			var final_damage = max(1, int(base_damage * (1.0 - wis_reduction)))
+
+			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % bolt_amount)
-			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % bolt_amount)
+			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
 
 		"shield":
 			if not character.use_mana(mana_cost):
@@ -848,7 +865,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]Damage:[/color] ~%d" % monster.strength)
 			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster.get("intelligence", 15))
 			# Skip monster turn for analyze (information only)
-			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+			# Include revealed HP data for client health bar update
+			return {
+				"success": true,
+				"messages": messages,
+				"combat_ended": false,
+				"skip_monster_turn": true,
+				"revealed_enemy_hp": monster.max_hp,
+				"revealed_enemy_current_hp": monster.current_hp
+			}
 
 		"distract":
 			combat["enemy_distracted"] = true  # -50% accuracy next attack
@@ -1047,6 +1072,13 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		var heal_amount = effect.base + (effect.per_level * item_level)
 		var actual_heal = character.heal(heal_amount)
 		messages.append("[color=#00FF00]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
+	elif effect.has("mana"):
+		# Mana potion
+		var mana_amount = effect.base + (effect.per_level * item_level)
+		var old_mana = character.current_mana
+		character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+		var actual_restore = character.current_mana - old_mana
+		messages.append("[color=#00FFFF]You drink %s and restore %d mana![/color]" % [item_name, actual_restore])
 	elif effect.has("buff"):
 		# Buff potion - can be round-based or battle-based
 		var buff_type = effect.buff

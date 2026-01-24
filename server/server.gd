@@ -25,6 +25,8 @@ var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flo
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
+var watchers = {}  # peer_id -> Array of peer_ids watching this player
+var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -336,6 +338,15 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_quest_turn_in(peer_id, message)
 		"get_quest_log":
 			handle_get_quest_log(peer_id)
+		# Watch/Inspect handlers
+		"watch_request":
+			handle_watch_request(peer_id, message)
+		"watch_approve":
+			handle_watch_approve(peer_id, message)
+		"watch_deny":
+			handle_watch_deny(peer_id, message)
+		"watch_stop":
+			handle_watch_stop(peer_id)
 		_:
 			pass
 
@@ -951,17 +962,19 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	if not result.success:
 		# Send all error messages
 		for msg in result.get("messages", []):
-			send_to_peer(peer_id, {
-				"type": "combat_message",
-				"message": msg
-			})
+			send_combat_message(peer_id, msg)
 		return
 
 	# Send all combat messages
 	for msg in result.messages:
+		send_combat_message(peer_id, msg)
+
+	# If Analyze revealed enemy HP, send that to update the health bar
+	if result.has("revealed_enemy_hp"):
 		send_to_peer(peer_id, {
-			"type": "combat_message",
-			"message": msg
+			"type": "enemy_hp_revealed",
+			"max_hp": result.revealed_enemy_hp,
+			"current_hp": result.get("revealed_enemy_current_hp", result.revealed_enemy_hp)
 		})
 
 	# If combat ended
@@ -1146,7 +1159,7 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 
 	# Send all combat messages
 	for msg in result.messages:
-		send_to_peer(peer_id, {"type": "combat_message", "message": msg})
+		send_combat_message(peer_id, msg)
 
 	# Check if combat ended (player died)
 	if result.has("combat_ended") and result.combat_ended:
@@ -1246,6 +1259,16 @@ func send_location_update(peer_id: int):
 		"y": character.y,
 		"description": map_display
 	})
+
+	# Forward location/map to watchers
+	if watchers.has(peer_id) and not watchers[peer_id].is_empty():
+		for watcher_id in watchers[peer_id]:
+			send_to_peer(watcher_id, {
+				"type": "watch_location",
+				"x": character.x,
+				"y": character.y,
+				"description": map_display
+			})
 
 func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 	"""Get list of other players within radius of the given peer's character."""
@@ -1386,6 +1409,9 @@ func handle_disconnect(peer_id: int):
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
 
+	# Clean up watch relationships before erasing character
+	cleanup_watcher_on_disconnect(peer_id)
+
 	if characters.has(peer_id):
 		characters.erase(peer_id)
 
@@ -1438,6 +1464,8 @@ func trigger_encounter(peer_id: int):
 			"message": result.message,
 			"combat_state": result.combat_state
 		})
+		# Forward encounter to watchers
+		forward_to_watchers(peer_id, result.message)
 
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""
@@ -1586,14 +1614,17 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
+		var flock_msg = "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message]
 		# Send flock encounter message with clear_output flag
 		send_to_peer(peer_id, {
 			"type": "combat_start",
-			"message": "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message],
+			"message": flock_msg,
 			"combat_state": result.combat_state,
 			"is_flock": true,
 			"clear_output": true
 		})
+		# Forward to watchers
+		forward_to_watchers(peer_id, flock_msg)
 
 func handle_continue_flock(peer_id: int):
 	"""Handle player continuing into a flock encounter"""
@@ -1625,28 +1656,66 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 	var item = inventory[index]
 	var item_type = item.get("type", "")
+	var item_name = item.get("name", "item")
+	var item_level = item.get("level", 1)
 
-	# Handle consumables (potions, etc.)
-	if "potion" in item_type or "elixir" in item_type:
-		# Heal based on item level
-		var heal_amount = item.get("level", 1) * 10
-		var actual_heal = character.heal(heal_amount)
+	# Get potion effect from drop tables
+	var effect = drop_tables.get_potion_effect(item_type)
 
-		# Remove from inventory
-		character.remove_item(index)
-
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item.get("name", "item"), actual_heal]
-		})
-
-		# Update character data
-		send_character_update(peer_id)
-	else:
+	if effect.is_empty():
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#808080]This item cannot be used directly. Try equipping it.[/color]"
 		})
+		return
+
+	# Remove from inventory first
+	character.remove_item(index)
+
+	# Apply effect
+	if effect.has("heal"):
+		# Healing potion
+		var heal_amount = effect.base + (effect.per_level * item_level)
+		var actual_heal = character.heal(heal_amount)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item_name, actual_heal]
+		})
+	elif effect.has("mana"):
+		# Mana potion
+		var mana_amount = effect.base + (effect.per_level * item_level)
+		var old_mana = character.current_mana
+		character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+		var actual_restore = character.current_mana - old_mana
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]You use %s and restore %d mana![/color]" % [item_name, actual_restore]
+		})
+	elif effect.has("buff"):
+		# Buff potion
+		var buff_type = effect.buff
+		var buff_value = effect.base + (effect.per_level * item_level)
+		var base_duration = effect.get("base_duration", 5)
+		var duration_per_10 = effect.get("duration_per_10_levels", 1)
+		var duration = base_duration + (item_level / 10) * duration_per_10
+
+		if effect.get("battles", false):
+			# Battle-based buff
+			character.add_persistent_buff(buff_type, buff_value, duration)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FFFF]You use %s! +%d %s for %d battles![/color]" % [item_name, buff_value, buff_type, duration]
+			})
+		else:
+			# Round-based buff (only effective in combat)
+			character.add_buff(buff_type, buff_value, duration)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FFFF]You use %s! +%d %s for %d rounds (in combat)![/color]" % [item_name, buff_value, buff_type, duration]
+			})
+
+	# Update character data
+	send_character_update(peer_id)
 
 func handle_inventory_equip(peer_id: int, message: Dictionary):
 	"""Handle equipping an item"""
@@ -1781,10 +1850,19 @@ func send_character_update(peer_id: int):
 		return
 
 	var character = characters[peer_id]
+	var char_dict = character.to_dict()
 	send_to_peer(peer_id, {
 		"type": "character_update",
-		"character": character.to_dict()
+		"character": char_dict
 	})
+
+	# Forward character update to watchers
+	if watchers.has(peer_id) and not watchers[peer_id].is_empty():
+		for watcher_id in watchers[peer_id]:
+			send_to_peer(watcher_id, {
+				"type": "watch_character",
+				"character": char_dict
+			})
 
 # ===== MERCHANT HANDLERS =====
 
@@ -2840,3 +2918,183 @@ func check_kill_quest_progress(peer_id: int, monster_level: int):
 
 	if not updates.is_empty():
 		save_character(peer_id)
+
+# ===== WATCH/INSPECT HANDLERS =====
+
+func handle_watch_request(peer_id: int, message: Dictionary):
+	"""Handle request to watch another player"""
+	var target_name = message.get("target", "")
+	if target_name.is_empty():
+		return
+
+	# Find target player by name
+	var target_peer_id = -1
+	for pid in characters:
+		if characters[pid].name.to_lower() == target_name.to_lower():
+			target_peer_id = pid
+			break
+
+	if target_peer_id == -1:
+		send_to_peer(peer_id, {"type": "error", "message": "Player '%s' not found or offline." % target_name})
+		return
+
+	if target_peer_id == peer_id:
+		send_to_peer(peer_id, {"type": "error", "message": "You can't watch yourself!"})
+		return
+
+	# Check if already watching someone
+	if watching.has(peer_id) and watching[peer_id] != -1:
+		send_to_peer(peer_id, {"type": "error", "message": "Already watching someone. Use 'unwatch' first."})
+		return
+
+	# Send request to target player
+	var requester_name = characters[peer_id].name
+	send_to_peer(target_peer_id, {
+		"type": "watch_request",
+		"requester": requester_name,
+		"requester_id": peer_id
+	})
+
+	log_message("Watch request: %s -> %s" % [requester_name, target_name])
+
+func handle_watch_approve(peer_id: int, message: Dictionary):
+	"""Handle approval of a watch request"""
+	var requester_name = message.get("requester", "")
+	if requester_name.is_empty():
+		return
+
+	# Find requester by name
+	var requester_peer_id = -1
+	for pid in characters:
+		if characters[pid].name.to_lower() == requester_name.to_lower():
+			requester_peer_id = pid
+			break
+
+	if requester_peer_id == -1:
+		send_to_peer(peer_id, {"type": "error", "message": "Player no longer online."})
+		return
+
+	# Set up watching relationship
+	watching[requester_peer_id] = peer_id
+	if not watchers.has(peer_id):
+		watchers[peer_id] = []
+	watchers[peer_id].append(requester_peer_id)
+
+	# Notify requester
+	var target_name = characters[peer_id].name
+	send_to_peer(requester_peer_id, {
+		"type": "watch_approved",
+		"target": target_name
+	})
+
+	# Send initial character and location data to watcher
+	var character = characters[peer_id]
+	var char_dict = character.to_dict()
+	send_to_peer(requester_peer_id, {
+		"type": "watch_character",
+		"character": char_dict
+	})
+
+	# Send initial map
+	var nearby_players = get_nearby_players(peer_id, 6)
+	var map_display = world_system.generate_map_display(character.x, character.y, 6, nearby_players)
+	send_to_peer(requester_peer_id, {
+		"type": "watch_location",
+		"x": character.x,
+		"y": character.y,
+		"description": map_display
+	})
+
+	log_message("Watch approved: %s now watching %s" % [requester_name, target_name])
+
+func handle_watch_deny(peer_id: int, message: Dictionary):
+	"""Handle denial of a watch request"""
+	var requester_name = message.get("requester", "")
+	if requester_name.is_empty():
+		return
+
+	# Find requester by name
+	var requester_peer_id = -1
+	for pid in characters:
+		if characters[pid].name.to_lower() == requester_name.to_lower():
+			requester_peer_id = pid
+			break
+
+	if requester_peer_id != -1:
+		var target_name = characters[peer_id].name
+		send_to_peer(requester_peer_id, {
+			"type": "watch_denied",
+			"target": target_name
+		})
+
+	log_message("Watch denied: %s denied %s" % [characters[peer_id].name, requester_name])
+
+func handle_watch_stop(peer_id: int):
+	"""Handle stopping watching another player"""
+	if not watching.has(peer_id) or watching[peer_id] == -1:
+		return
+
+	var watched_peer_id = watching[peer_id]
+	watching[peer_id] = -1
+
+	# Remove from watchers list
+	if watchers.has(watched_peer_id):
+		watchers[watched_peer_id].erase(peer_id)
+
+	# Notify watched player
+	if characters.has(watched_peer_id):
+		var watcher_name = characters[peer_id].name if characters.has(peer_id) else "Unknown"
+		send_to_peer(watched_peer_id, {
+			"type": "watcher_left",
+			"watcher": watcher_name
+		})
+
+	log_message("Watch stopped: %s stopped watching" % (characters[peer_id].name if characters.has(peer_id) else "Unknown"))
+
+func forward_to_watchers(peer_id: int, output: String):
+	"""Forward game output to all players watching this peer"""
+	if not watchers.has(peer_id) or watchers[peer_id].is_empty():
+		return
+
+	for watcher_id in watchers[peer_id]:
+		send_to_peer(watcher_id, {
+			"type": "watch_output",
+			"output": output
+		})
+
+func send_combat_message(peer_id: int, message: String):
+	"""Send a combat message and forward to watchers"""
+	send_to_peer(peer_id, {"type": "combat_message", "message": message})
+	forward_to_watchers(peer_id, message)
+
+func send_game_text(peer_id: int, message: String):
+	"""Send a text message and forward to watchers"""
+	send_to_peer(peer_id, {"type": "text", "message": message})
+	forward_to_watchers(peer_id, message)
+
+func cleanup_watcher_on_disconnect(peer_id: int):
+	"""Clean up watch relationships when a player disconnects"""
+	# If this player was watching someone, notify them
+	if watching.has(peer_id) and watching[peer_id] != -1:
+		var watched_peer_id = watching[peer_id]
+		if watchers.has(watched_peer_id):
+			watchers[watched_peer_id].erase(peer_id)
+			if characters.has(watched_peer_id):
+				var watcher_name = characters[peer_id].name if characters.has(peer_id) else "Unknown"
+				send_to_peer(watched_peer_id, {
+					"type": "watcher_left",
+					"watcher": watcher_name
+				})
+		watching.erase(peer_id)
+
+	# If players were watching this player, notify them
+	if watchers.has(peer_id):
+		var player_name = characters[peer_id].name if characters.has(peer_id) else "Unknown"
+		for watcher_id in watchers[peer_id]:
+			send_to_peer(watcher_id, {
+				"type": "watched_player_left",
+				"player": player_name
+			})
+			if watching.has(watcher_id):
+				watching[watcher_id] = -1
+		watchers.erase(peer_id)

@@ -867,6 +867,14 @@ text = "Class:"
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 
+[node name="ClassDescription" type="Label" parent="CharacterCreatePanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 11
+text = "Balanced melee warrior with solid defense and offense."
+horizontal_alignment = 1
+autowrap_mode = 2
+
 [node name="Warning" type="Label" parent="CharacterCreatePanel/VBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
