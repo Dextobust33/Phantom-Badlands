@@ -5,7 +5,7 @@ extends Control
 # CONFIGURE THESE FOR YOUR GITHUB REPO
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantasia-Revival"
-const GAME_EXECUTABLE = "phantasia-client.exe"
+const GAME_EXECUTABLE = "PhantasiaClient.exe"
 
 @onready var status_label = $VBox/StatusLabel
 @onready var progress_bar = $VBox/ProgressBar
