@@ -129,6 +129,9 @@ var pending_inventory_action: String = ""  # Action waiting for item selection
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
+# Remember last used amounts for variable cost abilities (e.g., Bolt)
+var last_ability_amounts: Dictionary = {}  # ability_name -> last_amount
+
 # XP tracking for two-color bar
 var xp_before_combat: int = 0  # XP before starting combat
 var recent_xp_gain: int = 0    # XP gained in most recent combat
@@ -366,7 +369,7 @@ func _ready():
 	call_deferred("_on_window_resized")
 
 	# Initial display
-	display_game("[b][color=#4A90E2]Welcome to Phantasia Revival[/color][/b]")
+	display_game("[b][color=#FFFF00]Welcome to Phantasia Revival[/color][/b]")
 	display_game("Connecting to server...")
 
 	# Initialize UI state
@@ -933,6 +936,15 @@ func _process(_delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
+	# Enter key to focus chat input (only in movement mode)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not at_trading_post:
+		if Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_KP_ENTER):
+			if not get_meta("enter_pressed", false):
+				set_meta("enter_pressed", true)
+				input_field.grab_focus()
+		else:
+			set_meta("enter_pressed", false)
+
 	# Numpad movement and hunt (only when playing and not in combat, flock, pending continue, inventory, or merchant)
 	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant:
 		if game_state == GameState.PLAYING:
@@ -973,7 +985,7 @@ func _process(_delta):
 		if not connected:
 			connected = true
 			game_state = GameState.CONNECTED
-			display_game("[color=#2ECC71]Connected to server![/color]")
+			display_game("[color=#00FF00]Connected to server![/color]")
 
 		var available = connection.get_available_bytes()
 		if available > 0:
@@ -991,7 +1003,7 @@ func _process(_delta):
 
 	elif status == StreamPeerTCP.STATUS_ERROR:
 		if connected:
-			display_game("[color=#E74C3C]Connection error![/color]")
+			display_game("[color=#FF0000]Connection error![/color]")
 			reset_connection_state()
 
 # ===== UI PANEL MANAGEMENT =====
@@ -1084,7 +1096,7 @@ func update_leaderboard_display(entries: Array):
 	leaderboard_list.append_text("[center][b]HALL OF FALLEN HEROES[/b][/center]\n\n")
 
 	if entries.is_empty():
-		leaderboard_list.append_text("[center][color=#666666]No entries yet. Be the first![/color][/center]")
+		leaderboard_list.append_text("[center][color=#555555]No entries yet. Be the first![/color][/center]")
 		return
 
 	for entry in entries:
@@ -1105,7 +1117,7 @@ func update_leaderboard_display(entries: Array):
 
 		leaderboard_list.append_text("[color=%s]#%d %s[/color]\n" % [color, rank, name])
 		leaderboard_list.append_text("   Level %d %s - %d XP\n" % [level, cls, exp])
-		leaderboard_list.append_text("   [color=#666666]Slain by: %s[/color]\n\n" % cause)
+		leaderboard_list.append_text("   [color=#555555]Slain by: %s[/color]\n\n" % cause)
 
 func update_online_players(players: Array):
 	"""Update the online players list display with clickable names"""
@@ -1115,7 +1127,7 @@ func update_online_players(players: Array):
 	online_players_list.clear()
 
 	if players.is_empty():
-		online_players_list.append_text("[color=#666666]No players online[/color]")
+		online_players_list.append_text("[color=#555555]No players online[/color]")
 		return
 
 	for player in players:
@@ -1123,7 +1135,7 @@ func update_online_players(players: Array):
 		var plevel = player.get("level", 1)
 		var pclass = player.get("class", "Unknown")
 		# Use URL tags to make names clickable (double-click shows stats)
-		online_players_list.append_text("[url=%s][color=#90EE90]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
+		online_players_list.append_text("[url=%s][color=#00FF00]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
 
 func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
@@ -1151,34 +1163,34 @@ func display_examine_result(data: Dictionary):
 	var total_attack = data.get("total_attack", str_stat)
 	var total_defense = data.get("total_defense", con_stat / 2)
 
-	var status = "[color=#90EE90]Exploring[/color]" if not in_combat_flag else "[color=#FF6B6B]In Combat[/color]"
+	var status = "[color=#00FF00]Exploring[/color]" if not in_combat_flag else "[color=#FF4444]In Combat[/color]"
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
 	display_game("Level %d %s %s - %s" % [level, char_race, cls, status])
-	display_game("[color=#9B59B6]XP:[/color] %d / %d ([color=#FFD700]%d to next level[/color])" % [current_xp, xp_needed, xp_remaining])
+	display_game("[color=#FF00FF]XP:[/color] %d / %d ([color=#FFD700]%d to next level[/color])" % [current_xp, xp_needed, xp_remaining])
 	display_game("HP: %d/%d" % [hp, max_hp])
 
 	# Stats with bonuses
 	var stats_line = "STR:%d" % str_stat
 	if bonuses.get("strength", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.strength
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.strength
 	stats_line += " CON:%d" % con_stat
 	if bonuses.get("constitution", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.constitution
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.constitution
 	stats_line += " DEX:%d" % dex_stat
 	if bonuses.get("dexterity", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.dexterity
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.dexterity
 	display_game(stats_line)
 
 	stats_line = "INT:%d" % int_stat
 	if bonuses.get("intelligence", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.intelligence
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.intelligence
 	stats_line += " WIS:%d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.wisdom
 	stats_line += " WIT:%d" % wit_stat
 	if bonuses.get("wits", 0) > 0:
-		stats_line += "[color=#90EE90](+%d)[/color]" % bonuses.wits
+		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.wits
 	display_game(stats_line)
 
 	# Combat stats
@@ -1192,7 +1204,7 @@ func display_examine_result(data: Dictionary):
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			equip_text += "[color=%s]%s[/color] " % [rarity_color, item.get("name", "Unknown")]
 	if equip_text != "":
-		display_game("[color=#E67E22]Gear:[/color] %s" % equip_text.strip_edges())
+		display_game("[color=#FFA500]Gear:[/color] %s" % equip_text.strip_edges())
 
 	display_game("Monsters Slain: %d" % kills)
 
@@ -1209,7 +1221,7 @@ func _on_login_button_pressed():
 
 	if user.is_empty() or passwd.is_empty():
 		if login_status:
-			login_status.text = "[color=#E74C3C]Enter username and password[/color]"
+			login_status.text = "[color=#FF0000]Enter username and password[/color]"
 		return
 
 	if login_status:
@@ -1228,17 +1240,17 @@ func _on_register_button_pressed():
 
 	if user.is_empty() or passwd.is_empty():
 		if login_status:
-			login_status.text = "[color=#E74C3C]Enter username and password[/color]"
+			login_status.text = "[color=#FF0000]Enter username and password[/color]"
 		return
 
 	if confirm_passwd.is_empty():
 		if login_status:
-			login_status.text = "[color=#E74C3C]Please confirm your password[/color]"
+			login_status.text = "[color=#FF0000]Please confirm your password[/color]"
 		return
 
 	if passwd != confirm_passwd:
 		if login_status:
-			login_status.text = "[color=#E74C3C]Passwords do not match[/color]"
+			login_status.text = "[color=#FF0000]Passwords do not match[/color]"
 		return
 
 	if login_status:
@@ -1296,7 +1308,7 @@ func _on_confirm_create_pressed():
 
 	if char_name.is_empty():
 		if char_create_status:
-			char_create_status.text = "[color=#E74C3C]Enter a character name[/color]"
+			char_create_status.text = "[color=#FF0000]Enter a character name[/color]"
 		return
 
 	if char_create_status:
@@ -1373,7 +1385,7 @@ func show_player_info_popup(data: Dictionary):
 	var total_attack = data.get("total_attack", str_stat)
 	var total_defense = data.get("total_defense", con_stat / 2)
 
-	var status_text = "[color=#90EE90]Exploring[/color]" if not in_combat_status else "[color=#FF6B6B]In Combat[/color]"
+	var status_text = "[color=#00FF00]Exploring[/color]" if not in_combat_status else "[color=#FF4444]In Combat[/color]"
 
 	var xp_needed = data.get("experience_to_next_level", 100)
 	var xp_remaining = xp_needed - exp
@@ -1382,33 +1394,33 @@ func show_player_info_popup(data: Dictionary):
 	player_info_content.clear()
 	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
 	player_info_content.append_text("[center]Level %d %s %s[/center]\n" % [level, char_race, cls])
-	player_info_content.append_text("[center][color=#9B59B6]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
+	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
-	player_info_content.append_text("[color=#4A90E2]HP:[/color] %d / %d\n\n" % [hp, max_hp])
+	player_info_content.append_text("[color=#00FFFF]HP:[/color] %d / %d\n\n" % [hp, max_hp])
 
 	# Stats with equipment bonuses
-	player_info_content.append_text("[color=#9B59B6]Stats:[/color]\n")
+	player_info_content.append_text("[color=#FF00FF]Stats:[/color]\n")
 	var line1 = "  STR: %d" % str_stat
 	if bonuses.get("strength", 0) > 0:
-		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.strength
+		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.strength
 	line1 += "  CON: %d" % con_stat
 	if bonuses.get("constitution", 0) > 0:
-		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.constitution
+		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.constitution
 	line1 += "  DEX: %d" % dex_stat
 	if bonuses.get("dexterity", 0) > 0:
-		line1 += "[color=#90EE90](+%d)[/color]" % bonuses.dexterity
+		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.dexterity
 	player_info_content.append_text(line1 + "\n")
 
 	var line2 = "  INT: %d" % int_stat
 	if bonuses.get("intelligence", 0) > 0:
-		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.intelligence
+		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.intelligence
 	line2 += "  WIS: %d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
-		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.wisdom
+		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.wisdom
 	line2 += "  WIT: %d" % wit_stat
 	if bonuses.get("wits", 0) > 0:
-		line2 += "[color=#90EE90](+%d)[/color]" % bonuses.wits
+		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.wits
 	player_info_content.append_text(line2 + "\n\n")
 
 	# Combat stats
@@ -1420,7 +1432,7 @@ func show_player_info_popup(data: Dictionary):
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			if not has_equipment:
-				player_info_content.append_text("[color=#E67E22]Equipment:[/color]\n")
+				player_info_content.append_text("[color=#FFA500]Equipment:[/color]\n")
 				has_equipment = true
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			player_info_content.append_text("  %s: [color=%s]%s[/color] (Lv%d)\n" % [
@@ -1430,7 +1442,7 @@ func show_player_info_popup(data: Dictionary):
 	if has_equipment:
 		player_info_content.append_text("\n")
 
-	player_info_content.append_text("[color=#E67E22]Monsters Slain:[/color] %d" % kills)
+	player_info_content.append_text("[color=#FFA500]Monsters Slain:[/color] %d" % kills)
 
 	player_info_panel.visible = true
 
@@ -1740,13 +1752,13 @@ func trigger_action(index: int):
 
 func send_combat_command(command: String):
 	if not connected:
-		display_game("[color=#E74C3C]Not connected![/color]")
+		display_game("[color=#FF0000]Not connected![/color]")
 		return
 	if not in_combat:
-		display_game("[color=#E74C3C]You are not in combat![/color]")
+		display_game("[color=#FF0000]You are not in combat![/color]")
 		return
 
-	display_game("[color=#F39C12]> %s[/color]" % command)
+	display_game("[color=#00FFFF]> %s[/color]" % command)
 	send_to_server({"type": "combat", "command": command})
 
 func prompt_variable_cost_ability(ability: String, resource_type: String):
@@ -1781,6 +1793,10 @@ func execute_variable_cost_ability(amount: int):
 		return
 
 	var ability = pending_variable_ability
+
+	# Remember this amount for next time
+	last_ability_amounts[ability] = amount
+
 	pending_variable_ability = ""
 	pending_variable_resource = ""
 
@@ -1888,9 +1904,14 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		"energy":
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-	# Clear input and reset placeholder
-	ability_popup_input.text = ""
-	ability_popup_input.placeholder_text = "Enter amount..."
+	# Pre-populate with last used amount for this ability, or empty
+	var last_amount = last_ability_amounts.get(ability, 0)
+	if last_amount > 0 and last_amount <= current_resource:
+		ability_popup_input.text = str(last_amount)
+		ability_popup_input.placeholder_text = ""
+	else:
+		ability_popup_input.text = ""
+		ability_popup_input.placeholder_text = "Enter amount..."
 
 	# Center the popup on screen
 	var viewport_size = get_viewport().get_visible_rect().size
@@ -2066,7 +2087,7 @@ func show_combat_item_menu():
 			usable_items.append({"index": i, "item": item})
 
 	if usable_items.is_empty():
-		display_game("[color=#E74C3C]You have no usable items![/color]")
+		display_game("[color=#FF0000]You have no usable items![/color]")
 		combat_item_mode = false
 		update_action_bar()
 		return
@@ -2079,13 +2100,13 @@ func show_combat_item_menu():
 		var rarity = item.get("rarity", "common")
 		var color = _get_rarity_color(rarity)
 		display_game("[%d] [color=%s]%s[/color]" % [j + 1, color, item_name])
-	display_game("[color=#95A5A6]Press 1-%d to use an item, or Space to cancel.[/color]" % usable_items.size())
+	display_game("[color=#808080]Press 1-%d to use an item, or Space to cancel.[/color]" % usable_items.size())
 
 func cancel_combat_item_mode():
 	"""Cancel combat item selection mode."""
 	combat_item_mode = false
 	update_action_bar()
-	display_game("[color=#95A5A6]Item use cancelled.[/color]")
+	display_game("[color=#808080]Item use cancelled.[/color]")
 
 func use_combat_item_by_number(number: int):
 	"""Use a combat item by its display number (1-indexed)."""
@@ -2099,7 +2120,7 @@ func use_combat_item_by_number(number: int):
 			usable_items.append(i)  # Store actual inventory index
 
 	if number < 1 or number > usable_items.size():
-		display_game("[color=#E74C3C]Invalid item number![/color]")
+		display_game("[color=#FF0000]Invalid item number![/color]")
 		return
 
 	var actual_index = usable_items[number - 1]
@@ -2211,14 +2232,14 @@ func logout_character():
 	"""Logout of current character, return to character select"""
 	if not connected:
 		return
-	display_game("[color=#F39C12]Switching character...[/color]")
+	display_game("[color=#00FFFF]Switching character...[/color]")
 	send_to_server({"type": "logout_character"})
 
 func logout_account():
 	"""Logout of account completely"""
 	if not connected:
 		return
-	display_game("[color=#F39C12]Logging out...[/color]")
+	display_game("[color=#00FFFF]Logging out...[/color]")
 	send_to_server({"type": "logout_account"})
 
 # ===== MERCHANT FUNCTIONS =====
@@ -2239,7 +2260,7 @@ func prompt_merchant_action(action_type: String):
 	match action_type:
 		"sell":
 			if inventory.is_empty():
-				display_game("[color=#E74C3C]You have nothing to sell.[/color]")
+				display_game("[color=#FF0000]You have nothing to sell.[/color]")
 				return
 			pending_merchant_action = "sell"
 			display_merchant_sell_list()
@@ -2252,7 +2273,7 @@ func prompt_merchant_action(action_type: String):
 				if equipped.get(slot) != null:
 					slots_with_items.append(slot)
 			if slots_with_items.is_empty():
-				display_game("[color=#E74C3C]You have nothing equipped to upgrade.[/color]")
+				display_game("[color=#FF0000]You have nothing equipped to upgrade.[/color]")
 				return
 			pending_merchant_action = "upgrade"
 			display_upgrade_options()
@@ -2266,7 +2287,7 @@ func prompt_merchant_action(action_type: String):
 			var max_bet = gold / 2
 
 			if max_bet < min_bet:
-				display_game("[color=#FF6B6B]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2))
+				display_game("[color=#FF4444]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2))
 				return
 
 			pending_merchant_action = "gamble"
@@ -2274,7 +2295,7 @@ func prompt_merchant_action(action_type: String):
 			display_game("Your gold: %d" % gold)
 			display_game("Bet range: %d - %d gold" % [min_bet, max_bet])
 			display_game("")
-			display_game("[color=#95A5A6]Rules: Both roll 3 dice. Higher total wins![/color]")
+			display_game("[color=#808080]Rules: Both roll 3 dice. Higher total wins![/color]")
 			display_game("  Lose by 6+: Lose full bet")
 			display_game("  Lose by 1-5: Lose half bet")
 			display_game("  Tie: Bet returned")
@@ -2291,7 +2312,7 @@ func prompt_merchant_action(action_type: String):
 		"buy":
 			var shop_items = merchant_data.get("shop_items", [])
 			if shop_items.is_empty():
-				display_game("[color=#E74C3C]The merchant has nothing for sale.[/color]")
+				display_game("[color=#FF0000]The merchant has nothing for sale.[/color]")
 				return
 			pending_merchant_action = "buy"
 			display_shop_inventory()
@@ -2300,14 +2321,14 @@ func prompt_merchant_action(action_type: String):
 		"sell_gems":
 			var gems = character_data.get("gems", 0)
 			if gems <= 0:
-				display_game("[color=#E74C3C]You have no gems to sell.[/color]")
+				display_game("[color=#FF0000]You have no gems to sell.[/color]")
 				return
 			pending_merchant_action = "sell_gems"
 			display_game("[color=#FFD700]===== SELL GEMS =====[/color]")
 			display_game("[color=#00FFFF]Your gems: %d[/color]" % gems)
 			display_game("Value: [color=#FFD700]1000 gold per gem[/color]")
 			display_game("")
-			display_game("[color=#95A5A6]Total value: %d gold[/color]" % (gems * 1000))
+			display_game("[color=#808080]Total value: %d gold[/color]" % (gems * 1000))
 			display_game("")
 			display_game("[color=#FFD700]Enter amount to sell (or press [Q] to sell all):[/color]")
 			input_field.placeholder_text = "Gems to sell..."
@@ -2318,7 +2339,7 @@ func sell_all_gems():
 	"""Sell all gems to merchant"""
 	var gems = character_data.get("gems", 0)
 	if gems <= 0:
-		display_game("[color=#E74C3C]You have no gems to sell.[/color]")
+		display_game("[color=#FF0000]You have no gems to sell.[/color]")
 		return
 	pending_merchant_action = ""
 	send_to_server({"type": "merchant_sell_gems", "amount": gems})
@@ -2328,7 +2349,7 @@ func sell_all_items():
 	"""Sell all inventory items to merchant"""
 	var inventory = character_data.get("inventory", [])
 	if inventory.is_empty():
-		display_game("[color=#E74C3C]You have no items to sell.[/color]")
+		display_game("[color=#FF0000]You have no items to sell.[/color]")
 		return
 	pending_merchant_action = ""
 	send_to_server({"type": "merchant_sell_all"})
@@ -2346,7 +2367,7 @@ func display_shop_inventory():
 	display_game("")
 
 	if shop_items.is_empty():
-		display_game("[color=#666666](nothing for sale)[/color]")
+		display_game("[color=#555555](nothing for sale)[/color]")
 	else:
 		for i in range(shop_items.size()):
 			var item = shop_items[i]
@@ -2365,18 +2386,18 @@ func display_shop_inventory():
 				if equipped_item != null and equipped_item is Dictionary:
 					var equipped_level = equipped_item.get("level", 1)
 					if level > equipped_level:
-						compare_text = " [color=#90EE90]↑[/color]"
+						compare_text = " [color=#00FF00]↑[/color]"
 					elif level < equipped_level:
 						compare_text = " [color=#FF6666]↓[/color]"
 					else:
 						compare_text = " [color=#FFFF66]=[/color]"
 				else:
-					compare_text = " [color=#90EE90]NEW[/color]"
+					compare_text = " [color=#00FF00]NEW[/color]"
 
 			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %d gold (or %d gems)" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price, gem_price])
 
 	display_game("")
-	display_game("[color=#95A5A6]Press 1-%d to buy with gold[/color]" % shop_items.size())
+	display_game("[color=#808080]Press 1-%d to buy with gold[/color]" % shop_items.size())
 
 func handle_shop_inventory(message: Dictionary):
 	"""Handle shop inventory update from server"""
@@ -2441,12 +2462,12 @@ func handle_gamble_result(message: Dictionary):
 	display_game("[color=#FFD700]Your gold: %d[/color]" % gold)
 
 	if max_bet >= min_bet:
-		display_game("[color=#95A5A6]Enter another bet (%d-%d) or press Space to stop:[/color]" % [min_bet, max_bet])
+		display_game("[color=#808080]Enter another bet (%d-%d) or press Space to stop:[/color]" % [min_bet, max_bet])
 		pending_merchant_action = "gamble"
 		input_field.placeholder_text = "Bet amount..."
 		input_field.grab_focus()
 	else:
-		display_game("[color=#FF6B6B]You don't have enough gold to continue gambling.[/color]")
+		display_game("[color=#FF4444]You don't have enough gold to continue gambling.[/color]")
 		pending_merchant_action = ""
 		show_merchant_menu()
 
@@ -2495,7 +2516,7 @@ func cancel_merchant_action():
 	"""Cancel pending merchant action"""
 	pending_merchant_action = ""
 	input_field.placeholder_text = ""  # Reset placeholder
-	display_game("[color=#95A5A6]Action cancelled.[/color]")
+	display_game("[color=#808080]Action cancelled.[/color]")
 	show_merchant_menu()
 	update_action_bar()
 
@@ -2504,7 +2525,7 @@ func select_merchant_sell_item(index: int):
 	var inventory = character_data.get("inventory", [])
 
 	if index < 0 or index >= inventory.size():
-		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		display_game("[color=#FF0000]Invalid item number.[/color]")
 		return
 
 	pending_merchant_action = ""
@@ -2516,7 +2537,7 @@ func select_merchant_buy_item(index: int):
 	var shop_items = merchant_data.get("shop_items", [])
 
 	if index < 0 or index >= shop_items.size():
-		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		display_game("[color=#FF0000]Invalid item number.[/color]")
 		return
 
 	pending_merchant_action = ""
@@ -2561,7 +2582,7 @@ func display_merchant_sell_list():
 	display_game("")
 
 	if inventory.is_empty():
-		display_game("[color=#666666](no items to sell)[/color]")
+		display_game("[color=#555555](no items to sell)[/color]")
 	else:
 		for i in range(inventory.size()):
 			var item = inventory[i]
@@ -2590,7 +2611,7 @@ func display_upgrade_options():
 			])
 			display_game("  [color=#FFD700]Upgrade to Lv%d: %d gold[/color]" % [current_level + 1, upgrade_cost])
 		else:
-			display_game("%s: [color=#666666](empty)[/color]" % slot.capitalize())
+			display_game("%s: [color=#555555](empty)[/color]" % slot.capitalize())
 
 func display_merchant_inventory(message: Dictionary):
 	"""Display inventory sent by server for merchant interaction"""
@@ -2621,7 +2642,7 @@ func process_merchant_input(input_text: String):
 				var amount = int(input_text)
 				send_to_server({"type": "merchant_gamble", "amount": amount})
 			else:
-				display_game("[color=#E74C3C]Invalid bet amount.[/color]")
+				display_game("[color=#FF0000]Invalid bet amount.[/color]")
 				show_merchant_menu()
 
 		"sell_gems":
@@ -2630,10 +2651,10 @@ func process_merchant_input(input_text: String):
 				if amount > 0:
 					send_to_server({"type": "merchant_sell_gems", "amount": amount})
 				else:
-					display_game("[color=#E74C3C]Invalid gem amount.[/color]")
+					display_game("[color=#FF0000]Invalid gem amount.[/color]")
 					show_merchant_menu()
 			else:
-				display_game("[color=#E74C3C]Invalid gem amount. Enter a number.[/color]")
+				display_game("[color=#FF0000]Invalid gem amount. Enter a number.[/color]")
 				show_merchant_menu()
 
 		"buy":
@@ -2643,17 +2664,17 @@ func process_merchant_input(input_text: String):
 				if index >= 0 and index < shop_items.size():
 					send_to_server({"type": "merchant_buy", "index": index})
 				else:
-					display_game("[color=#E74C3C]Invalid item number.[/color]")
+					display_game("[color=#FF0000]Invalid item number.[/color]")
 					display_shop_inventory()
 					pending_merchant_action = "buy"  # Keep in buy mode
 			else:
-				display_game("[color=#E74C3C]Invalid item number. Enter 1-%d.[/color]" % merchant_data.get("shop_items", []).size())
+				display_game("[color=#FF0000]Invalid item number. Enter 1-%d.[/color]" % merchant_data.get("shop_items", []).size())
 				display_shop_inventory()
 				pending_merchant_action = "buy"  # Keep in buy mode
 
 		_:
 			# Other actions use action bar, not text input
-			display_game("[color=#E74C3C]Use the action bar to select.[/color]")
+			display_game("[color=#FF0000]Use the action bar to select.[/color]")
 			show_merchant_menu()
 
 	update_action_bar()
@@ -2687,7 +2708,7 @@ func cancel_password_change():
 	if not has_character:
 		char_select_panel.visible = true
 		if char_select_status:
-			char_select_status.text = "[color=#95A5A6]Password change cancelled.[/color]"
+			char_select_status.text = "[color=#808080]Password change cancelled.[/color]"
 
 func finish_password_change(success: bool, message: String):
 	"""Complete the password change process and return to appropriate screen"""
@@ -2703,9 +2724,9 @@ func finish_password_change(success: bool, message: String):
 		char_select_panel.visible = true
 		if char_select_status:
 			if success:
-				char_select_status.text = "[color=#2ECC71]%s[/color]" % message
+				char_select_status.text = "[color=#00FF00]%s[/color]" % message
 			else:
-				char_select_status.text = "[color=#E74C3C]%s[/color]" % message
+				char_select_status.text = "[color=#FF0000]%s[/color]" % message
 
 func process_password_change_input(input_text: String):
 	"""Process input during password change"""
@@ -2726,7 +2747,7 @@ func process_password_change_input(input_text: String):
 		1:  # Entered new password
 			if input_text.length() < 4:
 				if char_select_status:
-					char_select_status.text = "[color=#E74C3C]Password must be at least 4 characters. Try again:[/color]"
+					char_select_status.text = "[color=#FF0000]Password must be at least 4 characters. Try again:[/color]"
 				input_field.grab_focus()
 				return
 
@@ -2740,7 +2761,7 @@ func process_password_change_input(input_text: String):
 		2:  # Entered confirm password
 			if input_text != temp_new_password:
 				if char_select_status:
-					char_select_status.text = "[color=#E74C3C]Passwords do not match. Enter new password again:[/color]"
+					char_select_status.text = "[color=#FF0000]Passwords do not match. Enter new password again:[/color]"
 				password_change_step = 1
 				temp_new_password = ""
 				input_field.placeholder_text = "New password..."
@@ -2748,7 +2769,7 @@ func process_password_change_input(input_text: String):
 				return
 
 			if char_select_status:
-				char_select_status.text = "[color=#95A5A6]Changing password...[/color]"
+				char_select_status.text = "[color=#808080]Changing password...[/color]"
 
 			# Send password change request
 			send_to_server({
@@ -2769,7 +2790,7 @@ func close_inventory():
 	"""Close inventory view and return to normal mode"""
 	inventory_mode = false
 	update_action_bar()
-	display_game("[color=#95A5A6]Inventory closed.[/color]")
+	display_game("[color=#808080]Inventory closed.[/color]")
 
 func display_inventory():
 	"""Display the player's inventory and equipped items"""
@@ -2782,7 +2803,7 @@ func display_inventory():
 	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
 
 	# Show equipped items with level and stats
-	display_game("[color=#4A90E2]Equipped:[/color]")
+	display_game("[color=#00FFFF]Equipped:[/color]")
 	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
@@ -2793,19 +2814,19 @@ func display_inventory():
 				slot.capitalize(), rarity_color, item.get("name", "Unknown"), item_level, bonus_text
 			])
 		else:
-			display_game("  %s: [color=#666666](empty)[/color]" % slot.capitalize())
+			display_game("  %s: [color=#555555](empty)[/color]" % slot.capitalize())
 
 	# Show total equipment bonuses
 	var bonuses = _calculate_equipment_bonuses(equipped)
 	if bonuses.attack > 0 or bonuses.defense > 0:
 		display_game("")
-		display_game("[color=#90EE90]Total Gear Bonuses: +%d Attack, +%d Defense[/color]" % [bonuses.attack, bonuses.defense])
+		display_game("[color=#00FF00]Total Gear Bonuses: +%d Attack, +%d Defense[/color]" % [bonuses.attack, bonuses.defense])
 
 	# Show inventory items with comparison hints
 	display_game("")
-	display_game("[color=#4A90E2]Backpack (%d/20):[/color]" % inventory.size())
+	display_game("[color=#00FFFF]Backpack (%d/20):[/color]" % inventory.size())
 	if inventory.is_empty():
-		display_game("  [color=#666666](empty)[/color]")
+		display_game("  [color=#555555](empty)[/color]")
 	else:
 		for i in range(inventory.size()):
 			var item = inventory[i]
@@ -2821,21 +2842,21 @@ func display_inventory():
 				if equipped_item != null and equipped_item is Dictionary:
 					var equipped_level = equipped_item.get("level", 1)
 					if item_level > equipped_level:
-						compare_text = "[color=#90EE90]↑[/color]"
+						compare_text = "[color=#00FF00]↑[/color]"
 					elif item_level < equipped_level:
 						compare_text = "[color=#FF6666]↓[/color]"
 					else:
 						compare_text = "[color=#FFFF66]=[/color]"
 				else:
-					compare_text = "[color=#90EE90]NEW[/color]"
+					compare_text = "[color=#00FF00]NEW[/color]"
 
 			display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
 				i + 1, rarity_color, item.get("name", "Unknown"), item_level, compare_text
 			])
 
 	display_game("")
-	display_game("[color=#95A5A6]Q=Inspect, W=Use, E=Equip, R=Unequip, 1=Discard, Space=Back[/color]")
-	display_game("[color=#95A5A6]Inspect equipped: type slot name (e.g., 'weapon')[/color]")
+	display_game("[color=#808080]Q=Inspect, W=Use, E=Equip, R=Unequip, 1=Discard, Space=Back[/color]")
+	display_game("[color=#808080]Inspect equipped: type slot name (e.g., 'weapon')[/color]")
 
 func _get_item_bonus_summary(item: Dictionary) -> String:
 	"""Get a short summary of item bonuses"""
@@ -2883,7 +2904,7 @@ func prompt_inventory_action(action_type: String):
 	match action_type:
 		"inspect":
 			if inventory.is_empty() and _count_equipped_items(equipped) == 0:
-				display_game("[color=#E74C3C]No items to inspect.[/color]")
+				display_game("[color=#FF0000]No items to inspect.[/color]")
 				return
 			pending_inventory_action = "inspect_item"
 			display_inventory()  # Show inventory for selection
@@ -2892,7 +2913,7 @@ func prompt_inventory_action(action_type: String):
 
 		"use":
 			if inventory.is_empty():
-				display_game("[color=#E74C3C]No items to use.[/color]")
+				display_game("[color=#FF0000]No items to use.[/color]")
 				return
 			pending_inventory_action = "use_item"
 			display_inventory()  # Show inventory for selection
@@ -2901,7 +2922,7 @@ func prompt_inventory_action(action_type: String):
 
 		"equip":
 			if inventory.is_empty():
-				display_game("[color=#E74C3C]No items to equip.[/color]")
+				display_game("[color=#FF0000]No items to equip.[/color]")
 				return
 			pending_inventory_action = "equip_item"
 			display_inventory()  # Show inventory for selection
@@ -2914,7 +2935,7 @@ func prompt_inventory_action(action_type: String):
 				if equipped.get(slot) != null:
 					slots_with_items.append(slot)
 			if slots_with_items.is_empty():
-				display_game("[color=#E74C3C]No items equipped.[/color]")
+				display_game("[color=#FF0000]No items equipped.[/color]")
 				return
 			pending_inventory_action = "unequip_item"
 			display_inventory()  # Show inventory for selection
@@ -2924,7 +2945,7 @@ func prompt_inventory_action(action_type: String):
 
 		"discard":
 			if inventory.is_empty():
-				display_game("[color=#E74C3C]No items to discard.[/color]")
+				display_game("[color=#FF0000]No items to discard.[/color]")
 				return
 			pending_inventory_action = "discard_item"
 			display_inventory()  # Show inventory for selection
@@ -2944,7 +2965,7 @@ func select_inventory_item(index: int):
 	var inventory = character_data.get("inventory", [])
 
 	if index < 0 or index >= inventory.size():
-		display_game("[color=#E74C3C]Invalid item number.[/color]")
+		display_game("[color=#FF0000]Invalid item number.[/color]")
 		display_inventory()  # Re-show inventory on error
 		return
 
@@ -2978,7 +2999,7 @@ func cancel_inventory_action():
 	"""Cancel pending inventory action"""
 	if pending_inventory_action != "":
 		pending_inventory_action = ""
-		display_game("[color=#95A5A6]Action cancelled.[/color]")
+		display_game("[color=#808080]Action cancelled.[/color]")
 		display_inventory()  # Re-show inventory
 		update_action_bar()
 
@@ -3229,12 +3250,12 @@ func handle_server_message(message: Dictionary):
 
 	match msg_type:
 		"welcome":
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			game_state = GameState.LOGIN_SCREEN
 
 		"register_success":
 			if login_status:
-				login_status.text = "[color=#2ECC71]Account created! Please log in.[/color]"
+				login_status.text = "[color=#00FF00]Account created! Please log in.[/color]"
 			# Clear password fields after successful registration
 			if password_field:
 				password_field.text = ""
@@ -3243,16 +3264,16 @@ func handle_server_message(message: Dictionary):
 
 		"register_failed":
 			if login_status:
-				login_status.text = "[color=#E74C3C]%s[/color]" % message.get("reason", "Registration failed")
+				login_status.text = "[color=#FF0000]%s[/color]" % message.get("reason", "Registration failed")
 
 		"login_success":
 			username = message.get("username", "")
-			display_game("[color=#2ECC71]Logged in as %s[/color]" % username)
+			display_game("[color=#00FF00]Logged in as %s[/color]" % username)
 			game_state = GameState.CHARACTER_SELECT
 
 		"login_failed":
 			if login_status:
-				login_status.text = "[color=#E74C3C]%s[/color]" % message.get("reason", "Login failed")
+				login_status.text = "[color=#FF0000]%s[/color]" % message.get("reason", "Login failed")
 
 		"character_list":
 			character_list = message.get("characters", [])
@@ -3272,7 +3293,7 @@ func handle_server_message(message: Dictionary):
 			update_resource_bar()
 			update_player_xp_bar()
 			update_currency_display()
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			display_character_status()
 			request_player_list()
 
@@ -3289,12 +3310,12 @@ func handle_server_message(message: Dictionary):
 			update_resource_bar()
 			update_player_xp_bar()
 			update_currency_display()
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", ""))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			display_character_status()
 			request_player_list()
 
 		"character_deleted":
-			display_game("[color=#F39C12]%s[/color]" % message.get("message", "Character deleted"))
+			display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Character deleted"))
 
 		"logout_character_success":
 			has_character = false
@@ -3303,7 +3324,7 @@ func handle_server_message(message: Dictionary):
 			game_state = GameState.CHARACTER_SELECT
 			update_action_bar()
 			show_enemy_hp_bar(false)
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Logged out of character"))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Logged out of character"))
 
 		"logout_account_success":
 			has_character = false
@@ -3315,7 +3336,7 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 			show_enemy_hp_bar(false)
 			show_login_panel()
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Logged out"))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Logged out"))
 
 		"permadeath":
 			game_state = GameState.DEAD
@@ -3365,7 +3386,7 @@ func handle_server_message(message: Dictionary):
 		"chat":
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
-			display_chat("[color=#4A90E2]%s:[/color] %s" % [sender, text])
+			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender, text])
 			# Refresh player list when someone joins, leaves, or dies
 			if "entered the realm" in text or "left the realm" in text or "has fallen" in text:
 				request_player_list()
@@ -3397,12 +3418,12 @@ func handle_server_message(message: Dictionary):
 
 		"error":
 			var error_msg = message.get("message", "Unknown error")
-			display_game("[color=#E74C3C]Error: %s[/color]" % error_msg)
+			display_game("[color=#FF0000]Error: %s[/color]" % error_msg)
 			# Update status labels if on relevant screen
 			if char_create_status and char_create_panel.visible:
-				char_create_status.text = "[color=#E74C3C]%s[/color]" % error_msg
+				char_create_status.text = "[color=#FF0000]%s[/color]" % error_msg
 			if char_select_status and char_select_panel.visible:
-				char_select_status.text = "[color=#E74C3C]%s[/color]" % error_msg
+				char_select_status.text = "[color=#FF0000]%s[/color]" % error_msg
 
 		"combat_start":
 			in_combat = true
@@ -3484,7 +3505,7 @@ func handle_server_message(message: Dictionary):
 				if message.get("flock_incoming", false):
 					flock_pending = true
 					flock_monster_name = message.get("flock_monster", "enemy")
-					display_game("[color=#FF6B6B]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
+					display_game("[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
 					display_game("[color=#FFD700]Press Space to continue...[/color]")
 				else:
 					# Combat chain complete - calculate total XP gain for bar display
@@ -3507,13 +3528,13 @@ func handle_server_message(message: Dictionary):
 
 					# Pause to let player read rewards
 					pending_continue = true
-					display_game("[color=#95A5A6]Press Space to continue...[/color]")
+					display_game("[color=#808080]Press Space to continue...[/color]")
 			elif message.get("fled", false):
 				# Fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
 				display_game("[color=#FFD700]You escaped from combat![/color]")
 				pending_continue = true
-				display_game("[color=#95A5A6]Press Space to continue...[/color]")
+				display_game("[color=#808080]Press Space to continue...[/color]")
 			else:
 				# Defeat handled by permadeath message
 				pass
@@ -3567,11 +3588,11 @@ func handle_server_message(message: Dictionary):
 			handle_quest_list(message)
 
 		"quest_accepted":
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Quest accepted!"))
+			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Quest accepted!"))
 			update_action_bar()
 
 		"quest_abandoned":
-			display_game("[color=#F39C12]%s[/color]" % message.get("message", "Quest abandoned."))
+			display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Quest abandoned."))
 
 		"quest_turned_in":
 			handle_quest_turned_in(message)
@@ -3592,11 +3613,11 @@ func _on_send_button_pressed():
 
 func _on_input_focus_entered():
 	if has_character and game_state == GameState.PLAYING:
-		display_game("[color=#95A5A6]Chat mode - type to send messages[/color]")
+		display_game("[color=#808080]Chat mode - type to send messages[/color]")
 
 func _on_input_focus_exited():
 	if has_character and game_state == GameState.PLAYING:
-		display_game("[color=#95A5A6]Movement mode - use numpad to move[/color]")
+		display_game("[color=#808080]Movement mode - use numpad to move[/color]")
 
 func _on_clickable_area_clicked(event: InputEvent):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -3645,7 +3666,7 @@ func send_input():
 	var is_combat_command = first_word in combat_keywords
 
 	if in_combat and is_combat_command:
-		display_game("[color=#F39C12]> %s[/color]" % text)
+		display_game("[color=#00FFFF]> %s[/color]" % text)
 		process_command(text)
 		return
 
@@ -3654,7 +3675,7 @@ func send_input():
 		send_to_server({"type": "chat", "message": text})
 		return
 
-	display_game("[color=#F39C12]> %s[/color]" % text)
+	display_game("[color=#00FFFF]> %s[/color]" % text)
 	process_command(text)
 
 func process_inventory_action(action: String, input_text: String):
@@ -3668,28 +3689,28 @@ func process_inventory_action(action: String, input_text: String):
 				var index = int(input_text) - 1  # Convert to 0-based
 				send_to_server({"type": "inventory_use", "index": index})
 			else:
-				display_game("[color=#E74C3C]Invalid item number.[/color]")
+				display_game("[color=#FF0000]Invalid item number.[/color]")
 
 		"equip_item":
 			if input_text.is_valid_int():
 				var index = int(input_text) - 1
 				send_to_server({"type": "inventory_equip", "index": index})
 			else:
-				display_game("[color=#E74C3C]Invalid item number.[/color]")
+				display_game("[color=#FF0000]Invalid item number.[/color]")
 
 		"unequip_item":
 			var slot = input_text.to_lower().strip_edges()
 			if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
 				send_to_server({"type": "inventory_unequip", "slot": slot})
 			else:
-				display_game("[color=#E74C3C]Invalid slot. Use: weapon, armor, helm, shield, ring, amulet[/color]")
+				display_game("[color=#FF0000]Invalid slot. Use: weapon, armor, helm, shield, ring, amulet[/color]")
 
 		"discard_item":
 			if input_text.is_valid_int():
 				var index = int(input_text) - 1
 				send_to_server({"type": "inventory_discard", "index": index})
 			else:
-				display_game("[color=#E74C3C]Invalid item number.[/color]")
+				display_game("[color=#FF0000]Invalid item number.[/color]")
 
 func inspect_item(input_text: String):
 	"""Inspect an item to see its details"""
@@ -3704,17 +3725,17 @@ func inspect_item(input_text: String):
 		item = equipped.get(slot)
 		source = "equipped in %s slot" % slot
 		if item == null:
-			display_game("[color=#E74C3C]Nothing equipped in %s slot.[/color]" % slot)
+			display_game("[color=#FF0000]Nothing equipped in %s slot.[/color]" % slot)
 			return
 	elif input_text.is_valid_int():
 		var index = int(input_text) - 1
 		if index < 0 or index >= inventory.size():
-			display_game("[color=#E74C3C]Invalid item number.[/color]")
+			display_game("[color=#FF0000]Invalid item number.[/color]")
 			return
 		item = inventory[index]
 		source = "in backpack"
 	else:
-		display_game("[color=#E74C3C]Enter a number (1-%d) or slot name.[/color]" % inventory.size())
+		display_game("[color=#FF0000]Enter a number (1-%d) or slot name.[/color]" % inventory.size())
 		return
 
 	# Display item details
@@ -3731,12 +3752,12 @@ func display_item_details(item: Dictionary, source: String):
 
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
-	display_game("[color=#95A5A6]%s[/color]" % source.capitalize())
+	display_game("[color=#808080]%s[/color]" % source.capitalize())
 	display_game("")
-	display_game("[color=#4A90E2]Type:[/color] %s" % _get_item_type_description(item_type))
-	display_game("[color=#4A90E2]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
-	display_game("[color=#4A90E2]Level:[/color] %d" % level)
-	display_game("[color=#4A90E2]Value:[/color] %d gold" % value)
+	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
+	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
+	display_game("[color=#00FFFF]Level:[/color] %d" % level)
+	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
 	display_game("")
 	display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
 	display_game("")
@@ -3839,13 +3860,13 @@ func process_command(text: String):
 			send_to_server({"type": "combat", "command": "flee"})
 		"who", "players":
 			request_player_list()
-			display_game("[color=#95A5A6]Refreshing player list...[/color]")
+			display_game("[color=#808080]Refreshing player list...[/color]")
 		"examine", "ex":
 			if parts.size() > 1:
 				var target = parts[1]
 				send_to_server({"type": "examine_player", "name": target})
 			else:
-				display_game("[color=#E74C3C]Usage: examine <playername>[/color]")
+				display_game("[color=#FF0000]Usage: examine <playername>[/color]")
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -3855,18 +3876,18 @@ func connect_to_server():
 	var status = connection.get_status()
 
 	if status == StreamPeerTCP.STATUS_CONNECTED:
-		display_game("[color=#F39C12]Already connected![/color]")
+		display_game("[color=#00FFFF]Already connected![/color]")
 		return
 
 	if status == StreamPeerTCP.STATUS_CONNECTING:
-		display_game("[color=#F39C12]Connection in progress...[/color]")
+		display_game("[color=#00FFFF]Connection in progress...[/color]")
 		return
 #changed from 127.0.0.1
 	display_game("Connecting to 24.158.80.95:9080...")
 #changed from 127.0.0.1
 	var error = connection.connect_to_host("24.158.80.95", 9080)
 	if error != OK:
-		display_game("[color=#E74C3C]Failed! Error: %d[/color]" % error)
+		display_game("[color=#FF0000]Failed! Error: %d[/color]" % error)
 		return
 
 	display_game("Waiting for connection...")
@@ -3884,7 +3905,7 @@ func reset_connection_state():
 
 func send_to_server(data: Dictionary):
 	if not connected:
-		display_game("[color=#E74C3C]Not connected![/color]")
+		display_game("[color=#FF0000]Not connected![/color]")
 		return
 
 	var json_str = JSON.stringify(data) + "\n"
@@ -3942,9 +3963,9 @@ func display_character_status():
 	text += "Race: %s\n" % char.get("race", "Human")
 	text += "Class: %s\n" % char.get("class", "Unknown")
 	text += "Level: %d\n" % char.get("level", 1)
-	text += "[color=#9B59B6]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
+	text += "[color=#FF00FF]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
 	text += "HP: %d/%d (%s)\n" % [char.get("current_hp", 0), char.get("max_hp", 0), char.get("health_state", "Unknown")]
-	text += "[color=#FFD700]Mana:[/color] %d/%d  [color=#FF6B6B]Stamina:[/color] %d/%d  [color=#90EE90]Energy:[/color] %d/%d\n" % [
+	text += "[color=#FFD700]Mana:[/color] %d/%d  [color=#FF4444]Stamina:[/color] %d/%d  [color=#00FF00]Energy:[/color] %d/%d\n" % [
 		char.get("current_mana", 0), char.get("max_mana", 0),
 		char.get("current_stamina", 0), char.get("max_stamina", 0),
 		char.get("current_energy", 0), char.get("max_energy", 0)
@@ -3954,26 +3975,26 @@ func display_character_status():
 	text += "Monsters Killed: %d\n\n" % char.get("monsters_killed", 0)
 
 	# Base stats with equipment bonuses shown
-	text += "[color=#4A90E2]Base Stats:[/color]\n"
+	text += "[color=#00FFFF]Base Stats:[/color]\n"
 	text += "  STR: %d" % stats.get("strength", 0)
 	if bonuses.strength > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.strength
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.strength
 	text += "  CON: %d" % stats.get("constitution", 0)
 	if bonuses.constitution > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.constitution
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.constitution
 	text += "  DEX: %d" % stats.get("dexterity", 0)
 	if bonuses.dexterity > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.dexterity
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.dexterity
 	text += "\n"
 	text += "  INT: %d" % stats.get("intelligence", 0)
 	if bonuses.intelligence > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.intelligence
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.intelligence
 	text += "  WIS: %d" % stats.get("wisdom", 0)
 	if bonuses.wisdom > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.wisdom
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.wisdom
 	text += "  WIT: %d" % stats.get("wits", stats.get("charisma", 0))
 	if bonuses.wits > 0:
-		text += " [color=#90EE90](+%d)[/color]" % bonuses.wits
+		text += " [color=#00FF00](+%d)[/color]" % bonuses.wits
 	text += "\n\n"
 
 	# Combat stats
@@ -3983,11 +4004,11 @@ func display_character_status():
 	text += "[color=#FF6666]Combat Stats:[/color]\n"
 	text += "  Attack Power: %d" % total_attack
 	if bonuses.attack > 0:
-		text += " [color=#90EE90](+%d from gear)[/color]" % bonuses.attack
+		text += " [color=#00FF00](+%d from gear)[/color]" % bonuses.attack
 	text += "\n"
 	text += "  Defense: %d" % total_defense
 	if bonuses.defense > 0:
-		text += " [color=#90EE90](+%d from gear)[/color]" % bonuses.defense
+		text += " [color=#00FF00](+%d from gear)[/color]" % bonuses.defense
 	text += "\n"
 	text += "  Damage: %d-%d\n" % [int(total_attack * 0.8), int(total_attack * 1.2)]
 
@@ -4058,29 +4079,29 @@ func show_help():
 	var help_text = """
 [b]Available Commands:[/b]
 
-[color=#4A90E2]Movement:[/color]
+[color=#00FFFF]Movement:[/color]
   Press Escape to toggle movement mode
   Use NUMPAD: 7 8 9 = NW N NE
               4 5 6 = W stay E
               1 2 3 = SW S SE
 
-[color=#4A90E2]Chat:[/color]
+[color=#00FFFF]Chat:[/color]
   Just type and press Enter!
 
-[color=#4A90E2]Action Bar:[/color]
+[color=#00FFFF]Action Bar:[/color]
   [Space] = Primary action (Status/Attack)
   [Q][W][E][R] = Quick actions
   [1][2][3][4] = Additional actions
 
-[color=#4A90E2]Inventory:[/color]
+[color=#00FFFF]Inventory:[/color]
   inventory/inv/i - Open inventory
   [Q] Inventory in movement mode
 
-[color=#4A90E2]Social:[/color]
+[color=#00FFFF]Social:[/color]
   who/players - Refresh player list
   examine <name> - View player stats
 
-[color=#4A90E2]Other:[/color]
+[color=#00FFFF]Other:[/color]
   help - This help
   status - Show stats
   clear - Clear screens
@@ -4120,26 +4141,26 @@ func show_help():
 
 [b][color=#FFD700]== COMBAT MECHANICS ==[/color][/b]
 
-[color=#4A90E2]Attack Damage:[/color]
+[color=#00FFFF]Attack Damage:[/color]
   Base damage = STR × weapon modifier
   Final damage = Base × (1 + level/50) - enemy defense
   Critical hits deal 1.5x damage (chance based on DEX)
 
-[color=#4A90E2]Defense:[/color]
+[color=#00FFFF]Defense:[/color]
   Damage reduction = CON% (max 30%)
   Armor adds flat reduction
   Block chance when defending = 25% + DEX/2
 
-[color=#4A90E2]Hit Chance:[/color]
+[color=#00FFFF]Hit Chance:[/color]
   Base hit = 75% + (your DEX - enemy DEX)
   Minimum 50%, maximum 95%
 
-[color=#4A90E2]Flee Chance:[/color]
+[color=#00FFFF]Flee Chance:[/color]
   Base flee = 40% + (your DEX × 2) - (enemy level / 10)
   Defending enemies: +20% flee chance
   Failed flee = enemy gets free attack
 
-[color=#4A90E2]Combat Tips:[/color]
+[color=#00FFFF]Combat Tips:[/color]
   • Defend reduces damage by 50% and boosts next attack
   • Special attacks cost mana but deal bonus damage
   • Monster level affects all their stats
@@ -4298,7 +4319,7 @@ func handle_trading_post_start(message: Dictionary):
 	display_game("")
 	display_game("Services: [Q] Shop | [W] Quests | [E] Recharge (50%% off)")
 	if avail_quests > 0:
-		display_game("[color=#90EE90]%d quest(s) available[/color]" % avail_quests)
+		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
 		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
 	display_game("")
@@ -4358,7 +4379,7 @@ func handle_quest_list(message: Dictionary):
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== %s - %s =====[/color]" % [quest_giver, tp_name])
-	display_game("[color=#888888]Active Quests: %d / %d[/color]" % [active_count, max_quests])
+	display_game("[color=#808080]Active Quests: %d / %d[/color]" % [active_count, max_quests])
 	display_game("")
 
 	# Show quests ready to turn in first
@@ -4375,7 +4396,7 @@ func handle_quest_list(message: Dictionary):
 
 	# Show available quests
 	if available_quests.size() > 0:
-		display_game("[color=#90EE90]=== Available Quests ===[/color]")
+		display_game("[color=#00FF00]=== Available Quests ===[/color]")
 		var offset = quests_to_turn_in.size()
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
@@ -4384,11 +4405,11 @@ func handle_quest_list(message: Dictionary):
 			var reward_str = _format_rewards(rewards)
 			display_game("[%d] [color=#FFD700]%s[/color]%s" % [offset + i + 1, quest.get("name", "Quest"), daily_tag])
 			display_game("    %s" % quest.get("description", ""))
-			display_game("    [color=#90EE90]Rewards: %s[/color]" % reward_str)
+			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")
 		display_game("Type number to accept quest")
 	elif quests_to_turn_in.size() == 0:
-		display_game("[color=#888888]No quests available at this time.[/color]")
+		display_game("[color=#808080]No quests available at this time.[/color]")
 
 	display_game("")
 	display_game("[Space] Back")
@@ -4414,13 +4435,13 @@ func handle_quest_turned_in(message: Dictionary):
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== Quest Complete! =====[/color]")
-	display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Quest turned in!"))
+	display_game("[color=#00FF00]%s[/color]" % message.get("message", "Quest turned in!"))
 	display_game("")
 
 	if multiplier > 1.0:
 		display_game("[color=#FF6600]Hotzone Bonus: x%.1f[/color]" % multiplier)
 
-	display_game("[color=#9B59B6]+%d XP[/color]" % rewards.get("xp", 0))
+	display_game("[color=#FF00FF]+%d XP[/color]" % rewards.get("xp", 0))
 	display_game("[color=#FFD700]+%d Gold[/color]" % rewards.get("gold", 0))
 	if rewards.get("gems", 0) > 0:
 		display_game("[color=#00FFFF]+%d Gems[/color]" % rewards.gems)
@@ -4452,7 +4473,7 @@ func handle_quest_log(message: Dictionary):
 	game_output.clear()
 	display_game(log_text)
 	display_game("")
-	display_game("[color=#888888]Press [Space] to continue[/color]")
+	display_game("[color=#808080]Press [Space] to continue[/color]")
 
 	pending_continue = true
 	update_action_bar()
@@ -4482,4 +4503,4 @@ func select_quest_option(index: int):
 		if quest_id != "":
 			send_to_server({"type": "quest_accept", "quest_id": quest_id})
 	else:
-		display_game("[color=#E74C3C]Invalid selection[/color]")
+		display_game("[color=#FF0000]Invalid selection[/color]")

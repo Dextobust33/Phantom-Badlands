@@ -233,7 +233,7 @@ func format_quest_log(character: Character) -> String:
 		character.get_active_quest_count(), Character.MAX_ACTIVE_QUESTS]
 
 	if character.active_quests.is_empty():
-		output += "[color=#888888]No active quests. Visit a Trading Post to accept quests.[/color]\n"
+		output += "[color=#808080]No active quests. Visit a Trading Post to accept quests.[/color]\n"
 		return output
 
 	var index = 1
@@ -266,7 +266,7 @@ func format_quest_log(character: Character) -> String:
 		var rewards = quest.get("rewards", {})
 		var reward_parts = []
 		if rewards.get("xp", 0) > 0:
-			reward_parts.append("[color=#9B59B6]%d XP[/color]" % rewards.xp)
+			reward_parts.append("[color=#FF00FF]%d XP[/color]" % rewards.xp)
 		if rewards.get("gold", 0) > 0:
 			reward_parts.append("[color=#FFD700]%d Gold[/color]" % rewards.gold)
 		if rewards.get("gems", 0) > 0:
@@ -289,7 +289,7 @@ func format_quest_log(character: Character) -> String:
 func format_available_quests(quests: Array, character: Character) -> String:
 	"""Format available quests for display at a Trading Post"""
 	if quests.is_empty():
-		return "[color=#888888]No quests available at this time.[/color]\n"
+		return "[color=#808080]No quests available at this time.[/color]\n"
 
 	var output = ""
 	var index = 1
@@ -308,7 +308,7 @@ func format_available_quests(quests: Array, character: Character) -> String:
 		if rewards.get("gems", 0) > 0:
 			reward_parts.append("%d Gems" % rewards.gems)
 		if not reward_parts.is_empty():
-			output += "    [color=#90EE90]Rewards: %s[/color]\n" % ", ".join(reward_parts)
+			output += "    [color=#00FF00]Rewards: %s[/color]\n" % ", ".join(reward_parts)
 
 		output += "\n"
 		index += 1

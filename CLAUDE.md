@@ -318,3 +318,41 @@ const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 var quest_db: Node = null
 quest_db = QuestDatabaseScript.new()
 ```
+
+## MUD Terminal Theme (Aardwolf/Alter Aeon Style)
+
+**Theme Overview:**
+The client uses a classic MUD terminal aesthetic with black backgrounds and colorful text. This style is inspired by Aardwolf MUD and Alter Aeon.
+
+**Color Palette:**
+| Element | Color | Hex Code |
+|---------|-------|----------|
+| Background | Black | `#000000` |
+| Default Text | Terminal Green | `#33FF33` |
+| Headers/Important | Bright Yellow | `#FFFF00` |
+| Gold/Rewards | Gold | `#FFD700` |
+| Success/Bonuses | Bright Green | `#00FF00` |
+| Errors/Danger | Bright Red | `#FF0000` |
+| Combat Damage (Player) | Bright Yellow | `#FFFF00` |
+| Combat Damage (Enemy) | Bright Red | `#FF4444` |
+| XP/Magical | Magenta | `#FF00FF` |
+| Info/Cyan Elements | Cyan | `#00FFFF` |
+| Muted/Hints | Gray | `#808080` |
+| Disabled | Dark Gray | `#555555` |
+| Gems | Cyan | `#00FFFF` |
+| Orange Elements | Orange | `#FFA500` |
+
+**Key Design Decisions:**
+- Damage numbers use bright, contrasting colors for visibility
+- Player damage dealt: Yellow (#FFFF00) for standout
+- Monster damage received: Bright red (#FF4444) for threat visibility
+- Success messages in bright green stand out against terminal green text
+- Panel borders use dark green (#008000) for MUD aesthetic
+
+**Files Modified for Theme:**
+- `client/client.tscn` - Panel backgrounds to black, default text to green, border colors
+- `client/client.gd` - BBCode color replacements throughout
+- `server/server.gd` - Chat and system message colors
+- `shared/combat_manager.gd` - Combat message colors
+- `shared/quest_manager.gd` - Quest display colors
+- `shared/world_system.gd` - Map and location description colors

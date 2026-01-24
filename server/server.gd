@@ -8,6 +8,8 @@ const PORT = 9080
 @onready var player_count_label = $VBox/StatusRow/PlayerCountLabel
 @onready var player_list = $VBox/PlayerList
 @onready var server_log = $VBox/ServerLog
+@onready var restart_button = $VBox/ButtonRow/RestartButton
+@onready var confirm_dialog = $ConfirmDialog
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
@@ -84,12 +86,68 @@ func _ready():
 	log_message("Waiting for connections...")
 	update_player_list()
 
+	# Connect restart button and confirmation dialog
+	if restart_button:
+		restart_button.pressed.connect(_on_restart_button_pressed)
+	if confirm_dialog:
+		confirm_dialog.confirmed.connect(_on_restart_confirmed)
+
 func log_message(msg: String):
 	"""Log a message to console and server UI."""
 	print(msg)
 	if server_log:
 		var timestamp = Time.get_time_string_from_system()
-		server_log.append_text("[color=#888888][%s][/color] %s\n" % [timestamp, msg])
+		server_log.append_text("[color=#808080][%s][/color] %s\n" % [timestamp, msg])
+
+func _on_restart_button_pressed():
+	"""Show confirmation dialog before restarting."""
+	if confirm_dialog:
+		confirm_dialog.popup_centered()
+
+func _on_restart_confirmed():
+	"""Restart the server after confirmation."""
+	log_message("Server restart initiated...")
+
+	# Save all active characters
+	save_all_active_characters()
+
+	# Notify all connected players
+	for peer_id in peers.keys():
+		send_to_peer(peer_id, {
+			"type": "server_message",
+			"message": "[color=#FFFF00]Server is restarting...[/color]"
+		})
+
+	# Disconnect all peers
+	var peer_ids = peers.keys().duplicate()
+	for peer_id in peer_ids:
+		handle_disconnect(peer_id)
+
+	# Stop the server
+	server.stop()
+	log_message("Server stopped.")
+
+	# Clear all state
+	peers.clear()
+	characters.clear()
+	pending_flocks.clear()
+	pending_flock_drops.clear()
+	pending_flock_gems.clear()
+	at_merchant.clear()
+	at_trading_post.clear()
+	next_peer_id = 1
+	auto_save_timer = 0.0
+
+	# Restart the server
+	var error = server.listen(PORT)
+	if error != OK:
+		log_message("ERROR: Failed to restart server on port %d" % PORT)
+		return
+
+	log_message("Server restarted successfully!")
+	log_message("Listening on port: %d" % PORT)
+	log_message("Waiting for connections...")
+	update_player_list()
 
 func update_player_list():
 	"""Update the player list UI with connected players."""
@@ -99,7 +157,7 @@ func update_player_list():
 	if player_list:
 		player_list.clear()
 		if characters.size() == 0:
-			player_list.append_text("[color=#666666]No players connected[/color]")
+			player_list.append_text("[color=#555555]No players connected[/color]")
 		else:
 			for peer_id in characters:
 				var char = characters[peer_id]
@@ -109,7 +167,7 @@ func update_player_list():
 				var level = char.level
 				var race = char.race
 				var cls = char.class_type
-				player_list.append_text("[color=#4A90E2]%s[/color] - %s %s Lv.%d [color=#666666](%s)[/color]\n" % [
+				player_list.append_text("[color=#00FFFF]%s[/color] - %s %s Lv.%d [color=#555555](%s)[/color]\n" % [
 					char_name, race, cls, level, username
 				])
 
@@ -386,7 +444,7 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	})
 
 	# Broadcast join message to other players
-	broadcast_chat("[color=#90EE90]%s has entered the realm.[/color]" % char_name)
+	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % char_name)
 
 	send_location_update(peer_id)
 
@@ -493,7 +551,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	})
 
 	# Broadcast join message to other players
-	broadcast_chat("[color=#90EE90]%s has entered the realm.[/color]" % char_name)
+	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % char_name)
 
 	send_location_update(peer_id)
 
@@ -631,7 +689,7 @@ func handle_logout_character(peer_id: int):
 		print("Character logout: %s" % char_name)
 		characters.erase(peer_id)
 		# Broadcast after removal
-		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
+		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
 
 	peers[peer_id].character_name = ""
 
@@ -663,7 +721,7 @@ func handle_logout_account(peer_id: int):
 		print("Character logout: %s" % char_name)
 		characters.erase(peer_id)
 		# Broadcast after removal
-		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
+		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
 
 	var username = peers[peer_id].username
 	print("Account logout: %s" % username)
@@ -731,6 +789,15 @@ func handle_move(peer_id: int, message: Dictionary):
 
 	# Calculate new position
 	var new_pos = world_system.move_player(old_x, old_y, direction)
+
+	# Check for player collision (can't move onto another player's space)
+	if is_player_at(new_pos.x, new_pos.y, peer_id):
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Another player is blocking that path!"
+		})
+		return
+
 	character.x = new_pos.x
 	character.y = new_pos.y
 
@@ -745,6 +812,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Send location and character updates
 	send_location_update(peer_id)
 	send_character_update(peer_id)
+
+	# Notify nearby players of the movement (so they see us on their map)
+	send_nearby_players_map_update(peer_id, old_x, old_y)
 
 	# Check for Trading Post first (safe zone with services)
 	if world_system.is_trading_post_tile(new_pos.x, new_pos.y):
@@ -791,7 +861,7 @@ func handle_hunt(peer_id: int):
 	if terrain_info.safe:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]This is a safe area. No monsters can be found here.[/color]",
+			"message": "[color=#808080]This is a safe area. No monsters can be found here.[/color]",
 			"clear_output": true
 		})
 		send_location_update(peer_id)
@@ -812,7 +882,7 @@ func handle_hunt(peer_id: int):
 		# Don't send location update - player hasn't moved, keep the message visible
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]You search the area but are unable to locate any monsters.[/color]",
+			"message": "[color=#808080]You search the area but are unable to locate any monsters.[/color]",
 			"clear_output": true
 		})
 
@@ -835,7 +905,7 @@ func handle_rest(peer_id: int):
 	if character.current_hp >= character.max_hp:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]You are already at full health.[/color]",
+			"message": "[color=#808080]You are already at full health.[/color]",
 			"clear_output": true
 		})
 		return
@@ -849,7 +919,7 @@ func handle_rest(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#90EE90]You rest and recover %d HP.[/color]" % heal_amount,
+		"message": "[color=#00FF00]You rest and recover %d HP.[/color]" % heal_amount,
 		"clear_output": true
 	})
 
@@ -864,7 +934,7 @@ func handle_rest(peer_id: int):
 	if ambush_roll < 15:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FF6B6B]You are ambushed while resting![/color]"
+			"message": "[color=#FF4444]You are ambushed while resting![/color]"
 		})
 		trigger_encounter(peer_id)
 
@@ -1134,7 +1204,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	})
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
-	var death_message = "[color=#FF6B6B]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
+	var death_message = "[color=#FF4444]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
 	for pid in peers.keys():
 		send_to_peer(pid, {
 			"type": "chat",
@@ -1163,8 +1233,11 @@ func send_location_update(peer_id: int):
 
 	var character = characters[peer_id]
 
+	# Get nearby players for map display (within map radius of 6)
+	var nearby_players = get_nearby_players(peer_id, 6)
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, 7)
+	var map_display = world_system.generate_map_display(character.x, character.y, 6, nearby_players)
 
 	# Send map display as description
 	send_to_peer(peer_id, {
@@ -1173,6 +1246,68 @@ func send_location_update(peer_id: int):
 		"y": character.y,
 		"description": map_display
 	})
+
+func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
+	"""Get list of other players within radius of the given peer's character."""
+	var result = []
+	if not characters.has(peer_id):
+		return result
+
+	var character = characters[peer_id]
+	var my_x = character.x
+	var my_y = character.y
+
+	for other_peer_id in characters.keys():
+		if other_peer_id == peer_id:
+			continue  # Skip self
+
+		var other_char = characters[other_peer_id]
+		var dx = abs(other_char.x - my_x)
+		var dy = abs(other_char.y - my_y)
+
+		# Check if within map view radius
+		if dx <= radius and dy <= radius:
+			result.append({
+				"x": other_char.x,
+				"y": other_char.y,
+				"name": other_char.name,
+				"level": other_char.level
+			})
+
+	return result
+
+func is_player_at(x: int, y: int, exclude_peer_id: int = -1) -> bool:
+	"""Check if any player (other than excluded peer) is at the given coordinates."""
+	for other_peer_id in characters.keys():
+		if other_peer_id == exclude_peer_id:
+			continue  # Skip excluded peer
+		var other_char = characters[other_peer_id]
+		if other_char.x == x and other_char.y == y:
+			return true
+	return false
+
+func send_nearby_players_map_update(peer_id: int, old_x: int, old_y: int, radius: int = 6):
+	"""Send map updates to players who could see this player move."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var new_x = character.x
+	var new_y = character.y
+
+	for other_peer_id in characters.keys():
+		if other_peer_id == peer_id:
+			continue  # Skip self
+
+		var other_char = characters[other_peer_id]
+
+		# Check if other player could see either old or new position
+		var saw_old = abs(other_char.x - old_x) <= radius and abs(other_char.y - old_y) <= radius
+		var sees_new = abs(other_char.x - new_x) <= radius and abs(other_char.y - new_y) <= radius
+
+		# Send update if they could see the movement
+		if saw_old or sees_new:
+			send_location_update(other_peer_id)
 
 func send_to_peer(peer_id: int, data: Dictionary):
 	if not peers.has(peer_id):
@@ -1261,7 +1396,7 @@ func handle_disconnect(peer_id: int):
 
 	# Broadcast disconnect message (after cleanup so they don't get their own message)
 	if char_name != "":
-		broadcast_chat("[color=#E74C3C]%s has left the realm.[/color]" % char_name)
+		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
 
 func _exit_tree():
 	print("Server shutting down...")
@@ -1325,7 +1460,7 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		var gold_amount = max(10, area_level * (randi() % 10 + 5))
 		character.gold += gold_amount
 		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]     [color=#90EE90]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]     [color=#00FF00]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
 		msg += "[color=#FFD700]║[/color] You discover a hidden cache!       [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=#FFD700]Found %d gold![/color]            [color=#FFD700]║[/color]\n" % gold_amount
@@ -1341,7 +1476,7 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		character.add_item(item)
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]     [color=#90EE90]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]     [color=#00FF00]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
 		msg += "[color=#FFD700]║[/color] You discover something valuable!   [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, item.get("name", "Unknown Item")]
@@ -1422,7 +1557,7 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	msg += "[color=#FFD700]║[/color] [color=#E6CC80]%s[/color] [color=#FFD700]║[/color]\n" % adventurer
 	msg += "[color=#FFD700]║[/color] %s! [color=#FFD700]║[/color]\n" % training_msgs[stat]
 	msg += "[color=#FFD700]╠════════════════════════════════════════╣[/color]\n"
-	msg += "[color=#FFD700]║[/color] [color=#90EE90]+%d %s permanently![/color] [color=#FFD700]║[/color]\n" % [bonus, stat_name]
+	msg += "[color=#FFD700]║[/color] [color=#00FF00]+%d %s permanently![/color] [color=#FFD700]║[/color]\n" % [bonus, stat_name]
 	msg += "[color=#FFD700]╚════════════════════════════════════════╝[/color]"
 
 	send_to_peer(peer_id, {
@@ -1454,7 +1589,7 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		# Send flock encounter message with clear_output flag
 		send_to_peer(peer_id, {
 			"type": "combat_start",
-			"message": "[color=#FF6B6B]Another %s appears![/color]\n%s" % [monster.name, result.message],
+			"message": "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message],
 			"combat_state": result.combat_state,
 			"is_flock": true,
 			"clear_output": true
@@ -1502,7 +1637,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]You use %s and restore %d HP![/color]" % [item.get("name", "item"), actual_heal]
+			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item.get("name", "item"), actual_heal]
 		})
 
 		# Update character data
@@ -1510,7 +1645,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	else:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]This item cannot be used directly. Try equipping it.[/color]"
+			"message": "[color=#808080]This item cannot be used directly. Try equipping it.[/color]"
 		})
 
 func handle_inventory_equip(peer_id: int, message: Dictionary):
@@ -1549,7 +1684,7 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 	else:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#E74C3C]This item cannot be equipped.[/color]"
+			"message": "[color=#FF0000]This item cannot be equipped.[/color]"
 		})
 		return
 
@@ -1564,12 +1699,12 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 		character.add_item(old_item)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]You equip %s and unequip %s.[/color]" % [equip_item.get("name", "item"), old_item.get("name", "item")]
+			"message": "[color=#00FF00]You equip %s and unequip %s.[/color]" % [equip_item.get("name", "item"), old_item.get("name", "item")]
 		})
 	else:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]You equip %s.[/color]" % equip_item.get("name", "item")
+			"message": "[color=#00FF00]You equip %s.[/color]" % equip_item.get("name", "item")
 		})
 
 	send_character_update(peer_id)
@@ -1592,7 +1727,7 @@ func handle_inventory_unequip(peer_id: int, message: Dictionary):
 	if character.equipped[slot] == null:
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#95A5A6]Nothing equipped in that slot.[/color]"
+			"message": "[color=#808080]Nothing equipped in that slot.[/color]"
 		})
 		return
 
@@ -1610,7 +1745,7 @@ func handle_inventory_unequip(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#90EE90]You unequip %s.[/color]" % item.get("name", "item")
+		"message": "[color=#00FF00]You unequip %s.[/color]" % item.get("name", "item")
 	})
 
 	send_character_update(peer_id)
@@ -1635,7 +1770,7 @@ func handle_inventory_discard(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FF6B6B]You discard %s.[/color]" % item.get("name", "Unknown")
+		"message": "[color=#FF4444]You discard %s.[/color]" % item.get("name", "Unknown")
 	})
 
 	send_character_update(peer_id)
@@ -1843,7 +1978,7 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 		if character.gems < gem_cost:
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF6B6B]You need %d gems for %d upgrade%s. You have %d gems.[/color]" % [gem_cost, count, "s" if count > 1 else "", character.gems]
+				"message": "[color=#FF4444]You need %d gems for %d upgrade%s. You have %d gems.[/color]" % [gem_cost, count, "s" if count > 1 else "", character.gems]
 			})
 			return
 
@@ -1857,14 +1992,14 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]%s upgraded %d level%s (now +%d) for %d gems![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, gem_cost]
+			"message": "[color=#00FF00]%s upgraded %d level%s (now +%d) for %d gems![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, gem_cost]
 		})
 	else:
 		# Standard gold payment
 		if character.gold < total_cost:
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF6B6B]You need %d gold for %d upgrade%s. You have %d gold.[/color]" % [total_cost, count, "s" if count > 1 else "", character.gold]
+				"message": "[color=#FF4444]You need %d gold for %d upgrade%s. You have %d gold.[/color]" % [total_cost, count, "s" if count > 1 else "", character.gold]
 			})
 			return
 
@@ -1878,7 +2013,7 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]%s upgraded %d level%s (now +%d) for %d gold![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, total_cost]
+			"message": "[color=#00FF00]%s upgraded %d level%s (now +%d) for %d gold![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, total_cost]
 		})
 
 	send_character_update(peer_id)
@@ -1908,7 +2043,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {
 			"type": "gamble_result",
 			"success": false,
-			"message": "[color=#FF6B6B]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2),
+			"message": "[color=#FF4444]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2),
 			"gold": character.gold
 		})
 		return
@@ -1919,7 +2054,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {
 			"type": "gamble_result",
 			"success": false,
-			"message": "[color=#FF6B6B]Invalid bet! Min: %d, Max: %d gold[/color]" % [min_bet, max_bet],
+			"message": "[color=#FF4444]Invalid bet! Min: %d, Max: %d gold[/color]" % [min_bet, max_bet],
 			"gold": character.gold
 		})
 		return
@@ -1931,8 +2066,8 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	var player_total = player_dice[0] + player_dice[1] + player_dice[2]
 
 	# Build dice display
-	var dice_msg = "[color=#FF6B6B]Merchant:[/color] [%d][%d][%d] = %d\n" % [merchant_dice[0], merchant_dice[1], merchant_dice[2], merchant_total]
-	dice_msg += "[color=#90EE90]You:[/color] [%d][%d][%d] = %d\n" % [player_dice[0], player_dice[1], player_dice[2], player_total]
+	var dice_msg = "[color=#FF4444]Merchant:[/color] [%d][%d][%d] = %d\n" % [merchant_dice[0], merchant_dice[1], merchant_dice[2], merchant_total]
+	dice_msg += "[color=#00FF00]You:[/color] [%d][%d][%d] = %d\n" % [player_dice[0], player_dice[1], player_dice[2], player_total]
 
 	var result_msg = ""
 	var won = false
@@ -1944,12 +2079,12 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	if diff < -5:
 		# Bad loss - lose bet
 		character.gold -= bet_amount
-		result_msg = "[color=#FF6B6B]Crushing defeat! You lose %d gold.[/color]" % bet_amount
+		result_msg = "[color=#FF4444]Crushing defeat! You lose %d gold.[/color]" % bet_amount
 	elif diff < 0:
 		# Small loss - lose half bet
 		var loss = bet_amount / 2
 		character.gold -= loss
-		result_msg = "[color=#FF6B6B]Close, but not enough. You lose %d gold.[/color]" % loss
+		result_msg = "[color=#FF4444]Close, but not enough. You lose %d gold.[/color]" % loss
 	elif diff == 0:
 		# Tie - push (no change)
 		result_msg = "[color=#FFD700]A tie! Your bet is returned.[/color]"
@@ -1957,7 +2092,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		# Small win - win 1.5x
 		var winnings = int(bet_amount * 1.5)
 		character.gold += winnings - bet_amount
-		result_msg = "[color=#90EE90]Victory! You win %d gold![/color]" % winnings
+		result_msg = "[color=#00FF00]Victory! You win %d gold![/color]" % winnings
 		won = true
 	elif diff <= 10:
 		# Big win - win 2.5x
@@ -2012,7 +2147,7 @@ func handle_merchant_leave(peer_id: int):
 		at_merchant.erase(peer_id)
 		send_to_peer(peer_id, {
 			"type": "merchant_end",
-			"message": "[color=#95A5A6]%s waves goodbye. \"Safe travels, adventurer!\"[/color]" % merchant_name
+			"message": "[color=#808080]%s waves goodbye. \"Safe travels, adventurer!\"[/color]" % merchant_name
 		})
 
 func _get_recharge_cost(player_level: int) -> int:
@@ -2040,7 +2175,7 @@ func handle_merchant_recharge(peer_id: int):
 	if not needs_recharge:
 		send_to_peer(peer_id, {
 			"type": "merchant_message",
-			"message": "[color=#95A5A6]\"You look fully rested already, traveler!\"[/color]"
+			"message": "[color=#808080]\"You look fully rested already, traveler!\"[/color]"
 		})
 		return
 
@@ -2048,7 +2183,7 @@ func handle_merchant_recharge(peer_id: int):
 	if character.gold < cost:
 		send_to_peer(peer_id, {
 			"type": "merchant_message",
-			"message": "[color=#E74C3C]\"You don't have enough gold! Recharge costs %d gold.\"[/color]" % cost
+			"message": "[color=#FF0000]\"You don't have enough gold! Recharge costs %d gold.\"[/color]" % cost
 		})
 		return
 
@@ -2060,7 +2195,7 @@ func handle_merchant_recharge(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "merchant_message",
-		"message": "[color=#2ECC71]The merchant provides you with a revitalizing tonic![/color]\n[color=#90EE90]All resources fully restored! (-%d gold)[/color]" % cost
+		"message": "[color=#00FF00]The merchant provides you with a revitalizing tonic![/color]\n[color=#00FF00]All resources fully restored! (-%d gold)[/color]" % cost
 	})
 
 	send_character_update(peer_id)
@@ -2235,7 +2370,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 		if character.gems < gem_price:
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF6B6B]You need %d gems. You have %d gems.[/color]" % [gem_price, character.gems]
+				"message": "[color=#FF4444]You need %d gems. You have %d gems.[/color]" % [gem_price, character.gems]
 			})
 			return
 
@@ -2246,13 +2381,13 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]You purchased [/color][color=%s]%s[/color][color=#90EE90] for %d gems![/color]" % [rarity_color, item.get("name", "Unknown"), gem_price]
+			"message": "[color=#00FF00]You purchased [/color][color=%s]%s[/color][color=#00FF00] for %d gems![/color]" % [rarity_color, item.get("name", "Unknown"), gem_price]
 		})
 	else:
 		if character.gold < price:
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF6B6B]You need %d gold. You have %d gold.[/color]" % [price, character.gold]
+				"message": "[color=#FF4444]You need %d gold. You have %d gold.[/color]" % [price, character.gold]
 			})
 			return
 
@@ -2263,7 +2398,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#90EE90]You purchased [/color][color=%s]%s[/color][color=#90EE90] for %d gold![/color]" % [rarity_color, item.get("name", "Unknown"), price]
+			"message": "[color=#00FF00]You purchased [/color][color=%s]%s[/color][color=#00FF00] for %d gold![/color]" % [rarity_color, item.get("name", "Unknown"), price]
 		})
 
 	# Remove item from shop (one-time purchase)
@@ -2496,14 +2631,14 @@ func handle_trading_post_recharge(peer_id: int):
 	if not needs_recharge:
 		send_to_peer(peer_id, {
 			"type": "trading_post_message",
-			"message": "[color=#95A5A6]You are already fully rested.[/color]"
+			"message": "[color=#808080]You are already fully rested.[/color]"
 		})
 		return
 
 	if character.gold < cost:
 		send_to_peer(peer_id, {
 			"type": "trading_post_message",
-			"message": "[color=#E74C3C]You don't have enough gold! Recharge costs %d gold (50%% off).[/color]" % cost
+			"message": "[color=#FF0000]You don't have enough gold! Recharge costs %d gold (50%% off).[/color]" % cost
 		})
 		return
 
@@ -2516,7 +2651,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_message",
-		"message": "[color=#2ECC71]The healers at %s restore you completely![/color]\n[color=#90EE90]All resources fully restored! (-%d gold, 50%% discount)[/color]" % [tp.name, cost]
+		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]All resources fully restored! (-%d gold, 50%% discount)[/color]" % [tp.name, cost]
 	})
 
 	send_character_update(peer_id)
@@ -2532,7 +2667,7 @@ func handle_trading_post_leave(peer_id: int):
 			at_merchant.erase(peer_id)
 		send_to_peer(peer_id, {
 			"type": "trading_post_end",
-			"message": "[color=#95A5A6]You leave %s behind.[/color]" % tp_name
+			"message": "[color=#808080]You leave %s behind.[/color]" % tp_name
 		})
 
 # ===== QUEST HANDLERS =====

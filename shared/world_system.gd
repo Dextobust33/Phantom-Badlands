@@ -251,7 +251,7 @@ func get_location_description(x: int, y: int) -> String:
 		desc += "[color=#FFD700][b]%s[/b][/color]\n" % tp.get("name", "Trading Post")
 		desc += "%s\n" % tp.get("description", "A trading hub")
 		desc += "[b]Quest Giver:[/b] %s\n" % tp.get("quest_giver", "Unknown")
-		desc += "[color=#90EE90]This is a safe area[/color]\n"
+		desc += "[color=#00FF00]This is a safe area[/color]\n"
 		return desc
 
 	# Special location description
@@ -271,10 +271,10 @@ func get_location_description(x: int, y: int) -> String:
 		if level_range.is_hotspot:
 			desc += "[color=#FF0000][b]!!! DANGER ZONE !!![/b][/color]\n"
 
-		desc += "[color=#FF6B6B]Danger:[/color] Monsters level %d-%d\n" % [level_range.min, level_range.max]
-		desc += "[color=#FF6B6B]Encounter Rate:[/color] %.0f%%\n" % (info.encounter_rate * 100)
+		desc += "[color=#FF4444]Danger:[/color] Monsters level %d-%d\n" % [level_range.min, level_range.max]
+		desc += "[color=#FF4444]Encounter Rate:[/color] %.0f%%\n" % (info.encounter_rate * 100)
 	else:
-		desc += "[color=#90EE90]This is a safe area[/color]\n"
+		desc += "[color=#00FF00]This is a safe area[/color]\n"
 
 	return desc
 
@@ -315,19 +315,18 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> String:
-	"""Generate complete map display with location info header"""
+func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
+	"""Generate complete map display with location info header.
+	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
 	var output = ""
 
 	# Check if at Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
 		var tp = trading_post_db.get_trading_post_at(center_x, center_y)
-		output += "[color=#FFD700][b]%s[/b][/color]\n" % tp.get("name", "Trading Post")
-		output += "[color=#B8860B]Location:[/color] [color=#5F9EA0][b](%d, %d)[/b][/color]\n" % [center_x, center_y]
-		output += "[color=#90EE90]Safe Zone[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
-		output += "\n"
+		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
+		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius)
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players)
 		output += "[/center]"
 		return output
 
@@ -338,29 +337,27 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7) -> Stri
 	# Get distance-based level range
 	var level_range = get_monster_level_range(center_x, center_y)
 
-	# Location header (left-aligned with emphasized coordinates)
-	output += "[color=#B8860B]Location:[/color] [color=#5F9EA0][b](%d, %d)[/b][/color]\n" % [center_x, center_y]
-	output += "[color=#B8860B]Terrain:[/color] %s\n" % info.name
+	# Location header - compact format
+	output += "[color=#5F9EA0](%d, %d)[/color] %s" % [center_x, center_y, info.name]
 
 	# Merchant at current location (not in Trading Posts)
 	if is_merchant_at(center_x, center_y):
 		var merchant = get_merchant_at(center_x, center_y)
-		output += "[color=#FFD700][b]%s nearby![/b][/color]\n" % merchant.name
-
-	# Danger info based on distance
-	if not info.safe and level_range.min > 0:
-		# Hotspot warning
-		if level_range.is_hotspot:
-			output += "[color=#FF0000][b]!!! DANGER ZONE !!![/b][/color]\n"
-		output += "[color=#FF6B6B]Danger:[/color] Level %d-%d monsters\n" % [level_range.min, level_range.max]
-	else:
-		output += "[color=#90EE90]Safe Zone[/color]\n"
+		output += " [color=#FFD700]$%s[/color]" % merchant.name
 
 	output += "\n"
 
+	# Danger info based on distance - single line
+	if not info.safe and level_range.min > 0:
+		if level_range.is_hotspot:
+			output += "[color=#FF0000]!DANGER![/color] "
+		output += "[color=#FF4444]Lv%d-%d[/color]\n" % [level_range.min, level_range.max]
+	else:
+		output += "[color=#00FF00]Safe[/color]\n"
+
 	# Add the map (centered)
 	output += "[center]"
-	output += generate_ascii_map_with_merchants(center_x, center_y, radius)
+	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players)
 	output += "[/center]"
 
 	return output
@@ -654,9 +651,18 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 		"is_wanderer": is_wanderer
 	}
 
-func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7) -> String:
-	"""Generate ASCII map with merchants and Trading Posts shown"""
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
+	"""Generate ASCII map with merchants, Trading Posts, and other players shown.
+	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
 	var map_lines: PackedStringArray = PackedStringArray()
+
+	# Build a lookup for player positions (excluding self at center)
+	var player_positions = {}
+	for player in nearby_players:
+		var key = "%d,%d" % [player.x, player.y]
+		if not player_positions.has(key):
+			player_positions[key] = []
+		player_positions[key].append(player)
 
 	for dy in range(radius, -radius - 1, -1):
 		var line_parts: PackedStringArray = PackedStringArray()
@@ -668,8 +674,19 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				line_parts.append("  ")
 				continue
 
+			var pos_key = "%d,%d" % [x, y]
+
 			if dx == 0 and dy == 0:
 				line_parts.append("[color=#FFFF00] @[/color]")
+			elif player_positions.has(pos_key):
+				# Show other player - use first letter of name in cyan
+				var players_here = player_positions[pos_key]
+				var first_player = players_here[0]
+				var player_char = first_player.name[0].to_upper() if first_player.name.length() > 0 else "?"
+				# Multiple players: show * instead
+				if players_here.size() > 1:
+					player_char = "*"
+				line_parts.append("[color=#00FFFF] %s[/color]" % player_char)
 			elif trading_post_db and trading_post_db.is_trading_post_tile(x, y):
 				# Trading Post tiles with special rendering
 				var tp_char = trading_post_db.get_tile_position_in_post(x, y)

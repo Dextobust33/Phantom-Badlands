@@ -4,7 +4,7 @@
 [ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3bj3m"]
-bg_color = Color(0.16862746, 0.16862746, 0.16862746, 1)
+bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.2, 0.05, 0.05, 1)
@@ -13,7 +13,7 @@ bg_color = Color(0.2, 0.05, 0.05, 1)
 bg_color = Color(0.8, 0.1, 0.1, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_korgu"]
-bg_color = Color(0.11764706, 0.11764706, 0.11764706, 1)
+bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_bg"]
 bg_color = Color(0, 0, 0, 1)
@@ -40,15 +40,15 @@ bg_color = Color(0.2, 0.7, 0.8, 1)
 bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hlfbj"]
-bg_color = Color(0.101960786, 0.101960786, 0.101960786, 1)
+bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel_bg"]
-bg_color = Color(0.12, 0.12, 0.15, 0.95)
+bg_color = Color(0, 0, 0, 0.95)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.3, 0.3, 0.4, 1)
+border_color = Color(0, 0.5, 0, 1)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
@@ -67,12 +67,12 @@ corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_bg"]
-bg_color = Color(0.08, 0.08, 0.12, 0.95)
+bg_color = Color(0, 0, 0, 0.95)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.4, 0.35, 0.2, 1)
+border_color = Color(0.6, 0.6, 0, 1)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
@@ -111,7 +111,7 @@ theme_override_constants/separation = 4
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
-theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
@@ -330,7 +330,7 @@ horizontal_alignment = 1
 [node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_korgu")
 bbcode_enabled = true
@@ -516,9 +516,9 @@ text = "0"
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
-theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
-theme_override_font_sizes/normal_font_size = 14
+theme_override_font_sizes/normal_font_size = 8
 theme_override_styles/background = SubResource("StyleBoxFlat_n07ed")
 bbcode_enabled = true
 
@@ -593,7 +593,7 @@ text = "SE"
 
 [node name="OnlinePlayersLabel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.8, 0.6, 1)
+theme_override_colors/font_color = Color(0, 0.75, 0, 1)
 theme_override_font_sizes/font_size = 12
 text = "Online Players"
 horizontal_alignment = 1
@@ -602,7 +602,7 @@ horizontal_alignment = 1
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_font_sizes/normal_font_size = 11
 theme_override_styles/background = SubResource("StyleBoxFlat_hlfbj")
 bbcode_enabled = true
@@ -616,8 +616,8 @@ theme_override_constants/separation = 8
 [node name="InputField" type="LineEdit" parent="RootContainer/BottomBar"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_placeholder_color = Color(0.5019608, 0.5019608, 0.5019608, 1)
+theme_override_colors/font_color = Color(0, 0.75, 0, 1)
+theme_override_colors/font_placeholder_color = Color(0, 0.5, 0, 1)
 theme_override_font_sizes/font_size = 16
 theme_override_styles/normal = SubResource("StyleBoxFlat_hlfbj")
 placeholder_text = "Type message or command..."
@@ -660,14 +660,14 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="LoginPanel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 24
 text = "Phantasia Revival"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="LoginPanel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_colors/font_color = Color(0, 0.75, 0, 1)
 theme_override_font_sizes/font_size = 12
 text = "Login or Register"
 horizontal_alignment = 1
@@ -750,7 +750,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="CharacterSelectPanel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 20
 text = "Select Character"
 horizontal_alignment = 1
@@ -829,7 +829,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="CharacterCreatePanel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 20
 text = "Create Character"
 horizontal_alignment = 1
@@ -1026,7 +1026,7 @@ theme_override_constants/separation = 10
 
 [node name="Title" type="Label" parent="PlayerInfoPanel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
+theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 16
 text = "Player Info"
 horizontal_alignment = 1

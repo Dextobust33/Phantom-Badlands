@@ -93,3 +93,24 @@ theme_override_styles/background = SubResource("StyleBoxFlat_bg")
 bbcode_enabled = true
 text = "[color=#666666]Server starting...[/color]"
 scroll_following = true
+
+[node name="ButtonRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RestartButton" type="Button" parent="VBox/ButtonRow"]
+custom_minimum_size = Vector2(120, 35)
+layout_mode = 2
+text = "Restart Server"
+
+[node name="Spacer" type="Control" parent="VBox/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ConfirmDialog" type="ConfirmationDialog" parent="."]
+title = "Confirm Server Restart"
+initial_position = 1
+size = Vector2i(350, 120)
+dialog_text = "Are you sure you want to restart the server?
+All connected players will be disconnected."
+ok_button_text = "Restart"
