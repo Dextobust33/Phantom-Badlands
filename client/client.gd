@@ -1774,6 +1774,7 @@ func display_shop_inventory():
 	var shop_items = merchant_data.get("shop_items", [])
 	var gold = character_data.get("gold", 0)
 	var gems = character_data.get("gems", 0)
+	var equipped = character_data.get("equipped", {})
 
 	display_game("[color=#FFD700]===== MERCHANT SHOP =====[/color]")
 	display_game("Your gold: %d  |  Your gems: %d" % [gold, gems])
@@ -1789,7 +1790,25 @@ func display_shop_inventory():
 			var level = item.get("level", 1)
 			var price = item.get("shop_price", 100)
 			var gem_price = int(ceil(price / 1000.0))
-			display_game("[%d] [color=%s]%s[/color] (Lv%d) - %d gold (or %d gems)" % [i + 1, color, item.get("name", "Unknown"), level, price, gem_price])
+			var item_type = item.get("type", "")
+
+			# Show comparison indicator if it's an equippable item
+			var compare_text = ""
+			var slot = _get_slot_for_item_type(item_type)
+			if slot != "":
+				var equipped_item = equipped.get(slot)
+				if equipped_item != null and equipped_item is Dictionary:
+					var equipped_level = equipped_item.get("level", 1)
+					if level > equipped_level:
+						compare_text = " [color=#90EE90]↑[/color]"
+					elif level < equipped_level:
+						compare_text = " [color=#FF6666]↓[/color]"
+					else:
+						compare_text = " [color=#FFFF66]=[/color]"
+				else:
+					compare_text = " [color=#90EE90]NEW[/color]"
+
+			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %d gold (or %d gems)" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price, gem_price])
 
 	display_game("")
 	display_game("[color=#95A5A6]Press 1-%d to buy with gold[/color]" % shop_items.size())

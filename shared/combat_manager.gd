@@ -474,9 +474,398 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"can_act": combat.player_can_act
 	}
 
+func get_monster_ascii_art(monster_name: String) -> String:
+	"""Return ASCII art for the monster, properly formatted for centering"""
+	# Map monster names to ASCII art - each line will be centered individually
+	var art_map = {
+		# Tier 1 - Small creatures
+		"Goblin": ["[color=#90EE90]",
+"      ,,,",
+"    /(o.o)\\",
+"   _| === |_",
+"  / |  |  | \\",
+"    |  |  |",
+"   _|  |  |_",
+"  (__/   \\__)","[/color]"],
+
+		"Giant Rat": ["[color=#8B4513]",
+"    (\\,/)",
+"    oo   '''//,",
+"  ,(~)_______/",
+"  \\(@)/ '''''",
+"    U '''''' U","[/color]"],
+
+		"Kobold": ["[color=#DAA520]",
+"      /\\  /\\",
+"     ( o  o )",
+"    /   <>   \\",
+"   /  | -- |  \\",
+"      | || |",
+"     /| || |\\",
+"    (_/    \\_)","[/color]"],
+
+		"Skeleton": ["[color=#FFFFFF]",
+"      .---.   ",
+"     / o o \\ ",
+"    (   ^   )",
+"     \\ --- /",
+"    __|   |__",
+"   /__|   |__\\",
+"      |   |",
+"     _|   |_","[/color]"],
+
+		"Wolf": ["[color=#808080]",
+"   /\\       /\\",
+"  /  \\_____/  \\",
+"  |  o     o  |",
+"  \\     W     /",
+"   \\  '---'  /",
+"    \\__| |__/",
+"       | |","[/color]"],
+
+		# Tier 2 - Medium creatures
+		"Orc": ["[color=#228B22]",
+"     \\\\|||//",
+"     ( O O )",
+"      \\ = /",
+"    __|===|__",
+"   /  |   |  \\",
+"   |  |   |  |",
+"   |__|   |__|","[/color]"],
+
+		"Hobgoblin": ["[color=#FF6347]",
+"      /|||\\",
+"     ( o_o )",
+"      \\ - /",
+"    __|===|__",
+"   /  |   |  \\",
+"      |   |",
+"     _|   |_","[/color]"],
+
+		"Gnoll": ["[color=#D2691E]",
+"     /\\   /\\",
+"    (  \\ /  )",
+"    | o   o |",
+"     \\ === /",
+"   __|     |__",
+"  /  |     |  \\",
+"     ||   ||","[/color]"],
+
+		"Zombie": ["[color=#556B2F]",
+"     ~~~~~~~",
+"    (  o    )",
+"     \\ --- /",
+"   __|     |__",
+"  /   |   |   \\",
+"       |  |",
+"       |  |","[/color]"],
+
+		"Giant Spider": ["[color=#4B0082]",
+"    /\\    /\\",
+"   //\\\\  //\\\\",
+"  // (o  o) \\\\",
+"  \\\\  \\--/  //",
+"   \\\\  ||  //",
+"    \\\\_||_//",
+"     //  \\\\","[/color]"],
+
+		"Wight": ["[color=#778899]",
+"     .oOOo.",
+"    (  O O )",
+"     \\ ~~ /",
+"   __|    |__",
+"  /  ~~~~~~  \\",
+"  \\          /",
+"   ~~~~~~~~~~","[/color]"],
+
+		# Tier 3 - Large creatures
+		"Ogre": ["[color=#6B8E23]",
+"    \\======/",
+"    ( O  O )",
+"     \\ == /",
+"   __|====|__",
+"  /  |    |  \\",
+"  |  |    |  |",
+"  |__|    |__|","[/color]"],
+
+		"Troll": ["[color=#2F4F4F]",
+"     .-----.",
+"    /  o o  \\",
+"    \\   =   /",
+"   __|-----|__",
+"  /  |     |  \\",
+"  |__|     |__|",
+"     |     |","[/color]"],
+
+		"Wraith": ["[color=#9370DB]",
+"    .oOOOOo.",
+"   (  ~  ~  )",
+"    \\      /",
+"     \\    /",
+"      \\  /",
+"       \\/",
+"      ~~~~","[/color]"],
+
+		"Wyvern": ["[color=#8FBC8F]",
+"    /\\     /\\",
+"   /  \\___/  \\",
+"  <==(o   o)==>",
+"     /) ^ (\\",
+"    //     \\\\",
+"   //   |   \\\\",
+"  ~~   / \\   ~~","[/color]"],
+
+		"Minotaur": ["[color=#8B0000]",
+"   (\\       /)",
+"    \\\\     //",
+"     (o   o)",
+"      \\ = /",
+"    __|===|__",
+"   /  |   |  \\",
+"   |__|   |__|","[/color]"],
+
+		# Tier 4 - Powerful creatures
+		"Giant": ["[color=#A0522D]",
+"    __|===|__",
+"   /  O   O  \\",
+"   \\    =    /",
+"  __|=======|__",
+" /  |       |  \\",
+" |  |       |  |",
+" |__|       |__|","[/color]"],
+
+		"Dragon Wyrmling": ["[color=#FF4500]",
+"     /\\_/\\",
+"    / o o \\",
+"   <   ^   >",
+"    \\ ~~~ /",
+"   //)   (\\\\",
+"  // |   | \\\\",
+" ~~  |   |  ~~","[/color]"],
+
+		"Demon": ["[color=#DC143C]",
+"   \\\\     //",
+"    \\\\   //",
+"    ( o^o )",
+"     \\~~~/",
+"   __|===|__",
+"  <  |   |  >",
+"    /|   |\\","[/color]"],
+
+		"Vampire": ["[color=#8B008B]",
+"     .-----.",
+"    / o   o \\",
+"    \\   V   /",
+"     \\_____/",
+"       |=|",
+"      /| |\\",
+"     / | | \\","[/color]"],
+
+		# Tier 5 - Epic creatures
+		"Ancient Dragon": ["[color=#FF6600]",
+"   <\\_______/>",
+"   /  O   O  \\",
+"  <     ^     >",
+"   \\  ~~~~  /",
+"  //)^^^^^^(\\\\",
+" // |      | \\\\",
+"<~~ |      | ~~>","[/color]"],
+
+		"Demon Lord": ["[color=#B22222]",
+"  \\\\\\     ///",
+"   \\\\\\   ///",
+"    ( O^O )",
+"   <|~~~~~|>",
+"  __|#####|__",
+" <  |     |  >",
+"   /|     |\\","[/color]"],
+
+		"Lich": ["[color=#9932CC]",
+"     .====.",
+"    / X  X \\",
+"    \\  ^^  /",
+"   __|####|__",
+"  /  |    |  \\",
+"  \\  |    |  /",
+"     ~~~~~~","[/color]"],
+
+		"Titan": ["[color=#FFD700]",
+"   ___|=|___",
+"  /  O   O  \\",
+"  \\    =    /",
+" __|=======|__",
+"/  |       |  \\",
+"|  |       |  |",
+"|__|       |__|","[/color]"],
+
+		# Tier 6 - Legendary
+		"Elemental": ["[color=#00CED1]",
+"    *  /\\  *",
+"   * /    \\ *",
+"  * (  ~~  ) *",
+"   * \\    / *",
+"    * \\||/ *",
+"     * || *",
+"      ~~~~","[/color]"],
+
+		"Iron Golem": ["[color=#708090]",
+"    [=====]",
+"    [O   O]",
+"    [  =  ]",
+"   _[=====]_",
+"  | |     | |",
+"  | |     | |",
+"  |_|     |_|","[/color]"],
+
+		"Sphinx": ["[color=#DAA520]",
+"       /\\",
+"      /  \\",
+"     ( oo )___",
+"     /      __\\",
+"    /   /\\/\\   \\",
+"   /___/    \\___\\",
+"      ||    ||","[/color]"],
+
+		"Hydra": ["[color=#006400]",
+"   \\|/  \\|/",
+"   (o)  (o)",
+"    \\\\  //",
+"     \\\\//",
+"      ||",
+"     /||\\",
+"    / || \\","[/color]"],
+
+		"Phoenix": ["[color=#FF8C00]",
+"    ,/|\\,",
+"   / /|\\ \\",
+"  ( ( o o ) )",
+"   \\ \\|// /",
+"    \\ ~~ /",
+"     \\||/",
+"    ~~||~~","[/color]"],
+
+		# Tier 7 - Mythical
+		"Void Walker": ["[color=#483D8B]",
+"    .:::::.   ",
+"   ::     ::  ",
+"  :: o   o :: ",
+"   ::  ~  ::  ",
+"    :: | ::   ",
+"     ::|::    ",
+"     ~~~~~    ","[/color]"],
+
+		"World Serpent": ["[color=#2E8B57]",
+"     _______",
+"    /  o o  \\~~~~",
+"   (    =    )",
+"    \\       /",
+"     )     (",
+"    /       \\",
+"   ~~~~~~~~~~~","[/color]"],
+
+		"Elder Lich": ["[color=#800080]",
+"     .=====.",
+"    / X ^ X \\",
+"    \\  ~~~  /",
+"   __|#####|__",
+"  /  |     |  \\",
+"  \\~~|     |~~/",
+"     ~~~~~~~","[/color]"],
+
+		"Primordial Dragon": ["[color=#FF0000]",
+"  <\\________/>",
+"  /   O  O   \\",
+" <      ^     >",
+"  \\  ~~~~~~  /",
+" //)^^^^^^^^(\\\\",
+"// |        | \\\\",
+"<~~|        |~~>","[/color]"],
+
+		# Tier 8 - Cosmic
+		"Cosmic Horror": ["[color=#4B0082]",
+"   @\\ | | /@",
+"    \\\\|^|//",
+"    (o ? o)",
+"   /|\\~~~/|\\",
+"    \\|   |/",
+"     |~~~|",
+"    ~~~~~~","[/color]"],
+
+		"Time Weaver": ["[color=#00FFFF]",
+"    *--@--*",
+"   /   @   \\",
+"  (  @   @  )",
+"   \\   @   /",
+"    *--@--*",
+"      |||",
+"     ~~~~~","[/color]"],
+
+		"Death Incarnate": ["[color=#AAAAAA]",
+"     .===.",
+"    / X X \\",
+"    \\ ___ /",
+"   __|---|__",
+"  /  |   |  \\",
+"  \\__|   |__/",
+"     ~~~~~","[/color]"],
+
+		# Tier 9 - Godlike
+		"Avatar of Chaos": ["[color=#FF00FF]",
+"   * \\|/ *",
+"  * =(!)= *",
+"   * /|\\ *",
+"    *|||*",
+"   */|||\\*",
+"    ~~~~~",
+"   *******","[/color]"],
+
+		"The Nameless One": ["[color=#696969]",
+"    ???????",
+"   ?       ?",
+"  ?  ?   ?  ?",
+"   ?   ?   ?",
+"    ???????",
+"      ???",
+"     ?????","[/color]"],
+
+		"God Slayer": ["[color=#FFD700]",
+"   \\\\\\|///",
+"    \\\\|//",
+"    (O=O)",
+"   <|###|>",
+"    |   |",
+"   /|   |\\",
+"    ~~~~~","[/color]"],
+
+		"Entropy": ["[color=#888888]",
+"    .......",
+"   .       .",
+"  .         .",
+"   .       .",
+"    .......",
+"      ...",
+"     .....","[/color]"]
+	}
+
+	# Return matching art - pad with spaces to push right
+	var padding = "                              "  # 30 spaces to push art right
+	if art_map.has(monster_name):
+		var lines = art_map[monster_name]
+		var result = ""
+		for line in lines:
+			if line.begins_with("[color=") or line == "[/color]":
+				result += line
+			else:
+				result += padding + line + "\n"
+		return result
+	else:
+		# Generic monster fallback
+		return padding + "[color=#888888]     ?????[/color]\n" + padding + "[color=#888888]    ( o.o )[/color]\n" + padding + "[color=#888888]     \\ = /[/color]\n" + padding + "[color=#888888]    /|   |\\[/color]\n" + padding + "[color=#888888]      ~~~[/color]\n"
+
 func generate_combat_start_message(character: Character, monster: Dictionary) -> String:
-	"""Generate the initial combat message"""
-	var msg = "[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
+	"""Generate the initial combat message with ASCII art"""
+	var ascii_art = get_monster_ascii_art(monster.name)
+	var msg = ascii_art + "\n[color=#FFD700]You encounter a %s (Lvl %d)![/color]" % [monster.name, monster.level]
 	return msg
 
 func to_dict() -> Dictionary:

@@ -103,6 +103,7 @@ layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
 theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
 bbcode_enabled = true
@@ -473,6 +474,75 @@ theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_n07ed")
 bbcode_enabled = true
+
+[node name="MovementPad" type="GridContainer" parent="RootContainer/MainContainer/RightPanel"]
+layout_mode = 2
+theme_override_constants/h_separation = 2
+theme_override_constants/v_separation = 2
+columns = 3
+
+[node name="NW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "NW"
+
+[node name="N" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "N"
+
+[node name="NE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "NE"
+
+[node name="W" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "W"
+
+[node name="Hunt" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "Hunt"
+
+[node name="E" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "E"
+
+[node name="SW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "SW"
+
+[node name="S" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "S"
+
+[node name="SE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+custom_minimum_size = Vector2(50, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "SE"
 
 [node name="OnlinePlayersLabel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
 layout_mode = 2
