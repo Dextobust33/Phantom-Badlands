@@ -30,6 +30,35 @@ Godot executable location: `D:\SteamLibrary\steamapps\common\Godot Engine\godot.
 
 Run server first, then client. Both commands run in background (`&`).
 
+## Releases & Distribution
+
+**GitHub Repository:** https://github.com/Dextobust33/Phantasia-Revival
+
+The game uses an auto-updating launcher. When code changes are committed and ready for players, create a new release:
+
+**Creating a Release:**
+```bash
+# 1. Update version number
+echo "0.2" > VERSION.txt
+
+# 2. Export client in Godot (Project → Export → Windows Desktop)
+#    Exports to: builds/PhantasiaClient.exe
+
+# 3. Create release ZIP (PowerShell)
+powershell -Command "Compress-Archive -Path 'builds/PhantasiaClient.exe', 'builds/PhantasiaClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantasia-client-v0.2.zip' -Force"
+
+# 4. Upload to GitHub (requires gh CLI)
+"/c/Program Files/GitHub CLI/gh.exe" release create v0.2 releases/phantasia-client-v0.2.zip --title "v0.2" --notes "Description of changes"
+
+# 5. Push code changes
+git push
+```
+
+**Important:** After significant changes, remind user to create a new release so players get updates!
+
+**Launcher:** `builds/PhantasiaLauncher.exe` - Share with friends (only needed once)
+**Client:** Auto-downloaded by launcher from GitHub releases
+
 ## Architecture
 
 ```
