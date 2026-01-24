@@ -1201,11 +1201,9 @@ func start_password_change():
 	temp_old_password = ""
 	temp_new_password = ""
 
-	# Show the game output panel for password prompts
-	game_panel.visible = true
-	game_output.clear()
-	display_game("[color=#FFD700]===== CHANGE PASSWORD =====[/color]")
-	display_game("Enter your current password (or type 'cancel' to abort):")
+	# Update status to show password change prompts
+	if char_select_status:
+		char_select_status.text = "[color=#FFD700]Enter your current password (or type 'cancel' to abort):[/color]"
 	input_field.placeholder_text = "Current password..."
 	input_field.secret = true
 	input_field.grab_focus()
@@ -1221,7 +1219,6 @@ func cancel_password_change():
 
 	# Return to character select if not in game
 	if not has_character:
-		game_panel.visible = false
 		char_select_panel.visible = true
 		if char_select_status:
 			char_select_status.text = "[color=#95A5A6]Password change cancelled.[/color]"
@@ -1237,7 +1234,6 @@ func finish_password_change(success: bool, message: String):
 
 	# Return to character select if not in game
 	if not has_character:
-		game_panel.visible = false
 		char_select_panel.visible = true
 		if char_select_status:
 			if success:
@@ -1256,34 +1252,37 @@ func process_password_change_input(input_text: String):
 		0:  # Entered old password
 			temp_old_password = input_text
 			password_change_step = 1
-			display_game("Enter your new password (min 4 characters):")
+			if char_select_status:
+				char_select_status.text = "[color=#FFD700]Enter your new password (min 4 characters):[/color]"
 			input_field.placeholder_text = "New password..."
 			input_field.grab_focus()
 
 		1:  # Entered new password
 			if input_text.length() < 4:
-				display_game("[color=#E74C3C]Password must be at least 4 characters.[/color]")
-				display_game("Enter your new password:")
+				if char_select_status:
+					char_select_status.text = "[color=#E74C3C]Password must be at least 4 characters. Try again:[/color]"
 				input_field.grab_focus()
 				return
 
 			temp_new_password = input_text
 			password_change_step = 2
-			display_game("Confirm your new password:")
+			if char_select_status:
+				char_select_status.text = "[color=#FFD700]Confirm your new password:[/color]"
 			input_field.placeholder_text = "Confirm password..."
 			input_field.grab_focus()
 
 		2:  # Entered confirm password
 			if input_text != temp_new_password:
-				display_game("[color=#E74C3C]Passwords do not match. Try again.[/color]")
+				if char_select_status:
+					char_select_status.text = "[color=#E74C3C]Passwords do not match. Enter new password again:[/color]"
 				password_change_step = 1
 				temp_new_password = ""
-				display_game("Enter your new password:")
 				input_field.placeholder_text = "New password..."
 				input_field.grab_focus()
 				return
 
-			display_game("[color=#95A5A6]Changing password...[/color]")
+			if char_select_status:
+				char_select_status.text = "[color=#95A5A6]Changing password...[/color]"
 
 			# Send password change request
 			send_to_server({
