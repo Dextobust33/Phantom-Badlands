@@ -39,16 +39,16 @@ The game uses an auto-updating launcher. When code changes are committed and rea
 **Creating a Release:**
 ```bash
 # 1. Update version number
-echo "0.2" > VERSION.txt
+echo "0.3" > VERSION.txt
 
-# 2. Export client in Godot (Project → Export → Windows Desktop)
-#    Exports to: builds/PhantasiaClient.exe
+# 2. Export client via command line (preset name is "Phantasia-Revival")
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantasia-Revival" "builds/PhantasiaClient.exe"
 
 # 3. Create release ZIP (PowerShell)
-powershell -Command "Compress-Archive -Path 'builds/PhantasiaClient.exe', 'builds/PhantasiaClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantasia-client-v0.2.zip' -Force"
+powershell -Command "Compress-Archive -Path 'builds/PhantasiaClient.exe', 'builds/PhantasiaClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantasia-client-v0.3.zip' -Force"
 
 # 4. Upload to GitHub (requires gh CLI)
-"/c/Program Files/GitHub CLI/gh.exe" release create v0.2 releases/phantasia-client-v0.2.zip --title "v0.2" --notes "Description of changes"
+"/c/Program Files/GitHub CLI/gh.exe" release create v0.3 releases/phantasia-client-v0.3.zip --title "v0.3" --notes "Description of changes"
 
 # 5. Push code changes
 git push
@@ -248,3 +248,73 @@ Many monsters have unique death messages that display when defeated, adding flav
 - `shared/combat_manager.gd` - Class advantage damage multipliers, monster ability processing, death message display
 - `client/client.gd` - Monster name color coding in HP bar based on affinity
 - `server/server.gd` - Summoner follow-up fights, monster fled handling
+
+## Quest System & Trading Posts (COMPLETE)
+
+**Trading Posts:**
+10 safe zone hubs spread across the world providing quest givers, shops, and services:
+
+| Name | Coordinates | Size | Quest Focus |
+|------|-------------|------|-------------|
+| Haven | (0, 10) | 5x5 | Beginner quests (spawn point) |
+| Crossroads | (0, 0) | 3x3 | Hotzone quests, dailies |
+| Frostgate | (0, -100) | 3x3 | Boss hunts, exploration |
+| Eastwatch | (150, 0) | 3x3 | Mid-level kill quests |
+| Westhold | (-150, 0) | 3x3 | Survival quests |
+| Southport | (0, -150) | 3x3 | Collection quests |
+| Shadowmere | (300, 300) | 5x5 | High-level challenges |
+| Inferno Outpost | (-350, 0) | 3x3 | Near Fire Mountain |
+| Void's Edge | (350, 0) | 3x3 | Near Dark Circle |
+| Frozen Reach | (0, -400) | 3x3 | Extreme cold zone |
+
+**Trading Post Services:**
+- Shop (50% discount on recharge)
+- Quest givers with location-specific quests
+- Safe zone (no monster encounters)
+- Map symbols: `P` (center), `+`, `-`, `|` (walls)
+
+**Quest Types:**
+1. **KILL_ANY** - Kill X monsters of any type
+2. **KILL_LEVEL** - Kill a monster of level X or higher
+3. **HOTZONE_KILL** - Kill X monsters in a hotzone within Y distance (1.5x-2.5x reward multiplier)
+4. **EXPLORATION** - Visit specific Trading Posts
+5. **BOSS_HUNT** - Defeat a monster of level X or higher
+
+**Quest Tracking:**
+- `character.active_quests` - Array of active quest progress
+- `character.completed_quests` - Array of completed quest IDs
+- `character.daily_quest_cooldowns` - Dictionary of daily quest reset times
+- `Character.MAX_ACTIVE_QUESTS = 5`
+
+**Quest Progress Flow:**
+1. Player accepts quest at Trading Post
+2. Server tracks progress via `quest_mgr.check_kill_progress()` or `check_exploration_progress()`
+3. Progress updates sent to client as `quest_progress` messages
+4. Quest complete sound plays when objectives met
+5. Player returns to quest giver Trading Post to turn in
+
+**Key Files:**
+- `shared/quest_database.gd` - Quest definitions, QuestType enum
+- `shared/quest_manager.gd` - Progress tracking, reward calculation
+- `shared/trading_post_database.gd` - Trading Post definitions, tile checks
+
+**Variable Cost Ability Popup:**
+For abilities with variable resource costs (like Bolt), a popup window prompts for input:
+- Created dynamically in `_create_ability_popup()`
+- Shows ability name, description, current resource
+- Input field for amount with validation
+- Confirm/Cancel buttons
+- Triggered when ability has `cost: 0` and `resource_type` set
+
+**Sound Effects:**
+- `quest_complete_player` - Short chime (G5 → C6) when quest objectives complete
+- Sound generated procedurally in `_generate_quest_complete_sound()`
+- Played when `quest_progress` message has `completed: true`
+
+**Preloading Classes:**
+When using `class_name` types across files, use `preload()` to avoid loading order issues:
+```gdscript
+const QuestDatabaseScript = preload("res://shared/quest_database.gd")
+var quest_db: Node = null
+quest_db = QuestDatabaseScript.new()
+```
