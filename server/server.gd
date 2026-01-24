@@ -191,6 +191,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_merchant_gamble(peer_id, message)
 		"merchant_leave":
 			handle_merchant_leave(peer_id)
+		"change_password":
+			handle_change_password(peer_id, message)
 		_:
 			pass
 
@@ -1417,3 +1419,31 @@ func _get_rarity_color(rarity: String) -> String:
 		"legendary": return "#FF8000"
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
+
+# ===== ACCOUNT MANAGEMENT =====
+
+func handle_change_password(peer_id: int, message: Dictionary):
+	"""Handle password change request"""
+	if not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "You must be logged in to change your password"
+		})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var old_password = message.get("old_password", "")
+	var new_password = message.get("new_password", "")
+
+	var result = persistence.change_password(account_id, old_password, new_password)
+
+	if result.success:
+		send_to_peer(peer_id, {
+			"type": "password_changed",
+			"message": "Your password has been changed successfully!"
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "password_change_failed",
+			"reason": result.reason
+		})

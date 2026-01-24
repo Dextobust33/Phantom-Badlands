@@ -106,6 +106,12 @@ var at_merchant: bool = false
 var merchant_data: Dictionary = {}
 var pending_merchant_action: String = ""
 
+# Password change mode
+var changing_password: bool = false
+var password_change_step: int = 0  # 0=old, 1=new, 2=confirm
+var temp_old_password: String = ""
+var temp_new_password: String = ""
+
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
 var current_enemy_name: String = ""
@@ -856,7 +862,7 @@ func update_action_bar():
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Players", "action_type": "server", "action_data": "get_players", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Password", "action_type": "local", "action_data": "change_password", "enabled": true},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
@@ -976,6 +982,8 @@ func execute_local_action(action: String):
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
 			send_upgrade_slot("amulet")
+		"change_password":
+			start_password_change()
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -1171,6 +1179,79 @@ func process_merchant_input(input_text: String):
 			show_merchant_menu()
 
 	update_action_bar()
+
+# ===== PASSWORD CHANGE FUNCTIONS =====
+
+func start_password_change():
+	"""Start the password change process"""
+	changing_password = true
+	password_change_step = 0
+	temp_old_password = ""
+	temp_new_password = ""
+
+	display_game("[color=#FFD700]===== CHANGE PASSWORD =====[/color]")
+	display_game("Enter your current password:")
+	input_field.placeholder_text = "Current password..."
+	input_field.secret = true
+	input_field.grab_focus()
+
+func cancel_password_change():
+	"""Cancel password change process"""
+	changing_password = false
+	password_change_step = 0
+	temp_old_password = ""
+	temp_new_password = ""
+	input_field.secret = false
+	input_field.placeholder_text = ""
+	display_game("[color=#95A5A6]Password change cancelled.[/color]")
+
+func process_password_change_input(input_text: String):
+	"""Process input during password change"""
+	match password_change_step:
+		0:  # Entered old password
+			temp_old_password = input_text
+			password_change_step = 1
+			display_game("Enter your new password:")
+			input_field.placeholder_text = "New password..."
+			input_field.grab_focus()
+
+		1:  # Entered new password
+			if input_text.length() < 4:
+				display_game("[color=#E74C3C]Password must be at least 4 characters.[/color]")
+				display_game("Enter your new password:")
+				input_field.grab_focus()
+				return
+
+			temp_new_password = input_text
+			password_change_step = 2
+			display_game("Confirm your new password:")
+			input_field.placeholder_text = "Confirm password..."
+			input_field.grab_focus()
+
+		2:  # Entered confirm password
+			if input_text != temp_new_password:
+				display_game("[color=#E74C3C]Passwords do not match. Try again.[/color]")
+				password_change_step = 1
+				temp_new_password = ""
+				display_game("Enter your new password:")
+				input_field.placeholder_text = "New password..."
+				input_field.grab_focus()
+				return
+
+			# Send password change request
+			send_to_server({
+				"type": "change_password",
+				"old_password": temp_old_password,
+				"new_password": temp_new_password
+			})
+
+			# Reset state
+			changing_password = false
+			password_change_step = 0
+			temp_old_password = ""
+			temp_new_password = ""
+			input_field.secret = false
+			input_field.placeholder_text = ""
 
 # ===== INVENTORY FUNCTIONS =====
 
@@ -1753,6 +1834,12 @@ func handle_server_message(message: Dictionary):
 		"merchant_inventory":
 			display_merchant_inventory(message)
 
+		"password_changed":
+			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Password changed successfully!"))
+
+		"password_change_failed":
+			display_game("[color=#E74C3C]Password change failed: %s[/color]" % message.get("reason", "Unknown error"))
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -1795,6 +1882,11 @@ func send_input():
 	# Check for pending merchant action (upgrade slot or gamble amount)
 	if pending_merchant_action != "":
 		process_merchant_input(text)
+		return
+
+	# Check for password change in progress
+	if changing_password:
+		process_password_change_input(text)
 		return
 
 	# Commands

@@ -374,6 +374,40 @@ func get_leaderboard(limit: int = 10) -> Array:
 
 	return result
 
+# ===== PASSWORD CHANGE =====
+
+func change_password(account_id: String, old_password: String, new_password: String) -> Dictionary:
+	"""Change password for an account (requires old password verification)"""
+	if not accounts_data.accounts.has(account_id):
+		return {"success": false, "reason": "Account not found"}
+
+	var account = accounts_data.accounts[account_id]
+
+	# Verify old password
+	if not verify_password(old_password, account.password_hash, account.password_salt):
+		return {"success": false, "reason": "Current password is incorrect"}
+
+	# Validate new password
+	if new_password.length() < 4:
+		return {"success": false, "reason": "New password must be at least 4 characters"}
+
+	if old_password == new_password:
+		return {"success": false, "reason": "New password must be different from current password"}
+
+	# Generate new salt and hash
+	var new_salt = generate_salt()
+	var new_hash = hash_password(new_password, new_salt)
+
+	# Update account
+	account.password_hash = new_hash
+	account.password_salt = new_salt
+
+	save_accounts()
+
+	print("Password changed for account: %s" % account.username)
+
+	return {"success": true, "message": "Password changed successfully"}
+
 # ===== ADMIN FUNCTIONS =====
 
 func admin_reset_password(username: String, new_password: String) -> Dictionary:
