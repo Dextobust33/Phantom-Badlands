@@ -218,14 +218,25 @@ func _process(_delta):
 			else:
 				input_field.grab_focus()
 
-	# Inventory item selection with number keys (1-9) when action is pending
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "":
+	# Inventory item selection with number keys (1-9)
+	# When action is pending: select item for that action
+	# When no action pending: default to inspect
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode:
 		var item_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
 		for i in range(item_keys.size()):
 			if Input.is_physical_key_pressed(item_keys[i]) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("itemkey_%d_pressed" % i, false):
 					set_meta("itemkey_%d_pressed" % i, true)
-					select_inventory_item(i)  # 0-based index
+					# Also mark action hotkeys as pressed to prevent double-trigger
+					# KEY_1-4 map to hotkey indices 5-8
+					if i < 4:
+						set_meta("hotkey_%d_pressed" % (i + 5), true)
+					if pending_inventory_action != "":
+						select_inventory_item(i)  # 0-based index
+					else:
+						# Default to inspect when pressing number with no action pending
+						pending_inventory_action = "inspect_item"
+						select_inventory_item(i)
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
 
@@ -1076,6 +1087,7 @@ func prompt_merchant_action(action_type: String):
 func cancel_merchant_action():
 	"""Cancel pending merchant action"""
 	pending_merchant_action = ""
+	input_field.placeholder_text = ""  # Reset placeholder
 	display_game("[color=#95A5A6]Action cancelled.[/color]")
 	show_merchant_menu()
 	update_action_bar()
@@ -1179,6 +1191,7 @@ func process_merchant_input(input_text: String):
 
 	match action:
 		"gamble":
+			input_field.placeholder_text = ""  # Reset placeholder
 			if input_text.is_valid_int():
 				var amount = int(input_text)
 				send_to_server({"type": "merchant_gamble", "amount": amount})
@@ -1489,7 +1502,10 @@ func select_inventory_item(index: int):
 	match action:
 		"inspect_item":
 			inspect_item(str(index + 1))  # Convert to 1-based for existing function
-			display_inventory()  # Re-show inventory after inspect
+			# Don't re-display inventory - let player read the item details
+			# Stay in inventory mode for further actions
+			update_action_bar()
+			return
 		"use_item":
 			send_to_server({"type": "inventory_use", "index": index})
 			# Server will send character_update which triggers inventory refresh
@@ -1501,6 +1517,8 @@ func select_inventory_item(index: int):
 			send_to_server({"type": "inventory_discard", "index": index})
 			# Server will send character_update which triggers inventory refresh
 
+	# Exit inventory mode after use/equip/discard to return to movement
+	inventory_mode = false
 	update_action_bar()
 
 func cancel_inventory_action():
@@ -1759,9 +1777,16 @@ func handle_server_message(message: Dictionary):
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
 			display_chat("[color=#4A90E2]%s:[/color] %s" % [sender, text])
-			# Refresh player list when someone joins or leaves
-			if "entered the realm" in text or "left the realm" in text:
+			# Refresh player list when someone joins, leaves, or dies
+			if "entered the realm" in text or "left the realm" in text or "has fallen" in text:
 				request_player_list()
+			# Show death announcements prominently everywhere
+			if sender == "World" and "has fallen" in text:
+				# Show on character select screen
+				if char_select_panel and char_select_panel.visible and char_select_status:
+					char_select_status.text = text
+				# Also show in game output for players in the world
+				display_game(text)
 
 		"text":
 			display_game(message.get("message", ""))
@@ -1914,6 +1939,9 @@ func send_input():
 		var action = pending_inventory_action
 		pending_inventory_action = ""
 		process_inventory_action(action, text)
+		# Exit inventory mode after action (except inspect which stays in inventory)
+		if action != "inspect_item":
+			inventory_mode = false
 		update_action_bar()
 		return
 

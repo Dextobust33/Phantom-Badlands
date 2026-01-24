@@ -86,9 +86,12 @@ func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> 
 	"""Roll for item drops from a monster. Returns array of dropped items."""
 	var drops = []
 
+	# Apply 15% boost to drop chance
+	var boosted_chance = int(drop_chance * 1.15)
+
 	# Check if we drop anything at all
 	var roll = randi() % 100
-	if roll >= drop_chance:
+	if roll >= boosted_chance:
 		return drops  # No drops
 
 	# Get the drop table
@@ -149,15 +152,65 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if final_rarity != base_rarity:
 		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
+	# Roll for affixes
+	var affixes = _roll_affixes(final_rarity, final_level)
+	var affix_name = _get_affix_prefix(affixes)
+
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
-		"name": _get_item_name(item_type, final_rarity),
-		"stats": {},  # Placeholder for item stats
+		"name": affix_name + _get_item_name(item_type, final_rarity),
+		"affixes": affixes,
 		"value": _calculate_item_value(final_rarity, final_level)
 	}
+
+# Affix definitions: name, stat, value_multiplier (scaled by level)
+const AFFIX_POOL = [
+	{"name": "Healthy", "stat": "hp_bonus", "base": 10, "per_level": 2},
+	{"name": "Vigorous", "stat": "hp_bonus", "base": 20, "per_level": 3},
+	{"name": "Stalwart", "stat": "hp_bonus", "base": 30, "per_level": 5},
+	{"name": "Mighty", "stat": "attack_bonus", "base": 2, "per_level": 0.5},
+	{"name": "Fortified", "stat": "defense_bonus", "base": 2, "per_level": 0.5},
+	{"name": "Swift", "stat": "dex_bonus", "base": 1, "per_level": 0.2},
+	{"name": "Wise", "stat": "wis_bonus", "base": 1, "per_level": 0.2},
+]
+
+func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
+	"""Roll for item affixes based on rarity. Higher rarity = more likely and better affixes."""
+	var affixes = {}
+
+	# Affix chances by rarity
+	var affix_chances = {
+		"common": 10,      # 10% chance for 1 affix
+		"uncommon": 25,    # 25% chance
+		"rare": 45,        # 45% chance
+		"epic": 70,        # 70% chance
+		"legendary": 90,   # 90% chance
+		"artifact": 100    # 100% chance
+	}
+
+	var chance = affix_chances.get(rarity, 10)
+	var roll = randi() % 100
+
+	if roll >= chance:
+		return affixes  # No affixes
+
+	# Roll for which affix
+	var affix = AFFIX_POOL[randi() % AFFIX_POOL.size()]
+	var value = int(affix.base + affix.per_level * item_level)
+
+	affixes[affix.stat] = value
+	affixes["affix_name"] = affix.name
+
+	return affixes
+
+func _get_affix_prefix(affixes: Dictionary) -> String:
+	"""Get prefix for item name based on affixes."""
+	if affixes.is_empty():
+		return ""
+	return affixes.get("affix_name", "") + " "
 
 func _maybe_upgrade_rarity(base_rarity: String) -> String:
 	"""Small chance to upgrade item rarity for exciting drops"""

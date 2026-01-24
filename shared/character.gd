@@ -188,6 +188,19 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.wisdom += int(base_bonus * 0.3)
 			bonuses.charisma += int(base_bonus * 0.2)
 
+		# Apply affix bonuses
+		var affixes = item.get("affixes", {})
+		if affixes.has("hp_bonus"):
+			bonuses.max_hp += affixes.hp_bonus
+		if affixes.has("attack_bonus"):
+			bonuses.attack += affixes.attack_bonus
+		if affixes.has("defense_bonus"):
+			bonuses.defense += affixes.defense_bonus
+		if affixes.has("dex_bonus"):
+			bonuses.dexterity += affixes.dex_bonus
+		if affixes.has("wis_bonus"):
+			bonuses.wisdom += affixes.wis_bonus
+
 	return bonuses
 
 func _get_rarity_multiplier(rarity: String) -> float:

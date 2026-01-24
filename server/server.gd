@@ -793,7 +793,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	# Add to leaderboard
 	var rank = persistence.add_to_leaderboard(character, cause_of_death, username)
 
-	# Send permadeath message
+	# Send permadeath message to the player who died
 	send_to_peer(peer_id, {
 		"type": "permadeath",
 		"character_name": character.name,
@@ -804,12 +804,24 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		"message": "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death]
 	})
 
+	# Broadcast death announcement to ALL connected players (including those on character select)
+	var death_message = "[color=#FF6B6B]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
+	for pid in peers.keys():
+		send_to_peer(pid, {
+			"type": "chat",
+			"sender": "World",
+			"message": death_message
+		})
+
 	# Delete character from persistence
 	persistence.delete_character(account_id, character.name)
 
 	# Remove from active characters
 	characters.erase(peer_id)
 	peers[peer_id].character_name = ""
+
+	# Broadcast updated player list to all online players
+	broadcast_player_list()
 
 	# Send updated character list so they can choose another or create new
 	handle_list_characters(peer_id)
@@ -853,6 +865,24 @@ func broadcast_chat(message: String, sender: String = "System"):
 			"type": "chat",
 			"sender": sender,
 			"message": message
+		})
+
+func broadcast_player_list():
+	"""Send updated player list to all connected players"""
+	var player_list = []
+	for pid in characters.keys():
+		var char = characters[pid]
+		player_list.append({
+			"name": char.name,
+			"level": char.level,
+			"class": char.class_type
+		})
+
+	for peer_id in characters.keys():
+		send_to_peer(peer_id, {
+			"type": "player_list",
+			"players": player_list,
+			"count": player_list.size()
 		})
 
 func save_character(peer_id: int):

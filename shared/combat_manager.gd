@@ -109,6 +109,8 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		if combat.character.current_hp <= 0:
 			result.combat_ended = true
 			result.victory = false
+			result.monster_name = "%s (Lvl %d)" % [combat.monster.name, combat.monster.level]
+			result.monster_level = combat.monster.level
 			result.messages.append("[color=#FF0000]You have been defeated![/color]")
 			end_combat(peer_id, false)
 			return result
