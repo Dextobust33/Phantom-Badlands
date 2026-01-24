@@ -608,6 +608,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Leaderboard"
 
+[node name="AccountContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ChangePasswordButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Change Password"
+
+[node name="LogoutButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Logout"
+
 [node name="StatusLabel" type="RichTextLabel" parent="CharacterSelectPanel/VBox"]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2

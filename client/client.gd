@@ -45,6 +45,8 @@ var game_state = GameState.DISCONNECTED
 @onready var create_char_button = $CharacterSelectPanel/VBox/ButtonContainer/CreateButton
 @onready var char_select_status = $CharacterSelectPanel/VBox/StatusLabel
 @onready var leaderboard_button = $CharacterSelectPanel/VBox/ButtonContainer/LeaderboardButton
+@onready var change_password_button = $CharacterSelectPanel/VBox/AccountContainer/ChangePasswordButton
+@onready var char_select_logout_button = $CharacterSelectPanel/VBox/AccountContainer/LogoutButton
 
 # UI References - Character Creation Panel
 @onready var char_create_panel = $CharacterCreatePanel
@@ -160,6 +162,10 @@ func _ready():
 		create_char_button.pressed.connect(_on_create_char_button_pressed)
 	if leaderboard_button:
 		leaderboard_button.pressed.connect(_on_leaderboard_button_pressed)
+	if change_password_button:
+		change_password_button.pressed.connect(_on_change_password_button_pressed)
+	if char_select_logout_button:
+		char_select_logout_button.pressed.connect(_on_char_select_logout_pressed)
 
 	# Connect character creation signals
 	if confirm_create_button:
@@ -574,6 +580,14 @@ func _on_create_char_button_pressed():
 func _on_leaderboard_button_pressed():
 	show_leaderboard_panel()
 
+func _on_change_password_button_pressed():
+	# Hide character select, show password change UI
+	char_select_panel.visible = false
+	start_password_change()
+
+func _on_char_select_logout_pressed():
+	logout_account()
+
 # ===== CHARACTER CREATION HANDLERS =====
 
 func _on_confirm_create_pressed():
@@ -862,7 +876,7 @@ func update_action_bar():
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Players", "action_type": "server", "action_data": "get_players", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "Password", "action_type": "local", "action_data": "change_password", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
@@ -982,8 +996,6 @@ func execute_local_action(action: String):
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
 			send_upgrade_slot("amulet")
-		"change_password":
-			start_password_change()
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -1189,8 +1201,11 @@ func start_password_change():
 	temp_old_password = ""
 	temp_new_password = ""
 
+	# Show the game output panel for password prompts
+	game_panel.visible = true
+	game_output.clear()
 	display_game("[color=#FFD700]===== CHANGE PASSWORD =====[/color]")
-	display_game("Enter your current password:")
+	display_game("Enter your current password (or type 'cancel' to abort):")
 	input_field.placeholder_text = "Current password..."
 	input_field.secret = true
 	input_field.grab_focus()
@@ -1203,15 +1218,45 @@ func cancel_password_change():
 	temp_new_password = ""
 	input_field.secret = false
 	input_field.placeholder_text = ""
-	display_game("[color=#95A5A6]Password change cancelled.[/color]")
+
+	# Return to character select if not in game
+	if not has_character:
+		game_panel.visible = false
+		char_select_panel.visible = true
+		if char_select_status:
+			char_select_status.text = "[color=#95A5A6]Password change cancelled.[/color]"
+
+func finish_password_change(success: bool, message: String):
+	"""Complete the password change process and return to appropriate screen"""
+	changing_password = false
+	password_change_step = 0
+	temp_old_password = ""
+	temp_new_password = ""
+	input_field.secret = false
+	input_field.placeholder_text = ""
+
+	# Return to character select if not in game
+	if not has_character:
+		game_panel.visible = false
+		char_select_panel.visible = true
+		if char_select_status:
+			if success:
+				char_select_status.text = "[color=#2ECC71]%s[/color]" % message
+			else:
+				char_select_status.text = "[color=#E74C3C]%s[/color]" % message
 
 func process_password_change_input(input_text: String):
 	"""Process input during password change"""
+	# Check for cancel
+	if input_text.to_lower() == "cancel":
+		cancel_password_change()
+		return
+
 	match password_change_step:
 		0:  # Entered old password
 			temp_old_password = input_text
 			password_change_step = 1
-			display_game("Enter your new password:")
+			display_game("Enter your new password (min 4 characters):")
 			input_field.placeholder_text = "New password..."
 			input_field.grab_focus()
 
@@ -1238,20 +1283,14 @@ func process_password_change_input(input_text: String):
 				input_field.grab_focus()
 				return
 
+			display_game("[color=#95A5A6]Changing password...[/color]")
+
 			# Send password change request
 			send_to_server({
 				"type": "change_password",
 				"old_password": temp_old_password,
 				"new_password": temp_new_password
 			})
-
-			# Reset state
-			changing_password = false
-			password_change_step = 0
-			temp_old_password = ""
-			temp_new_password = ""
-			input_field.secret = false
-			input_field.placeholder_text = ""
 
 # ===== INVENTORY FUNCTIONS =====
 
@@ -1835,10 +1874,10 @@ func handle_server_message(message: Dictionary):
 			display_merchant_inventory(message)
 
 		"password_changed":
-			display_game("[color=#2ECC71]%s[/color]" % message.get("message", "Password changed successfully!"))
+			finish_password_change(true, message.get("message", "Password changed successfully!"))
 
 		"password_change_failed":
-			display_game("[color=#E74C3C]Password change failed: %s[/color]" % message.get("reason", "Unknown error"))
+			finish_password_change(false, message.get("reason", "Password change failed"))
 
 # ===== INPUT HANDLING =====
 
