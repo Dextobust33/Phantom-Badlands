@@ -756,8 +756,35 @@ func update_action_bar():
 	elif at_merchant:
 		# Merchant mode
 		var services = merchant_data.get("services", [])
-		if pending_merchant_action != "":
-			# Waiting for selection
+		var equipped = character_data.get("equipped", {})
+		if pending_merchant_action == "sell":
+			# Waiting for item selection (use number keys)
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "upgrade":
+			# Show equipment slots as action bar options
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "Weapon", "action_type": "local", "action_data": "upgrade_weapon", "enabled": equipped.get("weapon") != null},
+				{"label": "Armor", "action_type": "local", "action_data": "upgrade_armor", "enabled": equipped.get("armor") != null},
+				{"label": "Helm", "action_type": "local", "action_data": "upgrade_helm", "enabled": equipped.get("helm") != null},
+				{"label": "Shield", "action_type": "local", "action_data": "upgrade_shield", "enabled": equipped.get("shield") != null},
+				{"label": "Ring", "action_type": "local", "action_data": "upgrade_ring", "enabled": equipped.get("ring") != null},
+				{"label": "Amulet", "action_type": "local", "action_data": "upgrade_amulet", "enabled": equipped.get("amulet") != null},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "gamble":
+			# Waiting for bet amount input
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -925,6 +952,18 @@ func execute_local_action(action: String):
 			prompt_merchant_action("gamble")
 		"merchant_cancel":
 			cancel_merchant_action()
+		"upgrade_weapon":
+			send_upgrade_slot("weapon")
+		"upgrade_armor":
+			send_upgrade_slot("armor")
+		"upgrade_helm":
+			send_upgrade_slot("helm")
+		"upgrade_shield":
+			send_upgrade_slot("shield")
+		"upgrade_ring":
+			send_upgrade_slot("ring")
+		"upgrade_amulet":
+			send_upgrade_slot("amulet")
 
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
@@ -981,9 +1020,8 @@ func prompt_merchant_action(action_type: String):
 				return
 			pending_merchant_action = "upgrade"
 			display_upgrade_options()
-			display_game("[color=#FFD700]Type slot name to upgrade (%s):[/color]" % ", ".join(slots_with_items))
-			input_field.placeholder_text = "Slot name..."
-			input_field.grab_focus()
+			display_game("[color=#FFD700]Select a slot to upgrade from the action bar:[/color]")
+			update_action_bar()
 
 		"gamble":
 			pending_merchant_action = "gamble"
@@ -1020,6 +1058,12 @@ func select_merchant_sell_item(index: int):
 
 	pending_merchant_action = ""
 	send_to_server({"type": "merchant_sell", "index": index})
+	update_action_bar()
+
+func send_upgrade_slot(slot: String):
+	"""Send upgrade request for a specific equipment slot"""
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_upgrade", "slot": slot})
 	update_action_bar()
 
 func show_merchant_menu():
@@ -1097,27 +1141,11 @@ func display_merchant_inventory(message: Dictionary):
 		])
 
 func process_merchant_input(input_text: String):
-	"""Process input during merchant interaction"""
+	"""Process input during merchant interaction (only for gamble bet amount)"""
 	var action = pending_merchant_action
 	pending_merchant_action = ""
 
 	match action:
-		"sell":
-			if input_text.is_valid_int():
-				var index = int(input_text) - 1
-				send_to_server({"type": "merchant_sell", "index": index})
-			else:
-				display_game("[color=#E74C3C]Invalid item number.[/color]")
-				show_merchant_menu()
-
-		"upgrade":
-			var slot = input_text.to_lower().strip_edges()
-			if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
-				send_to_server({"type": "merchant_upgrade", "slot": slot})
-			else:
-				display_game("[color=#E74C3C]Invalid slot name.[/color]")
-				show_merchant_menu()
-
 		"gamble":
 			if input_text.is_valid_int():
 				var amount = int(input_text)
@@ -1125,6 +1153,10 @@ func process_merchant_input(input_text: String):
 			else:
 				display_game("[color=#E74C3C]Invalid bet amount.[/color]")
 				show_merchant_menu()
+		_:
+			# Other actions use action bar, not text input
+			display_game("[color=#E74C3C]Use the action bar to select.[/color]")
+			show_merchant_menu()
 
 	update_action_bar()
 
