@@ -578,18 +578,36 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 		services.append("gamble")
 	else:
 		hash_val = abs((x * 97 + y * 61 + hour_seed * 37))
-		# Normal merchant types
-		var merchant_types = ["Mysterious Merchant", "Traveling Smith", "Fortune Teller"]
+		# Merchant types: specialized (Weaponsmith, Armorer, Jeweler) and general
+		var merchant_types = [
+			"Weaponsmith",      # Sells weapons only
+			"Armorer",          # Sells armor only
+			"Jeweler",          # Sells rings, amulets, artifacts
+			"Traveling Smith",  # Sells all equipment
+			"Mysterious Merchant",  # Sells all + gambles
+			"Fortune Teller"    # Sells all + gambles
+		]
 		merchant_type = merchant_types[hash_val % merchant_types.size()]
 
-		if "Smith" in merchant_type:
+		if "Smith" in merchant_type or merchant_type == "Weaponsmith":
 			services.append("upgrade")
 		if "Fortune" in merchant_type or "Mysterious" in merchant_type:
 			services.append("gamble")
 
+	# Determine specialty for equipment filtering
+	var specialty = "all"  # Default: sells everything
+	match merchant_type:
+		"Weaponsmith":
+			specialty = "weapons"
+		"Armorer":
+			specialty = "armor"
+		"Jeweler":
+			specialty = "jewelry"
+
 	return {
 		"name": merchant_type,
 		"services": services,
+		"specialty": specialty,
 		"x": x,
 		"y": y,
 		"hash": hash_val,  # For consistent pricing

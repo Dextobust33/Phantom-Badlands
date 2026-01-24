@@ -6,7 +6,7 @@ extends Resource
 # Basic Info
 @export var character_id: int = 0
 @export var name: String = ""
-@export var race: String = "Human"  # Human, Elf, or Dwarf
+@export var race: String = "Human"  # Human, Elf, Dwarf, or Ogre
 @export var class_type: String = ""
 @export var level: int = 1
 @export var experience: int = 0
@@ -301,9 +301,10 @@ func take_damage(damage: int) -> Dictionary:
 	return result
 
 func heal(amount: int) -> int:
-	"""Heal the character, return actual amount healed"""
+	"""Heal the character, return actual amount healed. Ogre racial applies 2x healing."""
 	var old_hp = current_hp
-	current_hp = min(current_hp + amount, max_hp)
+	var heal_amount = int(amount * get_heal_multiplier())
+	current_hp = min(current_hp + heal_amount, max_hp)
 	return current_hp - old_hp
 
 func check_level_up():
@@ -658,6 +659,12 @@ func try_last_stand() -> bool:
 func reset_combat_flags():
 	"""Reset per-combat flags. Call at start of each combat."""
 	last_stand_used = false
+
+func get_heal_multiplier() -> float:
+	"""Get healing multiplier from racial passive. Ogre gets 2x healing."""
+	if race == "Ogre":
+		return 2.0
+	return 1.0
 
 # ===== RESOURCE MANAGEMENT =====
 

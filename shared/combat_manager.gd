@@ -1312,25 +1312,25 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 
 func _get_class_advantage_multiplier(affinity: int, character_class: String) -> float:
 	"""Calculate damage multiplier based on class affinity.
-	Returns: 1.0 (neutral), 1.5 (advantage), 0.75 (disadvantage)"""
+	Returns: 1.0 (neutral), 1.25 (advantage), 0.85 (disadvantage)"""
 	var player_path = _get_player_class_path(character_class)
 
 	match affinity:
-		1:  # PHYSICAL - Warriors do +50%, Mages do -25%
+		1:  # PHYSICAL - Warriors do +25%, Mages do -15%
 			if player_path == "warrior":
-				return 1.5
+				return 1.25
 			elif player_path == "mage":
-				return 0.75
-		2:  # MAGICAL - Mages do +50%, Warriors do -25%
+				return 0.85
+		2:  # MAGICAL - Mages do +25%, Warriors do -15%
 			if player_path == "mage":
-				return 1.5
+				return 1.25
 			elif player_path == "warrior":
-				return 0.75
-		3:  # CUNNING - Tricksters do +50%, others do -25%
+				return 0.85
+		3:  # CUNNING - Tricksters do +25%, others do -15%
 			if player_path == "trickster":
-				return 1.5
+				return 1.25
 			else:
-				return 0.75
+				return 0.85
 	return 1.0  # Neutral
 
 func _get_player_class_path(character_class: String) -> String:
@@ -1911,20 +1911,8 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 	var affinity = monster.get("class_affinity", 0)  # 0 = NEUTRAL
 	var name_color = _get_affinity_color(affinity)
 
-	# Build encounter message with colored monster name
+	# Build encounter message with colored monster name (color indicates class affinity)
 	var msg = bordered_art + "\n[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
-
-	# Add hint about class affinity if not neutral
-	if affinity != 0:
-		var hint = ""
-		match affinity:
-			1:  # PHYSICAL
-				hint = "[color=#FFFF00](Weak to Warriors)[/color]"
-			2:  # MAGICAL
-				hint = "[color=#00BFFF](Weak to Mages)[/color]"
-			3:  # CUNNING
-				hint = "[color=#00FF00](Weak to Tricksters)[/color]"
-		msg += "\n" + hint
 
 	# Show notable abilities
 	var abilities = monster.get("abilities", [])

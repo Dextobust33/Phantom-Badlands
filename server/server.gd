@@ -339,7 +339,8 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
-	log_message("Character loaded: %s for peer %d" % [char_name, peer_id])
+	var username = peers[peer_id].username
+	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])
 	update_player_list()
 
 	send_to_peer(peer_id, {
@@ -1606,8 +1607,8 @@ func trigger_merchant_encounter(peer_id: int):
 	if merchant.is_empty():
 		return
 
-	# Generate shop inventory based on player level
-	var shop_items = generate_shop_inventory(character.level, merchant.get("hash", 0))
+	# Generate shop inventory based on player level and merchant specialty
+	var shop_items = generate_shop_inventory(character.level, merchant.get("hash", 0), merchant.get("specialty", "all"))
 	merchant["shop_items"] = shop_items
 
 	# Store merchant state
@@ -1616,7 +1617,17 @@ func trigger_merchant_encounter(peer_id: int):
 	# Build services message
 	var services_text = []
 	if shop_items.size() > 0:
-		services_text.append("[R] Buy items (%d available)" % shop_items.size())
+		var specialty_label = ""
+		match merchant.get("specialty", "all"):
+			"weapons":
+				specialty_label = "weapons"
+			"armor":
+				specialty_label = "armor"
+			"jewelry":
+				specialty_label = "jewelry"
+			_:
+				specialty_label = "items"
+		services_text.append("[R] Buy %s (%d available)" % [specialty_label, shop_items.size()])
 	if "sell" in merchant.services:
 		services_text.append("[Q] Sell items")
 	if character.gems > 0:
@@ -2066,18 +2077,25 @@ func _get_rarity_color(rarity: String) -> String:
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
 
-func generate_shop_inventory(player_level: int, merchant_hash: int) -> Array:
-	"""Generate purchasable items for merchant shop"""
+func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: String = "all") -> Array:
+	"""Generate purchasable items for merchant shop based on specialty.
+	Specialty: 'weapons', 'armor', 'jewelry', or 'all'"""
 	var items = []
 
 	# Use merchant hash for consistent inventory
 	var rng = RandomNumberGenerator.new()
 	rng.seed = merchant_hash
 
-	# Generate 3-6 items
-	var item_count = 3 + rng.randi() % 4
+	# Specialized merchants have more focused inventory (4-7 items)
+	# General merchants have variety (3-5 items)
+	var item_count = 4 + rng.randi() % 4 if specialty != "all" else 3 + rng.randi() % 3
 
-	for i in range(item_count):
+	var attempts = 0
+	var max_attempts = item_count * 5  # Prevent infinite loops
+
+	while items.size() < item_count and attempts < max_attempts:
+		attempts += 1
+
 		# Item level ranges around player level
 		var level_roll = rng.randi() % 100
 		var item_level = player_level
@@ -2099,11 +2117,32 @@ func generate_shop_inventory(player_level: int, merchant_hash: int) -> Array:
 		var drops = drop_tables.roll_drops(tier, 100, item_level)
 		if drops.size() > 0:
 			var item = drops[0]
+			var item_type = item.get("type", "")
+
+			# Filter by specialty
+			if not _item_matches_specialty(item_type, specialty):
+				continue
+
 			# Shop markup: 2.5x base value
 			item["shop_price"] = int(item.get("value", 100) * 2.5)
 			items.append(item)
 
 	return items
+
+func _item_matches_specialty(item_type: String, specialty: String) -> bool:
+	"""Check if an item type matches the merchant's specialty."""
+	if specialty == "all":
+		return true
+
+	match specialty:
+		"weapons":
+			return item_type.begins_with("weapon_")
+		"armor":
+			return item_type.begins_with("armor_")
+		"jewelry":
+			return item_type.begins_with("ring_") or item_type.begins_with("amulet_") or item_type == "artifact"
+		_:
+			return true
 
 func handle_merchant_buy(peer_id: int, message: Dictionary):
 	"""Handle buying an item from the merchant shop"""

@@ -172,7 +172,8 @@ var top5_player: AudioStreamPlayer = null
 const RACE_DESCRIPTIONS = {
 	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
 	"Elf": "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",
-	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat)."
+	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat).",
+	"Ogre": "Massive and regenerative. All healing effects are doubled."
 }
 
 # ===== ABILITY SYSTEM CONSTANTS =====
@@ -269,7 +270,7 @@ func _ready():
 	# Setup race options
 	if race_option:
 		race_option.clear()
-		for r in ["Human", "Elf", "Dwarf"]:
+		for r in ["Human", "Elf", "Dwarf", "Ogre"]:
 			race_option.add_item(r)
 		race_option.item_selected.connect(_on_race_selected)
 		_update_race_description()  # Set initial description
@@ -1327,6 +1328,8 @@ func setup_action_bar():
 			if button:
 				action_buttons.append(button)
 				button.pressed.connect(_on_action_button_pressed.bind(i))
+				# Reduce font size for ability bar buttons
+				button.add_theme_font_size_override("font_size", 11)
 
 			# Create cost label dynamically if it doesn't exist
 			var cost_label = action_container.get_node_or_null("Cost")
