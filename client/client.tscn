@@ -331,12 +331,23 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="PlayerLevel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
+[node name="LevelRow" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel"]
 layout_mode = 2
+
+[node name="PlayerLevel" type="Label" parent="RootContainer/MainContainer/RightPanel/LevelRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 16
 text = "Level 1"
 horizontal_alignment = 1
+
+[node name="MusicToggle" type="Button" parent="RootContainer/MainContainer/RightPanel/LevelRow"]
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "♫"
+flat = true
 
 [node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
 custom_minimum_size = Vector2(0, 18)

@@ -143,16 +143,36 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		monster.current_hp = max(0, monster.current_hp)
 		
 		messages.append("[color=#90EE90]You attack the %s![/color]" % monster.name)
-		messages.append("[color=#FFD700]You deal %d damage![/color]" % damage)
-		
+		messages.append("You deal [color=#FFFF00][b]%d[/b][/color] damage!" % damage)
+
 		if monster.current_hp <= 0:
 			# Monster defeated!
 			messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
-			messages.append("[color=#FFD700]You gain %d experience![/color]" % monster.experience_reward)
-			messages.append("[color=#FFD700]You gain %d gold![/color]" % monster.gold_reward)
+
+			# Calculate XP with level difference bonus
+			var base_xp = monster.experience_reward
+			var xp_level_diff = monster.level - character.level
+			var xp_multiplier = 1.0
+
+			# Bonus XP for fighting stronger monsters (risk vs reward)
+			if xp_level_diff > 0:
+				# +10% per level above, up to +500% at 50 levels above
+				# Then +5% per level beyond 50, uncapped
+				if xp_level_diff <= 50:
+					xp_multiplier = 1.0 + (xp_level_diff * 0.10)
+				else:
+					xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+
+			var final_xp = int(base_xp * xp_multiplier)
+
+			if xp_level_diff >= 10:
+				messages.append("[color=#FFD700]You gain [b]%d[/b] experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
+			else:
+				messages.append("[color=#FFD700]You gain [b]%d[/b] experience![/color]" % final_xp)
+			messages.append("[color=#FFD700]You gain [b]%d[/b] gold![/color]" % monster.gold_reward)
 
 			# Award experience and gold
-			character.add_experience(monster.experience_reward)
+			character.add_experience(final_xp)
 			character.gold += monster.gold_reward
 
 			# Roll for gem drops (from high-level monsters)
@@ -292,7 +312,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		character.current_hp -= damage
 		character.current_hp = max(0, character.current_hp)
 		
-		var msg = "[color=#FF6B6B]The %s attacks and deals %d damage![/color]" % [monster.name, damage]
+		var msg = "[color=#FF6B6B]The %s attacks and deals [b]%d[/b] damage![/color]" % [monster.name, damage]
 		return {"success": true, "message": msg}
 	else:
 		# Monster misses

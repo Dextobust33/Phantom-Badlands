@@ -27,9 +27,10 @@ var game_state = GameState.DISCONNECTED
 @onready var enemy_health_bar = $RootContainer/MainContainer/LeftPanel/EnemyHealthBar
 @onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
 @onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
-@onready var player_level_label = $RootContainer/MainContainer/RightPanel/PlayerLevel
+@onready var player_level_label = $RootContainer/MainContainer/RightPanel/LevelRow/PlayerLevel
 @onready var gold_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer/GoldLabel
 @onready var gem_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer/GemLabel
+@onready var music_toggle = $RootContainer/MainContainer/RightPanel/LevelRow/MusicToggle
 @onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
 
 # UI References - Login Panel
@@ -142,6 +143,15 @@ const RARE_SOUND_COOLDOWN: float = 120.0  # 2 minute cooldown
 var rare_sound_threshold: int = 0  # Increases if sound played recently
 var rare_drop_player: AudioStreamPlayer = null
 
+# Background music
+var music_player: AudioStreamPlayer = null
+var music_muted: bool = false
+const MUSIC_VOLUME_DB: float = -46.0  # Very quiet background
+
+# Level up sound
+var levelup_player: AudioStreamPlayer = null
+var last_known_level: int = 0  # Track level changes for sound
+
 func _ready():
 	# Setup action bar
 	if action_bar:
@@ -209,9 +219,28 @@ func _ready():
 
 	# Initialize rare drop sound player
 	rare_drop_player = AudioStreamPlayer.new()
-	rare_drop_player.volume_db = -5.0  # Slightly quieter
+	rare_drop_player.volume_db = -17.0  # Quiet but audible
 	add_child(rare_drop_player)
 	_generate_rare_drop_sound()
+
+	# Initialize level up sound player
+	levelup_player = AudioStreamPlayer.new()
+	levelup_player.volume_db = -19.0  # 20% quieter than before
+	add_child(levelup_player)
+	_generate_levelup_sound()
+
+	# Initialize background music player
+	music_player = AudioStreamPlayer.new()
+	music_player.volume_db = MUSIC_VOLUME_DB
+	add_child(music_player)
+	music_player.finished.connect(_on_music_finished)
+
+	# Connect music toggle button
+	if music_toggle:
+		music_toggle.pressed.connect(_on_music_toggle_pressed)
+
+	# Defer music generation to not block startup
+	call_deferred("_start_background_music")
 
 	# Initial display
 	display_game("[b][color=#4A90E2]Welcome to Phantasia Revival[/color][/b]")
@@ -279,6 +308,228 @@ func play_rare_drop_sound(drop_value: int):
 			rare_drop_player.play()
 		last_rare_sound_time = current_time
 		rare_sound_threshold += 1
+
+func _generate_levelup_sound():
+	"""Generate Diablo 2 style level up sound - triumphant fanfare"""
+	var sample_rate = 44100
+	var duration = 1.2
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = true
+
+	var data = PackedByteArray()
+	data.resize(samples * 4)
+
+	# Diablo 2 level up has a rising triumphant tone with choir-like quality
+	# Notes: Rising arpeggio C-E-G-C (octave up)
+	var notes = [
+		{"freq": 262, "start": 0.0, "dur": 0.4},    # C4
+		{"freq": 330, "start": 0.1, "dur": 0.4},    # E4
+		{"freq": 392, "start": 0.2, "dur": 0.5},    # G4
+		{"freq": 523, "start": 0.3, "dur": 0.7},    # C5
+		{"freq": 659, "start": 0.5, "dur": 0.6},    # E5 (high shimmer)
+	]
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var sample_l = 0.0
+		var sample_r = 0.0
+
+		# Layer each note
+		for note in notes:
+			var freq = note.freq
+			var start = note.start
+			var dur = note.dur
+
+			if t >= start and t < start + dur:
+				var note_t = t - start
+				# Envelope: quick attack, long sustain, fade out
+				var env = 0.0
+				var attack = 0.05
+				var release_start = dur - 0.3
+
+				if note_t < attack:
+					env = note_t / attack
+				elif note_t < release_start:
+					env = 1.0
+				else:
+					env = 1.0 - ((note_t - release_start) / 0.3)
+
+				env = max(0.0, env)
+
+				# Rich harmonic content (choir-like)
+				var wave = sin(TAU * freq * t) * 0.4
+				wave += sin(TAU * freq * 2.0 * t) * 0.2
+				wave += sin(TAU * freq * 3.0 * t) * 0.1
+				wave += sin(TAU * freq * 4.0 * t) * 0.05
+
+				# Slight stereo spread
+				sample_l += wave * env * 0.25
+				sample_r += wave * env * 0.25 * (1.0 + sin(TAU * 2.0 * t) * 0.1)
+
+		# Add shimmer/sparkle overlay
+		if t > 0.4 and t < 1.1:
+			var shimmer_env = 0.0
+			if t < 0.6:
+				shimmer_env = (t - 0.4) / 0.2
+			elif t < 0.9:
+				shimmer_env = 1.0
+			else:
+				shimmer_env = (1.1 - t) / 0.2
+
+			var shimmer = sin(TAU * 1047 * t) * 0.08  # C6
+			shimmer += sin(TAU * 1319 * t) * 0.05     # E6
+			sample_l += shimmer * shimmer_env
+			sample_r += shimmer * shimmer_env
+
+		# Soft limit
+		sample_l = clamp(sample_l, -0.9, 0.9)
+		sample_r = clamp(sample_r, -0.9, 0.9)
+
+		var int_l = int(sample_l * 32767)
+		var int_r = int(sample_r * 32767)
+
+		data[i * 4] = int_l & 0xFF
+		data[i * 4 + 1] = (int_l >> 8) & 0xFF
+		data[i * 4 + 2] = int_r & 0xFF
+		data[i * 4 + 3] = (int_r >> 8) & 0xFF
+
+	audio.data = data
+	levelup_player.stream = audio
+
+func play_levelup_sound():
+	"""Play the level up sound effect"""
+	if levelup_player and levelup_player.stream:
+		levelup_player.play()
+
+func _start_background_music():
+	"""Deferred music startup"""
+	_generate_ambient_music()
+	if not music_muted:
+		music_player.play()
+
+func _generate_ambient_music():
+	"""Generate Terraria-style chiptune adventure music"""
+	var sample_rate = 22050
+	var duration = 24.0  # 24 second loop
+	var samples = int(sample_rate * duration)
+	var bpm = 70.0  # Slow, ambient tempo
+	var beat_duration = 60.0 / bpm
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = true
+	audio.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	audio.loop_end = samples
+
+	var data = PackedByteArray()
+	data.resize(samples * 4)
+
+	# C major / A minor for bright adventure feel
+	# Melody notes (C major pentatonic)
+	var melody = [
+		262, 294, 330, 392, 440,  # C4, D4, E4, G4, A4
+		392, 330, 294, 262, 294,  # G4, E4, D4, C4, D4
+		330, 392, 440, 523, 440,  # E4, G4, A4, C5, A4
+		392, 330, 294, 330, 262   # G4, E4, D4, E4, C4
+	]
+
+	# Bass pattern (root notes)
+	var bass_notes = [131, 131, 175, 175, 196, 196, 165, 165]  # C3, C3, F3, F3, G3, G3, E3, E3
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var beat = t / beat_duration
+		var beat_16th = beat * 4.0
+
+		var sample_l = 0.0
+		var sample_r = 0.0
+
+		# Layer 1: Triangle wave bass (Terraria-style)
+		var bass_idx = int(beat / 2.0) % bass_notes.size()
+		var bass_freq = float(bass_notes[bass_idx])
+		var bass_phase = fmod(t * bass_freq, 1.0)
+		var bass_wave = abs(bass_phase - 0.5) * 4.0 - 1.0  # Triangle
+		sample_l += bass_wave * 0.15
+		sample_r += bass_wave * 0.15
+
+		# Layer 2: Square wave melody (main chiptune sound)
+		var melody_idx = int(beat_16th / 2.0) % melody.size()
+		var melody_freq = float(melody[melody_idx])
+
+		# Melody envelope (slight attack/decay per note)
+		var note_phase = fmod(beat_16th / 2.0, 1.0)
+		var melody_env = 1.0 - note_phase * 0.3
+
+		# Square wave (sign of sine)
+		var melody_wave = sign(sin(TAU * melody_freq * t))
+		# Soften the square wave slightly
+		melody_wave = melody_wave * 0.7 + sin(TAU * melody_freq * t) * 0.3
+		sample_l += melody_wave * 0.08 * melody_env
+		sample_r += melody_wave * 0.08 * melody_env
+
+		# Layer 3: Arpeggio accompaniment (fast chiptune arps)
+		var arp_notes = [262, 330, 392, 523]  # C4, E4, G4, C5
+		var arp_idx = int(beat_16th) % arp_notes.size()
+		var arp_freq = float(arp_notes[arp_idx])
+
+		var arp_env = exp(-fmod(beat_16th, 1.0) * 6.0)
+		var arp_wave = sign(sin(TAU * arp_freq * t)) * 0.5 + sin(TAU * arp_freq * 2.0 * t) * 0.3
+		sample_l += arp_wave * 0.04 * arp_env
+		sample_r += arp_wave * 0.05 * arp_env
+
+		# Layer 4: Noise percussion (simple hi-hat style on 8ths)
+		var perc_phase = fmod(beat * 2.0, 1.0)
+		if perc_phase < 0.1:
+			var noise = (randf() - 0.5) * 0.06 * (1.0 - perc_phase * 10.0)
+			sample_l += noise
+			sample_r += noise
+
+		# Layer 5: Kick drum on beats
+		var kick_phase = fmod(beat, 1.0)
+		if kick_phase < 0.15:
+			var kick_freq = 80.0 * (1.0 - kick_phase * 4.0)
+			var kick = sin(TAU * kick_freq * t) * (1.0 - kick_phase * 6.0) * 0.12
+			sample_l += kick
+			sample_r += kick
+
+		# Soft limiting
+		sample_l = clamp(sample_l, -0.9, 0.9)
+		sample_r = clamp(sample_r, -0.9, 0.9)
+
+		var int_l = int(sample_l * 32767)
+		var int_r = int(sample_r * 32767)
+
+		data[i * 4] = int_l & 0xFF
+		data[i * 4 + 1] = (int_l >> 8) & 0xFF
+		data[i * 4 + 2] = int_r & 0xFF
+		data[i * 4 + 3] = (int_r >> 8) & 0xFF
+
+	audio.data = data
+	music_player.stream = audio
+
+func _on_music_finished():
+	"""Restart music when it finishes (backup for loop)"""
+	if not music_muted and music_player:
+		music_player.play()
+
+func _on_music_toggle_pressed():
+	"""Toggle background music on/off"""
+	music_muted = not music_muted
+	if music_muted:
+		music_player.stop()
+		if music_toggle:
+			music_toggle.text = "♪"
+			music_toggle.modulate = Color(0.5, 0.5, 0.5)
+	else:
+		music_player.play()
+		if music_toggle:
+			music_toggle.text = "♫"
+			music_toggle.modulate = Color(1, 1, 1)
 
 func _process(_delta):
 	connection.poll()
@@ -1902,6 +2153,11 @@ func update_player_level():
 		return
 	var level = character_data.get("level", 1)
 	player_level_label.text = "Level %d" % level
+
+	# Play level up sound if level increased
+	if last_known_level > 0 and level > last_known_level:
+		play_levelup_sound()
+	last_known_level = level
 
 func update_player_hp_bar():
 	if not player_health_bar or not has_character:
