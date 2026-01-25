@@ -2,7 +2,8 @@
 # Server with persistence, account system, and permadeath
 extends Control
 
-const PORT = 9080
+const DEFAULT_PORT = 9080
+var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 
 # UI References
 @onready var player_count_label = $VBox/StatusRow/PlayerCountLabel
@@ -45,6 +46,15 @@ const PLAYER_LIST_UPDATE_INTERVAL = 180.0  # Update every 3 minutes
 var player_list_update_timer = 0.0
 
 func _ready():
+	# Parse command line arguments for port
+	var args = OS.get_cmdline_args()
+	for arg in args:
+		if arg.begins_with("--port="):
+			var port_str = arg.substr(7)
+			if port_str.is_valid_int():
+				PORT = int(port_str)
+				print("Using custom port from command line: %d" % PORT)
+
 	print("========================================")
 	print("Phantasia Revival Server Starting...")
 	print("========================================")
@@ -1514,11 +1524,15 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		# Fallback to gold
 		var gold_amount = max(10, area_level * (randi() % 10 + 5))
 		character.gold += gold_amount
+		# Pad gold text to fit in box (34 chars inner width)
+		var gold_text = "Found %d gold!" % gold_amount
+		if gold_text.length() < 34:
+			gold_text = gold_text + " ".repeat(34 - gold_text.length())
 		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]     [color=#00FF00]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
-		msg += "[color=#FFD700]║[/color] You discover a hidden cache!       [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]║[/color] [color=#FFD700]Found %d gold![/color]            [color=#FFD700]║[/color]\n" % gold_amount
+		msg += "[color=#FFD700]║[/color] You discover a hidden cache!      [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color] [color=#FFD700]%s[/color] [color=#FFD700]║[/color]\n" % gold_text
 		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -1530,11 +1544,16 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		var item = items[0]
 		character.add_item(item)
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
+		var item_name = item.get("name", "Unknown Item")
+		# Pad item name to fit in box (34 chars inner width)
+		var padded_name = item_name
+		if padded_name.length() < 34:
+			padded_name = padded_name + " ".repeat(34 - padded_name.length())
 		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]     [color=#00FF00]✦ LUCKY FIND! ✦[/color]     [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
-		msg += "[color=#FFD700]║[/color] You discover something valuable!   [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, item.get("name", "Unknown Item")]
+		msg += "[color=#FFD700]║[/color] You discover something valuable!  [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, padded_name]
 		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -2186,12 +2205,16 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		return
 
 	# Simulate dice rolls for both merchant and player
+	# House edge: merchant gets a hidden +2 bonus, making player wins harder
 	var merchant_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
 	var player_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
 	var merchant_total = merchant_dice[0] + merchant_dice[1] + merchant_dice[2]
 	var player_total = player_dice[0] + player_dice[1] + player_dice[2]
 
-	# Build dice display
+	# House edge - merchant effectively rolls 2 higher (hidden from player)
+	var adjusted_merchant_total = merchant_total + 2
+
+	# Build dice display (shows raw dice, not the house edge)
 	var dice_msg = "[color=#FF4444]Merchant:[/color] [%d][%d][%d] = %d\n" % [merchant_dice[0], merchant_dice[1], merchant_dice[2], merchant_total]
 	dice_msg += "[color=#00FF00]You:[/color] [%d][%d][%d] = %d\n" % [player_dice[0], player_dice[1], player_dice[2], player_total]
 
@@ -2199,56 +2222,69 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	var won = false
 	var item_won = null
 
-	# Determine outcome based on dice difference
-	var diff = player_total - merchant_total
+	# Check for triple 6s first - JACKPOT! (rare big win, ~0.46% chance)
+	if player_dice[0] == 6 and player_dice[1] == 6 and player_dice[2] == 6:
+		# Triple 6s - guaranteed item or massive gold!
+		var item_level = max(1, character.level + randi() % 30)
+		var tier = _level_to_tier(item_level)
+		var items = drop_tables.roll_drops(tier, 100, item_level)
 
-	if diff < -5:
-		# Bad loss - lose bet
-		character.gold -= bet_amount
-		result_msg = "[color=#FF4444]Crushing defeat! You lose %d gold.[/color]" % bet_amount
-	elif diff < 0:
-		# Small loss - lose half bet
-		var loss = bet_amount / 2
-		character.gold -= loss
-		result_msg = "[color=#FF4444]Close, but not enough. You lose %d gold.[/color]" % loss
-	elif diff == 0:
-		# Tie - push (no change)
-		result_msg = "[color=#FFD700]A tie! Your bet is returned.[/color]"
-	elif diff <= 5:
-		# Small win - win 1.5x
-		var winnings = int(bet_amount * 1.5)
-		character.gold += winnings - bet_amount
-		result_msg = "[color=#00FF00]Victory! You win %d gold![/color]" % winnings
+		if items.size() > 0 and character.can_add_item():
+			character.add_item(items[0])
+			item_won = items[0]
+			var rarity_color = _get_rarity_color(items[0].get("rarity", "common"))
+			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! JACKPOT! ★★★[/color]\n[color=%s]You won: %s![/color]" % [rarity_color, items[0].get("name", "Unknown")]
+		else:
+			var winnings = bet_amount * 10
+			character.gold += winnings - bet_amount
+			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! You win %d gold! ★★★[/color]" % winnings
 		won = true
-	elif diff <= 10:
-		# Big win - win 2.5x
-		var winnings = int(bet_amount * 2.5)
+	# Check for any triple (other than 6s) - nice bonus (~2.3% chance)
+	elif player_dice[0] == player_dice[1] and player_dice[1] == player_dice[2]:
+		var winnings = bet_amount * 3
 		character.gold += winnings - bet_amount
-		result_msg = "[color=#FFD700]Dominating! You win %d gold![/color]" % winnings
+		result_msg = "[color=#FFD700]TRIPLE %ds! Lucky roll! You win %d gold![/color]" % [player_dice[0], winnings]
 		won = true
 	else:
-		# Jackpot - triple 6s or huge margin, win item or 5x
-		if player_dice[0] == 6 and player_dice[1] == 6 and player_dice[2] == 6:
-			# Triple 6s - guaranteed item!
-			var item_level = max(1, character.level + randi() % 20)
-			var tier = _level_to_tier(item_level)
-			var items = drop_tables.roll_drops(tier, 100, item_level)
+		# Normal outcome based on dice difference (vs adjusted merchant total)
+		var diff = player_total - adjusted_merchant_total
 
-			if items.size() > 0 and character.can_add_item():
-				character.add_item(items[0])
-				item_won = items[0]
-				var rarity_color = _get_rarity_color(items[0].get("rarity", "common"))
-				result_msg = "[color=#FFD700]TRIPLE SIXES! JACKPOT![/color]\n[color=%s]You won: %s![/color]" % [rarity_color, items[0].get("name", "Unknown")]
-			else:
-				var winnings = bet_amount * 5
-				character.gold += winnings - bet_amount
-				result_msg = "[color=#FFD700]TRIPLE SIXES! You win %d gold![/color]" % winnings
+		if diff < -6:
+			# Crushing loss - lose full bet
+			character.gold -= bet_amount
+			result_msg = "[color=#FF4444]Crushing defeat! You lose %d gold.[/color]" % bet_amount
+		elif diff < -2:
+			# Bad loss - lose 75% bet
+			var loss = int(bet_amount * 0.75)
+			character.gold -= loss
+			result_msg = "[color=#FF4444]The merchant outrolls you! You lose %d gold.[/color]" % loss
+		elif diff < 0:
+			# Small loss - lose half bet
+			var loss = int(bet_amount * 0.5)
+			character.gold -= loss
+			result_msg = "[color=#FF4444]Close, but not enough. You lose %d gold.[/color]" % loss
+		elif diff == 0:
+			# Near-tie - lose small ante (house always wins ties)
+			var loss = int(bet_amount * 0.25)
+			character.gold -= loss
+			result_msg = "[color=#FFAA00]Too close to call... house takes a small cut: %d gold.[/color]" % loss
+		elif diff <= 3:
+			# Small win - win 1.25x (net +25%)
+			var winnings = int(bet_amount * 1.25)
+			character.gold += winnings - bet_amount
+			result_msg = "[color=#00FF00]Victory! You win %d gold![/color]" % winnings
+			won = true
+		elif diff <= 6:
+			# Good win - win 1.75x
+			var winnings = int(bet_amount * 1.75)
+			character.gold += winnings - bet_amount
+			result_msg = "[color=#00FF00]Strong roll! You win %d gold![/color]" % winnings
 			won = true
 		else:
-			# Big margin win - 3x
-			var winnings = bet_amount * 3
+			# Dominating win - win 2.5x
+			var winnings = int(bet_amount * 2.5)
 			character.gold += winnings - bet_amount
-			result_msg = "[color=#FFD700]CRUSHING VICTORY! You win %d gold![/color]" % winnings
+			result_msg = "[color=#FFD700]DOMINATING! You win %d gold![/color]" % winnings
 			won = true
 
 	# Send gamble result with prompt to continue

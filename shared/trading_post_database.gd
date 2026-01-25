@@ -36,6 +36,35 @@ const TRADING_POSTS = {
 		"description": "The central hub of the realm. The Royal Herald posts daily bounties for brave souls."
 	},
 
+	# Inner-Mid Zone (Level 25-75 areas) - Filling gaps closer to center
+	"northwatch": {
+		"id": "northwatch",
+		"name": "Northwatch",
+		"center": Vector2i(0, 75),
+		"size": 3,
+		"quest_giver": "Scout Leader",
+		"quest_focus": "scouting",
+		"description": "A watchtower overlooking the northern plains. Scout Leader Mira trains reconnaissance experts."
+	},
+	"eastern_camp": {
+		"id": "eastern_camp",
+		"name": "Eastern Camp",
+		"center": Vector2i(75, 0),
+		"size": 3,
+		"quest_giver": "Camp Commander",
+		"quest_focus": "combat",
+		"description": "A military encampment on the eastern road. The Commander drills soldiers daily."
+	},
+	"western_refuge": {
+		"id": "western_refuge",
+		"name": "Western Refuge",
+		"center": Vector2i(-75, 0),
+		"size": 3,
+		"quest_giver": "Hermit Sage",
+		"quest_focus": "wisdom",
+		"description": "A peaceful sanctuary in the western woods. The Hermit Sage offers guidance to seekers."
+	},
+
 	# Mid Zone (Level 50-200 areas)
 	"frostgate": {
 		"id": "frostgate",
@@ -45,6 +74,15 @@ const TRADING_POSTS = {
 		"quest_giver": "Guild Master",
 		"quest_focus": "exploration",
 		"description": "A northern outpost built into the frozen cliffs. The Guild Master organizes expeditions."
+	},
+	"highland_post": {
+		"id": "highland_post",
+		"name": "Highland Post",
+		"center": Vector2i(0, 150),
+		"size": 3,
+		"quest_giver": "Mountain Guide",
+		"quest_focus": "climbing",
+		"description": "A sturdy outpost in the northern highlands. The Mountain Guide knows every peak."
 	},
 	"eastwatch": {
 		"id": "eastwatch",
@@ -72,6 +110,116 @@ const TRADING_POSTS = {
 		"quest_giver": "Sea Captain",
 		"quest_focus": "collection",
 		"description": "A trading port on the southern coast. Captain Vex knows the seas and their treasures."
+	},
+	"northeast_bastion": {
+		"id": "northeast_bastion",
+		"name": "Northeast Bastion",
+		"center": Vector2i(120, 120),
+		"size": 3,
+		"quest_giver": "Bastion Commander",
+		"quest_focus": "defense",
+		"description": "A defensive fortress in the northeastern reaches. The Commander holds the line."
+	},
+	"northwest_lodge": {
+		"id": "northwest_lodge",
+		"name": "Northwest Lodge",
+		"center": Vector2i(-120, 120),
+		"size": 3,
+		"quest_giver": "Lodge Keeper",
+		"quest_focus": "hunting",
+		"description": "A hunting lodge in the northwestern forests. The Lodge Keeper tracks legendary beasts."
+	},
+	"southeast_outpost": {
+		"id": "southeast_outpost",
+		"name": "Southeast Outpost",
+		"center": Vector2i(120, -120),
+		"size": 3,
+		"quest_giver": "Outpost Warden",
+		"quest_focus": "patrol",
+		"description": "A border outpost in the southeastern wilds. The Warden patrols dangerous territory."
+	},
+	"southwest_camp": {
+		"id": "southwest_camp",
+		"name": "Southwest Camp",
+		"center": Vector2i(-120, -120),
+		"size": 3,
+		"quest_giver": "Ranger Captain",
+		"quest_focus": "tracking",
+		"description": "A ranger camp in the southwestern badlands. The Captain tracks threats from afar."
+	},
+
+	# Mid-Outer Zone (Level 150-300 areas) - Bridge between mid and outer
+	"far_east_station": {
+		"id": "far_east_station",
+		"name": "Far East Station",
+		"center": Vector2i(250, 0),
+		"size": 3,
+		"quest_giver": "Station Master",
+		"quest_focus": "expeditions",
+		"description": "A remote station on the far eastern frontier. The Station Master supplies brave explorers."
+	},
+	"far_west_haven": {
+		"id": "far_west_haven",
+		"name": "Far West Haven",
+		"center": Vector2i(-250, 0),
+		"size": 3,
+		"quest_giver": "Haven Watcher",
+		"quest_focus": "vigilance",
+		"description": "A fortified haven on the far western edge. The Watcher guards against what lies beyond."
+	},
+	"deep_south_port": {
+		"id": "deep_south_port",
+		"name": "Deep South Port",
+		"center": Vector2i(0, -275),
+		"size": 3,
+		"quest_giver": "Harbor Master",
+		"quest_focus": "maritime",
+		"description": "A harbor at the edge of known waters. The Harbor Master knows secrets of the deep."
+	},
+	"high_north_peak": {
+		"id": "high_north_peak",
+		"name": "High North Peak",
+		"center": Vector2i(0, 250),
+		"size": 3,
+		"quest_giver": "Peak Warden",
+		"quest_focus": "altitude",
+		"description": "A watchtower on the highest northern peak. The Peak Warden sees all approaches."
+	},
+	"northeast_frontier": {
+		"id": "northeast_frontier",
+		"name": "Northeast Frontier",
+		"center": Vector2i(200, 200),
+		"size": 3,
+		"quest_giver": "Frontier Marshal",
+		"quest_focus": "expansion",
+		"description": "The furthest northeast settlement. The Marshal pushes the boundaries of civilization."
+	},
+	"northwest_citadel": {
+		"id": "northwest_citadel",
+		"name": "Northwest Citadel",
+		"center": Vector2i(-200, 200),
+		"size": 3,
+		"quest_giver": "Citadel Lord",
+		"quest_focus": "fortification",
+		"description": "An ancient citadel in the northwest. The Lord maintains defenses against ancient evils."
+	},
+	"southeast_garrison": {
+		"id": "southeast_garrison",
+		"name": "Southeast Garrison",
+		"center": Vector2i(200, -200),
+		"size": 3,
+		"quest_giver": "Garrison General",
+		"quest_focus": "military",
+		"description": "A military garrison in the southeast. The General commands elite forces."
+	},
+	"southwest_fortress": {
+		"id": "southwest_fortress",
+		"name": "Southwest Fortress",
+		"center": Vector2i(-200, -200),
+		"size": 3,
+		"quest_giver": "Fortress Commander",
+		"quest_focus": "siege",
+		"description": "A massive fortress in the southwest. The Commander withstands all assaults."
 	},
 
 	# Outer Zone (Level 200+ dangerous areas)
@@ -110,6 +258,42 @@ const TRADING_POSTS = {
 		"quest_giver": "Frost Hermit",
 		"quest_focus": "extreme",
 		"description": "The most remote trading post, buried in eternal ice. The Frost Hermit offers extreme challenges."
+	},
+	"abyssal_depths": {
+		"id": "abyssal_depths",
+		"name": "Abyssal Depths",
+		"center": Vector2i(-300, -300),
+		"size": 3,
+		"quest_giver": "Depth Walker",
+		"quest_focus": "abyss",
+		"description": "A station at the edge of the abyss. The Depth Walker has seen things beyond mortal ken."
+	},
+	"celestial_spire": {
+		"id": "celestial_spire",
+		"name": "Celestial Spire",
+		"center": Vector2i(-300, 300),
+		"size": 3,
+		"quest_giver": "Star Keeper",
+		"quest_focus": "celestial",
+		"description": "A tower reaching toward the heavens. The Star Keeper reads the fates in the stars."
+	},
+	"storm_peak": {
+		"id": "storm_peak",
+		"name": "Storm Peak",
+		"center": Vector2i(0, 350),
+		"size": 3,
+		"quest_giver": "Storm Caller",
+		"quest_focus": "elemental",
+		"description": "A peak eternally wreathed in lightning. The Storm Caller commands the tempest."
+	},
+	"dragons_rest": {
+		"id": "dragons_rest",
+		"name": "Dragon's Rest",
+		"center": Vector2i(300, -300),
+		"size": 5,
+		"quest_giver": "Dragon Sage",
+		"quest_focus": "legendary",
+		"description": "An ancient sanctuary where dragons once slumbered. The Dragon Sage guards their legacy."
 	}
 }
 

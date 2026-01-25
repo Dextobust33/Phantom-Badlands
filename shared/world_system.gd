@@ -562,93 +562,325 @@ func get_direction_name(direction: int) -> String:
 	return "unknown"
 
 # ===== TRAVELING MERCHANT SYSTEM =====
+# Persistent merchants that travel between Trading Posts
+
+# Merchant definitions - each has a unique ID, type, and services
+const MERCHANT_DEFINITIONS = [
+	{
+		"id": "merchant_1",
+		"name": "Traveling Weaponsmith",
+		"specialty": "weapons",
+		"services": ["buy", "sell", "upgrade"]
+	},
+	{
+		"id": "merchant_2",
+		"name": "Wandering Armorer",
+		"specialty": "armor",
+		"services": ["buy", "sell", "upgrade"]
+	},
+	{
+		"id": "merchant_3",
+		"name": "Mysterious Jeweler",
+		"specialty": "jewelry",
+		"services": ["buy", "sell", "gamble"]
+	},
+	{
+		"id": "merchant_4",
+		"name": "Fortune Teller",
+		"specialty": "all",
+		"services": ["buy", "sell", "gamble"]
+	},
+	{
+		"id": "merchant_5",
+		"name": "Master Trader",
+		"specialty": "all",
+		"services": ["buy", "sell", "upgrade", "gamble"]
+	}
+]
+
+# Trading post IDs for routing
+# All trading post IDs for merchant routing (updated to include all posts)
+const TRADING_POST_IDS = [
+	# Inner zone
+	"haven", "crossroads",
+	# Inner-mid zone
+	"northwatch", "eastern_camp", "western_refuge",
+	# Mid zone
+	"frostgate", "highland_post", "eastwatch", "westhold", "southport",
+	"northeast_bastion", "northwest_lodge", "southeast_outpost", "southwest_camp",
+	# Mid-outer zone
+	"far_east_station", "far_west_haven", "deep_south_port", "high_north_peak",
+	"northeast_frontier", "northwest_citadel", "southeast_garrison", "southwest_fortress",
+	# Outer zone
+	"shadowmere", "inferno_outpost", "voids_edge", "frozen_reach",
+	"abyssal_depths", "celestial_spire", "storm_peak", "dragons_rest"
+]
+
+# Active merchant states: merchant_id -> {x, y, destination_id, next_destination_id, inventory_seed, last_restock_time}
+var traveling_merchants: Dictionary = {}
+
+# Movement speed: tiles per second (slow enough for players to catch up)
+# Merchants move slowly and take regular breaks to rest
+const MERCHANT_SPEED = 0.1  # Tiles per second (1 tile every 10 seconds)
+const MERCHANT_REST_DURATION = 120.0  # Rest for 2 minutes after moving some distance
+const MERCHANT_TRAVEL_BEFORE_REST = 30.0  # Move for 30 tiles then take a break
+
+# Last update timestamp for merchant movement
+var _last_merchant_update: float = 0.0
+
+# Whether merchants have been initialized
+var _merchants_initialized: bool = false
+
+func _initialize_merchants():
+	"""Initialize all traveling merchants with starting positions and destinations"""
+	if _merchants_initialized:
+		return
+
+	traveling_merchants.clear()
+	var rng = RandomNumberGenerator.new()
+	rng.seed = int(Time.get_unix_time_from_system())
+
+	for i in range(MERCHANT_DEFINITIONS.size()):
+		var merchant_def = MERCHANT_DEFINITIONS[i]
+		var merchant_id = merchant_def.id
+
+		# Pick a random starting trading post
+		var start_idx = rng.randi() % TRADING_POST_IDS.size()
+		var start_post_id = TRADING_POST_IDS[start_idx]
+		var start_post = trading_post_db.get_trading_post_by_id(start_post_id)
+
+		# Pick a different destination
+		var dest_idx = (start_idx + 1 + rng.randi() % (TRADING_POST_IDS.size() - 1)) % TRADING_POST_IDS.size()
+		var dest_post_id = TRADING_POST_IDS[dest_idx]
+
+		# Pick yet another different next destination
+		var next_idx = dest_idx
+		while next_idx == dest_idx or next_idx == start_idx:
+			next_idx = rng.randi() % TRADING_POST_IDS.size()
+		var next_post_id = TRADING_POST_IDS[next_idx]
+
+		# Start the merchant at the trading post (they'll move away from it)
+		traveling_merchants[merchant_id] = {
+			"id": merchant_id,
+			"name": merchant_def.name,
+			"specialty": merchant_def.specialty,
+			"services": merchant_def.services,
+			"x": float(start_post.center.x),
+			"y": float(start_post.center.y),
+			"destination_id": dest_post_id,
+			"next_destination_id": next_post_id,
+			"inventory_seed": rng.randi(),
+			"last_restock_time": Time.get_unix_time_from_system(),
+			"tiles_since_rest": 0.0,  # Track distance traveled since last rest
+			"resting_until": 0.0,  # Unix time when rest ends (0 = not resting)
+			"is_resting": false  # Easy flag for checking rest state
+		}
+
+	_merchants_initialized = true
+	_last_merchant_update = Time.get_unix_time_from_system()
+
+func update_merchants(delta: float = 0.0):
+	"""Update merchant positions - call this periodically from the server"""
+	if not _merchants_initialized:
+		_initialize_merchants()
+		return
+
+	var current_time = Time.get_unix_time_from_system()
+
+	# If delta not provided, calculate from last update
+	if delta <= 0:
+		delta = current_time - _last_merchant_update
+		if delta <= 0:
+			return
+
+	_last_merchant_update = current_time
+
+	for merchant_id in traveling_merchants:
+		var merchant = traveling_merchants[merchant_id]
+		_update_single_merchant(merchant, delta)
+
+func _update_single_merchant(merchant: Dictionary, delta: float):
+	"""Move a single merchant towards their destination, with rest breaks"""
+	var current_time = Time.get_unix_time_from_system()
+
+	# Initialize rest tracking fields if missing (for existing merchants)
+	if not merchant.has("tiles_since_rest"):
+		merchant.tiles_since_rest = 0.0
+	if not merchant.has("resting_until"):
+		merchant.resting_until = 0.0
+	if not merchant.has("is_resting"):
+		merchant.is_resting = false
+
+	# Check if merchant is resting
+	if merchant.is_resting:
+		if current_time >= merchant.resting_until:
+			# Rest is over, resume traveling
+			merchant.is_resting = false
+			merchant.tiles_since_rest = 0.0
+		else:
+			# Still resting, don't move
+			return
+
+	var dest_post = trading_post_db.get_trading_post_by_id(merchant.destination_id)
+	if dest_post.is_empty():
+		return
+
+	var dest_x = float(dest_post.center.x)
+	var dest_y = float(dest_post.center.y)
+	var curr_x = merchant.x
+	var curr_y = merchant.y
+
+	# Calculate direction to destination
+	var dx = dest_x - curr_x
+	var dy = dest_y - curr_y
+	var dist = sqrt(dx * dx + dy * dy)
+
+	# Check if arrived at destination (within 2 tiles of center)
+	if dist < 2.0:
+		_merchant_arrived_at_destination(merchant)
+		return
+
+	# Normalize and apply speed
+	var move_dist = MERCHANT_SPEED * delta
+	if move_dist > dist:
+		move_dist = dist
+
+	var norm_x = dx / dist
+	var norm_y = dy / dist
+
+	merchant.x = curr_x + norm_x * move_dist
+	merchant.y = curr_y + norm_y * move_dist
+
+	# Track distance traveled and trigger rest if needed
+	merchant.tiles_since_rest += move_dist
+	if merchant.tiles_since_rest >= MERCHANT_TRAVEL_BEFORE_REST:
+		# Time to rest! Merchant stops for a while
+		merchant.is_resting = true
+		merchant.resting_until = current_time + MERCHANT_REST_DURATION
+
+func _merchant_arrived_at_destination(merchant: Dictionary):
+	"""Handle merchant arriving at a trading post - restock and set new destination"""
+	var arrived_post_id = merchant.destination_id
+	var arrived_post = trading_post_db.get_trading_post_by_id(arrived_post_id)
+
+	# Snap to trading post center
+	merchant.x = float(arrived_post.center.x)
+	merchant.y = float(arrived_post.center.y)
+
+	# Reset rest tracking (arrival is like a break)
+	merchant.tiles_since_rest = 0.0
+	merchant.is_resting = false
+	merchant.resting_until = 0.0
+
+	# Restock inventory (new seed)
+	merchant.inventory_seed = randi()
+	merchant.last_restock_time = Time.get_unix_time_from_system()
+
+	# Rotate destinations: current next becomes new destination
+	var old_next = merchant.next_destination_id
+	merchant.destination_id = old_next
+
+	# Pick a new next destination (different from current and new destination)
+	var new_next_idx = randi() % TRADING_POST_IDS.size()
+	var attempts = 0
+	while (TRADING_POST_IDS[new_next_idx] == arrived_post_id or TRADING_POST_IDS[new_next_idx] == old_next) and attempts < 20:
+		new_next_idx = randi() % TRADING_POST_IDS.size()
+		attempts += 1
+	merchant.next_destination_id = TRADING_POST_IDS[new_next_idx]
 
 func is_merchant_at(x: int, y: int) -> bool:
 	"""Check if a traveling merchant is at this location"""
-	# No wandering merchants inside Trading Posts - they have built-in services
+	if not _merchants_initialized:
+		_initialize_merchants()
+
+	# No merchants inside Trading Posts - they pass through but don't stop there for players
 	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
 		return false
 
-	# Normal merchants: ~0.2% of tiles, move every hour
-	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
-	var hash_val = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
-	if hash_val < 2:  # 0.2% chance (reduced from 0.5%)
-		return true
-
-	# Wandering traders: ~0.1% of tiles, move every 12 minutes
-	var wanderer_seed = int(Time.get_unix_time_from_system() / 720)  # 12 minutes
-	var wanderer_hash = abs((x * 53 + y * 89 + wanderer_seed * 23) * 6131) % 1000
-	if wanderer_hash < 1:  # 0.1% chance
-		return true
+	# Check each merchant's position (within 1 tile)
+	for merchant_id in traveling_merchants:
+		var merchant = traveling_merchants[merchant_id]
+		var mx = int(round(merchant.x))
+		var my = int(round(merchant.y))
+		if mx == x and my == y:
+			return true
 
 	return false
 
 func check_merchant_encounter(x: int, y: int) -> bool:
 	"""Check if player encounters a merchant at this location"""
-	if is_merchant_at(x, y):
-		return true
-	return false
+	return is_merchant_at(x, y)
 
 func get_merchant_at(x: int, y: int) -> Dictionary:
 	"""Get merchant info for this location"""
-	if not is_merchant_at(x, y):
+	if not _merchants_initialized:
+		_initialize_merchants()
+
+	# Check each merchant's position
+	for merchant_id in traveling_merchants:
+		var merchant = traveling_merchants[merchant_id]
+		var mx = int(round(merchant.x))
+		var my = int(round(merchant.y))
+		if mx == x and my == y:
+			# Get destination info for display
+			var dest_post = trading_post_db.get_trading_post_by_id(merchant.destination_id)
+			var next_post = trading_post_db.get_trading_post_by_id(merchant.next_destination_id)
+
+			return {
+				"id": merchant.id,
+				"name": merchant.name,
+				"services": merchant.services,
+				"specialty": merchant.specialty,
+				"x": mx,
+				"y": my,
+				"hash": merchant.inventory_seed,  # For consistent pricing/inventory
+				"is_wanderer": false,
+				"destination": dest_post.get("name", "Unknown"),
+				"destination_id": merchant.destination_id,
+				"next_destination": next_post.get("name", "Unknown"),
+				"next_destination_id": merchant.next_destination_id,
+				"last_restock": merchant.last_restock_time,
+				"is_resting": merchant.get("is_resting", false)  # Whether merchant is taking a break
+			}
+
+	return {}
+
+func get_all_merchant_positions() -> Array:
+	"""Get positions of all merchants for map display"""
+	if not _merchants_initialized:
+		_initialize_merchants()
+
+	var positions = []
+	for merchant_id in traveling_merchants:
+		var merchant = traveling_merchants[merchant_id]
+		positions.append({
+			"x": int(round(merchant.x)),
+			"y": int(round(merchant.y)),
+			"name": merchant.name
+		})
+	return positions
+
+func get_merchant_travel_info(merchant_id: String) -> Dictionary:
+	"""Get detailed travel info for a specific merchant"""
+	if not traveling_merchants.has(merchant_id):
 		return {}
 
-	# Check if this is a wandering trader (fast-moving) vs normal merchant
-	var hour_seed = int(Time.get_unix_time_from_system() / 3600)
-	var wanderer_seed = int(Time.get_unix_time_from_system() / 720)  # 12 minutes
+	var merchant = traveling_merchants[merchant_id]
+	var dest_post = trading_post_db.get_trading_post_by_id(merchant.destination_id)
 
-	var normal_hash = abs((x * 97 + y * 61 + hour_seed * 37) * 7919) % 1000
-	var wanderer_hash = abs((x * 53 + y * 89 + wanderer_seed * 23) * 6131) % 1000
+	if dest_post.is_empty():
+		return {}
 
-	var is_wanderer = wanderer_hash < 1 and normal_hash >= 2
-
-	# Generate consistent merchant based on location + appropriate time seed
-	var hash_val: int
-	var merchant_type: String
-	var services = ["buy", "sell"]  # All merchants buy/sell
-
-	if is_wanderer:
-		hash_val = abs((x * 53 + y * 89 + wanderer_seed * 23))
-		merchant_type = "Wandering Trader"
-		services.append("upgrade")
-		services.append("gamble")
-	else:
-		hash_val = abs((x * 97 + y * 61 + hour_seed * 37))
-		# Merchant types: specialized (Weaponsmith, Armorer, Jeweler) and general
-		var merchant_types = [
-			"Weaponsmith",      # Sells weapons only
-			"Armorer",          # Sells armor only
-			"Jeweler",          # Sells rings, amulets, artifacts
-			"Traveling Smith",  # Sells all equipment
-			"Mysterious Merchant",  # Sells all + gambles
-			"Fortune Teller"    # Sells all + gambles
-		]
-		merchant_type = merchant_types[hash_val % merchant_types.size()]
-
-		if "Smith" in merchant_type or merchant_type == "Weaponsmith":
-			services.append("upgrade")
-		if "Fortune" in merchant_type or "Mysterious" in merchant_type:
-			services.append("gamble")
-
-	# Determine specialty for equipment filtering
-	var specialty = "all"  # Default: sells everything
-	match merchant_type:
-		"Weaponsmith":
-			specialty = "weapons"
-		"Armorer":
-			specialty = "armor"
-		"Jeweler":
-			specialty = "jewelry"
+	var dest_x = float(dest_post.center.x)
+	var dest_y = float(dest_post.center.y)
+	var dist = sqrt(pow(merchant.x - dest_x, 2) + pow(merchant.y - dest_y, 2))
+	var eta_seconds = dist / MERCHANT_SPEED if MERCHANT_SPEED > 0 else 0
 
 	return {
-		"name": merchant_type,
-		"services": services,
-		"specialty": specialty,
-		"x": x,
-		"y": y,
-		"hash": hash_val,  # For consistent pricing
-		"is_wanderer": is_wanderer
+		"destination": dest_post.name,
+		"distance": dist,
+		"eta_seconds": eta_seconds,
+		"eta_minutes": eta_seconds / 60.0
 	}
 
 func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:

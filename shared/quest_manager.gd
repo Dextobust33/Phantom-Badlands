@@ -45,11 +45,15 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		return {"success": false, "message": check.reason}
 
 	var quest = quest_db.get_quest(quest_id)
+	var quest_type = quest.get("type", -1)
 	var target = quest.get("target", 1)
 
 	# For kill count quests with separate kill_count field
 	if quest.has("kill_count"):
 		target = quest.kill_count
+	# KILL_LEVEL and BOSS_HUNT use target for level threshold, default to 1 kill
+	elif quest_type == QuestDatabaseScript.QuestType.KILL_LEVEL or quest_type == QuestDatabaseScript.QuestType.BOSS_HUNT:
+		target = 1  # Kill 1 monster of the required level
 
 	if character.add_quest(quest_id, target, origin_x, origin_y):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}

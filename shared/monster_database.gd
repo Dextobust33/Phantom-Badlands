@@ -985,10 +985,14 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var base_scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
 	var base_scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
 
-	# Adjust HP modestly - we want players with great gear to feel OVERPOWERED
-	# Only account for ~40% of expected attack bonus so good gear shreds monsters
-	var hp_multiplier = 1.0 + (expected_player_attack_bonus / 40.0)
-	var scaled_hp = max(5, int(base_scaled_hp * hp_multiplier))
+	# Adjust HP - base 2x multiplier plus bonus for expected player attack
+	# This ensures combat takes multiple rounds even with good gear
+	var hp_multiplier = 2.0 + (expected_player_attack_bonus / 30.0)
+	var scaled_hp = max(10, int(base_scaled_hp * hp_multiplier))
+
+	# Minimum HP floor based on level to prevent trivial one-shot kills
+	var min_hp = max(10, target_level * 3)
+	scaled_hp = max(scaled_hp, min_hp)
 
 	# Adjust strength modestly - armor should reduce damage but not negate it
 	# Only account for ~30% of expected defense so good armor feels impactful

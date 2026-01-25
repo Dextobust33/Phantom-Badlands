@@ -226,6 +226,262 @@ const QUESTS = {
 		"rewards": {"xp": 3000, "gold": 1500, "gems": 5},
 		"is_daily": false,
 		"prerequisite": "eastwatch_elite_target"
+	},
+
+	# ===== WESTHOLD (-150, 0) - Veteran Warrior - Survival Quests =====
+	"westhold_endurance": {
+		"id": "westhold_endurance",
+		"name": "Test of Endurance",
+		"description": "Prove your stamina by defeating 20 monsters without returning to town.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "westhold",
+		"target": 20,
+		"rewards": {"xp": 400, "gold": 200, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"westhold_western_wilds": {
+		"id": "westhold_western_wilds",
+		"name": "Western Wilds",
+		"description": "Venture to Far West Haven and report back.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "westhold",
+		"target": 1,
+		"destinations": ["far_west_haven"],
+		"rewards": {"xp": 800, "gold": 400, "gems": 2},
+		"is_daily": false,
+		"prerequisite": "westhold_endurance"
+	},
+
+	# ===== SOUTHPORT (0, -150) - Sea Captain - Collection/Exploration =====
+	"southport_southern_seas": {
+		"id": "southport_southern_seas",
+		"name": "Southern Expedition",
+		"description": "Chart a course to the Deep South Port.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "southport",
+		"target": 1,
+		"destinations": ["deep_south_port"],
+		"rewards": {"xp": 600, "gold": 300, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"southport_sea_monsters": {
+		"id": "southport_sea_monsters",
+		"name": "Sea Monster Bounty",
+		"description": "Defeat 15 monsters level 40+ in the southern regions.",
+		"type": QuestType.KILL_LEVEL,
+		"trading_post": "southport",
+		"target": 40,
+		"kill_count": 15,
+		"rewards": {"xp": 1000, "gold": 500, "gems": 2},
+		"is_daily": false,
+		"prerequisite": "southport_southern_seas"
+	},
+
+	# ===== NORTHWATCH (0, 75) - Scout Leader - Scouting =====
+	"northwatch_scout_training": {
+		"id": "northwatch_scout_training",
+		"name": "Scout Training",
+		"description": "Complete basic scout training by defeating 8 monsters.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "northwatch",
+		"target": 8,
+		"rewards": {"xp": 100, "gold": 50, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"northwatch_highland_recon": {
+		"id": "northwatch_highland_recon",
+		"name": "Highland Reconnaissance",
+		"description": "Scout the Highland Post to the north.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "northwatch",
+		"target": 1,
+		"destinations": ["highland_post"],
+		"rewards": {"xp": 300, "gold": 150, "gems": 1},
+		"is_daily": false,
+		"prerequisite": "northwatch_scout_training"
+	},
+
+	# ===== EASTERN_CAMP (75, 0) - Camp Commander - Combat =====
+	"eastern_camp_drill": {
+		"id": "eastern_camp_drill",
+		"name": "Combat Drill",
+		"description": "Defeat 12 monsters to complete your combat drill.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "eastern_camp",
+		"target": 12,
+		"rewards": {"xp": 150, "gold": 75, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"eastern_camp_eastwatch_run": {
+		"id": "eastern_camp_eastwatch_run",
+		"name": "Eastwatch Run",
+		"description": "Deliver supplies to Eastwatch fortress.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "eastern_camp",
+		"target": 1,
+		"destinations": ["eastwatch"],
+		"rewards": {"xp": 350, "gold": 175, "gems": 1},
+		"is_daily": false,
+		"prerequisite": "eastern_camp_drill"
+	},
+
+	# ===== WESTERN_REFUGE (-75, 0) - Hermit Sage - Wisdom =====
+	"western_refuge_meditation": {
+		"id": "western_refuge_meditation",
+		"name": "Meditation Journey",
+		"description": "Seek wisdom by visiting Westhold.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "western_refuge",
+		"target": 1,
+		"destinations": ["westhold"],
+		"rewards": {"xp": 250, "gold": 125, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+
+	# ===== HIGHLAND_POST (0, 150) - Mountain Guide - Climbing =====
+	"highland_climbing": {
+		"id": "highland_climbing",
+		"name": "Mountain Trials",
+		"description": "Defeat 25 monsters in the highland regions.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "highland_post",
+		"target": 25,
+		"rewards": {"xp": 500, "gold": 250, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"highland_peak_journey": {
+		"id": "highland_peak_journey",
+		"name": "Journey to High North Peak",
+		"description": "Climb to the High North Peak trading post.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "highland_post",
+		"target": 1,
+		"destinations": ["high_north_peak"],
+		"rewards": {"xp": 1200, "gold": 600, "gems": 3},
+		"is_daily": false,
+		"prerequisite": "highland_climbing"
+	},
+
+	# ===== FAR_EAST_STATION (250, 0) - Station Master - Expeditions =====
+	"far_east_expedition": {
+		"id": "far_east_expedition",
+		"name": "Eastern Frontier",
+		"description": "Push to Void's Edge at the edge of the world.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "far_east_station",
+		"target": 1,
+		"destinations": ["voids_edge"],
+		"rewards": {"xp": 2000, "gold": 1000, "gems": 5},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"far_east_elite_hunt": {
+		"id": "far_east_elite_hunt",
+		"name": "Elite Eastern Hunt",
+		"description": "Defeat a monster of level 150 or higher.",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "far_east_station",
+		"target": 150,
+		"rewards": {"xp": 3000, "gold": 1500, "gems": 7},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+
+	# ===== FAR_WEST_HAVEN (-250, 0) - Haven Watcher - Vigilance =====
+	"far_west_vigilance": {
+		"id": "far_west_vigilance",
+		"name": "Vigilant Watch",
+		"description": "Eliminate 30 monsters threatening the western frontier.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "far_west_haven",
+		"target": 30,
+		"rewards": {"xp": 1500, "gold": 750, "gems": 3},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"far_west_inferno_path": {
+		"id": "far_west_inferno_path",
+		"name": "Path to the Inferno",
+		"description": "Journey to the Inferno Outpost near Fire Mountain.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "far_west_haven",
+		"target": 1,
+		"destinations": ["inferno_outpost"],
+		"rewards": {"xp": 2500, "gold": 1250, "gems": 6},
+		"is_daily": false,
+		"prerequisite": "far_west_vigilance"
+	},
+
+	# ===== SHADOWMERE (300, 300) - Dark Warden - Challenge =====
+	"shadowmere_worthy": {
+		"id": "shadowmere_worthy",
+		"name": "Prove Your Worth",
+		"description": "Defeat a monster of level 250 or higher.",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "shadowmere",
+		"target": 250,
+		"rewards": {"xp": 5000, "gold": 2500, "gems": 10},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"shadowmere_ultimate": {
+		"id": "shadowmere_ultimate",
+		"name": "Ultimate Challenge",
+		"description": "Defeat a monster of level 500 or higher. Only legends attempt this.",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "shadowmere",
+		"target": 500,
+		"rewards": {"xp": 15000, "gold": 7500, "gems": 25},
+		"is_daily": false,
+		"prerequisite": "shadowmere_worthy"
+	},
+
+	# ===== DRAGONS_REST (300, -300) - Dragon Sage - Legendary =====
+	"dragons_rest_legacy": {
+		"id": "dragons_rest_legacy",
+		"name": "Dragon's Legacy",
+		"description": "Defeat 50 monsters level 200+ to honor the dragon's memory.",
+		"type": QuestType.KILL_LEVEL,
+		"trading_post": "dragons_rest",
+		"target": 200,
+		"kill_count": 50,
+		"rewards": {"xp": 10000, "gold": 5000, "gems": 15},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+
+	# ===== STORM_PEAK (0, 350) - Storm Caller - Elemental =====
+	"storm_peak_ascent": {
+		"id": "storm_peak_ascent",
+		"name": "Storm Ascent",
+		"description": "Prove yourself by defeating 40 monsters in the storm regions.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "storm_peak",
+		"target": 40,
+		"rewards": {"xp": 3500, "gold": 1750, "gems": 8},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+
+	# ===== FROZEN_REACH (0, -400) - Frost Hermit - Extreme =====
+	"frozen_extreme": {
+		"id": "frozen_extreme",
+		"name": "Frozen Extremity",
+		"description": "Survive 10 encounters in high-intensity hotzones within 100 tiles.",
+		"type": QuestType.HOTZONE_KILL,
+		"trading_post": "frozen_reach",
+		"target": 10,
+		"max_distance": 100.0,
+		"min_intensity": 0.5,
+		"rewards": {"xp": 8000, "gold": 4000, "gems": 15},
+		"is_daily": false,
+		"prerequisite": ""
 	}
 }
 
@@ -233,7 +489,34 @@ func get_quest(quest_id: String) -> Dictionary:
 	"""Get quest data by ID. Returns empty dict if not found."""
 	if QUESTS.has(quest_id):
 		return QUESTS[quest_id].duplicate(true)
+
+	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
+	if "_dynamic_" in quest_id:
+		return _regenerate_dynamic_quest(quest_id)
+
 	return {}
+
+func _regenerate_dynamic_quest(quest_id: String) -> Dictionary:
+	"""Regenerate a dynamic quest from its ID."""
+	# Parse ID: postid_dynamic_tier_index
+	var parts = quest_id.split("_dynamic_")
+	if parts.size() != 2:
+		return {}
+
+	var trading_post_id = parts[0]
+	var tier_parts = parts[1].split("_")
+	if tier_parts.size() != 2:
+		return {}
+
+	var tier = int(tier_parts[0])
+	var index = int(tier_parts[1])
+	var quest_tier = tier + index
+
+	# Get trading post coordinates
+	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
+
+	return _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
 
 func get_quests_for_trading_post(trading_post_id: String) -> Array:
 	"""Get all quests offered at a specific Trading Post."""
@@ -249,6 +532,7 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 	var available = []
 	var current_time = Time.get_unix_time_from_system()
 
+	# Get static quests for this trading post
 	for quest_id in QUESTS:
 		var quest = QUESTS[quest_id]
 
@@ -276,7 +560,149 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 
 		available.append(quest.duplicate(true))
 
+	# If no static quests available, generate dynamic quests
+	if available.is_empty():
+		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids)
+		available.append_array(dynamic_quests)
+
 	return available
+
+# ===== DYNAMIC QUEST GENERATION =====
+
+# Trading post locations for distance calculations
+const TRADING_POST_COORDS = {
+	"haven": Vector2i(0, 10),
+	"crossroads": Vector2i(0, 0),
+	"northwatch": Vector2i(0, 75),
+	"eastern_camp": Vector2i(75, 0),
+	"western_refuge": Vector2i(-75, 0),
+	"frostgate": Vector2i(0, -100),
+	"highland_post": Vector2i(0, 150),
+	"eastwatch": Vector2i(150, 0),
+	"westhold": Vector2i(-150, 0),
+	"southport": Vector2i(0, -150),
+	"northeast_bastion": Vector2i(120, 120),
+	"northwest_lodge": Vector2i(-120, 120),
+	"southeast_outpost": Vector2i(120, -120),
+	"southwest_camp": Vector2i(-120, -120),
+	"far_east_station": Vector2i(250, 0),
+	"far_west_haven": Vector2i(-250, 0),
+	"deep_south_port": Vector2i(0, -275),
+	"high_north_peak": Vector2i(0, 250),
+	"northeast_frontier": Vector2i(200, 200),
+	"northwest_citadel": Vector2i(-200, 200),
+	"southeast_garrison": Vector2i(200, -200),
+	"southwest_fortress": Vector2i(-200, -200),
+	"shadowmere": Vector2i(300, 300),
+	"inferno_outpost": Vector2i(-350, 0),
+	"voids_edge": Vector2i(350, 0),
+	"frozen_reach": Vector2i(0, -400),
+	"abyssal_depths": Vector2i(-300, -300),
+	"celestial_spire": Vector2i(-300, 300),
+	"storm_peak": Vector2i(0, 350),
+	"dragons_rest": Vector2i(300, -300)
+}
+
+func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array) -> Array:
+	"""Generate procedural quests when all static quests are completed."""
+	var quests = []
+
+	# Count completed static quests from this post to determine tier
+	var static_count = 0
+	for quest_id in QUESTS:
+		if QUESTS[quest_id].trading_post == trading_post_id:
+			if quest_id in completed_quests:
+				static_count += 1
+
+	# Count completed dynamic quests from this post
+	var dynamic_completed = 0
+	for quest_id in completed_quests:
+		if quest_id.begins_with(trading_post_id + "_dynamic_"):
+			dynamic_completed += 1
+
+	# Calculate tier based on total completions
+	var tier = dynamic_completed + 1
+
+	# Get this trading post's coordinates
+	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
+
+	# Generate 2-3 quests of increasing difficulty
+	for i in range(3):
+		var quest_tier = tier + i
+		var quest_id = "%s_dynamic_%d_%d" % [trading_post_id, tier, i]
+
+		# Skip if already active or completed
+		if quest_id in active_quest_ids or quest_id in completed_quests:
+			continue
+
+		var quest = _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
+		if not quest.is_empty():
+			quests.append(quest)
+
+	return quests
+
+func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: int, post_distance: float) -> Dictionary:
+	"""Generate a single quest based on tier and trading post location."""
+
+	# Base values that scale with tier
+	var kill_count = 5 + (tier * 5)  # 10, 15, 20, 25...
+	var min_level = int(post_distance * 0.5) + (tier * 25)  # Scales with distance and tier
+	var hotzone_distance = 50.0 + (tier * 50.0)  # 100, 150, 200...
+	var hotzone_kills = 3 + (tier * 2)  # 5, 7, 9...
+
+	# Rewards scale with tier
+	var base_xp = 200 * tier
+	var base_gold = 100 * tier
+	var gems = max(0, (tier - 1))  # 0, 1, 2, 3... gems starting at tier 2
+
+	# Quest type varies by tier
+	var quest_type: int
+	var quest_name: String
+	var quest_desc: String
+	var target: int
+
+	match tier % 4:
+		0:  # Kill any monsters
+			quest_type = QuestType.KILL_ANY
+			quest_name = "Slayer's Contract %d" % tier
+			quest_desc = "Eliminate %d monsters to prove your continued valor." % kill_count
+			target = kill_count
+		1:  # Kill high-level monsters
+			quest_type = QuestType.KILL_LEVEL
+			quest_name = "Veteran's Challenge %d" % tier
+			quest_desc = "Defeat a monster of level %d or higher." % min_level
+			target = min_level
+		2:  # Hotzone quest
+			quest_type = QuestType.HOTZONE_KILL
+			quest_name = "Danger Zone Bounty %d" % tier
+			quest_desc = "Kill %d monsters in hotzones within %.0f tiles." % [hotzone_kills, hotzone_distance]
+			target = hotzone_kills
+		3:  # Boss hunt
+			quest_type = QuestType.BOSS_HUNT
+			quest_name = "Elite Hunt %d" % tier
+			quest_desc = "Track down and defeat a monster of level %d or higher." % (min_level + 50)
+			target = min_level + 50
+
+	var quest = {
+		"id": quest_id,
+		"name": quest_name,
+		"description": quest_desc,
+		"type": quest_type,
+		"trading_post": trading_post_id,
+		"target": target,
+		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"is_daily": false,
+		"prerequisite": "",
+		"is_dynamic": true  # Flag for dynamic quests
+	}
+
+	# Add hotzone-specific fields
+	if quest_type == QuestType.HOTZONE_KILL:
+		quest["max_distance"] = hotzone_distance
+		quest["min_intensity"] = 0.0 if tier < 3 else 0.3
+
+	return quest
 
 func get_all_quest_ids() -> Array:
 	"""Get array of all quest IDs."""

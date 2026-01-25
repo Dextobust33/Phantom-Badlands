@@ -470,7 +470,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	"""Process outsmart action (Trickster ability).
 	Success = instant win with full rewards.
 	Failure = monster gets free attack, can't outsmart again this combat.
-	Success chance = (player_wits - monster_intelligence) * 5 + 30%, clamped 5-95%."""
+	Tricksters get +20% bonus. High wits helps, high monster INT hurts."""
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
@@ -484,15 +484,32 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"combat_ended": false
 		}
 
-	# Calculate outsmart chance
+	# Calculate outsmart chance - favors Tricksters and high WITS
 	var player_wits = character.get_stat("wits")
 	var monster_intelligence = monster.get("intelligence", 15)
-	var wits_diff = player_wits - monster_intelligence
-	var outsmart_chance = (wits_diff * 5) + 30
-	outsmart_chance = clampi(outsmart_chance, 5, 95)  # Min 5%, max 95%
+
+	# Base chance is low - this is a Trickster specialty
+	var base_chance = 15
+
+	# Bonus for high wits (+4% per point above 10)
+	var wits_bonus = max(0, (player_wits - 10) * 4)
+
+	# Trickster class bonus (+20%)
+	var class_type = character.class_type
+	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
+	var trickster_bonus = 20 if is_trickster else 0
+
+	# Penalty if monster is smarter than you (-5% per INT above your wits)
+	var int_penalty = max(0, (monster_intelligence - player_wits) * 5)
+
+	var outsmart_chance = base_chance + wits_bonus + trickster_bonus - int_penalty
+	outsmart_chance = clampi(outsmart_chance, 5, 90)  # Min 5%, max 90%
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
-	messages.append("[color=#808080](Your Wits: %d vs Monster Intelligence: %d = %d%% chance)[/color]" % [player_wits, monster_intelligence, outsmart_chance])
+	var bonus_text = ""
+	if is_trickster:
+		bonus_text = " [Trickster +20%%]"
+	messages.append("[color=#808080](Wits: %d, Monster INT: %d = %d%% chance%s)[/color]" % [player_wits, monster_intelligence, outsmart_chance, bonus_text])
 
 	var roll = randi() % 100
 
@@ -1298,11 +1315,29 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			character.apply_poison(poison_dmg, 20)  # 20 combat turns
 			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 20 turns)[/color]" % poison_dmg)
 
-	# Mana drain ability
+	# Mana drain ability - drains the character's primary resource based on class path
 	if ABILITY_MANA_DRAIN in abilities and hits > 0:
 		var drain = randi_range(5, 20) + int(monster_level / 10)
-		character.current_mana = max(0, character.current_mana - drain)
-		messages.append("[color=#FF00FF]The %s drains %d mana![/color]" % [monster.name, drain])
+		var resource_name = ""
+		# Determine primary resource based on class type
+		match character.class_type:
+			"Wizard", "Sage", "Sorcerer":
+				# Mage path - uses Mana
+				character.current_mana = max(0, character.current_mana - drain)
+				resource_name = "mana"
+			"Fighter", "Barbarian", "Paladin":
+				# Warrior path - uses Stamina
+				character.current_stamina = max(0, character.current_stamina - drain)
+				resource_name = "stamina"
+			"Thief", "Ranger", "Ninja":
+				# Trickster path - uses Energy
+				character.current_energy = max(0, character.current_energy - drain)
+				resource_name = "energy"
+			_:
+				# Default to mana for unknown classes
+				character.current_mana = max(0, character.current_mana - drain)
+				resource_name = "mana"
+		messages.append("[color=#FF00FF]The %s drains %d %s![/color]" % [monster.name, drain, resource_name])
 
 	# Stamina drain ability
 	if ABILITY_STAMINA_DRAIN in abilities and hits > 0:

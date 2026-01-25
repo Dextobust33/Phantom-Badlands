@@ -6,6 +6,21 @@ var connection = StreamPeerTCP.new()
 var connected = false
 var buffer = ""
 
+# Connection settings
+var server_ip: String = "localhost"
+var server_port: int = 9080
+var saved_connections: Array = []  # Array of {name, ip, port}
+const CONNECTION_CONFIG_PATH = "user://connection_settings.json"
+
+# Connection panel (created dynamically)
+var connection_panel: Panel = null
+var server_ip_field: LineEdit = null
+var server_port_field: LineEdit = null
+var saved_connections_list: ItemList = null
+var connect_button: Button = null
+var save_connection_button: Button = null
+var delete_connection_button: Button = null
+
 # Game states
 enum GameState {
 	DISCONNECTED,
@@ -137,8 +152,12 @@ var current_actions: Array[Dictionary] = []
 
 # Inventory mode
 var inventory_mode: bool = false
+var inventory_page: int = 0  # Current page (0-indexed)
+const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)
 var pending_inventory_action: String = ""  # Action waiting for item selection
+var last_item_use_result: String = ""  # Store last item use result to display after inventory refresh
+var awaiting_item_use_result: bool = false  # Flag to capture next text message as item use result
 
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
@@ -407,16 +426,18 @@ func _ready():
 	# Initial map scale
 	call_deferred("_on_window_resized")
 
+	# Load connection settings
+	_load_connection_settings()
+
 	# Initial display
 	display_game("[b][color=#FFFF00]Welcome to Phantasia Revival[/color][/b]")
-	display_game("Connecting to server...")
+	display_game("Select a server to connect to...")
 
 	# Initialize UI state
 	update_action_bar()
-	show_login_panel()
 
-	# Auto-connect
-	connect_to_server()
+	# Show connection panel instead of auto-connect
+	call_deferred("show_connection_panel")
 
 func _generate_rare_drop_sound():
 	"""Generate a pleasant chime sound for rare drops"""
@@ -937,7 +958,9 @@ func _process(_delta):
 					# KEY_1-4 map to hotkey indices 5-8
 					if i < 4:
 						set_meta("hotkey_%d_pressed" % (i + 5), true)
-					select_inventory_item(i)  # 0-based index
+					# Convert page-relative index to absolute inventory index
+					var absolute_index = inventory_page * INVENTORY_PAGE_SIZE + i
+					select_inventory_item(absolute_index)
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
 
@@ -1068,6 +1091,10 @@ func _process(_delta):
 			connected = true
 			game_state = GameState.CONNECTED
 			display_game("[color=#00FF00]Connected to server![/color]")
+			# Hide connection panel and show login panel
+			if connection_panel:
+				connection_panel.visible = false
+			show_login_panel()
 
 		var available = connection.get_available_bytes()
 		if available > 0:
@@ -1728,11 +1755,15 @@ func update_action_bar():
 			]
 	elif inventory_mode:
 		if pending_inventory_action != "":
-			# Waiting for item selection - show cancel option
+			# Waiting for item selection - show cancel and page navigation
+			var inv = character_data.get("inventory", [])
+			var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
+			var has_prev = inventory_page > 0
+			var has_next = inventory_page < total_pages - 1
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
+				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2476,6 +2507,22 @@ func execute_local_action(action: String):
 			prompt_inventory_action("discard")
 		"inventory_cancel":
 			cancel_inventory_action()
+		"inventory_prev_page":
+			if inventory_page > 0:
+				inventory_page -= 1
+				display_inventory()
+				# Re-prompt for current action
+				_reprompt_inventory_action()
+				update_action_bar()
+		"inventory_next_page":
+			var inv = character_data.get("inventory", [])
+			var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
+			if inventory_page < total_pages - 1:
+				inventory_page += 1
+				display_inventory()
+				# Re-prompt for current action
+				_reprompt_inventory_action()
+				update_action_bar()
 		"acknowledge_continue":
 			acknowledge_continue()
 		"merchant_leave":
@@ -3125,6 +3172,8 @@ func process_password_change_input(input_text: String):
 func open_inventory():
 	"""Open inventory view and switch to inventory mode"""
 	inventory_mode = true
+	inventory_page = 0  # Reset to first page when opening
+	last_item_use_result = ""  # Clear any previous item use result
 	update_action_bar()
 	display_inventory()
 
@@ -3168,13 +3217,20 @@ func display_inventory():
 		bonus_text += "[/color]"
 		display_game(bonus_text)
 
-	# Show inventory items with comparison hints
+	# Show inventory items with comparison hints (paginated)
 	display_game("")
-	display_game("[color=#00FFFF]Backpack (%d/20):[/color]" % inventory.size())
+	var total_pages = max(1, int(ceil(float(inventory.size()) / INVENTORY_PAGE_SIZE)))
+	# Clamp page to valid range
+	inventory_page = clamp(inventory_page, 0, total_pages - 1)
+
+	display_game("[color=#00FFFF]Backpack (%d/20) - Page %d/%d:[/color]" % [inventory.size(), inventory_page + 1, total_pages])
 	if inventory.is_empty():
 		display_game("  [color=#555555](empty)[/color]")
 	else:
-		for i in range(inventory.size()):
+		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+
+		for i in range(start_idx, end_idx):
 			var item = inventory[i]
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var item_level = item.get("level", 1)
@@ -3196,13 +3252,22 @@ func display_inventory():
 				else:
 					compare_text = "[color=#00FF00]NEW[/color]"
 
+			# Display number is 1-9 for current page
+			var display_num = (i - start_idx) + 1
 			display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
-				i + 1, rarity_color, item.get("name", "Unknown"), item_level, compare_text
+				display_num, rarity_color, item.get("name", "Unknown"), item_level, compare_text
 			])
 
 	display_game("")
 	display_game("[color=#808080]Q=Inspect, W=Use, E=Equip, R=Unequip, 1=Discard, Space=Back[/color]")
+	if total_pages > 1:
+		display_game("[color=#808080]2=Prev Page, 3=Next Page[/color]")
 	display_game("[color=#808080]Inspect equipped: type slot name (e.g., 'weapon')[/color]")
+
+	# Show last item use result if any
+	if last_item_use_result != "":
+		display_game("")
+		display_game(last_item_use_result)
 
 func _get_item_bonus_summary(item: Dictionary) -> String:
 	"""Get a short summary of item bonuses"""
@@ -3348,12 +3413,19 @@ func select_inventory_item(index: int):
 			# Stay in inspect mode for inspecting more items
 			pending_inventory_action = "inspect_item"
 			display_game("")
-			display_game("[color=#FFD700]Press 1-%d to inspect another item, or [Space] to go back:[/color]" % max(1, inventory.size()))
+			# Show page-relative item count
+			var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+			var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+			var items_on_page = end_idx - start_idx
+			display_game("[color=#FFD700]Press 1-%d to inspect another item, or [Space] to go back:[/color]" % max(1, items_on_page))
 			update_action_bar()
 			return
 		"use_item":
+			awaiting_item_use_result = true  # Capture the result message
 			send_to_server({"type": "inventory_use", "index": index})
-			# Server will send character_update which triggers inventory refresh
+			# Stay in inventory mode - character_update will refresh display
+			update_action_bar()
+			return
 		"equip_item":
 			send_to_server({"type": "inventory_equip", "index": index})
 			# Server will send character_update which triggers inventory refresh
@@ -3362,7 +3434,7 @@ func select_inventory_item(index: int):
 			send_to_server({"type": "inventory_discard", "index": index})
 			# Server will send character_update which triggers inventory refresh
 
-	# Exit inventory mode after use/equip/discard to return to movement
+	# Exit inventory mode after equip/discard to return to movement
 	inventory_mode = false
 	update_action_bar()
 
@@ -3373,6 +3445,23 @@ func cancel_inventory_action():
 		display_game("[color=#808080]Action cancelled.[/color]")
 		display_inventory()  # Re-show inventory
 		update_action_bar()
+
+func _reprompt_inventory_action():
+	"""Re-display the prompt for current pending inventory action after page change"""
+	var inv = character_data.get("inventory", [])
+	var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inv.size())
+	var items_on_page = end_idx - start_idx
+
+	match pending_inventory_action:
+		"inspect_item":
+			display_game("[color=#FFD700]Press 1-%d to inspect an item:[/color]" % items_on_page)
+		"use_item":
+			display_game("[color=#FFD700]Press 1-%d to use an item:[/color]" % items_on_page)
+		"equip_item":
+			display_game("[color=#FFD700]Press 1-%d to equip an item:[/color]" % items_on_page)
+		"discard_item":
+			display_game("[color=#FFD700]Press 1-%d to discard an item:[/color]" % items_on_page)
 
 func _get_item_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
@@ -3873,7 +3962,13 @@ func handle_server_message(message: Dictionary):
 			# Clear game output if requested (e.g., rest command)
 			if message.get("clear_output", false):
 				game_output.clear()
-			display_game(message.get("message", ""))
+			var text_msg = message.get("message", "")
+			# If awaiting item use result, store it instead of displaying immediately
+			if awaiting_item_use_result:
+				last_item_use_result = text_msg
+				awaiting_item_use_result = false
+			else:
+				display_game(text_msg)
 
 		"character_update":
 			if message.has("character"):
@@ -4331,8 +4426,69 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
 	var base_bonus = int(level * rarity_mult)
 
-	if "potion" in item_type or "elixir" in item_type:
-		var heal = level * 10
+	# Check for specific buff potions first (before generic potion check)
+	if "potion_speed" in item_type:
+		var buff_val = 5 + level * 2
+		var duration = 5 + (level / 10) * 2
+		return "+%d Speed for %d rounds" % [buff_val, duration]
+	elif "potion_strength" in item_type:
+		var buff_val = 3 + level
+		var duration = 5 + (level / 10) * 2
+		return "+%d Strength for %d rounds" % [buff_val, duration]
+	elif "potion_defense" in item_type:
+		var buff_val = 3 + level
+		var duration = 5 + (level / 10) * 2
+		return "+%d Defense for %d rounds" % [buff_val, duration]
+	elif "potion_power" in item_type:
+		var buff_val = 8 + level * 2
+		var duration = 2 + (level / 10)
+		return "+%d Strength for %d battles" % [buff_val, duration]
+	elif "potion_iron" in item_type:
+		var buff_val = 8 + level * 2
+		var duration = 2 + (level / 10)
+		return "+%d Defense for %d battles" % [buff_val, duration]
+	elif "potion_haste" in item_type:
+		var buff_val = 15 + level * 3
+		var duration = 2 + (level / 10)
+		return "+%d Speed for %d battles" % [buff_val, duration]
+	elif "elixir_might" in item_type:
+		var buff_val = 15 + level * 3
+		var duration = 5 + (level / 10) * 2
+		return "+%d Strength for %d battles" % [buff_val, duration]
+	elif "elixir_fortress" in item_type:
+		var buff_val = 15 + level * 3
+		var duration = 5 + (level / 10) * 2
+		return "+%d Defense for %d battles" % [buff_val, duration]
+	elif "elixir_swiftness" in item_type:
+		var buff_val = 25 + level * 5
+		var duration = 5 + (level / 10) * 2
+		return "+%d Speed for %d battles" % [buff_val, duration]
+	elif "mana" in item_type:
+		# Mana potions
+		var mana_amounts = {
+			"mana_minor": 15 + level * 8,
+			"mana_lesser": 30 + level * 10,
+			"mana_standard": 50 + level * 12,
+			"mana_greater": 100 + level * 15,
+			"mana_superior": 200 + level * 20,
+			"mana_master": 400 + level * 25
+		}
+		var mana = mana_amounts.get(item_type, 50 + level * 10)
+		return "Restores %d Mana when used" % mana
+	elif "potion" in item_type or "elixir" in item_type:
+		# Healing potions/elixirs (general case)
+		var heal_amounts = {
+			"potion_minor": 10 + level * 10,
+			"potion_lesser": 20 + level * 12,
+			"potion_standard": 40 + level * 15,
+			"potion_greater": 80 + level * 20,
+			"potion_superior": 150 + level * 25,
+			"potion_master": 300 + level * 30,
+			"elixir_minor": 500 + level * 40,
+			"elixir_greater": 1000 + level * 60,
+			"elixir_divine": 2000 + level * 100
+		}
+		var heal = heal_amounts.get(item_type, level * 10)
 		return "Restores %d HP when used" % heal
 	elif "weapon" in item_type:
 		var atk = base_bonus * 2
@@ -4420,6 +4576,239 @@ func process_command(text: String):
 
 # ===== CONNECTION FUNCTIONS =====
 
+func _load_connection_settings():
+	"""Load saved connection settings from config file"""
+	if FileAccess.file_exists(CONNECTION_CONFIG_PATH):
+		var file = FileAccess.open(CONNECTION_CONFIG_PATH, FileAccess.READ)
+		if file:
+			var json_str = file.get_as_text()
+			file.close()
+			var json = JSON.new()
+			var result = json.parse(json_str)
+			if result == OK:
+				var data = json.data
+				server_ip = data.get("last_ip", "localhost")
+				server_port = data.get("last_port", 9080)
+				saved_connections = data.get("saved_connections", [])
+				return
+	# Default values if no config
+	server_ip = "localhost"
+	server_port = 9080
+	saved_connections = [
+		{"name": "Local Server", "ip": "localhost", "port": 9080}
+	]
+
+func _save_connection_settings():
+	"""Save connection settings to config file"""
+	var data = {
+		"last_ip": server_ip,
+		"last_port": server_port,
+		"saved_connections": saved_connections
+	}
+	var file = FileAccess.open(CONNECTION_CONFIG_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data, "\t"))
+		file.close()
+
+func _create_connection_panel():
+	"""Create the connection panel UI dynamically"""
+	if connection_panel:
+		return  # Already created
+
+	connection_panel = Panel.new()
+	connection_panel.name = "ConnectionPanel"
+	connection_panel.custom_minimum_size = Vector2(400, 350)
+
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.1, 0.95)
+	style.border_color = Color(0.0, 0.5, 0.0)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	connection_panel.add_theme_stylebox_override("panel", style)
+
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.set_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 15)
+	connection_panel.add_child(vbox)
+
+	# Title
+	var title = Label.new()
+	title.text = "Connect to Server"
+	title.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	title.add_theme_font_size_override("font_size", 20)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	vbox.add_child(Control.new())  # Spacer
+
+	# Saved connections list
+	var list_label = Label.new()
+	list_label.text = "Saved Connections:"
+	list_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	vbox.add_child(list_label)
+
+	saved_connections_list = ItemList.new()
+	saved_connections_list.custom_minimum_size = Vector2(0, 100)
+	saved_connections_list.add_theme_color_override("font_color", Color(0.2, 1.0, 0.2))
+	saved_connections_list.item_selected.connect(_on_saved_connection_selected)
+	vbox.add_child(saved_connections_list)
+
+	vbox.add_child(Control.new())  # Spacer
+
+	# IP input
+	var ip_label = Label.new()
+	ip_label.text = "Server IP / Hostname:"
+	ip_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	vbox.add_child(ip_label)
+
+	server_ip_field = LineEdit.new()
+	server_ip_field.placeholder_text = "e.g., localhost or 192.168.1.100"
+	server_ip_field.text = server_ip
+	vbox.add_child(server_ip_field)
+
+	# Port input
+	var port_label = Label.new()
+	port_label.text = "Port:"
+	port_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	vbox.add_child(port_label)
+
+	server_port_field = LineEdit.new()
+	server_port_field.placeholder_text = "e.g., 9080"
+	server_port_field.text = str(server_port)
+	vbox.add_child(server_port_field)
+
+	vbox.add_child(Control.new())  # Spacer
+
+	# Buttons row 1
+	var btn_row1 = HBoxContainer.new()
+	btn_row1.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_row1)
+
+	connect_button = Button.new()
+	connect_button.text = "Connect"
+	connect_button.custom_minimum_size = Vector2(120, 35)
+	connect_button.pressed.connect(_on_connect_button_pressed)
+	btn_row1.add_child(connect_button)
+
+	btn_row1.add_child(Control.new())  # Spacer
+
+	save_connection_button = Button.new()
+	save_connection_button.text = "Save"
+	save_connection_button.custom_minimum_size = Vector2(80, 35)
+	save_connection_button.pressed.connect(_on_save_connection_pressed)
+	btn_row1.add_child(save_connection_button)
+
+	btn_row1.add_child(Control.new())  # Spacer
+
+	delete_connection_button = Button.new()
+	delete_connection_button.text = "Delete"
+	delete_connection_button.custom_minimum_size = Vector2(80, 35)
+	delete_connection_button.pressed.connect(_on_delete_connection_pressed)
+	btn_row1.add_child(delete_connection_button)
+
+	add_child(connection_panel)
+
+	# Center the panel
+	connection_panel.set_anchors_preset(Control.PRESET_CENTER)
+	connection_panel.position = (get_viewport().get_visible_rect().size - connection_panel.size) / 2
+
+func _refresh_saved_connections_list():
+	"""Refresh the saved connections list display"""
+	if not saved_connections_list:
+		return
+	saved_connections_list.clear()
+	for conn in saved_connections:
+		saved_connections_list.add_item("%s (%s:%d)" % [conn.name, conn.ip, conn.port])
+
+func _on_saved_connection_selected(index: int):
+	"""Handle selecting a saved connection"""
+	if index >= 0 and index < saved_connections.size():
+		var conn = saved_connections[index]
+		server_ip_field.text = conn.ip
+		server_port_field.text = str(conn.port)
+
+func _on_connect_button_pressed():
+	"""Handle connect button press"""
+	server_ip = server_ip_field.text.strip_edges()
+	var port_text = server_port_field.text.strip_edges()
+
+	if server_ip == "":
+		display_game("[color=#FF0000]Please enter a server IP or hostname.[/color]")
+		return
+
+	if not port_text.is_valid_int():
+		display_game("[color=#FF0000]Please enter a valid port number.[/color]")
+		return
+
+	server_port = int(port_text)
+
+	# Save as last used
+	_save_connection_settings()
+
+	# Hide connection panel and connect
+	connection_panel.visible = false
+	connect_to_server()
+
+func _on_save_connection_pressed():
+	"""Save current connection to saved list"""
+	var ip = server_ip_field.text.strip_edges()
+	var port_text = server_port_field.text.strip_edges()
+
+	if ip == "" or not port_text.is_valid_int():
+		display_game("[color=#FF0000]Enter valid IP and port first.[/color]")
+		return
+
+	var port = int(port_text)
+
+	# Check if already exists
+	for conn in saved_connections:
+		if conn.ip == ip and conn.port == port:
+			display_game("[color=#808080]Connection already saved.[/color]")
+			return
+
+	# Generate a name
+	var name = ip
+	if ip == "localhost" or ip == "127.0.0.1":
+		name = "Local Server"
+
+	saved_connections.append({"name": name, "ip": ip, "port": port})
+	_save_connection_settings()
+	_refresh_saved_connections_list()
+	display_game("[color=#00FF00]Connection saved![/color]")
+
+func _on_delete_connection_pressed():
+	"""Delete selected connection from saved list"""
+	var selected = saved_connections_list.get_selected_items()
+	if selected.is_empty():
+		display_game("[color=#808080]Select a connection to delete.[/color]")
+		return
+
+	var index = selected[0]
+	if index >= 0 and index < saved_connections.size():
+		saved_connections.remove_at(index)
+		_save_connection_settings()
+		_refresh_saved_connections_list()
+		display_game("[color=#808080]Connection deleted.[/color]")
+
+func show_connection_panel():
+	"""Show the connection panel"""
+	if not connection_panel:
+		_create_connection_panel()
+
+	_refresh_saved_connections_list()
+	server_ip_field.text = server_ip
+	server_port_field.text = str(server_port)
+
+	# Center the panel
+	connection_panel.position = (get_viewport().get_visible_rect().size - connection_panel.size) / 2
+	connection_panel.visible = true
+
+	# Hide other panels
+	if login_panel:
+		login_panel.visible = false
+	if char_select_panel:
+		char_select_panel.visible = false
+
 func connect_to_server():
 	var status = connection.get_status()
 
@@ -4430,12 +4819,14 @@ func connect_to_server():
 	if status == StreamPeerTCP.STATUS_CONNECTING:
 		display_game("[color=#00FFFF]Connection in progress...[/color]")
 		return
-#changed from 127.0.0.1
-	display_game("Connecting to 24.158.80.95:9080...")
-#changed from 127.0.0.1
-	var error = connection.connect_to_host("24.158.80.95", 9080)
+
+	display_game("Connecting to %s:%d..." % [server_ip, server_port])
+	var error = connection.connect_to_host(server_ip, server_port)
 	if error != OK:
-		display_game("[color=#FF0000]Failed! Error: %d[/color]" % error)
+		display_game("[color=#FF0000]Failed to connect! Error: %d[/color]" % error)
+		display_game("[color=#808080]Press Enter to try again or change server.[/color]")
+		# Show connection panel again on failure
+		call_deferred("show_connection_panel")
 		return
 
 	display_game("Waiting for connection...")
@@ -4449,7 +4840,7 @@ func reset_connection_state():
 	character_list = []
 	game_state = GameState.DISCONNECTED
 	update_action_bar()
-	show_login_panel()
+	show_connection_panel()
 
 func send_to_server(data: Dictionary):
 	if not connected:
