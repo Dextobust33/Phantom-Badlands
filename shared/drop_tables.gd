@@ -9,70 +9,110 @@ extends Node
 # Higher weight = more common
 const DROP_TABLES = {
 	"tier1": [
-		{"weight": 50, "item_type": "potion_minor", "rarity": "common"},
-		{"weight": 30, "item_type": "weapon_rusty", "rarity": "common"},
-		{"weight": 15, "item_type": "armor_leather", "rarity": "common"},
+		{"weight": 30, "item_type": "potion_minor", "rarity": "common"},
+		{"weight": 15, "item_type": "mana_minor", "rarity": "common"},
+		{"weight": 18, "item_type": "weapon_rusty", "rarity": "common"},
+		{"weight": 10, "item_type": "armor_leather", "rarity": "common"},
+		{"weight": 8, "item_type": "helm_cloth", "rarity": "common"},
+		{"weight": 7, "item_type": "shield_wood", "rarity": "common"},
+		{"weight": 7, "item_type": "boots_cloth", "rarity": "common"},
 		{"weight": 5, "item_type": "ring_copper", "rarity": "uncommon"}
 	],
 	"tier2": [
-		{"weight": 40, "item_type": "potion_lesser", "rarity": "common"},
-		{"weight": 30, "item_type": "weapon_iron", "rarity": "common"},
-		{"weight": 20, "item_type": "armor_chain", "rarity": "uncommon"},
-		{"weight": 10, "item_type": "ring_silver", "rarity": "uncommon"}
+		{"weight": 22, "item_type": "potion_lesser", "rarity": "common"},
+		{"weight": 10, "item_type": "mana_lesser", "rarity": "common"},
+		{"weight": 18, "item_type": "weapon_iron", "rarity": "common"},
+		{"weight": 14, "item_type": "armor_chain", "rarity": "uncommon"},
+		{"weight": 10, "item_type": "helm_leather", "rarity": "common"},
+		{"weight": 9, "item_type": "shield_iron", "rarity": "common"},
+		{"weight": 9, "item_type": "boots_leather", "rarity": "common"},
+		{"weight": 8, "item_type": "ring_silver", "rarity": "uncommon"}
 	],
 	"tier3": [
-		{"weight": 30, "item_type": "potion_standard", "rarity": "common"},
-		{"weight": 25, "item_type": "weapon_steel", "rarity": "uncommon"},
-		{"weight": 22, "item_type": "armor_plate", "rarity": "uncommon"},
-		{"weight": 8, "item_type": "amulet_bronze", "rarity": "rare"},
+		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
+		{"weight": 8, "item_type": "mana_standard", "rarity": "common"},
+		{"weight": 15, "item_type": "weapon_steel", "rarity": "uncommon"},
+		{"weight": 12, "item_type": "armor_plate", "rarity": "uncommon"},
+		{"weight": 9, "item_type": "helm_chain", "rarity": "uncommon"},
+		{"weight": 8, "item_type": "shield_steel", "rarity": "uncommon"},
+		{"weight": 8, "item_type": "boots_chain", "rarity": "uncommon"},
+		{"weight": 7, "item_type": "amulet_bronze", "rarity": "rare"},
 		{"weight": 5, "item_type": "potion_strength", "rarity": "uncommon"},
 		{"weight": 5, "item_type": "potion_defense", "rarity": "uncommon"},
 		{"weight": 5, "item_type": "potion_speed", "rarity": "uncommon"}
 	],
 	"tier4": [
-		{"weight": 25, "item_type": "potion_greater", "rarity": "uncommon"},
-		{"weight": 25, "item_type": "weapon_enchanted", "rarity": "rare"},
-		{"weight": 22, "item_type": "armor_enchanted", "rarity": "rare"},
-		{"weight": 12, "item_type": "ring_gold", "rarity": "rare"},
-		{"weight": 6, "item_type": "potion_strength", "rarity": "rare"},
-		{"weight": 5, "item_type": "potion_defense", "rarity": "rare"},
-		{"weight": 5, "item_type": "potion_speed", "rarity": "rare"}
+		{"weight": 14, "item_type": "potion_greater", "rarity": "uncommon"},
+		{"weight": 7, "item_type": "mana_greater", "rarity": "uncommon"},
+		{"weight": 15, "item_type": "weapon_enchanted", "rarity": "rare"},
+		{"weight": 12, "item_type": "armor_enchanted", "rarity": "rare"},
+		{"weight": 9, "item_type": "helm_plate", "rarity": "rare"},
+		{"weight": 8, "item_type": "shield_enchanted", "rarity": "rare"},
+		{"weight": 8, "item_type": "boots_plate", "rarity": "rare"},
+		{"weight": 8, "item_type": "ring_gold", "rarity": "rare"},
+		{"weight": 6, "item_type": "amulet_silver", "rarity": "rare"},
+		{"weight": 5, "item_type": "potion_strength", "rarity": "rare"},
+		{"weight": 4, "item_type": "potion_defense", "rarity": "rare"},
+		{"weight": 4, "item_type": "potion_speed", "rarity": "rare"}
 	],
 	"tier5": [
-		{"weight": 22, "item_type": "potion_superior", "rarity": "rare"},
-		{"weight": 26, "item_type": "weapon_magical", "rarity": "rare"},
-		{"weight": 22, "item_type": "armor_magical", "rarity": "rare"},
-		{"weight": 16, "item_type": "amulet_silver", "rarity": "epic"},
-		{"weight": 5, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 5, "item_type": "potion_defense", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_speed", "rarity": "epic"}
+		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
+		{"weight": 6, "item_type": "mana_superior", "rarity": "rare"},
+		{"weight": 16, "item_type": "weapon_magical", "rarity": "rare"},
+		{"weight": 14, "item_type": "armor_magical", "rarity": "rare"},
+		{"weight": 10, "item_type": "helm_magical", "rarity": "rare"},
+		{"weight": 9, "item_type": "shield_magical", "rarity": "rare"},
+		{"weight": 9, "item_type": "boots_magical", "rarity": "rare"},
+		{"weight": 10, "item_type": "amulet_silver", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
+		{"weight": 3, "item_type": "ring_elemental", "rarity": "epic"}
 	],
 	"tier6": [
-		{"weight": 17, "item_type": "potion_master", "rarity": "rare"},
-		{"weight": 26, "item_type": "weapon_elemental", "rarity": "epic"},
-		{"weight": 26, "item_type": "armor_elemental", "rarity": "epic"},
-		{"weight": 17, "item_type": "ring_elemental", "rarity": "epic"},
-		{"weight": 5, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 5, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 10, "item_type": "potion_master", "rarity": "rare"},
+		{"weight": 5, "item_type": "mana_master", "rarity": "rare"},
+		{"weight": 16, "item_type": "weapon_elemental", "rarity": "epic"},
+		{"weight": 14, "item_type": "armor_elemental", "rarity": "epic"},
+		{"weight": 10, "item_type": "helm_elemental", "rarity": "epic"},
+		{"weight": 9, "item_type": "shield_elemental", "rarity": "epic"},
+		{"weight": 9, "item_type": "boots_elemental", "rarity": "epic"},
+		{"weight": 10, "item_type": "ring_elemental", "rarity": "epic"},
+		{"weight": 5, "item_type": "amulet_gold", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_defense", "rarity": "epic"},
 		{"weight": 4, "item_type": "potion_speed", "rarity": "epic"}
 	],
 	"tier7": [
-		{"weight": 15, "item_type": "elixir_minor", "rarity": "epic"},
-		{"weight": 35, "item_type": "weapon_legendary", "rarity": "epic"},
-		{"weight": 30, "item_type": "armor_legendary", "rarity": "epic"},
-		{"weight": 20, "item_type": "amulet_gold", "rarity": "legendary"}
+		{"weight": 10, "item_type": "elixir_minor", "rarity": "epic"},
+		{"weight": 20, "item_type": "weapon_legendary", "rarity": "epic"},
+		{"weight": 18, "item_type": "armor_legendary", "rarity": "epic"},
+		{"weight": 12, "item_type": "helm_legendary", "rarity": "epic"},
+		{"weight": 10, "item_type": "shield_legendary", "rarity": "epic"},
+		{"weight": 10, "item_type": "boots_legendary", "rarity": "epic"},
+		{"weight": 10, "item_type": "amulet_gold", "rarity": "legendary"},
+		{"weight": 10, "item_type": "ring_legendary", "rarity": "legendary"}
 	],
 	"tier8": [
-		{"weight": 10, "item_type": "elixir_greater", "rarity": "epic"},
-		{"weight": 35, "item_type": "weapon_mythic", "rarity": "legendary"},
-		{"weight": 35, "item_type": "armor_mythic", "rarity": "legendary"},
-		{"weight": 20, "item_type": "ring_mythic", "rarity": "legendary"}
+		{"weight": 8, "item_type": "elixir_greater", "rarity": "epic"},
+		{"weight": 18, "item_type": "weapon_mythic", "rarity": "legendary"},
+		{"weight": 16, "item_type": "armor_mythic", "rarity": "legendary"},
+		{"weight": 12, "item_type": "helm_mythic", "rarity": "legendary"},
+		{"weight": 11, "item_type": "shield_mythic", "rarity": "legendary"},
+		{"weight": 11, "item_type": "boots_mythic", "rarity": "legendary"},
+		{"weight": 12, "item_type": "ring_mythic", "rarity": "legendary"},
+		{"weight": 12, "item_type": "amulet_mythic", "rarity": "legendary"}
 	],
 	"tier9": [
-		{"weight": 5, "item_type": "elixir_divine", "rarity": "legendary"},
-		{"weight": 35, "item_type": "weapon_divine", "rarity": "legendary"},
-		{"weight": 35, "item_type": "armor_divine", "rarity": "legendary"},
-		{"weight": 25, "item_type": "artifact", "rarity": "artifact"}
+		{"weight": 4, "item_type": "elixir_divine", "rarity": "legendary"},
+		{"weight": 16, "item_type": "weapon_divine", "rarity": "legendary"},
+		{"weight": 15, "item_type": "armor_divine", "rarity": "legendary"},
+		{"weight": 12, "item_type": "helm_divine", "rarity": "legendary"},
+		{"weight": 11, "item_type": "shield_divine", "rarity": "legendary"},
+		{"weight": 11, "item_type": "boots_divine", "rarity": "legendary"},
+		{"weight": 11, "item_type": "ring_divine", "rarity": "legendary"},
+		{"weight": 10, "item_type": "amulet_divine", "rarity": "legendary"},
+		{"weight": 10, "item_type": "artifact", "rarity": "artifact"}
 	],
 	"common": [
 		{"weight": 60, "item_type": "potion_minor", "rarity": "common"},
@@ -82,8 +122,10 @@ const DROP_TABLES = {
 }
 
 # Potion effects for consumables
-# heal: restores HP, buff: applies temporary combat buff
+# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, gold: grants gold
 const POTION_EFFECTS = {
+	# Gold pouches - grants variable gold based on item level
+	"gold_pouch": {"gold": true, "base": 50, "per_level": 25, "variance": 0.5},  # 50 + 25*level ± 50%
 	# Healing potions
 	"potion_minor": {"heal": true, "base": 10, "per_level": 10},
 	"potion_lesser": {"heal": true, "base": 20, "per_level": 12},
@@ -94,6 +136,13 @@ const POTION_EFFECTS = {
 	"elixir_minor": {"heal": true, "base": 500, "per_level": 40},
 	"elixir_greater": {"heal": true, "base": 1000, "per_level": 60},
 	"elixir_divine": {"heal": true, "base": 2000, "per_level": 100},
+	# Mana potions
+	"mana_minor": {"mana": true, "base": 15, "per_level": 8},
+	"mana_lesser": {"mana": true, "base": 30, "per_level": 10},
+	"mana_standard": {"mana": true, "base": 50, "per_level": 12},
+	"mana_greater": {"mana": true, "base": 100, "per_level": 15},
+	"mana_superior": {"mana": true, "base": 200, "per_level": 20},
+	"mana_master": {"mana": true, "base": 400, "per_level": 25},
 	# Basic buff potions - last rounds (single combat), scale with level
 	"potion_strength": {"buff": "strength", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
 	"potion_defense": {"buff": "defense", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
@@ -272,6 +321,17 @@ func _maybe_upgrade_rarity(base_rarity: String) -> String:
 
 func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	"""Get display name for an item type, with prefix for high rarity."""
+	# Special handling for gold pouches - name based on rarity
+	if item_type == "gold_pouch":
+		match rarity:
+			"common": return "Small Gold Pouch"
+			"uncommon": return "Gold Pouch"
+			"rare": return "Heavy Gold Pouch"
+			"epic": return "Bulging Gold Sack"
+			"legendary": return "Treasure Chest"
+			"artifact": return "Dragon's Hoard"
+			_: return "Gold Pouch"
+
 	# Convert item_type like "weapon_rusty" to "Rusty Weapon"
 	var parts = item_type.split("_")
 	var name_parts = []

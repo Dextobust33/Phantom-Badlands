@@ -40,6 +40,10 @@ var trading_post_db: Node
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
 var auto_save_timer = 0.0
 
+# Player list update timer (refreshes connected players display)
+const PLAYER_LIST_UPDATE_INTERVAL = 180.0  # Update every 3 minutes
+var player_list_update_timer = 0.0
+
 func _ready():
 	print("========================================")
 	print("Phantasia Revival Server Starting...")
@@ -179,6 +183,16 @@ func _process(delta):
 	if auto_save_timer >= AUTO_SAVE_INTERVAL:
 		auto_save_timer = 0.0
 		save_all_active_characters()
+
+	# Player list update timer (refresh display periodically)
+	player_list_update_timer += delta
+	if player_list_update_timer >= PLAYER_LIST_UPDATE_INTERVAL:
+		player_list_update_timer = 0.0
+		update_player_list()
+
+	# Update traveling merchants
+	if world_system:
+		world_system.update_merchants(delta)
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -426,6 +440,19 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	var char_name = message.get("name", "")
 	var account_id = peers[peer_id].account_id
+
+	# Check if this character is already logged in on another client
+	for other_peer_id in characters.keys():
+		if other_peer_id != peer_id:
+			var other_char = characters[other_peer_id]
+			if other_char.name.to_lower() == char_name.to_lower():
+				var other_account = peers.get(other_peer_id, {}).get("account_id", "")
+				if other_account == account_id:
+					send_to_peer(peer_id, {
+						"type": "error",
+						"message": "This character is already logged in on another client!"
+					})
+					return
 
 	# Load character from persistence
 	var character = persistence.load_character_as_object(account_id, char_name)
@@ -1713,6 +1740,18 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#00FFFF]You use %s! +%d %s for %d rounds (in combat)![/color]" % [item_name, buff_value, buff_type, duration]
 			})
+	elif effect.has("gold"):
+		# Gold pouch - grants variable gold based on level
+		var base_gold = effect.base + (effect.per_level * item_level)
+		var variance = effect.get("variance", 0.5)  # ±50% by default
+		var min_gold = int(base_gold * (1.0 - variance))
+		var max_gold = int(base_gold * (1.0 + variance))
+		var gold_amount = randi_range(min_gold, max_gold)
+		character.gold += gold_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You open %s and find %d gold![/color]" % [item_name, gold_amount]
+		})
 
 	# Update character data
 	send_character_update(peer_id)
@@ -1746,6 +1785,8 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 		slot = "helm"
 	elif "shield" in item_type:
 		slot = "shield"
+	elif "boots" in item_type:
+		slot = "boots"
 	elif "ring" in item_type:
 		slot = "ring"
 	elif "amulet" in item_type:
@@ -1911,10 +1952,17 @@ func trigger_merchant_encounter(peer_id: int):
 	services_text.append("[2] Recharge resources (%d gold)" % recharge_cost)
 	services_text.append("[Space] Leave")
 
+	# Build greeting with destination info
+	var greeting = "[color=#FFD700]A %s approaches you![/color]\n" % merchant.name
+	if merchant.has("destination") and merchant.destination != "":
+		greeting += "[color=#808080]\"I'm headed to %s, then on to %s. Care to trade?\"[/color]\n\n" % [merchant.destination, merchant.get("next_destination", "parts unknown")]
+	else:
+		greeting += "\"Greetings, traveler! Care to do business?\"\n\n"
+
 	send_to_peer(peer_id, {
 		"type": "merchant_start",
 		"merchant": merchant,
-		"message": "[color=#FFD700]A %s approaches you![/color]\n\"Greetings, traveler! Care to do business?\"\n\n%s" % [merchant.name, "\n".join(services_text)]
+		"message": greeting + "\n".join(services_text)
 	})
 
 func handle_merchant_sell(peer_id: int, message: Dictionary):
@@ -2035,7 +2083,7 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 
 	count = clampi(count, 1, 100)  # Limit to 100 upgrades at once
 
-	if not slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	if not slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment slot"})
 		return
 
@@ -2245,10 +2293,12 @@ func handle_merchant_recharge(peer_id: int):
 	var character = characters[peer_id]
 	var cost = _get_recharge_cost(character.level)
 
-	# Check if already at full resources
-	var needs_recharge = (character.current_mana < character.max_mana or
+	# Check if already at full resources and not poisoned
+	var needs_recharge = (character.current_hp < character.max_hp or
+						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
-						  character.current_energy < character.max_energy)
+						  character.current_energy < character.max_energy or
+						  character.poison_active)
 
 	if not needs_recharge:
 		send_to_peer(peer_id, {
@@ -2265,15 +2315,25 @@ func handle_merchant_recharge(peer_id: int):
 		})
 		return
 
+	# Track what was restored
+	var restored = []
+
+	# Cure poison if active
+	if character.poison_active:
+		character.cure_poison()
+		restored.append("poison cured")
+
 	# Deduct gold and restore resources
 	character.gold -= cost
+	character.current_hp = character.max_hp
 	character.current_mana = character.max_mana
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
+	restored.append("HP and resources restored")
 
 	send_to_peer(peer_id, {
 		"type": "merchant_message",
-		"message": "[color=#00FF00]The merchant provides you with a revitalizing tonic![/color]\n[color=#00FF00]All resources fully restored! (-%d gold)[/color]" % cost
+		"message": "[color=#00FF00]The merchant provides you with a revitalizing tonic![/color]\n[color=#00FF00]%s! (-%d gold)[/color]" % [", ".join(restored).capitalize(), cost]
 	})
 
 	send_character_update(peer_id)
@@ -2408,7 +2468,8 @@ func _item_matches_specialty(item_type: String, specialty: String) -> bool:
 		"weapons":
 			return item_type.begins_with("weapon_")
 		"armor":
-			return item_type.begins_with("armor_")
+			# Armor specialty includes all defensive gear
+			return item_type.begins_with("armor_") or item_type.begins_with("helm_") or item_type.begins_with("shield_") or item_type.begins_with("boots_")
 		"jewelry":
 			return item_type.begins_with("ring_") or item_type.begins_with("amulet_") or item_type == "artifact"
 		_:
@@ -2504,7 +2565,19 @@ func _send_shop_inventory(peer_id: int):
 			"level": item.get("level", 1),
 			"rarity": item.get("rarity", "common"),
 			"price": item.get("shop_price", 100),
-			"gem_price": int(ceil(item.get("shop_price", 100) / 1000.0))
+			"gem_price": int(ceil(item.get("shop_price", 100) / 1000.0)),
+			# Include full stats for inspection
+			"attack": item.get("attack", 0),
+			"defense": item.get("defense", 0),
+			"attack_bonus": item.get("attack_bonus", 0),
+			"defense_bonus": item.get("defense_bonus", 0),
+			"hp_bonus": item.get("hp_bonus", 0),
+			"str_bonus": item.get("str_bonus", 0),
+			"con_bonus": item.get("con_bonus", 0),
+			"dex_bonus": item.get("dex_bonus", 0),
+			"int_bonus": item.get("int_bonus", 0),
+			"wis_bonus": item.get("wis_bonus", 0),
+			"wits_bonus": item.get("wits_bonus", 0)
 		})
 
 	if not characters.has(peer_id):
@@ -2685,7 +2758,7 @@ func handle_trading_post_quests(peer_id: int):
 	})
 
 func handle_trading_post_recharge(peer_id: int):
-	"""Recharge resources at Trading Post (50% discount)"""
+	"""Recharge resources at Trading Post (50% discount, cures poison)"""
 	if not at_trading_post.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
 		return
@@ -2700,11 +2773,12 @@ func handle_trading_post_recharge(peer_id: int):
 	var base_cost = _get_recharge_cost(character.level)
 	var cost = int(base_cost * 0.5)
 
-	# Check if already at full resources
+	# Check if already at full resources and not poisoned
 	var needs_recharge = (character.current_hp < character.max_hp or
 						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
-						  character.current_energy < character.max_energy)
+						  character.current_energy < character.max_energy or
+						  character.poison_active)
 
 	if not needs_recharge:
 		send_to_peer(peer_id, {
@@ -2720,16 +2794,25 @@ func handle_trading_post_recharge(peer_id: int):
 		})
 		return
 
+	# Track what was restored
+	var restored = []
+
+	# Cure poison if active
+	if character.poison_active:
+		character.cure_poison()
+		restored.append("poison cured")
+
 	# Deduct gold and restore ALL resources including HP
 	character.gold -= cost
 	character.current_hp = character.max_hp
 	character.current_mana = character.max_mana
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
+	restored.append("HP and resources restored")
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_message",
-		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]All resources fully restored! (-%d gold, 50%% discount)[/color]" % [tp.name, cost]
+		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d gold, 50%% discount)[/color]" % [tp.name, ", ".join(restored).capitalize(), cost]
 	})
 
 	send_character_update(peer_id)

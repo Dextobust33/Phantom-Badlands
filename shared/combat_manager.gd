@@ -56,6 +56,12 @@ const ABILITY_AMBUSHER = "ambusher"
 const ABILITY_EASY_PREY = "easy_prey"
 const ABILITY_THORNS = "thorns"
 
+func apply_damage_variance(base_damage: int) -> int:
+	"""Apply ±15% variance to damage to make combat less predictable"""
+	# Variance range: 0.85 to 1.15 (±15%)
+	var variance = 0.85 + (randf() * 0.30)
+	return max(1, int(base_damage * variance))
+
 func set_monster_database(db: Node):
 	"""Set the monster database reference"""
 	monster_database = db
@@ -82,8 +88,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"outsmart_failed": false,  # Can only attempt outsmart once per combat
 		# Monster ability tracking
 		"ambusher_active": ambusher_active,  # Monster's first attack crits
-		"poison_active": false,
-		"poison_damage": 0,
+		# Note: Poison is now tracked on character (poison_active, poison_damage, poison_turns_remaining)
 		"enrage_stacks": 0,  # Damage bonus per round
 		"thorns_damage": 0,  # Damage reflected on hit
 		"curse_applied": false,  # Stat curse active
@@ -200,11 +205,16 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var messages = []
 
 	# === POISON TICK (at start of player turn) ===
-	if combat.get("poison_active", false):
-		var poison_dmg = combat.get("poison_damage", 1)
-		character.current_hp -= poison_dmg
-		character.current_hp = max(1, character.current_hp)  # Poison can't kill
-		messages.append("[color=#FF00FF]Poison deals %d damage![/color]" % poison_dmg)
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg > 0:
+			character.current_hp -= poison_dmg
+			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+			var turns_left = character.poison_turns_remaining
+			if turns_left > 0:
+				messages.append("[color=#FF00FF]Poison deals %d damage! (%d turns remaining)[/color]" % [poison_dmg, turns_left])
+			else:
+				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
 
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
@@ -417,8 +427,9 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var monster = combat.monster
 	var messages = []
 
-	# Flee chance based on speed difference (includes speed buff)
-	var player_speed = character.get_stat("dexterity") + character.get_buff_value("speed")
+	# Flee chance based on speed difference (includes speed buff and equipment bonus)
+	var equipment_bonuses = character.get_equipment_bonuses()
+	var player_speed = character.get_stat("dexterity") + character.get_buff_value("speed") + equipment_bonuses.speed
 	var flee_chance = 50 + (player_speed - monster.speed) * 5
 	flee_chance = clamp(flee_chance, 10, 95)  # 10-95% chance
 	
@@ -570,7 +581,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		return {
 			"success": true,
 			"messages": messages,
-			"combat_ended": false
+			"combat_ended": false,
+			"outsmart_failed": true  # Tell client outsmart can't be used again
 		}
 
 # ===== ABILITY SYSTEM =====
@@ -685,7 +697,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
 			var wis_reduction = min(0.30, float(monster_wis) / 500.0)  # WIS 150 = 30% reduction
-			var final_damage = max(1, int(base_damage * (1.0 - wis_reduction)))
+			var final_damage = apply_damage_variance(max(1, int(base_damage * (1.0 - wis_reduction))))
 
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -709,7 +721,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
 			var base_damage = character.get_effective_stat("intelligence") * 2
 			var damage_buff = character.get_buff_value("damage")
-			var damage = int(base_damage * (1.0 + damage_buff / 100.0))
+			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
@@ -738,7 +750,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
 			var base_damage = character.get_effective_stat("intelligence") * 5
 			var damage_buff = character.get_buff_value("damage")
-			var damage = int(base_damage * (1.0 + damage_buff / 100.0))
+			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
@@ -783,7 +795,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	match ability_name:
 		"power_strike":
-			var damage = int(total_attack * 1.5 * damage_multiplier)
+			var damage = apply_damage_variance(int(total_attack * 1.5 * damage_multiplier))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]POWER STRIKE![/color]")
@@ -795,7 +807,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFD700]+25%% damage for 3 rounds![/color]" % [])
 
 		"shield_bash":
-			var damage = int(total_attack * damage_multiplier)
+			var damage = apply_damage_variance(int(total_attack * damage_multiplier))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			combat["monster_stunned"] = true  # Enemy skips next turn
@@ -803,7 +815,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 
 		"cleave":
-			var damage = int(total_attack * 2 * damage_multiplier)
+			var damage = apply_damage_variance(int(total_attack * 2 * damage_multiplier))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]CLEAVE![/color]")
@@ -821,7 +833,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#00FF00]Block 50%% damage for 3 rounds![/color]" % [])
 
 		"devastate":
-			var damage = int(total_attack * 4 * damage_multiplier)
+			var damage = apply_damage_variance(int(total_attack * 4 * damage_multiplier))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color]")
@@ -913,7 +925,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var wits_bonus = character.get_stat("wits") / 2
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var damage = int((base_damage + wits_bonus) * 1.5 * damage_multiplier)
+			var damage = apply_damage_variance(int((base_damage + wits_bonus) * 1.5 * damage_multiplier))
 			# 50% crit chance
 			if randi() % 100 < 50:
 				damage = int(damage * 1.5)
@@ -1279,12 +1291,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# === POST-ATTACK ABILITIES ===
 
-	# Poison ability: apply poison if not already active
-	if ABILITY_POISON in abilities and not combat.get("poison_active", false):
+	# Poison ability: apply poison if not already active (lasts 20 turns, persists outside combat)
+	if ABILITY_POISON in abilities and not character.poison_active:
 		if randi() % 100 < 40:  # 40% chance to poison
-			combat["poison_active"] = true
-			combat["poison_damage"] = max(1, int(monster.strength * 0.2))
-			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round)[/color]" % combat.poison_damage)
+			var poison_dmg = max(1, int(monster.strength * 0.2))
+			character.apply_poison(poison_dmg, 20)  # 20 combat turns
+			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 20 turns)[/color]" % poison_dmg)
 
 	# Mana drain ability
 	if ABILITY_MANA_DRAIN in abilities and hits > 0:
@@ -1478,9 +1490,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_name_color": name_color,  # Color based on class affinity
 		"monster_affinity": affinity,
 		"can_act": combat.player_can_act,
-		# Combat status effects
-		"poison_active": combat.get("poison_active", false),
-		"poison_damage": combat.get("poison_damage", 0)
+		# Combat status effects (now tracked on character for persistence)
+		"poison_active": character.poison_active,
+		"poison_damage": character.poison_damage,
+		"poison_turns_remaining": character.poison_turns_remaining,
+		# Outsmart tracking
+		"outsmart_failed": combat.get("outsmart_failed", false)
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:
@@ -1489,13 +1504,36 @@ func get_monster_ascii_art(monster_name: String) -> String:
 	var art_map = {
 		# Tier 1 - Small creatures
 		"Goblin": ["[color=#00FF00]",
-"      ,,,",
-"    /(o.o)\\",
-"   _| === |_",
-"  / |  |  | \\",
-"    |  |  |",
-"   _|  |  |_",
-"  (__/   \\__)","[/color]"],
+"                                   xxXx                                    ",
+"                             +xxXXXXX$$$XXxxx+                             ",
+"                          ++xXXX$$$$$$$&&$$XXXxx+                          ",
+"                       ;;+xXXX$$$&&&&&&&&&&$$XXxxx+                        ",
+"                      ;+xxxxXX$$&&&&&&&&&&&&&$$XXXXx                       ",
+"                    .:;++xxXX$$$&&&&&&&&&&&&&&&$XXXXx+                     ",
+"                    :;+;x+xX$$$$&&&&&&&&&&&&&$X$$$XXx+;                    ",
+"  ++               .:;;;x+xX$$&&&&&&&&&&&&&&&$$$$XXxx+;                 x  ",
+"  .:+xxxxx         :::;;;xxxX$XX$&&&&$&&&&&&$$$$XXx++++           xXXx+:.  ",
+"   ....:+XXXXXx    ::::;;+XXXX$xX$&&&&&&&&&$X$$$$X++x+;;    xxXX$$X:..;:   ",
+"    .;::...+X$$XX+::;::;xXX$$&$X&$$&$$&$$$&&&$$&&X+;++;:+xX$$$$x:...:+;    ",
+"      :;::::.;xxXXX;:::+X$$X$&&&&&&$&$$&&&&$$&&&&$$x++;x$$$&X+:::+:+;.     ",
+"      :++;:;;:.:+x+x;;;;:+x$&$&X&&&$&&X&&&$$&XXx;+;++++$&$x:.;XX;+;x;      ",
+"       :x+;;;....:;;;;::....:+xX$X+xxXx+XX+x;......:;X+xX: .++X+;XX;       ",
+"         ;;;;;::..;:;xx::.;;......+$&&&+.  .;::x;:+x$Xx+;..:.++;++:        ",
+"          .:+;+;::+::+$Xx+;;;::;;+X&&&&$xx+;:;++;X&&$X+:x::x+x;x;          ",
+"           .;++;+x;:.:;X$XXx$$x+++$&&&&$XXxx&XxX&$$X+;:;.+$++;+:           ",
+"             ..;x;;;::.:;+X$$:;X$x$$&&&$$$$;;X&$$x;;:.:xXXXxx:             ",
+"                :;;;.:;::++x;X;.;+xX&&$$x;.xX;x$x+::;;:+Xx;.               ",
+"                  . .::;:+;;+$x;..;xxXx+.;+&$XX+xx;+x+:....                ",
+"                    .;;;;+;;xxXx+:.;;++:X$&$$Xxx;Xx+++:                    ",
+"                    .;;;;:+;:X&::;;:.:xxx;:.&$:+xxx+;x:                    ",
+"                    ..;;;:...+XxX++...;++$;xXx:;:++;;:.                    ",
+"                      .;;x++;+;+xxxxxxX$$$$X+xXXxx++..                     ",
+"                       ..:;:;+++++++;;;+xxX$XX++x+:.                       ",
+"                         ..;;;:;;;xxXX$$Xxx+++x+:.                         ",
+"                           .:++x+XX$$$&&$&$XX+:..                          ",
+"                            ..;+;xXXx+$x$X+x;..                            ",
+"                              ..::;+;;+;;:;..                              ",
+"                                 ..... ...                                 ","[/color]"],
 
 		"Giant Rat": ["[color=#8B4513]",
 "    (\\,/)",
@@ -1876,7 +1914,15 @@ func get_monster_ascii_art(monster_name: String) -> String:
 		for line in art_lines:
 			max_width = max(max_width, line.length())
 
-		# Build result with consistent centering
+		# Wide art (>50 chars) is pre-formatted - return as-is with newlines
+		if max_width > 50:
+			var result = color_tag + "\n"
+			for line in art_lines:
+				result += line + "\n"
+			result += "[/color]"
+			return result
+
+		# Small art - center with padding
 		var result = color_tag
 		var target_width = 20  # Fixed art width for consistency
 		for line in art_lines:
@@ -1921,10 +1967,14 @@ func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
 	if content_lines.is_empty():
 		return ascii_art
 
-	# Find max width for centering
+	# Find max width to check if art is too wide for border
 	var max_art_width = 0
 	for line in content_lines:
 		max_art_width = max(max_art_width, line.length())
+
+	# If art is wider than border, return it without border (pre-formatted art like goblin)
+	if max_art_width > border_width:
+		return ascii_art
 
 	# Build bordered art
 	var result = ""

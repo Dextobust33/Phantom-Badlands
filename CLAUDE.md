@@ -30,6 +30,63 @@ Godot executable location: `D:\SteamLibrary\steamapps\common\Godot Engine\godot.
 
 Run server first, then client. Both commands run in background (`&`).
 
+## Adding ASCII Art to Combat
+
+**Location:** `shared/combat_manager.gd` in the `get_monster_ascii_art()` function (~line 1500)
+
+**Format:** ASCII art is stored as an array of strings in the `art_map` dictionary:
+```gdscript
+"Monster Name": ["[color=#HEXCOLOR]",
+"line 1 of art",
+"line 2 of art",
+"line 3 of art","[/color]"],
+```
+
+**CRITICAL - Two Art Size Categories:**
+
+The display system handles art differently based on width:
+
+1. **Wide Art (>50 chars)** - Pre-formatted, displayed AS-IS
+   - Used for detailed art like the Goblin (75 chars wide)
+   - Leading/trailing whitespace is PRESERVED
+   - No border is added, no centering applied
+   - Each line must include its own spacing for alignment
+   - Copy lines EXACTLY from source file
+
+2. **Small Art (≤50 chars)** - Auto-centered with border
+   - Used for simple art like Giant Rat, Skeleton
+   - Whitespace is stripped and art is centered
+   - A decorative border is added around the art
+   - 25-space left padding applied automatically
+
+**Adding Wide Art (like Goblin):**
+- Read the source file with the Read tool
+- Copy each line EXACTLY as-is, preserving ALL whitespace
+- Lines should be ~75 chars wide with embedded spacing
+- Do NOT strip or trim any whitespace
+- The art relies on leading spaces for proper alignment
+
+**Adding Small Art:**
+- Just include the art characters, no padding needed
+- The system will auto-center and add borders
+- Keep lines under 50 characters wide
+
+**ASCII Art Source Files:** `C:\Users\Dexto\Desktop\Phantasia_Project\ASCII\`
+
+**Display Constraints:**
+- Wide art max: 75 characters (no border added)
+- Small art max: 50 characters (border adds ~4 chars)
+- Height: Unlimited (scrolls vertically)
+- Font: Consolas 14pt monospace
+
+**Color Suggestions by Monster Type:**
+- Green `#00FF00` - Goblins, nature creatures
+- Brown `#8B4513` - Rats, animals
+- Gray `#808080` or `#FFFFFF` - Undead, golems
+- Red `#FF0000` - Demons, fire creatures
+- Blue `#0070DD` - Water/ice creatures
+- Purple `#A335EE` - Magical beings
+
 ## Releases & Distribution
 
 **GitHub Repository:** https://github.com/Dextobust33/Phantasia-Revival

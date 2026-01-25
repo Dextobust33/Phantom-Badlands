@@ -40,6 +40,11 @@ extends Resource
 @export var in_combat: bool = false
 @export var last_stand_used: bool = false  # Dwarf racial - resets each combat
 
+# Poison status (persists outside combat)
+@export var poison_active: bool = false
+@export var poison_damage: int = 0
+@export var poison_turns_remaining: int = 0  # Decrements each combat turn
+
 # Inventory System (stubs for future item drops)
 @export var inventory: Array = []  # Array of item dictionaries
 @export var equipped: Dictionary = {
@@ -47,6 +52,7 @@ extends Resource
 	"armor": null,
 	"helm": null,
 	"shield": null,
+	"boots": null,
 	"ring": null,
 	"amulet": null
 }
@@ -123,7 +129,7 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 		"Sage": {"strength": 8, "constitution": 12, "dexterity": 10, "intelligence": 13, "wisdom": 15, "wits": 9},
 		# Trickster Path (WITS > 10 for Energy abilities)
 		"Thief": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
-		"Ranger": {"strength": 13, "constitution": 11, "dexterity": 12, "intelligence": 9, "wisdom": 9, "wits": 13},
+		"Ranger": {"strength": 12, "constitution": 11, "dexterity": 12, "intelligence": 9, "wisdom": 9, "wits": 14},
 		# Legacy classes (for existing characters)
 		"Paladin": {"strength": 13, "constitution": 14, "dexterity": 10, "intelligence": 9, "wisdom": 12, "wits": 12},
 		"Sorcerer": {"strength": 8, "constitution": 9, "dexterity": 10, "intelligence": 17, "wisdom": 11, "wits": 11},
@@ -181,7 +187,8 @@ func get_equipment_bonuses() -> Dictionary:
 		"wisdom": 0,
 		"wits": 0,
 		"max_hp": 0,
-		"max_mana": 0
+		"max_mana": 0,
+		"speed": 0
 	}
 
 	for slot in equipped.keys():
@@ -218,6 +225,10 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += int(base_bonus * 0.3)
 			bonuses.wits += int(base_bonus * 0.2)
+		elif "boots" in item_type:
+			bonuses.speed += base_bonus  # Speed bonus for flee chance
+			bonuses.dexterity += int(base_bonus * 0.3)
+			bonuses.defense += int(base_bonus * 0.5)
 
 		# Apply affix bonuses
 		var affixes = item.get("affixes", {})
@@ -400,6 +411,9 @@ func to_dict() -> Dictionary:
 		"gold": gold,
 		"gems": gems,
 		"in_combat": in_combat,
+		"poison_active": poison_active,
+		"poison_damage": poison_damage,
+		"poison_turns_remaining": poison_turns_remaining,
 		"inventory": inventory,
 		"equipped": equipped,
 		"created_at": created_at,
@@ -448,6 +462,11 @@ func from_dict(data: Dictionary):
 	gems = data.get("gems", 0)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
+
+	# Poison status
+	poison_active = data.get("poison_active", false)
+	poison_damage = data.get("poison_damage", 0)
+	poison_turns_remaining = data.get("poison_turns_remaining", 0)
 
 	# Inventory system
 	inventory = data.get("inventory", [])
@@ -655,6 +674,32 @@ func get_poison_damage_multiplier() -> float:
 	if race == "Elf":
 		return 0.5
 	return 1.0
+
+func cure_poison():
+	"""Cure poison status effect."""
+	poison_active = false
+	poison_damage = 0
+	poison_turns_remaining = 0
+
+func apply_poison(damage: int, duration: int = 20):
+	"""Apply poison to the character. Duration is in combat turns."""
+	poison_active = true
+	poison_damage = damage
+	poison_turns_remaining = duration
+
+func tick_poison() -> int:
+	"""Process one turn of poison. Returns damage dealt. Called each combat turn."""
+	if not poison_active or poison_turns_remaining <= 0:
+		return 0
+
+	poison_turns_remaining -= 1
+	if poison_turns_remaining <= 0:
+		cure_poison()
+		return 0
+
+	# Apply racial resistance
+	var final_damage = int(poison_damage * get_poison_damage_multiplier())
+	return max(1, final_damage)
 
 func try_last_stand() -> bool:
 	"""Dwarf racial: 25% chance to survive lethal damage with 1 HP.

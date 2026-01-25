@@ -90,6 +90,17 @@ var ability_popup_input: LineEdit = null
 var ability_popup_confirm: Button = null
 var ability_popup_cancel: Button = null
 
+# UI References - Gambling Popup (created dynamically)
+var gamble_popup: Panel = null
+var gamble_popup_title: Label = null
+var gamble_popup_gold_label: Label = null
+var gamble_popup_range_label: Label = null
+var gamble_popup_input: LineEdit = null
+var gamble_popup_confirm: Button = null
+var gamble_popup_cancel: Button = null
+var gamble_min_bet: int = 0
+var gamble_max_bet: int = 0
+
 # Account data
 var username = ""
 var account_id = ""
@@ -113,14 +124,15 @@ var in_combat = false
 var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
+var combat_outsmart_failed = false  # Track if outsmart already failed this combat
 var pending_variable_ability: String = ""  # Ability waiting for resource amount input
 var pending_variable_resource: String = ""  # Resource type for pending ability (mana/stamina/energy)
 
 # Action bar
 var action_buttons: Array[Button] = []
 var action_cost_labels: Array[Label] = []  # Labels showing resource cost below hotkey
-# Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4 (removed 5)
-var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4]
+# Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4, 5
+var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
 var current_actions: Array[Dictionary] = []
 
 # Inventory mode
@@ -133,6 +145,7 @@ var pending_continue: bool = false
 
 # Remember last used amounts for variable cost abilities (e.g., Bolt)
 var last_ability_amounts: Dictionary = {}  # ability_name -> last_amount
+var last_gamble_bet: int = 0  # Remember last gambling bet for quick repeat
 
 # XP tracking for two-color bar
 var xp_before_combat: int = 0  # XP before starting combat
@@ -995,7 +1008,7 @@ func _process(_delta):
 
 	# Action bar hotkeys (only when input NOT focused and playing)
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
-	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "sell", "gamble"]
+	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "sell", "gamble", "gamble_again"]
 	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled:
 		for i in range(action_hotkeys.size()):
 			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
@@ -1267,7 +1280,7 @@ func display_examine_result(data: Dictionary):
 
 	# Equipment
 	var equip_text = ""
-	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
@@ -1506,7 +1519,7 @@ func show_player_info_popup(data: Dictionary):
 
 	# Equipment
 	var has_equipment = false
-	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			if not has_equipment:
@@ -1529,7 +1542,7 @@ func show_player_info_popup(data: Dictionary):
 func setup_action_bar():
 	action_buttons.clear()
 	action_cost_labels.clear()
-	for i in range(9):
+	for i in range(10):
 		var action_container = action_bar.get_node("Action%d" % (i + 1))
 		if action_container:
 			var button = action_container.get_node("Button")
@@ -1565,22 +1578,26 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_combat:
-		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E/R/1-4=Path abilities
+		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E=Outsmart, R/1-5=Path abilities
 		var ability_actions = _get_combat_ability_actions()
 		var has_items = _has_usable_combat_items()
+		var can_outsmart = not combat_outsmart_failed  # Track if outsmart already failed this combat
 		current_actions = [
 			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
 			{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+			{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
 		]
-		# Add 6 ability slots (E, R, 1, 2, 3, 4)
-		for ability in ability_actions:
-			current_actions.append(ability)
+		# Add 6 ability slots (R, 1, 2, 3, 4, 5)
+		for i in range(min(6, ability_actions.size())):
+			current_actions.append(ability_actions[i])
 	elif flock_pending:
 		current_actions = [
 			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1594,6 +1611,7 @@ func update_action_bar():
 		# Waiting for player to acknowledge combat results
 		current_actions = [
 			{"label": "Continue", "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1622,11 +1640,13 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_merchant_action == "buy":
 			# Waiting for item selection from shop (use number keys)
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1644,14 +1664,31 @@ func update_action_bar():
 				{"label": "Armor", "action_type": "local", "action_data": "upgrade_armor", "enabled": equipped.get("armor") != null},
 				{"label": "Helm", "action_type": "local", "action_data": "upgrade_helm", "enabled": equipped.get("helm") != null},
 				{"label": "Shield", "action_type": "local", "action_data": "upgrade_shield", "enabled": equipped.get("shield") != null},
+				{"label": "Boots", "action_type": "local", "action_data": "upgrade_boots", "enabled": equipped.get("boots") != null},
 				{"label": "Ring", "action_type": "local", "action_data": "upgrade_ring", "enabled": equipped.get("ring") != null},
 				{"label": "Amulet", "action_type": "local", "action_data": "upgrade_amulet", "enabled": equipped.get("amulet") != null},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_merchant_action == "gamble":
-			# Waiting for bet amount input
+			# Initial gamble - popup is open, just show cancel
 			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "gamble_again":
+			# After a gamble result - offer bet again or cancel
+			var bet_label = "Bet Again (%d)" % last_gamble_bet if last_gamble_bet > 0 else "Bet Again"
+			current_actions = [
+				{"label": bet_label, "action_type": "local", "action_data": "merchant_gamble_again", "enabled": last_gamble_bet > 0},
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1674,6 +1711,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
 			current_actions = [
@@ -1683,7 +1721,8 @@ func update_action_bar():
 				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
 				{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
 				{"label": "SellGems", "action_type": "local", "action_data": "merchant_sell_gems", "enabled": player_gems > 0},
-				{"label": "Recharge", "action_type": "local", "action_data": "merchant_recharge", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -1700,16 +1739,18 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
 			# Inventory sub-menu: Spacebar=Back, Q-R for inventory actions
-			# Discard moved to end (KEY_4) to prevent accidental use
+			# Discard moved to end (KEY_5) to prevent accidental use
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
 				{"label": "Inspect", "action_type": "local", "action_data": "inventory_inspect", "enabled": true},
 				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
 				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1729,16 +1770,21 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
 			# Main Trading Post menu
 			var quests_available = trading_post_data.get("available_quests", 0) > 0
 			var quests_ready = trading_post_data.get("quests_to_turn_in", 0) > 0
+			# Calculate recharge cost (50 + level*10, then 50% off at Trading Post)
+			var player_level = character_data.get("level", 1)
+			var recharge_cost = int((50 + player_level * 10) * 0.5)
 			current_actions = [
 				{"label": "Leave", "action_type": "local", "action_data": "trading_post_leave", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": quests_available or quests_ready},
-				{"label": "Recharge", "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
+				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1755,12 +1801,14 @@ func update_action_bar():
 			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
 	else:
 		current_actions = [
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2044,6 +2092,190 @@ func _on_ability_popup_cancel():
 	"""Handle cancel button in ability popup."""
 	cancel_variable_cost_ability()
 
+# ===== GAMBLING POPUP =====
+
+func _create_gamble_popup():
+	"""Create the gambling input popup panel."""
+	gamble_popup = Panel.new()
+	gamble_popup.name = "GamblePopup"
+	gamble_popup.visible = false
+	gamble_popup.custom_minimum_size = Vector2(380, 380)
+
+	# Style the popup
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.15, 0.98)
+	style.border_color = Color(0.9, 0.8, 0.2, 1)  # Gold border
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(8)
+	gamble_popup.add_theme_stylebox_override("panel", style)
+
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 6)
+	vbox.offset_left = 20
+	vbox.offset_right = -20
+	vbox.offset_top = 15
+	vbox.offset_bottom = -15
+	gamble_popup.add_child(vbox)
+
+	# Title
+	gamble_popup_title = Label.new()
+	gamble_popup_title.text = "GAMBLING - DICE GAME"
+	gamble_popup_title.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	gamble_popup_title.add_theme_font_size_override("font_size", 18)
+	gamble_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(gamble_popup_title)
+
+	# Gold display
+	gamble_popup_gold_label = Label.new()
+	gamble_popup_gold_label.text = "Your gold: 0"
+	gamble_popup_gold_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	gamble_popup_gold_label.add_theme_font_size_override("font_size", 14)
+	gamble_popup_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(gamble_popup_gold_label)
+
+	# Bet range
+	gamble_popup_range_label = Label.new()
+	gamble_popup_range_label.text = "Bet range: 10 - 1000"
+	gamble_popup_range_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	gamble_popup_range_label.add_theme_font_size_override("font_size", 13)
+	gamble_popup_range_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(gamble_popup_range_label)
+
+	# Rules header
+	var rules_header = Label.new()
+	rules_header.text = "Roll 3 dice vs merchant. Higher wins!"
+	rules_header.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	rules_header.add_theme_font_size_override("font_size", 12)
+	rules_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(rules_header)
+
+	# Payout table
+	var payout_rtl = RichTextLabel.new()
+	payout_rtl.bbcode_enabled = true
+	payout_rtl.fit_content = true
+	payout_rtl.custom_minimum_size = Vector2(0, 100)
+	payout_rtl.add_theme_font_size_override("normal_font_size", 11)
+	payout_rtl.text = """[center][color=#FF6666]Lose 6+: Lose bet[/color]   [color=#FFAA66]Lose 1-5: Lose half[/color]
+[color=#AAAAAA]Tie: Bet returned[/color]
+[color=#66FF66]Win 1-5: 1.5x[/color]   [color=#66FFAA]Win 6-10: 2.5x[/color]
+[color=#66FFFF]Win 11+: 3x[/color]   [color=#FFD700]Triple 6s: JACKPOT![/color][/center]"""
+	vbox.add_child(payout_rtl)
+
+	# Spacer
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 5)
+	vbox.add_child(spacer)
+
+	# Input field
+	gamble_popup_input = LineEdit.new()
+	gamble_popup_input.placeholder_text = "Enter bet amount..."
+	gamble_popup_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gamble_popup_input.custom_minimum_size = Vector2(0, 40)
+	gamble_popup_input.add_theme_font_size_override("font_size", 16)
+	gamble_popup_input.text_submitted.connect(_on_gamble_popup_input_submitted)
+	vbox.add_child(gamble_popup_input)
+
+	# Button container
+	var btn_container = HBoxContainer.new()
+	btn_container.add_theme_constant_override("separation", 15)
+	btn_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_container)
+
+	# Cancel button
+	gamble_popup_cancel = Button.new()
+	gamble_popup_cancel.text = "Cancel"
+	gamble_popup_cancel.custom_minimum_size = Vector2(100, 35)
+	gamble_popup_cancel.pressed.connect(_on_gamble_popup_cancel)
+	btn_container.add_child(gamble_popup_cancel)
+
+	# Confirm button
+	gamble_popup_confirm = Button.new()
+	gamble_popup_confirm.text = "Bet!"
+	gamble_popup_confirm.custom_minimum_size = Vector2(100, 35)
+	gamble_popup_confirm.pressed.connect(_on_gamble_popup_confirm)
+	btn_container.add_child(gamble_popup_confirm)
+
+	# Add to root
+	add_child(gamble_popup)
+
+func _show_gamble_popup(gold: int, min_bet: int, max_bet: int):
+	"""Show the gambling popup with current gold and bet range."""
+	if not gamble_popup:
+		_create_gamble_popup()
+
+	gamble_min_bet = min_bet
+	gamble_max_bet = max_bet
+
+	gamble_popup_gold_label.text = "Your gold: %d" % gold
+	gamble_popup_range_label.text = "Bet range: %d - %d gold" % [min_bet, max_bet]
+
+	# Pre-populate with last bet if valid, otherwise empty
+	if last_gamble_bet >= min_bet and last_gamble_bet <= max_bet and last_gamble_bet <= gold:
+		gamble_popup_input.text = str(last_gamble_bet)
+		gamble_popup_input.placeholder_text = ""
+	else:
+		gamble_popup_input.text = ""
+		gamble_popup_input.placeholder_text = "Enter bet amount..."
+
+	# Center the popup on screen
+	gamble_popup.position = (get_viewport().get_visible_rect().size - gamble_popup.size) / 2
+
+	gamble_popup.visible = true
+	gamble_popup_input.grab_focus()
+	gamble_popup_input.select_all()
+
+func _hide_gamble_popup():
+	"""Hide the gambling popup."""
+	if gamble_popup:
+		gamble_popup.visible = false
+		gamble_popup_input.release_focus()
+
+func _on_gamble_popup_input_submitted(_text: String):
+	"""Handle Enter key in gamble popup input field."""
+	_on_gamble_popup_confirm()
+
+func _on_gamble_popup_confirm():
+	"""Handle confirm button in gamble popup."""
+	var text = gamble_popup_input.text.strip_edges()
+
+	if not text.is_valid_int():
+		gamble_popup_input.text = ""
+		gamble_popup_input.placeholder_text = "Enter a number!"
+		return
+
+	var amount = int(text)
+	if amount < gamble_min_bet:
+		gamble_popup_input.text = ""
+		gamble_popup_input.placeholder_text = "Min bet: %d" % gamble_min_bet
+		return
+
+	if amount > gamble_max_bet:
+		gamble_popup_input.text = ""
+		gamble_popup_input.placeholder_text = "Max bet: %d" % gamble_max_bet
+		return
+
+	var gold = character_data.get("gold", 0)
+	if amount > gold:
+		gamble_popup_input.text = ""
+		gamble_popup_input.placeholder_text = "Not enough gold!"
+		return
+
+	# Remember this bet for next time
+	last_gamble_bet = amount
+	pending_merchant_action = ""
+
+	_hide_gamble_popup()
+	send_to_server({"type": "merchant_gamble", "amount": amount})
+	update_action_bar()
+
+func _on_gamble_popup_cancel():
+	"""Handle cancel button in gamble popup."""
+	pending_merchant_action = ""
+	_hide_gamble_popup()
+	show_merchant_menu()
+	update_action_bar()
+
 func _has_usable_combat_items() -> bool:
 	"""Check if player has any usable items for combat (potions/elixirs)."""
 	var inventory = character_data.get("inventory", [])
@@ -2254,6 +2486,10 @@ func execute_local_action(action: String):
 			prompt_merchant_action("upgrade")
 		"merchant_gamble":
 			prompt_merchant_action("gamble")
+		"merchant_gamble_again":
+			# Repeat last bet
+			if last_gamble_bet > 0:
+				send_to_server({"type": "merchant_gamble", "amount": last_gamble_bet})
 		"merchant_buy":
 			prompt_merchant_action("buy")
 		"merchant_sell_gems":
@@ -2274,6 +2510,8 @@ func execute_local_action(action: String):
 			send_upgrade_slot("helm")
 		"upgrade_shield":
 			send_upgrade_slot("shield")
+		"upgrade_boots":
+			send_upgrade_slot("boots")
 		"upgrade_ring":
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
@@ -2347,7 +2585,7 @@ func prompt_merchant_action(action_type: String):
 
 		"upgrade":
 			var slots_with_items = []
-			for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 				if equipped.get(slot) != null:
 					slots_with_items.append(slot)
 			if slots_with_items.is_empty():
@@ -2369,22 +2607,8 @@ func prompt_merchant_action(action_type: String):
 				return
 
 			pending_merchant_action = "gamble"
-			display_game("[color=#FFD700]===== GAMBLING - DICE GAME =====[/color]")
-			display_game("Your gold: %d" % gold)
-			display_game("Bet range: %d - %d gold" % [min_bet, max_bet])
-			display_game("")
-			display_game("[color=#808080]Rules: Both roll 3 dice. Higher total wins![/color]")
-			display_game("  Lose by 6+: Lose full bet")
-			display_game("  Lose by 1-5: Lose half bet")
-			display_game("  Tie: Bet returned")
-			display_game("  Win by 1-5: Win 1.5x")
-			display_game("  Win by 6-10: Win 2.5x")
-			display_game("  Win by 11+: Win 3x")
-			display_game("  Triple 6s: JACKPOT (item or 5x)!")
-			display_game("")
-			display_game("[color=#FFD700]Enter bet amount (%d-%d):[/color]" % [min_bet, max_bet])
-			input_field.placeholder_text = "Bet amount..."
-			input_field.grab_focus()
+			# Show gambling popup instead of text input
+			_show_gamble_popup(gold, min_bet, max_bet)
 			update_action_bar()
 
 		"buy":
@@ -2472,7 +2696,36 @@ func display_shop_inventory():
 				else:
 					compare_text = " [color=#00FF00]NEW[/color]"
 
-			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %d gold (or %d gems)" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price, gem_price])
+			# Build stats string
+			var stats_parts = []
+			if item.get("attack", 0) > 0:
+				stats_parts.append("[color=#FF6666]ATK %d[/color]" % item.attack)
+			if item.get("defense", 0) > 0:
+				stats_parts.append("[color=#66FFFF]DEF %d[/color]" % item.defense)
+			if item.get("attack_bonus", 0) > 0:
+				stats_parts.append("[color=#FF6666]+%d ATK[/color]" % item.attack_bonus)
+			if item.get("defense_bonus", 0) > 0:
+				stats_parts.append("[color=#66FFFF]+%d DEF[/color]" % item.defense_bonus)
+			if item.get("hp_bonus", 0) > 0:
+				stats_parts.append("[color=#00FF00]+%d HP[/color]" % item.hp_bonus)
+			if item.get("str_bonus", 0) > 0:
+				stats_parts.append("+%d STR" % item.str_bonus)
+			if item.get("con_bonus", 0) > 0:
+				stats_parts.append("+%d CON" % item.con_bonus)
+			if item.get("dex_bonus", 0) > 0:
+				stats_parts.append("+%d DEX" % item.dex_bonus)
+			if item.get("int_bonus", 0) > 0:
+				stats_parts.append("+%d INT" % item.int_bonus)
+			if item.get("wis_bonus", 0) > 0:
+				stats_parts.append("+%d WIS" % item.wis_bonus)
+			if item.get("wits_bonus", 0) > 0:
+				stats_parts.append("+%d WIT" % item.wits_bonus)
+
+			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
+
+			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %d gold" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price])
+			if stats_str != "":
+				display_game("    %s" % stats_str)
 
 	display_game("")
 	display_game("[color=#808080]Press 1-%d to buy with gold[/color]" % shop_items.size())
@@ -2480,7 +2733,7 @@ func display_shop_inventory():
 func handle_shop_inventory(message: Dictionary):
 	"""Handle shop inventory update from server"""
 	var items = message.get("items", [])
-	# Update local merchant data with shop items
+	# Update local merchant data with shop items (include full stats)
 	if not merchant_data.is_empty():
 		var shop_items = []
 		for item in items:
@@ -2489,7 +2742,19 @@ func handle_shop_inventory(message: Dictionary):
 				"type": item.get("type", ""),
 				"level": item.get("level", 1),
 				"rarity": item.get("rarity", "common"),
-				"shop_price": item.get("price", 100)
+				"shop_price": item.get("price", 100),
+				# Stats for inspection
+				"attack": item.get("attack", 0),
+				"defense": item.get("defense", 0),
+				"attack_bonus": item.get("attack_bonus", 0),
+				"defense_bonus": item.get("defense_bonus", 0),
+				"hp_bonus": item.get("hp_bonus", 0),
+				"str_bonus": item.get("str_bonus", 0),
+				"con_bonus": item.get("con_bonus", 0),
+				"dex_bonus": item.get("dex_bonus", 0),
+				"int_bonus": item.get("int_bonus", 0),
+				"wis_bonus": item.get("wis_bonus", 0),
+				"wits_bonus": item.get("wits_bonus", 0)
 			})
 		merchant_data["shop_items"] = shop_items
 
@@ -2539,11 +2804,9 @@ func handle_gamble_result(message: Dictionary):
 	display_game("")
 	display_game("[color=#FFD700]Your gold: %d[/color]" % gold)
 
-	if max_bet >= min_bet:
-		display_game("[color=#808080]Enter another bet (%d-%d) or press Space to stop:[/color]" % [min_bet, max_bet])
-		pending_merchant_action = "gamble"
-		input_field.placeholder_text = "Bet amount..."
-		input_field.grab_focus()
+	if max_bet >= min_bet and last_gamble_bet <= gold:
+		display_game("[color=#808080]Press Space to bet again (%d gold) or Q to stop.[/color]" % last_gamble_bet)
+		pending_merchant_action = "gamble_again"
 	else:
 		display_game("[color=#FF4444]You don't have enough gold to continue gambling.[/color]")
 		pending_merchant_action = ""
@@ -2606,9 +2869,10 @@ func select_merchant_sell_item(index: int):
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		return
 
-	pending_merchant_action = ""
+	# Keep in sell mode for quick multiple sales
+	# pending_merchant_action stays as "sell"
 	send_to_server({"type": "merchant_sell", "index": index})
-	update_action_bar()
+	# Server will send character_update, then we refresh the sell list
 
 func select_merchant_buy_item(index: int):
 	"""Buy item at index from merchant shop"""
@@ -2678,7 +2942,7 @@ func display_upgrade_options():
 	display_game("Your gold: %d" % character_data.get("gold", 0))
 	display_game("")
 
-	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
@@ -2882,7 +3146,7 @@ func display_inventory():
 
 	# Show equipped items with level and stats
 	display_game("[color=#00FFFF]Equipped:[/color]")
-	for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
@@ -2896,9 +3160,13 @@ func display_inventory():
 
 	# Show total equipment bonuses
 	var bonuses = _calculate_equipment_bonuses(equipped)
-	if bonuses.attack > 0 or bonuses.defense > 0:
+	if bonuses.attack > 0 or bonuses.defense > 0 or bonuses.speed > 0:
 		display_game("")
-		display_game("[color=#00FF00]Total Gear Bonuses: +%d Attack, +%d Defense[/color]" % [bonuses.attack, bonuses.defense])
+		var bonus_text = "[color=#00FF00]Total Gear Bonuses: +%d Attack, +%d Defense" % [bonuses.attack, bonuses.defense]
+		if bonuses.speed > 0:
+			bonus_text += ", +%d Speed" % bonuses.speed
+		bonus_text += "[/color]"
+		display_game(bonus_text)
 
 	# Show inventory items with comparison hints
 	display_game("")
@@ -2968,6 +3236,8 @@ func _get_slot_for_item_type(item_type: String) -> String:
 		return "helm"
 	elif "shield" in item_type:
 		return "shield"
+	elif "boots" in item_type:
+		return "boots"
 	elif "ring" in item_type:
 		return "ring"
 	elif "amulet" in item_type:
@@ -3009,17 +3279,25 @@ func prompt_inventory_action(action_type: String):
 
 		"unequip":
 			var slots_with_items = []
-			for slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 				if equipped.get(slot) != null:
 					slots_with_items.append(slot)
 			if slots_with_items.is_empty():
 				display_game("[color=#FF0000]No items equipped.[/color]")
 				return
 			pending_inventory_action = "unequip_item"
-			display_inventory()  # Show inventory for selection
-			display_game("[color=#FFD700]Type slot to unequip (%s):[/color]" % ", ".join(slots_with_items))
-			input_field.placeholder_text = "Slot name..."
-			input_field.grab_focus()
+			# Display equipped items with numbers
+			display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
+			for i in range(slots_with_items.size()):
+				var slot = slots_with_items[i]
+				var item = equipped.get(slot)
+				var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+				display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+			display_game("")
+			display_game("[color=#FFD700]Press 1-%d to unequip an item:[/color]" % slots_with_items.size())
+			# Store slots for number key selection
+			set_meta("unequip_slots", slots_with_items)
+			update_action_bar()
 
 		"discard":
 			if inventory.is_empty():
@@ -3041,21 +3319,36 @@ func _count_equipped_items(equipped: Dictionary) -> int:
 func select_inventory_item(index: int):
 	"""Process inventory action with selected item index (0-based)"""
 	var inventory = character_data.get("inventory", [])
+	var action = pending_inventory_action
+
+	# Special handling for unequip - uses slot list instead of inventory
+	if action == "unequip_item":
+		var slots = get_meta("unequip_slots", [])
+		if index < 0 or index >= slots.size():
+			display_game("[color=#FF0000]Invalid slot number.[/color]")
+			return
+		var slot = slots[index]
+		pending_inventory_action = ""
+		send_to_server({"type": "inventory_unequip", "slot": slot})
+		inventory_mode = false
+		update_action_bar()
+		return
 
 	if index < 0 or index >= inventory.size():
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		display_inventory()  # Re-show inventory on error
 		return
 
-	var action = pending_inventory_action
 	pending_inventory_action = ""
 
 	# Process the action with the selected item
 	match action:
 		"inspect_item":
 			inspect_item(str(index + 1))  # Convert to 1-based for existing function
-			# Don't re-display inventory - let player read the item details
-			# Stay in inventory mode for further actions
+			# Stay in inspect mode for inspecting more items
+			pending_inventory_action = "inspect_item"
+			display_game("")
+			display_game("[color=#FFD700]Press 1-%d to inspect another item, or [Space] to go back:[/color]" % max(1, inventory.size()))
 			update_action_bar()
 			return
 		"use_item":
@@ -3131,7 +3424,12 @@ func update_player_hp_bar():
 		fill.add_theme_stylebox_override("panel", style)
 
 	if label:
-		label.text = "HP: %d/%d" % [current_hp, max_hp]
+		var hp_text = "HP: %d/%d" % [current_hp, max_hp]
+		# Show poison indicator if poisoned
+		if character_data.get("poison_active", false):
+			var turns = character_data.get("poison_turns_remaining", 0)
+			hp_text += " [POISONED:%d]" % turns
+		label.text = hp_text
 
 func update_resource_bar():
 	if not resource_bar or not has_character:
@@ -3158,7 +3456,7 @@ func update_resource_bar():
 			current_val = character_data.get("current_energy", 0)
 			max_val = max(character_data.get("max_energy", 1), 1)
 			resource_name = "Energy"
-			bar_color = Color(0.2, 0.8, 0.3)  # Green
+			bar_color = Color(0.1, 0.5, 0.15)  # Dark Green
 		_:
 			# No path - show mana by default
 			current_val = character_data.get("current_mana", 0)
@@ -3280,15 +3578,27 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	var fill = bar_container.get_node("Fill")
 	var hp_label = bar_container.get_node("HPLabel")
 
+	# Check for exact match first
+	var suspected_max = 0
+	var is_estimate = false
 	if known_enemy_hp.has(enemy_key):
-		var suspected_max = known_enemy_hp[enemy_key]
+		suspected_max = known_enemy_hp[enemy_key]
+	else:
+		# Try to estimate based on known data from similar monsters
+		suspected_max = estimate_enemy_hp(enemy_name, enemy_level)
+		is_estimate = suspected_max > 0
+
+	if suspected_max > 0:
 		var suspected_current = max(0, suspected_max - damage_dealt)
 		var percent = (float(suspected_current) / float(suspected_max)) * 100.0
 
 		if fill:
 			fill.anchor_right = percent / 100.0
 		if hp_label:
-			hp_label.text = "%d/%d" % [suspected_current, suspected_max]
+			if is_estimate:
+				hp_label.text = "~%d/%d" % [suspected_current, suspected_max]
+			else:
+				hp_label.text = "%d/%d" % [suspected_current, suspected_max]
 	else:
 		if fill:
 			fill.anchor_right = 1.0
@@ -3302,13 +3612,96 @@ func show_enemy_hp_bar(show: bool):
 func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: int):
 	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
 	known_enemy_hp[enemy_key] = total_damage
+	# Also store by monster name only for level-based estimation
+	var monster_key = "monster_%s" % enemy_name
+	if not known_enemy_hp.has(monster_key):
+		known_enemy_hp[monster_key] = {}
+	known_enemy_hp[monster_key][enemy_level] = total_damage
+
+func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
+	"""Estimate enemy HP based on knowledge from killing similar monsters.
+	Returns 0 if no estimate available."""
+	# First check exact match
+	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
+	if known_enemy_hp.has(enemy_key):
+		return known_enemy_hp[enemy_key]
+
+	# Check if we have any data for this monster type
+	var monster_key = "monster_%s" % enemy_name
+	if known_enemy_hp.has(monster_key) and known_enemy_hp[monster_key] is Dictionary:
+		var known_levels = known_enemy_hp[monster_key] as Dictionary
+
+		# Find the closest level we have data for (prefer higher levels)
+		var best_level = -1
+		var best_hp = 0
+		for known_level in known_levels.keys():
+			if known_level is int:
+				# Prefer exact match or higher level
+				if known_level >= enemy_level:
+					if best_level == -1 or known_level < best_level:
+						best_level = known_level
+						best_hp = known_levels[known_level]
+				elif best_level == -1:
+					# Use lower level if no higher available
+					if known_level > best_level:
+						best_level = known_level
+						best_hp = known_levels[known_level]
+
+		if best_level > 0 and best_hp > 0:
+			# Scale HP estimate based on level difference
+			# Rough formula: HP scales with level (higher level = more HP)
+			var level_ratio = float(enemy_level) / float(best_level)
+			return int(best_hp * level_ratio)
+
+	return 0
 
 func parse_damage_dealt(msg: String) -> int:
+	"""Parse damage dealt by PLAYER to enemy from combat messages.
+	Handles various formats with color codes. Excludes monster damage to player."""
+	# First strip all BBCode tags to get clean text
+	var clean_msg = msg
+	var bbcode_regex = RegEx.new()
+	bbcode_regex.compile("\\[/?[a-z]+[^\\]]*\\]")
+	clean_msg = bbcode_regex.sub(clean_msg, "", true)
+
+	# EXCLUDE monster damage messages (these are damage TO player, not FROM player)
+	# Monster attacks: "The X attacks and deals", "X hits N times for", "to you"
+	# Poison/thorns/reflect: "Poison deals", "Thorns deal", "death curse deals", "reflects X damage"
+	if "attacks and deals" in clean_msg:
+		return 0
+	if "hits" in clean_msg and "times for" in clean_msg:
+		return 0
+	if "to you" in clean_msg:
+		return 0
+	if "Poison deals" in clean_msg:
+		return 0
+	if "death curse deals" in clean_msg:
+		return 0
+	if "reflects" in clean_msg and "damage" in clean_msg:
+		return 0
+
+	# Now look for player damage patterns
 	var regex = RegEx.new()
-	regex.compile("deal (\\d+) damage")
-	var result = regex.search(msg)
+
+	# Player basic attack: "You deal X damage"
+	regex.compile("You deal (\\d+) damage")
+	var result = regex.search(clean_msg)
 	if result:
 		return int(result.get_string(1))
+
+	# Ability damage patterns: "deals X damage" (after ability name)
+	# e.g., "The explosion deals 50 damage", "Your swing deals 100 damage"
+	regex.compile("deals (\\d+) damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# Alternative pattern: "for X damage" (e.g., Exploit: "exploit a weakness for X damage")
+	regex.compile("for (\\d+) damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
 	return 0
 
 # ===== MESSAGE PROCESSING =====
@@ -3457,8 +3850,8 @@ func handle_server_message(message: Dictionary):
 
 		"location":
 			var desc = message.get("description", "")
-			if not in_combat and not pending_continue:
-				game_output.clear()
+			# Don't clear game_output on location updates - map is displayed separately
+			# Only update the map display panel
 			update_map(desc)
 
 		"chat":
@@ -3493,6 +3886,17 @@ func handle_server_message(message: Dictionary):
 				# Re-display inventory if in inventory mode (after use/equip/discard)
 				if inventory_mode:
 					display_inventory()
+				# Re-display sell list if in merchant sell mode (after selling an item)
+				if at_merchant and pending_merchant_action == "sell":
+					var inventory = character_data.get("inventory", [])
+					if inventory.is_empty():
+						display_game("[color=#808080]No more items to sell.[/color]")
+						pending_merchant_action = ""
+						show_merchant_menu()
+					else:
+						display_merchant_sell_list()
+						display_game("[color=#FFD700]Press 1-%d to sell another item, or [Space] to cancel:[/color]" % inventory.size())
+					update_action_bar()
 
 		"error":
 			var error_msg = message.get("message", "Unknown error")
@@ -3508,6 +3912,7 @@ func handle_server_message(message: Dictionary):
 			flock_pending = false
 			flock_monster_name = ""
 			combat_item_mode = false
+			combat_outsmart_failed = false  # Reset outsmart for new combat
 			update_action_bar()
 
 			# Track XP before combat for two-color XP bar
@@ -3556,6 +3961,11 @@ func handle_server_message(message: Dictionary):
 			if max_hp > 0 and current_enemy_name != "":
 				var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
 				known_enemy_hp[enemy_key] = max_hp
+				# Also store for level-based estimation
+				var monster_key = "monster_%s" % current_enemy_name
+				if not known_enemy_hp.has(monster_key):
+					known_enemy_hp[monster_key] = {}
+				known_enemy_hp[monster_key][current_enemy_level] = max_hp
 				# Calculate damage dealt from revealed HP
 				damage_dealt_to_current_enemy = max_hp - current_hp
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
@@ -3572,6 +3982,9 @@ func handle_server_message(message: Dictionary):
 				character_data["max_stamina"] = state.get("player_max_stamina", character_data.get("max_stamina", 0))
 				character_data["current_energy"] = state.get("player_energy", character_data.get("current_energy", 0))
 				character_data["max_energy"] = state.get("player_max_energy", character_data.get("max_energy", 0))
+				# Track if outsmart failed (can't try again this combat)
+				if state.get("outsmart_failed", false):
+					combat_outsmart_failed = true
 				update_player_hp_bar()
 				update_resource_bar()
 				update_action_bar()  # Refresh action bar for ability availability
@@ -3579,6 +3992,7 @@ func handle_server_message(message: Dictionary):
 		"combat_end":
 			in_combat = false
 			combat_item_mode = false
+			combat_outsmart_failed = false  # Reset for next combat
 
 			if message.get("victory", false):
 				if damage_dealt_to_current_enemy > 0:
@@ -3815,11 +4229,20 @@ func process_inventory_action(action: String, input_text: String):
 				display_game("[color=#FF0000]Invalid item number.[/color]")
 
 		"unequip_item":
-			var slot = input_text.to_lower().strip_edges()
-			if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
-				send_to_server({"type": "inventory_unequip", "slot": slot})
+			# Support both number keys and slot names for unequip
+			var slots = get_meta("unequip_slots", [])
+			if input_text.is_valid_int():
+				var index = int(input_text) - 1
+				if index >= 0 and index < slots.size():
+					send_to_server({"type": "inventory_unequip", "slot": slots[index]})
+				else:
+					display_game("[color=#FF0000]Invalid slot number.[/color]")
 			else:
-				display_game("[color=#FF0000]Invalid slot. Use: weapon, armor, helm, shield, ring, amulet[/color]")
+				var slot = input_text.to_lower().strip_edges()
+				if slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+					send_to_server({"type": "inventory_unequip", "slot": slot})
+				else:
+					display_game("[color=#FF0000]Invalid slot. Use: weapon, armor, helm, shield, boots, ring, amulet[/color]")
 
 		"discard_item":
 			if input_text.is_valid_int():
@@ -3837,7 +4260,7 @@ func inspect_item(input_text: String):
 
 	# Check if it's a slot name
 	var slot = input_text.to_lower().strip_edges()
-	if slot in ["weapon", "armor", "helm", "shield", "ring", "amulet"]:
+	if slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		item = equipped.get(slot)
 		source = "equipped in %s slot" % slot
 		if item == null:
@@ -4136,6 +4559,8 @@ func display_character_status():
 		text += " [color=#00FF00](+%d from gear)[/color]" % bonuses.defense
 	text += "\n"
 	text += "  Damage: %d-%d\n" % [int(total_attack * 0.8), int(total_attack * 1.2)]
+	if bonuses.speed > 0:
+		text += "  [color=#00FFFF]Speed: +%d (flee bonus from boots)[/color]\n" % bonuses.speed
 
 	display_game(text)
 
@@ -4151,7 +4576,8 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		"wisdom": 0,
 		"wits": 0,
 		"max_hp": 0,
-		"max_mana": 0
+		"max_mana": 0,
+		"speed": 0
 	}
 
 	for slot in equipped.keys():
@@ -4186,6 +4612,10 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += int(base_bonus * 0.3)
 			bonuses.wits += int(base_bonus * 0.2)
+		elif "boots" in item_type:
+			bonuses.speed += base_bonus
+			bonuses.dexterity += int(base_bonus * 0.3)
+			bonuses.defense += int(base_bonus * 0.5)
 
 	return bonuses
 
@@ -4232,6 +4662,13 @@ func show_help():
   help - This help
   status - Show stats
   clear - Clear screens
+
+[color=#00FFFF]Gems (Premium Currency):[/color]
+  • Drop from monsters 5+ levels higher than you
+  • Higher level difference = better drop chance
+  • Sell to merchants for 1000 gold each
+  • Pay for equipment upgrades (1 gem = 1000g)
+  • Multiply quest rewards in danger zones
 
 [color=#FF6600]! = Danger Zone[/color] (hotspot with boosted monster levels)
 
@@ -4848,7 +5285,7 @@ func handle_watch_character(message: Dictionary):
 		current_val = char_data.get("current_energy", 0)
 		max_val = max(char_data.get("max_energy", 1), 1)
 		resource_name = "Energy"
-		bar_color = Color(0.2, 0.8, 0.3)  # Green
+		bar_color = Color(0.1, 0.5, 0.15)  # Dark Green
 
 	if resource_bar:
 		var percent = (float(current_val) / float(max_val)) * 100.0
