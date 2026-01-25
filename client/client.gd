@@ -1204,6 +1204,8 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("questlogkey_%d_pressed" % i, false):
 					set_meta("questlogkey_%d_pressed" % i, true)
+					# Also mark the action bar hotkey as pressed to prevent double-trigger
+					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					abandon_quest_by_index(i)  # 0-based index
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
@@ -1214,6 +1216,9 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("combatitemkey_%d_pressed" % i, false):
 					set_meta("combatitemkey_%d_pressed" % i, true)
+					# Also mark the action bar hotkey as pressed to prevent double-trigger
+					# Item selection uses action_5 through action_13 (i + 5)
+					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					use_combat_item_by_number(i + 1)  # 1-based for user
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
@@ -1224,6 +1229,8 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("monsterselectkey_%d_pressed" % i, false):
 					set_meta("monsterselectkey_%d_pressed" % i, true)
+					# Also mark the action bar hotkey as pressed to prevent double-trigger
+					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					select_monster_from_scroll(i)  # 0-based index on current page
 			else:
 				set_meta("monsterselectkey_%d_pressed" % i, false)
@@ -1283,9 +1290,10 @@ func _process(delta):
 	# Skip if in settings mode (settings has its own input handling)
 	# Skip if in combat_item_mode (to prevent item selection from also triggering combat abilities)
 	# Skip if in quest_log_mode (to prevent abandon keys from also triggering action bar)
+	# Skip if in monster_select_mode (to prevent monster selection from also triggering action bar)
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
 	var quest_log_blocks_hotkeys = quest_log_mode and pending_continue
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not quest_log_blocks_hotkeys:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not quest_log_blocks_hotkeys and not monster_select_mode:
 		for i in range(10):  # 0-9 action slots
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
