@@ -427,3 +427,103 @@ The client uses a classic MUD terminal aesthetic with black backgrounds and colo
 - `shared/combat_manager.gd` - Combat message colors
 - `shared/quest_manager.gd` - Quest display colors
 - `shared/world_system.gd` - Map and location description colors
+
+## Code Refactoring Plan (In Progress)
+
+**Backup Branch:** `refactor-cleanup-backup` at commit 748c221
+
+**Current File Sizes (lines):**
+| File | Lines | Status |
+|------|-------|--------|
+| client/client.gd | 7873 | Needs cleanup |
+| server/server.gd | 3909 | Needs cleanup |
+| shared/combat_manager.gd | 3479 | ASCII art to move to client |
+| shared/monster_database.gd | 1387 | OK |
+| shared/world_system.gd | 999 | OK |
+| shared/character.gd | 981 | OK |
+| shared/quest_database.gd | 892 | OK |
+| shared/drop_tables.gd | 591 | OK |
+
+**Refactoring Goals:**
+1. Remove unused/dead functions
+2. Move ASCII art to client-side (reduce server load)
+3. Split large files into purpose-specific modules if beneficial
+4. Maintain backward compatibility (server running with players)
+
+**ASCII Art Migration Plan:**
+- Move `get_monster_ascii_art()` and art data from `combat_manager.gd` to `client/client.gd`
+- Server sends monster name only, client renders the art
+- This reduces server memory usage and network payload
+
+**Safe Refactoring Rules:**
+- Test each change before committing
+- Keep server message format unchanged for backward compatibility
+- Document any function removals with reason
+
+**Progress Tracking:**
+- [x] Analyze client/client.gd for unused functions
+- [x] Analyze server/server.gd for unused functions
+- [x] Analyze combat_manager.gd for unused functions
+- [ ] Move ASCII art to client-side (see detailed plan below)
+- [x] Remove confirmed dead code
+- [ ] Test all core systems after changes
+
+**Completed Cleanup (Session 2025-01-25):**
+| File | Function Removed | Line | Reason |
+|------|-----------------|------|--------|
+| client/client.gd | `get_combat_animation_display()` | ~7298 | Never called |
+| server/server.gd | `send_game_text()` | ~3879 | Never called |
+| combat_manager.gd | `to_dict()` | ~3270 | Never called |
+
+**Analysis Results:**
+- **client/client.gd**: Very clean - only 1 unused function found out of 180+
+- **server/server.gd**: Very clean - only 1 unused function found
+- **combat_manager.gd**: Very clean - only 1 unused function found
+
+**ASCII Art Migration Plan (Next Session):**
+
+The ASCII art data spans lines ~1944-3055 in `combat_manager.gd` (~1100 lines, 35% of file).
+
+**Proposed Architecture:**
+1. Create new file: `client/monster_art.gd`
+2. Move to client:
+   - `get_monster_ascii_art()` function
+   - `add_border_to_ascii_art()` function
+   - All `art_map` data (the large dictionary of ASCII art)
+3. Keep on server:
+   - `_get_raw_monster_ascii_art()` (just color lookup, ~40 lines)
+   - `get_monster_combat_bg_color()` (uses colors for background)
+
+**Client-Side Changes:**
+```gdscript
+# In client.gd, when handling "combat_start" message:
+var monster_name = message.combat_state.get("monster_name", "")
+var local_art = MonsterArt.get_monster_ascii_art(monster_name)
+var bordered_art = MonsterArt.add_border_to_ascii_art(local_art, monster_name)
+# Display bordered_art instead of using server's message
+```
+
+**Backward Compatibility:**
+- Server still sends `message` field with art (for old clients)
+- New clients ignore server art, render locally
+- After all clients update, server can stop sending art (reduces bandwidth)
+
+**Display Preservation:**
+- Copy functions exactly to maintain formatting
+- Keep same ASCII_ART_FONT_SIZE constant (11)
+- Wide art (>50 chars) displayed as-is
+- Small art auto-centered with border
+- Color tags preserved exactly
+
+**Files to Create/Modify:**
+- NEW: `client/monster_art.gd` - ASCII art data and rendering
+- MODIFY: `client/client.gd` - Load MonsterArt, use local rendering
+- MODIFY: `shared/combat_manager.gd` - Remove art data (keep colors only)
+
+**Testing Checklist:**
+- [ ] Combat start displays art correctly
+- [ ] Wide art (Goblin, Wolf, etc.) aligned properly
+- [ ] Small art centered with border
+- [ ] Elemental variants display randomly
+- [ ] Colors match original
+- [ ] Font size correct

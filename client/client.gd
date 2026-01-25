@@ -7295,13 +7295,6 @@ func _enhance_combat_message(msg: String) -> String:
 
 	return enhanced
 
-func get_combat_animation_display() -> String:
-	"""Get the current animation display string"""
-	if not combat_animation_active:
-		return ""
-	var spinner = combat_spinner_frames[combat_spinner_index % combat_spinner_frames.size()]
-	return "[color=%s]%s %s[/color]" % [combat_animation_color, spinner, combat_animation_text]
-
 func display_chat(text: String):
 	if chat_output:
 		chat_output.append_text(text + "\n")

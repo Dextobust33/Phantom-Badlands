@@ -3876,11 +3876,6 @@ func send_combat_message(peer_id: int, message: String):
 	send_to_peer(peer_id, {"type": "combat_message", "message": message})
 	forward_to_watchers(peer_id, message)
 
-func send_game_text(peer_id: int, message: String):
-	"""Send a text message and forward to watchers"""
-	send_to_peer(peer_id, {"type": "text", "message": message})
-	forward_to_watchers(peer_id, message)
-
 func cleanup_watcher_on_disconnect(peer_id: int):
 	"""Clean up watch relationships when a player disconnects"""
 	# If this player was watching someone, notify them

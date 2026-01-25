@@ -3267,11 +3267,6 @@ func _get_affinity_color(affinity: int) -> String:
 		_:
 			return "#FFFFFF"  # White - neutral
 
-func to_dict() -> Dictionary:
-	return {
-		"active_combats": active_combats.size()
-	}
-
 # Item Drop System Hooks
 
 func set_drop_tables(tables: Node):
