@@ -104,19 +104,43 @@ theme_override_constants/separation = 8
 [node name="LeftPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.6
+size_flags_stretch_ratio = 2.0
 theme_override_constants/separation = 4
 
-[node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
+[node name="GameOutputContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel"]
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
+
+[node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
 bbcode_enabled = true
 scroll_following = true
+
+[node name="BuffDisplayLabel" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -24.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
 
 [node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
 visible = false
@@ -162,8 +186,10 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
+theme_override_constants/outline_size = 2
 theme_override_font_sizes/font_size = 14
 text = "???"
 horizontal_alignment = 1
@@ -327,6 +353,23 @@ theme_override_font_sizes/font_size = 10
 text = "4"
 horizontal_alignment = 1
 
+[node name="Action10" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "---"
+
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 10
+text = "5"
+horizontal_alignment = 1
+
 [node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -360,7 +403,7 @@ text = "♫"
 flat = true
 
 [node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(0, 18)
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 
 [node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
@@ -389,15 +432,17 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 10
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 13
 text = "XP: 0 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(0, 20)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 
 [node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
@@ -427,15 +472,17 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 12
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 14
 text = "HP: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="ResourceBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
-custom_minimum_size = Vector2(0, 20)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 
 [node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
@@ -465,9 +512,11 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 12
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 14
 text = "Stamina: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -1011,10 +1060,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -180.0
-offset_top = -160.0
-offset_right = 180.0
-offset_bottom = 160.0
+offset_left = -220.0
+offset_top = -240.0
+offset_right = 220.0
+offset_bottom = 240.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")

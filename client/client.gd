@@ -33,7 +33,8 @@ enum GameState {
 var game_state = GameState.DISCONNECTED
 
 # UI References - Main game
-@onready var game_output = $RootContainer/MainContainer/LeftPanel/GameOutput
+@onready var game_output = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/GameOutput
+@onready var buff_display_label = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/BuffDisplayLabel
 @onready var chat_output = $RootContainer/MainContainer/LeftPanel/ChatOutput
 @onready var map_display = $RootContainer/MainContainer/RightPanel/MapDisplay
 @onready var input_field = $RootContainer/BottomBar/InputField
@@ -3373,6 +3374,33 @@ func prompt_inventory_action(action_type: String):
 			display_game("[color=#FFD700]Press 1-%d to discard an item:[/color]" % inventory.size())
 			update_action_bar()
 
+func _show_unequip_slots():
+	"""Display equipped items for unequipping (used after unequip to show remaining)"""
+	var equipped = character_data.get("equipped", {})
+	var slots_with_items = []
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		if equipped.get(slot) != null:
+			slots_with_items.append(slot)
+
+	if slots_with_items.is_empty():
+		display_game("[color=#808080]No more items equipped.[/color]")
+		pending_inventory_action = ""
+		display_inventory()
+		return
+
+	# Display equipped items with numbers
+	display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
+	for i in range(slots_with_items.size()):
+		var slot = slots_with_items[i]
+		var item = equipped.get(slot)
+		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+		display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+	display_game("")
+	display_game("[color=#FFD700]Press 1-%d to unequip another item, or [Space] to go back:[/color]" % slots_with_items.size())
+	# Store slots for number key selection
+	set_meta("unequip_slots", slots_with_items)
+	update_action_bar()
+
 func _count_equipped_items(equipped: Dictionary) -> int:
 	"""Count number of equipped items"""
 	var count = 0
@@ -3393,9 +3421,10 @@ func select_inventory_item(index: int):
 			display_game("[color=#FF0000]Invalid slot number.[/color]")
 			return
 		var slot = slots[index]
-		pending_inventory_action = ""
 		send_to_server({"type": "inventory_unequip", "slot": slot})
-		inventory_mode = false
+		# Stay in unequip mode for quick multiple unequips
+		# pending_inventory_action stays as "unequip_item"
+		# The character_update will refresh and re-show equipped items
 		update_action_bar()
 		return
 
@@ -3403,8 +3432,6 @@ func select_inventory_item(index: int):
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		display_inventory()  # Re-show inventory on error
 		return
-
-	pending_inventory_action = ""
 
 	# Process the action with the selected item
 	match action:
@@ -3428,13 +3455,22 @@ func select_inventory_item(index: int):
 			return
 		"equip_item":
 			send_to_server({"type": "inventory_equip", "index": index})
-			# Server will send character_update which triggers inventory refresh
+			# Stay in equip mode for quick multiple equips
+			# pending_inventory_action stays as "equip_item"
+			# The character_update will refresh and re-show inventory
+			update_action_bar()
+			return
 		"discard_item":
+			pending_inventory_action = ""
 			var item = inventory[index]
 			send_to_server({"type": "inventory_discard", "index": index})
-			# Server will send character_update which triggers inventory refresh
+			# Exit inventory mode after discard
+			inventory_mode = false
+			update_action_bar()
+			return
 
-	# Exit inventory mode after equip/discard to return to movement
+	# Fallback - exit inventory mode
+	pending_inventory_action = ""
 	inventory_mode = false
 	update_action_bar()
 
@@ -3513,12 +3549,70 @@ func update_player_hp_bar():
 		fill.add_theme_stylebox_override("panel", style)
 
 	if label:
-		var hp_text = "HP: %d/%d" % [current_hp, max_hp]
-		# Show poison indicator if poisoned
-		if character_data.get("poison_active", false):
-			var turns = character_data.get("poison_turns_remaining", 0)
-			hp_text += " [POISONED:%d]" % turns
-		label.text = hp_text
+		label.text = "HP: %d/%d" % [current_hp, max_hp]
+
+	# Update the buff display panel
+	update_buff_display()
+
+func update_buff_display():
+	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
+	if not buff_display_label:
+		return
+
+	var parts = []
+
+	# Poison (debuff) - purple/magenta
+	if character_data.get("poison_active", false):
+		var poison_dmg = character_data.get("poison_damage", 0)
+		var poison_turns = character_data.get("poison_turns_remaining", 0)
+		parts.append("[color=#FF00FF][P%d:%d][/color]" % [poison_dmg, poison_turns])
+
+	# Active combat buffs (round-based)
+	var active_buffs = character_data.get("active_buffs", [])
+	for buff in active_buffs:
+		var buff_type = buff.get("type", "")
+		var buff_value = buff.get("value", 0)
+		var buff_dur = buff.get("duration", 0)
+		var color = _get_buff_color(buff_type)
+		var letter = _get_buff_letter(buff_type)
+		parts.append("[color=%s][%s+%d:%d][/color]" % [color, letter, buff_value, buff_dur])
+
+	# Persistent buffs (battle-based)
+	var persistent_buffs = character_data.get("persistent_buffs", [])
+	for buff in persistent_buffs:
+		var buff_type = buff.get("type", "")
+		var buff_value = buff.get("value", 0)
+		var battles = buff.get("battles_remaining", 0)
+		var color = _get_buff_color(buff_type)
+		var letter = _get_buff_letter(buff_type)
+		parts.append("[color=%s][%s+%d:%dB][/color]" % [color, letter, buff_value, battles])
+
+	if parts.is_empty():
+		buff_display_label.text = ""
+	else:
+		buff_display_label.text = "".join(parts)
+
+func _get_buff_color(buff_type: String) -> String:
+	"""Get color for buff type display"""
+	match buff_type.to_lower():
+		"strength": return "#FF6666"  # Red
+		"defense": return "#6666FF"   # Blue
+		"speed": return "#66FF66"     # Green
+		"damage": return "#FF6666"    # Red
+		"damage_penalty": return "#FF4444"  # Dark red (debuff)
+		"defense_penalty": return "#4444FF" # Dark blue (debuff)
+		_: return "#FFFFFF"  # White default
+
+func _get_buff_letter(buff_type: String) -> String:
+	"""Get short letter code for buff type"""
+	match buff_type.to_lower():
+		"strength": return "S"
+		"defense": return "D"
+		"speed": return "V"  # Velocity
+		"damage": return "A"  # Attack
+		"damage_penalty": return "A-"
+		"defense_penalty": return "D-"
+		_: return buff_type.substr(0, 1).to_upper()
 
 func update_resource_bar():
 	if not resource_bar or not has_character:
@@ -3980,7 +4074,22 @@ func handle_server_message(message: Dictionary):
 				update_currency_display()
 				# Re-display inventory if in inventory mode (after use/equip/discard)
 				if inventory_mode:
-					display_inventory()
+					# Handle pending equip/unequip actions
+					if pending_inventory_action == "equip_item":
+						display_inventory()
+						var inv = character_data.get("inventory", [])
+						var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+						var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inv.size())
+						var items_on_page = end_idx - start_idx
+						if items_on_page > 0:
+							display_game("[color=#FFD700]Press 1-%d to equip another item, or [Space] to go back:[/color]" % items_on_page)
+						else:
+							display_game("[color=#808080]No more items to equip.[/color]")
+							pending_inventory_action = ""
+					elif pending_inventory_action == "unequip_item":
+						_show_unequip_slots()
+					else:
+						display_inventory()
 				# Re-display sell list if in merchant sell mode (after selling an item)
 				if at_merchant and pending_merchant_action == "sell":
 					var inventory = character_data.get("inventory", [])
@@ -4588,8 +4697,12 @@ func _load_connection_settings():
 			if result == OK:
 				var data = json.data
 				server_ip = data.get("last_ip", "localhost")
-				server_port = data.get("last_port", 9080)
+				server_port = int(data.get("last_port", 9080))
 				saved_connections = data.get("saved_connections", [])
+				# Ensure all saved connection ports are integers
+				for conn in saved_connections:
+					if conn.has("port"):
+						conn.port = int(conn.port)
 				return
 	# Default values if no config
 	server_ip = "localhost"
@@ -4953,7 +5066,45 @@ func display_character_status():
 	if bonuses.speed > 0:
 		text += "  [color=#00FFFF]Speed: +%d (flee bonus from boots)[/color]\n" % bonuses.speed
 
+	# Active Effects section
+	var effects_text = _get_status_effects_text()
+	if effects_text != "":
+		text += "\n" + effects_text
+
 	display_game(text)
+
+func _get_status_effects_text() -> String:
+	"""Generate status effects section for character status display"""
+	var lines = []
+
+	# Poison (debuff)
+	if character_data.get("poison_active", false):
+		var poison_dmg = character_data.get("poison_damage", 0)
+		var poison_turns = character_data.get("poison_turns_remaining", 0)
+		lines.append("  [color=#FF00FF]Poisoned[/color] - %d damage/round, %d rounds remaining" % [poison_dmg, poison_turns])
+
+	# Active combat buffs (round-based)
+	var active_buffs = character_data.get("active_buffs", [])
+	for buff in active_buffs:
+		var buff_type = buff.get("type", "").capitalize()
+		var buff_value = buff.get("value", 0)
+		var buff_dur = buff.get("duration", 0)
+		var color = _get_buff_color(buff_type.to_lower())
+		lines.append("  [color=%s]%s +%d[/color] - %d rounds remaining" % [color, buff_type, buff_value, buff_dur])
+
+	# Persistent buffs (battle-based)
+	var persistent_buffs = character_data.get("persistent_buffs", [])
+	for buff in persistent_buffs:
+		var buff_type = buff.get("type", "").capitalize()
+		var buff_value = buff.get("value", 0)
+		var battles = buff.get("battles_remaining", 0)
+		var color = _get_buff_color(buff_type.to_lower())
+		lines.append("  [color=%s]%s +%d[/color] - %d battles remaining" % [color, buff_type, buff_value, battles])
+
+	if lines.is_empty():
+		return ""
+
+	return "[color=#AAFFAA]Active Effects:[/color]\n" + "\n".join(lines)
 
 func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 	"""Calculate total bonuses from equipped items (client-side mirror of Character method)"""
@@ -5042,6 +5193,7 @@ func show_help():
 [color=#00FFFF]Inventory:[/color]
   inventory/inv/i - Open inventory
   [Q] Inventory in movement mode
+  Equip/Unequip stays in mode for quick multi-select
 
 [color=#00FFFF]Social:[/color]
   who/players - Refresh player list
@@ -5243,31 +5395,49 @@ WITS abilities include equipment bonuses
 [b][color=#FFD700]== OUTSMART (WITS-based) ==[/color][/b]
 
 [color=#FFA500]Outsmart[/color] - Trick dumb monsters
-  Base chance: 15%
-  +4% per WITS above 10
-  +20% bonus for Trickster classes
-  -5% per monster INT above your WITS
-  Clamped between 5% and 90%
+  Base chance: 5%
+  +5% per WITS above 10 (main factor!)
+  +15% bonus for Trickster classes
+  +8% per monster INT below 10 (dumb = easy)
+  -8% per monster INT above 10 (smart = hard)
+  -5% if monster INT exceeds your WITS
+  Clamped 2-85% (Tricksters: 2-95%)
+
+  [color=#00FF00]Best against:[/color] Low INT monsters (beasts, undead)
+  [color=#FF4444]Worst against:[/color] High INT monsters (mages, dragons)
+
   Success: Instant win with full rewards
   Failure: Monster gets free attack, can't retry
 
-[b][color=#FFD700]== TRADING POSTS ==[/color][/b]
+[b][color=#FFD700]== TRADING POSTS (58 Total) ==[/color][/b]
 
 Safe zones with services and quests:
   • [color=#00FF00]Haven[/color] (0,10) - Starting area, beginner quests
   • [color=#00FF00]Crossroads[/color] (0,0) - Hotzone quests, dailies
   • [color=#00FF00]Frostgate[/color] (0,-100) - Boss hunts, exploration
-  • And more scattered across the world!
+  • And 55 more across the world!
 
-Services: Shop, Quests, Recharge (50% off)
+Posts are [color=#FFFF00]denser near the center[/color], sparser at edges.
+World's Edge posts (700+ distance) for extreme challenges.
+Services: Shop, Quests, Recharge (action bar [2])
 
-[b][color=#FFD700]== WANDERING MERCHANTS ==[/color][/b]
+[b][color=#FFD700]== WANDERING MERCHANTS (110 Total) ==[/color][/b]
 
 Traveling merchants roam between Trading Posts:
-  • Move slowly (catchable on foot)
-  • Take rest breaks every few minutes
+  • [color=#FFFF00]More common near center[/color] (40% in core zone)
+  • Move slowly with rest breaks (catchable!)
+  • Inventories refresh every 5 minutes
   • Offer: Buy, Sell, Upgrade, Gamble
-  • [color=#FFD700]$[/color] symbol on map shows nearby merchants
+  • [color=#FFD700]$[/color] symbol on map shows merchants
+
+[b][color=#FFD700]== BUFFS & DEBUFFS ==[/color][/b]
+
+Active effects shown in bottom-right overlay:
+  • [color=#FF6666][S+15:5][/color] = Strength +15, 5 rounds
+  • [color=#6666FF][D+10:3B][/color] = Defense +10, 3 battles
+  • [color=#FF00FF][P5:2][/color] = Poison 5 dmg, 2 rounds
+
+View details: [Space] Status in movement mode
 
 [b][color=#FFD700]== QUESTS ==[/color][/b]
 
@@ -5335,7 +5505,7 @@ func handle_trading_post_start(message: Dictionary):
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
 	display_game("")
-	display_game("Services: [Q] Shop | [W] Quests | [E] Recharge (50%% off)")
+	display_game("Services: [Q] Shop | [W] Quests")
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
@@ -5377,7 +5547,7 @@ func cancel_trading_post_action():
 	game_output.clear()
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("")
-	display_game("Services: [Q] Shop | [W] Quests | [E] Recharge (50%% off)")
+	display_game("Services: [Q] Shop | [W] Quests")
 	display_game("")
 	display_game("[Space] Leave")
 

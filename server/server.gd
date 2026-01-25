@@ -26,6 +26,11 @@ var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flo
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
+
+# Persistent merchant inventory storage
+# merchant_id -> {items: Array, generated_at: float, player_level: int}
+var merchant_inventories = {}
+const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 var watchers = {}  # peer_id -> Array of peer_ids watching this player
 var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
 var monster_db: MonsterDatabase
@@ -44,6 +49,11 @@ var auto_save_timer = 0.0
 # Player list update timer (refreshes connected players display)
 const PLAYER_LIST_UPDATE_INTERVAL = 180.0  # Update every 3 minutes
 var player_list_update_timer = 0.0
+
+# Merchant movement update timer (refreshes maps to show merchant movement)
+const MERCHANT_UPDATE_INTERVAL = 10.0  # Check every 10 seconds
+var merchant_update_timer = 0.0
+var last_merchant_cache_positions: Dictionary = {}  # Tracks merchant positions for change detection
 
 func _ready():
 	# Parse command line arguments for port
@@ -200,9 +210,15 @@ func _process(delta):
 		player_list_update_timer = 0.0
 		update_player_list()
 
-	# Update traveling merchants
+	# Update traveling merchants and send map updates to players when merchants move
 	if world_system:
 		world_system.update_merchants(delta)
+
+		# Check for merchant position changes and update player maps
+		merchant_update_timer += delta
+		if merchant_update_timer >= MERCHANT_UPDATE_INTERVAL:
+			merchant_update_timer = 0.0
+			send_merchant_movement_updates()
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -1141,8 +1157,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"drop_data": drop_data          # Item data for sound effects
 				})
 
-				# Save character after combat
+				# Save character after combat and notify of expired buffs
 				save_character(peer_id)
+				send_buff_expiration_notifications(peer_id)
 
 		elif result.has("fled") and result.fled:
 			# Fled successfully - lose any pending flock drops and gems
@@ -1369,6 +1386,52 @@ func send_nearby_players_map_update(peer_id: int, old_x: int, old_y: int, radius
 		if saw_old or sees_new:
 			send_location_update(other_peer_id)
 
+func send_merchant_movement_updates():
+	"""Send map updates to players when merchants move in/out of their visible area.
+	Only sends to players who are in movement mode (not in combat, menus, etc.)"""
+	var map_radius = 6  # Same radius as normal map display
+
+	# For each active player in movement mode
+	for peer_id in characters.keys():
+		# Skip players in combat
+		if combat_mgr.is_in_combat(peer_id):
+			continue
+
+		# Skip players at merchant or trading post (in menu)
+		if at_merchant.has(peer_id) or at_trading_post.has(peer_id):
+			continue
+
+		var character = characters[peer_id]
+		var player_key = "p_%d" % peer_id
+
+		# Get merchants visible to this player using the public API
+		var nearby_merchants = world_system.get_merchants_near(character.x, character.y, map_radius)
+
+		# Build sorted list of position keys for comparison
+		var visible_merchants: Array = []
+		for merchant in nearby_merchants:
+			visible_merchants.append("%d,%d" % [merchant.x, merchant.y])
+		visible_merchants.sort()
+
+		# Check if visible merchants changed since last update
+		var last_visible = last_merchant_cache_positions.get(player_key, [])
+
+		# Compare arrays - if different, send map update
+		var changed = false
+		if visible_merchants.size() != last_visible.size():
+			changed = true
+		else:
+			for i in range(visible_merchants.size()):
+				if visible_merchants[i] != last_visible[i]:
+					changed = true
+					break
+
+		if changed:
+			# Store new visible merchants
+			last_merchant_cache_positions[player_key] = visible_merchants.duplicate()
+			# Send map-only update (location type doesn't affect GameOutput)
+			send_location_update(peer_id)
+
 func send_to_peer(peer_id: int, data: Dictionary):
 	if not peers.has(peer_id):
 		return
@@ -1409,6 +1472,16 @@ func broadcast_player_list():
 			"count": player_list.size()
 		})
 
+func send_buff_expiration_notifications(peer_id: int):
+	"""Send notifications for any persistent buffs that expired after combat."""
+	var expired = combat_mgr.get_expired_persistent_buffs(peer_id)
+	for buff in expired:
+		var buff_name = buff.type.capitalize()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]Your %s buff has worn off. (%d battles)[/color]" % [buff_name, 0]
+		})
+
 func save_character(peer_id: int):
 	"""Save a single character"""
 	if not characters.has(peer_id):
@@ -1445,6 +1518,11 @@ func handle_disconnect(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+
+	# Clean up merchant position tracking
+	var player_key = "p_%d" % peer_id
+	if last_merchant_cache_positions.has(player_key):
+		last_merchant_cache_positions.erase(player_key)
 
 	# Clean up watch relationships before erasing character
 	cleanup_watcher_on_disconnect(peer_id)
@@ -1926,6 +2004,32 @@ func send_character_update(peer_id: int):
 
 # ===== MERCHANT HANDLERS =====
 
+func get_or_generate_merchant_inventory(merchant_id: String, player_level: int, seed_hash: int, specialty: String) -> Array:
+	"""Get existing merchant inventory or generate new one if expired/missing.
+	Inventory persists for 5 minutes before regenerating."""
+	var current_time = Time.get_unix_time_from_system()
+
+	# Check if we have valid cached inventory
+	if merchant_inventories.has(merchant_id):
+		var cached = merchant_inventories[merchant_id]
+		var age = current_time - cached.generated_at
+
+		# Return cached inventory if not expired and same player level tier
+		# (regenerate if player level changed significantly to show level-appropriate items)
+		var level_tier = player_level / 10
+		var cached_tier = cached.player_level / 10
+		if age < INVENTORY_REFRESH_INTERVAL and level_tier == cached_tier:
+			return cached.items
+
+	# Generate new inventory
+	var items = generate_shop_inventory(player_level, seed_hash, specialty)
+	merchant_inventories[merchant_id] = {
+		"items": items,
+		"generated_at": current_time,
+		"player_level": player_level
+	}
+	return items
+
 func trigger_merchant_encounter(peer_id: int):
 	"""Trigger a merchant encounter for the player"""
 	if not characters.has(peer_id):
@@ -1937,8 +2041,14 @@ func trigger_merchant_encounter(peer_id: int):
 	if merchant.is_empty():
 		return
 
-	# Generate shop inventory based on player level and merchant specialty
-	var shop_items = generate_shop_inventory(character.level, merchant.get("hash", 0), merchant.get("specialty", "all"))
+	# Get or generate persistent shop inventory
+	var merchant_id = merchant.get("id", "unknown")
+	var shop_items = get_or_generate_merchant_inventory(
+		merchant_id,
+		character.level,
+		merchant.get("hash", 0),
+		merchant.get("specialty", "all")
+	)
 	merchant["shop_items"] = shop_items
 
 	# Store merchant state
@@ -1966,9 +2076,6 @@ func trigger_merchant_encounter(peer_id: int):
 		services_text.append("[W] Upgrade equipment")
 	if "gamble" in merchant.services:
 		services_text.append("[E] Gamble")
-	# Recharge option - show cost based on player level
-	var recharge_cost = _get_recharge_cost(character.level)
-	services_text.append("[2] Recharge resources (%d gold)" % recharge_cost)
 	services_text.append("[Space] Leave")
 
 	# Build greeting with destination info
@@ -2580,6 +2687,11 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 	shop_items.remove_at(item_index)
 	merchant["shop_items"] = shop_items
 
+	# Also update persistent inventory storage
+	var merchant_id = merchant.get("id", "")
+	if merchant_id != "" and merchant_inventories.has(merchant_id):
+		merchant_inventories[merchant_id].items = shop_items
+
 	send_character_update(peer_id)
 	_send_shop_inventory(peer_id)
 
@@ -2710,17 +2822,25 @@ func handle_trading_post_shop(peer_id: int):
 
 	var character = characters[peer_id]
 
-	# Generate shop inventory for this Trading Post
-	var shop_items = generate_shop_inventory(character.level, hash(tp.id), "all")
+	# Get or generate persistent shop inventory for this Trading Post
+	var merchant_id = "trading_post_" + tp.id
+	var inventory_seed = hash(tp.id)
+	var shop_items = get_or_generate_merchant_inventory(
+		merchant_id,
+		character.level,
+		inventory_seed,
+		"all"
+	)
 
 	# Create a merchant-like experience using the Trading Post
 	var merchant_info = {
+		"id": merchant_id,  # For persistent inventory tracking
 		"name": tp.name + " Merchant",
 		"services": ["buy", "sell", "upgrade", "gamble"],
 		"specialty": "all",
 		"x": tp.center.x,
 		"y": tp.center.y,
-		"hash": hash(tp.id),
+		"hash": inventory_seed,
 		"is_trading_post": true,
 		"shop_items": shop_items
 	}
@@ -2736,8 +2856,6 @@ func handle_trading_post_shop(peer_id: int):
 		services_text.append("[R] Buy items (%d available)" % shop_items.size())
 	if character.gems > 0:
 		services_text.append("[1] Sell gems (%d @ 1000g each)" % character.gems)
-	var recharge_cost = _get_recharge_cost(character.level) / 2  # 50% discount at Trading Posts
-	services_text.append("[2] Recharge resources (%d gold - 50%% off!)" % recharge_cost)
 	services_text.append("[Space] Leave shop")
 
 	send_to_peer(peer_id, {

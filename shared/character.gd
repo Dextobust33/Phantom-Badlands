@@ -612,27 +612,33 @@ func get_buff_value(buff_type: String) -> int:
 			total += buff.value
 	return total
 
-func tick_buffs():
-	"""Decrement buff durations by 1. Call at end of each combat round."""
-	var expired = []
+func tick_buffs() -> Array:
+	"""Decrement buff durations by 1. Call at end of each combat round. Returns expired buff info."""
+	var expired_indices = []
+	var expired_buffs = []
 	for i in range(active_buffs.size()):
 		active_buffs[i].duration -= 1
 		if active_buffs[i].duration <= 0:
-			expired.append(i)
+			expired_indices.append(i)
+			expired_buffs.append({"type": active_buffs[i].type, "value": active_buffs[i].value})
 	# Remove expired buffs (reverse order to preserve indices)
-	for i in range(expired.size() - 1, -1, -1):
-		active_buffs.remove_at(expired[i])
+	for i in range(expired_indices.size() - 1, -1, -1):
+		active_buffs.remove_at(expired_indices[i])
+	return expired_buffs
 
-func tick_persistent_buffs():
-	"""Decrement persistent buff battles by 1. Call when combat ends."""
-	var expired = []
+func tick_persistent_buffs() -> Array:
+	"""Decrement persistent buff battles by 1. Call when combat ends. Returns expired buff info."""
+	var expired_indices = []
+	var expired_buffs = []
 	for i in range(persistent_buffs.size()):
 		persistent_buffs[i].battles_remaining -= 1
 		if persistent_buffs[i].battles_remaining <= 0:
-			expired.append(i)
+			expired_indices.append(i)
+			expired_buffs.append({"type": persistent_buffs[i].type, "value": persistent_buffs[i].value})
 	# Remove expired buffs (reverse order to preserve indices)
-	for i in range(expired.size() - 1, -1, -1):
-		persistent_buffs.remove_at(expired[i])
+	for i in range(expired_indices.size() - 1, -1, -1):
+		persistent_buffs.remove_at(expired_indices[i])
+	return expired_buffs
 
 func clear_buffs():
 	"""Clear all active combat buffs. Call when combat ends. Does NOT clear persistent buffs."""

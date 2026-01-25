@@ -16,7 +16,10 @@ extends Node
 
 # All Trading Posts in the game world
 const TRADING_POSTS = {
-	# Inner Zone (Safe Start)
+	# ============================================
+	# CORE ZONE (0-30 distance) - Level 1-30, Very Safe
+	# High density - new players never far from safety
+	# ============================================
 	"haven": {
 		"id": "haven",
 		"name": "Haven",
@@ -35,8 +38,74 @@ const TRADING_POSTS = {
 		"quest_focus": "hotzone",
 		"description": "The central hub of the realm. The Royal Herald posts daily bounties for brave souls."
 	},
+	"south_gate": {
+		"id": "south_gate",
+		"name": "South Gate",
+		"center": Vector2i(0, -25),
+		"size": 3,
+		"quest_giver": "Gate Warden",
+		"quest_focus": "beginner",
+		"description": "The southern entrance to Haven's territory. The Gate Warden guides newcomers."
+	},
+	"east_market": {
+		"id": "east_market",
+		"name": "East Market",
+		"center": Vector2i(25, 10),
+		"size": 3,
+		"quest_giver": "Market Master",
+		"quest_focus": "collection",
+		"description": "A bustling marketplace east of Haven. The Market Master always needs supplies."
+	},
+	"west_shrine": {
+		"id": "west_shrine",
+		"name": "West Shrine",
+		"center": Vector2i(-25, 10),
+		"size": 3,
+		"quest_giver": "Shrine Keeper",
+		"quest_focus": "beginner",
+		"description": "A sacred shrine west of Haven. The Keeper teaches the ways of the realm."
+	},
 
-	# Inner-Mid Zone (Level 25-75 areas) - Filling gaps closer to center
+	# ============================================
+	# INNER ZONE (30-75 distance) - Level 30-75
+	# Good density - learning the ropes
+	# ============================================
+	"northeast_farm": {
+		"id": "northeast_farm",
+		"name": "Northeast Farm",
+		"center": Vector2i(40, 40),
+		"size": 3,
+		"quest_giver": "Farmer Giles",
+		"quest_focus": "pest_control",
+		"description": "A hardy farm on the northeastern outskirts. Farmer Giles needs help with pests."
+	},
+	"northwest_mill": {
+		"id": "northwest_mill",
+		"name": "Northwest Mill",
+		"center": Vector2i(-40, 40),
+		"size": 3,
+		"quest_giver": "Miller Tom",
+		"quest_focus": "delivery",
+		"description": "An old mill in the northwest. Miller Tom trades with nearby settlements."
+	},
+	"southeast_mine": {
+		"id": "southeast_mine",
+		"name": "Southeast Mine",
+		"center": Vector2i(45, -35),
+		"size": 3,
+		"quest_giver": "Mine Foreman",
+		"quest_focus": "gathering",
+		"description": "A productive mine southeast of Crossroads. The Foreman needs brave escorts."
+	},
+	"southwest_grove": {
+		"id": "southwest_grove",
+		"name": "Southwest Grove",
+		"center": Vector2i(-45, -35),
+		"size": 3,
+		"quest_giver": "Grove Tender",
+		"quest_focus": "nature",
+		"description": "A mystical grove in the southwest. The Tender protects the ancient trees."
+	},
 	"northwatch": {
 		"id": "northwatch",
 		"name": "Northwatch",
@@ -63,6 +132,51 @@ const TRADING_POSTS = {
 		"quest_giver": "Hermit Sage",
 		"quest_focus": "wisdom",
 		"description": "A peaceful sanctuary in the western woods. The Hermit Sage offers guidance to seekers."
+	},
+	"southern_watch": {
+		"id": "southern_watch",
+		"name": "Southern Watch",
+		"center": Vector2i(0, -65),
+		"size": 3,
+		"quest_giver": "Watch Commander",
+		"quest_focus": "patrol",
+		"description": "A defensive position watching the southern approaches. The Commander assigns patrol routes."
+	},
+	"northeast_tower": {
+		"id": "northeast_tower",
+		"name": "Northeast Tower",
+		"center": Vector2i(55, 55),
+		"size": 3,
+		"quest_giver": "Tower Warden",
+		"quest_focus": "vigilance",
+		"description": "A tall watchtower in the northeast. The Warden spots threats from afar."
+	},
+	"northwest_inn": {
+		"id": "northwest_inn",
+		"name": "Northwest Inn",
+		"center": Vector2i(-55, 55),
+		"size": 3,
+		"quest_giver": "Innkeeper",
+		"quest_focus": "rumors",
+		"description": "A cozy inn in the northwest. The Innkeeper hears all the local gossip."
+	},
+	"southeast_bridge": {
+		"id": "southeast_bridge",
+		"name": "Southeast Bridge",
+		"center": Vector2i(60, -50),
+		"size": 3,
+		"quest_giver": "Bridge Guard",
+		"quest_focus": "protection",
+		"description": "A fortified bridge crossing in the southeast. The Guard protects travelers."
+	},
+	"southwest_temple": {
+		"id": "southwest_temple",
+		"name": "Southwest Temple",
+		"center": Vector2i(-60, -50),
+		"size": 3,
+		"quest_giver": "Temple Priest",
+		"quest_focus": "cleansing",
+		"description": "An ancient temple in the southwest. The Priest fights corruption."
 	},
 
 	# Mid Zone (Level 50-200 areas)
@@ -294,6 +408,160 @@ const TRADING_POSTS = {
 		"quest_giver": "Dragon Sage",
 		"quest_focus": "legendary",
 		"description": "An ancient sanctuary where dragons once slumbered. The Dragon Sage guards their legacy."
+	},
+
+	# ============================================
+	# EXTREME ZONE (500-700 distance) - Level 500+
+	# Very sparse - only the most dangerous territories
+	# ============================================
+	"primordial_sanctum": {
+		"id": "primordial_sanctum",
+		"name": "Primordial Sanctum",
+		"center": Vector2i(0, 500),
+		"size": 5,
+		"quest_giver": "Ancient One",
+		"quest_focus": "primordial",
+		"description": "A sanctum from before recorded history. The Ancient One remembers the first days."
+	},
+	"nether_gate": {
+		"id": "nether_gate",
+		"name": "Nether Gate",
+		"center": Vector2i(0, -550),
+		"size": 3,
+		"quest_giver": "Gate Keeper",
+		"quest_focus": "nether",
+		"description": "A gate to realms unknown. The Gate Keeper guards the boundary between worlds."
+	},
+	"eastern_terminus": {
+		"id": "eastern_terminus",
+		"name": "Eastern Terminus",
+		"center": Vector2i(500, 0),
+		"size": 3,
+		"quest_giver": "Edge Walker",
+		"quest_focus": "terminus",
+		"description": "The furthest eastern point of civilization. The Edge Walker maps the unknown."
+	},
+	"western_terminus": {
+		"id": "western_terminus",
+		"name": "Western Terminus",
+		"center": Vector2i(-500, 0),
+		"size": 3,
+		"quest_giver": "Boundary Warden",
+		"quest_focus": "terminus",
+		"description": "The furthest western point of civilization. The Boundary Warden holds the line."
+	},
+	"chaos_refuge": {
+		"id": "chaos_refuge",
+		"name": "Chaos Refuge",
+		"center": Vector2i(400, 400),
+		"size": 3,
+		"quest_giver": "Chaos Tamer",
+		"quest_focus": "chaos",
+		"description": "An island of order in chaotic lands. The Chaos Tamer brings stability."
+	},
+	"entropy_station": {
+		"id": "entropy_station",
+		"name": "Entropy Station",
+		"center": Vector2i(-400, -400),
+		"size": 3,
+		"quest_giver": "Entropy Scholar",
+		"quest_focus": "entropy",
+		"description": "A station studying the decay of reality. The Scholar seeks to understand the end."
+	},
+	"oblivion_watch": {
+		"id": "oblivion_watch",
+		"name": "Oblivion Watch",
+		"center": Vector2i(-450, 400),
+		"size": 3,
+		"quest_giver": "Void Sentinel",
+		"quest_focus": "oblivion",
+		"description": "A watchtower overlooking the void. The Void Sentinel guards against nothingness."
+	},
+	"genesis_point": {
+		"id": "genesis_point",
+		"name": "Genesis Point",
+		"center": Vector2i(450, -400),
+		"size": 3,
+		"quest_giver": "Creation Sage",
+		"quest_focus": "genesis",
+		"description": "Where new realities are born. The Creation Sage harnesses primordial power."
+	},
+
+	# ============================================
+	# WORLD'S EDGE (700+ distance) - Level 700+
+	# The absolute frontier - very sparse
+	# ============================================
+	"world_spine_north": {
+		"id": "world_spine_north",
+		"name": "World's Spine North",
+		"center": Vector2i(0, 700),
+		"size": 5,
+		"quest_giver": "Titan Keeper",
+		"quest_focus": "titan",
+		"description": "A fortress at the northern edge of the world. The Titan Keeper commands godlike power."
+	},
+	"world_spine_south": {
+		"id": "world_spine_south",
+		"name": "World's Spine South",
+		"center": Vector2i(0, -700),
+		"size": 5,
+		"quest_giver": "Abyssal Lord",
+		"quest_focus": "abyssal",
+		"description": "A fortress at the southern edge of the world. The Abyssal Lord rules the depths."
+	},
+	"eternal_east": {
+		"id": "eternal_east",
+		"name": "Eternal East",
+		"center": Vector2i(700, 0),
+		"size": 3,
+		"quest_giver": "Dawn Herald",
+		"quest_focus": "eternal",
+		"description": "Where the sun rises eternally. The Dawn Herald commands the light."
+	},
+	"eternal_west": {
+		"id": "eternal_west",
+		"name": "Eternal West",
+		"center": Vector2i(-700, 0),
+		"size": 3,
+		"quest_giver": "Dusk Warden",
+		"quest_focus": "eternal",
+		"description": "Where the sun sets eternally. The Dusk Warden guards the twilight."
+	},
+	"apex_northeast": {
+		"id": "apex_northeast",
+		"name": "Apex Northeast",
+		"center": Vector2i(550, 550),
+		"size": 3,
+		"quest_giver": "Apex Hunter",
+		"quest_focus": "apex",
+		"description": "A hunting lodge for the ultimate predators. The Apex Hunter tracks godbeasts."
+	},
+	"apex_southeast": {
+		"id": "apex_southeast",
+		"name": "Apex Southeast",
+		"center": Vector2i(550, -550),
+		"size": 3,
+		"quest_giver": "Storm Breaker",
+		"quest_focus": "apex",
+		"description": "A fortress that defies the elements. The Storm Breaker conquers nature itself."
+	},
+	"apex_northwest": {
+		"id": "apex_northwest",
+		"name": "Apex Northwest",
+		"center": Vector2i(-550, 550),
+		"size": 3,
+		"quest_giver": "Reality Weaver",
+		"quest_focus": "apex",
+		"description": "A sanctum where reality bends. The Reality Weaver shapes existence."
+	},
+	"apex_southwest": {
+		"id": "apex_southwest",
+		"name": "Apex Southwest",
+		"center": Vector2i(-550, -550),
+		"size": 3,
+		"quest_giver": "Doom Prophet",
+		"quest_focus": "apex",
+		"description": "A temple to the end times. The Doom Prophet sees all possible futures."
 	}
 }
 

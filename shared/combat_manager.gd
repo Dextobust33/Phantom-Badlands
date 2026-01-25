@@ -21,6 +21,9 @@ const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
+# Pending buff expiration notifications (peer_id -> array of expired buffs)
+var _pending_buff_expirations = {}
+
 # Drop tables reference (set by server when initialized)
 # Using Node type to avoid compile-time dependency on DropTables class
 var drop_tables: Node = null
@@ -192,8 +195,11 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	combat.round += 1
 	combat.player_can_act = true
 
-	# Tick buff durations at end of round
-	combat.character.tick_buffs()
+	# Tick buff durations at end of round and notify of expired buffs
+	var expired_buffs = combat.character.tick_buffs()
+	for buff in expired_buffs:
+		var buff_name = buff.type.capitalize()
+		result.messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
 
 	return result
 
@@ -484,26 +490,34 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"combat_ended": false
 		}
 
-	# Calculate outsmart chance - favors Tricksters and high WITS
+	# Calculate outsmart chance - WIT vs monster INT is the key factor
+	# Dumb monsters are easy to fool, smart ones nearly impossible
 	var player_wits = character.get_stat("wits")
 	var monster_intelligence = monster.get("intelligence", 15)
 
-	# Base chance is low - this is a Trickster specialty
-	var base_chance = 15
+	# Base chance is very low - outsmart is situational
+	var base_chance = 5
 
-	# Bonus for high wits (+4% per point above 10)
-	var wits_bonus = max(0, (player_wits - 10) * 4)
+	# WIT bonus: +5% per point above 10 (high wits = main factor)
+	var wits_bonus = max(0, (player_wits - 10) * 5)
 
-	# Trickster class bonus (+20%)
+	# Trickster class bonus (+15%)
 	var class_type = character.class_type
 	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
-	var trickster_bonus = 20 if is_trickster else 0
+	var trickster_bonus = 15 if is_trickster else 0
 
-	# Penalty if monster is smarter than you (-5% per INT above your wits)
-	var int_penalty = max(0, (monster_intelligence - player_wits) * 5)
+	# Dumb monster bonus: +8% per INT below 10 (dumb = easy to trick)
+	var dumb_bonus = max(0, (10 - monster_intelligence) * 8)
 
-	var outsmart_chance = base_chance + wits_bonus + trickster_bonus - int_penalty
-	outsmart_chance = clampi(outsmart_chance, 5, 90)  # Min 5%, max 90%
+	# Smart monster penalty: -8% per INT above 10 (smart = hard to trick)
+	var smart_penalty = max(0, (monster_intelligence - 10) * 8)
+
+	# Additional penalty if monster INT exceeds your wits (-5% per point)
+	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 5)
+
+	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus - smart_penalty - int_vs_wits_penalty
+	var max_chance = 95 if is_trickster else 85  # Tricksters can reach 95%
+	outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
 	var bonus_text = ""
@@ -593,7 +607,10 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# Combat continues normally
 		combat.round += 1
 		combat.player_can_act = true
-		character.tick_buffs()
+		var expired_buffs = character.tick_buffs()
+		for buff in expired_buffs:
+			var buff_name = buff.type.capitalize()
+			messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
 
 		return {
 			"success": true,
@@ -663,7 +680,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	combat.player_can_act = true
 
 	# Tick buff durations and regenerate energy
-	combat.character.tick_buffs()
+	var expired_buffs = combat.character.tick_buffs()
+	for buff in expired_buffs:
+		var buff_name = buff.type.capitalize()
+		result.messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
 	combat.character.regenerate_energy()  # Energy regenerates each round
 
 	return result
@@ -1236,11 +1256,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			# Monster hits
 			var damage = calculate_monster_damage(monster, character)
 
-			# Ambusher ability: first attack crits
+			# Ambusher ability: first attack deals bonus damage (75% chance to trigger)
 			if combat.get("ambusher_active", false):
 				combat["ambusher_active"] = false
-				damage = int(damage * 2.0)
-				messages.append("[color=#FF0000]AMBUSH! The %s strikes from the shadows![/color]" % monster.name)
+				if randi() % 100 < 75:  # 75% chance to ambush
+					damage = int(damage * 1.75)  # 1.75x damage (nerfed from 2x)
+					messages.append("[color=#FF0000]AMBUSH! The %s strikes from the shadows![/color]" % monster.name)
 
 			# Berserker ability: +50% damage when below 50% HP
 			if ABILITY_BERSERKER in abilities:
@@ -1481,12 +1502,24 @@ func end_combat(peer_id: int, victory: bool):
 		character.clear_buffs()
 
 		# Tick persistent buffs (battle-based) - reduces remaining battles by 1
-		character.tick_persistent_buffs()
+		var expired_persistent = character.tick_persistent_buffs()
+
+		# Store expired persistent buffs for the server to notify about
+		if not expired_persistent.is_empty():
+			_pending_buff_expirations[peer_id] = expired_persistent
 
 		# Remove from active combats
 		active_combats.erase(peer_id)
 
 		print("Combat ended for peer %d - Victory: %s" % [peer_id, victory])
+
+func get_expired_persistent_buffs(peer_id: int) -> Array:
+	"""Get and clear any pending persistent buff expiration notifications for a peer."""
+	if _pending_buff_expirations.has(peer_id):
+		var expired = _pending_buff_expirations[peer_id]
+		_pending_buff_expirations.erase(peer_id)
+		return expired
+	return []
 
 func is_in_combat(peer_id: int) -> bool:
 	"""Check if a player is in combat"""
