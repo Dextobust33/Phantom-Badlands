@@ -31,9 +31,12 @@
       "ethereal": 0.30,
       "berserker": 0.30,
       "summoner": 0.30,
+      "bleed": 0.30,
       "corrosive": 0.25,
       "sunder": 0.25,
       "regeneration": 0.25,
+      "blind": 0.25,
+      "slow_aura": 0.20,
       "armored": 0.20,
       "curse": 0.20,
       "mana_drain": 0.20,
@@ -75,7 +78,11 @@
     "glass_cannon_damage_mult": 3.0,
     "glass_cannon_hp_mult": 0.5,
     "multi_strike_min": 2,
-    "multi_strike_max": 3
+    "multi_strike_max": 3,
+    "blind_hit_reduction": 30,
+    "bleed_damage_percent": 15,
+    "bleed_chance": 40,
+    "slow_aura_flee_reduction": 25
   },
 
   "monster_spawning": {

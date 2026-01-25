@@ -49,6 +49,15 @@ var balance_config: Dictionary = {}
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
 var auto_save_timer = 0.0
 
+# Connection security
+const AUTH_TIMEOUT = 30.0  # Kick unauthenticated connections after 30 seconds
+const MAX_CONNECTIONS_PER_IP = 3  # Max simultaneous connections from one IP
+const CONNECTION_RATE_LIMIT = 5.0  # Seconds between connection attempts from same IP
+var ip_connection_times: Dictionary = {}  # IP -> last connection timestamp
+var ip_connection_counts: Dictionary = {}  # IP -> current connection count
+var security_check_timer: float = 0.0
+const SECURITY_CHECK_INTERVAL = 5.0  # Check for stale connections every 5 seconds
+
 # Player list update timer (refreshes connected players display)
 const PLAYER_LIST_UPDATE_INTERVAL = 180.0  # Update every 3 minutes
 var player_list_update_timer = 0.0
@@ -332,6 +341,25 @@ func _process(delta):
 	# Check for new connections
 	if server.is_connection_available():
 		var peer = server.take_connection()
+		var peer_ip = peer.get_connected_host()
+		var current_time = Time.get_unix_time_from_system()
+
+		# Security: Rate limiting - check if IP is connecting too fast
+		if ip_connection_times.has(peer_ip):
+			var last_connect = ip_connection_times[peer_ip]
+			if current_time - last_connect < CONNECTION_RATE_LIMIT:
+				log_message("Rate limit: Rejecting rapid connection from %s" % peer_ip)
+				peer.disconnect_from_host()
+				return
+
+		# Security: Check max connections per IP
+		var current_count = ip_connection_counts.get(peer_ip, 0)
+		if current_count >= MAX_CONNECTIONS_PER_IP:
+			log_message("Connection limit: Rejecting connection from %s (max %d)" % [peer_ip, MAX_CONNECTIONS_PER_IP])
+			peer.disconnect_from_host()
+			return
+
+		# Accept connection
 		var peer_id = next_peer_id
 		next_peer_id += 1
 
@@ -341,10 +369,15 @@ func _process(delta):
 			"account_id": "",
 			"username": "",
 			"character_name": "",
-			"buffer": ""
+			"buffer": "",
+			"connect_time": current_time,
+			"ip": peer_ip
 		}
 
-		var peer_ip = peer.get_connected_host()
+		# Track IP connection
+		ip_connection_times[peer_ip] = current_time
+		ip_connection_counts[peer_ip] = current_count + 1
+
 		log_message("New connection! Peer ID: %d from %s" % [peer_id, peer_ip])
 
 		# Send welcome message
@@ -382,6 +415,12 @@ func _process(delta):
 	# Clean up disconnected peers
 	for peer_id in disconnected_peers:
 		handle_disconnect(peer_id)
+
+	# Security: Periodically check for stale unauthenticated connections
+	security_check_timer += delta
+	if security_check_timer >= SECURITY_CHECK_INTERVAL:
+		security_check_timer = 0.0
+		_check_stale_connections()
 
 func process_buffer(peer_id: int):
 	var peer_data = peers[peer_id]
@@ -1157,9 +1196,31 @@ func handle_rest(peer_id: int):
 
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 
+	# Regenerate primary resource on rest (same as movement - 2%)
+	var regen_percent = 0.02
+	var mana_regen = int(character.max_mana * regen_percent)
+	var stamina_regen = int(character.max_stamina * regen_percent)
+	var energy_regen = int(character.max_energy * regen_percent)
+	character.current_mana = min(character.max_mana, character.current_mana + mana_regen)
+	character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_regen)
+	character.current_energy = min(character.max_energy, character.current_energy + energy_regen)
+
+	# Build rest message with resource info
+	var rest_msg = "[color=#00FF00]You rest and recover %d HP" % heal_amount
+
+	# Show resource regen based on class path
+	var class_type = character.class_type
+	if class_type in ["Fighter", "Barbarian", "Paladin"] and stamina_regen > 0:
+		rest_msg += " and %d Stamina" % stamina_regen
+	elif class_type in ["Wizard", "Sorcerer", "Sage"] and mana_regen > 0:
+		rest_msg += " and %d Mana" % mana_regen
+	elif class_type in ["Thief", "Ranger", "Ninja"] and energy_regen > 0:
+		rest_msg += " and %d Energy" % energy_regen
+	rest_msg += ".[/color]"
+
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#00FF00]You rest and recover %d HP.[/color]" % heal_amount,
+		"message": rest_msg,
 		"clear_output": true
 	})
 
@@ -1275,10 +1336,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					pending_flock_gems[peer_id] = 0
 				pending_flock_gems[peer_id] += gems_this_combat
 
-				# Store pending flock data for this peer
+				# Store pending flock data for this peer (including analyze bonus carry-over)
 				pending_flocks[peer_id] = {
 					"monster_name": monster_name,
-					"monster_level": monster_level
+					"monster_level": monster_level,
+					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id)
 				}
 
 				send_to_peer(peer_id, {
@@ -1359,9 +1421,19 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
+
+			# Move character to an adjacent empty tile (no encounter triggered)
+			var flee_pos = _find_flee_destination(peer_id)
+			if flee_pos != null:
+				characters[peer_id].x = flee_pos.x
+				characters[peer_id].y = flee_pos.y
+				save_character(peer_id)
+
 			send_to_peer(peer_id, {
 				"type": "combat_end",
-				"fled": true
+				"fled": true,
+				"new_x": characters[peer_id].x,
+				"new_y": characters[peer_id].y
 			})
 		elif result.get("monster_fled", false):
 			# Monster fled (coward ability) - combat ends, no loot
@@ -1487,6 +1559,39 @@ func _generate_wish_gear(wish: Dictionary) -> Dictionary:
 	var item_type = types[randi() % types.size()]
 
 	return drop_tables._generate_item({"item_type": item_type, "rarity": rarity}, gear_level)
+
+func _find_flee_destination(peer_id: int):
+	"""Find an adjacent tile without another player for flee movement"""
+	if not characters.has(peer_id):
+		return null
+
+	var character = characters[peer_id]
+	var current_x = character.x
+	var current_y = character.y
+
+	# Get all occupied positions
+	var occupied = {}
+	for pid in characters:
+		if pid != peer_id:
+			var other = characters[pid]
+			occupied[Vector2i(other.x, other.y)] = true
+
+	# Direction offsets: N, S, E, W, NE, NW, SE, SW
+	var directions = [
+		Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0),
+		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)
+	]
+	directions.shuffle()  # Randomize flee direction
+
+	for dir in directions:
+		var new_pos = Vector2i(current_x + dir.x, current_y + dir.y)
+		# Check if not occupied by another player
+		if not occupied.has(new_pos):
+			# Check world bounds (-1000 to 1000)
+			if new_pos.x >= -1000 and new_pos.x <= 1000 and new_pos.y >= -1000 and new_pos.y <= 1000:
+				return {"x": new_pos.x, "y": new_pos.y}
+
+	return null  # No valid flee destination (very rare)
 
 # ===== PERMADEATH =====
 
@@ -1756,10 +1861,21 @@ func save_all_active_characters():
 		save_character(peer_id)
 
 func handle_disconnect(peer_id: int):
-	var username = peers[peer_id].get("username", "Unknown")
+	if not peers.has(peer_id):
+		return
+
+	var peer_data = peers[peer_id]
+	var username = peer_data.get("username", "Unknown")
+	var peer_ip = peer_data.get("ip", "")
 	var char_name = ""
 	if characters.has(peer_id):
 		char_name = characters[peer_id].name
+
+	# Decrement IP connection count
+	if peer_ip != "" and ip_connection_counts.has(peer_ip):
+		ip_connection_counts[peer_ip] = max(0, ip_connection_counts[peer_ip] - 1)
+		if ip_connection_counts[peer_ip] == 0:
+			ip_connection_counts.erase(peer_ip)
 
 	log_message("Peer %d (%s) disconnected" % [peer_id, username])
 
@@ -1793,6 +1909,31 @@ func handle_disconnect(peer_id: int):
 	# Broadcast disconnect message (after cleanup so they don't get their own message)
 	if char_name != "":
 		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
+
+func _check_stale_connections():
+	"""Kick connections that haven't authenticated within AUTH_TIMEOUT seconds"""
+	var current_time = Time.get_unix_time_from_system()
+	var stale_peers = []
+
+	for peer_id in peers.keys():
+		var peer_data = peers[peer_id]
+		# Skip authenticated connections
+		if peer_data.get("authenticated", false):
+			continue
+
+		var connect_time = peer_data.get("connect_time", current_time)
+		if current_time - connect_time > AUTH_TIMEOUT:
+			var peer_ip = peer_data.get("ip", "unknown")
+			log_message("Security: Kicking unauthenticated connection %d from %s (timeout)" % [peer_id, peer_ip])
+			stale_peers.append(peer_id)
+
+	# Disconnect stale peers
+	for peer_id in stale_peers:
+		if peers.has(peer_id):
+			var connection = peers[peer_id].connection
+			if connection:
+				connection.disconnect_from_host()
+			handle_disconnect(peer_id)
 
 func _exit_tree():
 	print("Server shutting down...")
@@ -1835,15 +1976,50 @@ func trigger_encounter(peer_id: int):
 	else:
 		# Normal random monster encounter
 		monster = monster_db.generate_monster(level_range.min, level_range.max)
+
+	# Apply pending monster debuffs from scrolls
+	var debuff_messages = []
+	if character.pending_monster_debuffs.size() > 0:
+		for debuff in character.pending_monster_debuffs:
+			var debuff_type = debuff.get("type", "")
+			var debuff_value = debuff.get("value", 0)
+			var reduction = float(debuff_value) / 100.0
+
+			match debuff_type:
+				"weakness":
+					monster.strength = max(1, int(monster.strength * (1.0 - reduction)))
+					debuff_messages.append("[color=#FF00FF]Weakness curse: -%d%% attack![/color]" % debuff_value)
+				"vulnerability":
+					monster.defense = max(0, int(monster.defense * (1.0 - reduction)))
+					debuff_messages.append("[color=#FF00FF]Vulnerability curse: -%d%% defense![/color]" % debuff_value)
+				"slow":
+					monster["speed"] = max(1, int(monster.get("speed", 10) * (1.0 - reduction)))
+					debuff_messages.append("[color=#FF00FF]Slow curse: -%d%% speed![/color]" % debuff_value)
+				"doom":
+					var hp_loss = int(monster.max_hp * reduction)
+					monster.max_hp = max(1, monster.max_hp - hp_loss)
+					monster.current_hp = min(monster.current_hp, monster.max_hp)
+					debuff_messages.append("[color=#FF00FF]Doom curse: -%d HP![/color]" % hp_loss)
+
+		# Clear the pending debuffs after applying
+		character.pending_monster_debuffs.clear()
+		save_character(peer_id)
+
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
 		# Get monster's combat background color
 		var monster_name = result.combat_state.get("monster_name", "")
 		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
+
+		# Prepend debuff messages if any were applied
+		var full_message = result.message
+		if debuff_messages.size() > 0:
+			full_message = "\n".join(debuff_messages) + "\n\n" + result.message
+
 		send_to_peer(peer_id, {
 			"type": "combat_start",
-			"message": result.message,
+			"message": full_message,
 			"combat_state": result.combat_state,
 			"combat_bg_color": combat_bg_color
 		})
@@ -1992,7 +2168,7 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int):
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
@@ -2004,6 +2180,10 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
+
+	# Apply analyze bonus from previous combat (carry-over for flock chain)
+	if analyze_bonus > 0:
+		combat_mgr.set_analyze_bonus(peer_id, analyze_bonus)
 
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message]
@@ -2029,7 +2209,9 @@ func handle_continue_flock(peer_id: int):
 	var flock_data = pending_flocks[peer_id]
 	pending_flocks.erase(peer_id)
 
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level)
+	# Pass analyze bonus to carry over damage bonus from previous combat
+	var analyze_bonus = flock_data.get("analyze_bonus", 0)
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus)
 
 # ===== INVENTORY HANDLERS =====
 
@@ -2086,6 +2268,26 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#00FFFF]You use %s and restore %d mana![/color]" % [item_name, actual_restore]
 		})
+	elif effect.has("stamina"):
+		# Stamina potion
+		var stamina_amount = effect.base + (effect.per_level * item_level)
+		var old_stamina = character.current_stamina
+		character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_amount)
+		var actual_restore = character.current_stamina - old_stamina
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFCC00]You use %s and restore %d stamina![/color]" % [item_name, actual_restore]
+		})
+	elif effect.has("energy"):
+		# Energy potion
+		var energy_amount = effect.base + (effect.per_level * item_level)
+		var old_energy = character.current_energy
+		character.current_energy = min(character.max_energy, character.current_energy + energy_amount)
+		var actual_restore = character.current_energy - old_energy
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#66FF66]You use %s and restore %d energy![/color]" % [item_name, actual_restore]
+		})
 	elif effect.has("buff"):
 		# Buff potion
 		var buff_type = effect.buff
@@ -2131,6 +2333,23 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 		# Don't update character yet - wait for confirmation
 		return
+	elif effect.has("monster_debuff"):
+		# Debuff scroll - apply to next monster encountered
+		var debuff_type = effect.monster_debuff
+		var debuff_value = effect.base + (effect.per_level * item_level)
+		character.pending_monster_debuffs.append({"type": debuff_type, "value": debuff_value})
+
+		var debuff_messages = {
+			"weakness": "Your next foe will strike with weakened blows! (-%d%% attack)" % debuff_value,
+			"vulnerability": "Your next foe's defenses will crumble! (-%d%% defense)" % debuff_value,
+			"slow": "Your next foe will be sluggish and slow! (-%d%% speed)" % debuff_value,
+			"doom": "Your next foe is marked for death! (-%d%% max HP)" % debuff_value
+		}
+		var msg = debuff_messages.get(debuff_type, "A dark curse awaits your next foe...")
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF00FF]You use %s![/color]\n[color=#FFD700]%s[/color]" % [item_name, msg]
+		})
 
 	# Update character data
 	send_character_update(peer_id)
@@ -3442,9 +3661,11 @@ func handle_get_quest_log(peer_id: int):
 	# Build array of active quest info for client-side abandonment
 	var active_quests_info = []
 	for quest in character.active_quests:
+		var qid = quest.get("quest_id", "")
+		var quest_data = quest_db.get_quest(qid)
 		active_quests_info.append({
-			"id": quest.get("id", ""),
-			"name": quest.get("name", "Unknown Quest"),
+			"id": qid,
+			"name": quest_data.get("name", "Unknown Quest") if quest_data else "Unknown Quest",
 			"progress": quest.get("progress", 0),
 			"target": quest.get("target", 1)
 		})

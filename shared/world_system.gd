@@ -828,6 +828,28 @@ func check_merchant_encounter(x: int, y: int) -> bool:
 	"""Check if player encounters a merchant at this location"""
 	return is_merchant_at(x, y)
 
+func _get_merchant_map_color(x: int, y: int) -> String:
+	"""Get the map display color for a merchant based on their specialty."""
+	_refresh_merchant_cache()
+	var key = "%d,%d" % [x, y]
+
+	if not _merchant_cache.has(key):
+		return "#FFD700"  # Default gold
+
+	var merchant_idx = _merchant_cache[key][0]
+	var info = _get_merchant_info(merchant_idx)
+	var specialty = info.get("specialty", "all")
+
+	match specialty:
+		"weapons":
+			return "#FF4444"  # Red for weapons
+		"armor":
+			return "#4488FF"  # Blue for armor
+		"jewelry":
+			return "#AA44FF"  # Purple for jewelry
+		_:
+			return "#FFD700"  # Gold for general merchants
+
 func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
 	"""Generate ASCII map with merchants, Trading Posts, and other players shown.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
@@ -883,8 +905,9 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 					# Interior - light background
 					line_parts.append("[color=#C4A84B] .[/color]")
 			elif is_merchant_at(x, y):
-				# Show merchant as $ in gold
-				line_parts.append("[color=#FFD700] $[/color]")
+				# Show merchant $ with color based on specialty
+				var merchant_color = _get_merchant_map_color(x, y)
+				line_parts.append("[color=%s] $[/color]" % merchant_color)
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)

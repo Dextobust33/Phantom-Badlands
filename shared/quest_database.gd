@@ -33,108 +33,259 @@ enum QuestType {
 # All quests in the game
 const QUESTS = {
 	# ===== HAVEN (0, 10) - Guard Captain - Beginner Quests =====
+	"haven_first_steps": {
+		"id": "haven_first_steps",
+		"name": "First Steps",
+		"description": "Defeat your first monster to begin your adventure.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "haven",
+		"target": 1,
+		"rewards": {"xp": 25, "gold": 15, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"haven_first_blood": {
 		"id": "haven_first_blood",
 		"name": "First Blood",
-		"description": "Kill 5 monsters to prove your worth as an adventurer.",
+		"description": "Kill 3 monsters to prove your worth as an adventurer.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "haven",
+		"target": 3,
+		"rewards": {"xp": 50, "gold": 30, "gems": 0},
+		"is_daily": false,
+		"prerequisite": "haven_first_steps"
+	},
+	"haven_getting_started": {
+		"id": "haven_getting_started",
+		"name": "Getting Started",
+		"description": "Explore the area by defeating 5 monsters.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
 		"target": 5,
 		"rewards": {"xp": 75, "gold": 40, "gems": 0},
 		"is_daily": false,
-		"prerequisite": ""
+		"prerequisite": "haven_first_blood"
 	},
 	"haven_pest_control": {
 		"id": "haven_pest_control",
 		"name": "Pest Control",
-		"description": "Help keep the area safe by eliminating 15 monsters.",
+		"description": "Help keep the area safe by eliminating 10 monsters.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
-		"target": 15,
-		"rewards": {"xp": 200, "gold": 100, "gems": 0},
+		"target": 10,
+		"rewards": {"xp": 150, "gold": 75, "gems": 0},
 		"is_daily": false,
-		"prerequisite": "haven_first_blood"
+		"prerequisite": "haven_getting_started"
 	},
 	"haven_stronger_foes": {
 		"id": "haven_stronger_foes",
 		"name": "Stronger Foes",
-		"description": "Prove your courage by defeating 3 monsters of level 10 or higher.",
+		"description": "Prove your courage by defeating 2 monsters of level 5 or higher.",
 		"type": QuestType.KILL_LEVEL,
 		"trading_post": "haven",
-		"target": 10,
-		"kill_count": 3,
-		"rewards": {"xp": 300, "gold": 150, "gems": 0},
+		"target": 5,
+		"kill_count": 2,
+		"rewards": {"xp": 200, "gold": 100, "gems": 0},
 		"is_daily": false,
 		"prerequisite": "haven_pest_control"
 	},
 	"haven_local_hero": {
 		"id": "haven_local_hero",
 		"name": "Local Hero",
-		"description": "Become a hero of Haven by slaying 40 monsters.",
+		"description": "Become a hero of Haven by slaying 25 monsters.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
-		"target": 40,
-		"rewards": {"xp": 750, "gold": 400, "gems": 1},
+		"target": 25,
+		"rewards": {"xp": 500, "gold": 250, "gems": 1},
 		"is_daily": false,
 		"prerequisite": "haven_stronger_foes"
 	},
+	"haven_daily_patrol": {
+		"id": "haven_daily_patrol",
+		"name": "Daily Patrol",
+		"description": "Defeat 5 monsters to protect Haven. Can be completed daily.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "haven",
+		"target": 5,
+		"rewards": {"xp": 50, "gold": 25, "gems": 0},
+		"is_daily": true,
+		"prerequisite": ""
+	},
 
-	# ===== CROSSROADS (0, 0) - Royal Herald - Hotzone Focus =====
+	# ===== CROSSROADS (0, 0) - Royal Herald - Mixed Quests =====
+	"crossroads_patrol": {
+		"id": "crossroads_patrol",
+		"name": "Crossroads Patrol",
+		"description": "Help patrol the area by defeating 8 monsters.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "crossroads",
+		"target": 8,
+		"rewards": {"xp": 100, "gold": 50, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"crossroads_danger_zone": {
 		"id": "crossroads_danger_zone",
 		"name": "Into the Danger Zone",
-		"description": "Kill 5 monsters (level 5+) in a hotzone within 50 tiles. The Royal Herald offers this bounty daily.",
+		"description": "Kill 3 monsters (level 3+) in a hotzone within 50 tiles. The Royal Herald offers this bounty daily.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 5,
+		"target": 3,
 		"max_distance": 50.0,
 		"min_intensity": 0.0,
-		"min_monster_level": 5,
-		"rewards": {"xp": 200, "gold": 125, "gems": 1},
+		"min_monster_level": 3,
+		"rewards": {"xp": 150, "gold": 75, "gems": 0},
 		"is_daily": true,
 		"prerequisite": ""
 	},
 	"crossroads_danger_seeker": {
 		"id": "crossroads_danger_seeker",
 		"name": "Danger Seeker",
-		"description": "Kill 8 monsters (level 15+) in hotzones within 100 tiles of Crossroads.",
+		"description": "Kill 5 monsters (level 8+) in hotzones within 75 tiles of Crossroads.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 8,
-		"max_distance": 100.0,
+		"target": 5,
+		"max_distance": 75.0,
 		"min_intensity": 0.0,
-		"min_monster_level": 15,
-		"rewards": {"xp": 400, "gold": 250, "gems": 1},
+		"min_monster_level": 8,
+		"rewards": {"xp": 300, "gold": 150, "gems": 1},
 		"is_daily": false,
-		"prerequisite": ""
+		"prerequisite": "crossroads_patrol"
 	},
 	"crossroads_risk_reward": {
 		"id": "crossroads_risk_reward",
 		"name": "Risk and Reward",
-		"description": "Kill 15 monsters (level 30+) in hotzones within 200 tiles. Greater risk, greater reward.",
+		"description": "Kill 10 monsters (level 20+) in hotzones within 150 tiles. Greater risk, greater reward.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 15,
-		"max_distance": 200.0,
+		"target": 10,
+		"max_distance": 150.0,
 		"min_intensity": 0.0,
-		"min_monster_level": 30,
-		"rewards": {"xp": 750, "gold": 500, "gems": 2},
+		"min_monster_level": 20,
+		"rewards": {"xp": 600, "gold": 300, "gems": 2},
 		"is_daily": false,
 		"prerequisite": "crossroads_danger_seeker"
 	},
 	"crossroads_extreme": {
 		"id": "crossroads_extreme",
 		"name": "Extreme Challenge",
-		"description": "Kill 5 monsters (level 75+) in high-intensity hotzones (0.5+) within 300 tiles. Only for the brave.",
+		"description": "Kill 5 monsters (level 50+) in high-intensity hotzones (0.5+) within 250 tiles. Only for the brave.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
 		"target": 5,
-		"max_distance": 300.0,
+		"max_distance": 250.0,
 		"min_intensity": 0.5,
-		"min_monster_level": 75,
-		"rewards": {"xp": 1500, "gold": 1000, "gems": 5},
+		"min_monster_level": 50,
+		"rewards": {"xp": 1200, "gold": 600, "gems": 4},
 		"is_daily": false,
 		"prerequisite": "crossroads_risk_reward"
+	},
+
+	# ===== SOUTH GATE (0, -25) - Gate Warden - Beginner Quests =====
+	"south_gate_watch": {
+		"id": "south_gate_watch",
+		"name": "South Watch",
+		"description": "Help the Gate Warden by defeating 4 monsters near the southern gate.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "south_gate",
+		"target": 4,
+		"rewards": {"xp": 40, "gold": 20, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"south_gate_guardian": {
+		"id": "south_gate_guardian",
+		"name": "Gate Guardian",
+		"description": "Protect the gate by slaying 10 monsters.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "south_gate",
+		"target": 10,
+		"rewards": {"xp": 125, "gold": 60, "gems": 0},
+		"is_daily": false,
+		"prerequisite": "south_gate_watch"
+	},
+	"south_gate_daily": {
+		"id": "south_gate_daily",
+		"name": "Gate Duty",
+		"description": "Complete your daily gate duty by defeating 4 monsters.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "south_gate",
+		"target": 4,
+		"rewards": {"xp": 35, "gold": 20, "gems": 0},
+		"is_daily": true,
+		"prerequisite": ""
+	},
+
+	# ===== EAST MARKET (25, 10) - Market Master - Collection Quests =====
+	"east_market_supply": {
+		"id": "east_market_supply",
+		"name": "Supply Run",
+		"description": "Clear the roads by defeating 6 monsters so merchants can travel safely.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "east_market",
+		"target": 6,
+		"rewards": {"xp": 60, "gold": 35, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"east_market_crossroads": {
+		"id": "east_market_crossroads",
+		"name": "Road to Crossroads",
+		"description": "Visit Crossroads to establish a trade route.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "east_market",
+		"target": 1,
+		"destinations": ["crossroads"],
+		"rewards": {"xp": 75, "gold": 40, "gems": 0},
+		"is_daily": false,
+		"prerequisite": "east_market_supply"
+	},
+	"east_market_daily": {
+		"id": "east_market_daily",
+		"name": "Merchant Guard",
+		"description": "Escort duty - defeat 5 monsters along trade routes.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "east_market",
+		"target": 5,
+		"rewards": {"xp": 45, "gold": 30, "gems": 0},
+		"is_daily": true,
+		"prerequisite": ""
+	},
+
+	# ===== WEST SHRINE (-25, 10) - Shrine Keeper - Beginner Quests =====
+	"west_shrine_cleanse": {
+		"id": "west_shrine_cleanse",
+		"name": "Shrine Cleansing",
+		"description": "Clear 5 monsters that threaten the sacred shrine.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "west_shrine",
+		"target": 5,
+		"rewards": {"xp": 50, "gold": 25, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"west_shrine_pilgrimage": {
+		"id": "west_shrine_pilgrimage",
+		"name": "Pilgrimage",
+		"description": "Visit Haven to complete your pilgrimage.",
+		"type": QuestType.EXPLORATION,
+		"trading_post": "west_shrine",
+		"target": 1,
+		"destinations": ["haven"],
+		"rewards": {"xp": 50, "gold": 25, "gems": 0},
+		"is_daily": false,
+		"prerequisite": "west_shrine_cleanse"
+	},
+	"west_shrine_daily": {
+		"id": "west_shrine_daily",
+		"name": "Sacred Duty",
+		"description": "Protect the shrine by defeating 4 monsters.",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "west_shrine",
+		"target": 4,
+		"rewards": {"xp": 35, "gold": 20, "gems": 0},
+		"is_daily": true,
+		"prerequisite": ""
 	},
 
 	# ===== FROSTGATE (0, -100) - Guild Master - Exploration/Boss =====
@@ -579,6 +730,9 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 const TRADING_POST_COORDS = {
 	"haven": Vector2i(0, 10),
 	"crossroads": Vector2i(0, 0),
+	"south_gate": Vector2i(0, -25),
+	"east_market": Vector2i(25, 10),
+	"west_shrine": Vector2i(-25, 10),
 	"northwatch": Vector2i(0, 75),
 	"eastern_camp": Vector2i(75, 0),
 	"western_refuge": Vector2i(-75, 0),
@@ -651,25 +805,38 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: int, post_distance: float) -> Dictionary:
 	"""Generate a single quest based on tier and trading post location."""
 
-	# Base values that scale with tier - made harder
-	var kill_count = 10 + (tier * 8)  # 18, 26, 34, 42...
-	var min_level = int(post_distance * 0.5) + (tier * 25)  # Scales with distance and tier
-	var hotzone_distance = 50.0 + (tier * 50.0)  # 100, 150, 200...
-	var hotzone_kills = 5 + (tier * 3)  # 8, 11, 14...
-	var hotzone_min_monster_level = max(10, int(post_distance * 0.3) + (tier * 15))  # Min monster level for hotzone quests
+	# Gentler scaling for early tiers - starts easier and ramps up gradually
+	# Tier 1-3: Easy quests, Tier 4-7: Medium, Tier 8+: Hard
+	var tier_multiplier: float
+	if tier <= 3:
+		tier_multiplier = 0.5 + (tier - 1) * 0.25  # 0.5, 0.75, 1.0
+	elif tier <= 7:
+		tier_multiplier = 1.0 + (tier - 3) * 0.5   # 1.0, 1.5, 2.0, 2.5
+	else:
+		tier_multiplier = 2.5 + (tier - 7) * 0.75  # 2.5, 3.25, 4.0...
 
-	# Rewards scale with tier
-	var base_xp = 200 * tier
-	var base_gold = 100 * tier
-	var gems = max(0, (tier - 1))  # 0, 1, 2, 3... gems starting at tier 2
+	# Base values with gentler scaling
+	var kill_count = int(5 + (tier * 3 * tier_multiplier))  # 5, 8, 11, 17, 27...
+	var min_level = int((post_distance * 0.3) + (tier * 10 * tier_multiplier))  # Scales slower
+	var hotzone_distance = 30.0 + (tier * 25.0 * tier_multiplier)  # 30, 55, 80...
+	var hotzone_kills = int(3 + (tier * 2 * tier_multiplier))  # 3, 5, 7, 11...
+	var hotzone_min_monster_level = max(3, int(post_distance * 0.2) + int(tier * 8 * tier_multiplier))  # Starts lower
 
-	# Quest type varies by tier
+	# Rewards scale with tier - more generous for early tiers
+	var base_xp = int(100 + (150 * tier * tier_multiplier))
+	var base_gold = int(50 + (75 * tier * tier_multiplier))
+	var gems = max(0, int((tier - 2) * tier_multiplier))  # Gems start at tier 3
+
+	# Quest type varies by tier - simpler quests early on
 	var quest_type: int
 	var quest_name: String
 	var quest_desc: String
 	var target: int
 
-	match tier % 4:
+	# For very early tiers (1-2), prefer simpler KILL_ANY quests
+	var effective_tier_type = tier if tier > 2 else 0
+
+	match effective_tier_type % 4:
 		0:  # Kill any monsters
 			quest_type = QuestType.KILL_ANY
 			quest_name = "Slayer's Contract %d" % tier
@@ -688,8 +855,8 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		3:  # Boss hunt
 			quest_type = QuestType.BOSS_HUNT
 			quest_name = "Elite Hunt %d" % tier
-			quest_desc = "Track down and defeat a monster of level %d or higher." % (min_level + 50)
-			target = min_level + 50
+			quest_desc = "Track down and defeat a monster of level %d or higher." % (min_level + int(25 * tier_multiplier))
+			target = min_level + int(25 * tier_multiplier)
 
 	var quest = {
 		"id": quest_id,
@@ -707,7 +874,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 	# Add hotzone-specific fields
 	if quest_type == QuestType.HOTZONE_KILL:
 		quest["max_distance"] = hotzone_distance
-		quest["min_intensity"] = 0.0 if tier < 3 else 0.3
+		quest["min_intensity"] = 0.0 if tier < 5 else 0.3
 		quest["min_monster_level"] = hotzone_min_monster_level
 
 	return quest

@@ -30,20 +30,25 @@ const DROP_TABLES = {
 	],
 	"tier3": [
 		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
-		{"weight": 8, "item_type": "mana_standard", "rarity": "common"},
+		{"weight": 6, "item_type": "mana_standard", "rarity": "common"},
+		{"weight": 6, "item_type": "stamina_standard", "rarity": "common"},
+		{"weight": 6, "item_type": "energy_standard", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_steel", "rarity": "uncommon"},
 		{"weight": 12, "item_type": "armor_plate", "rarity": "uncommon"},
 		{"weight": 9, "item_type": "helm_chain", "rarity": "uncommon"},
 		{"weight": 8, "item_type": "shield_steel", "rarity": "uncommon"},
 		{"weight": 8, "item_type": "boots_chain", "rarity": "uncommon"},
 		{"weight": 7, "item_type": "amulet_bronze", "rarity": "rare"},
-		{"weight": 5, "item_type": "potion_strength", "rarity": "uncommon"},
-		{"weight": 5, "item_type": "potion_defense", "rarity": "uncommon"},
-		{"weight": 5, "item_type": "potion_speed", "rarity": "uncommon"}
+		{"weight": 4, "item_type": "potion_strength", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "potion_defense", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "potion_speed", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "potion_crit", "rarity": "uncommon"}
 	],
 	"tier4": [
 		{"weight": 14, "item_type": "potion_greater", "rarity": "uncommon"},
-		{"weight": 7, "item_type": "mana_greater", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "mana_greater", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "stamina_greater", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "energy_greater", "rarity": "uncommon"},
 		{"weight": 15, "item_type": "weapon_enchanted", "rarity": "rare"},
 		{"weight": 12, "item_type": "armor_enchanted", "rarity": "rare"},
 		{"weight": 9, "item_type": "helm_plate", "rarity": "rare"},
@@ -51,10 +56,15 @@ const DROP_TABLES = {
 		{"weight": 8, "item_type": "boots_plate", "rarity": "rare"},
 		{"weight": 8, "item_type": "ring_gold", "rarity": "rare"},
 		{"weight": 6, "item_type": "amulet_silver", "rarity": "rare"},
-		{"weight": 5, "item_type": "potion_strength", "rarity": "rare"},
-		{"weight": 4, "item_type": "potion_defense", "rarity": "rare"},
-		{"weight": 4, "item_type": "potion_speed", "rarity": "rare"},
-		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"}
+		{"weight": 4, "item_type": "potion_strength", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_defense", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_speed", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_crit", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_lifesteal", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "rare"},
+		{"weight": 2, "item_type": "scroll_weakness", "rarity": "rare"},
+		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "rare"}
 	],
 	"tier5": [
 		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
@@ -65,11 +75,18 @@ const DROP_TABLES = {
 		{"weight": 9, "item_type": "shield_magical", "rarity": "rare"},
 		{"weight": 9, "item_type": "boots_magical", "rarity": "rare"},
 		{"weight": 10, "item_type": "amulet_silver", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_defense", "rarity": "epic"},
 		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_lifesteal", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_thorns", "rarity": "epic"},
 		{"weight": 3, "item_type": "ring_elemental", "rarity": "epic"},
-		{"weight": 4, "item_type": "scroll_monster_select", "rarity": "epic"}
+		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_rage", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_vampirism", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_slow", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"}
 	],
 	"tier6": [
 		{"weight": 10, "item_type": "potion_master", "rarity": "rare"},
@@ -81,9 +98,13 @@ const DROP_TABLES = {
 		{"weight": 9, "item_type": "boots_elemental", "rarity": "epic"},
 		{"weight": 10, "item_type": "ring_elemental", "rarity": "epic"},
 		{"weight": 5, "item_type": "amulet_gold", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_defense", "rarity": "epic"},
-		{"weight": 4, "item_type": "potion_speed", "rarity": "epic"}
+		{"weight": 3, "item_type": "potion_strength", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_defense", "rarity": "epic"},
+		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_haste", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_precision", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_thorns", "rarity": "epic"}
 	],
 	"tier7": [
 		{"weight": 10, "item_type": "elixir_minor", "rarity": "epic"},
@@ -145,10 +166,23 @@ const POTION_EFFECTS = {
 	"mana_greater": {"mana": true, "base": 100, "per_level": 15},
 	"mana_superior": {"mana": true, "base": 200, "per_level": 20},
 	"mana_master": {"mana": true, "base": 400, "per_level": 25},
+	# Stamina potions (for Warriors)
+	"stamina_minor": {"stamina": true, "base": 15, "per_level": 8},
+	"stamina_lesser": {"stamina": true, "base": 30, "per_level": 10},
+	"stamina_standard": {"stamina": true, "base": 50, "per_level": 12},
+	"stamina_greater": {"stamina": true, "base": 100, "per_level": 15},
+	# Energy potions (for Tricksters)
+	"energy_minor": {"energy": true, "base": 15, "per_level": 8},
+	"energy_lesser": {"energy": true, "base": 30, "per_level": 10},
+	"energy_standard": {"energy": true, "base": 50, "per_level": 12},
+	"energy_greater": {"energy": true, "base": 100, "per_level": 15},
 	# Basic buff potions - last rounds (single combat), scale with level
 	"potion_strength": {"buff": "strength", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
 	"potion_defense": {"buff": "defense", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
 	"potion_speed": {"buff": "speed", "base": 5, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"potion_crit": {"buff": "crit_chance", "base": 10, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"potion_lifesteal": {"buff": "lifesteal", "base": 10, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
+	"potion_thorns": {"buff": "thorns", "base": 15, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
 	# Power potions - last multiple battles
 	"potion_power": {"buff": "strength", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
 	"potion_iron": {"buff": "defense", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
@@ -159,6 +193,19 @@ const POTION_EFFECTS = {
 	"elixir_swiftness": {"buff": "speed", "base": 25, "per_level": 5, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
 	# Scrolls - special consumable effects
 	"scroll_monster_select": {"monster_select": true},  # Lets player choose next monster encounter
+	# Buff scrolls - apply before next combat
+	"scroll_forcefield": {"buff": "forcefield", "base": 50, "per_level": 10, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Absorbs damage
+	"scroll_rage": {"buff": "strength", "base": 20, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +STR for 1 battle
+	"scroll_stone_skin": {"buff": "defense", "base": 20, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +DEF for 1 battle
+	"scroll_haste": {"buff": "speed", "base": 30, "per_level": 5, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +SPD for 1 battle
+	"scroll_vampirism": {"buff": "lifesteal", "base": 25, "per_level": 3, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Lifesteal for 1 battle
+	"scroll_thorns": {"buff": "thorns", "base": 30, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Reflect damage
+	"scroll_precision": {"buff": "crit_chance", "base": 25, "per_level": 2, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Crit chance
+	# Debuff scrolls - apply debuff to next monster encountered
+	"scroll_weakness": {"monster_debuff": "weakness", "base": 25, "per_level": 2},  # -ATK on monster
+	"scroll_vulnerability": {"monster_debuff": "vulnerability", "base": 25, "per_level": 2},  # -DEF on monster
+	"scroll_slow": {"monster_debuff": "slow", "base": 30, "per_level": 3},  # -SPD on monster
+	"scroll_doom": {"monster_debuff": "doom", "base": 10, "per_level": 2},  # Monster loses % max HP at start
 }
 
 # Rarity colors for display
@@ -244,8 +291,8 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if final_rarity != base_rarity:
 		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
-	# Consumables (potions, gold, scrolls) never get stat affixes
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("scroll_")
+	# Consumables (potions, gold, scrolls, resource restorers) never get stat affixes
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
 
 	# Roll for affixes (only for equipment, not consumables)
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
@@ -340,12 +387,34 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			_: return "Gold Pouch"
 
 	# Special handling for scrolls
-	if item_type == "scroll_monster_select":
+	if item_type.begins_with("scroll_"):
+		var scroll_names = {
+			"scroll_monster_select": "Scroll of Summoning",
+			"scroll_forcefield": "Scroll of Forcefield",
+			"scroll_rage": "Scroll of Rage",
+			"scroll_stone_skin": "Scroll of Stone Skin",
+			"scroll_haste": "Scroll of Haste",
+			"scroll_vampirism": "Scroll of Vampirism",
+			"scroll_thorns": "Scroll of Thorns",
+			"scroll_precision": "Scroll of Precision",
+			"scroll_weakness": "Scroll of Weakness",
+			"scroll_vulnerability": "Scroll of Vulnerability",
+			"scroll_slow": "Scroll of Slow",
+			"scroll_doom": "Scroll of Doom"
+		}
+		var base_name = scroll_names.get(item_type, "Mysterious Scroll")
 		match rarity:
-			"rare": return "Scroll of Summoning"
-			"epic": return "Ancient Scroll of Summoning"
-			"legendary": return "Arcane Scroll of Summoning"
-			_: return "Scroll of Summoning"
+			"epic": return "Ancient " + base_name
+			"legendary": return "Arcane " + base_name
+			_: return base_name
+
+	# Special handling for resource potions
+	if item_type.begins_with("stamina_"):
+		var tier = item_type.replace("stamina_", "").capitalize()
+		return tier + " Stamina Potion"
+	if item_type.begins_with("energy_"):
+		var tier = item_type.replace("energy_", "").capitalize()
+		return tier + " Energy Potion"
 
 	# Convert item_type like "weapon_rusty" to "Rusty Weapon"
 	var parts = item_type.split("_")

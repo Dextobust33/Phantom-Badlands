@@ -177,6 +177,7 @@ func get_account_characters(account_id: String) -> Array:
 			characters.append({
 				"name": char_data.get("name", char_name),
 				"class": char_data.get("class", "Unknown"),
+				"race": char_data.get("race", "Human"),
 				"level": char_data.get("level", 1),
 				"experience": char_data.get("experience", 0)
 			})

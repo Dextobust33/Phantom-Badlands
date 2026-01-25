@@ -42,6 +42,9 @@ const ABILITY_WEAPON_MASTER = "weapon_master"    # Guaranteed weapon drop on dea
 const ABILITY_SHIELD_BEARER = "shield_bearer"    # Guaranteed shield drop on death
 const ABILITY_CORROSIVE = "corrosive"            # Chance to damage player's equipment on hit
 const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/shields
+const ABILITY_BLIND = "blind"                    # Reduces player hit chance (30%)
+const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
+const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
@@ -382,7 +385,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 5,
 				"description": "A fierce predator with sharp fangs",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_PACK_LEADER, ABILITY_AMBUSHER],
+				"abilities": [ABILITY_PACK_LEADER, ABILITY_AMBUSHER, ABILITY_BLEED],
 				"death_message": ""
 			}
 		
@@ -492,7 +495,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 10,
 				"description": "An undead warrior with life-draining abilities",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_LIFE_STEAL, ABILITY_CURSE],
+				"abilities": [ABILITY_LIFE_STEAL, ABILITY_CURSE, ABILITY_BLIND],
 				"death_message": "The wight's eyes fade as the dark magic releases it."
 			}
 		
@@ -752,7 +755,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 8,
 				"description": "A being of pure elemental energy",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_DAMAGE_REFLECT],
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_DAMAGE_REFLECT, ABILITY_SLOW_AURA],
 				"death_message": "The elemental disperses into raw mana."
 			}
 		MonsterType.IRON_GOLEM:

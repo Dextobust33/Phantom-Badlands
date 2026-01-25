@@ -70,6 +70,9 @@ const ABILITY_WEAPON_MASTER = "weapon_master"    # Guaranteed weapon drop
 const ABILITY_SHIELD_BEARER = "shield_bearer"    # Guaranteed shield drop
 const ABILITY_CORROSIVE = "corrosive"            # Chance to damage player's equipment on hit
 const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/shields
+const ABILITY_BLIND = "blind"                    # Reduces player hit chance
+const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
+const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 
 # ASCII art display settings
 const ASCII_ART_FONT_SIZE = 10  # Default is 14, smaller = less space
@@ -163,6 +166,24 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# Mark character as in combat and reset per-combat flags
 	character.in_combat = true
 	character.reset_combat_flags()  # Reset Dwarf Last Stand etc.
+
+	# Check for forcefield persistent buff (from scrolls) and apply it
+	var forcefield_buff = character.get_buff_value("forcefield")
+	if forcefield_buff > 0:
+		combat_state["forcefield_shield"] = forcefield_buff
+
+	# Check for other scroll buffs that affect combat
+	var lifesteal_buff = character.get_buff_value("lifesteal")
+	if lifesteal_buff > 0:
+		combat_state["lifesteal_percent"] = lifesteal_buff
+
+	var thorns_buff = character.get_buff_value("thorns")
+	if thorns_buff > 0:
+		combat_state["player_thorns"] = thorns_buff
+
+	var crit_buff = character.get_buff_value("crit_chance")
+	if crit_buff > 0:
+		combat_state["crit_bonus"] = crit_buff
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
@@ -287,6 +308,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			else:
 				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
 
+	# === BLEED TICK (stacking DoT from Bleed ability) ===
+	var bleed_stacks = combat.get("player_bleed_stacks", 0)
+	if bleed_stacks > 0:
+		var bleed_dmg_per_stack = combat.get("player_bleed_damage", 5)
+		var total_bleed = bleed_stacks * bleed_dmg_per_stack
+		character.current_hp -= total_bleed
+		character.current_hp = max(1, character.current_hp)  # Bleed can't kill either
+		messages.append("[color=#FF4444]Bleeding deals %d damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
+
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
 	if is_vanished:
@@ -298,7 +328,13 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var monster_speed = monster.get("speed", 10)  # Use monster speed as DEX equivalent
 	var dex_diff = player_dex - monster_speed
 	var hit_chance = 75 + dex_diff
-	hit_chance = clamp(hit_chance, 50, 95)  # 50% minimum, 95% maximum
+
+	# Apply blind debuff (from monster ability)
+	var blind_penalty = combat.get("player_blind", 0)
+	if blind_penalty > 0:
+		hit_chance -= blind_penalty
+
+	hit_chance = clamp(hit_chance, 30, 95)  # 30% minimum (can be reduced by blind), 95% maximum
 
 	# Ethereal ability: 50% dodge chance for monster
 	var ethereal_dodge = ABILITY_ETHEREAL in abilities and not is_vanished
@@ -311,7 +347,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 	if is_vanished or hit_roll < hit_chance:
 		# Hit!
-		var damage_result = calculate_damage(character, monster)
+		var damage_result = calculate_damage(character, monster, combat)
 		var damage = damage_result.damage
 		var is_crit = damage_result.is_crit
 
@@ -334,6 +370,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 		messages.append("[color=#00FF00]You attack the %s![/color]" % monster.name)
 		messages.append("You deal [color=#FFFF00]%d[/color] damage!" % damage)
+
+		# Lifesteal from scroll/potion buff
+		var lifesteal_percent = combat.get("lifesteal_percent", 0)
+		if lifesteal_percent > 0:
+			var heal_amount = max(1, int(damage * lifesteal_percent / 100.0))
+			var actual_heal = character.heal(heal_amount)
+			if actual_heal > 0:
+				messages.append("[color=#00FF00]Lifesteal heals you for %d HP![/color]" % actual_heal)
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
@@ -501,16 +545,16 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	}
 
 func process_defend(combat: Dictionary) -> Dictionary:
-	"""Process player defend action"""
+	"""Process player defend action (legacy - not currently in action bar)"""
 	var character = combat.character
 	var messages = []
-	
+
 	# Defending gives temporary defense bonus and small HP recovery
 	var defense_bonus = character.get_effective_stat("constitution") / 4
 	var heal_amount = max(1, character.get_total_max_hp() / 20)
 
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-	
+
 	messages.append("[color=#87CEEB]You take a defensive stance![/color]")
 	messages.append("[color=#00FF00]You recover %d HP![/color]" % heal_amount)
 	
@@ -539,7 +583,13 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var equipment_speed = equipment_bonuses.speed
 	var monster_level = monster.get("level", 1)
 	var flee_chance = 40 + (player_dex * 2) + speed_buff + equipment_speed - int(monster_level / 10)
-	flee_chance = clamp(flee_chance, 10, 95)  # 10-95% chance
+
+	# Apply slow aura debuff (from monster ability)
+	var slow_penalty = combat.get("player_slow", 0)
+	if slow_penalty > 0:
+		flee_chance -= slow_penalty
+
+	flee_chance = clamp(flee_chance, 5, 95)  # 5-95% chance (slow can reduce it more)
 	
 	var roll = randi() % 100
 	
@@ -786,7 +836,9 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	for buff in expired_buffs:
 		var buff_name = buff.type.capitalize()
 		result.messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
-	combat.character.regenerate_energy()  # Energy regenerates each round
+	# Note: Energy no longer regenerates automatically each round
+	# Stamina regenerates when defending (10%), Mana doesn't auto-regen
+	# Energy is the Trickster's precious resource - use it wisely!
 
 	return result
 
@@ -1038,7 +1090,23 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#808080]%s (Level %d)[/color]" % [monster.name, monster.level])
 			messages.append("[color=#FF4444]HP:[/color] %d/%d" % [monster.current_hp, monster.max_hp])
 			messages.append("[color=#FFFF00]Damage:[/color] ~%d" % monster.strength)
-			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster.get("intelligence", 15))
+			var monster_int = monster.get("intelligence", 15)
+			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster_int)
+
+			# Calculate and show outsmart chance
+			var player_wits = character.get_effective_stat("wits")
+			var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+			var base_chance = 5
+			var wits_bonus = max(0, (player_wits - 10) * 5)
+			var trickster_bonus = 15 if is_trickster else 0
+			var dumb_bonus = max(0, (10 - monster_int) * 8)
+			var smart_penalty = max(0, (monster_int - 10) * 8)
+			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 5)
+			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus - smart_penalty - int_vs_wits_penalty
+			var max_chance = 95 if is_trickster else 85
+			outsmart_chance = clampi(outsmart_chance, 2, max_chance)
+			messages.append("[color=#00FFFF]Outsmart Chance:[/color] %d%%" % outsmart_chance)
+
 			# Grant +10% damage bonus for rest of combat
 			combat["analyze_bonus"] = 10
 			messages.append("[color=#00FF00]+10%% damage bonus for this combat![/color]" % [])
@@ -1498,6 +1566,14 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 		character.current_hp -= total_damage
 
+		# Player thorns from scroll/potion buff (reflect damage back to monster)
+		var player_thorns = combat.get("player_thorns", 0)
+		if player_thorns > 0 and total_damage > 0:
+			var thorns_damage = max(1, int(total_damage * player_thorns / 100.0))
+			monster.current_hp -= thorns_damage
+			monster.current_hp = max(0, monster.current_hp)
+			messages.append("[color=#FF00FF]Thorns reflect %d damage back![/color]" % thorns_damage)
+
 		# Check for Dwarf Last Stand (survive lethal damage with 1 HP)
 		if character.current_hp <= 0:
 			if character.try_last_stand():
@@ -1604,6 +1680,33 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				else:
 					messages.append("[color=#FF4444]The %s sunders your %s! (%d%% worn)[/color]" % [monster.name, result.item_name, result.new_wear])
 
+	# Blind ability: reduces player hit chance (applied once per combat)
+	if ABILITY_BLIND in abilities and not combat.get("blind_applied", false):
+		if randi() % 100 < 40:  # 40% chance
+			combat["blind_applied"] = true
+			var blind_reduction = ability_cfg.get("blind_hit_reduction", 30)
+			combat["player_blind"] = blind_reduction  # Reduces hit chance
+			messages.append("[color=#808080]The %s blinds you! (-%d%% hit chance)[/color]" % [monster.name, blind_reduction])
+
+	# Bleed ability: stacking bleed DoT (can stack up to 3 times)
+	if ABILITY_BLEED in abilities and hits > 0:
+		var bleed_chance = ability_cfg.get("bleed_chance", 40)
+		if randi() % 100 < bleed_chance:
+			var bleed_stacks = combat.get("player_bleed_stacks", 0)
+			if bleed_stacks < 3:  # Max 3 stacks
+				bleed_stacks += 1
+				combat["player_bleed_stacks"] = bleed_stacks
+				var bleed_damage = max(1, int(monster.strength * ability_cfg.get("bleed_damage_percent", 15) / 100.0))
+				combat["player_bleed_damage"] = bleed_damage
+				messages.append("[color=#FF4444]The %s causes you to bleed! (%d stacks)[/color]" % [monster.name, bleed_stacks])
+
+	# Slow aura ability: reduces player flee chance (passive)
+	if ABILITY_SLOW_AURA in abilities and not combat.get("slow_aura_applied", false):
+		combat["slow_aura_applied"] = true
+		var slow_reduction = ability_cfg.get("slow_aura_flee_reduction", 25)
+		combat["player_slow"] = slow_reduction
+		messages.append("[color=#808080]The %s's aura slows you! (-%d%% flee chance)[/color]" % [monster.name, slow_reduction])
+
 	# Summoner ability: call reinforcements (once per combat)
 	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
 		if randi() % 100 < 20:  # 20% chance
@@ -1613,7 +1716,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	return {"success": true, "message": "\n".join(messages)}
 
-func calculate_damage(character: Character, monster: Dictionary) -> Dictionary:
+func calculate_damage(character: Character, monster: Dictionary, combat: Dictionary = {}) -> Dictionary:
 	"""Calculate player damage to monster (includes equipment, buffs, crits, and class advantage)
 	Returns dictionary with 'damage' and 'is_crit' keys"""
 	var cfg = balance_config.get("combat", {})
@@ -1647,7 +1750,10 @@ func calculate_damage(character: Character, monster: Dictionary) -> Dictionary:
 	var crit_damage = cfg.get("player_crit_damage", 1.5)
 
 	var crit_chance = crit_base + int(dex_stat * crit_per_dex)
-	crit_chance = min(crit_chance, crit_max)
+	# Add crit bonus from scrolls/potions
+	var crit_bonus = combat.get("crit_bonus", 0)
+	crit_chance += crit_bonus
+	crit_chance = min(crit_chance, 75)  # Cap at 75% even with bonuses
 	var is_crit = (randi() % 100) < crit_chance
 	if is_crit:
 		raw_damage = int(raw_damage * crit_damage)
@@ -1779,6 +1885,17 @@ func get_expired_persistent_buffs(peer_id: int) -> Array:
 func is_in_combat(peer_id: int) -> bool:
 	"""Check if a player is in combat"""
 	return active_combats.has(peer_id)
+
+func get_analyze_bonus(peer_id: int) -> int:
+	"""Get the analyze bonus for a player's current combat"""
+	if not active_combats.has(peer_id):
+		return 0
+	return active_combats[peer_id].get("analyze_bonus", 0)
+
+func set_analyze_bonus(peer_id: int, bonus: int):
+	"""Set the analyze bonus for a player's current combat (used for flock carry-over)"""
+	if active_combats.has(peer_id):
+		active_combats[peer_id]["analyze_bonus"] = bonus
 
 func get_combat_display(peer_id: int) -> Dictionary:
 	"""Get formatted combat state for display"""

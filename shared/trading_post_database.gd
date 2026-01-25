@@ -657,38 +657,129 @@ func get_distance_to_nearest_trading_post(x: int, y: int) -> float:
 
 func get_tile_position_in_post(x: int, y: int) -> String:
 	"""Get the position character for map rendering within a Trading Post.
-	Returns: 'P' for center, '+' for corners, '-' for horizontal edges, '|' for vertical edges, ' ' for interior"""
+	Uses different shapes based on trading post ID for visual variety.
+	Returns: 'P' for center, various edge/corner chars based on shape, ' ' for interior"""
 	if not is_trading_post_tile(x, y):
 		return ""
 
 	var post = get_trading_post_at(x, y)
 	var center = post.center
 	var half_size = post.size / 2
+	var post_id = post.get("id", "")
 
 	# Check if this is the center
 	if x == center.x and y == center.y:
 		return "P"
+
+	# Calculate relative position from center
+	var rel_x = x - center.x
+	var rel_y = y - center.y
 
 	# Check if on edge
 	var on_left = (x == center.x - half_size)
 	var on_right = (x == center.x + half_size)
 	var on_top = (y == center.y + half_size)
 	var on_bottom = (y == center.y - half_size)
+	var on_edge = on_left or on_right or on_top or on_bottom
 
-	# Corners
+	# Get shape type based on trading post ID hash
+	var shape_type = _get_post_shape_type(post_id)
+
+	match shape_type:
+		0:  # Classic shape: + - |
+			if (on_left or on_right) and (on_top or on_bottom):
+				return "+"
+			if on_top or on_bottom:
+				return "-"
+			if on_left or on_right:
+				return "|"
+			return " "
+
+		1:  # Fortress shape: # = ||
+			if (on_left or on_right) and (on_top or on_bottom):
+				return "#"
+			if on_top or on_bottom:
+				return "="
+			if on_left or on_right:
+				return "#"
+			return "."
+
+		2:  # Tower shape: * ~ :
+			if (on_left or on_right) and (on_top or on_bottom):
+				return "*"
+			if on_top or on_bottom:
+				return "~"
+			if on_left or on_right:
+				return ":"
+			return " "
+
+		3:  # Camp shape: o - .
+			if (on_left or on_right) and (on_top or on_bottom):
+				return "o"
+			if on_top or on_bottom:
+				return "-"
+			if on_left or on_right:
+				return "."
+			return " "
+
+		4:  # Temple shape: ^ _ |
+			if on_top and (on_left or on_right):
+				return "^"
+			if on_bottom and (on_left or on_right):
+				return "."
+			if on_top:
+				return "^"
+			if on_bottom:
+				return "_"
+			if on_left or on_right:
+				return "|"
+			return " "
+
+		5:  # Outpost shape: [ ] =
+			if on_left and (on_top or on_bottom):
+				return "["
+			if on_right and (on_top or on_bottom):
+				return "]"
+			if on_top or on_bottom:
+				return "="
+			if on_left:
+				return "["
+			if on_right:
+				return "]"
+			return "."
+
+	# Default fallback
 	if (on_left or on_right) and (on_top or on_bottom):
 		return "+"
-
-	# Horizontal edges
 	if on_top or on_bottom:
 		return "-"
-
-	# Vertical edges
 	if on_left or on_right:
 		return "|"
-
-	# Interior tile
 	return " "
+
+func _get_post_shape_type(post_id: String) -> int:
+	"""Get shape type for a trading post based on its ID and zone."""
+	# Special posts get specific shapes
+	match post_id:
+		"haven":
+			return 0  # Classic - welcoming starting area
+		"crossroads":
+			return 1  # Fortress - central hub
+		"shadowmere", "dragons_rest":
+			return 1  # Fortress - major outposts
+		"primordial_sanctum", "world_spine_north", "world_spine_south":
+			return 2  # Tower - ancient/mystical places
+		"celestial_spire", "storm_peak":
+			return 2  # Tower - elevated locations
+		"southwest_temple", "west_shrine":
+			return 4  # Temple - religious sites
+
+	# Use hash of ID for variety
+	var hash_val = 0
+	for c in post_id:
+		hash_val = (hash_val * 31 + c.unicode_at(0)) % 1000000
+
+	return hash_val % 6
 
 func get_trading_posts_within_distance(x: int, y: int, max_distance: float) -> Array:
 	"""Get all Trading Posts within the specified distance"""

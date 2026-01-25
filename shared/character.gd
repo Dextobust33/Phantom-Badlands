@@ -48,6 +48,10 @@ extends Resource
 # Forced next monster (from Monster Selection Scroll)
 @export var forced_next_monster: String = ""  # Monster name, empty = random
 
+# Pending monster debuffs (from debuff scrolls) - applied at start of next combat
+# Array of {type: String, value: int} - types: "weakness", "vulnerability", "slow", "doom"
+@export var pending_monster_debuffs: Array = []
+
 # Inventory System (stubs for future item drops)
 @export var inventory: Array = []  # Array of item dictionaries
 @export var equipped: Dictionary = {
@@ -211,32 +215,33 @@ func get_equipment_bonuses() -> Dictionary:
 		var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
 		# Apply bonuses based on item type
+		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
 		if "weapon" in item_type:
 			bonuses.attack += base_bonus * 3  # Weapons are THE attack item - huge attack boost
-			bonuses.strength += int(base_bonus * 0.5)
+			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 		elif "armor" in item_type:
 			bonuses.defense += base_bonus * 2  # Armor gives defense
-			bonuses.constitution += int(base_bonus * 0.3)
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.max_hp += base_bonus * 3
 		elif "helm" in item_type:
 			bonuses.defense += base_bonus
-			bonuses.wisdom += int(base_bonus * 0.2)
+			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "shield" in item_type:
-			bonuses.defense += int(base_bonus * 0.5)  # Shields give less defense
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 			bonuses.max_hp += base_bonus * 5  # Shields are THE HP item - huge HP boost
-			bonuses.constitution += int(base_bonus * 0.3)
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		elif "ring" in item_type:
-			bonuses.attack += int(base_bonus * 0.5)
-			bonuses.dexterity += int(base_bonus * 0.3)
-			bonuses.intelligence += int(base_bonus * 0.2)
+			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "amulet" in item_type:
 			bonuses.max_mana += base_bonus * 2
-			bonuses.wisdom += int(base_bonus * 0.3)
-			bonuses.wits += int(base_bonus * 0.2)
+			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
 			bonuses.speed += base_bonus  # Speed bonus for flee chance
-			bonuses.dexterity += int(base_bonus * 0.3)
-			bonuses.defense += int(base_bonus * 0.5)
+			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 
 		# Apply affix bonuses
 		var affixes = item.get("affixes", {})
@@ -439,10 +444,13 @@ func level_up():
 	
 	# Recalculate derived stats
 	calculate_derived_stats()
-	
-	# Full heal on level up
-	current_hp = max_hp
-	current_mana = max_mana
+
+	# Full heal on level up (including equipment bonuses)
+	var equip_bonuses = get_equipment_bonuses()
+	current_hp = max_hp + equip_bonuses.get("max_hp", 0)
+	current_mana = max_mana + equip_bonuses.get("max_mana", 0)
+	current_stamina = max_stamina
+	current_energy = max_energy
 
 func get_stat_gains_for_class() -> Dictionary:
 	"""Get stat increases per level based on class"""
@@ -502,6 +510,7 @@ func to_dict() -> Dictionary:
 		"poison_damage": poison_damage,
 		"poison_turns_remaining": poison_turns_remaining,
 		"forced_next_monster": forced_next_monster,
+		"pending_monster_debuffs": pending_monster_debuffs,
 		"inventory": inventory,
 		"equipped": equipped,
 		"created_at": created_at,
@@ -558,6 +567,9 @@ func from_dict(data: Dictionary):
 
 	# Forced next monster (from Monster Selection Scroll)
 	forced_next_monster = data.get("forced_next_monster", "")
+
+	# Pending monster debuffs (from debuff scrolls)
+	pending_monster_debuffs = data.get("pending_monster_debuffs", [])
 
 	# Inventory system
 	inventory = data.get("inventory", [])
