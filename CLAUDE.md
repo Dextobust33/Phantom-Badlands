@@ -116,6 +116,20 @@ git push
 **Launcher:** `builds/PhantasiaLauncher.exe` - Share with friends (only needed once)
 **Client:** Auto-downloaded by launcher from GitHub releases
 
+## Maintenance Tasks
+
+**Update Help Page After Changes:**
+When game mechanics, formulas, or features change, update the in-game help:
+- **Location:** `client/client.gd` in `show_help()` function (~line 5024)
+- **Sections to keep current:**
+  - Combat formulas (Outsmart, damage, flee chance)
+  - Trading Posts and their locations
+  - Quest system info
+  - Gambling mechanics
+  - Class abilities and resource costs
+  - Race passives
+- Always verify help text matches actual game behavior before releases
+
 ## Architecture
 
 ```

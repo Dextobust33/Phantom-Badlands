@@ -5243,10 +5243,50 @@ WITS abilities include equipment bonuses
 [b][color=#FFD700]== OUTSMART (WITS-based) ==[/color][/b]
 
 [color=#FFA500]Outsmart[/color] - Trick dumb monsters
-  Success = (Your WITS - Monster INT) × 5 + 30%
-  Clamped between 5% and 95%
+  Base chance: 15%
+  +4% per WITS above 10
+  +20% bonus for Trickster classes
+  -5% per monster INT above your WITS
+  Clamped between 5% and 90%
   Success: Instant win with full rewards
   Failure: Monster gets free attack, can't retry
+
+[b][color=#FFD700]== TRADING POSTS ==[/color][/b]
+
+Safe zones with services and quests:
+  • [color=#00FF00]Haven[/color] (0,10) - Starting area, beginner quests
+  • [color=#00FF00]Crossroads[/color] (0,0) - Hotzone quests, dailies
+  • [color=#00FF00]Frostgate[/color] (0,-100) - Boss hunts, exploration
+  • And more scattered across the world!
+
+Services: Shop, Quests, Recharge (50% off)
+
+[b][color=#FFD700]== WANDERING MERCHANTS ==[/color][/b]
+
+Traveling merchants roam between Trading Posts:
+  • Move slowly (catchable on foot)
+  • Take rest breaks every few minutes
+  • Offer: Buy, Sell, Upgrade, Gamble
+  • [color=#FFD700]$[/color] symbol on map shows nearby merchants
+
+[b][color=#FFD700]== QUESTS ==[/color][/b]
+
+Accept quests at Trading Posts:
+  • Kill quests - Slay X monsters
+  • Hotzone quests - Hunt in danger zones for bonus rewards
+  • Exploration - Visit specific locations
+  • Boss hunts - Defeat high-level monsters
+
+Press [R] Quests in movement mode to view quest log.
+
+[b][color=#FFD700]== GAMBLING ==[/color][/b]
+
+Dice game at merchants (use with caution!):
+  • Roll 3d6 vs merchant's 3d6
+  • House has a slight edge
+  • Triples pay big! Triple 6s = JACKPOT
+  • Long-term: expect to lose money
+  • Short-term: can get lucky!
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
