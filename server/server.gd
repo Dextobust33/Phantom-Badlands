@@ -11,6 +11,8 @@ var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 @onready var server_log = $VBox/ServerLog
 @onready var restart_button = $VBox/ButtonRow/RestartButton
 @onready var confirm_dialog = $ConfirmDialog
+@onready var broadcast_input = $VBox/BroadcastRow/BroadcastInput
+@onready var broadcast_button = $VBox/BroadcastRow/BroadcastButton
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
@@ -41,6 +43,7 @@ var drop_tables: Node
 var quest_db: Node
 var quest_mgr: Node
 var trading_post_db: Node
+var balance_config: Dictionary = {}
 
 # Auto-save timer
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
@@ -100,6 +103,11 @@ func _ready():
 	trading_post_db = TradingPostDatabaseScript.new()
 	add_child(trading_post_db)
 
+	# Load and apply balance configuration
+	load_balance_config()
+	combat_mgr.set_balance_config(balance_config)
+	monster_db.set_balance_config(balance_config)
+
 	var error = server.listen(PORT)
 	if error != OK:
 		print("ERROR: Failed to start server on port %d" % PORT)
@@ -118,6 +126,12 @@ func _ready():
 	if confirm_dialog:
 		confirm_dialog.confirmed.connect(_on_restart_confirmed)
 
+	# Connect broadcast button and input
+	if broadcast_button:
+		broadcast_button.pressed.connect(_on_broadcast_button_pressed)
+	if broadcast_input:
+		broadcast_input.text_submitted.connect(_on_broadcast_submitted)
+
 func log_message(msg: String):
 	"""Log a message to console and server UI."""
 	print(msg)
@@ -129,6 +143,101 @@ func _on_restart_button_pressed():
 	"""Show confirmation dialog before restarting."""
 	if confirm_dialog:
 		confirm_dialog.popup_centered()
+
+func _on_broadcast_button_pressed():
+	"""Send broadcast message from button press."""
+	if broadcast_input and broadcast_input.text.strip_edges() != "":
+		_send_broadcast(broadcast_input.text.strip_edges())
+		broadcast_input.text = ""
+
+func _on_broadcast_submitted(text: String):
+	"""Send broadcast message from Enter key."""
+	if text.strip_edges() != "":
+		_send_broadcast(text.strip_edges())
+		broadcast_input.text = ""
+
+func _send_broadcast(message: String):
+	"""Broadcast a server announcement to all connected players."""
+	log_message("[BROADCAST] %s" % message)
+
+	var broadcast_msg = {
+		"type": "server_broadcast",
+		"message": message
+	}
+
+	for peer_id in peers.keys():
+		send_to_peer(peer_id, broadcast_msg)
+
+func load_balance_config():
+	"""Load balance configuration from JSON file. Falls back to defaults if missing."""
+	var config_path = "res://server/balance_config.json"
+
+	if not FileAccess.file_exists(config_path):
+		log_message("[BALANCE] Config file not found, using defaults")
+		balance_config = _get_default_balance_config()
+		return
+
+	var file = FileAccess.open(config_path, FileAccess.READ)
+	if file == null:
+		log_message("[BALANCE] Failed to open config file, using defaults")
+		balance_config = _get_default_balance_config()
+		return
+
+	var json_text = file.get_as_text()
+	file.close()
+
+	var json = JSON.new()
+	var parse_result = json.parse(json_text)
+
+	if parse_result != OK:
+		log_message("[BALANCE] Failed to parse config JSON: %s" % json.get_error_message())
+		balance_config = _get_default_balance_config()
+		return
+
+	balance_config = json.get_data()
+	var profile = balance_config.get("profile", "unknown")
+	var version = balance_config.get("version", "unknown")
+	log_message("[BALANCE] Loaded config profile: %s (v%s)" % [profile, version])
+
+func _get_default_balance_config() -> Dictionary:
+	"""Return default balance configuration (legacy behavior)"""
+	return {
+		"profile": "legacy",
+		"version": "1.0",
+		"combat": {
+			"player_str_multiplier": 0.02,
+			"player_crit_base": 5,
+			"player_crit_per_dex": 0.5,
+			"player_crit_max": 25,
+			"player_crit_damage": 1.5,
+			"monster_level_diff_base": 1.05,
+			"monster_level_diff_cap": 50,
+			"defense_formula_constant": 100,
+			"defense_max_reduction": 0.6,
+			"equipment_defense_cap": 0.0,
+			"equipment_defense_divisor": 500
+		},
+		"lethality": {
+			"hp_weight": 1.0,
+			"str_weight": 3.0,
+			"def_weight": 1.0,
+			"speed_weight": 2.0,
+			"ability_modifiers": {}
+		},
+		"rewards": {
+			"xp_level_diff_multiplier": 0.10,
+			"xp_high_level_base": 6.0,
+			"xp_high_level_bonus": 0.05,
+			"gold_lethality_multiplier": 0.0,
+			"gold_lethality_cap": 1.0,
+			"gem_lethality_divisor": 1000,
+			"gem_level_divisor": 100
+		},
+		"drops": {
+			"quality_bonus_thresholds": [500, 1000, 5000],
+			"quality_bonus_values": [1, 2, 3]
+		}
+	}
 
 func _on_restart_confirmed():
 	"""Restart the server after confirmation."""
@@ -322,6 +431,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
 			handle_combat_use_item(peer_id, message)
+		"wish_select":
+			handle_wish_select(peer_id, message)
 		"continue_flock":
 			handle_continue_flock(peer_id)
 		"rest":
@@ -342,6 +453,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_unequip(peer_id, message)
 		"inventory_discard":
 			handle_inventory_discard(peer_id, message)
+		"monster_select_confirm":
+			handle_monster_select_confirm(peer_id, message)
 		"merchant_sell":
 			handle_merchant_sell(peer_id, message)
 		"merchant_sell_all":
@@ -710,7 +823,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"experience_to_next_level": char.experience_to_next_level,
 				"class": char.class_type,
 				"hp": char.current_hp,
-				"max_hp": char.max_hp,
+				"max_hp": char.get_total_max_hp(),
 				"strength": char.get_stat("strength"),
 				"constitution": char.get_stat("constitution"),
 				"dexterity": char.get_stat("dexterity"),
@@ -868,7 +981,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Regenerate health and resources on movement (small amount per step)
 	var regen_percent = 0.02  # 2% per move for resources
 	var hp_regen_percent = 0.01  # 1% per move for health
-	character.current_hp = min(character.max_hp, character.current_hp + max(1, int(character.max_hp * hp_regen_percent)))
+	character.current_hp = min(character.get_total_max_hp(), character.current_hp + max(1, int(character.get_total_max_hp() * hp_regen_percent)))
 	character.current_mana = min(character.max_mana, character.current_mana + int(character.max_mana * regen_percent))
 	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
 	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
@@ -1029,7 +1142,7 @@ func handle_rest(peer_id: int):
 	var character = characters[peer_id]
 
 	# Already at full HP
-	if character.current_hp >= character.max_hp:
+	if character.current_hp >= character.get_total_max_hp():
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#808080]You are already at full health.[/color]",
@@ -1039,10 +1152,10 @@ func handle_rest(peer_id: int):
 
 	# Restore 10-25% of max HP
 	var heal_percent = randf_range(0.10, 0.25)
-	var heal_amount = int(character.max_hp * heal_percent)
+	var heal_amount = int(character.get_total_max_hp() * heal_percent)
 	heal_amount = max(1, heal_amount)  # At least 1 HP
 
-	character.current_hp = min(character.max_hp, character.current_hp + heal_amount)
+	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -1211,14 +1324,30 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							"level_diff": item.get("level", 1) - player_level
 						})
 
-				send_to_peer(peer_id, {
-					"type": "combat_end",
-					"victory": true,
-					"character": characters[peer_id].to_dict(),
-					"flock_drops": drop_messages,  # Send all drop messages at once
-					"total_gems": total_gems,       # Total gems earned for sound
-					"drop_data": drop_data          # Item data for sound effects
-				})
+					# Check if wish granter gave pending wish choice
+				var combat_state = combat_mgr.get_active_combat(peer_id)
+				var wish_pending = combat_state.get("wish_pending", false) if combat_state else false
+				var wish_options = combat_state.get("wish_options", []) if combat_state else []
+
+				if wish_pending and wish_options.size() > 0:
+					# Send wish choice to client
+					send_to_peer(peer_id, {
+						"type": "wish_choice",
+						"options": wish_options,
+						"character": characters[peer_id].to_dict(),
+						"flock_drops": drop_messages,
+						"total_gems": total_gems,
+						"drop_data": drop_data
+					})
+				else:
+					send_to_peer(peer_id, {
+						"type": "combat_end",
+						"victory": true,
+						"character": characters[peer_id].to_dict(),
+						"flock_drops": drop_messages,  # Send all drop messages at once
+						"total_gems": total_gems,       # Total gems earned for sound
+						"drop_data": drop_data          # Item data for sound effects
+					})
 
 				# Save character after combat and notify of expired buffs
 				save_character(peer_id)
@@ -1295,6 +1424,69 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 		})
 		# Also send character update for HP/inventory changes
 		send_character_update(peer_id)
+
+func handle_wish_select(peer_id: int, message: Dictionary):
+	"""Handle player selecting a wish reward from a Wish Granter monster"""
+	if not characters.has(peer_id):
+		return
+
+	var choice_index = message.get("choice", -1)
+	var combat_state = combat_mgr.get_active_combat(peer_id)
+
+	if not combat_state.get("wish_pending", false):
+		send_to_peer(peer_id, {"type": "error", "message": "No wish pending!"})
+		return
+
+	var wish_options = combat_state.get("wish_options", [])
+	if choice_index < 0 or choice_index >= wish_options.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid wish choice!"})
+		return
+
+	var chosen_wish = wish_options[choice_index]
+	var character = characters[peer_id]
+
+	# Apply the wish
+	var result_msg = combat_mgr.apply_wish_choice(character, chosen_wish)
+
+	# If gear was chosen, generate and give the item
+	if chosen_wish.type == "gear":
+		var gear_item = _generate_wish_gear(chosen_wish)
+		if character.can_add_item():
+			character.add_item(gear_item)
+			result_msg += "\n[color=%s]Received: %s[/color]" % [
+				_get_rarity_color(gear_item.get("rarity", "common")),
+				gear_item.get("name", "Unknown Item")
+			]
+		else:
+			result_msg += "\n[color=#FF0000]Inventory full! Gear was lost![/color]"
+
+	# Clear wish pending state
+	combat_state["wish_pending"] = false
+	combat_state["wish_options"] = []
+
+	# End combat now
+	combat_mgr.end_combat(peer_id, true)
+
+	# Send result to client
+	send_to_peer(peer_id, {
+		"type": "wish_granted",
+		"message": result_msg,
+		"character": character.to_dict()
+	})
+
+	save_character(peer_id)
+	send_buff_expiration_notifications(peer_id)
+
+func _generate_wish_gear(wish: Dictionary) -> Dictionary:
+	"""Generate a gear item from a wish choice"""
+	var gear_level = wish.get("level", 10)
+	var rarity = wish.get("rarity", "rare")
+
+	# Pick random equipment type
+	var types = ["weapon_enchanted", "armor_enchanted", "shield_enchanted", "helm_enchanted", "boots_enchanted"]
+	var item_type = types[randi() % types.size()]
+
+	return drop_tables._generate_item({"item_type": item_type, "rarity": rarity}, gear_level)
 
 # ===== PERMADEATH =====
 
@@ -1632,8 +1824,17 @@ func trigger_encounter(peer_id: int):
 		trigger_loot_find(peer_id, character, area_level)
 		return
 
-	# Normal monster encounter
-	var monster = monster_db.generate_monster(level_range.min, level_range.max)
+	# Check for forced next monster (from Monster Selection Scroll)
+	var monster: Dictionary
+	if character.forced_next_monster != "":
+		# Generate the forced monster at the area's level
+		monster = monster_db.generate_monster_by_name(character.forced_next_monster, area_level)
+		# Clear the forced monster after use
+		character.forced_next_monster = ""
+		save_character(peer_id)
+	else:
+		# Normal random monster encounter
+		monster = monster_db.generate_monster(level_range.min, level_range.max)
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
@@ -1919,8 +2120,54 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FFD700]You open %s and find %d gold![/color]" % [item_name, gold_amount]
 		})
+	elif effect.has("monster_select"):
+		# Monster Selection Scroll - let player pick next encounter
+		# Get list of all monster names from monster database
+		var monster_names = monster_db.get_all_monster_names()
+		send_to_peer(peer_id, {
+			"type": "monster_select_prompt",
+			"monsters": monster_names,
+			"message": "[color=#FF00FF]The %s glows with arcane power...[/color]\n[color=#FFD700]Choose a creature to summon for your next encounter![/color]" % item_name
+		})
+		# Don't update character yet - wait for confirmation
+		return
 
 	# Update character data
+	send_character_update(peer_id)
+
+func handle_monster_select_confirm(peer_id: int, message: Dictionary):
+	"""Handle player selecting a monster from the scroll selection"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var monster_name = message.get("monster_name", "")
+
+	if monster_name.is_empty():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid monster selection"
+		})
+		return
+
+	# Verify this is a valid monster name
+	var valid_names = monster_db.get_all_monster_names()
+	if monster_name not in valid_names:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Unknown monster type"
+		})
+		return
+
+	# Set the forced next monster on character
+	character.forced_next_monster = monster_name
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF00FF]The scroll crumbles to dust as the summoning circle forms...[/color]\n[color=#FFD700]Your next encounter will be with: %s[/color]" % monster_name
+	})
+
+	save_character(peer_id)
 	send_character_update(peer_id)
 
 func handle_inventory_equip(peer_id: int, message: Dictionary):
@@ -2507,7 +2754,7 @@ func handle_merchant_recharge(peer_id: int):
 	var cost = _get_recharge_cost(character.level)
 
 	# Check if already at full resources and not poisoned
-	var needs_recharge = (character.current_hp < character.max_hp or
+	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
 						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
 						  character.current_energy < character.max_energy or
@@ -2538,7 +2785,7 @@ func handle_merchant_recharge(peer_id: int):
 
 	# Deduct gold and restore resources
 	character.gold -= cost
-	character.current_hp = character.max_hp
+	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.max_mana
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
@@ -2759,7 +3006,13 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 	# Send buy success with item data for equip prompt
 	if bought_item != null:
 		var item_type = bought_item.get("type", "")
-		var is_equippable = item_type in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
+		var is_equippable = (item_type.begins_with("weapon_") or
+							item_type.begins_with("armor_") or
+							item_type.begins_with("helm_") or
+							item_type.begins_with("shield_") or
+							item_type.begins_with("boots_") or
+							item_type.begins_with("ring_") or
+							item_type.begins_with("amulet_"))
 		if is_equippable:
 			# Find the item's index in inventory (it's the last item added)
 			var inv_index = character.inventory.size() - 1
@@ -3015,7 +3268,7 @@ func handle_trading_post_recharge(peer_id: int):
 	var cost = int(base_cost * 0.5)
 
 	# Check if already at full resources and not poisoned
-	var needs_recharge = (character.current_hp < character.max_hp or
+	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
 						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
 						  character.current_energy < character.max_energy or
@@ -3045,7 +3298,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 	# Deduct gold and restore ALL resources including HP
 	character.gold -= cost
-	character.current_hp = character.max_hp
+	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.max_mana
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
@@ -3179,18 +3432,29 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": result.message})
 
 func handle_get_quest_log(peer_id: int):
-	"""Send quest log to player"""
+	"""Send quest log to player with quest IDs for abandonment"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
 	var quest_log = quest_mgr.format_quest_log(character)
 
+	# Build array of active quest info for client-side abandonment
+	var active_quests_info = []
+	for quest in character.active_quests:
+		active_quests_info.append({
+			"id": quest.get("id", ""),
+			"name": quest.get("name", "Unknown Quest"),
+			"progress": quest.get("progress", 0),
+			"target": quest.get("target", 1)
+		})
+
 	send_to_peer(peer_id, {
 		"type": "quest_log",
 		"log": quest_log,
 		"active_count": character.active_quests.size(),
-		"max_quests": Character.MAX_ACTIVE_QUESTS
+		"max_quests": Character.MAX_ACTIVE_QUESTS,
+		"active_quests": active_quests_info
 	})
 
 func check_exploration_quest_progress(peer_id: int, x: int, y: int):

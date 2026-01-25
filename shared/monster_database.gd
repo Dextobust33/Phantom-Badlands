@@ -38,6 +38,42 @@ const ABILITY_ENRAGE = "enrage"                  # Gets stronger each round
 const ABILITY_AMBUSHER = "ambusher"              # First attack always crits
 const ABILITY_EASY_PREY = "easy_prey"            # Low stats but no special rewards
 const ABILITY_THORNS = "thorns"                  # Damages attacker on melee
+const ABILITY_WEAPON_MASTER = "weapon_master"    # Guaranteed weapon drop on death
+const ABILITY_SHIELD_BEARER = "shield_bearer"    # Guaranteed shield drop on death
+const ABILITY_CORROSIVE = "corrosive"            # Chance to damage player's equipment on hit
+const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/shields
+
+# Balance configuration (set by server)
+var balance_config: Dictionary = {}
+
+func set_balance_config(cfg: Dictionary):
+	"""Set balance configuration from server"""
+	balance_config = cfg
+	print("Monster Database: Balance config loaded")
+
+func calculate_lethality(monster: Dictionary) -> int:
+	"""Calculate monster lethality score based on stats and abilities.
+	Lethality represents how dangerous a monster is relative to its level."""
+	var cfg = balance_config.get("lethality", {})
+
+	# Base lethality from stats
+	var hp_weight = cfg.get("hp_weight", 1.0)
+	var str_weight = cfg.get("str_weight", 3.0)
+	var def_weight = cfg.get("def_weight", 1.0)
+	var speed_weight = cfg.get("speed_weight", 2.0)
+
+	var base = monster.get("max_hp", 10) * hp_weight
+	base += monster.get("strength", 5) * str_weight
+	base += monster.get("defense", 5) * def_weight
+	base += monster.get("speed", 10) * speed_weight
+
+	# Apply ability modifiers
+	var ability_mods = cfg.get("ability_modifiers", {})
+	var mult = 1.0
+	for ability in monster.get("abilities", []):
+		mult += ability_mods.get(ability, 0.0)
+
+	return max(1, int(base * mult))
 
 # Monster types by difficulty tier
 enum MonsterType {
@@ -129,88 +165,131 @@ func generate_monster_by_name(monster_name: String, target_level: int) -> Dictio
 	# Fallback if name not found - generate random monster
 	return generate_monster(target_level, target_level)
 
+func get_all_monster_names() -> Array:
+	"""Get a list of all monster names for selection UI"""
+	var names = []
+	for type_id in MonsterType.values():
+		var base_stats = get_monster_base_stats(type_id)
+		if base_stats.has("name"):
+			names.append(base_stats.name)
+	names.sort()  # Alphabetical order for easier navigation
+	return names
+
 func select_monster_type(level: int) -> MonsterType:
-	"""Select an appropriate monster type for the level"""
-	var possible_types = []
+	"""Select an appropriate monster type for the level, with chance for higher-tier bleed"""
+	# Get tier bleed settings from config
+	var spawn_cfg = balance_config.get("monster_spawning", {})
+	var base_bleed_chance = spawn_cfg.get("tier_bleed_chance", 7)
+	var scale_to_area = spawn_cfg.get("tier_bleed_scale_to_area", true)
 
-	if level <= 5:
-		# Tier 1
-		possible_types = [
-			MonsterType.GOBLIN,
-			MonsterType.GIANT_RAT,
-			MonsterType.KOBOLD,
-			MonsterType.SKELETON,
-			MonsterType.WOLF
-		]
-	elif level <= 15:
-		# Tier 2
-		possible_types = [
-			MonsterType.ORC,
-			MonsterType.HOBGOBLIN,
-			MonsterType.GNOLL,
-			MonsterType.ZOMBIE,
-			MonsterType.GIANT_SPIDER,
-			MonsterType.WIGHT
-		]
-	elif level <= 30:
-		# Tier 3
-		possible_types = [
-			MonsterType.OGRE,
-			MonsterType.TROLL,
-			MonsterType.WRAITH,
-			MonsterType.WYVERN,
-			MonsterType.MINOTAUR
-		]
-	elif level <= 50:
-		# Tier 4
-		possible_types = [
-			MonsterType.GIANT,
-			MonsterType.DRAGON_WYRMLING,
-			MonsterType.DEMON,
-			MonsterType.VAMPIRE
-		]
-	elif level <= 100:
-		# Tier 5
-		possible_types = [
-			MonsterType.ANCIENT_DRAGON,
-			MonsterType.DEMON_LORD,
-			MonsterType.LICH,
-			MonsterType.TITAN
-		]
-	elif level <= 500:
-		# Tier 6
-		possible_types = [
-			MonsterType.ELEMENTAL,
-			MonsterType.IRON_GOLEM,
-			MonsterType.SPHINX,
-			MonsterType.HYDRA,
-			MonsterType.PHOENIX
-		]
-	elif level <= 2000:
-		# Tier 7
-		possible_types = [
-			MonsterType.VOID_WALKER,
-			MonsterType.WORLD_SERPENT,
-			MonsterType.ELDER_LICH,
-			MonsterType.PRIMORDIAL_DRAGON
-		]
-	elif level <= 5000:
-		# Tier 8
-		possible_types = [
-			MonsterType.COSMIC_HORROR,
-			MonsterType.TIME_WEAVER,
-			MonsterType.DEATH_INCARNATE
-		]
-	else:
-		# Tier 9 (5001+)
-		possible_types = [
-			MonsterType.AVATAR_OF_CHAOS,
-			MonsterType.THE_NAMELESS_ONE,
-			MonsterType.GOD_SLAYER,
-			MonsterType.ENTROPY
-		]
+	# Determine current tier and progress within tier
+	var tier_info = _get_tier_info(level)
+	var current_tier = tier_info.tier
+	var tier_progress = tier_info.progress  # 0.0 to 1.0
 
+	# Calculate actual bleed chance
+	var bleed_chance = base_bleed_chance
+	if scale_to_area:
+		# Scale chance based on how far into the tier we are (higher at end of tier)
+		bleed_chance = int(base_bleed_chance * (0.5 + tier_progress))
+
+	# Roll for tier bleed (only if not already at highest tier)
+	var use_higher_tier = current_tier < 9 and randi() % 100 < bleed_chance
+
+	var possible_types = _get_tier_monsters(current_tier if not use_higher_tier else current_tier + 1)
 	return possible_types[randi() % possible_types.size()]
+
+func _get_tier_info(level: int) -> Dictionary:
+	"""Get the tier number and progress through that tier (0.0 to 1.0)"""
+	if level <= 5:
+		return {"tier": 1, "progress": float(level) / 5.0}
+	elif level <= 15:
+		return {"tier": 2, "progress": float(level - 5) / 10.0}
+	elif level <= 30:
+		return {"tier": 3, "progress": float(level - 15) / 15.0}
+	elif level <= 50:
+		return {"tier": 4, "progress": float(level - 30) / 20.0}
+	elif level <= 100:
+		return {"tier": 5, "progress": float(level - 50) / 50.0}
+	elif level <= 500:
+		return {"tier": 6, "progress": float(level - 100) / 400.0}
+	elif level <= 2000:
+		return {"tier": 7, "progress": float(level - 500) / 1500.0}
+	elif level <= 5000:
+		return {"tier": 8, "progress": float(level - 2000) / 3000.0}
+	else:
+		return {"tier": 9, "progress": 1.0}
+
+func _get_tier_monsters(tier: int) -> Array:
+	"""Get list of monster types for a specific tier"""
+	match tier:
+		1:
+			return [
+				MonsterType.GOBLIN,
+				MonsterType.GIANT_RAT,
+				MonsterType.KOBOLD,
+				MonsterType.SKELETON,
+				MonsterType.WOLF
+			]
+		2:
+			return [
+				MonsterType.ORC,
+				MonsterType.HOBGOBLIN,
+				MonsterType.GNOLL,
+				MonsterType.ZOMBIE,
+				MonsterType.GIANT_SPIDER,
+				MonsterType.WIGHT
+			]
+		3:
+			return [
+				MonsterType.OGRE,
+				MonsterType.TROLL,
+				MonsterType.WRAITH,
+				MonsterType.WYVERN,
+				MonsterType.MINOTAUR
+			]
+		4:
+			return [
+				MonsterType.GIANT,
+				MonsterType.DRAGON_WYRMLING,
+				MonsterType.DEMON,
+				MonsterType.VAMPIRE
+			]
+		5:
+			return [
+				MonsterType.ANCIENT_DRAGON,
+				MonsterType.DEMON_LORD,
+				MonsterType.LICH,
+				MonsterType.TITAN
+			]
+		6:
+			return [
+				MonsterType.ELEMENTAL,
+				MonsterType.IRON_GOLEM,
+				MonsterType.SPHINX,
+				MonsterType.HYDRA,
+				MonsterType.PHOENIX
+			]
+		7:
+			return [
+				MonsterType.VOID_WALKER,
+				MonsterType.WORLD_SERPENT,
+				MonsterType.ELDER_LICH,
+				MonsterType.PRIMORDIAL_DRAGON
+			]
+		8:
+			return [
+				MonsterType.COSMIC_HORROR,
+				MonsterType.TIME_WEAVER,
+				MonsterType.DEATH_INCARNATE
+			]
+		_:  # Tier 9 or higher
+			return [
+				MonsterType.AVATAR_OF_CHAOS,
+				MonsterType.THE_NAMELESS_ONE,
+				MonsterType.GOD_SLAYER,
+				MonsterType.ENTROPY
+			]
 
 func get_monster_base_stats(type: MonsterType) -> Dictionary:
 	"""Get base statistics for a monster type"""
@@ -1020,8 +1099,53 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	if ABILITY_ARMORED in abilities:
 		scaled_defense = int(scaled_defense * 1.5)
 
-	return {
-		"name": base_stats.name,
+	# Rare variant system - chance for special monster variants
+	var monster_name = base_stats.name
+	var monster_abilities = abilities.duplicate() if abilities is Array else []
+	var is_rare_variant = false
+	var variant_type = ""
+
+	# 4% chance for GOOD rare variant (drops gear)
+	if randf() < 0.04 and target_level >= 5:
+		# Don't double up on abilities
+		if ABILITY_WEAPON_MASTER not in monster_abilities and ABILITY_SHIELD_BEARER not in monster_abilities:
+			is_rare_variant = true
+			# 50/50 weapon or shield variant
+			if randf() < 0.5:
+				monster_name = base_stats.name + " Weapon Master"
+				monster_abilities.append(ABILITY_WEAPON_MASTER)
+				variant_type = "weapon_master"
+				# Weapon masters are more aggressive
+				scaled_strength = int(scaled_strength * 1.25)
+			else:
+				monster_name = base_stats.name + " Shield Guardian"
+				monster_abilities.append(ABILITY_SHIELD_BEARER)
+				variant_type = "shield_guardian"
+				# Shield guardians are tankier
+				scaled_hp = int(scaled_hp * 1.25)
+				scaled_defense = int(scaled_defense * 1.25)
+
+	# 2% chance for DANGEROUS rare variant (damages gear) - separate roll
+	# These are scary encounters that give players a reason to upgrade gear
+	if not is_rare_variant and randf() < 0.02 and target_level >= 10:
+		if ABILITY_CORROSIVE not in monster_abilities and ABILITY_SUNDER not in monster_abilities:
+			is_rare_variant = true
+			# 50/50 corrosive (acid damage) or sunder (physical destruction)
+			if randf() < 0.5:
+				monster_name = "Corrosive " + base_stats.name
+				monster_abilities.append(ABILITY_CORROSIVE)
+				variant_type = "corrosive"
+				# Corrosive monsters are slightly tougher
+				scaled_hp = int(scaled_hp * 1.15)
+			else:
+				monster_name = "Sundering " + base_stats.name
+				monster_abilities.append(ABILITY_SUNDER)
+				variant_type = "sunder"
+				# Sundering monsters hit harder
+				scaled_strength = int(scaled_strength * 1.15)
+
+	var monster = {
+		"name": monster_name,
 		"level": target_level,
 		"max_hp": scaled_hp,
 		"current_hp": scaled_hp,
@@ -1037,9 +1161,16 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"description": base_stats.description,
 		# New fields for ability system
 		"class_affinity": base_stats.get("class_affinity", ClassAffinity.NEUTRAL),
-		"abilities": abilities,
-		"death_message": base_stats.get("death_message", "")
+		"abilities": monster_abilities,
+		"death_message": base_stats.get("death_message", ""),
+		"is_rare_variant": is_rare_variant,
+		"lethality": 0  # Placeholder, calculated below
 	}
+
+	# Calculate and store lethality score
+	monster.lethality = calculate_lethality(monster)
+
+	return monster
 
 func _estimate_player_equipment_attack(player_level: int) -> int:
 	"""Estimate BASELINE player attack bonus - intentionally conservative.

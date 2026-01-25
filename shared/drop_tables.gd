@@ -53,7 +53,8 @@ const DROP_TABLES = {
 		{"weight": 6, "item_type": "amulet_silver", "rarity": "rare"},
 		{"weight": 5, "item_type": "potion_strength", "rarity": "rare"},
 		{"weight": 4, "item_type": "potion_defense", "rarity": "rare"},
-		{"weight": 4, "item_type": "potion_speed", "rarity": "rare"}
+		{"weight": 4, "item_type": "potion_speed", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"}
 	],
 	"tier5": [
 		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
@@ -67,7 +68,8 @@ const DROP_TABLES = {
 		{"weight": 4, "item_type": "potion_strength", "rarity": "epic"},
 		{"weight": 4, "item_type": "potion_defense", "rarity": "epic"},
 		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
-		{"weight": 3, "item_type": "ring_elemental", "rarity": "epic"}
+		{"weight": 3, "item_type": "ring_elemental", "rarity": "epic"},
+		{"weight": 4, "item_type": "scroll_monster_select", "rarity": "epic"}
 	],
 	"tier6": [
 		{"weight": 10, "item_type": "potion_master", "rarity": "rare"},
@@ -155,6 +157,8 @@ const POTION_EFFECTS = {
 	"elixir_might": {"buff": "strength", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
 	"elixir_fortress": {"buff": "defense", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
 	"elixir_swiftness": {"buff": "speed", "base": 25, "per_level": 5, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
+	# Scrolls - special consumable effects
+	"scroll_monster_select": {"monster_select": true},  # Lets player choose next monster encounter
 }
 
 # Rarity colors for display
@@ -240,8 +244,11 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if final_rarity != base_rarity:
 		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
-	# Roll for affixes
-	var affixes = _roll_affixes(final_rarity, final_level)
+	# Consumables (potions, gold, scrolls) never get stat affixes
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("scroll_")
+
+	# Roll for affixes (only for equipment, not consumables)
+	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
 	var affix_name = _get_affix_prefix(affixes)
 
 	return {
@@ -332,6 +339,14 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"artifact": return "Dragon's Hoard"
 			_: return "Gold Pouch"
 
+	# Special handling for scrolls
+	if item_type == "scroll_monster_select":
+		match rarity:
+			"rare": return "Scroll of Summoning"
+			"epic": return "Ancient Scroll of Summoning"
+			"legendary": return "Arcane Scroll of Summoning"
+			_: return "Scroll of Summoning"
+
 	# Convert item_type like "weapon_rusty" to "Rusty Weapon"
 	var parts = item_type.split("_")
 	var name_parts = []
@@ -383,3 +398,125 @@ func is_usable_in_combat(item_type: String) -> bool:
 
 func to_dict() -> Dictionary:
 	return {"initialized": true}
+
+func generate_weapon(monster_level: int) -> Dictionary:
+	"""Generate a guaranteed weapon drop from a Weapon Master monster.
+	These are special high-quality weapons scaled to the monster's level."""
+	# Determine rarity based on level - higher level = better chance of good rarity
+	var rarity = _get_rare_drop_rarity(monster_level)
+
+	# Pick a weapon type based on level tier
+	var weapon_type = "weapon_rusty"
+	if monster_level >= 2000:
+		weapon_type = "weapon_mythic"
+	elif monster_level >= 500:
+		weapon_type = "weapon_legendary"
+	elif monster_level >= 100:
+		weapon_type = "weapon_elemental"
+	elif monster_level >= 50:
+		weapon_type = "weapon_magical"
+	elif monster_level >= 30:
+		weapon_type = "weapon_enchanted"
+	elif monster_level >= 15:
+		weapon_type = "weapon_steel"
+	elif monster_level >= 5:
+		weapon_type = "weapon_iron"
+
+	# Generate with boosted level for the rare drop
+	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+
+	var affixes = _roll_affixes(rarity, boosted_level)
+	var affix_name = _get_affix_prefix(affixes)
+
+	return {
+		"id": randi(),
+		"type": weapon_type,
+		"rarity": rarity,
+		"level": boosted_level,
+		"name": affix_name + "Weapon Master's " + _get_item_name(weapon_type, rarity),
+		"affixes": affixes,
+		"value": _calculate_item_value(rarity, boosted_level),
+		"from_rare_monster": true
+	}
+
+func generate_shield(monster_level: int) -> Dictionary:
+	"""Generate a guaranteed shield drop from a Shield Guardian monster.
+	These are special high-quality shields scaled to the monster's level."""
+	# Determine rarity based on level - higher level = better chance of good rarity
+	var rarity = _get_rare_drop_rarity(monster_level)
+
+	# Pick a shield type based on level tier
+	var shield_type = "shield_wood"
+	if monster_level >= 2000:
+		shield_type = "shield_mythic"
+	elif monster_level >= 500:
+		shield_type = "shield_legendary"
+	elif monster_level >= 100:
+		shield_type = "shield_elemental"
+	elif monster_level >= 50:
+		shield_type = "shield_magical"
+	elif monster_level >= 30:
+		shield_type = "shield_enchanted"
+	elif monster_level >= 15:
+		shield_type = "shield_steel"
+	elif monster_level >= 5:
+		shield_type = "shield_iron"
+
+	# Generate with boosted level for the rare drop
+	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+
+	var affixes = _roll_affixes(rarity, boosted_level)
+	var affix_name = _get_affix_prefix(affixes)
+
+	return {
+		"id": randi(),
+		"type": shield_type,
+		"rarity": rarity,
+		"level": boosted_level,
+		"name": affix_name + "Guardian's " + _get_item_name(shield_type, rarity),
+		"affixes": affixes,
+		"value": _calculate_item_value(rarity, boosted_level),
+		"from_rare_monster": true
+	}
+
+func _get_rare_drop_rarity(monster_level: int) -> String:
+	"""Determine rarity for rare monster drops. Higher level = better rarity."""
+	var roll = randf()
+
+	# Level-based thresholds for rarity
+	if monster_level >= 1000:
+		# High level: 20% legendary, 50% epic, 30% rare
+		if roll < 0.20:
+			return "legendary"
+		elif roll < 0.70:
+			return "epic"
+		else:
+			return "rare"
+	elif monster_level >= 100:
+		# Mid level: 10% legendary, 40% epic, 40% rare, 10% uncommon
+		if roll < 0.10:
+			return "legendary"
+		elif roll < 0.50:
+			return "epic"
+		elif roll < 0.90:
+			return "rare"
+		else:
+			return "uncommon"
+	elif monster_level >= 30:
+		# Lower mid: 5% epic, 35% rare, 40% uncommon, 20% common
+		if roll < 0.05:
+			return "epic"
+		elif roll < 0.40:
+			return "rare"
+		elif roll < 0.80:
+			return "uncommon"
+		else:
+			return "common"
+	else:
+		# Low level: 20% rare, 40% uncommon, 40% common
+		if roll < 0.20:
+			return "rare"
+		elif roll < 0.60:
+			return "uncommon"
+		else:
+			return "common"

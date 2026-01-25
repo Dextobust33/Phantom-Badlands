@@ -31,6 +31,14 @@ var drop_tables: Node = null
 # Monster database reference (for class affinity helpers)
 var monster_database: Node = null
 
+# Balance configuration (set by server)
+var balance_config: Dictionary = {}
+
+func set_balance_config(cfg: Dictionary):
+	"""Set balance configuration from server"""
+	balance_config = cfg
+	print("Combat Manager: Balance config loaded")
+
 # Monster ability constants (duplicated from MonsterDatabase for easy access)
 const ABILITY_GLASS_CANNON = "glass_cannon"
 const ABILITY_MULTI_STRIKE = "multi_strike"
@@ -58,6 +66,10 @@ const ABILITY_ENRAGE = "enrage"
 const ABILITY_AMBUSHER = "ambusher"
 const ABILITY_EASY_PREY = "easy_prey"
 const ABILITY_THORNS = "thorns"
+const ABILITY_WEAPON_MASTER = "weapon_master"    # Guaranteed weapon drop
+const ABILITY_SHIELD_BEARER = "shield_bearer"    # Guaranteed shield drop
+const ABILITY_CORROSIVE = "corrosive"            # Chance to damage player's equipment on hit
+const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/shields
 
 # ASCII art display settings
 const ASCII_ART_FONT_SIZE = 10  # Default is 14, smaller = less space
@@ -161,6 +173,12 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"message": msg,
 		"combat_state": get_combat_display(peer_id)
 	}
+
+func get_active_combat(peer_id: int) -> Dictionary:
+	"""Get the active combat state for a peer, or empty dict if not in combat"""
+	if active_combats.has(peer_id):
+		return active_combats[peer_id]
+	return {}
 
 func process_combat_command(peer_id: int, command: String) -> Dictionary:
 	"""Process a combat command from player"""
@@ -274,13 +292,13 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if is_vanished:
 		combat.erase("vanished")
 
-	# Hit chance: 95% base, -1% per 2 monster levels above player (minimum 70%)
-	# Vanish guarantees hit
-	var player_level = character.level
-	var monster_level = monster.level
-	var level_diff = max(0, monster_level - player_level)
-	var hit_chance = 95 - (level_diff / 2)
-	hit_chance = max(70, hit_chance)  # Never below 70%
+	# Hit chance: 75% base + (player DEX - monster speed) per point
+	# DEX makes it easier to hit enemies, Vanish guarantees hit
+	var player_dex = character.get_effective_stat("dexterity")
+	var monster_speed = monster.get("speed", 10)  # Use monster speed as DEX equivalent
+	var dex_diff = player_dex - monster_speed
+	var hit_chance = 75 + dex_diff
+	hit_chance = clamp(hit_chance, 50, 95)  # 50% minimum, 95% maximum
 
 	# Ethereal ability: 50% dodge chance for monster
 	var ethereal_dodge = ABILITY_ETHEREAL in abilities and not is_vanished
@@ -293,14 +311,22 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 	if is_vanished or hit_roll < hit_chance:
 		# Hit!
-		var damage = calculate_damage(character, monster)
+		var damage_result = calculate_damage(character, monster)
+		var damage = damage_result.damage
+		var is_crit = damage_result.is_crit
 
-		# Apply vanish crit (1.5x damage) or regular crit
-		var is_crit = is_vanished or (randi() % 100 < 10)  # 10% base crit chance
-		if is_crit:
+		# Apply analyze bonus (+10% from Analyze ability)
+		var analyze_bonus = combat.get("analyze_bonus", 0)
+		if analyze_bonus > 0:
+			damage = int(damage * (1.0 + analyze_bonus / 100.0))
+
+		# Apply vanish bonus (extra 1.5x on top of any crit)
+		if is_vanished:
 			damage = int(damage * 1.5)
-			if is_vanished:
-				messages.append("[color=#FFD700]You strike from the shadows![/color]")
+			messages.append("[color=#FFD700]You strike from the shadows![/color]")
+
+		# Show crit message (crit already applied in calculate_damage)
+		if is_crit:
 			messages.append("[color=#FFD700]CRITICAL HIT![/color]")
 
 		monster.current_hp -= damage
@@ -402,24 +428,44 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		character.gems += gems_earned
 		messages.append("[color=#00FFFF]You found %d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
-	# Wish granter ability: grant a powerful buff
+	# Weapon Master ability: guaranteed weapon drop
+	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
+		var weapon = drop_tables.generate_weapon(monster.level)
+		if not weapon.is_empty():
+			messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
+			messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+				_get_rarity_color(weapon.get("rarity", "common")),
+				weapon.get("name", "Unknown Weapon"),
+				weapon.get("level", 1)
+			])
+			# Add to dropped items (server handles inventory)
+			if not combat.has("extra_drops"):
+				combat.extra_drops = []
+			combat.extra_drops.append(weapon)
+
+	# Shield Bearer ability: guaranteed shield drop
+	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
+		var shield = drop_tables.generate_shield(monster.level)
+		if not shield.is_empty():
+			messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
+			messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+				_get_rarity_color(shield.get("rarity", "common")),
+				shield.get("name", "Unknown Shield"),
+				shield.get("level", 1)
+			])
+			# Add to dropped items (server handles inventory)
+			if not combat.has("extra_drops"):
+				combat.extra_drops = []
+			combat.extra_drops.append(shield)
+
+	# Wish granter ability: player chooses from 3 rewards
 	if ABILITY_WISH_GRANTER in abilities:
-		# Grant a random powerful buff for several battles
-		var wish_type = randi() % 4
-		match wish_type:
-			0:
-				character.add_persistent_buff("damage", 50, 10)
-				messages.append("[color=#FFD700]WISH GRANTED: +50%% damage for 10 battles![/color]")
-			1:
-				character.add_persistent_buff("defense", 50, 10)
-				messages.append("[color=#FFD700]WISH GRANTED: +50%% defense for 10 battles![/color]")
-			2:
-				character.add_persistent_buff("speed", 30, 10)
-				messages.append("[color=#FFD700]WISH GRANTED: +30 speed for 10 battles![/color]")
-			3:
-				# Heal to full and bonus max HP
-				character.current_hp = character.max_hp
-				messages.append("[color=#FFD700]WISH GRANTED: Full HP restored![/color]")
+		# Generate wish options and flag for server to handle
+		var wish_options = generate_wish_options(character, monster.level)
+		combat["wish_pending"] = true
+		combat["wish_options"] = wish_options
+		messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+		messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 
 	# Roll for item drops
 	var dropped_items = roll_combat_drops(monster, character)
@@ -435,6 +481,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if ABILITY_PACK_LEADER in abilities:
 		flock = min(75, flock + 25)
 
+	# Combine regular drops with extra drops from abilities
+	var all_drops = dropped_items.duplicate()
+	if combat.has("extra_drops"):
+		all_drops.append_array(combat.extra_drops)
+
 	return {
 		"success": true,
 		"messages": messages,
@@ -443,9 +494,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"monster_name": monster.name,
 		"monster_level": monster.level,
 		"flock_chance": flock,
-		"dropped_items": dropped_items,
+		"dropped_items": all_drops,
 		"gems_earned": gems_earned,
-		"summon_next_fight": combat.get("summon_next_fight", "")
+		"summon_next_fight": combat.get("summon_next_fight", ""),
+		"is_rare_variant": monster.get("is_rare_variant", false)
 	}
 
 func process_defend(combat: Dictionary) -> Dictionary:
@@ -454,10 +506,10 @@ func process_defend(combat: Dictionary) -> Dictionary:
 	var messages = []
 	
 	# Defending gives temporary defense bonus and small HP recovery
-	var defense_bonus = character.get_stat("constitution") / 4
-	var heal_amount = max(1, character.max_hp / 20)
-	
-	character.current_hp = min(character.max_hp, character.current_hp + heal_amount)
+	var defense_bonus = character.get_effective_stat("constitution") / 4
+	var heal_amount = max(1, character.get_total_max_hp() / 20)
+
+	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 	
 	messages.append("[color=#87CEEB]You take a defensive stance![/color]")
 	messages.append("[color=#00FF00]You recover %d HP![/color]" % heal_amount)
@@ -480,10 +532,13 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var monster = combat.monster
 	var messages = []
 
-	# Flee chance based on speed difference (includes speed buff and equipment bonus)
+	# Flee chance: 40% base + (DEX × 2) + equipment speed - (enemy level / 10)
 	var equipment_bonuses = character.get_equipment_bonuses()
-	var player_speed = character.get_stat("dexterity") + character.get_buff_value("speed") + equipment_bonuses.speed
-	var flee_chance = 50 + (player_speed - monster.speed) * 5
+	var player_dex = character.get_effective_stat("dexterity")
+	var speed_buff = character.get_buff_value("speed")
+	var equipment_speed = equipment_bonuses.speed
+	var monster_level = monster.get("level", 1)
+	var flee_chance = 40 + (player_dex * 2) + speed_buff + equipment_speed - int(monster_level / 10)
 	flee_chance = clamp(flee_chance, 10, 95)  # 10-95% chance
 	
 	var roll = randi() % 100
@@ -539,7 +594,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 	# Calculate outsmart chance - WIT vs monster INT is the key factor
 	# Dumb monsters are easy to fool, smart ones nearly impossible
-	var player_wits = character.get_stat("wits")
+	var player_wits = character.get_effective_stat("wits")
 	var monster_intelligence = monster.get("intelligence", 15)
 
 	# Base chance is very low - outsmart is situational
@@ -803,19 +858,29 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"blast":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			var base_damage = character.get_effective_stat("intelligence") * 2
+			# Base damage 50, scaled by INT (+3% per point) and multiplied by 2
+			var int_stat = character.get_effective_stat("intelligence")
+			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
+			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic × 2
 			var damage_buff = character.get_buff_value("damage")
 			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
 			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
+			# Apply burn DoT (20% of INT per round for 3 rounds)
+			var burn_damage = max(1, int(int_stat * 0.2))
+			combat["monster_burn"] = {"damage": burn_damage, "rounds": 3}
+			messages.append("[color=#FF6600]The target is burning! (%d damage/round for 3 rounds)[/color]" % burn_damage)
 
 		"forcefield":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			combat["forcefield_charges"] = 2  # Block next 2 attacks
-			messages.append("[color=#FF00FF]You cast Forcefield! (Blocks next 2 attacks)[/color]")
+			# Forcefield provides flat damage reduction = 50 + INT
+			var int_stat = character.get_effective_stat("intelligence")
+			var shield_value = 50 + int_stat
+			combat["forcefield_shield"] = shield_value
+			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 
 		"teleport":
 			if not character.use_mana(mana_cost):
@@ -832,7 +897,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"meteor":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			var base_damage = character.get_effective_stat("intelligence") * 5
+			# Base damage 100, scaled by INT (+3% per point), multiplied by 3-4x (random)
+			var int_stat = character.get_effective_stat("intelligence")
+			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
+			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
+			var base_damage = int(100 * int_multiplier * meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
 			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
 			monster.current_hp -= damage
@@ -904,12 +973,22 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]CLEAVE![/color]")
 			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
+			# Apply bleed DoT (15% of STR per round for 4 rounds)
+			var str_stat = character.get_effective_stat("strength")
+			var bleed_damage = max(1, int(str_stat * 0.15))
+			combat["monster_bleed"] = {"damage": bleed_damage, "rounds": 4}
+			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
 
 		"berserk":
-			character.add_buff("damage", 100, 3)  # +100% damage for 3 rounds
+			# Berserk scales with missing HP: +50% to +150% damage based on HP missing
+			# At full HP: +50% damage. At 1% HP: +150% damage
+			var hp_percent = float(character.current_hp) / float(character.max_hp)
+			var missing_hp_percent = 1.0 - hp_percent
+			var damage_bonus = int(50 + (missing_hp_percent * 100))  # 50-150%
+			character.add_buff("damage", damage_bonus, 3)
 			character.add_buff("defense_penalty", -50, 3)  # -50% defense for 3 rounds
 			messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-			messages.append("[color=#FFD700]+100%% damage, -50%% defense for 3 rounds![/color]" % [])
+			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), -50%% defense for 3 rounds![/color]" % damage_bonus)
 
 		"iron_skin":
 			character.add_buff("damage_reduction", 50, 3)  # Block 50% damage for 3 rounds
@@ -960,6 +1039,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FF4444]HP:[/color] %d/%d" % [monster.current_hp, monster.max_hp])
 			messages.append("[color=#FFFF00]Damage:[/color] ~%d" % monster.strength)
 			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster.get("intelligence", 15))
+			# Grant +10% damage bonus for rest of combat
+			combat["analyze_bonus"] = 10
+			messages.append("[color=#00FF00]+10%% damage bonus for this combat![/color]" % [])
 			# Skip monster turn for analyze (information only)
 			# Include revealed HP data for client health bar update
 			return {
@@ -982,7 +1064,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			success_chance = clampi(success_chance, 10, 90)
 			var roll = randi() % 100
 			if roll < success_chance:
-				var stolen_gold = wits * 10
+				# More gold: base * wits multiplier + monster level bonus
+				var base_gold = 50 + (monster.level * 2)
+				var stolen_gold = int(base_gold * (1.0 + wits * 0.05))  # +5% per wits
 				character.gold += stolen_gold
 				messages.append("[color=#00FF00]PICKPOCKET SUCCESS![/color]")
 				messages.append("[color=#FFD700]You steal %d gold![/color]" % stolen_gold)
@@ -1006,7 +1090,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 		"ambush":
 			# Ambush uses weapon damage + wits bonus, affected by damage buffs
 			var base_damage = character.get_total_attack()
-			var wits_bonus = character.get_stat("wits") / 2
+			var wits_bonus = character.get_effective_stat("wits") / 2
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
 			var damage = apply_damage_variance(int((base_damage + wits_bonus) * 1.5 * damage_multiplier))
@@ -1035,59 +1119,83 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]You exploit a weakness for %d damage![/color]" % damage)
 
 		"perfect_heist":
-			# Instant win + double rewards
-			messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
-			messages.append("[color=#00FF00]You execute a flawless heist![/color]")
+			# Chance-based instant win with double rewards
+			var wits = character.get_effective_stat("wits")
+			var monster_int = monster.get("intelligence", 15)
+			# Base 40% success, +2% per wits over monster intelligence
+			var success_chance = 40 + ((wits - monster_int) * 2)
+			success_chance = clampi(success_chance, 15, 85)
 
-			# Double XP and gold
-			var base_xp = monster.experience_reward * 2
-			var xp_level_diff = monster.level - character.level
-			var xp_multiplier = 1.0
-			if xp_level_diff > 0:
-				if xp_level_diff <= 50:
-					xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-				else:
-					xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+			var roll = randi() % 100
+			if roll < success_chance:
+				messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
+				messages.append("[color=#00FF00]You execute a flawless heist![/color]")
 
-			var final_xp = int(base_xp * xp_multiplier)
-			var gold = monster.gold_reward * 2
+				# Double XP and gold
+				var base_xp = monster.experience_reward * 2
+				var xp_level_diff = monster.level - character.level
+				var xp_multiplier = 1.0
+				if xp_level_diff > 0:
+					if xp_level_diff <= 50:
+						xp_multiplier = 1.0 + (xp_level_diff * 0.10)
+					else:
+						xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
 
-			var level_result = character.add_experience(final_xp)
-			character.gold += gold
+				var final_xp = int(base_xp * xp_multiplier)
+				var gold = monster.gold_reward * 2
 
-			messages.append("[color=#FF00FF]+%d XP (doubled!)[/color]" % final_xp)
-			messages.append("[color=#FFD700]+%d gold (doubled!)[/color]" % gold)
+				var level_result = character.add_experience(final_xp)
+				character.gold += gold
 
-			if level_result.leveled_up:
-				messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
+				messages.append("[color=#FF00FF]+%d XP (doubled!)[/color]" % final_xp)
+				messages.append("[color=#FFD700]+%d gold (doubled!)[/color]" % gold)
 
-			# Roll for item drops (double chance)
-			var dropped_items = []
-			var gems_earned = 0
-			if drop_tables:
-				var drops_result = drop_tables.roll_drops(
-					monster.get("drop_table_id", "tier1"),
-					monster.get("drop_chance", 5) * 2,
-					monster.level
-				)
-				dropped_items = drops_result
-				gems_earned = roll_gem_drops(monster, character) * 2
-				if gems_earned > 0:
-					character.gems += gems_earned
-					messages.append("[color=#00FFFF]+%d gems (doubled!)![/color]" % gems_earned)
+				if level_result.leveled_up:
+					messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
 
-			return {
-				"success": true,
-				"messages": messages,
-				"combat_ended": true,
-				"victory": true,
-				"monster_name": monster.name,
-				"monster_level": monster.level,
-				"flock_chance": 0,  # No flock after perfect heist
-				"dropped_items": dropped_items,
-				"gems_earned": gems_earned,
-				"skip_monster_turn": true
-			}
+				# Roll for item drops (double chance)
+				var dropped_items = []
+				var gems_earned = 0
+				if drop_tables:
+					var drops_result = drop_tables.roll_drops(
+						monster.get("drop_table_id", "tier1"),
+						monster.get("drop_chance", 5) * 2,
+						monster.level
+					)
+					dropped_items = drops_result
+					gems_earned = roll_gem_drops(monster, character) * 2
+					if gems_earned > 0:
+						character.gems += gems_earned
+						messages.append("[color=#00FFFF]+%d gems (doubled!)![/color]" % gems_earned)
+
+				return {
+					"success": true,
+					"messages": messages,
+					"combat_ended": true,
+					"victory": true,
+					"monster_name": monster.name,
+					"monster_level": monster.level,
+					"flock_chance": 0,  # No flock after perfect heist
+					"dropped_items": dropped_items,
+					"gems_earned": gems_earned,
+					"skip_monster_turn": true
+				}
+			else:
+				# Failed heist - take damage and combat continues
+				messages.append("[color=#FF4444][b]HEIST FAILED![/b][/color]")
+				messages.append("[color=#FF4444]You're caught mid-heist![/color]")
+				# Monster gets a free attack
+				var monster_result = process_monster_turn(combat)
+				messages.append(monster_result.message)
+				if character.current_hp <= 0:
+					return {
+						"success": true,
+						"messages": messages,
+						"combat_ended": true,
+						"victory": false,
+						"monster_name": "%s (Lvl %d)" % [monster.name, monster.level]
+					}
+				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -1229,6 +1337,38 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				"monster_fled": true
 			}
 
+	# Process burn DoT on monster (from Blast)
+	var burn_data = combat.get("monster_burn", {})
+	if burn_data.get("rounds", 0) > 0:
+		var burn_dmg = burn_data.damage
+		monster.current_hp -= burn_dmg
+		monster.current_hp = max(0, monster.current_hp)
+		burn_data.rounds -= 1
+		combat["monster_burn"] = burn_data
+		messages.append("[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, burn_dmg])
+		if burn_data.rounds == 0:
+			combat.erase("monster_burn")
+			messages.append("[color=#808080]The flames die out.[/color]")
+		# Check if burn killed the monster
+		if monster.current_hp <= 0:
+			return _process_victory(combat, messages)
+
+	# Process bleed DoT on monster (from Cleave)
+	var bleed_data = combat.get("monster_bleed", {})
+	if bleed_data.get("rounds", 0) > 0:
+		var bleed_dmg = bleed_data.damage
+		monster.current_hp -= bleed_dmg
+		monster.current_hp = max(0, monster.current_hp)
+		bleed_data.rounds -= 1
+		combat["monster_bleed"] = bleed_data
+		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, bleed_dmg])
+		if bleed_data.rounds == 0:
+			combat.erase("monster_bleed")
+			messages.append("[color=#808080]The bleeding stops.[/color]")
+		# Check if bleed killed the monster
+		if monster.current_hp <= 0:
+			return _process_victory(combat, messages)
+
 	# Regeneration ability: heal 10% HP per turn
 	if ABILITY_REGENERATION in abilities:
 		var heal_amount = max(1, int(monster.max_hp * 0.10))
@@ -1240,17 +1380,6 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		combat["enrage_stacks"] = combat.get("enrage_stacks", 0) + 1
 		if combat.enrage_stacks > 1:
 			messages.append("[color=#FF4444]The %s grows more furious! (+%d%% damage)[/color]" % [monster.name, combat.enrage_stacks * 10])
-
-	# Check for Forcefield (blocks attacks completely)
-	var forcefield = combat.get("forcefield_charges", 0)
-	if forcefield > 0:
-		combat["forcefield_charges"] = forcefield - 1
-		var charges_left = forcefield - 1
-		if charges_left > 0:
-			messages.append("[color=#FF00FF]Your Forcefield absorbs the attack! (%d charge%s left)[/color]" % [charges_left, "s" if charges_left > 1 else ""])
-		else:
-			messages.append("[color=#FF00FF]Your Forcefield absorbs the attack! (Shield breaks)[/color]")
-		return {"success": true, "message": "\n".join(messages)}
 
 	# === ATTACK CALCULATION ===
 
@@ -1355,6 +1484,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]The %s drains %d life from you![/color]" % [monster.name, heal])
 
 	if hits > 0:
+		# Check for Forcefield shield (absorbs damage)
+		var forcefield_shield = combat.get("forcefield_shield", 0)
+		if forcefield_shield > 0:
+			if total_damage <= forcefield_shield:
+				combat["forcefield_shield"] = forcefield_shield - total_damage
+				messages.append("[color=#FF00FF]Your Forcefield absorbs %d damage! (%d shield remaining)[/color]" % [total_damage, combat.forcefield_shield])
+				total_damage = 0
+			else:
+				total_damage -= forcefield_shield
+				combat.erase("forcefield_shield")
+				messages.append("[color=#FF00FF]Your Forcefield absorbs %d damage before breaking![/color]" % forcefield_shield)
+
 		character.current_hp -= total_damage
 
 		# Check for Dwarf Last Stand (survive lethal damage with 1 HP)
@@ -1433,6 +1574,36 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			character.add_buff("damage", -30, 3)  # -30% damage for 3 rounds
 			messages.append("[color=#FF4444]The %s disarms you! (-30%% damage for 3 rounds)[/color]" % monster.name)
 
+	# Corrosive ability: chance to damage random equipment on hit (configurable)
+	var ability_cfg = balance_config.get("monster_abilities", {})
+	if ABILITY_CORROSIVE in abilities and hits > 0:
+		var corrosive_chance = ability_cfg.get("corrosive_chance", 15)
+		if randi() % 100 < corrosive_chance:
+			# Damage a random piece of equipment
+			var slots_to_damage = ["weapon", "shield", "armor", "helm", "boots"]
+			slots_to_damage.shuffle()
+			for slot in slots_to_damage:
+				var result = character.damage_equipment(slot, randi_range(5, 15))
+				if result.success:
+					if result.is_broken:
+						messages.append("[color=#FF0000]The %s's acid BREAKS your %s! Replace it immediately![/color]" % [monster.name, result.item_name])
+					else:
+						messages.append("[color=#FFA500]The %s's acid corrodes your %s! (%d%% worn)[/color]" % [monster.name, result.item_name, result.new_wear])
+					break
+
+	# Sunder ability: specifically damages weapons and shields (configurable)
+	if ABILITY_SUNDER in abilities and hits > 0:
+		var sunder_chance = ability_cfg.get("sunder_chance", 20)
+		if randi() % 100 < sunder_chance:
+			# 50/50 weapon or shield
+			var target_slot = "weapon" if randf() < 0.5 else "shield"
+			var result = character.damage_equipment(target_slot, randi_range(10, 25))
+			if result.success:
+				if result.is_broken:
+					messages.append("[color=#FF0000]The %s SHATTERS your %s! You need a new one![/color]" % [monster.name, result.item_name])
+				else:
+					messages.append("[color=#FF4444]The %s sunders your %s! (%d%% worn)[/color]" % [monster.name, result.item_name, result.new_wear])
+
 	# Summoner ability: call reinforcements (once per combat)
 	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
 		if randi() % 100 < 20:  # 20% chance
@@ -1442,14 +1613,23 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	return {"success": true, "message": "\n".join(messages)}
 
-func calculate_damage(character: Character, monster: Dictionary) -> int:
-	"""Calculate player damage to monster (includes equipment, buffs, and class advantage)"""
+func calculate_damage(character: Character, monster: Dictionary) -> Dictionary:
+	"""Calculate player damage to monster (includes equipment, buffs, crits, and class advantage)
+	Returns dictionary with 'damage' and 'is_crit' keys"""
+	var cfg = balance_config.get("combat", {})
+
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
 
 	# Add strength buff bonus
 	var strength_buff = character.get_buff_value("strength")
 	base_damage += strength_buff
+
+	# Apply STR percentage bonus (configurable, default +2% per point)
+	var str_stat = character.get_effective_stat("strength")
+	var str_mult = cfg.get("player_str_multiplier", 0.02)
+	var str_multiplier = 1.0 + (str_stat * str_mult)
+	base_damage = int(base_damage * str_multiplier)
 
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var raw_damage = base_damage + damage_roll
@@ -1459,10 +1639,24 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
 
+	# Critical hit check (configurable base, per-dex, max, and damage multiplier)
+	var dex_stat = character.get_effective_stat("dexterity")
+	var crit_base = cfg.get("player_crit_base", 5)
+	var crit_per_dex = cfg.get("player_crit_per_dex", 0.5)
+	var crit_max = cfg.get("player_crit_max", 25)
+	var crit_damage = cfg.get("player_crit_damage", 1.5)
+
+	var crit_chance = crit_base + int(dex_stat * crit_per_dex)
+	crit_chance = min(crit_chance, crit_max)
+	var is_crit = (randi() % 100) < crit_chance
+	if is_crit:
+		raw_damage = int(raw_damage * crit_damage)
+
 	# Monster defense reduces damage by a percentage (not flat)
-	# Defense 10 = 5% reduction, Defense 100 = 33% reduction, Defense 500 = 50% reduction
-	var defense_ratio = float(monster.defense) / (float(monster.defense) + 100.0)
-	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
+	var defense_constant = cfg.get("defense_formula_constant", 100)
+	var defense_max = cfg.get("defense_max_reduction", 0.6)
+	var defense_ratio = float(monster.defense) / (float(monster.defense) + defense_constant)
+	var damage_reduction = defense_ratio * defense_max
 	var total = int(raw_damage * (1.0 - damage_reduction))
 
 	# Apply class advantage multiplier
@@ -1470,7 +1664,7 @@ func calculate_damage(character: Character, monster: Dictionary) -> int:
 	var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
 	total = int(total * class_multiplier)
 
-	return max(1, total)  # Minimum 1 damage
+	return {"damage": max(1, total), "is_crit": is_crit}
 
 func _get_class_advantage_multiplier(affinity: int, character_class: String) -> float:
 	"""Calculate damage multiplier based on class affinity.
@@ -1509,27 +1703,41 @@ func _get_player_class_path(character_class: String) -> String:
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	"""Calculate monster damage to player (reduced by equipment defense and buffs)"""
+	var cfg = balance_config.get("combat", {})
+
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var raw_damage = base_damage + damage_roll
 
+	# Equipment defense provides flat reduction BEFORE defense formula
+	# This makes gear meaningful against higher-level monsters
+	var equipment_defense = character.get_equipment_defense()
+	var equip_cap = cfg.get("equipment_defense_cap", 0.3)
+	var equip_divisor = cfg.get("equipment_defense_divisor", 500)
+	var equipment_reduction = 0.0
+	if equip_cap > 0 and equip_divisor > 0:
+		equipment_reduction = min(equip_cap, float(equipment_defense) / equip_divisor)
+	raw_damage = int(raw_damage * (1.0 - equipment_reduction))
+
 	# Player defense reduces damage by percentage (not flat)
-	# Defense 10 = 9% reduction, Defense 50 = 33% reduction, Defense 200 = 50% reduction
 	var player_defense = character.get_total_defense()
 
 	# Add defense buff bonus
 	var defense_buff = character.get_buff_value("defense")
 	player_defense += defense_buff
 
-	var defense_ratio = float(player_defense) / (float(player_defense) + 100.0)
-	var damage_reduction = defense_ratio * 0.6  # Max 60% reduction at very high defense
+	var defense_constant = cfg.get("defense_formula_constant", 100)
+	var defense_max = cfg.get("defense_max_reduction", 0.6)
+	var defense_ratio = float(player_defense) / (float(player_defense) + defense_constant)
+	var damage_reduction = defense_ratio * defense_max
 	var total = int(raw_damage * (1.0 - damage_reduction))
 
-	# Level difference bonus: monsters higher level deal extra damage
+	# Level difference bonus: monsters higher level deal extra damage (configurable)
 	var level_diff = monster.level - character.level
 	if level_diff > 0:
-		# +5% damage per level above player, compounding
-		var level_multiplier = pow(1.05, min(level_diff, 50))  # Cap at 50 level diff
+		var level_base = cfg.get("monster_level_diff_base", 1.04)
+		var level_cap = cfg.get("monster_level_diff_cap", 75)
+		var level_multiplier = pow(level_base, min(level_diff, level_cap))
 		total = int(total * level_multiplier)
 
 	# Minimum damage based on monster level (higher level = higher floor)
@@ -1589,8 +1797,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"round": combat.round,
 		"player_name": character.name,
 		"player_hp": character.current_hp,
-		"player_max_hp": character.max_hp,
-		"player_hp_percent": int((float(character.current_hp) / character.max_hp) * 100),
+		"player_max_hp": character.get_total_max_hp(),
+		"player_hp_percent": int((float(character.current_hp) / character.get_total_max_hp()) * 100),
 		"player_mana": character.current_mana,
 		"player_max_mana": character.max_mana,
 		"player_stamina": character.current_stamina,
@@ -2737,6 +2945,14 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 		notable_abilities.append("[color=#00FFFF]Gem Bearer[/color]")
 	if ABILITY_WISH_GRANTER in abilities:
 		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
+	if ABILITY_WEAPON_MASTER in abilities:
+		notable_abilities.append("[color=#FF8000]★ WEAPON MASTER ★[/color]")
+	if ABILITY_SHIELD_BEARER in abilities:
+		notable_abilities.append("[color=#00FFFF]★ SHIELD GUARDIAN ★[/color]")
+	if ABILITY_CORROSIVE in abilities:
+		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
+	if ABILITY_SUNDER in abilities:
+		notable_abilities.append("[color=#FF4444]⚠ SUNDERING ⚠[/color]")
 
 	if notable_abilities.size() > 0:
 		msg += "\n[color=#808080]Traits: %s[/color]" % ", ".join(notable_abilities)
@@ -2826,8 +3042,142 @@ func roll_gem_drops(monster: Dictionary, character: Character) -> int:
 	if roll >= gem_chance:
 		return 0
 
-	# Gem quantity formula: scales with monster lethality and level
+	# Gem quantity formula: scales with monster lethality and level (configurable)
+	var cfg = balance_config.get("rewards", {})
 	var lethality = monster.get("lethality", 0)
-	var gem_count = max(1, int(lethality / 1000) + int(monster_level / 100))
+	var lethality_divisor = cfg.get("gem_lethality_divisor", 1000)
+	var level_divisor = cfg.get("gem_level_divisor", 100)
+	var gem_count = max(1, int(lethality / lethality_divisor) + int(monster_level / level_divisor))
 
 	return gem_count
+
+# ===== WISH GRANTER SYSTEM =====
+
+func generate_wish_options(character: Character, monster_level: int) -> Array:
+	"""Generate 3 wish options for player to choose from after defeating a wish granter.
+	Options include: gear upgrades, gems, valuable loot, or rare permanent stat upgrades."""
+	var options = []
+	var player_level = character.level
+
+	# Always generate 3 distinct options
+	var available_types = ["gems", "gear", "buff", "gold", "stats"]
+	available_types.shuffle()
+
+	# Option 1: Always a good option (gems or gear)
+	if randf() < 0.5:
+		options.append(_generate_gem_wish(monster_level))
+	else:
+		options.append(_generate_gear_wish(player_level, monster_level))
+
+	# Option 2: Another good option (different from option 1)
+	if options[0].type == "gems":
+		options.append(_generate_gear_wish(player_level, monster_level))
+	else:
+		options.append(_generate_gem_wish(monster_level))
+
+	# Option 3: Special option - small chance for permanent stats, otherwise buff
+	if randf() < 0.10:  # 10% chance for permanent stat boost
+		options.append(_generate_stat_wish())
+	elif randf() < 0.5:
+		options.append(_generate_buff_wish())
+	else:
+		options.append(_generate_gold_wish(monster_level))
+
+	return options
+
+func _generate_gem_wish(monster_level: int) -> Dictionary:
+	"""Generate a gem reward wish option"""
+	var gem_amount = max(5, int(monster_level / 10) + randi_range(3, 8))
+	return {
+		"type": "gems",
+		"amount": gem_amount,
+		"label": "%d Gems" % gem_amount,
+		"description": "Receive %d precious gems" % gem_amount,
+		"color": "#00FFFF"
+	}
+
+func _generate_gear_wish(player_level: int, monster_level: int) -> Dictionary:
+	"""Generate a gear reward wish option"""
+	var gear_level = max(player_level, monster_level) + randi_range(5, 15)
+	var rarity = "rare" if randf() < 0.7 else "epic"
+	if randf() < 0.1:
+		rarity = "legendary"
+	return {
+		"type": "gear",
+		"level": gear_level,
+		"rarity": rarity,
+		"label": "%s Lv%d Gear" % [rarity.capitalize(), gear_level],
+		"description": "Receive a %s quality item at level %d" % [rarity, gear_level],
+		"color": _get_rarity_color(rarity)
+	}
+
+func _generate_buff_wish() -> Dictionary:
+	"""Generate a powerful temporary buff wish option"""
+	var buff_types = [
+		{"stat": "damage", "value": 75, "battles": 15, "label": "+75% Damage (15 battles)"},
+		{"stat": "defense", "value": 75, "battles": 15, "label": "+75% Defense (15 battles)"},
+		{"stat": "speed", "value": 50, "battles": 15, "label": "+50 Speed (15 battles)"},
+		{"stat": "crit", "value": 25, "battles": 20, "label": "+25% Crit Chance (20 battles)"}
+	]
+	var chosen = buff_types[randi() % buff_types.size()]
+	return {
+		"type": "buff",
+		"stat": chosen.stat,
+		"value": chosen.value,
+		"battles": chosen.battles,
+		"label": chosen.label,
+		"description": "Powerful combat enhancement",
+		"color": "#FFD700"
+	}
+
+func _generate_gold_wish(monster_level: int) -> Dictionary:
+	"""Generate a gold reward wish option"""
+	var gold_amount = max(1000, monster_level * 100 + randi_range(500, 2000))
+	return {
+		"type": "gold",
+		"amount": gold_amount,
+		"label": "%d Gold" % gold_amount,
+		"description": "Receive a fortune of %d gold" % gold_amount,
+		"color": "#FFD700"
+	}
+
+func _generate_stat_wish() -> Dictionary:
+	"""Generate a permanent stat increase wish option (rare!)"""
+	var stats = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+	var chosen_stat = stats[randi() % stats.size()]
+	var boost = randi_range(1, 3)
+	return {
+		"type": "stats",
+		"stat": chosen_stat,
+		"amount": boost,
+		"label": "+%d %s (PERMANENT)" % [boost, chosen_stat.capitalize()],
+		"description": "Permanently increase your %s by %d!" % [chosen_stat, boost],
+		"color": "#FF00FF"
+	}
+
+func apply_wish_choice(character: Character, wish: Dictionary) -> String:
+	"""Apply the chosen wish reward to the character. Returns result message."""
+	match wish.type:
+		"gems":
+			character.gems += wish.amount
+			return "[color=#00FFFF]WISH GRANTED: +%d gems![/color]" % wish.amount
+		"gold":
+			character.gold += wish.amount
+			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount
+		"buff":
+			character.add_persistent_buff(wish.stat, wish.value, wish.battles)
+			return "[color=#FFD700]WISH GRANTED: %s![/color]" % wish.label
+		"stats":
+			# Permanent stat increase
+			match wish.stat:
+				"strength": character.strength += wish.amount
+				"constitution": character.constitution += wish.amount
+				"dexterity": character.dexterity += wish.amount
+				"intelligence": character.intelligence += wish.amount
+				"wisdom": character.wisdom += wish.amount
+				"wits": character.wits += wish.amount
+			return "[color=#FF00FF]WISH GRANTED: Permanent +%d %s![/color]" % [wish.amount, wish.stat.capitalize()]
+		"gear":
+			# Server will handle gear generation
+			return "[color=%s]WISH GRANTED: Generating %s gear...[/color]" % [wish.color, wish.rarity]
+	return "[color=#FFD700]WISH GRANTED![/color]"

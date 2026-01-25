@@ -1,0 +1,100 @@
+{
+  "profile": "default",
+  "version": "1.1",
+
+  "combat": {
+    "player_str_multiplier": 0.02,
+    "player_crit_base": 5,
+    "player_crit_per_dex": 0.5,
+    "player_crit_max": 25,
+    "player_crit_damage": 1.5,
+    "monster_level_diff_base": 1.035,
+    "monster_level_diff_cap": 100,
+    "defense_formula_constant": 100,
+    "defense_max_reduction": 0.6,
+    "equipment_defense_cap": 0.4,
+    "equipment_defense_divisor": 400
+  },
+
+  "lethality": {
+    "hp_weight": 1.0,
+    "str_weight": 3.0,
+    "def_weight": 1.0,
+    "speed_weight": 2.0,
+    "ability_modifiers": {
+      "glass_cannon": 0.50,
+      "multi_strike": 0.50,
+      "death_curse": 0.40,
+      "enrage": 0.35,
+      "life_steal": 0.35,
+      "poison": 0.30,
+      "ethereal": 0.30,
+      "berserker": 0.30,
+      "summoner": 0.30,
+      "corrosive": 0.25,
+      "sunder": 0.25,
+      "regeneration": 0.25,
+      "armored": 0.20,
+      "curse": 0.20,
+      "mana_drain": 0.20,
+      "stamina_drain": 0.20,
+      "energy_drain": 0.20,
+      "damage_reflect": 0.20,
+      "thorns": 0.20,
+      "pack_leader": 0.15,
+      "disarm": 0.15,
+      "ambusher": 0.15,
+      "unpredictable": 0.15,
+      "easy_prey": -0.50,
+      "coward": -0.40,
+      "gold_hoarder": 0.10,
+      "gem_bearer": 0.15,
+      "wish_granter": 0.10,
+      "weapon_master": 0.0,
+      "shield_bearer": 0.0
+    }
+  },
+
+  "monster_abilities": {
+    "corrosive_chance": 15,
+    "sunder_chance": 20,
+    "poison_damage_percent": 20,
+    "life_steal_percent": 50,
+    "regeneration_percent": 10,
+    "damage_reflect_percent": 25,
+    "thorns_percent": 25,
+    "ethereal_dodge_chance": 50,
+    "curse_defense_reduction": 25,
+    "disarm_damage_reduction": 30,
+    "disarm_duration": 3,
+    "summoner_chance": 20,
+    "ambusher_multiplier": 1.75,
+    "enrage_per_round": 10,
+    "berserker_bonus": 50,
+    "death_curse_percent": 25,
+    "glass_cannon_damage_mult": 3.0,
+    "glass_cannon_hp_mult": 0.5,
+    "multi_strike_min": 2,
+    "multi_strike_max": 3
+  },
+
+  "monster_spawning": {
+    "tier_bleed_chance": 7,
+    "tier_bleed_scale_to_area": true
+  },
+
+  "rewards": {
+    "xp_level_diff_multiplier": 0.10,
+    "xp_high_level_base": 6.0,
+    "xp_high_level_bonus": 0.05,
+    "gold_lethality_multiplier": 0.5,
+    "gold_lethality_cap": 2.0,
+    "gem_lethality_divisor": 1000,
+    "gem_level_divisor": 100
+  },
+
+  "drops": {
+    "quality_bonus_thresholds": [500, 1000, 5000],
+    "quality_bonus_values": [1, 2, 3]
+  }
+}

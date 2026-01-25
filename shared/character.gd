@@ -45,6 +45,9 @@ extends Resource
 @export var poison_damage: int = 0
 @export var poison_turns_remaining: int = 0  # Decrements each combat turn
 
+# Forced next monster (from Monster Selection Scroll)
+@export var forced_next_monster: String = ""  # Monster name, empty = random
+
 # Inventory System (stubs for future item drops)
 @export var inventory: Array = []  # Array of item dictionaries
 @export var equipped: Dictionary = {
@@ -140,7 +143,7 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 
 func calculate_derived_stats():
 	"""Calculate HP, mana, stamina, energy from primary stats"""
-	max_hp = (constitution * 10) + (level * 5)
+	max_hp = 50 + (constitution * 5)  # Base 50 + CON × 5
 	max_mana = (intelligence * 8) + (wisdom * 4)
 	max_stamina = (strength * 4) + (constitution * 4)  # Warrior resource
 	max_energy = (wits * 4) + (dexterity * 4)          # Trickster resource
@@ -200,13 +203,17 @@ func get_equipment_bonuses() -> Dictionary:
 		var item_type = item.get("type", "")
 		var rarity_mult = _get_rarity_multiplier(item.get("rarity", "common"))
 
-		# Base bonus scales with item level and rarity
-		var base_bonus = int(item_level * rarity_mult)
+		# Check for item wear/damage (0-100, 100 = fully damaged/broken)
+		var wear = item.get("wear", 0)
+		var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness, 100% wear = 0%
+
+		# Base bonus scales with item level, rarity, and wear
+		var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
 		# Apply bonuses based on item type
 		if "weapon" in item_type:
-			bonuses.attack += base_bonus * 2  # Weapons give attack
-			bonuses.strength += int(base_bonus * 0.3)
+			bonuses.attack += base_bonus * 3  # Weapons are THE attack item - huge attack boost
+			bonuses.strength += int(base_bonus * 0.5)
 		elif "armor" in item_type:
 			bonuses.defense += base_bonus * 2  # Armor gives defense
 			bonuses.constitution += int(base_bonus * 0.3)
@@ -215,8 +222,9 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.defense += base_bonus
 			bonuses.wisdom += int(base_bonus * 0.2)
 		elif "shield" in item_type:
-			bonuses.defense += int(base_bonus * 1.5)
-			bonuses.constitution += int(base_bonus * 0.2)
+			bonuses.defense += int(base_bonus * 0.5)  # Shields give less defense
+			bonuses.max_hp += base_bonus * 5  # Shields are THE HP item - huge HP boost
+			bonuses.constitution += int(base_bonus * 0.3)
 		elif "ring" in item_type:
 			bonuses.attack += int(base_bonus * 0.5)
 			bonuses.dexterity += int(base_bonus * 0.3)
@@ -265,6 +273,21 @@ func get_total_defense() -> int:
 	"""Get total defense including equipment"""
 	var bonuses = get_equipment_bonuses()
 	return (constitution / 2) + bonuses.defense
+
+func get_equipment_defense() -> int:
+	"""Get defense bonus from equipment only (used for equipment reduction calculation)"""
+	var bonuses = get_equipment_bonuses()
+	return bonuses.defense
+
+func get_total_max_hp() -> int:
+	"""Get total max HP including equipment bonuses (mainly from shields)"""
+	var bonuses = get_equipment_bonuses()
+	return max_hp + bonuses.max_hp
+
+func get_total_max_mana() -> int:
+	"""Get total max mana including equipment bonuses (mainly from amulets)"""
+	var bonuses = get_equipment_bonuses()
+	return max_mana + bonuses.max_mana
 
 func get_effective_stat(stat_name: String) -> int:
 	"""Get stat value including equipment bonuses"""
@@ -326,6 +349,68 @@ func heal(amount: int) -> int:
 	var heal_amount = int(amount * get_heal_multiplier())
 	current_hp = min(current_hp + heal_amount, max_hp)
 	return current_hp - old_hp
+
+func damage_equipment(slot: String, wear_amount: int) -> Dictionary:
+	"""Damage equipment in a specific slot. Returns info about the damage."""
+	if not equipped.has(slot) or equipped[slot] == null:
+		return {"success": false, "message": "No item in slot"}
+
+	var item = equipped[slot]
+	var old_wear = item.get("wear", 0)
+	var new_wear = min(100, old_wear + wear_amount)
+	item["wear"] = new_wear
+
+	var result = {
+		"success": true,
+		"item_name": item.get("name", "Unknown"),
+		"slot": slot,
+		"old_wear": old_wear,
+		"new_wear": new_wear,
+		"wear_added": new_wear - old_wear,
+		"is_broken": new_wear >= 100
+	}
+
+	return result
+
+func damage_weapon(wear_amount: int) -> Dictionary:
+	"""Damage the equipped weapon. Returns info about the damage."""
+	return damage_equipment("weapon", wear_amount)
+
+func damage_shield(wear_amount: int) -> Dictionary:
+	"""Damage the equipped shield. Returns info about the damage."""
+	return damage_equipment("shield", wear_amount)
+
+func get_equipment_wear_status() -> Dictionary:
+	"""Get wear status for all equipped items"""
+	var status = {}
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item != null and item is Dictionary:
+			var wear = item.get("wear", 0)
+			status[slot] = {
+				"name": item.get("name", "Unknown"),
+				"wear": wear,
+				"condition": _get_condition_string(wear),
+				"effectiveness": 100 - wear
+			}
+	return status
+
+func _get_condition_string(wear: int) -> String:
+	"""Get a human-readable condition string from wear percentage"""
+	if wear == 0:
+		return "Pristine"
+	elif wear <= 10:
+		return "Excellent"
+	elif wear <= 25:
+		return "Good"
+	elif wear <= 50:
+		return "Worn"
+	elif wear <= 75:
+		return "Damaged"
+	elif wear < 100:
+		return "Nearly Broken"
+	else:
+		return "BROKEN"
 
 func check_level_up():
 	"""Check if character should level up"""
@@ -399,8 +484,10 @@ func to_dict() -> Dictionary:
 		},
 		"current_hp": current_hp,
 		"max_hp": max_hp,
+		"total_max_hp": get_total_max_hp(),  # Equipment-boosted max HP for display
 		"current_mana": current_mana,
 		"max_mana": max_mana,
+		"total_max_mana": get_total_max_mana(),  # Equipment-boosted max mana for display
 		"current_stamina": current_stamina,
 		"max_stamina": max_stamina,
 		"current_energy": current_energy,
@@ -414,6 +501,7 @@ func to_dict() -> Dictionary:
 		"poison_active": poison_active,
 		"poison_damage": poison_damage,
 		"poison_turns_remaining": poison_turns_remaining,
+		"forced_next_monster": forced_next_monster,
 		"inventory": inventory,
 		"equipped": equipped,
 		"created_at": created_at,
@@ -467,6 +555,9 @@ func from_dict(data: Dictionary):
 	poison_active = data.get("poison_active", false)
 	poison_damage = data.get("poison_damage", 0)
 	poison_turns_remaining = data.get("poison_turns_remaining", 0)
+
+	# Forced next monster (from Monster Selection Scroll)
+	forced_next_monster = data.get("forced_next_monster", "")
 
 	# Inventory system
 	inventory = data.get("inventory", [])

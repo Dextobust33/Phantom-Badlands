@@ -4,12 +4,16 @@ class_name QuestManager
 extends Node
 
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
+const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
 
 var quest_db: Node = null
+var trading_post_db: Node = null
 
 func _ready():
 	quest_db = QuestDatabaseScript.new()
 	add_child(quest_db)
+	trading_post_db = TradingPostDatabaseScript.new()
+	add_child(trading_post_db)
 
 # ===== QUEST ACCEPTANCE =====
 
@@ -90,8 +94,13 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 				# Must be in a hotzone within max_distance of quest origin
 				var max_distance = quest.get("max_distance", 50.0)
 				var min_intensity = quest.get("min_intensity", 0.0)
+				var min_monster_level = quest.get("min_monster_level", 1)
 				var origin_x = quest_data.get("origin_x", 0)
 				var origin_y = quest_data.get("origin_y", 0)
+
+				# Check if monster meets minimum level requirement
+				if monster_level < min_monster_level:
+					continue
 
 				# Check if in a hotzone
 				if hotzone_intensity > 0:
@@ -278,8 +287,18 @@ func format_quest_log(character: Character) -> String:
 		if not reward_parts.is_empty():
 			output += "    Rewards: %s\n" % ", ".join(reward_parts)
 
-		# Hotzone bonus note
+		# Turn-in location
+		var origin_x = quest_data.get("origin_x", 0)
+		var origin_y = quest_data.get("origin_y", 0)
+		var turn_in_post = trading_post_db.get_trading_post_at(origin_x, origin_y)
+		if not turn_in_post.is_empty():
+			output += "    Turn in: [color=#00FFFF]%s[/color] (%d, %d)\n" % [turn_in_post.get("name", "Unknown"), origin_x, origin_y]
+
+		# Hotzone requirements and bonus note
 		if quest.get("type", -1) == QuestDatabaseScript.QuestType.HOTZONE_KILL:
+			var min_monster_level = quest.get("min_monster_level", 1)
+			if min_monster_level > 1:
+				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
 			output += "    [color=#FF6600](1.5x-2.5x hotzone intensity bonus)[/color]\n"
 
 		if is_complete:
@@ -304,15 +323,37 @@ func format_available_quests(quests: Array, character: Character) -> String:
 
 		# Rewards preview
 		var rewards = quest.get("rewards", {})
+		var base_xp = rewards.get("xp", 0)
+		var base_gold = rewards.get("gold", 0)
+		var base_gems = rewards.get("gems", 0)
+
 		var reward_parts = []
-		if rewards.get("xp", 0) > 0:
-			reward_parts.append("%d XP" % rewards.xp)
-		if rewards.get("gold", 0) > 0:
-			reward_parts.append("%d Gold" % rewards.gold)
-		if rewards.get("gems", 0) > 0:
-			reward_parts.append("%d Gems" % rewards.gems)
+		if base_xp > 0:
+			reward_parts.append("%d XP" % base_xp)
+		if base_gold > 0:
+			reward_parts.append("%d Gold" % base_gold)
+		if base_gems > 0:
+			reward_parts.append("%d Gems" % base_gems)
 		if not reward_parts.is_empty():
-			output += "    [color=#00FF00]Rewards: %s[/color]\n" % ", ".join(reward_parts)
+			output += "    [color=#00FF00]Base Rewards: %s[/color]\n" % ", ".join(reward_parts)
+
+		# Show hotzone requirements and bonus potential for hotzone quests
+		if quest.get("type", -1) == QuestDatabaseScript.QuestType.HOTZONE_KILL:
+			var min_monster_level = quest.get("min_monster_level", 1)
+			if min_monster_level > 1:
+				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
+			var max_xp = int(base_xp * 2.5)
+			var max_gold = int(base_gold * 2.5)
+			var max_gems = int(base_gems * 2.5) if base_gems > 0 else 0
+			var bonus_parts = []
+			if max_xp > base_xp:
+				bonus_parts.append("up to %d XP" % max_xp)
+			if max_gold > base_gold:
+				bonus_parts.append("up to %d Gold" % max_gold)
+			if max_gems > base_gems:
+				bonus_parts.append("up to %d Gems" % max_gems)
+			if not bonus_parts.is_empty():
+				output += "    [color=#FF6600]Hotzone Bonus: %s[/color]\n" % ", ".join(bonus_parts)
 
 		output += "\n"
 		index += 1

@@ -36,44 +36,45 @@ const QUESTS = {
 	"haven_first_blood": {
 		"id": "haven_first_blood",
 		"name": "First Blood",
-		"description": "Kill 3 monsters to prove your worth as an adventurer.",
+		"description": "Kill 5 monsters to prove your worth as an adventurer.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
-		"target": 3,
-		"rewards": {"xp": 50, "gold": 25, "gems": 0},
+		"target": 5,
+		"rewards": {"xp": 75, "gold": 40, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
 	},
 	"haven_pest_control": {
 		"id": "haven_pest_control",
 		"name": "Pest Control",
-		"description": "Help keep the area safe by eliminating 10 monsters.",
+		"description": "Help keep the area safe by eliminating 15 monsters.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
-		"target": 10,
-		"rewards": {"xp": 150, "gold": 75, "gems": 0},
+		"target": 15,
+		"rewards": {"xp": 200, "gold": 100, "gems": 0},
 		"is_daily": false,
 		"prerequisite": "haven_first_blood"
 	},
 	"haven_stronger_foes": {
 		"id": "haven_stronger_foes",
 		"name": "Stronger Foes",
-		"description": "Prove your courage by defeating a monster of level 10 or higher.",
+		"description": "Prove your courage by defeating 3 monsters of level 10 or higher.",
 		"type": QuestType.KILL_LEVEL,
 		"trading_post": "haven",
 		"target": 10,
-		"rewards": {"xp": 200, "gold": 100, "gems": 0},
+		"kill_count": 3,
+		"rewards": {"xp": 300, "gold": 150, "gems": 0},
 		"is_daily": false,
 		"prerequisite": "haven_pest_control"
 	},
 	"haven_local_hero": {
 		"id": "haven_local_hero",
 		"name": "Local Hero",
-		"description": "Become a hero of Haven by slaying 25 monsters.",
+		"description": "Become a hero of Haven by slaying 40 monsters.",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "haven",
-		"target": 25,
-		"rewards": {"xp": 500, "gold": 250, "gems": 1},
+		"target": 40,
+		"rewards": {"xp": 750, "gold": 400, "gems": 1},
 		"is_daily": false,
 		"prerequisite": "haven_stronger_foes"
 	},
@@ -82,38 +83,41 @@ const QUESTS = {
 	"crossroads_danger_zone": {
 		"id": "crossroads_danger_zone",
 		"name": "Into the Danger Zone",
-		"description": "Kill 3 monsters in a hotzone within 50 tiles. The Royal Herald offers this bounty daily.",
+		"description": "Kill 5 monsters (level 5+) in a hotzone within 50 tiles. The Royal Herald offers this bounty daily.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 3,
+		"target": 5,
 		"max_distance": 50.0,
 		"min_intensity": 0.0,
-		"rewards": {"xp": 150, "gold": 100, "gems": 1},
+		"min_monster_level": 5,
+		"rewards": {"xp": 200, "gold": 125, "gems": 1},
 		"is_daily": true,
 		"prerequisite": ""
 	},
 	"crossroads_danger_seeker": {
 		"id": "crossroads_danger_seeker",
 		"name": "Danger Seeker",
-		"description": "Kill 5 monsters in hotzones within 100 tiles of Crossroads.",
+		"description": "Kill 8 monsters (level 15+) in hotzones within 100 tiles of Crossroads.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 5,
+		"target": 8,
 		"max_distance": 100.0,
 		"min_intensity": 0.0,
-		"rewards": {"xp": 300, "gold": 200, "gems": 1},
+		"min_monster_level": 15,
+		"rewards": {"xp": 400, "gold": 250, "gems": 1},
 		"is_daily": false,
 		"prerequisite": ""
 	},
 	"crossroads_risk_reward": {
 		"id": "crossroads_risk_reward",
 		"name": "Risk and Reward",
-		"description": "Kill 10 monsters in hotzones within 200 tiles. Greater risk, greater reward.",
+		"description": "Kill 15 monsters (level 30+) in hotzones within 200 tiles. Greater risk, greater reward.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
-		"target": 10,
+		"target": 15,
 		"max_distance": 200.0,
 		"min_intensity": 0.0,
+		"min_monster_level": 30,
 		"rewards": {"xp": 750, "gold": 500, "gems": 2},
 		"is_daily": false,
 		"prerequisite": "crossroads_danger_seeker"
@@ -121,12 +125,13 @@ const QUESTS = {
 	"crossroads_extreme": {
 		"id": "crossroads_extreme",
 		"name": "Extreme Challenge",
-		"description": "Kill 5 monsters in high-intensity hotzones (0.5+) within 300 tiles. Only for the brave.",
+		"description": "Kill 5 monsters (level 75+) in high-intensity hotzones (0.5+) within 300 tiles. Only for the brave.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "crossroads",
 		"target": 5,
 		"max_distance": 300.0,
 		"min_intensity": 0.5,
+		"min_monster_level": 75,
 		"rewards": {"xp": 1500, "gold": 1000, "gems": 5},
 		"is_daily": false,
 		"prerequisite": "crossroads_risk_reward"
@@ -473,12 +478,13 @@ const QUESTS = {
 	"frozen_extreme": {
 		"id": "frozen_extreme",
 		"name": "Frozen Extremity",
-		"description": "Survive 10 encounters in high-intensity hotzones within 100 tiles.",
+		"description": "Survive 10 encounters with monsters (level 150+) in high-intensity hotzones within 100 tiles.",
 		"type": QuestType.HOTZONE_KILL,
 		"trading_post": "frozen_reach",
 		"target": 10,
 		"max_distance": 100.0,
 		"min_intensity": 0.5,
+		"min_monster_level": 150,
 		"rewards": {"xp": 8000, "gold": 4000, "gems": 15},
 		"is_daily": false,
 		"prerequisite": ""
@@ -645,11 +651,12 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: int, post_distance: float) -> Dictionary:
 	"""Generate a single quest based on tier and trading post location."""
 
-	# Base values that scale with tier
-	var kill_count = 5 + (tier * 5)  # 10, 15, 20, 25...
+	# Base values that scale with tier - made harder
+	var kill_count = 10 + (tier * 8)  # 18, 26, 34, 42...
 	var min_level = int(post_distance * 0.5) + (tier * 25)  # Scales with distance and tier
 	var hotzone_distance = 50.0 + (tier * 50.0)  # 100, 150, 200...
-	var hotzone_kills = 3 + (tier * 2)  # 5, 7, 9...
+	var hotzone_kills = 5 + (tier * 3)  # 8, 11, 14...
+	var hotzone_min_monster_level = max(10, int(post_distance * 0.3) + (tier * 15))  # Min monster level for hotzone quests
 
 	# Rewards scale with tier
 	var base_xp = 200 * tier
@@ -676,7 +683,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		2:  # Hotzone quest
 			quest_type = QuestType.HOTZONE_KILL
 			quest_name = "Danger Zone Bounty %d" % tier
-			quest_desc = "Kill %d monsters in hotzones within %.0f tiles." % [hotzone_kills, hotzone_distance]
+			quest_desc = "Kill %d monsters (level %d+) in hotzones within %.0f tiles." % [hotzone_kills, hotzone_min_monster_level, hotzone_distance]
 			target = hotzone_kills
 		3:  # Boss hunt
 			quest_type = QuestType.BOSS_HUNT
@@ -701,6 +708,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 	if quest_type == QuestType.HOTZONE_KILL:
 		quest["max_distance"] = hotzone_distance
 		quest["min_intensity"] = 0.0 if tier < 3 else 0.3
+		quest["min_monster_level"] = hotzone_min_monster_level
 
 	return quest
 
