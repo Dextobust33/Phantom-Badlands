@@ -1336,10 +1336,10 @@ func _process(delta):
 
 				if move_dir > 0:
 					send_move(move_dir)
-					game_output.clear()
+					clear_game_output()
 					last_move_time = current_time
 				elif is_hunt:
-					game_output.clear()
+					clear_game_output()
 					send_to_server({"type": "hunt"})
 					last_move_time = current_time
 
@@ -6546,7 +6546,7 @@ func _on_move_button(direction: int):
 	var current_time = Time.get_ticks_msec() / 1000.0
 	if current_time - last_move_time >= MOVE_COOLDOWN:
 		send_move(direction)
-		game_output.clear()
+		clear_game_output()
 		last_move_time = current_time
 
 func _on_hunt_button():
@@ -6558,7 +6558,7 @@ func _on_hunt_button():
 
 	var current_time = Time.get_ticks_msec() / 1000.0
 	if current_time - last_move_time >= MOVE_COOLDOWN:
-		game_output.clear()
+		clear_game_output()
 		send_to_server({"type": "hunt"})
 		last_move_time = current_time
 
