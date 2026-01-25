@@ -873,6 +873,36 @@ func handle_move(peer_id: int, message: Dictionary):
 	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
 	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
 
+	# Tick poison on movement (counts as a round)
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg > 0:
+			character.current_hp -= poison_dmg
+			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "poison",
+				"message": poison_msg,
+				"damage": poison_dmg,
+				"turns_remaining": turns_left
+			})
+
+	# Tick active buffs on movement (for any non-combat buffs)
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "buff_expired",
+				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
+			})
+
 	# Send location and character updates
 	send_location_update(peer_id)
 	send_character_update(peer_id)
@@ -918,6 +948,39 @@ func handle_hunt(peer_id: int):
 		return
 
 	var character = characters[peer_id]
+
+	# Tick poison on hunt (counts as a round)
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg > 0:
+			character.current_hp -= poison_dmg
+			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "poison",
+				"message": poison_msg,
+				"damage": poison_dmg,
+				"turns_remaining": turns_left
+			})
+			send_character_update(peer_id)
+
+	# Tick active buffs on hunt (for any non-combat buffs)
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "buff_expired",
+				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
+			})
+		if not expired.is_empty():
+			send_character_update(peer_id)
 
 	# Check if in safe zone (can't hunt there)
 	var terrain = world_system.get_terrain_at(character.x, character.y)
@@ -1574,10 +1637,14 @@ func trigger_encounter(peer_id: int):
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
+		# Get monster's combat background color
+		var monster_name = result.combat_state.get("monster_name", "")
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
 		send_to_peer(peer_id, {
 			"type": "combat_start",
 			"message": result.message,
-			"combat_state": result.combat_state
+			"combat_state": result.combat_state,
+			"combat_bg_color": combat_bg_color
 		})
 		# Forward encounter to watchers
 		forward_to_watchers(peer_id, result.message)
@@ -1739,13 +1806,16 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message]
+		# Get monster's combat background color
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster.name)
 		# Send flock encounter message with clear_output flag
 		send_to_peer(peer_id, {
 			"type": "combat_start",
 			"message": flock_msg,
 			"combat_state": result.combat_state,
 			"is_flock": true,
-			"clear_output": true
+			"clear_output": true,
+			"combat_bg_color": combat_bg_color
 		})
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
@@ -2647,6 +2717,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Your inventory is full!"})
 		return
 
+	var bought_item = null
 	if use_gems:
 		var gem_price = int(ceil(price / 1000.0))
 		if character.gems < gem_price:
@@ -2658,6 +2729,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 
 		character.gems -= gem_price
 		item.erase("shop_price")  # Remove shop metadata
+		bought_item = item.duplicate()
 		character.add_item(item)
 
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
@@ -2675,6 +2747,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 
 		character.gold -= price
 		item.erase("shop_price")  # Remove shop metadata
+		bought_item = item.duplicate()
 		character.add_item(item)
 
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
@@ -2682,6 +2755,20 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#00FF00]You purchased [/color][color=%s]%s[/color][color=#00FF00] for %d gold![/color]" % [rarity_color, item.get("name", "Unknown"), price]
 		})
+
+	# Send buy success with item data for equip prompt
+	if bought_item != null:
+		var item_type = bought_item.get("type", "")
+		var is_equippable = item_type in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
+		if is_equippable:
+			# Find the item's index in inventory (it's the last item added)
+			var inv_index = character.inventory.size() - 1
+			send_to_peer(peer_id, {
+				"type": "merchant_buy_success",
+				"item": bought_item,
+				"inventory_index": inv_index,
+				"is_equippable": true
+			})
 
 	# Remove item from shop (one-time purchase)
 	shop_items.remove_at(item_index)

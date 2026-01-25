@@ -11,6 +11,50 @@ var server_ip: String = "localhost"
 var server_port: int = 9080
 var saved_connections: Array = []  # Array of {name, ip, port}
 const CONNECTION_CONFIG_PATH = "user://connection_settings.json"
+const KEYBIND_CONFIG_PATH = "user://keybinds.json"
+
+# Keybind configuration
+var default_keybinds = {
+	# Action bar (indices 0-9)
+	"action_0": KEY_SPACE,  # Primary action
+	"action_1": KEY_Q,
+	"action_2": KEY_W,
+	"action_3": KEY_E,
+	"action_4": KEY_R,
+	"action_5": KEY_1,
+	"action_6": KEY_2,
+	"action_7": KEY_3,
+	"action_8": KEY_4,
+	"action_9": KEY_5,
+	# Movement (8 directions + hunt)
+	"move_1": KEY_KP_1,      # SW
+	"move_2": KEY_KP_2,      # S
+	"move_3": KEY_KP_3,      # SE
+	"move_4": KEY_KP_4,      # W
+	"move_6": KEY_KP_6,      # E
+	"move_7": KEY_KP_7,      # NW
+	"move_8": KEY_KP_8,      # N
+	"move_9": KEY_KP_9,      # NE
+	"hunt": KEY_KP_5,        # Hunt
+	# Alternative movement (arrow keys)
+	"move_up": KEY_UP,
+	"move_down": KEY_DOWN,
+	"move_left": KEY_LEFT,
+	"move_right": KEY_RIGHT,
+	# Chat
+	"chat_focus": KEY_ENTER
+}
+var keybinds: Dictionary = {}  # Active keybinds (loaded from file or defaults)
+
+# Settings mode
+var settings_mode: bool = false
+var settings_submenu: String = ""  # "", "action_keys", "movement_keys"
+var rebinding_action: String = ""  # Key being rebound (empty = not rebinding)
+
+# Combat background color
+var default_game_output_stylebox: StyleBox = null
+var current_combat_bg_color: String = ""
+var pending_combat_bg_color: String = ""  # Color to apply after ASCII art clears
 
 # Connection panel (created dynamically)
 var connection_panel: Panel = null
@@ -34,6 +78,7 @@ var game_state = GameState.DISCONNECTED
 
 # UI References - Main game
 @onready var game_output = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/GameOutput
+@onready var game_output_container = $RootContainer/MainContainer/LeftPanel/GameOutputContainer
 @onready var buff_display_label = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/BuffDisplayLabel
 @onready var chat_output = $RootContainer/MainContainer/LeftPanel/ChatOutput
 @onready var map_display = $RootContainer/MainContainer/RightPanel/MapDisplay
@@ -147,6 +192,7 @@ var pending_variable_resource: String = ""  # Resource type for pending ability 
 # Action bar
 var action_buttons: Array[Button] = []
 var action_cost_labels: Array[Label] = []  # Labels showing resource cost below hotkey
+var action_hotkey_labels: Array[Label] = []  # Labels showing the hotkey name below button
 # Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4, 5
 var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
 var current_actions: Array[Dictionary] = []
@@ -175,6 +221,9 @@ var recent_xp_gain: int = 0    # XP gained in most recent combat
 var at_merchant: bool = false
 var merchant_data: Dictionary = {}
 var pending_merchant_action: String = ""
+var selected_shop_item: int = -1  # Currently selected shop item for inspection (-1 = none)
+var bought_item_pending_equip: Dictionary = {}  # Item just bought that can be equipped
+var bought_item_inventory_index: int = -1  # Index of the bought item in inventory
 
 # Trading Post mode
 var at_trading_post: bool = false
@@ -293,6 +342,21 @@ const TRICKSTER_ABILITY_SLOTS = [
 ]
 
 func _ready():
+	# Load keybind configuration
+	_load_keybinds()
+
+	# Save default game output stylebox for combat background changes
+	if game_output:
+		var existing_style = game_output.get_theme_stylebox("normal")
+		if existing_style:
+			default_game_output_stylebox = existing_style.duplicate()
+		else:
+			# Create a default black stylebox
+			default_game_output_stylebox = StyleBoxFlat.new()
+			default_game_output_stylebox.bg_color = Color("#000000")
+			default_game_output_stylebox.set_corner_radius_all(4)
+			default_game_output_stylebox.set_content_margin_all(8)
+
 	# Setup action bar
 	if action_bar:
 		setup_action_bar()
@@ -936,8 +1000,21 @@ func _process(_delta):
 	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
 		if Input.is_action_just_pressed("ui_cancel"):
+			# If rebinding a key, cancel the rebind
+			if rebinding_action != "":
+				rebinding_action = ""
+				game_output.clear()
+				if settings_submenu == "action_keys":
+					display_action_keybinds()
+				elif settings_submenu == "movement_keys":
+					display_movement_keybinds()
+				else:
+					display_settings_menu()
+			# If in settings mode, close it
+			elif settings_mode:
+				close_settings()
 			# If watching another player, escape stops watching
-			if watching_player != "":
+			elif watching_player != "":
 				stop_watching()
 			# If there's a pending watch request, escape denies it
 			elif watch_request_pending != "":
@@ -1032,10 +1109,13 @@ func _process(_delta):
 
 	# Action bar hotkeys (only when input NOT focused and playing)
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
-	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "sell", "gamble", "gamble_again"]
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled:
-		for i in range(action_hotkeys.size()):
-			if Input.is_physical_key_pressed(action_hotkeys[i]) and not Input.is_key_pressed(KEY_SHIFT):
+	# Skip if in settings mode (settings has its own input handling)
+	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode:
+		for i in range(10):  # 0-9 action slots
+			var action_key = "action_%d" % i
+			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
 					set_meta("hotkey_%d_pressed" % i, true)
 					trigger_action(i)
@@ -1051,31 +1131,43 @@ func _process(_delta):
 		else:
 			set_meta("enter_pressed", false)
 
-	# Numpad movement and hunt (only when playing and not in combat, flock, pending continue, inventory, or merchant)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, or settings)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
 				var move_dir = 0
 				var is_hunt = false
-				if Input.is_physical_key_pressed(KEY_KP_1):
-					move_dir = 1
-				elif Input.is_physical_key_pressed(KEY_KP_2):
-					move_dir = 2
-				elif Input.is_physical_key_pressed(KEY_KP_3):
-					move_dir = 3
-				elif Input.is_physical_key_pressed(KEY_KP_4):
-					move_dir = 4
-				elif Input.is_physical_key_pressed(KEY_KP_5):
-					is_hunt = true
-				elif Input.is_physical_key_pressed(KEY_KP_6):
-					move_dir = 6
-				elif Input.is_physical_key_pressed(KEY_KP_7):
-					move_dir = 7
-				elif Input.is_physical_key_pressed(KEY_KP_8):
-					move_dir = 8
-				elif Input.is_physical_key_pressed(KEY_KP_9):
-					move_dir = 9
+
+				# Check numpad/configured movement keys
+				for dir in [1, 2, 3, 4, 6, 7, 8, 9]:
+					var move_key = "move_%d" % dir
+					var key = keybinds.get(move_key, default_keybinds.get(move_key, 0))
+					if key != 0 and Input.is_physical_key_pressed(key):
+						move_dir = dir
+						break
+
+				# Check hunt key
+				if move_dir == 0:
+					var hunt_key = keybinds.get("hunt", default_keybinds.get("hunt", KEY_KP_5))
+					if Input.is_physical_key_pressed(hunt_key):
+						is_hunt = true
+
+				# Check arrow keys as alternative movement (4-direction)
+				if move_dir == 0 and not is_hunt:
+					var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
+					var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
+					var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
+					var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
+
+					if Input.is_physical_key_pressed(up_key):
+						move_dir = 8  # North
+					elif Input.is_physical_key_pressed(down_key):
+						move_dir = 2  # South
+					elif Input.is_physical_key_pressed(left_key):
+						move_dir = 4  # West
+					elif Input.is_physical_key_pressed(right_key):
+						move_dir = 6  # East
 
 				if move_dir > 0:
 					send_move(move_dir)
@@ -1115,6 +1207,94 @@ func _process(_delta):
 		if connected:
 			display_game("[color=#FF0000]Connection error![/color]")
 			reset_connection_state()
+
+func _input(event):
+	# Handle key input for rebinding mode
+	if rebinding_action != "" and event is InputEventKey and event.pressed:
+		# Capture the key for rebinding
+		var keycode = event.keycode
+		if keycode == KEY_ESCAPE:
+			# Cancel rebinding
+			rebinding_action = ""
+			game_output.clear()
+			if settings_submenu == "action_keys":
+				display_action_keybinds()
+			elif settings_submenu == "movement_keys":
+				display_movement_keybinds()
+			else:
+				display_settings_menu()
+		else:
+			complete_rebinding(keycode)
+		get_viewport().set_input_as_handled()
+		return
+
+	# Handle settings mode input
+	if settings_mode and not rebinding_action and event is InputEventKey and event.pressed and not event.echo:
+		var keycode = event.keycode
+		if settings_submenu == "":
+			# Main settings menu
+			match keycode:
+				KEY_Q:
+					settings_submenu = "action_keys"
+					game_output.clear()
+					display_action_keybinds()
+					update_action_bar()
+				KEY_W:
+					settings_submenu = "movement_keys"
+					game_output.clear()
+					display_movement_keybinds()
+					update_action_bar()
+				KEY_E:
+					reset_keybinds_to_defaults()
+				KEY_SPACE:
+					close_settings()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "action_keys":
+			# Action keybinds submenu - 0-9 to rebind actions
+			if keycode >= KEY_0 and keycode <= KEY_9:
+				var index = keycode - KEY_0
+				start_rebinding("action_%d" % index)
+			elif keycode == KEY_SPACE:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "movement_keys":
+			# Movement keybinds submenu
+			match keycode:
+				KEY_1:
+					start_rebinding("move_7")  # NW
+				KEY_2:
+					start_rebinding("move_8")  # N
+				KEY_3:
+					start_rebinding("move_9")  # NE
+				KEY_4:
+					start_rebinding("move_4")  # W
+				KEY_5:
+					start_rebinding("hunt")
+				KEY_6:
+					start_rebinding("move_6")  # E
+				KEY_7:
+					start_rebinding("move_1")  # SW
+				KEY_8:
+					start_rebinding("move_2")  # S
+				KEY_9:
+					start_rebinding("move_3")  # SE
+				KEY_Q:
+					start_rebinding("move_up")
+				KEY_W:
+					start_rebinding("move_down")
+				KEY_E:
+					start_rebinding("move_left")
+				KEY_R:
+					start_rebinding("move_right")
+				KEY_SPACE:
+					settings_submenu = ""
+					game_output.clear()
+					display_settings_menu()
+					update_action_bar()
+			get_viewport().set_input_as_handled()
 
 # ===== UI PANEL MANAGEMENT =====
 
@@ -1570,6 +1750,7 @@ func show_player_info_popup(data: Dictionary):
 func setup_action_bar():
 	action_buttons.clear()
 	action_cost_labels.clear()
+	action_hotkey_labels.clear()
 	for i in range(10):
 		var action_container = action_bar.get_node("Action%d" % (i + 1))
 		if action_container:
@@ -1579,6 +1760,13 @@ func setup_action_bar():
 				button.pressed.connect(_on_action_button_pressed.bind(i))
 				# Reduce font size for ability bar buttons
 				button.add_theme_font_size_override("font_size", 11)
+
+			# Get hotkey label reference
+			var hotkey_label = action_container.get_node_or_null("Hotkey")
+			if hotkey_label:
+				action_hotkey_labels.append(hotkey_label)
+			else:
+				action_hotkey_labels.append(null)
 
 			# Create cost label dynamically if it doesn't exist
 			var cost_label = action_container.get_node_or_null("Cost")
@@ -1591,10 +1779,67 @@ func setup_action_bar():
 				action_container.add_child(cost_label)
 			action_cost_labels.append(cost_label)
 
+	# Initialize hotkey labels with current keybinds
+	update_action_bar_hotkeys()
+
 func update_action_bar():
 	current_actions.clear()
 
-	if combat_item_mode:
+	if settings_mode:
+		# Settings mode - actions handled by _input(), show info only
+		if rebinding_action != "":
+			current_actions = [
+				{"label": "Press Key", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Cancel", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif settings_submenu == "action_keys":
+			current_actions = [
+				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Press 0-9", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "to rebind", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif settings_submenu == "movement_keys":
+			current_actions = [
+				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Up", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Down", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Left", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Right", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			current_actions = [
+				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Actions", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Movement", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Reset", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif combat_item_mode:
 		# Combat item selection mode - show cancel only, use number keys to select
 		current_actions = [
 			{"label": "Cancel", "action_type": "local", "action_data": "combat_item_cancel", "enabled": true},
@@ -1675,6 +1920,39 @@ func update_action_bar():
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "buy_inspect":
+			# Inspecting a shop item before purchase
+			var can_afford = false
+			if selected_shop_item >= 0 and selected_shop_item < shop_items.size():
+				var item = shop_items[selected_shop_item]
+				var price = item.get("shop_price", 0)
+				can_afford = character_data.get("gold", 0) >= price
+			current_actions = [
+				{"label": "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
+				{"label": "Back", "action_type": "local", "action_data": "cancel_shop_inspect", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_merchant_action == "buy_equip_prompt":
+			# After buying an equippable item - offer to equip now
+			current_actions = [
+				{"label": "Equip Now", "action_type": "local", "action_data": "equip_bought_item", "enabled": true},
+				{"label": "Keep", "action_type": "local", "action_data": "skip_equip_bought", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -1832,7 +2110,7 @@ func update_action_bar():
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
@@ -2486,6 +2764,8 @@ func execute_local_action(action: String):
 			display_character_status()
 		"help":
 			show_help()
+		"settings":
+			open_settings()
 		"leaderboard":
 			show_leaderboard_panel()
 		"logout_character":
@@ -2564,6 +2844,14 @@ func execute_local_action(action: String):
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
 			send_upgrade_slot("amulet")
+		"confirm_shop_buy":
+			confirm_shop_purchase()
+		"cancel_shop_inspect":
+			cancel_shop_inspection()
+		"equip_bought_item":
+			equip_bought_item()
+		"skip_equip_bought":
+			skip_equip_bought_item()
 		"combat_item":
 			show_combat_item_menu()
 		"combat_item_cancel":
@@ -2590,6 +2878,9 @@ func acknowledge_continue():
 	pending_continue = false
 	# Keep recent XP gain highlight visible until next XP gain
 	game_output.clear()
+	# Reset combat background when player continues (not during flock)
+	if not flock_pending:
+		reset_combat_background()
 	update_action_bar()
 
 func logout_character():
@@ -2614,6 +2905,7 @@ func leave_merchant():
 	at_merchant = false
 	merchant_data = {}
 	pending_merchant_action = ""
+	selected_shop_item = -1
 	update_action_bar()
 
 func prompt_merchant_action(action_type: String):
@@ -2816,6 +3108,48 @@ func handle_shop_inventory(message: Dictionary):
 		display_shop_inventory()
 	update_action_bar()
 
+func handle_merchant_buy_success(message: Dictionary):
+	"""Handle successful item purchase with equip option"""
+	var item = message.get("item", {})
+	var inv_index = message.get("inventory_index", -1)
+	var is_equippable = message.get("is_equippable", false)
+
+	if is_equippable and not item.is_empty():
+		bought_item_pending_equip = item
+		bought_item_inventory_index = inv_index
+		pending_merchant_action = "buy_equip_prompt"
+
+		game_output.clear()
+		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+		display_game("[color=#00FF00]Purchase successful![/color]")
+		display_game("")
+		display_game("[color=%s]%s[/color] added to inventory." % [rarity_color, item.get("name", "Unknown")])
+		display_game("")
+		display_game("[color=#FFD700]Would you like to equip it now?[/color]")
+		display_game("")
+		display_game("[color=#808080][Space] Equip Now  |  [Q] Keep in Inventory[/color]")
+		update_action_bar()
+
+func equip_bought_item():
+	"""Equip the item that was just bought"""
+	if bought_item_inventory_index < 0 or bought_item_pending_equip.is_empty():
+		return
+
+	send_to_server({"type": "equip", "index": bought_item_inventory_index})
+	bought_item_pending_equip = {}
+	bought_item_inventory_index = -1
+	pending_merchant_action = ""
+	update_action_bar()
+
+func skip_equip_bought_item():
+	"""Skip equipping and return to shop"""
+	bought_item_pending_equip = {}
+	bought_item_inventory_index = -1
+	pending_merchant_action = ""
+	game_output.clear()
+	show_merchant_menu()
+	update_action_bar()
+
 func handle_gamble_result(message: Dictionary):
 	"""Handle gambling result from server"""
 	var success = message.get("success", false)
@@ -2904,6 +3238,7 @@ func _calculate_drop_value(message: Dictionary) -> int:
 func cancel_merchant_action():
 	"""Cancel pending merchant action"""
 	pending_merchant_action = ""
+	selected_shop_item = -1  # Reset shop item selection
 	input_field.placeholder_text = ""  # Reset placeholder
 	display_game("[color=#808080]Action cancelled.[/color]")
 	show_merchant_menu()
@@ -2923,16 +3258,261 @@ func select_merchant_sell_item(index: int):
 	# Server will send character_update, then we refresh the sell list
 
 func select_merchant_buy_item(index: int):
-	"""Buy item at index from merchant shop"""
+	"""Select item at index from merchant shop for inspection"""
 	var shop_items = merchant_data.get("shop_items", [])
 
 	if index < 0 or index >= shop_items.size():
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		return
 
-	pending_merchant_action = ""
-	send_to_server({"type": "merchant_buy", "index": index})
+	selected_shop_item = index
+	pending_merchant_action = "buy_inspect"
+	game_output.clear()
+	display_shop_item_details(shop_items[index])
 	update_action_bar()
+
+func confirm_shop_purchase():
+	"""Confirm purchase of the selected shop item"""
+	if selected_shop_item < 0:
+		display_game("[color=#FF0000]No item selected.[/color]")
+		return
+
+	var shop_items = merchant_data.get("shop_items", [])
+	if selected_shop_item >= shop_items.size():
+		display_game("[color=#FF0000]Invalid item selection.[/color]")
+		selected_shop_item = -1
+		pending_merchant_action = "buy"
+		display_shop_inventory()
+		update_action_bar()
+		return
+
+	var item = shop_items[selected_shop_item]
+	var price = item.get("shop_price", 0)
+	var gold = character_data.get("gold", 0)
+
+	if gold < price:
+		display_game("[color=#FF0000]You don't have enough gold![/color]")
+		return
+
+	send_to_server({"type": "merchant_buy", "index": selected_shop_item})
+	selected_shop_item = -1
+	pending_merchant_action = ""
+	update_action_bar()
+
+func cancel_shop_inspection():
+	"""Cancel shop item inspection and return to shop list"""
+	selected_shop_item = -1
+	pending_merchant_action = "buy"
+	game_output.clear()
+	display_shop_inventory()
+	update_action_bar()
+
+func display_shop_item_details(item: Dictionary):
+	"""Display detailed stats for a shop item"""
+	var name = item.get("name", "Unknown Item")
+	var item_type = item.get("type", "unknown")
+	var rarity = item.get("rarity", "common")
+	var level = item.get("level", 1)
+	var price = item.get("shop_price", 0)
+	var gem_price = int(ceil(price / 1000.0))
+	var gold = character_data.get("gold", 0)
+	var rarity_color = _get_item_rarity_color(rarity)
+
+	display_game("")
+	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
+	display_game("")
+	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
+	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
+	display_game("[color=#00FFFF]Level:[/color] %d" % level)
+	display_game("[color=#00FFFF]Price:[/color] %d gold (%d gems)" % [price, gem_price])
+	display_game("")
+
+	# Display all stats
+	var stats_shown = false
+	if item.get("attack", 0) > 0:
+		display_game("[color=#FF6666]+%d Attack[/color]" % item.attack)
+		stats_shown = true
+	if item.get("defense", 0) > 0:
+		display_game("[color=#66FFFF]+%d Defense[/color]" % item.defense)
+		stats_shown = true
+	if item.get("attack_bonus", 0) > 0:
+		display_game("[color=#FF6666]+%d Attack Bonus[/color]" % item.attack_bonus)
+		stats_shown = true
+	if item.get("defense_bonus", 0) > 0:
+		display_game("[color=#66FFFF]+%d Defense Bonus[/color]" % item.defense_bonus)
+		stats_shown = true
+	if item.get("hp_bonus", 0) > 0:
+		display_game("[color=#00FF00]+%d Max HP[/color]" % item.hp_bonus)
+		stats_shown = true
+	if item.get("str_bonus", 0) > 0:
+		display_game("+%d Strength" % item.str_bonus)
+		stats_shown = true
+	if item.get("con_bonus", 0) > 0:
+		display_game("+%d Constitution" % item.con_bonus)
+		stats_shown = true
+	if item.get("dex_bonus", 0) > 0:
+		display_game("+%d Dexterity" % item.dex_bonus)
+		stats_shown = true
+	if item.get("int_bonus", 0) > 0:
+		display_game("+%d Intelligence" % item.int_bonus)
+		stats_shown = true
+	if item.get("wis_bonus", 0) > 0:
+		display_game("+%d Wisdom" % item.wis_bonus)
+		stats_shown = true
+	if item.get("wits_bonus", 0) > 0:
+		display_game("+%d Wits" % item.wits_bonus)
+		stats_shown = true
+
+	if not stats_shown:
+		display_game("[color=#808080](No stat bonuses)[/color]")
+
+	display_game("")
+
+	# Show comparison with equipped item
+	var slot = _get_slot_for_item_type(item_type)
+	if slot != "":
+		var equipped = character_data.get("equipped", {})
+		var equipped_item = equipped.get(slot)
+		if equipped_item != null and equipped_item is Dictionary:
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_item.get("name", "item"))
+			_display_item_comparison(item, equipped_item)
+		else:
+			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
+	display_game("")
+
+	# Show affordability
+	if gold >= price:
+		display_game("[color=#00FF00]You can afford this item.[/color]")
+	else:
+		display_game("[color=#FF0000]You need %d more gold![/color]" % (price - gold))
+
+	display_game("")
+	display_game("[color=#808080][Space] Buy  |  [Q] Back to list[/color]")
+
+func _compute_item_bonuses(item: Dictionary) -> Dictionary:
+	"""Compute the actual bonuses an item provides (mirrors character.gd logic)"""
+	var bonuses = {
+		"attack": 0,
+		"defense": 0,
+		"strength": 0,
+		"constitution": 0,
+		"dexterity": 0,
+		"intelligence": 0,
+		"wisdom": 0,
+		"wits": 0,
+		"max_hp": 0,
+		"max_mana": 0,
+		"speed": 0
+	}
+
+	var item_level = item.get("level", 1)
+	var item_type = item.get("type", "")
+	var rarity_mult = _get_rarity_multiplier_for_status(item.get("rarity", "common"))
+
+	# Base bonus scales with item level and rarity
+	var base_bonus = int(item_level * rarity_mult)
+
+	# Apply bonuses based on item type (mirrors character.gd)
+	if "weapon" in item_type:
+		bonuses.attack += base_bonus * 2
+		bonuses.strength += int(base_bonus * 0.3)
+	elif "armor" in item_type:
+		bonuses.defense += base_bonus * 2
+		bonuses.constitution += int(base_bonus * 0.3)
+		bonuses.max_hp += base_bonus * 3
+	elif "helm" in item_type:
+		bonuses.defense += base_bonus
+		bonuses.wisdom += int(base_bonus * 0.2)
+	elif "shield" in item_type:
+		bonuses.defense += int(base_bonus * 1.5)
+		bonuses.constitution += int(base_bonus * 0.2)
+	elif "ring" in item_type:
+		bonuses.attack += int(base_bonus * 0.5)
+		bonuses.dexterity += int(base_bonus * 0.3)
+		bonuses.intelligence += int(base_bonus * 0.2)
+	elif "amulet" in item_type:
+		bonuses.max_mana += base_bonus * 2
+		bonuses.wisdom += int(base_bonus * 0.3)
+		bonuses.wits += int(base_bonus * 0.2)
+	elif "boots" in item_type:
+		bonuses.speed += base_bonus
+		bonuses.dexterity += int(base_bonus * 0.3)
+		bonuses.defense += int(base_bonus * 0.5)
+
+	# Apply affix bonuses
+	var affixes = item.get("affixes", {})
+	if affixes.has("hp_bonus"):
+		bonuses.max_hp += affixes.hp_bonus
+	if affixes.has("attack_bonus"):
+		bonuses.attack += affixes.attack_bonus
+	if affixes.has("defense_bonus"):
+		bonuses.defense += affixes.defense_bonus
+	if affixes.has("str_bonus"):
+		bonuses.strength += affixes.str_bonus
+	if affixes.has("con_bonus"):
+		bonuses.constitution += affixes.con_bonus
+	if affixes.has("dex_bonus"):
+		bonuses.dexterity += affixes.dex_bonus
+	if affixes.has("int_bonus"):
+		bonuses.intelligence += affixes.int_bonus
+	if affixes.has("wis_bonus"):
+		bonuses.wisdom += affixes.wis_bonus
+	if affixes.has("wits_bonus"):
+		bonuses.wits += affixes.wits_bonus
+
+	return bonuses
+
+func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
+	"""Display stat comparison between two items using computed bonuses"""
+	var new_bonuses = _compute_item_bonuses(new_item)
+	var old_bonuses = _compute_item_bonuses(old_item)
+	var comparisons = []
+
+	# Compare all stats
+	var stat_labels = {
+		"attack": "ATK",
+		"defense": "DEF",
+		"max_hp": "HP",
+		"max_mana": "Mana",
+		"strength": "STR",
+		"constitution": "CON",
+		"dexterity": "DEX",
+		"intelligence": "INT",
+		"wisdom": "WIS",
+		"wits": "WIT",
+		"speed": "SPD"
+	}
+
+	for stat in stat_labels.keys():
+		var new_val = new_bonuses.get(stat, 0)
+		var old_val = old_bonuses.get(stat, 0)
+		if new_val != old_val:
+			var diff = new_val - old_val
+			var color = "#00FF00" if diff > 0 else "#FF6666"
+			comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, stat_labels[stat]])
+
+	# Compare level
+	var new_lvl = new_item.get("level", 1)
+	var old_lvl = old_item.get("level", 1)
+	if new_lvl != old_lvl:
+		var diff = new_lvl - old_lvl
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d Level[/color]" % [color, diff])
+
+	if comparisons.size() > 0:
+		display_game("  " + " | ".join(comparisons))
+	else:
+		display_game("  [color=#808080](No stat difference)[/color]")
+
+	# Compare effects using computed effect descriptions
+	var new_type = new_item.get("type", "")
+	var old_type = old_item.get("type", "")
+	var new_effect = _get_item_effect_description(new_type, new_item.get("level", 1), new_item.get("rarity", "common"))
+	var old_effect = _get_item_effect_description(old_type, old_item.get("level", 1), old_item.get("rarity", "common"))
+
+	if new_effect != old_effect:
+		display_game("  [color=#FF6666]Current:[/color] %s" % old_effect)
+		display_game("  [color=#00FF00]New:[/color] %s" % new_effect)
 
 func send_upgrade_slot(slot: String):
 	"""Send upgrade request for a specific equipment slot"""
@@ -3509,6 +4089,40 @@ func _get_item_rarity_color(rarity: String) -> String:
 		"legendary": return "#FF8000"
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
+
+# ===== COMBAT BACKGROUND FUNCTIONS =====
+
+func set_combat_background(hex_color: String):
+	"""Set the GameOutput background to a combat-themed color"""
+	if not game_output or hex_color == "":
+		return
+
+	current_combat_bg_color = hex_color
+
+	# Parse hex color and create StyleBox for RichTextLabel's "normal" style
+	var color = Color(hex_color)
+	var stylebox = StyleBoxFlat.new()
+	stylebox.bg_color = color
+	stylebox.set_corner_radius_all(4)
+	stylebox.set_content_margin_all(8)  # Add some padding
+	game_output.add_theme_stylebox_override("normal", stylebox)
+
+func reset_combat_background():
+	"""Reset the GameOutput background to its default color"""
+	if not game_output:
+		return
+
+	current_combat_bg_color = ""
+
+	if default_game_output_stylebox:
+		game_output.add_theme_stylebox_override("normal", default_game_output_stylebox)
+	else:
+		# Fallback to black if no default saved
+		var stylebox = StyleBoxFlat.new()
+		stylebox.bg_color = Color("#000000")
+		stylebox.set_corner_radius_all(4)
+		stylebox.set_content_margin_all(8)
+		game_output.add_theme_stylebox_override("normal", stylebox)
 
 # ===== HP BAR FUNCTIONS =====
 
@@ -4111,6 +4725,15 @@ func handle_server_message(message: Dictionary):
 			if char_select_status and char_select_panel.visible:
 				char_select_status.text = "[color=#FF0000]%s[/color]" % error_msg
 
+		"status_effect":
+			# Handle status effect messages (poison tick on movement, buff expiration, etc.)
+			var effect_msg = message.get("message", "")
+			if effect_msg != "":
+				display_game(effect_msg)
+			# Update HP bar since poison may have dealt damage
+			if message.get("effect", "") == "poison":
+				update_player_hp_bar()
+
 		"combat_start":
 			in_combat = true
 			flock_pending = false
@@ -4126,6 +4749,11 @@ func handle_server_message(message: Dictionary):
 
 			# Always clear game output for fresh combat display
 			game_output.clear()
+
+			# Apply combat background color immediately
+			var combat_bg_color = message.get("combat_bg_color", "")
+			if combat_bg_color != "":
+				set_combat_background(combat_bg_color)
 
 			display_game(message.get("message", ""))
 
@@ -4252,6 +4880,8 @@ func handle_server_message(message: Dictionary):
 			current_enemy_level = 0
 			damage_dealt_to_current_enemy = 0
 
+			# Note: Background reset is handled in acknowledge_continue() when player presses Space
+
 		"merchant_start":
 			at_merchant = true
 			merchant_data = message.get("merchant", {})
@@ -4270,6 +4900,9 @@ func handle_server_message(message: Dictionary):
 
 		"shop_inventory":
 			handle_shop_inventory(message)
+
+		"merchant_buy_success":
+			handle_merchant_buy_success(message)
 
 		"gamble_result":
 			handle_gamble_result(message)
@@ -4503,6 +5136,19 @@ func display_item_details(item: Dictionary, source: String):
 	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
 	display_game("")
 	display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
+
+	# Show comparison with equipped item for equipment types
+	var slot = _get_slot_for_item_type(item_type)
+	if slot != "":
+		display_game("")
+		var equipped = character_data.get("equipped", {})
+		var equipped_item = equipped.get(slot)
+		if equipped_item != null and equipped_item is Dictionary:
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_item.get("name", "item"))
+			_display_item_comparison(item, equipped_item)
+		else:
+			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
+
 	display_game("")
 
 func _get_item_type_description(item_type: String) -> String:
@@ -4680,6 +5326,11 @@ func process_command(text: String):
 				display_game("[color=#808080]Watch another player's game output (requires their approval).[/color]")
 		"unwatch":
 			stop_watching()
+		"settings", "keybinds", "keys":
+			if has_character:
+				open_settings()
+			else:
+				display_game("You don't have a character yet")
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -4722,6 +5373,219 @@ func _save_connection_settings():
 	if file:
 		file.store_string(JSON.stringify(data, "\t"))
 		file.close()
+
+# ===== KEYBIND CONFIGURATION =====
+
+func _load_keybinds():
+	"""Load keybind configuration from config file"""
+	keybinds = default_keybinds.duplicate()  # Start with defaults
+	if FileAccess.file_exists(KEYBIND_CONFIG_PATH):
+		var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.READ)
+		if file:
+			var json_str = file.get_as_text()
+			file.close()
+			var json = JSON.new()
+			var result = json.parse(json_str)
+			if result == OK:
+				var data = json.data
+				# Merge loaded keybinds over defaults
+				for key in data:
+					if default_keybinds.has(key):
+						keybinds[key] = int(data[key])
+
+func _save_keybinds():
+	"""Save keybind configuration to config file"""
+	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(keybinds, "\t"))
+		file.close()
+	# Update action bar hotkey labels
+	update_action_bar_hotkeys()
+
+func update_action_bar_hotkeys():
+	"""Update the hotkey labels on action bar buttons to reflect current keybinds"""
+	if action_hotkey_labels.is_empty():
+		return
+
+	for i in range(min(action_hotkey_labels.size(), 10)):
+		var label = action_hotkey_labels[i]
+		if label != null:
+			var action_key = "action_%d" % i
+			var keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+			label.text = get_key_name(keycode)
+
+func get_key_name(keycode: int) -> String:
+	"""Convert keycode to human-readable name"""
+	match keycode:
+		KEY_SPACE: return "Space"
+		KEY_ENTER: return "Enter"
+		KEY_KP_ENTER: return "NumEnter"
+		KEY_KP_0: return "Num0"
+		KEY_KP_1: return "Num1"
+		KEY_KP_2: return "Num2"
+		KEY_KP_3: return "Num3"
+		KEY_KP_4: return "Num4"
+		KEY_KP_5: return "Num5"
+		KEY_KP_6: return "Num6"
+		KEY_KP_7: return "Num7"
+		KEY_KP_8: return "Num8"
+		KEY_KP_9: return "Num9"
+		KEY_UP: return "Up"
+		KEY_DOWN: return "Down"
+		KEY_LEFT: return "Left"
+		KEY_RIGHT: return "Right"
+		KEY_TAB: return "Tab"
+		KEY_BACKSPACE: return "Backspace"
+		KEY_1: return "1"
+		KEY_2: return "2"
+		KEY_3: return "3"
+		KEY_4: return "4"
+		KEY_5: return "5"
+		KEY_6: return "6"
+		KEY_7: return "7"
+		KEY_8: return "8"
+		KEY_9: return "9"
+		KEY_0: return "0"
+		_: return OS.get_keycode_string(keycode)
+
+func is_reserved_key(keycode: int) -> bool:
+	"""Check if a key is reserved and cannot be rebound"""
+	return keycode in [KEY_ESCAPE, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_TAB]
+
+func get_keybind_conflicts(keycode: int, exclude_action: String) -> Array:
+	"""Find any other actions bound to the same key"""
+	var conflicts = []
+	for action in keybinds:
+		if action != exclude_action and keybinds[action] == keycode:
+			conflicts.append(action)
+	return conflicts
+
+func open_settings():
+	"""Open the settings menu"""
+	settings_mode = true
+	settings_submenu = ""
+	rebinding_action = ""
+	game_output.clear()
+	display_settings_menu()
+	update_action_bar()
+
+func close_settings():
+	"""Close settings and return to normal mode"""
+	settings_mode = false
+	settings_submenu = ""
+	rebinding_action = ""
+	game_output.clear()
+	update_action_bar()
+
+func display_settings_menu():
+	"""Display the main settings menu"""
+	display_game("[color=#FFD700]===== SETTINGS =====[/color]")
+	display_game("")
+	display_game("[Q] Configure Action Bar Keys")
+	display_game("[W] Configure Movement Keys")
+	display_game("[E] Reset All to Defaults")
+	display_game("[Space] Back to Game")
+	display_game("")
+	display_game("[color=#808080]Current Keybinds Summary:[/color]")
+	display_game("  Primary Action: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("action_0", KEY_SPACE)))
+	display_game("  Move North: [color=#00FFFF]%s[/color] / [color=#00FFFF]%s[/color]" % [get_key_name(keybinds.get("move_8", KEY_KP_8)), get_key_name(keybinds.get("move_up", KEY_UP))])
+	display_game("  Hunt: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("hunt", KEY_KP_5)))
+
+func display_action_keybinds():
+	"""Display action bar keybinds for editing"""
+	display_game("[color=#FFD700]===== ACTION BAR KEYBINDS =====[/color]")
+	display_game("")
+	var action_names = ["Primary (Space)", "Action 1 (Q)", "Action 2 (W)", "Action 3 (E)", "Action 4 (R)", "Action 5 (1)", "Action 6 (2)", "Action 7 (3)", "Action 8 (4)", "Action 9 (5)"]
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var current_key = keybinds.get(action_key, default_keybinds[action_key])
+		display_game("[%d] %s: [color=#00FFFF]%s[/color]" % [i, action_names[i], get_key_name(current_key)])
+	display_game("")
+	display_game("[color=#808080]Press 0-9 to rebind, or Space to go back[/color]")
+
+func display_movement_keybinds():
+	"""Display movement keybinds for editing"""
+	display_game("[color=#FFD700]===== MOVEMENT KEYBINDS =====[/color]")
+	display_game("")
+	display_game("[color=#E6CC80]Numpad Movement:[/color]")
+	display_game("[1] Northwest (7): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_7", KEY_KP_7)))
+	display_game("[2] North (8): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_8", KEY_KP_8)))
+	display_game("[3] Northeast (9): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_9", KEY_KP_9)))
+	display_game("[4] West (4): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_4", KEY_KP_4)))
+	display_game("[5] Hunt (5): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("hunt", KEY_KP_5)))
+	display_game("[6] East (6): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_6", KEY_KP_6)))
+	display_game("[7] Southwest (1): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_1", KEY_KP_1)))
+	display_game("[8] South (2): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_2", KEY_KP_2)))
+	display_game("[9] Southeast (3): [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_3", KEY_KP_3)))
+	display_game("")
+	display_game("[color=#E6CC80]Arrow Key Movement:[/color]")
+	display_game("[Q] Up: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_up", KEY_UP)))
+	display_game("[W] Down: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_down", KEY_DOWN)))
+	display_game("[E] Left: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_left", KEY_LEFT)))
+	display_game("[R] Right: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("move_right", KEY_RIGHT)))
+	display_game("")
+	display_game("[color=#808080]Press a key to rebind, or Space to go back[/color]")
+
+func start_rebinding(action: String):
+	"""Start the rebinding process for an action"""
+	rebinding_action = action
+	game_output.clear()
+	display_game("[color=#FFD700]===== REBINDING =====[/color]")
+	display_game("")
+	var action_display = action.replace("_", " ").capitalize()
+	display_game("Rebinding: [color=#00FFFF]%s[/color]" % action_display)
+	display_game("Current key: [color=#FFD700]%s[/color]" % get_key_name(keybinds.get(action, 0)))
+	display_game("")
+	display_game("[color=#00FF00]Press the new key...[/color]")
+	display_game("[color=#808080](Press Escape to cancel)[/color]")
+
+func complete_rebinding(new_keycode: int):
+	"""Complete the rebinding with the new key"""
+	if rebinding_action.is_empty():
+		return
+
+	# Check for reserved keys
+	if is_reserved_key(new_keycode):
+		display_game("[color=#FF0000]That key is reserved and cannot be used.[/color]")
+		await get_tree().create_timer(1.0).timeout
+		start_rebinding(rebinding_action)
+		return
+
+	# Check for conflicts
+	var conflicts = get_keybind_conflicts(new_keycode, rebinding_action)
+	if conflicts.size() > 0:
+		display_game("[color=#FFA500]Warning: This key is also bound to: %s[/color]" % ", ".join(conflicts))
+		display_game("[color=#808080]The other binding will be cleared.[/color]")
+		# Clear conflicting bindings
+		for conflict in conflicts:
+			keybinds[conflict] = 0  # Unbind
+
+	# Set the new binding
+	keybinds[rebinding_action] = new_keycode
+	_save_keybinds()
+
+	display_game("[color=#00FF00]Bound %s to %s[/color]" % [rebinding_action.replace("_", " ").capitalize(), get_key_name(new_keycode)])
+
+	await get_tree().create_timer(0.5).timeout
+
+	# Return to appropriate submenu
+	rebinding_action = ""
+	game_output.clear()
+	if settings_submenu == "action_keys":
+		display_action_keybinds()
+	elif settings_submenu == "movement_keys":
+		display_movement_keybinds()
+	else:
+		display_settings_menu()
+
+func reset_keybinds_to_defaults():
+	"""Reset all keybinds to default values"""
+	keybinds = default_keybinds.duplicate()
+	_save_keybinds()
+	game_output.clear()
+	display_game("[color=#00FF00]All keybinds reset to defaults![/color]")
+	await get_tree().create_timer(1.0).timeout
+	display_settings_menu()
 
 func _create_connection_panel():
 	"""Create the connection panel UI dynamically"""
@@ -5436,6 +6300,11 @@ Active effects shown in bottom-right overlay:
   • [color=#FF6666][S+15:5][/color] = Strength +15, 5 rounds
   • [color=#6666FF][D+10:3B][/color] = Defense +10, 3 battles
   • [color=#FF00FF][P5:2][/color] = Poison 5 dmg, 2 rounds
+
+[color=#FF00FF]Poison[/color] ticks on [color=#FFFF00]movement and hunting[/color]:
+  • Each step or hunt deals poison damage
+  • Poison cannot kill you (stops at 1 HP)
+  • Elves take 50% reduced poison damage
 
 View details: [Space] Status in movement mode
 
