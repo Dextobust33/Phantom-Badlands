@@ -1929,6 +1929,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_hp_percent": int((float(monster.current_hp) / monster.max_hp) * 100),
 		"monster_name_color": name_color,  # Color based on class affinity
 		"monster_affinity": affinity,
+		"monster_abilities": monster.get("abilities", []),  # For client-side trait display
 		"can_act": combat.player_can_act,
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,
@@ -3219,12 +3220,19 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 	# Wrap ASCII art with smaller font size
 	bordered_art = "[font_size=%d]%s[/font_size]" % [ASCII_ART_FONT_SIZE, bordered_art]
 
+	# Get encounter text without art
+	var encounter_text = generate_encounter_text(monster)
+
+	return bordered_art + "\n" + encounter_text
+
+func generate_encounter_text(monster: Dictionary) -> String:
+	"""Generate encounter text WITHOUT ASCII art (for client-side art rendering)"""
 	# Get class affinity color
 	var affinity = monster.get("class_affinity", 0)  # 0 = NEUTRAL
 	var name_color = _get_affinity_color(affinity)
 
 	# Build encounter message with colored monster name (color indicates class affinity)
-	var msg = bordered_art + "\n[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
+	var msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
 
 	# Show notable abilities
 	var abilities = monster.get("abilities", [])

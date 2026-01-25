@@ -2,6 +2,13 @@
 # Client with account system, character selection, and permadeath handling
 extends Control
 
+# Monster art helper - loaded lazily to avoid initialization issues
+var _monster_art_script = null
+func _get_monster_art():
+	if _monster_art_script == null:
+		_monster_art_script = load("res://client/monster_art.gd")
+	return _monster_art_script
+
 var connection = StreamPeerTCP.new()
 var connected = false
 var buffer = ""
@@ -1275,8 +1282,10 @@ func _process(delta):
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
 	# Skip if in settings mode (settings has its own input handling)
 	# Skip if in combat_item_mode (to prevent item selection from also triggering combat abilities)
+	# Skip if in quest_log_mode (to prevent abandon keys from also triggering action bar)
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode:
+	var quest_log_blocks_hotkeys = quest_log_mode and pending_continue
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not quest_log_blocks_hotkeys:
 		for i in range(10):  # 0-9 action slots
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -2111,10 +2120,10 @@ func update_action_bar():
 			var total_pages = max(1, ceili(float(inventory.size()) / INVENTORY_PAGE_SIZE))
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
-				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_items", "enabled": has_items},
 				{"label": "Prev", "action_type": "local", "action_data": "sell_prev_page", "enabled": sell_page > 0},
 				{"label": "Next", "action_type": "local", "action_data": "sell_next_page", "enabled": sell_page < total_pages - 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_items", "enabled": has_items},
 				{"label": "1-9 Sell", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2215,10 +2224,10 @@ func update_action_bar():
 			# Waiting for gem amount input
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_gems", "enabled": player_gems > 0},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2259,12 +2268,16 @@ func update_action_bar():
 			var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
 			var has_prev = inventory_page > 0
 			var has_next = inventory_page < total_pages - 1
+			# Show Equipped option in inspect modes
+			var show_equipped = pending_inventory_action in ["inspect_item", "inspect_equipped_item"]
+			var equipped = character_data.get("equipped", {})
+			var has_equipped = show_equipped and _count_equipped_items(equipped) > 0
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
 				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
 				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Equipped", "action_type": "local", "action_data": "inspect_equipped_switch", "enabled": has_equipped},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3071,6 +3084,9 @@ func execute_local_action(action: String):
 			prompt_inventory_action("unequip")
 		"inventory_inspect_equipped":
 			prompt_inventory_action("inspect_equipped")
+		"inspect_equipped_switch":
+			# Switch from backpack inspect to equipped items inspect
+			prompt_inventory_action("inspect_equipped")
 		"inventory_discard":
 			prompt_inventory_action("discard")
 		"inventory_cancel":
@@ -3367,30 +3383,31 @@ func display_shop_inventory():
 				else:
 					compare_text = " [color=#00FF00]NEW[/color]"
 
-			# Build stats string
+			# Build stats string using computed bonuses
 			var stats_parts = []
-			if item.get("attack", 0) > 0:
-				stats_parts.append("[color=#FF6666]ATK %d[/color]" % item.attack)
-			if item.get("defense", 0) > 0:
-				stats_parts.append("[color=#66FFFF]DEF %d[/color]" % item.defense)
-			if item.get("attack_bonus", 0) > 0:
-				stats_parts.append("[color=#FF6666]+%d ATK[/color]" % item.attack_bonus)
-			if item.get("defense_bonus", 0) > 0:
-				stats_parts.append("[color=#66FFFF]+%d DEF[/color]" % item.defense_bonus)
-			if item.get("hp_bonus", 0) > 0:
-				stats_parts.append("[color=#00FF00]+%d HP[/color]" % item.hp_bonus)
-			if item.get("str_bonus", 0) > 0:
-				stats_parts.append("+%d STR" % item.str_bonus)
-			if item.get("con_bonus", 0) > 0:
-				stats_parts.append("+%d CON" % item.con_bonus)
-			if item.get("dex_bonus", 0) > 0:
-				stats_parts.append("+%d DEX" % item.dex_bonus)
-			if item.get("int_bonus", 0) > 0:
-				stats_parts.append("+%d INT" % item.int_bonus)
-			if item.get("wis_bonus", 0) > 0:
-				stats_parts.append("+%d WIS" % item.wis_bonus)
-			if item.get("wits_bonus", 0) > 0:
-				stats_parts.append("+%d WIT" % item.wits_bonus)
+			var bonuses = _compute_item_bonuses(item)
+			if bonuses.get("attack", 0) > 0:
+				stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+			if bonuses.get("defense", 0) > 0:
+				stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+			if bonuses.get("max_hp", 0) > 0:
+				stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
+			if bonuses.get("max_mana", 0) > 0:
+				stats_parts.append("[color=#9999FF]+%d Mana[/color]" % bonuses.max_mana)
+			if bonuses.get("strength", 0) > 0:
+				stats_parts.append("+%d STR" % bonuses.strength)
+			if bonuses.get("constitution", 0) > 0:
+				stats_parts.append("+%d CON" % bonuses.constitution)
+			if bonuses.get("dexterity", 0) > 0:
+				stats_parts.append("+%d DEX" % bonuses.dexterity)
+			if bonuses.get("intelligence", 0) > 0:
+				stats_parts.append("+%d INT" % bonuses.intelligence)
+			if bonuses.get("wisdom", 0) > 0:
+				stats_parts.append("+%d WIS" % bonuses.wisdom)
+			if bonuses.get("wits", 0) > 0:
+				stats_parts.append("+%d WIT" % bonuses.wits)
+			if bonuses.get("speed", 0) > 0:
+				stats_parts.append("[color=#FFFF00]+%d SPD[/color]" % bonuses.speed)
 
 			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
 
@@ -3414,18 +3431,8 @@ func handle_shop_inventory(message: Dictionary):
 				"level": item.get("level", 1),
 				"rarity": item.get("rarity", "common"),
 				"shop_price": item.get("price", 100),
-				# Stats for inspection
-				"attack": item.get("attack", 0),
-				"defense": item.get("defense", 0),
-				"attack_bonus": item.get("attack_bonus", 0),
-				"defense_bonus": item.get("defense_bonus", 0),
-				"hp_bonus": item.get("hp_bonus", 0),
-				"str_bonus": item.get("str_bonus", 0),
-				"con_bonus": item.get("con_bonus", 0),
-				"dex_bonus": item.get("dex_bonus", 0),
-				"int_bonus": item.get("int_bonus", 0),
-				"wis_bonus": item.get("wis_bonus", 0),
-				"wits_bonus": item.get("wits_bonus", 0)
+				# Store affixes for client-side stat computation
+				"affixes": item.get("affixes", {})
 			})
 		merchant_data["shop_items"] = shop_items
 
@@ -3661,42 +3668,8 @@ func display_shop_item_details(item: Dictionary):
 	display_game("[color=#00FFFF]Price:[/color] %d gold (%d gems)" % [price, gem_price])
 	display_game("")
 
-	# Display all stats
-	var stats_shown = false
-	if item.get("attack", 0) > 0:
-		display_game("[color=#FF6666]+%d Attack[/color]" % item.attack)
-		stats_shown = true
-	if item.get("defense", 0) > 0:
-		display_game("[color=#66FFFF]+%d Defense[/color]" % item.defense)
-		stats_shown = true
-	if item.get("attack_bonus", 0) > 0:
-		display_game("[color=#FF6666]+%d Attack Bonus[/color]" % item.attack_bonus)
-		stats_shown = true
-	if item.get("defense_bonus", 0) > 0:
-		display_game("[color=#66FFFF]+%d Defense Bonus[/color]" % item.defense_bonus)
-		stats_shown = true
-	if item.get("hp_bonus", 0) > 0:
-		display_game("[color=#00FF00]+%d Max HP[/color]" % item.hp_bonus)
-		stats_shown = true
-	if item.get("str_bonus", 0) > 0:
-		display_game("+%d Strength" % item.str_bonus)
-		stats_shown = true
-	if item.get("con_bonus", 0) > 0:
-		display_game("+%d Constitution" % item.con_bonus)
-		stats_shown = true
-	if item.get("dex_bonus", 0) > 0:
-		display_game("+%d Dexterity" % item.dex_bonus)
-		stats_shown = true
-	if item.get("int_bonus", 0) > 0:
-		display_game("+%d Intelligence" % item.int_bonus)
-		stats_shown = true
-	if item.get("wis_bonus", 0) > 0:
-		display_game("+%d Wisdom" % item.wis_bonus)
-		stats_shown = true
-	if item.get("wits_bonus", 0) > 0:
-		display_game("+%d Wits" % item.wits_bonus)
-		stats_shown = true
-
+	# Display all computed stats
+	var stats_shown = _display_computed_item_bonuses(item)
 	if not stats_shown:
 		display_game("[color=#808080](No stat bonuses)[/color]")
 
@@ -3801,6 +3774,47 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		bonuses.wits += int(affixes.wits_bonus * wear_penalty)
 
 	return bonuses
+
+func _display_computed_item_bonuses(item: Dictionary) -> bool:
+	"""Display all computed bonuses for an item. Returns true if any bonuses were shown."""
+	var bonuses = _compute_item_bonuses(item)
+	var stats_shown = false
+
+	if bonuses.get("attack", 0) > 0:
+		display_game("[color=#FF6666]+%d Attack[/color]" % bonuses.attack)
+		stats_shown = true
+	if bonuses.get("defense", 0) > 0:
+		display_game("[color=#66FFFF]+%d Defense[/color]" % bonuses.defense)
+		stats_shown = true
+	if bonuses.get("max_hp", 0) > 0:
+		display_game("[color=#00FF00]+%d Max HP[/color]" % bonuses.max_hp)
+		stats_shown = true
+	if bonuses.get("max_mana", 0) > 0:
+		display_game("[color=#9999FF]+%d Max Mana[/color]" % bonuses.max_mana)
+		stats_shown = true
+	if bonuses.get("strength", 0) > 0:
+		display_game("+%d Strength" % bonuses.strength)
+		stats_shown = true
+	if bonuses.get("constitution", 0) > 0:
+		display_game("+%d Constitution" % bonuses.constitution)
+		stats_shown = true
+	if bonuses.get("dexterity", 0) > 0:
+		display_game("+%d Dexterity" % bonuses.dexterity)
+		stats_shown = true
+	if bonuses.get("intelligence", 0) > 0:
+		display_game("+%d Intelligence" % bonuses.intelligence)
+		stats_shown = true
+	if bonuses.get("wisdom", 0) > 0:
+		display_game("+%d Wisdom" % bonuses.wisdom)
+		stats_shown = true
+	if bonuses.get("wits", 0) > 0:
+		display_game("+%d Wits" % bonuses.wits)
+		stats_shown = true
+	if bonuses.get("speed", 0) > 0:
+		display_game("[color=#FFFF00]+%d Speed[/color]" % bonuses.speed)
+		stats_shown = true
+
+	return stats_shown
 
 func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 	"""Display stat comparison between two items using computed bonuses"""
@@ -5269,9 +5283,24 @@ func handle_server_message(message: Dictionary):
 			if combat_bg_color != "":
 				set_combat_background(combat_bg_color)
 
-			display_game(message.get("message", ""))
-
+			# Check if we should render ASCII art client-side
 			var combat_state = message.get("combat_state", {})
+			var display_msg = message.get("message", "")
+			if message.get("use_client_art", false):
+				var monster_name = combat_state.get("monster_name", "")
+				if monster_name != "":
+					# Render art locally using MonsterArt class
+					var local_art = _get_monster_art().get_bordered_art_with_font(monster_name)
+					# Build encounter text with traits
+					var encounter_text = _build_encounter_text(combat_state)
+					# For flock, prepend the "Another X appears!" message
+					if message.get("is_flock", false):
+						display_msg = "[color=#FF4444]Another %s appears![/color]\n%s\n%s" % [monster_name, local_art, encounter_text]
+					else:
+						display_msg = local_art + "\n" + encounter_text
+			display_game(display_msg)
+
+			# combat_state already fetched above for client-side art
 			current_enemy_name = combat_state.get("monster_name", "Enemy")
 			current_enemy_level = combat_state.get("monster_level", 1)
 			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
@@ -5727,11 +5756,17 @@ func display_item_details(item: Dictionary, source: String):
 	display_game("[color=#00FFFF]Level:[/color] %d" % level)
 	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
 	display_game("")
-	display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
 
-	# Show comparison with equipped item for equipment types
+	# For equipment, show computed stats; for consumables, show effect description
 	var slot = _get_slot_for_item_type(item_type)
 	if slot != "":
+		# Equipment: show computed bonuses
+		display_game("[color=#E6CC80]Stats:[/color]")
+		var stats_shown = _display_computed_item_bonuses(item)
+		if not stats_shown:
+			display_game("[color=#808080](No stat bonuses)[/color]")
+
+		# Show comparison with equipped item
 		display_game("")
 		var equipped = character_data.get("equipped", {})
 		var equipped_item = equipped.get(slot)
@@ -5740,6 +5775,9 @@ func display_item_details(item: Dictionary, source: String):
 			_display_item_comparison(item, equipped_item)
 		else:
 			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
+	else:
+		# Consumables: show effect description
+		display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
 
 	display_game("")
 
@@ -5761,42 +5799,8 @@ func display_equip_comparison(item: Dictionary, inv_index: int):
 	display_game("[color=#00FFFF]Level:[/color] %d" % level)
 	display_game("")
 
-	# Display all stats
-	var stats_shown = false
-	if item.get("attack", 0) > 0:
-		display_game("[color=#FF6666]+%d Attack[/color]" % item.attack)
-		stats_shown = true
-	if item.get("defense", 0) > 0:
-		display_game("[color=#66FFFF]+%d Defense[/color]" % item.defense)
-		stats_shown = true
-	if item.get("attack_bonus", 0) > 0:
-		display_game("[color=#FF6666]+%d Attack Bonus[/color]" % item.attack_bonus)
-		stats_shown = true
-	if item.get("defense_bonus", 0) > 0:
-		display_game("[color=#66FFFF]+%d Defense Bonus[/color]" % item.defense_bonus)
-		stats_shown = true
-	if item.get("hp_bonus", 0) > 0:
-		display_game("[color=#00FF00]+%d Max HP[/color]" % item.hp_bonus)
-		stats_shown = true
-	if item.get("str_bonus", 0) > 0:
-		display_game("+%d Strength" % item.str_bonus)
-		stats_shown = true
-	if item.get("con_bonus", 0) > 0:
-		display_game("+%d Constitution" % item.con_bonus)
-		stats_shown = true
-	if item.get("dex_bonus", 0) > 0:
-		display_game("+%d Dexterity" % item.dex_bonus)
-		stats_shown = true
-	if item.get("int_bonus", 0) > 0:
-		display_game("+%d Intelligence" % item.int_bonus)
-		stats_shown = true
-	if item.get("wis_bonus", 0) > 0:
-		display_game("+%d Wisdom" % item.wis_bonus)
-		stats_shown = true
-	if item.get("wits_bonus", 0) > 0:
-		display_game("+%d Wits" % item.wits_bonus)
-		stats_shown = true
-
+	# Display all computed stats
+	var stats_shown = _display_computed_item_bonuses(item)
 	if not stats_shown:
 		display_game("[color=#808080](No stat bonuses)[/color]")
 
@@ -5945,7 +5949,33 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif "gold_pouch" in item_type:
 		return "Contains %d-%d gold" % [level * 10, level * 50]
 	elif "gem" in item_type:
-		return "Worth %d gold when sold" % int(level * 100 * rarity_mult)
+		return "Worth 1000 gold when sold"
+	# Scroll effects
+	elif "scroll_forcefield" in item_type:
+		var shield_amount = 50 + level * 25
+		return "Creates a %d HP shield that absorbs damage" % shield_amount
+	elif "scroll_rage" in item_type:
+		var buff_val = 20 + level * 5
+		return "+%d Strength for next combat" % buff_val
+	elif "scroll_stoneskin" in item_type:
+		var buff_val = 20 + level * 5
+		return "+%d Defense for next combat" % buff_val
+	elif "scroll_haste" in item_type:
+		var buff_val = 30 + level * 8
+		return "+%d Speed for next combat" % buff_val
+	elif "scroll_vampirism" in item_type:
+		var lifesteal = 15 + level * 3
+		return "%d%% Lifesteal for next combat" % lifesteal
+	elif "scroll_thorns" in item_type:
+		var reflect = 20 + level * 5
+		return "Reflect %d%% damage for next combat" % reflect
+	elif "scroll_critical" in item_type:
+		var crit = 20 + level * 3
+		return "+%d%% Critical chance for next combat" % crit
+	elif "scroll_summoning" in item_type:
+		return "Choose your next monster encounter"
+	elif "scroll" in item_type:
+		return "Magical scroll with unknown power"
 	else:
 		return "Unknown effect"
 
@@ -6159,9 +6189,11 @@ func get_selection_keys_text(count: int) -> String:
 	"""Generate text showing selection key range (e.g., 'Press 1-5' or 'Press Q-R')"""
 	if count <= 0:
 		return ""
-	if count == 1:
+	# Cap at 9 since we only have keybinds for 1-9
+	var capped_count = min(count, 9)
+	if capped_count == 1:
 		return "Press %s" % get_item_select_key_name(0)
-	return "Press %s-%s" % [get_item_select_key_name(0), get_item_select_key_name(count - 1)]
+	return "Press %s-%s" % [get_item_select_key_name(0), get_item_select_key_name(capped_count - 1)]
 
 func open_settings():
 	"""Open the settings menu"""
@@ -7271,6 +7303,44 @@ func stop_combat_animation():
 	combat_animation_active = false
 	combat_animation_text = ""
 	combat_animation_timer = 0.0
+
+func _build_encounter_text(combat_state: Dictionary) -> String:
+	"""Build encounter text with monster name and traits (for client-side art rendering)"""
+	var monster_name = combat_state.get("monster_name", "Enemy")
+	var monster_level = combat_state.get("monster_level", 1)
+	var name_color = combat_state.get("monster_name_color", "#FFFFFF")
+
+	# Build encounter message with colored monster name
+	var msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster_name, monster_level]
+
+	# Show notable abilities from combat_state
+	var abilities = combat_state.get("monster_abilities", [])
+	var notable_abilities = []
+	if "glass_cannon" in abilities:
+		notable_abilities.append("[color=#FF4444]Glass Cannon[/color]")
+	if "regeneration" in abilities:
+		notable_abilities.append("[color=#00FF00]Regenerates[/color]")
+	if "poison" in abilities:
+		notable_abilities.append("[color=#FF00FF]Venomous[/color]")
+	if "life_steal" in abilities:
+		notable_abilities.append("[color=#FF4444]Life Stealer[/color]")
+	if "gem_bearer" in abilities:
+		notable_abilities.append("[color=#00FFFF]Gem Bearer[/color]")
+	if "wish_granter" in abilities:
+		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
+	if "weapon_master" in abilities:
+		notable_abilities.append("[color=#FF8000]★ WEAPON MASTER ★[/color]")
+	if "shield_bearer" in abilities:
+		notable_abilities.append("[color=#00FFFF]★ SHIELD GUARDIAN ★[/color]")
+	if "corrosive" in abilities:
+		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
+	if "sunder" in abilities:
+		notable_abilities.append("[color=#FF4444]⚠ SUNDERING ⚠[/color]")
+
+	if notable_abilities.size() > 0:
+		msg += "\n[color=#808080]Traits: %s[/color]" % ", ".join(notable_abilities)
+
+	return msg
 
 func _enhance_combat_message(msg: String) -> String:
 	"""Add visual flair symbols to combat messages"""

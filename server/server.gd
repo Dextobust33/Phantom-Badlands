@@ -2021,7 +2021,8 @@ func trigger_encounter(peer_id: int):
 			"type": "combat_start",
 			"message": full_message,
 			"combat_state": result.combat_state,
-			"combat_bg_color": combat_bg_color
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true  # Client should render ASCII art locally
 		})
 		# Forward encounter to watchers
 		forward_to_watchers(peer_id, result.message)
@@ -2196,7 +2197,8 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			"combat_state": result.combat_state,
 			"is_flock": true,
 			"clear_output": true,
-			"combat_bg_color": combat_bg_color
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true  # Client should render ASCII art locally
 		})
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
@@ -3273,18 +3275,8 @@ func _send_shop_inventory(peer_id: int):
 			"rarity": item.get("rarity", "common"),
 			"price": item.get("shop_price", 100),
 			"gem_price": int(ceil(item.get("shop_price", 100) / 1000.0)),
-			# Include full stats for inspection
-			"attack": item.get("attack", 0),
-			"defense": item.get("defense", 0),
-			"attack_bonus": item.get("attack_bonus", 0),
-			"defense_bonus": item.get("defense_bonus", 0),
-			"hp_bonus": item.get("hp_bonus", 0),
-			"str_bonus": item.get("str_bonus", 0),
-			"con_bonus": item.get("con_bonus", 0),
-			"dex_bonus": item.get("dex_bonus", 0),
-			"int_bonus": item.get("int_bonus", 0),
-			"wis_bonus": item.get("wis_bonus", 0),
-			"wits_bonus": item.get("wits_bonus", 0)
+			# Include affixes for client-side stat computation
+			"affixes": item.get("affixes", {})
 		})
 
 	if not characters.has(peer_id):

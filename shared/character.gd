@@ -622,9 +622,9 @@ func add_experience(amount: int) -> Dictionary:
 		max_stamina = (strength * 4) + (constitution * 4)  # Recalculate from new stats
 		max_energy = (wits * 4) + (dexterity * 4)         # Recalculate from new stats
 
-		# Fully restore resources on level up
-		current_hp = max_hp
-		current_mana = max_mana
+		# Fully restore resources on level up (including equipment bonuses)
+		current_hp = get_total_max_hp()
+		current_mana = get_total_max_mana()
 		current_stamina = max_stamina
 		current_energy = max_energy
 
