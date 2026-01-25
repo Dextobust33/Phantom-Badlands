@@ -291,8 +291,8 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if final_rarity != base_rarity:
 		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
-	# Consumables (potions, gold, scrolls, resource restorers) never get stat affixes
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
+	# Consumables (potions, gold, gems, scrolls, resource restorers) never get stat affixes
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
 
 	# Roll for affixes (only for equipment, not consumables)
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)

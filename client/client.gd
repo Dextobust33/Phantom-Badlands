@@ -1289,12 +1289,15 @@ func _process(delta):
 	# Allow hotkeys during merchant modes and inventory modes (for Cancel buttons)
 	# Skip if in settings mode (settings has its own input handling)
 	# Skip if in combat_item_mode (to prevent item selection from also triggering combat abilities)
-	# Skip if in quest_log_mode (to prevent abandon keys from also triggering action bar)
 	# Skip if in monster_select_mode (to prevent monster selection from also triggering action bar)
+	# Note: quest_log_mode handled separately below to allow Space (Continue) but block number keys
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
-	var quest_log_blocks_hotkeys = quest_log_mode and pending_continue
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not quest_log_blocks_hotkeys and not monster_select_mode:
+	var quest_log_blocks_number_keys = quest_log_mode and pending_continue
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode:
 		for i in range(10):  # 0-9 action slots
+			# Skip number keys (action_5 through action_9) when in quest log mode to prevent double-trigger
+			if quest_log_blocks_number_keys and i >= 5:
+				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
@@ -7483,9 +7486,10 @@ func handle_quest_list(message: Dictionary):
 			var quest = quests_to_turn_in[i]
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
-			display_game("[%d] [color=#00FF00]%s[/color] - %s" % [i + 1, quest.get("name", "Quest"), reward_str])
+			var key_name = get_item_select_key_name(i)
+			display_game("[%s] [color=#00FF00]%s[/color] - %s" % [key_name, quest.get("name", "Quest"), reward_str])
 		display_game("")
-		display_game("Type number to turn in quest")
+		display_game("Press key to turn in quest")
 		display_game("")
 
 	# Show available quests
@@ -7497,11 +7501,12 @@ func handle_quest_list(message: Dictionary):
 			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
-			display_game("[%d] [color=#FFD700]%s[/color]%s" % [offset + i + 1, quest.get("name", "Quest"), daily_tag])
+			var key_name = get_item_select_key_name(offset + i)
+			display_game("[%s] [color=#FFD700]%s[/color]%s" % [key_name, quest.get("name", "Quest"), daily_tag])
 			display_game("    %s" % quest.get("description", ""))
 			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")
-		display_game("Type number to accept quest")
+		display_game("Press key to accept quest")
 	elif quests_to_turn_in.size() == 0:
 		display_game("[color=#808080]No quests available at this time.[/color]")
 
@@ -7656,9 +7661,10 @@ func handle_quest_log(message: Dictionary):
 		for i in range(quest_log_quests.size()):
 			var q = quest_log_quests[i]
 			var prog_text = "%d/%d" % [q.get("progress", 0), q.get("target", 1)]
-			display_game("  [color=#FFFF00][%d][/color] %s (%s)" % [i + 1, q.get("name", "Unknown"), prog_text])
+			var key_name = get_item_select_key_name(i)
+			display_game("  [color=#FFFF00][%s][/color] %s (%s)" % [key_name, q.get("name", "Unknown"), prog_text])
 		display_game("")
-		display_game("[color=#808080]Press [%s] to close | [1-%d] to abandon quest[/color]" % [get_action_key_name(0), quest_log_quests.size()])
+		display_game("[color=#808080]Press [%s] to close | Press shown key to abandon quest[/color]" % get_action_key_name(0))
 	else:
 		display_game("[color=#808080]Press [%s] to continue[/color]" % get_action_key_name(0))
 

@@ -2646,7 +2646,17 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 		return
 
 	var item = character.inventory[index]
-	var sell_price = item.get("value", 10) / 2  # Sell for half value
+	var item_type = item.get("type", "")
+	var item_level = item.get("level", 1)
+	var sell_price = item.get("value", 10) / 2  # Default: Sell for half value
+
+	# Special handling for gold pouches - sell for their gold content
+	if item_type == "gold_pouch":
+		# Match Effect description: level * 10 to level * 50, average = level * 30
+		sell_price = item_level * 30
+	# Special handling for gems - always worth 1000 gold
+	elif item_type.begins_with("gem_"):
+		sell_price = 1000
 
 	# Remove item and give gold
 	character.remove_item(index)
@@ -2680,7 +2690,17 @@ func handle_merchant_sell_all(peer_id: int):
 
 	# Calculate total value and clear inventory
 	for item in character.inventory:
-		var sell_price = item.get("value", 10) / 2  # Sell for half value
+		var item_type = item.get("type", "")
+		var item_level = item.get("level", 1)
+		var sell_price = item.get("value", 10) / 2  # Default: Sell for half value
+
+		# Special handling for gold pouches - sell for their gold content
+		if item_type == "gold_pouch":
+			sell_price = item_level * 30
+		# Special handling for gems - always worth 1000 gold
+		elif item_type.begins_with("gem_"):
+			sell_price = 1000
+
 		total_gold += sell_price
 
 	character.inventory.clear()

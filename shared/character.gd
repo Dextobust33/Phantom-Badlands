@@ -352,7 +352,7 @@ func heal(amount: int) -> int:
 	"""Heal the character, return actual amount healed. Ogre racial applies 2x healing."""
 	var old_hp = current_hp
 	var heal_amount = int(amount * get_heal_multiplier())
-	current_hp = min(current_hp + heal_amount, max_hp)
+	current_hp = min(current_hp + heal_amount, get_total_max_hp())
 	return current_hp - old_hp
 
 func damage_equipment(slot: String, wear_amount: int) -> Dictionary:
