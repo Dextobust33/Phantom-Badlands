@@ -1154,7 +1154,8 @@ func _process(delta):
 
 	# Inventory item selection with keybinds (items 1-9) when action is pending
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action != "equip_confirm":
+	# Skip when in monster_select_mode (scroll selection takes priority)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action != "equip_confirm" and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				if not get_meta("itemkey_%d_pressed" % i, false):
@@ -5508,6 +5509,10 @@ func handle_server_message(message: Dictionary):
 			# Monster Selection Scroll used - show monster list
 			monster_select_list = message.get("monsters", [])
 			if monster_select_list.size() > 0:
+				# Exit inventory mode to prevent double-trigger on number keys
+				inventory_mode = false
+				pending_inventory_action = ""
+				selected_item_index = -1
 				monster_select_mode = true
 				monster_select_page = 0
 				display_game(message.get("message", "Choose a monster to summon:"))
@@ -5914,6 +5919,26 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		}
 		var mana = mana_amounts.get(item_type, 50 + level * 10)
 		return "Restores %d Mana when used" % mana
+	elif "stamina" in item_type:
+		# Stamina potions (Warriors)
+		var stamina_amounts = {
+			"stamina_minor": 15 + level * 8,
+			"stamina_lesser": 30 + level * 10,
+			"stamina_standard": 50 + level * 12,
+			"stamina_greater": 100 + level * 15
+		}
+		var stamina = stamina_amounts.get(item_type, 50 + level * 10)
+		return "Restores %d Stamina when used" % stamina
+	elif "energy" in item_type:
+		# Energy potions (Tricksters)
+		var energy_amounts = {
+			"energy_minor": 15 + level * 8,
+			"energy_lesser": 30 + level * 10,
+			"energy_standard": 50 + level * 12,
+			"energy_greater": 100 + level * 15
+		}
+		var energy = energy_amounts.get(item_type, 50 + level * 10)
+		return "Restores %d Energy when used" % energy
 	elif "potion" in item_type or "elixir" in item_type:
 		# Healing potions/elixirs (general case)
 		var heal_amounts = {
