@@ -472,47 +472,51 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		character.gems += gems_earned
 		messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
-	# Weapon Master ability: guaranteed weapon drop
+	# Weapon Master ability: 35% chance to drop a weapon
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
-		var weapon = drop_tables.generate_weapon(monster.level)
-		if not weapon.is_empty():
-			messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
-			messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-				_get_rarity_color(weapon.get("rarity", "common")),
-				weapon.get("name", "Unknown Weapon"),
-				weapon.get("level", 1)
-			])
-			# Add to dropped items (server handles inventory)
-			if not combat.has("extra_drops"):
-				combat.extra_drops = []
-			combat.extra_drops.append(weapon)
+		if randf() < 0.35:  # 35% chance
+			var weapon = drop_tables.generate_weapon(monster.level)
+			if not weapon.is_empty():
+				messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
+				messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+					_get_rarity_color(weapon.get("rarity", "common")),
+					weapon.get("name", "Unknown Weapon"),
+					weapon.get("level", 1)
+				])
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(weapon)
+		else:
+			messages.append("[color=#808080]The Weapon Master's weapon shatters on death...[/color]")
 
-	# Shield Bearer ability: guaranteed shield drop
-	# Debug: Log ability check
-	print("[DEBUG] Shield drop check - abilities: ", abilities, " | has shield_bearer: ", ABILITY_SHIELD_BEARER in abilities, " | drop_tables null: ", drop_tables == null)
+	# Shield Bearer ability: 35% chance to drop a shield
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
-		var shield = drop_tables.generate_shield(monster.level)
-		print("[DEBUG] Generated shield: ", shield)
-		if not shield.is_empty():
-			messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
-			messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-				_get_rarity_color(shield.get("rarity", "common")),
-				shield.get("name", "Unknown Shield"),
-				shield.get("level", 1)
-			])
-			# Add to dropped items (server handles inventory)
-			if not combat.has("extra_drops"):
-				combat.extra_drops = []
-			combat.extra_drops.append(shield)
+		if randf() < 0.35:  # 35% chance
+			var shield = drop_tables.generate_shield(monster.level)
+			if not shield.is_empty():
+				messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
+				messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+					_get_rarity_color(shield.get("rarity", "common")),
+					shield.get("name", "Unknown Shield"),
+					shield.get("level", 1)
+				])
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(shield)
+		else:
+			messages.append("[color=#808080]The Shield Guardian's shield crumbles to dust...[/color]")
 
-	# Wish granter ability: player chooses from 3 rewards
+	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
-		# Generate wish options and flag for server to handle
-		var wish_options = generate_wish_options(character, monster.level)
-		combat["wish_pending"] = true
-		combat["wish_options"] = wish_options
-		messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
-		messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
+		if randf() < 0.10:  # 10% chance
+			var monster_lethality = monster.get("lethality", 100)
+			var wish_options = generate_wish_options(character, monster.level, monster_lethality)
+			combat["wish_pending"] = true
+			combat["wish_options"] = wish_options
+			messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
+		else:
+			messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
 
 	# Roll for item drops
 	var dropped_items = roll_combat_drops(monster, character)
@@ -582,20 +586,26 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var monster = combat.monster
 	var messages = []
 
-	# Flee chance: 40% base + (DEX × 2) + equipment speed - (enemy level / 10)
+	# Flee chance based on level difference, DEX, and equipment speed
+	# Base 50% + (DEX × 2) + equipment_speed + speed_buff - (level_diff × 3)
 	var equipment_bonuses = character.get_equipment_bonuses()
 	var player_dex = character.get_effective_stat("dexterity")
 	var speed_buff = character.get_buff_value("speed")
-	var equipment_speed = equipment_bonuses.speed
+	var equipment_speed = equipment_bonuses.speed  # Boots provide speed bonus
 	var monster_level = monster.get("level", 1)
-	var flee_chance = 40 + (player_dex * 2) + speed_buff + equipment_speed - int(monster_level / 10)
+	var player_level = character.level
+	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
+
+	# Base 50%, +2% per DEX, +equipment speed (boots!), +speed buffs
+	# -3% per level the monster is above you (fighting +20 level = -60%)
+	var flee_chance = 50 + (player_dex * 2) + equipment_speed + speed_buff - (level_diff * 3)
 
 	# Apply slow aura debuff (from monster ability)
 	var slow_penalty = combat.get("player_slow", 0)
 	if slow_penalty > 0:
 		flee_chance -= slow_penalty
 
-	flee_chance = clamp(flee_chance, 5, 95)  # 5-95% chance (slow can reduce it more)
+	flee_chance = clamp(flee_chance, 5, 95)  # Hardcap 5-95%
 	
 	var roll = randi() % 100
 	
@@ -730,29 +740,35 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			)
 			dropped_items = drops_result
 
-			# Weapon Master ability: guaranteed weapon drop
+				# Weapon Master ability: 35% chance to drop a weapon
 			if ABILITY_WEAPON_MASTER in abilities:
-				var weapon = drop_tables.generate_weapon(monster.level)
-				if not weapon.is_empty():
-					messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
-					messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-						_get_rarity_color(weapon.get("rarity", "common")),
-						weapon.get("name", "Unknown Weapon"),
-						weapon.get("level", 1)
-					])
-					extra_drops.append(weapon)
+				if randf() < 0.35:  # 35% chance
+					var weapon = drop_tables.generate_weapon(monster.level)
+					if not weapon.is_empty():
+						messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
+						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+							_get_rarity_color(weapon.get("rarity", "common")),
+							weapon.get("name", "Unknown Weapon"),
+							weapon.get("level", 1)
+						])
+						extra_drops.append(weapon)
+				else:
+					messages.append("[color=#808080]The Weapon Master's weapon shatters on death...[/color]")
 
-			# Shield Bearer ability: guaranteed shield drop
+			# Shield Bearer ability: 35% chance to drop a shield
 			if ABILITY_SHIELD_BEARER in abilities:
-				var shield = drop_tables.generate_shield(monster.level)
-				if not shield.is_empty():
-					messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
-					messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-						_get_rarity_color(shield.get("rarity", "common")),
-						shield.get("name", "Unknown Shield"),
-						shield.get("level", 1)
-					])
-					extra_drops.append(shield)
+				if randf() < 0.35:  # 35% chance
+					var shield = drop_tables.generate_shield(monster.level)
+					if not shield.is_empty():
+						messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
+						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+							_get_rarity_color(shield.get("rarity", "common")),
+							shield.get("name", "Unknown Shield"),
+							shield.get("level", 1)
+						])
+						extra_drops.append(shield)
+				else:
+					messages.append("[color=#808080]The Shield Guardian's shield crumbles to dust...[/color]")
 
 			# Roll for gem drops
 			gems_earned = roll_gem_drops(monster, character)
@@ -760,12 +776,16 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				character.gems += gems_earned
 				messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
-		# Wish granter ability: player chooses from 3 rewards
+		# Wish granter ability: 10% chance to offer a wish
 		if ABILITY_WISH_GRANTER in abilities:
-			wish_options = generate_wish_options(character, monster.level)
-			wish_pending = true
-			messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
-			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
+			if randf() < 0.10:  # 10% chance
+				var monster_lethality = monster.get("lethality", 100)
+				wish_options = generate_wish_options(character, monster.level, monster_lethality)
+				wish_pending = true
+				messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+				messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
+			else:
+				messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
 
 		# Combine regular drops with extra drops (like normal victory)
 		var all_drops = dropped_items.duplicate()
@@ -3411,15 +3431,12 @@ func roll_gem_drops(monster: Dictionary, character: Character) -> int:
 
 # ===== WISH GRANTER SYSTEM =====
 
-func generate_wish_options(character: Character, monster_level: int) -> Array:
+func generate_wish_options(character: Character, monster_level: int, monster_lethality: int = 100) -> Array:
 	"""Generate 3 wish options for player to choose from after defeating a wish granter.
-	Options include: gear upgrades, gems, valuable loot, or rare permanent stat upgrades."""
+	Options include: gear upgrades, gems, equipment upgrade, or rare permanent stat upgrades."""
 	var options = []
 	var player_level = character.level
-
-	# Always generate 3 distinct options
-	var available_types = ["gems", "gear", "buff", "gold", "stats"]
-	available_types.shuffle()
+	var level_diff = max(0, monster_level - player_level)
 
 	# Option 1: Always a good option (gems or gear)
 	if randf() < 0.5:
@@ -3433,13 +3450,13 @@ func generate_wish_options(character: Character, monster_level: int) -> Array:
 	else:
 		options.append(_generate_gem_wish(monster_level))
 
-	# Option 3: Special option - small chance for permanent stats, otherwise buff
+	# Option 3: Special option - small chance for permanent stats, otherwise buff or equipment upgrade
 	if randf() < 0.10:  # 10% chance for permanent stat boost
 		options.append(_generate_stat_wish())
 	elif randf() < 0.5:
 		options.append(_generate_buff_wish())
 	else:
-		options.append(_generate_gold_wish(monster_level))
+		options.append(_generate_upgrade_wish(monster_lethality, level_diff))
 
 	return options
 
@@ -3488,15 +3505,24 @@ func _generate_buff_wish() -> Dictionary:
 		"color": "#FFD700"
 	}
 
-func _generate_gold_wish(monster_level: int) -> Dictionary:
-	"""Generate a gold reward wish option"""
-	var gold_amount = max(1000, monster_level * 100 + randi_range(500, 2000))
+func _generate_upgrade_wish(monster_lethality: int, level_diff: int) -> Dictionary:
+	"""Generate an equipment upgrade wish option.
+	Number of upgrades scales with monster lethality and level difference.
+	Harder fights = more upgrades."""
+	# Base upgrades: 1-2
+	# Lethality bonus: +1 per 500 lethality (max +5)
+	# Level diff bonus: +1 per 10 levels above player (max +5)
+	var base_upgrades = randi_range(1, 2)
+	var lethality_bonus = mini(5, int(monster_lethality / 500))
+	var level_bonus = mini(5, int(level_diff / 10))
+	var total_upgrades = base_upgrades + lethality_bonus + level_bonus
+
 	return {
-		"type": "gold",
-		"amount": gold_amount,
-		"label": "%d Gold" % gold_amount,
-		"description": "Receive a fortune of %d gold" % gold_amount,
-		"color": "#FFD700"
+		"type": "upgrade",
+		"upgrades": total_upgrades,
+		"label": "Equipment Upgrade (x%d)" % total_upgrades,
+		"description": "Upgrade a random equipped item %d time%s" % [total_upgrades, "s" if total_upgrades > 1 else ""],
+		"color": "#FF8000"
 	}
 
 func _generate_stat_wish() -> Dictionary:
@@ -3538,4 +3564,7 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 		"gear":
 			# Server will handle gear generation
 			return "[color=%s]WISH GRANTED: Generating %s gear...[/color]" % [wish.color, wish.rarity]
+		"upgrade":
+			# Server will handle equipment upgrades
+			return "[color=#FF8000]WISH GRANTED: Upgrading equipment %d time%s...[/color]" % [wish.upgrades, "s" if wish.upgrades > 1 else ""]
 	return "[color=#FFD700]WISH GRANTED![/color]"

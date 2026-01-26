@@ -1560,6 +1560,12 @@ func handle_wish_select(peer_id: int, message: Dictionary):
 		else:
 			result_msg += "\n[color=#FF0000]Inventory full! Gear was lost![/color]"
 
+	# If upgrade was chosen, upgrade a random equipped item
+	if chosen_wish.type == "upgrade":
+		var upgrade_count = chosen_wish.get("upgrades", 1)
+		var upgrade_result = _apply_wish_upgrades(character, upgrade_count)
+		result_msg += "\n" + upgrade_result
+
 	# Clear pending wish
 	pending_wishes.erase(peer_id)
 
@@ -1587,6 +1593,74 @@ func _generate_wish_gear(wish: Dictionary) -> Dictionary:
 	var item_type = types[randi() % types.size()]
 
 	return drop_tables._generate_item({"item_type": item_type, "rarity": rarity}, gear_level)
+
+func _apply_wish_upgrades(character: Character, upgrade_count: int) -> String:
+	"""Apply multiple upgrades to a random equipped item from a wish.
+	Returns a message describing what was upgraded."""
+	var equipped = character.equipped
+	var upgradeable_slots = []
+
+	# Find all equipped slots with items that can be upgraded
+	for slot in equipped:
+		var item = equipped[slot]
+		if item != null and not item.is_empty():
+			# Check if item can be upgraded (has level and stats)
+			if item.has("level"):
+				upgradeable_slots.append(slot)
+
+	if upgradeable_slots.is_empty():
+		return "[color=#FF0000]No equipped items to upgrade![/color]"
+
+	# Pick a random equipped item
+	var chosen_slot = upgradeable_slots[randi() % upgradeable_slots.size()]
+	var item = equipped[chosen_slot]
+	var old_level = item.get("level", 1)
+
+	# Apply all upgrades to this one item
+	for i in range(upgrade_count):
+		item = _upgrade_single_item(item)
+		equipped[chosen_slot] = item
+
+	var new_level = item.get("level", 1)
+	var levels_gained = new_level - old_level
+
+	return "[color=#FF8000]%s upgraded from Lv%d to Lv%d! (+%d levels)[/color]" % [
+		item.get("name", "Equipment"),
+		old_level,
+		new_level,
+		levels_gained
+	]
+
+func _upgrade_single_item(item: Dictionary) -> Dictionary:
+	"""Apply a single upgrade to an item"""
+	var current_level = item.get("level", 1)
+	var new_level = current_level + 1
+	item["level"] = new_level
+
+	# Upgrade stats based on item type
+	var item_type = item.get("item_type", "")
+
+	if "weapon" in item_type:
+		var current_dmg = item.get("damage", 10)
+		item["damage"] = current_dmg + max(1, int(current_dmg * 0.08))
+	elif "armor" in item_type:
+		var current_def = item.get("defense", 5)
+		item["defense"] = current_def + max(1, int(current_def * 0.08))
+	elif "shield" in item_type:
+		var current_def = item.get("defense", 3)
+		item["defense"] = current_def + max(1, int(current_def * 0.08))
+	elif "helm" in item_type:
+		var current_def = item.get("defense", 2)
+		item["defense"] = current_def + max(1, int(current_def * 0.08))
+	elif "boots" in item_type:
+		var current_speed = item.get("speed", 5)
+		item["speed"] = current_speed + max(1, int(current_speed * 0.08))
+
+	# Update name to reflect new level
+	var base_name = item.get("base_name", item.get("name", "Item"))
+	item["name"] = "%s +%d" % [base_name, new_level - 1] if new_level > 1 else base_name
+
+	return item
 
 func _find_flee_destination(peer_id: int):
 	"""Find an adjacent tile without another player for flee movement"""
