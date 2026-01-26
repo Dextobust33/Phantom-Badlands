@@ -3746,6 +3746,12 @@ func acknowledge_continue():
 	# Reset combat background when player continues (not during flock)
 	if not flock_pending:
 		reset_combat_background()
+
+	# If at trading post, go back to quest menu so player can turn in more
+	if at_trading_post:
+		send_to_server({"type": "trading_post_quests"})
+		return
+
 	update_action_bar()
 
 func logout_character():
@@ -8944,11 +8950,12 @@ func handle_quest_turned_in(message: Dictionary):
 	update_player_xp_bar()
 	update_player_level()
 
-	# Go back to Trading Post menu if still there
+	# Go back to Trading Post quest menu if still there
 	if at_trading_post:
 		display_game("")
 		display_game("[%s] Continue" % get_action_key_name(0))
 		quest_view_mode = false
+		pending_continue = true
 		update_action_bar()
 
 func handle_quest_log(message: Dictionary):
