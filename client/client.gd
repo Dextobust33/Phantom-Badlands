@@ -6934,6 +6934,19 @@ func display_character_status():
 
 	if bonuses.speed > 0:
 		text += "  [color=#00FFFF]Speed Bonus:[/color] +%d (improves flee chance)\n" % bonuses.speed
+
+	# === CLASS-SPECIFIC BONUSES ===
+	var has_class_bonus = bonuses.mana_regen > 0 or bonuses.meditate_bonus > 0 or bonuses.energy_regen > 0 or bonuses.flee_bonus > 0
+	if has_class_bonus:
+		text += "\n[color=#FF00FF]═══ Class Gear Bonuses ═══[/color]\n"
+		if bonuses.mana_regen > 0:
+			text += "  [color=#66CCCC]Mana Regen:[/color] +%d per combat round (Arcane Ring)\n" % bonuses.mana_regen
+		if bonuses.meditate_bonus > 0:
+			text += "  [color=#66CCCC]Meditate Bonus:[/color] +%d%% effectiveness (Mystic Amulet)\n" % bonuses.meditate_bonus
+		if bonuses.energy_regen > 0:
+			text += "  [color=#66FF66]Energy Regen:[/color] +%d per combat round (Shadow Ring)\n" % bonuses.energy_regen
+		if bonuses.flee_bonus > 0:
+			text += "  [color=#66FF66]Flee Bonus:[/color] +%d%% flee chance (Evasion Amulet)\n" % bonuses.flee_bonus
 	text += "\n"
 
 	# === EQUIPMENT STATUS ===
@@ -7043,7 +7056,12 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0,
-		"speed": 0
+		"speed": 0,
+		# Class-specific bonuses
+		"mana_regen": 0,
+		"meditate_bonus": 0,
+		"energy_regen": 0,
+		"flee_bonus": 0
 	}
 
 	for slot in equipped.keys():
@@ -7078,14 +7096,34 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 			bonuses.max_hp += base_bonus * 5  # Shields are THE HP item
 			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		elif item_type == "ring_arcane":
+			# Mage ring: INT + mana regen
+			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif item_type == "ring_shadow":
+			# Trickster ring: WITS + energy regen
+			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "ring" in item_type:
 			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif item_type == "amulet_mystic":
+			# Mage amulet: max mana + meditate bonus
+			bonuses.max_mana += base_bonus * 3
+			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+		elif item_type == "amulet_evasion":
+			# Trickster amulet: speed + flee bonus
+			bonuses.speed += base_bonus
+			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
 		elif "amulet" in item_type:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif item_type == "boots_swift":
+			# Trickster boots: extra speed + WITS
+			bonuses.speed += int(base_bonus * 1.5)
+			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
 			bonuses.speed += base_bonus
 			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
@@ -7366,8 +7404,9 @@ Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
 Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
 
 [color=#66FFFF]Meditate[/color] (replaces Rest for mages)
-  Restores HP and 15-25%% max mana
-  If at full HP: double mana regen (30-50%%)
+  Restores HP and 4%% max mana (2x movement regen)
+  If at full HP: double mana regen (8%%)
+  Mystic Amulets boost meditate effectiveness
   Can be ambushed (15%% chance)
 
 [color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)

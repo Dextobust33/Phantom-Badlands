@@ -1258,10 +1258,11 @@ func _handle_meditate(peer_id: int, character: Character):
 	var meditate_bonus = character.get_equipment_bonuses().get("meditate_bonus", 0)
 	var bonus_mult = 1.0 + (meditate_bonus / 100.0)
 
-	# Mana regeneration: 15-25% of max mana (double if at full HP, plus equipment bonus)
-	var mana_percent = randf_range(0.15, 0.25)
+	# Mana regeneration: 4% of max mana (2x movement), double if at full HP
+	var base_mana_percent = 0.04  # 2x the 2% movement regen
+	var mana_percent = base_mana_percent
 	if at_full_hp:
-		mana_percent *= 2.0  # Double mana regen when HP is full
+		mana_percent *= 2.0  # 8% when HP is full
 	mana_percent *= bonus_mult  # Apply equipment meditate bonus
 
 	var mana_regen = int(character.max_mana * mana_percent)
