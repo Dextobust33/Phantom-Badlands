@@ -4111,7 +4111,7 @@ func prompt_merchant_action(action_type: String):
 			display_game("")
 			display_game("[color=#808080]Total value: %d gold[/color]" % (gems * 1000))
 			display_game("")
-			display_game("[color=#FFD700]Press [%s] to sell all, or type amount in chat:[/color]" % get_action_key_name(1))
+			display_game("[color=#FFD700]Press [%s] to sell all, or type amount in chat:[/color]" % get_action_key_name(4))
 			input_field.placeholder_text = "Gems to sell..."
 			# Don't auto-focus input - user can press Q to sell all or click input to type amount
 			update_action_bar()
@@ -5182,13 +5182,33 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()
 
 		"equip":
-			if inventory.is_empty():
-				display_game("[color=#FF0000]No items to equip.[/color]")
+			# Filter for equippable items only (exclude consumables like potions, elixirs, scrolls)
+			var equippable_items = []
+			for i in range(inventory.size()):
+				var item = inventory[i]
+				var item_type = item.get("type", "")
+				# Equippable items have types like: weapon_*, armor_*, helm_*, shield_*, boots_*, ring_*, amulet_*
+				# Consumables have types like: potion_*, elixir_*, scroll_*
+				if not ("potion" in item_type or "elixir" in item_type or "scroll" in item_type):
+					equippable_items.append({"index": i, "item": item})
+			if equippable_items.is_empty():
+				display_game("[color=#FF0000]No equippable items in inventory.[/color]")
 				return
 			pending_inventory_action = "equip_item"
 			set_inventory_background("equip")
-			display_inventory()  # Show inventory for selection
-			display_game("[color=#FFD700]%s to equip an item:[/color]" % get_selection_keys_text(inventory.size()))
+			# Display only equippable items
+			display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
+			for j in range(equippable_items.size()):
+				var entry = equippable_items[j]
+				var item = entry.item
+				var item_name = item.get("name", "Unknown")
+				var rarity = item.get("rarity", "common")
+				var level = item.get("level", 1)
+				var color = _get_rarity_color(rarity)
+				display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
+			display_game("[color=#808080]%s to equip an item:[/color]" % get_selection_keys_text(equippable_items.size()))
+			# Store equippable items mapping for selection
+			set_meta("equippable_items", equippable_items)
 			update_action_bar()
 
 		"unequip":
@@ -5539,6 +5559,21 @@ func select_inventory_item(index: int):
 		update_action_bar()
 		return
 
+	# Special handling for equip_item - uses filtered equippable_items list
+	if action == "equip_item":
+		var equippable_items = get_meta("equippable_items", [])
+		if index < 0 or index >= equippable_items.size():
+			display_game("[color=#FF0000]Invalid item number.[/color]")
+			return
+		var actual_index = equippable_items[index].index
+		var item = inventory[actual_index]
+		selected_item_index = actual_index
+		pending_inventory_action = "equip_confirm"
+		game_output.clear()
+		display_equip_comparison(item, actual_index)
+		update_action_bar()
+		return
+
 	if index < 0 or index >= inventory.size():
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		display_inventory()  # Re-show inventory on error
@@ -5556,15 +5591,6 @@ func select_inventory_item(index: int):
 			var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
 			var items_on_page = end_idx - start_idx
 			display_game("[color=#FFD700]%s to inspect another item, or [%s] to go back:[/color]" % [get_selection_keys_text(max(1, items_on_page)), get_action_key_name(0)])
-			update_action_bar()
-			return
-		"equip_item":
-			# Show comparison and ask for confirmation instead of immediately equipping
-			var item = inventory[index]
-			selected_item_index = index
-			pending_inventory_action = "equip_confirm"
-			game_output.clear()
-			display_equip_comparison(item, index)
 			update_action_bar()
 			return
 		"discard_item":
@@ -5614,12 +5640,18 @@ func cancel_equip_confirmation():
 	pending_inventory_action = "equip_item"
 	set_inventory_background("equip")
 	game_output.clear()
-	display_inventory()
-	var inventory = character_data.get("inventory", [])
-	var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
-	var items_on_page = end_idx - start_idx
-	display_game("[color=#FFD700]%s to equip an item:[/color]" % get_selection_keys_text(items_on_page))
+	# Re-display filtered equippable items
+	var equippable_items = get_meta("equippable_items", [])
+	display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
+	for j in range(equippable_items.size()):
+		var entry = equippable_items[j]
+		var item = entry.item
+		var item_name = item.get("name", "Unknown")
+		var rarity = item.get("rarity", "common")
+		var level = item.get("level", 1)
+		var color = _get_rarity_color(rarity)
+		display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
+	display_game("[color=#FFD700]%s to equip an item:[/color]" % get_selection_keys_text(equippable_items.size()))
 	update_action_bar()
 
 func _reprompt_inventory_action():
@@ -6412,13 +6444,27 @@ func handle_server_message(message: Dictionary):
 				if inventory_mode:
 					# Handle pending equip/unequip actions
 					if pending_inventory_action == "equip_item":
-						display_inventory()
+						# Regenerate filtered equippable items list
 						var inv = character_data.get("inventory", [])
-						var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-						var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inv.size())
-						var items_on_page = end_idx - start_idx
-						if items_on_page > 0:
-							display_game("[color=#FFD700]%s to equip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(items_on_page), get_action_key_name(0)])
+						var equippable_items = []
+						for ii in range(inv.size()):
+							var itm = inv[ii]
+							var item_type = itm.get("type", "")
+							if not ("potion" in item_type or "elixir" in item_type or "scroll" in item_type):
+								equippable_items.append({"index": ii, "item": itm})
+						set_meta("equippable_items", equippable_items)
+						if equippable_items.size() > 0:
+							game_output.clear()
+							display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
+							for j in range(equippable_items.size()):
+								var entry = equippable_items[j]
+								var item = entry.item
+								var item_name = item.get("name", "Unknown")
+								var rarity = item.get("rarity", "common")
+								var level = item.get("level", 1)
+								var color = _get_rarity_color(rarity)
+								display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
+							display_game("[color=#FFD700]%s to equip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(equippable_items.size()), get_action_key_name(0)])
 						else:
 							display_game("[color=#808080]No more items to equip.[/color]")
 							pending_inventory_action = ""
@@ -7605,13 +7651,18 @@ func get_item_select_key_name(index: int) -> String:
 	return get_key_name(get_item_select_keycode(index))
 
 func is_item_key_blocked_by_action_bar(index: int) -> bool:
-	"""Check if item selection key conflicts with a currently-held action bar key"""
+	"""Check if item selection key conflicts with a currently-held action bar key that has an enabled action"""
 	var item_keycode = get_item_select_keycode(index)
 	for j in range(10):
 		var action_key = "action_%d" % j
 		var action_keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 		if item_keycode == action_keycode and get_meta("hotkey_%d_pressed" % j, false):
-			return true
+			# Only block if that action bar slot has an enabled action
+			if j < current_actions.size():
+				var action = current_actions[j]
+				if action.get("enabled", false) and action.get("action_type", "none") != "none":
+					return true
+			# If no action in slot, don't block item selection
 	return false
 
 func is_item_select_key_pressed(index: int) -> bool:
@@ -9749,6 +9800,17 @@ func generate_bug_report(description: String = ""):
 		report_lines.append("Pending Ability Action: %s" % pending_ability_action)
 	if rebinding_action != "":
 		report_lines.append("Rebinding Action: %s" % rebinding_action)
+
+	# Keybind info (show non-default keybinds)
+	var rebound_keys = []
+	for key in keybinds:
+		if default_keybinds.has(key) and keybinds[key] != default_keybinds[key]:
+			rebound_keys.append("%s: %s (was %s)" % [key, get_key_name(keybinds[key]), get_key_name(default_keybinds[key])])
+	if rebound_keys.size() > 0:
+		report_lines.append("")
+		report_lines.append("== Rebound Keys ==")
+		for rebound in rebound_keys:
+			report_lines.append(rebound)
 
 	# Combat info if in combat
 	if in_combat and current_enemy_name != "":
