@@ -46,32 +46,26 @@ const MSG_PERMADEATH = "permadeath"
 const MSG_LEADERBOARD = "leaderboard"
 const MSG_ERROR = "error"
 
-# Character Classes (6 classes: 2 Warrior, 2 Mage, 2 Trickster)
+# Character Classes (9 classes: 3 Warrior, 3 Mage, 3 Trickster)
 const CLASS_FIGHTER = "Fighter"
 const CLASS_BARBARIAN = "Barbarian"
+const CLASS_PALADIN = "Paladin"
 const CLASS_WIZARD = "Wizard"
+const CLASS_SORCERER = "Sorcerer"
 const CLASS_SAGE = "Sage"
 const CLASS_THIEF = "Thief"
 const CLASS_RANGER = "Ranger"
-
-# Legacy classes (kept for backwards compatibility with existing characters)
-const CLASS_PALADIN = "Paladin"
-const CLASS_SORCERER = "Sorcerer"
 const CLASS_NINJA = "Ninja"
 
 const AVAILABLE_CLASSES = [
 	CLASS_FIGHTER,
 	CLASS_BARBARIAN,
+	CLASS_PALADIN,
 	CLASS_WIZARD,
+	CLASS_SORCERER,
 	CLASS_SAGE,
 	CLASS_THIEF,
-	CLASS_RANGER
-]
-
-# Legacy classes that existing characters may have
-const LEGACY_CLASSES = [
-	CLASS_PALADIN,
-	CLASS_SORCERER,
+	CLASS_RANGER,
 	CLASS_NINJA
 ]
 

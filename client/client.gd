@@ -512,10 +512,10 @@ func _ready():
 		race_option.item_selected.connect(_on_race_selected)
 		_update_race_description()  # Set initial description
 
-	# Setup class options (6 classes: 2 Warrior, 2 Mage, 2 Trickster)
+	# Setup class options (9 classes: 3 Warrior, 3 Mage, 3 Trickster)
 	if class_option:
 		class_option.clear()
-		for cls in ["Fighter", "Barbarian", "Wizard", "Sage", "Thief", "Ranger"]:
+		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
 			class_option.add_item(cls)
 		class_option.item_selected.connect(_on_class_selected)
 		_update_class_description()  # Set initial description
