@@ -2908,8 +2908,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		if damage_buff > 0:
 			bonus_parts.append("[color=#FFD700]+%d%% buff[/color]" % damage_buff)
 
-		# Calculate mana needed (add 10% buffer to account for variance and ensure kill)
-		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.10)
+		# Calculate mana needed (add 15% buffer to account for variance and ensure kill)
+		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.15)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var damage_per_mana = snapped(effective_multiplier, 0.1)
@@ -6460,7 +6460,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -6930,6 +6930,12 @@ func process_command(text: String):
 				show_leaderboard_panel()
 			else:
 				display_game("You don't have a character yet")
+		"bug", "report":
+			# Get optional description from rest of command
+			var description = ""
+			if parts.size() > 1:
+				description = " ".join(parts.slice(1))
+			generate_bug_report(description)
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -8308,6 +8314,13 @@ Buffs shown in top bar: [Letter+Value:Duration]
   [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Lifesteal [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Forcefield
   Duration: Number = rounds, Number+B = battles
 
+[b][color=#FFD700]== BUG REPORTING ==[/color][/b]
+Found a bug? Report it!
+  • [color=#FFFF00]bug <description>[/color] - Generate bug report
+  • [color=#FFFF00]report <description>[/color] - Same as bug
+  • Report captures: game state, combat info, resources
+  • Copy the report and paste to developer for help!
+
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k2, k6, k0, k4, k1, k0]
@@ -9028,3 +9041,130 @@ func handle_watch_character(message: Dictionary):
 		gold_label.text = str(gold)
 	if gem_label:
 		gem_label.text = str(gems)
+
+# ===== BUG REPORTING =====
+
+const BUG_REPORT_PATH = "user://bug_reports.txt"
+
+func generate_bug_report(description: String = ""):
+	"""Generate a bug report with client state for troubleshooting"""
+	var timestamp = Time.get_datetime_string_from_system(false, true)
+	var report_lines = []
+
+	# Header
+	report_lines.append("===== BUG REPORT =====")
+	report_lines.append("Timestamp: %s" % timestamp)
+	report_lines.append("Version: %s" % get_version())
+
+	# Player info
+	if has_character:
+		var char_name = character_data.get("name", "Unknown")
+		var char_level = character_data.get("level", 1)
+		var char_race = character_data.get("race", "Unknown")
+		var char_class = character_data.get("class", "Unknown")
+		report_lines.append("Player: %s (Level %d %s %s)" % [char_name, char_level, char_race, char_class])
+		var x = character_data.get("x", 0)
+		var y = character_data.get("y", 0)
+		report_lines.append("Location: (%d, %d)" % [x, y])
+	else:
+		report_lines.append("Player: No character loaded")
+
+	# Game state flags
+	report_lines.append("")
+	report_lines.append("== Client State ==")
+	report_lines.append("Game State: %s" % GameState.keys()[game_state])
+	report_lines.append("Connected: %s" % str(connected))
+	report_lines.append("Has Character: %s" % str(has_character))
+	report_lines.append("In Combat: %s" % str(in_combat))
+	report_lines.append("Inventory Mode: %s" % str(inventory_mode))
+	report_lines.append("Settings Mode: %s" % str(settings_mode))
+	report_lines.append("Ability Mode: %s" % str(ability_mode))
+	report_lines.append("At Merchant: %s" % str(at_merchant))
+	report_lines.append("At Trading Post: %s" % str(at_trading_post))
+	report_lines.append("Combat Item Mode: %s" % str(combat_item_mode))
+	report_lines.append("Monster Select Mode: %s" % str(monster_select_mode))
+	report_lines.append("Flock Pending: %s" % str(flock_pending))
+	report_lines.append("Pending Continue: %s" % str(pending_continue))
+
+	# Pending actions
+	if pending_inventory_action != "":
+		report_lines.append("Pending Inventory Action: %s" % pending_inventory_action)
+	if pending_merchant_action != "":
+		report_lines.append("Pending Merchant Action: %s" % pending_merchant_action)
+	if pending_ability_action != "":
+		report_lines.append("Pending Ability Action: %s" % pending_ability_action)
+	if rebinding_action != "":
+		report_lines.append("Rebinding Action: %s" % rebinding_action)
+
+	# Combat info if in combat
+	if in_combat and current_enemy_name != "":
+		report_lines.append("")
+		report_lines.append("== Combat Info ==")
+		report_lines.append("Enemy: %s (Level %d)" % [current_enemy_name, current_enemy_level])
+		report_lines.append("Enemy HP: %d / %d" % [current_enemy_hp, current_enemy_max_hp])
+		report_lines.append("Damage Dealt: %d" % damage_dealt_to_current_enemy)
+
+	# Player resources if has character
+	if has_character:
+		report_lines.append("")
+		report_lines.append("== Resources ==")
+		report_lines.append("HP: %d / %d" % [character_data.get("current_hp", 0), character_data.get("total_max_hp", character_data.get("max_hp", 0))])
+		report_lines.append("Mana: %d / %d" % [character_data.get("current_mana", 0), character_data.get("total_max_mana", character_data.get("max_mana", 0))])
+		report_lines.append("Stamina: %d / %d" % [character_data.get("current_stamina", 0), character_data.get("max_stamina", 0)])
+		report_lines.append("Energy: %d / %d" % [character_data.get("current_energy", 0), character_data.get("max_energy", 0)])
+		report_lines.append("Gold: %d | Gems: %d" % [character_data.get("gold", 0), character_data.get("gems", 0)])
+
+		# Active buffs
+		var active_buffs = character_data.get("active_buffs", [])
+		var persistent_buffs = character_data.get("persistent_buffs", [])
+		if active_buffs.size() > 0 or persistent_buffs.size() > 0:
+			report_lines.append("")
+			report_lines.append("== Active Buffs ==")
+			for buff in active_buffs:
+				report_lines.append("- %s: +%d (%d rounds)" % [buff.get("type", "?"), buff.get("value", 0), buff.get("rounds", 0)])
+			for buff in persistent_buffs:
+				report_lines.append("- %s: +%d (%d battles)" % [buff.get("type", "?"), buff.get("value", 0), buff.get("battles", 0)])
+
+	# Description
+	report_lines.append("")
+	report_lines.append("== Bug Description ==")
+	if description != "":
+		report_lines.append(description)
+	else:
+		report_lines.append("[No description provided - use: bug <description>]")
+
+	report_lines.append("===== END REPORT =====")
+	report_lines.append("")
+
+	var report_text = "\n".join(report_lines)
+
+	# Save to file
+	var file = FileAccess.open(BUG_REPORT_PATH, FileAccess.READ_WRITE if FileAccess.file_exists(BUG_REPORT_PATH) else FileAccess.WRITE)
+	if file:
+		file.seek_end()
+		file.store_string(report_text + "\n")
+		file.close()
+
+	# Display to user
+	display_game("[color=#FFD700]===== BUG REPORT GENERATED =====[/color]")
+	display_game("[color=#808080]Saved to: %s[/color]" % ProjectSettings.globalize_path(BUG_REPORT_PATH))
+	display_game("")
+	display_game("[color=#00FFFF]Copy the report below and paste it to Claude:[/color]")
+	display_game("")
+	for line in report_lines:
+		if line.begins_with("====="):
+			display_game("[color=#FFD700]%s[/color]" % line)
+		elif line.begins_with("=="):
+			display_game("[color=#00FF00]%s[/color]" % line)
+		else:
+			display_game("[color=#FFFFFF]%s[/color]" % line)
+
+func get_version() -> String:
+	"""Get current game version from VERSION.txt"""
+	if FileAccess.file_exists("res://VERSION.txt"):
+		var file = FileAccess.open("res://VERSION.txt", FileAccess.READ)
+		if file:
+			var version = file.get_line().strip_edges()
+			file.close()
+			return version
+	return "Unknown"
