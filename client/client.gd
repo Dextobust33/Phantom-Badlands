@@ -1538,6 +1538,7 @@ func _input(event):
 				pending_ability_action = ""
 				selected_ability_slot = -1
 				display_ability_menu()
+				update_action_bar()
 			elif keycode >= KEY_A and keycode <= KEY_Z:
 				# Accept letter keys
 				var key_char = char(keycode)
@@ -1556,6 +1557,7 @@ func _input(event):
 				pending_ability_action = ""
 				selected_ability_slot = -1
 				display_ability_menu()
+				update_action_bar()
 				get_viewport().set_input_as_handled()
 				return
 
@@ -1569,6 +1571,30 @@ func _input(event):
 			elif keycode == KEY_SPACE or keycode == KEY_ESCAPE:
 				pending_ability_action = ""
 				display_ability_menu()
+				update_action_bar()
+				get_viewport().set_input_as_handled()
+				return
+
+		# Main ability menu (no pending action) - handle Q/W/E/R for menu actions
+		if pending_ability_action == "":
+			if keycode == KEY_SPACE or keycode == KEY_ESCAPE:
+				# Exit ability mode
+				exit_ability_mode()
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == KEY_Q:
+				# Equip
+				show_ability_equip_prompt()
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == KEY_W:
+				# Unequip
+				show_ability_unequip_prompt()
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == KEY_E:
+				# Keybinds
+				show_keybind_prompt()
 				get_viewport().set_input_as_handled()
 				return
 
@@ -2844,7 +2870,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var effective_multiplier = int_multiplier * 0.85
 
 		# Apply class passive bonuses
-		var class_type = character_data.get("class_type", "")
+		var class_type = character_data.get("class", "")
 		var passive_bonus_text = ""
 		match class_type:
 			"Wizard":
@@ -3542,6 +3568,7 @@ func execute_local_action(action: String):
 			pending_ability_action = ""
 			selected_ability_slot = -1
 			display_ability_menu()
+			update_action_bar()
 
 func select_wish(index: int):
 	"""Send wish selection to server"""
