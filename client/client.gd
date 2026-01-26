@@ -5220,7 +5220,8 @@ func handle_server_message(message: Dictionary):
 			# Play item drop sound if an item was found
 			var item = message.get("item")
 			if item != null:
-				_play_item_drop_sound(item.get("rarity", "common"), item.get("level", 1) - character_data.get("level", 1))
+				var drop_value = _get_rarity_value(item.get("rarity", "common"))
+				play_rare_drop_sound(drop_value)
 			pending_continue = true
 			update_action_bar()
 
