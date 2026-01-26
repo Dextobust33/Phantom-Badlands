@@ -232,6 +232,12 @@ var pending_inventory_action: String = ""  # Action waiting for item selection
 var last_item_use_result: String = ""  # Store last item use result to display after inventory refresh
 var awaiting_item_use_result: bool = false  # Flag to capture next text message as item use result
 
+# Ability management mode
+var ability_mode: bool = false
+var ability_data: Dictionary = {}  # Cached ability data from server
+var pending_ability_action: String = ""  # "equip", "unequip", "keybind"
+var selected_ability_slot: int = -1  # Slot being modified
+
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
@@ -308,6 +314,10 @@ var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
+var current_forcefield: int = 0  # Current forcefield/shield value from combat
+
+# Shield bar overlay (created dynamically)
+var shield_fill_panel: Panel = null
 
 # Combat animation system
 var combat_spinner_frames = ["[", "|", "/", "-", "\\", "|", "/", "-"]
@@ -364,12 +374,15 @@ const RACE_DESCRIPTIONS = {
 }
 
 const CLASS_DESCRIPTIONS = {
-	"Fighter": "Warrior Path. Balanced melee fighter with solid defense and offense. Uses Stamina for powerful physical abilities.",
-	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina for devastating attacks.",
-	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana for versatile magical abilities.",
-	"Sage": "Mage Path. Wise scholar balancing offense and utility. Uses Mana with improved regeneration.",
-	"Thief": "Trickster Path. Cunning rogue excelling at evasion and critical hits. Uses Energy for tricks and ambushes.",
-	"Ranger": "Trickster Path. Versatile scout with balanced combat and survival skills. Uses Energy efficiently."
+	"Fighter": "Warrior Path. Balanced melee fighter with solid defense and offense. Uses Stamina.\n[color=#C0C0C0]Passive - Tactical Discipline:[/color] 20% reduced stamina costs, +15% defense",
+	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina.\n[color=#8B0000]Passive - Blood Rage:[/color] +3% damage per 10% HP missing (max +30%), abilities cost 25% more",
+	"Paladin": "Warrior Path. Holy knight with sustain and bonus damage vs evil. Uses Stamina.\n[color=#FFD700]Passive - Divine Favor:[/color] Heal 3% max HP per round, +25% damage vs undead/demons",
+	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.\n[color=#4169E1]Passive - Arcane Precision:[/color] +15% spell damage, +10% spell crit chance",
+	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 10% chance to backfire",
+	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
+	"Thief": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
+	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% gold/XP from kills",
+	"Ninja": "Trickster Path. Shadow warrior with superior escape abilities. Uses Energy.\n[color=#191970]Passive - Shadow Step:[/color] +40% flee success, take no damage when fleeing"
 }
 
 # ===== ABILITY SYSTEM CONSTANTS =====
@@ -1514,6 +1527,51 @@ func _input(event):
 					update_action_bar()
 			get_viewport().set_input_as_handled()
 
+	# Handle ability mode input
+	if ability_mode and event is InputEventKey and event.pressed and not event.echo:
+		var keycode = event.keycode
+
+		if pending_ability_action == "press_keybind":
+			# Waiting for a key to set as keybind
+			if keycode == KEY_ESCAPE or keycode == KEY_SPACE:
+				# Cancel
+				pending_ability_action = ""
+				selected_ability_slot = -1
+				display_ability_menu()
+			elif keycode >= KEY_A and keycode <= KEY_Z:
+				# Accept letter keys
+				var key_char = char(keycode)
+				handle_keybind_press(key_char)
+			get_viewport().set_input_as_handled()
+			return
+
+		if pending_ability_action == "choose_ability":
+			# Choosing from ability list
+			if keycode >= KEY_1 and keycode <= KEY_9:
+				var choice = keycode - KEY_0
+				handle_ability_choice(choice)
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == KEY_SPACE or keycode == KEY_ESCAPE:
+				pending_ability_action = ""
+				selected_ability_slot = -1
+				display_ability_menu()
+				get_viewport().set_input_as_handled()
+				return
+
+		if pending_ability_action in ["select_ability", "select_unequip_slot", "select_keybind_slot"]:
+			# Selecting a slot (1-4)
+			if keycode >= KEY_1 and keycode <= KEY_4:
+				var slot_num = keycode - KEY_0
+				handle_ability_slot_selection(slot_num)
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == KEY_SPACE or keycode == KEY_ESCAPE:
+				pending_ability_action = ""
+				display_ability_menu()
+				get_viewport().set_input_as_handled()
+				return
+
 # ===== UI PANEL MANAGEMENT =====
 
 func hide_all_panels():
@@ -1679,6 +1737,10 @@ func display_examine_result(data: Dictionary):
 	var total_defense = data.get("total_defense", con_stat / 2)
 
 	var status = "[color=#00FF00]Exploring[/color]" if not in_combat_flag else "[color=#FF4444]In Combat[/color]"
+	# Add cloak indicator if active
+	var cloak_active = data.get("cloak_active", false)
+	if cloak_active and not in_combat_flag:
+		status = "[color=#9932CC]Cloaked[/color]"
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
 	display_game("Level %d %s %s - %s" % [level, char_race, cls, status])
@@ -1910,6 +1972,10 @@ func show_player_info_popup(data: Dictionary):
 	var total_defense = data.get("total_defense", con_stat / 2)
 
 	var status_text = "[color=#00FF00]Exploring[/color]" if not in_combat_status else "[color=#FF4444]In Combat[/color]"
+	# Add cloak indicator if active
+	var cloak_active = data.get("cloak_active", false)
+	if cloak_active and not in_combat_status:
+		status_text = "[color=#9932CC]Cloaked[/color]"
 
 	var xp_needed = data.get("experience_to_next_level", 100)
 	var xp_remaining = xp_needed - exp
@@ -2110,6 +2176,65 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif ability_mode:
+		# Ability management mode
+		if pending_ability_action == "choose_ability":
+			# Choosing an ability from list
+			var unlocked = ability_data.get("unlocked_abilities", [])
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % unlocked.size(), "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_ability_action == "press_keybind":
+			# Waiting for keybind press
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Press Key", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_ability_action in ["select_ability", "select_unequip_slot", "select_keybind_slot"]:
+			# Selecting a slot (1-4)
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-4 Slot", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Main ability menu
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "ability_exit", "enabled": true},
+				{"label": "Equip", "action_type": "local", "action_data": "ability_equip", "enabled": true},
+				{"label": "Unequip", "action_type": "local", "action_data": "ability_unequip", "enabled": true},
+				{"label": "Keybinds", "action_type": "local", "action_data": "ability_keybinds", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif combat_item_mode:
 		# Combat item selection mode - show cancel only, use number keys to select
 		current_actions = [
@@ -2401,15 +2526,20 @@ func update_action_bar():
 		var char_class = character_data.get("class", "")
 		if char_class in ["Wizard", "Sorcerer", "Sage"]:
 			rest_label = "Meditate"
+		# Cloak availability (level 20+)
+		var player_level = character_data.get("level", 1)
+		var cloak_unlocked = player_level >= 20
+		var cloak_active = character_data.get("cloak_active", false)
+		var cloak_label = "Uncloak" if cloak_active else "Cloak"
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
-			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "Abilities", "action_type": "local", "action_data": "abilities", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": cloak_unlocked},
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
@@ -2701,7 +2831,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		"energy":
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT
+	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
 	var suggested_amount = 0
 	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
 		# Magic Bolt damage = mana * (1 + INT/50), reduced by monster WIS
@@ -2713,12 +2843,26 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		# Assume ~15% WIS reduction as conservative estimate (monsters vary)
 		var effective_multiplier = int_multiplier * 0.85
 
+		# Apply class passive bonuses
+		var class_type = character_data.get("class_type", "")
+		var passive_bonus_text = ""
+		match class_type:
+			"Wizard":
+				# Arcane Precision: +15% spell damage
+				effective_multiplier *= 1.15
+				passive_bonus_text = " [color=#4169E1]+15% Arcane Precision[/color]"
+			"Sorcerer":
+				# Chaos Magic: average 25% bonus (double 25% of time minus backfire 10%)
+				# Net average: +25%*0.5 - 10%*0.25 = +12.5% - 2.5% = +10%
+				effective_multiplier *= 1.10
+				passive_bonus_text = " [color=#9400D3]+10% avg Chaos Magic[/color]"
+
 		# Calculate mana needed (round up to ensure kill)
 		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var damage_per_mana = snapped(effective_multiplier, 0.1)
-		ability_popup_description.text = "~%.1f dmg/mana (INT %d). Enemy HP: %d" % [damage_per_mana, int_stat, current_enemy_hp]
+		ability_popup_description.text = "~%.1f dmg/mana (INT %d).%s Enemy HP: %d" % [damage_per_mana, int_stat, passive_bonus_text, current_enemy_hp]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -3008,57 +3152,107 @@ func _get_ability_slots_for_path(path: String) -> Array:
 	return []
 
 func _get_combat_ability_actions() -> Array:
-	"""Build combat ability actions based on player's path and level."""
+	"""Build combat ability actions based on player's equipped abilities."""
 	var abilities = []
 	var player_level = character_data.get("level", 1)
 	var path = _get_player_active_path()
-	var ability_slots = _get_ability_slots_for_path(path)
 
 	# Get current resources
 	var current_mana = character_data.get("current_mana", 0)
 	var current_stamina = character_data.get("current_stamina", 0)
 	var current_energy = character_data.get("current_energy", 0)
 
-	# Build 6 ability slots (E, R, 1, 2, 3, 4)
-	for i in range(6):
-		if i < ability_slots.size():
-			var slot = ability_slots[i]
-			var command = slot[0]
-			var display_name = slot[1]
-			var required_level = slot[2]
-			var cost = slot[3]
-			var resource_type = slot[4]
+	# Get equipped abilities from character data
+	var equipped_abilities = character_data.get("equipped_abilities", [])
 
-			if player_level >= required_level:
-				# Check if player has enough resources
-				var has_resource = true
-				if resource_type == "mana" and cost > 0:
-					has_resource = current_mana >= cost
-				elif resource_type == "stamina":
-					has_resource = current_stamina >= cost
-				elif resource_type == "energy":
-					has_resource = current_energy >= cost
+	# If no equipped abilities, fall back to hardcoded slots (backward compatibility)
+	if equipped_abilities.is_empty():
+		var ability_slots = _get_ability_slots_for_path(path)
+		# Build using old method
+		for i in range(6):
+			if i < ability_slots.size():
+				var slot = ability_slots[i]
+				var command = slot[0]
+				var display_name = slot[1]
+				var required_level = slot[2]
+				var cost = slot[3]
+				var resource_type = slot[4]
 
-				abilities.append({
-					"label": display_name,
-					"action_type": "combat",
-					"action_data": command,
-					"enabled": has_resource,
-					"cost": cost,
-					"resource_type": resource_type
-				})
+				if player_level >= required_level:
+					var has_resource = true
+					if resource_type == "mana" and cost > 0:
+						has_resource = current_mana >= cost
+					elif resource_type == "stamina":
+						has_resource = current_stamina >= cost
+					elif resource_type == "energy":
+						has_resource = current_energy >= cost
+
+					abilities.append({
+						"label": display_name,
+						"action_type": "combat",
+						"action_data": command,
+						"enabled": has_resource,
+						"cost": cost,
+						"resource_type": resource_type
+					})
+				else:
+					abilities.append({
+						"label": "Lv%d" % required_level,
+						"action_type": "none",
+						"action_data": "",
+						"enabled": false,
+						"cost": 0,
+						"resource_type": ""
+					})
 			else:
-				# Ability not unlocked yet - show locked
 				abilities.append({
-					"label": "Lv%d" % required_level,
+					"label": "---",
 					"action_type": "none",
 					"action_data": "",
 					"enabled": false,
 					"cost": 0,
 					"resource_type": ""
 				})
+		return abilities
+
+	# Build ability actions from equipped abilities (4 slots + 2 empty for expansion)
+	for i in range(6):
+		if i < equipped_abilities.size() and equipped_abilities[i] != "" and equipped_abilities[i] != null:
+			var ability_name = equipped_abilities[i]
+			var ability_info = _get_ability_combat_info(ability_name, path)
+
+			if ability_info.is_empty():
+				abilities.append({
+					"label": "---",
+					"action_type": "none",
+					"action_data": "",
+					"enabled": false,
+					"cost": 0,
+					"resource_type": ""
+				})
+				continue
+
+			var cost = ability_info.cost
+			var resource_type = ability_info.resource_type
+
+			# Check if player has enough resources
+			var has_resource = true
+			if resource_type == "mana" and cost > 0:
+				has_resource = current_mana >= cost
+			elif resource_type == "stamina":
+				has_resource = current_stamina >= cost
+			elif resource_type == "energy":
+				has_resource = current_energy >= cost
+
+			abilities.append({
+				"label": ability_info.display,
+				"action_type": "combat",
+				"action_data": ability_name,
+				"enabled": has_resource,
+				"cost": cost,
+				"resource_type": resource_type
+			})
 		else:
-			# No ability for this slot
 			abilities.append({
 				"label": "---",
 				"action_type": "none",
@@ -3069,6 +3263,48 @@ func _get_combat_ability_actions() -> Array:
 			})
 
 	return abilities
+
+func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
+	"""Get combat info for an ability (display name, cost, resource type)"""
+	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
+
+	# Ability definitions with display name and cost
+	var ability_defs = {
+		# Mage abilities
+		"magic_bolt": {"display": "Bolt", "cost": 0, "resource_type": "mana"},
+		"shield": {"display": "Shield", "cost": 20, "resource_type": "mana"},
+		"blast": {"display": "Blast", "cost": 50, "resource_type": "mana"},
+		"forcefield": {"display": "Field", "cost": 75, "resource_type": "mana"},
+		"teleport": {"display": "Teleport", "cost": 40, "resource_type": "mana"},
+		"meteor": {"display": "Meteor", "cost": 100, "resource_type": "mana"},
+		"haste": {"display": "Haste", "cost": 35, "resource_type": "mana"},
+		"paralyze": {"display": "Paralyze", "cost": 60, "resource_type": "mana"},
+		"banish": {"display": "Banish", "cost": 80, "resource_type": "mana"},
+		# Warrior abilities
+		"power_strike": {"display": "Strike", "cost": 10, "resource_type": "stamina"},
+		"war_cry": {"display": "Cry", "cost": 15, "resource_type": "stamina"},
+		"shield_bash": {"display": "Bash", "cost": 20, "resource_type": "stamina"},
+		"cleave": {"display": "Cleave", "cost": 30, "resource_type": "stamina"},
+		"berserk": {"display": "Berserk", "cost": 40, "resource_type": "stamina"},
+		"iron_skin": {"display": "Iron", "cost": 35, "resource_type": "stamina"},
+		"devastate": {"display": "Devastate", "cost": 60, "resource_type": "stamina"},
+		"fortify": {"display": "Fortify", "cost": 25, "resource_type": "stamina"},
+		"rally": {"display": "Rally", "cost": 45, "resource_type": "stamina"},
+		# Trickster abilities
+		"analyze": {"display": "Analyze", "cost": 5, "resource_type": "energy"},
+		"distract": {"display": "Distract", "cost": 15, "resource_type": "energy"},
+		"pickpocket": {"display": "Steal", "cost": 20, "resource_type": "energy"},
+		"ambush": {"display": "Ambush", "cost": 30, "resource_type": "energy"},
+		"vanish": {"display": "Vanish", "cost": 40, "resource_type": "energy"},
+		"exploit": {"display": "Exploit", "cost": 35, "resource_type": "energy"},
+		"perfect_heist": {"display": "Heist", "cost": 50, "resource_type": "energy"},
+		"sabotage": {"display": "Sabotage", "cost": 25, "resource_type": "energy"},
+		"gambit": {"display": "Gambit", "cost": 35, "resource_type": "energy"},
+		# Universal abilities
+		"cloak": {"display": "Cloak", "cost": 30, "resource_type": resource_type},
+	}
+
+	return ability_defs.get(ability_name, {})
 
 func show_combat_item_menu():
 	"""Display usable items for combat selection."""
@@ -3291,6 +3527,21 @@ func execute_local_action(action: String):
 		# Target farm scroll actions
 		"target_farm_cancel":
 			cancel_target_farm()
+		# Ability management actions
+		"abilities":
+			enter_ability_mode()
+		"ability_exit":
+			exit_ability_mode()
+		"ability_equip":
+			show_ability_equip_prompt()
+		"ability_unequip":
+			show_ability_unequip_prompt()
+		"ability_keybinds":
+			show_keybind_prompt()
+		"ability_cancel":
+			pending_ability_action = ""
+			selected_ability_slot = -1
+			display_ability_menu()
 
 func select_wish(index: int):
 	"""Send wish selection to server"""
@@ -4495,6 +4746,210 @@ func _count_equipped_items(equipped: Dictionary) -> int:
 			count += 1
 	return count
 
+# ===== ABILITY MANAGEMENT UI =====
+
+func enter_ability_mode():
+	"""Enter ability management mode"""
+	ability_mode = true
+	pending_ability_action = ""
+	selected_ability_slot = -1
+	# Request ability data from server
+	send_to_server({"type": "get_abilities"})
+	update_action_bar()
+
+func exit_ability_mode():
+	"""Exit ability management mode"""
+	ability_mode = false
+	pending_ability_action = ""
+	selected_ability_slot = -1
+	ability_data.clear()
+	display_game("[color=#808080]Exited ability management.[/color]")
+	update_action_bar()
+
+func display_ability_menu():
+	"""Display the ability loadout management screen"""
+	if not ability_mode or ability_data.is_empty():
+		return
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== ABILITY LOADOUT =====[/color]")
+	display_game("")
+
+	var equipped = ability_data.get("equipped_abilities", [])
+	var keybinds = ability_data.get("ability_keybinds", {})
+	var unlocked = ability_data.get("unlocked_abilities", [])
+	var all_abilities = ability_data.get("all_abilities", [])
+
+	# Show currently equipped abilities in 4 slots
+	display_game("[color=#00FFFF]Combat Slots:[/color]")
+	for i in range(4):
+		var ability_name = equipped[i] if i < equipped.size() else ""
+		var keybind = keybinds.get(str(i), keybinds.get(i, "?"))
+		if ability_name != "" and ability_name != null:
+			var ability_info = _get_ability_info_from_list(ability_name, all_abilities)
+			var display_name = ability_info.get("display", ability_name.capitalize().replace("_", " "))
+			var cost_text = _get_ability_cost_text(ability_name)
+			display_game("  [%s] Slot %d: [color=#00FF00]%s[/color] %s" % [keybind, i + 1, display_name, cost_text])
+		else:
+			display_game("  [%s] Slot %d: [color=#555555](empty)[/color]" % [keybind, i + 1])
+
+	display_game("")
+
+	# Show available abilities
+	display_game("[color=#00FFFF]Available Abilities:[/color]")
+	var player_level = character_data.get("level", 1)
+	for ability in all_abilities:
+		var name = ability.get("name", "")
+		var display_name = ability.get("display", name.capitalize())
+		var req_level = ability.get("level", 1)
+		var is_unlocked = player_level >= req_level
+		var is_equipped = name in equipped
+
+		if is_unlocked:
+			var status = "[color=#00FF00]EQUIPPED[/color]" if is_equipped else ""
+			var cost_text = _get_ability_cost_text(name)
+			display_game("  [color=#FFFFFF]%s[/color] %s %s" % [display_name, cost_text, status])
+		else:
+			display_game("  [color=#555555]%s (Lv %d)[/color]" % [display_name, req_level])
+
+	display_game("")
+	display_game("[color=#808080]%s=Back, %s=Equip, %s=Unequip, %s=Keybinds[/color]" % [
+		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
+
+func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> Dictionary:
+	"""Find ability info from the ability list"""
+	for ability in ability_list:
+		if ability.get("name", "") == ability_name:
+			return ability
+	return {}
+
+func _get_ability_cost_text(ability_name: String) -> String:
+	"""Get cost text for an ability"""
+	var path = _get_player_active_path()
+	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
+	var resource_color = "#66CCFF" if path == "mage" else ("#FFCC66" if path == "warrior" else "#66FF66")
+
+	# Get cost from ability info
+	var cost = 0
+	match ability_name:
+		# Mage abilities
+		"magic_bolt": cost = 0  # Variable
+		"shield": cost = 20
+		"blast": cost = 50
+		"forcefield": cost = 75
+		"teleport": cost = 40
+		"meteor": cost = 100
+		"haste": cost = 35
+		"paralyze": cost = 60
+		"banish": cost = 80
+		# Warrior abilities
+		"power_strike": cost = 10
+		"war_cry": cost = 15
+		"shield_bash": cost = 20
+		"cleave": cost = 30
+		"berserk": cost = 40
+		"iron_skin": cost = 35
+		"devastate": cost = 60
+		"fortify": cost = 25
+		"rally": cost = 45
+		# Trickster abilities
+		"analyze": cost = 5
+		"distract": cost = 15
+		"pickpocket": cost = 20
+		"ambush": cost = 30
+		"vanish": cost = 40
+		"exploit": cost = 35
+		"perfect_heist": cost = 50
+		"sabotage": cost = 25
+		"gambit": cost = 35
+		# Universal
+		"cloak": cost = 0  # % based
+
+	if ability_name == "magic_bolt":
+		return "[color=%s](variable mana)[/color]" % resource_color
+	elif ability_name == "cloak":
+		return "[color=#9932CC](8%% per move)[/color]"
+	elif cost > 0:
+		return "[color=%s](%d %s)[/color]" % [resource_color, cost, resource_type.substr(0, 3)]
+	return ""
+
+func show_ability_equip_prompt():
+	"""Show prompt to select an ability to equip"""
+	pending_ability_action = "select_ability"
+	display_game("")
+	display_game("[color=#FFD700]Select slot (1-4) to equip to:[/color]")
+	update_action_bar()
+
+func show_ability_unequip_prompt():
+	"""Show prompt to select slot to unequip"""
+	pending_ability_action = "select_unequip_slot"
+	display_game("")
+	display_game("[color=#FFD700]Select slot (1-4) to unequip:[/color]")
+	update_action_bar()
+
+func show_keybind_prompt():
+	"""Show prompt to change keybinds"""
+	pending_ability_action = "select_keybind_slot"
+	display_game("")
+	display_game("[color=#FFD700]Select slot (1-4) to change keybind:[/color]")
+	update_action_bar()
+
+func handle_ability_slot_selection(slot_num: int):
+	"""Handle when a slot number is selected in ability mode"""
+	if slot_num < 1 or slot_num > 4:
+		display_game("[color=#FF0000]Invalid slot. Use 1-4.[/color]")
+		return
+
+	var slot_index = slot_num - 1
+
+	match pending_ability_action:
+		"select_ability":
+			# Show list of abilities to choose from
+			selected_ability_slot = slot_index
+			pending_ability_action = "choose_ability"
+			display_game("")
+			display_game("[color=#FFD700]Select ability for slot %d:[/color]" % slot_num)
+			var unlocked = ability_data.get("unlocked_abilities", [])
+			for i in range(unlocked.size()):
+				var ability = unlocked[i]
+				var display_name = ability.get("display", ability.name.capitalize())
+				display_game("  %d. %s" % [i + 1, display_name])
+			display_game("[color=#808080]Press 1-%d to select, %s to cancel[/color]" % [unlocked.size(), get_action_key_name(0)])
+			update_action_bar()
+
+		"select_unequip_slot":
+			send_to_server({"type": "unequip_ability", "slot": slot_index})
+			pending_ability_action = ""
+
+		"select_keybind_slot":
+			selected_ability_slot = slot_index
+			pending_ability_action = "press_keybind"
+			display_game("")
+			display_game("[color=#FFD700]Press a key for slot %d (Q/W/E/R or any letter):[/color]" % slot_num)
+			update_action_bar()
+
+func handle_ability_choice(choice_num: int):
+	"""Handle when an ability is chosen from the list"""
+	var unlocked = ability_data.get("unlocked_abilities", [])
+	if choice_num < 1 or choice_num > unlocked.size():
+		display_game("[color=#FF0000]Invalid choice.[/color]")
+		return
+
+	var ability = unlocked[choice_num - 1]
+	send_to_server({"type": "equip_ability", "slot": selected_ability_slot, "ability": ability.name})
+	pending_ability_action = ""
+	selected_ability_slot = -1
+
+func handle_keybind_press(key: String):
+	"""Handle a keybind press when setting keybind"""
+	if key.length() != 1 or not key.is_valid_identifier():
+		display_game("[color=#FF0000]Invalid key. Use a single letter.[/color]")
+		return
+
+	send_to_server({"type": "set_ability_keybind", "slot": selected_ability_slot, "key": key})
+	pending_ability_action = ""
+	selected_ability_slot = -1
+
 func select_inventory_item(index: int):
 	"""Process inventory action with selected item index (0-based)"""
 	var inventory = character_data.get("inventory", [])
@@ -4743,8 +5198,14 @@ func update_player_hp_bar():
 		style.bg_color = get_hp_color(percent)
 		fill.add_theme_stylebox_override("panel", style)
 
+	# Update shield/forcefield overlay
+	_update_shield_bar(max_hp)
+
 	if label:
-		label.text = "HP: %d/%d" % [current_hp, max_hp]
+		if current_forcefield > 0:
+			label.text = "HP: %d/%d [color=#9932CC](+%d Shield)[/color]" % [current_hp, max_hp, current_forcefield]
+		else:
+			label.text = "HP: %d/%d" % [current_hp, max_hp]
 
 	# Update the buff display panel
 	update_buff_display()
@@ -4816,6 +5277,47 @@ func _get_buff_letter(buff_type: String) -> String:
 		"damage_penalty": return "A-"
 		"defense_penalty": return "D-"
 		_: return buff_type.substr(0, 1).to_upper()
+
+func _update_shield_bar(max_hp: int):
+	"""Update the purple shield/forcefield overlay on the HP bar"""
+	if not player_health_bar:
+		return
+
+	# Create shield fill panel if it doesn't exist
+	if shield_fill_panel == null:
+		shield_fill_panel = Panel.new()
+		shield_fill_panel.name = "ShieldFill"
+		# Position it after Fill but before HPLabel
+		var fill_node = player_health_bar.get_node_or_null("Fill")
+		if fill_node:
+			player_health_bar.add_child(shield_fill_panel)
+			player_health_bar.move_child(shield_fill_panel, fill_node.get_index() + 1)
+		else:
+			player_health_bar.add_child(shield_fill_panel)
+
+		# Set up anchors for dynamic sizing (same as Fill)
+		shield_fill_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+		shield_fill_panel.anchor_left = 0
+		shield_fill_panel.anchor_top = 0
+		shield_fill_panel.anchor_bottom = 1
+		shield_fill_panel.offset_left = 0
+		shield_fill_panel.offset_top = 0
+		shield_fill_panel.offset_bottom = 0
+
+		# Create purple style
+		var shield_style = StyleBoxFlat.new()
+		shield_style.bg_color = Color(0.6, 0.2, 0.8, 0.7)  # Purple, semi-transparent
+		shield_fill_panel.add_theme_stylebox_override("panel", shield_style)
+
+	# Update shield bar visibility and size
+	if current_forcefield > 0 and max_hp > 0:
+		shield_fill_panel.visible = true
+		# Shield shows as percentage of max HP (can exceed 100% if shield > max_hp)
+		var shield_percent = min(1.0, float(current_forcefield) / float(max_hp))
+		shield_fill_panel.anchor_right = shield_percent
+		shield_fill_panel.offset_right = 0
+	else:
+		shield_fill_panel.visible = false
 
 func update_resource_bar():
 	if not resource_bar or not has_character:
@@ -5398,6 +5900,57 @@ func handle_server_message(message: Dictionary):
 			# Update HP bar since poison may have dealt damage
 			if message.get("effect", "") == "poison":
 				update_player_hp_bar()
+			# Update action bar if cloak dropped (to reflect new state)
+			if message.get("effect", "") == "cloak_dropped":
+				update_action_bar()
+
+		"cloak_toggle":
+			# Handle cloak toggle response
+			var cloak_msg = message.get("message", "")
+			var cloak_active = message.get("active", false)
+			if cloak_msg != "":
+				display_game(cloak_msg)
+			# Update character_data with new cloak state
+			character_data["cloak_active"] = cloak_active
+			update_action_bar()
+
+		"ability_data":
+			# Received ability loadout data from server
+			ability_data = {
+				"all_abilities": message.get("all_abilities", []),
+				"unlocked_abilities": message.get("unlocked_abilities", []),
+				"equipped_abilities": message.get("equipped_abilities", []),
+				"ability_keybinds": message.get("ability_keybinds", {})
+			}
+			# Also update character_data
+			character_data["equipped_abilities"] = ability_data.equipped_abilities
+			character_data["ability_keybinds"] = ability_data.ability_keybinds
+			# Display ability management screen
+			display_ability_menu()
+
+		"ability_equipped":
+			var equip_msg = message.get("message", "")
+			if equip_msg != "":
+				display_game(equip_msg)
+			# Refresh ability display
+			if ability_mode:
+				send_to_server({"type": "get_abilities"})
+
+		"ability_unequipped":
+			var unequip_msg = message.get("message", "")
+			if unequip_msg != "":
+				display_game(unequip_msg)
+			# Refresh ability display
+			if ability_mode:
+				send_to_server({"type": "get_abilities"})
+
+		"keybind_changed":
+			var keybind_msg = message.get("message", "")
+			if keybind_msg != "":
+				display_game(keybind_msg)
+			# Refresh ability display
+			if ability_mode:
+				send_to_server({"type": "get_abilities"})
 
 		"combat_start":
 			in_combat = true
@@ -5459,6 +6012,10 @@ func handle_server_message(message: Dictionary):
 			if combat_state.has("player_energy"):
 				character_data["current_energy"] = combat_state.get("player_energy", 0)
 				character_data["max_energy"] = combat_state.get("player_max_energy", 0)
+
+			# Track forcefield/shield value for visual display
+			current_forcefield = combat_state.get("forcefield_shield", 0)
+			update_player_hp_bar()  # Refresh HP bar with shield overlay
 
 			show_enemy_hp_bar(true)
 			update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0, current_enemy_hp, current_enemy_max_hp)
@@ -5523,6 +6080,8 @@ func handle_server_message(message: Dictionary):
 				# Update monster HP from server (accurate values)
 				current_enemy_hp = state.get("monster_hp", current_enemy_hp)
 				current_enemy_max_hp = state.get("monster_max_hp", current_enemy_max_hp)
+				# Track forcefield/shield for visual display
+				current_forcefield = state.get("forcefield_shield", 0)
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 				update_player_hp_bar()
 				update_resource_bar()
@@ -5532,6 +6091,8 @@ func handle_server_message(message: Dictionary):
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
+			current_forcefield = 0  # Reset forcefield display
+			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
 				if damage_dealt_to_current_enemy > 0:
@@ -5807,7 +6368,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -6265,6 +6826,16 @@ func process_command(text: String):
 		"settings", "keybinds", "keys":
 			if has_character:
 				open_settings()
+			else:
+				display_game("You don't have a character yet")
+		"abilities", "loadout":
+			if has_character:
+				enter_ability_mode()
+			else:
+				display_game("You don't have a character yet")
+		"leaders", "leaderboard":
+			if has_character:
+				show_leaderboard_panel()
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -6851,6 +7422,12 @@ func display_character_status():
 	var text = "[b][color=#FFD700]═══════ Character Status ═══════[/color][/b]\n"
 	text += "Name: %s\n" % char.get("name", "Unknown")
 	text += "Race: %s  |  Class: %s  |  Level: %d\n" % [char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
+
+	# === CLASS PASSIVE ===
+	var class_passive = _get_class_passive(char.get("class", ""))
+	if class_passive.name != "None":
+		text += "[color=%s]%s:[/color] %s\n" % [class_passive.color, class_passive.name, class_passive.description]
+
 	text += "[color=#FF00FF]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
 	text += "Gold: %d  |  Position: (%d, %d)  |  Kills: %d\n\n" % [char.get("gold", 0), char.get("x", 0), char.get("y", 0), char.get("monsters_killed", 0)]
 
@@ -7043,6 +7620,30 @@ func _get_status_effects_text() -> String:
 
 	return "[color=#AAFFAA]Active Effects:[/color]\n" + "\n".join(lines)
 
+func _get_class_passive(class_type: String) -> Dictionary:
+	"""Get class passive info (client-side mirror of Character.get_class_passive)"""
+	match class_type:
+		"Fighter":
+			return {"name": "Tactical Discipline", "description": "20% reduced stamina costs, +15% defense", "color": "#C0C0C0"}
+		"Barbarian":
+			return {"name": "Blood Rage", "description": "+3% damage per 10% HP missing (max +30%), abilities cost 25% more", "color": "#8B0000"}
+		"Paladin":
+			return {"name": "Divine Favor", "description": "Heal 3% max HP per round, +25% damage vs undead/demons", "color": "#FFD700"}
+		"Wizard":
+			return {"name": "Arcane Precision", "description": "+15% spell damage, +10% spell crit chance", "color": "#4169E1"}
+		"Sorcerer":
+			return {"name": "Chaos Magic", "description": "25% chance for double spell damage, 10% chance to backfire", "color": "#9400D3"}
+		"Sage":
+			return {"name": "Mana Mastery", "description": "25% reduced mana costs, Meditate restores 50% more", "color": "#20B2AA"}
+		"Thief":
+			return {"name": "Backstab", "description": "+50% crit damage, +15% base crit chance", "color": "#2F4F4F"}
+		"Ranger":
+			return {"name": "Hunter's Mark", "description": "+25% damage vs beasts, +30% gold/XP from kills", "color": "#228B22"}
+		"Ninja":
+			return {"name": "Shadow Step", "description": "+40% flee success, take no damage when fleeing", "color": "#191970"}
+		_:
+			return {"name": "None", "description": "No passive ability", "color": "#808080"}
+
 func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 	"""Calculate total bonuses from equipped items (client-side mirror of Character method)"""
 	var bonuses = {
@@ -7188,6 +7789,13 @@ func show_help():
   inventory/inv/i - Open inventory
   [%s] Inventory in movement mode
   Equip/Unequip stays in mode for quick multi-select
+
+[color=#00FFFF]Abilities:[/color]
+  abilities/loadout - Manage ability loadout
+  [%s] Abilities in movement mode
+  • Equip/unequip abilities to 4 combat slots
+  • Customize keybinds per slot
+  • Cloak unlocks at level 20 (universal stealth)
 
 [color=#00FFFF]Social:[/color]
   who/players - Refresh player list
@@ -7351,19 +7959,31 @@ When a Wish Granter offers you a wish (10%% chance):
   • Includes potions, regen, and other heals
   • Great for sustained combat
 
-[b][color=#FFD700]== CLASS OVERVIEW ==[/color][/b]
+[b][color=#FFD700]== CLASS PASSIVES ==[/color][/b]
 
 [color=#FF6666]Warrior Path[/color] (STR > 10) - Uses Stamina
-  [color=#FFCC00]Fighter[/color] - Balanced melee with solid defense/offense
-  [color=#FFCC00]Barbarian[/color] - Aggressive berserker, high damage, low defense
+  [color=#C0C0C0]Fighter[/color] - Tactical Discipline
+    • 20%% reduced stamina costs, +15%% defense
+  [color=#8B0000]Barbarian[/color] - Blood Rage
+    • +3%% damage per 10%% HP missing (max +30%%), abilities cost 25%% more
+  [color=#FFD700]Paladin[/color] - Divine Favor
+    • Heal 3%% max HP per combat round, +25%% damage vs undead/demons
 
 [color=#66FFFF]Mage Path[/color] (INT > 10) - Uses Mana
-  [color=#66CCCC]Wizard[/color] - Pure spellcaster, high magic damage
-  [color=#66CCCC]Sage[/color] - Balanced scholar with utility focus
+  [color=#4169E1]Wizard[/color] - Arcane Precision
+    • +15%% spell damage, +10%% spell crit chance
+  [color=#9400D3]Sorcerer[/color] - Chaos Magic
+    • 25%% chance for double spell damage, 10%% chance to backfire
+  [color=#20B2AA]Sage[/color] - Mana Mastery
+    • 25%% reduced mana costs, Meditate restores 50%% more
 
 [color=#66FF66]Trickster Path[/color] (WITS > 10) - Uses Energy
-  [color=#90EE90]Thief[/color] - Cunning rogue, evasion and crits
-  [color=#90EE90]Ranger[/color] - Versatile scout, balanced combat
+  [color=#2F4F4F]Thief[/color] - Backstab
+    • +50%% crit damage, +15%% base crit chance
+  [color=#228B22]Ranger[/color] - Hunter's Mark
+    • +25%% damage vs beasts, +30%% gold/XP from kills
+  [color=#191970]Ninja[/color] - Shadow Step
+    • +40%% flee success, take no damage when fleeing
 
 [b][color=#FFD700]== WATCH FEATURE ==[/color][/b]
 
@@ -7584,7 +8204,7 @@ Buffs shown in top bar: [Letter+Value:Duration]
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k1, k2, k6, k0, k4, k1, k0]
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k2, k6, k0, k4, k1, k0]
 	display_game(help_text)
 
 func display_game(text: String):

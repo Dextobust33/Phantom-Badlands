@@ -94,6 +94,18 @@ const MAX_ACTIVE_QUESTS = 5
 # Killing a monster reveals HP for that type at or below the killed level (within 20 levels)
 @export var known_monsters: Dictionary = {}
 
+# Ability Loadout System - which abilities are equipped and their keybinds
+# equipped_abilities: Array of ability names in slot order (max 4 slots)
+@export var equipped_abilities: Array = []
+# ability_keybinds: Dictionary mapping slot index to key string {0: "Q", 1: "W", 2: "E", 3: "R"}
+@export var ability_keybinds: Dictionary = {0: "Q", 1: "W", 2: "E", 3: "R"}
+const MAX_ABILITY_SLOTS = 4
+const DEFAULT_ABILITY_KEYBINDS = {0: "Q", 1: "W", 2: "E", 3: "R"}
+
+# Cloak System - universal stealth ability
+@export var cloak_active: bool = false
+const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed regen)
+
 func _init():
 	# Constructor
 	pass
@@ -134,6 +146,9 @@ func initialize(char_name: String, char_class: String, char_race: String = "Huma
 	played_time_seconds = 0
 	monsters_killed = 0
 
+	# Initialize default ability loadout
+	initialize_default_abilities()
+
 func get_starting_stats_for_class(char_class: String) -> Dictionary:
 	"""Get starting stats based on character class"""
 	var stats = {
@@ -153,6 +168,173 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 	}
 
 	return stats.get(char_class, stats["Fighter"])
+
+func get_class_passive() -> Dictionary:
+	"""Get the unique passive ability for this character's class"""
+	match class_type:
+		# Warriors
+		"Fighter":
+			return {
+				"name": "Tactical Discipline",
+				"description": "20% reduced stamina costs, +15% defense",
+				"color": "#C0C0C0",
+				"effects": {
+					"stamina_cost_reduction": 0.20,
+					"defense_bonus_percent": 0.15
+				}
+			}
+		"Barbarian":
+			return {
+				"name": "Blood Rage",
+				"description": "+3% damage per 10% HP missing (max +30%), abilities cost 25% more",
+				"color": "#8B0000",
+				"effects": {
+					"damage_per_missing_hp": 0.03,  # Per 10% HP missing
+					"max_rage_bonus": 0.30,
+					"stamina_cost_increase": 0.25
+				}
+			}
+		"Paladin":
+			return {
+				"name": "Divine Favor",
+				"description": "Heal 3% max HP per round, +25% damage vs undead/demons",
+				"color": "#FFD700",
+				"effects": {
+					"combat_regen_percent": 0.03,
+					"bonus_vs_undead": 0.25
+				}
+			}
+		# Mages
+		"Wizard":
+			return {
+				"name": "Arcane Precision",
+				"description": "+15% spell damage, +10% spell crit chance",
+				"color": "#4169E1",
+				"effects": {
+					"spell_damage_bonus": 0.15,
+					"spell_crit_bonus": 0.10
+				}
+			}
+		"Sorcerer":
+			return {
+				"name": "Chaos Magic",
+				"description": "25% chance for double spell damage, 10% chance to backfire",
+				"color": "#9400D3",
+				"effects": {
+					"double_damage_chance": 0.25,
+					"backfire_chance": 0.10
+				}
+			}
+		"Sage":
+			return {
+				"name": "Mana Mastery",
+				"description": "25% reduced mana costs, Meditate restores 50% more",
+				"color": "#20B2AA",
+				"effects": {
+					"mana_cost_reduction": 0.25,
+					"meditate_bonus": 0.50
+				}
+			}
+		# Tricksters
+		"Thief":
+			return {
+				"name": "Backstab",
+				"description": "+50% crit damage, +15% base crit chance",
+				"color": "#2F4F4F",
+				"effects": {
+					"crit_damage_bonus": 0.50,
+					"crit_chance_bonus": 0.15
+				}
+			}
+		"Ranger":
+			return {
+				"name": "Hunter's Mark",
+				"description": "+25% damage vs beasts, +30% gold/XP from kills",
+				"color": "#228B22",
+				"effects": {
+					"bonus_vs_beasts": 0.25,
+					"gold_bonus": 0.30,
+					"xp_bonus": 0.30
+				}
+			}
+		"Ninja":
+			return {
+				"name": "Shadow Step",
+				"description": "+40% flee success, take no damage when fleeing",
+				"color": "#191970",
+				"effects": {
+					"flee_bonus": 0.40,
+					"flee_no_damage": true
+				}
+			}
+		_:
+			return {
+				"name": "None",
+				"description": "No passive ability",
+				"color": "#808080",
+				"effects": {}
+			}
+
+func get_class_attack_verb() -> String:
+	"""Get the attack verb/style for this character's class"""
+	match class_type:
+		"Fighter": return "strike"
+		"Barbarian": return "smash"
+		"Paladin": return "smite"
+		"Wizard": return "blast"
+		"Sorcerer": return "unleash chaos upon"
+		"Sage": return "channel energy at"
+		"Thief": return "stab"
+		"Ranger": return "shoot"
+		"Ninja": return "slash"
+		_: return "attack"
+
+func get_class_attack_description(damage: int, monster_name: String, is_crit: bool = false) -> String:
+	"""Get a flavored attack description for this class"""
+	var verb = get_class_attack_verb()
+	var crit_text = ""
+
+	match class_type:
+		"Fighter":
+			if is_crit:
+				crit_text = "With perfect form, you "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Barbarian":
+			if is_crit:
+				crit_text = "In a blood-fueled frenzy, "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Paladin":
+			if is_crit:
+				crit_text = "Divine light guides your blade as "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Wizard":
+			if is_crit:
+				crit_text = "Arcane energy surges as "
+			return "%syou %s the %s with magic for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Sorcerer":
+			if is_crit:
+				crit_text = "Wild magic explodes as "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Sage":
+			if is_crit:
+				crit_text = "Ancient wisdom empowers you as "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Thief":
+			if is_crit:
+				crit_text = "You find a gap in their defenses and "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Ranger":
+			if is_crit:
+				crit_text = "Your arrow finds its mark as "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		"Ninja":
+			if is_crit:
+				crit_text = "Moving like a shadow, "
+			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
+		_:
+			if is_crit:
+				crit_text = "[color=#FF6600]CRITICAL![/color] "
+			return "%sYou attack the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, monster_name, damage]
 
 func calculate_derived_stats():
 	"""Calculate HP, mana, stamina, energy from primary stats"""
@@ -560,7 +742,10 @@ func to_dict() -> Dictionary:
 		"active_quests": active_quests,
 		"completed_quests": completed_quests,
 		"daily_quest_cooldowns": daily_quest_cooldowns,
-		"known_monsters": known_monsters
+		"known_monsters": known_monsters,
+		"equipped_abilities": equipped_abilities,
+		"ability_keybinds": ability_keybinds,
+		"cloak_active": cloak_active
 	}
 
 func from_dict(data: Dictionary):
@@ -639,6 +824,17 @@ func from_dict(data: Dictionary):
 
 	# Monster knowledge system
 	known_monsters = data.get("known_monsters", {})
+
+	# Ability loadout system
+	equipped_abilities = data.get("equipped_abilities", [])
+	ability_keybinds = data.get("ability_keybinds", DEFAULT_ABILITY_KEYBINDS.duplicate())
+	# Ensure keybinds has all slots (in case of legacy data)
+	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
+		if not ability_keybinds.has(slot):
+			ability_keybinds[slot] = DEFAULT_ABILITY_KEYBINDS[slot]
+
+	# Cloak system - always starts off when loading (no free permanent cloak)
+	cloak_active = false
 
 func knows_monster(monster_name: String, monster_level: int = 0) -> bool:
 	"""Check if the player knows this monster's HP based on previous kills.
@@ -874,6 +1070,30 @@ func get_active_buff_names() -> Array:
 			names.append(buff.type)
 	return names
 
+func has_buff(buff_type: String) -> bool:
+	"""Check if character has a specific buff type active."""
+	for buff in active_buffs:
+		if buff.type == buff_type:
+			return true
+	for buff in persistent_buffs:
+		if buff.type == buff_type:
+			return true
+	return false
+
+func remove_buff(buff_type: String) -> bool:
+	"""Remove a specific buff by type. Returns true if buff was found and removed."""
+	# Check combat buffs first
+	for i in range(active_buffs.size() - 1, -1, -1):
+		if active_buffs[i].type == buff_type:
+			active_buffs.remove_at(i)
+			return true
+	# Check persistent buffs
+	for i in range(persistent_buffs.size() - 1, -1, -1):
+		if persistent_buffs[i].type == buff_type:
+			persistent_buffs.remove_at(i)
+			return true
+	return false
+
 func get_persistent_buff_display() -> String:
 	"""Get display string for persistent buffs."""
 	if persistent_buffs.is_empty():
@@ -1096,3 +1316,216 @@ func get_average_hotzone_intensity(quest_id: String) -> float:
 				return quest.accumulated_intensity / quest.kills_in_hotzone
 			return 0.0
 	return 0.0
+
+# ===== ABILITY LOADOUT SYSTEM =====
+
+func get_class_path() -> String:
+	"""Get the class path (warrior/mage/trickster) for this character"""
+	match class_type:
+		"Fighter", "Barbarian", "Paladin":
+			return "warrior"
+		"Wizard", "Sorcerer", "Sage":
+			return "mage"
+		"Thief", "Ranger", "Ninja":
+			return "trickster"
+		_:
+			return "warrior"
+
+func get_all_available_abilities() -> Array:
+	"""Get list of all abilities this character can learn (based on class path)"""
+	var path = get_class_path()
+	var abilities = []
+
+	# Universal abilities available to all classes
+	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true})
+
+	match path:
+		"mage":
+			abilities.append({"name": "magic_bolt", "level": 1, "display": "Magic Bolt"})
+			abilities.append({"name": "shield", "level": 10, "display": "Shield"})
+			abilities.append({"name": "blast", "level": 40, "display": "Blast"})
+			abilities.append({"name": "forcefield", "level": 60, "display": "Forcefield"})
+			abilities.append({"name": "teleport", "level": 80, "display": "Teleport"})
+			abilities.append({"name": "meteor", "level": 100, "display": "Meteor"})
+			abilities.append({"name": "haste", "level": 30, "display": "Haste"})
+			abilities.append({"name": "paralyze", "level": 50, "display": "Paralyze"})
+			abilities.append({"name": "banish", "level": 70, "display": "Banish"})
+		"warrior":
+			abilities.append({"name": "power_strike", "level": 1, "display": "Power Strike"})
+			abilities.append({"name": "war_cry", "level": 10, "display": "War Cry"})
+			abilities.append({"name": "shield_bash", "level": 25, "display": "Shield Bash"})
+			abilities.append({"name": "cleave", "level": 40, "display": "Cleave"})
+			abilities.append({"name": "berserk", "level": 60, "display": "Berserk"})
+			abilities.append({"name": "iron_skin", "level": 80, "display": "Iron Skin"})
+			abilities.append({"name": "devastate", "level": 100, "display": "Devastate"})
+			abilities.append({"name": "fortify", "level": 35, "display": "Fortify"})
+			abilities.append({"name": "rally", "level": 55, "display": "Rally"})
+		"trickster":
+			abilities.append({"name": "analyze", "level": 1, "display": "Analyze"})
+			abilities.append({"name": "distract", "level": 10, "display": "Distract"})
+			abilities.append({"name": "pickpocket", "level": 25, "display": "Pickpocket"})
+			abilities.append({"name": "ambush", "level": 40, "display": "Ambush"})
+			abilities.append({"name": "vanish", "level": 60, "display": "Vanish"})
+			abilities.append({"name": "exploit", "level": 80, "display": "Exploit"})
+			abilities.append({"name": "perfect_heist", "level": 100, "display": "Perfect Heist"})
+			abilities.append({"name": "sabotage", "level": 30, "display": "Sabotage"})
+			abilities.append({"name": "gambit", "level": 50, "display": "Gambit"})
+
+	return abilities
+
+func get_unlocked_abilities() -> Array:
+	"""Get list of abilities this character has unlocked (based on level)"""
+	var all_abilities = get_all_available_abilities()
+	var unlocked = []
+	for ability in all_abilities:
+		if level >= ability.level:
+			unlocked.append(ability)
+	return unlocked
+
+func initialize_default_abilities():
+	"""Initialize default equipped abilities for a new character"""
+	var unlocked = get_unlocked_abilities()
+	equipped_abilities.clear()
+	# Equip first 4 unlocked abilities by default
+	for i in range(min(MAX_ABILITY_SLOTS, unlocked.size())):
+		equipped_abilities.append(unlocked[i].name)
+	# Reset keybinds to default
+	ability_keybinds = DEFAULT_ABILITY_KEYBINDS.duplicate()
+
+func equip_ability(slot: int, ability_name: String) -> bool:
+	"""Equip an ability to a slot. Returns false if ability not unlocked or slot invalid."""
+	if slot < 0 or slot >= MAX_ABILITY_SLOTS:
+		return false
+
+	# Check if ability is unlocked
+	var unlocked = get_unlocked_abilities()
+	var found = false
+	for ability in unlocked:
+		if ability.name == ability_name:
+			found = true
+			break
+	if not found:
+		return false
+
+	# Expand equipped array if needed
+	while equipped_abilities.size() <= slot:
+		equipped_abilities.append("")
+
+	equipped_abilities[slot] = ability_name
+	return true
+
+func unequip_ability(slot: int) -> bool:
+	"""Remove ability from a slot"""
+	if slot < 0 or slot >= equipped_abilities.size():
+		return false
+	equipped_abilities[slot] = ""
+	return true
+
+func set_ability_keybind(slot: int, key: String) -> bool:
+	"""Set the keybind for an ability slot"""
+	if slot < 0 or slot >= MAX_ABILITY_SLOTS:
+		return false
+	if key.length() == 0:
+		return false
+	ability_keybinds[slot] = key.to_upper()
+	return true
+
+func get_ability_in_slot(slot: int) -> String:
+	"""Get the ability name in a slot, or empty string if none"""
+	if slot < 0 or slot >= equipped_abilities.size():
+		return ""
+	return equipped_abilities[slot]
+
+func get_keybind_for_slot(slot: int) -> String:
+	"""Get the keybind for a slot"""
+	if ability_keybinds.has(slot):
+		return ability_keybinds[slot]
+	return DEFAULT_ABILITY_KEYBINDS.get(slot, "")
+
+func get_slot_for_keybind(key: String) -> int:
+	"""Get the slot index for a keybind, or -1 if not found"""
+	var upper_key = key.to_upper()
+	for slot in ability_keybinds.keys():
+		if ability_keybinds[slot] == upper_key:
+			return slot
+	return -1
+
+# ===== CLOAK SYSTEM =====
+
+func get_primary_resource() -> String:
+	"""Get the primary resource type for this character's class path"""
+	match get_class_path():
+		"mage": return "mana"
+		"warrior": return "stamina"
+		"trickster": return "energy"
+		_: return "mana"
+
+func get_primary_resource_current() -> int:
+	"""Get current value of primary resource"""
+	match get_class_path():
+		"mage": return current_mana
+		"warrior": return current_stamina
+		"trickster": return current_energy
+		_: return current_mana
+
+func get_primary_resource_max() -> int:
+	"""Get max value of primary resource"""
+	match get_class_path():
+		"mage": return max_mana
+		"warrior": return max_stamina
+		"trickster": return max_energy
+		_: return max_mana
+
+func get_cloak_cost() -> int:
+	"""Get the resource cost to maintain cloak for one movement"""
+	var max_resource = get_primary_resource_max()
+	return max(1, int(max_resource * CLOAK_COST_PERCENT / 100.0))
+
+func can_maintain_cloak() -> bool:
+	"""Check if character has enough resource to maintain cloak"""
+	return get_primary_resource_current() >= get_cloak_cost()
+
+func drain_cloak_cost() -> int:
+	"""Drain the cloak cost from primary resource. Returns amount drained."""
+	var cost = get_cloak_cost()
+	var path = get_class_path()
+	match path:
+		"mage":
+			var actual = min(cost, current_mana)
+			current_mana -= actual
+			return actual
+		"warrior":
+			var actual = min(cost, current_stamina)
+			current_stamina -= actual
+			return actual
+		"trickster":
+			var actual = min(cost, current_energy)
+			current_energy -= actual
+			return actual
+	return 0
+
+func toggle_cloak() -> Dictionary:
+	"""Toggle cloak on/off. Returns result with success and message."""
+	if cloak_active:
+		cloak_active = false
+		return {"success": true, "message": "You drop your cloak and become visible.", "active": false}
+	else:
+		if can_maintain_cloak():
+			cloak_active = true
+			var cost = get_cloak_cost()
+			var resource = get_primary_resource()
+			return {"success": true, "message": "You cloak yourself in shadows. (-%d %s per move)" % [cost, resource], "active": true}
+		else:
+			return {"success": false, "message": "Not enough %s to maintain cloak!" % get_primary_resource(), "active": false}
+
+func process_cloak_on_move() -> Dictionary:
+	"""Process cloak drain when moving. Returns result with cloak status."""
+	if not cloak_active:
+		return {"cloaked": false, "dropped": false}
+
+	if can_maintain_cloak():
+		var drained = drain_cloak_cost()
+		return {"cloaked": true, "dropped": false, "drained": drained}
+	else:
+		cloak_active = false
+		return {"cloaked": false, "dropped": true, "message": "Your cloak fades as you run out of %s!" % get_primary_resource()}

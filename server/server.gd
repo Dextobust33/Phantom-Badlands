@@ -542,6 +542,16 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_watch_deny(peer_id, message)
 		"watch_stop":
 			handle_watch_stop(peer_id)
+		"toggle_cloak":
+			handle_toggle_cloak(peer_id)
+		"get_abilities":
+			handle_get_abilities(peer_id)
+		"equip_ability":
+			handle_equip_ability(peer_id, message)
+		"unequip_ability":
+			handle_unequip_ability(peer_id, message)
+		"set_ability_keybind":
+			handle_set_ability_keybind(peer_id, message)
 		_:
 			pass
 
@@ -1034,6 +1044,15 @@ func handle_move(peer_id: int, message: Dictionary):
 	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
 	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
 
+	# Process cloak drain (costs resource per movement, happens AFTER regen so cost > regen)
+	var cloak_result = character.process_cloak_on_move()
+	if cloak_result.dropped:
+		send_to_peer(peer_id, {
+			"type": "status_effect",
+			"effect": "cloak_dropped",
+			"message": "[color=#9932CC]%s[/color]" % cloak_result.message
+		})
+
 	# Tick poison on movement (counts as a round)
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
@@ -1086,17 +1105,28 @@ func handle_move(peer_id: int, message: Dictionary):
 		at_trading_post.erase(peer_id)
 		send_to_peer(peer_id, {"type": "trading_post_end"})
 
-	# Check for merchant first
+	# Check for merchant first (merchants can still be encountered while cloaked)
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
 		trigger_merchant_encounter(peer_id)
-	# Check for monster encounter (only if no merchant)
-	elif world_system.check_encounter(new_pos.x, new_pos.y):
+	# Check for monster encounter (only if no merchant and not cloaked)
+	elif not character.cloak_active and world_system.check_encounter(new_pos.x, new_pos.y):
 		trigger_encounter(peer_id)
 
 func handle_hunt(peer_id: int):
 	"""Handle hunt action - actively search for monsters with increased encounter chance"""
 	if not characters.has(peer_id):
 		return
+
+	var character = characters[peer_id]
+
+	# Check if cloaked - hunting breaks cloak
+	if character.cloak_active:
+		character.cloak_active = false
+		send_to_peer(peer_id, {
+			"type": "status_effect",
+			"effect": "cloak_dropped",
+			"message": "[color=#9932CC]Your cloak drops as you begin hunting![/color]"
+		})
 
 	# Check if in combat
 	if combat_mgr.is_in_combat(peer_id):
@@ -1107,8 +1137,6 @@ func handle_hunt(peer_id: int):
 	if pending_flocks.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "More enemies are approaching! Press Space to continue."})
 		return
-
-	var character = characters[peer_id]
 
 	# Tick poison on hunt (counts as a round)
 	if character.poison_active:
@@ -1258,12 +1286,21 @@ func _handle_meditate(peer_id: int, character: Character):
 	var meditate_bonus = character.get_equipment_bonuses().get("meditate_bonus", 0)
 	var bonus_mult = 1.0 + (meditate_bonus / 100.0)
 
+	# === CLASS PASSIVE: Sage Mana Mastery ===
+	# Meditate restores 50% more
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+	var sage_meditate_bonus = 0
+	if passive_effects.has("meditate_bonus"):
+		sage_meditate_bonus = passive_effects.get("meditate_bonus", 0)
+		bonus_mult += sage_meditate_bonus
+
 	# Mana regeneration: 4% of max mana (2x movement), double if at full HP
 	var base_mana_percent = 0.04  # 2x the 2% movement regen
 	var mana_percent = base_mana_percent
 	if at_full_hp:
 		mana_percent *= 2.0  # 8% when HP is full
-	mana_percent *= bonus_mult  # Apply equipment meditate bonus
+	mana_percent *= bonus_mult  # Apply equipment + class meditate bonus
 
 	var mana_regen = int(character.max_mana * mana_percent)
 	mana_regen = max(1, mana_regen)
@@ -1271,8 +1308,12 @@ func _handle_meditate(peer_id: int, character: Character):
 
 	var meditate_msg = ""
 	var bonus_text = ""
-	if meditate_bonus > 0:
+	if meditate_bonus > 0 and sage_meditate_bonus > 0:
+		bonus_text = " [color=#66CCCC](+%d%% from gear)[/color][color=#20B2AA](+%d%% Mana Mastery)[/color]" % [meditate_bonus, int(sage_meditate_bonus * 100)]
+	elif meditate_bonus > 0:
 		bonus_text = " [color=#66CCCC](+%d%% from gear)[/color]" % meditate_bonus
+	elif sage_meditate_bonus > 0:
+		bonus_text = " [color=#20B2AA](+%d%% Mana Mastery)[/color]" % int(sage_meditate_bonus * 100)
 
 	if at_full_hp:
 		# Full HP: focus entirely on mana
@@ -4197,3 +4238,144 @@ func cleanup_watcher_on_disconnect(peer_id: int):
 			if watching.has(watcher_id):
 				watching[watcher_id] = -1
 		watchers.erase(peer_id)
+
+func handle_toggle_cloak(peer_id: int):
+	"""Handle cloak toggle - allows player to cloak/uncloak outside combat"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Can't toggle cloak in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot toggle cloak while in combat!"})
+		return
+
+	# Check if character has unlocked cloak (level 20)
+	if character.level < 20:
+		send_to_peer(peer_id, {"type": "error", "message": "Cloak unlocks at level 20."})
+		return
+
+	# Toggle cloak
+	var result = character.toggle_cloak()
+	send_to_peer(peer_id, {
+		"type": "cloak_toggle",
+		"active": result.active,
+		"message": "[color=#9932CC]%s[/color]" % result.message
+	})
+
+	# Update character state
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+# ===== ABILITY LOADOUT HANDLERS =====
+
+func handle_get_abilities(peer_id: int):
+	"""Send ability loadout data to client"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var all_abilities = character.get_all_available_abilities()
+	var unlocked = character.get_unlocked_abilities()
+
+	send_to_peer(peer_id, {
+		"type": "ability_data",
+		"all_abilities": all_abilities,
+		"unlocked_abilities": unlocked,
+		"equipped_abilities": character.equipped_abilities,
+		"ability_keybinds": character.ability_keybinds
+	})
+
+func handle_equip_ability(peer_id: int, message: Dictionary):
+	"""Handle equipping an ability to a slot"""
+	if not characters.has(peer_id):
+		return
+
+	# Can't change abilities in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot change abilities while in combat!"})
+		return
+
+	var slot = message.get("slot", -1)
+	var ability_name = message.get("ability", "")
+
+	if slot < 0 or slot >= Character.MAX_ABILITY_SLOTS:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid ability slot."})
+		return
+
+	var character = characters[peer_id]
+
+	if character.equip_ability(slot, ability_name):
+		var ability_display = ability_name.capitalize().replace("_", " ")
+		send_to_peer(peer_id, {
+			"type": "ability_equipped",
+			"slot": slot,
+			"ability": ability_name,
+			"message": "[color=#00FF00]%s equipped to slot %d.[/color]" % [ability_display, slot + 1]
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot equip that ability. You may not have unlocked it yet."})
+
+func handle_unequip_ability(peer_id: int, message: Dictionary):
+	"""Handle unequipping an ability from a slot"""
+	if not characters.has(peer_id):
+		return
+
+	# Can't change abilities in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot change abilities while in combat!"})
+		return
+
+	var slot = message.get("slot", -1)
+
+	if slot < 0 or slot >= Character.MAX_ABILITY_SLOTS:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid ability slot."})
+		return
+
+	var character = characters[peer_id]
+	var old_ability = character.get_ability_in_slot(slot)
+
+	if character.unequip_ability(slot):
+		var ability_display = old_ability.capitalize().replace("_", " ") if old_ability != "" else "Ability"
+		send_to_peer(peer_id, {
+			"type": "ability_unequipped",
+			"slot": slot,
+			"message": "[color=#FFA500]%s removed from slot %d.[/color]" % [ability_display, slot + 1]
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Could not unequip ability from that slot."})
+
+func handle_set_ability_keybind(peer_id: int, message: Dictionary):
+	"""Handle changing a keybind for an ability slot"""
+	if not characters.has(peer_id):
+		return
+
+	var slot = message.get("slot", -1)
+	var key = message.get("key", "")
+
+	if slot < 0 or slot >= Character.MAX_ABILITY_SLOTS:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid ability slot."})
+		return
+
+	if key.length() == 0 or key.length() > 1:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid keybind. Use a single key."})
+		return
+
+	var character = characters[peer_id]
+
+	if character.set_ability_keybind(slot, key):
+		send_to_peer(peer_id, {
+			"type": "keybind_changed",
+			"slot": slot,
+			"key": key.to_upper(),
+			"message": "[color=#00FFFF]Slot %d keybind set to [%s].[/color]" % [slot + 1, key.to_upper()]
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Could not set keybind."})

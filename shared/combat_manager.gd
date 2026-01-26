@@ -76,6 +76,16 @@ const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 
+# New abilities from Phantasia 5 inspiration
+const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
+const ABILITY_GOLD_STEAL = "gold_steal"          # Steals 5-15% of player gold on hit
+const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
+const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
+const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
+const ABILITY_DISGUISE = "disguise"              # Appears as weaker monster, reveals after 2 rounds
+const ABILITY_XP_STEAL = "xp_steal"              # Steals 1-3% of player XP on hit (rare, punishing)
+const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equipped item
+
 # ASCII art display settings
 const ASCII_ART_FONT_SIZE = 10  # Default is 14, smaller = less space
 
@@ -143,6 +153,24 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var monster_abilities = monster.get("abilities", [])
 	var ambusher_active = ABILITY_AMBUSHER in monster_abilities
 
+	# Handle disguise ability - monster appears weaker initially
+	var disguise_active = ABILITY_DISGUISE in monster_abilities
+	var true_stats = {}
+	if disguise_active:
+		# Store true stats for reveal later
+		true_stats = {
+			"max_hp": monster.max_hp,
+			"current_hp": monster.current_hp,
+			"strength": monster.strength,
+			"defense": monster.defense,
+			"name": monster.name
+		}
+		# Show weakened stats initially (50%)
+		monster.max_hp = max(10, int(monster.max_hp * 0.5))
+		monster.current_hp = monster.max_hp
+		monster.strength = max(5, int(monster.strength * 0.5))
+		monster.defense = max(3, int(monster.defense * 0.5))
+
 	# Create combat state
 	var combat_state = {
 		"peer_id": peer_id,
@@ -160,7 +188,11 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"thorns_damage": 0,  # Damage reflected on hit
 		"curse_applied": false,  # Stat curse active
 		"disarm_applied": false,  # Weapon damage reduced
-		"summoner_triggered": false  # Already called reinforcements
+		"summoner_triggered": false,  # Already called reinforcements
+		# Disguise ability tracking
+		"disguise_active": disguise_active,
+		"disguise_true_stats": true_stats,
+		"disguise_revealed": false
 	}
 
 	active_combats[peer_id] = combat_state
@@ -283,6 +315,23 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	combat.round += 1
 	combat.player_can_act = true
 
+	# === DISGUISE REVEAL (after 2 rounds) ===
+	if combat.get("disguise_active", false) and not combat.get("disguise_revealed", false) and combat.round >= 3:
+		var true_stats = combat.get("disguise_true_stats", {})
+		if not true_stats.is_empty():
+			combat["disguise_revealed"] = true
+			var monster = combat.monster
+			# Calculate how much damage was dealt to disguised form
+			var damage_dealt = combat.get("disguise_true_stats", {}).get("max_hp", monster.max_hp) * 0.5 - monster.current_hp
+			# Restore true stats
+			monster.max_hp = true_stats.max_hp
+			monster.strength = true_stats.strength
+			monster.defense = true_stats.defense
+			# Set current HP to true max minus proportional damage
+			monster.current_hp = max(1, true_stats.max_hp - int(damage_dealt * 2))
+			result.messages.append("[color=#FF0000]The %s reveals its true form![/color]" % monster.name)
+			result.messages.append("[color=#FF4444]It was much stronger than it appeared![/color]")
+
 	# Tick buff durations at end of round and notify of expired buffs
 	var expired_buffs = combat.character.tick_buffs()
 	for buff in expired_buffs:
@@ -338,6 +387,16 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp = max(1, character.current_hp)  # Bleed can't kill either
 		messages.append("[color=#FF4444]Bleeding deals %d damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
 
+	# === CHARM EFFECT (player attacks themselves) ===
+	if combat.get("player_charmed", false):
+		combat["player_charmed"] = false  # Only lasts one turn
+		var self_damage = max(1, int(character.get_total_attack() * 0.5))  # 50% of player attack
+		character.current_hp -= self_damage
+		character.current_hp = max(1, character.current_hp)  # Can't kill yourself
+		messages.append("[color=#FF00FF]You are charmed and attack yourself for %d damage![/color]" % self_damage)
+		combat.player_can_act = false
+		return {"success": true, "messages": messages, "combat_ended": false}
+
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
 	if is_vanished:
@@ -366,11 +425,23 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 	var hit_roll = randi() % 100
 
+	# === CLASS PASSIVE: Paladin Divine Favor ===
+	# Heal 3% max HP per combat round
+	var passive = character.get_class_passive()
+	var effects = passive.get("effects", {})
+	if effects.has("combat_regen_percent"):
+		var regen_amount = max(1, int(character.max_hp * effects.get("combat_regen_percent", 0)))
+		var actual_heal = character.heal(regen_amount)
+		if actual_heal > 0:
+			messages.append("[color=#FFD700]Divine Favor heals %d HP.[/color]" % actual_heal)
+
 	if is_vanished or hit_roll < hit_chance:
 		# Hit!
 		var damage_result = calculate_damage(character, monster, combat)
 		var damage = damage_result.damage
 		var is_crit = damage_result.is_crit
+		var passive_messages = damage_result.get("passive_messages", [])
+		var backfire_damage = damage_result.get("backfire_damage", 0)
 
 		# Apply analyze bonus (+10% from Analyze ability)
 		var analyze_bonus = combat.get("analyze_bonus", 0)
@@ -382,15 +453,22 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			damage = int(damage * 1.5)
 			messages.append("[color=#FFD700]You strike from the shadows![/color]")
 
-		# Show crit message (crit already applied in calculate_damage)
-		if is_crit:
-			messages.append("[color=#FFD700]CRITICAL HIT![/color]")
+		# Show passive messages (Blood Rage, Chaos Magic, etc.)
+		for msg in passive_messages:
+			messages.append(msg)
+
+		# Handle Sorcerer backfire damage
+		if backfire_damage > 0:
+			character.current_hp -= backfire_damage
+			character.current_hp = max(1, character.current_hp)
+			messages.append("[color=#9400D3]Wild magic burns you for %d damage![/color]" % backfire_damage)
 
 		monster.current_hp -= damage
 		monster.current_hp = max(0, monster.current_hp)
 
-		messages.append("[color=#00FF00]You attack the %s![/color]" % monster.name)
-		messages.append("You deal [color=#FFFF00]%d[/color] damage!" % damage)
+		# Use class-specific attack description
+		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
+		messages.append(attack_desc)
 
 		# Lifesteal from scroll/potion buff
 		var lifesteal_percent = combat.get("lifesteal_percent", 0)
@@ -472,6 +550,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if ABILITY_EASY_PREY in abilities:
 		final_xp = int(final_xp * 0.5)
 		gold = int(gold * 0.5)
+
+	# === CLASS PASSIVE: Ranger Hunter's Mark ===
+	# +30% gold and XP from kills
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+	if passive_effects.has("gold_bonus") or passive_effects.has("xp_bonus"):
+		var gold_mult = 1.0 + passive_effects.get("gold_bonus", 0)
+		var xp_mult = 1.0 + passive_effects.get("xp_bonus", 0)
+		gold = int(gold * gold_mult)
+		final_xp = int(final_xp * xp_mult)
+		messages.append("[color=#228B22]Hunter's Mark: +%d%% gold & XP![/color]" % int(passive_effects.get("gold_bonus", 0) * 100))
 
 	if xp_level_diff >= 10:
 		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
@@ -641,6 +730,10 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var monster = combat.monster
 	var messages = []
 
+	# Get class passive for flee bonuses
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+
 	# Flee chance based on level difference, DEX, and equipment speed
 	# Base 50% + (DEX × 2) + equipment_speed + speed_buff + flee_bonus - (level_diff × 3)
 	var equipment_bonuses = character.get_equipment_bonuses()
@@ -656,15 +749,22 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	# -3% per level the monster is above you (fighting +20 level = -60%)
 	var flee_chance = 50 + (player_dex * 2) + equipment_speed + speed_buff + flee_bonus - (level_diff * 3)
 
+	# === CLASS PASSIVE: Ninja Shadow Step ===
+	# +40% flee success chance
+	if passive_effects.has("flee_bonus"):
+		var ninja_flee_bonus = int(passive_effects.get("flee_bonus", 0) * 100)
+		flee_chance += ninja_flee_bonus
+		messages.append("[color=#191970]Shadow Step: +%d%% flee chance![/color]" % ninja_flee_bonus)
+
 	# Apply slow aura debuff (from monster ability)
 	var slow_penalty = combat.get("player_slow", 0)
 	if slow_penalty > 0:
 		flee_chance -= slow_penalty
 
 	flee_chance = clamp(flee_chance, 5, 95)  # Hardcap 5-95%
-	
+
 	var roll = randi() % 100
-	
+
 	if roll < flee_chance:
 		# Successful flee
 		messages.append("[color=#FFD700]You successfully flee from combat![/color]")
@@ -678,6 +778,11 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	else:
 		# Failed flee
 		messages.append("[color=#FF4444]You fail to escape![/color]")
+		# === CLASS PASSIVE: Ninja Shadow Step ===
+		# Take no damage when fleeing fails
+		if passive_effects.get("flee_no_damage", false):
+			combat["ninja_flee_protection"] = true
+			messages.append("[color=#191970]Shadow Step: You evade the counterattack![/color]")
 		combat.player_can_act = false
 		return {
 			"success": true,
@@ -920,14 +1025,17 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		"ironskin": ability_name = "iron_skin"
 		"heist": ability_name = "perfect_heist"
 
+	# Universal abilities (available to all classes, use class resource)
+	if ability_name == "cloak":
+		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
-	if ability_name in ["magic_bolt", "shield", "cloak", "blast", "forcefield", "teleport", "meteor"]:
+	elif ability_name in ["magic_bolt", "shield", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
 		result = _process_mage_ability(combat, ability_name, arg)
 	# Warrior abilities (use stamina)
-	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate"]:
+	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
 		result = _process_warrior_ability(combat, ability_name)
 	# Trickster abilities (use energy)
-	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist"]:
+	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
 		result = _process_trickster_ability(combat, ability_name)
 	else:
 		return {"success": false, "message": "Unknown ability!"}
@@ -967,6 +1075,46 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 
 	return result
 
+func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dictionary:
+	"""Process universal abilities available to all classes (use class resource)"""
+	var character = combat.character
+	var messages = []
+
+	# Check level requirement for cloak (level 20)
+	if character.level < 20:
+		return {"success": false, "messages": ["[color=#FF4444]Cloak requires level 20![/color]"], "combat_ended": false}
+
+	# Determine cost based on class path (8% of max resource)
+	var cost = character.get_cloak_cost()
+	var resource_name = character.get_primary_resource()
+	var current_resource = character.get_primary_resource_current()
+
+	match ability_name:
+		"cloak":
+			# In combat, cloak lets you avoid one monster attack and escape
+			if current_resource < cost:
+				return {"success": false, "messages": ["[color=#FF4444]Not enough %s! Need %d.[/color]" % [resource_name, cost]], "combat_ended": false}
+
+			# Drain the resource
+			character.drain_cloak_cost()
+
+			# 75% chance to escape combat successfully
+			if randf() < 0.75:
+				messages.append("[color=#9932CC]You cloak yourself in shadows and slip away from combat![/color]")
+				return {
+					"success": true,
+					"messages": messages,
+					"combat_ended": true,
+					"victory": false,
+					"fled": true,
+					"skip_monster_turn": true
+				}
+			else:
+				messages.append("[color=#FF4444]You try to cloak but the %s sees through your disguise![/color]" % combat.monster.name)
+				return {"success": true, "messages": messages, "combat_ended": false}
+
+	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
+
 func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String) -> Dictionary:
 	"""Process mage abilities (use mana)"""
 	var character = combat.character
@@ -988,6 +1136,10 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 	var mana_cost = ability_info.cost
 
+	# Get class passive for spell modifications
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+
 	match ability_name:
 		"magic_bolt":
 			# Variable mana cost - damage scales with INT
@@ -998,9 +1150,17 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			bolt_amount = mini(bolt_amount, character.current_mana)
 			if bolt_amount <= 0:
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana![/color]"], "combat_ended": false, "skip_monster_turn": true}
-			character.current_mana -= bolt_amount
 
-			# Calculate INT-based damage
+			# === CLASS PASSIVE: Sage Mana Mastery ===
+			# 25% reduced mana costs - apply to actual mana spent
+			var actual_mana_cost = bolt_amount
+			if passive_effects.has("mana_cost_reduction"):
+				actual_mana_cost = int(bolt_amount * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
+				actual_mana_cost = max(1, actual_mana_cost)
+				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % actual_mana_cost)
+			character.current_mana -= actual_mana_cost
+
+			# Calculate INT-based damage (based on intended bolt_amount, not reduced cost)
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x, INT 100 = 3x
 			var base_damage = int(bolt_amount * int_multiplier)
@@ -1009,6 +1169,35 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var damage_buff = character.get_buff_value("damage")
 			if damage_buff > 0:
 				base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
+
+			# === CLASS PASSIVE: Wizard Arcane Precision ===
+			# +15% spell damage
+			if passive_effects.has("spell_damage_bonus"):
+				base_damage = int(base_damage * (1.0 + passive_effects.get("spell_damage_bonus", 0)))
+				messages.append("[color=#4169E1]Arcane Precision: +%d%% spell damage![/color]" % int(passive_effects.get("spell_damage_bonus", 0) * 100))
+
+			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
+			# 25% double damage, 10% backfire
+			if passive_effects.has("double_damage_chance"):
+				var chaos_roll = randf()
+				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
+					# Backfire: damage yourself
+					var backfire_dmg = int(base_damage * 0.5)
+					character.current_hp -= backfire_dmg
+					character.current_hp = max(1, character.current_hp)
+					base_damage = int(base_damage * 0.5)
+					messages.append("[color=#9400D3]Chaos Magic backfires for %d damage![/color]" % backfire_dmg)
+				elif chaos_roll < passive_effects.get("backfire_chance", 0.10) + passive_effects.get("double_damage_chance", 0.25):
+					base_damage = base_damage * 2
+					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
+
+			# === CLASS PASSIVE: Wizard Spell Crit ===
+			# +10% spell crit chance (1.5x damage)
+			if passive_effects.has("spell_crit_bonus"):
+				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
+				if randi() % 100 < spell_crit_chance:
+					base_damage = int(base_damage * 1.5)
+					messages.append("[color=#4169E1]Spell Critical! +50%% damage![/color]")
 
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
@@ -1033,14 +1222,46 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF00FF]You cast Cloak! (50%% chance enemy misses next attack)[/color]" % [])
 
 		"blast":
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			# Apply Sage mana cost reduction
+			var blast_cost = mana_cost
+			if passive_effects.has("mana_cost_reduction"):
+				blast_cost = max(1, int(mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0))))
+			if not character.use_mana(blast_cost):
+				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % blast_cost], "combat_ended": false, "skip_monster_turn": true}
+			if blast_cost < mana_cost:
+				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % blast_cost)
 			# Base damage 50, scaled by INT (+3% per point) and multiplied by 2
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
 			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic × 2
 			var damage_buff = character.get_buff_value("damage")
-			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
+			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
+
+			# === CLASS PASSIVE: Wizard Arcane Precision ===
+			if passive_effects.has("spell_damage_bonus"):
+				base_damage = int(base_damage * (1.0 + passive_effects.get("spell_damage_bonus", 0)))
+
+			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
+			if passive_effects.has("double_damage_chance"):
+				var chaos_roll = randf()
+				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
+					var backfire_dmg = int(base_damage * 0.5)
+					character.current_hp -= backfire_dmg
+					character.current_hp = max(1, character.current_hp)
+					base_damage = int(base_damage * 0.5)
+					messages.append("[color=#9400D3]Chaos Magic backfires for %d damage![/color]" % backfire_dmg)
+				elif chaos_roll < passive_effects.get("backfire_chance", 0.10) + passive_effects.get("double_damage_chance", 0.25):
+					base_damage = base_damage * 2
+					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
+
+			# === CLASS PASSIVE: Wizard Spell Crit ===
+			if passive_effects.has("spell_crit_bonus"):
+				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
+				if randi() % 100 < spell_crit_chance:
+					base_damage = int(base_damage * 1.5)
+					messages.append("[color=#4169E1]Spell Critical![/color]")
+
+			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
@@ -1072,19 +1293,100 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			}
 
 		"meteor":
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			# Apply Sage mana cost reduction
+			var meteor_cost = mana_cost
+			if passive_effects.has("mana_cost_reduction"):
+				meteor_cost = max(1, int(mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0))))
+			if not character.use_mana(meteor_cost):
+				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % meteor_cost], "combat_ended": false, "skip_monster_turn": true}
+			if meteor_cost < mana_cost:
+				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % meteor_cost)
 			# Base damage 100, scaled by INT (+3% per point), multiplied by 3-4x (random)
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
 			var base_damage = int(100 * int_multiplier * meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
-			var damage = apply_damage_variance(int(base_damage * (1.0 + damage_buff / 100.0)))
+			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
+
+			# === CLASS PASSIVE: Wizard Arcane Precision ===
+			if passive_effects.has("spell_damage_bonus"):
+				base_damage = int(base_damage * (1.0 + passive_effects.get("spell_damage_bonus", 0)))
+
+			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
+			if passive_effects.has("double_damage_chance"):
+				var chaos_roll = randf()
+				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
+					var backfire_dmg = int(base_damage * 0.5)
+					character.current_hp -= backfire_dmg
+					character.current_hp = max(1, character.current_hp)
+					base_damage = int(base_damage * 0.5)
+					messages.append("[color=#9400D3]Chaos Magic backfires for %d damage![/color]" % backfire_dmg)
+				elif chaos_roll < passive_effects.get("backfire_chance", 0.10) + passive_effects.get("double_damage_chance", 0.25):
+					base_damage = base_damage * 2
+					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
+
+			# === CLASS PASSIVE: Wizard Spell Crit ===
+			if passive_effects.has("spell_crit_bonus"):
+				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
+				if randi() % 100 < spell_crit_chance:
+					base_damage = int(base_damage * 1.5)
+					messages.append("[color=#4169E1]Spell Critical![/color]")
+
+			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
 			messages.append("[color=#FF4444]A massive meteor crashes down for %d damage![/color]" % damage)
+
+		"haste":
+			# Speed buff - reduces monster attacks and increases player dodge
+			if not character.use_mana(mana_cost):
+				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			var speed_bonus = 20 + int(character.get_effective_stat("intelligence") / 5)
+			character.add_buff("speed", speed_bonus, 5)
+			combat["haste_active"] = true
+			messages.append("[color=#00FFFF]You cast Haste! (+%d%% speed for 5 rounds)[/color]" % speed_bonus)
+
+		"paralyze":
+			# Attempt to stun monster for 1-2 turns
+			if not character.use_mana(mana_cost):
+				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			var int_stat = character.get_effective_stat("intelligence")
+			var success_chance = 50 + int(int_stat / 2)  # 50% base + 0.5% per INT
+			success_chance = min(85, success_chance)  # Cap at 85%
+			if randf() * 100 < success_chance:
+				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
+				combat["monster_stunned"] = stun_duration
+				messages.append("[color=#FFFF00]You paralyze the %s for %d turn(s)![/color]" % [monster.name, stun_duration])
+			else:
+				messages.append("[color=#FF4444]The %s resists your paralysis![/color]" % monster.name)
+
+		"banish":
+			# Attempt to remove monster from combat with 50% loot chance
+			if not character.use_mana(mana_cost):
+				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			var int_stat = character.get_effective_stat("intelligence")
+			var success_chance = 40 + int(int_stat / 3)  # 40% base + 0.33% per INT
+			success_chance = min(75, success_chance)  # Cap at 75%
+			if randf() * 100 < success_chance:
+				messages.append("[color=#FF00FF]You banish the %s to another dimension![/color]" % monster.name)
+				# 50% chance to get loot from banished monster
+				if randf() < 0.5:
+					messages.append("[color=#FFD700]The creature drops something as it vanishes![/color]")
+					return _process_victory_with_abilities(combat, messages)
+				else:
+					messages.append("[color=#808080]The creature vanishes without a trace...[/color]")
+					return {
+						"success": true,
+						"messages": messages,
+						"combat_ended": true,
+						"victory": false,
+						"fled": true,
+						"skip_monster_turn": true
+					}
+			else:
+				messages.append("[color=#FF4444]The %s resists being banished![/color]" % monster.name)
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -1112,6 +1414,19 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
 
 	var stamina_cost = ability_info.cost
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+
+	# === CLASS PASSIVE: Fighter Tactical Discipline ===
+	# 20% reduced stamina costs
+	if passive_effects.has("stamina_cost_reduction"):
+		stamina_cost = max(1, int(stamina_cost * (1.0 - passive_effects.get("stamina_cost_reduction", 0))))
+		messages.append("[color=#C0C0C0]Tactical Discipline: Only costs %d stamina![/color]" % stamina_cost)
+
+	# === CLASS PASSIVE: Barbarian Blood Rage ===
+	# Abilities cost 25% more
+	if passive_effects.has("stamina_cost_increase"):
+		stamina_cost = int(stamina_cost * (1.0 + passive_effects.get("stamina_cost_increase", 0)))
 
 	if not character.use_stamina(stamina_cost):
 		return {"success": false, "messages": ["[color=#FF4444]Not enough stamina! (Need %d)[/color]" % stamina_cost], "combat_ended": false, "skip_monster_turn": true}
@@ -1178,6 +1493,22 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color]")
 			messages.append("[color=#FFFF00]A catastrophic blow deals %d damage![/color]" % damage)
+
+		"fortify":
+			# Defense buff - reduces incoming damage
+			var str_stat = character.get_effective_stat("strength")
+			var defense_bonus = 25 + int(str_stat / 4)  # 25% base + 0.25% per STR
+			character.add_buff("defense", defense_bonus, 5)
+			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
+
+		"rally":
+			# Heal + minor strength buff - warrior sustain ability
+			var con_stat = character.get_effective_stat("constitution")
+			var heal_amount = 20 + int(con_stat * 2)  # 20 base + 2 per CON
+			var actual_heal = character.heal(heal_amount)
+			var str_bonus = 10 + int(character.get_effective_stat("strength") / 5)
+			character.add_buff("strength", str_bonus, 3)
+			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for 3 rounds![/color]" % [actual_heal, str_bonus])
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -1390,6 +1721,39 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					}
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
+		"sabotage":
+			# Weaken monster - reduce strength and defense
+			var wits = character.get_effective_stat("wits")
+			var debuff_amount = 15 + int(wits / 3)  # 15% base + 0.33% per WITS
+			# Store debuffs in combat state
+			var existing_sabotage = combat.get("monster_sabotaged", 0)
+			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
+			messages.append("[color=#FFA500]You sabotage the %s! (-%d%% strength/defense)[/color]" % [monster.name, debuff_amount])
+
+		"gambit":
+			# High risk/reward - big damage but chance of backfire
+			var wits = character.get_effective_stat("wits")
+			var success_chance = 55 + int(wits / 4)  # 55% base + 0.25% per WITS
+			success_chance = min(80, success_chance)  # Cap at 80%
+
+			if randf() * 100 < success_chance:
+				# Success - deal big damage (2.5x normal)
+				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
+				var damage_buff = character.get_buff_value("damage")
+				var damage_multiplier = 1.0 + (damage_buff / 100.0)
+				var damage = apply_damage_variance(int(total_attack * 2.5 * damage_multiplier))
+				monster.current_hp -= damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#FFD700][b]GAMBIT SUCCESS![/b][/color]")
+				messages.append("[color=#00FF00]Your risky gambit pays off for %d damage![/color]" % damage)
+			else:
+				# Failure - take damage yourself
+				var self_damage = max(5, int(character.get_total_max_hp() * 0.15))  # 15% max HP
+				character.current_hp -= self_damage
+				character.current_hp = max(1, character.current_hp)  # Can't kill yourself
+				messages.append("[color=#FF4444][b]GAMBIT FAILED![/b][/color]")
+				messages.append("[color=#FF4444]Your gambit backfires for %d self-damage![/color]" % self_damage)
+
 	# Check if monster died
 	if monster.current_hp <= 0:
 		return _process_victory(combat, messages)
@@ -1403,9 +1767,11 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 			match ability_name:
 				"magic_bolt": return {"level": 1, "cost": 0, "name": "Magic Bolt"}
 				"shield": return {"level": 10, "cost": 20, "name": "Shield"}
-				"cloak": return {"level": 25, "cost": 30, "name": "Cloak"}
+				"haste": return {"level": 30, "cost": 35, "name": "Haste"}
 				"blast": return {"level": 40, "cost": 50, "name": "Blast"}
+				"paralyze": return {"level": 50, "cost": 60, "name": "Paralyze"}
 				"forcefield": return {"level": 60, "cost": 75, "name": "Forcefield"}
+				"banish": return {"level": 70, "cost": 80, "name": "Banish"}
 				"teleport": return {"level": 80, "cost": 40, "name": "Teleport"}
 				"meteor": return {"level": 100, "cost": 100, "name": "Meteor"}
 		"warrior":
@@ -1413,7 +1779,9 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"power_strike": return {"level": 1, "cost": 10, "name": "Power Strike"}
 				"war_cry": return {"level": 10, "cost": 15, "name": "War Cry"}
 				"shield_bash": return {"level": 25, "cost": 20, "name": "Shield Bash"}
+				"fortify": return {"level": 35, "cost": 25, "name": "Fortify"}
 				"cleave": return {"level": 40, "cost": 30, "name": "Cleave"}
+				"rally": return {"level": 55, "cost": 35, "name": "Rally"}
 				"berserk": return {"level": 60, "cost": 40, "name": "Berserk"}
 				"iron_skin": return {"level": 80, "cost": 35, "name": "Iron Skin"}
 				"devastate": return {"level": 100, "cost": 50, "name": "Devastate"}
@@ -1422,7 +1790,9 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"analyze": return {"level": 1, "cost": 5, "name": "Analyze"}
 				"distract": return {"level": 10, "cost": 15, "name": "Distract"}
 				"pickpocket": return {"level": 25, "cost": 20, "name": "Pickpocket"}
+				"sabotage": return {"level": 30, "cost": 25, "name": "Sabotage"}
 				"ambush": return {"level": 40, "cost": 30, "name": "Ambush"}
+				"gambit": return {"level": 50, "cost": 35, "name": "Gambit"}
 				"vanish": return {"level": 60, "cost": 40, "name": "Vanish"}
 				"exploit": return {"level": 80, "cost": 35, "name": "Exploit"}
 				"perfect_heist": return {"level": 100, "cost": 50, "name": "Perfect Heist"}
@@ -1513,10 +1883,19 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var abilities = monster.get("abilities", [])
 	var messages = []
 
-	# Check if monster is stunned (Shield Bash)
-	if combat.get("monster_stunned", false):
-		combat.erase("monster_stunned")
-		return {"success": true, "message": "[color=#808080]The %s is stunned and cannot act![/color]" % monster.name}
+	# Check if monster is stunned (Shield Bash or Paralyze)
+	var stun_turns = combat.get("monster_stunned", 0)
+	if stun_turns is bool:
+		# Legacy boolean stun (Shield Bash)
+		if stun_turns:
+			combat.erase("monster_stunned")
+			return {"success": true, "message": "[color=#808080]The %s is stunned and cannot act![/color]" % monster.name}
+	elif stun_turns > 0:
+		# Multi-turn stun (Paralyze)
+		combat["monster_stunned"] = stun_turns - 1
+		if stun_turns - 1 <= 0:
+			combat.erase("monster_stunned")
+		return {"success": true, "message": "[color=#808080]The %s is paralyzed and cannot act! (%d turn(s) remaining)[/color]" % [monster.name, max(0, stun_turns - 1)]}
 
 	# === PRE-ATTACK ABILITIES ===
 
@@ -1597,6 +1976,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	combat.defending = false
 	combat.defense_bonus = 0
 
+	# === CLASS PASSIVE: Ninja Shadow Step ===
+	# Take no damage after failed flee attempt
+	if combat.get("ninja_flee_protection", false):
+		combat.erase("ninja_flee_protection")
+		messages.append("[color=#191970]You slip away from the %s's counterattack![/color]" % monster.name)
+		return {"success": true, "message": "\n".join(messages)}
+
 	# Cloak: 50% miss chance (one time)
 	if combat.get("cloak_active", false):
 		combat.erase("cloak_active")
@@ -1624,6 +2010,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if hit_roll < hit_chance:
 			# Monster hits
 			var damage = calculate_monster_damage(monster, character)
+
+			# Sabotage debuff: reduce monster damage
+			var sabotage_reduction = combat.get("monster_sabotaged", 0)
+			if sabotage_reduction > 0:
+				damage = int(damage * (1.0 - sabotage_reduction / 100.0))
+				damage = max(1, damage)
 
 			# Ambusher ability: first attack deals bonus damage (75% chance to trigger)
 			if combat.get("ambusher_active", false):
@@ -1840,12 +2232,76 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["summon_next_fight"] = monster.get("base_name", monster.name)
 			messages.append("[color=#FF4444]The %s calls for reinforcements![/color]" % monster.name)
 
+	# Charm ability: player attacks themselves next turn (once per combat)
+	if ABILITY_CHARM in abilities and not combat.get("charm_applied", false):
+		if randi() % 100 < 25:  # 25% chance
+			combat["charm_applied"] = true
+			combat["player_charmed"] = true
+			messages.append("[color=#FF00FF]The %s charms you! You will attack yourself next turn![/color]" % monster.name)
+
+	# Gold steal ability: steals 5-15% of player gold on hit
+	if ABILITY_GOLD_STEAL in abilities and hits > 0:
+		if randi() % 100 < 35:  # 35% chance
+			var steal_percent = randi_range(5, 15)
+			var gold_stolen = max(1, int(character.gold * steal_percent / 100.0))
+			character.gold = max(0, character.gold - gold_stolen)
+			messages.append("[color=#FFD700]The %s steals %d gold from you![/color]" % [monster.name, gold_stolen])
+
+	# Buff destroy ability: removes one random active buff
+	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
+		if randi() % 100 < 30:  # 30% chance
+			var active_buffs = character.get_active_buff_names()
+			if active_buffs.size() > 0:
+				var buff_to_remove = active_buffs[randi() % active_buffs.size()]
+				character.remove_buff(buff_to_remove)
+				messages.append("[color=#FF00FF]The %s dispels your %s![/color]" % [monster.name, buff_to_remove])
+
+	# Shield shatter ability: destroys forcefield/shield buffs instantly
+	if ABILITY_SHIELD_SHATTER in abilities and hits > 0:
+		if combat.get("forcefield_shield", 0) > 0:
+			combat["forcefield_shield"] = 0
+			messages.append("[color=#FF0000]The %s shatters your Forcefield![/color]" % monster.name)
+		if character.has_buff("defense"):
+			character.remove_buff("defense")
+			messages.append("[color=#FF4444]The %s shatters your defensive shields![/color]" % monster.name)
+
+	# XP steal ability: steals 1-3% of player XP on hit (rare but punishing)
+	if ABILITY_XP_STEAL in abilities and hits > 0:
+		if randi() % 100 < 20:  # 20% chance
+			var steal_percent = randi_range(1, 3)
+			var xp_stolen = max(1, int(character.experience * steal_percent / 100.0))
+			character.experience = max(0, character.experience - xp_stolen)
+			messages.append("[color=#FF00FF]The %s drains %d experience from you![/color]" % [monster.name, xp_stolen])
+
+	# Item steal ability: 5% chance to steal random equipped item
+	if ABILITY_ITEM_STEAL in abilities and hits > 0:
+		if randi() % 100 < 5:  # 5% chance
+			var equip_slots = ["weapon", "shield", "armor", "helm", "boots", "ring", "amulet"]
+			equip_slots.shuffle()
+			for slot in equip_slots:
+				var equipped_item = character.get_equipped_item(slot)
+				if equipped_item != null and not equipped_item.is_empty():
+					character.unequip_item(slot)
+					combat["stolen_item"] = equipped_item
+					messages.append("[color=#FF0000]The %s steals your %s![/color]" % [monster.name, equipped_item.get("name", slot)])
+					break
+
+	# Flee attack ability: monster deals damage then flees (no loot)
+	if ABILITY_FLEE_ATTACK in abilities and not combat.get("flee_attack_used", false):
+		if randi() % 100 < 30 and monster.current_hp < monster.max_hp * 0.5:  # 30% chance when below 50% HP
+			combat["flee_attack_used"] = true
+			combat["monster_fled"] = true
+			messages.append("[color=#FFA500]The %s strikes one last time and flees into the shadows![/color]" % monster.name)
+
 	return {"success": true, "message": "\n".join(messages)}
 
 func calculate_damage(character: Character, monster: Dictionary, combat: Dictionary = {}) -> Dictionary:
-	"""Calculate player damage to monster (includes equipment, buffs, crits, and class advantage)
-	Returns dictionary with 'damage' and 'is_crit' keys"""
+	"""Calculate player damage to monster (includes equipment, buffs, crits, class passives, and class advantage)
+	Returns dictionary with 'damage', 'is_crit', and 'passive_messages' keys"""
 	var cfg = balance_config.get("combat", {})
+	var passive_messages = []
+	var passive = character.get_class_passive()
+	var effects = passive.get("effects", {})
 
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
@@ -1868,6 +2324,16 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
 
+	# === CLASS PASSIVE: Barbarian Blood Rage ===
+	# +3% damage per 10% HP missing, max +30%
+	if effects.has("damage_per_missing_hp"):
+		var hp_percent = float(character.current_hp) / float(character.max_hp)
+		var missing_hp_percent = 1.0 - hp_percent
+		var rage_bonus = min(effects.get("max_rage_bonus", 0.30), missing_hp_percent * effects.get("damage_per_missing_hp", 0.03) * 10.0)
+		if rage_bonus > 0.01:
+			raw_damage = int(raw_damage * (1.0 + rage_bonus))
+			passive_messages.append("[color=#8B0000]Blood Rage: +%d%% damage![/color]" % int(rage_bonus * 100))
+
 	# Critical hit check (configurable base, per-dex, max, and damage multiplier)
 	var dex_stat = character.get_effective_stat("dexterity")
 	var crit_base = cfg.get("player_crit_base", 5)
@@ -1879,10 +2345,43 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# Add crit bonus from scrolls/potions
 	var crit_bonus = combat.get("crit_bonus", 0)
 	crit_chance += crit_bonus
+
+	# === CLASS PASSIVE: Thief Backstab ===
+	# +15% base crit chance
+	if effects.has("crit_chance_bonus"):
+		crit_chance += int(effects.get("crit_chance_bonus", 0) * 100)
+
 	crit_chance = min(crit_chance, 75)  # Cap at 75% even with bonuses
 	var is_crit = (randi() % 100) < crit_chance
+
+	# === CLASS PASSIVE: Thief Backstab crit damage bonus ===
+	# +50% crit damage multiplier (1.5x becomes 2.0x)
+	var final_crit_damage = crit_damage
+	if is_crit and effects.has("crit_damage_bonus"):
+		final_crit_damage += effects.get("crit_damage_bonus", 0)
+
 	if is_crit:
-		raw_damage = int(raw_damage * crit_damage)
+		raw_damage = int(raw_damage * final_crit_damage)
+
+	# === CLASS PASSIVE: Sorcerer Chaos Magic ===
+	# 25% chance for double damage, 10% chance to backfire
+	var backfire_damage = 0
+	if effects.has("double_damage_chance"):
+		var chaos_roll = randf()
+		if chaos_roll < effects.get("backfire_chance", 0.10):
+			# Backfire: deal damage to self instead
+			backfire_damage = int(raw_damage * 0.5)
+			raw_damage = int(raw_damage * 0.5)  # Halve the attack damage
+			passive_messages.append("[color=#9400D3]Chaos Magic backfires![/color]")
+		elif chaos_roll < effects.get("backfire_chance", 0.10) + effects.get("double_damage_chance", 0.25):
+			# Double damage
+			raw_damage = raw_damage * 2
+			passive_messages.append("[color=#9400D3]Chaos Magic surges: DOUBLE DAMAGE![/color]")
+
+	# === CLASS PASSIVE: Wizard Arcane Precision ===
+	# +15% spell damage (applied to all attacks for Wizards)
+	if effects.has("spell_damage_bonus"):
+		raw_damage = int(raw_damage * (1.0 + effects.get("spell_damage_bonus", 0)))
 
 	# Monster defense reduces damage by a percentage (not flat)
 	var defense_constant = cfg.get("defense_formula_constant", 100)
@@ -1896,7 +2395,23 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
 	total = int(total * class_multiplier)
 
-	return {"damage": max(1, total), "is_crit": is_crit}
+	# === CLASS PASSIVE: Paladin Divine Favor ===
+	# +25% damage vs undead/demons
+	if effects.has("bonus_vs_undead"):
+		var monster_type = monster.get("type", "").to_lower()
+		if "undead" in monster_type or "demon" in monster_type or monster.name.to_lower() in ["skeleton", "zombie", "wraith", "lich", "elder lich", "vampire", "demon"]:
+			total = int(total * (1.0 + effects.get("bonus_vs_undead", 0)))
+			passive_messages.append("[color=#FFD700]Divine Favor: +%d%% vs undead![/color]" % int(effects.get("bonus_vs_undead", 0) * 100))
+
+	# === CLASS PASSIVE: Ranger Hunter's Mark ===
+	# +25% damage vs beasts
+	if effects.has("bonus_vs_beasts"):
+		var monster_type = monster.get("type", "").to_lower()
+		if "beast" in monster_type or "animal" in monster_type or monster.name.to_lower() in ["giant rat", "wolf", "dire wolf", "giant spider", "bear", "dire bear", "wyvern"]:
+			total = int(total * (1.0 + effects.get("bonus_vs_beasts", 0)))
+			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(effects.get("bonus_vs_beasts", 0) * 100))
+
+	return {"damage": max(1, total), "is_crit": is_crit, "passive_messages": passive_messages, "backfire_damage": backfire_damage}
 
 func _get_class_advantage_multiplier(affinity: int, character_class: String) -> float:
 	"""Calculate damage multiplier based on class affinity.
@@ -1934,8 +2449,10 @@ func _get_player_class_path(character_class: String) -> String:
 			return "warrior"  # Default
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
-	"""Calculate monster damage to player (reduced by equipment defense and buffs)"""
+	"""Calculate monster damage to player (reduced by equipment defense, buffs, and class passives)"""
 	var cfg = balance_config.get("combat", {})
+	var passive = character.get_class_passive()
+	var effects = passive.get("effects", {})
 
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
@@ -1957,6 +2474,12 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	# Add defense buff bonus
 	var defense_buff = character.get_buff_value("defense")
 	player_defense += defense_buff
+
+	# === CLASS PASSIVE: Fighter Tactical Discipline ===
+	# +15% defense bonus
+	if effects.has("defense_bonus_percent"):
+		var defense_bonus = int(player_defense * effects.get("defense_bonus_percent", 0))
+		player_defense += defense_bonus
 
 	var defense_constant = cfg.get("defense_formula_constant", 100)
 	var defense_max = cfg.get("defense_max_reduction", 0.6)
@@ -2071,7 +2594,9 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"poison_damage": character.poison_damage,
 		"poison_turns_remaining": character.poison_turns_remaining,
 		# Outsmart tracking
-		"outsmart_failed": combat.get("outsmart_failed", false)
+		"outsmart_failed": combat.get("outsmart_failed", false),
+		# Forcefield/shield for visual display
+		"forcefield_shield": combat.get("forcefield_shield", 0)
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:
@@ -3392,6 +3917,22 @@ func generate_encounter_text(monster: Dictionary) -> String:
 		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
 	if ABILITY_SUNDER in abilities:
 		notable_abilities.append("[color=#FF4444]⚠ SUNDERING ⚠[/color]")
+	if ABILITY_CHARM in abilities:
+		notable_abilities.append("[color=#FF00FF]Enchanting[/color]")
+	if ABILITY_GOLD_STEAL in abilities:
+		notable_abilities.append("[color=#FFD700]⚠ THIEF ⚠[/color]")
+	if ABILITY_BUFF_DESTROY in abilities:
+		notable_abilities.append("[color=#808080]Dispeller[/color]")
+	if ABILITY_SHIELD_SHATTER in abilities:
+		notable_abilities.append("[color=#FF4444]Shield Breaker[/color]")
+	if ABILITY_XP_STEAL in abilities:
+		notable_abilities.append("[color=#FF00FF]⚠ XP DRAINER ⚠[/color]")
+	if ABILITY_ITEM_STEAL in abilities:
+		notable_abilities.append("[color=#FF0000]⚠ PICKPOCKET ⚠[/color]")
+	if ABILITY_DISGUISE in abilities:
+		notable_abilities.append("[color=#808080]Deceptive[/color]")
+	if ABILITY_FLEE_ATTACK in abilities:
+		notable_abilities.append("[color=#FFA500]Skirmisher[/color]")
 
 	if notable_abilities.size() > 0:
 		msg += "\n[color=#808080]Traits: %s[/color]" % ", ".join(notable_abilities)

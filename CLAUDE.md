@@ -506,3 +506,95 @@ ASCII art rendering has been migrated to client-side to reduce server load.
 - Wide art (>50 chars): Displayed as-is, no border (e.g., Goblin, Wolf)
 - Small art (≤50 chars): Auto-centered with Unicode box border
 - Variant monsters: "VARIANT:Name1,Name2,Name3" format, randomly selected
+
+## Cloak System (Universal Ability)
+
+**Overview:**
+Cloak is a universal stealth ability unlocked at level 20 for all classes. While cloaked, players avoid monster encounters but drain their primary resource per movement.
+
+**Mechanics:**
+- Unlocks at level 20 for all classes
+- Costs 8% of max primary resource per movement (mana/stamina/energy)
+- Active outside combat only (prevents monster encounters while moving)
+- Drops automatically when resource runs out
+- Hunting actively breaks cloak
+- Can be toggled via action bar [4] key in movement mode
+- Merchants can still be encountered while cloaked
+
+**Implementation Files:**
+- **shared/character.gd**: `cloak_active`, `CLOAK_COST_PERCENT`, `get_cloak_cost()`, `can_maintain_cloak()`, `drain_cloak_cost()`, `toggle_cloak()`, `process_cloak_on_move()`
+- **server/server.gd**: `handle_toggle_cloak()`, cloak processing in `handle_move()`, cloak break in `handle_hunt()`
+- **client/client.gd**: Cloak/Uncloak button in action bar, cloak_toggle message handler, cloak status indicators
+
+**Status Display:**
+- Shows "[color=#9932CC]Cloaked[/color]" instead of "Exploring" when active
+- Purple (#9932CC) color theme for cloak-related messages
+
+## New Monster & Trickster Abilities
+
+**Sabotage (Trickster L30):**
+- Reduces monster damage by 15% + (WITS/3)%
+- Effect stored in `combat["monster_sabotaged"]`
+- Stacks up to 50% max reduction
+- Applied in `process_monster_turn()` damage calculation
+
+**Other New Abilities (from previous sessions):**
+- **Mage**: Haste (L30), Paralyze (L50), Banish (L70)
+- **Warrior**: Fortify (L35), Rally (L55)
+- **Trickster**: Sabotage (L30), Gambit (L50)
+
+## New Monster Abilities (Phantasia 5 Inspired)
+
+| Ability | Effect |
+|---------|--------|
+| `charm` | Player attacks themselves for 1 turn |
+| `gold_steal` | Steals 5-15% of player gold on hit |
+| `buff_destroy` | Removes one random active buff |
+| `shield_shatter` | Destroys forcefield/shield buffs instantly |
+| `flee_attack` | Deals damage then flees (no loot) |
+| `disguise` | Appears as weaker monster, reveals after 2 rounds |
+| `xp_steal` | Steals 1-3% of player XP on hit (rare, punishing) |
+| `item_steal` | 5% chance to steal random equipped item |
+
+## Shield Bar Visual
+
+Forcefield shields now display as a purple overlay on the HP bar.
+- Created dynamically in client via `_update_shield_bar()`
+- Purple semi-transparent (#9932CC, 70% alpha)
+- Shows shield amount relative to max HP
+- Tracks `current_forcefield` from combat state
+
+## Ability Loadout System
+
+**Overview:**
+Players can customize which abilities are equipped to their 4 combat slots and change keybinds for each slot.
+
+**Access Methods:**
+- Action bar: [1] "Abilities" in movement mode
+- Command: `/abilities` or `/loadout`
+
+**Features:**
+- 4 ability slots for combat (shown in action bar during combat)
+- Each slot can be bound to a custom key (default: Q, W, E, R)
+- Shows all available abilities for the character's class path
+- Shows which abilities are currently equipped and their costs
+- Universal abilities (Cloak) available to all classes
+
+**UI Actions:**
+- **Equip**: Select slot (1-4), then select ability from unlocked list
+- **Unequip**: Select slot (1-4) to clear
+- **Keybinds**: Select slot (1-4), then press new key
+
+**Implementation Files:**
+- **shared/character.gd**: `equipped_abilities`, `ability_keybinds`, `get_all_available_abilities()`, `get_unlocked_abilities()`, `equip_ability()`, `unequip_ability()`, `set_ability_keybind()`
+- **server/server.gd**: `handle_get_abilities()`, `handle_equip_ability()`, `handle_unequip_ability()`, `handle_set_ability_keybind()`
+- **client/client.gd**: `ability_mode`, `display_ability_menu()`, ability mode input handling, `_get_combat_ability_actions()` uses equipped abilities
+
+**Message Types:**
+- `get_abilities` → `ability_data` (request/response)
+- `equip_ability` → `ability_equipped`
+- `unequip_ability` → `ability_unequipped`
+- `set_ability_keybind` → `keybind_changed`
+
+**Backward Compatibility:**
+If `equipped_abilities` is empty, combat falls back to hardcoded ability slots (MAGE_ABILITY_SLOTS, WARRIOR_ABILITY_SLOTS, TRICKSTER_ABILITY_SLOTS).
