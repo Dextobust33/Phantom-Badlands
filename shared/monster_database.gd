@@ -47,6 +47,7 @@ const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
 const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
+const ABILITY_WARRIOR_HOARDER = "warrior_hoarder"  # 35% chance to drop warrior gear
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
@@ -679,7 +680,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 12,
 				"description": "A bull-headed humanoid warrior",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_BERSERKER, ABILITY_ENRAGE],
+				"abilities": [ABILITY_BERSERKER, ABILITY_ENRAGE, ABILITY_WARRIOR_HOARDER],
 				"death_message": "The minotaur's labyrinthine rage finally ends."
 			}
 		MonsterType.GARGOYLE:
@@ -1027,7 +1028,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 10,
 				"description": "An animated construct of living metal",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ARMORED, ABILITY_THORNS],
+				"abilities": [ABILITY_ARMORED, ABILITY_THORNS, ABILITY_WARRIOR_HOARDER],
 				"death_message": "The golem's core shatters. It salutes you... wait, that's new."
 			}
 		MonsterType.SPHINX:
@@ -1229,7 +1230,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "The physical manifestation of death itself",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER],
+				"abilities": [ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_WARRIOR_HOARDER],
 				"death_message": "'Impossible... I AM death...' Life, it seems, finds a way."
 			}
 

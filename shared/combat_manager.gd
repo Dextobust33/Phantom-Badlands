@@ -78,6 +78,7 @@ const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
 const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
+const ABILITY_WARRIOR_HOARDER = "warrior_hoarder"  # 35% chance to drop warrior gear
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
@@ -141,6 +142,20 @@ func apply_damage_variance(base_damage: int) -> int:
 	# Variance range: 0.85 to 1.15 (±15%)
 	var variance = 0.85 + (randf() * 0.30)
 	return max(1, int(base_damage * variance))
+
+func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary) -> int:
+	"""Apply 50% defense and level penalty to ability damage"""
+	var mod_damage = damage
+	var mon_def = monster.get("defense", 0)
+	var def_ratio = float(mon_def) / (float(mon_def) + 100.0)
+	var partial_red = (def_ratio * 0.6) * 0.5
+	mod_damage = int(mod_damage * (1.0 - partial_red))
+	var mon_level = monster.get("level", 1)
+	var lvl_diff = mon_level - char_level
+	if lvl_diff > 0:
+		var lvl_penalty = min(0.40, lvl_diff * 0.015)
+		mod_damage = int(mod_damage * (1.0 - lvl_penalty))
+	return max(1, mod_damage)
 
 func set_monster_database(db: Node):
 	"""Set the monster database reference"""
@@ -368,6 +383,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		var actual_regen = character.current_energy - old_energy
 		if actual_regen > 0:
 			messages.append("[color=#66FF66]Shadow gear restores %d energy.[/color]" % actual_regen)
+
+	var stamina_regen = bonuses.get("stamina_regen", 0)
+	if stamina_regen > 0 and character.current_stamina < character.max_stamina:
+		var old_stam = character.current_stamina
+		character.current_stamina = mini(character.max_stamina, character.current_stamina + stamina_regen)
+		var actual_regen = character.current_stamina - old_stam
+		if actual_regen > 0:
+			messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
 
 	# === POISON TICK (at start of player turn) ===
 	if character.poison_active:
@@ -652,6 +675,23 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 				combat.extra_drops.append(trick_item)
 		else:
 			messages.append("[color=#808080]The Cunning Prey's gear vanishes into shadow...[/color]")
+
+	# Warrior Hoarder ability: 35% chance to drop warrior gear
+	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
+		if randf() < 0.35:
+			var war_item = drop_tables.generate_warrior_gear(monster.level)
+			if not war_item.is_empty():
+				messages.append("[color=#FF6600]The Warrior Hoarder drops battle-worn gear![/color]")
+				messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+					_get_rarity_color(war_item.get("rarity", "common")),
+					war_item.get("name", "Unknown Item"),
+					war_item.get("level", 1)
+				])
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(war_item)
+		else:
+			messages.append("[color=#808080]The Warrior Hoarder's armor crumbles...[/color]")
 
 	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
@@ -1217,7 +1257,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
 			var wis_reduction = min(0.30, float(monster_wis) / 300.0)  # WIS 90 = 30% reduction
-			var final_damage = apply_damage_variance(max(1, int(base_damage * (1.0 - wis_reduction))))
+			var pre_mod_dmg = max(1, int(base_damage * (1.0 - wis_reduction)))
+			var final_damage = apply_damage_variance(apply_ability_damage_modifiers(pre_mod_dmg, character.level, monster))
 
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -1455,7 +1496,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	match ability_name:
 		"power_strike":
-			var damage = apply_damage_variance(int(total_attack * 1.5 * damage_multiplier))
+			var str_stat = character.get_effective_stat("strength")
+			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
+			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]POWER STRIKE![/color]")
@@ -1467,7 +1512,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFD700]+25%% damage for 3 rounds![/color]" % [])
 
 		"shield_bash":
-			var damage = apply_damage_variance(int(total_attack * damage_multiplier))
+			var str_stat = character.get_effective_stat("strength")
+			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
+			var base_dmg = int(total_attack * damage_multiplier * str_mult)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			combat["monster_stunned"] = true  # Enemy skips next turn
@@ -1475,13 +1524,16 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 
 		"cleave":
-			var damage = apply_damage_variance(int(total_attack * 2 * damage_multiplier))
+			var str_stat = character.get_effective_stat("strength")
+			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
+			var base_dmg = int(total_attack * 2 * damage_multiplier * str_mult)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]CLEAVE![/color]")
 			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
 			# Apply bleed DoT (15% of STR per round for 4 rounds)
-			var str_stat = character.get_effective_stat("strength")
 			var bleed_damage = max(1, int(str_stat * 0.15))
 			combat["monster_bleed"] = {"damage": bleed_damage, "rounds": 4}
 			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
@@ -1503,7 +1555,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#00FF00]Block 50%% damage for 3 rounds![/color]" % [])
 
 		"devastate":
-			var damage = apply_damage_variance(int(total_attack * 4 * damage_multiplier))
+			var str_stat = character.get_effective_stat("strength")
+			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
+			var base_dmg = int(total_attack * 4 * damage_multiplier * str_mult)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color]")
@@ -1627,12 +1683,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			# Ambush uses weapon damage + wits bonus, affected by damage buffs
+			# Ambush uses weapon damage + WITS multiplier, affected by damage buffs
+			var wits_stat = character.get_effective_stat("wits")
+			var wits_mult = 1.0 + (wits_stat * 0.02)  # +2% per WITS
 			var base_damage = character.get_total_attack()
-			var wits_bonus = character.get_effective_stat("wits") / 2
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var damage = apply_damage_variance(int((base_damage + wits_bonus) * 1.5 * damage_multiplier))
+			var base_dmg = int(base_damage * 1.5 * damage_multiplier * wits_mult)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
 			if randi() % 100 < 50:
 				damage = int(damage * 1.5)
@@ -1858,7 +1917,7 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		# Mana potion
 		var mana_amount = effect.base + (effect.per_level * item_level)
 		var old_mana = character.current_mana
-		character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+		character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
 		var actual_restore = character.current_mana - old_mana
 		messages.append("[color=#00FFFF]You drink %s and restore %d mana![/color]" % [item_name, actual_restore])
 	elif effect.has("buff"):
@@ -2410,6 +2469,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
 	total = int(total * class_multiplier)
 
+	# Apply level difference penalty (3% per level, max 50%)
+	var lvl_diff = monster.get("level", 1) - character.level
+	if lvl_diff > 0:
+		var lvl_penalty = min(0.50, lvl_diff * 0.03)
+		total = int(total * (1.0 - lvl_penalty))
+
 	# === CLASS PASSIVE: Paladin Divine Favor ===
 	# +25% damage vs undead/demons
 	if effects.has("bonus_vs_undead"):
@@ -2588,7 +2653,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"player_max_hp": character.get_total_max_hp(),
 		"player_hp_percent": int((float(character.current_hp) / character.get_total_max_hp()) * 100),
 		"player_mana": character.current_mana,
-		"player_max_mana": character.max_mana,
+		"player_max_mana": character.get_total_max_mana(),
 		"player_stamina": character.current_stamina,
 		"player_max_stamina": character.max_stamina,
 		"player_energy": character.current_energy,

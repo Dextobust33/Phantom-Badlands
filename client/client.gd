@@ -375,6 +375,14 @@ var quests_sound_played: Dictionary = {}  # Track which quests have played compl
 var danger_player: AudioStreamPlayer = null
 var last_known_hp_before_round: int = 0  # Track HP to detect heavy damage
 
+# Combat sound effects (subtle, not overwhelming)
+var combat_hit_player: AudioStreamPlayer = null  # Player lands an attack
+var combat_crit_player: AudioStreamPlayer = null  # Critical hit
+var combat_victory_player: AudioStreamPlayer = null  # Monster defeated
+var combat_ability_player: AudioStreamPlayer = null  # Ability use
+var last_combat_sound_time: float = 0.0
+const COMBAT_SOUND_COOLDOWN: float = 0.15  # Minimum time between combat sounds
+
 # ===== RACE DESCRIPTIONS =====
 const RACE_DESCRIPTIONS = {
 	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
@@ -549,6 +557,27 @@ func _ready():
 	danger_player.volume_db = -18.0  # Quiet but noticeable
 	add_child(danger_player)
 	_generate_danger_sound()
+
+	# Initialize combat sound players (subtle, not overwhelming)
+	combat_hit_player = AudioStreamPlayer.new()
+	combat_hit_player.volume_db = -22.0  # Very subtle
+	add_child(combat_hit_player)
+	_generate_combat_hit_sound()
+
+	combat_crit_player = AudioStreamPlayer.new()
+	combat_crit_player.volume_db = -18.0  # Slightly louder for impact
+	add_child(combat_crit_player)
+	_generate_combat_crit_sound()
+
+	combat_victory_player = AudioStreamPlayer.new()
+	combat_victory_player.volume_db = -20.0  # Subtle victory chime
+	add_child(combat_victory_player)
+	_generate_combat_victory_sound()
+
+	combat_ability_player = AudioStreamPlayer.new()
+	combat_ability_player.volume_db = -24.0  # Very subtle magical sound
+	add_child(combat_ability_player)
+	_generate_combat_ability_sound()
 
 	# Initialize background music player
 	music_player = AudioStreamPlayer.new()
@@ -984,6 +1013,172 @@ func play_danger_sound():
 	if danger_player and danger_player.stream:
 		danger_player.play()
 
+# ===== COMBAT SOUND EFFECTS =====
+
+func _generate_combat_hit_sound():
+	"""Generate a subtle click/thump for landing an attack - very short"""
+	var sample_rate = 44100
+	var duration = 0.08  # Very short
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var envelope = exp(-t * 50)  # Very fast decay
+
+		# Low-mid click with some body
+		var sample = sin(t * 180 * TAU) * 0.4  # Low thump
+		sample += sin(t * 350 * TAU) * 0.3  # Mid click
+		sample *= envelope * 0.25  # Keep it subtle
+
+		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
+		data[i * 2] = int_val & 0xFF
+		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+
+	audio.data = data
+	combat_hit_player.stream = audio
+
+func _generate_combat_crit_sound():
+	"""Generate a satisfying critical hit sound - short impact"""
+	var sample_rate = 44100
+	var duration = 0.15  # Short but impactful
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var envelope = exp(-t * 25)  # Fast decay but slightly longer
+
+		# Impact with bright overtone
+		var sample = sin(t * 100 * TAU) * 0.5  # Deep impact
+		sample += sin(t * 400 * TAU) * 0.3  # Bright tone
+		sample += sin(t * 600 * TAU) * 0.2  # Shimmer
+		sample *= envelope * 0.35  # Slightly louder than normal hit
+
+		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
+		data[i * 2] = int_val & 0xFF
+		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+
+	audio.data = data
+	combat_crit_player.stream = audio
+
+func _generate_combat_victory_sound():
+	"""Generate a short satisfying victory chime"""
+	var sample_rate = 44100
+	var duration = 0.25  # Short celebration
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	# Quick ascending notes (G4 -> C5)
+	var notes = [392.0, 523.25]  # G4, C5
+	var note_starts = [0.0, 0.08]
+	var note_durs = [0.12, 0.17]
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var sample = 0.0
+
+		for n in range(notes.size()):
+			var freq = notes[n]
+			var start = note_starts[n]
+			var dur = note_durs[n]
+			if t >= start and t < start + dur:
+				var note_t = t - start
+				var envelope = 1.0 - (note_t / dur)
+				envelope = envelope * envelope
+				sample += sin(note_t * freq * TAU) * envelope * 0.25
+
+		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
+		data[i * 2] = int_val & 0xFF
+		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+
+	audio.data = data
+	combat_victory_player.stream = audio
+
+func _generate_combat_ability_sound():
+	"""Generate a subtle magical whoosh for ability use"""
+	var sample_rate = 44100
+	var duration = 0.12  # Very short
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		# Sweep from higher to lower frequency
+		var freq = 800 - (t / duration) * 400  # 800Hz -> 400Hz sweep
+		var envelope = sin(t / duration * PI)  # Bell curve
+
+		var sample = sin(t * freq * TAU) * 0.2
+		sample += sin(t * freq * 2 * TAU) * 0.1  # Harmonic
+		sample *= envelope * 0.2  # Keep it subtle
+
+		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
+		data[i * 2] = int_val & 0xFF
+		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+
+	audio.data = data
+	combat_ability_player.stream = audio
+
+func _can_play_combat_sound() -> bool:
+	"""Check if enough time has passed since last combat sound"""
+	var current_time = Time.get_ticks_msec() / 1000.0
+	return current_time - last_combat_sound_time >= COMBAT_SOUND_COOLDOWN
+
+func play_combat_hit_sound():
+	"""Play subtle hit sound if cooldown allows"""
+	if not _can_play_combat_sound():
+		return
+	if combat_hit_player and combat_hit_player.stream:
+		combat_hit_player.play()
+		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
+
+func play_combat_crit_sound():
+	"""Play critical hit sound - bypasses cooldown"""
+	if combat_crit_player and combat_crit_player.stream:
+		combat_crit_player.play()
+		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
+
+func play_combat_victory_sound():
+	"""Play victory chime"""
+	if combat_victory_player and combat_victory_player.stream:
+		combat_victory_player.play()
+
+func play_combat_ability_sound():
+	"""Play ability use sound if cooldown allows"""
+	if not _can_play_combat_sound():
+		return
+	if combat_ability_player and combat_ability_player.stream:
+		combat_ability_player.play()
+		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
+
 func _start_background_music():
 	"""Deferred music startup"""
 	_generate_ambient_music()
@@ -1265,6 +1460,14 @@ func _process(delta):
 					use_combat_item_by_number(i + 1)  # 1-based for user
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
+		# Space key (action_0) cancels combat item mode
+		var cancel_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+		if Input.is_physical_key_pressed(cancel_key):
+			if not get_meta("combatitem_cancel_pressed", false):
+				set_meta("combatitem_cancel_pressed", true)
+				cancel_combat_item_mode()
+		else:
+			set_meta("combatitem_cancel_pressed", false)
 
 	# Monster selection with keybinds (from Monster Selection Scroll)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode:
@@ -4233,7 +4436,13 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0,
-		"speed": 0
+		"speed": 0,
+		# Class-specific bonuses
+		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
+		"meditate_bonus": 0,  # % bonus to Meditate effectiveness (Mage gear)
+		"energy_regen": 0,    # Flat energy per combat round (Trickster gear)
+		"flee_bonus": 0,      # % bonus to flee chance (Trickster gear)
+		"stamina_regen": 0    # Flat stamina per combat round (Warrior gear)
 	}
 
 	var item_level = item.get("level", 1)
@@ -4247,9 +4456,40 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 	# Base bonus scales with item level, rarity, and wear
 	var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
-	# Apply bonuses based on item type (matches server character.gd)
-	# Use max(1, ...) for fractional multipliers to ensure even low-level items show stats
-	if "weapon" in item_type:
+	# Check class-specific gear FIRST (before generic types)
+	if "ring_arcane" in item_type:
+		# Arcane ring (Mage): INT + mana_regen
+		bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "ring_shadow" in item_type:
+		# Shadow ring (Trickster): WITS + energy_regen
+		bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "amulet_mystic" in item_type:
+		# Mystic amulet (Mage): max_mana + meditate_bonus
+		bonuses.max_mana += base_bonus * 3
+		bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+	elif "amulet_evasion" in item_type:
+		# Evasion amulet (Trickster): speed + flee_bonus
+		bonuses.speed += base_bonus
+		bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
+	elif "boots_swift" in item_type:
+		# Swift boots (Trickster): Speed + WITS
+		bonuses.speed += int(base_bonus * 1.5)
+		bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+	elif "weapon_warlord" in item_type:
+		# Warlord weapon (Warrior): ATK + stamina_regen
+		bonuses.attack += base_bonus * 3
+		bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "shield_bulwark" in item_type:
+		# Bulwark shield (Warrior): DEF + HP + stamina_regen
+		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.max_hp += base_bonus * 5
+		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	# Generic item types (if not class-specific)
+	elif "weapon" in item_type:
 		bonuses.attack += base_bonus * 3  # Weapons are THE attack item
 		bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 	elif "armor" in item_type:
@@ -4338,6 +4578,23 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 		display_game("[color=#FFFF00]+%d Speed[/color]" % bonuses.speed)
 		stats_shown = true
 
+	# Class-specific bonuses
+	if bonuses.get("mana_regen", 0) > 0:
+		display_game("[color=#66CCFF]+%d Mana/round[/color] [color=#808080](Mage)[/color]" % bonuses.mana_regen)
+		stats_shown = true
+	if bonuses.get("meditate_bonus", 0) > 0:
+		display_game("[color=#66CCFF]+%d%% Meditate[/color] [color=#808080](Mage)[/color]" % bonuses.meditate_bonus)
+		stats_shown = true
+	if bonuses.get("energy_regen", 0) > 0:
+		display_game("[color=#66FF66]+%d Energy/round[/color] [color=#808080](Trickster)[/color]" % bonuses.energy_regen)
+		stats_shown = true
+	if bonuses.get("flee_bonus", 0) > 0:
+		display_game("[color=#66FF66]+%d%% Flee[/color] [color=#808080](Trickster)[/color]" % bonuses.flee_bonus)
+		stats_shown = true
+	if bonuses.get("stamina_regen", 0) > 0:
+		display_game("[color=#FFCC00]+%d Stamina/round[/color] [color=#808080](Warrior)[/color]" % bonuses.stamina_regen)
+		stats_shown = true
+
 	return stats_shown
 
 func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
@@ -4358,7 +4615,13 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 		"intelligence": "INT",
 		"wisdom": "WIS",
 		"wits": "WIT",
-		"speed": "SPD"
+		"speed": "SPD",
+		# Class-specific bonuses
+		"mana_regen": "Mana/rnd",
+		"meditate_bonus": "Meditate%",
+		"energy_regen": "Energy/rnd",
+		"flee_bonus": "Flee%",
+		"stamina_regen": "Stam/rnd"
 	}
 
 	for stat in stat_labels.keys():
@@ -4826,13 +5089,30 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()  # Show cancel option
 
 		"use":
-			if inventory.is_empty():
-				display_game("[color=#FF0000]No items to use.[/color]")
+			# Filter for usable items only (potions/elixirs)
+			var usable_items = []
+			for i in range(inventory.size()):
+				var item = inventory[i]
+				var item_type = item.get("type", "")
+				if "potion" in item_type or "elixir" in item_type:
+					usable_items.append({"index": i, "item": item})
+			if usable_items.is_empty():
+				display_game("[color=#FF0000]No usable items (potions/elixirs) in inventory.[/color]")
 				return
 			pending_inventory_action = "use_item"
 			set_inventory_background("use")
-			display_inventory()  # Show inventory for selection
-			display_game("[color=#FFD700]%s to use an item:[/color]" % get_selection_keys_text(inventory.size()))
+			# Display only usable items
+			display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
+			for j in range(usable_items.size()):
+				var entry = usable_items[j]
+				var item = entry.item
+				var item_name = item.get("name", "Unknown")
+				var rarity = item.get("rarity", "common")
+				var color = _get_rarity_color(rarity)
+				display_game("[%d] [color=%s]%s[/color]" % [j + 1, color, item_name])
+			display_game("[color=#808080]%s to use an item:[/color]" % get_selection_keys_text(usable_items.size()))
+			# Store usable items mapping for selection
+			set_meta("usable_items", usable_items)
 			update_action_bar()
 
 		"equip":
@@ -5181,6 +5461,18 @@ func select_inventory_item(index: int):
 		update_action_bar()
 		return
 
+	# Special handling for use_item - uses filtered usable_items list
+	if action == "use_item":
+		var usable_items = get_meta("usable_items", [])
+		if index < 0 or index >= usable_items.size():
+			display_game("[color=#FF0000]Invalid item number.[/color]")
+			return
+		var actual_index = usable_items[index].index
+		awaiting_item_use_result = true
+		send_to_server({"type": "inventory_use", "index": actual_index})
+		update_action_bar()
+		return
+
 	if index < 0 or index >= inventory.size():
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		display_inventory()  # Re-show inventory on error
@@ -5198,12 +5490,6 @@ func select_inventory_item(index: int):
 			var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
 			var items_on_page = end_idx - start_idx
 			display_game("[color=#FFD700]%s to inspect another item, or [%s] to go back:[/color]" % [get_selection_keys_text(max(1, items_on_page)), get_action_key_name(0)])
-			update_action_bar()
-			return
-		"use_item":
-			awaiting_item_use_result = true  # Capture the result message
-			send_to_server({"type": "inventory_use", "index": index})
-			# Stay in inventory mode - character_update will refresh display
 			update_action_bar()
 			return
 		"equip_item":
@@ -6231,6 +6517,9 @@ func handle_server_message(message: Dictionary):
 			# Stop any ongoing animation when we receive combat feedback
 			stop_combat_animation()
 
+			# Trigger combat sounds based on message content
+			_trigger_combat_sounds(combat_msg)
+
 			var damage = parse_damage_dealt(combat_msg)
 			if damage > 0:
 				damage_dealt_to_current_enemy += damage
@@ -6320,12 +6609,17 @@ func handle_server_message(message: Dictionary):
 					xp_before_combat = 0  # Reset for next combat
 					update_player_xp_bar()  # Update bar with new gain highlight
 
+					# Play victory sound (subtle, short)
+					play_combat_victory_sound()
+
 					# Victory without flock - show all accumulated drops
 					var flock_drops = message.get("flock_drops", [])
 					if flock_drops.size() > 0:
-						display_game("[color=#FFD700]===== LOOT =====[/color]")
+						display_game("")
+						display_game("[color=#FFD700].-=[ LOOT ]=-.[/color]")
 						for drop_msg in flock_drops:
-							display_game(drop_msg)
+							display_game("  " + drop_msg)
+						display_game("")
 
 					# Check for rare drops and play sound effect
 					var drop_value = _calculate_drop_value(message)
@@ -8070,484 +8364,416 @@ func show_help():
 	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
 	var help_text = """
-[b]Available Commands:[/b]
+[b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
+If you die, your character is gone forever! Play smart!
 
-[color=#00FFFF]Movement:[/color]
-  Press Escape to toggle movement mode
-  Use NUMPAD: 7 8 9 = NW N NE
-              4 5 6 = W stay E
-              1 2 3 = SW S SE
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 1: GETTING STARTED
+═══════════════════════════════════════════════[/color][/b]
 
-[color=#00FFFF]Chat:[/color]
-  Just type and press Enter!
+[color=#00FFFF]Controls:[/color]
+  [Escape] Toggle movement mode
+  [NUMPAD] 7 8 9 = NW N NE
+           4 5 6 = W stay E
+           1 2 3 = SW S SE
+  Just type and press Enter to chat!
 
 [color=#00FFFF]Action Bar:[/color]
   [%s] = Primary action (Status/Attack)
   [%s][%s][%s][%s] = Quick actions
   [%s][%s][%s][%s] = Additional actions
 
-[color=#00FFFF]Inventory:[/color]
-  inventory/inv/i - Open inventory
-  [%s] Inventory in movement mode
-  Equip/Unequip stays in mode for quick multi-select
-
-[color=#00FFFF]Abilities:[/color]
-  abilities/loadout - Manage ability loadout
-  [%s] Abilities in movement mode
-  • Equip/unequip abilities to 4 combat slots
-  • Customize keybinds per slot
-  • Cloak unlocks at level 20 (universal stealth)
-
-[color=#00FFFF]Social:[/color]
-  who/players - Refresh player list
-  examine <name> - View player stats
-  watch <name> - Watch another player's game
-  unwatch - Stop watching
-
-[color=#00FFFF]Other:[/color]
-  help - This help
-  status - Show stats
+[color=#00FFFF]Basic Commands:[/color]
+  inventory/inv/i - Open inventory ([%s] in movement)
+  abilities/loadout - Manage abilities ([%s] in movement)
+  status - Show detailed stats
+  who/players - See online players
+  examine <name> - View another player
+  help - This help screen
   clear - Clear screens
 
-[color=#00FFFF]Gems (Premium Currency):[/color]
-  • Drop from monsters 5+ levels higher than you
-  • Higher level difference = better drop chance
-  • Sell to merchants for 1000 gold each
-  • Pay for equipment upgrades (1 gem = 1000g)
-  • Multiply quest rewards in danger zones
+[color=#00FFFF]Map Legend:[/color]
+  [color=#FF6600]![/color] = Danger Zone (hotspot - stronger monsters)
+  [color=#FFFF00]P[/color] = Trading Post (safe zone)
+  [color=#FFD700]$[/color] = Wandering Merchant
+  [color=#00FF00]@[/color] = You
 
-[color=#FF6600]! = Danger Zone[/color] (hotspot with boosted monster levels)
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 2: CHARACTER BUILDING
+═══════════════════════════════════════════════[/color][/b]
 
-[b][color=#FFD700]== CHARACTER STATS ==[/color][/b]
+[color=#AAAAAA]-- PRIMARY STATS --[/color]
 
-[color=#FF6666]STR (Strength)[/color] - Primary damage stat
-  • Increases physical attack damage (+2%% per point)
-  • Adds directly to Attack Power with equipment
+[color=#FF6666]STR (Strength)[/color] - Physical power
+  • +2%% attack damage per point
+  • Powers Warrior abilities
 
-[color=#66FF66]CON (Constitution)[/color] - Health and survivability
-  • Determines max HP (base 50 + CON × 5)
-  • Also increases Defense stat (CON/2)
-  • Essential for survival against tough monsters
+[color=#66FF66]CON (Constitution)[/color] - Survivability
+  • Max HP = 50 + CON × 5
+  • Defense = CON/2 + gear
 
-[color=#66FFFF]DEX (Dexterity)[/color] - Accuracy and evasion
-  • Increases hit chance (+1%% per point vs enemy speed)
-  • Improves flee success (+2%% per point)
-  • Increases critical hit chance (base 5%% + 0.5%% per point, max 25%%)
+[color=#66FFFF]DEX (Dexterity)[/color] - Speed and precision
+  • +1%% hit chance per point
+  • +2%% flee chance per point
+  • Crit chance: 5%% + 0.5%% per point (max 25%%)
 
 [color=#FF66FF]INT (Intelligence)[/color] - Magic power
-  • Increases spell damage (+3%% per point)
-  • Determines max Mana (INT × 8 + WIS × 4)
-  • Powers all Mage abilities
+  • +3%% spell damage per point
+  • Mana = INT×8 + WIS×4
+  • Powers Mage abilities
 
 [color=#FFFF66]WIS (Wisdom)[/color] - Magic support
-  • Contributes to max Mana (INT × 8 + WIS × 4)
-  • Enemies with high WIS resist spell damage
-  • Helps with some Trickster abilities
+  • Contributes to max mana
+  • High enemy WIS resists spells
 
-[color=#FFA500]WIT (Wits)[/color] - Outsmarting enemies
-  • Enables the Outsmart combat action
-  • +5%% success per point above 10
-  • Essential stat for Trickster builds
+[color=#FFA500]WIT (Wits)[/color] - Cunning
+  • Powers Outsmart action
+  • +5%% outsmart per point above 10
+  • Powers Trickster abilities
 
-[b][color=#FFD700]== COMBAT MECHANICS ==[/color][/b]
+[color=#AAAAAA]-- RACE PASSIVES --[/color]
 
-[color=#00FFFF]Attack Damage:[/color]
-  Base = Attack Power (STR + weapon bonuses)
-  Multiplied by: STR bonus (+2%% per STR point)
-  Critical hits deal 1.5x damage (chance from DEX)
+[color=#FFFFFF]Human[/color] - +10%% XP from all sources
+[color=#66FF99]Elf[/color] - 50%% reduced poison, immune to poison debuffs
+[color=#FFA366]Dwarf[/color] - 25%% chance to survive lethal hit with 1 HP
+[color=#8B4513]Ogre[/color] - All healing doubled (2x)
 
-[color=#00FFFF]Defense & Damage Reduction:[/color]
-  Defense = (CON/2) + equipment bonuses
+[color=#AAAAAA]-- CLASS PATHS --[/color]
+
+[color=#FF6666]WARRIOR PATH[/color] (STR > 10) - Uses Stamina
+  [color=#C0C0C0]Fighter[/color] - 20%% reduced stamina, +15%% defense
+  [color=#8B0000]Barbarian[/color] - +3%% dmg per 10%% HP missing (max +30%%)
+  [color=#FFD700]Paladin[/color] - Heal 3%% HP/round, +25%% vs undead/demons
+
+[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana
+  [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% spell crit
+  [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 10%% backfire
+  [color=#20B2AA]Sage[/color] - 25%% reduced mana, +50%% Meditate
+
+[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy
+  [color=#2F4F4F]Thief[/color] - +50%% crit damage, +15%% base crit
+  [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% gold/XP
+  [color=#191970]Ninja[/color] - +40%% flee, no damage when fleeing
+
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 3: COMBAT
+═══════════════════════════════════════════════[/color][/b]
+
+[color=#AAAAAA]-- DAMAGE FORMULAS --[/color]
+
+[color=#00FFFF]Physical Attack:[/color]
+  Base = STR + weapon bonuses
+  Multiplied by: 1.0 + (STR × 0.02)
+  Critical: 1.5x damage (chance from DEX)
+
+[color=#00FFFF]Defense Reduction:[/color]
   Reduction = Defense / (Defense + 100) × 60%%
-  Example: 50 Defense = 23%% reduction, 200 Defense = 40%%
+  50 DEF = 23%%, 200 DEF = 40%%, 500 DEF = 50%%
 
-[color=#00FFFF]Hit Chance:[/color]
-  Base = 75%% + (your DEX - enemy speed)
-  Minimum 50%%, maximum 95%%
+[color=#00FFFF]Level Difference Penalty:[/color]
+  vs higher level monsters, your damage is reduced:
+  Attacks: -3%% per level (max -50%%)
+  Abilities: -1.5%% per level (max -40%%)
+  Example: 10 levels above = -30%% attack / -15%% ability
 
-[color=#00FFFF]Flee Chance:[/color]
-  Base = 50%% + (DEX × 2) + equipment speed + buffs - (level diff × 3)
-  Hardcapped 5-95%% (always a chance to escape or fail)
-  Boots with speed bonus help escape!
-  Failed flee = enemy gets free attack
+[color=#00FFFF]Hit/Flee Chance:[/color]
+  Hit = 75%% + (your DEX - enemy speed), clamped 50-95%%
+  Flee = 50%% + DEX×2 + speed bonuses - level diff×3, clamped 5-95%%
 
-[color=#00FFFF]Critical Hits:[/color]
-  Chance = 5%% + (DEX × 0.5%%), max 25%%
-  Crits deal 1.5x damage
+[color=#AAAAAA]-- WARRIOR ABILITIES --[/color]
+Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4 (refills between combats)
 
-[color=#00FFFF]Equipment Wear:[/color]
-  Some monsters can damage your gear (Corrosive, Sundering)
-  Worn equipment gives reduced bonuses
-  Broken gear (100%% wear) provides no bonuses!
-  Check status to see equipment condition
+Lv1  [color=#FF6666]Power Strike[/color] (10) - 1.5x Attack
+Lv10 [color=#FF6666]War Cry[/color] (15) - +25%% dmg, 3 rounds
+Lv25 [color=#FF6666]Shield Bash[/color] (20) - Attack + stun
+Lv40 [color=#FF6666]Cleave[/color] (30) - 2x Attack
+Lv60 [color=#FF6666]Berserk[/color] (40) - +100%% dmg, -50%% def, 3 rounds
+Lv80 [color=#FF6666]Iron Skin[/color] (35) - Block 50%% dmg, 3 rounds
+Lv100 [color=#FF6666]Devastate[/color] (50) - 4x Attack
 
-[color=#00FFFF]Level Up:[/color]
-  When you level up, you are fully healed!
-  • HP restored to maximum (including equipment bonuses)
-  • Mana/Stamina/Energy restored to maximum
-  • Stats increase based on your class
+[color=#AAAAAA]-- MAGE ABILITIES --[/color]
+Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
 
-[b][color=#FFD700]== MONSTER ABILITIES ==[/color][/b]
+[color=#66FFFF]Meditate[/color] - Restores HP + 4%% mana (8%% if full HP)
 
-[color=#FF4444]Offensive:[/color]
-  • [color=#FF4444]Poison[/color] - DoT that persists outside combat
-  • [color=#FF4444]Bleed[/color] - Stacking DoT (up to 3 stacks)
-  • [color=#FF4444]Multi-Strike[/color] - Attacks 2-3 times per turn
-  • [color=#FF4444]Berserker[/color] - More damage when wounded
-  • [color=#FF4444]Enrage[/color] - Gets stronger each round
-  • [color=#FF4444]Life Steal[/color] - Heals from damage dealt
-  • [color=#FF4444]Glass Cannon[/color] - 3x damage but half HP
+Lv1  [color=#66FFFF]Magic Bolt[/color] (var) - Mana × (1 + INT/50) damage
+Lv10 [color=#66FFFF]Shield[/color] (20) - +50%% def, 3 rounds
+Lv25 [color=#66FFFF]Cloak[/color] (30) - 50%% miss next attack
+Lv40 [color=#66FFFF]Blast[/color] (50) - 2x Magic
+Lv60 [color=#66FFFF]Forcefield[/color] (75) - Block 2 attacks
+Lv80 [color=#66FFFF]Teleport[/color] (40) - Guaranteed flee
+Lv100 [color=#66FFFF]Meteor[/color] (100) - 5x Magic
+
+[color=#AAAAAA]-- TRICKSTER ABILITIES --[/color]
+Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4 (refills between combats)
+
+Lv1  [color=#FFA500]Analyze[/color] (5) - Reveal monster stats
+Lv10 [color=#FFA500]Distract[/color] (15) - -50%% enemy accuracy
+Lv25 [color=#FFA500]Pickpocket[/color] (20) - Steal WITS×10 gold
+Lv40 [color=#FFA500]Ambush[/color] (30) - 1.5x (Attack+WITS/2), +50%% crit
+Lv60 [color=#FFA500]Vanish[/color] (40) - Invisible, next attack crits
+Lv80 [color=#FFA500]Exploit[/color] (35) - 10%% monster HP as damage
+Lv100 [color=#FFA500]Perfect Heist[/color] (50) - Instant win, 2x rewards
+
+[color=#AAAAAA]-- OUTSMART --[/color]
+
+[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win
+  Base 5%% + 5%% per WITS above 10
+  +15%% for Tricksters
+  +8%% per monster INT below 10
+  -8%% per monster INT above 10
+  Clamped 2-85%% (Tricksters: 2-95%%)
+  [color=#00FF00]Best:[/color] Beasts, undead | [color=#FF4444]Worst:[/color] Mages, dragons
+  Failure = enemy free attack, can't retry
+
+[color=#AAAAAA]-- UNIVERSAL ABILITIES --[/color]
+
+[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement
+  • 8%% resource drain per step
+  • No monster encounters while cloaked
+  • Toggle with [%s] in movement mode
+
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 4: MONSTERS
+═══════════════════════════════════════════════[/color][/b]
+
+[color=#FF4444]Offensive Abilities:[/color]
+  Poison - DoT persists outside combat
+  Bleed - Stacking DoT (up to 3)
+  Multi-Strike - 2-3 attacks per turn
+  Berserker - +dmg when wounded
+  Enrage - Stronger each round
+  Life Steal - Heals from damage
+  Glass Cannon - 3x dmg, half HP
 
 [color=#808080]Debuffs:[/color]
-  • [color=#808080]Curse[/color] - Reduces your defense
-  • [color=#808080]Disarm[/color] - Reduces your damage
-  • [color=#808080]Blind[/color] - Reduces your hit chance
-  • [color=#808080]Slow Aura[/color] - Reduces flee chance
-  • [color=#808080]Mana/Stamina/Energy Drain[/color] - Drains resources
+  Curse - Reduces defense
+  Disarm - Reduces damage
+  Blind - Reduces hit chance
+  Slow Aura - Reduces flee chance
+  Drain - Steals mana/stamina/energy
 
 [color=#6666FF]Defensive:[/color]
-  • [color=#6666FF]Armored[/color] - +50%% defense
-  • [color=#6666FF]Ethereal[/color] - 50%% dodge chance
-  • [color=#6666FF]Regeneration[/color] - Heals each turn
-  • [color=#6666FF]Damage Reflect[/color] - Returns 25%% damage
-  • [color=#6666FF]Thorns[/color] - Damages you on melee attacks
+  Armored - +50%% defense
+  Ethereal - 50%% dodge
+  Regeneration - Heals per turn
+  Damage Reflect - Returns 25%%
+  Thorns - Damages you on hit
 
 [color=#FFD700]Special:[/color]
-  • [color=#FFD700]Death Curse[/color] - Damages you when killed
-  • [color=#FFD700]Summoner[/color] - Can call reinforcements
-  • [color=#FFD700]Corrosive/Sunder[/color] - Damages equipment
+  Death Curse - Damages on death
+  Summoner - Calls reinforcements
+  Corrosive/Sunder - Damages gear
 
 [color=#00FF00]Reward Abilities:[/color]
-  • [color=#00FF00]Wish Granter[/color] - 10%% chance to offer a wish
-  • [color=#00FF00]Weapon Master[/color] - 35%% chance to drop weapon
-  • [color=#00FF00]Shield Bearer[/color] - 35%% chance to drop shield
-  • [color=#00FF00]Gem Bearer[/color] - Always drops extra gems
-  • [color=#00FF00]Gold Hoarder[/color] - Drops 3x gold
-  • [color=#66CCCC]Arcane Hoarder[/color] - 35%% chance to drop mage gear
-  • [color=#66FF66]Cunning Prey[/color] - 35%% chance to drop trickster gear
+  Wish Granter - 10%% chance for wish
+  Weapon Master - 35%% weapon drop
+  Shield Bearer - 35%% shield drop
+  Arcane Hoarder - 35%% mage gear
+  Cunning Prey - 35%% trickster gear
+  Gem Bearer - Always extra gems
+  Gold Hoarder - 3x gold
 
-[b][color=#FFD700]== WISH REWARDS ==[/color][/b]
+[color=#AAAAAA]-- WISH REWARDS --[/color]
 
-When a Wish Granter offers you a wish (10%% chance):
-  • [color=#00FFFF]Gems[/color] - Receive precious gems
-  • [color=#A335EE]Gear[/color] - Receive high-quality equipment
-  • [color=#FFD700]Buff[/color] - Powerful temporary combat enhancement
-  • [color=#FF8000]Equipment Upgrade[/color] - Upgrade equipped gear multiple times!
-  • [color=#FF00FF]Permanent Stats[/color] - Rare chance for permanent stat boost
+When Wish Granter offers a wish (10%% chance):
+  [color=#00FFFF]Gems[/color] - Precious gems
+  [color=#A335EE]Gear[/color] - High-quality equipment
+  [color=#FFD700]Buff[/color] - Powerful temp combat buff
+  [color=#FF8000]Equipment Upgrade[/color] - Up to 12 upgrades!
+  [color=#FF00FF]Permanent Stats[/color] - Rare stat boost
 
-[color=#FF8000]Equipment Upgrade scaling:[/color]
-  Base 1-2 upgrades, +1 per 500 lethality (max +5),
-  +1 per 10 levels above you (max +5). Maximum: 12 upgrades!
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 5: ITEMS & EQUIPMENT
+═══════════════════════════════════════════════[/color][/b]
 
-[b][color=#FFD700]== RACE PASSIVES ==[/color][/b]
+[color=#AAAAAA]-- CONSUMABLES --[/color]
 
-[color=#FFFFFF]Human[/color] - Adaptable and ambitious
-  • +10%% bonus XP from all sources
-  • Best for leveling quickly
+[color=#00FFFF]Potions:[/color] Use with [%s] from inventory
+  Health - Restore HP (Minor to Divine)
+  Mana/Stamina/Energy - Restore resources
+  Strength/Defense/Speed - Temp stat boost
+  Crit/Lifesteal/Thorns - Combat effects
 
-[color=#66FF99]Elf[/color] - Ancient and resilient
-  • 50%% reduced poison damage
-  • Immune to poison debuffs
-  • Good against venomous creatures
-
-[color=#FFA366]Dwarf[/color] - Sturdy and determined
-  • Last Stand: 25%% chance to survive lethal damage with 1 HP
-  • Triggers once per combat
-  • Great for risky fights
-
-[color=#8B4513]Ogre[/color] - Massive and regenerative
-  • All healing effects are doubled (2x)
-  • Includes potions, regen, and other heals
-  • Great for sustained combat
-
-[b][color=#FFD700]== CLASS PASSIVES ==[/color][/b]
-
-[color=#FF6666]Warrior Path[/color] (STR > 10) - Uses Stamina
-  [color=#C0C0C0]Fighter[/color] - Tactical Discipline
-    • 20%% reduced stamina costs, +15%% defense
-  [color=#8B0000]Barbarian[/color] - Blood Rage
-    • +3%% damage per 10%% HP missing (max +30%%), abilities cost 25%% more
-  [color=#FFD700]Paladin[/color] - Divine Favor
-    • Heal 3%% max HP per combat round, +25%% damage vs undead/demons
-
-[color=#66FFFF]Mage Path[/color] (INT > 10) - Uses Mana
-  [color=#4169E1]Wizard[/color] - Arcane Precision
-    • +15%% spell damage, +10%% spell crit chance
-  [color=#9400D3]Sorcerer[/color] - Chaos Magic
-    • 25%% chance for double spell damage, 10%% chance to backfire
-  [color=#20B2AA]Sage[/color] - Mana Mastery
-    • 25%% reduced mana costs, Meditate restores 50%% more
-
-[color=#66FF66]Trickster Path[/color] (WITS > 10) - Uses Energy
-  [color=#2F4F4F]Thief[/color] - Backstab
-    • +50%% crit damage, +15%% base crit chance
-  [color=#228B22]Ranger[/color] - Hunter's Mark
-    • +25%% damage vs beasts, +30%% gold/XP from kills
-  [color=#191970]Ninja[/color] - Shadow Step
-    • +40%% flee success, take no damage when fleeing
-
-[b][color=#FFD700]== WATCH FEATURE ==[/color][/b]
-
-Watch another player's game in real-time!
-  • Type [color=#FFFF00]watch <name>[/color] to request watching a player
-  • Watched player presses [%s] to approve, [%s] to deny
-  • While watching, you see their game, map, and stats
-  • Press [color=#FFFF00][Escape][/color] to stop watching
-  • Type [color=#FFFF00]unwatch[/color] to stop watching
-
-[b][color=#FFD700]== WARRIOR ABILITIES (STR Path) ==[/color][/b]
-Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4 (refills between combats)
-Damage abilities use [color=#FFCC00]Attack[/color] = STR + weapon bonuses
-
-[color=#FF6666]Lv 1 - Power Strike[/color] (10 Stamina)
-  Deal Attack × 1.5 damage
-
-[color=#FF6666]Lv 10 - War Cry[/color] (15 Stamina)
-  +25%% damage for 3 rounds
-
-[color=#FF6666]Lv 25 - Shield Bash[/color] (20 Stamina)
-  Deal Attack damage + stun (enemy skips turn)
-
-[color=#FF6666]Lv 40 - Cleave[/color] (30 Stamina)
-  Deal Attack × 2 damage
-
-[color=#FF6666]Lv 60 - Berserk[/color] (40 Stamina)
-  +100%% damage, -50%% defense for 3 rounds
-
-[color=#FF6666]Lv 80 - Iron Skin[/color] (35 Stamina)
-  Block 50%% damage for 3 rounds
-
-[color=#FF6666]Lv 100 - Devastate[/color] (50 Stamina)
-  Deal Attack × 4 damage
-
-[b][color=#FFD700]== MAGE ABILITIES (INT Path) ==[/color][/b]
-Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
-Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
-
-[color=#66FFFF]Meditate[/color] (replaces Rest for mages)
-  Restores HP and 4%% max mana (2x movement regen)
-  If at full HP: double mana regen (8%%)
-  Mystic Amulets boost meditate effectiveness
-  Can be ambushed (15%% chance)
-
-[color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)
-  Damage = Mana × (1 + INT/50), reduced by monster WIS
-  Example: INT 50 = 2x damage per mana, INT 100 = 3x
-  Auto-suggests optimal mana to kill monster
-
-[color=#66FFFF]Lv 10 - Shield[/color] (20 Mana)
-  +50%% defense for 3 rounds
-
-[color=#66FFFF]Lv 25 - Cloak[/color] (30 Mana)
-  50%% chance enemy misses next attack
-
-[color=#66FFFF]Lv 40 - Blast[/color] (50 Mana)
-  Deal Magic × 2 damage
-
-[color=#66FFFF]Lv 60 - Forcefield[/color] (75 Mana)
-  Block next 2 attacks completely
-
-[color=#66FFFF]Lv 80 - Teleport[/color] (40 Mana)
-  Guaranteed flee (always succeeds)
-
-[color=#66FFFF]Lv 100 - Meteor[/color] (100 Mana)
-  Deal Magic × 5 damage
-
-[b][color=#FFD700]== TRICKSTER ABILITIES (WITS Path) ==[/color][/b]
-Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4 (refills between combats)
-WITS abilities include equipment bonuses
-
-[color=#FFA500]Lv 1 - Analyze[/color] (5 Energy)
-  Reveal monster stats (HP, damage, intelligence)
-
-[color=#FFA500]Lv 10 - Distract[/color] (15 Energy)
-  Enemy has -50%% accuracy on next attack
-
-[color=#FFA500]Lv 25 - Pickpocket[/color] (20 Energy)
-  Steal WITS × 10 gold (fail = monster attacks)
-
-[color=#FFA500]Lv 40 - Ambush[/color] (30 Energy)
-  Deal (Attack + WITS/2) × 1.5 damage + 50%% crit chance
-
-[color=#FFA500]Lv 60 - Vanish[/color] (40 Energy)
-  Invisible, guaranteed crit on next attack
-
-[color=#FFA500]Lv 80 - Exploit[/color] (35 Energy)
-  Deal 10%% of monster's current HP as damage
-
-[color=#FFA500]Lv 100 - Perfect Heist[/color] (50 Energy)
-  Instant win + double gold/gems
-
-[b][color=#FFD700]== OUTSMART (WITS-based) ==[/color][/b]
-
-[color=#FFA500]Outsmart[/color] - Trick dumb monsters
-  Base chance: 5%%
-  +5%% per WITS above 10 (main factor!)
-  +15%% bonus for Trickster classes
-  +8%% per monster INT below 10 (dumb = easy)
-  -8%% per monster INT above 10 (smart = hard)
-  -5%% if monster INT exceeds your WITS
-  Clamped 2-85%% (Tricksters: 2-95%%)
-
-  [color=#00FF00]Best against:[/color] Low INT monsters (beasts, undead)
-  [color=#FF4444]Worst against:[/color] High INT monsters (mages, dragons)
-
-  Success: Instant win with full rewards
-  Failure: Monster gets free attack, can't retry
-
-[b][color=#FFD700]== TRADING POSTS (58 Total) ==[/color][/b]
-
-Safe zones with services and quests:
-  • [color=#00FF00]Haven[/color] (0,10) - Starting area, beginner quests
-  • [color=#00FF00]Crossroads[/color] (0,0) - Hotzone quests, dailies
-  • [color=#00FF00]Frostgate[/color] (0,-100) - Boss hunts, exploration
-  • And 55 more across the world!
-
-Posts are [color=#FFFF00]denser near the center[/color], sparser at edges.
-World's Edge posts (700+ distance) for extreme challenges.
-Services: Shop, Quests, Recharge (action bar [%s])
-Map shapes vary by location: +/-/| (classic), #/= (fortress), */~ (tower), etc.
-
-[b][color=#FFD700]== WANDERING MERCHANTS (110 Total) ==[/color][/b]
-
-Traveling merchants roam between Trading Posts:
-  • [color=#FFFF00]More common near center[/color] (40%% in core zone)
-  • Move slowly with rest breaks (catchable!)
-  • Inventories refresh every 5 minutes
-  • Offer: Buy, Sell, Upgrade, Gamble
-
-[color=#00FFFF]Map Colors by Specialty:[/color]
-  • [color=#FF4444]$[/color] = Weaponsmith (weapons)
-  • [color=#4488FF]$[/color] = Armorer (armor)
-  • [color=#AA44FF]$[/color] = Jeweler (jewelry)
-  • [color=#FFD700]$[/color] = General merchant (all items)
-
-[b][color=#FFD700]== BUFFS & DEBUFFS ==[/color][/b]
-
-Active effects shown in bottom-right overlay:
-  • [color=#FF6666][S+15:5][/color] = Strength +15, 5 rounds
-  • [color=#6666FF][D+10:3B][/color] = Defense +10, 3 battles
-  • [color=#FF00FF][P5:2][/color] = Poison 5 dmg, 2 rounds
-
-[color=#FF00FF]Poison[/color] ticks on [color=#FFFF00]movement and hunting[/color]:
-  • Each step or hunt deals poison damage
-  • Poison cannot kill you (stops at 1 HP)
-  • Elves take 50%% reduced poison damage
-
-View details: [%s] Status in movement mode
-
-[b][color=#FFD700]== QUESTS ==[/color][/b]
-
-Accept quests at Trading Posts:
-  • Kill quests - Slay X monsters
-  • Hotzone quests - Hunt in danger zones for bonus rewards
-  • Exploration - Visit specific locations
-  • Boss hunts - Defeat high-level monsters
-
-Press [%s] Quests in movement mode to view quest log.
-
-[b][color=#FFD700]== GAMBLING ==[/color][/b]
-
-Dice game at merchants (use with caution!):
-  • Roll 3d6 vs merchant's 3d6
-  • House has a slight edge
-  • Triples pay big! Triple 6s = JACKPOT
-  • Long-term: expect to lose money
-  • Short-term: can get lucky!
-
-[b][color=#FFD700]== CONSUMABLES ==[/color][/b]
-
-[color=#00FFFF]Potions:[/color]
-  • [color=#00FF00]Health[/color] - Restore HP (Minor to Divine tiers)
-  • [color=#66CCCC]Mana[/color] - Restore mana for Mages
-  • [color=#FFCC00]Stamina[/color] - Restore stamina for Warriors
-  • [color=#66FF66]Energy[/color] - Restore energy for Tricksters
-  • [color=#FF6666]Strength[/color] - +ATK (rounds or battles)
-  • [color=#6666FF]Defense[/color] - +DEF (rounds or battles)
-  • [color=#66FF66]Speed[/color] - +SPD (rounds or battles)
-  • [color=#FFD700]Crit[/color] - +Crit chance (rounds)
-  • [color=#FF00FF]Lifesteal[/color] - Heal when dealing damage (rounds)
-  • [color=#FF4444]Thorns[/color] - Reflect damage back (rounds)
-  Use from inventory with [%s] Use
-
-[color=#FF00FF]Buff Scrolls (apply before next combat):[/color]
-  • [color=#00FFFF]Forcefield[/color] - Absorbs damage before HP
-  • [color=#FF6666]Rage[/color] - Massive strength boost
-  • [color=#6666FF]Stone Skin[/color] - Massive defense boost
-  • [color=#66FF66]Haste[/color] - Massive speed boost
-  • [color=#FF00FF]Vampirism[/color] - Lifesteal for entire fight
-  • [color=#FF4444]Thorns[/color] - Reflect damage for entire fight
-  • [color=#FFD700]Precision[/color] - High crit chance
+[color=#FF00FF]Buff Scrolls (apply before combat):[/color]
+  Forcefield, Rage, Stone Skin, Haste
+  Vampirism, Thorns, Precision
 
 [color=#A335EE]Debuff Scrolls (weaken next monster):[/color]
-  • [color=#FF4444]Weakness[/color] - Reduce monster attack
-  • [color=#6666FF]Vulnerability[/color] - Reduce monster defense
-  • [color=#808080]Slow[/color] - Reduce monster speed
-  • [color=#FF00FF]Doom[/color] - Monster starts with less HP
+  Weakness, Vulnerability, Slow, Doom
 
 [color=#A335EE]Special Scrolls:[/color]
-  • [color=#FFD700]Scroll of Summoning[/color] - Choose your next monster!
-  • [color=#FF00FF]Scroll of Finding[/color] - Next 5 monsters have chosen ability
-    (Weapon Master, Shield Bearer, Gem Bearer, Arcane Hoarder, Cunning Prey)
+  Scroll of Summoning - Choose your next monster!
+  Scroll of Finding - Next 5 monsters have chosen trait
 
-[b][color=#FFD700]== LUCKY FINDS & SPECIAL ENCOUNTERS ==[/color][/b]
-Rarely when moving/hunting, you may discover:
-  • [color=#FFD700]Lucky Find[/color] - Hidden treasure (gold or items)
+[color=#AAAAAA]-- EQUIPMENT WEAR --[/color]
+
+Some monsters (Corrosive, Sundering) damage gear.
+Worn equipment = reduced bonuses.
+100%% wear = broken, no bonuses!
+Repair at merchants.
+
+[color=#AAAAAA]-- GEAR HUNTING BY CLASS --[/color]
+
+Hunt these monsters for class-specific equipment (35%% drop):
+
+[color=#FF6666]WARRIOR GEAR[/color] (Warrior Hoarder trait):
+  Minotaur (tier 3), Iron Golem (tier 6), Death Incarnate (tier 8)
+
+[color=#66CCCC]MAGE GEAR[/color] (Arcane Hoarder trait):
+  Wraith (tier 3), Lich (tier 5), Elemental (tier 6)
+  Sphinx (tier 6), Elder Lich (tier 7), Time Weaver (tier 8)
+
+[color=#66FF66]TRICKSTER GEAR[/color] (Cunning Prey trait):
+  Goblin (tier 1), Hobgoblin (tier 2), Giant Spider (tier 2)
+  Void Walker (tier 7)
+
+[color=#FFD700]WEAPONS/SHIELDS[/color] (Rare variants, 4%% spawn chance):
+  Any monster Lv5+ can spawn as "Weapon Master" or "Shield Guardian"
+  35%% guaranteed drop of that item type!
+  Scroll of Finding can force these to appear.
+
+[color=#AAAAAA]-- BUFFS & DEBUFFS --[/color]
+
+Shown in overlay: [Letter+Value:Duration]
+  [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit
+  [color=#FF00FF]L[/color]=Lifesteal [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Forcefield
+  Number = rounds, Number+B = battles
+
+[color=#FF00FF]Poison[/color] ticks on movement/hunting (can't kill).
+
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 6: THE WORLD
+═══════════════════════════════════════════════[/color][/b]
+
+[color=#AAAAAA]-- TRADING POSTS (58 Total) --[/color]
+
+Safe zones with shops, quests, recharge ([%s]).
+  [color=#00FF00]Haven[/color] (0,10) - Spawn, beginner quests
+  [color=#00FF00]Crossroads[/color] (0,0) - The High Seat, hotzone quests
+  [color=#00FF00]Frostgate[/color] (0,-100) - Boss hunts
+  +55 more across the world!
+
+Denser near center, sparser at edges.
+
+[color=#AAAAAA]-- WANDERING MERCHANTS (110) --[/color]
+
+Roam between posts. Buy, sell, upgrade, gamble.
+[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General
+
+[color=#AAAAAA]-- DANGER ZONES --[/color]
+
+[color=#FF6600]![/color] = Hotspot with 50-150%% level bonus!
+Higher risk, higher rewards.
+
+[color=#AAAAAA]-- QUESTS --[/color]
+
+Accept at Trading Posts. View with [%s] Quests.
+  Kill quests - Slay X monsters
+  Hotzone quests - Hunt in danger zones (bonus rewards!)
+  Exploration - Visit specific locations
+  Boss hunts - Defeat high-level monsters
+
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 7: GEMS & PROGRESSION
+═══════════════════════════════════════════════[/color][/b]
+
+[color=#00FFFF]Gems (Premium Currency):[/color]
+  • Drop from monsters 5+ levels ABOVE you
+  • Higher level diff = better drop chance
+  • Sell to merchants: 1 gem = 1000 gold
+  • Pay for upgrades (1 gem = 1000g value)
+
+[color=#FFD700]Lucky Finds:[/color]
+Rarely while moving/hunting:
+  • Hidden treasure (gold or items)
   • [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!
 
-These require pressing [%s] to continue.
+Press [%s] to continue when these appear.
 
-[b][color=#FFD700]== BUFF OVERLAY ==[/color][/b]
-Buffs shown in top bar: [Letter+Value:Duration]
-  [color=#FF6666]S[/color]=Strength [color=#6666FF]D[/color]=Defense [color=#66FF66]V[/color]=Speed
-  [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Lifesteal [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Forcefield
-  Duration: Number = rounds, Number+B = battles
+[color=#00FFFF]Level Up:[/color]
+  • Fully healed (HP, mana/stamina/energy)
+  • Stats increase based on class
 
-[b][color=#FFD700]== BUG REPORTING ==[/color][/b]
-Found a bug? Report it!
-  • [color=#FFFF00]bug <description>[/color] - Generate bug report
-  • [color=#FFFF00]report <description>[/color] - Same as bug
-  • Report captures: game state, combat info, resources
-  • Copy the report and paste to developer for help!
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 8: CHASE ITEMS & ENDGAME
+═══════════════════════════════════════════════[/color][/b]
 
-[b][color=#FFD700]== TITLE SYSTEM ==[/color][/b]
+Long-term goals for dedicated players!
 
-Prestigious titles grant special abilities to interact with the realm:
+[color=#AAAAAA]-- CHASE ITEMS --[/color]
 
-[color=#C0C0C0]Jarl[/color] (Level 50-500) - Chieftain of the Realm
-  • Requires: [color=#C0C0C0]Jarl's Ring[/color] (rare drop from Lv100+ monsters)
-  • Claim at: The High Seat (0,0)
-  • Only ONE Jarl at a time
-  • Abilities: Banish, Curse, Gift of Silver, Claim Tribute
-  • Lost on death or if level exceeds 500
+[color=#C0C0C0]Jarl's Ring[/color]
+  • Rare drop from Lv100+ monsters
+  • Required to become [color=#C0C0C0]Jarl[/color]
+  • Consumed when claiming title
+
+[color=#A335EE]Unforged Crown[/color]
+  • Very rare drop from Lv200+ monsters
+  • Forge at [color=#FF6600]Fire Mountain[/color] (-400,0)
+  • Survive the trial to create Crown of the North
+
+[color=#FFD700]Crown of the North[/color]
+  • Created from Unforged Crown
+  • Required to become [color=#FFD700]High King[/color]
+  • Consumed when claiming title
+
+[color=#00FFFF]Eternal Flame[/color]
+  • Hidden location in the world
+  • Only [color=#9400D3]Elders[/color] can seek it
+  • Reach it to become [color=#00FFFF]Eternal[/color]
+
+[color=#AAAAAA]-- TITLE SYSTEM --[/color]
+
+Prestigious titles grant realm-shaping abilities!
+
+[color=#C0C0C0]Jarl[/color] (Level 50-500) - Chieftain
+  • Requires: Jarl's Ring + claim at (0,0)
+  • Only ONE at a time
+  • Abilities: Banish, Curse, Gift of Silver
+  • Lost on death or exceeding Lv500
 
 [color=#FFD700]High King[/color] (Level 200-1000) - Supreme Ruler
-  • Requires: [color=#FFD700]Crown of the North[/color]
-  • Crown created: Forge Unforged Crown at Fire Mountain (-400,0)
-  • Claim at: The High Seat (0,0)
-  • Only ONE High King at a time (removes Jarl)
+  • Requires: Crown of the North + claim at (0,0)
+  • Only ONE at a time (replaces Jarl)
   • Abilities: Exile, Knight, Cure, Royal Decree
   • Survives one lethal blow (loses title instead)
 
 [color=#9400D3]Elder[/color] (Level 1000+) - Ancient Wisdom
-  • Automatically granted at level 1000
-  • Multiple Elders can exist
+  • Automatic at level 1000
+  • Multiple can exist
   • Abilities: Heal, Seek Flame, Slap
-  • Can seek the Eternal Flame to become Eternal
+  • Can seek the Eternal Flame
 
 [color=#00FFFF]Eternal[/color] - Immortal Legend
-  • Requires: Elder who finds the Eternal Flame
-  • Use Seek Flame to find direction/distance
-  • Up to THREE Eternals at a time
-  • Has 3 lives (survives death, loses a life)
+  • Requires: Elder who finds Eternal Flame
+  • Up to THREE at a time
+  • Has 3 lives (survives death 3x)
   • Abilities: Smite, Restore, Bless, Proclaim
 
-Title holders are shown on login and in player list.
-Press Title button in action bar to use abilities.
+[b][color=#FFD700]═══════════════════════════════════════════════
+           SECTION 9: SOCIAL & MISC
+═══════════════════════════════════════════════[/color][/b]
 
-[b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
-If you die, your character is gone forever!
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k2, k6, k0, k4, k1, k0]
+[color=#AAAAAA]-- WATCH FEATURE --[/color]
+
+Watch another player's game live!
+  watch <name> - Request to watch
+  Player presses [%s] approve, [%s] deny
+  [Escape] or unwatch to stop
+
+[color=#AAAAAA]-- GAMBLING --[/color]
+
+Dice game at merchants (risky!):
+  Roll 3d6 vs merchant's 3d6
+  House has slight edge
+  Triples pay big! Triple 6s = JACKPOT
+
+[color=#AAAAAA]-- BUG REPORTING --[/color]
+
+  bug <description> - Generate report
+  Copy and paste to developer!
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k8, k1, k4, k4, k0, k1, k2]
 	display_game(help_text)
 
 func display_game(text: String):
@@ -8657,6 +8883,31 @@ func _enhance_combat_message(msg: String) -> String:
 
 	return enhanced
 
+func _trigger_combat_sounds(msg: String):
+	"""Trigger appropriate combat sounds based on message content"""
+	var upper_msg = msg.to_upper()
+
+	# Critical hit gets priority - special impactful sound
+	if "CRITICAL" in upper_msg:
+		play_combat_crit_sound()
+		return
+
+	# Player deals damage - check for "deal" or player attacking
+	# Messages like "You deal X damage" or "deals X damage"
+	if "DEAL" in upper_msg and "DAMAGE" in upper_msg:
+		play_combat_hit_sound()
+		return
+
+	# Ability use indicators - cast, unleash, invoke, channel
+	if "CAST" in upper_msg or "UNLEASH" in upper_msg or "INVOKE" in upper_msg or "CHANNEL" in upper_msg:
+		play_combat_ability_sound()
+		return
+
+	# Shield/buff activation
+	if "SHIELD" in upper_msg or "FORCEFIELD" in upper_msg or "BARRIER" in upper_msg:
+		play_combat_ability_sound()
+		return
+
 func display_chat(text: String):
 	if chat_output:
 		chat_output.append_text(text + "\n")
@@ -8757,7 +9008,18 @@ func handle_quest_list(message: Dictionary):
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== %s - %s =====[/color]" % [quest_giver, tp_name])
-	display_game("[color=#808080]Active Quests: %d / %d[/color]" % [active_count, max_quests])
+
+	# Show area level info if available (from scaled quests)
+	var area_level = 0
+	if available_quests.size() > 0:
+		area_level = available_quests[0].get("area_level", 0)
+	elif quests_to_turn_in.size() > 0:
+		area_level = quests_to_turn_in[0].get("area_level", 0)
+
+	if area_level > 0:
+		display_game("[color=#808080]Area Level: ~%d | Active Quests: %d / %d[/color]" % [area_level, active_count, max_quests])
+	else:
+		display_game("[color=#808080]Active Quests: %d / %d[/color]" % [active_count, max_quests])
 	display_game("")
 
 	# Show quests ready to turn in first
@@ -8780,10 +9042,11 @@ func handle_quest_list(message: Dictionary):
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
 			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
+			var tier_tag = _get_quest_tier_tag(quest)
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
 			var key_name = get_item_select_key_name(offset + i)
-			display_game("[%s] [color=#FFD700]%s[/color]%s" % [key_name, quest.get("name", "Quest"), daily_tag])
+			display_game("[%s] [color=#FFD700]%s[/color]%s%s" % [key_name, quest.get("name", "Quest"), daily_tag, tier_tag])
 			display_game("    %s" % quest.get("description", ""))
 			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")
@@ -8804,6 +9067,29 @@ func _format_rewards(rewards: Dictionary) -> String:
 	if rewards.get("gems", 0) > 0:
 		parts.append("%d Gems" % rewards.gems)
 	return ", ".join(parts) if parts.size() > 0 else "None"
+
+func _get_quest_tier_tag(quest: Dictionary) -> String:
+	"""Get a visual tag indicating quest tier/difficulty relative to area level"""
+	var tier = quest.get("reward_tier", "")
+	var area_level = quest.get("area_level", 0)
+
+	# Color-coded tier tags for visual distinction
+	match tier:
+		"beginner":
+			# Only show EASY tag if we're in a non-beginner area (level > 10)
+			if area_level > 10:
+				return " [color=#808080][EASY][/color]"
+			return ""
+		"standard":
+			return ""  # Standard quests don't need a tag
+		"veteran":
+			return " [color=#FFA500][VETERAN][/color]"
+		"elite":
+			return " [color=#A335EE][ELITE][/color]"
+		"legendary":
+			return " [color=#FF8000][LEGENDARY][/color]"
+
+	return ""
 
 func _format_wish_description(wish: Dictionary) -> String:
 	"""Format a wish option for display"""

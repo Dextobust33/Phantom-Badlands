@@ -395,7 +395,8 @@ func get_equipment_bonuses() -> Dictionary:
 		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
 		"meditate_bonus": 0,  # % bonus to Meditate effectiveness (Mage gear)
 		"energy_regen": 0,    # Flat energy per combat round (Trickster gear)
-		"flee_bonus": 0       # % bonus to flee chance (Trickster gear)
+		"flee_bonus": 0,      # % bonus to flee chance (Trickster gear)
+		"stamina_regen": 0    # Flat stamina per combat round (Warrior gear)
 	}
 
 	for slot in equipped.keys():
@@ -414,40 +415,8 @@ func get_equipment_bonuses() -> Dictionary:
 		# Base bonus scales with item level, rarity, and wear
 		var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
-		# Apply bonuses based on item type
+		# Check class-specific gear FIRST (before generic types)
 		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
-		if "weapon" in item_type:
-			bonuses.attack += base_bonus * 3  # Weapons are THE attack item - huge attack boost
-			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		elif "armor" in item_type:
-			bonuses.defense += base_bonus * 2  # Armor gives defense
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.max_hp += base_bonus * 3
-		elif "helm" in item_type:
-			bonuses.defense += base_bonus
-			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "shield" in item_type:
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.max_hp += base_bonus * 5  # Shields are THE HP item - huge HP boost
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		elif "ring" in item_type:
-			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "amulet" in item_type:
-			bonuses.max_mana += base_bonus * 2
-			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "boots_swift" in item_type:
-			# Swift boots (Trickster): Speed + WITS
-			bonuses.speed += int(base_bonus * 1.5)
-			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		elif "boots" in item_type:
-			bonuses.speed += base_bonus  # Speed bonus for flee chance
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-
-		# Class-specific gear (check before generic types)
 		if "ring_arcane" in item_type:
 			# Arcane ring (Mage): INT + mana_regen
 			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
@@ -456,15 +425,57 @@ func get_equipment_bonuses() -> Dictionary:
 			# Shadow ring (Trickster): WITS + energy_regen
 			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-
-		if "amulet_mystic" in item_type:
+		elif "amulet_mystic" in item_type:
 			# Mystic amulet (Mage): max_mana + meditate_bonus
-			bonuses.max_mana += base_bonus * 3
+			bonuses.max_mana += int(base_bonus * 2.5)
 			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
 		elif "amulet_evasion" in item_type:
 			# Evasion amulet (Trickster): speed + flee_bonus
 			bonuses.speed += base_bonus
 			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
+		elif "boots_swift" in item_type:
+			# Swift boots (Trickster): Speed + WITS
+			bonuses.speed += int(base_bonus * 1.5)
+			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		elif "weapon_warlord" in item_type:
+			# Warlord weapon (Warrior): ATK + STR + stamina_regen
+			bonuses.attack += int(base_bonus * 2.5)
+			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "shield_bulwark" in item_type:
+			# Bulwark shield (Warrior): DEF + HP + stamina_regen
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.max_hp += base_bonus * 4
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+		# Generic item types (if not class-specific)
+		# Note: Multipliers balanced to make gear valuable but not overwhelming
+		elif "weapon" in item_type:
+			bonuses.attack += int(base_bonus * 2.5)  # Weapons give strong attack
+			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		elif "armor" in item_type:
+			bonuses.defense += int(base_bonus * 1.75)  # Armor gives defense
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.max_hp += int(base_bonus * 2.5)
+		elif "helm" in item_type:
+			bonuses.defense += base_bonus
+			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "shield" in item_type:
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.max_hp += base_bonus * 4  # Shields give good HP
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		elif "ring" in item_type:
+			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "amulet" in item_type:
+			bonuses.max_mana += int(base_bonus * 1.75)
+			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "boots" in item_type:
+			bonuses.speed += base_bonus  # Speed bonus for flee chance
+			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 
 		# Apply affix bonuses
 		var affixes = item.get("affixes", {})
@@ -669,9 +680,8 @@ func level_up():
 	calculate_derived_stats()
 
 	# Full heal on level up (including equipment bonuses)
-	var equip_bonuses = get_equipment_bonuses()
-	current_hp = max_hp + equip_bonuses.get("max_hp", 0)
-	current_mana = max_mana + equip_bonuses.get("max_mana", 0)
+	current_hp = get_total_max_hp()
+	current_mana = get_total_max_mana()
 	current_stamina = max_stamina
 	current_energy = max_energy
 
@@ -901,8 +911,9 @@ func add_experience(amount: int) -> Dictionary:
 		current_stamina = max_stamina
 		current_energy = max_energy
 
-		# Calculate next level requirement (increases by 50% each level)
-		experience_to_next_level = int(experience_to_next_level * 1.5)
+		# Calculate next level requirement using polynomial scaling
+		# Formula: (level+1)^2.2 * 50 - scales reasonably up to level 10000
+		experience_to_next_level = int(pow(level + 1, 2.2) * 50)
 	
 	return {
 		"leveled_up": leveled_up,
@@ -1223,8 +1234,8 @@ func regenerate_energy() -> int:
 
 func restore_all_resources():
 	"""Restore all resources to full (for resting or sanctuaries)."""
-	current_hp = max_hp
-	current_mana = max_mana
+	current_hp = get_total_max_hp()
+	current_mana = get_total_max_mana()
 	current_stamina = max_stamina
 	current_energy = max_energy
 

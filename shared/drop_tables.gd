@@ -507,7 +507,9 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 		"amulet_mystic": "Mystic Amulet",
 		"ring_shadow": "Shadow Ring",
 		"amulet_evasion": "Evasion Amulet",
-		"boots_swift": "Swift Boots"
+		"boots_swift": "Swift Boots",
+		"weapon_warlord": "Warlord Blade",
+		"shield_bulwark": "Bulwark Shield"
 	}
 	if class_item_names.has(item_type):
 		var base = class_item_names[item_type]
@@ -702,6 +704,32 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 		"rarity": rarity,
 		"level": boosted_level,
 		"name": affix_name + "Cunning Prey's " + _get_item_name(item_type, rarity),
+		"affixes": affixes,
+		"value": _calculate_item_value(rarity, boosted_level),
+		"from_rare_monster": true
+	}
+
+func generate_warrior_gear(monster_level: int) -> Dictionary:
+	"""Generate warrior-specific gear from a Warrior Hoarder monster.
+	Returns warlord blade or bulwark shield scaled to monster level."""
+	var rarity = _get_rare_drop_rarity(monster_level)
+
+	# 50/50 weapon or shield
+	var is_weapon = randf() < 0.5
+	var item_type = "weapon_warlord" if is_weapon else "shield_bulwark"
+
+	# Generate with boosted level
+	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+
+	var affixes = _roll_affixes(rarity, boosted_level)
+	var affix_name = _get_affix_prefix(affixes)
+
+	return {
+		"id": randi(),
+		"type": item_type,
+		"rarity": rarity,
+		"level": boosted_level,
+		"name": affix_name + "Warrior Hoarder's " + _get_item_name(item_type, rarity),
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true

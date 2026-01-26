@@ -645,13 +645,74 @@ const QUESTS = {
 func get_quest(quest_id: String) -> Dictionary:
 	"""Get quest data by ID. Returns empty dict if not found."""
 	if QUESTS.has(quest_id):
-		return QUESTS[quest_id].duplicate(true)
+		var quest = QUESTS[quest_id].duplicate(true)
+		# Scale rewards based on trading post area level
+		var area_level = _get_area_level_for_post(quest.trading_post)
+		return _scale_quest_rewards(quest, area_level)
 
 	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:
 		return _regenerate_dynamic_quest(quest_id)
 
 	return {}
+
+func _get_area_level_for_post(trading_post_id: String) -> int:
+	"""Get the expected monster level for an area around a trading post."""
+	var coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var distance = sqrt(coords.x * coords.x + coords.y * coords.y)
+	# Distance-to-level formula: roughly distance * 0.5 for moderate zones
+	# Haven (distance 10) = level 5, Northwatch (distance 75) = level 37
+	return max(1, int(distance * 0.5))
+
+func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
+	"""Scale quest rewards based on the trading post's area level.
+
+	This ensures that quests at higher-level trading posts give appropriate rewards.
+	For example, 'Scout Training' at Northwatch (level 37 area) will give ~700 XP
+	instead of the base 100 XP designed for Haven (level 5 area).
+	"""
+	# Base level for reward scaling (Haven area is ~level 5)
+	const BASE_LEVEL = 5.0
+
+	# Don't scale if we're at or below base level
+	if area_level <= BASE_LEVEL:
+		quest["area_level"] = area_level
+		quest["reward_tier"] = "beginner"
+		return quest
+
+	# Calculate scaling factor based on area level
+	# Level 37 area (Northwatch) = 37/5 = 7.4x multiplier
+	# Cap at 200x for extremely high-level areas
+	var scale_factor = min(200.0, float(area_level) / BASE_LEVEL)
+
+	# Scale XP and gold proportionally
+	var original_xp = quest.rewards.get("xp", 0)
+	var original_gold = quest.rewards.get("gold", 0)
+	var original_gems = quest.rewards.get("gems", 0)
+
+	var scaled_rewards = {
+		"xp": int(original_xp * scale_factor),
+		"gold": int(original_gold * scale_factor),
+		"gems": original_gems + int((scale_factor - 1) / 5)  # Gems scale slower
+	}
+
+	quest.rewards = scaled_rewards
+	quest["area_level"] = area_level
+	quest["original_rewards"] = {"xp": original_xp, "gold": original_gold, "gems": original_gems}
+
+	# Determine reward tier for display
+	if scale_factor < 2.0:
+		quest["reward_tier"] = "beginner"
+	elif scale_factor < 5.0:
+		quest["reward_tier"] = "standard"
+	elif scale_factor < 15.0:
+		quest["reward_tier"] = "veteran"
+	elif scale_factor < 50.0:
+		quest["reward_tier"] = "elite"
+	else:
+		quest["reward_tier"] = "legendary"
+
+	return quest
 
 func _regenerate_dynamic_quest(quest_id: String) -> Dictionary:
 	"""Regenerate a dynamic quest from its ID."""
@@ -676,18 +737,21 @@ func _regenerate_dynamic_quest(quest_id: String) -> Dictionary:
 	return _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
 
 func get_quests_for_trading_post(trading_post_id: String) -> Array:
-	"""Get all quests offered at a specific Trading Post."""
+	"""Get all quests offered at a specific Trading Post (with scaled rewards)."""
 	var quests = []
+	var area_level = _get_area_level_for_post(trading_post_id)
 	for quest_id in QUESTS:
 		var quest = QUESTS[quest_id]
 		if quest.trading_post == trading_post_id:
-			quests.append(quest.duplicate(true))
+			var scaled_quest = _scale_quest_rewards(quest.duplicate(true), area_level)
+			quests.append(scaled_quest)
 	return quests
 
 func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary) -> Array:
 	"""Get quests available for a player at a Trading Post, considering prerequisites and cooldowns."""
 	var available = []
 	var current_time = Time.get_unix_time_from_system()
+	var area_level = _get_area_level_for_post(trading_post_id)
 
 	# Get static quests for this trading post
 	for quest_id in QUESTS:
@@ -715,7 +779,9 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 		if quest.prerequisite != "" and quest.prerequisite not in completed_quests:
 			continue
 
-		available.append(quest.duplicate(true))
+		# Scale quest rewards based on area level
+		var scaled_quest = _scale_quest_rewards(quest.duplicate(true), area_level)
+		available.append(scaled_quest)
 
 	# If no static quests available, generate dynamic quests
 	if available.is_empty():
@@ -858,6 +924,20 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 			quest_desc = "Track down and defeat a monster of level %d or higher." % (min_level + int(25 * tier_multiplier))
 			target = min_level + int(25 * tier_multiplier)
 
+	# Calculate area level for display consistency
+	var area_level = max(1, int(post_distance * 0.5))
+
+	# Determine reward tier based on tier multiplier
+	var reward_tier: String
+	if tier_multiplier < 2.0:
+		reward_tier = "standard"
+	elif tier_multiplier < 3.0:
+		reward_tier = "veteran"
+	elif tier_multiplier < 4.0:
+		reward_tier = "elite"
+	else:
+		reward_tier = "legendary"
+
 	var quest = {
 		"id": quest_id,
 		"name": quest_name,
@@ -868,7 +948,9 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
 		"is_daily": false,
 		"prerequisite": "",
-		"is_dynamic": true  # Flag for dynamic quests
+		"is_dynamic": true,  # Flag for dynamic quests
+		"area_level": area_level,
+		"reward_tier": reward_tier
 	}
 
 	# Add hotzone-specific fields

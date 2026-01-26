@@ -766,8 +766,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Validate class (6 available classes: 2 Warrior, 2 Mage, 2 Trickster)
-	var valid_classes = ["Fighter", "Barbarian", "Wizard", "Sage", "Thief", "Ranger"]
+	# Validate class (9 available classes: 3 Warrior, 3 Mage, 3 Trickster)
+	var valid_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sage", "Sorcerer", "Thief", "Ranger", "Ninja"]
 	if char_class not in valid_classes:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -1089,7 +1089,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	var regen_percent = 0.02  # 2% per move for resources
 	var hp_regen_percent = 0.01  # 1% per move for health
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + max(1, int(character.get_total_max_hp() * hp_regen_percent)))
-	character.current_mana = min(character.max_mana, character.current_mana + int(character.max_mana * regen_percent))
+	character.current_mana = min(character.get_total_max_mana(), character.current_mana + int(character.max_mana * regen_percent))
 	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
 	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
 
@@ -1371,7 +1371,7 @@ func _handle_meditate(peer_id: int, character: Character):
 
 	var mana_regen = int(character.max_mana * mana_percent)
 	mana_regen = max(1, mana_regen)
-	character.current_mana = min(character.max_mana, character.current_mana + mana_regen)
+	character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_regen)
 
 	var meditate_msg = ""
 	var bonus_text = ""
@@ -1560,19 +1560,21 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				for item in all_drops:
 					if characters[peer_id].can_add_item():
 						characters[peer_id].add_item(item)
-						drop_messages.append("[color=%s]Received: %s[/color]" % [
-							_get_rarity_color(item.get("rarity", "common")),
-							item.get("name", "Unknown Item")
-						])
+						# Format with rarity symbol for visual distinction
+						var rarity = item.get("rarity", "common")
+						var color = _get_rarity_color(rarity)
+						var symbol = _get_rarity_symbol(rarity)
+						var name = item.get("name", "Unknown Item")
+						drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
 						# Track rarity and level for sound effects
 						drop_data.append({
-							"rarity": item.get("rarity", "common"),
+							"rarity": rarity,
 							"level": item.get("level", 1),
 							"level_diff": item.get("level", 1) - player_level
 						})
 					else:
 						# Inventory full - item lost!
-						drop_messages.append("[color=#FF4444]INVENTORY FULL! Lost: %s[/color]" % item.get("name", "Unknown Item"))
+						drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
 
 				# Check if wish granter gave pending wish choice (from result, not combat state)
 				var wish_pending = result.get("wish_pending", false)
@@ -1724,12 +1726,14 @@ func handle_wish_select(peer_id: int, message: Dictionary):
 		var gear_item = _generate_wish_gear(chosen_wish)
 		if character.can_add_item():
 			character.add_item(gear_item)
-			result_msg += "\n[color=%s]Received: %s[/color]" % [
-				_get_rarity_color(gear_item.get("rarity", "common")),
+			var rarity = gear_item.get("rarity", "common")
+			result_msg += "\n[color=%s]%s %s[/color]" % [
+				_get_rarity_color(rarity),
+				_get_rarity_symbol(rarity),
 				gear_item.get("name", "Unknown Item")
 			]
 		else:
-			result_msg += "\n[color=#FF0000]Inventory full! Gear was lost![/color]"
+			result_msg += "\n[color=#FF0000]X LOST: %s[/color]" % gear_item.get("name", "Unknown Item")
 
 	# If upgrade was chosen, upgrade a random equipped item
 	if chosen_wish.type == "upgrade":
@@ -2631,7 +2635,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		else:
 			mana_amount = effect.base + (effect.per_level * item_level)
 		var old_mana = character.current_mana
-		character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+		character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
 		var actual_restore = character.current_mana - old_mana
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -2734,13 +2738,14 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	elif effect.has("target_farm"):
 		# Target Farming Scroll (Scroll of Finding) - let player select ability to farm
 		var encounters = effect.get("encounters", 5)
-		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey"]
+		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey", "warrior_hoarder"]
 		var option_names = {
 			"weapon_master": "Weapon Master (weapon drops)",
 			"shield_bearer": "Shield Guardian (shield drops)",
 			"gem_bearer": "Gem Bearer (gem drops)",
 			"arcane_hoarder": "Arcane Hoarder (mage gear drops)",
-			"cunning_prey": "Cunning Prey (trickster gear drops)"
+			"cunning_prey": "Cunning Prey (trickster gear drops)",
+			"warrior_hoarder": "Warrior Hoarder (warrior gear drops)"
 		}
 		send_to_peer(peer_id, {
 			"type": "target_farm_select",
@@ -2816,7 +2821,8 @@ func handle_target_farm_select(peer_id: int, message: Dictionary):
 		"shield_bearer": "Shield Guardians",
 		"gem_bearer": "Gem Bearers",
 		"arcane_hoarder": "Arcane Hoarders",
-		"cunning_prey": "Cunning Prey"
+		"cunning_prey": "Cunning Prey",
+		"warrior_hoarder": "Warrior Hoarders"
 	}
 
 	send_to_peer(peer_id, {
@@ -3463,7 +3469,7 @@ func handle_merchant_recharge(peer_id: int):
 	# Deduct gold and restore resources
 	character.gold -= cost
 	character.current_hp = character.get_total_max_hp()
-	character.current_mana = character.max_mana
+	character.current_mana = character.get_total_max_mana()
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
 	restored.append("HP and resources restored")
@@ -3543,6 +3549,17 @@ func _get_rarity_color(rarity: String) -> String:
 		"legendary": return "#FF8000"
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
+
+func _get_rarity_symbol(rarity: String) -> String:
+	"""Get visual symbol prefix for item rarity - makes drops stand out"""
+	match rarity:
+		"common": return "+"
+		"uncommon": return "++"
+		"rare": return "+++"
+		"epic": return "[b]>>>[/b]"
+		"legendary": return "[b]***[/b]"
+		"artifact": return "[b]<<<>>>[/b]"
+		_: return "+"
 
 func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: String = "all") -> Array:
 	"""Generate purchasable items for merchant shop based on specialty.
@@ -3966,7 +3983,7 @@ func handle_trading_post_recharge(peer_id: int):
 	# Deduct gold and restore ALL resources including HP
 	character.gold -= cost
 	character.current_hp = character.get_total_max_hp()
-	character.current_mana = character.max_mana
+	character.current_mana = character.get_total_max_mana()
 	character.current_stamina = character.max_stamina
 	character.current_energy = character.max_energy
 	restored.append("HP and resources restored")
@@ -4504,7 +4521,7 @@ func _randomize_eternal_flame_location():
 		int(cos(angle) * distance),
 		int(sin(angle) * distance)
 	)
-	log_message("Eternal Flame location set: (%d, %d)" % [eternal_flame_location.x, eternal_flame_location.y])
+	log_message("Eternal Flame location has been randomized")
 
 func _grant_eternal_title(peer_id: int):
 	"""Grant the Eternal title to an Elder who found the Eternal Flame"""
