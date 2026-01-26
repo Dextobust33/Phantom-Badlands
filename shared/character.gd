@@ -434,9 +434,10 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.speed += base_bonus
 			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
 		elif "boots_swift" in item_type:
-			# Swift boots (Trickster): Speed + WITS
+			# Swift boots (Trickster): Speed + WITS + energy_regen
 			bonuses.speed += int(base_bonus * 1.5)
 			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
 		elif "weapon_warlord" in item_type:
 			# Warlord weapon (Warrior): ATK + STR + stamina_regen
 			bonuses.attack += int(base_bonus * 2.5)

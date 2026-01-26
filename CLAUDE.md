@@ -261,6 +261,46 @@ When game mechanics, formulas, or features change, update the in-game help:
 - `client/client.gd` - Currency display, shop buy UI, gem selling UI
 - `server/server.gd` - Shop inventory generation, buy/sell_gems handlers, multi-upgrade
 
+## Class-Specific Gear System
+
+**Overview:**
+Special monsters drop class-specific equipment that provides unique bonuses for each class path.
+
+**Mage Gear (Arcane Hoarder monsters):**
+| Item | Type | Stats | Class Bonus |
+|------|------|-------|-------------|
+| Arcane Ring | Ring | INT | Mana Regen per combat round |
+| Mystic Amulet | Amulet | Max Mana | Meditate effectiveness bonus |
+
+**Trickster Gear (Cunning Prey monsters):**
+| Item | Type | Stats | Class Bonus |
+|------|------|-------|-------------|
+| Shadow Ring | Ring | WITS | Energy Regen per combat round |
+| Evasion Amulet | Amulet | Speed | Flee chance bonus |
+| Swift Boots | Boots | Speed, WITS | Energy Regen per combat round |
+
+**Warrior Gear (Warrior Hoarder monsters):**
+| Item | Type | Stats | Class Bonus |
+|------|------|-------|-------------|
+| Warlord Blade | Weapon | ATK, STR | Stamina Regen per combat round |
+| Bulwark Shield | Shield | DEF, HP, CON | Stamina Regen per combat round |
+
+**Drop Mechanics:**
+- Class gear drops from monsters with the corresponding ability (35% chance)
+- Items are level-boosted (+15%) based on monster level
+- Rarity scales with monster level
+- When no gear drops, a message appears (e.g., "The Cunning Prey's gear vanishes into shadow...")
+
+**Display:**
+- Class bonuses show in a separate "Class Gear Bonuses" section when inspecting items
+- Status screen shows total class bonuses from all equipped gear
+- Color-coded: Mage (cyan), Trickster (green), Warrior (orange)
+
+**Key Files:**
+- `shared/drop_tables.gd` - generate_mage_gear(), generate_trickster_gear(), generate_warrior_gear()
+- `shared/character.gd` - Equipment bonus calculation with class-specific handling
+- `client/client.gd` - _compute_item_bonuses(), _display_computed_item_bonuses()
+
 ## Monster Ability & Class Affinity System (COMPLETE)
 
 **Class Affinity System:**

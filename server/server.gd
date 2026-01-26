@@ -35,6 +35,8 @@ var at_trading_post = {}  # peer_id -> trading_post_data dictionary
 # merchant_id -> {items: Array, generated_at: float, player_level: int}
 var merchant_inventories = {}
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
+const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading posts
+const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
 var watchers = {}  # peer_id -> Array of peer_ids watching this player
 var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
 
@@ -2986,8 +2988,17 @@ func send_character_update(peer_id: int):
 
 func get_or_generate_merchant_inventory(merchant_id: String, player_level: int, seed_hash: int, specialty: String) -> Array:
 	"""Get existing merchant inventory or generate new one if expired/missing.
-	Inventory persists for 5 minutes before regenerating."""
+	Starter trading posts refresh every 1 minute, others every 5 minutes."""
 	var current_time = Time.get_unix_time_from_system()
+
+	# Check if this is a starter trading post (faster refresh, starter items)
+	var is_starter_post = false
+	for starter_id in STARTER_TRADING_POSTS:
+		if ("trading_post_" + starter_id) == merchant_id:
+			is_starter_post = true
+			break
+
+	var refresh_interval = STARTER_INVENTORY_REFRESH_INTERVAL if is_starter_post else INVENTORY_REFRESH_INTERVAL
 
 	# Check if we have valid cached inventory
 	if merchant_inventories.has(merchant_id):
@@ -2998,11 +3009,11 @@ func get_or_generate_merchant_inventory(merchant_id: String, player_level: int, 
 		# (regenerate if player level changed significantly to show level-appropriate items)
 		var level_tier = player_level / 10
 		var cached_tier = cached.player_level / 10
-		if age < INVENTORY_REFRESH_INTERVAL and level_tier == cached_tier:
+		if age < refresh_interval and level_tier == cached_tier:
 			return cached.items
 
-	# Generate new inventory
-	var items = generate_shop_inventory(player_level, seed_hash, specialty)
+	# Generate new inventory (starter posts get starter items)
+	var items = generate_shop_inventory(player_level, seed_hash, specialty, is_starter_post)
 	merchant_inventories[merchant_id] = {
 		"items": items,
 		"generated_at": current_time,
@@ -3561,18 +3572,28 @@ func _get_rarity_symbol(rarity: String) -> String:
 		"artifact": return "[b]<<<>>>[/b]"
 		_: return "+"
 
-func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: String = "all") -> Array:
+func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: String = "all", is_starter_post: bool = false) -> Array:
 	"""Generate purchasable items for merchant shop based on specialty.
-	Specialty: 'weapons', 'armor', 'jewelry', or 'all'"""
+	Specialty: 'weapons', 'armor', 'jewelry', or 'all'
+	Starter posts have more items, lower levels, and cheaper prices."""
 	var items = []
 
-	# Use merchant hash for consistent inventory
+	# Use merchant hash + time for varied inventory at starter posts
 	var rng = RandomNumberGenerator.new()
-	rng.seed = merchant_hash
+	if is_starter_post:
+		# Starter posts use time-based seed for more variety
+		rng.seed = merchant_hash + int(Time.get_unix_time_from_system() / STARTER_INVENTORY_REFRESH_INTERVAL)
+	else:
+		rng.seed = merchant_hash
 
-	# Specialized merchants have more focused inventory (4-7 items)
-	# General merchants have variety (3-5 items)
-	var item_count = 4 + rng.randi() % 4 if specialty != "all" else 3 + rng.randi() % 3
+	# Starter posts have more items (6-8), others have normal amounts
+	var item_count: int
+	if is_starter_post:
+		item_count = 6 + rng.randi() % 3  # 6-8 items
+	elif specialty != "all":
+		item_count = 4 + rng.randi() % 4  # 4-7 items
+	else:
+		item_count = 3 + rng.randi() % 3  # 3-5 items
 
 	var attempts = 0
 	var max_attempts = item_count * 5  # Prevent infinite loops
@@ -3580,19 +3601,32 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 	while items.size() < item_count and attempts < max_attempts:
 		attempts += 1
 
-		# Item level ranges around player level
-		var level_roll = rng.randi() % 100
-		var item_level = player_level
+		var item_level: int
 
-		if level_roll < 50:
-			# Standard tier: player level -5 to +5
-			item_level = maxi(1, player_level + rng.randi_range(-5, 5))
-		elif level_roll < 80:
-			# Premium tier: player level +5 to +20
-			item_level = player_level + rng.randi_range(5, 20)
+		if is_starter_post:
+			# Starter posts: focus on level 1-15 items
+			var level_roll = rng.randi() % 100
+			if level_roll < 60:
+				# Basic starter: level 1-5
+				item_level = 1 + rng.randi() % 5
+			elif level_roll < 90:
+				# Intermediate: level 5-10
+				item_level = 5 + rng.randi() % 6
+			else:
+				# Aspirational: level 10-15
+				item_level = 10 + rng.randi() % 6
 		else:
-			# Legendary tier: player level +20 to +50
-			item_level = player_level + rng.randi_range(20, 50)
+			# Normal shop: item level ranges around player level
+			var level_roll = rng.randi() % 100
+			if level_roll < 50:
+				# Standard tier: player level -5 to +5
+				item_level = maxi(1, player_level + rng.randi_range(-5, 5))
+			elif level_roll < 80:
+				# Premium tier: player level +5 to +20
+				item_level = player_level + rng.randi_range(5, 20)
+			else:
+				# Legendary tier: player level +20 to +50
+				item_level = player_level + rng.randi_range(20, 50)
 
 		# Determine tier for drop tables
 		var tier = _level_to_tier(item_level)
@@ -3603,12 +3637,13 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 			var item = drops[0]
 			var item_type = item.get("type", "")
 
-			# Filter by specialty
-			if not _item_matches_specialty(item_type, specialty):
+			# Filter by specialty (starter posts accept all types)
+			if not is_starter_post and not _item_matches_specialty(item_type, specialty):
 				continue
 
-			# Shop markup: 2.5x base value
-			item["shop_price"] = int(item.get("value", 100) * 2.5)
+			# Shop markup: 2.5x base value (1.5x for starter posts - more affordable)
+			var markup = 1.5 if is_starter_post else 2.5
+			item["shop_price"] = int(item.get("value", 100) * markup)
 			items.append(item)
 
 	return items
@@ -3925,12 +3960,29 @@ func handle_trading_post_quests(peer_id: int):
 					"rewards": rewards
 				})
 
+	# Build active quests list for unified display (with abandon option)
+	var active_quests_display = []
+	for quest_data in character.active_quests:
+		var quest = quest_db.get_quest(quest_data.quest_id)
+		if not quest.is_empty():
+			active_quests_display.append({
+				"id": quest_data.quest_id,
+				"name": quest.name,
+				"progress": quest_data.progress,
+				"target": quest_data.target,
+				"description": quest.get("description", ""),
+				"is_complete": quest_data.progress >= quest_data.target,
+				"trading_post": quest.trading_post
+			})
+
 	send_to_peer(peer_id, {
 		"type": "quest_list",
 		"quest_giver": tp.quest_giver,
 		"trading_post": tp.name,
+		"trading_post_id": tp.id,
 		"available_quests": available_quests,
 		"quests_to_turn_in": quests_to_turn_in,
+		"active_quests": active_quests_display,
 		"active_count": character.active_quests.size(),
 		"max_quests": Character.MAX_ACTIVE_QUESTS
 	})

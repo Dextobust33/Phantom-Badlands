@@ -279,6 +279,8 @@ const FULLSCREEN_HEIGHT_THRESHOLD = 900  # Window height above which we use full
 var quest_view_mode: bool = false
 var available_quests: Array = []
 var quests_to_turn_in: Array = []
+var active_quests_display: Array = []  # Active quests shown in unified menu
+var current_quest_tp_id: String = ""  # Trading post ID for quest menu
 
 # Quest log abandonment mode
 var quest_log_mode: bool = false
@@ -318,6 +320,7 @@ var temp_new_password: String = ""
 
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
+var discovered_monster_types: Dictionary = {}  # Tracks monster types by base name (first encounter)
 var current_enemy_name: String = ""
 var current_enemy_level: int = 0
 var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class affinity
@@ -378,7 +381,7 @@ var last_known_hp_before_round: int = 0  # Track HP to detect heavy damage
 # Combat sound effects (subtle, not overwhelming)
 var combat_hit_player: AudioStreamPlayer = null  # Player lands an attack
 var combat_crit_player: AudioStreamPlayer = null  # Critical hit
-var combat_victory_player: AudioStreamPlayer = null  # Monster defeated
+var combat_victory_player: AudioStreamPlayer = null  # Monster defeated (plays on first-time discoveries)
 var combat_ability_player: AudioStreamPlayer = null  # Ability use
 var last_combat_sound_time: float = 0.0
 const COMBAT_SOUND_COOLDOWN: float = 0.15  # Minimum time between combat sounds
@@ -1166,8 +1169,10 @@ func play_combat_crit_sound():
 		combat_crit_player.play()
 		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
 
-func play_combat_victory_sound():
-	"""Play victory chime"""
+func play_combat_victory_sound(force: bool = false):
+	"""Play victory chime - only plays for first-time monster discoveries unless forced"""
+	if not force:
+		return  # Only play when discovering new monster types
 	if combat_victory_player and combat_victory_player.stream:
 		combat_victory_player.play()
 
@@ -2843,6 +2848,8 @@ func update_action_bar():
 		var fourth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true} if has_title else {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown
 		var fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true} if forge_available else {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
+		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
+		var cloak_action = {"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": true} if cloak_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
@@ -2851,7 +2858,7 @@ func update_action_bar():
 			fifth_action,
 			{"label": "Abilities", "action_type": "local", "action_data": "abilities", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
-			{"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": cloak_unlocked},
+			cloak_action,
 			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
@@ -4474,9 +4481,10 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		bonuses.speed += base_bonus
 		bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
 	elif "boots_swift" in item_type:
-		# Swift boots (Trickster): Speed + WITS
+		# Swift boots (Trickster): Speed + WITS + energy_regen
 		bonuses.speed += int(base_bonus * 1.5)
 		bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
 	elif "weapon_warlord" in item_type:
 		# Warlord weapon (Warrior): ATK + stamina_regen
 		bonuses.attack += base_bonus * 3
@@ -6000,6 +6008,24 @@ func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: i
 		known_enemy_hp[monster_key] = {}
 	known_enemy_hp[monster_key][enemy_level] = total_damage
 
+func _get_base_monster_name(monster_name: String) -> String:
+	"""Strip variant prefixes from monster name to get the base type.
+	Used for tracking unique monster types discovered."""
+	# Known variant prefixes (monster ability variants)
+	var variant_prefixes = [
+		"Corrosive ", "Shield Guardian ", "Weapon Master ", "Gem Bearer ",
+		"Arcane Hoarder ", "Cunning Prey ", "Warrior Hoarder ", "Wish Granter ",
+		"Gold Hoarder ", "Pack Leader ", "Alpha ", "Ancient ", "Elder ",
+		"Young ", "Frenzied ", "Cursed ", "Ethereal ", "Armored ",
+		"Venomous ", "Savage ", "Feral "
+	]
+	var result = monster_name
+	for prefix in variant_prefixes:
+		if result.begins_with(prefix):
+			result = result.substr(prefix.length())
+			break  # Only strip one prefix
+	return result
+
 func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 	"""Estimate enemy HP based on knowledge from killing similar monsters.
 	Returns 0 if no estimate available."""
@@ -6609,8 +6635,12 @@ func handle_server_message(message: Dictionary):
 					xp_before_combat = 0  # Reset for next combat
 					update_player_xp_bar()  # Update bar with new gain highlight
 
-					# Play victory sound (subtle, short)
-					play_combat_victory_sound()
+					# Play victory sound only on first kill of a monster at this specific level
+					# e.g., "Giant Rat" level 4 and level 5 are tracked separately
+					var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
+					if not discovered_monster_types.has(enemy_key):
+						discovered_monster_types[enemy_key] = true
+						play_combat_victory_sound(true)  # Play for new discovery
 
 					# Victory without flock - show all accumulated drops
 					var flock_drops = message.get("flock_drops", [])
@@ -8102,7 +8132,7 @@ func display_character_status():
 		if bonuses.meditate_bonus > 0:
 			text += "  [color=#66CCCC]Meditate Bonus:[/color] +%d%% effectiveness (Mystic Amulet)\n" % bonuses.meditate_bonus
 		if bonuses.energy_regen > 0:
-			text += "  [color=#66FF66]Energy Regen:[/color] +%d per combat round (Shadow Ring)\n" % bonuses.energy_regen
+			text += "  [color=#66FF66]Energy Regen:[/color] +%d per combat round (Trickster Gear)\n" % bonuses.energy_regen
 		if bonuses.flee_bonus > 0:
 			text += "  [color=#66FF66]Flee Bonus:[/color] +%d%% flee chance (Evasion Amulet)\n" % bonuses.flee_bonus
 	text += "\n"
@@ -8317,9 +8347,10 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif item_type == "boots_swift":
-			# Trickster boots: extra speed + WITS
+			# Trickster boots: extra speed + WITS + energy_regen
 			bonuses.speed += int(base_bonus * 1.5)
 			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
 			bonuses.speed += base_bonus
 			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
@@ -8995,11 +9026,13 @@ func cancel_trading_post_action():
 # ===== QUEST FUNCTIONS =====
 
 func handle_quest_list(message: Dictionary):
-	"""Handle quest list from quest giver"""
+	"""Handle unified quest list from quest giver - shows turn-ins, active, and available"""
 	var quest_giver = message.get("quest_giver", "Quest Giver")
 	var tp_name = message.get("trading_post", "Trading Post")
+	current_quest_tp_id = message.get("trading_post_id", "")
 	available_quests = message.get("available_quests", [])
 	quests_to_turn_in = message.get("quests_to_turn_in", [])
+	active_quests_display = message.get("active_quests", [])
 	var active_count = message.get("active_count", 0)
 	var max_quests = message.get("max_quests", 5)
 
@@ -9022,36 +9055,62 @@ func handle_quest_list(message: Dictionary):
 		display_game("[color=#808080]Active Quests: %d / %d[/color]" % [active_count, max_quests])
 	display_game("")
 
-	# Show quests ready to turn in first
+	var key_index = 0  # Track which key to use next
+
+	# SECTION 1: Quests ready to turn in (highest priority)
 	if quests_to_turn_in.size() > 0:
 		display_game("[color=#FFD700]=== Ready to Turn In ===[/color]")
 		for i in range(quests_to_turn_in.size()):
 			var quest = quests_to_turn_in[i]
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
-			var key_name = get_item_select_key_name(i)
-			display_game("[%s] [color=#00FF00]%s[/color] - %s" % [key_name, quest.get("name", "Quest"), reward_str])
-		display_game("")
-		display_game("Press key to turn in quest")
+			var key_name = get_item_select_key_name(key_index)
+			display_game("[%s] [color=#00FF00]✓ %s[/color] - %s" % [key_name, quest.get("name", "Quest"), reward_str])
+			key_index += 1
 		display_game("")
 
-	# Show available quests
+	# SECTION 2: Your Active Quests (with progress and abandon option)
+	if active_quests_display.size() > 0:
+		display_game("[color=#00FFFF]=== Your Active Quests ===[/color]")
+		for quest in active_quests_display:
+			var progress = quest.get("progress", 0)
+			var target = quest.get("target", 1)
+			var is_complete = quest.get("is_complete", false)
+			var quest_tp = quest.get("trading_post", "")
+
+			# Color based on completion and location
+			var status_color = "#00FF00" if is_complete else "#FFFF00"
+			var turn_in_hint = ""
+			if is_complete:
+				if quest_tp == current_quest_tp_id:
+					turn_in_hint = " [color=#00FF00](Turn in above!)[/color]"
+				else:
+					turn_in_hint = " [color=#808080](Turn in elsewhere)[/color]"
+
+			display_game("  [color=%s]%s[/color] - %d/%d%s" % [status_color, quest.get("name", "Quest"), progress, target, turn_in_hint])
+
+		display_game("")
+		display_game("[color=#808080]To abandon a quest, use [R] Quests from the world map[/color]")
+		display_game("")
+
+	# SECTION 3: Available quests to accept
 	if available_quests.size() > 0:
 		display_game("[color=#00FF00]=== Available Quests ===[/color]")
-		var offset = quests_to_turn_in.size()
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
 			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
 			var tier_tag = _get_quest_tier_tag(quest)
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
-			var key_name = get_item_select_key_name(offset + i)
+			var key_name = get_item_select_key_name(key_index)
 			display_game("[%s] [color=#FFD700]%s[/color]%s%s" % [key_name, quest.get("name", "Quest"), daily_tag, tier_tag])
 			display_game("    %s" % quest.get("description", ""))
 			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")
-		display_game("Press key to accept quest")
-	elif quests_to_turn_in.size() == 0:
+			key_index += 1
+
+	# Show message if nothing available
+	if quests_to_turn_in.size() == 0 and available_quests.size() == 0 and active_quests_display.size() == 0:
 		display_game("[color=#808080]No quests available at this time.[/color]")
 
 	display_game("")

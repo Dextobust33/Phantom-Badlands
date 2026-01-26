@@ -623,7 +623,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(weapon)
 		else:
-			messages.append("[color=#808080]The Weapon Master's weapon shatters on death...[/color]")
+			messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
 
 	# Shield Bearer ability: 35% chance to drop a shield
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
@@ -640,7 +640,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(shield)
 		else:
-			messages.append("[color=#808080]The Shield Guardian's shield crumbles to dust...[/color]")
+			messages.append("[color=#AA6666]✗ The Shield Guardian's shield crumbles to dust...[/color]")
 
 	# Arcane Hoarder ability: 35% chance to drop mage gear
 	if ABILITY_ARCANE_HOARDER in abilities and drop_tables != null:
@@ -657,7 +657,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(mage_item)
 		else:
-			messages.append("[color=#808080]The Arcane Hoarder's magic dissipates...[/color]")
+			messages.append("[color=#AA66AA]✗ The Arcane Hoarder's magic dissipates...[/color]")
 
 	# Cunning Prey ability: 35% chance to drop trickster gear
 	if ABILITY_CUNNING_PREY in abilities and drop_tables != null:
@@ -674,7 +674,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(trick_item)
 		else:
-			messages.append("[color=#808080]The Cunning Prey's gear vanishes into shadow...[/color]")
+			messages.append("[color=#66AA66]✗ The Cunning Prey's gear vanishes into shadow...[/color]")
 
 	# Warrior Hoarder ability: 35% chance to drop warrior gear
 	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
@@ -691,7 +691,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(war_item)
 		else:
-			messages.append("[color=#808080]The Warrior Hoarder's armor crumbles...[/color]")
+			messages.append("[color=#AA8866]✗ The Warrior Hoarder's armor crumbles...[/color]")
 
 	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
@@ -969,7 +969,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(weapon)
 				else:
-					messages.append("[color=#808080]The Weapon Master's weapon shatters on death...[/color]")
+					messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
 
 			# Shield Bearer ability: 35% chance to drop a shield
 			if ABILITY_SHIELD_BEARER in abilities:
@@ -984,7 +984,52 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(shield)
 				else:
-					messages.append("[color=#808080]The Shield Guardian's shield crumbles to dust...[/color]")
+					messages.append("[color=#AA6666]✗ The Shield Guardian's shield crumbles to dust...[/color]")
+
+			# Arcane Hoarder ability: 35% chance to drop mage gear
+			if ABILITY_ARCANE_HOARDER in abilities:
+				if randf() < 0.35:  # 35% chance
+					var mage_item = drop_tables.generate_mage_gear(monster.level)
+					if not mage_item.is_empty():
+						messages.append("[color=#66CCCC]The Arcane Hoarder drops magical equipment![/color]")
+						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+							_get_rarity_color(mage_item.get("rarity", "common")),
+							mage_item.get("name", "Unknown Item"),
+							mage_item.get("level", 1)
+						])
+						extra_drops.append(mage_item)
+				else:
+					messages.append("[color=#AA66AA]✗ The Arcane Hoarder's magic dissipates...[/color]")
+
+			# Cunning Prey ability: 35% chance to drop trickster gear
+			if ABILITY_CUNNING_PREY in abilities:
+				if randf() < 0.35:  # 35% chance
+					var trick_item = drop_tables.generate_trickster_gear(monster.level)
+					if not trick_item.is_empty():
+						messages.append("[color=#66FF66]The Cunning Prey drops elusive equipment![/color]")
+						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+							_get_rarity_color(trick_item.get("rarity", "common")),
+							trick_item.get("name", "Unknown Item"),
+							trick_item.get("level", 1)
+						])
+						extra_drops.append(trick_item)
+				else:
+					messages.append("[color=#66AA66]✗ The Cunning Prey's gear vanishes into shadow...[/color]")
+
+			# Warrior Hoarder ability: 35% chance to drop warrior gear
+			if ABILITY_WARRIOR_HOARDER in abilities:
+				if randf() < 0.35:
+					var war_item = drop_tables.generate_warrior_gear(monster.level)
+					if not war_item.is_empty():
+						messages.append("[color=#FF6600]The Warrior Hoarder drops battle-worn gear![/color]")
+						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+							_get_rarity_color(war_item.get("rarity", "common")),
+							war_item.get("name", "Unknown Item"),
+							war_item.get("level", 1)
+						])
+						extra_drops.append(war_item)
+				else:
+					messages.append("[color=#AA8866]✗ The Warrior Hoarder's armor crumbles...[/color]")
 
 			# Roll for gem drops
 			gems_earned = roll_gem_drops(monster, character)
