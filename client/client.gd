@@ -23,22 +23,27 @@ const KEYBIND_CONFIG_PATH = "user://keybinds.json"
 
 # Keybind configuration
 var default_keybinds = {
-	# Action bar (indices 0-9)
+	# Action bar (10 slots total)
 	"action_0": KEY_SPACE,  # Primary action
 	"action_1": KEY_Q,
 	"action_2": KEY_W,
 	"action_3": KEY_E,
 	"action_4": KEY_R,
-	"action_5": KEY_1,
-	"action_6": KEY_2,
-	"action_7": KEY_3,
-	"action_8": KEY_4,
-	"action_9": KEY_5,
-	# Extended selection keys (for merchant/inventory with 6-9 items)
-	"action_10": KEY_6,
-	"action_11": KEY_7,
-	"action_12": KEY_8,
-	"action_13": KEY_9,
+	"action_5": KEY_6,      # Extended action bar
+	"action_6": KEY_7,
+	"action_7": KEY_8,
+	"action_8": KEY_9,
+	"action_9": KEY_0,
+	# Item selection keys (separate from action bar, always 1-9 by default)
+	"item_1": KEY_1,
+	"item_2": KEY_2,
+	"item_3": KEY_3,
+	"item_4": KEY_4,
+	"item_5": KEY_5,
+	"item_6": KEY_6,
+	"item_7": KEY_7,
+	"item_8": KEY_8,
+	"item_9": KEY_9,
 	# Movement (8 directions + hunt)
 	"move_1": KEY_KP_1,      # SW
 	"move_2": KEY_KP_2,      # S
@@ -61,7 +66,7 @@ var keybinds: Dictionary = {}  # Active keybinds (loaded from file or defaults)
 
 # Settings mode
 var settings_mode: bool = false
-var settings_submenu: String = ""  # "", "action_keys", "movement_keys"
+var settings_submenu: String = ""  # "", "action_keys", "movement_keys", "item_keys"
 var rebinding_action: String = ""  # Key being rebound (empty = not rebinding)
 
 # Combat background color
@@ -206,8 +211,9 @@ var pending_variable_resource: String = ""  # Resource type for pending ability 
 var action_buttons: Array[Button] = []
 var action_cost_labels: Array[Label] = []  # Labels showing resource cost below hotkey
 var action_hotkey_labels: Array[Label] = []  # Labels showing the hotkey name below button
-# Spacebar is first action, then Q, W, E, R, 1, 2, 3, 4, 5
-var action_hotkeys = [KEY_SPACE, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
+# Action bar: 10 slots using action_0 through action_9
+# Default keys: Space, Q, W, E, R, 6, 7, 8, 9, 0
+# Item selection: separate system using item_1 through item_9 (keys 1-9 by default)
 var current_actions: Array[Dictionary] = []
 
 # Inventory mode
@@ -1377,6 +1383,8 @@ func _process(delta):
 					display_action_keybinds()
 				elif settings_submenu == "movement_keys":
 					display_movement_keybinds()
+				elif settings_submenu == "item_keys":
+					display_item_keybinds()
 				else:
 					display_settings_menu()
 			# If in settings mode, close it
@@ -1400,11 +1408,11 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action != "equip_confirm" and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				# Skip if this key conflicts with a held action bar key
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("itemkey_%d_pressed" % i, false):
 					set_meta("itemkey_%d_pressed" % i, true)
-					# Also mark action hotkeys as pressed to prevent double-trigger
-					if i < 5:
-						set_meta("hotkey_%d_pressed" % (i + 5), true)
 					# Convert page-relative index to absolute inventory index
 					var absolute_index = inventory_page * INVENTORY_PAGE_SIZE + i
 					select_inventory_item(absolute_index)
@@ -1415,6 +1423,8 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "sell":
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("merchantkey_%d_pressed" % i, false):
 					set_meta("merchantkey_%d_pressed" % i, true)
 					select_merchant_sell_item(i)  # 0-based index
@@ -1425,6 +1435,8 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "buy":
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("buykey_%d_pressed" % i, false):
 					set_meta("buykey_%d_pressed" % i, true)
 					select_merchant_buy_item(i)  # 0-based index
@@ -1435,6 +1447,8 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("questkey_%d_pressed" % i, false):
 					set_meta("questkey_%d_pressed" % i, true)
 					select_quest_option(i)  # 0-based index
@@ -1445,10 +1459,10 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and quest_log_mode and pending_continue:
 		for i in range(min(quest_log_quests.size(), 9)):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("questlogkey_%d_pressed" % i, false):
 					set_meta("questlogkey_%d_pressed" % i, true)
-					# Also mark the action bar hotkey as pressed to prevent double-trigger
-					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					abandon_quest_by_index(i)  # 0-based index
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
@@ -1457,11 +1471,10 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and combat_item_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("combatitemkey_%d_pressed" % i, false):
 					set_meta("combatitemkey_%d_pressed" % i, true)
-					# Also mark the action bar hotkey as pressed to prevent double-trigger
-					# Item selection uses action_5 through action_13 (i + 5)
-					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					use_combat_item_by_number(i + 1)  # 1-based for user
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
@@ -1478,10 +1491,10 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("monsterselectkey_%d_pressed" % i, false):
 					set_meta("monsterselectkey_%d_pressed" % i, true)
-					# Also mark the action bar hotkey as pressed to prevent double-trigger
-					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					select_monster_from_scroll(i)  # 0-based index on current page
 			else:
 				set_meta("monsterselectkey_%d_pressed" % i, false)
@@ -1490,20 +1503,21 @@ func _process(delta):
 	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode:
 		for i in range(5):  # Only 5 options (1-5)
 			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
 				if not get_meta("targetfarmkey_%d_pressed" % i, false):
 					set_meta("targetfarmkey_%d_pressed" % i, true)
-					set_meta("hotkey_%d_pressed" % (i + 5), true)
 					select_target_farm_ability(i)  # 0-based index
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
 
-	# Inventory page navigation with keys 2 and 3 (when no pending action)
+	# Inventory page navigation with item keys 2 and 3 (when no pending action)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "":
 		var inv = character_data.get("inventory", [])
 		var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
 
-		# Key 2 = Previous Page
-		var prev_key = keybinds.get("action_6", default_keybinds.get("action_6", KEY_2))
+		# Item key 2 = Previous Page
+		var prev_key = keybinds.get("item_2", default_keybinds.get("item_2", KEY_2))
 		if Input.is_physical_key_pressed(prev_key) and not Input.is_key_pressed(KEY_SHIFT):
 			if not get_meta("invpage_prev_pressed", false):
 				set_meta("invpage_prev_pressed", true)
@@ -1513,8 +1527,8 @@ func _process(delta):
 		else:
 			set_meta("invpage_prev_pressed", false)
 
-		# Next Page (action_7)
-		var next_key = keybinds.get("action_7", default_keybinds.get("action_7", KEY_3))
+		# Item key 3 = Next Page
+		var next_key = keybinds.get("item_3", default_keybinds.get("item_3", KEY_3))
 		if Input.is_physical_key_pressed(next_key) and not Input.is_key_pressed(KEY_SHIFT):
 			if not get_meta("invpage_next_pressed", false):
 				set_meta("invpage_next_pressed", true)
@@ -1555,13 +1569,9 @@ func _process(delta):
 	# Skip if ability_popup is visible (typing in the input field)
 	# Note: quest_log_mode handled separately below to allow Space (Continue) but block number keys
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
-	var quest_log_blocks_number_keys = quest_log_mode and pending_continue
 	var ability_popup_open = ability_popup != null and ability_popup.visible
 	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not ability_popup_open:
-		for i in range(10):  # 0-9 action slots
-			# Skip number keys (action_5 through action_9) when in quest log mode to prevent double-trigger
-			if quest_log_blocks_number_keys and i >= 5:
-				continue
+		for i in range(10):  # All 10 action bar slots
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
@@ -1670,6 +1680,8 @@ func _input(event):
 				display_action_keybinds()
 			elif settings_submenu == "movement_keys":
 				display_movement_keybinds()
+			elif settings_submenu == "item_keys":
+				display_item_keybinds()
 			else:
 				display_settings_menu()
 		else:
@@ -1681,29 +1693,52 @@ func _input(event):
 	if settings_mode and not rebinding_action and event is InputEventKey and event.pressed and not event.echo:
 		var keycode = event.keycode
 		if settings_submenu == "":
-			# Main settings menu
-			match keycode:
-				KEY_Q:
-					settings_submenu = "action_keys"
-					game_output.clear()
-					display_action_keybinds()
-					update_action_bar()
-				KEY_W:
-					settings_submenu = "movement_keys"
-					game_output.clear()
-					display_movement_keybinds()
-					update_action_bar()
-				KEY_E:
-					reset_keybinds_to_defaults()
-				KEY_SPACE:
-					close_settings()
+			# Main settings menu - use actual keybinds
+			var key_action_1 = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+			var key_action_2 = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
+			var key_action_3 = keybinds.get("action_3", default_keybinds.get("action_3", KEY_E))
+			var key_action_4 = keybinds.get("action_4", default_keybinds.get("action_4", KEY_R))
+			var key_action_0 = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+
+			if keycode == key_action_1:
+				settings_submenu = "action_keys"
+				game_output.clear()
+				display_action_keybinds()
+				update_action_bar()
+			elif keycode == key_action_2:
+				settings_submenu = "movement_keys"
+				game_output.clear()
+				display_movement_keybinds()
+				update_action_bar()
+			elif keycode == key_action_3:
+				settings_submenu = "item_keys"
+				game_output.clear()
+				display_item_keybinds()
+				update_action_bar()
+			elif keycode == key_action_4:
+				reset_keybinds_to_defaults()
+			elif keycode == key_action_0:
+				close_settings()
 			get_viewport().set_input_as_handled()
 		elif settings_submenu == "action_keys":
-			# Action keybinds submenu - 0-9 to rebind actions
+			# Action keybinds submenu - 0-9 to rebind action bar keys
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
 			if keycode >= KEY_0 and keycode <= KEY_9:
 				var index = keycode - KEY_0
 				start_rebinding("action_%d" % index)
-			elif keycode == KEY_SPACE:
+			elif keycode == back_key:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "item_keys":
+			# Item selection keybinds submenu - 1-9 to rebind item keys
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if keycode >= KEY_1 and keycode <= KEY_9:
+				var index = keycode - KEY_1  # 0-8
+				start_rebinding("item_%d" % (index + 1))  # item_1 through item_9
+			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
 				display_settings_menu()
@@ -1711,38 +1746,43 @@ func _input(event):
 			get_viewport().set_input_as_handled()
 		elif settings_submenu == "movement_keys":
 			# Movement keybinds submenu
-			match keycode:
-				KEY_1:
-					start_rebinding("move_7")  # NW
-				KEY_2:
-					start_rebinding("move_8")  # N
-				KEY_3:
-					start_rebinding("move_9")  # NE
-				KEY_4:
-					start_rebinding("move_4")  # W
-				KEY_5:
-					start_rebinding("hunt")
-				KEY_6:
-					start_rebinding("move_6")  # E
-				KEY_7:
-					start_rebinding("move_1")  # SW
-				KEY_8:
-					start_rebinding("move_2")  # S
-				KEY_9:
-					start_rebinding("move_3")  # SE
-				KEY_Q:
-					start_rebinding("move_up")
-				KEY_W:
-					start_rebinding("move_down")
-				KEY_E:
-					start_rebinding("move_left")
-				KEY_R:
-					start_rebinding("move_right")
-				KEY_SPACE:
-					settings_submenu = ""
-					game_output.clear()
-					display_settings_menu()
-					update_action_bar()
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			var key_1 = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+			var key_2 = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
+			var key_3 = keybinds.get("action_3", default_keybinds.get("action_3", KEY_E))
+			var key_4 = keybinds.get("action_4", default_keybinds.get("action_4", KEY_R))
+
+			if keycode == KEY_1:
+				start_rebinding("move_7")  # NW
+			elif keycode == KEY_2:
+				start_rebinding("move_8")  # N
+			elif keycode == KEY_3:
+				start_rebinding("move_9")  # NE
+			elif keycode == KEY_4:
+				start_rebinding("move_4")  # W
+			elif keycode == KEY_5:
+				start_rebinding("hunt")
+			elif keycode == KEY_6:
+				start_rebinding("move_6")  # E
+			elif keycode == KEY_7:
+				start_rebinding("move_1")  # SW
+			elif keycode == KEY_8:
+				start_rebinding("move_2")  # S
+			elif keycode == KEY_9:
+				start_rebinding("move_3")  # SE
+			elif keycode == key_1:
+				start_rebinding("move_up")
+			elif keycode == key_2:
+				start_rebinding("move_down")
+			elif keycode == key_3:
+				start_rebinding("move_left")
+			elif keycode == key_4:
+				start_rebinding("move_right")
+			elif keycode == back_key:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
 			get_viewport().set_input_as_handled()
 
 	# Handle ability mode input
@@ -2377,6 +2417,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif settings_submenu == "item_keys":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Press 1-9", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "to rebind", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif settings_submenu == "movement_keys":
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
@@ -2395,8 +2448,8 @@ func update_action_bar():
 				{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
 				{"label": "Actions", "action_type": "local", "action_data": "settings_action_keys", "enabled": true},
 				{"label": "Movement", "action_type": "local", "action_data": "settings_movement_keys", "enabled": true},
+				{"label": "Items", "action_type": "local", "action_data": "settings_item_keys", "enabled": true},
 				{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3916,6 +3969,11 @@ func execute_local_action(action: String):
 			settings_submenu = "movement_keys"
 			game_output.clear()
 			display_movement_keybinds()
+			update_action_bar()
+		"settings_item_keys":
+			settings_submenu = "item_keys"
+			game_output.clear()
+			display_item_keybinds()
 			update_action_bar()
 		"settings_reset":
 			reset_keybinds_to_defaults()
@@ -7497,6 +7555,7 @@ func update_action_bar_hotkeys():
 	for i in range(min(action_hotkey_labels.size(), 10)):
 		var label = action_hotkey_labels[i]
 		if label != null:
+			# All 10 action bar slots use action_0 through action_9
 			var action_key = "action_%d" % i
 			var keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 			label.text = get_key_name(keycode)
@@ -7537,14 +7596,23 @@ func get_key_name(keycode: int) -> String:
 
 func get_item_select_keycode(index: int) -> int:
 	"""Get the keycode for item selection (index 0-8 for items 1-9)"""
-	# Items 1-5 use action_5 through action_9
-	# Items 6-9 use action_10 through action_13
-	var action_key = "action_%d" % (index + 5)
-	return keybinds.get(action_key, default_keybinds.get(action_key, KEY_1 + index))
+	# Item selection keys are separate from action bar keys
+	var item_key = "item_%d" % (index + 1)  # item_1 through item_9
+	return keybinds.get(item_key, default_keybinds.get(item_key, KEY_1 + index))
 
 func get_item_select_key_name(index: int) -> String:
 	"""Get the display name for item selection key (index 0-8 for items 1-9)"""
 	return get_key_name(get_item_select_keycode(index))
+
+func is_item_key_blocked_by_action_bar(index: int) -> bool:
+	"""Check if item selection key conflicts with a currently-held action bar key"""
+	var item_keycode = get_item_select_keycode(index)
+	for j in range(10):
+		var action_key = "action_%d" % j
+		var action_keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if item_keycode == action_keycode and get_meta("hotkey_%d_pressed" % j, false):
+			return true
+	return false
 
 func is_item_select_key_pressed(index: int) -> bool:
 	"""Check if the item selection key is pressed (index 0-8 for items 1-9)"""
@@ -7609,11 +7677,13 @@ func display_settings_menu():
 	display_game("")
 	display_game("[%s] Configure Action Bar Keys" % get_action_key_name(1))
 	display_game("[%s] Configure Movement Keys" % get_action_key_name(2))
-	display_game("[%s] Reset All to Defaults" % get_action_key_name(3))
+	display_game("[%s] Configure Item Selection Keys" % get_action_key_name(3))
+	display_game("[%s] Reset All to Defaults" % get_action_key_name(4))
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")
 	display_game("  Primary Action: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("action_0", KEY_SPACE)))
+	display_game("  Item Selection: [color=#00FFFF]%s[/color]-[color=#00FFFF]%s[/color]" % [get_item_select_key_name(0), get_item_select_key_name(8)])
 	display_game("  Move North: [color=#00FFFF]%s[/color] / [color=#00FFFF]%s[/color]" % [get_key_name(keybinds.get("move_8", KEY_KP_8)), get_key_name(keybinds.get("move_up", KEY_UP))])
 	display_game("  Hunt: [color=#00FFFF]%s[/color]" % get_key_name(keybinds.get("hunt", KEY_KP_5)))
 
@@ -7621,13 +7691,25 @@ func display_action_keybinds():
 	"""Display action bar keybinds for editing"""
 	display_game("[color=#FFD700]===== ACTION BAR KEYBINDS =====[/color]")
 	display_game("")
-	var action_names = ["Primary (Space)", "Action 1 (Q)", "Action 2 (W)", "Action 3 (E)", "Action 4 (R)", "Action 5 (1)", "Action 6 (2)", "Action 7 (3)", "Action 8 (4)", "Action 9 (5)"]
-	for i in range(10):
+	var action_names = ["Primary (Space)", "Action 1 (Q)", "Action 2 (W)", "Action 3 (E)", "Action 4 (R)", "Action 5 (6)", "Action 6 (7)", "Action 7 (8)", "Action 8 (9)", "Action 9 (0)"]
+	for i in range(10):  # Show all 10 action bar keys
 		var action_key = "action_%d" % i
 		var current_key = keybinds.get(action_key, default_keybinds[action_key])
 		display_game("[%d] %s: [color=#00FFFF]%s[/color]" % [i, action_names[i], get_key_name(current_key)])
 	display_game("")
 	display_game("[color=#808080]Press 0-9 to rebind, or %s to go back[/color]" % get_action_key_name(0))
+
+func display_item_keybinds():
+	"""Display item selection keybinds for editing (used in inventory, merchant, quests)"""
+	display_game("[color=#FFD700]===== ITEM SELECTION KEYBINDS =====[/color]")
+	display_game("[color=#808080]These keys are used to select items in inventory, merchant, and quest menus.[/color]")
+	display_game("")
+	for i in range(9):
+		var item_key = "item_%d" % (i + 1)  # item_1 through item_9
+		var current_key = keybinds.get(item_key, default_keybinds.get(item_key, KEY_1 + i))
+		display_game("[%d] Item %d: [color=#00FFFF]%s[/color]" % [i + 1, i + 1, get_key_name(current_key)])
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to rebind, or %s to go back[/color]" % get_action_key_name(0))
 
 func display_movement_keybinds():
 	"""Display movement keybinds for editing"""
@@ -7701,6 +7783,8 @@ func complete_rebinding(new_keycode: int):
 		display_action_keybinds()
 	elif settings_submenu == "movement_keys":
 		display_movement_keybinds()
+	elif settings_submenu == "item_keys":
+		display_item_keybinds()
 	else:
 		display_settings_menu()
 
