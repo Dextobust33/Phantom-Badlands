@@ -466,11 +466,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var gems_earned = roll_gem_drops(monster, character)
 	if ABILITY_GEM_BEARER in abilities:
 		gems_earned = max(1, gems_earned * 2) if gems_earned > 0 else randi_range(1, 3)
-		messages.append("[color=#00FFFF]The gem bearer's hoard glitters![/color]")
+		messages.append("[color=#00FFFF]✧ The gem bearer's hoard glitters! ✧[/color]")
 
 	if gems_earned > 0:
 		character.gems += gems_earned
-		messages.append("[color=#00FFFF]You found %d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+		messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 	# Weapon Master ability: guaranteed weapon drop
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
@@ -488,8 +488,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			combat.extra_drops.append(weapon)
 
 	# Shield Bearer ability: guaranteed shield drop
+	# Debug: Log ability check
+	print("[DEBUG] Shield drop check - abilities: ", abilities, " | has shield_bearer: ", ABILITY_SHIELD_BEARER in abilities, " | drop_tables null: ", drop_tables == null)
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
 		var shield = drop_tables.generate_shield(monster.level)
+		print("[DEBUG] Generated shield: ", shield)
 		if not shield.is_empty():
 			messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
 			messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
@@ -536,6 +539,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"combat_ended": true,
 		"victory": true,
 		"monster_name": monster.name,
+		"monster_base_name": monster.get("base_name", monster.name),  # For flock generation
 		"monster_level": monster.level,
 		"flock_chance": flock,
 		"dropped_items": all_drops,
@@ -725,7 +729,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			gems_earned = roll_gem_drops(monster, character)
 			if gems_earned > 0:
 				character.gems += gems_earned
-				messages.append("[color=#00FFFF]+%d gem%s![/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+				messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 		return {
 			"success": true,
@@ -1236,7 +1240,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					gems_earned = roll_gem_drops(monster, character) * 2
 					if gems_earned > 0:
 						character.gems += gems_earned
-						messages.append("[color=#00FFFF]+%d gems (doubled!)![/color]" % gems_earned)
+						messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gems (doubled!)![/color][color=#00FFFF] ◆ ✦[/color]" % gems_earned)
 
 				return {
 					"success": true,
@@ -1713,7 +1717,8 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
 		if randi() % 100 < 20:  # 20% chance
 			combat["summoner_triggered"] = true
-			combat["summon_next_fight"] = monster.name  # Server will handle spawning
+			# Use base_name so flock generates correct monster type (may still roll variant)
+			combat["summon_next_fight"] = monster.get("base_name", monster.name)
 			messages.append("[color=#FF4444]The %s calls for reinforcements![/color]" % monster.name)
 
 	return {"success": true, "message": "\n".join(messages)}
@@ -3470,7 +3475,7 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 	match wish.type:
 		"gems":
 			character.gems += wish.amount
-			return "[color=#00FFFF]WISH GRANTED: +%d gems![/color]" % wish.amount
+			return "[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] ◆ ✦[/color]" % wish.amount
 		"gold":
 			character.gold += wish.amount
 			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount

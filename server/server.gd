@@ -26,6 +26,7 @@ var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
+var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
 
@@ -898,6 +899,9 @@ func handle_logout_character(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	# Clear pending wish if any
+	if pending_wishes.has(peer_id):
+		pending_wishes.erase(peer_id)
 
 	# Remove character from active characters
 	if characters.has(peer_id):
@@ -930,6 +934,9 @@ func handle_logout_account(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	# Clear pending wish if any
+	if pending_wishes.has(peer_id):
+		pending_wishes.erase(peer_id)
 
 	# Remove character
 	if characters.has(peer_id):
@@ -1285,6 +1292,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
+			print("[DEBUG] Victory drops received: ", current_drops.size(), " items: ", current_drops)
 
 			# Check for summoner ability - force a follow-up encounter
 			var summon_next = result.get("summon_next_fight", "")
@@ -1330,6 +1338,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			if flock_chance > 0 and flock_roll < flock_chance:
 				# Flock triggered! Store drops for later, don't give items yet
 				var monster_name = result.get("monster_name", "")
+				# Use base_name for flock generation (variants like "Minotaur Shield Guardian" -> "Minotaur")
+				var monster_base_name = result.get("monster_base_name", monster_name)
 				var monster_level = result.get("monster_level", 1)
 
 				# Accumulate drops for this flock
@@ -1343,8 +1353,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flock_gems[peer_id] += gems_this_combat
 
 				# Store pending flock data for this peer (including analyze bonus carry-over)
+				# Use base_name so flock correctly generates same monster type (may still roll variant)
 				pending_flocks[peer_id] = {
-					"monster_name": monster_name,
+					"monster_name": monster_base_name,
 					"monster_level": monster_level,
 					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id)
 				}
@@ -1391,12 +1402,22 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							"level": item.get("level", 1),
 							"level_diff": item.get("level", 1) - player_level
 						})
+					else:
+						# Inventory full - item lost!
+						drop_messages.append("[color=#FF4444]INVENTORY FULL! Lost: %s[/color]" % item.get("name", "Unknown Item"))
 
-					# Check if wish granter gave pending wish choice (from result, not combat state)
+				# Check if wish granter gave pending wish choice (from result, not combat state)
 				var wish_pending = result.get("wish_pending", false)
 				var wish_options = result.get("wish_options", [])
 
 				if wish_pending and wish_options.size() > 0:
+					# Store wish data for when player selects (combat state may be cleared)
+					pending_wishes[peer_id] = {
+						"wish_options": wish_options,
+						"drop_messages": drop_messages,
+						"total_gems": total_gems,
+						"drop_data": drop_data
+					}
 					# Send wish choice to client
 					send_to_peer(peer_id, {
 						"type": "wish_choice",
@@ -1508,13 +1529,15 @@ func handle_wish_select(peer_id: int, message: Dictionary):
 		return
 
 	var choice_index = message.get("choice", -1)
-	var combat_state = combat_mgr.get_active_combat(peer_id)
 
-	if not combat_state.get("wish_pending", false):
+	# Check for pending wish in our separate storage first (more reliable)
+	if not pending_wishes.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "No wish pending!"})
 		return
 
-	var wish_options = combat_state.get("wish_options", [])
+	var wish_data = pending_wishes[peer_id]
+	var wish_options = wish_data.get("wish_options", [])
+
 	if choice_index < 0 or choice_index >= wish_options.size():
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid wish choice!"})
 		return
@@ -1537,12 +1560,12 @@ func handle_wish_select(peer_id: int, message: Dictionary):
 		else:
 			result_msg += "\n[color=#FF0000]Inventory full! Gear was lost![/color]"
 
-	# Clear wish pending state
-	combat_state["wish_pending"] = false
-	combat_state["wish_options"] = []
+	# Clear pending wish
+	pending_wishes.erase(peer_id)
 
-	# End combat now
-	combat_mgr.end_combat(peer_id, true)
+	# End combat if still active
+	if combat_mgr.is_in_combat(peer_id):
+		combat_mgr.end_combat(peer_id, true)
 
 	# Send result to client
 	send_to_peer(peer_id, {
@@ -1894,6 +1917,9 @@ func handle_disconnect(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	# Clear pending wish if any
+	if pending_wishes.has(peer_id):
+		pending_wishes.erase(peer_id)
 
 	# Clean up merchant position tracking
 	var player_key = "p_%d" % peer_id

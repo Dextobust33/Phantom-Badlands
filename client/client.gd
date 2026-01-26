@@ -5991,29 +5991,43 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Contains %d-%d gold" % [level * 10, level * 50]
 	elif "gem" in item_type:
 		return "Worth 1000 gold when sold"
-	# Scroll effects
+	# Scroll effects - buff scrolls
 	elif "scroll_forcefield" in item_type:
-		var shield_amount = 50 + level * 25
-		return "Creates a %d HP shield that absorbs damage" % shield_amount
+		var shield_amount = 50 + level * 10
+		return "Creates a %d HP shield that absorbs damage (1 battle)" % shield_amount
 	elif "scroll_rage" in item_type:
-		var buff_val = 20 + level * 5
+		var buff_val = 20 + level * 4
 		return "+%d Strength for next combat" % buff_val
-	elif "scroll_stoneskin" in item_type:
-		var buff_val = 20 + level * 5
+	elif "scroll_stone_skin" in item_type:
+		var buff_val = 20 + level * 4
 		return "+%d Defense for next combat" % buff_val
 	elif "scroll_haste" in item_type:
-		var buff_val = 30 + level * 8
+		var buff_val = 30 + level * 5
 		return "+%d Speed for next combat" % buff_val
 	elif "scroll_vampirism" in item_type:
-		var lifesteal = 15 + level * 3
+		var lifesteal = 25 + level * 3
 		return "%d%% Lifesteal for next combat" % lifesteal
 	elif "scroll_thorns" in item_type:
-		var reflect = 20 + level * 5
+		var reflect = 30 + level * 4
 		return "Reflect %d%% damage for next combat" % reflect
-	elif "scroll_critical" in item_type:
-		var crit = 20 + level * 3
+	elif "scroll_precision" in item_type:
+		var crit = 25 + level * 2
 		return "+%d%% Critical chance for next combat" % crit
-	elif "scroll_summoning" in item_type:
+	# Scroll effects - debuff scrolls (affect next monster)
+	elif "scroll_weakness" in item_type:
+		var debuff = 25 + level * 2
+		return "Next monster has -%d%% Attack" % debuff
+	elif "scroll_vulnerability" in item_type:
+		var debuff = 25 + level * 2
+		return "Next monster has -%d%% Defense" % debuff
+	elif "scroll_slow" in item_type:
+		var debuff = 30 + level * 3
+		return "Next monster has -%d%% Speed" % debuff
+	elif "scroll_doom" in item_type:
+		var debuff = 10 + level * 2
+		return "Next monster loses %d%% Max HP at combat start" % debuff
+	# Scroll effects - special
+	elif "scroll_monster_select" in item_type:
 		return "Choose your next monster encounter"
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
