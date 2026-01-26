@@ -4840,7 +4840,12 @@ func display_ability_menu():
 			display_game("  [color=#555555]%s (Lv %d)[/color]" % [display_name, req_level])
 
 	display_game("")
-	display_game("[color=#808080]%s=Back, %s=Equip, %s=Unequip, %s=Keybinds[/color]" % [
+	display_game("[color=#FFD700]How to use:[/color]")
+	display_game("  1. Press [%s] Equip to add abilities to combat slots" % get_action_key_name(1))
+	display_game("  2. Select a slot (1-4), then select an ability from the list")
+	display_game("  3. Press [%s] Keybinds to change slot hotkeys" % get_action_key_name(3))
+	display_game("")
+	display_game("[color=#808080][%s]=Back  [%s]=Equip  [%s]=Unequip  [%s]=Keybinds[/color]" % [
 		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
 
 func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> Dictionary:
