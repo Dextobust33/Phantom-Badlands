@@ -541,7 +541,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"dropped_items": all_drops,
 		"gems_earned": gems_earned,
 		"summon_next_fight": combat.get("summon_next_fight", ""),
-		"is_rare_variant": monster.get("is_rare_variant", false)
+		"is_rare_variant": monster.get("is_rare_variant", false),
+		"wish_pending": combat.get("wish_pending", false),
+		"wish_options": combat.get("wish_options", [])
 	}
 
 func process_defend(combat: Dictionary) -> Dictionary:
@@ -1930,6 +1932,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"player_energy": character.current_energy,
 		"player_max_energy": character.max_energy,
 		"monster_name": monster.name,
+		"monster_base_name": monster.get("base_name", monster.name),  # Original name for art lookup
 		"monster_level": monster.level,
 		"monster_hp": display_hp,
 		"monster_max_hp": display_max_hp,

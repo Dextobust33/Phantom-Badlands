@@ -1392,10 +1392,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							"level_diff": item.get("level", 1) - player_level
 						})
 
-					# Check if wish granter gave pending wish choice
-				var combat_state = combat_mgr.get_active_combat(peer_id)
-				var wish_pending = combat_state.get("wish_pending", false) if combat_state else false
-				var wish_options = combat_state.get("wish_options", []) if combat_state else []
+					# Check if wish granter gave pending wish choice (from result, not combat state)
+				var wish_pending = result.get("wish_pending", false)
+				var wish_options = result.get("wish_options", [])
 
 				if wish_pending and wish_options.size() > 0:
 					# Send wish choice to client

@@ -1291,10 +1291,12 @@ func _process(delta):
 	# Skip if in settings mode (settings has its own input handling)
 	# Skip if in combat_item_mode (to prevent item selection from also triggering combat abilities)
 	# Skip if in monster_select_mode (to prevent monster selection from also triggering action bar)
+	# Skip if ability_popup is visible (typing in the input field)
 	# Note: quest_log_mode handled separately below to allow Space (Continue) but block number keys
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
 	var quest_log_blocks_number_keys = quest_log_mode and pending_continue
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode:
+	var ability_popup_open = ability_popup != null and ability_popup.visible
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not ability_popup_open:
 		for i in range(10):  # 0-9 action slots
 			# Skip number keys (action_5 through action_9) when in quest log mode to prevent double-trigger
 			if quest_log_blocks_number_keys and i >= 5:
@@ -3943,9 +3945,10 @@ func display_merchant_sell_list():
 			var item = inventory[i]
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var sell_price = item.get("value", 10) / 2
-			var display_num = i - start_idx + 1  # 1-9 for keys
-			display_game("[%d] [color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
-				display_num, rarity_color, item.get("name", "Unknown"), sell_price
+			var key_index = i - start_idx  # 0-8 for key lookup
+			var key_name = get_item_select_key_name(key_index)
+			display_game("[%s] [color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
+				key_name, rarity_color, item.get("name", "Unknown"), sell_price
 			])
 		if total_pages > 1:
 			display_game("")
@@ -5300,9 +5303,11 @@ func handle_server_message(message: Dictionary):
 			var display_msg = message.get("message", "")
 			if message.get("use_client_art", false):
 				var monster_name = combat_state.get("monster_name", "")
+				# Use base_name for art lookup (strips variant prefixes like "Corrosive")
+				var monster_base_name = combat_state.get("monster_base_name", monster_name)
 				if monster_name != "":
-					# Render art locally using MonsterArt class
-					var local_art = _get_monster_art().get_bordered_art_with_font(monster_name)
+					# Render art locally using MonsterArt class (use base name for art lookup)
+					var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name)
 					# Build encounter text with traits
 					var encounter_text = _build_encounter_text(combat_state)
 					# For flock, prepend the "Another X appears!" message

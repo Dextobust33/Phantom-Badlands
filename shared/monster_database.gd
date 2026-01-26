@@ -1149,6 +1149,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	var monster = {
 		"name": monster_name,
+		"base_name": base_stats.name,  # Original name without variant prefix/suffix (for art lookup)
 		"level": target_level,
 		"max_hp": scaled_hp,
 		"current_hp": scaled_hp,
