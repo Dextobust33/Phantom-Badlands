@@ -1946,7 +1946,8 @@ func _update_class_description():
 	if not class_option or not class_description:
 		return
 	var selected_class = class_option.get_item_text(class_option.selected)
-	class_description.text = CLASS_DESCRIPTIONS.get(selected_class, "")
+	class_description.clear()
+	class_description.append_text(CLASS_DESCRIPTIONS.get(selected_class, ""))
 
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
