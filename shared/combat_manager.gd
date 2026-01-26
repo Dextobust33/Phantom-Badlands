@@ -1910,6 +1910,13 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	var affinity = monster.get("class_affinity", 0)
 	var name_color = _get_affinity_color(affinity)
 
+	# Check if player knows this monster (has killed it at or above this level)
+	# If unknown, send -1 for HP values so client shows "???"
+	var knows_monster = character.knows_monster(monster.name, monster.level)
+	var display_hp = monster.current_hp if knows_monster else -1
+	var display_max_hp = monster.max_hp if knows_monster else -1
+	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if knows_monster else -1
+
 	return {
 		"round": combat.round,
 		"player_name": character.name,
@@ -1924,12 +1931,13 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"player_max_energy": character.max_energy,
 		"monster_name": monster.name,
 		"monster_level": monster.level,
-		"monster_hp": monster.current_hp,
-		"monster_max_hp": monster.max_hp,
-		"monster_hp_percent": int((float(monster.current_hp) / monster.max_hp) * 100),
+		"monster_hp": display_hp,
+		"monster_max_hp": display_max_hp,
+		"monster_hp_percent": display_hp_percent,
 		"monster_name_color": name_color,  # Color based on class affinity
 		"monster_affinity": affinity,
 		"monster_abilities": monster.get("abilities", []),  # For client-side trait display
+		"monster_known": knows_monster,  # Let client know if HP is real or estimated
 		"can_act": combat.player_can_act,
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,

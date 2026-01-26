@@ -85,6 +85,11 @@ const MAX_INVENTORY_SIZE = 20
 @export var daily_quest_cooldowns: Dictionary = {}
 const MAX_ACTIVE_QUESTS = 5
 
+# Monster Knowledge System - tracks which monsters the player has killed
+# Dictionary of {monster_name: max_level_killed} - knowing a monster reveals its HP
+# Killing a monster reveals HP for that type at or below the killed level (within 20 levels)
+@export var known_monsters: Dictionary = {}
+
 func _init():
 	# Constructor
 	pass
@@ -520,7 +525,8 @@ func to_dict() -> Dictionary:
 		"persistent_buffs": persistent_buffs,
 		"active_quests": active_quests,
 		"completed_quests": completed_quests,
-		"daily_quest_cooldowns": daily_quest_cooldowns
+		"daily_quest_cooldowns": daily_quest_cooldowns,
+		"known_monsters": known_monsters
 	}
 
 func from_dict(data: Dictionary):
@@ -592,6 +598,29 @@ func from_dict(data: Dictionary):
 	active_quests = data.get("active_quests", [])
 	completed_quests = data.get("completed_quests", [])
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
+
+	# Monster knowledge system
+	known_monsters = data.get("known_monsters", {})
+
+func knows_monster(monster_name: String, monster_level: int = 0) -> bool:
+	"""Check if the player knows this monster's HP based on previous kills.
+	Player knows HP if they've killed this monster type at or above this level,
+	or within 20 levels below their highest kill."""
+	if not known_monsters.has(monster_name):
+		return false
+	var max_level_killed = known_monsters[monster_name]
+	# Know monsters at or below the level you've killed
+	# Also know monsters up to 20 levels below your highest kill
+	return monster_level <= max_level_killed
+
+func record_monster_kill(monster_name: String, monster_level: int = 1):
+	"""Record that the player has killed this monster type at this level.
+	Updates to track the highest level killed."""
+	if not known_monsters.has(monster_name):
+		known_monsters[monster_name] = monster_level
+	else:
+		# Only update if this is a higher level than previously killed
+		known_monsters[monster_name] = max(known_monsters[monster_name], monster_level)
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus."""

@@ -1273,6 +1273,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
 
+			# Record monster knowledge (player now knows this monster type's HP at this level)
+			var killed_monster_name = result.get("monster_name", "")
+			var killed_monster_level = result.get("monster_level", 1)
+			if killed_monster_name != "":
+				characters[peer_id].record_monster_kill(killed_monster_name, killed_monster_level)
+
 			# Check quest progress for kill-based quests
 			var monster_level_for_quest = result.get("monster_level", 1)
 			check_kill_quest_progress(peer_id, monster_level_for_quest)
