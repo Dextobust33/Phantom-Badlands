@@ -106,6 +106,10 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "Q", 1: "W", 2: "E", 3: "R"}
 @export var cloak_active: bool = false
 const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed regen)
 
+# Title System - prestigious titles with special abilities
+@export var title: String = ""  # Current title: "", "jarl", "high_king", "elder", "eternal"
+@export var title_data: Dictionary = {}  # Title-specific data (lives for Eternal, etc.)
+
 func _init():
 	# Constructor
 	pass
@@ -745,7 +749,9 @@ func to_dict() -> Dictionary:
 		"known_monsters": known_monsters,
 		"equipped_abilities": equipped_abilities,
 		"ability_keybinds": ability_keybinds,
-		"cloak_active": cloak_active
+		"cloak_active": cloak_active,
+		"title": title,
+		"title_data": title_data
 	}
 
 func from_dict(data: Dictionary):
@@ -835,6 +841,10 @@ func from_dict(data: Dictionary):
 
 	# Cloak system - always starts off when loading (no free permanent cloak)
 	cloak_active = false
+
+	# Title system
+	title = data.get("title", "")
+	title_data = data.get("title_data", {})
 
 func knows_monster(monster_name: String, monster_level: int = 0) -> bool:
 	"""Check if the player knows this monster's HP based on previous kills.

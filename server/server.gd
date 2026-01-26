@@ -18,6 +18,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
+const TitlesScript = preload("res://shared/titles.gd")
 
 var server = TCPServer.new()
 var peers = {}
@@ -36,6 +37,14 @@ var merchant_inventories = {}
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 var watchers = {}  # peer_id -> Array of peer_ids watching this player
 var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
+
+# Title system state - only one Jarl and one High King allowed, up to 3 Eternals
+var current_jarl_id: int = -1              # peer_id of current Jarl (-1 if none)
+var current_high_king_id: int = -1         # peer_id of current High King (-1 if none)
+var current_eternal_ids: Array = []        # peer_ids of current Eternals (max 3)
+var eternal_flame_location: Vector2i = Vector2i(0, 0)  # Hidden location, moves when found
+var realm_treasury: int = 0                # Gold collected from tribute
+
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -112,6 +121,9 @@ func _ready():
 	# Initialize trading post database
 	trading_post_db = TradingPostDatabaseScript.new()
 	add_child(trading_post_db)
+
+	# Initialize title system - randomize Eternal Flame location
+	_randomize_eternal_flame_location()
 
 	# Load and apply balance configuration
 	load_balance_config()
@@ -552,6 +564,15 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_unequip_ability(peer_id, message)
 		"set_ability_keybind":
 			handle_set_ability_keybind(peer_id, message)
+		# Title system handlers
+		"claim_title":
+			handle_claim_title(peer_id, message)
+		"title_ability":
+			handle_title_ability(peer_id, message)
+		"get_title_menu":
+			handle_get_title_menu(peer_id)
+		"forge_crown":
+			handle_forge_crown(peer_id)
 		_:
 			pass
 
@@ -662,6 +683,9 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
+	# Update title holder tracking
+	_update_title_holders_on_login(peer_id)
+
 	var username = peers[peer_id].username
 	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])
 	update_player_list()
@@ -669,11 +693,15 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "character_loaded",
 		"character": character.to_dict(),
-		"message": "Welcome back, %s!" % char_name
+		"message": "Welcome back, %s!" % char_name,
+		"title_holders": _get_current_title_holders()
 	})
 
-	# Broadcast join message to other players
-	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % char_name)
+	# Broadcast join message to other players (include title if present)
+	var display_name = char_name
+	if not character.title.is_empty():
+		display_name = TitlesScript.format_titled_name(char_name, character.title)
+	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % display_name)
 
 	send_location_update(peer_id)
 
@@ -776,7 +804,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "character_created",
 		"character": character.to_dict(),
-		"message": "Welcome to the world, %s!" % char_name
+		"message": "Welcome to the world, %s!" % char_name,
+		"title_holders": _get_current_title_holders()
 	})
 
 	# Broadcast join message to other players
@@ -841,7 +870,8 @@ func handle_get_players(peer_id: int):
 		player_list.append({
 			"name": char.name,
 			"level": char.level,
-			"class": char.class_type
+			"class": char.class_type,
+			"title": char.title
 		})
 
 	send_to_peer(peer_id, {
@@ -918,10 +948,16 @@ func handle_logout_character(peer_id: int):
 	# Remove character from active characters
 	if characters.has(peer_id):
 		var char_name = characters[peer_id].name
+		var char_title = characters[peer_id].title
 		print("Character logout: %s" % char_name)
+		# Update title holder tracking before removing
+		_update_title_holders_on_logout(peer_id)
 		characters.erase(peer_id)
-		# Broadcast after removal
-		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
+		# Broadcast after removal (include title if present)
+		var display_name = char_name
+		if not char_title.is_empty():
+			display_name = TitlesScript.format_titled_name(char_name, char_title)
+		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % display_name)
 
 	peers[peer_id].character_name = ""
 
@@ -953,10 +989,16 @@ func handle_logout_account(peer_id: int):
 	# Remove character
 	if characters.has(peer_id):
 		var char_name = characters[peer_id].name
+		var char_title = characters[peer_id].title
 		print("Character logout: %s" % char_name)
+		# Update title holder tracking before removing
+		_update_title_holders_on_logout(peer_id)
 		characters.erase(peer_id)
-		# Broadcast after removal
-		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % char_name)
+		# Broadcast after removal (include title if present)
+		var display_name = char_name
+		if not char_title.is_empty():
+			display_name = TitlesScript.format_titled_name(char_name, char_title)
+		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % display_name)
 
 	var username = peers[peer_id].username
 	print("Account logout: %s" % username)
@@ -986,12 +1028,19 @@ func handle_chat(peer_id: int, message: Dictionary):
 	var username = peers[peer_id].username
 	print("Chat from %s: %s" % [username, text])
 
+	# Get title prefix if character has one
+	var display_name = username
+	if characters.has(peer_id):
+		var character = characters[peer_id]
+		if not character.title.is_empty():
+			display_name = TitlesScript.format_titled_name(username, character.title)
+
 	# Broadcast to ALL peers EXCEPT the sender
 	for other_peer_id in peers.keys():
 		if peers[other_peer_id].authenticated and other_peer_id != peer_id:
 			send_to_peer(other_peer_id, {
 				"type": "chat",
-				"sender": username,
+				"sender": display_name,
 				"message": text
 			})
 
@@ -1104,6 +1153,24 @@ func handle_move(peer_id: int, message: Dictionary):
 	if at_trading_post.has(peer_id):
 		at_trading_post.erase(peer_id)
 		send_to_peer(peer_id, {"type": "trading_post_end"})
+
+	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
+	if new_pos.x == -400 and new_pos.y == 0:
+		if _has_title_item(character, "unforged_crown"):
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF4500]The Infernal Forge burns before you. Your Unforged Crown trembles with power.[/color]"
+			})
+			send_to_peer(peer_id, {
+				"type": "forge_available",
+				"message": "[color=#FFD700]You may FORGE the Crown of the North here.[/color]"
+			})
+
+	# Check for Eternal Flame (Elder can become Eternal)
+	if new_pos.x == eternal_flame_location.x and new_pos.y == eternal_flame_location.y:
+		if character.title == "elder":
+			_grant_eternal_title(peer_id)
+			return  # Don't trigger encounters after finding the flame
 
 	# Check for merchant first (merchants can still be encountered while cloaked)
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
@@ -1538,6 +1605,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"drop_data": drop_data          # Item data for sound effects
 					})
 
+				# Check for Elder auto-grant (level 1000)
+				check_elder_auto_grant(peer_id)
+
 				# Save character after combat and notify of expired buffs
 				save_character(peer_id)
 				send_buff_expiration_notifications(peer_id)
@@ -1807,6 +1877,44 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	var account_id = peers[peer_id].account_id
 	var username = peers[peer_id].username
 
+	# Check for High King "Escape Death" ability
+	if character.title == "high_king" and not character.title_data.get("escape_death_used", false):
+		character.title_data["escape_death_used"] = true
+		character.current_hp = int(character.get_total_max_hp() * 0.1)  # Survive with 10% HP
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]The Crown of the North saves you from death! But its power is now spent...[/color]"
+		})
+		broadcast_title_change(character.name, "high_king", "lost")
+		character.title = ""
+		character.title_data = {}
+		current_high_king_id = -1
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return  # Don't actually die
+
+	# Check for Eternal lives
+	if character.title == "eternal":
+		var lives = character.title_data.get("lives", 3)
+		if lives > 1:
+			character.title_data["lives"] = lives - 1
+			character.current_hp = int(character.get_total_max_hp() * 0.1)  # Survive with 10% HP
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FFFF]Your eternal essence prevents death! Lives remaining: %d[/color]" % (lives - 1)
+			})
+			send_character_update(peer_id)
+			save_character(peer_id)
+			return  # Don't actually die
+
+	# Handle title loss on death
+	if not character.title.is_empty():
+		var lost_title = character.title
+		broadcast_title_change(character.name, lost_title, "lost")
+		_update_title_holders_on_logout(peer_id)
+		character.title = ""
+		character.title_data = {}
+
 	print("PERMADEATH: %s (Level %d) killed by %s" % [character.name, character.level, cause_of_death])
 
 	# Add to leaderboard
@@ -2025,7 +2133,8 @@ func broadcast_player_list():
 		player_list.append({
 			"name": char.name,
 			"level": char.level,
-			"class": char.class_type
+			"class": char.class_type,
+			"title": char.title
 		})
 
 	for peer_id in characters.keys():
@@ -2103,6 +2212,9 @@ func handle_disconnect(peer_id: int):
 
 	# Clean up watch relationships before erasing character
 	cleanup_watcher_on_disconnect(peer_id)
+
+	# Update title holder tracking before removing
+	_update_title_holders_on_logout(peer_id)
 
 	if characters.has(peer_id):
 		characters.erase(peer_id)
@@ -3981,6 +4093,8 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			"leveled_up": result.leveled_up,
 			"new_level": result.new_level
 		})
+		# Check for Elder auto-grant (level 1000)
+		check_elder_auto_grant(peer_id)
 		send_character_update(peer_id)
 		save_character(peer_id)
 	else:
@@ -4379,3 +4493,746 @@ func handle_set_ability_keybind(peer_id: int, message: Dictionary):
 		save_character(peer_id)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Could not set keybind."})
+
+# ===== TITLE SYSTEM =====
+
+func _randomize_eternal_flame_location():
+	"""Set the Eternal Flame to a random location within 500 distance from origin"""
+	var angle = randf() * TAU  # Random angle in radians
+	var distance = randf_range(100, 500)  # Random distance between 100-500
+	eternal_flame_location = Vector2i(
+		int(cos(angle) * distance),
+		int(sin(angle) * distance)
+	)
+	log_message("Eternal Flame location set: (%d, %d)" % [eternal_flame_location.x, eternal_flame_location.y])
+
+func _grant_eternal_title(peer_id: int):
+	"""Grant the Eternal title to an Elder who found the Eternal Flame"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Must be an Elder to become Eternal
+	if character.title != "elder":
+		return
+
+	# If 3 Eternals exist, remove the oldest one
+	if current_eternal_ids.size() >= 3:
+		var oldest_eternal_id = current_eternal_ids[0]
+		if characters.has(oldest_eternal_id):
+			var old_eternal = characters[oldest_eternal_id]
+			old_eternal.title = "elder"  # Demote back to Elder
+			old_eternal.title_data = {}
+			broadcast_title_change(old_eternal.name, "eternal", "lost")
+			send_to_peer(oldest_eternal_id, {
+				"type": "title_lost",
+				"title": "eternal",
+				"message": "[color=#808080]A new Eternal has risen. You return to the rank of Elder.[/color]"
+			})
+			send_character_update(oldest_eternal_id)
+			save_character(oldest_eternal_id)
+		current_eternal_ids.remove_at(0)
+
+	# Grant Eternal title
+	character.title = "eternal"
+	character.title_data = {"lives": 3}  # Eternals have 3 lives
+	current_eternal_ids.append(peer_id)
+
+	# Announce the ascension
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]★★★ THE ETERNAL FLAME EMBRACES YOU! ★★★[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]You have transcended mortality. You are now ETERNAL.[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#808080]You have 3 lives. Use them wisely.[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]"
+	})
+
+	send_to_peer(peer_id, {
+		"type": "title_achieved",
+		"title": "eternal",
+		"message": "[color=#00FFFF]You have become an Eternal![/color]"
+	})
+
+	broadcast_title_change(character.name, "eternal", "achieved")
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	# Move the Eternal Flame to a new location
+	_randomize_eternal_flame_location()
+	broadcast_chat("[color=#00FFFF]The Eternal Flame has moved to a new location...[/color]")
+
+func _update_title_holders_on_login(peer_id: int):
+	"""Update title holder tracking when a character logs in"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	if character.title.is_empty():
+		return
+
+	match character.title:
+		"jarl":
+			# Only one Jarl allowed
+			if current_jarl_id == -1:
+				current_jarl_id = peer_id
+				log_message("Jarl logged in: %s" % character.name)
+			else:
+				# Someone else is already Jarl - this shouldn't happen
+				# Strip the title from the newly logged in player
+				character.title = ""
+				character.title_data = {}
+				log_message("Warning: Duplicate Jarl detected, stripping title from %s" % character.name)
+		"high_king":
+			if current_high_king_id == -1:
+				current_high_king_id = peer_id
+				log_message("High King logged in: %s" % character.name)
+			else:
+				character.title = ""
+				character.title_data = {}
+				log_message("Warning: Duplicate High King detected, stripping title from %s" % character.name)
+		"eternal":
+			if not current_eternal_ids.has(peer_id) and current_eternal_ids.size() < 3:
+				current_eternal_ids.append(peer_id)
+				log_message("Eternal logged in: %s" % character.name)
+
+func _update_title_holders_on_logout(peer_id: int):
+	"""Update title holder tracking when a character logs out"""
+	if current_jarl_id == peer_id:
+		current_jarl_id = -1
+		log_message("Jarl logged out")
+	if current_high_king_id == peer_id:
+		current_high_king_id = -1
+		log_message("High King logged out")
+	if current_eternal_ids.has(peer_id):
+		current_eternal_ids.erase(peer_id)
+		log_message("Eternal logged out")
+
+func _get_current_title_holders() -> Array:
+	"""Get list of current title holders for display on login"""
+	var holders = []
+
+	# High King (highest rank)
+	if current_high_king_id != -1 and characters.has(current_high_king_id):
+		var king = characters[current_high_king_id]
+		holders.append({
+			"title": "high_king",
+			"name": king.name,
+			"level": king.level
+		})
+
+	# Jarl (only if no High King)
+	if current_jarl_id != -1 and characters.has(current_jarl_id):
+		var jarl = characters[current_jarl_id]
+		holders.append({
+			"title": "jarl",
+			"name": jarl.name,
+			"level": jarl.level
+		})
+
+	# Eternals (up to 3)
+	for eternal_id in current_eternal_ids:
+		if characters.has(eternal_id):
+			var eternal = characters[eternal_id]
+			holders.append({
+				"title": "eternal",
+				"name": eternal.name,
+				"level": eternal.level
+			})
+
+	# Count Elders (all level 1000+ players with "elder" title online)
+	var elder_count = 0
+	for peer_id in characters.keys():
+		var char = characters[peer_id]
+		if char.title == "elder":
+			elder_count += 1
+
+	if elder_count > 0:
+		holders.append({
+			"title": "elder",
+			"count": elder_count
+		})
+
+	return holders
+
+func broadcast_title_change(player_name: String, title_id: String, action: String):
+	"""Broadcast a title change to all players"""
+	var title_info = TitlesScript.TITLE_DATA.get(title_id, {})
+	var color = title_info.get("color", "#FFD700")
+	var title_name = title_info.get("name", title_id.capitalize())
+
+	var msg = ""
+	match action:
+		"claimed":
+			msg = "[color=%s]%s has claimed the title of %s![/color]" % [color, player_name, title_name]
+		"lost":
+			msg = "[color=#808080]%s is no longer %s.[/color]" % [player_name, title_name]
+		"achieved":
+			msg = "[color=%s]%s has achieved the rank of %s![/color]" % [color, player_name, title_name]
+		"usurped":
+			msg = "[color=%s]%s has usurped the throne and become %s![/color]" % [color, player_name, title_name]
+
+	# Send to both game output and chat
+	for other_peer_id in characters.keys():
+		send_to_peer(other_peer_id, {"type": "text", "message": msg})
+		send_to_peer(other_peer_id, {"type": "chat", "sender": "Realm", "message": msg})
+
+	log_message("Title change: %s %s %s" % [player_name, action, title_id])
+
+func _has_title_item(character: Character, item_type: String) -> bool:
+	"""Check if character has a specific title item in inventory"""
+	for item in character.inventory:
+		if item.get("type", "") == item_type:
+			return true
+	return false
+
+func _remove_title_item(character: Character, item_type: String) -> bool:
+	"""Remove a title item from character inventory. Returns true if found and removed."""
+	for i in range(character.inventory.size()):
+		if character.inventory[i].get("type", "") == item_type:
+			character.inventory.remove_at(i)
+			return true
+	return false
+
+func _get_peer_id_for_character_name(char_name: String) -> int:
+	"""Find peer_id for a character by name. Returns -1 if not found."""
+	for peer_id in characters.keys():
+		if characters[peer_id].name.to_lower() == char_name.to_lower():
+			return peer_id
+	return -1
+
+func handle_claim_title(peer_id: int, message: Dictionary):
+	"""Handle claiming a title at The High Seat"""
+	if not characters.has(peer_id):
+		return
+
+	var title_type = message.get("title", "")
+	var character = characters[peer_id]
+
+	if title_type == "jarl":
+		# Check if High King exists
+		if current_high_king_id != -1:
+			send_to_peer(peer_id, {"type": "error", "message": "A High King rules. The Jarl position is vacant."})
+			return
+
+		# Check if someone else is already Jarl
+		if current_jarl_id != -1 and current_jarl_id != peer_id:
+			var current_jarl = characters.get(current_jarl_id)
+			var jarl_name = current_jarl.name if current_jarl else "Unknown"
+			send_to_peer(peer_id, {"type": "error", "message": "%s already holds the title of Jarl." % jarl_name})
+			return
+
+		# Check level requirements
+		if character.level < 50:
+			send_to_peer(peer_id, {"type": "error", "message": "Jarls must be at least level 50."})
+			return
+		if character.level > 500:
+			send_to_peer(peer_id, {"type": "error", "message": "You are too powerful for this title (max level 500)."})
+			return
+
+		# Check for Jarl's Ring
+		if not _has_title_item(character, "jarls_ring"):
+			send_to_peer(peer_id, {"type": "error", "message": "You need a Jarl's Ring to claim The High Seat."})
+			return
+
+		# Check location
+		if character.x != 0 or character.y != 0:
+			send_to_peer(peer_id, {"type": "error", "message": "You must be at The High Seat (0,0)."})
+			return
+
+		# Grant title
+		_remove_title_item(character, "jarls_ring")  # Consume ring
+		character.title = "jarl"
+		character.title_data = {}
+		current_jarl_id = peer_id
+
+		broadcast_title_change(character.name, "jarl", "claimed")
+		send_to_peer(peer_id, {
+			"type": "title_claimed",
+			"title": "jarl",
+			"message": "[color=#C0C0C0]You claim The High Seat. You are now Jarl![/color]"
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+
+	elif title_type == "high_king":
+		# Check level requirements
+		if character.level < 200:
+			send_to_peer(peer_id, {"type": "error", "message": "The High King must be at least level 200."})
+			return
+		if character.level > 1000:
+			send_to_peer(peer_id, {"type": "error", "message": "You are too powerful for this title (max level 1000)."})
+			return
+
+		# Check for Crown of the North
+		if not _has_title_item(character, "crown_of_north"):
+			send_to_peer(peer_id, {"type": "error", "message": "You need the Crown of the North to claim the throne."})
+			return
+
+		# Check location
+		if character.x != 0 or character.y != 0:
+			send_to_peer(peer_id, {"type": "error", "message": "You must be at The High Seat (0,0)."})
+			return
+
+		# If there's a current Jarl, they lose their title
+		if current_jarl_id != -1 and current_jarl_id != peer_id:
+			var old_jarl = characters.get(current_jarl_id)
+			if old_jarl:
+				old_jarl.title = ""
+				old_jarl.title_data = {}
+				broadcast_title_change(old_jarl.name, "jarl", "lost")
+				send_to_peer(current_jarl_id, {
+					"type": "title_lost",
+					"title": "jarl",
+					"message": "[color=#808080]A new High King has risen. You are no longer Jarl.[/color]"
+				})
+				send_character_update(current_jarl_id)
+				save_character(current_jarl_id)
+			current_jarl_id = -1
+
+		# If there's a current High King, they lose their title
+		if current_high_king_id != -1 and current_high_king_id != peer_id:
+			var old_king = characters.get(current_high_king_id)
+			if old_king:
+				old_king.title = ""
+				old_king.title_data = {}
+				broadcast_title_change(old_king.name, "high_king", "lost")
+				send_to_peer(current_high_king_id, {
+					"type": "title_lost",
+					"title": "high_king",
+					"message": "[color=#808080]You have been usurped! You are no longer High King.[/color]"
+				})
+				send_character_update(current_high_king_id)
+				save_character(current_high_king_id)
+
+		# Grant title
+		_remove_title_item(character, "crown_of_north")  # Consume crown
+		character.title = "high_king"
+		character.title_data = {"escape_death_used": false}
+		current_high_king_id = peer_id
+
+		broadcast_title_change(character.name, "high_king", "usurped")
+		send_to_peer(peer_id, {
+			"type": "title_claimed",
+			"title": "high_king",
+			"message": "[color=#FFD700]You claim the Crown of the North. You are now High King![/color]"
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Unknown title."})
+
+func handle_forge_crown(peer_id: int):
+	"""Handle forging the Unforged Crown into Crown of the North at Fire Mountain"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Check location (Fire Mountain / Infernal Forge at -400, 0)
+	if character.x != -400 or character.y != 0:
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at the Infernal Forge at Fire Mountain (-400, 0)."})
+		return
+
+	# Check for Unforged Crown
+	if not _has_title_item(character, "unforged_crown"):
+		send_to_peer(peer_id, {"type": "error", "message": "You need an Unforged Crown to forge at the Infernal Forge."})
+		return
+
+	# Remove Unforged Crown and add Crown of the North
+	_remove_title_item(character, "unforged_crown")
+
+	var crown_of_north = TitlesScript.TITLE_ITEMS.get("crown_of_north", {})
+	var new_crown = {
+		"type": "crown_of_north",
+		"name": crown_of_north.get("name", "Crown of the North"),
+		"rarity": crown_of_north.get("rarity", "artifact"),
+		"description": crown_of_north.get("description", ""),
+		"is_title_item": true
+	}
+	character.inventory.append(new_crown)
+
+	# Announce the forging
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF4500]The flames of the Infernal Forge roar to life![/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]Your Unforged Crown is consumed by the fire...[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]★★★ THE CROWN OF THE NORTH HAS BEEN FORGED! ★★★[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#C0C0C0]Take it to The High Seat at (0,0) to claim the throne of the High King.[/color]"
+	})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]"
+	})
+
+	# Broadcast to all players
+	var forge_msg = "[color=#FFD700]%s has forged the Crown of the North at the Infernal Forge![/color]" % character.name
+	for other_peer_id in characters.keys():
+		if other_peer_id != peer_id:
+			send_to_peer(other_peer_id, {
+				"type": "chat",
+				"sender": "Realm",
+				"message": forge_msg
+			})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func check_elder_auto_grant(peer_id: int):
+	"""Check if character should be auto-granted Elder title at level 1000"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Already has a title? Skip (Elder doesn't override other titles)
+	if not character.title.is_empty():
+		return
+
+	# Check level threshold
+	if character.level >= 1000:
+		character.title = "elder"
+		character.title_data = {}
+		broadcast_title_change(character.name, "elder", "achieved")
+		send_to_peer(peer_id, {
+			"type": "title_achieved",
+			"title": "elder",
+			"message": "[color=#9400D3]You have reached level 1000 and become an Elder of the realm![/color]"
+		})
+		save_character(peer_id)
+
+func handle_title_ability(peer_id: int, message: Dictionary):
+	"""Handle using a title ability"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var ability_id = message.get("ability", "")
+	var target_name = message.get("target", "")
+	var broadcast_text = message.get("broadcast_text", "")
+
+	if character.title.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have a title."})
+		return
+
+	var abilities = TitlesScript.get_title_abilities(character.title)
+	if not abilities.has(ability_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have that ability."})
+		return
+
+	var ability = abilities[ability_id]
+	var cost = ability.get("cost", 0)
+	var resource = ability.get("resource", "none")
+
+	# Check and consume resource cost
+	if resource == "mana":
+		if character.current_mana < cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough mana (%d required)." % cost})
+			return
+		character.current_mana -= cost
+	elif resource == "mana_percent":
+		var mana_cost = int(character.max_mana * cost / 100.0)
+		if character.current_mana < mana_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough mana (%d%% required)." % cost})
+			return
+		character.current_mana -= mana_cost
+	elif resource == "gems":
+		if character.gems < cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems (%d required)." % cost})
+			return
+		character.gems -= cost
+	elif resource == "lives":
+		var lives = character.title_data.get("lives", 3)
+		if lives < cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough lives (%d required)." % cost})
+			return
+		character.title_data["lives"] = lives - cost
+
+	# Find target if needed
+	var target_peer_id = -1
+	var target: Character = null
+	if ability.get("target", "self") == "player" and not target_name.is_empty():
+		target_peer_id = _get_peer_id_for_character_name(target_name)
+		if target_peer_id == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "Player '%s' not found online." % target_name})
+			return
+		target = characters.get(target_peer_id)
+
+	# Execute ability
+	_execute_title_ability(peer_id, character, ability_id, target_peer_id, target, broadcast_text)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _execute_title_ability(peer_id: int, character: Character, ability_id: String, target_peer_id: int, target: Character, broadcast_text: String):
+	"""Execute a specific title ability"""
+	var title_color = TitlesScript.get_title_color(character.title)
+	var title_prefix = TitlesScript.get_title_prefix(character.title)
+
+	match ability_id:
+		# Jarl abilities
+		"banish":
+			if target:
+				var offset_x = randi_range(-50, 50)
+				var offset_y = randi_range(-50, 50)
+				target.x = clampi(target.x + offset_x, -1000, 1000)
+				target.y = clampi(target.y + offset_y, -1000, 1000)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#C0C0C0]The Jarl has banished you! You find yourself at (%d, %d).[/color]" % [target.x, target.y]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has banished %s!" % target.name)
+				send_location_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"curse":
+			if target:
+				target.apply_poison(5, 10)
+				target.current_energy = max(0, int(target.current_energy * 0.8))
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#C0C0C0]The Jarl has cursed you! Poison courses through your veins.[/color]"
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has cursed %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"gift_silver":
+			if target:
+				target.gold += 5000
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]The Jarl has gifted you 5000 gold![/color]"
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has gifted %s with silver!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"claim_tribute":
+			var tribute = int(realm_treasury * 0.1)
+			if tribute > 0:
+				character.gold += tribute
+				realm_treasury -= tribute
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]You claim %d gold from the realm treasury.[/color]" % tribute
+				})
+			else:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
+
+		# High King abilities
+		"exile":
+			if target:
+				var angle = randf() * TAU
+				var edge_dist = 200
+				target.x = clampi(int(cos(angle) * edge_dist), -1000, 1000)
+				target.y = clampi(int(sin(angle) * edge_dist), -1000, 1000)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]The High King has exiled you to the edge of the realm! You find yourself at (%d, %d).[/color]" % [target.x, target.y]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has exiled %s from the kingdom!" % target.name)
+				send_location_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"knight":
+			if target:
+				target.add_persistent_buff("knighted", 25, 10)  # +25% damage for 10 battles
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]The High King has knighted you! +25% damage for 10 battles.[/color]"
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has knighted %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"cure":
+			if target:
+				target.cure_poison()
+				target.active_buffs.clear()  # Clear debuffs (they're stored as negative buffs)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FF00]The High King has cured all your ailments![/color]"
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has cured %s of all ailments!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"royal_decree":
+			if not broadcast_text.is_empty():
+				var decree_msg = "[color=#FFD700][ROYAL DECREE] %s[/color]" % broadcast_text
+				for other_peer_id in characters.keys():
+					send_to_peer(other_peer_id, {"type": "text", "message": decree_msg})
+					send_to_peer(other_peer_id, {"type": "chat", "sender": "High King %s" % character.name, "message": broadcast_text})
+
+		# Elder abilities
+		"heal_other":
+			if target:
+				var heal_amount = int(target.get_total_max_hp() * 0.5)
+				var healed = target.heal(heal_amount)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FF00]Elder %s has healed you for %d HP![/color]" % [character.name, healed]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has healed %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"seek_flame":
+			var dx = eternal_flame_location.x - character.x
+			var dy = eternal_flame_location.y - character.y
+			var distance = sqrt(dx * dx + dy * dy)
+			var direction = ""
+			if abs(dx) > abs(dy):
+				direction = "east" if dx > 0 else "west"
+			else:
+				direction = "north" if dy > 0 else "south"
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FFFF]The Eternal Flame calls from %d tiles to the %s...[/color]" % [int(distance), direction]
+			})
+
+		"slap":
+			if target:
+				var offset_x = randi_range(-20, 20)
+				var offset_y = randi_range(-20, 20)
+				target.x = clampi(target.x + offset_x, -1000, 1000)
+				target.y = clampi(target.y + offset_y, -1000, 1000)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#9400D3]Elder %s has slapped you across the realm! You find yourself at (%d, %d).[/color]" % [character.name, target.x, target.y]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has slapped %s!" % target.name)
+				send_location_update(target_peer_id)
+				save_character(target_peer_id)
+
+		# Eternal abilities
+		"smite":
+			if target:
+				target.apply_poison(50, 5)
+				# -50% stats debuff stored in title_data temporarily
+				target.add_buff("smite_debuff", 50, 5)  # 50% stat reduction for 5 rounds
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]Eternal %s has SMITED you! Devastating curse applied.[/color]" % character.name
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has unleashed divine wrath upon %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"restore":
+			if target:
+				target.current_hp = target.get_total_max_hp()
+				target.current_mana = target.get_total_max_mana()
+				target.current_stamina = target.max_stamina
+				target.current_energy = target.max_energy
+				target.cure_poison()
+				target.active_buffs.clear()
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]Eternal %s has fully restored you![/color]" % character.name
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has fully restored %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"bless":
+			if target:
+				var stats = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+				var chosen_stat = stats[randi() % stats.size()]
+				match chosen_stat:
+					"strength": target.strength += 5
+					"constitution": target.constitution += 5
+					"dexterity": target.dexterity += 5
+					"intelligence": target.intelligence += 5
+					"wisdom": target.wisdom += 5
+					"wits": target.wits += 5
+				target.calculate_derived_stats()
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]Eternal %s has blessed you with +5 %s![/color]" % [character.name, chosen_stat.capitalize()]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has blessed %s with divine power!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"proclaim":
+			if not broadcast_text.is_empty():
+				var proclaim_msg = "[color=#00FFFF][ETERNAL PROCLAMATION] %s[/color]" % broadcast_text
+				for other_peer_id in characters.keys():
+					send_to_peer(other_peer_id, {"type": "text", "message": proclaim_msg})
+					send_to_peer(other_peer_id, {"type": "chat", "sender": "Eternal %s" % character.name, "message": broadcast_text})
+
+func _broadcast_chat_from_title(player_name: String, title_id: String, action_text: String):
+	"""Broadcast a chat message for a title action"""
+	var title_color = TitlesScript.get_title_color(title_id)
+	var title_prefix = TitlesScript.get_title_prefix(title_id)
+	var msg = "[color=%s]%s %s %s[/color]" % [title_color, title_prefix, player_name, action_text]
+
+	for peer_id in characters.keys():
+		send_to_peer(peer_id, {"type": "chat", "sender": "Realm", "message": msg})
+
+func handle_get_title_menu(peer_id: int):
+	"""Send title menu data to client"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Get available claimable titles
+	var claimable = []
+	if character.x == 0 and character.y == 0:
+		# At The High Seat - check for claimable titles
+		if _has_title_item(character, "jarls_ring") and current_high_king_id == -1:
+			if character.level >= 50 and character.level <= 500:
+				claimable.append({"id": "jarl", "name": "Jarl"})
+		if _has_title_item(character, "crown_of_north"):
+			if character.level >= 200 and character.level <= 1000:
+				claimable.append({"id": "high_king", "name": "High King"})
+
+	# Get current title abilities
+	var abilities = {}
+	if not character.title.is_empty():
+		abilities = TitlesScript.get_title_abilities(character.title)
+
+	# Get online players for targeting
+	var online_players = []
+	for pid in characters.keys():
+		if pid != peer_id:
+			online_players.append(characters[pid].name)
+
+	send_to_peer(peer_id, {
+		"type": "title_menu",
+		"current_title": character.title,
+		"title_data": character.title_data,
+		"claimable": claimable,
+		"abilities": abilities,
+		"online_players": online_players,
+		"realm_treasury": realm_treasury if character.title == "jarl" else 0
+	})

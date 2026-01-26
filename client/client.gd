@@ -300,6 +300,16 @@ var target_farm_options: Array = []  # Array of ability IDs
 var target_farm_names: Dictionary = {}  # Ability ID -> display name
 var target_farm_encounters: int = 5
 
+# Title system mode
+var title_mode: bool = false  # Whether in title menu
+var title_menu_data: Dictionary = {}  # Title menu data from server
+var title_ability_mode: bool = false  # Whether selecting an ability
+var title_target_mode: bool = false  # Whether selecting a target for ability
+var pending_title_ability: String = ""  # Ability waiting for target selection
+var title_online_players: Array = []  # List of online players for targeting
+var title_broadcast_mode: bool = false  # Whether entering broadcast text
+var forge_available: bool = false  # Whether at Infernal Forge with Unforged Crown
+
 # Password change mode
 var changing_password: bool = false
 var password_change_step: int = 0  # 0=old, 1=new, 2=confirm
@@ -1598,6 +1608,13 @@ func _input(event):
 				get_viewport().set_input_as_handled()
 				return
 
+	# Handle title mode input
+	if title_mode and event is InputEventKey and event.pressed and not event.echo:
+		var keycode = event.keycode
+		if handle_title_key_input(keycode):
+			get_viewport().set_input_as_handled()
+			return
+
 # ===== UI PANEL MANAGEMENT =====
 
 func hide_all_panels():
@@ -1733,8 +1750,26 @@ func update_online_players(players: Array):
 		var pname = player.get("name", "Unknown")
 		var plevel = player.get("level", 1)
 		var pclass = player.get("class", "Unknown")
+		var ptitle = player.get("title", "")
+
+		# Format name with title prefix if present
+		var display_name = pname
+		if not ptitle.is_empty():
+			var title_info = _get_title_display_info(ptitle)
+			display_name = "[color=%s]%s[/color] %s" % [title_info.color, title_info.prefix, pname]
+
 		# Use URL tags to make names clickable (double-click shows stats)
-		online_players_list.append_text("[url=%s][color=#00FF00]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
+		online_players_list.append_text("[url=%s]%s[/url] Lv%d %s\n" % [pname, display_name if ptitle.is_empty() else display_name, plevel, pclass])
+
+func _get_title_display_info(title_id: String) -> Dictionary:
+	"""Get display info for a title (color, prefix, name)"""
+	var title_data = {
+		"jarl": {"name": "Jarl", "color": "#C0C0C0", "prefix": "[Jarl]"},
+		"high_king": {"name": "High King", "color": "#FFD700", "prefix": "[High King]"},
+		"elder": {"name": "Elder", "color": "#9400D3", "prefix": "[Elder]"},
+		"eternal": {"name": "Eternal", "color": "#00FFFF", "prefix": "[Eternal]"}
+	}
+	return title_data.get(title_id, {"name": title_id.capitalize(), "color": "#FFFFFF", "prefix": ""})
 
 func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
@@ -2261,6 +2296,46 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+	elif title_mode:
+		# Title menu mode
+		var abilities = title_menu_data.get("abilities", {})
+		var claimable = title_menu_data.get("claimable", [])
+		if title_target_mode:
+			# Target selection
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "title_exit", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Main title menu - show abilities as Q/W/E/R
+			var ability_labels = []
+			var ability_ids = abilities.keys()
+			for i in range(4):
+				if i < ability_ids.size():
+					var ability = abilities[ability_ids[i]]
+					ability_labels.append({"label": ability.get("name", "?"), "action_type": "none", "action_data": "", "enabled": true})
+				else:
+					ability_labels.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "title_exit", "enabled": true},
+				ability_labels[0],
+				ability_labels[1],
+				ability_labels[2],
+				ability_labels[3],
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif combat_item_mode:
 		# Combat item selection mode - show cancel only, use number keys to select
 		current_actions = [
@@ -2557,12 +2632,19 @@ func update_action_bar():
 		var cloak_unlocked = player_level >= 20
 		var cloak_active = character_data.get("cloak_active", false)
 		var cloak_label = "Uncloak" if cloak_active else "Cloak"
+		# Title button if player has a title
+		var player_title = character_data.get("title", "")
+		var has_title = not player_title.is_empty()
+		# Use "Title" button for titled players, otherwise "Help"
+		var fourth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true} if has_title else {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
+		# Forge button if at Infernal Forge with Unforged Crown
+		var fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true} if forge_available else {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
-			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
-			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
+			fourth_action,
+			fifth_action,
 			{"label": "Abilities", "action_type": "local", "action_data": "abilities", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			{"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": cloak_unlocked},
@@ -3586,6 +3668,20 @@ func execute_local_action(action: String):
 			enter_ability_mode()
 		"ability_exit":
 			exit_ability_mode()
+		# Title system actions
+		"title":
+			open_title_menu()
+		"title_exit":
+			title_mode = false
+			title_ability_mode = false
+			title_target_mode = false
+			title_broadcast_mode = false
+			update_action_bar()
+		"forge_crown":
+			# Forge the Unforged Crown at the Infernal Forge
+			send_to_server({"type": "forge_crown"})
+			forge_available = false
+			update_action_bar()
 		"ability_equip":
 			show_ability_equip_prompt()
 		"ability_unequip":
@@ -5760,6 +5856,7 @@ func handle_server_message(message: Dictionary):
 			update_player_xp_bar()
 			update_currency_display()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
+			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
 
@@ -5777,6 +5874,7 @@ func handle_server_message(message: Dictionary):
 			update_player_xp_bar()
 			update_currency_display()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
+			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
 
@@ -5927,6 +6025,12 @@ func handle_server_message(message: Dictionary):
 				update_resource_bar()
 				update_player_xp_bar()
 				update_currency_display()
+				# Reset forge_available if not at Fire Mountain (-400, 0)
+				if forge_available:
+					var px = character_data.get("x", 0)
+					var py = character_data.get("y", 0)
+					if px != -400 or py != 0:
+						forge_available = false
 				# Re-display inventory if in inventory mode (after use/equip/discard)
 				if inventory_mode:
 					# Handle pending equip/unequip actions
@@ -6407,6 +6511,40 @@ func handle_server_message(message: Dictionary):
 		"watched_player_left":
 			handle_watched_player_left(message)
 
+		# Title system messages
+		"title_menu":
+			handle_title_menu(message)
+
+		"title_claimed":
+			display_game(message.get("message", ""))
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+			# Request updated player list to show new title
+			send_to_server({"type": "get_player_list"})
+			update_action_bar()
+
+		"title_lost":
+			display_game(message.get("message", ""))
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+			update_action_bar()
+
+		"title_achieved":
+			display_game(message.get("message", ""))
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+			# Request updated player list to show new title
+			send_to_server({"type": "get_player_list"})
+			update_action_bar()
+
+		"forge_available":
+			display_game(message.get("message", ""))
+			forge_available = true
+			update_action_bar()
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -6459,8 +6597,13 @@ func send_input():
 		process_password_change_input(text)
 		return
 
+	# Check for title broadcast mode
+	if title_broadcast_mode:
+		process_title_broadcast(text)
+		return
+
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var is_command = first_word in command_keywords
@@ -6925,6 +7068,11 @@ func process_command(text: String):
 				enter_ability_mode()
 			else:
 				display_game("You don't have a character yet")
+		"title":
+			if has_character:
+				open_title_menu()
+			else:
+				display_game("You don't have a character yet")
 		"leaders", "leaderboard":
 			if has_character:
 				show_leaderboard_panel()
@@ -7071,6 +7219,13 @@ func is_item_select_key_pressed(index: int) -> bool:
 	"""Check if the item selection key is pressed (index 0-8 for items 1-9)"""
 	var keycode = get_item_select_keycode(index)
 	return Input.is_physical_key_pressed(keycode) and not Input.is_key_pressed(KEY_SHIFT)
+
+func _key_to_selection_index(key: int) -> int:
+	"""Convert a keycode to a selection index (0-8). Returns -1 if not a selection key."""
+	for i in range(9):
+		if key == get_item_select_keycode(i):
+			return i
+	return -1
 
 func get_action_key_name(action_index: int) -> String:
 	"""Get the display name for an action bar key (index 0-9)"""
@@ -7500,6 +7655,33 @@ func _on_hunt_button():
 		last_move_time = current_time
 
 # ===== DISPLAY FUNCTIONS =====
+
+func display_title_holders(holders: Array):
+	"""Display current realm title holders on login"""
+	if holders.is_empty():
+		display_game("[color=#808080]═══ The realm has no titled rulers ═══[/color]")
+		return
+
+	display_game("[color=#FFD700]═══════════════════ REALM TITLES ═══════════════════[/color]")
+
+	for holder in holders:
+		var title = holder.get("title", "")
+		var name = holder.get("name", "")
+		var level = holder.get("level", 0)
+		var count = holder.get("count", 0)
+
+		match title:
+			"high_king":
+				display_game("[color=#FFD700]  [High King] %s (Level %d) - Supreme Ruler[/color]" % [name, level])
+			"jarl":
+				display_game("[color=#C0C0C0]  [Jarl] %s (Level %d) - Chieftain[/color]" % [name, level])
+			"eternal":
+				display_game("[color=#00FFFF]  [Eternal] %s (Level %d) - Immortal Legend[/color]" % [name, level])
+			"elder":
+				if count > 0:
+					display_game("[color=#9400D3]  %d Elder%s walk the realm[/color]" % [count, "s" if count > 1 else ""])
+
+	display_game("[color=#FFD700]════════════════════════════════════════════════════[/color]")
 
 func display_character_status():
 	if not has_character:
@@ -8320,6 +8502,41 @@ Found a bug? Report it!
   • [color=#FFFF00]report <description>[/color] - Same as bug
   • Report captures: game state, combat info, resources
   • Copy the report and paste to developer for help!
+
+[b][color=#FFD700]== TITLE SYSTEM ==[/color][/b]
+
+Prestigious titles grant special abilities to interact with the realm:
+
+[color=#C0C0C0]Jarl[/color] (Level 50-500) - Chieftain of the Realm
+  • Requires: [color=#C0C0C0]Jarl's Ring[/color] (rare drop from Lv100+ monsters)
+  • Claim at: The High Seat (0,0)
+  • Only ONE Jarl at a time
+  • Abilities: Banish, Curse, Gift of Silver, Claim Tribute
+  • Lost on death or if level exceeds 500
+
+[color=#FFD700]High King[/color] (Level 200-1000) - Supreme Ruler
+  • Requires: [color=#FFD700]Crown of the North[/color]
+  • Crown created: Forge Unforged Crown at Fire Mountain (-400,0)
+  • Claim at: The High Seat (0,0)
+  • Only ONE High King at a time (removes Jarl)
+  • Abilities: Exile, Knight, Cure, Royal Decree
+  • Survives one lethal blow (loses title instead)
+
+[color=#9400D3]Elder[/color] (Level 1000+) - Ancient Wisdom
+  • Automatically granted at level 1000
+  • Multiple Elders can exist
+  • Abilities: Heal, Seek Flame, Slap
+  • Can seek the Eternal Flame to become Eternal
+
+[color=#00FFFF]Eternal[/color] - Immortal Legend
+  • Requires: Elder who finds the Eternal Flame
+  • Use Seek Flame to find direction/distance
+  • Up to THREE Eternals at a time
+  • Has 3 lives (survives death, loses a life)
+  • Abilities: Smite, Restore, Bless, Proclaim
+
+Title holders are shown on login and in player list.
+Press Title button in action bar to use abilities.
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
@@ -9168,3 +9385,210 @@ func get_version() -> String:
 			file.close()
 			return version
 	return "Unknown"
+
+# ===== TITLE SYSTEM =====
+
+func handle_title_menu(message: Dictionary):
+	"""Handle title menu data from server"""
+	title_menu_data = message
+	title_mode = true
+	title_ability_mode = false
+	title_target_mode = false
+	title_broadcast_mode = false
+	pending_title_ability = ""
+	title_online_players = message.get("online_players", [])
+	display_title_menu()
+	update_action_bar()
+
+func display_title_menu():
+	"""Display the title menu"""
+	game_output.clear()
+
+	var current_title = title_menu_data.get("current_title", "")
+	var claimable = title_menu_data.get("claimable", [])
+	var abilities = title_menu_data.get("abilities", {})
+
+	display_game("[color=#FFD700]===== TITLE MENU =====[/color]")
+	display_game("")
+
+	# Show current title
+	if current_title.is_empty():
+		display_game("[color=#808080]You hold no title.[/color]")
+	else:
+		var title_info = _get_title_display_info(current_title)
+		display_game("Current Title: [color=%s]%s[/color]" % [title_info.color, title_info.name])
+
+		# Show Eternal lives if applicable
+		if current_title == "eternal":
+			var lives = title_menu_data.get("title_data", {}).get("lives", 3)
+			display_game("Lives remaining: [color=#00FFFF]%d[/color]" % lives)
+
+		# Show realm treasury for Jarl
+		if current_title == "jarl":
+			var treasury = title_menu_data.get("realm_treasury", 0)
+			display_game("Realm Treasury: [color=#FFD700]%d gold[/color]" % treasury)
+
+	display_game("")
+
+	# Show claimable titles
+	if not claimable.is_empty():
+		display_game("[color=#00FF00]Available Titles:[/color]")
+		var idx = 1
+		for title in claimable:
+			display_game("  [%d] %s" % [idx, title.get("name", "Unknown")])
+			idx += 1
+		display_game("")
+
+	# Show abilities
+	if not abilities.is_empty():
+		display_game("[color=#00FFFF]Title Abilities:[/color]")
+		var idx = 1
+		for ability_id in abilities.keys():
+			var ability = abilities[ability_id]
+			var cost_text = ""
+			if ability.get("cost", 0) > 0:
+				var resource = ability.get("resource", "mana")
+				if resource == "mana_percent":
+					cost_text = " (%d%% Mana)" % ability.cost
+				elif resource == "gems":
+					cost_text = " (%d Gems)" % ability.cost
+				elif resource == "lives":
+					cost_text = " (%d Lives)" % ability.cost
+				else:
+					cost_text = " (%d %s)" % [ability.cost, resource.capitalize()]
+			display_game("  [%s] %s%s - %s" % [get_action_key_name(idx), ability.get("name", ability_id), cost_text, ability.get("description", "")])
+			idx += 1
+		display_game("")
+
+	display_game("[color=#808080]Press [%s] to exit[/color]" % get_action_key_name(0))
+
+func handle_title_key_input(key: int) -> bool:
+	"""Handle key input in title mode. Returns true if handled."""
+	if not title_mode:
+		return false
+
+	if title_broadcast_mode:
+		# Wait for text input from command line
+		return true
+
+	if title_target_mode:
+		# Handle target selection
+		if key == KEY_SPACE:
+			# Cancel target selection
+			title_target_mode = false
+			pending_title_ability = ""
+			display_title_menu()
+			update_action_bar()
+			return true
+
+		var target_idx = _key_to_selection_index(key)
+		if target_idx >= 0 and target_idx < title_online_players.size():
+			var target_name = title_online_players[target_idx]
+			send_to_server({
+				"type": "title_ability",
+				"ability": pending_title_ability,
+				"target": target_name
+			})
+			title_target_mode = false
+			title_mode = false
+			pending_title_ability = ""
+			update_action_bar()
+			return true
+		return true
+
+	# Space to exit
+	if key == KEY_SPACE:
+		title_mode = false
+		title_ability_mode = false
+		display_game("")
+		update_action_bar()
+		return true
+
+	var claimable = title_menu_data.get("claimable", [])
+	var abilities = title_menu_data.get("abilities", {})
+
+	# Number keys for claiming titles
+	if not claimable.is_empty():
+		var idx = _key_to_selection_index(key)
+		if idx >= 0 and idx < claimable.size():
+			var title_to_claim = claimable[idx]
+			send_to_server({"type": "claim_title", "title": title_to_claim.get("id", "")})
+			title_mode = false
+			return true
+
+	# Q/W/E/R keys for abilities (if has title)
+	if not abilities.is_empty():
+		var ability_keys = [KEY_Q, KEY_W, KEY_E, KEY_R]
+		var ability_idx = ability_keys.find(key)
+		if ability_idx >= 0:
+			var ability_ids = abilities.keys()
+			if ability_idx < ability_ids.size():
+				var ability_id = ability_ids[ability_idx]
+				var ability = abilities[ability_id]
+
+				# Check if ability needs target
+				if ability.get("target", "self") == "player":
+					# Enter target selection mode
+					pending_title_ability = ability_id
+					title_target_mode = true
+					_display_target_selection()
+					update_action_bar()
+					return true
+
+				# Check if ability is a broadcast (royal_decree, proclaim)
+				if ability_id in ["royal_decree", "proclaim"]:
+					title_broadcast_mode = true
+					pending_title_ability = ability_id
+					display_game("")
+					display_game("[color=#FFD700]Enter your message:[/color]")
+					if input_field:
+						input_field.placeholder_text = "Type your message and press Enter"
+						input_field.grab_focus()
+					return true
+
+				# Self-target ability, use immediately
+				send_to_server({
+					"type": "title_ability",
+					"ability": ability_id
+				})
+				title_mode = false
+				update_action_bar()
+				return true
+
+	return true
+
+func _display_target_selection():
+	"""Display list of online players for targeting"""
+	game_output.clear()
+	display_game("[color=#FFD700]Select a target:[/color]")
+	display_game("")
+
+	if title_online_players.is_empty():
+		display_game("[color=#808080]No other players online.[/color]")
+	else:
+		for i in range(title_online_players.size()):
+			if i < 9:
+				display_game("  [%d] %s" % [i + 1, title_online_players[i]])
+
+	display_game("")
+	display_game("[color=#808080]Press [%s] to cancel[/color]" % get_action_key_name(0))
+
+func process_title_broadcast(text: String):
+	"""Process broadcast text input for royal_decree or proclaim"""
+	if not title_broadcast_mode or pending_title_ability.is_empty():
+		return
+
+	send_to_server({
+		"type": "title_ability",
+		"ability": pending_title_ability,
+		"broadcast_text": text
+	})
+
+	title_broadcast_mode = false
+	title_mode = false
+	pending_title_ability = ""
+	update_action_bar()
+
+func open_title_menu():
+	"""Request title menu from server"""
+	send_to_server({"type": "get_title_menu"})

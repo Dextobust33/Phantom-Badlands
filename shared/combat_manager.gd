@@ -31,6 +31,9 @@ var drop_tables: Node = null
 # Monster database reference (for class affinity helpers)
 var monster_database: Node = null
 
+# Titles reference for title item drops
+const TitlesScript = preload("res://shared/titles.gd")
+
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
 
@@ -661,6 +664,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 		else:
 			messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
+
+	# Title item drops (Jarl's Ring, Unforged Crown)
+	var title_item = roll_title_item_drop(monster.level)
+	if not title_item.is_empty():
+		messages.append("[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]")
+		messages.append("[color=#FFD700]★★★ A LEGENDARY TITLE ITEM DROPS! ★★★[/color]")
+		messages.append("[color=#C0C0C0]%s[/color]" % title_item.name)
+		messages.append("[color=#808080]%s[/color]" % title_item.description)
+		messages.append("[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]")
+		if not combat.has("extra_drops"):
+			combat.extra_drops = []
+		combat.extra_drops.append(title_item)
 
 	# Roll for item drops
 	var dropped_items = roll_combat_drops(monster, character)
@@ -4025,6 +4040,43 @@ func roll_gem_drops(monster: Dictionary, character: Character) -> int:
 	var gem_count = max(1, int(lethality / lethality_divisor) + int(monster_level / level_divisor))
 
 	return gem_count
+
+# ===== TITLE ITEM DROPS =====
+
+func roll_title_item_drop(monster_level: int) -> Dictionary:
+	"""Roll for title item drops. Returns item dictionary or empty if no drop.
+	- Jarl's Ring: 0.5% chance from level 100+ monsters
+	- Unforged Crown: 0.2% chance from level 200+ monsters
+	"""
+	var title_items = TitlesScript.TITLE_ITEMS
+
+	# Check Unforged Crown first (rarer, higher level requirement)
+	if monster_level >= 200:
+		var crown_info = title_items.get("unforged_crown", {})
+		var crown_chance = crown_info.get("drop_chance", 0.2)
+		if randf() * 100 < crown_chance:
+			return {
+				"type": "unforged_crown",
+				"name": crown_info.get("name", "Unforged Crown"),
+				"rarity": crown_info.get("rarity", "legendary"),
+				"description": crown_info.get("description", ""),
+				"is_title_item": true
+			}
+
+	# Check Jarl's Ring
+	if monster_level >= 100:
+		var ring_info = title_items.get("jarls_ring", {})
+		var ring_chance = ring_info.get("drop_chance", 0.5)
+		if randf() * 100 < ring_chance:
+			return {
+				"type": "jarls_ring",
+				"name": ring_info.get("name", "Jarl's Ring"),
+				"rarity": ring_info.get("rarity", "legendary"),
+				"description": ring_info.get("description", ""),
+				"is_title_item": true
+			}
+
+	return {}
 
 # ===== WISH GRANTER SYSTEM =====
 
