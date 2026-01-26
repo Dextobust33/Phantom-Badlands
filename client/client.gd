@@ -158,7 +158,7 @@ var game_state = GameState.DISCONNECTED
 # UI References - Ability Input Popup (created dynamically)
 var ability_popup: Panel = null
 var ability_popup_title: Label = null
-var ability_popup_description: Label = null
+var ability_popup_description: RichTextLabel = null
 var ability_popup_resource_label: Label = null
 var ability_popup_input: LineEdit = null
 var ability_popup_confirm: Button = null
@@ -2788,11 +2788,13 @@ func _create_ability_popup():
 	ability_popup_title.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(ability_popup_title)
 
-	# Description label
-	ability_popup_description = Label.new()
-	ability_popup_description.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ability_popup_description.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	ability_popup_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Description label (RichTextLabel for BBCode support)
+	ability_popup_description = RichTextLabel.new()
+	ability_popup_description.bbcode_enabled = true
+	ability_popup_description.fit_content = true
+	ability_popup_description.scroll_active = false
+	ability_popup_description.custom_minimum_size = Vector2(0, 40)
+	ability_popup_description.add_theme_color_override("default_color", Color(0.7, 0.7, 0.7))
 	vbox.add_child(ability_popup_description)
 
 	# Resource label
@@ -2845,7 +2847,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 
 	# Set popup content
 	ability_popup_title.text = ability.to_upper().replace("_", " ")
-	ability_popup_description.text = "Damage dealt equals %s spent." % resource_name.to_lower()
+	ability_popup_description.text = "[center]Damage dealt equals %s spent.[/center]" % resource_name.to_lower()
 	ability_popup_resource_label.text = "Current %s: %d" % [resource_name, current_resource]
 
 	# Color the resource label based on type
@@ -2860,35 +2862,44 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
 	var suggested_amount = 0
 	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
-		# Magic Bolt damage = mana * (1 + INT/50), reduced by monster WIS
+		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS
 		# Calculate mana needed based on player INT
 		var stats = character_data.get("stats", {})
 		var int_stat = stats.get("intelligence", 10)
 		var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x damage per mana
 
-		# Assume ~15% WIS reduction as conservative estimate (monsters vary)
-		var effective_multiplier = int_multiplier * 0.85
+		# Apply damage buff (War Cry, potions, etc.) - from active_buffs and persistent_buffs
+		var damage_buff = _get_buff_value("damage")
+		var buff_multiplier = 1.0 + (float(damage_buff) / 100.0)
+
+		# Assume ~20% WIS reduction as conservative estimate (monsters can reduce up to 30%)
+		var effective_multiplier = int_multiplier * buff_multiplier * 0.80
 
 		# Apply class passive bonuses
 		var class_type = character_data.get("class", "")
-		var passive_bonus_text = ""
+		var bonus_parts = []
 		match class_type:
 			"Wizard":
 				# Arcane Precision: +15% spell damage
 				effective_multiplier *= 1.15
-				passive_bonus_text = " [color=#4169E1]+15% Arcane Precision[/color]"
+				bonus_parts.append("[color=#4169E1]+15% Arcane[/color]")
 			"Sorcerer":
-				# Chaos Magic: average 25% bonus (double 25% of time minus backfire 10%)
-				# Net average: +25%*0.5 - 10%*0.25 = +12.5% - 2.5% = +10%
+				# Chaos Magic: average ~10% bonus (25% double, 10% backfire)
 				effective_multiplier *= 1.10
-				passive_bonus_text = " [color=#9400D3]+10% avg Chaos Magic[/color]"
+				bonus_parts.append("[color=#9400D3]+10% Chaos[/color]")
+
+		if damage_buff > 0:
+			bonus_parts.append("[color=#FFD700]+%d%% buff[/color]" % damage_buff)
 
 		# Calculate mana needed (round up to ensure kill)
 		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var damage_per_mana = snapped(effective_multiplier, 0.1)
-		ability_popup_description.text = "~%.1f dmg/mana (INT %d).%s Enemy HP: %d" % [damage_per_mana, int_stat, passive_bonus_text, current_enemy_hp]
+		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
+		if bonus_text != "":
+			bonus_text = " " + bonus_text
+		ability_popup_description.text = "[center]~%.1f dmg/mana (INT %d)%s\nEnemy HP: %d[/center]" % [damage_per_mana, int_stat, bonus_text, current_enemy_hp]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -7675,6 +7686,20 @@ func _get_class_passive(class_type: String) -> Dictionary:
 			return {"name": "Shadow Step", "description": "+40% flee success, take no damage when fleeing", "color": "#191970"}
 		_:
 			return {"name": "None", "description": "No passive ability", "color": "#808080"}
+
+func _get_buff_value(buff_type: String) -> int:
+	"""Get the current value of a buff type from character_data (combines active and persistent buffs)"""
+	var total = 0
+	var active_buffs = character_data.get("active_buffs", [])
+	var persistent_buffs = character_data.get("persistent_buffs", [])
+
+	for buff in active_buffs:
+		if buff is Dictionary and buff.get("type", "") == buff_type:
+			total += buff.get("value", 0)
+	for buff in persistent_buffs:
+		if buff is Dictionary and buff.get("type", "") == buff_type:
+			total += buff.get("value", 0)
+	return total
 
 func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 	"""Calculate total bonuses from equipped items (client-side mirror of Character method)"""

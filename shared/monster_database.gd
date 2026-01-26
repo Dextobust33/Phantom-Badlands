@@ -48,6 +48,16 @@ const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 
+# New abilities from Phantasia 5 inspiration
+const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
+const ABILITY_GOLD_STEAL = "gold_steal"          # Steals 5-15% of player gold on hit
+const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
+const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
+const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
+const ABILITY_DISGUISE = "disguise"              # Appears as weaker monster, reveals after 2 rounds
+const ABILITY_XP_STEAL = "xp_steal"              # Steals 1-3% of player XP on hit (rare, punishing)
+const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equipped item
+
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
 
@@ -96,6 +106,9 @@ enum MonsterType {
 	ZOMBIE,
 	GIANT_SPIDER,
 	WIGHT,
+	SIREN,
+	KELPIE,
+	MIMIC,
 
 	# Tier 3 (Level 16-30)
 	OGRE,
@@ -103,18 +116,27 @@ enum MonsterType {
 	WRAITH,
 	WYVERN,
 	MINOTAUR,
+	GARGOYLE,
+	HARPY,
+	SHRIEKER,
 
 	# Tier 4 (Level 31-50)
 	GIANT,
 	DRAGON_WYRMLING,
 	DEMON,
 	VAMPIRE,
+	GRYPHON,
+	CHIMAERA,
+	SUCCUBUS,
 
 	# Tier 5 (Level 51-100)
 	ANCIENT_DRAGON,
 	DEMON_LORD,
 	LICH,
 	TITAN,
+	BALROG,
+	CERBERUS,
+	JABBERWOCK,
 
 	# Tier 6 (Level 101-500)
 	ELEMENTAL,
@@ -122,6 +144,7 @@ enum MonsterType {
 	SPHINX,
 	HYDRA,
 	PHOENIX,
+	NAZGUL,
 
 	# Tier 7 (Level 501-2000)
 	VOID_WALKER,
@@ -243,7 +266,10 @@ func _get_tier_monsters(tier: int) -> Array:
 				MonsterType.GNOLL,
 				MonsterType.ZOMBIE,
 				MonsterType.GIANT_SPIDER,
-				MonsterType.WIGHT
+				MonsterType.WIGHT,
+				MonsterType.SIREN,
+				MonsterType.KELPIE,
+				MonsterType.MIMIC
 			]
 		3:
 			return [
@@ -251,21 +277,30 @@ func _get_tier_monsters(tier: int) -> Array:
 				MonsterType.TROLL,
 				MonsterType.WRAITH,
 				MonsterType.WYVERN,
-				MonsterType.MINOTAUR
+				MonsterType.MINOTAUR,
+				MonsterType.GARGOYLE,
+				MonsterType.HARPY,
+				MonsterType.SHRIEKER
 			]
 		4:
 			return [
 				MonsterType.GIANT,
 				MonsterType.DRAGON_WYRMLING,
 				MonsterType.DEMON,
-				MonsterType.VAMPIRE
+				MonsterType.VAMPIRE,
+				MonsterType.GRYPHON,
+				MonsterType.CHIMAERA,
+				MonsterType.SUCCUBUS
 			]
 		5:
 			return [
 				MonsterType.ANCIENT_DRAGON,
 				MonsterType.DEMON_LORD,
 				MonsterType.LICH,
-				MonsterType.TITAN
+				MonsterType.TITAN,
+				MonsterType.BALROG,
+				MonsterType.CERBERUS,
+				MonsterType.JABBERWOCK
 			]
 		6:
 			return [
@@ -273,7 +308,8 @@ func _get_tier_monsters(tier: int) -> Array:
 				MonsterType.IRON_GOLEM,
 				MonsterType.SPHINX,
 				MonsterType.HYDRA,
-				MonsterType.PHOENIX
+				MonsterType.PHOENIX,
+				MonsterType.NAZGUL
 			]
 		7:
 			return [
@@ -500,7 +536,61 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"abilities": [ABILITY_LIFE_STEAL, ABILITY_CURSE, ABILITY_BLIND],
 				"death_message": "The wight's eyes fade as the dark magic releases it."
 			}
-		
+		MonsterType.SIREN:
+			return {
+				"name": "Siren",
+				"base_level": 10,
+				"base_hp": 40,
+				"base_strength": 12,
+				"base_defense": 8,
+				"base_speed": 14,
+				"base_experience": 180,
+				"base_gold": 35,
+				"flock_chance": 10,
+				"drop_table_id": "tier2",
+				"drop_chance": 12,
+				"description": "A beautiful sea creature with an entrancing voice",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_CHARM, ABILITY_MANA_DRAIN],
+				"death_message": "The siren's song fades to silence as she sinks beneath the waves."
+			}
+		MonsterType.KELPIE:
+			return {
+				"name": "Kelpie",
+				"base_level": 11,
+				"base_hp": 50,
+				"base_strength": 16,
+				"base_defense": 12,
+				"base_speed": 16,
+				"base_experience": 190,
+				"base_gold": 30,
+				"flock_chance": 5,
+				"drop_table_id": "tier2",
+				"drop_chance": 10,
+				"description": "A shape-shifting water horse that drowns its prey",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_BLEED, ABILITY_SLOW_AURA],
+				"death_message": "The kelpie dissolves into water and seeps into the ground."
+			}
+		MonsterType.MIMIC:
+			return {
+				"name": "Mimic",
+				"base_level": 13,
+				"base_hp": 60,
+				"base_strength": 20,
+				"base_defense": 20,
+				"base_speed": 6,
+				"base_experience": 250,
+				"base_gold": 100,
+				"flock_chance": 0,
+				"drop_table_id": "tier2",
+				"drop_chance": 25,
+				"description": "A creature disguised as a treasure chest",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_AMBUSHER, ABILITY_DISGUISE, ABILITY_GOLD_HOARDER],
+				"death_message": "The mimic's chest lid closes one final time... revealing actual treasure inside!"
+			}
+
 		# Tier 3
 		MonsterType.OGRE:
 			return {
@@ -592,7 +682,61 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"abilities": [ABILITY_BERSERKER, ABILITY_ENRAGE],
 				"death_message": "The minotaur's labyrinthine rage finally ends."
 			}
-		
+		MonsterType.GARGOYLE:
+			return {
+				"name": "Gargoyle",
+				"base_level": 22,
+				"base_hp": 95,
+				"base_strength": 22,
+				"base_defense": 35,
+				"base_speed": 8,
+				"base_experience": 650,
+				"base_gold": 80,
+				"flock_chance": 15,
+				"drop_table_id": "tier3",
+				"drop_chance": 10,
+				"description": "An animated stone guardian with demonic features",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_ARMORED, ABILITY_THORNS],
+				"death_message": "The gargoyle crumbles back into lifeless stone."
+			}
+		MonsterType.HARPY:
+			return {
+				"name": "Harpy",
+				"base_level": 19,
+				"base_hp": 65,
+				"base_strength": 18,
+				"base_defense": 12,
+				"base_speed": 22,
+				"base_experience": 550,
+				"base_gold": 70,
+				"flock_chance": 30,
+				"drop_table_id": "tier3",
+				"drop_chance": 10,
+				"description": "A winged creature with a woman's face and vulture's body",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_ETHEREAL, ABILITY_BLIND, ABILITY_SUMMONER],
+				"death_message": "The harpy's shriek echoes as she plummets from the sky."
+			}
+		MonsterType.SHRIEKER:
+			return {
+				"name": "Shrieker",
+				"base_level": 17,
+				"base_hp": 40,
+				"base_strength": 5,
+				"base_defense": 5,
+				"base_speed": 3,
+				"base_experience": 300,
+				"base_gold": 20,
+				"flock_chance": 0,
+				"drop_table_id": "tier3",
+				"drop_chance": 5,
+				"description": "A fungal creature that screams when disturbed",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_SUMMONER, ABILITY_COWARD],
+				"death_message": "The shrieker's final wail summons... nothing. It dies alone."
+			}
+
 		# Tier 4
 		MonsterType.GIANT:
 			return {
@@ -666,7 +810,61 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"abilities": [ABILITY_LIFE_STEAL, ABILITY_ETHEREAL, ABILITY_DISARM],
 				"death_message": "The vampire crumbles to dust. 'I'll... be... back...' he whispers."
 			}
-		
+		MonsterType.GRYPHON:
+			return {
+				"name": "Gryphon",
+				"base_level": 38,
+				"base_hp": 150,
+				"base_strength": 32,
+				"base_defense": 28,
+				"base_speed": 20,
+				"base_experience": 1800,
+				"base_gold": 400,
+				"flock_chance": 5,
+				"drop_table_id": "tier4",
+				"drop_chance": 15,
+				"description": "A majestic creature with eagle head and lion body",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_BERSERKER],
+				"death_message": "The noble gryphon lets out a final screech before falling silent."
+			}
+		MonsterType.CHIMAERA:
+			return {
+				"name": "Chimaera",
+				"base_level": 44,
+				"base_hp": 175,
+				"base_strength": 36,
+				"base_defense": 26,
+				"base_speed": 14,
+				"base_experience": 2400,
+				"base_gold": 550,
+				"flock_chance": 0,
+				"drop_table_id": "tier4",
+				"drop_chance": 15,
+				"description": "A three-headed beast: lion, goat, and serpent",
+				"class_affinity": ClassAffinity.NEUTRAL,
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_POISON, ABILITY_UNPREDICTABLE],
+				"death_message": "All three heads of the chimaera fall at once."
+			}
+		MonsterType.SUCCUBUS:
+			return {
+				"name": "Succubus",
+				"base_level": 40,
+				"base_hp": 130,
+				"base_strength": 28,
+				"base_defense": 22,
+				"base_speed": 18,
+				"base_experience": 2000,
+				"base_gold": 450,
+				"flock_chance": 0,
+				"drop_table_id": "tier4",
+				"drop_chance": 15,
+				"description": "A seductive demon that drains life force",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_CHARM, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN],
+				"death_message": "The succubus fades away with a haunting smile."
+			}
+
 		# Tier 5
 		MonsterType.ANCIENT_DRAGON:
 			return {
@@ -739,6 +937,60 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
 				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GLASS_CANNON, ABILITY_GEM_BEARER],
 				"death_message": "The titan grants you a final gift as it returns to the cosmos."
+			}
+		MonsterType.BALROG:
+			return {
+				"name": "Balrog",
+				"base_level": 75,
+				"base_hp": 480,
+				"base_strength": 72,
+				"base_defense": 48,
+				"base_speed": 14,
+				"base_experience": 14000,
+				"base_gold": 7000,
+				"flock_chance": 0,
+				"drop_table_id": "tier5",
+				"drop_chance": 20,
+				"description": "A demon of shadow and flame from the deepest pits",
+				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
+				"abilities": [ABILITY_BERSERKER, ABILITY_DEATH_CURSE, ABILITY_ENRAGE],
+				"death_message": "The Balrog's flames extinguish as it plummets into darkness."
+			}
+		MonsterType.CERBERUS:
+			return {
+				"name": "Cerberus",
+				"base_level": 78,
+				"base_hp": 520,
+				"base_strength": 68,
+				"base_defense": 52,
+				"base_speed": 16,
+				"base_experience": 15000,
+				"base_gold": 7500,
+				"flock_chance": 0,
+				"drop_table_id": "tier5",
+				"drop_chance": 20,
+				"description": "The three-headed guardian of the underworld",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_POISON, ABILITY_BLEED],
+				"death_message": "All three heads of Cerberus howl in unison before falling silent."
+			}
+		MonsterType.JABBERWOCK:
+			return {
+				"name": "Jabberwock",
+				"base_level": 82,
+				"base_hp": 550,
+				"base_strength": 75,
+				"base_defense": 45,
+				"base_speed": 18,
+				"base_experience": 16000,
+				"base_gold": 8500,
+				"flock_chance": 0,
+				"drop_table_id": "tier5",
+				"drop_chance": 22,
+				"description": "A fearsome creature with jaws that bite and claws that catch",
+				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_MULTI_STRIKE, ABILITY_FLEE_ATTACK],
+				"death_message": "The Jabberwock goes galumphing back whence it came... permanently."
 			}
 
 		# Tier 6 (Level 101-500)
@@ -831,6 +1083,24 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
 				"abilities": [ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
 				"death_message": "The phoenix erupts in flame... but this time, it doesn't rise."
+			}
+		MonsterType.NAZGUL:
+			return {
+				"name": "Nazgul",
+				"base_level": 300,
+				"base_hp": 850,
+				"base_strength": 95,
+				"base_defense": 85,
+				"base_speed": 22,
+				"base_experience": 55000,
+				"base_gold": 30000,
+				"flock_chance": 5,
+				"drop_table_id": "tier6",
+				"drop_chance": 15,
+				"description": "A wraith king bound to a ring of power",
+				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL],
+				"death_message": "The Nazgul screams as its ring shatters, freeing what remains of its soul."
 			}
 
 		# Tier 7 (Level 501-2000)
