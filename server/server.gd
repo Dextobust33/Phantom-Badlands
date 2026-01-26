@@ -1173,7 +1173,7 @@ func handle_hunt(peer_id: int):
 		})
 
 func handle_rest(peer_id: int):
-	"""Handle rest action to restore HP"""
+	"""Handle rest action to restore HP (or Meditate for mages)"""
 	if not characters.has(peer_id):
 		return
 
@@ -1186,8 +1186,15 @@ func handle_rest(peer_id: int):
 		return
 
 	var character = characters[peer_id]
+	var class_type = character.class_type
+	var is_mage = class_type in ["Wizard", "Sorcerer", "Sage"]
 
-	# Already at full HP
+	# Mages use Meditate instead of Rest
+	if is_mage:
+		_handle_meditate(peer_id, character)
+		return
+
+	# Non-mages: Already at full HP
 	if character.current_hp >= character.get_total_max_hp():
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -1205,10 +1212,8 @@ func handle_rest(peer_id: int):
 
 	# Regenerate primary resource on rest (same as movement - 2%)
 	var regen_percent = 0.02
-	var mana_regen = int(character.max_mana * regen_percent)
 	var stamina_regen = int(character.max_stamina * regen_percent)
 	var energy_regen = int(character.max_energy * regen_percent)
-	character.current_mana = min(character.max_mana, character.current_mana + mana_regen)
 	character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_regen)
 	character.current_energy = min(character.max_energy, character.current_energy + energy_regen)
 
@@ -1216,11 +1221,8 @@ func handle_rest(peer_id: int):
 	var rest_msg = "[color=#00FF00]You rest and recover %d HP" % heal_amount
 
 	# Show resource regen based on class path
-	var class_type = character.class_type
 	if class_type in ["Fighter", "Barbarian", "Paladin"] and stamina_regen > 0:
 		rest_msg += " and %d Stamina" % stamina_regen
-	elif class_type in ["Wizard", "Sorcerer", "Sage"] and mana_regen > 0:
-		rest_msg += " and %d Mana" % mana_regen
 	elif class_type in ["Thief", "Ranger", "Ninja"] and energy_regen > 0:
 		rest_msg += " and %d Energy" % energy_regen
 	rest_msg += ".[/color]"
@@ -1243,6 +1245,53 @@ func handle_rest(peer_id: int):
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#FF4444]You are ambushed while resting![/color]"
+		})
+		trigger_encounter(peer_id)
+
+func _handle_meditate(peer_id: int, character: Character):
+	"""Handle Meditate action for mages - restores HP and mana, always works"""
+	var at_full_hp = character.current_hp >= character.get_total_max_hp()
+
+	# Mana regeneration: 15-25% of max mana (double if at full HP)
+	var mana_percent = randf_range(0.15, 0.25)
+	if at_full_hp:
+		mana_percent *= 2.0  # Double mana regen when HP is full
+
+	var mana_regen = int(character.max_mana * mana_percent)
+	mana_regen = max(1, mana_regen)
+	character.current_mana = min(character.max_mana, character.current_mana + mana_regen)
+
+	var meditate_msg = ""
+
+	if at_full_hp:
+		# Full HP: focus entirely on mana
+		meditate_msg = "[color=#66CCCC]You meditate deeply and recover %d Mana.[/color]" % mana_regen
+	else:
+		# Not full HP: also heal
+		var heal_percent = randf_range(0.10, 0.25)
+		var heal_amount = int(character.get_total_max_hp() * heal_percent)
+		heal_amount = max(1, heal_amount)
+		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+		meditate_msg = "[color=#66CCCC]You meditate and recover %d HP and %d Mana.[/color]" % [heal_amount, mana_regen]
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": meditate_msg,
+		"clear_output": true
+	})
+
+	# Send updated character data
+	send_to_peer(peer_id, {
+		"type": "character_update",
+		"character": character.to_dict()
+	})
+
+	# Chance to be ambushed while meditating (15%)
+	var ambush_roll = randi() % 100
+	if ambush_roll < 15:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Your meditation is interrupted by an ambush![/color]"
 		})
 		trigger_encounter(peer_id)
 

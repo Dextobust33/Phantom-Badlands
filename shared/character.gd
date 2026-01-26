@@ -153,7 +153,7 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 func calculate_derived_stats():
 	"""Calculate HP, mana, stamina, energy from primary stats"""
 	max_hp = 50 + (constitution * 5)  # Base 50 + CON × 5
-	max_mana = (intelligence * 8) + (wisdom * 4)
+	max_mana = (intelligence * 12) + (wisdom * 6)     # Mage resource (increased for Magic Bolt)
 	max_stamina = (strength * 4) + (constitution * 4)  # Warrior resource
 	max_energy = (wits * 4) + (dexterity * 4)          # Trickster resource
 
@@ -647,7 +647,7 @@ func add_experience(amount: int) -> Dictionary:
 		
 		# Increase HP, Mana, Stamina, Energy
 		max_hp += 10 + (constitution / 2)
-		max_mana += 5 + (intelligence / 2)
+		max_mana += 10 + intelligence  # Increased mana growth for mages
 		max_stamina = (strength * 4) + (constitution * 4)  # Recalculate from new stats
 		max_energy = (wits * 4) + (dexterity * 4)         # Recalculate from new stats
 

@@ -2352,10 +2352,15 @@ func update_action_bar():
 			]
 	elif has_character:
 		# Normal movement mode: Spacebar=Status
+		# Mages use "Meditate" instead of "Rest"
+		var rest_label = "Rest"
+		var char_class = character_data.get("class_type", "")
+		if char_class in ["Wizard", "Sorcerer", "Sage"]:
+			rest_label = "Meditate"
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
-			{"label": "Rest", "action_type": "server", "action_data": "rest", "enabled": true},
+			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
 			{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
@@ -2652,10 +2657,15 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		"energy":
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-	# Pre-populate with last used amount for this ability, or empty
-	var last_amount = last_ability_amounts.get(ability, 0)
-	if last_amount > 0 and last_amount <= current_resource:
-		ability_popup_input.text = str(last_amount)
+	# For Magic Bolt: auto-suggest exact amount to kill monster if HP is known
+	var suggested_amount = 0
+	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
+		# We know the monster's HP - suggest exact amount to kill it
+		suggested_amount = mini(current_enemy_hp, current_resource)
+		ability_popup_description.text = "Damage equals mana. Enemy HP: %d" % current_enemy_hp
+
+	if suggested_amount > 0:
+		ability_popup_input.text = str(suggested_amount)
 		ability_popup_input.placeholder_text = ""
 	else:
 		ability_popup_input.text = ""
@@ -7224,11 +7234,17 @@ Damage abilities use [color=#FFCC00]Attack[/color] = STR + weapon bonuses
   Deal Attack × 4 damage
 
 [b][color=#FFD700]== MAGE ABILITIES (INT Path) ==[/color][/b]
-Uses [color=#66CCCC]Mana[/color] = INT×8 + WIS×4 (refills between combats)
+Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
 Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
+
+[color=#66FFFF]Meditate[/color] (replaces Rest for mages)
+  Restores HP and 15-25%% max mana
+  If at full HP: double mana regen (30-50%%)
+  Can be ambushed (15%% chance)
 
 [color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)
   Deal damage equal to mana spent (1:1 ratio)
+  Auto-suggests exact amount to kill if HP known
 
 [color=#66FFFF]Lv 10 - Shield[/color] (20 Mana)
   +50%% defense for 3 rounds
