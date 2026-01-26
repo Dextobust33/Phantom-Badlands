@@ -125,6 +125,7 @@ theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_3bj3m")
 bbcode_enabled = true
 scroll_following = true
+selection_enabled = true
 
 [node name="BuffDisplayLabel" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
 layout_mode = 1
@@ -378,6 +379,7 @@ theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_korgu")
 bbcode_enabled = true
 scroll_following = true
+selection_enabled = true
 
 [node name="RightPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
 layout_mode = 2
