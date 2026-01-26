@@ -7083,7 +7083,8 @@ func show_help():
   Minimum 50%%, maximum 95%%
 
 [color=#00FFFF]Flee Chance:[/color]
-  Base = 40%% + (DEX × 2) + equipment speed - (enemy level / 10)
+  Base = 50%% + (DEX × 2) + equipment speed + buffs - (level diff × 3)
+  Hardcapped 5-95%% (always a chance to escape or fail)
   Boots with speed bonus help escape!
   Failed flee = enemy gets free attack
 
@@ -7132,6 +7133,26 @@ func show_help():
   • [color=#FFD700]Death Curse[/color] - Damages you when killed
   • [color=#FFD700]Summoner[/color] - Can call reinforcements
   • [color=#FFD700]Corrosive/Sunder[/color] - Damages equipment
+
+[color=#00FF00]Reward Abilities:[/color]
+  • [color=#00FF00]Wish Granter[/color] - 10%% chance to offer a wish
+  • [color=#00FF00]Weapon Master[/color] - 35%% chance to drop weapon
+  • [color=#00FF00]Shield Bearer[/color] - 35%% chance to drop shield
+  • [color=#00FF00]Gem Bearer[/color] - Always drops extra gems
+  • [color=#00FF00]Gold Hoarder[/color] - Drops 3x gold
+
+[b][color=#FFD700]== WISH REWARDS ==[/color][/b]
+
+When a Wish Granter offers you a wish (10%% chance):
+  • [color=#00FFFF]Gems[/color] - Receive precious gems
+  • [color=#A335EE]Gear[/color] - Receive high-quality equipment
+  • [color=#FFD700]Buff[/color] - Powerful temporary combat enhancement
+  • [color=#FF8000]Equipment Upgrade[/color] - Upgrade equipped gear multiple times!
+  • [color=#FF00FF]Permanent Stats[/color] - Rare chance for permanent stat boost
+
+[color=#FF8000]Equipment Upgrade scaling:[/color]
+  Base 1-2 upgrades, +1 per 500 lethality (max +5),
+  +1 per 10 levels above you (max +5). Maximum: 12 upgrades!
 
 [b][color=#FFD700]== RACE PASSIVES ==[/color][/b]
 
