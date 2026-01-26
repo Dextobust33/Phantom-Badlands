@@ -247,6 +247,9 @@ var selected_ability_slot: int = -1  # Slot being modified
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
+# Track which action bar indices triggered actions this frame (to block item selection for same key)
+var action_triggered_this_frame: Array = []
+
 # Remember last used amounts for variable cost abilities (e.g., Bolt)
 var last_ability_amounts: Dictionary = {}  # ability_name -> last_amount
 var last_gamble_bet: int = 0  # Remember last gambling bet for quick repeat
@@ -1359,6 +1362,9 @@ func _on_window_resized():
 		online_players_label.add_theme_font_size_override("font_size", label_size)
 
 func _process(delta):
+	# Clear action triggers from previous frame
+	action_triggered_this_frame.clear()
+
 	connection.poll()
 	var status = connection.get_status()
 
@@ -1577,6 +1583,12 @@ func _process(delta):
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
 					set_meta("hotkey_%d_pressed" % i, true)
+					# Only mark as triggered if this slot has an enabled action
+					# (prevents blocking item selection when action bar slot is empty)
+					if i < current_actions.size():
+						var action = current_actions[i]
+						if action.get("enabled", false) and action.get("action_type", "none") != "none":
+							action_triggered_this_frame.append(i)
 					trigger_action(i)
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
@@ -7657,12 +7669,16 @@ func is_item_key_blocked_by_action_bar(index: int) -> bool:
 		var action_key = "action_%d" % j
 		var action_keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 		if item_keycode == action_keycode and get_meta("hotkey_%d_pressed" % j, false):
-			# Only block if that action bar slot has an enabled action
+			# Block if this action bar key triggered an action THIS frame
+			# (prevents item selection when action changes state, like Equip showing item list)
+			if j in action_triggered_this_frame:
+				return true
+			# Also block if that action bar slot currently has an enabled action
 			if j < current_actions.size():
 				var action = current_actions[j]
 				if action.get("enabled", false) and action.get("action_type", "none") != "none":
 					return true
-			# If no action in slot, don't block item selection
+			# If no action in slot and didn't trigger this frame, allow item selection
 	return false
 
 func is_item_select_key_pressed(index: int) -> bool:
