@@ -2122,7 +2122,7 @@ func update_action_bar():
 			]
 		elif settings_submenu == "action_keys":
 			current_actions = [
-				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2135,11 +2135,11 @@ func update_action_bar():
 			]
 		elif settings_submenu == "movement_keys":
 			current_actions = [
-				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Up", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Down", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Left", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Right", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
+				{"label": "Up", "action_type": "local", "action_data": "settings_rebind_move_up", "enabled": true},
+				{"label": "Down", "action_type": "local", "action_data": "settings_rebind_move_down", "enabled": true},
+				{"label": "Left", "action_type": "local", "action_data": "settings_rebind_move_left", "enabled": true},
+				{"label": "Right", "action_type": "local", "action_data": "settings_rebind_move_right", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2148,10 +2148,10 @@ func update_action_bar():
 			]
 		else:
 			current_actions = [
-				{"label": "Back", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Actions", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Movement", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Reset", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
+				{"label": "Actions", "action_type": "local", "action_data": "settings_action_keys", "enabled": true},
+				{"label": "Movement", "action_type": "local", "action_data": "settings_movement_keys", "enabled": true},
+				{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2872,16 +2872,33 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var damage_buff = _get_buff_value("damage")
 		var buff_multiplier = 1.0 + (float(damage_buff) / 100.0)
 
-		# Assume ~20% WIS reduction as conservative estimate (monsters can reduce up to 30%)
-		var effective_multiplier = int_multiplier * buff_multiplier * 0.80
+		# Estimate monster WIS reduction based on level (formula: min(0.30, monster_int / 300))
+		# Monster INT by level tier: 1-5=5, 6-15=10, 16-30=18, 31-50=25, 51-100=35, 101-500=45, 500+=55+
+		var estimated_monster_int = 10  # Default for low level
+		if current_enemy_level <= 5:
+			estimated_monster_int = 5
+		elif current_enemy_level <= 15:
+			estimated_monster_int = 10
+		elif current_enemy_level <= 30:
+			estimated_monster_int = 18
+		elif current_enemy_level <= 50:
+			estimated_monster_int = 25
+		elif current_enemy_level <= 100:
+			estimated_monster_int = 35
+		elif current_enemy_level <= 500:
+			estimated_monster_int = 45
+		else:
+			estimated_monster_int = 55
+		var wis_reduction = minf(0.30, float(estimated_monster_int) / 300.0)
+		var effective_multiplier = int_multiplier * buff_multiplier * (1.0 - wis_reduction)
 
 		# Apply class passive bonuses
 		var class_type = character_data.get("class", "")
 		var bonus_parts = []
 		match class_type:
 			"Wizard":
-				# Arcane Precision: +15% spell damage
-				effective_multiplier *= 1.15
+				# Arcane Precision: +15% spell damage, +10% crit (avg +5% more)
+				effective_multiplier *= 1.15 * 1.05  # Include average crit bonus
 				bonus_parts.append("[color=#4169E1]+15% Arcane[/color]")
 			"Sorcerer":
 				# Chaos Magic: average ~10% bonus (25% double, 10% backfire)
@@ -2891,8 +2908,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		if damage_buff > 0:
 			bonus_parts.append("[color=#FFD700]+%d%% buff[/color]" % damage_buff)
 
-		# Calculate mana needed (round up to ensure kill)
-		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier)
+		# Calculate mana needed (add 10% buffer to account for variance and ensure kill)
+		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.10)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var damage_per_mana = snapped(effective_multiplier, 0.1)
@@ -3579,6 +3596,38 @@ func execute_local_action(action: String):
 			pending_ability_action = ""
 			selected_ability_slot = -1
 			display_ability_menu()
+			update_action_bar()
+		# Settings actions
+		"settings_close":
+			close_settings()
+		"settings_action_keys":
+			settings_submenu = "action_keys"
+			game_output.clear()
+			display_action_keybinds()
+			update_action_bar()
+		"settings_movement_keys":
+			settings_submenu = "movement_keys"
+			game_output.clear()
+			display_movement_keybinds()
+			update_action_bar()
+		"settings_reset":
+			reset_keybinds_to_defaults()
+		"settings_back_to_main":
+			settings_submenu = ""
+			game_output.clear()
+			display_settings_menu()
+			update_action_bar()
+		"settings_rebind_move_up":
+			start_rebinding("move_up")
+			update_action_bar()
+		"settings_rebind_move_down":
+			start_rebinding("move_down")
+			update_action_bar()
+		"settings_rebind_move_left":
+			start_rebinding("move_left")
+			update_action_bar()
+		"settings_rebind_move_right":
+			start_rebinding("move_right")
 			update_action_bar()
 
 func select_wish(index: int):

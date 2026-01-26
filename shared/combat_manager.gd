@@ -1201,7 +1201,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
-			var wis_reduction = min(0.30, float(monster_wis) / 500.0)  # WIS 150 = 30% reduction
+			var wis_reduction = min(0.30, float(monster_wis) / 300.0)  # WIS 90 = 30% reduction
 			var final_damage = apply_damage_variance(max(1, int(base_damage * (1.0 - wis_reduction))))
 
 			monster.current_hp -= final_damage
