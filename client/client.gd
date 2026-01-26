@@ -1319,8 +1319,8 @@ func _process(delta):
 		else:
 			set_meta("enter_pressed", false)
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, or settings)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, or monster select)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -3539,7 +3539,7 @@ func handle_gamble_result(message: Dictionary):
 	display_game("[color=#FFD700]Your gold: %d[/color]" % gold)
 
 	if max_bet >= min_bet and last_gamble_bet <= gold:
-		display_game("[color=#808080]Press Space to bet again (%d gold) or Q to stop.[/color]" % last_gamble_bet)
+		display_game("[color=#808080]Press [%s] to bet again (%d gold) or [%s] to stop.[/color]" % [get_action_key_name(0), last_gamble_bet, get_action_key_name(1)])
 		pending_merchant_action = "gamble_again"
 	else:
 		display_game("[color=#FF4444]You don't have enough gold to continue gambling.[/color]")
@@ -3952,7 +3952,7 @@ func display_merchant_sell_list():
 			])
 		if total_pages > 1:
 			display_game("")
-			display_game("[color=#808080][E] Prev Page  [R] Next Page[/color]")
+			display_game("[color=#808080][%s] Prev Page  [%s] Next Page[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 
 func display_upgrade_options():
 	"""Display equipped items that can be upgraded"""
@@ -5202,6 +5202,49 @@ func handle_server_message(message: Dictionary):
 			else:
 				display_game(text_msg)
 
+		"lucky_find":
+			# Lucky find requires acknowledgment before moving again
+			game_output.clear()
+			var find_msg = message.get("message", "You found something!")
+			display_game(find_msg)
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			# Update character data (gold/items were added)
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+				update_player_hp_bar()
+				update_resource_bar()
+				update_player_xp_bar()
+				update_currency_display()
+			# Play item drop sound if an item was found
+			var item = message.get("item")
+			if item != null:
+				_play_item_drop_sound(item.get("rarity", "common"), item.get("level", 1) - character_data.get("level", 1))
+			pending_continue = true
+			update_action_bar()
+
+		"special_encounter":
+			# Special encounters (legendary adventurer, etc.) require acknowledgment
+			game_output.clear()
+			var encounter_msg = message.get("message", "Something special happened!")
+			display_game(encounter_msg)
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			# Update character data (stats were modified)
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+				update_player_hp_bar()
+				update_resource_bar()
+				update_player_xp_bar()
+				update_currency_display()
+			# Play a special sound for legendary encounters
+			if levelup_player and levelup_player.stream:
+				levelup_player.play()
+			pending_continue = true
+			update_action_bar()
+
 		"character_update":
 			if message.has("character"):
 				character_data = message.character
@@ -5425,7 +5468,7 @@ func handle_server_message(message: Dictionary):
 					flock_pending = true
 					flock_monster_name = message.get("flock_monster", "enemy")
 					display_game("[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
-					display_game("[color=#FFD700]Press Space to continue...[/color]")
+					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
 				else:
 					# Combat chain complete - calculate total XP gain for bar display
 					var current_xp = character_data.get("experience", 0)
@@ -5447,7 +5490,7 @@ func handle_server_message(message: Dictionary):
 
 					# Pause to let player read rewards
 					pending_continue = true
-					display_game("[color=#808080]Press Space to continue...[/color]")
+					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("fled", false):
 				# Fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
@@ -5459,7 +5502,7 @@ func handle_server_message(message: Dictionary):
 				else:
 					display_game("[color=#FFD700]You escaped from combat![/color]")
 				pending_continue = true
-				display_game("[color=#808080]Press Space to continue...[/color]")
+				display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			else:
 				# Defeat handled by permadeath message
 				pass
@@ -5495,6 +5538,7 @@ func handle_server_message(message: Dictionary):
 			# Wish selection result
 			wish_selection_mode = false
 			wish_options = []
+			in_combat = false  # End combat state so action bar shows Continue
 			var result_msg = message.get("message", "Your wish has been granted!")
 			display_game("")
 			display_game("[color=#FF00FF]%s[/color]" % result_msg)
@@ -5507,7 +5551,7 @@ func handle_server_message(message: Dictionary):
 				update_player_xp_bar()
 				update_currency_display()
 			pending_continue = true
-			display_game("[color=#808080]Press Space to continue...[/color]")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			update_action_bar()
 
 		"monster_select_prompt":
@@ -6937,6 +6981,17 @@ func _get_rarity_multiplier_for_status(rarity: String) -> float:
 		_: return 1.0
 
 func show_help():
+	# Build action key names dynamically for help text
+	var k0 = get_action_key_name(0)  # Primary (default: Space)
+	var k1 = get_action_key_name(1)  # Quick 1 (default: Q)
+	var k2 = get_action_key_name(2)  # Quick 2 (default: W)
+	var k3 = get_action_key_name(3)  # Quick 3 (default: E)
+	var k4 = get_action_key_name(4)  # Quick 4 (default: R)
+	var k5 = get_action_key_name(5)  # Additional 1 (default: 1)
+	var k6 = get_action_key_name(6)  # Additional 2 (default: 2)
+	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
+	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
+
 	var help_text = """
 [b]Available Commands:[/b]
 
@@ -6950,13 +7005,13 @@ func show_help():
   Just type and press Enter!
 
 [color=#00FFFF]Action Bar:[/color]
-  [Space] = Primary action (Status/Attack)
-  [Q][W][E][R] = Quick actions
-  [1][2][3][4] = Additional actions
+  [%s] = Primary action (Status/Attack)
+  [%s][%s][%s][%s] = Quick actions
+  [%s][%s][%s][%s] = Additional actions
 
 [color=#00FFFF]Inventory:[/color]
   inventory/inv/i - Open inventory
-  [Q] Inventory in movement mode
+  [%s] Inventory in movement mode
   Equip/Unequip stays in mode for quick multi-select
 
 [color=#00FFFF]Social:[/color]
@@ -6982,7 +7037,7 @@ func show_help():
 [b][color=#FFD700]== CHARACTER STATS ==[/color][/b]
 
 [color=#FF6666]STR (Strength)[/color] - Primary damage stat
-  • Increases physical attack damage (+2% per point)
+  • Increases physical attack damage (+2%% per point)
   • Adds directly to Attack Power with equipment
 
 [color=#66FF66]CON (Constitution)[/color] - Health and survivability
@@ -6991,12 +7046,12 @@ func show_help():
   • Essential for survival against tough monsters
 
 [color=#66FFFF]DEX (Dexterity)[/color] - Accuracy and evasion
-  • Increases hit chance (+1% per point vs enemy speed)
-  • Improves flee success (+2% per point)
-  • Increases critical hit chance (base 5% + 0.5% per point, max 25%)
+  • Increases hit chance (+1%% per point vs enemy speed)
+  • Improves flee success (+2%% per point)
+  • Increases critical hit chance (base 5%% + 0.5%% per point, max 25%%)
 
 [color=#FF66FF]INT (Intelligence)[/color] - Magic power
-  • Increases spell damage (+3% per point)
+  • Increases spell damage (+3%% per point)
   • Determines max Mana (INT × 8 + WIS × 4)
   • Powers all Mage abilities
 
@@ -7007,38 +7062,38 @@ func show_help():
 
 [color=#FFA500]WIT (Wits)[/color] - Outsmarting enemies
   • Enables the Outsmart combat action
-  • +5% success per point above 10
+  • +5%% success per point above 10
   • Essential stat for Trickster builds
 
 [b][color=#FFD700]== COMBAT MECHANICS ==[/color][/b]
 
 [color=#00FFFF]Attack Damage:[/color]
   Base = Attack Power (STR + weapon bonuses)
-  Multiplied by: STR bonus (+2% per STR point)
+  Multiplied by: STR bonus (+2%% per STR point)
   Critical hits deal 1.5x damage (chance from DEX)
 
 [color=#00FFFF]Defense & Damage Reduction:[/color]
   Defense = (CON/2) + equipment bonuses
-  Reduction = Defense / (Defense + 100) × 60%
-  Example: 50 Defense = 23% reduction, 200 Defense = 40%
+  Reduction = Defense / (Defense + 100) × 60%%
+  Example: 50 Defense = 23%% reduction, 200 Defense = 40%%
 
 [color=#00FFFF]Hit Chance:[/color]
-  Base = 75% + (your DEX - enemy speed)
-  Minimum 50%, maximum 95%
+  Base = 75%% + (your DEX - enemy speed)
+  Minimum 50%%, maximum 95%%
 
 [color=#00FFFF]Flee Chance:[/color]
-  Base = 40% + (DEX × 2) + equipment speed - (enemy level / 10)
+  Base = 40%% + (DEX × 2) + equipment speed - (enemy level / 10)
   Boots with speed bonus help escape!
   Failed flee = enemy gets free attack
 
 [color=#00FFFF]Critical Hits:[/color]
-  Chance = 5% + (DEX × 0.5%), max 25%
+  Chance = 5%% + (DEX × 0.5%%), max 25%%
   Crits deal 1.5x damage
 
 [color=#00FFFF]Equipment Wear:[/color]
   Some monsters can damage your gear (Corrosive, Sundering)
   Worn equipment gives reduced bonuses
-  Broken gear (100% wear) provides no bonuses!
+  Broken gear (100%% wear) provides no bonuses!
   Check status to see equipment condition
 
 [color=#00FFFF]Level Up:[/color]
@@ -7066,10 +7121,10 @@ func show_help():
   • [color=#808080]Mana/Stamina/Energy Drain[/color] - Drains resources
 
 [color=#6666FF]Defensive:[/color]
-  • [color=#6666FF]Armored[/color] - +50% defense
-  • [color=#6666FF]Ethereal[/color] - 50% dodge chance
+  • [color=#6666FF]Armored[/color] - +50%% defense
+  • [color=#6666FF]Ethereal[/color] - 50%% dodge chance
   • [color=#6666FF]Regeneration[/color] - Heals each turn
-  • [color=#6666FF]Damage Reflect[/color] - Returns 25% damage
+  • [color=#6666FF]Damage Reflect[/color] - Returns 25%% damage
   • [color=#6666FF]Thorns[/color] - Damages you on melee attacks
 
 [color=#FFD700]Special:[/color]
@@ -7080,16 +7135,16 @@ func show_help():
 [b][color=#FFD700]== RACE PASSIVES ==[/color][/b]
 
 [color=#FFFFFF]Human[/color] - Adaptable and ambitious
-  • +10% bonus XP from all sources
+  • +10%% bonus XP from all sources
   • Best for leveling quickly
 
 [color=#66FF99]Elf[/color] - Ancient and resilient
-  • 50% reduced poison damage
+  • 50%% reduced poison damage
   • Immune to poison debuffs
   • Good against venomous creatures
 
 [color=#FFA366]Dwarf[/color] - Sturdy and determined
-  • Last Stand: 25% chance to survive lethal damage with 1 HP
+  • Last Stand: 25%% chance to survive lethal damage with 1 HP
   • Triggers once per combat
   • Great for risky fights
 
@@ -7116,7 +7171,7 @@ func show_help():
 
 Watch another player's game in real-time!
   • Type [color=#FFFF00]watch <name>[/color] to request watching a player
-  • Watched player presses [Q] to approve, [W] to deny
+  • Watched player presses [%s] to approve, [%s] to deny
   • While watching, you see their game, map, and stats
   • Press [color=#FFFF00][Escape][/color] to stop watching
   • Type [color=#FFFF00]unwatch[/color] to stop watching
@@ -7129,7 +7184,7 @@ Damage abilities use [color=#FFCC00]Attack[/color] = STR + weapon bonuses
   Deal Attack × 1.5 damage
 
 [color=#FF6666]Lv 10 - War Cry[/color] (15 Stamina)
-  +25% damage for 3 rounds
+  +25%% damage for 3 rounds
 
 [color=#FF6666]Lv 25 - Shield Bash[/color] (20 Stamina)
   Deal Attack damage + stun (enemy skips turn)
@@ -7138,10 +7193,10 @@ Damage abilities use [color=#FFCC00]Attack[/color] = STR + weapon bonuses
   Deal Attack × 2 damage
 
 [color=#FF6666]Lv 60 - Berserk[/color] (40 Stamina)
-  +100% damage, -50% defense for 3 rounds
+  +100%% damage, -50%% defense for 3 rounds
 
 [color=#FF6666]Lv 80 - Iron Skin[/color] (35 Stamina)
-  Block 50% damage for 3 rounds
+  Block 50%% damage for 3 rounds
 
 [color=#FF6666]Lv 100 - Devastate[/color] (50 Stamina)
   Deal Attack × 4 damage
@@ -7154,10 +7209,10 @@ Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
   Deal damage equal to mana spent (1:1 ratio)
 
 [color=#66FFFF]Lv 10 - Shield[/color] (20 Mana)
-  +50% defense for 3 rounds
+  +50%% defense for 3 rounds
 
 [color=#66FFFF]Lv 25 - Cloak[/color] (30 Mana)
-  50% chance enemy misses next attack
+  50%% chance enemy misses next attack
 
 [color=#66FFFF]Lv 40 - Blast[/color] (50 Mana)
   Deal Magic × 2 damage
@@ -7179,19 +7234,19 @@ WITS abilities include equipment bonuses
   Reveal monster stats (HP, damage, intelligence)
 
 [color=#FFA500]Lv 10 - Distract[/color] (15 Energy)
-  Enemy has -50% accuracy on next attack
+  Enemy has -50%% accuracy on next attack
 
 [color=#FFA500]Lv 25 - Pickpocket[/color] (20 Energy)
   Steal WITS × 10 gold (fail = monster attacks)
 
 [color=#FFA500]Lv 40 - Ambush[/color] (30 Energy)
-  Deal (Attack + WITS/2) × 1.5 damage + 50% crit chance
+  Deal (Attack + WITS/2) × 1.5 damage + 50%% crit chance
 
 [color=#FFA500]Lv 60 - Vanish[/color] (40 Energy)
   Invisible, guaranteed crit on next attack
 
 [color=#FFA500]Lv 80 - Exploit[/color] (35 Energy)
-  Deal 10% of monster's current HP as damage
+  Deal 10%% of monster's current HP as damage
 
 [color=#FFA500]Lv 100 - Perfect Heist[/color] (50 Energy)
   Instant win + double gold/gems
@@ -7199,13 +7254,13 @@ WITS abilities include equipment bonuses
 [b][color=#FFD700]== OUTSMART (WITS-based) ==[/color][/b]
 
 [color=#FFA500]Outsmart[/color] - Trick dumb monsters
-  Base chance: 5%
-  +5% per WITS above 10 (main factor!)
-  +15% bonus for Trickster classes
-  +8% per monster INT below 10 (dumb = easy)
-  -8% per monster INT above 10 (smart = hard)
-  -5% if monster INT exceeds your WITS
-  Clamped 2-85% (Tricksters: 2-95%)
+  Base chance: 5%%
+  +5%% per WITS above 10 (main factor!)
+  +15%% bonus for Trickster classes
+  +8%% per monster INT below 10 (dumb = easy)
+  -8%% per monster INT above 10 (smart = hard)
+  -5%% if monster INT exceeds your WITS
+  Clamped 2-85%% (Tricksters: 2-95%%)
 
   [color=#00FF00]Best against:[/color] Low INT monsters (beasts, undead)
   [color=#FF4444]Worst against:[/color] High INT monsters (mages, dragons)
@@ -7223,13 +7278,13 @@ Safe zones with services and quests:
 
 Posts are [color=#FFFF00]denser near the center[/color], sparser at edges.
 World's Edge posts (700+ distance) for extreme challenges.
-Services: Shop, Quests, Recharge (action bar [2])
+Services: Shop, Quests, Recharge (action bar [%s])
 Map shapes vary by location: +/-/| (classic), #/= (fortress), */~ (tower), etc.
 
 [b][color=#FFD700]== WANDERING MERCHANTS (110 Total) ==[/color][/b]
 
 Traveling merchants roam between Trading Posts:
-  • [color=#FFFF00]More common near center[/color] (40% in core zone)
+  • [color=#FFFF00]More common near center[/color] (40%% in core zone)
   • Move slowly with rest breaks (catchable!)
   • Inventories refresh every 5 minutes
   • Offer: Buy, Sell, Upgrade, Gamble
@@ -7250,9 +7305,9 @@ Active effects shown in bottom-right overlay:
 [color=#FF00FF]Poison[/color] ticks on [color=#FFFF00]movement and hunting[/color]:
   • Each step or hunt deals poison damage
   • Poison cannot kill you (stops at 1 HP)
-  • Elves take 50% reduced poison damage
+  • Elves take 50%% reduced poison damage
 
-View details: [Space] Status in movement mode
+View details: [%s] Status in movement mode
 
 [b][color=#FFD700]== QUESTS ==[/color][/b]
 
@@ -7262,7 +7317,7 @@ Accept quests at Trading Posts:
   • Exploration - Visit specific locations
   • Boss hunts - Defeat high-level monsters
 
-Press [R] Quests in movement mode to view quest log.
+Press [%s] Quests in movement mode to view quest log.
 
 [b][color=#FFD700]== GAMBLING ==[/color][/b]
 
@@ -7286,7 +7341,7 @@ Dice game at merchants (use with caution!):
   • [color=#FFD700]Crit[/color] - +Crit chance (rounds)
   • [color=#FF00FF]Lifesteal[/color] - Heal when dealing damage (rounds)
   • [color=#FF4444]Thorns[/color] - Reflect damage back (rounds)
-  Use from inventory with [Q] Use
+  Use from inventory with [%s] Use
 
 [color=#FF00FF]Buff Scrolls (apply before next combat):[/color]
   • [color=#00FFFF]Forcefield[/color] - Absorbs damage before HP
@@ -7306,6 +7361,13 @@ Dice game at merchants (use with caution!):
 [color=#A335EE]Special Scrolls:[/color]
   • [color=#FFD700]Scroll of Summoning[/color] - Choose your next monster!
 
+[b][color=#FFD700]== LUCKY FINDS & SPECIAL ENCOUNTERS ==[/color][/b]
+Rarely when moving/hunting, you may discover:
+  • [color=#FFD700]Lucky Find[/color] - Hidden treasure (gold or items)
+  • [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!
+
+These require pressing [%s] to continue.
+
 [b][color=#FFD700]== BUFF OVERLAY ==[/color][/b]
 Buffs shown in top bar: [Letter+Value:Duration]
   [color=#FF6666]S[/color]=Strength [color=#6666FF]D[/color]=Defense [color=#66FF66]V[/color]=Speed
@@ -7314,7 +7376,7 @@ Buffs shown in top bar: [Letter+Value:Duration]
 
 [b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
 If you die, your character is gone forever!
-"""
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k1, k2, k6, k0, k4, k1, k0]
 	display_game(help_text)
 
 func display_game(text: String):
@@ -7616,9 +7678,9 @@ func display_monster_select_page():
 
 	display_game("")
 	if total_pages > 1:
-		display_game("[color=#808080][Q] Prev Page  [W] Next Page  [Space] Cancel[/color]")
+		display_game("[color=#808080][%s] Prev Page  [%s] Next Page  [%s] Cancel[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(0)])
 	else:
-		display_game("[color=#808080][Space] Cancel[/color]")
+		display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
 
 func select_monster_from_scroll(index: int):
 	"""Send selected monster to server"""

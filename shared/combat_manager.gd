@@ -717,6 +717,11 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# Roll for item drops
 		var dropped_items = []
 		var gems_earned = 0
+		var extra_drops = []
+		var abilities = monster.get("abilities", [])
+		var wish_pending = false
+		var wish_options = []
+
 		if drop_tables:
 			var drops_result = drop_tables.roll_drops(
 				monster.get("drop_table_id", "tier1"),
@@ -725,11 +730,46 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			)
 			dropped_items = drops_result
 
+			# Weapon Master ability: guaranteed weapon drop
+			if ABILITY_WEAPON_MASTER in abilities:
+				var weapon = drop_tables.generate_weapon(monster.level)
+				if not weapon.is_empty():
+					messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
+					messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+						_get_rarity_color(weapon.get("rarity", "common")),
+						weapon.get("name", "Unknown Weapon"),
+						weapon.get("level", 1)
+					])
+					extra_drops.append(weapon)
+
+			# Shield Bearer ability: guaranteed shield drop
+			if ABILITY_SHIELD_BEARER in abilities:
+				var shield = drop_tables.generate_shield(monster.level)
+				if not shield.is_empty():
+					messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
+					messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+						_get_rarity_color(shield.get("rarity", "common")),
+						shield.get("name", "Unknown Shield"),
+						shield.get("level", 1)
+					])
+					extra_drops.append(shield)
+
 			# Roll for gem drops
 			gems_earned = roll_gem_drops(monster, character)
 			if gems_earned > 0:
 				character.gems += gems_earned
 				messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+
+		# Wish granter ability: player chooses from 3 rewards
+		if ABILITY_WISH_GRANTER in abilities:
+			wish_options = generate_wish_options(character, monster.level)
+			wish_pending = true
+			messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
+
+		# Combine regular drops with extra drops (like normal victory)
+		var all_drops = dropped_items.duplicate()
+		all_drops.append_array(extra_drops)
 
 		return {
 			"success": true,
@@ -738,9 +778,12 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"victory": true,
 			"monster_name": monster.name,
 			"monster_level": monster.level,
+			"monster_base_name": monster.get("base_name", monster.name),
 			"flock_chance": monster.get("flock_chance", 0),
-			"dropped_items": dropped_items,
-			"gems_earned": gems_earned
+			"dropped_items": all_drops,
+			"gems_earned": gems_earned,
+			"wish_pending": wish_pending,
+			"wish_options": wish_options
 		}
 	else:
 		# FAILURE! Monster gets free attack

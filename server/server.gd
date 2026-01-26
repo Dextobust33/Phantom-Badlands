@@ -2074,6 +2074,9 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	# Roll for item using drop tables
 	var items = drop_tables.roll_drops(loot_tier, 100, area_level)  # 100% drop chance
 
+	var msg = ""
+	var item_data = null
+
 	if items.is_empty():
 		# Fallback to gold
 		var gold_amount = max(10, area_level * (randi() % 10 + 5))
@@ -2082,42 +2085,41 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		var gold_text = "Found %d gold!" % gold_amount
 		if gold_text.length() < 34:
 			gold_text = gold_text + " ".repeat(34 - gold_text.length())
-		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
+		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
 		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
 		msg += "[color=#FFD700]║[/color] You discover a hidden cache!      [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=#FFD700]%s[/color] [color=#FFD700]║[/color]\n" % gold_text
 		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": msg,
-			"clear_output": true
-		})
 	else:
 		# Add items to inventory
 		var item = items[0]
-		character.add_item(item)
+		if character.can_add_item():
+			character.add_item(item)
+			item_data = item
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		var item_name = item.get("name", "Unknown Item")
 		# Pad item name to fit in box (34 chars inner width)
 		var padded_name = item_name
 		if padded_name.length() < 34:
 			padded_name = padded_name + " ".repeat(34 - padded_name.length())
-		var msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
+		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
 		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
 		msg += "[color=#FFD700]║[/color] You discover something valuable!  [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, padded_name]
 		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": msg,
-			"clear_output": true
-		})
+		if not character.can_add_item() and items.size() > 0:
+			msg += "\n[color=#FF4444]INVENTORY FULL! Item was lost![/color]"
 
-	# Send updated character data
-	send_character_update(peer_id)
-	send_location_update(peer_id)
+	# Send lucky_find message that requires acknowledgment
+	send_to_peer(peer_id, {
+		"type": "lucky_find",
+		"message": msg,
+		"character": character.to_dict(),
+		"item": item_data
+	})
+
 	persistence.save_character(character)
 
 func trigger_legendary_adventurer(peer_id: int, character: Character, area_level: int):
@@ -2188,15 +2190,13 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	msg += "[color=#FFD700]║[/color] [color=#00FF00]+%d %s permanently![/color] [color=#FFD700]║[/color]\n" % [bonus, stat_name]
 	msg += "[color=#FFD700]╚════════════════════════════════════════╝[/color]"
 
+	# Send special encounter message that requires acknowledgment
 	send_to_peer(peer_id, {
-		"type": "text",
+		"type": "special_encounter",
 		"message": msg,
-		"clear_output": true
+		"character": character.to_dict()
 	})
 
-	# Send updated character data
-	send_character_update(peer_id)
-	send_location_update(peer_id)
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
