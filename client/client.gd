@@ -214,6 +214,19 @@ var current_actions: Array[Dictionary] = []
 var inventory_mode: bool = false
 var inventory_page: int = 0  # Current page (0-indexed)
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
+
+# Consumable tier system for display purposes (matches server calculations)
+# mana = healing * 0.6, stamina/energy = healing * 0.5
+const CONSUMABLE_TIERS = {
+	1: {"name": "Minor", "healing": 50, "buff_value": 3, "mana": 30, "resource": 25},
+	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "mana": 60, "resource": 50},
+	3: {"name": "Standard", "healing": 200, "buff_value": 8, "mana": 120, "resource": 100},
+	4: {"name": "Greater", "healing": 400, "buff_value": 12, "mana": 240, "resource": 200},
+	5: {"name": "Superior", "healing": 800, "buff_value": 18, "mana": 480, "resource": 400},
+	6: {"name": "Master", "healing": 1600, "buff_value": 25, "mana": 960, "resource": 800},
+	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "mana": 1800, "resource": 1500}
+}
+
 var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)
 var pending_inventory_action: String = ""  # Action waiting for item selection
 var last_item_use_result: String = ""  # Store last item use result to display after inventory refresh
@@ -274,6 +287,12 @@ var monster_select_mode: bool = false
 var monster_select_list: Array = []  # Array of monster names
 var monster_select_page: int = 0  # Current page in monster selection
 const MONSTER_SELECT_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
+
+# Target farm selection mode (from Scroll of Finding)
+var target_farm_mode: bool = false
+var target_farm_options: Array = []  # Array of ability IDs
+var target_farm_names: Dictionary = {}  # Ability ID -> display name
+var target_farm_encounters: int = 5
 
 # Password change mode
 var changing_password: bool = false
@@ -1236,6 +1255,17 @@ func _process(delta):
 			else:
 				set_meta("monsterselectkey_%d_pressed" % i, false)
 
+	# Target farm selection with keybinds (from Scroll of Finding)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode:
+		for i in range(5):  # Only 5 options (1-5)
+			if is_item_select_key_pressed(i):
+				if not get_meta("targetfarmkey_%d_pressed" % i, false):
+					set_meta("targetfarmkey_%d_pressed" % i, true)
+					set_meta("hotkey_%d_pressed" % (i + 5), true)
+					select_target_farm_ability(i)  # 0-based index
+			else:
+				set_meta("targetfarmkey_%d_pressed" % i, false)
+
 	# Inventory page navigation with keys 2 and 3 (when no pending action)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "":
 		var inv = character_data.get("inventory", [])
@@ -2066,6 +2096,20 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif target_farm_mode:
+		# Target farm selection from scroll - Space=Cancel, 1-5=Select
+		current_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "target_farm_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif combat_item_mode:
 		# Combat item selection mode - show cancel only, use number keys to select
 		current_actions = [
@@ -2354,7 +2398,7 @@ func update_action_bar():
 		# Normal movement mode: Spacebar=Status
 		# Mages use "Meditate" instead of "Rest"
 		var rest_label = "Rest"
-		var char_class = character_data.get("class_type", "")
+		var char_class = character_data.get("class", "")
 		if char_class in ["Wizard", "Sorcerer", "Sage"]:
 			rest_label = "Meditate"
 		current_actions = [
@@ -2657,12 +2701,24 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		"energy":
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-	# For Magic Bolt: auto-suggest exact amount to kill monster if HP is known
+	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT
 	var suggested_amount = 0
 	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
-		# We know the monster's HP - suggest exact amount to kill it
-		suggested_amount = mini(current_enemy_hp, current_resource)
-		ability_popup_description.text = "Damage equals mana. Enemy HP: %d" % current_enemy_hp
+		# Magic Bolt damage = mana * (1 + INT/50), reduced by monster WIS
+		# Calculate mana needed based on player INT
+		var stats = character_data.get("stats", {})
+		var int_stat = stats.get("intelligence", 10)
+		var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x damage per mana
+
+		# Assume ~15% WIS reduction as conservative estimate (monsters vary)
+		var effective_multiplier = int_multiplier * 0.85
+
+		# Calculate mana needed (round up to ensure kill)
+		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier)
+		suggested_amount = mini(mana_needed, current_resource)
+
+		var damage_per_mana = snapped(effective_multiplier, 0.1)
+		ability_popup_description.text = "~%.1f dmg/mana (INT %d). Enemy HP: %d" % [damage_per_mana, int_stat, current_enemy_hp]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -3232,6 +3288,9 @@ func execute_local_action(action: String):
 			if monster_select_page < total_pages - 1:
 				monster_select_page += 1
 				display_monster_select_page()
+		# Target farm scroll actions
+		"target_farm_cancel":
+			cancel_target_farm()
 
 func select_wish(index: int):
 	"""Send wish selection to server"""
@@ -4241,9 +4300,19 @@ func display_inventory():
 
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
-			display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
-				display_num, rarity_color, item.get("name", "Unknown"), item_level, compare_text
-			])
+
+			# Check if consumable (show quantity) vs equipment (show level)
+			var is_consumable = item.get("is_consumable", false)
+			if is_consumable:
+				var quantity = item.get("quantity", 1)
+				var qty_text = " x%d" % quantity if quantity > 1 else ""
+				display_game("  %d. [color=%s]%s[/color]%s" % [
+					display_num, rarity_color, item.get("name", "Unknown"), qty_text
+				])
+			else:
+				display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
+					display_num, rarity_color, item.get("name", "Unknown"), item_level, compare_text
+				])
 
 	display_game("")
 	display_game("[color=#808080]%s=Inspect, %s=Use, %s=Equip, %s=Unequip, %s=Discard, %s=Back[/color]" % [
@@ -5579,6 +5648,21 @@ func handle_server_message(message: Dictionary):
 				display_monster_select_page()
 				update_action_bar()
 
+		"target_farm_select":
+			# Scroll of Finding used - show ability selection
+			target_farm_options = message.get("options", [])
+			target_farm_names = message.get("option_names", {})
+			target_farm_encounters = message.get("encounters", 5)
+			if target_farm_options.size() > 0:
+				# Exit inventory mode
+				inventory_mode = false
+				pending_inventory_action = ""
+				selected_item_index = -1
+				target_farm_mode = true
+				display_game(message.get("message", "Choose a trait to hunt:"))
+				display_target_farm_options()
+				update_action_bar()
+
 		"merchant_start":
 			at_merchant = true
 			merchant_data = message.get("merchant", {})
@@ -5822,6 +5906,7 @@ func display_item_details(item: Dictionary, source: String):
 	var level = item.get("level", 1)
 	var value = item.get("value", 0)
 	var rarity_color = _get_item_rarity_color(rarity)
+	var is_consumable = item.get("is_consumable", false)
 
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
@@ -5829,7 +5914,16 @@ func display_item_details(item: Dictionary, source: String):
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
-	display_game("[color=#00FFFF]Level:[/color] %d" % level)
+
+	# Show tier and quantity for consumables, level for equipment
+	if is_consumable:
+		var tier = item.get("tier", 1)
+		var quantity = item.get("quantity", 1)
+		display_game("[color=#00FFFF]Tier:[/color] %d" % tier)
+		display_game("[color=#00FFFF]Quantity:[/color] %d" % quantity)
+	else:
+		display_game("[color=#00FFFF]Level:[/color] %d" % level)
+
 	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
 	display_game("")
 
@@ -5852,8 +5946,9 @@ func display_item_details(item: Dictionary, source: String):
 		else:
 			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
 	else:
-		# Consumables: show effect description
-		display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, level, rarity))
+		# Consumables: show effect description based on tier
+		var tier = item.get("tier", 1) if is_consumable else level
+		display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, tier, rarity))
 
 	display_game("")
 
@@ -5930,7 +6025,38 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
 	var base_bonus = int(level * rarity_mult)
 
-	# Check for specific buff potions first (before generic potion check)
+	# TIER-BASED CONSUMABLES (level parameter contains tier 1-7 when is_consumable)
+	# Check if this is a tier value (1-7) which means tier-based item
+	var is_tier_value = level >= 1 and level <= 7
+
+	# Health potions (potion_minor, potion_lesser, etc. or health_potion)
+	if is_tier_value and (item_type == "health_potion" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type) or item_type.begins_with("elixir_")):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "Restores %d HP when used" % tier_data.healing
+	# Mana potions (mana_minor, mana_lesser, etc. or mana_potion)
+	elif is_tier_value and (item_type == "mana_potion" or item_type.begins_with("mana_")):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "Restores %d Mana when used" % tier_data.mana
+	# Stamina potions
+	elif is_tier_value and (item_type == "stamina_potion" or item_type.begins_with("stamina_")):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "Restores %d Stamina when used" % tier_data.resource
+	# Energy potions
+	elif is_tier_value and (item_type == "energy_potion" or item_type.begins_with("energy_")):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "Restores %d Energy when used" % tier_data.resource
+	# Buff potions (check tier versions)
+	elif is_tier_value and (item_type == "strength_potion" or "potion_strength" in item_type or "potion_power" in item_type or "elixir_might" in item_type):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "+%d Strength for 5 battles" % tier_data.buff_value
+	elif is_tier_value and (item_type == "defense_potion" or "potion_defense" in item_type or "potion_iron" in item_type or "elixir_fortress" in item_type):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "+%d Defense for 5 battles" % tier_data.buff_value
+	elif is_tier_value and (item_type == "speed_potion" or "potion_speed" in item_type or "potion_haste" in item_type or "elixir_swiftness" in item_type):
+		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+		return "+%d Speed for 5 battles" % tier_data.buff_value
+
+	# LEGACY: Check for specific buff potions first (before generic potion check)
 	if "potion_speed" in item_type:
 		var buff_val = 5 + level * 2
 		var duration = 5 + (level / 10) * 2
@@ -7150,6 +7276,8 @@ func show_help():
   • [color=#00FF00]Shield Bearer[/color] - 35%% chance to drop shield
   • [color=#00FF00]Gem Bearer[/color] - Always drops extra gems
   • [color=#00FF00]Gold Hoarder[/color] - Drops 3x gold
+  • [color=#66CCCC]Arcane Hoarder[/color] - 35%% chance to drop mage gear
+  • [color=#66FF66]Cunning Prey[/color] - 35%% chance to drop trickster gear
 
 [b][color=#FFD700]== WISH REWARDS ==[/color][/b]
 
@@ -7243,8 +7371,9 @@ Damage abilities use [color=#66CCCC]Magic[/color] = INT + equipment bonuses
   Can be ambushed (15%% chance)
 
 [color=#66FFFF]Lv 1 - Magic Bolt[/color] (Variable Mana)
-  Deal damage equal to mana spent (1:1 ratio)
-  Auto-suggests exact amount to kill if HP known
+  Damage = Mana × (1 + INT/50), reduced by monster WIS
+  Example: INT 50 = 2x damage per mana, INT 100 = 3x
+  Auto-suggests optimal mana to kill monster
 
 [color=#66FFFF]Lv 10 - Shield[/color] (20 Mana)
   +50%% defense for 3 rounds
@@ -7398,6 +7527,8 @@ Dice game at merchants (use with caution!):
 
 [color=#A335EE]Special Scrolls:[/color]
   • [color=#FFD700]Scroll of Summoning[/color] - Choose your next monster!
+  • [color=#FF00FF]Scroll of Finding[/color] - Next 5 monsters have chosen ability
+    (Weapon Master, Shield Bearer, Gem Bearer, Arcane Hoarder, Cunning Prey)
 
 [b][color=#FFD700]== LUCKY FINDS & SPECIAL ENCOUNTERS ==[/color][/b]
 Rarely when moving/hunting, you may discover:
@@ -7487,6 +7618,10 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 		notable_abilities.append("[color=#FF8000]★ WEAPON MASTER ★[/color]")
 	if "shield_bearer" in abilities:
 		notable_abilities.append("[color=#00FFFF]★ SHIELD GUARDIAN ★[/color]")
+	if "arcane_hoarder" in abilities:
+		notable_abilities.append("[color=#66CCCC]★ ARCANE HOARDER ★[/color]")
+	if "cunning_prey" in abilities:
+		notable_abilities.append("[color=#66FF66]★ CUNNING PREY ★[/color]")
 	if "corrosive" in abilities:
 		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
 	if "sunder" in abilities:
@@ -7737,6 +7872,42 @@ func cancel_monster_select():
 	"""Cancel monster selection"""
 	monster_select_mode = false
 	monster_select_list = []
+	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
+	update_action_bar()
+
+func display_target_farm_options():
+	"""Display target farming ability options"""
+	display_game("")
+	display_game("[color=#FF00FF]===== SCROLL OF FINDING =====[/color]")
+	display_game("[color=#808080]Choose a trait to hunt for the next %d encounters:[/color]" % target_farm_encounters)
+	display_game("")
+
+	for i in range(target_farm_options.size()):
+		var ability = target_farm_options[i]
+		var display_name = target_farm_names.get(ability, ability)
+		display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, display_name])
+
+	display_game("")
+	display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
+
+func select_target_farm_ability(index: int):
+	"""Send selected ability to server"""
+	if index < 0 or index >= target_farm_options.size():
+		return
+
+	var ability = target_farm_options[index]
+	target_farm_mode = false
+	target_farm_options = []
+	target_farm_names = {}
+	send_to_server({"type": "target_farm_select", "ability": ability, "encounters": target_farm_encounters})
+	game_output.clear()
+	update_action_bar()
+
+func cancel_target_farm():
+	"""Cancel target farm selection"""
+	target_farm_mode = false
+	target_farm_options = []
+	target_farm_names = {}
 	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
 	update_action_bar()
 

@@ -45,6 +45,8 @@ const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/
 const ABILITY_BLIND = "blind"                    # Reduces player hit chance (30%)
 const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
 const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
+const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
+const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
@@ -313,7 +315,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 5,
 				"description": "A small, green-skinned creature with sharp teeth",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_PACK_LEADER],
+				"abilities": [ABILITY_PACK_LEADER, ABILITY_CUNNING_PREY],
 				"death_message": "The goblin squeaks 'Not the face!' as it falls."
 			}
 		MonsterType.GIANT_RAT:
@@ -423,7 +425,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 8,
 				"description": "A large, disciplined goblinoid soldier",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_SUMMONER],
+				"abilities": [ABILITY_SUMMONER, ABILITY_CUNNING_PREY],
 				"death_message": "The hobgoblin salutes as it falls, maintaining military bearing."
 			}
 		MonsterType.GNOLL:
@@ -477,7 +479,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 8,
 				"description": "A spider large enough to prey on humans",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_POISON, ABILITY_AMBUSHER],
+				"abilities": [ABILITY_POISON, ABILITY_AMBUSHER, ABILITY_CUNNING_PREY],
 				"death_message": "The spider curls up its legs in defeat."
 			}
 		MonsterType.WIGHT:
@@ -551,7 +553,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 12,
 				"description": "A ghostly spirit that feeds on life force",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ETHEREAL, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN, ABILITY_ARCANE_HOARDER],
 				"death_message": "The wraith dissipates with an ethereal wail."
 			}
 		MonsterType.WYVERN:
@@ -717,7 +719,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 22,
 				"description": "An undead sorcerer of terrible power",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_MANA_DRAIN, ABILITY_CURSE, ABILITY_SUMMONER, ABILITY_REGENERATION],
+				"abilities": [ABILITY_MANA_DRAIN, ABILITY_CURSE, ABILITY_SUMMONER, ABILITY_REGENERATION, ABILITY_ARCANE_HOARDER],
 				"death_message": "The lich's phylactery shatters. 'Impossible...' it whispers."
 			}
 		MonsterType.TITAN:
@@ -755,7 +757,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 8,
 				"description": "A being of pure elemental energy",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_DAMAGE_REFLECT, ABILITY_SLOW_AURA],
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_DAMAGE_REFLECT, ABILITY_SLOW_AURA, ABILITY_ARCANE_HOARDER],
 				"death_message": "The elemental disperses into raw mana."
 			}
 		MonsterType.IRON_GOLEM:
@@ -791,7 +793,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 12,
 				"description": "An ancient guardian of forbidden knowledge",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER],
+				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER, ABILITY_ARCANE_HOARDER],
 				"death_message": "'Your riddle... was superior...' the sphinx admits gracefully."
 			}
 		MonsterType.HYDRA:
@@ -847,7 +849,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 10,
 				"description": "A creature from between dimensions",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_ETHEREAL, ABILITY_UNPREDICTABLE, ABILITY_MANA_DRAIN, ABILITY_ENERGY_DRAIN],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_UNPREDICTABLE, ABILITY_MANA_DRAIN, ABILITY_ENERGY_DRAIN, ABILITY_CUNNING_PREY],
 				"death_message": "Reality snaps back as the Void Walker is erased from existence."
 			}
 		MonsterType.WORLD_SERPENT:
@@ -883,7 +885,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "An undead sorcerer of unfathomable age",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_MANA_DRAIN, ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER],
+				"abilities": [ABILITY_MANA_DRAIN, ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_ARCANE_HOARDER],
 				"death_message": "'I have seen the end times... you are not it.' *crumbles*"
 			}
 		MonsterType.PRIMORDIAL_DRAGON:
@@ -939,7 +941,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A being that exists across all timelines",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_ETHEREAL, ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER, ABILITY_ARCANE_HOARDER],
 				"death_message": "'We will meet again... in another timeline...' Time resumes."
 			}
 		MonsterType.DEATH_INCARNATE:

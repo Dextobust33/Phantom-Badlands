@@ -32,7 +32,7 @@ Run server first, then client. Both commands run in background (`&`).
 
 ## Adding ASCII Art to Combat
 
-**Location:** `shared/combat_manager.gd` in the `get_monster_ascii_art()` function (~line 1500)
+**Location:** `client/monster_art.gd` in the `get_art_map()` function
 
 **Format:** ASCII art is stored as an array of strings in the `art_map` dictionary:
 ```gdscript
@@ -480,50 +480,29 @@ The client uses a classic MUD terminal aesthetic with black backgrounds and colo
 - **server/server.gd**: Very clean - only 1 unused function found
 - **combat_manager.gd**: Very clean - only 1 unused function found
 
-**ASCII Art Migration Plan (Next Session):**
+**ASCII Art Migration (COMPLETE):**
 
-The ASCII art data spans lines ~1944-3055 in `combat_manager.gd` (~1100 lines, 35% of file).
+ASCII art rendering has been migrated to client-side to reduce server load.
 
-**Proposed Architecture:**
-1. Create new file: `client/monster_art.gd`
-2. Move to client:
-   - `get_monster_ascii_art()` function
-   - `add_border_to_ascii_art()` function
-   - All `art_map` data (the large dictionary of ASCII art)
-3. Keep on server:
-   - `_get_raw_monster_ascii_art()` (just color lookup, ~40 lines)
-   - `get_monster_combat_bg_color()` (uses colors for background)
+**Files Created/Modified:**
+- `client/monster_art.gd` (NEW - 1244 lines) - All ASCII art data and rendering functions
+- `client/client.gd` - Lazy-loads MonsterArt, renders art locally when `use_client_art: true`
+- `shared/combat_manager.gd` - Added `generate_encounter_text()`, `monster_abilities` in combat_state
+- `server/server.gd` - Added `use_client_art: true` flag to combat_start messages
 
-**Client-Side Changes:**
-```gdscript
-# In client.gd, when handling "combat_start" message:
-var monster_name = message.combat_state.get("monster_name", "")
-var local_art = MonsterArt.get_monster_ascii_art(monster_name)
-var bordered_art = MonsterArt.add_border_to_ascii_art(local_art, monster_name)
-# Display bordered_art instead of using server's message
-```
+**How It Works:**
+1. Server sends `combat_start` with `use_client_art: true` and `monster_abilities` in combat_state
+2. Client checks the flag and renders ASCII art locally using `MonsterArt.get_bordered_art_with_font()`
+3. Client builds encounter text with traits using `_build_encounter_text()`
+4. Server still sends full message for backward compatibility (can be removed later)
 
-**Backward Compatibility:**
-- Server still sends `message` field with art (for old clients)
-- New clients ignore server art, render locally
-- After all clients update, server can stop sending art (reduces bandwidth)
+**Key Functions in monster_art.gd:**
+- `get_art_map()` - Returns dictionary of all monster ASCII art
+- `get_monster_ascii_art(monster_name)` - Returns formatted ASCII art string
+- `add_border_to_ascii_art(ascii_art, monster_name)` - Adds decorative border
+- `get_bordered_art_with_font(monster_name)` - Returns art with border and font size wrapper
 
-**Display Preservation:**
-- Copy functions exactly to maintain formatting
-- Keep same ASCII_ART_FONT_SIZE constant (11)
-- Wide art (>50 chars) displayed as-is
-- Small art auto-centered with border
-- Color tags preserved exactly
-
-**Files to Create/Modify:**
-- NEW: `client/monster_art.gd` - ASCII art data and rendering
-- MODIFY: `client/client.gd` - Load MonsterArt, use local rendering
-- MODIFY: `shared/combat_manager.gd` - Remove art data (keep colors only)
-
-**Testing Checklist:**
-- [ ] Combat start displays art correctly
-- [ ] Wide art (Goblin, Wolf, etc.) aligned properly
-- [ ] Small art centered with border
-- [ ] Elemental variants display randomly
-- [ ] Colors match original
-- [ ] Font size correct
+**Art Format:**
+- Wide art (>50 chars): Displayed as-is, no border (e.g., Goblin, Wolf)
+- Small art (≤50 chars): Auto-centered with Unicode box border
+- Variant monsters: "VARIANT:Name1,Name2,Name3" format, randomly selected

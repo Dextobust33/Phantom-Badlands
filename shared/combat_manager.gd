@@ -73,6 +73,8 @@ const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/
 const ABILITY_BLIND = "blind"                    # Reduces player hit chance
 const ABILITY_BLEED = "bleed"                    # Stacking bleed DoT on player
 const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
+const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
+const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 
 # ASCII art display settings
 const ASCII_ART_FONT_SIZE = 10  # Default is 14, smaller = less space
@@ -296,6 +298,25 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var abilities = monster.get("abilities", [])
 	var messages = []
 
+	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
+	var bonuses = character.get_equipment_bonuses()
+	var mana_regen = bonuses.get("mana_regen", 0)
+	var energy_regen = bonuses.get("energy_regen", 0)
+
+	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
+		var old_mana = character.current_mana
+		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + mana_regen)
+		var actual_regen = character.current_mana - old_mana
+		if actual_regen > 0:
+			messages.append("[color=#66CCFF]Arcane gear restores %d mana.[/color]" % actual_regen)
+
+	if energy_regen > 0 and character.current_energy < character.max_energy:
+		var old_energy = character.current_energy
+		character.current_energy = mini(character.max_energy, character.current_energy + energy_regen)
+		var actual_regen = character.current_energy - old_energy
+		if actual_regen > 0:
+			messages.append("[color=#66FF66]Shadow gear restores %d energy.[/color]" % actual_regen)
+
 	# === POISON TICK (at start of player turn) ===
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
@@ -506,6 +527,40 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#808080]The Shield Guardian's shield crumbles to dust...[/color]")
 
+	# Arcane Hoarder ability: 35% chance to drop mage gear
+	if ABILITY_ARCANE_HOARDER in abilities and drop_tables != null:
+		if randf() < 0.35:  # 35% chance
+			var mage_item = drop_tables.generate_mage_gear(monster.level)
+			if not mage_item.is_empty():
+				messages.append("[color=#66CCCC]The Arcane Hoarder drops magical equipment![/color]")
+				messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+					_get_rarity_color(mage_item.get("rarity", "common")),
+					mage_item.get("name", "Unknown Item"),
+					mage_item.get("level", 1)
+				])
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(mage_item)
+		else:
+			messages.append("[color=#808080]The Arcane Hoarder's magic dissipates...[/color]")
+
+	# Cunning Prey ability: 35% chance to drop trickster gear
+	if ABILITY_CUNNING_PREY in abilities and drop_tables != null:
+		if randf() < 0.35:  # 35% chance
+			var trick_item = drop_tables.generate_trickster_gear(monster.level)
+			if not trick_item.is_empty():
+				messages.append("[color=#66FF66]The Cunning Prey drops elusive equipment![/color]")
+				messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
+					_get_rarity_color(trick_item.get("rarity", "common")),
+					trick_item.get("name", "Unknown Item"),
+					trick_item.get("level", 1)
+				])
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(trick_item)
+		else:
+			messages.append("[color=#808080]The Cunning Prey's gear vanishes into shadow...[/color]")
+
 	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
 		if randf() < 0.10:  # 10% chance
@@ -587,18 +642,19 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var messages = []
 
 	# Flee chance based on level difference, DEX, and equipment speed
-	# Base 50% + (DEX × 2) + equipment_speed + speed_buff - (level_diff × 3)
+	# Base 50% + (DEX × 2) + equipment_speed + speed_buff + flee_bonus - (level_diff × 3)
 	var equipment_bonuses = character.get_equipment_bonuses()
 	var player_dex = character.get_effective_stat("dexterity")
 	var speed_buff = character.get_buff_value("speed")
 	var equipment_speed = equipment_bonuses.speed  # Boots provide speed bonus
+	var flee_bonus = equipment_bonuses.get("flee_bonus", 0)  # Evasion gear provides flee bonus
 	var monster_level = monster.get("level", 1)
 	var player_level = character.level
 	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
 
-	# Base 50%, +2% per DEX, +equipment speed (boots!), +speed buffs
+	# Base 50%, +2% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
 	# -3% per level the monster is above you (fighting +20 level = -60%)
-	var flee_chance = 50 + (player_dex * 2) + equipment_speed + speed_buff - (level_diff * 3)
+	var flee_chance = 50 + (player_dex * 2) + equipment_speed + speed_buff + flee_bonus - (level_diff * 3)
 
 	# Apply slow aura debuff (from monster ability)
 	var slow_penalty = combat.get("player_slow", 0)

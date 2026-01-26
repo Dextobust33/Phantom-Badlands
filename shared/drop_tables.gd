@@ -4,6 +4,42 @@
 class_name DropTables
 extends Node
 
+# Consumable tier definitions
+# Tiers replace level-based scaling with fixed power levels that stack
+const CONSUMABLE_TIERS = {
+	1: {"name": "Minor", "healing": 50, "buff_value": 3, "level_min": 1, "level_max": 10},
+	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "level_min": 11, "level_max": 25},
+	3: {"name": "Standard", "healing": 200, "buff_value": 8, "level_min": 26, "level_max": 50},
+	4: {"name": "Greater", "healing": 400, "buff_value": 12, "level_min": 51, "level_max": 100},
+	5: {"name": "Superior", "healing": 800, "buff_value": 18, "level_min": 101, "level_max": 250},
+	6: {"name": "Master", "healing": 1600, "buff_value": 25, "level_min": 251, "level_max": 500},
+	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "level_min": 501, "level_max": 99999}
+}
+
+# Consumable categories for combat quick-use
+const CONSUMABLE_CATEGORIES = {
+	"health": ["health_potion"],
+	"mana": ["mana_potion"],
+	"stamina": ["stamina_potion"],
+	"energy": ["energy_potion"],
+	"buff": ["strength_potion", "defense_potion", "speed_potion", "crit_potion", "lifesteal_potion", "thorns_potion"],
+	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision"]
+}
+
+func get_tier_for_level(monster_level: int) -> int:
+	"""Get the appropriate consumable tier for a monster level"""
+	for tier in range(7, 0, -1):  # Check from highest to lowest
+		var tier_data = CONSUMABLE_TIERS[tier]
+		if monster_level >= tier_data.level_min:
+			return tier
+	return 1
+
+func get_tier_name(tier: int) -> String:
+	"""Get the display name for a tier"""
+	if CONSUMABLE_TIERS.has(tier):
+		return CONSUMABLE_TIERS[tier].name
+	return "Unknown"
+
 # Drop table definitions by tier
 # Each entry: {weight: int, item_type: String, rarity: String}
 # Higher weight = more common
@@ -86,7 +122,8 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "scroll_rage", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_vampirism", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_slow", "rarity": "epic"},
-		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"}
+		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"}
 	],
 	"tier6": [
 		{"weight": 10, "item_type": "potion_master", "rarity": "rare"},
@@ -206,6 +243,8 @@ const POTION_EFFECTS = {
 	"scroll_vulnerability": {"monster_debuff": "vulnerability", "base": 25, "per_level": 2},  # -DEF on monster
 	"scroll_slow": {"monster_debuff": "slow", "base": 30, "per_level": 3},  # -SPD on monster
 	"scroll_doom": {"monster_debuff": "doom", "base": 10, "per_level": 2},  # Monster loses % max HP at start
+	# Target farming scroll - guarantees ability on next N encounters
+	"scroll_target_farm": {"target_farm": true, "encounters": 5},
 }
 
 # Rarity colors for display
@@ -291,14 +330,14 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if final_rarity != base_rarity:
 		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
-	# Consumables (potions, gold, gems, scrolls, resource restorers) never get stat affixes
+	# Check if this is a consumable (potions, resource restorers, scrolls)
 	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
 
 	# Roll for affixes (only for equipment, not consumables)
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
 	var affix_name = _get_affix_prefix(affixes)
 
-	return {
+	var item = {
 		"id": randi(),
 		"type": item_type,
 		"rarity": final_rarity,
@@ -307,6 +346,51 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 		"affixes": affixes,
 		"value": _calculate_item_value(final_rarity, final_level)
 	}
+
+	# Add consumable-specific fields for stacking
+	if is_consumable:
+		item["is_consumable"] = true
+		item["quantity"] = 1
+		# Determine tier based on monster level
+		var tier = get_tier_for_level(final_level)
+		item["tier"] = tier
+		# Update name to include tier name for consumables
+		var tier_name = get_tier_name(tier)
+		item["name"] = _get_tiered_consumable_name(item_type, tier_name, final_rarity)
+
+	return item
+
+func _get_tiered_consumable_name(item_type: String, tier_name: String, rarity: String) -> String:
+	"""Generate display name for tiered consumables"""
+	# Map item types to base names
+	var base_names = {
+		"potion_minor": "Health Potion",
+		"potion_lesser": "Health Potion",
+		"potion_standard": "Health Potion",
+		"potion_greater": "Health Potion",
+		"potion_superior": "Health Potion",
+		"potion_master": "Health Potion",
+		"mana_minor": "Mana Potion",
+		"mana_lesser": "Mana Potion",
+		"mana_standard": "Mana Potion",
+		"mana_greater": "Mana Potion",
+		"mana_superior": "Mana Potion",
+		"mana_master": "Mana Potion",
+		"stamina_minor": "Stamina Potion",
+		"stamina_lesser": "Stamina Potion",
+		"stamina_standard": "Stamina Potion",
+		"stamina_greater": "Stamina Potion",
+		"energy_minor": "Energy Potion",
+		"energy_lesser": "Energy Potion",
+		"energy_standard": "Energy Potion",
+		"energy_greater": "Energy Potion",
+		"elixir_minor": "Elixir",
+		"elixir_greater": "Elixir",
+		"elixir_divine": "Elixir"
+	}
+
+	var base_name = base_names.get(item_type, _get_item_name(item_type, rarity))
+	return tier_name + " " + base_name
 
 # Affix definitions: name, stat, value_multiplier (scaled by level)
 const AFFIX_POOL = [
@@ -400,7 +484,8 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"scroll_weakness": "Scroll of Weakness",
 			"scroll_vulnerability": "Scroll of Vulnerability",
 			"scroll_slow": "Scroll of Slow",
-			"scroll_doom": "Scroll of Doom"
+			"scroll_doom": "Scroll of Doom",
+			"scroll_target_farm": "Scroll of Finding"
 		}
 		var base_name = scroll_names.get(item_type, "Mysterious Scroll")
 		match rarity:
@@ -415,6 +500,22 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	if item_type.begins_with("energy_"):
 		var tier = item_type.replace("energy_", "").capitalize()
 		return tier + " Energy Potion"
+
+	# Class-specific gear names
+	var class_item_names = {
+		"ring_arcane": "Arcane Ring",
+		"amulet_mystic": "Mystic Amulet",
+		"ring_shadow": "Shadow Ring",
+		"amulet_evasion": "Evasion Amulet",
+		"boots_swift": "Swift Boots"
+	}
+	if class_item_names.has(item_type):
+		var base = class_item_names[item_type]
+		match rarity:
+			"epic": return "Masterwork " + base
+			"legendary": return "Mythical " + base
+			"artifact": return "Divine " + base
+			_: return base
 
 	# Convert item_type like "weapon_rusty" to "Rusty Weapon"
 	var parts = item_type.split("_")
@@ -543,6 +644,64 @@ func generate_shield(monster_level: int) -> Dictionary:
 		"rarity": rarity,
 		"level": boosted_level,
 		"name": affix_name + "Guardian's " + _get_item_name(shield_type, rarity),
+		"affixes": affixes,
+		"value": _calculate_item_value(rarity, boosted_level),
+		"from_rare_monster": true
+	}
+
+func generate_mage_gear(monster_level: int) -> Dictionary:
+	"""Generate mage-specific gear from an Arcane Hoarder monster.
+	Returns arcane ring or mystic amulet scaled to monster level."""
+	var rarity = _get_rare_drop_rarity(monster_level)
+
+	# 50/50 ring or amulet
+	var is_ring = randf() < 0.5
+	var item_type = "ring_arcane" if is_ring else "amulet_mystic"
+
+	# Generate with boosted level
+	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+
+	var affixes = _roll_affixes(rarity, boosted_level)
+	var affix_name = _get_affix_prefix(affixes)
+
+	return {
+		"id": randi(),
+		"type": item_type,
+		"rarity": rarity,
+		"level": boosted_level,
+		"name": affix_name + "Arcane Hoarder's " + _get_item_name(item_type, rarity),
+		"affixes": affixes,
+		"value": _calculate_item_value(rarity, boosted_level),
+		"from_rare_monster": true
+	}
+
+func generate_trickster_gear(monster_level: int) -> Dictionary:
+	"""Generate trickster-specific gear from a Cunning Prey monster.
+	Returns shadow ring, evasion amulet, or swift boots scaled to monster level."""
+	var rarity = _get_rare_drop_rarity(monster_level)
+
+	# 33/33/33 distribution
+	var roll = randf()
+	var item_type: String
+	if roll < 0.33:
+		item_type = "ring_shadow"
+	elif roll < 0.66:
+		item_type = "amulet_evasion"
+	else:
+		item_type = "boots_swift"
+
+	# Generate with boosted level
+	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+
+	var affixes = _roll_affixes(rarity, boosted_level)
+	var affix_name = _get_affix_prefix(affixes)
+
+	return {
+		"id": randi(),
+		"type": item_type,
+		"rarity": rarity,
+		"level": boosted_level,
+		"name": affix_name + "Cunning Prey's " + _get_item_name(item_type, rarity),
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true

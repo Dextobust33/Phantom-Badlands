@@ -495,6 +495,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_discard(peer_id, message)
 		"monster_select_confirm":
 			handle_monster_select_confirm(peer_id, message)
+		"target_farm_select":
+			handle_target_farm_select(peer_id, message)
 		"merchant_sell":
 			handle_merchant_sell(peer_id, message)
 		"merchant_sell_all":
@@ -1252,27 +1254,35 @@ func _handle_meditate(peer_id: int, character: Character):
 	"""Handle Meditate action for mages - restores HP and mana, always works"""
 	var at_full_hp = character.current_hp >= character.get_total_max_hp()
 
-	# Mana regeneration: 15-25% of max mana (double if at full HP)
+	# Get equipment meditate bonus (from Mystic Amulets)
+	var meditate_bonus = character.get_equipment_bonuses().get("meditate_bonus", 0)
+	var bonus_mult = 1.0 + (meditate_bonus / 100.0)
+
+	# Mana regeneration: 15-25% of max mana (double if at full HP, plus equipment bonus)
 	var mana_percent = randf_range(0.15, 0.25)
 	if at_full_hp:
 		mana_percent *= 2.0  # Double mana regen when HP is full
+	mana_percent *= bonus_mult  # Apply equipment meditate bonus
 
 	var mana_regen = int(character.max_mana * mana_percent)
 	mana_regen = max(1, mana_regen)
 	character.current_mana = min(character.max_mana, character.current_mana + mana_regen)
 
 	var meditate_msg = ""
+	var bonus_text = ""
+	if meditate_bonus > 0:
+		bonus_text = " [color=#66CCCC](+%d%% from gear)[/color]" % meditate_bonus
 
 	if at_full_hp:
 		# Full HP: focus entirely on mana
-		meditate_msg = "[color=#66CCCC]You meditate deeply and recover %d Mana.[/color]" % mana_regen
+		meditate_msg = "[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [mana_regen, bonus_text]
 	else:
 		# Not full HP: also heal
 		var heal_percent = randf_range(0.10, 0.25)
 		var heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-		meditate_msg = "[color=#66CCCC]You meditate and recover %d HP and %d Mana.[/color]" % [heal_amount, mana_regen]
+		meditate_msg = "[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [heal_amount, mana_regen, bonus_text]
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -2159,6 +2169,23 @@ func trigger_encounter(peer_id: int):
 		character.pending_monster_debuffs.clear()
 		save_character(peer_id)
 
+	# Apply target farming ability if active (from Scroll of Finding)
+	if character.target_farm_ability != "" and character.target_farm_remaining > 0:
+		var target_ability = character.target_farm_ability
+		if not monster.get("abilities", []).has(target_ability):
+			if not monster.has("abilities"):
+				monster["abilities"] = []
+			monster.abilities.append(target_ability)
+
+		character.target_farm_remaining -= 1
+		if character.target_farm_remaining <= 0:
+			# Scroll effect expired
+			character.target_farm_ability = ""
+			debuff_messages.append("[color=#808080]Your Scroll of Finding's magic has faded.[/color]")
+		else:
+			debuff_messages.append("[color=#FFD700]Scroll of Finding: %d encounters remaining[/color]" % character.target_farm_remaining)
+		save_character(peer_id)
+
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
@@ -2391,6 +2418,8 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	var item_type = item.get("type", "")
 	var item_name = item.get("name", "item")
 	var item_level = item.get("level", 1)
+	var item_tier = item.get("tier", 0)  # 0 means old-style item
+	var is_consumable = item.get("is_consumable", false)
 
 	# Get potion effect from drop tables
 	var effect = drop_tables.get_potion_effect(item_type)
@@ -2402,21 +2431,51 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Remove from inventory first
-	character.remove_item(index)
+	# For consumables with stacking, use the stack function
+	if is_consumable:
+		var used_item = character.use_consumable_stack(index)
+		if used_item.is_empty():
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "Failed to use item"
+			})
+			return
+		# Get remaining quantity for display
+		var remaining = 0
+		var new_inventory = character.inventory
+		for inv_item in new_inventory:
+			if inv_item.get("type", "") == item_type and inv_item.get("tier", 0) == item_tier:
+				remaining = inv_item.get("quantity", 0)
+				break
+	else:
+		# Old-style item - remove directly
+		character.remove_item(index)
+
+	# Get values based on tier system (if available) or legacy level system
+	var tier_data = {}
+	if item_tier > 0 and drop_tables.CONSUMABLE_TIERS.has(item_tier):
+		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
 
 	# Apply effect
 	if effect.has("heal"):
-		# Healing potion
-		var heal_amount = effect.base + (effect.per_level * item_level)
+		# Healing potion - use tier healing value if available
+		var heal_amount: int
+		if tier_data.has("healing"):
+			heal_amount = tier_data.healing
+		else:
+			heal_amount = effect.base + (effect.per_level * item_level)
 		var actual_heal = character.heal(heal_amount)
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item_name, actual_heal]
 		})
 	elif effect.has("mana"):
-		# Mana potion
-		var mana_amount = effect.base + (effect.per_level * item_level)
+		# Mana potion - use tier healing value if available (mana uses similar scaling)
+		var mana_amount: int
+		if tier_data.has("healing"):
+			mana_amount = int(tier_data.healing * 0.6)  # Mana is roughly 60% of HP healing
+		else:
+			mana_amount = effect.base + (effect.per_level * item_level)
 		var old_mana = character.current_mana
 		character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
 		var actual_restore = character.current_mana - old_mana
@@ -2426,7 +2485,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 	elif effect.has("stamina"):
 		# Stamina potion
-		var stamina_amount = effect.base + (effect.per_level * item_level)
+		var stamina_amount: int
+		if tier_data.has("healing"):
+			stamina_amount = int(tier_data.healing * 0.5)
+		else:
+			stamina_amount = effect.base + (effect.per_level * item_level)
 		var old_stamina = character.current_stamina
 		character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_amount)
 		var actual_restore = character.current_stamina - old_stamina
@@ -2436,7 +2499,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 	elif effect.has("energy"):
 		# Energy potion
-		var energy_amount = effect.base + (effect.per_level * item_level)
+		var energy_amount: int
+		if tier_data.has("healing"):
+			energy_amount = int(tier_data.healing * 0.5)
+		else:
+			energy_amount = effect.base + (effect.per_level * item_level)
 		var old_energy = character.current_energy
 		character.current_energy = min(character.max_energy, character.current_energy + energy_amount)
 		var actual_restore = character.current_energy - old_energy
@@ -2447,7 +2514,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	elif effect.has("buff"):
 		# Buff potion
 		var buff_type = effect.buff
-		var buff_value = effect.base + (effect.per_level * item_level)
+		var buff_value: int
+		if tier_data.has("buff_value"):
+			buff_value = tier_data.buff_value
+		else:
+			buff_value = effect.base + (effect.per_level * item_level)
 		var base_duration = effect.get("base_duration", 5)
 		var duration_per_10 = effect.get("duration_per_10_levels", 1)
 		var duration = base_duration + (item_level / 10) * duration_per_10
@@ -2506,6 +2577,26 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FF00FF]You use %s![/color]\n[color=#FFD700]%s[/color]" % [item_name, msg]
 		})
+	elif effect.has("target_farm"):
+		# Target Farming Scroll (Scroll of Finding) - let player select ability to farm
+		var encounters = effect.get("encounters", 5)
+		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey"]
+		var option_names = {
+			"weapon_master": "Weapon Master (weapon drops)",
+			"shield_bearer": "Shield Guardian (shield drops)",
+			"gem_bearer": "Gem Bearer (gem drops)",
+			"arcane_hoarder": "Arcane Hoarder (mage gear drops)",
+			"cunning_prey": "Cunning Prey (trickster gear drops)"
+		}
+		send_to_peer(peer_id, {
+			"type": "target_farm_select",
+			"options": options,
+			"option_names": option_names,
+			"encounters": encounters,
+			"message": "[color=#FF00FF]The %s glows with mystical energy...[/color]\n[color=#FFD700]Choose a trait to hunt for the next %d encounters![/color]" % [item_name, encounters]
+		})
+		# Don't update character yet - wait for selection
+		return
 
 	# Update character data
 	send_character_update(peer_id)
@@ -2540,6 +2631,43 @@ func handle_monster_select_confirm(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#FF00FF]The scroll crumbles to dust as the summoning circle forms...[/color]\n[color=#FFD700]Your next encounter will be with: %s[/color]" % monster_name
+	})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func handle_target_farm_select(peer_id: int, message: Dictionary):
+	"""Handle player selecting a target farming ability from the scroll selection"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var ability = message.get("ability", "")
+	var encounters = message.get("encounters", 5)
+
+	var valid_abilities = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey"]
+	if ability not in valid_abilities:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid ability selection"
+		})
+		return
+
+	# Set the target farming ability on character
+	character.target_farm_ability = ability
+	character.target_farm_remaining = encounters
+
+	var ability_names = {
+		"weapon_master": "Weapon Masters",
+		"shield_bearer": "Shield Guardians",
+		"gem_bearer": "Gem Bearers",
+		"arcane_hoarder": "Arcane Hoarders",
+		"cunning_prey": "Cunning Prey"
+	}
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF00FF]The scroll crumbles as its magic takes hold...[/color]\n[color=#FFD700]Your next %d encounters will attract %s![/color]" % [encounters, ability_names.get(ability, ability)]
 	})
 
 	save_character(peer_id)

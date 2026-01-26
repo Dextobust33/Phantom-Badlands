@@ -48,6 +48,10 @@ extends Resource
 # Forced next monster (from Monster Selection Scroll)
 @export var forced_next_monster: String = ""  # Monster name, empty = random
 
+# Target farming (from Target Farming Scroll)
+@export var target_farm_ability: String = ""  # Ability to add to next encounters
+@export var target_farm_remaining: int = 0    # Number of encounters remaining
+
 # Pending monster debuffs (from debuff scrolls) - applied at start of next combat
 # Array of {type: String, value: int} - types: "weakness", "vulnerability", "slow", "doom"
 @export var pending_monster_debuffs: Array = []
@@ -200,7 +204,12 @@ func get_equipment_bonuses() -> Dictionary:
 		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0,
-		"speed": 0
+		"speed": 0,
+		# Class-specific bonuses
+		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
+		"meditate_bonus": 0,  # % bonus to Meditate effectiveness (Mage gear)
+		"energy_regen": 0,    # Flat energy per combat round (Trickster gear)
+		"flee_bonus": 0       # % bonus to flee chance (Trickster gear)
 	}
 
 	for slot in equipped.keys():
@@ -243,10 +252,33 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.max_mana += base_bonus * 2
 			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "boots_swift" in item_type:
+			# Swift boots (Trickster): Speed + WITS
+			bonuses.speed += int(base_bonus * 1.5)
+			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
 			bonuses.speed += base_bonus  # Speed bonus for flee chance
 			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+
+		# Class-specific gear (check before generic types)
+		if "ring_arcane" in item_type:
+			# Arcane ring (Mage): INT + mana_regen
+			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "ring_shadow" in item_type:
+			# Shadow ring (Trickster): WITS + energy_regen
+			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+
+		if "amulet_mystic" in item_type:
+			# Mystic amulet (Mage): max_mana + meditate_bonus
+			bonuses.max_mana += base_bonus * 3
+			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+		elif "amulet_evasion" in item_type:
+			# Evasion amulet (Trickster): speed + flee_bonus
+			bonuses.speed += base_bonus
+			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
 
 		# Apply affix bonuses
 		var affixes = item.get("affixes", {})
@@ -515,6 +547,8 @@ func to_dict() -> Dictionary:
 		"poison_damage": poison_damage,
 		"poison_turns_remaining": poison_turns_remaining,
 		"forced_next_monster": forced_next_monster,
+		"target_farm_ability": target_farm_ability,
+		"target_farm_remaining": target_farm_remaining,
 		"pending_monster_debuffs": pending_monster_debuffs,
 		"inventory": inventory,
 		"equipped": equipped,
@@ -573,6 +607,10 @@ func from_dict(data: Dictionary):
 
 	# Forced next monster (from Monster Selection Scroll)
 	forced_next_monster = data.get("forced_next_monster", "")
+
+	# Target farming (from Target Farming Scroll)
+	target_farm_ability = data.get("target_farm_ability", "")
+	target_farm_remaining = data.get("target_farm_remaining", 0)
 
 	# Pending monster debuffs (from debuff scrolls)
 	pending_monster_debuffs = data.get("pending_monster_debuffs", [])
@@ -674,16 +712,66 @@ func get_experience_progress() -> int:
 
 # Inventory System Stubs
 
+const MAX_STACK_SIZE = 99  # Maximum stack size for consumables
+
 func can_add_item() -> bool:
 	"""Check if inventory has space for another item"""
 	return inventory.size() < MAX_INVENTORY_SIZE
 
 func add_item(item: Dictionary) -> bool:
-	"""Add an item to inventory. Returns true if successful."""
+	"""Add an item to inventory. Consumables stack automatically. Returns true if successful."""
+	# Check if it's a stackable consumable
+	if item.get("is_consumable", false):
+		return _add_stackable_consumable(item)
+	# Non-consumable - add as separate item
 	if not can_add_item():
 		return false
 	inventory.append(item)
 	return true
+
+func _add_stackable_consumable(item: Dictionary) -> bool:
+	"""Add a consumable item, stacking with existing items of same type+tier"""
+	var item_type = item.get("type", "")
+	var item_tier = item.get("tier", 1)
+	var add_quantity = item.get("quantity", 1)
+
+	# Find existing stack of same type+tier
+	for inv_item in inventory:
+		if inv_item.get("is_consumable", false) and inv_item.get("type", "") == item_type and inv_item.get("tier", 1) == item_tier:
+			# Found matching stack - add to it
+			var current_qty = inv_item.get("quantity", 1)
+			var new_qty = mini(MAX_STACK_SIZE, current_qty + add_quantity)
+			inv_item["quantity"] = new_qty
+			return true
+
+	# No existing stack - create new if space available
+	if not can_add_item():
+		return false
+	item["quantity"] = mini(MAX_STACK_SIZE, add_quantity)
+	inventory.append(item)
+	return true
+
+func use_consumable_stack(index: int) -> Dictionary:
+	"""Use one consumable from a stack. Returns the item data or empty if invalid/empty."""
+	if index < 0 or index >= inventory.size():
+		return {}
+
+	var item = inventory[index]
+	if not item.get("is_consumable", false):
+		return {}
+
+	var quantity = item.get("quantity", 1)
+	if quantity <= 0:
+		return {}
+
+	# Decrease quantity
+	item["quantity"] = quantity - 1
+
+	# Remove from inventory if depleted
+	if item["quantity"] <= 0:
+		inventory.remove_at(index)
+
+	return item
 
 func remove_item(index: int) -> Dictionary:
 	"""Remove and return item at index. Returns empty dict if invalid."""
