@@ -6036,7 +6036,7 @@ func _display_sort_menu():
 		display_game("  [color=#FFA500]Speed[/color] - Sort by Speed bonus (highest first)")
 		display_game("  [color=#808080]Slot[/color] - Group by equipment slot")
 		display_game("")
-		display_game("[color=#808080]Select More... for additional options[/color]")
+		display_game("[color=#808080]Press [%s] More... for Compare Stat setting[/color]" % get_action_key_name(9))
 	else:
 		display_game("Additional sort and display options:")
 		display_game("")
@@ -6154,16 +6154,14 @@ func display_inventory():
 				])
 
 	display_game("")
-	display_game("[color=#808080]%s=Back  %s=Inspect  %s=Use  %s=Equip  %s=Discard[/color]" % [
+	display_game("[color=#808080]%s=Back  %s=Inspect  %s=Use  %s=Equip  %s=Unequip[/color]" % [
 		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
-		get_action_key_name(3), get_action_key_name(5)])
-	display_game("[color=#808080]%s=Sort  %s=Salvage All (below your level)[/color]" % [
-		get_action_key_name(6), get_action_key_name(7)])
+		get_action_key_name(3), get_action_key_name(4)])
+	display_game("[color=#808080]%s=Sort  %s=Salvage  %s=Discard[/color]" % [
+		get_action_key_name(5), get_action_key_name(6), get_action_key_name(7)])
 	display_game("[color=#808080]↑↓ arrows compare: %s (change in Sort menu)[/color]" % _get_compare_stat_label(inventory_compare_stat))
-	if _count_equipped_items(equipped) > 0:
-		display_game("[color=#808080]%s=Inspect Equipped  %s=Unequip[/color]" % [get_action_key_name(8), get_action_key_name(4)])
 	if total_pages > 1:
-		display_game("[color=#808080]%s/%s=Prev/Next Page[/color]" % [get_action_key_name(1), get_action_key_name(2)])
+		display_game("[color=#808080]%s/%s=Prev/Next Page[/color]" % [get_action_key_name(8), get_action_key_name(9)])
 
 	# Show last item use result if any
 	if last_item_use_result != "":
