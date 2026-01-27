@@ -5850,17 +5850,38 @@ func _display_equippable_items_page():
 			stats_parts.append("[color=#9999FF]+%d MP[/color]" % bonuses.max_mana)
 		var stats_str = " ".join(stats_parts) if stats_parts.size() > 0 else ""
 
-		# Comparison with equipped item
+		# Comparison with equipped item - show stat differences
 		var compare_text = ""
 		var slot = _get_slot_for_item_type(item_type)
 		if slot != "":
 			var equipped_item = equipped.get(slot)
 			if equipped_item != null and equipped_item is Dictionary:
-				var equipped_level = equipped_item.get("level", 1)
-				if level > equipped_level:
-					compare_text = " [color=#00FF00]↑[/color]"
-				elif level < equipped_level:
-					compare_text = " [color=#FF6666]↓[/color]"
+				# Calculate stat differences
+				var new_bonuses = _compute_item_bonuses(item)
+				var old_bonuses = _compute_item_bonuses(equipped_item)
+				var diff_parts = []
+
+				# Check key stats for comparison
+				var atk_diff = new_bonuses.get("attack", 0) - old_bonuses.get("attack", 0)
+				var def_diff = new_bonuses.get("defense", 0) - old_bonuses.get("defense", 0)
+				var hp_diff = new_bonuses.get("max_hp", 0) - old_bonuses.get("max_hp", 0)
+				var spd_diff = new_bonuses.get("speed", 0) - old_bonuses.get("speed", 0)
+
+				if atk_diff != 0:
+					var c = "#00FF00" if atk_diff > 0 else "#FF6666"
+					diff_parts.append("[color=%s]%+dATK[/color]" % [c, atk_diff])
+				if def_diff != 0:
+					var c = "#00FF00" if def_diff > 0 else "#FF6666"
+					diff_parts.append("[color=%s]%+dDEF[/color]" % [c, def_diff])
+				if hp_diff != 0:
+					var c = "#00FF00" if hp_diff > 0 else "#FF6666"
+					diff_parts.append("[color=%s]%+dHP[/color]" % [c, hp_diff])
+				if spd_diff != 0:
+					var c = "#00FF00" if spd_diff > 0 else "#FF6666"
+					diff_parts.append("[color=%s]%+dSPD[/color]" % [c, spd_diff])
+
+				if diff_parts.size() > 0:
+					compare_text = " [%s]" % ", ".join(diff_parts)
 				else:
 					compare_text = " [color=#FFFF66]=[/color]"
 			else:
@@ -5869,9 +5890,9 @@ func _display_equippable_items_page():
 		# Display number is 1-9 for current page
 		var display_num = (j - start_idx) + 1
 
-		# Display item with stats
+		# Display item with stats and comparison
 		if stats_str != "":
-			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [display_num, color, item_name, level, compare_text, stats_str])
+			display_game("[%d] [color=%s]%s[/color] (Lv%d) - %s%s" % [display_num, color, item_name, level, stats_str, compare_text])
 		else:
 			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s" % [display_num, color, item_name, level, compare_text])
 
@@ -6334,6 +6355,10 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 
 	if suspected_max > 0:
 		var suspected_current = max(0, suspected_max - damage_dealt)
+		# If estimate shows 0 but monster is still alive (combat hasn't ended),
+		# show at least 1 HP to indicate monster isn't dead yet
+		if suspected_current == 0 and in_combat:
+			suspected_current = 1  # Monster still alive, estimate was too low
 		var percent = (float(suspected_current) / float(suspected_max)) * 100.0
 
 		if fill:
