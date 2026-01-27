@@ -5287,7 +5287,7 @@ func display_inventory():
 	if _count_equipped_items(equipped) > 0:
 		display_game("[color=#808080]%s=Inspect Equipped[/color]" % get_action_key_name(8))
 	if total_pages > 1:
-		display_game("[color=#808080]%s=Prev Page, %s=Next Page[/color]" % [get_action_key_name(6), get_action_key_name(7)])
+		display_game("[color=#808080]%s=Prev Page, %s=Next Page[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 
 	# Show last item use result if any
 	if last_item_use_result != "":
@@ -6046,7 +6046,7 @@ func update_player_hp_bar():
 
 	if label:
 		if current_forcefield > 0:
-			label.text = "HP: %d/%d [color=#9932CC](+%d Shield)[/color]" % [current_hp, max_hp, current_forcefield]
+			label.text = "HP: %d/%d (+%d Shield)" % [current_hp, max_hp, current_forcefield]
 		else:
 			label.text = "HP: %d/%d" % [current_hp, max_hp]
 

@@ -3139,7 +3139,7 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 	})
 
 	send_character_update(peer_id)
-	_send_merchant_inventory(peer_id)
+	# Note: Don't call _send_merchant_inventory here - client handles pagination via display_merchant_sell_list()
 
 func handle_merchant_sell_all(peer_id: int):
 	"""Handle selling all inventory items to a merchant"""
@@ -3183,7 +3183,7 @@ func handle_merchant_sell_all(peer_id: int):
 	})
 
 	send_character_update(peer_id)
-	_send_merchant_inventory(peer_id)
+	# Note: Don't call _send_merchant_inventory here - client handles pagination via display_merchant_sell_list()
 
 func handle_merchant_sell_gems(peer_id: int, message: Dictionary):
 	"""Handle selling gems to a merchant"""
