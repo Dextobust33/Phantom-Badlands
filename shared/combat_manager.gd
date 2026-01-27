@@ -17,6 +17,7 @@ enum CombatAction {
 const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "shield", "cloak", "blast", "forcefield", "teleport", "meteor"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate"]
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist"]
+const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
 
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
@@ -278,7 +279,7 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			action = CombatAction.OUTSMART
 		_:
 			# Check if it's an ability command
-			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS:
+			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS:
 				return process_ability_command(peer_id, cmd, arg)
 			return {"success": false, "message": "Unknown combat command! Use: attack, defend, flee, outsmart"}
 
@@ -1174,7 +1175,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		"heist": ability_name = "perfect_heist"
 
 	# Universal abilities (available to all classes, use class resource)
-	if ability_name == "cloak":
+	if ability_name == "cloak" or ability_name == "all_or_nothing":
 		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
 	elif ability_name in ["magic_bolt", "shield", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
@@ -1226,19 +1227,20 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process universal abilities available to all classes (use class resource)"""
 	var character = combat.character
+	var monster = combat.monster
 	var messages = []
-
-	# Check level requirement for cloak (level 20)
-	if character.level < 20:
-		return {"success": false, "messages": ["[color=#FF4444]Cloak requires level 20![/color]"], "combat_ended": false}
-
-	# Determine cost based on class path (8% of max resource)
-	var cost = character.get_cloak_cost()
-	var resource_name = character.get_primary_resource()
-	var current_resource = character.get_primary_resource_current()
 
 	match ability_name:
 		"cloak":
+			# Check level requirement for cloak (level 20)
+			if character.level < 20:
+				return {"success": false, "messages": ["[color=#FF4444]Cloak requires level 20![/color]"], "combat_ended": false}
+
+			# Determine cost based on class path (8% of max resource)
+			var cost = character.get_cloak_cost()
+			var resource_name = character.get_primary_resource()
+			var current_resource = character.get_primary_resource_current()
+
 			# In combat, cloak lets you avoid one monster attack and escape
 			if current_resource < cost:
 				return {"success": false, "messages": ["[color=#FF4444]Not enough %s! Need %d.[/color]" % [resource_name, cost]], "combat_ended": false}
@@ -1258,8 +1260,67 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 					"skip_monster_turn": true
 				}
 			else:
-				messages.append("[color=#FF4444]You try to cloak but the %s sees through your disguise![/color]" % combat.monster.name)
+				messages.append("[color=#FF4444]You try to cloak but the %s sees through your disguise![/color]" % monster.name)
 				return {"success": true, "messages": messages, "combat_ended": false}
+
+		"all_or_nothing":
+			# Universal desperation ability - very low chance to instant kill
+			# Costs 1 mana/stamina/energy (uses whatever resource the class has)
+			var has_resource = false
+			if character.current_mana >= 1:
+				character.current_mana -= 1
+				has_resource = true
+			elif character.current_stamina >= 1:
+				character.current_stamina -= 1
+				has_resource = true
+			elif character.current_energy >= 1:
+				character.current_energy -= 1
+				has_resource = true
+
+			if not has_resource:
+				return {"success": false, "messages": ["[color=#FF4444]You need at least 1 resource to attempt this![/color]"], "combat_ended": false, "skip_monster_turn": true}
+
+			# Track usage (for "gets better over time" mechanic)
+			character.all_or_nothing_uses += 1
+
+			# Calculate success chance:
+			# Base: 3%
+			# +0.1% per use (max +10% from uses, so caps at 100 uses)
+			# -0.5% per monster level above player (heavily penalized vs high level)
+			# +0.5% per monster level below player
+			var base_chance = 3.0
+			var use_bonus = min(10.0, character.all_or_nothing_uses * 0.1)
+			var level_diff = monster.level - character.level
+			var level_modifier = -level_diff * 0.5  # Negative if monster higher, positive if lower
+
+			var success_chance = base_chance + use_bonus + level_modifier
+			success_chance = clamp(success_chance, 1.0, 25.0)  # Min 1%, max 25%
+
+			messages.append("[color=#FF00FF][b]ALL OR NOTHING![/b][/color]")
+			messages.append("[color=#808080](Success chance: %.1f%%)[/color]" % success_chance)
+
+			if randf() * 100.0 < success_chance:
+				# SUCCESS - instant kill!
+				var killing_blow = monster.current_hp
+				monster.current_hp = 0
+				messages.append("[color=#00FF00][b]MIRACULOUS SUCCESS![/b][/color]")
+				messages.append("[color=#FFD700]Against all odds, you strike the %s's vital point for %d damage![/color]" % [monster.name, killing_blow])
+			else:
+				# FAILURE - monster gets enraged (double strength and speed)
+				monster.strength = monster.strength * 2
+				monster.speed = monster.speed * 2
+				# Wake up paralyzed monsters faster
+				if combat.get("monster_stunned", 0) > 0:
+					combat["monster_stunned"] = max(0, combat["monster_stunned"] - 2)
+					messages.append("[color=#FF4444]The monster snaps out of paralysis![/color]")
+				messages.append("[color=#FF0000][b]CATASTROPHIC FAILURE![/b][/color]")
+				messages.append("[color=#FF4444]The %s becomes ENRAGED! Its strength and speed DOUBLE![/color]" % monster.name)
+
+			# Check if monster died
+			if monster.current_hp <= 0:
+				return _process_victory(combat, messages)
+
+			return {"success": true, "messages": messages, "combat_ended": false}
 
 	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
 
@@ -1953,59 +2014,6 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				character.current_hp = max(1, character.current_hp)  # Can't kill yourself
 				messages.append("[color=#FF4444][b]GAMBIT FAILED![/b][/color]")
 				messages.append("[color=#FF4444]Your gambit backfires for %d self-damage![/color]" % self_damage)
-
-		"all_or_nothing":
-			# Universal desperation ability - very low chance to instant kill
-			# Costs 1 mana/stamina/energy (uses whatever resource the class has)
-			var has_resource = false
-			if character.current_mana >= 1:
-				character.current_mana -= 1
-				has_resource = true
-			elif character.current_stamina >= 1:
-				character.current_stamina -= 1
-				has_resource = true
-			elif character.current_energy >= 1:
-				character.current_energy -= 1
-				has_resource = true
-
-			if not has_resource:
-				return {"success": false, "messages": ["[color=#FF4444]You need at least 1 resource to attempt this![/color]"], "combat_ended": false, "skip_monster_turn": true}
-
-			# Track usage (for "gets better over time" mechanic)
-			character.all_or_nothing_uses += 1
-
-			# Calculate success chance:
-			# Base: 3%
-			# +0.1% per use (max +10% from uses, so caps at 100 uses)
-			# -0.5% per monster level above player (heavily penalized vs high level)
-			# +0.5% per monster level below player
-			var base_chance = 3.0
-			var use_bonus = min(10.0, character.all_or_nothing_uses * 0.1)
-			var level_diff = monster.level - character.level
-			var level_modifier = -level_diff * 0.5  # Negative if monster higher, positive if lower
-
-			var success_chance = base_chance + use_bonus + level_modifier
-			success_chance = clamp(success_chance, 1.0, 25.0)  # Min 1%, max 25%
-
-			messages.append("[color=#FF00FF][b]ALL OR NOTHING![/b][/color]")
-			messages.append("[color=#808080](Success chance: %.1f%%)[/color]" % success_chance)
-
-			if randf() * 100.0 < success_chance:
-				# SUCCESS - instant kill!
-				var killing_blow = monster.current_hp
-				monster.current_hp = 0
-				messages.append("[color=#00FF00][b]MIRACULOUS SUCCESS![/b][/color]")
-				messages.append("[color=#FFD700]Against all odds, you strike the %s's vital point for %d damage![/color]" % [monster.name, killing_blow])
-			else:
-				# FAILURE - monster gets enraged (double strength and speed)
-				monster.strength = monster.strength * 2
-				monster.speed = monster.speed * 2
-				# Wake up paralyzed monsters faster
-				if combat.get("monster_stunned", 0) > 0:
-					combat["monster_stunned"] = max(0, combat["monster_stunned"] - 2)
-					messages.append("[color=#FF4444]The monster snaps out of paralysis![/color]")
-				messages.append("[color=#FF0000][b]CATASTROPHIC FAILURE![/b][/color]")
-				messages.append("[color=#FF4444]The %s becomes ENRAGED! Its strength and speed DOUBLE![/color]" % monster.name)
 
 	# Check if monster died
 	if monster.current_hp <= 0:

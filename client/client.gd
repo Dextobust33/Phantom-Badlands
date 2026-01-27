@@ -29,11 +29,11 @@ var default_keybinds = {
 	"action_2": KEY_W,
 	"action_3": KEY_E,
 	"action_4": KEY_R,
-	"action_5": KEY_6,      # Extended action bar
-	"action_6": KEY_7,
-	"action_7": KEY_8,
-	"action_8": KEY_9,
-	"action_9": KEY_0,
+	"action_5": KEY_1,      # Extended action bar (shares with item keys intentionally)
+	"action_6": KEY_2,
+	"action_7": KEY_3,
+	"action_8": KEY_4,
+	"action_9": KEY_5,
 	# Item selection keys (separate from action bar, always 1-9 by default)
 	"item_1": KEY_1,
 	"item_2": KEY_2,
@@ -3059,14 +3059,14 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Main Trading Post menu
+			# Main Trading Post menu (player walks out to leave)
 			var quests_available = trading_post_data.get("available_quests", 0) > 0
 			var quests_ready = trading_post_data.get("quests_to_turn_in", 0) > 0
 			# Calculate recharge cost (50 + level*10, then 50% off at Trading Post)
 			var player_level = character_data.get("level", 1)
 			var recharge_cost = int((50 + player_level * 10) * 0.5)
 			current_actions = [
-				{"label": "Leave", "action_type": "local", "action_data": "trading_post_leave", "enabled": true},
+				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": quests_available or quests_ready},
 				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
@@ -8843,10 +8843,24 @@ func is_reserved_key(keycode: int) -> bool:
 	return keycode in [KEY_ESCAPE, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_TAB]
 
 func get_keybind_conflicts(keycode: int, exclude_action: String) -> Array:
-	"""Find any other actions bound to the same key"""
+	"""Find any other actions bound to the same key.
+	Action bar keys (action_5-9) are allowed to share with item keys (item_1-9)
+	since they serve different purposes in different contexts."""
 	var conflicts = []
+	# Check if the action being rebound is an action bar key or item key
+	var is_action_key = exclude_action.begins_with("action_")
+	var is_item_key = exclude_action.begins_with("item_")
+
 	for action in keybinds:
 		if action != exclude_action and keybinds[action] == keycode:
+			# Allow action bar keys to share with item keys
+			var other_is_action = action.begins_with("action_")
+			var other_is_item = action.begins_with("item_")
+
+			# Skip conflict if one is action bar and other is item key
+			if (is_action_key and other_is_item) or (is_item_key and other_is_action):
+				continue
+
 			conflicts.append(action)
 	return conflicts
 
@@ -10365,13 +10379,13 @@ func handle_trading_post_start(message: Dictionary):
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
 	display_game("")
-	display_game("Services: [%s] Shop | [%s] Quests" % [get_action_key_name(1), get_action_key_name(2)])
+	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
 		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
 	display_game("")
-	display_game("[%s] Leave" % get_action_key_name(0))
+	display_game("[color=#808080]Walk in any direction to leave.[/color]")
 
 	update_action_bar()
 
@@ -10407,9 +10421,9 @@ func cancel_trading_post_action():
 	game_output.clear()
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("")
-	display_game("Services: [%s] Shop | [%s] Quests" % [get_action_key_name(1), get_action_key_name(2)])
+	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
 	display_game("")
-	display_game("[%s] Leave" % get_action_key_name(0))
+	display_game("[color=#808080]Walk in any direction to leave.[/color]")
 
 # ===== QUEST FUNCTIONS =====
 
