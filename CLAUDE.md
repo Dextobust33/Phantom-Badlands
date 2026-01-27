@@ -202,7 +202,7 @@ The client uses a state-driven action bar system. **Common bugs occur when state
    - `pending_merchant_action` - Current merchant sub-action
    - `quest_view_mode` - Viewing quests at trading post
 
-3. **Action handlers in `execute_action()` must:**
+3. **Action handlers in `execute_local_action()` must:**
    - Clear/set the appropriate pending action state
    - Call `update_action_bar()` to reflect the new state
    - If sending to server, still update action bar immediately (server response will update again if needed)
@@ -211,21 +211,82 @@ The client uses a state-driven action bar system. **Common bugs occur when state
    - Check current mode flags before updating UI
    - Call `update_action_bar()` after `display_inventory()` or similar display functions
 
+### Keybind Structure
+
+Action bar uses 10 slots (indices 0-9) with default keybinds:
+- `action_0`: Space (primary action)
+- `action_1-4`: Q, W, E, R (quick actions)
+- `action_5-9`: 1, 2, 3, 4, 5 (extended actions - SHARED with item selection keys)
+
+Item selection uses 9 keys (`item_1` through `item_9`), defaulting to keys 1-9.
+
+**Key Sharing:** Action bar slots 5-9 intentionally share keys with item selection (1-5). This is allowed because:
+- Action bar buttons take priority when their slot has an enabled action
+- Item selection only activates when in a mode that needs it AND the action bar slot is empty/disabled
+
+### Key Conflict Prevention
+
+**CRITICAL:** When adding sub-menus that use action bar buttons (like Sort or Salvage), you MUST exclude those modes from item selection processing.
+
+In `_process()`, the item selection code at ~line 1451 checks:
+```gdscript
+if inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"] and not monster_select_mode:
+```
+
+**When adding new sub-menus that use action bar buttons instead of item selection:**
+1. Add the new `pending_inventory_action` value to the exclusion list above
+2. This prevents number keys from triggering both item selection AND action bar buttons
+
+### Adding Sub-Menus with Pagination
+
+For menus that need more than 10 options (like Sort menu):
+
+1. Add a page variable (e.g., `sort_menu_page`)
+2. In `update_action_bar()`, check the page and show different actions:
+   ```gdscript
+   if sort_menu_page == 0:
+       # Page 1 actions + "More..." button
+   else:
+       # Page 2 actions + "Back" button
+   ```
+3. Add handlers for page navigation (`sort_more`, `sort_back`)
+4. Reset the page variable when opening/closing the menu
+
 ### Common Pitfalls
 
+- **Key conflicts:** Adding sub-menus without excluding them from item selection processing
 - Sending server message but not updating action bar until response arrives
 - Clearing `pending_*_action` without calling `update_action_bar()`
-- Adding new action bar buttons without checking they're in all relevant state conditions in `_get_current_actions()`
-- Adding new abilities without adding them to BOTH the command routing AND the ability list in `process_ability_command()`
+- Adding new action bar buttons without checking they're in all relevant state conditions in `update_action_bar()`
+- Adding new abilities without adding them to BOTH the command routing AND the ability list
+- Forgetting to reset page variables (like `sort_menu_page`) when exiting menus
 
-### Action Bar Structure (in `_get_current_actions()`)
+### Action Bar Structure (in `update_action_bar()`)
 
 The function uses a priority-based if/elif chain:
-1. Combat states (highest priority)
-2. Special modes (merchant, trading post, inventory)
-3. Normal movement mode (lowest priority)
+1. `settings_mode` - Settings menu (highest priority)
+2. `wish_selection_mode` - Wish granter selection
+3. `monster_select_mode` - Monster targeting
+4. `at_merchant` - Merchant interactions
+5. `inventory_mode` - Inventory and sub-menus (sort, salvage, equip, etc.)
+6. `at_trading_post` - Trading post menu
+7. Combat states (`in_combat`, `flock_pending`, `pending_continue`)
+8. Normal movement mode (lowest priority)
 
 When adding new modes, insert them at the appropriate priority level.
+
+### Input Processing Order (in `_process()`)
+
+Understanding the order prevents conflicts:
+1. Settings mode key handling
+2. Escape key handling
+3. **Inventory item selection** (~line 1451) - runs when `inventory_mode` and `pending_inventory_action` set
+4. Merchant item selection
+5. Quest selection
+6. **Action bar key processing** (~line 1656) - runs for all 10 action slots
+7. Movement keys
+
+Item selection runs BEFORE action bar processing. If both could trigger on the same key, item selection wins unless properly excluded.
 
 ## Zone Difficulty Overhaul (COMPLETE)
 
