@@ -2709,6 +2709,14 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FFD700]You open %s and find %d gold![/color]" % [item_name, gold_amount]
 		})
+	elif effect.has("gems"):
+		# Gem item - grants gems (premium currency) based on tier
+		var gem_amount = effect.base + (effect.get("per_tier", 1) * max(0, item_tier - 1))
+		character.gems += gem_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]You appraise %s and receive %d gem%s![/color]" % [item_name, gem_amount, "s" if gem_amount > 1 else ""]
+		})
 	elif effect.has("monster_select"):
 		# Monster Selection Scroll - let player pick next encounter
 		# Get list of all monster names from monster database

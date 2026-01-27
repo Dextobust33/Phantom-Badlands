@@ -182,10 +182,12 @@ const DROP_TABLES = {
 }
 
 # Potion effects for consumables
-# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, gold: grants gold
+# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, gold: grants gold, gems: grants gems
 const POTION_EFFECTS = {
 	# Gold pouches - grants variable gold based on item level
 	"gold_pouch": {"gold": true, "base": 50, "per_level": 25, "variance": 0.5},  # 50 + 25*level ± 50%
+	# Gem items - grants gems (premium currency)
+	"gem_small": {"gems": true, "base": 1, "per_tier": 1},  # 1 gem + 1 per tier above 1
 	# Healing potions
 	"potion_minor": {"heal": true, "base": 10, "per_level": 10},
 	"potion_lesser": {"heal": true, "base": 20, "per_level": 12},
@@ -469,6 +471,17 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"legendary": return "Treasure Chest"
 			"artifact": return "Dragon's Hoard"
 			_: return "Gold Pouch"
+
+	# Special handling for gem items - name based on rarity
+	if item_type == "gem_small":
+		match rarity:
+			"common": return "Tiny Gem"
+			"uncommon": return "Small Gem"
+			"rare": return "Gem"
+			"epic": return "Precious Gem"
+			"legendary": return "Flawless Gem"
+			"artifact": return "Perfect Gem"
+			_: return "Small Gem"
 
 	# Special handling for scrolls
 	if item_type.begins_with("scroll_"):

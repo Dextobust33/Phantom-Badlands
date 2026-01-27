@@ -219,6 +219,9 @@ var current_actions: Array[Dictionary] = []
 # Inventory mode
 var inventory_mode: bool = false
 var inventory_page: int = 0  # Current page (0-indexed)
+var equip_page: int = 0  # Current page for filtered equip list (0-indexed)
+var use_page: int = 0  # Current page for filtered usable items list (0-indexed)
+var combat_use_page: int = 0  # Current page for combat usable items list (0-indexed)
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 
 # Consumable tier system for display purposes (matches server calculations)
@@ -1419,9 +1422,17 @@ func _process(delta):
 					continue
 				if not get_meta("itemkey_%d_pressed" % i, false):
 					set_meta("itemkey_%d_pressed" % i, true)
-					# Convert page-relative index to absolute inventory index
-					var absolute_index = inventory_page * INVENTORY_PAGE_SIZE + i
-					select_inventory_item(absolute_index)
+					var selection_index = i
+					if pending_inventory_action == "equip_item":
+						# Equip uses its own page for filtered list
+						selection_index = equip_page * INVENTORY_PAGE_SIZE + i
+					elif pending_inventory_action == "use_item":
+						# Use item uses its own page for filtered list
+						selection_index = use_page * INVENTORY_PAGE_SIZE + i
+					else:
+						# Regular inventory uses inventory_page
+						selection_index = inventory_page * INVENTORY_PAGE_SIZE + i
+					select_inventory_item(selection_index)
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
 
@@ -1489,6 +1500,9 @@ func _process(delta):
 		if Input.is_physical_key_pressed(cancel_key):
 			if not get_meta("combatitem_cancel_pressed", false):
 				set_meta("combatitem_cancel_pressed", true)
+				# Mark hotkey_0 as pressed to prevent attack on same frame
+				# (action bar checks hotkey_0_pressed, not combatitem_cancel_pressed)
+				set_meta("hotkey_0_pressed", true)
 				cancel_combat_item_mode()
 		else:
 			set_meta("combatitem_cancel_pressed", false)
@@ -2611,11 +2625,15 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif combat_item_mode:
-		# Combat item selection mode - show cancel only, use number keys to select
+		# Combat item selection mode - show cancel and page navigation
+		var usable_items = get_meta("combat_usable_items", [])
+		var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
+		var has_prev = combat_use_page > 0
+		var has_next = combat_use_page < total_pages - 1
 		current_actions = [
 			{"label": "Cancel", "action_type": "local", "action_data": "combat_item_cancel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Prev Pg", "action_type": "local", "action_data": "combat_use_prev_page", "enabled": has_prev},
+			{"label": "Next Pg", "action_type": "local", "action_data": "combat_use_next_page", "enabled": has_next},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2812,6 +2830,42 @@ func update_action_bar():
 				{"label": "Equip", "action_type": "local", "action_data": "confirm_equip", "enabled": true},
 				{"label": "Cancel", "action_type": "local", "action_data": "cancel_equip_confirm", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "equip_item":
+			# Equip mode uses filtered equippable items list with its own pagination
+			var equippable_items = get_meta("equippable_items", [])
+			var total_pages = max(1, int(ceil(float(equippable_items.size()) / INVENTORY_PAGE_SIZE)))
+			var has_prev = equip_page > 0
+			var has_next = equip_page < total_pages - 1
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "equip_prev_page", "enabled": has_prev},
+				{"label": "Next Pg", "action_type": "local", "action_data": "equip_next_page", "enabled": has_next},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "use_item":
+			# Use mode uses filtered usable items list with its own pagination
+			var usable_items = get_meta("usable_items", [])
+			var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
+			var has_prev = use_page > 0
+			var has_next = use_page < total_pages - 1
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "use_prev_page", "enabled": has_prev},
+				{"label": "Next Pg", "action_type": "local", "action_data": "use_next_page", "enabled": has_next},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3721,7 +3775,6 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 func show_combat_item_menu():
 	"""Display usable items for combat selection."""
 	combat_item_mode = true
-	update_action_bar()
 
 	var inventory = character_data.get("inventory", [])
 	var usable_items = []
@@ -3729,7 +3782,8 @@ func show_combat_item_menu():
 	for i in range(inventory.size()):
 		var item = inventory[i]
 		var item_type = item.get("type", "")
-		if "potion" in item_type or "elixir" in item_type:
+		# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
+		if "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 			usable_items.append({"index": i, "item": item})
 
 	if usable_items.is_empty():
@@ -3738,15 +3792,38 @@ func show_combat_item_menu():
 		update_action_bar()
 		return
 
-	display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
-	for j in range(usable_items.size()):
+	combat_use_page = 0  # Reset to first page
+	set_meta("combat_usable_items", usable_items)
+	_display_combat_usable_items_page()
+	update_action_bar()
+
+func _display_combat_usable_items_page():
+	"""Display current page of combat usable items"""
+	var usable_items = get_meta("combat_usable_items", [])
+
+	var total_pages = int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE))
+	var start_idx = combat_use_page * INVENTORY_PAGE_SIZE
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, usable_items.size())
+
+	if total_pages > 1:
+		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [combat_use_page + 1, total_pages])
+	else:
+		display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
+
+	for j in range(start_idx, end_idx):
 		var entry = usable_items[j]
 		var item = entry.item
 		var item_name = item.get("name", "Unknown")
 		var rarity = item.get("rarity", "common")
 		var color = _get_rarity_color(rarity)
-		display_game("[%d] [color=%s]%s[/color]" % [j + 1, color, item_name])
-	display_game("[color=#808080]%s to use an item, or %s to cancel.[/color]" % [get_selection_keys_text(usable_items.size()), get_action_key_name(0)])
+		var display_num = (j - start_idx) + 1
+		display_game("[%d] [color=%s]%s[/color]" % [display_num, color, item_name])
+
+	var items_on_page = end_idx - start_idx
+	if total_pages > 1:
+		display_game("[color=#808080]%s to use | Prev/Next Page to navigate[/color]" % get_selection_keys_text(items_on_page))
+	else:
+		display_game("[color=#808080]%s to use an item, or %s to cancel.[/color]" % [get_selection_keys_text(items_on_page), get_action_key_name(0)])
 
 func cancel_combat_item_mode():
 	"""Cancel combat item selection mode."""
@@ -3755,21 +3832,17 @@ func cancel_combat_item_mode():
 	display_game("[color=#808080]Item use cancelled.[/color]")
 
 func use_combat_item_by_number(number: int):
-	"""Use a combat item by its display number (1-indexed)."""
-	var inventory = character_data.get("inventory", [])
-	var usable_items = []
+	"""Use a combat item by its display number (1-indexed, page-relative)."""
+	var usable_items = get_meta("combat_usable_items", [])
 
-	for i in range(inventory.size()):
-		var item = inventory[i]
-		var item_type = item.get("type", "")
-		if "potion" in item_type or "elixir" in item_type:
-			usable_items.append(i)  # Store actual inventory index
+	# Convert page-relative number to absolute index in filtered list
+	var absolute_index = combat_use_page * INVENTORY_PAGE_SIZE + (number - 1)
 
-	if number < 1 or number > usable_items.size():
+	if absolute_index < 0 or absolute_index >= usable_items.size():
 		display_game("[color=#FF0000]Invalid item number![/color]")
 		return
 
-	var actual_index = usable_items[number - 1]
+	var actual_index = usable_items[absolute_index].index
 	combat_item_mode = false
 	update_action_bar()
 
@@ -3838,6 +3911,42 @@ func execute_local_action(action: String):
 				display_inventory()
 				# Re-prompt for current action
 				_reprompt_inventory_action()
+				update_action_bar()
+		"equip_prev_page":
+			if equip_page > 0:
+				equip_page -= 1
+				_display_equippable_items_page()
+				update_action_bar()
+		"equip_next_page":
+			var equippable_items = get_meta("equippable_items", [])
+			var total_pages = max(1, int(ceil(float(equippable_items.size()) / INVENTORY_PAGE_SIZE)))
+			if equip_page < total_pages - 1:
+				equip_page += 1
+				_display_equippable_items_page()
+				update_action_bar()
+		"use_prev_page":
+			if use_page > 0:
+				use_page -= 1
+				_display_usable_items_page()
+				update_action_bar()
+		"use_next_page":
+			var usable_items = get_meta("usable_items", [])
+			var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
+			if use_page < total_pages - 1:
+				use_page += 1
+				_display_usable_items_page()
+				update_action_bar()
+		"combat_use_prev_page":
+			if combat_use_page > 0:
+				combat_use_page -= 1
+				_display_combat_usable_items_page()
+				update_action_bar()
+		"combat_use_next_page":
+			var combat_usable_items = get_meta("combat_usable_items", [])
+			var total_pages = max(1, int(ceil(float(combat_usable_items.size()) / INVENTORY_PAGE_SIZE)))
+			if combat_use_page < total_pages - 1:
+				combat_use_page += 1
+				_display_combat_usable_items_page()
 				update_action_bar()
 		"acknowledge_continue":
 			acknowledge_continue()
@@ -5167,60 +5276,43 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()  # Show cancel option
 
 		"use":
-			# Filter for usable items only (potions/elixirs)
+			# Filter for usable items only (all consumables)
 			var usable_items = []
 			for i in range(inventory.size()):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
-				if "potion" in item_type or "elixir" in item_type:
+				# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
+				if "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 					usable_items.append({"index": i, "item": item})
 			if usable_items.is_empty():
-				display_game("[color=#FF0000]No usable items (potions/elixirs) in inventory.[/color]")
+				display_game("[color=#FF0000]No usable items in inventory.[/color]")
 				return
 			pending_inventory_action = "use_item"
 			set_inventory_background("use")
-			# Display only usable items
-			display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
-			for j in range(usable_items.size()):
-				var entry = usable_items[j]
-				var item = entry.item
-				var item_name = item.get("name", "Unknown")
-				var rarity = item.get("rarity", "common")
-				var color = _get_rarity_color(rarity)
-				display_game("[%d] [color=%s]%s[/color]" % [j + 1, color, item_name])
-			display_game("[color=#808080]%s to use an item:[/color]" % get_selection_keys_text(usable_items.size()))
-			# Store usable items mapping for selection
+			use_page = 0  # Reset to first page
 			set_meta("usable_items", usable_items)
+			_display_usable_items_page()
 			update_action_bar()
 
 		"equip":
-			# Filter for equippable items only (exclude consumables like potions, elixirs, scrolls)
+			# Filter for equippable items only (exclude all consumables)
 			var equippable_items = []
 			for i in range(inventory.size()):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				# Equippable items have types like: weapon_*, armor_*, helm_*, shield_*, boots_*, ring_*, amulet_*
-				# Consumables have types like: potion_*, elixir_*, scroll_*
-				if not ("potion" in item_type or "elixir" in item_type or "scroll" in item_type):
+				# Consumables have types like: potion_*, elixir_*, scroll_*, gold_*, gem_*, mana_*, stamina_*, energy_*
+				var is_consumable = "potion" in item_type or "elixir" in item_type or "scroll" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_")
+				if not is_consumable:
 					equippable_items.append({"index": i, "item": item})
 			if equippable_items.is_empty():
 				display_game("[color=#FF0000]No equippable items in inventory.[/color]")
 				return
 			pending_inventory_action = "equip_item"
 			set_inventory_background("equip")
-			# Display only equippable items
-			display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
-			for j in range(equippable_items.size()):
-				var entry = equippable_items[j]
-				var item = entry.item
-				var item_name = item.get("name", "Unknown")
-				var rarity = item.get("rarity", "common")
-				var level = item.get("level", 1)
-				var color = _get_rarity_color(rarity)
-				display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
-			display_game("[color=#808080]%s to equip an item:[/color]" % get_selection_keys_text(equippable_items.size()))
-			# Store equippable items mapping for selection
+			equip_page = 0  # Reset to first page
 			set_meta("equippable_items", equippable_items)
+			_display_equippable_items_page()
 			update_action_bar()
 
 		"unequip":
@@ -5646,24 +5738,109 @@ func confirm_equip_item():
 	# The character_update will refresh and re-show inventory
 	update_action_bar()
 
+func _display_equippable_items_page():
+	"""Display current page of equippable items with stats and comparison"""
+	var equippable_items = get_meta("equippable_items", [])
+	var equipped = character_data.get("equipped", {})
+
+	var total_pages = int(ceil(float(equippable_items.size()) / INVENTORY_PAGE_SIZE))
+	var start_idx = equip_page * INVENTORY_PAGE_SIZE
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, equippable_items.size())
+
+	game_output.clear()
+	if total_pages > 1:
+		display_game("[color=#FFD700]===== EQUIPPABLE ITEMS (Page %d/%d) =====[/color]" % [equip_page + 1, total_pages])
+	else:
+		display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
+
+	for j in range(start_idx, end_idx):
+		var entry = equippable_items[j]
+		var item = entry.item
+		var item_name = item.get("name", "Unknown")
+		var item_type = item.get("type", "")
+		var rarity = item.get("rarity", "common")
+		var level = item.get("level", 1)
+		var color = _get_rarity_color(rarity)
+
+		# Build stats string
+		var stats_parts = []
+		var bonuses = _compute_item_bonuses(item)
+		if bonuses.get("attack", 0) > 0:
+			stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+		if bonuses.get("defense", 0) > 0:
+			stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+		if bonuses.get("max_hp", 0) > 0:
+			stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
+		if bonuses.get("max_mana", 0) > 0:
+			stats_parts.append("[color=#9999FF]+%d MP[/color]" % bonuses.max_mana)
+		var stats_str = " ".join(stats_parts) if stats_parts.size() > 0 else ""
+
+		# Comparison with equipped item
+		var compare_text = ""
+		var slot = _get_slot_for_item_type(item_type)
+		if slot != "":
+			var equipped_item = equipped.get(slot)
+			if equipped_item != null and equipped_item is Dictionary:
+				var equipped_level = equipped_item.get("level", 1)
+				if level > equipped_level:
+					compare_text = " [color=#00FF00]↑[/color]"
+				elif level < equipped_level:
+					compare_text = " [color=#FF6666]↓[/color]"
+				else:
+					compare_text = " [color=#FFFF66]=[/color]"
+			else:
+				compare_text = " [color=#00FF00]NEW[/color]"
+
+		# Display number is 1-9 for current page
+		var display_num = (j - start_idx) + 1
+
+		# Display item with stats
+		if stats_str != "":
+			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [display_num, color, item_name, level, compare_text, stats_str])
+		else:
+			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s" % [display_num, color, item_name, level, compare_text])
+
+	var items_on_page = end_idx - start_idx
+	if total_pages > 1:
+		display_game("[color=#808080]%s to equip | Prev/Next Page to navigate[/color]" % get_selection_keys_text(items_on_page))
+	else:
+		display_game("[color=#808080]%s to equip an item:[/color]" % get_selection_keys_text(items_on_page))
+
+func _display_usable_items_page():
+	"""Display current page of usable items"""
+	var usable_items = get_meta("usable_items", [])
+
+	var total_pages = int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE))
+	var start_idx = use_page * INVENTORY_PAGE_SIZE
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, usable_items.size())
+
+	game_output.clear()
+	if total_pages > 1:
+		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [use_page + 1, total_pages])
+	else:
+		display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
+
+	for j in range(start_idx, end_idx):
+		var entry = usable_items[j]
+		var item = entry.item
+		var item_name = item.get("name", "Unknown")
+		var rarity = item.get("rarity", "common")
+		var color = _get_rarity_color(rarity)
+		var display_num = (j - start_idx) + 1
+		display_game("[%d] [color=%s]%s[/color]" % [display_num, color, item_name])
+
+	var items_on_page = end_idx - start_idx
+	if total_pages > 1:
+		display_game("[color=#808080]%s to use | Prev/Next Page to navigate[/color]" % get_selection_keys_text(items_on_page))
+	else:
+		display_game("[color=#808080]%s to use an item:[/color]" % get_selection_keys_text(items_on_page))
+
 func cancel_equip_confirmation():
 	"""Cancel equip confirmation and return to equip item selection"""
 	selected_item_index = -1
 	pending_inventory_action = "equip_item"
 	set_inventory_background("equip")
-	game_output.clear()
-	# Re-display filtered equippable items
-	var equippable_items = get_meta("equippable_items", [])
-	display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
-	for j in range(equippable_items.size()):
-		var entry = equippable_items[j]
-		var item = entry.item
-		var item_name = item.get("name", "Unknown")
-		var rarity = item.get("rarity", "common")
-		var level = item.get("level", 1)
-		var color = _get_rarity_color(rarity)
-		display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
-	display_game("[color=#FFD700]%s to equip an item:[/color]" % get_selection_keys_text(equippable_items.size()))
+	_display_equippable_items_page()
 	update_action_bar()
 
 func _reprompt_inventory_action():
@@ -6458,11 +6635,13 @@ func handle_server_message(message: Dictionary):
 					if pending_inventory_action == "equip_item":
 						# Regenerate filtered equippable items list
 						var inv = character_data.get("inventory", [])
+						var equipped = character_data.get("equipped", {})
 						var equippable_items = []
 						for ii in range(inv.size()):
 							var itm = inv[ii]
-							var item_type = itm.get("type", "")
-							if not ("potion" in item_type or "elixir" in item_type or "scroll" in item_type):
+							var itm_type = itm.get("type", "")
+							var is_consumable = "potion" in itm_type or "elixir" in itm_type or "scroll" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_")
+							if not is_consumable:
 								equippable_items.append({"index": ii, "item": itm})
 						set_meta("equippable_items", equippable_items)
 						if equippable_items.size() > 0:
@@ -6472,10 +6651,44 @@ func handle_server_message(message: Dictionary):
 								var entry = equippable_items[j]
 								var item = entry.item
 								var item_name = item.get("name", "Unknown")
+								var item_type = item.get("type", "")
 								var rarity = item.get("rarity", "common")
 								var level = item.get("level", 1)
 								var color = _get_rarity_color(rarity)
-								display_game("[%d] [color=%s]%s[/color] (Lv%d)" % [j + 1, color, item_name, level])
+
+								# Build stats string
+								var stats_parts = []
+								var bonuses = _compute_item_bonuses(item)
+								if bonuses.get("attack", 0) > 0:
+									stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+								if bonuses.get("defense", 0) > 0:
+									stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+								if bonuses.get("max_hp", 0) > 0:
+									stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
+								if bonuses.get("max_mana", 0) > 0:
+									stats_parts.append("[color=#9999FF]+%d MP[/color]" % bonuses.max_mana)
+								var stats_str = " ".join(stats_parts) if stats_parts.size() > 0 else ""
+
+								# Comparison with equipped item
+								var compare_text = ""
+								var slot = _get_slot_for_item_type(item_type)
+								if slot != "":
+									var equipped_item = equipped.get(slot)
+									if equipped_item != null and equipped_item is Dictionary:
+										var equipped_level = equipped_item.get("level", 1)
+										if level > equipped_level:
+											compare_text = " [color=#00FF00]↑[/color]"
+										elif level < equipped_level:
+											compare_text = " [color=#FF6666]↓[/color]"
+										else:
+											compare_text = " [color=#FFFF66]=[/color]"
+									else:
+										compare_text = " [color=#00FF00]NEW[/color]"
+
+								if stats_str != "":
+									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [j + 1, color, item_name, level, compare_text, stats_str])
+								else:
+									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s" % [j + 1, color, item_name, level, compare_text])
 							display_game("[color=#FFD700]%s to equip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(equippable_items.size()), get_action_key_name(0)])
 						else:
 							display_game("[color=#808080]No more items to equip.[/color]")
