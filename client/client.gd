@@ -2654,7 +2654,7 @@ func update_action_bar():
 				{"label": "Back", "action_type": "local", "action_data": "ability_exit", "enabled": true},
 				{"label": "Equip", "action_type": "local", "action_data": "ability_equip", "enabled": true},
 				{"label": "Unequip", "action_type": "local", "action_data": "ability_unequip", "enabled": true},
-				{"label": "Keybinds", "action_type": "local", "action_data": "ability_keybinds", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6408,18 +6408,20 @@ func display_ability_menu():
 	var all_abilities = ability_data.get("all_abilities", [])
 
 	# Show currently equipped abilities in 4 slots
+	# Combat action bar: indices 0-3 are Attack/UseItem/Flee/Outsmart, indices 4-9 are ability slots
+	# So ability slot i maps to action bar index (4 + i)
 	display_game("[color=#00FFFF]Your Combat Slots:[/color] (press these keys during combat)")
 	display_game("")
 	for i in range(4):
 		var ability_name = equipped[i] if i < equipped.size() else ""
-		var keybind = keybinds.get(str(i), keybinds.get(i, "?"))
+		var combat_key = get_action_key_name(4 + i)  # Ability slots start at action bar index 4
 		if ability_name != "" and ability_name != null:
 			var ability_info = _get_ability_info_from_list(ability_name, all_abilities)
 			var display_name = ability_info.get("display", ability_name.capitalize().replace("_", " "))
 			var cost_text = _get_ability_cost_text(ability_name)
-			display_game("  Slot %d: [color=#00FF00]%s[/color] %s  [color=#AAAAAA]→ Press [%s] in combat[/color]" % [i + 1, display_name, cost_text, keybind])
+			display_game("  Slot %d: [color=#00FF00]%s[/color] %s  [color=#AAAAAA]→ Press [%s] in combat[/color]" % [i + 1, display_name, cost_text, combat_key])
 		else:
-			display_game("  Slot %d: [color=#555555](empty)[/color]  [color=#555555]→ Key: %s[/color]" % [i + 1, keybind])
+			display_game("  Slot %d: [color=#555555](empty)[/color]  [color=#555555]→ Key: %s[/color]" % [i + 1, combat_key])
 
 	display_game("")
 
@@ -6444,8 +6446,9 @@ func display_ability_menu():
 	display_game("[color=#FFD700]Menu Controls:[/color]")
 	display_game("  [%s] Equip - Add an ability to a slot" % get_action_key_name(1))
 	display_game("  [%s] Unequip - Remove an ability from a slot" % get_action_key_name(2))
-	display_game("  [%s] Keybinds - Change which key activates a slot" % get_action_key_name(3))
 	display_game("  [%s] Back - Return to game" % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]Tip: Change combat keybinds in Settings (action_4 through action_7)[/color]")
 
 func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> Dictionary:
 	"""Find ability info from the ability list"""
@@ -6978,6 +6981,19 @@ func update_buff_display():
 		var poison_turns = character_data.get("poison_turns_remaining", 0)
 		parts.append("[color=#FF00FF][P%d:%d][/color]" % [poison_dmg, poison_turns])
 
+	# Blind (debuff) - gray
+	if character_data.get("blind_active", false):
+		var blind_turns = character_data.get("blind_turns_remaining", 0)
+		parts.append("[color=#808080][BL:%d][/color]" % blind_turns)
+
+	# Forcefield/Shield (combat) - cyan
+	if current_forcefield > 0:
+		parts.append("[color=#00FFFF][FF:%d][/color]" % current_forcefield)
+
+	# Cloak (world movement) - purple
+	if character_data.get("cloak_active", false):
+		parts.append("[color=#9932CC][CLK][/color]")
+
 	# Active combat buffs (round-based)
 	var active_buffs = character_data.get("active_buffs", [])
 	for buff in active_buffs:
@@ -7010,10 +7026,11 @@ func _get_buff_color(buff_type: String) -> String:
 		"defense": return "#6666FF"   # Blue
 		"speed": return "#66FF66"     # Green
 		"damage": return "#FF6666"    # Red
-		"crit_chance": return "#FFD700"  # Gold
+		"crit", "crit_chance": return "#FFD700"  # Gold
 		"lifesteal": return "#FF00FF"    # Magenta
 		"thorns": return "#FF4444"       # Dark red
 		"forcefield": return "#00FFFF"   # Cyan
+		"damage_reduction": return "#00CED1"  # Dark cyan (Iron Skin)
 		"damage_penalty": return "#FF4444"  # Dark red (debuff)
 		"defense_penalty": return "#4444FF" # Dark blue (debuff)
 		_: return "#FFFFFF"  # White default
@@ -7025,10 +7042,11 @@ func _get_buff_letter(buff_type: String) -> String:
 		"defense": return "D"
 		"speed": return "V"  # Velocity
 		"damage": return "A"  # Attack
-		"crit_chance": return "C"  # Crit
+		"crit", "crit_chance": return "C"  # Crit
 		"lifesteal": return "L"    # Lifesteal
 		"thorns": return "T"       # Thorns
 		"forcefield": return "F"   # Forcefield
+		"damage_reduction": return "DR"  # Damage Reduction (Iron Skin)
 		"damage_penalty": return "A-"
 		"defense_penalty": return "D-"
 		_: return buff_type.substr(0, 1).to_upper()
@@ -10025,6 +10043,17 @@ Lv100 [color=#FFA500]Perfect Heist[/color] (50) - Instant win, 2x rewards
   • Chance improves slightly with each use (+0.1%%)
   • Harder vs higher level monsters (-0.5%%/lvl)
   • Maximum 25%% chance, minimum 1%%
+
+[color=#AAAAAA]-- BUFF ABILITY ADVANTAGE --[/color]
+
+Defensive/buff abilities only give monsters a [color=#00FF00]25%% chance[/color] to attack!
+This makes buffing yourself much safer. Affected abilities:
+
+  [color=#66FFFF]Mage:[/color] Shield, Cloak, Forcefield, Haste
+  [color=#FF6666]Warrior:[/color] War Cry, Iron Skin, Fortify, Rally
+  [color=#FFA500]Trickster:[/color] Distract, Sabotage
+
+75%% of the time you'll see: "You act quickly, avoiding the attack!"
 
 [b][color=#FFD700]═══════════════════════════════════════════════
            SECTION 4: MONSTERS

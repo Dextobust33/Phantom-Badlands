@@ -1195,7 +1195,14 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		return result
 
 	# Monster's turn (if still alive and ability didn't end turn specially)
-	if not result.get("skip_monster_turn", false) and combat.monster.current_hp > 0:
+	# Buff abilities only give monster 25% chance to attack (player is being defensive/cautious)
+	var monster_attacks = true
+	if result.get("buff_ability", false):
+		monster_attacks = randi() % 100 < 25  # 25% chance monster still attacks
+		if not monster_attacks:
+			result.messages.append("[color=#00FF00]You act quickly, avoiding the %s's attack![/color]" % combat.monster.name)
+
+	if not result.get("skip_monster_turn", false) and monster_attacks and combat.monster.current_hp > 0:
 		var monster_result = process_monster_turn(combat)
 		result.messages.append(monster_result.message)
 
@@ -1329,6 +1336,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
+	var is_buff_ability = false  # Buff abilities only give monster 25% chance to attack
 
 	# Check INT requirement for mage path
 	if character.get_stat("intelligence") <= 10:
@@ -1424,12 +1432,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
 			character.add_buff("defense", 50, 3)  # +50% defense for 3 rounds
 			messages.append("[color=#FF00FF]You cast Shield! (+50%% defense for 3 rounds)[/color]" % [])
+			is_buff_ability = true
 
 		"cloak":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
 			combat["cloak_active"] = true  # 50% miss chance for enemy
 			messages.append("[color=#FF00FF]You cast Cloak! (50%% chance enemy misses next attack)[/color]" % [])
+			is_buff_ability = true
 
 		"blast":
 			# Apply Sage mana cost reduction
@@ -1489,6 +1499,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var shield_value = 50 + int_stat
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
+			is_buff_ability = true
 
 		"teleport":
 			if not character.use_mana(mana_cost):
@@ -1557,6 +1568,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			character.add_buff("speed", speed_bonus, 5)
 			combat["haste_active"] = true
 			messages.append("[color=#00FFFF]You cast Haste! (+%d%% speed for 5 rounds)[/color]" % speed_bonus)
+			is_buff_ability = true
 
 		"paralyze":
 			# Attempt to stun monster for 1-2 turns
@@ -1602,13 +1614,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	if monster.current_hp <= 0:
 		return _process_victory(combat, messages)
 
-	return {"success": true, "messages": messages, "combat_ended": false}
+	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
 func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process warrior abilities (use stamina)"""
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
+	var is_buff_ability = false  # Buff abilities only give monster 25% chance to attack
 
 	# Check STR requirement for warrior path
 	if character.get_stat("strength") <= 10:
@@ -1664,6 +1677,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			character.add_buff("damage", 25, 3)  # +25% damage for 3 rounds
 			messages.append("[color=#FF4444]WAR CRY![/color]")
 			messages.append("[color=#FFD700]+25%% damage for 3 rounds![/color]" % [])
+			is_buff_ability = true
 
 		"shield_bash":
 			var str_stat = character.get_effective_stat("strength")
@@ -1707,6 +1721,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			character.add_buff("damage_reduction", 50, 3)  # Block 50% damage for 3 rounds
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
 			messages.append("[color=#00FF00]Block 50%% damage for 3 rounds![/color]" % [])
+			is_buff_ability = true
 
 		"devastate":
 			var str_stat = character.get_effective_stat("strength")
@@ -1725,6 +1740,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var defense_bonus = 25 + int(str_stat / 4)  # 25% base + 0.25% per STR
 			character.add_buff("defense", defense_bonus, 5)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
+			is_buff_ability = true
 
 		"rally":
 			# Heal + minor strength buff - warrior sustain ability
@@ -1734,18 +1750,20 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_bonus = 10 + int(character.get_effective_stat("strength") / 5)
 			character.add_buff("strength", str_bonus, 3)
 			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for 3 rounds![/color]" % [actual_heal, str_bonus])
+			is_buff_ability = true
 
 	# Check if monster died
 	if monster.current_hp <= 0:
 		return _process_victory(combat, messages)
 
-	return {"success": true, "messages": messages, "combat_ended": false}
+	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
 func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process trickster abilities (use energy)"""
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
+	var is_buff_ability = false  # Buff/debuff abilities only give monster 25% chance to attack
 
 	# Check WITS requirement for trickster path
 	if character.get_stat("wits") <= 10:
@@ -1826,6 +1844,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			combat["enemy_distracted"] = true  # -50% accuracy next attack
 			messages.append("[color=#00FF00]DISTRACT![/color]")
 			messages.append("[color=#808080]The enemy is distracted! (-50%% accuracy)[/color]" % [])
+			is_buff_ability = true
 
 		"pickpocket":
 			var wits = character.get_effective_stat("wits")
@@ -1990,6 +2009,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var existing_sabotage = combat.get("monster_sabotaged", 0)
 			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
 			messages.append("[color=#FFA500]You sabotage the %s! (-%d%% strength/defense)[/color]" % [monster.name, debuff_amount])
+			is_buff_ability = true
 
 		"gambit":
 			# High risk/reward - big damage but chance of backfire
@@ -2019,7 +2039,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	if monster.current_hp <= 0:
 		return _process_victory(combat, messages)
 
-	return {"success": true, "messages": messages, "combat_ended": false}
+	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
 func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 	"""Get ability info from constants"""
