@@ -4486,6 +4486,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"gambit": {"display": "Gambit", "cost": 35, "resource_type": "energy"},
 		# Universal abilities
 		"cloak": {"display": "Cloak", "cost": 30, "resource_type": resource_type},
+		"all_or_nothing": {"display": "All/None", "cost": 1, "resource_type": resource_type},
 	}
 
 	return ability_defs.get(ability_name, {})
