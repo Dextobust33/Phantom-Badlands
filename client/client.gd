@@ -64,6 +64,11 @@ var default_keybinds = {
 }
 var keybinds: Dictionary = {}  # Active keybinds (loaded from file or defaults)
 
+# Inventory comparison stat setting (what the ↑↓ arrows compare)
+var inventory_compare_stat: String = "level"  # Options: level, hp, atk, def, wit, mana, speed
+const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "speed"]
+var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare)
+
 # Settings mode
 var settings_mode: bool = false
 var settings_submenu: String = ""  # "", "action_keys", "movement_keys", "item_keys"
@@ -1443,7 +1448,8 @@ func _process(delta):
 	# Inventory item selection with keybinds (items 1-9) when action is pending
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action != "equip_confirm" and not monster_select_mode:
+	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -1612,32 +1618,8 @@ func _process(delta):
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
 
-	# Inventory page navigation with item keys 2 and 3 (when no pending action)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "":
-		var inv = character_data.get("inventory", [])
-		var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
-
-		# Item key 2 = Previous Page
-		var prev_key = keybinds.get("item_2", default_keybinds.get("item_2", KEY_2))
-		if Input.is_physical_key_pressed(prev_key) and not Input.is_key_pressed(KEY_SHIFT):
-			if not get_meta("invpage_prev_pressed", false):
-				set_meta("invpage_prev_pressed", true)
-				if inventory_page > 0:
-					inventory_page -= 1
-					display_inventory()
-		else:
-			set_meta("invpage_prev_pressed", false)
-
-		# Item key 3 = Next Page
-		var next_key = keybinds.get("item_3", default_keybinds.get("item_3", KEY_3))
-		if Input.is_physical_key_pressed(next_key) and not Input.is_key_pressed(KEY_SHIFT):
-			if not get_meta("invpage_next_pressed", false):
-				set_meta("invpage_next_pressed", true)
-				if inventory_page < total_pages - 1:
-					inventory_page += 1
-					display_inventory()
-		else:
-			set_meta("invpage_next_pressed", false)
+	# NOTE: Inventory page navigation removed from here - now handled via action bar buttons
+	# to avoid conflicts with Sort (key 2) and Salvage (key 3) action bar buttons
 
 	# Watch request approval (action_1 = approve, action_2 = deny) - skip other hotkeys this frame
 	var watch_request_handled = false
@@ -2924,19 +2906,36 @@ func update_action_bar():
 			]
 	elif inventory_mode:
 		if pending_inventory_action == "sort_select":
-			# Sort submenu - show sort options
-			current_actions = [
-				{"label": "Cancel", "action_type": "local", "action_data": "sort_cancel", "enabled": true},
-				{"label": "Level", "action_type": "local", "action_data": "sort_by_level", "enabled": true},
-				{"label": "HP", "action_type": "local", "action_data": "sort_by_hp", "enabled": true},
-				{"label": "ATK", "action_type": "local", "action_data": "sort_by_atk", "enabled": true},
-				{"label": "DEF", "action_type": "local", "action_data": "sort_by_def", "enabled": true},
-				{"label": "WIT", "action_type": "local", "action_data": "sort_by_wit", "enabled": true},
-				{"label": "Slot", "action_type": "local", "action_data": "sort_by_slot", "enabled": true},
-				{"label": "Rarity", "action_type": "local", "action_data": "sort_by_rarity", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
+			# Sort submenu - show sort options (2 pages)
+			if sort_menu_page == 0:
+				# Page 1: Main sort options
+				current_actions = [
+					{"label": "Cancel", "action_type": "local", "action_data": "sort_cancel", "enabled": true},
+					{"label": "Level", "action_type": "local", "action_data": "sort_by_level", "enabled": true},
+					{"label": "HP", "action_type": "local", "action_data": "sort_by_hp", "enabled": true},
+					{"label": "ATK", "action_type": "local", "action_data": "sort_by_atk", "enabled": true},
+					{"label": "DEF", "action_type": "local", "action_data": "sort_by_def", "enabled": true},
+					{"label": "WIT", "action_type": "local", "action_data": "sort_by_wit", "enabled": true},
+					{"label": "Mana", "action_type": "local", "action_data": "sort_by_mana", "enabled": true},
+					{"label": "Speed", "action_type": "local", "action_data": "sort_by_speed", "enabled": true},
+					{"label": "Slot", "action_type": "local", "action_data": "sort_by_slot", "enabled": true},
+					{"label": "More...", "action_type": "local", "action_data": "sort_more", "enabled": true},
+				]
+			else:
+				# Page 2: Rarity and Compare options
+				var cmp_label = "Cmp:%s" % inventory_compare_stat.to_upper().left(3)
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "sort_back", "enabled": true},
+					{"label": "Rarity", "action_type": "local", "action_data": "sort_by_rarity", "enabled": true},
+					{"label": cmp_label, "action_type": "local", "action_data": "cycle_compare_stat", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
 		elif pending_inventory_action == "salvage_select":
 			# Salvage submenu - show salvage options
 			var player_level = character_data.get("level", 1)
@@ -3027,20 +3026,23 @@ func update_action_bar():
 			]
 		else:
 			# Inventory sub-menu: Spacebar=Back, Q-R for inventory actions
-			# Discard moved to end (KEY_5) to prevent accidental use
 			var equipped = character_data.get("equipped", {})
 			var has_equipped = _count_equipped_items(equipped) > 0
+			var inv = character_data.get("inventory", [])
+			var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
+			var has_prev = inventory_page > 0
+			var has_next = inventory_page < total_pages - 1
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
 				{"label": "Inspect", "action_type": "local", "action_data": "inventory_inspect", "enabled": true},
 				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
 				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
-				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 				{"label": "Sort", "action_type": "local", "action_data": "inventory_sort", "enabled": true},
 				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
-				{"label": "InspEquip", "action_type": "local", "action_data": "inventory_inspect_equipped", "enabled": has_equipped},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
+				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 			]
 	elif at_trading_post:
 		# Trading Post mode
@@ -4618,34 +4620,67 @@ func execute_local_action(action: String):
 		"sort_by_level":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "level"})
+			update_action_bar()
 		"sort_by_hp":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "hp"})
+			update_action_bar()
 		"sort_by_atk":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "atk"})
+			update_action_bar()
 		"sort_by_def":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "def"})
+			update_action_bar()
 		"sort_by_wit":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "wit"})
+			update_action_bar()
 		"sort_by_slot":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "slot"})
+			update_action_bar()
 		"sort_by_rarity":
 			pending_inventory_action = ""
 			send_to_server({"type": "inventory_sort", "sort_by": "rarity"})
+			update_action_bar()
+		"sort_by_mana":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "mana"})
+			update_action_bar()
+		"sort_by_speed":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "speed"})
+			update_action_bar()
 		"sort_cancel":
 			pending_inventory_action = ""
+			sort_menu_page = 0
 			display_inventory()
 			update_action_bar()
+		"sort_more":
+			# Go to page 2 of sort menu
+			sort_menu_page = 1
+			_display_sort_menu()
+		"sort_back":
+			# Go back to page 1 of sort menu
+			sort_menu_page = 0
+			_display_sort_menu()
+		"cycle_compare_stat":
+			# Cycle to next compare stat
+			var current_idx = COMPARE_STAT_OPTIONS.find(inventory_compare_stat)
+			var next_idx = (current_idx + 1) % COMPARE_STAT_OPTIONS.size()
+			inventory_compare_stat = COMPARE_STAT_OPTIONS[next_idx]
+			display_game("[color=#00FF00]Compare stat changed to: %s[/color]" % _get_compare_stat_label(inventory_compare_stat))
+			update_action_bar()  # Update button label
 		"salvage_all":
+			pending_inventory_action = ""
 			send_to_server({"type": "inventory_salvage", "mode": "all"})
-			pending_inventory_action = ""
+			update_action_bar()
 		"salvage_below_level":
-			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
 			pending_inventory_action = ""
+			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
+			update_action_bar()
 		"salvage_cancel":
 			pending_inventory_action = ""
 			display_inventory()
@@ -5053,16 +5088,7 @@ func display_shop_inventory():
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
-				if equipped_item != null and equipped_item is Dictionary:
-					var equipped_level = equipped_item.get("level", 1)
-					if level > equipped_level:
-						compare_text = " [color=#00FF00]↑[/color]"
-					elif level < equipped_level:
-						compare_text = " [color=#FF6666]↓[/color]"
-					else:
-						compare_text = " [color=#FFFF66]=[/color]"
-				else:
-					compare_text = " [color=#00FF00]NEW[/color]"
+				compare_text = " " + _get_compare_arrow(item, equipped_item)
 
 			# Build stats string using computed bonuses
 			var stats_parts = []
@@ -5491,6 +5517,25 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
 	if affixes.has("wits_bonus"):
 		bonuses.wits += int(affixes.wits_bonus * wear_penalty)
+	if affixes.has("mana_bonus"):
+		bonuses.max_mana += int(affixes.mana_bonus * wear_penalty)
+	if affixes.has("speed_bonus"):
+		bonuses.speed += int(affixes.speed_bonus * wear_penalty)
+
+	# Also check for direct item properties (some items store bonuses directly)
+	# These are the same properties the server uses for sorting
+	if item.has("hp_bonus"):
+		bonuses.max_hp += int(item.hp_bonus * wear_penalty)
+	if item.has("attack_bonus"):
+		bonuses.attack += int(item.attack_bonus * wear_penalty)
+	if item.has("defense_bonus"):
+		bonuses.defense += int(item.defense_bonus * wear_penalty)
+	if item.has("wits_bonus"):
+		bonuses.wits += int(item.wits_bonus * wear_penalty)
+	if item.has("mana_bonus"):
+		bonuses.max_mana += int(item.mana_bonus * wear_penalty)
+	if item.has("speed_bonus"):
+		bonuses.speed += int(item.speed_bonus * wear_penalty)
 
 	return bonuses
 
@@ -5551,6 +5596,59 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 		stats_shown = true
 
 	return stats_shown
+
+func _get_item_compare_value(item: Dictionary, stat: String) -> int:
+	"""Get the comparison value for an item based on the chosen stat"""
+	match stat:
+		"level":
+			return item.get("level", 1)
+		"hp":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("max_hp", 0)
+		"atk":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("attack", 0)
+		"def":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("defense", 0)
+		"wit":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("wits", 0)
+		"mana":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("max_mana", 0)
+		"speed":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("speed", 0)
+		_:
+			return item.get("level", 1)
+
+func _get_compare_arrow(new_item: Dictionary, equipped_item: Dictionary) -> String:
+	"""Get the comparison arrow text based on inventory_compare_stat setting"""
+	if equipped_item == null or not (equipped_item is Dictionary):
+		return "[color=#00FF00]NEW[/color]"
+
+	var new_val = _get_item_compare_value(new_item, inventory_compare_stat)
+	var old_val = _get_item_compare_value(equipped_item, inventory_compare_stat)
+
+	if new_val > old_val:
+		return "[color=#00FF00]↑[/color]"
+	elif new_val < old_val:
+		return "[color=#FF6666]↓[/color]"
+	else:
+		return "[color=#FFFF66]=[/color]"
+
+func _get_compare_stat_label(stat: String) -> String:
+	"""Get display label for a comparison stat"""
+	match stat:
+		"level": return "Level"
+		"hp": return "HP"
+		"atk": return "Attack"
+		"def": return "Defense"
+		"wit": return "Wits"
+		"mana": return "Mana"
+		"speed": return "Speed"
+		_: return stat.capitalize()
 
 func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 	"""Display stat comparison between two items using computed bonuses"""
@@ -5918,18 +6016,35 @@ func close_inventory():
 func open_sort_menu():
 	"""Open sort submenu for inventory"""
 	pending_inventory_action = "sort_select"
+	sort_menu_page = 0  # Reset to first page
+	_display_sort_menu()
+
+func _display_sort_menu():
+	"""Display the sort menu based on current page"""
 	game_output.clear()
 	display_game("[color=#FFD700]===== SORT INVENTORY =====[/color]")
 	display_game("")
-	display_game("Choose how to sort your inventory:")
-	display_game("")
-	display_game("  [color=#00FFFF]Level[/color] - Sort by item level (highest first)")
-	display_game("  [color=#FF6666]HP[/color] - Sort by HP bonus (highest first)")
-	display_game("  [color=#FFFF00]ATK[/color] - Sort by Attack bonus (highest first)")
-	display_game("  [color=#00FF00]DEF[/color] - Sort by Defense bonus (highest first)")
-	display_game("  [color=#FF00FF]WIT[/color] - Sort by Wits bonus (highest first)")
-	display_game("  [color=#FFA500]Slot[/color] - Group by equipment slot")
-	display_game("  [color=#A335EE]Rarity[/color] - Sort by rarity (legendary first)")
+	if sort_menu_page == 0:
+		display_game("Choose how to sort your inventory:")
+		display_game("")
+		display_game("  [color=#00FFFF]Level[/color] - Sort by item level (highest first)")
+		display_game("  [color=#FF6666]HP[/color] - Sort by HP bonus (highest first)")
+		display_game("  [color=#FFFF00]ATK[/color] - Sort by Attack bonus (highest first)")
+		display_game("  [color=#00FF00]DEF[/color] - Sort by Defense bonus (highest first)")
+		display_game("  [color=#FF00FF]WIT[/color] - Sort by Wits bonus (highest first)")
+		display_game("  [color=#66CCFF]Mana[/color] - Sort by Mana bonus (highest first)")
+		display_game("  [color=#FFA500]Speed[/color] - Sort by Speed bonus (highest first)")
+		display_game("  [color=#808080]Slot[/color] - Group by equipment slot")
+		display_game("")
+		display_game("[color=#808080]Select More... for additional options[/color]")
+	else:
+		display_game("Additional sort and display options:")
+		display_game("")
+		display_game("  [color=#A335EE]Rarity[/color] - Sort by rarity (legendary first)")
+		display_game("")
+		display_game("[color=#00FFFF]Compare Stat:[/color] [color=#FFFF00]%s[/color]" % _get_compare_stat_label(inventory_compare_stat))
+		display_game("[color=#808080]The compare stat determines what the ↑↓ arrows next to items compare.[/color]")
+		display_game("[color=#808080]Press Cmp button to cycle: Level → HP → ATK → DEF → WIT → Mana → Speed[/color]")
 	display_game("")
 	update_action_bar()
 
@@ -6017,16 +6132,7 @@ func display_inventory():
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
-				if equipped_item != null and equipped_item is Dictionary:
-					var equipped_level = equipped_item.get("level", 1)
-					if item_level > equipped_level:
-						compare_text = "[color=#00FF00]↑[/color]"
-					elif item_level < equipped_level:
-						compare_text = "[color=#FF6666]↓[/color]"
-					else:
-						compare_text = "[color=#FFFF66]=[/color]"
-				else:
-					compare_text = "[color=#00FF00]NEW[/color]"
+				compare_text = _get_compare_arrow(item, equipped_item)
 
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
@@ -6053,6 +6159,7 @@ func display_inventory():
 		get_action_key_name(3), get_action_key_name(5)])
 	display_game("[color=#808080]%s=Sort  %s=Salvage All (below your level)[/color]" % [
 		get_action_key_name(6), get_action_key_name(7)])
+	display_game("[color=#808080]↑↓ arrows compare: %s (change in Sort menu)[/color]" % _get_compare_stat_label(inventory_compare_stat))
 	if _count_equipped_items(equipped) > 0:
 		display_game("[color=#808080]%s=Inspect Equipped  %s=Unequip[/color]" % [get_action_key_name(8), get_action_key_name(4)])
 	if total_pages > 1:
@@ -7594,16 +7701,7 @@ func handle_server_message(message: Dictionary):
 								var slot = _get_slot_for_item_type(item_type)
 								if slot != "":
 									var equipped_item = equipped.get(slot)
-									if equipped_item != null and equipped_item is Dictionary:
-										var equipped_level = equipped_item.get("level", 1)
-										if level > equipped_level:
-											compare_text = " [color=#00FF00]↑[/color]"
-										elif level < equipped_level:
-											compare_text = " [color=#FF6666]↓[/color]"
-										else:
-											compare_text = " [color=#FFFF66]=[/color]"
-									else:
-										compare_text = " [color=#00FF00]NEW[/color]"
+									compare_text = " " + _get_compare_arrow(item, equipped_item)
 
 								if stats_str != "":
 									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [j + 1, color, item_name, level, compare_text, stats_str])
@@ -7618,6 +7716,7 @@ func handle_server_message(message: Dictionary):
 						_show_unequip_slots()
 					else:
 						display_inventory()
+						update_action_bar()
 				# Re-display sell list if in merchant sell mode (after selling an item)
 				if at_merchant and pending_merchant_action == "sell":
 					var inventory = character_data.get("inventory", [])

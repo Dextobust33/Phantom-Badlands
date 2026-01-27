@@ -182,6 +182,51 @@ When game mechanics, formulas, or features change, update the in-game help:
 - UI uses RichTextLabel with BBCode for colored text output
 - Three-panel client layout: GameOutput, ChatOutput, MapDisplay
 
+## Action Bar & State Management (CRITICAL)
+
+The client uses a state-driven action bar system. **Common bugs occur when state changes don't properly update the action bar.**
+
+### Key Principles
+
+1. **Always call `update_action_bar()` after state changes:**
+   - After changing `pending_inventory_action`, `pending_merchant_action`, etc.
+   - After changing mode flags like `inventory_mode`, `at_merchant`, `at_trading_post`
+   - After server responses that affect UI state
+
+2. **State variables that affect action bar:**
+   - `inventory_mode` - In inventory view
+   - `at_merchant` - At a merchant
+   - `at_trading_post` - At a trading post
+   - `in_combat` - In combat
+   - `pending_inventory_action` - Current inventory sub-action ("sort_select", "salvage_select", "equip_item", etc.)
+   - `pending_merchant_action` - Current merchant sub-action
+   - `quest_view_mode` - Viewing quests at trading post
+
+3. **Action handlers in `execute_action()` must:**
+   - Clear/set the appropriate pending action state
+   - Call `update_action_bar()` to reflect the new state
+   - If sending to server, still update action bar immediately (server response will update again if needed)
+
+4. **Server response handlers (`character_update`, etc.) must:**
+   - Check current mode flags before updating UI
+   - Call `update_action_bar()` after `display_inventory()` or similar display functions
+
+### Common Pitfalls
+
+- Sending server message but not updating action bar until response arrives
+- Clearing `pending_*_action` without calling `update_action_bar()`
+- Adding new action bar buttons without checking they're in all relevant state conditions in `_get_current_actions()`
+- Adding new abilities without adding them to BOTH the command routing AND the ability list in `process_ability_command()`
+
+### Action Bar Structure (in `_get_current_actions()`)
+
+The function uses a priority-based if/elif chain:
+1. Combat states (highest priority)
+2. Special modes (merchant, trading post, inventory)
+3. Normal movement mode (lowest priority)
+
+When adding new modes, insert them at the appropriate priority level.
+
 ## Zone Difficulty Overhaul (COMPLETE)
 
 **All phases implemented:**

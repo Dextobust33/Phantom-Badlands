@@ -2993,6 +2993,73 @@ func handle_inventory_discard(peer_id: int, message: Dictionary):
 
 	send_character_update(peer_id)
 
+func _compute_item_stat(item: Dictionary, stat: String) -> int:
+	"""Compute the actual stat bonus an item provides (used for sorting/comparing)"""
+	var item_level = item.get("level", 1)
+	var item_type = item.get("type", "")
+	var rarity = item.get("rarity", "common")
+
+	# Rarity multipliers
+	var rarity_mult = 1.0
+	match rarity:
+		"uncommon": rarity_mult = 1.25
+		"rare": rarity_mult = 1.5
+		"epic": rarity_mult = 2.0
+		"legendary": rarity_mult = 3.0
+
+	var base_bonus = int(item_level * rarity_mult)
+	var value = 0
+
+	# Compute based on item type (mirrors client _compute_item_bonuses logic)
+	match stat:
+		"hp":
+			if "armor" in item_type:
+				value = base_bonus * 3
+			elif "shield" in item_type:
+				value = base_bonus * 5
+			# Add direct hp_bonus if present
+			value += item.get("hp_bonus", 0)
+		"atk":
+			if "weapon" in item_type:
+				value = base_bonus * 3
+			elif "ring" in item_type:
+				value = max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			value += item.get("attack_bonus", 0)
+		"def":
+			if "armor" in item_type:
+				value = base_bonus * 2
+			elif "helm" in item_type:
+				value = base_bonus
+			elif "shield" in item_type:
+				value = max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			elif "boots" in item_type:
+				value = max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			value += item.get("defense_bonus", 0)
+		"wit":
+			if "ring_shadow" in item_type:
+				value = max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			elif "amulet" in item_type:
+				value = max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			elif "boots_swift" in item_type:
+				value = max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			value += item.get("wits_bonus", 0)
+		"mana":
+			if "amulet_mystic" in item_type:
+				value = base_bonus * 3
+			elif "amulet" in item_type:
+				value = base_bonus * 2
+			value += item.get("mana_bonus", 0)
+		"speed":
+			if "boots_swift" in item_type:
+				value = int(base_bonus * 1.5)
+			elif "boots" in item_type:
+				value = base_bonus
+			elif "amulet_evasion" in item_type:
+				value = base_bonus
+			value += item.get("speed_bonus", 0)
+
+	return value
+
 func handle_inventory_sort(peer_id: int, message: Dictionary):
 	"""Handle sorting inventory by a specified criterion"""
 	if not characters.has(peer_id):
@@ -3009,33 +3076,45 @@ func handle_inventory_sort(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Define sort comparators
+	# Define sort comparators - use computed stats for accurate sorting
 	match sort_by:
 		"level":
 			inventory.sort_custom(func(a, b): return a.get("level", 1) > b.get("level", 1))
 		"hp":
 			inventory.sort_custom(func(a, b):
-				var a_hp = a.get("hp_bonus", 0)
-				var b_hp = b.get("hp_bonus", 0)
+				var a_hp = _compute_item_stat(a, "hp")
+				var b_hp = _compute_item_stat(b, "hp")
 				return a_hp > b_hp
 			)
 		"atk":
 			inventory.sort_custom(func(a, b):
-				var a_atk = a.get("attack_bonus", 0)
-				var b_atk = b.get("attack_bonus", 0)
+				var a_atk = _compute_item_stat(a, "atk")
+				var b_atk = _compute_item_stat(b, "atk")
 				return a_atk > b_atk
 			)
 		"def":
 			inventory.sort_custom(func(a, b):
-				var a_def = a.get("defense_bonus", 0)
-				var b_def = b.get("defense_bonus", 0)
+				var a_def = _compute_item_stat(a, "def")
+				var b_def = _compute_item_stat(b, "def")
 				return a_def > b_def
 			)
 		"wit":
 			inventory.sort_custom(func(a, b):
-				var a_wit = a.get("wits_bonus", 0)
-				var b_wit = b.get("wits_bonus", 0)
+				var a_wit = _compute_item_stat(a, "wit")
+				var b_wit = _compute_item_stat(b, "wit")
 				return a_wit > b_wit
+			)
+		"mana":
+			inventory.sort_custom(func(a, b):
+				var a_mana = _compute_item_stat(a, "mana")
+				var b_mana = _compute_item_stat(b, "mana")
+				return a_mana > b_mana
+			)
+		"speed":
+			inventory.sort_custom(func(a, b):
+				var a_speed = _compute_item_stat(a, "speed")
+				var b_speed = _compute_item_stat(b, "speed")
+				return a_speed > b_speed
 			)
 		"slot":
 			# Sort by slot type: weapon, armor, helm, shield, boots, ring, amulet
@@ -3063,6 +3142,8 @@ func handle_inventory_sort(peer_id: int, message: Dictionary):
 		"atk": "Attack bonus",
 		"def": "Defense bonus",
 		"wit": "Wits bonus",
+		"mana": "Mana bonus",
+		"speed": "Speed bonus",
 		"slot": "equipment slot",
 		"rarity": "Rarity"
 	}
