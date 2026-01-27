@@ -306,6 +306,8 @@ var wish_options: Array = []  # Array of wish dictionaries from server
 var monster_select_mode: bool = false
 var monster_select_list: Array = []  # Array of monster names
 var monster_select_page: int = 0  # Current page in monster selection
+var monster_select_confirm_mode: bool = false  # Waiting for confirmation
+var monster_select_pending: String = ""  # Monster name pending confirmation
 const MONSTER_SELECT_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 
 # Target farm selection mode (from Scroll of Finding)
@@ -1509,15 +1511,67 @@ func _process(delta):
 
 	# Monster selection with keybinds (from Monster Selection Scroll)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode:
-		for i in range(9):
-			if is_item_select_key_pressed(i):
-				if is_item_key_blocked_by_action_bar(i):
-					continue
-				if not get_meta("monsterselectkey_%d_pressed" % i, false):
-					set_meta("monsterselectkey_%d_pressed" % i, true)
-					select_monster_from_scroll(i)  # 0-based index on current page
+		if monster_select_confirm_mode:
+			# Confirmation mode - Space=Confirm, Q=Back
+			var confirm_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if Input.is_physical_key_pressed(confirm_key):
+				if not get_meta("monsterselect_confirm_pressed", false):
+					set_meta("monsterselect_confirm_pressed", true)
+					confirm_monster_select()
 			else:
-				set_meta("monsterselectkey_%d_pressed" % i, false)
+				set_meta("monsterselect_confirm_pressed", false)
+
+			var back_key = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+			if Input.is_physical_key_pressed(back_key):
+				if not get_meta("monsterselect_back_pressed", false):
+					set_meta("monsterselect_back_pressed", true)
+					cancel_monster_select()  # Goes back to list in confirm mode
+			else:
+				set_meta("monsterselect_back_pressed", false)
+		else:
+			# Selection mode - Space=Cancel, Q=Prev, W=Next, 1-9=Select
+			# Handle Cancel (Space/action_0)
+			var cancel_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if Input.is_physical_key_pressed(cancel_key):
+				if not get_meta("monsterselect_cancel_pressed", false):
+					set_meta("monsterselect_cancel_pressed", true)
+					cancel_monster_select()
+			else:
+				set_meta("monsterselect_cancel_pressed", false)
+
+			# Handle Prev Page (Q/action_1)
+			var prev_key = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+			if Input.is_physical_key_pressed(prev_key):
+				if not get_meta("monsterselect_prev_pressed", false):
+					set_meta("monsterselect_prev_pressed", true)
+					if monster_select_page > 0:
+						monster_select_page -= 1
+						display_monster_select_page()
+			else:
+				set_meta("monsterselect_prev_pressed", false)
+
+			# Handle Next Page (W/action_2)
+			var next_key = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
+			if Input.is_physical_key_pressed(next_key):
+				if not get_meta("monsterselect_next_pressed", false):
+					set_meta("monsterselect_next_pressed", true)
+					var total_pages = max(1, ceili(float(monster_select_list.size()) / MONSTER_SELECT_PAGE_SIZE))
+					if monster_select_page < total_pages - 1:
+						monster_select_page += 1
+						display_monster_select_page()
+			else:
+				set_meta("monsterselect_next_pressed", false)
+
+			# Handle number key selection (1-9 and numpad 1-9)
+			for i in range(9):
+				var regular_key_pressed = is_item_select_key_pressed(i)
+				var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+				if regular_key_pressed or numpad_key_pressed:
+					if not get_meta("monsterselectkey_%d_pressed" % i, false):
+						set_meta("monsterselectkey_%d_pressed" % i, true)
+						select_monster_from_scroll(i)  # 0-based index on current page
+				else:
+					set_meta("monsterselectkey_%d_pressed" % i, false)
 
 	# Target farm selection with keybinds (from Scroll of Finding)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode:
@@ -2497,20 +2551,35 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif monster_select_mode:
-		# Monster selection from scroll - Space=Cancel, Q=Prev, W=Next, 1-9=Select
-		var total_pages = max(1, ceili(float(monster_select_list.size()) / MONSTER_SELECT_PAGE_SIZE))
-		current_actions = [
-			{"label": "Cancel", "action_type": "local", "action_data": "monster_select_cancel", "enabled": true},
-			{"label": "Prev", "action_type": "local", "action_data": "monster_select_prev", "enabled": monster_select_page > 0},
-			{"label": "Next", "action_type": "local", "action_data": "monster_select_next", "enabled": monster_select_page < total_pages - 1},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		if monster_select_confirm_mode:
+			# Confirmation mode - Space=Confirm, Q=Back to list
+			current_actions = [
+				{"label": "Confirm", "action_type": "local", "action_data": "monster_select_confirm", "enabled": true},
+				{"label": "Back", "action_type": "local", "action_data": "monster_select_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Monster selection from scroll - Space=Cancel, Q=Prev, W=Next, 1-9=Select
+			var total_pages = max(1, ceili(float(monster_select_list.size()) / MONSTER_SELECT_PAGE_SIZE))
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "monster_select_cancel", "enabled": true},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "monster_select_prev", "enabled": monster_select_page > 0},
+				{"label": "Next Pg", "action_type": "local", "action_data": "monster_select_next", "enabled": monster_select_page < total_pages - 1},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif target_farm_mode:
 		# Target farm selection from scroll - Space=Cancel, 1-5=Select
 		current_actions = [
@@ -4036,6 +4105,10 @@ func execute_local_action(action: String):
 		# Monster selection scroll actions
 		"monster_select_cancel":
 			cancel_monster_select()
+		"monster_select_confirm":
+			confirm_monster_select()
+		"monster_select_back":
+			cancel_monster_select()  # Goes back to list when in confirm mode
 		"monster_select_prev":
 			if monster_select_page > 0:
 				monster_select_page -= 1
@@ -9256,13 +9329,43 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 	return msg
 
 func _enhance_combat_message(msg: String) -> String:
-	"""Add visual flair symbols to combat messages"""
-	# Add damage symbols to damage numbers
+	"""Add visual flair and BBCode effects to combat messages"""
 	var enhanced = msg
+	var upper_msg = msg.to_upper()
 
-	# Critical hit gets extra emphasis
-	if "CRITICAL" in msg.to_upper():
-		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=20 level=5]CRITICAL HIT[/shake]")
+	# Critical hit gets shaking text effect - multiple possible formats
+	if "CRITICAL" in upper_msg:
+		# Try various critical hit text formats
+		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
+		enhanced = enhanced.replace("Critical Hit", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
+		enhanced = enhanced.replace("critical hit", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
+		enhanced = enhanced.replace("Critical!", "[shake rate=25 level=8][color=#FF0000]CRITICAL![/color][/shake]")
+		enhanced = enhanced.replace("CRITICAL!", "[shake rate=25 level=8][color=#FF0000]CRITICAL![/color][/shake]")
+
+	# Devastating/massive damage gets wave effect
+	if "DEVASTAT" in upper_msg or "MASSIVE" in upper_msg:
+		enhanced = enhanced.replace("Devastating", "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
+		enhanced = enhanced.replace("devastating", "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
+		enhanced = enhanced.replace("Massive", "[wave amp=30 freq=5][color=#FF4500]Massive[/color][/wave]")
+
+	# Monster death gets rainbow effect
+	if "DEFEATED" in upper_msg or "SLAIN" in upper_msg or "DIES" in upper_msg:
+		enhanced = enhanced.replace("defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]defeated[/rainbow]")
+		enhanced = enhanced.replace("Defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]Defeated[/rainbow]")
+		enhanced = enhanced.replace("slain", "[rainbow freq=1.0 sat=0.8 val=0.8]slain[/rainbow]")
+		enhanced = enhanced.replace("dies", "[rainbow freq=1.0 sat=0.8 val=0.8]dies[/rainbow]")
+
+	# Healing gets pulse effect
+	if "HEAL" in upper_msg and ("+" in msg or "RESTORE" in upper_msg):
+		enhanced = enhanced.replace("healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]healed[/pulse]")
+		enhanced = enhanced.replace("Healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]Healed[/pulse]")
+		enhanced = enhanced.replace("restored", "[pulse freq=2.0 color=#00FF00 ease=-2.0]restored[/pulse]")
+
+	# Flee success gets fade effect
+	if "ESCAPED" in upper_msg or "FLED" in upper_msg:
+		enhanced = enhanced.replace("escaped", "[fade start=0 length=10]escaped[/fade]")
+		enhanced = enhanced.replace("Escaped", "[fade start=0 length=10]Escaped[/fade]")
+		enhanced = enhanced.replace("fled", "[fade start=0 length=10]fled[/fade]")
 
 	# Add impact symbols to large damage numbers
 	var regex = RegEx.new()
@@ -9271,8 +9374,11 @@ func _enhance_combat_message(msg: String) -> String:
 	if result:
 		var dmg_num = result.get_string(1)
 		var dmg_int = int(dmg_num)
-		if dmg_int >= 1000:
-			enhanced = enhanced.replace(dmg_num + " damage", dmg_num + " damage!!")
+		if dmg_int >= 10000:
+			# Massive damage - wave effect on the number
+			enhanced = enhanced.replace(dmg_num + " damage", "[wave amp=20 freq=6][color=#FF0000]" + dmg_num + "[/color][/wave] damage!!!")
+		elif dmg_int >= 1000:
+			enhanced = enhanced.replace(dmg_num + " damage", "[color=#FF4500]" + dmg_num + "[/color] damage!!")
 		elif dmg_int >= 100:
 			enhanced = enhanced.replace(dmg_num + " damage", dmg_num + " damage!")
 
@@ -9547,9 +9653,12 @@ func display_monster_select_page():
 	var total_pages = max(1, ceili(float(total_monsters) / MONSTER_SELECT_PAGE_SIZE))
 	monster_select_page = clamp(monster_select_page, 0, total_pages - 1)
 
+	game_output.clear()
+	display_game("[color=#FF00FF]===== SCROLL OF SUMMONING =====[/color]")
+	display_game("[color=#FFD700]Select a creature to summon for your next encounter![/color]")
+	display_game("[color=#808080]The chosen monster will appear at your level when you next hunt or move.[/color]")
 	display_game("")
-	display_game("[color=#FF00FF]===== SUMMON CREATURE =====[/color]")
-	display_game("[color=#808080]Page %d/%d (%d monsters)[/color]" % [monster_select_page + 1, total_pages, total_monsters])
+	display_game("[color=#808080]Page %d/%d (%d monsters available)[/color]" % [monster_select_page + 1, total_pages, total_monsters])
 	display_game("")
 
 	var start_idx = monster_select_page * MONSTER_SELECT_PAGE_SIZE
@@ -9561,27 +9670,63 @@ func display_monster_select_page():
 		display_game("[color=#FFFF00][%d][/color] %s" % [key_num, monster_name])
 
 	display_game("")
+	display_game("[color=#808080]Press 1-9 or Numpad 1-9 to select a monster[/color]")
 	if total_pages > 1:
 		display_game("[color=#808080][%s] Prev Page  [%s] Next Page  [%s] Cancel[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(0)])
 	else:
 		display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
+	update_action_bar()
 
 func select_monster_from_scroll(index: int):
-	"""Send selected monster to server"""
+	"""Show confirmation for selected monster"""
 	var absolute_idx = monster_select_page * MONSTER_SELECT_PAGE_SIZE + index
 	if absolute_idx < 0 or absolute_idx >= monster_select_list.size():
 		return
 
 	var monster_name = monster_select_list[absolute_idx]
+	monster_select_pending = monster_name
+	monster_select_confirm_mode = true
+
+	game_output.clear()
+	display_game("[color=#FF00FF]===== CONFIRM SUMMON =====[/color]")
+	display_game("")
+	display_game("[color=#FFD700]You have selected: [color=#FFFFFF]%s[/color][/color]" % monster_name)
+	display_game("")
+	display_game("[color=#808080]This creature will appear at your level when you next[/color]")
+	display_game("[color=#808080]hunt or move into a non-safe zone.[/color]")
+	display_game("")
+	display_game("[color=#00FF00][%s] Confirm[/color]  [color=#FF6666][%s] Cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+	update_action_bar()
+
+func confirm_monster_select():
+	"""Confirm the monster selection and send to server"""
+	if monster_select_pending.is_empty():
+		cancel_monster_select()
+		return
+
+	var monster_name = monster_select_pending
 	monster_select_mode = false
+	monster_select_confirm_mode = false
+	monster_select_pending = ""
 	monster_select_list = []
 	send_to_server({"type": "monster_select_confirm", "monster_name": monster_name})
 	game_output.clear()
+	display_game("[color=#FF00FF]The scroll glows brightly![/color]")
+	display_game("[color=#FFD700]A %s will appear on your next encounter![/color]" % monster_name)
 	update_action_bar()
 
 func cancel_monster_select():
 	"""Cancel monster selection"""
+	if monster_select_confirm_mode:
+		# Go back to selection list
+		monster_select_confirm_mode = false
+		monster_select_pending = ""
+		display_monster_select_page()
+		return
+
 	monster_select_mode = false
+	monster_select_confirm_mode = false
+	monster_select_pending = ""
 	monster_select_list = []
 	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
 	update_action_bar()
