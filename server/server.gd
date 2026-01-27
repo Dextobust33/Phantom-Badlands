@@ -1834,7 +1834,17 @@ func _upgrade_single_item(item: Dictionary) -> Dictionary:
 		item["speed"] = current_speed + max(1, int(current_speed * 0.08))
 
 	# Update name to reflect new level
-	var base_name = item.get("base_name", item.get("name", "Item"))
+	var base_name = item.get("base_name", "")
+	if base_name == "":
+		# Extract base name by stripping any existing "+X" suffix
+		var current_name = item.get("name", "Item")
+		var plus_idx = current_name.rfind(" +")
+		if plus_idx > 0:
+			base_name = current_name.substr(0, plus_idx)
+		else:
+			base_name = current_name
+		# Store the base_name for future upgrades
+		item["base_name"] = base_name
 	item["name"] = "%s +%d" % [base_name, new_level - 1] if new_level > 1 else base_name
 
 	return item

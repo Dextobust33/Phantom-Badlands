@@ -4045,12 +4045,14 @@ func execute_local_action(action: String):
 			if sell_page > 0:
 				sell_page -= 1
 				display_merchant_sell_list()
+				update_action_bar()  # Refresh button states after page change
 		"sell_next_page":
 			var inventory = character_data.get("inventory", [])
 			var total_pages = max(1, ceili(float(inventory.size()) / INVENTORY_PAGE_SIZE))
 			if sell_page < total_pages - 1:
 				sell_page += 1
 				display_merchant_sell_list()
+				update_action_bar()  # Refresh button states after page change
 		"merchant_cancel":
 			cancel_merchant_action()
 		"upgrade_weapon":

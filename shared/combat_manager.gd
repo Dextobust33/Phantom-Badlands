@@ -874,40 +874,67 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"combat_ended": false
 		}
 
-	# Calculate outsmart chance - WIT vs monster INT is the key factor
+	# Calculate outsmart chance - WIT vs monster INT and LEVEL DIFFERENCE are key factors
 	# Dumb monsters are easy to fool, smart ones nearly impossible
+	# Higher level monsters are harder to outsmart - it's risky to fight above your level
 	var player_wits = character.get_effective_stat("wits")
 	var monster_intelligence = monster.get("intelligence", 15)
+	var player_level = character.level
+	var monster_level = monster.level
 
 	# Base chance is very low - outsmart is situational
 	var base_chance = 5
 
-	# WIT bonus: +5% per point above 10 (high wits = main factor)
-	var wits_bonus = max(0, (player_wits - 10) * 5)
+	# WIT bonus: +3% per point above 10 (reduced from +5%)
+	var wits_bonus = max(0, (player_wits - 10) * 3)
 
 	# Trickster class bonus (+15%)
 	var class_type = character.class_type
 	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
 	var trickster_bonus = 15 if is_trickster else 0
 
-	# Dumb monster bonus: +8% per INT below 10 (dumb = easy to trick)
-	var dumb_bonus = max(0, (10 - monster_intelligence) * 8)
+	# Dumb monster bonus: +5% per INT below 10 (reduced from +8%)
+	var dumb_bonus = max(0, (10 - monster_intelligence) * 5)
 
-	# Smart monster penalty: -8% per INT above 10 (smart = hard to trick)
-	var smart_penalty = max(0, (monster_intelligence - 10) * 8)
+	# Smart monster penalty: -5% per INT above 10 (reduced from -8%)
+	var smart_penalty = max(0, (monster_intelligence - 10) * 5)
 
-	# Additional penalty if monster INT exceeds your wits (-5% per point)
-	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 5)
+	# Additional penalty if monster INT exceeds your wits (-3% per point)
+	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 3)
 
-	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus - smart_penalty - int_vs_wits_penalty
-	var max_chance = 95 if is_trickster else 85  # Tricksters can reach 95%
+	# LEVEL DIFFERENCE PENALTY - This is the big balancing factor
+	# Fighting monsters much higher level is risky for Outsmart
+	var level_diff = monster_level - player_level
+	var level_penalty = 0
+	if level_diff > 0:
+		# Scaling penalty: -2% per level for first 10 levels, -1% per level after
+		if level_diff <= 10:
+			level_penalty = level_diff * 2  # -2% to -20% for 1-10 levels above
+		elif level_diff <= 50:
+			level_penalty = 20 + (level_diff - 10)  # -21% to -60% for 11-50 levels above
+		else:
+			# Severe penalty for extreme level differences
+			level_penalty = 60 + int((level_diff - 50) * 0.5)  # -60%+ for 51+ levels above
+
+	# Level BONUS for fighting weaker monsters (small bonus)
+	var level_bonus = 0
+	if level_diff < 0:
+		level_bonus = min(20, abs(level_diff))  # Up to +20% for fighting weaker monsters
+
+	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+	var max_chance = 85 if is_trickster else 70  # Reduced max caps
 	outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
 	var bonus_text = ""
 	if is_trickster:
-		bonus_text = " [Trickster +20%%]"
-	messages.append("[color=#808080](Wits: %d, Monster INT: %d = %d%% chance%s)[/color]" % [player_wits, monster_intelligence, outsmart_chance, bonus_text])
+		bonus_text = " [Trickster]"
+	var level_text = ""
+	if level_diff > 10:
+		level_text = " [color=#FF4444]Lv%+d[/color]" % level_diff
+	elif level_diff > 0:
+		level_text = " [color=#FFA500]Lv%+d[/color]" % level_diff
+	messages.append("[color=#808080](Wits: %d vs INT: %d, %d%% chance%s%s)[/color]" % [player_wits, monster_intelligence, outsmart_chance, bonus_text, level_text])
 
 	var roll = randi() % 100
 
@@ -1665,19 +1692,39 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var monster_int = monster.get("intelligence", 15)
 			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster_int)
 
-			# Calculate and show outsmart chance
+			# Calculate and show outsmart chance (must match process_outsmart formula)
 			var player_wits = character.get_effective_stat("wits")
 			var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+			var player_level = character.level
+			var monster_level = monster.level
 			var base_chance = 5
-			var wits_bonus = max(0, (player_wits - 10) * 5)
+			var wits_bonus = max(0, (player_wits - 10) * 3)
 			var trickster_bonus = 15 if is_trickster else 0
-			var dumb_bonus = max(0, (10 - monster_int) * 8)
-			var smart_penalty = max(0, (monster_int - 10) * 8)
-			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 5)
-			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus - smart_penalty - int_vs_wits_penalty
-			var max_chance = 95 if is_trickster else 85
+			var dumb_bonus = max(0, (10 - monster_int) * 5)
+			var smart_penalty = max(0, (monster_int - 10) * 5)
+			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 3)
+			# Level difference penalty
+			var level_diff = monster_level - player_level
+			var level_penalty = 0
+			if level_diff > 0:
+				if level_diff <= 10:
+					level_penalty = level_diff * 2
+				elif level_diff <= 50:
+					level_penalty = 20 + (level_diff - 10)
+				else:
+					level_penalty = 60 + int((level_diff - 50) * 0.5)
+			var level_bonus = 0
+			if level_diff < 0:
+				level_bonus = min(20, abs(level_diff))
+			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+			var max_chance = 85 if is_trickster else 70
 			outsmart_chance = clampi(outsmart_chance, 2, max_chance)
-			messages.append("[color=#00FFFF]Outsmart Chance:[/color] %d%%" % outsmart_chance)
+			var level_warning = ""
+			if level_diff > 10:
+				level_warning = " [color=#FF4444](Lv%+d penalty!)[/color]" % level_diff
+			elif level_diff > 0:
+				level_warning = " [color=#FFA500](Lv%+d)[/color]" % level_diff
+			messages.append("[color=#00FFFF]Outsmart Chance:[/color] %d%%%s" % [outsmart_chance, level_warning])
 
 			# Grant +10% damage bonus for rest of combat
 			combat["analyze_bonus"] = 10
