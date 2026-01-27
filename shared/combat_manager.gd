@@ -404,6 +404,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			else:
 				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
 
+	# === BLIND TICK (at start of player turn) ===
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		if still_blind:
+			messages.append("[color=#808080]You are blinded! (%d turns remaining)[/color]" % character.blind_turns_remaining)
+		else:
+			messages.append("[color=#00FF00]Your vision clears![/color]")
+
 	# === BLEED TICK (stacking DoT from Bleed ability) ===
 	var bleed_stacks = combat.get("player_bleed_stacks", 0)
 	if bleed_stacks > 0:
@@ -435,9 +443,9 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var dex_diff = player_dex - monster_speed
 	var hit_chance = 75 + dex_diff
 
-	# Apply blind debuff (from monster ability)
-	var blind_penalty = combat.get("player_blind", 0)
-	if blind_penalty > 0:
+	# Apply blind debuff (persistent status effect)
+	if character.blind_active:
+		var blind_penalty = 30  # 30% hit chance reduction when blinded
 		hit_chance -= blind_penalty
 
 	hit_chance = clamp(hit_chance, 30, 95)  # 30% minimum (can be reduced by blind), 95% maximum
@@ -959,6 +967,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		var gold = monster.gold_reward
 
 		# Add XP and gold
+		var old_level = character.level
 		var level_result = character.add_experience(final_xp)
 		character.gold += gold
 
@@ -966,6 +975,18 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 		if level_result.leveled_up:
 			messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
+
+			# Check for newly unlocked abilities
+			var new_abilities = character.get_newly_unlocked_abilities(old_level, level_result.new_level)
+			if new_abilities.size() > 0:
+				messages.append("")
+				messages.append("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
+				messages.append("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+				for ability in new_abilities:
+					var ability_type = "Universal" if ability.get("universal", false) else "Class"
+					messages.append("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+				messages.append("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+				messages.append("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
 
 		# Roll for item drops
 		var dropped_items = []
@@ -1304,7 +1325,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				messages.append("[color=#4169E1]Arcane Precision: +%d%% spell damage![/color]" % int(passive_effects.get("spell_damage_bonus", 0) * 100))
 
 			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
-			# 25% double damage, 10% backfire
+			# 25% double damage, 5% backfire
 			if passive_effects.has("double_damage_chance"):
 				var chaos_roll = randf()
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
@@ -1834,6 +1855,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var final_xp = int(base_xp * xp_multiplier)
 				var gold = monster.gold_reward * 2
 
+				var heist_old_level = character.level
 				var level_result = character.add_experience(final_xp)
 				character.gold += gold
 
@@ -1842,6 +1864,18 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 				if level_result.leveled_up:
 					messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
+
+					# Check for newly unlocked abilities
+					var new_abilities = character.get_newly_unlocked_abilities(heist_old_level, level_result.new_level)
+					if new_abilities.size() > 0:
+						messages.append("")
+						messages.append("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
+						messages.append("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+						for ability in new_abilities:
+							var ability_type = "Universal" if ability.get("universal", false) else "Class"
+							messages.append("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+						messages.append("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+						messages.append("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
 
 				# Roll for item drops (double chance)
 				var dropped_items = []
@@ -1920,6 +1954,59 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#FF4444][b]GAMBIT FAILED![/b][/color]")
 				messages.append("[color=#FF4444]Your gambit backfires for %d self-damage![/color]" % self_damage)
 
+		"all_or_nothing":
+			# Universal desperation ability - very low chance to instant kill
+			# Costs 1 mana/stamina/energy (uses whatever resource the class has)
+			var has_resource = false
+			if character.current_mana >= 1:
+				character.current_mana -= 1
+				has_resource = true
+			elif character.current_stamina >= 1:
+				character.current_stamina -= 1
+				has_resource = true
+			elif character.current_energy >= 1:
+				character.current_energy -= 1
+				has_resource = true
+
+			if not has_resource:
+				return {"success": false, "messages": ["[color=#FF4444]You need at least 1 resource to attempt this![/color]"], "combat_ended": false, "skip_monster_turn": true}
+
+			# Track usage (for "gets better over time" mechanic)
+			character.all_or_nothing_uses += 1
+
+			# Calculate success chance:
+			# Base: 3%
+			# +0.1% per use (max +10% from uses, so caps at 100 uses)
+			# -0.5% per monster level above player (heavily penalized vs high level)
+			# +0.5% per monster level below player
+			var base_chance = 3.0
+			var use_bonus = min(10.0, character.all_or_nothing_uses * 0.1)
+			var level_diff = monster.level - character.level
+			var level_modifier = -level_diff * 0.5  # Negative if monster higher, positive if lower
+
+			var success_chance = base_chance + use_bonus + level_modifier
+			success_chance = clamp(success_chance, 1.0, 25.0)  # Min 1%, max 25%
+
+			messages.append("[color=#FF00FF][b]ALL OR NOTHING![/b][/color]")
+			messages.append("[color=#808080](Success chance: %.1f%%)[/color]" % success_chance)
+
+			if randf() * 100.0 < success_chance:
+				# SUCCESS - instant kill!
+				var killing_blow = monster.current_hp
+				monster.current_hp = 0
+				messages.append("[color=#00FF00][b]MIRACULOUS SUCCESS![/b][/color]")
+				messages.append("[color=#FFD700]Against all odds, you strike the %s's vital point for %d damage![/color]" % [monster.name, killing_blow])
+			else:
+				# FAILURE - monster gets enraged (double strength and speed)
+				monster.strength = monster.strength * 2
+				monster.speed = monster.speed * 2
+				# Wake up paralyzed monsters faster
+				if combat.get("monster_stunned", 0) > 0:
+					combat["monster_stunned"] = max(0, combat["monster_stunned"] - 2)
+					messages.append("[color=#FF4444]The monster snaps out of paralysis![/color]")
+				messages.append("[color=#FF0000][b]CATASTROPHIC FAILURE![/b][/color]")
+				messages.append("[color=#FF4444]The %s becomes ENRAGED! Its strength and speed DOUBLE![/color]" % monster.name)
+
 	# Check if monster died
 	if monster.current_hp <= 0:
 		return _process_victory(combat, messages)
@@ -1928,6 +2015,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 	"""Get ability info from constants"""
+	# Universal abilities (available to all paths)
+	match ability_name:
+		"cloak": return {"level": 20, "cost": 0, "name": "Cloak", "universal": true}
+		"all_or_nothing": return {"level": 1, "cost": 1, "name": "All or Nothing", "universal": true}
+
 	match path:
 		"mage":
 			match ability_name:
@@ -2279,9 +2371,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	# Poison ability: apply poison if not already active (lasts 20 turns, persists outside combat)
 	if ABILITY_POISON in abilities and not character.poison_active:
 		if randi() % 100 < 40:  # 40% chance to poison
-			var poison_dmg = max(1, int(monster.strength * 0.2))
-			character.apply_poison(poison_dmg, 20)  # 20 combat turns
-			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 20 turns)[/color]" % poison_dmg)
+			var poison_dmg = max(1, int(monster.strength * 0.30))  # 30% of monster STR (up from 20%)
+			character.apply_poison(poison_dmg, 35)  # 35 combat turns (nearly double from 20)
+			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns)[/color]" % poison_dmg)
 
 	# Mana drain ability - drains the character's primary resource based on class path
 	if ABILITY_MANA_DRAIN in abilities and hits > 0:
@@ -2363,13 +2455,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				else:
 					messages.append("[color=#FF4444]The %s sunders your %s! (%d%% worn)[/color]" % [monster.name, result.item_name, result.new_wear])
 
-	# Blind ability: reduces player hit chance (applied once per combat)
-	if ABILITY_BLIND in abilities and not combat.get("blind_applied", false):
+	# Blind ability: persistent debuff that reduces hit chance, hides monster HP, reduces map vision
+	if ABILITY_BLIND in abilities and not character.blind_active:
 		if randi() % 100 < 40:  # 40% chance
-			combat["blind_applied"] = true
-			var blind_reduction = ability_cfg.get("blind_hit_reduction", 30)
-			combat["player_blind"] = blind_reduction  # Reduces hit chance
-			messages.append("[color=#808080]The %s blinds you! (-%d%% hit chance)[/color]" % [monster.name, blind_reduction])
+			var blind_duration = ability_cfg.get("blind_duration", 15)
+			character.apply_blind(blind_duration)
+			messages.append("[color=#808080]The %s blinds you! (-%d%% hit chance, reduced vision for %d turns)[/color]" % [monster.name, ability_cfg.get("blind_hit_reduction", 30), blind_duration])
 
 	# Bleed ability: stacking bleed DoT (can stack up to 3 times)
 	if ABILITY_BLEED in abilities and hits > 0:
@@ -2530,7 +2621,7 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		raw_damage = int(raw_damage * final_crit_damage)
 
 	# === CLASS PASSIVE: Sorcerer Chaos Magic ===
-	# 25% chance for double damage, 10% chance to backfire
+	# 25% chance for double damage, 5% chance to backfire
 	var backfire_damage = 0
 	if effects.has("double_damage_chance"):
 		var chaos_roll = randf()
@@ -2571,15 +2662,24 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# +25% damage vs undead/demons
 	if effects.has("bonus_vs_undead"):
 		var monster_type = monster.get("type", "").to_lower()
-		if "undead" in monster_type or "demon" in monster_type or monster.name.to_lower() in ["skeleton", "zombie", "wraith", "lich", "elder lich", "vampire", "demon"]:
+		var undead_demon_names = [
+			"skeleton", "zombie", "wraith", "wight", "lich", "elder lich", "vampire", "nazgul", "death incarnate",  # Undead
+			"demon", "demon lord", "balrog", "succubus"  # Demons
+		]
+		if "undead" in monster_type or "demon" in monster_type or monster.name.to_lower() in undead_demon_names:
 			total = int(total * (1.0 + effects.get("bonus_vs_undead", 0)))
 			passive_messages.append("[color=#FFD700]Divine Favor: +%d%% vs undead![/color]" % int(effects.get("bonus_vs_undead", 0) * 100))
 
 	# === CLASS PASSIVE: Ranger Hunter's Mark ===
-	# +25% damage vs beasts
+	# +25% damage vs beasts (natural creatures, animals, monsters with animal forms)
 	if effects.has("bonus_vs_beasts"):
 		var monster_type = monster.get("type", "").to_lower()
-		if "beast" in monster_type or "animal" in monster_type or monster.name.to_lower() in ["giant rat", "wolf", "dire wolf", "giant spider", "bear", "dire bear", "wyvern"]:
+		var beast_names = [
+			"giant rat", "wolf", "dire wolf", "giant spider", "bear", "dire bear",  # Basic beasts
+			"wyvern", "gryphon", "chimaera", "cerberus", "hydra",  # Mythical beasts
+			"world serpent", "harpy", "minotaur"  # Part-beast creatures
+		]
+		if "beast" in monster_type or "animal" in monster_type or monster.name.to_lower() in beast_names:
 			total = int(total * (1.0 + effects.get("bonus_vs_beasts", 0)))
 			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(effects.get("bonus_vs_beasts", 0) * 100))
 
@@ -2732,11 +2832,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	var name_color = _get_affinity_color(affinity)
 
 	# Check if player knows this monster (has killed it at or above this level)
-	# If unknown, send -1 for HP values so client shows "???"
+	# If unknown OR player is blinded, send -1 for HP values so client shows "???"
 	var knows_monster = character.knows_monster(monster.name, monster.level)
-	var display_hp = monster.current_hp if knows_monster else -1
-	var display_max_hp = monster.max_hp if knows_monster else -1
-	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if knows_monster else -1
+	var can_see_hp = knows_monster and not character.blind_active
+	var display_hp = monster.current_hp if can_see_hp else -1
+	var display_max_hp = monster.max_hp if can_see_hp else -1
+	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if can_see_hp else -1
 
 	return {
 		"round": combat.round,

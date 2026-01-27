@@ -507,6 +507,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_unequip(peer_id, message)
 		"inventory_discard":
 			handle_inventory_discard(peer_id, message)
+		"inventory_sort":
+			handle_inventory_sort(peer_id, message)
+		"inventory_salvage":
+			handle_inventory_salvage(peer_id, message)
 		"monster_select_confirm":
 			handle_monster_select_confirm(peer_id, message)
 		"target_farm_select":
@@ -519,6 +523,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_merchant_sell_gems(peer_id, message)
 		"merchant_upgrade":
 			handle_merchant_upgrade(peer_id, message)
+		"merchant_upgrade_all":
+			handle_merchant_upgrade_all(peer_id)
 		"merchant_gamble":
 			handle_merchant_gamble(peer_id, message)
 		"merchant_buy":
@@ -558,6 +564,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_watch_stop(peer_id)
 		"toggle_cloak":
 			handle_toggle_cloak(peer_id)
+		"teleport":
+			handle_teleport(peer_id, message)
 		"get_abilities":
 			handle_get_abilities(peer_id)
 		"equip_ability":
@@ -1987,11 +1995,14 @@ func send_location_update(peer_id: int):
 
 	var character = characters[peer_id]
 
-	# Get nearby players for map display (within map radius of 6)
-	var nearby_players = get_nearby_players(peer_id, 6)
+	# Vision radius is reduced when blinded
+	var vision_radius = 2 if character.blind_active else 6
+
+	# Get nearby players for map display (within map radius)
+	var nearby_players = get_nearby_players(peer_id, vision_radius)
 
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, 6, nearby_players)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players)
 
 	# Send map display as description
 	send_to_peer(peer_id, {
@@ -2982,6 +2993,153 @@ func handle_inventory_discard(peer_id: int, message: Dictionary):
 
 	send_character_update(peer_id)
 
+func handle_inventory_sort(peer_id: int, message: Dictionary):
+	"""Handle sorting inventory by a specified criterion"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var sort_by = message.get("sort_by", "level")
+	var inventory = character.inventory
+
+	if inventory.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]No items to sort.[/color]"
+		})
+		return
+
+	# Define sort comparators
+	match sort_by:
+		"level":
+			inventory.sort_custom(func(a, b): return a.get("level", 1) > b.get("level", 1))
+		"hp":
+			inventory.sort_custom(func(a, b):
+				var a_hp = a.get("hp_bonus", 0)
+				var b_hp = b.get("hp_bonus", 0)
+				return a_hp > b_hp
+			)
+		"atk":
+			inventory.sort_custom(func(a, b):
+				var a_atk = a.get("attack_bonus", 0)
+				var b_atk = b.get("attack_bonus", 0)
+				return a_atk > b_atk
+			)
+		"def":
+			inventory.sort_custom(func(a, b):
+				var a_def = a.get("defense_bonus", 0)
+				var b_def = b.get("defense_bonus", 0)
+				return a_def > b_def
+			)
+		"wit":
+			inventory.sort_custom(func(a, b):
+				var a_wit = a.get("wits_bonus", 0)
+				var b_wit = b.get("wits_bonus", 0)
+				return a_wit > b_wit
+			)
+		"slot":
+			# Sort by slot type: weapon, armor, helm, shield, boots, ring, amulet
+			var slot_order = {"weapon": 0, "armor": 1, "helm": 2, "shield": 3, "boots": 4, "ring": 5, "amulet": 6}
+			inventory.sort_custom(func(a, b):
+				var a_slot = slot_order.get(a.get("type", ""), 99)
+				var b_slot = slot_order.get(b.get("type", ""), 99)
+				if a_slot != b_slot:
+					return a_slot < b_slot
+				return a.get("level", 1) > b.get("level", 1)
+			)
+		"rarity":
+			var rarity_order = {"legendary": 0, "epic": 1, "rare": 2, "uncommon": 3, "common": 4}
+			inventory.sort_custom(func(a, b):
+				var a_rarity = rarity_order.get(a.get("rarity", "common"), 99)
+				var b_rarity = rarity_order.get(b.get("rarity", "common"), 99)
+				if a_rarity != b_rarity:
+					return a_rarity < b_rarity
+				return a.get("level", 1) > b.get("level", 1)
+			)
+
+	var sort_names = {
+		"level": "Level",
+		"hp": "HP bonus",
+		"atk": "Attack bonus",
+		"def": "Defense bonus",
+		"wit": "Wits bonus",
+		"slot": "equipment slot",
+		"rarity": "Rarity"
+	}
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00]Inventory sorted by %s.[/color]" % sort_names.get(sort_by, sort_by)
+	})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func handle_inventory_salvage(peer_id: int, message: Dictionary):
+	"""Handle bulk salvaging items for gold"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var mode = message.get("mode", "below_level")
+	var inventory = character.inventory
+
+	if inventory.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]No items to salvage.[/color]"
+		})
+		return
+
+	var threshold = max(1, character.level - 5)
+	var items_to_remove = []
+	var total_gold = 0
+
+	# Identify items to salvage based on mode
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		var item_level = item.get("level", 1)
+		var should_salvage = false
+
+		match mode:
+			"below_level":
+				should_salvage = item_level < threshold
+			"all":
+				should_salvage = true
+
+		if should_salvage:
+			# Calculate salvage value (25% of item value)
+			var base_value = item_level * 10
+			var rarity_mult = {"common": 1.0, "uncommon": 1.5, "rare": 2.0, "epic": 3.0, "legendary": 5.0}
+			var mult = rarity_mult.get(item.get("rarity", "common"), 1.0)
+			var salvage_value = int(base_value * mult * 0.25)
+			total_gold += salvage_value
+			items_to_remove.append(i)
+
+	if items_to_remove.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]No items match the salvage criteria.[/color]"
+		})
+		return
+
+	# Remove items in reverse order to preserve indices
+	var salvaged_count = items_to_remove.size()
+	items_to_remove.reverse()
+	for idx in items_to_remove:
+		character.remove_item(idx)
+
+	# Add gold
+	character.gold += total_gold
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]Salvaged %d items for %d gold![/color]" % [salvaged_count, total_gold]
+	})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
+
 func send_character_update(peer_id: int):
 	"""Send character data update to client"""
 	if not characters.has(peer_id):
@@ -3299,6 +3457,66 @@ func handle_merchant_upgrade(peer_id: int, message: Dictionary):
 
 	send_character_update(peer_id)
 
+func handle_merchant_upgrade_all(peer_id: int):
+	"""Handle upgrading all equipped items by 1 level each"""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+
+	var merchant = at_merchant[peer_id]
+	if not "upgrade" in merchant.services:
+		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer upgrades."})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Calculate total cost for all equipped items
+	var total_cost = 0
+	var items_to_upgrade = []
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipped.get(slot)
+		if item != null:
+			var current_level = item.get("level", 1)
+			var upgrade_cost = int(pow(current_level + 1, 2) * 10)
+			total_cost += upgrade_cost
+			items_to_upgrade.append({"slot": slot, "item": item, "cost": upgrade_cost})
+
+	if items_to_upgrade.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]No items equipped to upgrade.[/color]"
+		})
+		return
+
+	if character.gold < total_cost:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]You need %d gold to upgrade all items. You have %d gold.[/color]" % [total_cost, character.gold]
+		})
+		return
+
+	# Perform all upgrades
+	character.gold -= total_cost
+	var upgraded_names = []
+	for entry in items_to_upgrade:
+		var item = entry.item
+		var current_level = item.get("level", 1)
+		item["level"] = current_level + 1
+		item["value"] = int(item.get("value", 100) * 1.5)
+		var rarity = item.get("rarity", "common")
+		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
+		upgraded_names.append("%s +%d" % [entry.slot.capitalize(), item["level"] - 1])
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00]Upgraded %d items for %d gold![/color]\n[color=#808080]%s[/color]" % [items_to_upgrade.size(), total_cost, ", ".join(upgraded_names)]
+	})
+
+	send_character_update(peer_id)
+
 func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	"""Handle gambling with a merchant"""
 	if not at_merchant.has(peer_id):
@@ -3465,12 +3683,13 @@ func handle_merchant_recharge(peer_id: int):
 	var character = characters[peer_id]
 	var cost = _get_recharge_cost(character.level)
 
-	# Check if already at full resources and not poisoned
+	# Check if already at full resources and not poisoned/blinded
 	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
 						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
 						  character.current_energy < character.max_energy or
-						  character.poison_active)
+						  character.poison_active or
+						  character.blind_active)
 
 	if not needs_recharge:
 		send_to_peer(peer_id, {
@@ -3494,6 +3713,11 @@ func handle_merchant_recharge(peer_id: int):
 	if character.poison_active:
 		character.cure_poison()
 		restored.append("poison cured")
+
+	# Cure blindness if active
+	if character.blind_active:
+		character.cure_blind()
+		restored.append("blindness cured")
 
 	# Deduct gold and restore resources
 	character.gold -= cost
@@ -4021,12 +4245,13 @@ func handle_trading_post_recharge(peer_id: int):
 	var base_cost = _get_recharge_cost(character.level)
 	var cost = int(base_cost * 0.5)
 
-	# Check if already at full resources and not poisoned
+	# Check if already at full resources and not poisoned/blinded
 	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
 						  character.current_mana < character.max_mana or
 						  character.current_stamina < character.max_stamina or
 						  character.current_energy < character.max_energy or
-						  character.poison_active)
+						  character.poison_active or
+						  character.blind_active)
 
 	if not needs_recharge:
 		send_to_peer(peer_id, {
@@ -4049,6 +4274,11 @@ func handle_trading_post_recharge(peer_id: int):
 	if character.poison_active:
 		character.cure_poison()
 		restored.append("poison cured")
+
+	# Cure blindness if active
+	if character.blind_active:
+		character.cure_blind()
+		restored.append("blindness cured")
 
 	# Deduct gold and restore ALL resources including HP
 	character.gold -= cost
@@ -4168,9 +4398,15 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to turn in quests"})
 		return
 
+	var old_level = character.level
 	var result = quest_mgr.turn_in_quest(character, quest_id)
 
 	if result.success:
+		# Check for newly unlocked abilities
+		var unlocked_abilities = []
+		if result.leveled_up:
+			unlocked_abilities = character.get_newly_unlocked_abilities(old_level, result.new_level)
+
 		send_to_peer(peer_id, {
 			"type": "quest_turned_in",
 			"quest_id": quest_id,
@@ -4178,7 +4414,8 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			"message": result.message,
 			"rewards": result.rewards,
 			"leveled_up": result.leveled_up,
-			"new_level": result.new_level
+			"new_level": result.new_level,
+			"unlocked_abilities": unlocked_abilities
 		})
 		# Check for Elder auto-grant (level 1000)
 		check_elder_auto_grant(peer_id)
@@ -4341,9 +4578,10 @@ func handle_watch_approve(peer_id: int, message: Dictionary):
 		"character": char_dict
 	})
 
-	# Send initial map
-	var nearby_players = get_nearby_players(peer_id, 6)
-	var map_display = world_system.generate_map_display(character.x, character.y, 6, nearby_players)
+	# Send initial map (vision reduced if character is blind)
+	var vision_radius = 2 if character.blind_active else 6
+	var nearby_players = get_nearby_players(peer_id, vision_radius)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players)
 	send_to_peer(requester_peer_id, {
 		"type": "watch_location",
 		"x": character.x,
@@ -4467,6 +4705,107 @@ func handle_toggle_cloak(peer_id: int):
 
 	# Update character state
 	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_teleport(peer_id: int, message: Dictionary):
+	"""Handle teleport ability - allows player to teleport to coordinates"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Can't teleport in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot teleport while in combat!"})
+		return
+
+	# Check if character has unlocked teleport based on class path
+	var teleport_level = 60  # Default (warrior)
+	var path = character.get_class_path()
+	match path:
+		"mage":
+			teleport_level = 30
+		"trickster":
+			teleport_level = 45
+		"warrior":
+			teleport_level = 60
+
+	if character.level < teleport_level:
+		send_to_peer(peer_id, {"type": "error", "message": "Teleport unlocks at level %d for your class." % teleport_level})
+		return
+
+	var target_x = message.get("x", 0)
+	var target_y = message.get("y", 0)
+
+	# Validate bounds
+	if target_x < -1000 or target_x > 1000 or target_y < -1000 or target_y > 1000:
+		send_to_peer(peer_id, {"type": "error", "message": "Coordinates must be between -1000 and 1000."})
+		return
+
+	# Calculate cost based on distance
+	var distance = sqrt(pow(target_x - character.x, 2) + pow(target_y - character.y, 2))
+	var cost = int(10 + distance)
+
+	# Determine resource type based on class path
+	var resource_name = "mana"
+	var current_resource = 0
+	match path:
+		"mage":
+			resource_name = "mana"
+			current_resource = character.current_mana
+		"trickster":
+			resource_name = "energy"
+			current_resource = character.current_energy
+		"warrior":
+			resource_name = "stamina"
+			current_resource = character.current_stamina
+		_:
+			resource_name = "mana"
+			current_resource = character.current_mana
+
+	if current_resource < cost:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Not enough %s! Need %d, have %d.[/color]" % [resource_name.capitalize(), cost, current_resource]
+		})
+		return
+
+	# Deduct cost
+	match path:
+		"mage":
+			character.current_mana -= cost
+		"trickster":
+			character.current_energy -= cost
+		"warrior":
+			character.current_stamina -= cost
+		_:
+			character.current_mana -= cost
+
+	# Store old position for message
+	var old_x = character.x
+	var old_y = character.y
+
+	# Teleport
+	character.x = target_x
+	character.y = target_y
+
+	# Break cloak if active
+	if character.cloak_active:
+		character.cloak_active = false
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#9932CC]Your cloak drops as you teleport.[/color]"
+		})
+
+	# Send teleport message
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#AA66FF]You channel your power and teleport from (%d, %d) to (%d, %d)! (-%d %s)[/color]" % [old_x, old_y, target_x, target_y, cost, resource_name]
+	})
+
+	# Update character and send location
+	send_character_update(peer_id)
+	send_location_update(peer_id)
 	save_character(peer_id)
 
 # ===== ABILITY LOADOUT HANDLERS =====
@@ -5162,6 +5501,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 		"cure":
 			if target:
 				target.cure_poison()
+				target.cure_blind()
 				target.active_buffs.clear()  # Clear debuffs (they're stored as negative buffs)
 				send_to_peer(target_peer_id, {
 					"type": "text",
@@ -5240,6 +5580,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				target.current_stamina = target.max_stamina
 				target.current_energy = target.max_energy
 				target.cure_poison()
+				target.cure_blind()
 				target.active_buffs.clear()
 				send_to_peer(target_peer_id, {
 					"type": "text",

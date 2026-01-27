@@ -180,6 +180,33 @@ var gamble_popup_cancel: Button = null
 var gamble_min_bet: int = 0
 var gamble_max_bet: int = 0
 
+# UI References - Upgrade Popup (created dynamically)
+var upgrade_popup: Panel = null
+var upgrade_popup_title: Label = null
+var upgrade_popup_item_label: Label = null
+var upgrade_popup_gold_label: Label = null
+var upgrade_popup_cost_label: Label = null
+var upgrade_popup_input: LineEdit = null
+var upgrade_popup_btn_1: Button = null
+var upgrade_popup_btn_5: Button = null
+var upgrade_popup_btn_10: Button = null
+var upgrade_popup_btn_max: Button = null
+var upgrade_popup_confirm: Button = null
+var upgrade_popup_cancel: Button = null
+var upgrade_pending_slot: String = ""
+var upgrade_max_affordable: int = 0
+
+# UI References - Teleport Popup (created dynamically)
+var teleport_popup: Panel = null
+var teleport_popup_title: Label = null
+var teleport_popup_resource_label: Label = null
+var teleport_popup_cost_label: Label = null
+var teleport_popup_x_input: LineEdit = null
+var teleport_popup_y_input: LineEdit = null
+var teleport_popup_confirm: Button = null
+var teleport_popup_cancel: Button = null
+var teleport_mode: bool = false
+
 # Account data
 var username = ""
 var account_id = ""
@@ -413,7 +440,7 @@ const CLASS_DESCRIPTIONS = {
 	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina.\n[color=#8B0000]Passive - Blood Rage:[/color] +3% damage per 10% HP missing (max +30%), abilities cost 25% more",
 	"Paladin": "Warrior Path. Holy knight with sustain and bonus damage vs evil. Uses Stamina.\n[color=#FFD700]Passive - Divine Favor:[/color] Heal 3% max HP per round, +25% damage vs undead/demons",
 	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.\n[color=#4169E1]Passive - Arcane Precision:[/color] +15% spell damage, +10% spell crit chance",
-	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 10% chance to backfire",
+	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
 	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
 	"Thief": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
 	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% gold/XP from kills",
@@ -2824,6 +2851,9 @@ func update_action_bar():
 			]
 		elif pending_merchant_action == "upgrade":
 			# Show equipment slots as action bar options
+			# Calculate if Upgrade All is affordable
+			var upgrade_all_cost = _calculate_upgrade_all_cost()
+			var can_upgrade_all = upgrade_all_cost > 0 and character_data.get("gold", 0) >= upgrade_all_cost
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "Weapon", "action_type": "local", "action_data": "upgrade_weapon", "enabled": equipped.get("weapon") != null},
@@ -2833,7 +2863,7 @@ func update_action_bar():
 				{"label": "Boots", "action_type": "local", "action_data": "upgrade_boots", "enabled": equipped.get("boots") != null},
 				{"label": "Ring", "action_type": "local", "action_data": "upgrade_ring", "enabled": equipped.get("ring") != null},
 				{"label": "Amulet", "action_type": "local", "action_data": "upgrade_amulet", "enabled": equipped.get("amulet") != null},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "All+1(%dg)" % upgrade_all_cost if upgrade_all_cost > 0 else "All+1", "action_type": "local", "action_data": "upgrade_all", "enabled": can_upgrade_all},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_merchant_action == "gamble":
@@ -2893,7 +2923,37 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif inventory_mode:
-		if pending_inventory_action == "equip_confirm":
+		if pending_inventory_action == "sort_select":
+			# Sort submenu - show sort options
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "sort_cancel", "enabled": true},
+				{"label": "Level", "action_type": "local", "action_data": "sort_by_level", "enabled": true},
+				{"label": "HP", "action_type": "local", "action_data": "sort_by_hp", "enabled": true},
+				{"label": "ATK", "action_type": "local", "action_data": "sort_by_atk", "enabled": true},
+				{"label": "DEF", "action_type": "local", "action_data": "sort_by_def", "enabled": true},
+				{"label": "WIT", "action_type": "local", "action_data": "sort_by_wit", "enabled": true},
+				{"label": "Slot", "action_type": "local", "action_data": "sort_by_slot", "enabled": true},
+				{"label": "Rarity", "action_type": "local", "action_data": "sort_by_rarity", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "salvage_select":
+			# Salvage submenu - show salvage options
+			var player_level = character_data.get("level", 1)
+			var threshold = max(1, player_level - 5)
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
+				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
+				{"label": "All Items", "action_type": "local", "action_data": "salvage_all", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "equip_confirm":
 			# Confirming equip - show equip/cancel options
 			current_actions = [
 				{"label": "Equip", "action_type": "local", "action_data": "confirm_equip", "enabled": true},
@@ -2976,11 +3036,11 @@ func update_action_bar():
 				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
 				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "InspEquip", "action_type": "local", "action_data": "inventory_inspect_equipped", "enabled": has_equipped},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
+				{"label": "Sort", "action_type": "local", "action_data": "inventory_sort", "enabled": true},
+				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
+				{"label": "InspEquip", "action_type": "local", "action_data": "inventory_inspect_equipped", "enabled": has_equipped},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif at_trading_post:
 		# Trading Post mode
@@ -3038,6 +3098,10 @@ func update_action_bar():
 		var fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true} if forge_available else {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
 		var cloak_action = {"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": true} if cloak_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+		# Teleport unlocks at different levels: Mage 30, Trickster 45, Warrior 60
+		var teleport_unlock_level = _get_teleport_unlock_level()
+		var teleport_unlocked = player_level >= teleport_unlock_level
+		var teleport_action = {"label": "Teleport", "action_type": "local", "action_data": "teleport", "enabled": true} if teleport_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 		current_actions = [
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
@@ -3047,7 +3111,7 @@ func update_action_bar():
 			{"label": "Abilities", "action_type": "local", "action_data": "abilities", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
-			{"label": "SwitchChr", "action_type": "local", "action_data": "logout_character", "enabled": true},
+			teleport_action,
 			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
 		]
 	else:
@@ -3382,7 +3446,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 				effective_multiplier *= 1.15 * 1.05  # Include average crit bonus
 				bonus_parts.append("[color=#4169E1]+15% Arcane[/color]")
 			"Sorcerer":
-				# Chaos Magic: average ~10% bonus (25% double, 10% backfire)
+				# Chaos Magic: average ~22% bonus (25% double, 5% backfire)
 				effective_multiplier *= 1.10
 				bonus_parts.append("[color=#9400D3]+10% Chaos[/color]")
 
@@ -3643,6 +3707,578 @@ func _on_gamble_popup_cancel():
 	show_merchant_menu()
 	update_action_bar()
 
+# ===== UPGRADE POPUP =====
+
+func _create_upgrade_popup():
+	"""Create the upgrade amount input popup panel."""
+	upgrade_popup = Panel.new()
+	upgrade_popup.name = "UpgradePopup"
+	upgrade_popup.visible = false
+	upgrade_popup.custom_minimum_size = Vector2(400, 320)
+
+	# Style the popup
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.08, 0.98)
+	style.border_color = Color(0.2, 0.8, 0.2, 1)  # Green border
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(8)
+	upgrade_popup.add_theme_stylebox_override("panel", style)
+
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 8)
+	vbox.offset_left = 20
+	vbox.offset_right = -20
+	vbox.offset_top = 15
+	vbox.offset_bottom = -15
+	upgrade_popup.add_child(vbox)
+
+	# Title
+	upgrade_popup_title = Label.new()
+	upgrade_popup_title.text = "UPGRADE EQUIPMENT"
+	upgrade_popup_title.add_theme_color_override("font_color", Color(0.2, 1, 0.2))
+	upgrade_popup_title.add_theme_font_size_override("font_size", 18)
+	upgrade_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(upgrade_popup_title)
+
+	# Item display
+	upgrade_popup_item_label = Label.new()
+	upgrade_popup_item_label.text = "Item: Weapon +5"
+	upgrade_popup_item_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	upgrade_popup_item_label.add_theme_font_size_override("font_size", 14)
+	upgrade_popup_item_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(upgrade_popup_item_label)
+
+	# Gold display
+	upgrade_popup_gold_label = Label.new()
+	upgrade_popup_gold_label.text = "Your gold: 0"
+	upgrade_popup_gold_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	upgrade_popup_gold_label.add_theme_font_size_override("font_size", 14)
+	upgrade_popup_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(upgrade_popup_gold_label)
+
+	# Cost display
+	upgrade_popup_cost_label = Label.new()
+	upgrade_popup_cost_label.text = "Cost for 1 upgrade: 100 gold"
+	upgrade_popup_cost_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	upgrade_popup_cost_label.add_theme_font_size_override("font_size", 13)
+	upgrade_popup_cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(upgrade_popup_cost_label)
+
+	# Quick upgrade buttons
+	var quick_btn_container = HBoxContainer.new()
+	quick_btn_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	quick_btn_container.add_theme_constant_override("separation", 10)
+	vbox.add_child(quick_btn_container)
+
+	upgrade_popup_btn_1 = Button.new()
+	upgrade_popup_btn_1.text = "+1"
+	upgrade_popup_btn_1.custom_minimum_size = Vector2(60, 35)
+	upgrade_popup_btn_1.pressed.connect(_on_upgrade_quick.bind(1))
+	quick_btn_container.add_child(upgrade_popup_btn_1)
+
+	upgrade_popup_btn_5 = Button.new()
+	upgrade_popup_btn_5.text = "+5"
+	upgrade_popup_btn_5.custom_minimum_size = Vector2(60, 35)
+	upgrade_popup_btn_5.pressed.connect(_on_upgrade_quick.bind(5))
+	quick_btn_container.add_child(upgrade_popup_btn_5)
+
+	upgrade_popup_btn_10 = Button.new()
+	upgrade_popup_btn_10.text = "+10"
+	upgrade_popup_btn_10.custom_minimum_size = Vector2(60, 35)
+	upgrade_popup_btn_10.pressed.connect(_on_upgrade_quick.bind(10))
+	quick_btn_container.add_child(upgrade_popup_btn_10)
+
+	upgrade_popup_btn_max = Button.new()
+	upgrade_popup_btn_max.text = "MAX"
+	upgrade_popup_btn_max.custom_minimum_size = Vector2(70, 35)
+	upgrade_popup_btn_max.pressed.connect(_on_upgrade_max)
+	quick_btn_container.add_child(upgrade_popup_btn_max)
+
+	# Spacer
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 5)
+	vbox.add_child(spacer)
+
+	# Custom input label
+	var input_label = Label.new()
+	input_label.text = "Or enter custom amount:"
+	input_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	input_label.add_theme_font_size_override("font_size", 12)
+	input_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(input_label)
+
+	# Input field
+	upgrade_popup_input = LineEdit.new()
+	upgrade_popup_input.placeholder_text = "Enter number of upgrades..."
+	upgrade_popup_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	upgrade_popup_input.custom_minimum_size = Vector2(0, 35)
+	upgrade_popup_input.add_theme_font_size_override("font_size", 14)
+	upgrade_popup_input.text_submitted.connect(_on_upgrade_popup_input_submitted)
+	upgrade_popup_input.text_changed.connect(_on_upgrade_input_changed)
+	vbox.add_child(upgrade_popup_input)
+
+	# Button container
+	var btn_container = HBoxContainer.new()
+	btn_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_container.add_theme_constant_override("separation", 20)
+	vbox.add_child(btn_container)
+
+	# Cancel button
+	upgrade_popup_cancel = Button.new()
+	upgrade_popup_cancel.text = "Cancel"
+	upgrade_popup_cancel.custom_minimum_size = Vector2(100, 35)
+	upgrade_popup_cancel.pressed.connect(_on_upgrade_popup_cancel)
+	btn_container.add_child(upgrade_popup_cancel)
+
+	# Confirm button
+	upgrade_popup_confirm = Button.new()
+	upgrade_popup_confirm.text = "Upgrade!"
+	upgrade_popup_confirm.custom_minimum_size = Vector2(100, 35)
+	upgrade_popup_confirm.pressed.connect(_on_upgrade_popup_confirm)
+	btn_container.add_child(upgrade_popup_confirm)
+
+	# Add to root
+	add_child(upgrade_popup)
+
+func _calculate_upgrade_cost(current_level: int, count: int) -> int:
+	"""Calculate total cost for upgrading an item multiple levels."""
+	var total = 0
+	for i in range(count):
+		total += int(pow(current_level + i + 1, 2) * 10)
+	return total
+
+func _calculate_max_affordable_upgrades(current_level: int, gold: int) -> int:
+	"""Calculate maximum number of upgrades affordable with current gold."""
+	var count = 0
+	var total_cost = 0
+	while count < 100:  # Max 100 upgrades at once
+		var next_cost = int(pow(current_level + count + 1, 2) * 10)
+		if total_cost + next_cost > gold:
+			break
+		total_cost += next_cost
+		count += 1
+	return count
+
+func _show_upgrade_popup(slot: String):
+	"""Show the upgrade popup for a specific equipment slot."""
+	if not upgrade_popup:
+		_create_upgrade_popup()
+
+	var equipped = character_data.get("equipped", {})
+	var item = equipped.get(slot)
+	if item == null:
+		return
+
+	upgrade_pending_slot = slot
+	var current_level = item.get("level", 1)
+	var gold = character_data.get("gold", 0)
+	var item_name = item.get("name", "Unknown")
+	var rarity = item.get("rarity", "common")
+
+	# Calculate max affordable
+	upgrade_max_affordable = _calculate_max_affordable_upgrades(current_level, gold)
+
+	# Update labels
+	upgrade_popup_item_label.text = "%s: %s (Lv%d)" % [slot.capitalize(), item_name, current_level]
+	upgrade_popup_gold_label.text = "Your gold: %d" % gold
+	upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d gold" % _calculate_upgrade_cost(current_level, 1)
+
+	# Update quick button states
+	upgrade_popup_btn_1.disabled = upgrade_max_affordable < 1
+	upgrade_popup_btn_1.text = "+1 (%dg)" % _calculate_upgrade_cost(current_level, 1) if upgrade_max_affordable >= 1 else "+1"
+
+	upgrade_popup_btn_5.disabled = upgrade_max_affordable < 5
+	upgrade_popup_btn_5.text = "+5 (%dg)" % _calculate_upgrade_cost(current_level, 5) if upgrade_max_affordable >= 5 else "+5"
+
+	upgrade_popup_btn_10.disabled = upgrade_max_affordable < 10
+	upgrade_popup_btn_10.text = "+10 (%dg)" % _calculate_upgrade_cost(current_level, 10) if upgrade_max_affordable >= 10 else "+10"
+
+	upgrade_popup_btn_max.disabled = upgrade_max_affordable < 1
+	upgrade_popup_btn_max.text = "MAX (+%d)" % upgrade_max_affordable if upgrade_max_affordable >= 1 else "MAX"
+
+	# Clear input
+	upgrade_popup_input.text = ""
+	upgrade_popup_input.placeholder_text = "1-%d upgrades" % upgrade_max_affordable if upgrade_max_affordable > 0 else "Not enough gold!"
+
+	# Center the popup on screen
+	upgrade_popup.position = (get_viewport().get_visible_rect().size - upgrade_popup.size) / 2
+
+	upgrade_popup.visible = true
+	upgrade_popup_input.grab_focus()
+
+func _hide_upgrade_popup():
+	"""Hide the upgrade popup."""
+	if upgrade_popup:
+		upgrade_popup.visible = false
+		upgrade_popup_input.release_focus()
+
+func _on_upgrade_input_changed(new_text: String):
+	"""Update cost display when input changes."""
+	if not upgrade_popup or upgrade_pending_slot == "":
+		return
+
+	var equipped = character_data.get("equipped", {})
+	var item = equipped.get(upgrade_pending_slot)
+	if item == null:
+		return
+
+	var current_level = item.get("level", 1)
+
+	if new_text.is_valid_int():
+		var count = clampi(int(new_text), 1, 100)
+		var cost = _calculate_upgrade_cost(current_level, count)
+		upgrade_popup_cost_label.text = "Cost for %d upgrade%s: %d gold" % [count, "s" if count > 1 else "", cost]
+	else:
+		upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d gold" % _calculate_upgrade_cost(current_level, 1)
+
+func _on_upgrade_popup_input_submitted(_text: String):
+	"""Handle Enter key in upgrade popup input field."""
+	_on_upgrade_popup_confirm()
+
+func _on_upgrade_quick(count: int):
+	"""Handle quick upgrade button click."""
+	if upgrade_max_affordable < count:
+		return
+	_do_upgrade(count)
+
+func _on_upgrade_max():
+	"""Handle max upgrade button click."""
+	if upgrade_max_affordable < 1:
+		return
+	_do_upgrade(upgrade_max_affordable)
+
+func _on_upgrade_popup_confirm():
+	"""Handle confirm button in upgrade popup."""
+	var text = upgrade_popup_input.text.strip_edges()
+
+	if text == "":
+		# Default to 1 upgrade if no input
+		_do_upgrade(1)
+		return
+
+	if not text.is_valid_int():
+		upgrade_popup_input.text = ""
+		upgrade_popup_input.placeholder_text = "Enter a number!"
+		return
+
+	var count = int(text)
+	if count < 1:
+		upgrade_popup_input.text = ""
+		upgrade_popup_input.placeholder_text = "Minimum: 1"
+		return
+
+	if count > upgrade_max_affordable:
+		upgrade_popup_input.text = ""
+		upgrade_popup_input.placeholder_text = "Max affordable: %d" % upgrade_max_affordable
+		return
+
+	_do_upgrade(count)
+
+func _do_upgrade(count: int):
+	"""Perform the upgrade."""
+	_hide_upgrade_popup()
+	pending_merchant_action = ""
+	send_to_server({"type": "merchant_upgrade", "slot": upgrade_pending_slot, "count": count})
+	upgrade_pending_slot = ""
+	update_action_bar()
+
+func _on_upgrade_popup_cancel():
+	"""Handle cancel button in upgrade popup."""
+	_hide_upgrade_popup()
+	upgrade_pending_slot = ""
+	# Return to upgrade slot selection
+	pending_merchant_action = "upgrade"
+	display_upgrade_options()
+	update_action_bar()
+
+# ===== TELEPORT POPUP =====
+
+func _create_teleport_popup():
+	"""Create the teleport coordinate input popup panel."""
+	teleport_popup = Panel.new()
+	teleport_popup.name = "TeleportPopup"
+	teleport_popup.visible = false
+	teleport_popup.custom_minimum_size = Vector2(380, 320)
+
+	# Style the popup
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.08, 0.98)
+	style.border_color = Color(0.6, 0.2, 0.8, 1)  # Purple border for magic
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(8)
+	teleport_popup.add_theme_stylebox_override("panel", style)
+
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 10)
+	vbox.offset_left = 20
+	vbox.offset_right = -20
+	vbox.offset_top = 15
+	vbox.offset_bottom = -15
+	teleport_popup.add_child(vbox)
+
+	# Title
+	teleport_popup_title = Label.new()
+	teleport_popup_title.text = "TELEPORT"
+	teleport_popup_title.add_theme_color_override("font_color", Color(0.8, 0.4, 1))
+	teleport_popup_title.add_theme_font_size_override("font_size", 18)
+	teleport_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(teleport_popup_title)
+
+	# Current position
+	var pos_label = Label.new()
+	var px = character_data.get("x", 0)
+	var py = character_data.get("y", 0)
+	pos_label.text = "Current position: (%d, %d)" % [px, py]
+	pos_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	pos_label.add_theme_font_size_override("font_size", 13)
+	pos_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pos_label.name = "PosLabel"
+	vbox.add_child(pos_label)
+
+	# Resource display
+	teleport_popup_resource_label = Label.new()
+	teleport_popup_resource_label.text = "Mana: 100/100"
+	teleport_popup_resource_label.add_theme_color_override("font_color", Color(0.4, 0.6, 1))
+	teleport_popup_resource_label.add_theme_font_size_override("font_size", 14)
+	teleport_popup_resource_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(teleport_popup_resource_label)
+
+	# Cost display
+	teleport_popup_cost_label = Label.new()
+	teleport_popup_cost_label.text = "Cost: 10 + 1 per tile distance"
+	teleport_popup_cost_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
+	teleport_popup_cost_label.add_theme_font_size_override("font_size", 13)
+	teleport_popup_cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(teleport_popup_cost_label)
+
+	# Coordinate inputs container
+	var coord_container = HBoxContainer.new()
+	coord_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	coord_container.add_theme_constant_override("separation", 15)
+	vbox.add_child(coord_container)
+
+	# X input
+	var x_container = VBoxContainer.new()
+	coord_container.add_child(x_container)
+
+	var x_label = Label.new()
+	x_label.text = "X Coordinate"
+	x_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	x_label.add_theme_font_size_override("font_size", 12)
+	x_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	x_container.add_child(x_label)
+
+	teleport_popup_x_input = LineEdit.new()
+	teleport_popup_x_input.placeholder_text = "-1000 to 1000"
+	teleport_popup_x_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	teleport_popup_x_input.custom_minimum_size = Vector2(120, 35)
+	teleport_popup_x_input.add_theme_font_size_override("font_size", 14)
+	teleport_popup_x_input.text_changed.connect(_on_teleport_coords_changed)
+	x_container.add_child(teleport_popup_x_input)
+
+	# Y input
+	var y_container = VBoxContainer.new()
+	coord_container.add_child(y_container)
+
+	var y_label = Label.new()
+	y_label.text = "Y Coordinate"
+	y_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	y_label.add_theme_font_size_override("font_size", 12)
+	y_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	y_container.add_child(y_label)
+
+	teleport_popup_y_input = LineEdit.new()
+	teleport_popup_y_input.placeholder_text = "-1000 to 1000"
+	teleport_popup_y_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	teleport_popup_y_input.custom_minimum_size = Vector2(120, 35)
+	teleport_popup_y_input.add_theme_font_size_override("font_size", 14)
+	teleport_popup_y_input.text_changed.connect(_on_teleport_coords_changed)
+	teleport_popup_y_input.text_submitted.connect(_on_teleport_y_submitted)
+	y_container.add_child(teleport_popup_y_input)
+
+	# World bounds note
+	var bounds_label = Label.new()
+	bounds_label.text = "World bounds: -1000 to +1000"
+	bounds_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	bounds_label.add_theme_font_size_override("font_size", 11)
+	bounds_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(bounds_label)
+
+	# Button container
+	var btn_container = HBoxContainer.new()
+	btn_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_container.add_theme_constant_override("separation", 20)
+	vbox.add_child(btn_container)
+
+	# Cancel button
+	teleport_popup_cancel = Button.new()
+	teleport_popup_cancel.text = "Cancel"
+	teleport_popup_cancel.custom_minimum_size = Vector2(100, 35)
+	teleport_popup_cancel.pressed.connect(_on_teleport_popup_cancel)
+	btn_container.add_child(teleport_popup_cancel)
+
+	# Confirm button
+	teleport_popup_confirm = Button.new()
+	teleport_popup_confirm.text = "Teleport!"
+	teleport_popup_confirm.custom_minimum_size = Vector2(100, 35)
+	teleport_popup_confirm.pressed.connect(_on_teleport_popup_confirm)
+	btn_container.add_child(teleport_popup_confirm)
+
+	# Add to root
+	add_child(teleport_popup)
+
+func _calculate_teleport_cost(target_x: int, target_y: int) -> int:
+	"""Calculate resource cost for teleporting to target coordinates."""
+	var px = character_data.get("x", 0)
+	var py = character_data.get("y", 0)
+	var distance = sqrt(pow(target_x - px, 2) + pow(target_y - py, 2))
+	# Base cost of 10 + 1 per tile distance
+	return int(10 + distance)
+
+func _get_player_primary_resource() -> Dictionary:
+	"""Get the player's primary resource name, current, and max values."""
+	var path = _get_player_active_path()
+	match path:
+		"mage":
+			return {
+				"name": "Mana",
+				"current": character_data.get("current_mana", 0),
+				"max": character_data.get("max_mana", 100)
+			}
+		"trickster":
+			return {
+				"name": "Energy",
+				"current": character_data.get("current_energy", 0),
+				"max": character_data.get("max_energy", 100)
+			}
+		"warrior":
+			return {
+				"name": "Stamina",
+				"current": character_data.get("current_stamina", 0),
+				"max": character_data.get("max_stamina", 100)
+			}
+		_:
+			# Default to mana if no path determined
+			return {
+				"name": "Mana",
+				"current": character_data.get("current_mana", 0),
+				"max": character_data.get("max_mana", 100)
+			}
+
+func open_teleport_popup():
+	"""Show the teleport popup."""
+	if in_combat:
+		display_game("[color=#FF0000]Cannot teleport during combat![/color]")
+		return
+
+	if not teleport_popup:
+		_create_teleport_popup()
+
+	teleport_mode = true
+
+	var px = character_data.get("x", 0)
+	var py = character_data.get("y", 0)
+	var resource = _get_player_primary_resource()
+
+	# Update position label
+	var pos_label = teleport_popup.get_node("VBoxContainer/PosLabel")
+	if pos_label:
+		pos_label.text = "Current position: (%d, %d)" % [px, py]
+
+	# Update resource label
+	teleport_popup_resource_label.text = "%s: %d/%d" % [resource.name, resource.current, resource.max]
+
+	# Clear inputs
+	teleport_popup_x_input.text = ""
+	teleport_popup_y_input.text = ""
+	teleport_popup_cost_label.text = "Cost: 10 + 1 per tile distance"
+
+	# Center the popup on screen
+	teleport_popup.position = (get_viewport().get_visible_rect().size - teleport_popup.size) / 2
+
+	teleport_popup.visible = true
+	teleport_popup_x_input.grab_focus()
+
+func _hide_teleport_popup():
+	"""Hide the teleport popup."""
+	teleport_mode = false
+	if teleport_popup:
+		teleport_popup.visible = false
+		teleport_popup_x_input.release_focus()
+		teleport_popup_y_input.release_focus()
+
+func _on_teleport_coords_changed(_new_text: String):
+	"""Update cost display when coordinates change."""
+	var x_text = teleport_popup_x_input.text.strip_edges()
+	var y_text = teleport_popup_y_input.text.strip_edges()
+
+	if x_text.lstrip("-").is_valid_int() and y_text.lstrip("-").is_valid_int():
+		var target_x = int(x_text)
+		var target_y = int(y_text)
+		var cost = _calculate_teleport_cost(target_x, target_y)
+		var resource = _get_player_primary_resource()
+		var color = "#00FF00" if resource.current >= cost else "#FF0000"
+		teleport_popup_cost_label.text = "Cost: [color=%s]%d %s[/color]" % [color, cost, resource.name]
+	else:
+		teleport_popup_cost_label.text = "Cost: 10 + 1 per tile distance"
+
+func _on_teleport_y_submitted(_text: String):
+	"""Handle Enter key in Y input field."""
+	_on_teleport_popup_confirm()
+
+func _on_teleport_popup_confirm():
+	"""Handle confirm button in teleport popup."""
+	var x_text = teleport_popup_x_input.text.strip_edges()
+	var y_text = teleport_popup_y_input.text.strip_edges()
+
+	# Validate X coordinate
+	if not x_text.lstrip("-").is_valid_int():
+		teleport_popup_x_input.text = ""
+		teleport_popup_x_input.placeholder_text = "Enter a number!"
+		teleport_popup_x_input.grab_focus()
+		return
+
+	# Validate Y coordinate
+	if not y_text.lstrip("-").is_valid_int():
+		teleport_popup_y_input.text = ""
+		teleport_popup_y_input.placeholder_text = "Enter a number!"
+		teleport_popup_y_input.grab_focus()
+		return
+
+	var target_x = int(x_text)
+	var target_y = int(y_text)
+
+	# Validate bounds
+	if target_x < -1000 or target_x > 1000:
+		teleport_popup_x_input.text = ""
+		teleport_popup_x_input.placeholder_text = "Range: -1000 to 1000"
+		teleport_popup_x_input.grab_focus()
+		return
+
+	if target_y < -1000 or target_y > 1000:
+		teleport_popup_y_input.text = ""
+		teleport_popup_y_input.placeholder_text = "Range: -1000 to 1000"
+		teleport_popup_y_input.grab_focus()
+		return
+
+	# Check resource cost
+	var cost = _calculate_teleport_cost(target_x, target_y)
+	var resource = _get_player_primary_resource()
+
+	if resource.current < cost:
+		display_game("[color=#FF0000]Not enough %s! Need %d, have %d.[/color]" % [resource.name, cost, resource.current])
+		return
+
+	# Send teleport request
+	_hide_teleport_popup()
+	send_to_server({"type": "teleport", "x": target_x, "y": target_y})
+
+func _on_teleport_popup_cancel():
+	"""Handle cancel button in teleport popup."""
+	_hide_teleport_popup()
+
 func _has_usable_combat_items() -> bool:
 	"""Check if player has any usable items for combat (potions/elixirs)."""
 	var inventory = character_data.get("inventory", [])
@@ -3674,6 +4310,19 @@ func _get_player_active_path() -> String:
 		active_path = "trickster"
 
 	return active_path
+
+func _get_teleport_unlock_level() -> int:
+	"""Get the level at which teleport unlocks based on class path."""
+	var path = _get_player_active_path()
+	match path:
+		"mage":
+			return 30
+		"trickster":
+			return 45
+		"warrior":
+			return 60
+		_:
+			return 60  # Default to warrior level if no path yet
 
 func _get_ability_slots_for_path(path: String) -> Array:
 	"""Get ability slots for a given path."""
@@ -3940,6 +4589,8 @@ func execute_local_action(action: String):
 			logout_character()
 		"logout_account":
 			logout_account()
+		"teleport":
+			open_teleport_popup()
 		"inventory":
 			open_inventory()
 		"inventory_back":
@@ -3959,6 +4610,45 @@ func execute_local_action(action: String):
 			prompt_inventory_action("inspect_equipped")
 		"inventory_discard":
 			prompt_inventory_action("discard")
+		"inventory_sort":
+			open_sort_menu()
+		"inventory_salvage":
+			open_salvage_menu()
+		"sort_by_level":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "level"})
+		"sort_by_hp":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "hp"})
+		"sort_by_atk":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "atk"})
+		"sort_by_def":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "def"})
+		"sort_by_wit":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "wit"})
+		"sort_by_slot":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "slot"})
+		"sort_by_rarity":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_sort", "sort_by": "rarity"})
+		"sort_cancel":
+			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
+		"salvage_all":
+			send_to_server({"type": "inventory_salvage", "mode": "all"})
+			pending_inventory_action = ""
+		"salvage_below_level":
+			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
+			pending_inventory_action = ""
+		"salvage_cancel":
+			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
 		"confirm_equip":
@@ -4069,6 +4759,8 @@ func execute_local_action(action: String):
 			send_upgrade_slot("ring")
 		"upgrade_amulet":
 			send_upgrade_slot("amulet")
+		"upgrade_all":
+			send_upgrade_all()
 		"confirm_shop_buy":
 			confirm_shop_purchase()
 		"cancel_shop_inspect":
@@ -4930,9 +5622,36 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 		display_game("  [color=#808080]Effect:[/color] %s" % new_effect)
 
 func send_upgrade_slot(slot: String):
-	"""Send upgrade request for a specific equipment slot"""
+	"""Show upgrade popup for a specific equipment slot"""
+	# Show the upgrade popup instead of upgrading immediately
+	_show_upgrade_popup(slot)
+
+func _calculate_upgrade_all_cost() -> int:
+	"""Calculate total cost to upgrade all equipped items by 1 level each."""
+	var equipped = character_data.get("equipped", {})
+	var total = 0
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary:
+			var current_level = item.get("level", 1)
+			total += int(pow(current_level + 1, 2) * 10)
+	return total
+
+func send_upgrade_all():
+	"""Send upgrade request for all equipped items (+1 each)."""
+	var cost = _calculate_upgrade_all_cost()
+	var gold = character_data.get("gold", 0)
+
+	if cost <= 0:
+		display_game("[color=#FF0000]No items equipped to upgrade.[/color]")
+		return
+
+	if gold < cost:
+		display_game("[color=#FF0000]Not enough gold! Need %d, have %d.[/color]" % [cost, gold])
+		return
+
 	pending_merchant_action = ""
-	send_to_server({"type": "merchant_upgrade", "slot": slot})
+	send_to_server({"type": "merchant_upgrade_all"})
 	update_action_bar()
 
 func show_merchant_menu():
@@ -5195,6 +5914,50 @@ func close_inventory():
 	update_action_bar()
 	display_game("[color=#808080]Inventory closed.[/color]")
 
+func open_sort_menu():
+	"""Open sort submenu for inventory"""
+	pending_inventory_action = "sort_select"
+	game_output.clear()
+	display_game("[color=#FFD700]===== SORT INVENTORY =====[/color]")
+	display_game("")
+	display_game("Choose how to sort your inventory:")
+	display_game("")
+	display_game("  [color=#00FFFF]Level[/color] - Sort by item level (highest first)")
+	display_game("  [color=#FF6666]HP[/color] - Sort by HP bonus (highest first)")
+	display_game("  [color=#FFFF00]ATK[/color] - Sort by Attack bonus (highest first)")
+	display_game("  [color=#00FF00]DEF[/color] - Sort by Defense bonus (highest first)")
+	display_game("  [color=#FF00FF]WIT[/color] - Sort by Wits bonus (highest first)")
+	display_game("  [color=#FFA500]Slot[/color] - Group by equipment slot")
+	display_game("  [color=#A335EE]Rarity[/color] - Sort by rarity (legendary first)")
+	display_game("")
+	update_action_bar()
+
+func open_salvage_menu():
+	"""Open salvage submenu for bulk item disposal"""
+	pending_inventory_action = "salvage_select"
+	var inventory = character_data.get("inventory", [])
+	var player_level = character_data.get("level", 1)
+	var threshold = max(1, player_level - 5)
+
+	# Count items that would be salvaged
+	var below_level_count = 0
+	var total_count = inventory.size()
+	for item in inventory:
+		if item.get("level", 1) < threshold:
+			below_level_count += 1
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== SALVAGE ITEMS =====[/color]")
+	display_game("")
+	display_game("Convert items to gold. Returns 25% of item value.")
+	display_game("")
+	display_game("[color=#FFA500]All (<Lv%d)[/color] - Salvage %d items below level %d" % [threshold, below_level_count, threshold])
+	display_game("[color=#FF0000]All Items[/color] - Salvage all %d items (use with caution!)" % total_count)
+	display_game("")
+	display_game("[color=#808080]Note: Equipped items are not affected.[/color]")
+	display_game("")
+	update_action_bar()
+
 func display_inventory():
 	"""Display the player's inventory and equipped items"""
 	if not has_character:
@@ -5235,7 +5998,7 @@ func display_inventory():
 	# Clamp page to valid range
 	inventory_page = clamp(inventory_page, 0, total_pages - 1)
 
-	display_game("[color=#00FFFF]Backpack (%d/20) - Page %d/%d:[/color]" % [inventory.size(), inventory_page + 1, total_pages])
+	display_game("[color=#00FFFF]Backpack (%d/40) - Page %d/%d:[/color]" % [inventory.size(), inventory_page + 1, total_pages])
 	if inventory.is_empty():
 		display_game("  [color=#555555](empty)[/color]")
 	else:
@@ -5267,7 +6030,7 @@ func display_inventory():
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
 
-			# Check if consumable (show quantity) vs equipment (show level)
+			# Check if consumable (show quantity) vs equipment (show level + stats)
 			var is_consumable = item.get("is_consumable", false)
 			if is_consumable:
 				var quantity = item.get("quantity", 1)
@@ -5276,18 +6039,23 @@ func display_inventory():
 					display_num, rarity_color, item.get("name", "Unknown"), qty_text
 				])
 			else:
-				display_game("  %d. [color=%s]%s[/color] (Lv%d) %s" % [
-					display_num, rarity_color, item.get("name", "Unknown"), item_level, compare_text
+				# Show equipment with stats at a glance
+				var bonus_text = _get_item_bonus_summary(item)
+				var slot_abbr = _get_slot_abbreviation(item_type)
+				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s" % [
+					display_num, compare_text, rarity_color, item.get("name", "Unknown"), item_level, bonus_text, slot_abbr
 				])
 
 	display_game("")
-	display_game("[color=#808080]%s=Inspect, %s=Use, %s=Equip, %s=Unequip, %s=Discard, %s=Back[/color]" % [
-		get_action_key_name(1), get_action_key_name(2), get_action_key_name(3),
-		get_action_key_name(4), get_action_key_name(5), get_action_key_name(0)])
+	display_game("[color=#808080]%s=Back  %s=Inspect  %s=Use  %s=Equip  %s=Discard[/color]" % [
+		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
+		get_action_key_name(3), get_action_key_name(5)])
+	display_game("[color=#808080]%s=Sort  %s=Salvage All (below your level)[/color]" % [
+		get_action_key_name(6), get_action_key_name(7)])
 	if _count_equipped_items(equipped) > 0:
-		display_game("[color=#808080]%s=Inspect Equipped[/color]" % get_action_key_name(8))
+		display_game("[color=#808080]%s=Inspect Equipped  %s=Unequip[/color]" % [get_action_key_name(8), get_action_key_name(4)])
 	if total_pages > 1:
-		display_game("[color=#808080]%s=Prev Page, %s=Next Page[/color]" % [get_action_key_name(1), get_action_key_name(2)])
+		display_game("[color=#808080]%s/%s=Prev/Next Page[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 
 	# Show last item use result if any
 	if last_item_use_result != "":
@@ -5332,6 +6100,24 @@ func _get_slot_for_item_type(item_type: String) -> String:
 		return "ring"
 	elif "amulet" in item_type:
 		return "amulet"
+	return ""
+
+func _get_slot_abbreviation(item_type: String) -> String:
+	"""Get a short slot indicator for inventory display"""
+	if "weapon" in item_type:
+		return "[color=#666666][WPN][/color]"
+	elif "armor" in item_type:
+		return "[color=#666666][ARM][/color]"
+	elif "helm" in item_type:
+		return "[color=#666666][HLM][/color]"
+	elif "shield" in item_type:
+		return "[color=#666666][SHD][/color]"
+	elif "boots" in item_type:
+		return "[color=#666666][BOT][/color]"
+	elif "ring" in item_type:
+		return "[color=#666666][RNG][/color]"
+	elif "amulet" in item_type:
+		return "[color=#666666][AMU][/color]"
 	return ""
 
 func prompt_inventory_action(action_type: String):
@@ -5516,7 +6302,8 @@ func display_ability_menu():
 	var all_abilities = ability_data.get("all_abilities", [])
 
 	# Show currently equipped abilities in 4 slots
-	display_game("[color=#00FFFF]Combat Slots:[/color]")
+	display_game("[color=#00FFFF]Your Combat Slots:[/color] (press these keys during combat)")
+	display_game("")
 	for i in range(4):
 		var ability_name = equipped[i] if i < equipped.size() else ""
 		var keybind = keybinds.get(str(i), keybinds.get(i, "?"))
@@ -5524,9 +6311,9 @@ func display_ability_menu():
 			var ability_info = _get_ability_info_from_list(ability_name, all_abilities)
 			var display_name = ability_info.get("display", ability_name.capitalize().replace("_", " "))
 			var cost_text = _get_ability_cost_text(ability_name)
-			display_game("  [%s] Slot %d: [color=#00FF00]%s[/color] %s" % [keybind, i + 1, display_name, cost_text])
+			display_game("  Slot %d: [color=#00FF00]%s[/color] %s  [color=#AAAAAA]→ Press [%s] in combat[/color]" % [i + 1, display_name, cost_text, keybind])
 		else:
-			display_game("  [%s] Slot %d: [color=#555555](empty)[/color]" % [keybind, i + 1])
+			display_game("  Slot %d: [color=#555555](empty)[/color]  [color=#555555]→ Key: %s[/color]" % [i + 1, keybind])
 
 	display_game("")
 
@@ -5548,13 +6335,11 @@ func display_ability_menu():
 			display_game("  [color=#555555]%s (Lv %d)[/color]" % [display_name, req_level])
 
 	display_game("")
-	display_game("[color=#FFD700]How to use:[/color]")
-	display_game("  1. Press [%s] Equip to add abilities to combat slots" % get_action_key_name(1))
-	display_game("  2. Select a slot (1-4), then select an ability from the list")
-	display_game("  3. Press [%s] Keybinds to change slot hotkeys" % get_action_key_name(3))
-	display_game("")
-	display_game("[color=#808080][%s]=Back  [%s]=Equip  [%s]=Unequip  [%s]=Keybinds[/color]" % [
-		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
+	display_game("[color=#FFD700]Menu Controls:[/color]")
+	display_game("  [%s] Equip - Add an ability to a slot" % get_action_key_name(1))
+	display_game("  [%s] Unequip - Remove an ability from a slot" % get_action_key_name(2))
+	display_game("  [%s] Keybinds - Change which key activates a slot" % get_action_key_name(3))
+	display_game("  [%s] Back - Return to game" % get_action_key_name(0))
 
 func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> Dictionary:
 	"""Find ability info from the ability list"""
@@ -6442,6 +7227,31 @@ func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 
 	return 0
 
+func parse_monster_healing(msg: String) -> int:
+	"""Parse healing done BY the monster (life steal, regeneration).
+	This should be subtracted from damage_dealt_to_current_enemy to fix HP bar."""
+	# First strip all BBCode tags to get clean text
+	var clean_msg = msg
+	var bbcode_regex = RegEx.new()
+	bbcode_regex.compile("\\[/?[a-z]+[^\\]]*\\]")
+	clean_msg = bbcode_regex.sub(clean_msg, "", true)
+
+	var regex = RegEx.new()
+
+	# Life steal: "The X drains Y life from you!"
+	regex.compile("drains (\\d+) life")
+	var result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# Regeneration: "The X regenerates Y HP!"
+	regex.compile("regenerates (\\d+) HP")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	return 0
+
 func parse_damage_dealt(msg: String) -> int:
 	"""Parse damage dealt by PLAYER to enemy from combat messages.
 	Handles various formats with color codes. Excludes monster damage to player."""
@@ -6451,9 +7261,10 @@ func parse_damage_dealt(msg: String) -> int:
 	bbcode_regex.compile("\\[/?[a-z]+[^\\]]*\\]")
 	clean_msg = bbcode_regex.sub(clean_msg, "", true)
 
-	# EXCLUDE monster damage messages (these are damage TO player, not FROM player)
+	# EXCLUDE damage messages that are NOT damage to the enemy
 	# Monster attacks: "The X attacks and deals", "X hits N times for", "to you"
 	# Poison/thorns/reflect: "Poison deals", "Thorns deal", "death curse deals", "reflects X damage"
+	# Self-damage: "backfires", "burns you", "yourself", "Bleeding deals"
 	if "attacks and deals" in clean_msg:
 		return 0
 	if "hits" in clean_msg and "times for" in clean_msg:
@@ -6465,6 +7276,14 @@ func parse_damage_dealt(msg: String) -> int:
 	if "death curse deals" in clean_msg:
 		return 0
 	if "reflects" in clean_msg and "damage" in clean_msg:
+		return 0
+	if "backfires" in clean_msg:
+		return 0
+	if "burns you" in clean_msg:
+		return 0
+	if "yourself" in clean_msg:
+		return 0
+	if "Bleeding deals" in clean_msg:
 		return 0
 
 	# Now look for player damage patterns
@@ -6978,6 +7797,12 @@ func handle_server_message(message: Dictionary):
 			var damage = parse_damage_dealt(combat_msg)
 			if damage > 0:
 				damage_dealt_to_current_enemy += damage
+				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+			# Track monster healing (life steal, regeneration) to fix HP bar estimate
+			var monster_heal = parse_monster_healing(combat_msg)
+			if monster_heal > 0:
+				damage_dealt_to_current_enemy = max(0, damage_dealt_to_current_enemy - monster_heal)
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 
 		"enemy_hp_revealed":
@@ -8672,6 +9497,11 @@ func _get_status_effects_text() -> String:
 		var poison_turns = character_data.get("poison_turns_remaining", 0)
 		lines.append("  [color=#FF00FF]Poisoned[/color] - %d damage/round, %d rounds remaining" % [poison_dmg, poison_turns])
 
+	# Blindness (debuff)
+	if character_data.get("blind_active", false):
+		var blind_turns = character_data.get("blind_turns_remaining", 0)
+		lines.append("  [color=#808080]Blinded[/color] - reduced vision & accuracy, %d rounds remaining" % blind_turns)
+
 	# Active combat buffs (round-based)
 	var active_buffs = character_data.get("active_buffs", [])
 	for buff in active_buffs:
@@ -8699,23 +9529,23 @@ func _get_class_passive(class_type: String) -> Dictionary:
 	"""Get class passive info (client-side mirror of Character.get_class_passive)"""
 	match class_type:
 		"Fighter":
-			return {"name": "Tactical Discipline", "description": "20% reduced stamina costs, +15% defense", "color": "#C0C0C0"}
+			return {"name": "Tactical Discipline", "description": "20% reduced stamina costs, +15% defense. Affects: All abilities", "color": "#C0C0C0"}
 		"Barbarian":
-			return {"name": "Blood Rage", "description": "+3% damage per 10% HP missing (max +30%), abilities cost 25% more", "color": "#8B0000"}
+			return {"name": "Blood Rage", "description": "+3% dmg per 10% HP missing (max +30%), +25% ability cost. Affects: All attacks", "color": "#8B0000"}
 		"Paladin":
-			return {"name": "Divine Favor", "description": "Heal 3% max HP per round, +25% damage vs undead/demons", "color": "#FFD700"}
+			return {"name": "Divine Favor", "description": "Heal 3% HP/round, +25% vs undead/demons. Affects: Combat regen, attacks vs undead", "color": "#FFD700"}
 		"Wizard":
-			return {"name": "Arcane Precision", "description": "+15% spell damage, +10% spell crit chance", "color": "#4169E1"}
+			return {"name": "Arcane Precision", "description": "+15% spell damage, +10% spell crit. Affects: All attacks and spells", "color": "#4169E1"}
 		"Sorcerer":
-			return {"name": "Chaos Magic", "description": "25% chance for double spell damage, 10% chance to backfire", "color": "#9400D3"}
+			return {"name": "Chaos Magic", "description": "25% double damage, 5% backfire. Affects: ALL attacks and abilities", "color": "#9400D3"}
 		"Sage":
-			return {"name": "Mana Mastery", "description": "25% reduced mana costs, Meditate restores 50% more", "color": "#20B2AA"}
+			return {"name": "Mana Mastery", "description": "25% reduced mana costs, +50% Meditate. Affects: All spells, Meditate", "color": "#20B2AA"}
 		"Thief":
-			return {"name": "Backstab", "description": "+50% crit damage, +15% base crit chance", "color": "#2F4F4F"}
+			return {"name": "Backstab", "description": "+15% base crit, +50% crit damage (2x total). Affects: All attacks", "color": "#2F4F4F"}
 		"Ranger":
-			return {"name": "Hunter's Mark", "description": "+25% damage vs beasts, +30% gold/XP from kills", "color": "#228B22"}
+			return {"name": "Hunter's Mark", "description": "+25% dmg vs beasts, +30% gold/XP. Affects: Beast attacks, all rewards", "color": "#228B22"}
 		"Ninja":
-			return {"name": "Shadow Step", "description": "+40% flee success, take no damage when fleeing", "color": "#191970"}
+			return {"name": "Shadow Step", "description": "+40% flee chance, no damage on failed flee. Affects: Flee action only", "color": "#191970"}
 		_:
 			return {"name": "None", "description": "No passive ability", "color": "#808080"}
 
@@ -8933,22 +9763,62 @@ If you die, your character is gone forever! Play smart!
 [color=#FFA366]Dwarf[/color] - 25%% chance to survive lethal hit with 1 HP
 [color=#8B4513]Ogre[/color] - All healing doubled (2x)
 
-[color=#AAAAAA]-- CLASS PATHS --[/color]
+[color=#AAAAAA]-- CLASS PATHS & PASSIVES --[/color]
 
 [color=#FF6666]WARRIOR PATH[/color] (STR > 10) - Uses Stamina
-  [color=#C0C0C0]Fighter[/color] - 20%% reduced stamina, +15%% defense
-  [color=#8B0000]Barbarian[/color] - +3%% dmg per 10%% HP missing (max +30%%)
-  [color=#FFD700]Paladin[/color] - Heal 3%% HP/round, +25%% vs undead/demons
+
+[color=#C0C0C0]Fighter - Tactical Discipline[/color]
+  • 20%% reduced stamina costs on ALL abilities
+  • +15%% defense from CON calculation
+  • Affects: Power Strike, War Cry, Shield Bash, etc.
+
+[color=#8B0000]Barbarian - Blood Rage[/color]
+  • +3%% damage per 10%% HP missing (max +30%%)
+  • +25%% stamina COST on abilities (risk/reward)
+  • Affects: ALL attacks and abilities
+
+[color=#FFD700]Paladin - Divine Favor[/color]
+  • Heal 3%% max HP at start of each combat round
+  • +25%% damage vs undead and demons
+  • Affects: Basic attacks and abilities vs undead/demons
+  • Undead: Skeleton, Zombie, Wraith, Wight, Lich, Vampire, Nazgul
+  • Demons: Demon, Demon Lord, Balrog, Succubus
 
 [color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana
-  [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% spell crit
-  [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 10%% backfire
-  [color=#20B2AA]Sage[/color] - 25%% reduced mana, +50%% Meditate
+
+[color=#4169E1]Wizard - Arcane Precision[/color]
+  • +15%% spell damage on ALL attacks
+  • +10%% spell crit chance (1.5x on crit)
+  • Affects: Magic Bolt, Blast, Meteor, basic attacks
+
+[color=#9400D3]Sorcerer - Chaos Magic[/color]
+  • 25%% chance for DOUBLE damage (2x)
+  • 5%% chance to backfire (50%% self-dmg, 50%% attack)
+  • Affects: ALL attacks and abilities
+
+[color=#20B2AA]Sage - Mana Mastery[/color]
+  • 25%% reduced mana costs on all spells
+  • +50%% bonus to Meditate restoration
+  • Affects: Magic Bolt, Blast, Meteor, Meditate
 
 [color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy
-  [color=#2F4F4F]Thief[/color] - +50%% crit damage, +15%% base crit
-  [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% gold/XP
-  [color=#191970]Ninja[/color] - +40%% flee, no damage when fleeing
+
+[color=#2F4F4F]Thief - Backstab[/color]
+  • +15%% base critical hit chance
+  • +50%% crit damage (1.5x becomes 2.0x)
+  • Affects: ALL attacks and abilities
+
+[color=#228B22]Ranger - Hunter's Mark[/color]
+  • +25%% damage vs beasts/animals
+  • +30%% gold and XP from all kills
+  • Affects: Attacks vs beasts, all kill rewards
+  • Beasts: Rat, Wolf, Spider, Wyvern, Gryphon, Chimaera,
+           Cerberus, Hydra, World Serpent, Harpy, Minotaur
+
+[color=#191970]Ninja - Shadow Step[/color]
+  • +40%% flee success chance
+  • No damage taken when flee fails
+  • Affects: Flee action only
 
 [b][color=#FFD700]═══════════════════════════════════════════════
            SECTION 3: COMBAT
@@ -8993,10 +9863,11 @@ Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
 
 Lv1  [color=#66FFFF]Magic Bolt[/color] (var) - Mana × (1 + INT/50) damage
 Lv10 [color=#66FFFF]Shield[/color] (20) - +50%% def, 3 rounds
-Lv25 [color=#66FFFF]Cloak[/color] (30) - 50%% miss next attack
+Lv30 [color=#66FFFF]Haste[/color] (25) - +50%% speed, 3 rounds
 Lv40 [color=#66FFFF]Blast[/color] (50) - 2x Magic
+Lv50 [color=#66FFFF]Paralyze[/color] (35) - Stun enemy 1 round
 Lv60 [color=#66FFFF]Forcefield[/color] (75) - Block 2 attacks
-Lv80 [color=#66FFFF]Teleport[/color] (40) - Guaranteed flee
+Lv70 [color=#66FFFF]Banish[/color] (60) - Instant kill on weak enemies
 Lv100 [color=#66FFFF]Meteor[/color] (100) - 5x Magic
 
 [color=#AAAAAA]-- TRICKSTER ABILITIES --[/color]
@@ -9028,23 +9899,42 @@ Lv100 [color=#FFA500]Perfect Heist[/color] (50) - Instant win, 2x rewards
   • No monster encounters while cloaked
   • Toggle with [%s] in movement mode
 
+[color=#AA66FF]Teleport[/color] - Instant travel to coordinates
+  • Unlocks: Mage Lv30, Trickster Lv45, Warrior Lv60
+  • Cost: 10 + 1 per tile distance (uses primary resource)
+  • Enter X,Y coordinates (-1000 to 1000)
+  • Cannot use in combat, breaks cloak
+
+[color=#FF00FF]All or Nothing[/color] (Any Level) - Desperate gamble
+  • Cost: 1 of any resource
+  • Very low success chance (~3%% base)
+  • SUCCESS: Instant kill on any monster!
+  • FAILURE: Monster's STR and SPD double!
+  • Chance improves slightly with each use (+0.1%%)
+  • Harder vs higher level monsters (-0.5%%/lvl)
+  • Maximum 25%% chance, minimum 1%%
+
 [b][color=#FFD700]═══════════════════════════════════════════════
            SECTION 4: MONSTERS
 ═══════════════════════════════════════════════[/color][/b]
 
 [color=#FF4444]Offensive Abilities:[/color]
-  Poison - DoT persists outside combat
-  Bleed - Stacking DoT (up to 3)
   Multi-Strike - 2-3 attacks per turn
   Berserker - +dmg when wounded
   Enrage - Stronger each round
-  Life Steal - Heals from damage
+  Life Steal - Heals from damage dealt
   Glass Cannon - 3x dmg, half HP
 
-[color=#808080]Debuffs:[/color]
+[color=#808080]Status Effects (persist outside combat):[/color]
+  [color=#FF00FF]Poison[/color] - 30%% monster STR dmg/round, 35 rounds
+    Cured by: Recharge at merchants/posts
+  [color=#808080]Blind[/color] - -30%% hit chance, hides monster HP, reduced map vision
+    Duration: 15 rounds, Cured by: Recharge
+
+[color=#808080]Combat Debuffs:[/color]
   Curse - Reduces defense
   Disarm - Reduces damage
-  Blind - Reduces hit chance
+  Bleed - Stacking DoT (up to 3)
   Slow Aura - Reduces flee chance
   Drain - Steals mana/stamina/energy
 
@@ -9825,6 +10715,18 @@ func handle_quest_turned_in(message: Dictionary):
 		display_game("[color=#FFD700][b]LEVEL UP! You are now level %d![/b][/color]" % new_level)
 		if levelup_player and levelup_player.stream:
 			levelup_player.play()
+
+		# Show newly unlocked abilities
+		var unlocked_abilities = message.get("unlocked_abilities", [])
+		if unlocked_abilities.size() > 0:
+			display_game("")
+			display_game("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
+			display_game("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+			for ability in unlocked_abilities:
+				var ability_type = "Universal" if ability.get("universal", false) else "Class"
+				display_game("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.get("display", ability.get("name", "?")), ability_type])
+			display_game("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+			display_game("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
 
 	# Update UI
 	update_currency_display()

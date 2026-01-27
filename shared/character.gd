@@ -45,6 +45,13 @@ extends Resource
 @export var poison_damage: int = 0
 @export var poison_turns_remaining: int = 0  # Decrements each combat turn
 
+# Blind status (persists outside combat - reduces vision and hides monster HP)
+@export var blind_active: bool = false
+@export var blind_turns_remaining: int = 0  # Decrements each combat turn
+
+# All or Nothing ability - usage count increases success chance over time
+@export var all_or_nothing_uses: int = 0
+
 # Forced next monster (from Monster Selection Scroll)
 @export var forced_next_monster: String = ""  # Monster name, empty = random
 
@@ -67,7 +74,7 @@ extends Resource
 	"ring": null,
 	"amulet": null
 }
-const MAX_INVENTORY_SIZE = 20
+const MAX_INVENTORY_SIZE = 40
 
 # Tracking / Persistence
 @export var created_at: int = 0
@@ -222,11 +229,11 @@ func get_class_passive() -> Dictionary:
 		"Sorcerer":
 			return {
 				"name": "Chaos Magic",
-				"description": "25% chance for double spell damage, 10% chance to backfire",
+				"description": "25% chance for double spell damage, 5% chance to backfire",
 				"color": "#9400D3",
 				"effects": {
 					"double_damage_chance": 0.25,
-					"backfire_chance": 0.10
+					"backfire_chance": 0.05
 				}
 			}
 		"Sage":
@@ -743,6 +750,9 @@ func to_dict() -> Dictionary:
 		"poison_active": poison_active,
 		"poison_damage": poison_damage,
 		"poison_turns_remaining": poison_turns_remaining,
+		"blind_active": blind_active,
+		"blind_turns_remaining": blind_turns_remaining,
+		"all_or_nothing_uses": all_or_nothing_uses,
 		"forced_next_monster": forced_next_monster,
 		"target_farm_ability": target_farm_ability,
 		"target_farm_remaining": target_farm_remaining,
@@ -807,6 +817,13 @@ func from_dict(data: Dictionary):
 	poison_damage = data.get("poison_damage", 0)
 	poison_turns_remaining = data.get("poison_turns_remaining", 0)
 
+	# Blind status
+	blind_active = data.get("blind_active", false)
+	blind_turns_remaining = data.get("blind_turns_remaining", 0)
+
+	# All or Nothing usage tracking
+	all_or_nothing_uses = data.get("all_or_nothing_uses", 0)
+
 	# Forced next monster (from Monster Selection Scroll)
 	forced_next_monster = data.get("forced_next_monster", "")
 
@@ -856,6 +873,9 @@ func from_dict(data: Dictionary):
 	# Title system
 	title = data.get("title", "")
 	title_data = data.get("title_data", {})
+
+	# Clamp resources to max in case saved data has resources over max
+	_clamp_resources_to_max()
 
 func knows_monster(monster_name: String, monster_level: int = 0) -> bool:
 	"""Check if the player knows this monster's HP based on previous kills.
@@ -1017,7 +1037,16 @@ func unequip_slot(slot: String) -> Dictionary:
 		return {}
 	var item = equipped[slot]
 	equipped[slot] = null
+	# Clamp resources to new max after unequipping (in case gear boosted max)
+	_clamp_resources_to_max()
 	return item
+
+func _clamp_resources_to_max():
+	"""Clamp all resources to their current maximum values."""
+	current_hp = min(current_hp, get_total_max_hp())
+	current_mana = min(current_mana, get_total_max_mana())
+	current_stamina = min(current_stamina, max_stamina)
+	current_energy = min(current_energy, max_energy)
 
 # ===== BUFF SYSTEM =====
 
@@ -1168,6 +1197,30 @@ func tick_poison() -> int:
 	# Apply racial resistance
 	var final_damage = int(poison_damage * get_poison_damage_multiplier())
 	return max(1, final_damage)
+
+func cure_blind():
+	"""Cure blind status effect."""
+	blind_active = false
+	blind_turns_remaining = 0
+
+func apply_blind(duration: int = 15):
+	"""Apply blindness to the character. Duration is in combat turns.
+	Blindness reduces map vision and hides monster HP."""
+	blind_active = true
+	blind_turns_remaining = duration
+
+func tick_blind() -> bool:
+	"""Process one turn of blindness. Returns true if still blind.
+	Called each combat turn."""
+	if not blind_active or blind_turns_remaining <= 0:
+		return false
+
+	blind_turns_remaining -= 1
+	if blind_turns_remaining <= 0:
+		cure_blind()
+		return false
+
+	return true
 
 func try_last_stand() -> bool:
 	"""Dwarf racial: 25% chance to survive lethal damage with 1 HP.
@@ -1360,6 +1413,18 @@ func get_all_available_abilities() -> Array:
 
 	# Universal abilities available to all classes
 	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true})
+	abilities.append({"name": "all_or_nothing", "level": 1, "display": "All or Nothing", "universal": true})
+
+	# Teleport unlocks at different levels per class path
+	var teleport_level = 60  # Default (warrior)
+	match path:
+		"mage":
+			teleport_level = 30
+		"trickster":
+			teleport_level = 45
+		"warrior":
+			teleport_level = 60
+	abilities.append({"name": "teleport", "level": teleport_level, "display": "Teleport", "universal": true, "non_combat": true})
 
 	match path:
 		"mage":
@@ -1367,7 +1432,6 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "shield", "level": 10, "display": "Shield"})
 			abilities.append({"name": "blast", "level": 40, "display": "Blast"})
 			abilities.append({"name": "forcefield", "level": 60, "display": "Forcefield"})
-			abilities.append({"name": "teleport", "level": 80, "display": "Teleport"})
 			abilities.append({"name": "meteor", "level": 100, "display": "Meteor"})
 			abilities.append({"name": "haste", "level": 30, "display": "Haste"})
 			abilities.append({"name": "paralyze", "level": 50, "display": "Paralyze"})
@@ -1403,6 +1467,25 @@ func get_unlocked_abilities() -> Array:
 		if level >= ability.level:
 			unlocked.append(ability)
 	return unlocked
+
+func get_abilities_unlocked_at_level(check_level: int) -> Array:
+	"""Get list of abilities that unlock exactly at the specified level"""
+	var all_abilities = get_all_available_abilities()
+	var newly_unlocked = []
+	for ability in all_abilities:
+		if ability.level == check_level:
+			newly_unlocked.append(ability)
+	return newly_unlocked
+
+func get_newly_unlocked_abilities(old_level: int, new_level: int) -> Array:
+	"""Get list of abilities unlocked between old_level and new_level (exclusive/inclusive)"""
+	var all_abilities = get_all_available_abilities()
+	var newly_unlocked = []
+	for ability in all_abilities:
+		# Ability unlocks if: old_level < ability.level <= new_level
+		if ability.level > old_level and ability.level <= new_level:
+			newly_unlocked.append(ability)
+	return newly_unlocked
 
 func initialize_default_abilities():
 	"""Initialize default equipped abilities for a new character"""
