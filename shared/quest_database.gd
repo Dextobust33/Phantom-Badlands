@@ -53,7 +53,7 @@ const QUESTS = {
 		"target": 3,
 		"rewards": {"xp": 50, "gold": 30, "gems": 0},
 		"is_daily": false,
-		"prerequisite": "haven_first_steps"
+		"prerequisite": ""
 	},
 	"haven_getting_started": {
 		"id": "haven_getting_started",
@@ -64,7 +64,7 @@ const QUESTS = {
 		"target": 5,
 		"rewards": {"xp": 75, "gold": 40, "gems": 0},
 		"is_daily": false,
-		"prerequisite": "haven_first_blood"
+		"prerequisite": ""
 	},
 	"haven_pest_control": {
 		"id": "haven_pest_control",
@@ -75,7 +75,7 @@ const QUESTS = {
 		"target": 10,
 		"rewards": {"xp": 150, "gold": 75, "gems": 0},
 		"is_daily": false,
-		"prerequisite": "haven_getting_started"
+		"prerequisite": ""
 	},
 	"haven_stronger_foes": {
 		"id": "haven_stronger_foes",
@@ -87,7 +87,7 @@ const QUESTS = {
 		"kill_count": 2,
 		"rewards": {"xp": 200, "gold": 100, "gems": 0},
 		"is_daily": false,
-		"prerequisite": "haven_pest_control"
+		"prerequisite": ""
 	},
 	"haven_local_hero": {
 		"id": "haven_local_hero",
@@ -98,7 +98,7 @@ const QUESTS = {
 		"target": 25,
 		"rewards": {"xp": 500, "gold": 250, "gems": 1},
 		"is_daily": false,
-		"prerequisite": "haven_stronger_foes"
+		"prerequisite": ""
 	},
 	"haven_daily_patrol": {
 		"id": "haven_daily_patrol",

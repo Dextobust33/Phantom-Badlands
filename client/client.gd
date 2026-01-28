@@ -3207,15 +3207,13 @@ func update_action_bar():
 			]
 		else:
 			# Main Trading Post menu (player walks out to leave)
-			var quests_available = trading_post_data.get("available_quests", 0) > 0
-			var quests_ready = trading_post_data.get("quests_to_turn_in", 0) > 0
 			# Calculate recharge cost (50 + level*10, then 50% off at Trading Post)
 			var player_level = character_data.get("level", 1)
 			var recharge_cost = int((50 + player_level * 10) * 0.5)
 			current_actions = [
 				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
-				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": quests_available or quests_ready},
+				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": true},
 				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11540,6 +11538,8 @@ func handle_quest_log(message: Dictionary):
 		display_game("")
 		display_game("[color=#808080]Press [%s] to close | Press shown key to abandon quest[/color]" % get_action_key_name(0))
 	else:
+		display_game("[color=#00FFFF]Visit a Trading Post to accept new quests![/color]")
+		display_game("")
 		display_game("[color=#808080]Press [%s] to continue[/color]" % get_action_key_name(0))
 
 	pending_continue = true

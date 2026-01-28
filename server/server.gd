@@ -735,6 +735,10 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	send_location_update(peer_id)
 
+	# Check if spawning at a Trading Post and trigger the encounter
+	if world_system.is_trading_post_tile(character.x, character.y):
+		trigger_trading_post_encounter(peer_id)
+
 func handle_create_character(peer_id: int, message: Dictionary):
 	if not peers[peer_id].authenticated:
 		send_to_peer(peer_id, {
@@ -842,6 +846,10 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % char_name)
 
 	send_location_update(peer_id)
+
+	# Check if spawning at a Trading Post and trigger the encounter
+	if world_system.is_trading_post_tile(character.x, character.y):
+		trigger_trading_post_encounter(peer_id)
 
 func handle_delete_character(peer_id: int, message: Dictionary):
 	if not peers[peer_id].authenticated:
@@ -4900,6 +4908,11 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 func handle_get_quest_log(peer_id: int):
 	"""Send quest log to player with quest IDs for abandonment"""
 	if not characters.has(peer_id):
+		return
+
+	# If at a trading post, show the full quest menu instead
+	if at_trading_post.has(peer_id):
+		handle_trading_post_quests(peer_id)
 		return
 
 	var character = characters[peer_id]
