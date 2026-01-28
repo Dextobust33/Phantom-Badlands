@@ -603,6 +603,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_trade_ready(peer_id)
 		"trade_cancel":
 			handle_trade_cancel(peer_id)
+		"debug_lucky_find":
+			handle_debug_lucky_find(peer_id)
+		"debug_legendary":
+			handle_debug_legendary(peer_id)
 		_:
 			pass
 
@@ -2457,18 +2461,42 @@ func trigger_encounter(peer_id: int):
 		# Forward encounter to watchers
 		forward_to_watchers(peer_id, result.message)
 
+func handle_debug_lucky_find(peer_id: int):
+	"""Debug command to trigger a lucky find for testing"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var area_level = max(1, character.level)
+	trigger_loot_find(peer_id, character, area_level)
+
+func handle_debug_legendary(peer_id: int):
+	"""Debug command to trigger a legendary encounter for testing"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var area_level = max(1, character.level)
+	trigger_legendary_adventurer(peer_id, character, area_level)
+
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""
-	# Generate loot scaled to area difficulty
-	var loot_tier = "common"
+	# Generate loot scaled to area difficulty - use drop table tier names
+	var loot_tier = "tier1"
 	if area_level >= 5000:
-		loot_tier = "legendary"
-	elif area_level >= 2000:
-		loot_tier = "epic"
+		loot_tier = "tier9"
+	elif area_level >= 2500:
+		loot_tier = "tier8"
+	elif area_level >= 1000:
+		loot_tier = "tier7"
 	elif area_level >= 500:
-		loot_tier = "rare"
+		loot_tier = "tier6"
+	elif area_level >= 250:
+		loot_tier = "tier5"
 	elif area_level >= 100:
-		loot_tier = "uncommon"
+		loot_tier = "tier4"
+	elif area_level >= 50:
+		loot_tier = "tier3"
+	elif area_level >= 20:
+		loot_tier = "tier2"
 
 	# Roll for item using drop tables
 	var items = drop_tables.roll_drops(loot_tier, 100, area_level)  # 100% drop chance
@@ -2484,12 +2512,12 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		var gold_text = "Found %d gold!" % gold_amount
 		if gold_text.length() < 34:
 			gold_text = gold_text + " ".repeat(34 - gold_text.length())
-		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]          [color=#00FF00]✦ LUCKY FIND! ✦[/color]           [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
-		msg += "[color=#FFD700]║[/color] You discover a hidden cache!      [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]║[/color] [color=#FFD700]%s[/color] [color=#FFD700]║[/color]\n" % gold_text
-		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
+		msg = "[color=#FFD700]+====================================+[/color]\n"
+		msg += "[color=#FFD700]|[/color]          [color=#00FF00]* LUCKY FIND! *[/color]           [color=#FFD700]|[/color]\n"
+		msg += "[color=#FFD700]+====================================+[/color]\n"
+		msg += "[color=#FFD700]|[/color] You discover a hidden cache!       [color=#FFD700]|[/color]\n"
+		msg += "[color=#FFD700]|[/color] [color=#FFD700]%s[/color] [color=#FFD700]|[/color]\n" % gold_text
+		msg += "[color=#FFD700]+====================================+[/color]"
 	else:
 		# Add items to inventory
 		var item = items[0]
@@ -2502,12 +2530,12 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		var padded_name = item_name
 		if padded_name.length() < 34:
 			padded_name = padded_name + " ".repeat(34 - padded_name.length())
-		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]          [color=#00FF00]✦ LUCKY FIND! ✦[/color]           [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
-		msg += "[color=#FFD700]║[/color] You discover something valuable!   [color=#FFD700]║[/color]\n"
-		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, padded_name]
-		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
+		msg = "[color=#FFD700]+====================================+[/color]\n"
+		msg += "[color=#FFD700]|[/color]          [color=#00FF00]* LUCKY FIND! *[/color]           [color=#FFD700]|[/color]\n"
+		msg += "[color=#FFD700]+====================================+[/color]\n"
+		msg += "[color=#FFD700]|[/color] You discover something valuable!   [color=#FFD700]|[/color]\n"
+		msg += "[color=#FFD700]|[/color] [color=%s]%s[/color] [color=#FFD700]|[/color]\n" % [rarity_color, padded_name]
+		msg += "[color=#FFD700]+====================================+[/color]"
 		if not character.can_add_item() and items.size() > 0:
 			msg += "\n[color=#FF4444]INVENTORY FULL! Item was lost![/color]"
 
@@ -2580,14 +2608,25 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 		"wits": "shows you how to read your opponents"
 	}
 
-	var msg = "[color=#FFD700]╔════════════════════════════════════════════════╗[/color]\n"
-	msg += "[color=#FFD700]║[/color]       [color=#FF69B4]✦ LEGENDARY ENCOUNTER ✦[/color]       [color=#FFD700]║[/color]\n"
-	msg += "[color=#FFD700]╠════════════════════════════════════════════════╣[/color]\n"
-	msg += "[color=#FFD700]║[/color] [color=#E6CC80]%s[/color]\n" % adventurer
-	msg += "[color=#FFD700]║[/color] %s!\n" % training_msgs[stat]
-	msg += "[color=#FFD700]╠════════════════════════════════════════════════╣[/color]\n"
-	msg += "[color=#FFD700]║[/color] [color=#00FF00]+%d %s permanently![/color]\n" % [bonus, stat_name]
-	msg += "[color=#FFD700]╚════════════════════════════════════════════════╝[/color]"
+	# Pad content lines to 46 chars (48 inner - 2 for side spaces)
+	var adventurer_line = adventurer
+	if adventurer_line.length() < 46:
+		adventurer_line += " ".repeat(46 - adventurer_line.length())
+	var training_line = training_msgs[stat] + "!"
+	if training_line.length() < 46:
+		training_line += " ".repeat(46 - training_line.length())
+	var bonus_line = "+%d %s permanently!" % [bonus, stat_name]
+	if bonus_line.length() < 46:
+		bonus_line += " ".repeat(46 - bonus_line.length())
+
+	var msg = "[color=#FFD700]+================================================+[/color]\n"
+	msg += "[color=#FFD700]|[/color]            [color=#FF69B4]* LEGENDARY ENCOUNTER *[/color]            [color=#FFD700]|[/color]\n"
+	msg += "[color=#FFD700]+================================================+[/color]\n"
+	msg += "[color=#FFD700]|[/color] [color=#E6CC80]%s[/color] [color=#FFD700]|[/color]\n" % adventurer_line
+	msg += "[color=#FFD700]|[/color] %s [color=#FFD700]|[/color]\n" % training_line
+	msg += "[color=#FFD700]+================================================+[/color]\n"
+	msg += "[color=#FFD700]|[/color] [color=#00FF00]%s[/color] [color=#FFD700]|[/color]\n" % bonus_line
+	msg += "[color=#FFD700]+================================================+[/color]"
 
 	# Send special encounter message that requires acknowledgment
 	send_to_peer(peer_id, {

@@ -166,3 +166,13 @@ BBCode tags add to string length but don't display. Use separate lines instead o
 
 ### 5. Static Functions and Constants
 GDScript 4 static functions CAN access class constants. If errors occur, check for typos.
+
+### 6. New Commands Need Whitelist Entry
+**Symptom:** New `/command` goes to chat instead of being processed
+**Cause:** Commands must be added to TWO places in `client/client.gd`:
+1. `command_keywords` array (~line 8993) - whitelist that routes input to `process_command()` instead of chat
+2. `process_command()` match statement (~line 9421) - actual command handler
+
+**Also for server-side commands:** Add to `server/server.gd`:
+1. `handle_message()` match statement (~line 470)
+2. Create the handler function
