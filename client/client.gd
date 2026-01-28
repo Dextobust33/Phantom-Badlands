@@ -7688,23 +7688,23 @@ func update_resource_bar():
 			current_val = character_data.get("current_stamina", 0)
 			max_val = max(character_data.get("total_max_stamina", character_data.get("max_stamina", 1)), 1)
 			resource_name = "Stamina"
-			bar_color = Color(0.9, 0.75, 0.1)  # Yellow
+			bar_color = Color(1.0, 0.8, 0.0)  # #FFCC00 Orange-yellow
 		"mage":
 			current_val = character_data.get("current_mana", 0)
 			max_val = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			resource_name = "Mana"
-			bar_color = Color(0.2, 0.7, 0.8)  # Teal
+			bar_color = Color(0.6, 0.6, 1.0)  # #9999FF Purple
 		"trickster":
 			current_val = character_data.get("current_energy", 0)
 			max_val = max(character_data.get("total_max_energy", character_data.get("max_energy", 1)), 1)
 			resource_name = "Energy"
-			bar_color = Color(0.1, 0.5, 0.15)  # Dark Green
+			bar_color = Color(0.4, 1.0, 0.4)  # #66FF66 Light green
 		_:
 			# No path - show mana by default
 			current_val = character_data.get("current_mana", 0)
 			max_val = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			resource_name = "Mana"
-			bar_color = Color(0.2, 0.7, 0.8)
+			bar_color = Color(0.6, 0.6, 1.0)  # #9999FF Purple
 
 	var percent = (float(current_val) / float(max_val)) * 100.0
 
@@ -11765,17 +11765,17 @@ func handle_watch_character(message: Dictionary):
 		current_val = char_data.get("current_stamina", 0)
 		max_val = max(char_data.get("max_stamina", 1), 1)
 		resource_name = "Stamina"
-		bar_color = Color(0.9, 0.75, 0.1)  # Yellow
+		bar_color = Color(1.0, 0.8, 0.0)  # #FFCC00 Orange-yellow
 	elif char_class in ["Wizard", "Sorcerer", "Sage"]:
 		current_val = char_data.get("current_mana", 0)
 		max_val = max(char_data.get("max_mana", 1), 1)
 		resource_name = "Mana"
-		bar_color = Color(0.2, 0.7, 0.8)  # Teal
+		bar_color = Color(0.6, 0.6, 1.0)  # #9999FF Purple
 	else:  # Trickster classes: Thief, Ranger, Ninja
 		current_val = char_data.get("current_energy", 0)
 		max_val = max(char_data.get("max_energy", 1), 1)
 		resource_name = "Energy"
-		bar_color = Color(0.1, 0.5, 0.15)  # Dark Green
+		bar_color = Color(0.4, 1.0, 0.4)  # #66FF66 Light green
 
 	if resource_bar:
 		var percent = (float(current_val) / float(max_val)) * 100.0
