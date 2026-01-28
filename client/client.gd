@@ -8990,7 +8990,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade", "debuglucky", "debuglegendary"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -9499,16 +9499,6 @@ func process_command(text: String):
 				else:
 					display_game("[color=#FF0000]Usage: /trade <playername>[/color]")
 					display_game("[color=#808080]Request to trade items with another player.[/color]")
-			else:
-				display_game("You don't have a character yet")
-		"debuglucky":
-			if has_character:
-				send_to_server({"type": "debug_lucky_find"})
-			else:
-				display_game("You don't have a character yet")
-		"debuglegendary":
-			if has_character:
-				send_to_server({"type": "debug_legendary"})
 			else:
 				display_game("You don't have a character yet")
 		_:

@@ -603,10 +603,6 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_trade_ready(peer_id)
 		"trade_cancel":
 			handle_trade_cancel(peer_id)
-		"debug_lucky_find":
-			handle_debug_lucky_find(peer_id)
-		"debug_legendary":
-			handle_debug_legendary(peer_id)
 		_:
 			pass
 
@@ -2460,22 +2456,6 @@ func trigger_encounter(peer_id: int):
 		})
 		# Forward encounter to watchers
 		forward_to_watchers(peer_id, result.message)
-
-func handle_debug_lucky_find(peer_id: int):
-	"""Debug command to trigger a lucky find for testing"""
-	if not characters.has(peer_id):
-		return
-	var character = characters[peer_id]
-	var area_level = max(1, character.level)
-	trigger_loot_find(peer_id, character, area_level)
-
-func handle_debug_legendary(peer_id: int):
-	"""Debug command to trigger a legendary encounter for testing"""
-	if not characters.has(peer_id):
-		return
-	var character = characters[peer_id]
-	var area_level = max(1, character.level)
-	trigger_legendary_adventurer(peer_id, character, area_level)
 
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""
