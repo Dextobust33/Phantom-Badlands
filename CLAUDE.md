@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Start for New Sessions
+
+**For a condensed overview, see:** `docs/QUICK_REFERENCE.md`
+
+**Visual diagrams available in `/docs/`:**
+- `architecture.md` - System architecture, data flow, file map
+- `action-bar-states.md` - Complete action bar state machine (CRITICAL for UI work)
+- `combat-flow.md` - Combat system flowcharts, damage formulas
+- `networking-protocol.md` - All message types, sequence diagrams
+- `quest-system.md` - Quest flow, trading posts
+
 ## Project Overview
 
 Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScript. It features a client-server architecture with turn-based combat, procedural world generation, and character progression across 9 class archetypes.
