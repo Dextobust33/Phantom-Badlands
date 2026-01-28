@@ -709,6 +709,22 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"potion_crit": "Critical Potion",
 		"potion_lifesteal": "Lifesteal Potion",
 		"potion_thorns": "Thorns Potion",
+		# Scrolls
+		"scroll_monster_select": "Scroll of Summoning",
+		"scroll_forcefield": "Scroll of Forcefield",
+		"scroll_rage": "Scroll of Rage",
+		"scroll_stone_skin": "Scroll of Stone Skin",
+		"scroll_haste": "Scroll of Haste",
+		"scroll_vampirism": "Scroll of Vampirism",
+		"scroll_thorns": "Scroll of Thorns",
+		"scroll_precision": "Scroll of Precision",
+		"scroll_weakness": "Scroll of Weakness",
+		"scroll_vulnerability": "Scroll of Vulnerability",
+		"scroll_slow": "Scroll of Slow",
+		"scroll_doom": "Scroll of Doom",
+		"scroll_target_farm": "Scroll of Finding",
+		"scroll_time_stop": "Scroll of Time Stop",
+		"scroll_resurrect": "Scroll of Resurrection",
 		# Gold/Gems (special - don't prefix with tier)
 		"gold_pouch": "Gold Pouch",
 		"gem_small": "Gem",
@@ -1425,12 +1441,25 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
 
+	# Use simpler item names to avoid duplicate "Arcane" in name
+	# (Arcane Hoarder's Ring instead of Arcane Hoarder's Arcane Ring)
+	var base_item_name = "Ring" if is_ring else "Amulet"
+	# Add rarity prefix for higher tier items
+	match rarity:
+		"epic": base_item_name = "Masterwork " + base_item_name
+		"legendary": base_item_name = "Mythical " + base_item_name
+		"artifact": base_item_name = "Divine " + base_item_name
+
+	# If prefix is "Arcane", mark it with * to show double arcane bonus
+	if affixes.get("prefix_name", "") == "Arcane":
+		affix_name = "Arcane* "  # Asterisk indicates double arcane synergy
+
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Arcane Hoarder's " + _get_item_name(item_type, rarity) + affix_suffix,
+		"name": affix_name + "Arcane Hoarder's " + base_item_name + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -1444,12 +1473,16 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 	# 33/33/33 distribution
 	var roll = randf()
 	var item_type: String
+	var base_item_name: String
 	if roll < 0.33:
 		item_type = "ring_shadow"
+		base_item_name = "Shadow Ring"
 	elif roll < 0.66:
 		item_type = "amulet_evasion"
+		base_item_name = "Evasion Amulet"
 	else:
 		item_type = "boots_swift"
+		base_item_name = "Boots"  # Use simple name to avoid "Swift Cunning Prey's Swift Boots"
 
 	# Generate with boosted level
 	var boosted_level = int(monster_level * 1.15)  # 15% level boost
@@ -1458,12 +1491,22 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
 
+	# Add rarity prefix for higher tier items
+	match rarity:
+		"epic": base_item_name = "Masterwork " + base_item_name
+		"legendary": base_item_name = "Mythical " + base_item_name
+		"artifact": base_item_name = "Divine " + base_item_name
+
+	# If prefix would duplicate item name, mark with * for synergy
+	if affixes.get("prefix_name", "") == "Swift" and item_type == "boots_swift":
+		affix_name = "Swift* "  # Asterisk indicates double swift synergy
+
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Cunning Prey's " + _get_item_name(item_type, rarity) + affix_suffix,
+		"name": affix_name + "Cunning Prey's " + base_item_name + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true

@@ -282,6 +282,52 @@ func set_monster_database(db: Node):
 	"""Set the monster database reference"""
 	monster_database = db
 
+func _process_status_ticks(character: Character, messages: Array) -> void:
+	"""Process poison and blind ticks at the start of a player's turn.
+	Called by all player combat actions."""
+	# === POISON TICK ===
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg > 0:
+			character.current_hp -= poison_dmg
+			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+			var turns_left = character.poison_turns_remaining
+			if turns_left > 0:
+				messages.append("[color=#FF00FF]Poison deals %d damage! (%d turns remaining)[/color]" % [poison_dmg, turns_left])
+			else:
+				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
+
+	# === BLIND TICK ===
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		if still_blind:
+			messages.append("[color=#808080]You are blinded! (%d turns remaining)[/color]" % character.blind_turns_remaining)
+		else:
+			messages.append("[color=#00FF00]Your vision clears![/color]")
+
+func _infer_tier_from_name(item_name: String) -> int:
+	"""Infer consumable tier from item name for legacy items without tier field"""
+	var name_lower = item_name.to_lower()
+	if "divine" in name_lower: return 7
+	if "master" in name_lower: return 6
+	if "superior" in name_lower: return 5
+	if "greater" in name_lower: return 4
+	if "standard" in name_lower: return 3
+	if "lesser" in name_lower: return 2
+	if "minor" in name_lower: return 1
+	# Default to tier 1 for consumables with no tier indicator
+	return 1
+
+func _is_tier_based_consumable(item_type: String) -> bool:
+	"""Check if item type uses the tier system for scaling"""
+	# Health, mana, stamina, energy potions and scrolls use tier-based values
+	if item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion"]:
+		return true
+	# Scrolls also use tier system
+	if item_type.begins_with("scroll_"):
+		return true
+	return false
+
 func _ready():
 	print("Combat Manager initialized")
 
@@ -551,25 +597,8 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if actual_regen > 0:
 			messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
 
-	# === POISON TICK (at start of player turn) ===
-	if character.poison_active:
-		var poison_dmg = character.tick_poison()
-		if poison_dmg > 0:
-			character.current_hp -= poison_dmg
-			character.current_hp = max(1, character.current_hp)  # Poison can't kill
-			var turns_left = character.poison_turns_remaining
-			if turns_left > 0:
-				messages.append("[color=#FF00FF]Poison deals %d damage! (%d turns remaining)[/color]" % [poison_dmg, turns_left])
-			else:
-				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
-
-	# === BLIND TICK (at start of player turn) ===
-	if character.blind_active:
-		var still_blind = character.tick_blind()
-		if still_blind:
-			messages.append("[color=#808080]You are blinded! (%d turns remaining)[/color]" % character.blind_turns_remaining)
-		else:
-			messages.append("[color=#00FF00]Your vision clears![/color]")
+	# === POISON & BLIND TICK (at start of player turn) ===
+	_process_status_ticks(character, messages)
 
 	# === BLEED TICK (stacking DoT from Bleed ability) ===
 	var bleed_stacks = combat.get("player_bleed_stacks", 0)
@@ -1021,6 +1050,9 @@ func process_defend(combat: Dictionary) -> Dictionary:
 	var character = combat.character
 	var messages = []
 
+	# Process status effects (poison/blind tick)
+	_process_status_ticks(character, messages)
+
 	# Defending gives temporary defense bonus and small HP recovery
 	var defense_bonus = character.get_effective_stat("constitution") / 4
 	var heal_amount = max(1, character.get_total_max_hp() / 20)
@@ -1047,6 +1079,9 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
+
+	# Process status effects (poison/blind tick)
+	_process_status_ticks(character, messages)
 
 	# Get class passive for flee bonuses
 	var passive = character.get_class_passive()
@@ -1116,7 +1151,12 @@ func process_flee(combat: Dictionary) -> Dictionary:
 
 func process_special(combat: Dictionary) -> Dictionary:
 	"""Process special action (class-specific)"""
+	var character = combat.character
 	var messages = []
+
+	# Process status effects (poison/blind tick)
+	_process_status_ticks(character, messages)
+
 	messages.append("[color=#808080]Special abilities coming soon![/color]")
 
 	return {
@@ -1133,6 +1173,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
+
+	# Process status effects (poison/blind tick)
+	_process_status_ticks(character, messages)
 
 	# Check if already failed outsmart this combat
 	if combat.get("outsmart_failed", false):
@@ -2428,16 +2471,35 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	var messages = []
 	var item_name = item.get("name", "item")
 	var item_level = item.get("level", 1)
+	var item_tier = item.get("tier", 0)
+
+	# Infer tier from item name for legacy tier-based consumables (potions only, not scrolls)
+	# Scrolls use their own base+per_level scaling and shouldn't use the tier system
+	if item_tier == 0 and _is_tier_based_consumable(item_type):
+		item_tier = _infer_tier_from_name(item_name)
+
+	# Get tier data for proper healing values
+	var tier_data = {}
+	if item_tier > 0 and drop_tables.CONSUMABLE_TIERS.has(item_tier):
+		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
 
 	# Apply effect
 	if effect.has("heal"):
-		# Healing potion
-		var heal_amount = effect.base + (effect.per_level * item_level)
+		# Healing potion - use tier healing value if available
+		var heal_amount: int
+		if tier_data.has("healing"):
+			heal_amount = tier_data.healing
+		else:
+			heal_amount = effect.base + (effect.per_level * item_level)
 		var actual_heal = character.heal(heal_amount)
 		messages.append("[color=#00FF00]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
 	elif effect.has("mana"):
-		# Mana potion
-		var mana_amount = effect.base + (effect.per_level * item_level)
+		# Mana potion - use tier healing value if available
+		var mana_amount: int
+		if tier_data.has("healing"):
+			mana_amount = int(tier_data.healing * 0.6)  # Mana is roughly 60% of HP healing
+		else:
+			mana_amount = effect.base + (effect.per_level * item_level)
 		var old_mana = character.current_mana
 		character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
 		var actual_restore = character.current_mana - old_mana

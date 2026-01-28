@@ -1168,6 +1168,24 @@ func handle_move(peer_id: int, message: Dictionary):
 				"turns_remaining": turns_left
 			})
 
+	# Tick blind on movement (counts as a round)
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind",
+				"message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left,
+				"turns_remaining": turns_left
+			})
+		else:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind_cured",
+				"message": "[color=#00FF00]Your vision clears![/color]"
+			})
+
 	# Tick active buffs on movement (for any non-combat buffs)
 	if not character.active_buffs.is_empty():
 		var expired = character.tick_buffs()
@@ -2700,6 +2718,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	var item_tier = item.get("tier", 0)  # 0 means old-style item
 	var is_consumable = item.get("is_consumable", false)
 
+	# Infer tier from item name for legacy tier-based consumables (potions only, not scrolls)
+	# Scrolls use their own base+per_level scaling and shouldn't use the tier system
+	if item_tier == 0 and _is_tier_based_consumable(item_type):
+		item_tier = _infer_tier_from_name(item_name)
+
 	# Get potion effect from drop tables
 	var effect = drop_tables.get_potion_effect(item_type)
 
@@ -4083,6 +4106,29 @@ func _get_rarity_color(rarity: String) -> String:
 		"legendary": return "#FF8000"
 		"artifact": return "#E6CC80"
 		_: return "#FFFFFF"
+
+func _infer_tier_from_name(item_name: String) -> int:
+	"""Infer consumable tier from item name for legacy items without tier field"""
+	var name_lower = item_name.to_lower()
+	if "divine" in name_lower: return 7
+	if "master" in name_lower: return 6
+	if "superior" in name_lower: return 5
+	if "greater" in name_lower: return 4
+	if "standard" in name_lower: return 3
+	if "lesser" in name_lower: return 2
+	if "minor" in name_lower: return 1
+	# Default to tier 1 for consumables with no tier indicator
+	return 1
+
+func _is_tier_based_consumable(item_type: String) -> bool:
+	"""Check if item type uses the tier system for scaling"""
+	# Health, mana, stamina, energy potions and scrolls use tier-based values
+	if item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion"]:
+		return true
+	# Scrolls also use tier system
+	if item_type.begins_with("scroll_"):
+		return true
+	return false
 
 func _get_rarity_symbol(rarity: String) -> String:
 	"""Get visual symbol prefix for item rarity - makes drops stand out"""

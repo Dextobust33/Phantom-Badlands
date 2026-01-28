@@ -5377,15 +5377,17 @@ func display_shop_inventory():
 			var item_type = item.get("type", "")
 
 			# Show comparison indicator if it's an equippable item
+			var compare_arrow = ""
 			var compare_text = ""
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
+				compare_arrow = _get_compare_arrow(item, equipped_item)
 				var diff_parts = _get_item_comparison_parts(item, equipped_item)
 				if diff_parts.size() > 0:
 					compare_text = " [%s]" % ", ".join(diff_parts)
 				else:
-					compare_text = " [color=#FFFF66]=[/color]"
+					compare_text = ""
 
 			# Build stats string using computed bonuses
 			var stats_parts = []
@@ -5415,7 +5417,7 @@ func display_shop_inventory():
 
 			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
 
-			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price])
+			display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, item.get("name", "Unknown"), level, compare_text, price])
 			if stats_str != "":
 				display_game("    %s" % stats_str)
 
@@ -6611,16 +6613,16 @@ func display_inventory():
 			var item_level = item.get("level", 1)
 			var item_type = item.get("type", "")
 
-			# Show comparison indicator if it's an equippable item
+			# Show comparison arrow on left and detailed stats on right for equippable items
+			var compare_arrow = ""
 			var compare_text = ""
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
+				compare_arrow = _get_compare_arrow(item, equipped_item) + " "
 				var diff_parts = _get_item_comparison_parts(item, equipped_item)
 				if diff_parts.size() > 0:
-					compare_text = "[%s] " % ", ".join(diff_parts)
-				else:
-					compare_text = "[color=#FFFF66]=[/color] "
+					compare_text = " [%s]" % ", ".join(diff_parts)
 
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
@@ -6634,12 +6636,12 @@ func display_inventory():
 					display_num, rarity_color, item.get("name", "Unknown"), qty_text
 				])
 			else:
-				# Show equipment with stats at a glance (using themed names)
+				# Show equipment with arrow on left, stats on right (using themed names)
 				var bonus_text = _get_item_bonus_summary(item)
 				var slot_abbr = _get_slot_abbreviation(item_type)
 				var themed_name = _get_themed_item_name(item, player_class)
-				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s" % [
-					display_num, compare_text, rarity_color, themed_name, item_level, bonus_text, slot_abbr
+				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s%s" % [
+					display_num, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, compare_text
 				])
 
 	display_game("")
@@ -7254,38 +7256,26 @@ func _display_equippable_items_page():
 		var level = item.get("level", 1)
 		var color = _get_rarity_color(rarity)
 
-		# Build stats string
-		var stats_parts = []
-		var bonuses = _compute_item_bonuses(item)
-		if bonuses.get("attack", 0) > 0:
-			stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
-		if bonuses.get("defense", 0) > 0:
-			stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
-		if bonuses.get("max_hp", 0) > 0:
-			stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
-		if bonuses.get("max_mana", 0) > 0:
-			stats_parts.append("[color=#9999FF]+%d MP[/color]" % bonuses.max_mana)
-		var stats_str = " ".join(stats_parts) if stats_parts.size() > 0 else ""
+		# Get bonus summary and slot abbreviation (matching Backpack format)
+		var bonus_text = _get_item_bonus_summary(item)
+		var slot_abbr = _get_slot_abbreviation(item_type)
 
-		# Comparison with equipped item - show stat differences
+		# Comparison with equipped item - show arrow on left and stat differences on right
+		var compare_arrow = ""
 		var compare_text = ""
 		var slot = _get_slot_for_item_type(item_type)
 		if slot != "":
 			var equipped_item = equipped.get(slot)
+			compare_arrow = _get_compare_arrow(item, equipped_item)
 			var diff_parts = _get_item_comparison_parts(item, equipped_item)
 			if diff_parts.size() > 0:
 				compare_text = " [%s]" % ", ".join(diff_parts)
-			else:
-				compare_text = " [color=#FFFF66]=[/color]"
 
 		# Display number is 1-9 for current page
 		var display_num = (j - start_idx) + 1
 
-		# Display item with stats and comparison
-		if stats_str != "":
-			display_game("[%d] [color=%s]%s[/color] (Lv%d) - %s%s" % [display_num, color, item_name, level, stats_str, compare_text])
-		else:
-			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s" % [display_num, color, item_name, level, compare_text])
+		# Display item matching Backpack format: arrow + name + Lv# + bonus + slot + comparison
+		display_game("[%d] %s [color=%s]%s[/color] Lv%d %s %s%s" % [display_num, compare_arrow, color, item_name, level, bonus_text, slot_abbr, compare_text])
 
 	var items_on_page = end_idx - start_idx
 	if total_pages > 1:
@@ -8313,34 +8303,23 @@ func handle_server_message(message: Dictionary):
 								var level = item.get("level", 1)
 								var color = _get_rarity_color(rarity)
 
-								# Build stats string
-								var stats_parts = []
-								var bonuses = _compute_item_bonuses(item)
-								if bonuses.get("attack", 0) > 0:
-									stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
-								if bonuses.get("defense", 0) > 0:
-									stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
-								if bonuses.get("max_hp", 0) > 0:
-									stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
-								if bonuses.get("max_mana", 0) > 0:
-									stats_parts.append("[color=#9999FF]+%d MP[/color]" % bonuses.max_mana)
-								var stats_str = " ".join(stats_parts) if stats_parts.size() > 0 else ""
+								# Get bonus summary and slot abbreviation (matching Backpack format)
+								var bonus_text = _get_item_bonus_summary(item)
+								var slot_abbr = _get_slot_abbreviation(item_type)
 
-								# Comparison with equipped item
+								# Comparison with equipped item - arrow on left, stats on right
+								var compare_arrow = ""
 								var compare_text = ""
 								var slot = _get_slot_for_item_type(item_type)
 								if slot != "":
 									var equipped_item = equipped.get(slot)
+									compare_arrow = _get_compare_arrow(item, equipped_item)
 									var diff_parts = _get_item_comparison_parts(item, equipped_item)
 									if diff_parts.size() > 0:
 										compare_text = " [%s]" % ", ".join(diff_parts)
-									else:
-										compare_text = " [color=#FFFF66]=[/color]"
 
-								if stats_str != "":
-									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [j + 1, color, item_name, level, compare_text, stats_str])
-								else:
-									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s" % [j + 1, color, item_name, level, compare_text])
+								# Display matching Backpack format
+								display_game("[%d] %s [color=%s]%s[/color] Lv%d %s %s%s" % [j + 1, compare_arrow, color, item_name, level, bonus_text, slot_abbr, compare_text])
 							display_game("[color=#FFD700]%s to equip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(equippable_items.size()), get_action_key_name(0)])
 						else:
 							display_game("[color=#808080]No more items to equip.[/color]")
@@ -10632,6 +10611,7 @@ func show_help():
 [color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
 [color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
 [color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%%HP)
+[color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
 
 [color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
 
