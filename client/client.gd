@@ -2243,33 +2243,33 @@ func display_examine_result(data: Dictionary):
 	display_game("[color=#FFD700]===== %s =====[/color]" % pname)
 	display_game("Level %d %s %s - %s" % [level, char_race, cls, status])
 	display_game("[color=#FF00FF]XP:[/color] %d / %d ([color=#FFD700]%d to next level[/color])" % [current_xp, xp_needed, xp_remaining])
-	display_game("HP: %d/%d" % [hp, max_hp])
+	display_game("[color=#FF6666]HP:[/color] %d/%d" % [hp, max_hp])
 
-	# Stats with bonuses
-	var stats_line = "STR:%d" % str_stat
+	# Stats with bonuses (color-coded)
+	var stats_line = "[color=#FF6666]STR:[/color]%d" % str_stat
 	if bonuses.get("strength", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.strength
-	stats_line += " CON:%d" % con_stat
+	stats_line += " [color=#00FF00]CON:[/color]%d" % con_stat
 	if bonuses.get("constitution", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.constitution
-	stats_line += " DEX:%d" % dex_stat
+	stats_line += " [color=#FFFF00]DEX:[/color]%d" % dex_stat
 	if bonuses.get("dexterity", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.dexterity
 	display_game(stats_line)
 
-	stats_line = "INT:%d" % int_stat
+	stats_line = "[color=#9999FF]INT:[/color]%d" % int_stat
 	if bonuses.get("intelligence", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.intelligence
-	stats_line += " WIS:%d" % wis_stat
+	stats_line += " [color=#66CCFF]WIS:[/color]%d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.wisdom
-	stats_line += " WIT:%d" % wit_stat
+	stats_line += " [color=#FF00FF]WIT:[/color]%d" % wit_stat
 	if bonuses.get("wits", 0) > 0:
 		stats_line += "[color=#00FF00](+%d)[/color]" % bonuses.wits
 	display_game(stats_line)
 
 	# Combat stats
-	display_game("[color=#FF6666]Attack:[/color] %d  [color=#66FFFF]Defense:[/color] %d" % [total_attack, total_defense])
+	display_game("[color=#FFFF00]Attack:[/color] %d  [color=#00FF00]Defense:[/color] %d" % [total_attack, total_defense])
 
 	# Equipment
 	var equip_text = ""
@@ -2486,34 +2486,34 @@ func show_player_info_popup(data: Dictionary):
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
-	player_info_content.append_text("[color=#00FFFF]HP:[/color] %d / %d\n\n" % [hp, max_hp])
+	player_info_content.append_text("[color=#FF6666]HP:[/color] %d / %d\n\n" % [hp, max_hp])
 
-	# Stats with equipment bonuses
+	# Stats with equipment bonuses (color-coded)
 	player_info_content.append_text("[color=#FF00FF]Stats:[/color]\n")
-	var line1 = "  STR: %d" % str_stat
+	var line1 = "  [color=#FF6666]STR:[/color] %d" % str_stat
 	if bonuses.get("strength", 0) > 0:
 		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.strength
-	line1 += "  CON: %d" % con_stat
+	line1 += "  [color=#00FF00]CON:[/color] %d" % con_stat
 	if bonuses.get("constitution", 0) > 0:
 		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.constitution
-	line1 += "  DEX: %d" % dex_stat
+	line1 += "  [color=#FFFF00]DEX:[/color] %d" % dex_stat
 	if bonuses.get("dexterity", 0) > 0:
 		line1 += "[color=#00FF00](+%d)[/color]" % bonuses.dexterity
 	player_info_content.append_text(line1 + "\n")
 
-	var line2 = "  INT: %d" % int_stat
+	var line2 = "  [color=#9999FF]INT:[/color] %d" % int_stat
 	if bonuses.get("intelligence", 0) > 0:
 		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.intelligence
-	line2 += "  WIS: %d" % wis_stat
+	line2 += "  [color=#66CCFF]WIS:[/color] %d" % wis_stat
 	if bonuses.get("wisdom", 0) > 0:
 		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.wisdom
-	line2 += "  WIT: %d" % wit_stat
+	line2 += "  [color=#FF00FF]WIT:[/color] %d" % wit_stat
 	if bonuses.get("wits", 0) > 0:
 		line2 += "[color=#00FF00](+%d)[/color]" % bonuses.wits
 	player_info_content.append_text(line2 + "\n\n")
 
 	# Combat stats
-	player_info_content.append_text("[color=#FF6666]Attack:[/color] %d  [color=#66FFFF]Defense:[/color] %d\n\n" % [total_attack, total_defense])
+	player_info_content.append_text("[color=#FFFF00]Attack:[/color] %d  [color=#00FF00]Defense:[/color] %d\n\n" % [total_attack, total_defense])
 
 	# Equipment
 	var has_equipment = false
@@ -5393,31 +5393,31 @@ func display_shop_inventory():
 			var stats_parts = []
 			var bonuses = _compute_item_bonuses(item)
 			if bonuses.get("attack", 0) > 0:
-				stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+				stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
 			if bonuses.get("defense", 0) > 0:
-				stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+				stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
 			if bonuses.get("max_hp", 0) > 0:
 				stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
 			if bonuses.get("max_mana", 0) > 0:
 				stats_parts.append("[color=#9999FF]+%d Mana[/color]" % bonuses.max_mana)
 			if bonuses.get("strength", 0) > 0:
-				stats_parts.append("+%d STR" % bonuses.strength)
+				stats_parts.append("[color=#FF6666]+%d STR[/color]" % bonuses.strength)
 			if bonuses.get("constitution", 0) > 0:
-				stats_parts.append("+%d CON" % bonuses.constitution)
+				stats_parts.append("[color=#00FF00]+%d CON[/color]" % bonuses.constitution)
 			if bonuses.get("dexterity", 0) > 0:
-				stats_parts.append("+%d DEX" % bonuses.dexterity)
+				stats_parts.append("[color=#FFFF00]+%d DEX[/color]" % bonuses.dexterity)
 			if bonuses.get("intelligence", 0) > 0:
-				stats_parts.append("+%d INT" % bonuses.intelligence)
+				stats_parts.append("[color=#9999FF]+%d INT[/color]" % bonuses.intelligence)
 			if bonuses.get("wisdom", 0) > 0:
-				stats_parts.append("+%d WIS" % bonuses.wisdom)
+				stats_parts.append("[color=#66CCFF]+%d WIS[/color]" % bonuses.wisdom)
 			if bonuses.get("wits", 0) > 0:
-				stats_parts.append("+%d WIT" % bonuses.wits)
+				stats_parts.append("[color=#FF00FF]+%d WIT[/color]" % bonuses.wits)
 			if bonuses.get("speed", 0) > 0:
-				stats_parts.append("[color=#FFFF00]+%d SPD[/color]" % bonuses.speed)
+				stats_parts.append("[color=#FFA500]+%d SPD[/color]" % bonuses.speed)
 
 			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
 
-			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %d gold" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price])
+			display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, color, item.get("name", "Unknown"), level, compare_text, price])
 			if stats_str != "":
 				display_game("    %s" % stats_str)
 
@@ -5965,31 +5965,33 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		old_bonuses = _compute_item_bonuses(old_item)
 	var diff_parts = []
 
-	# Stats to compare with their display labels (ordered by importance)
+	# Stats to compare with their display labels and colors (ordered by importance)
 	var stats_to_compare = [
-		["attack", "ATK"],
-		["defense", "DEF"],
-		["max_hp", "HP"],
-		["max_mana", "MP"],
-		["max_stamina", "STA"],
-		["max_energy", "EN"],
-		["speed", "SPD"],
-		["strength", "STR"],
-		["constitution", "CON"],
-		["dexterity", "DEX"],
-		["intelligence", "INT"],
-		["wisdom", "WIS"],
-		["wits", "WIT"]
+		["attack", "ATK", "#FFFF00"],      # Yellow
+		["defense", "DEF", "#00FF00"],     # Green
+		["max_hp", "HP", "#FF6666"],       # Light red
+		["max_mana", "MP", "#9999FF"],     # Purple
+		["max_stamina", "STA", "#FFCC00"], # Orange-yellow
+		["max_energy", "EN", "#66FF66"],   # Light green
+		["speed", "SPD", "#FFA500"],       # Orange
+		["strength", "STR", "#FF6666"],    # Red
+		["constitution", "CON", "#00FF00"], # Green
+		["dexterity", "DEX", "#FFFF00"],   # Yellow
+		["intelligence", "INT", "#9999FF"], # Purple
+		["wisdom", "WIS", "#66CCFF"],      # Cyan
+		["wits", "WIT", "#FF00FF"]         # Magenta
 	]
 
 	for stat_info in stats_to_compare:
 		var stat = stat_info[0]
 		var label = stat_info[1]
+		var stat_color = stat_info[2]
 		var new_val = new_bonuses.get(stat, 0)
 		var old_val = old_bonuses.get(stat, 0)
 		var diff = new_val - old_val
 		if diff != 0:
-			var c = "#00FF00" if diff > 0 else "#FF6666"
+			# Use stat color but dim it for negative values
+			var c = stat_color if diff > 0 else "#808080"
 			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
 
 	return diff_parts
@@ -7258,9 +7260,9 @@ func _display_equippable_items_page():
 		var stats_parts = []
 		var bonuses = _compute_item_bonuses(item)
 		if bonuses.get("attack", 0) > 0:
-			stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+			stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
 		if bonuses.get("defense", 0) > 0:
-			stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+			stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
 		if bonuses.get("max_hp", 0) > 0:
 			stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
 		if bonuses.get("max_mana", 0) > 0:
@@ -8317,9 +8319,9 @@ func handle_server_message(message: Dictionary):
 								var stats_parts = []
 								var bonuses = _compute_item_bonuses(item)
 								if bonuses.get("attack", 0) > 0:
-									stats_parts.append("[color=#FF6666]ATK %d[/color]" % bonuses.attack)
+									stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
 								if bonuses.get("defense", 0) > 0:
-									stats_parts.append("[color=#66FFFF]DEF %d[/color]" % bonuses.defense)
+									stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
 								if bonuses.get("max_hp", 0) > 0:
 									stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
 								if bonuses.get("max_mana", 0) > 0:
@@ -10198,7 +10200,7 @@ func display_character_status():
 	var total_hp = char.get("total_max_hp", base_hp)
 	var base_mana = char.get("max_mana", 0)
 	var total_mana = char.get("total_max_mana", base_mana)
-	text += "[color=#FF4444]HP:[/color] %d/%d  |  [color=#00BFFF]Mana:[/color] %d/%d  |  [color=#FF8C00]Stam:[/color] %d/%d  |  [color=#00FF00]Ener:[/color] %d/%d\n" % [
+	text += "[color=#FF6666]HP:[/color] %d/%d  |  [color=#9999FF]Mana:[/color] %d/%d  |  [color=#FFCC00]Stam:[/color] %d/%d  |  [color=#66FF66]Ener:[/color] %d/%d\n" % [
 		char.get("current_hp", 0), total_hp,
 		char.get("current_mana", 0), total_mana,
 		char.get("current_stamina", 0), char.get("max_stamina", 0),
@@ -10244,7 +10246,7 @@ func display_character_status():
 	if bonuses.get("flee_bonus", 0) > 0:
 		class_bonus_parts.append("[color=#66FF66]+%d%% Flee[/color]" % bonuses.get("flee_bonus", 0))
 	if bonuses.get("stamina_regen", 0) > 0:
-		class_bonus_parts.append("[color=#FF8C00]+%d Stamina/round[/color]" % bonuses.get("stamina_regen", 0))
+		class_bonus_parts.append("[color=#FFCC00]+%d Stamina/round[/color]" % bonuses.get("stamina_regen", 0))
 	if class_bonus_parts.size() > 0:
 		text += "[color=#808080]── Class Gear Bonuses ──[/color]\n"
 		text += "%s\n\n" % "  |  ".join(class_bonus_parts)
