@@ -27,6 +27,7 @@ var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
+var flock_counts = {}  # peer_id -> int (how many monsters in current flock chain)
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
@@ -39,6 +40,11 @@ const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading 
 const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
 var watchers = {}  # peer_id -> Array of peer_ids watching this player
 var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
+
+# Trading system - tracks active trades between players
+# active_trades: {peer_id: {partner_id, my_items: [], partner_items: [], my_ready: bool, partner_ready: bool}}
+var active_trades = {}
+var pending_trade_requests = {}  # {peer_id: requesting_peer_id} - pending incoming trade requests
 
 # Title system state - only one Jarl and one High King allowed, up to 3 Eternals
 var current_jarl_id: int = -1              # peer_id of current Jarl (-1 if none)
@@ -62,7 +68,7 @@ const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
 var auto_save_timer = 0.0
 
 # Connection security
-const AUTH_TIMEOUT = 30.0  # Kick unauthenticated connections after 30 seconds
+const AUTH_TIMEOUT = 90.0  # Kick unauthenticated connections after 90 seconds (time to enter login)
 const MAX_CONNECTIONS_PER_IP = 3  # Max simultaneous connections from one IP
 const CONNECTION_RATE_LIMIT = 5.0  # Seconds between connection attempts from same IP
 var ip_connection_times: Dictionary = {}  # IP -> last connection timestamp
@@ -292,6 +298,7 @@ func _on_restart_confirmed():
 	pending_flocks.clear()
 	pending_flock_drops.clear()
 	pending_flock_gems.clear()
+	flock_counts.clear()
 	at_merchant.clear()
 	at_trading_post.clear()
 	next_peer_id = 1
@@ -583,6 +590,19 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_get_title_menu(peer_id)
 		"forge_crown":
 			handle_forge_crown(peer_id)
+		# Trading system handlers
+		"trade_request":
+			handle_trade_request(peer_id, message)
+		"trade_response":
+			handle_trade_response(peer_id, message)
+		"trade_offer":
+			handle_trade_offer(peer_id, message)
+		"trade_remove":
+			handle_trade_remove(peer_id, message)
+		"trade_ready":
+			handle_trade_ready(peer_id)
+		"trade_cancel":
+			handle_trade_cancel(peer_id)
 		_:
 			pass
 
@@ -951,6 +971,8 @@ func handle_logout_character(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
@@ -992,6 +1014,8 @@ func handle_logout_account(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
@@ -1073,6 +1097,10 @@ func handle_move(peer_id: int, message: Dictionary):
 			"message": "More enemies are approaching! Press Space to continue."
 		})
 		return
+
+	# Cancel any active trade (moving breaks trade)
+	if active_trades.has(peer_id):
+		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
 
 	var direction = message.get("direction", 5)
 	var character = characters[peer_id]
@@ -1214,6 +1242,10 @@ func handle_hunt(peer_id: int):
 	if pending_flocks.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "More enemies are approaching! Press Space to continue."})
 		return
+
+	# Cancel any active trade (hunting breaks trade)
+	if active_trades.has(peer_id):
+		_cancel_trade(peer_id, "Trade cancelled - you started hunting.")
 
 	# Tick poison on hunt (counts as a round)
 	if character.poison_active:
@@ -1488,10 +1520,17 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					pending_flock_gems[peer_id] = 0
 				pending_flock_gems[peer_id] += gems_this_combat
 
+				# Track flock count for visual variety (summoner counts as flock)
+				if not flock_counts.has(peer_id):
+					flock_counts[peer_id] = 1
+				else:
+					flock_counts[peer_id] += 1
+
 				# Queue the summoned monster
 				pending_flocks[peer_id] = {
 					"monster_name": summon_next,
-					"monster_level": monster_level
+					"monster_level": monster_level,
+					"flock_count": flock_counts[peer_id]  # For visual variety
 				}
 
 				send_to_peer(peer_id, {
@@ -1520,6 +1559,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				var monster_base_name = result.get("monster_base_name", monster_name)
 				var monster_level = result.get("monster_level", 1)
 
+				# Track flock count for visual variety
+				if not flock_counts.has(peer_id):
+					flock_counts[peer_id] = 1
+				else:
+					flock_counts[peer_id] += 1
+
 				# Accumulate drops for this flock
 				if not pending_flock_drops.has(peer_id):
 					pending_flock_drops[peer_id] = []
@@ -1535,7 +1580,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flocks[peer_id] = {
 					"monster_name": monster_base_name,
 					"monster_level": monster_level,
-					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id)
+					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id),
+					"flock_count": flock_counts[peer_id]  # For visual variety
 				}
 
 				send_to_peer(peer_id, {
@@ -1562,6 +1608,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if pending_flock_gems.has(peer_id):
 					total_gems += pending_flock_gems[peer_id]
 					pending_flock_gems.erase(peer_id)
+
+				# Reset flock count
+				if flock_counts.has(peer_id):
+					flock_counts.erase(peer_id)
 
 				# Give all drops to player now
 				var drop_messages = []
@@ -1630,6 +1680,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
+			if flock_counts.has(peer_id):
+				flock_counts.erase(peer_id)
 
 			# Move character to an adjacent empty tile (no encounter triggered)
 			var flee_pos = _find_flee_destination(peer_id)
@@ -1650,6 +1702,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
+			if flock_counts.has(peer_id):
+				flock_counts.erase(peer_id)
 			send_to_peer(peer_id, {
 				"type": "combat_end",
 				"monster_fled": true,
@@ -1662,6 +1716,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
+			if flock_counts.has(peer_id):
+				flock_counts.erase(peer_id)
 			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
 	else:
 		# Combat continues - send updated state
@@ -2228,6 +2284,8 @@ func handle_disconnect(peer_id: int):
 	# Clear pending flock if any
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
@@ -2239,6 +2297,16 @@ func handle_disconnect(peer_id: int):
 
 	# Clean up watch relationships before erasing character
 	cleanup_watcher_on_disconnect(peer_id)
+
+	# Clean up active trades
+	if active_trades.has(peer_id):
+		_cancel_trade(peer_id, "Player disconnected.")
+	if pending_trade_requests.has(peer_id):
+		pending_trade_requests.erase(peer_id)
+	# Also clean up if this player was requesting a trade with someone
+	for target_id in pending_trade_requests.keys():
+		if pending_trade_requests[target_id] == peer_id:
+			pending_trade_requests.erase(target_id)
 
 	# Update title holder tracking before removing
 	_update_title_holders_on_logout(peer_id)
@@ -2370,7 +2438,7 @@ func trigger_encounter(peer_id: int):
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
-		# Get monster's combat background color
+		# Get contrasting background color for the monster's art
 		var monster_name = result.combat_state.get("monster_name", "")
 		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
 
@@ -2531,7 +2599,7 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0):
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
@@ -2549,17 +2617,19 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		combat_mgr.set_analyze_bonus(peer_id, analyze_bonus)
 
 	if result.success:
-		var flock_msg = "[color=#FF4444]Another %s appears![/color]\n%s" % [monster.name, result.message]
-		# Get monster's combat background color
-		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster.name)
+		var flock_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s" % [monster.name, flock_count + 1, result.message]
+		# Get varied colors for flock visual variety
+		var varied_colors = combat_mgr.get_flock_varied_colors(monster.name, flock_count)
 		# Send flock encounter message with clear_output flag
 		send_to_peer(peer_id, {
 			"type": "combat_start",
 			"message": flock_msg,
 			"combat_state": result.combat_state,
 			"is_flock": true,
+			"flock_count": flock_count,
 			"clear_output": true,
-			"combat_bg_color": combat_bg_color,
+			"combat_bg_color": varied_colors.bg_color,
+			"flock_art_color": varied_colors.art_color,  # Client uses this to recolor ASCII art
 			"use_client_art": true  # Client should render ASCII art locally
 		})
 		# Forward to watchers
@@ -2573,9 +2643,10 @@ func handle_continue_flock(peer_id: int):
 	var flock_data = pending_flocks[peer_id]
 	pending_flocks.erase(peer_id)
 
-	# Pass analyze bonus to carry over damage bonus from previous combat
+	# Pass analyze bonus and flock count for visual variety
 	var analyze_bonus = flock_data.get("analyze_bonus", 0)
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus)
+	var flock_count = flock_data.get("flock_count", 1)
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count)
 
 # ===== INVENTORY HANDLERS =====
 
@@ -3897,8 +3968,9 @@ func _get_rarity_symbol(rarity: String) -> String:
 
 func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: String = "all", is_starter_post: bool = false) -> Array:
 	"""Generate purchasable items for merchant shop based on specialty.
-	Specialty: 'weapons', 'armor', 'jewelry', or 'all'
-	Starter posts have more items, lower levels, and cheaper prices."""
+	Specialty: 'weapons', 'armor', 'jewelry', 'potions', 'scrolls', 'elite', or 'all'
+	Starter posts have more items, lower levels, and cheaper prices.
+	Elite merchants have better quality items at higher prices."""
 	var items = []
 
 	# Use merchant hash + time for varied inventory at starter posts
@@ -3909,10 +3981,12 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 	else:
 		rng.seed = merchant_hash
 
-	# Starter posts have more items (6-8), others have normal amounts
+	# Determine item count based on merchant type
 	var item_count: int
 	if is_starter_post:
 		item_count = 6 + rng.randi() % 3  # 6-8 items
+	elif specialty == "elite":
+		item_count = 8 + rng.randi() % 5  # 8-12 items (elite has more selection)
 	elif specialty != "all":
 		item_count = 4 + rng.randi() % 4  # 4-7 items
 	else:
@@ -3938,6 +4012,18 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 			else:
 				# Aspirational: level 10-15
 				item_level = 10 + rng.randi() % 6
+		elif specialty == "elite":
+			# Elite merchants: higher quality items, biased toward premium/legendary
+			var level_roll = rng.randi() % 100
+			if level_roll < 20:
+				# Standard tier (rare): player level to +10
+				item_level = maxi(1, player_level + rng.randi_range(0, 10))
+			elif level_roll < 60:
+				# Premium tier: player level +10 to +30
+				item_level = player_level + rng.randi_range(10, 30)
+			else:
+				# Legendary tier: player level +30 to +75
+				item_level = player_level + rng.randi_range(30, 75)
 		else:
 			# Normal shop: item level ranges around player level
 			var level_roll = rng.randi() % 100
@@ -3951,30 +4037,51 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 				# Legendary tier: player level +20 to +50
 				item_level = player_level + rng.randi_range(20, 50)
 
-		# Determine tier for drop tables
-		var tier = _level_to_tier(item_level)
+		# Check if this is an affix-focused merchant
+		var is_affix_specialty = drop_tables.is_affix_specialty(specialty)
 
-		# Roll for item (100% drop rate for shop)
-		var drops = drop_tables.roll_drops(tier, 100, item_level)
-		if drops.size() > 0:
-			var item = drops[0]
-			var item_type = item.get("type", "")
-
-			# Filter by specialty (starter posts accept all types)
-			if not is_starter_post and not _item_matches_specialty(item_type, specialty):
+		var item: Dictionary
+		if is_affix_specialty:
+			# Affix-focused merchants: generate equipment with guaranteed specialty affixes
+			var equipment_types = _get_equipment_types_for_level(item_level, rng)
+			var item_type = equipment_types[rng.randi() % equipment_types.size()]
+			var rarity = _get_shop_rarity(item_level, rng)
+			item = drop_tables.generate_shop_item_with_specialty(item_type, rarity, item_level, specialty)
+		else:
+			# Normal drop table rolling
+			var tier = _level_to_tier(item_level)
+			var drops = drop_tables.roll_drops(tier, 100, item_level)
+			if drops.size() == 0:
 				continue
+			item = drops[0]
 
-			# Shop markup: 2.5x base value (1.5x for starter posts - more affordable)
-			var markup = 1.5 if is_starter_post else 2.5
-			item["shop_price"] = int(item.get("value", 100) * markup)
-			items.append(item)
+		var item_type = item.get("type", "")
+
+		# Filter by specialty (starter posts accept all types)
+		if not is_starter_post and not _item_matches_specialty(item_type, specialty):
+			continue
+
+		# Shop markup varies by merchant type
+		# Starter posts: 1.5x (affordable), Elite: 4x (expensive but quality)
+		# Affix merchants: 3.5x (guaranteed good affixes worth premium), Normal: 2.5x
+		var markup: float
+		if is_starter_post:
+			markup = 1.5
+		elif specialty == "elite":
+			markup = 4.0  # Elite merchants charge premium prices
+		elif is_affix_specialty:
+			markup = 3.5  # Affix merchants charge a premium for guaranteed stats
+		else:
+			markup = 2.5
+		item["shop_price"] = int(item.get("value", 100) * markup)
+		items.append(item)
 
 	return items
 
 func _item_matches_specialty(item_type: String, specialty: String) -> bool:
 	"""Check if an item type matches the merchant's specialty."""
-	if specialty == "all":
-		return true
+	if specialty == "all" or specialty == "elite":
+		return true  # Elite merchants sell everything
 
 	match specialty:
 		"weapons":
@@ -3984,8 +4091,116 @@ func _item_matches_specialty(item_type: String, specialty: String) -> bool:
 			return item_type.begins_with("armor_") or item_type.begins_with("helm_") or item_type.begins_with("shield_") or item_type.begins_with("boots_")
 		"jewelry":
 			return item_type.begins_with("ring_") or item_type.begins_with("amulet_") or item_type == "artifact"
+		"potions":
+			# Potions, elixirs, and resource restorers
+			return item_type.begins_with("potion_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
+		"scrolls":
+			return item_type.begins_with("scroll_")
+		# Affix-focused merchants sell equipment (weapons, armor, jewelry)
+		"warrior_affixes", "mage_affixes", "trickster_affixes", "tank_affixes", "dps_affixes":
+			return _is_equipment_type(item_type)
 		_:
 			return true
+
+func _is_equipment_type(item_type: String) -> bool:
+	"""Check if item type is equipment (can have affixes)."""
+	return (item_type.begins_with("weapon_") or item_type.begins_with("armor_") or
+		item_type.begins_with("helm_") or item_type.begins_with("shield_") or
+		item_type.begins_with("boots_") or item_type.begins_with("ring_") or
+		item_type.begins_with("amulet_") or item_type == "artifact")
+
+func _get_equipment_types_for_level(item_level: int, rng: RandomNumberGenerator) -> Array:
+	"""Get array of equipment types appropriate for a given level."""
+	var types = []
+
+	# Weapons scale with level
+	if item_level >= 2000:
+		types.append("weapon_mythic")
+	elif item_level >= 500:
+		types.append("weapon_legendary")
+	elif item_level >= 100:
+		types.append("weapon_elemental")
+	elif item_level >= 50:
+		types.append("weapon_magical")
+	elif item_level >= 30:
+		types.append("weapon_enchanted")
+	elif item_level >= 15:
+		types.append("weapon_steel")
+	elif item_level >= 5:
+		types.append("weapon_iron")
+	else:
+		types.append("weapon_rusty")
+
+	# Armor scales with level
+	if item_level >= 2000:
+		types.append("armor_mythic")
+	elif item_level >= 500:
+		types.append("armor_legendary")
+	elif item_level >= 100:
+		types.append("armor_elemental")
+	elif item_level >= 50:
+		types.append("armor_magical")
+	elif item_level >= 30:
+		types.append("armor_enchanted")
+	elif item_level >= 15:
+		types.append("armor_plate")
+	elif item_level >= 5:
+		types.append("armor_chain")
+	else:
+		types.append("armor_leather")
+
+	# Add helms, shields, boots, rings, amulets scaled to level
+	if item_level >= 50:
+		types.append_array(["helm_magical", "shield_magical", "boots_magical", "ring_gold", "amulet_silver"])
+	elif item_level >= 15:
+		types.append_array(["helm_chain", "shield_steel", "boots_chain", "ring_silver", "amulet_bronze"])
+	else:
+		types.append_array(["helm_leather", "shield_iron", "boots_leather", "ring_copper"])
+
+	return types
+
+func _get_shop_rarity(item_level: int, rng: RandomNumberGenerator) -> String:
+	"""Get a rarity for shop items based on item level."""
+	var roll = rng.randi() % 100
+
+	if item_level >= 500:
+		# High level: better rarities
+		if roll < 10:
+			return "legendary"
+		elif roll < 40:
+			return "epic"
+		elif roll < 80:
+			return "rare"
+		else:
+			return "uncommon"
+	elif item_level >= 100:
+		# Mid level
+		if roll < 5:
+			return "legendary"
+		elif roll < 25:
+			return "epic"
+		elif roll < 60:
+			return "rare"
+		else:
+			return "uncommon"
+	elif item_level >= 30:
+		# Lower mid
+		if roll < 10:
+			return "epic"
+		elif roll < 40:
+			return "rare"
+		elif roll < 75:
+			return "uncommon"
+		else:
+			return "common"
+	else:
+		# Low level
+		if roll < 5:
+			return "rare"
+		elif roll < 30:
+			return "uncommon"
+		else:
+			return "common"
 
 func handle_merchant_buy(peer_id: int, message: Dictionary):
 	"""Handle buying an item from the merchant shop"""
@@ -5745,3 +5960,372 @@ func handle_get_title_menu(peer_id: int):
 		"online_players": online_players,
 		"realm_treasury": realm_treasury if character.title == "jarl" else 0
 	})
+
+# ===== TRADING SYSTEM HANDLERS =====
+
+func _get_peer_by_name(target_name: String) -> int:
+	"""Find peer_id by character name (case-insensitive). Returns -1 if not found."""
+	for pid in characters.keys():
+		if characters[pid].name.to_lower() == target_name.to_lower():
+			return pid
+	return -1
+
+func _cancel_trade(peer_id: int, reason: String = ""):
+	"""Cancel an active trade for a player and notify both parties."""
+	if not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var partner_id = trade.partner_id
+
+	# Remove trade from both players
+	active_trades.erase(peer_id)
+	if active_trades.has(partner_id):
+		active_trades.erase(partner_id)
+
+	# Notify both players
+	var cancel_msg = {"type": "trade_cancelled", "reason": reason}
+	send_to_peer(peer_id, cancel_msg)
+	if peers.has(partner_id):
+		send_to_peer(partner_id, cancel_msg)
+
+func _send_trade_update(peer_id: int):
+	"""Send current trade state to a player."""
+	if not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var partner_id = trade.partner_id
+	var partner_trade = active_trades.get(partner_id, {})
+
+	# Get partner info
+	var partner_name = ""
+	var partner_class = ""
+	var partner_items_data = []
+	if characters.has(partner_id):
+		partner_name = characters[partner_id].name
+		partner_class = characters[partner_id].class_type
+		# Convert partner's item indices to actual item data
+		var partner_inventory = characters[partner_id].inventory
+		for idx in partner_trade.get("my_items", []):
+			if idx >= 0 and idx < partner_inventory.size():
+				partner_items_data.append(partner_inventory[idx])
+
+	# Get my character info
+	var my_class = ""
+	if characters.has(peer_id):
+		my_class = characters[peer_id].class_type
+
+	send_to_peer(peer_id, {
+		"type": "trade_update",
+		"partner_name": partner_name,
+		"partner_class": partner_class,
+		"my_class": my_class,
+		"my_items": trade.my_items,
+		"partner_items": partner_items_data,  # Send actual item data, not indices
+		"my_ready": trade.my_ready,
+		"partner_ready": partner_trade.get("my_ready", false)
+	})
+
+func handle_trade_request(peer_id: int, message: Dictionary):
+	"""Handle a player requesting to trade with another player."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var target_name = message.get("target", "").strip_edges()
+
+	# Validation checks
+	if character.in_combat:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade while in combat."})
+		return
+
+	if active_trades.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are already in a trade."})
+		return
+
+	if target_name.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Usage: /trade <player_name>"})
+		return
+
+	# Find target player
+	var target_id = _get_peer_by_name(target_name)
+	if target_id == -1:
+		send_to_peer(peer_id, {"type": "error", "message": "Player '%s' is not online." % target_name})
+		return
+
+	if target_id == peer_id:
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot trade with yourself."})
+		return
+
+	var target = characters[target_id]
+
+	if target.in_combat:
+		send_to_peer(peer_id, {"type": "error", "message": "%s is in combat and cannot trade." % target.name})
+		return
+
+	if active_trades.has(target_id):
+		send_to_peer(peer_id, {"type": "error", "message": "%s is already in a trade." % target.name})
+		return
+
+	if pending_trade_requests.has(target_id):
+		send_to_peer(peer_id, {"type": "error", "message": "%s already has a pending trade request." % target.name})
+		return
+
+	# Store pending request
+	pending_trade_requests[target_id] = peer_id
+
+	# Notify requester
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]Trade request sent to %s. Waiting for response...[/color]" % target.name
+	})
+
+	# Send request to target
+	send_to_peer(target_id, {
+		"type": "trade_request_received",
+		"from_name": character.name,
+		"from_id": peer_id
+	})
+
+func handle_trade_response(peer_id: int, message: Dictionary):
+	"""Handle accepting or declining a trade request."""
+	if not characters.has(peer_id):
+		return
+
+	var accept = message.get("accept", false)
+
+	if not pending_trade_requests.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No pending trade request."})
+		return
+
+	var requester_id = pending_trade_requests[peer_id]
+	pending_trade_requests.erase(peer_id)
+
+	if not characters.has(requester_id):
+		send_to_peer(peer_id, {"type": "error", "message": "The other player is no longer online."})
+		return
+
+	var requester = characters[requester_id]
+	var responder = characters[peer_id]
+
+	if not accept:
+		# Declined
+		send_to_peer(requester_id, {
+			"type": "text",
+			"message": "[color=#FF8800]%s declined your trade request.[/color]" % responder.name
+		})
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]Trade request declined.[/color]"
+		})
+		return
+
+	# Accepted - check if either player is now in combat or trading
+	if requester.in_combat or responder.in_combat:
+		send_to_peer(peer_id, {"type": "error", "message": "Trade cancelled - a player entered combat."})
+		send_to_peer(requester_id, {"type": "error", "message": "Trade cancelled - a player entered combat."})
+		return
+
+	if active_trades.has(requester_id) or active_trades.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "Trade cancelled - a player is already trading."})
+		send_to_peer(requester_id, {"type": "error", "message": "Trade cancelled - a player is already trading."})
+		return
+
+	# Create trade session for both players
+	active_trades[peer_id] = {
+		"partner_id": requester_id,
+		"my_items": [],  # Array of inventory indices
+		"my_ready": false
+	}
+	active_trades[requester_id] = {
+		"partner_id": peer_id,
+		"my_items": [],
+		"my_ready": false
+	}
+
+	# Notify both players trade has started
+	send_to_peer(peer_id, {
+		"type": "trade_started",
+		"partner_name": requester.name,
+		"partner_class": requester.class_type
+	})
+	send_to_peer(requester_id, {
+		"type": "trade_started",
+		"partner_name": responder.name,
+		"partner_class": responder.class_type
+	})
+
+	# Send initial trade state
+	_send_trade_update(peer_id)
+	_send_trade_update(requester_id)
+
+func handle_trade_offer(peer_id: int, message: Dictionary):
+	"""Handle adding an item to trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Validate index
+	if index < 0 or index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index."})
+		return
+
+	# Check if already in offer
+	if index in trade.my_items:
+		send_to_peer(peer_id, {"type": "error", "message": "Item already in trade offer."})
+		return
+
+	# Check if item is equipped (can't trade equipped items)
+	var item = character.inventory[index]
+	var item_type = item.get("type", "")
+
+	# Add to offer
+	trade.my_items.append(index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
+func handle_trade_remove(peer_id: int, message: Dictionary):
+	"""Handle removing an item from trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Remove from offer
+	var offer_index = trade.my_items.find(index)
+	if offer_index != -1:
+		trade.my_items.remove_at(offer_index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
+func handle_trade_ready(peer_id: int):
+	"""Handle a player marking themselves as ready to complete trade."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var partner_id = trade.partner_id
+
+	if not active_trades.has(partner_id):
+		_cancel_trade(peer_id, "Partner disconnected.")
+		return
+
+	var partner_trade = active_trades[partner_id]
+
+	# Toggle ready status
+	trade.my_ready = not trade.my_ready
+
+	# Check if both ready - execute trade
+	if trade.my_ready and partner_trade.my_ready:
+		_execute_trade(peer_id, partner_id)
+	else:
+		# Just update status
+		_send_trade_update(peer_id)
+		_send_trade_update(partner_id)
+
+func _execute_trade(peer_id_a: int, peer_id_b: int):
+	"""Execute a trade between two players."""
+	var char_a = characters[peer_id_a]
+	var char_b = characters[peer_id_b]
+	var trade_a = active_trades[peer_id_a]
+	var trade_b = active_trades[peer_id_b]
+
+	# Collect items to trade (make copies before modifying inventories)
+	var items_from_a = []
+	var items_from_b = []
+
+	# Sort indices in descending order so we can remove without index shifting issues
+	var indices_a = trade_a.my_items.duplicate()
+	var indices_b = trade_b.my_items.duplicate()
+	indices_a.sort()
+	indices_a.reverse()
+	indices_b.sort()
+	indices_b.reverse()
+
+	# Validate both players have space for incoming items
+	var space_needed_a = indices_b.size()
+	var space_needed_b = indices_a.size()
+	var space_available_a = char_a.MAX_INVENTORY_SIZE - char_a.inventory.size() + indices_a.size()
+	var space_available_b = char_b.MAX_INVENTORY_SIZE - char_b.inventory.size() + indices_b.size()
+
+	if space_available_a < space_needed_a:
+		_cancel_trade(peer_id_a, "%s doesn't have enough inventory space." % char_a.name)
+		return
+	if space_available_b < space_needed_b:
+		_cancel_trade(peer_id_a, "%s doesn't have enough inventory space." % char_b.name)
+		return
+
+	# Extract items from A
+	for idx in indices_a:
+		if idx >= 0 and idx < char_a.inventory.size():
+			items_from_a.append(char_a.inventory[idx].duplicate(true))
+			char_a.inventory.remove_at(idx)
+
+	# Extract items from B
+	for idx in indices_b:
+		if idx >= 0 and idx < char_b.inventory.size():
+			items_from_b.append(char_b.inventory[idx].duplicate(true))
+			char_b.inventory.remove_at(idx)
+
+	# Give items to each player
+	for item in items_from_b:
+		char_a.add_item(item)
+	for item in items_from_a:
+		char_b.add_item(item)
+
+	# Clear trade state
+	active_trades.erase(peer_id_a)
+	active_trades.erase(peer_id_b)
+
+	# Save both characters
+	save_character(peer_id_a)
+	save_character(peer_id_b)
+
+	# Notify both players
+	send_to_peer(peer_id_a, {
+		"type": "trade_complete",
+		"received_count": items_from_b.size(),
+		"gave_count": items_from_a.size()
+	})
+	send_to_peer(peer_id_b, {
+		"type": "trade_complete",
+		"received_count": items_from_a.size(),
+		"gave_count": items_from_b.size()
+	})
+
+	# Send character updates
+	send_character_update(peer_id_a)
+	send_character_update(peer_id_b)
+
+func handle_trade_cancel(peer_id: int):
+	"""Handle a player cancelling a trade."""
+	if pending_trade_requests.has(peer_id):
+		var requester_id = pending_trade_requests[peer_id]
+		pending_trade_requests.erase(peer_id)
+		if peers.has(requester_id):
+			send_to_peer(requester_id, {
+				"type": "text",
+				"message": "[color=#FF8800]Trade request cancelled.[/color]"
+			})
+
+	if active_trades.has(peer_id):
+		_cancel_trade(peer_id, "Trade cancelled.")

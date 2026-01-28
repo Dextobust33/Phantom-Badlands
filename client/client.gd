@@ -9,6 +9,18 @@ func _get_monster_art():
 		_monster_art_script = load("res://client/monster_art.gd")
 	return _monster_art_script
 
+# Character script for thematic item display
+const CharacterScript = preload("res://shared/character.gd")
+
+func _recolor_ascii_art(art: String, new_color: String) -> String:
+	"""Replace ALL color tags in ASCII art with a new color for variety"""
+	# ASCII art uses [color=#HEXCODE]...[/color] format
+	# Replace all color tags with the new color using regex substitution
+	var color_regex = RegEx.new()
+	color_regex.compile("\\[color=#[0-9A-Fa-f]{6}\\]")
+	var new_tag = "[color=%s]" % new_color
+	return color_regex.sub(art, new_tag, true)  # true = replace all matches
+
 var connection = StreamPeerTCP.new()
 var connected = false
 var buffer = ""
@@ -66,7 +78,7 @@ var keybinds: Dictionary = {}  # Active keybinds (loaded from file or defaults)
 
 # Inventory comparison stat setting (what the ↑↓ arrows compare)
 var inventory_compare_stat: String = "level"  # Options: level, hp, atk, def, wit, mana, speed
-const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "speed"]
+const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "stamina", "energy", "speed"]
 var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare)
 
 # Settings mode
@@ -312,6 +324,17 @@ var watching_player: String = ""  # Name of player we're watching (empty = not w
 var watch_request_pending: String = ""  # Player who requested to watch us (waiting for approval)
 var watchers: Array = []  # Players currently watching us
 
+# Trading mode - trade items with another player
+var in_trade: bool = false
+var trade_partner_name: String = ""
+var trade_partner_class: String = ""
+var trade_my_items: Array = []  # Inventory indices of items I'm offering
+var trade_partner_items: Array = []  # Items partner is offering (full item data)
+var trade_my_ready: bool = false
+var trade_partner_ready: bool = false
+var pending_trade_request: String = ""  # Name of player requesting to trade with us
+var trade_pending_add: bool = false  # Waiting for player to select item to add
+
 # Font size constants for responsive scaling
 const CHAT_BASE_FONT_SIZE = 12  # Base size in windowed mode
 const CHAT_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
@@ -370,6 +393,7 @@ var discovered_monster_types: Dictionary = {}  # Tracks monster types by base na
 var current_enemy_name: String = ""
 var current_enemy_level: int = 0
 var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class affinity
+var current_enemy_abilities: Array = []  # Monster abilities for damage calculation
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
@@ -609,22 +633,22 @@ func _ready():
 
 	# Initialize combat sound players (subtle, not overwhelming)
 	combat_hit_player = AudioStreamPlayer.new()
-	combat_hit_player.volume_db = -22.0  # Very subtle
+	combat_hit_player.volume_db = -17.0  # Audible hit sound
 	add_child(combat_hit_player)
 	_generate_combat_hit_sound()
 
 	combat_crit_player = AudioStreamPlayer.new()
-	combat_crit_player.volume_db = -18.0  # Slightly louder for impact
+	combat_crit_player.volume_db = -14.0  # Louder for critical impact
 	add_child(combat_crit_player)
 	_generate_combat_crit_sound()
 
 	combat_victory_player = AudioStreamPlayer.new()
-	combat_victory_player.volume_db = -20.0  # Subtle victory chime
+	combat_victory_player.volume_db = -16.0  # Clear victory chime
 	add_child(combat_victory_player)
 	_generate_combat_victory_sound()
 
 	combat_ability_player = AudioStreamPlayer.new()
-	combat_ability_player.volume_db = -24.0  # Very subtle magical sound
+	combat_ability_player.volume_db = -18.0  # Audible magical sound
 	add_child(combat_ability_player)
 	_generate_combat_ability_sound()
 
@@ -1065,9 +1089,9 @@ func play_danger_sound():
 # ===== COMBAT SOUND EFFECTS =====
 
 func _generate_combat_hit_sound():
-	"""Generate a subtle click/thump for landing an attack - very short"""
+	"""Generate an ultra-subtle click for landing an attack - barely audible"""
 	var sample_rate = 44100
-	var duration = 0.08  # Very short
+	var duration = 0.05  # Ultra short
 	var samples = int(sample_rate * duration)
 
 	var audio = AudioStreamWAV.new()
@@ -1080,12 +1104,12 @@ func _generate_combat_hit_sound():
 
 	for i in range(samples):
 		var t = float(i) / sample_rate
-		var envelope = exp(-t * 50)  # Very fast decay
+		var envelope = exp(-t * 80)  # Very fast decay
 
-		# Low-mid click with some body
-		var sample = sin(t * 180 * TAU) * 0.4  # Low thump
-		sample += sin(t * 350 * TAU) * 0.3  # Mid click
-		sample *= envelope * 0.25  # Keep it subtle
+		# Soft low click
+		var sample = sin(t * 150 * TAU) * 0.3
+		sample += sin(t * 280 * TAU) * 0.2
+		sample *= envelope * 0.08  # Ultra conservative - barely audible
 
 		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
 		data[i * 2] = int_val & 0xFF
@@ -1095,9 +1119,9 @@ func _generate_combat_hit_sound():
 	combat_hit_player.stream = audio
 
 func _generate_combat_crit_sound():
-	"""Generate a satisfying critical hit sound - short impact"""
+	"""Generate a subtle critical hit sound - short soft impact"""
 	var sample_rate = 44100
-	var duration = 0.15  # Short but impactful
+	var duration = 0.1  # Short
 	var samples = int(sample_rate * duration)
 
 	var audio = AudioStreamWAV.new()
@@ -1110,13 +1134,13 @@ func _generate_combat_crit_sound():
 
 	for i in range(samples):
 		var t = float(i) / sample_rate
-		var envelope = exp(-t * 25)  # Fast decay but slightly longer
+		var envelope = exp(-t * 35)  # Fast decay
 
-		# Impact with bright overtone
-		var sample = sin(t * 100 * TAU) * 0.5  # Deep impact
-		sample += sin(t * 400 * TAU) * 0.3  # Bright tone
-		sample += sin(t * 600 * TAU) * 0.2  # Shimmer
-		sample *= envelope * 0.35  # Slightly louder than normal hit
+		# Soft impact with slight brightness
+		var sample = sin(t * 120 * TAU) * 0.4
+		sample += sin(t * 350 * TAU) * 0.25
+		sample += sin(t * 500 * TAU) * 0.15
+		sample *= envelope * 0.12  # Ultra conservative - barely louder than hit
 
 		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
 		data[i * 2] = int_val & 0xFF
@@ -1126,9 +1150,9 @@ func _generate_combat_crit_sound():
 	combat_crit_player.stream = audio
 
 func _generate_combat_victory_sound():
-	"""Generate a short satisfying victory chime"""
+	"""Generate an ultra-subtle victory chime"""
 	var sample_rate = 44100
-	var duration = 0.25  # Short celebration
+	var duration = 0.15  # Very short
 	var samples = int(sample_rate * duration)
 
 	var audio = AudioStreamWAV.new()
@@ -1139,10 +1163,10 @@ func _generate_combat_victory_sound():
 	var data = PackedByteArray()
 	data.resize(samples * 2)
 
-	# Quick ascending notes (G4 -> C5)
+	# Quick soft ascending notes (G4 -> C5)
 	var notes = [392.0, 523.25]  # G4, C5
-	var note_starts = [0.0, 0.08]
-	var note_durs = [0.12, 0.17]
+	var note_starts = [0.0, 0.05]
+	var note_durs = [0.08, 0.10]
 
 	for i in range(samples):
 		var t = float(i) / sample_rate
@@ -1156,7 +1180,7 @@ func _generate_combat_victory_sound():
 				var note_t = t - start
 				var envelope = 1.0 - (note_t / dur)
 				envelope = envelope * envelope
-				sample += sin(note_t * freq * TAU) * envelope * 0.25
+				sample += sin(note_t * freq * TAU) * envelope * 0.08  # Ultra conservative
 
 		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
 		data[i * 2] = int_val & 0xFF
@@ -1166,9 +1190,9 @@ func _generate_combat_victory_sound():
 	combat_victory_player.stream = audio
 
 func _generate_combat_ability_sound():
-	"""Generate a subtle magical whoosh for ability use"""
+	"""Generate a magical whoosh for ability use"""
 	var sample_rate = 44100
-	var duration = 0.12  # Very short
+	var duration = 0.15  # Slightly longer for clarity
 	var samples = int(sample_rate * duration)
 
 	var audio = AudioStreamWAV.new()
@@ -1181,13 +1205,14 @@ func _generate_combat_ability_sound():
 
 	for i in range(samples):
 		var t = float(i) / sample_rate
-		# Sweep from higher to lower frequency
+		# Gentle sweep
 		var freq = 800 - (t / duration) * 400  # 800Hz -> 400Hz sweep
 		var envelope = sin(t / duration * PI)  # Bell curve
 
-		var sample = sin(t * freq * TAU) * 0.2
-		sample += sin(t * freq * 2 * TAU) * 0.1  # Harmonic
-		sample *= envelope * 0.2  # Keep it subtle
+		var sample = sin(t * freq * TAU) * 0.25
+		sample += sin(t * freq * 1.5 * TAU) * 0.12  # Soft harmonic
+		sample += sin(t * freq * 2.0 * TAU) * 0.06  # Extra shimmer
+		sample *= envelope * 0.35  # Audible but not loud
 
 		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
 		data[i * 2] = int_val & 0xFF
@@ -1495,6 +1520,18 @@ func _process(delta):
 			else:
 				set_meta("buykey_%d_pressed" % i, false)
 
+	# Trade item selection with keybinds when adding items to trade
+	if game_state == GameState.PLAYING and not input_field.has_focus() and in_trade and trade_pending_add:
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("tradekey_%d_pressed" % i, false):
+					set_meta("tradekey_%d_pressed" % i, true)
+					select_trade_item(i)
+			else:
+				set_meta("tradekey_%d_pressed" % i, false)
+
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
 		for i in range(9):
@@ -1653,7 +1690,11 @@ func _process(delta):
 	# Note: quest_log_mode handled separately below to allow Space (Continue) but block number keys
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
 	var ability_popup_open = ability_popup != null and ability_popup.visible
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not ability_popup_open:
+	var gamble_popup_open = gamble_popup != null and gamble_popup.visible
+	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
+	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
+	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open:
 		for i in range(10):  # All 10 action bar slots
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -1679,8 +1720,8 @@ func _process(delta):
 		else:
 			set_meta("enter_pressed", false)
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, or monster select)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, or popups)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not any_popup_open:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -1757,6 +1798,40 @@ func _process(delta):
 			reset_connection_state()
 
 func _input(event):
+	# Handle numpad input for popup LineEdits (higher priority than other handlers)
+	if event is InputEventKey and event.pressed and not event.echo:
+		var popup_input: LineEdit = null
+		if ability_popup != null and ability_popup.visible and ability_popup_input != null and ability_popup_input.has_focus():
+			popup_input = ability_popup_input
+		elif gamble_popup != null and gamble_popup.visible and gamble_popup_input != null and gamble_popup_input.has_focus():
+			popup_input = gamble_popup_input
+		elif upgrade_popup != null and upgrade_popup.visible and upgrade_popup_input != null and upgrade_popup_input.has_focus():
+			popup_input = upgrade_popup_input
+		elif teleport_popup != null and teleport_popup.visible:
+			if teleport_popup_x_input != null and teleport_popup_x_input.has_focus():
+				popup_input = teleport_popup_x_input
+			elif teleport_popup_y_input != null and teleport_popup_y_input.has_focus():
+				popup_input = teleport_popup_y_input
+
+		if popup_input != null:
+			var numpad_map = {
+				KEY_KP_0: "0", KEY_KP_1: "1", KEY_KP_2: "2", KEY_KP_3: "3", KEY_KP_4: "4",
+				KEY_KP_5: "5", KEY_KP_6: "6", KEY_KP_7: "7", KEY_KP_8: "8", KEY_KP_9: "9",
+				KEY_KP_SUBTRACT: "-", KEY_KP_PERIOD: "."
+			}
+			if numpad_map.has(event.keycode):
+				var char_to_insert = numpad_map[event.keycode]
+				var caret_pos = popup_input.caret_column
+				var current_text = popup_input.text
+				popup_input.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
+				popup_input.caret_column = caret_pos + 1
+				get_viewport().set_input_as_handled()
+				return
+			elif event.keycode == KEY_KP_ENTER:
+				popup_input.text_submitted.emit(popup_input.text)
+				get_viewport().set_input_as_handled()
+				return
+
 	# Handle key input for rebinding mode
 	if rebinding_action != "" and event is InputEventKey and event.pressed:
 		# Capture the key for rebinding
@@ -2539,6 +2614,51 @@ func update_action_bar():
 				{"label": "Movement", "action_type": "local", "action_data": "settings_movement_keys", "enabled": true},
 				{"label": "Items", "action_type": "local", "action_data": "settings_item_keys", "enabled": true},
 				{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif pending_trade_request != "":
+		# Incoming trade request - Accept or Decline
+		current_actions = [
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Accept", "action_type": "local", "action_data": "trade_accept", "enabled": true},
+			{"label": "Decline", "action_type": "local", "action_data": "trade_decline", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif in_trade:
+		# Active trade session
+		if trade_pending_add:
+			# Selecting item to add - show Back button, items selected via number keys
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "trade_cancel_add", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Prev", "action_type": "local", "action_data": "trade_page_prev", "enabled": inventory_page > 0},
+				{"label": "Next", "action_type": "local", "action_data": "trade_page_next", "enabled": true},
+			]
+		else:
+			# Main trade window
+			var ready_label = "Unready" if trade_my_ready else "Ready"
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Add Item", "action_type": "local", "action_data": "trade_add_item", "enabled": true},
+				{"label": "Remove", "action_type": "local", "action_data": "trade_remove_item", "enabled": trade_my_items.size() > 0},
+				{"label": ready_label, "action_type": "local", "action_data": "trade_toggle_ready", "enabled": true},
+				{"label": "Cancel", "action_type": "local", "action_data": "trade_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3362,6 +3482,7 @@ func _create_ability_popup():
 	ability_popup_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ability_popup_input.custom_minimum_size = Vector2(0, 35)
 	ability_popup_input.text_submitted.connect(_on_ability_popup_input_submitted)
+	ability_popup_input.gui_input.connect(_on_popup_input_gui_input.bind(ability_popup_input))
 	vbox.add_child(ability_popup_input)
 
 	# Button container
@@ -3409,7 +3530,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
 	var suggested_amount = 0
 	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
-		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS
+		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS, defense, and level penalty
 		# Calculate mana needed based on player INT
 		var stats = character_data.get("stats", {})
 		var int_stat = stats.get("intelligence", 10)
@@ -3444,25 +3565,79 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var bonus_parts = []
 		match class_type:
 			"Wizard":
-				# Arcane Precision: +15% spell damage, +10% crit (avg +5% more)
-				effective_multiplier *= 1.15 * 1.05  # Include average crit bonus
+				# Arcane Precision: +15% spell damage, +10% crit chance
+				# Use base 15% only - don't assume crit for safety
+				effective_multiplier *= 1.15
 				bonus_parts.append("[color=#4169E1]+15% Arcane[/color]")
 			"Sorcerer":
-				# Chaos Magic: average ~22% bonus (25% double, 5% backfire)
-				effective_multiplier *= 1.10
-				bonus_parts.append("[color=#9400D3]+10% Chaos[/color]")
+				# Chaos Magic: 25% double, 5% backfire - DON'T assume bonus, could backfire
+				# Use no bonus for safety (worst case is 50% damage on backfire)
+				bonus_parts.append("[color=#9400D3]Chaos (variable)[/color]")
+
+		# Apply class affinity bonus (blue monsters = weak to mages = +25% damage)
+		var is_mage_path = class_type in ["Wizard", "Sage", "Sorcerer"]
+		if is_mage_path and current_enemy_color == "#00BFFF":  # Blue = Magical affinity = weak to mages
+			effective_multiplier *= 1.25
+			bonus_parts.append("[color=#00BFFF]+25% vs Magic[/color]")
+		elif is_mage_path and (current_enemy_color == "#FFFF00" or current_enemy_color == "#00FF00"):
+			# Yellow (Physical) or Green (Cunning) = resistant to mages = -15% damage
+			effective_multiplier *= 0.85
+			bonus_parts.append("[color=#FF6666]-15% resist[/color]")
 
 		if damage_buff > 0:
 			bonus_parts.append("[color=#FFD700]+%d%% buff[/color]" % damage_buff)
 
-		# Calculate mana needed (add 15% buffer to account for variance and ensure kill)
-		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.15)
+		# === NEW: Estimate monster defense reduction ===
+		# Defense formula: partial_red = (def / (def + 100)) * 0.6 * 0.5
+		# Estimate base defense by level tier (conservative/high estimates)
+		var estimated_defense = 5  # Default
+		if current_enemy_level <= 5:
+			estimated_defense = 8
+		elif current_enemy_level <= 15:
+			estimated_defense = 15
+		elif current_enemy_level <= 30:
+			estimated_defense = 25
+		elif current_enemy_level <= 50:
+			estimated_defense = 40
+		elif current_enemy_level <= 100:
+			estimated_defense = 60
+		elif current_enemy_level <= 500:
+			estimated_defense = 100
+		else:
+			estimated_defense = 150
+		# Add level-based defense bonus (level / 10)
+		estimated_defense += int(current_enemy_level / 10)
+		# Check for armored ability (+50% defense)
+		if "armored" in current_enemy_abilities:
+			estimated_defense = int(estimated_defense * 1.5)
+			bonus_parts.append("[color=#6666FF]Armored[/color]")
+		# Apply defense reduction formula (50% of normal defense formula for abilities)
+		var def_ratio = float(estimated_defense) / (float(estimated_defense) + 100.0)
+		var defense_reduction = def_ratio * 0.6 * 0.5
+		effective_multiplier *= (1.0 - defense_reduction)
+
+		# === NEW: Apply level penalty if monster level > player level ===
+		var player_level = character_data.get("level", 1)
+		var level_diff = current_enemy_level - player_level
+		if level_diff > 0:
+			var level_penalty = minf(0.40, level_diff * 0.015)  # 1.5% per level, max 40%
+			effective_multiplier *= (1.0 - level_penalty)
+			if level_penalty >= 0.05:
+				bonus_parts.append("[color=#FF6666]-%d%% lvl[/color]" % int(level_penalty * 100))
+
+		# === NEW: Apply worst-case damage variance (0.85x) instead of average ===
+		# This ensures the suggested amount accounts for bad RNG rolls
+		effective_multiplier *= 0.85
+
+		# Calculate mana needed (small buffer for any remaining variance)
+		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.05)
 		suggested_amount = mini(mana_needed, current_resource)
 
+		# Display shows the conservative damage per mana (after all reductions)
 		var damage_per_mana = snapped(effective_multiplier, 0.1)
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
 		if bonus_text != "":
-			bonus_text = " " + bonus_text
+			bonus_text = "\n" + bonus_text
 		ability_popup_description.text = "[center]~%.1f dmg/mana (INT %d)%s\nEnemy HP: %d[/center]" % [damage_per_mana, int_stat, bonus_text, current_enemy_hp]
 
 	if suggested_amount > 0:
@@ -3524,6 +3699,26 @@ func _on_ability_popup_confirm():
 func _on_ability_popup_cancel():
 	"""Handle cancel button in ability popup."""
 	cancel_variable_cost_ability()
+
+func _on_popup_input_gui_input(event: InputEvent, line_edit: LineEdit):
+	"""Handle numpad input for popup LineEdits since Godot doesn't automatically convert them."""
+	if event is InputEventKey and event.pressed and not event.echo:
+		var numpad_map = {
+			KEY_KP_0: "0", KEY_KP_1: "1", KEY_KP_2: "2", KEY_KP_3: "3", KEY_KP_4: "4",
+			KEY_KP_5: "5", KEY_KP_6: "6", KEY_KP_7: "7", KEY_KP_8: "8", KEY_KP_9: "9",
+			KEY_KP_SUBTRACT: "-", KEY_KP_PERIOD: "."
+		}
+		if numpad_map.has(event.keycode):
+			var char_to_insert = numpad_map[event.keycode]
+			var caret_pos = line_edit.caret_column
+			var current_text = line_edit.text
+			line_edit.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
+			line_edit.caret_column = caret_pos + 1
+			line_edit.accept_event()
+		elif event.keycode == KEY_KP_ENTER:
+			# Treat numpad enter same as regular enter
+			line_edit.text_submitted.emit(line_edit.text)
+			line_edit.accept_event()
 
 # ===== GAMBLING POPUP =====
 
@@ -3607,6 +3802,7 @@ func _create_gamble_popup():
 	gamble_popup_input.custom_minimum_size = Vector2(0, 40)
 	gamble_popup_input.add_theme_font_size_override("font_size", 16)
 	gamble_popup_input.text_submitted.connect(_on_gamble_popup_input_submitted)
+	gamble_popup_input.gui_input.connect(_on_popup_input_gui_input.bind(gamble_popup_input))
 	vbox.add_child(gamble_popup_input)
 
 	# Button container
@@ -3818,6 +4014,7 @@ func _create_upgrade_popup():
 	upgrade_popup_input.add_theme_font_size_override("font_size", 14)
 	upgrade_popup_input.text_submitted.connect(_on_upgrade_popup_input_submitted)
 	upgrade_popup_input.text_changed.connect(_on_upgrade_input_changed)
+	upgrade_popup_input.gui_input.connect(_on_popup_input_gui_input.bind(upgrade_popup_input))
 	vbox.add_child(upgrade_popup_input)
 
 	# Button container
@@ -4078,6 +4275,7 @@ func _create_teleport_popup():
 	teleport_popup_x_input.custom_minimum_size = Vector2(120, 35)
 	teleport_popup_x_input.add_theme_font_size_override("font_size", 14)
 	teleport_popup_x_input.text_changed.connect(_on_teleport_coords_changed)
+	teleport_popup_x_input.gui_input.connect(_on_popup_input_gui_input.bind(teleport_popup_x_input))
 	x_container.add_child(teleport_popup_x_input)
 
 	# Y input
@@ -4098,6 +4296,7 @@ func _create_teleport_popup():
 	teleport_popup_y_input.add_theme_font_size_override("font_size", 14)
 	teleport_popup_y_input.text_changed.connect(_on_teleport_coords_changed)
 	teleport_popup_y_input.text_submitted.connect(_on_teleport_y_submitted)
+	teleport_popup_y_input.gui_input.connect(_on_popup_input_gui_input.bind(teleport_popup_y_input))
 	y_container.add_child(teleport_popup_y_input)
 
 	# World bounds note
@@ -4672,6 +4871,7 @@ func execute_local_action(action: String):
 			var next_idx = (current_idx + 1) % COMPARE_STAT_OPTIONS.size()
 			inventory_compare_stat = COMPARE_STAT_OPTIONS[next_idx]
 			display_game("[color=#00FF00]Compare stat changed to: %s[/color]" % _get_compare_stat_label(inventory_compare_stat))
+			_save_keybinds()  # Persist the setting
 			update_action_bar()  # Update button label
 		"salvage_all":
 			pending_inventory_action = ""
@@ -4917,6 +5117,43 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"settings_rebind_move_right":
 			start_rebinding("move_right")
+			update_action_bar()
+		# Trade actions
+		"trade_accept":
+			send_to_server({"type": "trade_response", "accept": true})
+			pending_trade_request = ""
+		"trade_decline":
+			send_to_server({"type": "trade_response", "accept": false})
+			pending_trade_request = ""
+			update_action_bar()
+		"trade_add_item":
+			trade_pending_add = true
+			inventory_page = 0
+			display_trade_window()
+			update_action_bar()
+		"trade_cancel_add":
+			trade_pending_add = false
+			display_trade_window()
+			update_action_bar()
+		"trade_page_prev":
+			if inventory_page > 0:
+				inventory_page -= 1
+				display_trade_window()
+		"trade_page_next":
+			var total_pages = max(1, int(ceil(float(character_data.get("inventory", []).size()) / INVENTORY_PAGE_SIZE)))
+			if inventory_page < total_pages - 1:
+				inventory_page += 1
+				display_trade_window()
+		"trade_remove_item":
+			# Remove last added item
+			if trade_my_items.size() > 0:
+				var last_idx = trade_my_items[-1]
+				send_to_server({"type": "trade_remove", "index": last_idx})
+		"trade_toggle_ready":
+			send_to_server({"type": "trade_ready"})
+		"trade_cancel":
+			send_to_server({"type": "trade_cancel"})
+			_exit_trade_mode()
 			update_action_bar()
 
 func select_wish(index: int):
@@ -5416,6 +5653,8 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0,
+		"max_stamina": 0,     # Stamina bonus from affixes
+		"max_energy": 0,      # Energy bonus from affixes
 		"speed": 0,
 		# Class-specific bonuses
 		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
@@ -5436,66 +5675,63 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 	# Base bonus scales with item level, rarity, and wear
 	var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
-	# Check class-specific gear FIRST (before generic types)
-	if "ring_arcane" in item_type:
-		# Arcane ring (Mage): INT + mana_regen
-		bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-	elif "ring_shadow" in item_type:
-		# Shadow ring (Trickster): WITS + energy_regen
-		bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-	elif "amulet_mystic" in item_type:
-		# Mystic amulet (Mage): max_mana + meditate_bonus
-		bonuses.max_mana += base_bonus * 3
-		bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
-	elif "amulet_evasion" in item_type:
-		# Evasion amulet (Trickster): speed + flee_bonus
-		bonuses.speed += base_bonus
-		bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
-	elif "boots_swift" in item_type:
-		# Swift boots (Trickster): Speed + WITS + energy_regen
-		bonuses.speed += int(base_bonus * 1.5)
-		bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
-	elif "weapon_warlord" in item_type:
-		# Warlord weapon (Warrior): ATK + stamina_regen
-		bonuses.attack += base_bonus * 3
-		bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-	elif "shield_bulwark" in item_type:
-		# Bulwark shield (Warrior): DEF + HP + stamina_regen
-		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.max_hp += base_bonus * 5
-		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-	# Generic item types (if not class-specific)
-	elif "weapon" in item_type:
-		bonuses.attack += base_bonus * 3  # Weapons are THE attack item
+	# STEP 1: Apply base item type bonuses (all items get these)
+	# Note: Multipliers match server's character.gd exactly
+	if "weapon" in item_type:
+		bonuses.attack += int(base_bonus * 2.5)  # Weapons give strong attack
 		bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 	elif "armor" in item_type:
-		bonuses.defense += base_bonus * 2
+		bonuses.defense += int(base_bonus * 1.75)  # Armor gives defense
 		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.max_hp += base_bonus * 3
+		bonuses.max_hp += int(base_bonus * 2.5)
 	elif "helm" in item_type:
 		bonuses.defense += base_bonus
 		bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 	elif "shield" in item_type:
 		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.max_hp += base_bonus * 5  # Shields are THE HP item
+		bonuses.max_hp += base_bonus * 4  # Shields give good HP
 		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 	elif "ring" in item_type:
 		bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 		bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 	elif "amulet" in item_type:
-		bonuses.max_mana += base_bonus * 2
+		bonuses.max_mana += int(base_bonus * 1.75)
 		bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 	elif "boots" in item_type:
 		bonuses.speed += base_bonus
 		bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+
+	# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
+	if "ring_arcane" in item_type:
+		# Arcane ring (Mage): extra INT + mana_regen
+		bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "ring_shadow" in item_type:
+		# Shadow ring (Trickster): extra WITS + energy_regen
+		bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "amulet_mystic" in item_type:
+		# Mystic amulet (Mage): extra max_mana + meditate_bonus
+		bonuses.max_mana += base_bonus  # Extra mana on top of base
+		bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+	elif "amulet_evasion" in item_type:
+		# Evasion amulet (Trickster): extra speed + flee_bonus
+		bonuses.speed += base_bonus
+		bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
+	elif "boots_swift" in item_type:
+		# Swift boots (Trickster): extra Speed + WITS + energy_regen
+		bonuses.speed += int(base_bonus * 0.5)  # Extra speed on top of base
+		bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
+	elif "weapon_warlord" in item_type:
+		# Warlord weapon (Warrior): extra stamina_regen (base weapon stats already applied)
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "shield_bulwark" in item_type:
+		# Bulwark shield (Warrior): extra stamina_regen (base shield stats already applied)
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 
 	# Apply affix bonuses (also affected by wear)
 	var affixes = item.get("affixes", {})
@@ -5519,6 +5755,10 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		bonuses.wits += int(affixes.wits_bonus * wear_penalty)
 	if affixes.has("mana_bonus"):
 		bonuses.max_mana += int(affixes.mana_bonus * wear_penalty)
+	if affixes.has("stamina_bonus"):
+		bonuses.max_stamina += int(affixes.stamina_bonus * wear_penalty)
+	if affixes.has("energy_bonus"):
+		bonuses.max_energy += int(affixes.energy_bonus * wear_penalty)
 	if affixes.has("speed_bonus"):
 		bonuses.speed += int(affixes.speed_bonus * wear_penalty)
 
@@ -5534,6 +5774,10 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 		bonuses.wits += int(item.wits_bonus * wear_penalty)
 	if item.has("mana_bonus"):
 		bonuses.max_mana += int(item.mana_bonus * wear_penalty)
+	if item.has("stamina_bonus"):
+		bonuses.max_stamina += int(item.stamina_bonus * wear_penalty)
+	if item.has("energy_bonus"):
+		bonuses.max_energy += int(item.energy_bonus * wear_penalty)
 	if item.has("speed_bonus"):
 		bonuses.speed += int(item.speed_bonus * wear_penalty)
 
@@ -5577,6 +5821,12 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	if bonuses.get("speed", 0) > 0:
 		display_game("[color=#FFFF00]+%d Speed[/color]" % bonuses.speed)
 		stats_shown = true
+	if bonuses.get("max_stamina", 0) > 0:
+		display_game("[color=#FFCC00]+%d Max Stamina[/color]" % bonuses.max_stamina)
+		stats_shown = true
+	if bonuses.get("max_energy", 0) > 0:
+		display_game("[color=#66FF66]+%d Max Energy[/color]" % bonuses.max_energy)
+		stats_shown = true
 
 	# Class-specific bonuses
 	if bonuses.get("mana_regen", 0) > 0:
@@ -5617,13 +5867,19 @@ func _get_item_compare_value(item: Dictionary, stat: String) -> int:
 		"mana":
 			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("max_mana", 0)
+		"stamina":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("max_stamina", 0)
+		"energy":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("max_energy", 0)
 		"speed":
 			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("speed", 0)
 		_:
 			return item.get("level", 1)
 
-func _get_compare_arrow(new_item: Dictionary, equipped_item: Dictionary) -> String:
+func _get_compare_arrow(new_item: Dictionary, equipped_item) -> String:
 	"""Get the comparison arrow text based on inventory_compare_stat setting"""
 	if equipped_item == null or not (equipped_item is Dictionary):
 		return "[color=#00FF00]NEW[/color]"
@@ -5647,6 +5903,8 @@ func _get_compare_stat_label(stat: String) -> String:
 		"def": return "Defense"
 		"wit": return "Wits"
 		"mana": return "Mana"
+		"stamina": return "Stamina"
+		"energy": return "Energy"
 		"speed": return "Speed"
 		_: return stat.capitalize()
 
@@ -5662,6 +5920,8 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 		"defense": "DEF",
 		"max_hp": "HP",
 		"max_mana": "Mana",
+		"max_stamina": "Stamina",
+		"max_energy": "Energy",
 		"strength": "STR",
 		"constitution": "CON",
 		"dexterity": "DEX",
@@ -5707,18 +5967,23 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 		else:
 			display_game("  [color=#808080](No stat bonuses)[/color]")
 
-	# Compare effects using computed effect descriptions
+	# Compare effects using computed effect descriptions - ONLY for consumables
+	# Equipment stats are already compared via computed bonuses above
 	var new_type = new_item.get("type", "")
-	var old_type = old_item.get("type", "")
-	var new_effect = _get_item_effect_description(new_type, new_item.get("level", 1), new_item.get("rarity", "common"))
-	var old_effect = _get_item_effect_description(old_type, old_item.get("level", 1), old_item.get("rarity", "common"))
+	var new_slot = _get_slot_for_item_type(new_type)
 
-	# Always show effect comparison so users can see what items do
-	if new_effect != old_effect:
-		display_game("  [color=#FF6666]Current:[/color] %s" % old_effect)
-		display_game("  [color=#00FF00]New:[/color] %s" % new_effect)
-	elif new_effect != "" and new_effect != "Unknown effect":
-		display_game("  [color=#808080]Effect:[/color] %s" % new_effect)
+	# Skip effect description for equipment - stats are already shown above
+	if new_slot == "":
+		# Consumable - show effect description
+		var old_type = old_item.get("type", "")
+		var new_effect = _get_item_effect_description(new_type, new_item.get("level", 1), new_item.get("rarity", "common"))
+		var old_effect = _get_item_effect_description(old_type, old_item.get("level", 1), old_item.get("rarity", "common"))
+
+		if new_effect != old_effect:
+			display_game("  [color=#FF6666]Current:[/color] %s" % old_effect)
+			display_game("  [color=#00FF00]New:[/color] %s" % new_effect)
+		elif new_effect != "" and new_effect != "Unknown effect":
+			display_game("  [color=#808080]Effect:[/color] %s" % new_effect)
 
 func send_upgrade_slot(slot: String):
 	"""Show upgrade popup for a specific equipment slot"""
@@ -5993,6 +6258,119 @@ func process_password_change_input(input_text: String):
 				"new_password": temp_new_password
 			})
 
+# ===== TRADING FUNCTIONS =====
+
+func _exit_trade_mode():
+	"""Exit trading mode and reset all trade state."""
+	in_trade = false
+	trade_partner_name = ""
+	trade_partner_class = ""
+	trade_my_items = []
+	trade_partner_items = []
+	trade_my_ready = false
+	trade_partner_ready = false
+	pending_trade_request = ""
+	trade_pending_add = false
+
+func display_trade_window():
+	"""Display the trade window showing both offers."""
+	game_output.clear()
+
+	var my_class = character_data.get("class", "")
+	var inventory = character_data.get("inventory", [])
+
+	display_game("[color=#FFD700]═══════════════════════════════════════════════════[/color]")
+	display_game("[color=#FFD700]           TRADING WITH %s[/color]" % trade_partner_name.to_upper())
+	display_game("[color=#FFD700]═══════════════════════════════════════════════════[/color]")
+	display_game("")
+
+	# Your Offer section
+	display_game("[color=#00FF00]── YOUR OFFER ──[/color]")
+	if trade_my_items.is_empty():
+		display_game("  [color=#555555](no items offered)[/color]")
+	else:
+		for i in range(trade_my_items.size()):
+			var inv_idx = trade_my_items[i]
+			if inv_idx >= 0 and inv_idx < inventory.size():
+				var item = inventory[inv_idx]
+				var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+				var themed_name = _get_themed_item_name(item, my_class)
+				display_game("  %d. [color=%s]%s[/color]" % [i + 1, rarity_color, themed_name])
+	display_game("")
+
+	# Their Offer section
+	display_game("[color=#00FFFF]── %s'S OFFER ──[/color]" % trade_partner_name.to_upper())
+	if trade_partner_items.is_empty():
+		display_game("  [color=#555555](no items offered)[/color]")
+	else:
+		for i in range(trade_partner_items.size()):
+			var item = trade_partner_items[i]
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			# Use partner's class for their items (owner's perspective)
+			var themed_name = _get_themed_item_name(item, trade_partner_class)
+			display_game("  %d. [color=%s]%s[/color]" % [i + 1, rarity_color, themed_name])
+	display_game("")
+	display_game("")
+
+	# Status
+	var my_status = "[color=#00FF00]READY[/color]" if trade_my_ready else "[color=#808080]Not Ready[/color]"
+	var their_status = "[color=#00FF00]READY[/color]" if trade_partner_ready else "[color=#808080]Not Ready[/color]"
+	display_game("Your Status: %s    |    %s's Status: %s" % [my_status, trade_partner_name, their_status])
+	display_game("")
+
+	# Instructions
+	if trade_pending_add:
+		display_game("[color=#FFFF00]Select an item from your inventory to add (1-9):[/color]")
+		# Show inventory items for selection
+		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+		for i in range(start_idx, end_idx):
+			var item = inventory[i]
+			var display_num = (i - start_idx) + 1
+			var in_offer = i in trade_my_items
+			var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			var themed_name = _get_themed_item_name(item, my_class)
+			display_game("%s%d. [color=%s]%s[/color]" % [prefix, display_num, rarity_color, themed_name])
+	else:
+		display_game("[color=#808080][Q] Add Item  |  [W] Remove Item  |  [E] Ready/Unready  |  [R] Cancel[/color]")
+
+func handle_trade_command(target_name: String):
+	"""Send a trade request to another player."""
+	if in_trade:
+		display_game("[color=#FF0000]You are already in a trade.[/color]")
+		return
+	if in_combat:
+		display_game("[color=#FF0000]Cannot trade while in combat.[/color]")
+		return
+
+	send_to_server({
+		"type": "trade_request",
+		"target": target_name
+	})
+
+func select_trade_item(display_index: int):
+	"""Add an item to the trade offer by its display index (0-8)."""
+	var inventory = character_data.get("inventory", [])
+	var actual_index = inventory_page * INVENTORY_PAGE_SIZE + display_index
+
+	if actual_index < 0 or actual_index >= inventory.size():
+		display_game("[color=#FF0000]Invalid item.[/color]")
+		return
+
+	# Check if already in offer
+	if actual_index in trade_my_items:
+		# Remove it instead
+		send_to_server({"type": "trade_remove", "index": actual_index})
+	else:
+		# Add it
+		send_to_server({"type": "trade_offer", "index": actual_index})
+
+	# Go back to main trade view
+	trade_pending_add = false
+	display_trade_window()
+	update_action_bar()
+
 # ===== INVENTORY FUNCTIONS =====
 
 func open_inventory():
@@ -6079,24 +6457,30 @@ func display_inventory():
 	if not has_character:
 		return
 
+	# Clear output to show fresh inventory view
+	game_output.clear()
+
 	var inventory = character_data.get("inventory", [])
 	var equipped = character_data.get("equipped", {})
 
 	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
 
-	# Show equipped items with level and stats
+	# Show equipped items with level and stats (using themed names)
+	var player_class = character_data.get("class", "")
 	display_game("[color=#00FFFF]Equipped:[/color]")
 	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
+		var slot_display = _get_themed_slot_name(slot, player_class)
 		if item != null and item is Dictionary:
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var item_level = item.get("level", 1)
 			var bonus_text = _get_item_bonus_summary(item)
+			var themed_name = _get_themed_item_name(item, player_class)
 			display_game("  %s: [color=%s]%s[/color] (Lv%d) %s" % [
-				slot.capitalize(), rarity_color, item.get("name", "Unknown"), item_level, bonus_text
+				slot_display, rarity_color, themed_name, item_level, bonus_text
 			])
 		else:
-			display_game("  %s: [color=#555555](empty)[/color]" % slot.capitalize())
+			display_game("  %s: [color=#555555](empty)[/color]" % slot_display)
 
 	# Show total equipment bonuses
 	var bonuses = _calculate_equipment_bonuses(equipped)
@@ -6146,11 +6530,12 @@ func display_inventory():
 					display_num, rarity_color, item.get("name", "Unknown"), qty_text
 				])
 			else:
-				# Show equipment with stats at a glance
+				# Show equipment with stats at a glance (using themed names)
 				var bonus_text = _get_item_bonus_summary(item)
 				var slot_abbr = _get_slot_abbreviation(item_type)
+				var themed_name = _get_themed_item_name(item, player_class)
 				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s" % [
-					display_num, compare_text, rarity_color, item.get("name", "Unknown"), item_level, bonus_text, slot_abbr
+					display_num, compare_text, rarity_color, themed_name, item_level, bonus_text, slot_abbr
 				])
 
 	display_game("")
@@ -6225,6 +6610,30 @@ func _get_slot_abbreviation(item_type: String) -> String:
 	elif "amulet" in item_type:
 		return "[color=#666666][AMU][/color]"
 	return ""
+
+func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String:
+	"""Get the item name themed for a specific class.
+	If owner_class is empty, uses the current player's class."""
+	var item_name = item.get("name", "Unknown")
+	var item_type = item.get("type", "")
+	var slot = _get_slot_for_item_type(item_type)
+
+	if slot == "":
+		return item_name  # Not an equipment item
+
+	var class_type = owner_class if owner_class != "" else character_data.get("class", "")
+	if class_type == "":
+		return item_name
+
+	return CharacterScript.get_themed_item_name(item_name, slot, class_type)
+
+func _get_themed_slot_name(slot: String, class_type: String = "") -> String:
+	"""Get the themed name for an equipment slot based on class."""
+	if class_type == "":
+		class_type = character_data.get("class", "")
+	if class_type == "" or not CharacterScript.CLASS_EQUIPMENT_THEMES.has(class_type):
+		return slot.capitalize()
+	return CharacterScript.CLASS_EQUIPMENT_THEMES[class_type].get(slot, slot.capitalize())
 
 func prompt_inventory_action(action_type: String):
 	"""Prompt user for item selection for inventory action"""
@@ -6928,6 +7337,87 @@ func get_hp_color(percent: float) -> Color:
 		var t = percent / 50.0
 		return Color(0.8, 0.1 + t * 0.7, 0.1, 1.0)
 
+# Health bar animation variables
+var last_player_hp_percent: float = 100.0
+var last_enemy_hp_percent: float = 100.0
+var hp_bar_tween: Tween = null
+var enemy_hp_bar_tween: Tween = null
+var low_hp_pulse_active: bool = false
+
+func animate_hp_bar_change(fill_node: Control, target_percent: float, is_player: bool = true):
+	"""Animate HP bar changes with smooth tweening"""
+	if not fill_node:
+		return
+
+	# Kill existing tween if any
+	var tween_ref = hp_bar_tween if is_player else enemy_hp_bar_tween
+	if tween_ref and tween_ref.is_valid():
+		tween_ref.kill()
+
+	# Create new tween for smooth transition
+	var new_tween = create_tween()
+	new_tween.tween_property(fill_node, "anchor_right", target_percent / 100.0, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+	if is_player:
+		hp_bar_tween = new_tween
+	else:
+		enemy_hp_bar_tween = new_tween
+
+	# Flash effect on damage taken
+	var current_percent = last_player_hp_percent if is_player else last_enemy_hp_percent
+	if target_percent < current_percent:
+		# Taking damage - flash red
+		flash_hp_bar(fill_node, Color(1, 0, 0, 0.5))
+	elif target_percent > current_percent:
+		# Healing - flash green
+		flash_hp_bar(fill_node, Color(0, 1, 0, 0.5))
+
+	# Update tracking
+	if is_player:
+		last_player_hp_percent = target_percent
+		# Start low HP pulse if below 25%
+		if target_percent < 25.0 and not low_hp_pulse_active:
+			start_low_hp_pulse()
+		elif target_percent >= 25.0 and low_hp_pulse_active:
+			stop_low_hp_pulse()
+	else:
+		last_enemy_hp_percent = target_percent
+
+func flash_hp_bar(fill_node: Control, flash_color: Color):
+	"""Quick flash effect on HP bar"""
+	if not fill_node:
+		return
+	var flash_tween = create_tween()
+	var original_modulate = fill_node.modulate
+	fill_node.modulate = flash_color
+	flash_tween.tween_property(fill_node, "modulate", original_modulate, 0.2)
+
+func start_low_hp_pulse():
+	"""Start pulsing effect when player HP is critically low"""
+	low_hp_pulse_active = true
+	_pulse_low_hp()
+
+func stop_low_hp_pulse():
+	"""Stop the low HP pulse effect"""
+	low_hp_pulse_active = false
+	if player_health_bar:
+		var fill = player_health_bar.get_node("Fill")
+		if fill:
+			fill.modulate = Color(1, 1, 1, 1)
+
+func _pulse_low_hp():
+	"""Create pulsing effect for low HP"""
+	if not low_hp_pulse_active or not player_health_bar:
+		return
+	var fill = player_health_bar.get_node("Fill")
+	if not fill:
+		return
+
+	var pulse_tween = create_tween()
+	pulse_tween.tween_property(fill, "modulate", Color(1.5, 0.5, 0.5, 1), 0.4)
+	pulse_tween.tween_property(fill, "modulate", Color(1, 1, 1, 1), 0.4)
+	pulse_tween.tween_callback(_pulse_low_hp)
+
 func update_player_level():
 	if not player_level_label or not has_character:
 		return
@@ -6951,7 +7441,8 @@ func update_player_hp_bar():
 	var label = player_health_bar.get_node("HPLabel")
 
 	if fill:
-		fill.anchor_right = percent / 100.0
+		# Animate the HP bar change instead of instant update
+		animate_hp_bar_change(fill, percent, true)
 		var style = fill.get_theme_stylebox("panel").duplicate()
 		style.bg_color = get_hp_color(percent)
 		fill.add_theme_stylebox_override("panel", style)
@@ -7105,23 +7596,23 @@ func update_resource_bar():
 	match path:
 		"warrior":
 			current_val = character_data.get("current_stamina", 0)
-			max_val = max(character_data.get("max_stamina", 1), 1)
+			max_val = max(character_data.get("total_max_stamina", character_data.get("max_stamina", 1)), 1)
 			resource_name = "Stamina"
 			bar_color = Color(0.9, 0.75, 0.1)  # Yellow
 		"mage":
 			current_val = character_data.get("current_mana", 0)
-			max_val = max(character_data.get("max_mana", 1), 1)
+			max_val = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			resource_name = "Mana"
 			bar_color = Color(0.2, 0.7, 0.8)  # Teal
 		"trickster":
 			current_val = character_data.get("current_energy", 0)
-			max_val = max(character_data.get("max_energy", 1), 1)
+			max_val = max(character_data.get("total_max_energy", character_data.get("max_energy", 1)), 1)
 			resource_name = "Energy"
 			bar_color = Color(0.1, 0.5, 0.15)  # Dark Green
 		_:
 			# No path - show mana by default
 			current_val = character_data.get("current_mana", 0)
-			max_val = max(character_data.get("max_mana", 1), 1)
+			max_val = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			resource_name = "Mana"
 			bar_color = Color(0.2, 0.7, 0.8)
 
@@ -7245,7 +7736,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 		# Actual HP values from server - always accurate
 		var percent = (float(actual_hp) / float(actual_max_hp)) * 100.0
 		if fill:
-			fill.anchor_right = percent / 100.0
+			animate_hp_bar_change(fill, percent, false)
 		if hp_label:
 			hp_label.text = "%d/%d" % [actual_hp, actual_max_hp]
 		# Store for future reference
@@ -7271,7 +7762,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 		var percent = (float(suspected_current) / float(suspected_max)) * 100.0
 
 		if fill:
-			fill.anchor_right = percent / 100.0
+			animate_hp_bar_change(fill, percent, false)
 		if hp_label:
 			if is_estimate:
 				hp_label.text = "~%d/%d" % [suspected_current, suspected_max]
@@ -7279,7 +7770,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 				hp_label.text = "%d/%d" % [suspected_current, suspected_max]
 	else:
 		if fill:
-			fill.anchor_right = 1.0
+			animate_hp_bar_change(fill, 100.0, false)
 		if hp_label:
 			hp_label.text = "???"
 
@@ -7838,6 +8329,7 @@ func handle_server_message(message: Dictionary):
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset outsmart for new combat
 			last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
+			last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
 			update_action_bar()
 
 			# Track XP before combat for two-color XP bar
@@ -7863,11 +8355,20 @@ func handle_server_message(message: Dictionary):
 				if monster_name != "":
 					# Render art locally using MonsterArt class (use base name for art lookup)
 					var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name)
+
+					# Recolor ASCII art for visual variety (works for both flock and regular encounters)
+					var art_color = message.get("flock_art_color", "")  # Flock encounters use flock_art_color
+					if art_color == "":
+						art_color = message.get("art_color", "")  # Regular encounters use art_color
+					if art_color != "":
+						local_art = _recolor_ascii_art(local_art, art_color)
+
 					# Build encounter text with traits
 					var encounter_text = _build_encounter_text(combat_state)
-					# For flock, prepend the "Another X appears!" message
+					# For flock, prepend the "Another X appears!" message with pack number
 					if message.get("is_flock", false):
-						display_msg = "[color=#FF4444]Another %s appears![/color]\n%s\n%s" % [monster_name, local_art, encounter_text]
+						var flock_count = message.get("flock_count", 1)
+						display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
 					else:
 						display_msg = local_art + "\n" + encounter_text
 			display_game(display_msg)
@@ -7876,6 +8377,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_name = combat_state.get("monster_name", "Enemy")
 			current_enemy_level = combat_state.get("monster_level", 1)
 			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
+			current_enemy_abilities = combat_state.get("monster_abilities", [])
 			damage_dealt_to_current_enemy = 0
 			# Get actual monster HP from server
 			current_enemy_hp = combat_state.get("monster_hp", -1)
@@ -7980,6 +8482,7 @@ func handle_server_message(message: Dictionary):
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
 			current_forcefield = 0  # Reset forcefield display
+			stop_low_hp_pulse()  # Stop any HP bar animations
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
@@ -8246,6 +8749,60 @@ func handle_server_message(message: Dictionary):
 			forge_available = true
 			update_action_bar()
 
+		# Trading system messages
+		"trade_request_received":
+			pending_trade_request = message.get("from_name", "")
+			display_game("")
+			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#FFD700]TRADE REQUEST[/color]")
+			display_game("[color=#00FFFF]%s wants to trade with you.[/color]" % pending_trade_request)
+			display_game("[color=#808080][Q] Accept  |  [W] Decline[/color]")
+			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
+		"trade_started":
+			in_trade = true
+			trade_partner_name = message.get("partner_name", "")
+			trade_partner_class = message.get("partner_class", "")
+			trade_my_items = []
+			trade_partner_items = []
+			trade_my_ready = false
+			trade_partner_ready = false
+			pending_trade_request = ""
+			trade_pending_add = false
+			display_game("")
+			display_game("[color=#00FF00]Trade started with %s![/color]" % trade_partner_name)
+			display_trade_window()
+			update_action_bar()
+
+		"trade_update":
+			trade_partner_name = message.get("partner_name", trade_partner_name)
+			trade_partner_class = message.get("partner_class", trade_partner_class)
+			trade_my_items = message.get("my_items", [])
+			trade_partner_items = message.get("partner_items", [])
+			trade_my_ready = message.get("my_ready", false)
+			trade_partner_ready = message.get("partner_ready", false)
+			if in_trade:
+				display_trade_window()
+				update_action_bar()
+
+		"trade_cancelled":
+			var reason = message.get("reason", "Trade cancelled.")
+			display_game("[color=#FF8800]%s[/color]" % reason)
+			_exit_trade_mode()
+			update_action_bar()
+
+		"trade_complete":
+			var received = message.get("received_count", 0)
+			var gave = message.get("gave_count", 0)
+			display_game("")
+			display_game("[color=#00FF00]═══════════════════════════════════════[/color]")
+			display_game("[color=#FFD700]TRADE COMPLETE![/color]")
+			display_game("[color=#00FF00]You gave %d item(s) and received %d item(s).[/color]" % [gave, received])
+			display_game("[color=#00FF00]═══════════════════════════════════════[/color]")
+			_exit_trade_mode()
+			update_action_bar()
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -8304,9 +8861,12 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
+	# Strip leading "/" for command matching
+	if first_word.begins_with("/"):
+		first_word = first_word.substr(1)
 	var is_command = first_word in command_keywords
 	var is_combat_command = first_word in combat_keywords
 
@@ -8395,9 +8955,9 @@ func inspect_item(input_text: String):
 	# Display item details
 	display_item_details(item, source)
 
-func display_item_details(item: Dictionary, source: String):
-	"""Display detailed information about an item"""
-	var name = item.get("name", "Unknown Item")
+func display_item_details(item: Dictionary, source: String, owner_class: String = ""):
+	"""Display detailed information about an item.
+	owner_class is used for themed display - empty means current player's class."""
 	var item_type = item.get("type", "unknown")
 	var rarity = item.get("rarity", "common")
 	var level = item.get("level", 1)
@@ -8405,8 +8965,12 @@ func display_item_details(item: Dictionary, source: String):
 	var rarity_color = _get_item_rarity_color(rarity)
 	var is_consumable = item.get("is_consumable", false)
 
+	# Use themed name based on owner's class (or current player if not specified)
+	var display_class = owner_class if owner_class != "" else character_data.get("class", "")
+	var themed_name = _get_themed_item_name(item, display_class)
+
 	display_game("")
-	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
+	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, themed_name])
 	display_game("[color=#808080]%s[/color]" % source.capitalize())
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
@@ -8438,7 +9002,8 @@ func display_item_details(item: Dictionary, source: String):
 		var equipped = character_data.get("equipped", {})
 		var equipped_item = equipped.get(slot)
 		if equipped_item != null and equipped_item is Dictionary:
-			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_item.get("name", "item"))
+			var equipped_themed = _get_themed_item_name(equipped_item, display_class)
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_themed)
 			_display_item_comparison(item, equipped_item)
 		else:
 			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
@@ -8451,16 +9016,17 @@ func display_item_details(item: Dictionary, source: String):
 
 func display_equip_comparison(item: Dictionary, inv_index: int):
 	"""Display item details with comparison to equipped item for equip confirmation"""
-	var name = item.get("name", "Unknown Item")
 	var item_type = item.get("type", "unknown")
 	var rarity = item.get("rarity", "common")
 	var level = item.get("level", 1)
 	var rarity_color = _get_item_rarity_color(rarity)
+	var player_class = character_data.get("class", "")
+	var themed_name = _get_themed_item_name(item, player_class)
 
 	display_game("")
 	display_game("[color=#FFD700]===== EQUIP ITEM =====[/color]")
 	display_game("")
-	display_game("[color=%s]%s[/color]" % [rarity_color, name])
+	display_game("[color=%s]%s[/color]" % [rarity_color, themed_name])
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
@@ -8480,7 +9046,8 @@ func display_equip_comparison(item: Dictionary, inv_index: int):
 		var equipped = character_data.get("equipped", {})
 		var equipped_item = equipped.get(slot)
 		if equipped_item != null and equipped_item is Dictionary:
-			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_item.get("name", "item"))
+			var equipped_themed = _get_themed_item_name(equipped_item, player_class)
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_themed)
 			_display_item_comparison(item, equipped_item)
 			display_game("")
 			display_game("[color=#808080]Currently equipped item will be unequipped.[/color]")
@@ -8526,8 +9093,8 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	# Check if this is a tier value (1-7) which means tier-based item
 	var is_tier_value = level >= 1 and level <= 7
 
-	# Health potions (potion_minor, potion_lesser, etc. or health_potion)
-	if is_tier_value and (item_type == "health_potion" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type) or item_type.begins_with("elixir_")):
+	# Health potions (potion_minor, potion_lesser, etc. or health_potion, elixir)
+	if is_tier_value and (item_type == "health_potion" or item_type == "elixir" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type) or item_type.begins_with("elixir_")):
 		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		return "Restores %d HP when used" % tier_data.healing
 	# Mana potions (mana_minor, mana_lesser, etc. or mana_potion)
@@ -8718,6 +9285,9 @@ func process_command(text: String):
 		return
 
 	var command = parts[0].to_lower()
+	# Strip leading "/" for command matching
+	if command.begins_with("/"):
+		command = command.substr(1)
 
 	match command:
 		"help":
@@ -8785,6 +9355,23 @@ func process_command(text: String):
 			if parts.size() > 1:
 				description = " ".join(parts.slice(1))
 			generate_bug_report(description)
+		"search", "find":
+			if parts.size() > 1:
+				var search_term = " ".join(parts.slice(1))
+				search_help(search_term)
+			else:
+				display_game("[color=#FF0000]Usage: /search <term>[/color]")
+				display_game("[color=#808080]Example: /search warrior, /search flee, /search gems[/color]")
+		"trade":
+			if has_character:
+				if parts.size() > 1:
+					var target = parts[1]
+					handle_trade_command(target)
+				else:
+					display_game("[color=#FF0000]Usage: /trade <playername>[/color]")
+					display_game("[color=#808080]Request to trade items with another player.[/color]")
+			else:
+				display_game("You don't have a character yet")
 		_:
 			display_game("Unknown command: %s (type 'help')" % command)
 
@@ -8834,7 +9421,7 @@ func _save_connection_settings():
 # ===== KEYBIND CONFIGURATION =====
 
 func _load_keybinds():
-	"""Load keybind configuration from config file"""
+	"""Load keybind configuration and settings from config file"""
 	keybinds = default_keybinds.duplicate()  # Start with defaults
 	if FileAccess.file_exists(KEYBIND_CONFIG_PATH):
 		var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.READ)
@@ -8849,12 +9436,18 @@ func _load_keybinds():
 				for key in data:
 					if default_keybinds.has(key):
 						keybinds[key] = int(data[key])
+				# Load compare stat setting
+				if data.has("inventory_compare_stat") and data["inventory_compare_stat"] in COMPARE_STAT_OPTIONS:
+					inventory_compare_stat = data["inventory_compare_stat"]
 
 func _save_keybinds():
-	"""Save keybind configuration to config file"""
+	"""Save keybind configuration and settings to config file"""
+	var save_data = keybinds.duplicate()
+	# Include other persistent settings
+	save_data["inventory_compare_stat"] = inventory_compare_stat
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
-		file.store_string(JSON.stringify(keybinds, "\t"))
+		file.store_string(JSON.stringify(save_data, "\t"))
 		file.close()
 	# Update action bar hotkey labels
 	update_action_bar_hotkeys()
@@ -9437,7 +10030,8 @@ func display_character_status():
 	if not has_character:
 		return
 
-	# Set contrasting background for status page (dark blue-gray)
+	# Clear output and set contrasting background
+	game_output.clear()
 	_set_game_output_background(Color(0.05, 0.08, 0.12, 1.0))
 
 	var char = character_data
@@ -9449,139 +10043,136 @@ func display_character_status():
 	var xp_needed = char.get("experience_to_next_level", 100)
 	var xp_remaining = xp_needed - current_xp
 
-	var text = "[b][color=#FFD700]═══════ Character Status ═══════[/color][/b]\n"
-	text += "Name: %s\n" % char.get("name", "Unknown")
-	text += "Race: %s  |  Class: %s  |  Level: %d\n" % [char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
+	var text = ""
 
-	# === CLASS PASSIVE ===
+	# === HEADER ===
+	text += "[b][color=#FFD700]════════════════════════════════════════════[/color][/b]\n"
+	text += "[b][color=#FFD700]  %s[/color][/b] - %s %s Level %d\n" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
+	text += "[b][color=#FFD700]════════════════════════════════════════════[/color][/b]\n"
+
+	# Class passive
 	var class_passive = _get_class_passive(char.get("class", ""))
 	if class_passive.name != "None":
 		text += "[color=%s]%s:[/color] %s\n" % [class_passive.color, class_passive.name, class_passive.description]
+	text += "\n"
 
-	text += "[color=#FF00FF]Experience:[/color] %d / %d ([color=#FFD700]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
-	text += "Gold: %d  |  Position: (%d, %d)  |  Kills: %d\n\n" % [char.get("gold", 0), char.get("x", 0), char.get("y", 0), char.get("monsters_killed", 0)]
+	# === PROGRESSION ===
+	text += "[color=#808080]── Progress ──[/color]\n"
+	text += "[color=#FF00FF]XP:[/color] %d / %d  ([color=#FFFF00]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
+	text += "[color=#FFD700]Gold:[/color] %d  |  [color=#00FFFF]Gems:[/color] %d  |  [color=#FF4444]Kills:[/color] %d\n" % [char.get("gold", 0), char.get("gems", 0), char.get("monsters_killed", 0)]
+	text += "[color=#808080]Location:[/color] (%d, %d)\n" % [char.get("x", 0), char.get("y", 0)]
+	text += "\n"
 
-	# === HEALTH & RESOURCES ===
+	# === RESOURCES ===
+	text += "[color=#808080]── Resources ──[/color]\n"
 	var base_hp = char.get("max_hp", 0)
 	var total_hp = char.get("total_max_hp", base_hp)
-	var hp_from_gear = total_hp - base_hp
-
-	text += "[color=#FF6666]═══ Health & Resources ═══[/color]\n"
-	text += "  [color=#FF4444]HP:[/color] %d / %d" % [char.get("current_hp", 0), total_hp]
-	if hp_from_gear > 0:
-		text += " [color=#00FF00](Base: %d + %d from gear)[/color]" % [base_hp, hp_from_gear]
-	text += " (%s)\n" % char.get("health_state", "Unknown")
-
 	var base_mana = char.get("max_mana", 0)
 	var total_mana = char.get("total_max_mana", base_mana)
-	var mana_from_gear = total_mana - base_mana
-	text += "  [color=#00BFFF]Mana:[/color] %d / %d" % [char.get("current_mana", 0), total_mana]
-	if mana_from_gear > 0:
-		text += " [color=#00FF00](+%d from gear)[/color]" % mana_from_gear
-	text += "\n"
-
-	text += "  [color=#FF8C00]Stamina:[/color] %d / %d\n" % [char.get("current_stamina", 0), char.get("max_stamina", 0)]
-	text += "  [color=#00FF00]Energy:[/color] %d / %d\n\n" % [char.get("current_energy", 0), char.get("max_energy", 0)]
-
-	# === BASE STATS ===
-	text += "[color=#00FFFF]═══ Base Stats ═══[/color]\n"
-	var stat_names = [
-		["STR", "strength"], ["CON", "constitution"], ["DEX", "dexterity"],
-		["INT", "intelligence"], ["WIS", "wisdom"], ["WIT", "wits"]
+	text += "[color=#FF4444]HP:[/color] %d/%d  |  [color=#00BFFF]Mana:[/color] %d/%d  |  [color=#FF8C00]Stam:[/color] %d/%d  |  [color=#00FF00]Ener:[/color] %d/%d\n" % [
+		char.get("current_hp", 0), total_hp,
+		char.get("current_mana", 0), total_mana,
+		char.get("current_stamina", 0), char.get("max_stamina", 0),
+		char.get("current_energy", 0), char.get("max_energy", 0)
 	]
-	var line1 = "  "
-	var line2 = "  "
-	for i in range(stat_names.size()):
-		var stat_abbr = stat_names[i][0]
-		var stat_key = stat_names[i][1]
-		var base_val = stats.get(stat_key, 0)
-		var bonus_val = bonuses.get(stat_key, 0)
-		var stat_text = "%s: %d" % [stat_abbr, base_val]
+	text += "\n"
+
+	# === STATS ===
+	text += "[color=#808080]── Base Stats ──[/color]\n"
+	var stat_parts = []
+	for pair in [["STR", "strength"], ["CON", "constitution"], ["DEX", "dexterity"], ["INT", "intelligence"], ["WIS", "wisdom"], ["WIT", "wits"]]:
+		var base_val = stats.get(pair[1], 0)
+		var bonus_val = bonuses.get(pair[1], 0)
 		if bonus_val > 0:
-			stat_text += "[color=#00FF00](+%d)[/color]" % bonus_val
-		stat_text += "  "
-		if i < 3:
-			line1 += stat_text
+			stat_parts.append("%s: %d [color=#00FF00]+%d[/color]" % [pair[0], base_val, bonus_val])
 		else:
-			line2 += stat_text
-	text += line1 + "\n" + line2 + "\n\n"
+			stat_parts.append("%s: %d" % [pair[0], base_val])
+	text += "%s\n" % "  |  ".join(stat_parts)
+	text += "\n"
 
-	# === COMBAT STATS ===
+	# === COMBAT ===
+	text += "[color=#808080]── Combat ──[/color]\n"
 	var base_str = stats.get("strength", 0)
-	var total_attack = base_str + bonuses.strength + bonuses.attack
-	var attack_from_str = base_str + bonuses.strength
-	var attack_from_gear = bonuses.attack
-
+	var total_attack = base_str + bonuses.get("strength", 0) + bonuses.get("attack", 0)
 	var base_con = stats.get("constitution", 0)
-	var total_defense = (base_con + bonuses.constitution) / 2 + bonuses.defense
-	var base_defense = base_con / 2
-	var defense_from_gear = bonuses.defense + bonuses.constitution / 2
-
-	# Calculate damage reduction percentage (same formula as combat)
+	var total_defense = (base_con + bonuses.get("constitution", 0)) / 2 + bonuses.get("defense", 0)
 	var defense_ratio = float(total_defense) / (float(total_defense) + 100.0)
-	var damage_reduction_pct = int(defense_ratio * 60)  # Max 60% reduction
-
-	text += "[color=#FF6666]═══ Combat Stats ═══[/color]\n"
-	text += "  [color=#FF4444]Attack Power:[/color] %d" % total_attack
-	text += " [color=#808080](STR: %d" % attack_from_str
-	if attack_from_gear > 0:
-		text += " + Gear: %d" % attack_from_gear
-	text += ")[/color]\n"
-
-	text += "  [color=#00BFFF]Defense:[/color] %d" % total_defense
-	text += " [color=#808080](Base: %d" % base_defense
-	if defense_from_gear > 0:
-		text += " + Gear: %d" % defense_from_gear
-	text += ")[/color]\n"
-
-	text += "  [color=#FFD700]Damage Reduction:[/color] %d%%" % damage_reduction_pct
-	text += " [color=#808080](Higher defense = more reduction, max 60%%)[/color]\n"
-
-	text += "  [color=#FFFFFF]Damage Range:[/color] %d - %d\n" % [int(total_attack * 0.8), int(total_attack * 1.2)]
-
-	if bonuses.speed > 0:
-		text += "  [color=#00FFFF]Speed Bonus:[/color] +%d (improves flee chance)\n" % bonuses.speed
-
-	# === CLASS-SPECIFIC BONUSES ===
-	var has_class_bonus = bonuses.mana_regen > 0 or bonuses.meditate_bonus > 0 or bonuses.energy_regen > 0 or bonuses.flee_bonus > 0
-	if has_class_bonus:
-		text += "\n[color=#FF00FF]═══ Class Gear Bonuses ═══[/color]\n"
-		if bonuses.mana_regen > 0:
-			text += "  [color=#66CCCC]Mana Regen:[/color] +%d per combat round (Arcane Ring)\n" % bonuses.mana_regen
-		if bonuses.meditate_bonus > 0:
-			text += "  [color=#66CCCC]Meditate Bonus:[/color] +%d%% effectiveness (Mystic Amulet)\n" % bonuses.meditate_bonus
-		if bonuses.energy_regen > 0:
-			text += "  [color=#66FF66]Energy Regen:[/color] +%d per combat round (Trickster Gear)\n" % bonuses.energy_regen
-		if bonuses.flee_bonus > 0:
-			text += "  [color=#66FF66]Flee Bonus:[/color] +%d%% flee chance (Evasion Amulet)\n" % bonuses.flee_bonus
+	var damage_reduction_pct = int(defense_ratio * 60)
+	text += "[color=#FF4444]Attack:[/color] %d  (deals %d-%d damage)\n" % [total_attack, int(total_attack * 0.8), int(total_attack * 1.2)]
+	text += "[color=#00BFFF]Defense:[/color] %d  (reduces damage by %d%%)\n" % [total_defense, damage_reduction_pct]
+	if bonuses.get("speed", 0) > 0:
+		text += "[color=#FFFF00]Speed:[/color] +%d\n" % bonuses.get("speed", 0)
 	text += "\n"
 
-	# === EQUIPMENT STATUS ===
-	text += "[color=#FFA500]═══ Equipment Condition ═══[/color]\n"
-	var has_equipment = false
+	# === CLASS GEAR BONUSES ===
+	var class_bonus_parts = []
+	if bonuses.get("mana_regen", 0) > 0:
+		class_bonus_parts.append("[color=#66CCCC]+%d Mana/round[/color]" % bonuses.get("mana_regen", 0))
+	if bonuses.get("meditate_bonus", 0) > 0:
+		class_bonus_parts.append("[color=#66CCCC]+%d%% Meditate[/color]" % bonuses.get("meditate_bonus", 0))
+	if bonuses.get("energy_regen", 0) > 0:
+		class_bonus_parts.append("[color=#66FF66]+%d Energy/round[/color]" % bonuses.get("energy_regen", 0))
+	if bonuses.get("flee_bonus", 0) > 0:
+		class_bonus_parts.append("[color=#66FF66]+%d%% Flee[/color]" % bonuses.get("flee_bonus", 0))
+	if bonuses.get("stamina_regen", 0) > 0:
+		class_bonus_parts.append("[color=#FF8C00]+%d Stamina/round[/color]" % bonuses.get("stamina_regen", 0))
+	if class_bonus_parts.size() > 0:
+		text += "[color=#808080]── Class Gear Bonuses ──[/color]\n"
+		text += "%s\n\n" % "  |  ".join(class_bonus_parts)
+
+	# === EQUIPMENT ===
+	var has_gear = false
 	for slot in ["weapon", "shield", "armor", "helm", "boots", "ring", "amulet"]:
-		var item = equipped.get(slot)
-		if item != null and item is Dictionary:
-			has_equipment = true
-			var wear = item.get("wear", 0)
-			var condition = _get_condition_string(wear)
-			var effectiveness = 100 - wear
-			var condition_color = _get_condition_color(wear)
-			var item_name = item.get("name", "Unknown")
-			if item_name.length() > 25:
-				item_name = item_name.substr(0, 22) + "..."
-			text += "  %s: [color=%s]%s[/color] (%d%% effective)\n" % [item_name, condition_color, condition, effectiveness]
+		if equipped.get(slot) != null:
+			has_gear = true
+			break
+	if has_gear:
+		text += "[color=#808080]── Equipment ──[/color]\n"
+		var player_class = char.get("class", "")
+		for slot in ["weapon", "shield", "armor", "helm", "boots", "ring", "amulet"]:
+			var item = equipped.get(slot)
+			if item != null and item is Dictionary:
+				var wear = item.get("wear", 0)
+				var condition = _get_condition_string(wear)
+				var condition_color = _get_condition_color(wear)
+				var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+				var slot_display = _get_themed_slot_name(slot, player_class)
+				var themed_name = _get_themed_item_name(item, player_class)
+				text += "[color=#AAAAAA]%s:[/color] [color=%s]%s[/color] [color=%s](%s)[/color]\n" % [
+					slot_display, rarity_color, themed_name, condition_color, condition
+				]
+		text += "\n"
 
-	if not has_equipment:
-		text += "  [color=#808080]No equipment worn[/color]\n"
-	text += "\n"
-
-	# Active Effects section
-	var effects_text = _get_status_effects_text()
+	# === ACTIVE EFFECTS ===
+	var effects_text = _get_status_effects_text_compact()
 	if effects_text != "":
+		text += "[color=#808080]── Active Effects ──[/color]\n"
 		text += effects_text
 
 	display_game(text)
+
+func _get_status_effects_text_compact() -> String:
+	"""Generate compact status effects for character status display"""
+	var parts = []
+
+	if character_data.get("poison_active", false):
+		var poison_dmg = character_data.get("poison_damage", 0)
+		var poison_turns = character_data.get("poison_turns_remaining", 0)
+		parts.append("[color=#FF00FF]Poison %d dmg x%d[/color]" % [poison_dmg, poison_turns])
+
+	if character_data.get("blind_active", false):
+		var blind_turns = character_data.get("blind_turns_remaining", 0)
+		parts.append("[color=#808080]Blind x%d[/color]" % blind_turns)
+
+	var active_buffs = character_data.get("active_buffs", [])
+	for buff in active_buffs:
+		var buff_type = buff.get("type", "Unknown")
+		var remaining = buff.get("battles_remaining", 0)
+		parts.append("[color=#00FF00]%s x%d[/color]" % [buff_type, remaining])
+
+	if parts.size() > 0:
+		return "[color=#FFFF00]Effects:[/color] %s\n" % " | ".join(parts)
+	return ""
 
 func _get_condition_string(wear: int) -> String:
 	"""Get a human-readable condition string from wear percentage"""
@@ -9711,7 +10302,8 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		"mana_regen": 0,
 		"meditate_bonus": 0,
 		"energy_regen": 0,
-		"flee_bonus": 0
+		"flee_bonus": 0,
+		"stamina_regen": 0  # Warrior gear
 	}
 
 	for slot in equipped.keys():
@@ -9732,7 +10324,19 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 
 		# Apply bonuses based on item type (matches server character.gd)
 		# Use max(1, ...) for fractional multipliers to ensure even low-level items show stats
-		if "weapon" in item_type:
+		# Check class-specific gear FIRST (before generic types)
+		if item_type == "weapon_warlord":
+			# Warrior weapon: ATK + STR + stamina_regen
+			bonuses.attack += base_bonus * 3
+			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif item_type == "shield_bulwark":
+			# Warrior shield: DEF + HP + CON + stamina_regen
+			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.max_hp += base_bonus * 5
+			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+		elif "weapon" in item_type:
 			bonuses.attack += base_bonus * 3  # Weapons are THE attack item
 			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 		elif "armor" in item_type:
@@ -9807,6 +10411,9 @@ func _get_rarity_multiplier_for_status(rarity: String) -> float:
 		_: return 1.0
 
 func show_help():
+	# Clear output before showing help
+	game_output.clear()
+
 	# Build action key names dynamically for help text
 	var k0 = get_action_key_name(0)  # Primary (default: Space)
 	var k1 = get_action_key_name(1)  # Quick 1 (default: Q)
@@ -9818,489 +10425,239 @@ func show_help():
 	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
 	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
-	var help_text = """
-[b][color=#FF6666]WARNING: PERMADEATH IS ENABLED![/color][/b]
-If you die, your character is gone forever! Play smart!
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 1: GETTING STARTED
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#00FFFF]Controls:[/color]
-  [Escape] Toggle movement mode
-  [NUMPAD] 7 8 9 = NW N NE
-           4 5 6 = W stay E
-           1 2 3 = SW S SE
-  Just type and press Enter to chat!
-
-[color=#00FFFF]Action Bar:[/color]
-  [%s] = Primary action (Status/Attack)
-  [%s][%s][%s][%s] = Quick actions
-  [%s][%s][%s][%s] = Additional actions
-
-[color=#00FFFF]Basic Commands:[/color]
-  inventory/inv/i - Open inventory ([%s] in movement)
-  abilities/loadout - Manage abilities ([%s] in movement)
-  status - Show detailed stats
-  who/players - See online players
-  examine <name> - View another player
-  help - This help screen
-  clear - Clear screens
-
-[color=#00FFFF]Map Legend:[/color]
-  [color=#FF6600]![/color] = Danger Zone (hotspot - stronger monsters)
-  [color=#FFFF00]P[/color] = Trading Post (safe zone)
-  [color=#FFD700]$[/color] = Wandering Merchant
-  [color=#00FF00]@[/color] = You
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 2: CHARACTER BUILDING
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#AAAAAA]-- PRIMARY STATS --[/color]
-
-[color=#FF6666]STR (Strength)[/color] - Physical power
-  • +2%% attack damage per point
-  • Powers Warrior abilities
-
-[color=#66FF66]CON (Constitution)[/color] - Survivability
-  • Max HP = 50 + CON × 5
-  • Defense = CON/2 + gear
-
-[color=#66FFFF]DEX (Dexterity)[/color] - Speed and precision
-  • +1%% hit chance per point
-  • +2%% flee chance per point
-  • Crit chance: 5%% + 0.5%% per point (max 25%%)
-
-[color=#FF66FF]INT (Intelligence)[/color] - Magic power
-  • +3%% spell damage per point
-  • Mana = INT×8 + WIS×4
-  • Powers Mage abilities
-
-[color=#FFFF66]WIS (Wisdom)[/color] - Magic support
-  • Contributes to max mana
-  • High enemy WIS resists spells
-
-[color=#FFA500]WIT (Wits)[/color] - Cunning
-  • Powers Outsmart action
-  • +5%% outsmart per point above 10
-  • Powers Trickster abilities
-
-[color=#AAAAAA]-- RACE PASSIVES --[/color]
-
-[color=#FFFFFF]Human[/color] - +10%% XP from all sources
-[color=#66FF99]Elf[/color] - 50%% reduced poison, immune to poison debuffs
-[color=#FFA366]Dwarf[/color] - 25%% chance to survive lethal hit with 1 HP
-[color=#8B4513]Ogre[/color] - All healing doubled (2x)
-
-[color=#AAAAAA]-- CLASS PATHS & PASSIVES --[/color]
-
-[color=#FF6666]WARRIOR PATH[/color] (STR > 10) - Uses Stamina
-
-[color=#C0C0C0]Fighter - Tactical Discipline[/color]
-  • 20%% reduced stamina costs on ALL abilities
-  • +15%% defense from CON calculation
-  • Affects: Power Strike, War Cry, Shield Bash, etc.
-
-[color=#8B0000]Barbarian - Blood Rage[/color]
-  • +3%% damage per 10%% HP missing (max +30%%)
-  • +25%% stamina COST on abilities (risk/reward)
-  • Affects: ALL attacks and abilities
-
-[color=#FFD700]Paladin - Divine Favor[/color]
-  • Heal 3%% max HP at start of each combat round
-  • +25%% damage vs undead and demons
-  • Affects: Basic attacks and abilities vs undead/demons
-  • Undead: Skeleton, Zombie, Wraith, Wight, Lich, Vampire, Nazgul
-  • Demons: Demon, Demon Lord, Balrog, Succubus
-
-[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana
-
-[color=#4169E1]Wizard - Arcane Precision[/color]
-  • +15%% spell damage on ALL attacks
-  • +10%% spell crit chance (1.5x on crit)
-  • Affects: Magic Bolt, Blast, Meteor, basic attacks
-
-[color=#9400D3]Sorcerer - Chaos Magic[/color]
-  • 25%% chance for DOUBLE damage (2x)
-  • 5%% chance to backfire (50%% self-dmg, 50%% attack)
-  • Affects: ALL attacks and abilities
-
-[color=#20B2AA]Sage - Mana Mastery[/color]
-  • 25%% reduced mana costs on all spells
-  • +50%% bonus to Meditate restoration
-  • Affects: Magic Bolt, Blast, Meteor, Meditate
-
-[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy
-
-[color=#2F4F4F]Thief - Backstab[/color]
-  • +15%% base critical hit chance
-  • +50%% crit damage (1.5x becomes 2.0x)
-  • Affects: ALL attacks and abilities
-
-[color=#228B22]Ranger - Hunter's Mark[/color]
-  • +25%% damage vs beasts/animals
-  • +30%% gold and XP from all kills
-  • Affects: Attacks vs beasts, all kill rewards
-  • Beasts: Rat, Wolf, Spider, Wyvern, Gryphon, Chimaera,
-           Cerberus, Hydra, World Serpent, Harpy, Minotaur
-
-[color=#191970]Ninja - Shadow Step[/color]
-  • +40%% flee success chance
-  • No damage taken when flee fails
-  • Affects: Flee action only
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 3: COMBAT
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#AAAAAA]-- DAMAGE FORMULAS --[/color]
-
-[color=#00FFFF]Physical Attack:[/color]
-  Base = STR + weapon bonuses
-  Multiplied by: 1.0 + (STR × 0.02)
-  Critical: 1.5x damage (chance from DEX)
-
-[color=#00FFFF]Defense Reduction:[/color]
-  Reduction = Defense / (Defense + 100) × 60%%
-  50 DEF = 23%%, 200 DEF = 40%%, 500 DEF = 50%%
-
-[color=#00FFFF]Level Difference Penalty:[/color]
-  vs higher level monsters, your damage is reduced:
-  Attacks: -3%% per level (max -50%%)
-  Abilities: -1.5%% per level (max -40%%)
-  Example: 10 levels above = -30%% attack / -15%% ability
-
-[color=#00FFFF]Hit/Flee Chance:[/color]
-  Hit = 75%% + (your DEX - enemy speed), clamped 50-95%%
-  Flee = 50%% + DEX×2 + speed bonuses - level diff×3, clamped 5-95%%
-
-[color=#AAAAAA]-- WARRIOR ABILITIES --[/color]
-Uses [color=#FFCC00]Stamina[/color] = STR×4 + CON×4 (refills between combats)
-
-Lv1  [color=#FF6666]Power Strike[/color] (10) - 1.5x Attack
-Lv10 [color=#FF6666]War Cry[/color] (15) - +25%% dmg, 3 rounds
-Lv25 [color=#FF6666]Shield Bash[/color] (20) - Attack + stun
-Lv40 [color=#FF6666]Cleave[/color] (30) - 2x Attack
-Lv60 [color=#FF6666]Berserk[/color] (40) - +100%% dmg, -50%% def, 3 rounds
-Lv80 [color=#FF6666]Iron Skin[/color] (35) - Block 50%% dmg, 3 rounds
-Lv100 [color=#FF6666]Devastate[/color] (50) - 4x Attack
-
-[color=#AAAAAA]-- MAGE ABILITIES --[/color]
-Uses [color=#66CCCC]Mana[/color] = INT×12 + WIS×6 (use Meditate to restore)
-
-[color=#66FFFF]Meditate[/color] - Restores HP + 4%% mana (8%% if full HP)
-
-Lv1  [color=#66FFFF]Magic Bolt[/color] (var) - Mana × (1 + INT/50) damage
-Lv10 [color=#66FFFF]Shield[/color] (20) - +50%% def, 3 rounds
-Lv30 [color=#66FFFF]Haste[/color] (25) - +50%% speed, 3 rounds
-Lv40 [color=#66FFFF]Blast[/color] (50) - 2x Magic
-Lv50 [color=#66FFFF]Paralyze[/color] (35) - Stun enemy 1 round
-Lv60 [color=#66FFFF]Forcefield[/color] (75) - Block 2 attacks
-Lv70 [color=#66FFFF]Banish[/color] (60) - Instant kill on weak enemies
-Lv100 [color=#66FFFF]Meteor[/color] (100) - 5x Magic
-
-[color=#AAAAAA]-- TRICKSTER ABILITIES --[/color]
-Uses [color=#66FF66]Energy[/color] = WITS×4 + DEX×4 (refills between combats)
-
-Lv1  [color=#FFA500]Analyze[/color] (5) - Reveal monster stats
-Lv10 [color=#FFA500]Distract[/color] (15) - -50%% enemy accuracy
-Lv25 [color=#FFA500]Pickpocket[/color] (20) - Steal WITS×10 gold
-Lv40 [color=#FFA500]Ambush[/color] (30) - 1.5x (Attack+WITS/2), +50%% crit
-Lv60 [color=#FFA500]Vanish[/color] (40) - Invisible, next attack crits
-Lv80 [color=#FFA500]Exploit[/color] (35) - 10%% monster HP as damage
-Lv100 [color=#FFA500]Perfect Heist[/color] (50) - Instant win, 2x rewards
-
-[color=#AAAAAA]-- OUTSMART --[/color]
-
-[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win
-  Base 5%% + 5%% per WITS above 10
-  +15%% for Tricksters
-  +8%% per monster INT below 10
-  -8%% per monster INT above 10
-  Clamped 2-85%% (Tricksters: 2-95%%)
-  [color=#00FF00]Best:[/color] Beasts, undead | [color=#FF4444]Worst:[/color] Mages, dragons
-  Failure = enemy free attack, can't retry
-
-[color=#AAAAAA]-- UNIVERSAL ABILITIES --[/color]
-
-[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement
-  • 8%% resource drain per step
-  • No monster encounters while cloaked
-  • Toggle with [%s] in movement mode
-
-[color=#AA66FF]Teleport[/color] - Instant travel to coordinates
-  • Unlocks: Mage Lv30, Trickster Lv45, Warrior Lv60
-  • Cost: 10 + 1 per tile distance (uses primary resource)
-  • Enter X,Y coordinates (-1000 to 1000)
-  • Cannot use in combat, breaks cloak
-
-[color=#FF00FF]All or Nothing[/color] (Any Level) - Desperate gamble
-  • Cost: 1 of any resource
-  • Very low success chance (~3%% base)
-  • SUCCESS: Instant kill on any monster!
-  • FAILURE: Monster's STR and SPD double!
-  • Chance improves slightly with each use (+0.1%%)
-  • Harder vs higher level monsters (-0.5%%/lvl)
-  • Maximum 25%% chance, minimum 1%%
-
-[color=#AAAAAA]-- BUFF ABILITY ADVANTAGE --[/color]
-
-Defensive/buff abilities only give monsters a [color=#00FF00]25%% chance[/color] to attack!
-This makes buffing yourself much safer. Affected abilities:
-
-  [color=#66FFFF]Mage:[/color] Shield, Cloak, Forcefield, Haste
-  [color=#FF6666]Warrior:[/color] War Cry, Iron Skin, Fortify, Rally
-  [color=#FFA500]Trickster:[/color] Distract, Sabotage
-
-75%% of the time you'll see: "You act quickly, avoiding the attack!"
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 4: MONSTERS
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#FF4444]Offensive Abilities:[/color]
-  Multi-Strike - 2-3 attacks per turn
-  Berserker - +dmg when wounded
-  Enrage - Stronger each round
-  Life Steal - Heals from damage dealt
-  Glass Cannon - 3x dmg, half HP
-
-[color=#808080]Status Effects (persist outside combat):[/color]
-  [color=#FF00FF]Poison[/color] - 30%% monster STR dmg/round, 35 rounds
-    Cured by: Recharge at merchants/posts
-  [color=#808080]Blind[/color] - -30%% hit chance, hides monster HP, reduced map vision
-    Duration: 15 rounds, Cured by: Recharge
-
-[color=#808080]Combat Debuffs:[/color]
-  Curse - Reduces defense
-  Disarm - Reduces damage
-  Bleed - Stacking DoT (up to 3)
-  Slow Aura - Reduces flee chance
-  Drain - Steals mana/stamina/energy
-
-[color=#6666FF]Defensive:[/color]
-  Armored - +50%% defense
-  Ethereal - 50%% dodge
-  Regeneration - Heals per turn
-  Damage Reflect - Returns 25%%
-  Thorns - Damages you on hit
-
-[color=#FFD700]Special:[/color]
-  Death Curse - Damages on death
-  Summoner - Calls reinforcements
-  Corrosive/Sunder - Damages gear
-
-[color=#00FF00]Reward Abilities:[/color]
-  Wish Granter - 10%% chance for wish
-  Weapon Master - 35%% weapon drop
-  Shield Bearer - 35%% shield drop
-  Arcane Hoarder - 35%% mage gear
-  Cunning Prey - 35%% trickster gear
-  Gem Bearer - Always extra gems
-  Gold Hoarder - 3x gold
-
-[color=#AAAAAA]-- WISH REWARDS --[/color]
-
-When Wish Granter offers a wish (10%% chance):
-  [color=#00FFFF]Gems[/color] - Precious gems
-  [color=#A335EE]Gear[/color] - High-quality equipment
-  [color=#FFD700]Buff[/color] - Powerful temp combat buff
-  [color=#FF8000]Equipment Upgrade[/color] - Up to 12 upgrades!
-  [color=#FF00FF]Permanent Stats[/color] - Rare stat boost
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 5: ITEMS & EQUIPMENT
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#AAAAAA]-- CONSUMABLES --[/color]
-
-[color=#00FFFF]Potions:[/color] Use with [%s] from inventory
-  Health - Restore HP (Minor to Divine)
-  Mana/Stamina/Energy - Restore resources
-  Strength/Defense/Speed - Temp stat boost
-  Crit/Lifesteal/Thorns - Combat effects
-
-[color=#FF00FF]Buff Scrolls (apply before combat):[/color]
-  Forcefield, Rage, Stone Skin, Haste
-  Vampirism, Thorns, Precision
-
-[color=#A335EE]Debuff Scrolls (weaken next monster):[/color]
-  Weakness, Vulnerability, Slow, Doom
-
-[color=#A335EE]Special Scrolls:[/color]
-  Scroll of Summoning - Choose your next monster!
-  Scroll of Finding - Next 5 monsters have chosen trait
-
-[color=#AAAAAA]-- EQUIPMENT WEAR --[/color]
-
-Some monsters (Corrosive, Sundering) damage gear.
-Worn equipment = reduced bonuses.
-100%% wear = broken, no bonuses!
-Repair at merchants.
-
-[color=#AAAAAA]-- GEAR HUNTING BY CLASS --[/color]
-
-Hunt these monsters for class-specific equipment (35%% drop):
-
-[color=#FF6666]WARRIOR GEAR[/color] (Warrior Hoarder trait):
-  Minotaur (tier 3), Iron Golem (tier 6), Death Incarnate (tier 8)
-
-[color=#66CCCC]MAGE GEAR[/color] (Arcane Hoarder trait):
-  Wraith (tier 3), Lich (tier 5), Elemental (tier 6)
-  Sphinx (tier 6), Elder Lich (tier 7), Time Weaver (tier 8)
-
-[color=#66FF66]TRICKSTER GEAR[/color] (Cunning Prey trait):
-  Goblin (tier 1), Hobgoblin (tier 2), Giant Spider (tier 2)
-  Void Walker (tier 7)
-
-[color=#FFD700]WEAPONS/SHIELDS[/color] (Rare variants, 4%% spawn chance):
-  Any monster Lv5+ can spawn as "Weapon Master" or "Shield Guardian"
-  35%% guaranteed drop of that item type!
-  Scroll of Finding can force these to appear.
-
-[color=#AAAAAA]-- BUFFS & DEBUFFS --[/color]
-
-Shown in overlay: [Letter+Value:Duration]
-  [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit
-  [color=#FF00FF]L[/color]=Lifesteal [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Forcefield
-  Number = rounds, Number+B = battles
-
-[color=#FF00FF]Poison[/color] ticks on movement/hunting (can't kill).
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 6: THE WORLD
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#AAAAAA]-- TRADING POSTS (58 Total) --[/color]
-
-Safe zones with shops, quests, recharge ([%s]).
-  [color=#00FF00]Haven[/color] (0,10) - Spawn, beginner quests
-  [color=#00FF00]Crossroads[/color] (0,0) - The High Seat, hotzone quests
-  [color=#00FF00]Frostgate[/color] (0,-100) - Boss hunts
-  +55 more across the world!
-
-Denser near center, sparser at edges.
-
-[color=#AAAAAA]-- WANDERING MERCHANTS (110) --[/color]
-
-Roam between posts. Buy, sell, upgrade, gamble.
-[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General
-
-[color=#AAAAAA]-- DANGER ZONES --[/color]
-
-[color=#FF6600]![/color] = Hotspot with 50-150%% level bonus!
-Higher risk, higher rewards.
-
-[color=#AAAAAA]-- QUESTS --[/color]
-
-Accept at Trading Posts. View with [%s] Quests.
-  Kill quests - Slay X monsters
-  Hotzone quests - Hunt in danger zones (bonus rewards!)
-  Exploration - Visit specific locations
-  Boss hunts - Defeat high-level monsters
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 7: GEMS & PROGRESSION
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#00FFFF]Gems (Premium Currency):[/color]
-  • Drop from monsters 5+ levels ABOVE you
-  • Higher level diff = better drop chance
-  • Sell to merchants: 1 gem = 1000 gold
-  • Pay for upgrades (1 gem = 1000g value)
-
-[color=#FFD700]Lucky Finds:[/color]
-Rarely while moving/hunting:
-  • Hidden treasure (gold or items)
-  • [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!
-
-Press [%s] to continue when these appear.
-
-[color=#00FFFF]Level Up:[/color]
-  • Fully healed (HP, mana/stamina/energy)
-  • Stats increase based on class
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 8: CHASE ITEMS & ENDGAME
-═══════════════════════════════════════════════[/color][/b]
-
-Long-term goals for dedicated players!
-
-[color=#AAAAAA]-- CHASE ITEMS --[/color]
-
-[color=#C0C0C0]Jarl's Ring[/color]
-  • Rare drop from Lv100+ monsters
-  • Required to become [color=#C0C0C0]Jarl[/color]
-  • Consumed when claiming title
-
-[color=#A335EE]Unforged Crown[/color]
-  • Very rare drop from Lv200+ monsters
-  • Forge at [color=#FF6600]Fire Mountain[/color] (-400,0)
-  • Survive the trial to create Crown of the North
-
-[color=#FFD700]Crown of the North[/color]
-  • Created from Unforged Crown
-  • Required to become [color=#FFD700]High King[/color]
-  • Consumed when claiming title
-
-[color=#00FFFF]Eternal Flame[/color]
-  • Hidden location in the world
-  • Only [color=#9400D3]Elders[/color] can seek it
-  • Reach it to become [color=#00FFFF]Eternal[/color]
-
-[color=#AAAAAA]-- TITLE SYSTEM --[/color]
-
-Prestigious titles grant realm-shaping abilities!
-
-[color=#C0C0C0]Jarl[/color] (Level 50-500) - Chieftain
-  • Requires: Jarl's Ring + claim at (0,0)
-  • Only ONE at a time
-  • Abilities: Banish, Curse, Gift of Silver
-  • Lost on death or exceeding Lv500
-
-[color=#FFD700]High King[/color] (Level 200-1000) - Supreme Ruler
-  • Requires: Crown of the North + claim at (0,0)
-  • Only ONE at a time (replaces Jarl)
-  • Abilities: Exile, Knight, Cure, Royal Decree
-  • Survives one lethal blow (loses title instead)
-
-[color=#9400D3]Elder[/color] (Level 1000+) - Ancient Wisdom
-  • Automatic at level 1000
-  • Multiple can exist
-  • Abilities: Heal, Seek Flame, Slap
-  • Can seek the Eternal Flame
-
-[color=#00FFFF]Eternal[/color] - Immortal Legend
-  • Requires: Elder who finds Eternal Flame
-  • Up to THREE at a time
-  • Has 3 lives (survives death 3x)
-  • Abilities: Smite, Restore, Bless, Proclaim
-
-[b][color=#FFD700]═══════════════════════════════════════════════
-           SECTION 9: SOCIAL & MISC
-═══════════════════════════════════════════════[/color][/b]
-
-[color=#AAAAAA]-- WATCH FEATURE --[/color]
-
-Watch another player's game live!
-  watch <name> - Request to watch
-  Player presses [%s] approve, [%s] deny
-  [Escape] or unwatch to stop
-
-[color=#AAAAAA]-- GAMBLING --[/color]
-
-Dice game at merchants (risky!):
-  Roll 3d6 vs merchant's 3d6
-  House has slight edge
-  Triples pay big! Triple 6s = JACKPOT
-
-[color=#AAAAAA]-- BUG REPORTING --[/color]
-
-  bug <description> - Generate report
-  Copy and paste to developer!
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k8, k1, k4, k4, k0, k1, k2]
+	var help_text = """[font_size=11]
+[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
+[color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
+
+[b][color=#FFD700]══ BASICS ══[/color][/b]
+[color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
+[color=#00FFFF]Cmds:[/color] inventory ([%s]) | abilities ([%s]) | status | who | examine <name> | help | clear
+[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
+
+[b][color=#FFD700]══ STATS & RACES ══[/color][/b]
+[color=#FF6666]STR[/color]=+2%%atk, Warrior | [color=#66FF66]CON[/color]=HP(50+×5), DEF(÷2) | [color=#66FFFF]DEX[/color]=+1%%hit, +2%%flee, crit(5%%+0.5%%/pt)
+[color=#FF66FF]INT[/color]=+3%%spell, Mage | [color=#FFFF66]WIS[/color]=Mana, resist | [color=#FFA500]WIT[/color]=Outsmart(+5%%/pt), Trickster
+[color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=50%%poison res | [color=#FFA366]Dwarf[/color]=25%%survive | [color=#8B4513]Ogre[/color]=2x heal
+
+[b][color=#FFD700]══ CLASS PATHS ══[/color][/b]
+[color=#FF6666]WARRIOR (STR>10, Stamina)[/color]                         [color=#66FFFF]MAGE (INT>10, Mana)[/color]
+  [color=#C0C0C0]Fighter[/color] - 20%% less cost, +15%% DEF               [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% crit
+  [color=#8B0000]Barbarian[/color] - +3%%dmg/10%%HP lost, +25%% cost        [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 5%% backfire
+  [color=#FFD700]Paladin[/color] - 3%%HP/rnd heal, +25%% vs undead          [color=#20B2AA]Sage[/color] - 25%% less cost, +50%% meditate
+
+[color=#66FF66]TRICKSTER (WIT>10, Energy)[/color]
+  [color=#2F4F4F]Thief[/color] - +15%% crit chance, +50%% crit dmg    [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% rewards
+  [color=#191970]Ninja[/color] - +40%% flee, no dmg on fail
+
+[b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
+[color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
+[color=#00FFFF]Lvl Penalty:[/color] -3%%atk/lvl (max-50%%), -1.5%%ability/lvl (max-40%%) vs higher monsters
+[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 50%%+DEX×2+spd-lvldiff×3 | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5-spd/2 [40-95%%]
+[color=#FF4444]Initiative:[/color] (mon_spd-DEX)×2%% chance enemy strikes first (max 30%%, ambusher +15%%)
+
+[b][color=#FFD700]══ ABILITIES ══[/color][/b]
+[color=#FF6666]WARRIOR (Stam=STR×4+CON×4)[/color]                          [color=#66FFFF]MAGE (Mana=INT×12+WIS×6)[/color]
+  L1 Power Strike(10) 1.5x | L10 War Cry(15) +25%%      L1 Bolt(var) mana×(1+INT/50) | L10 Shield(20) +50%%def
+  L25 Shield Bash(20) stun | L40 Cleave(30) 2x          L30 Haste(35) spd buff | L40 Blast(50) 2x
+  L60 Berserk(40) +100%%/-50%% | L80 Iron Skin(35)        L50 Paralyze(35) stun | L60 Forcefield(75)
+  L100 Devastate(50) 4x                                 L70 Banish(60) instakill weak | L100 Meteor(100) 5x
+                                                        [color=#66FFFF]Meditate[/color] - Restore HP + 4%% mana (8%% if full)
+[color=#FFA500]TRICKSTER (Energy=WIT×4+DEX×4)[/color]
+  L1 Analyze(5) stats | L10 Distract(15) -50%%acc | L25 Pickpocket(20) WIT×10g | L40 Ambush(30) 1.5x+crit
+  L60 Vanish(40) invis+crit | L80 Exploit(35) 10%%HP | L100 Perfect Heist(50) win+2x
+
+[color=#AAAAAA]Outsmart:[/color] 5%%+(WIT-10)×5%% ±8%%/INT diff. Best vs beasts/undead. Fail=free enemy attack.
+[color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
+[color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 25%%)
+[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Shield,Haste,War Cry,etc) = 75%% dodge enemy turn!
+
+[b][color=#FFD700]══ MONSTERS ══[/color][/b]
+[color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+dmg/rnd) | Life Steal | Glass Cannon(3x,½HP)
+[color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(DoT×3) | Slow(-flee) | Drain(res) | [color=#FF00FF]Poison[/color](35rnd) | [color=#808080]Blind[/color](15rnd)
+[color=#6666FF]Defense:[/color] Armored(+50%%def) | Ethereal(50%%dodge) | Regen | Reflect(25%%) | Thorns
+[color=#FFD700]Special:[/color] Death Curse | Summoner | Corrosive/Sunder(gear dmg)
+[color=#00FF00]Rewards:[/color] Wish Granter(10%%) | Weapon/Shield Master(35%%) | Arcane/Cunning(35%%) | Gem Bearer | Gold×3
+[color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
+[color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
+
+[b][color=#FFD700]══ ITEMS ══[/color][/b]
+[color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
+[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
+[color=#A335EE]Debuff Scrolls:[/color] Weakness, Vulnerability, Slow, Doom | [color=#A335EE]Special:[/color] Summoning, Finding (choose trait×5)
+[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% wear = broken (no stats). Repair at merchants.
+
+[b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
+[color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35%% drop
+[color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%%
+[color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
+[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
+
+[color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
+
+[b][color=#FFD700]══ WORLD ══[/color][/b]
+[color=#00FF00]Posts(58):[/color] Haven(0,10)=spawn | Crossroads(0,0)=throne | Frostgate(0,-100)=boss. Recharge([%s])!
+[color=#FFD700]Merchants(110):[/color] [color=#FF4444]$[/color]=Weapon [color=#4488FF]$[/color]=Armor [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General. Buy/sell/upgrade/gamble!
+[color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#00FFFF]Quests([%s]):[/color] Kill, Hotzone(bonus!), Explore, Boss
+
+[b][color=#FFD700]══ PROGRESSION ══[/color][/b]
+[color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
+[color=#FFD700]Lucky Finds:[/color] Treasure, [color=#FF69B4]Legendary Adventurer[/color] (perm stat!) - Press [%s] to continue.
+[color=#00FFFF]Level Up:[/color] Full heal + stat gains by class.
+
+[b][color=#FFD700]══ ENDGAME ══[/color][/b]
+[color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv100+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
+[color=#AAAAAA]Titles:[/color]
+  [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Banish/Curse/Gift. Lost on death or Lv500+.
+  [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Exile/Knight/Cure. Survives 1 death!
+  [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Seek Flame/Slap. Can find Eternal Flame.
+  [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Smite/Restore/Bless/Proclaim.
+
+[b][color=#FFD700]══ MISC ══[/color][/b]
+[color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
+[color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
+[color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
+[color=#AAAAAA]Formulas:[/color] HP=50+CON×5 | Mana=INT×12+WIS×6 | Stam=STR×4+CON×4 | Energy=WIT×4+DEX×4 | DEF=CON/2+gear
+[/font_size]
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k2]
 	display_game(help_text)
+
+func search_help(search_term: String):
+	"""Search the help text and display matching sections with context"""
+	game_output.clear()
+
+	var term = search_term.to_lower().strip_edges()
+	if term.is_empty():
+		display_game("[color=#FF0000]Please provide a search term.[/color]")
+		return
+
+	# Define searchable help sections with keywords
+	var help_sections = [
+		{
+			"title": "CONTROLS & BASICS",
+			"keywords": ["controls", "keys", "keyboard", "numpad", "move", "movement", "escape", "action", "bar", "commands", "inventory", "abilities", "status", "help", "clear", "map"],
+			"content": "[color=#00FFFF]Keys:[/color] [Esc]=Toggle mode | [NUMPAD]=Move (789/456/123) | Type+Enter=Chat\n[color=#00FFFF]Action Bar:[/color] [Space]=Primary | [Q][W][E][R]=Quick | [1][2][3][4]=Additional\n[color=#00FFFF]Commands:[/color] inventory/i, abilities, status, who, examine <name>, help, clear\n[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Trading Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You"
+		},
+		{
+			"title": "STATS",
+			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy"],
+			"content": "[color=#FF6666]STR[/color] = +2% attack per point, Warrior path\n[color=#66FF66]CON[/color] = HP (50 + CON×5), Defense (CON/2)\n[color=#66FFFF]DEX[/color] = +1% hit, +2% flee, crit chance (5% + 0.5%/pt)\n[color=#FF66FF]INT[/color] = +3% spell damage, Mana (INT×12 + WIS×6), Mage path\n[color=#FFFF66]WIS[/color] = Mana pool, spell resistance\n[color=#FFA500]WIT[/color] = Outsmart (+5%/pt above 10), Trickster path"
+		},
+		{
+			"title": "RACES",
+			"keywords": ["race", "races", "human", "elf", "dwarf", "ogre", "poison", "lethal", "heal", "xp", "experience"],
+			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources"
+		},
+		{
+			"title": "WARRIOR PATH",
+			"keywords": ["warrior", "fighter", "barbarian", "paladin", "stamina", "strength", "melee", "power", "strike", "war", "cry", "shield", "bash", "cleave", "berserk", "iron", "skin", "devastate", "undead", "demon"],
+			"content": "[color=#FF6666]WARRIOR PATH[/color] (STR > 10) - Uses Stamina (STR×4 + CON×4)\n\n[color=#C0C0C0]Fighter[/color] - 20% reduced stamina costs, +15% defense from CON\n[color=#8B0000]Barbarian[/color] - +3% damage per 10% HP missing (max +30%), +25% stamina cost\n[color=#FFD700]Paladin[/color] - Heal 3% max HP per round, +25% damage vs undead/demons\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Power Strike (10) - 1.5x damage\nL10 War Cry (15) - +25% damage, 3 rounds\nL25 Shield Bash (20) - Attack + stun\nL40 Cleave (30) - 2x damage\nL60 Berserk (40) - +100% damage, -50% defense, 3 rounds\nL80 Iron Skin (35) - Block 50% damage, 3 rounds\nL100 Devastate (50) - 4x damage"
+		},
+		{
+			"title": "MAGE PATH",
+			"keywords": ["mage", "wizard", "sorcerer", "sage", "mana", "magic", "spell", "bolt", "blast", "meteor", "shield", "haste", "paralyze", "forcefield", "banish", "meditate", "intelligence"],
+			"content": "[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana (INT×12 + WIS×6)\n\n[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance\n[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance\n[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% meditate bonus\n\n[color=#AAAAAA]Abilities:[/color]\nMeditate - Restore HP + 4% mana (8% if full HP)\nL1 Magic Bolt (variable) - Mana × (1 + INT/50) damage\nL10 Shield (20) - +50% defense, 3 rounds\nL30 Haste (35) - Speed buff, 5 rounds\nL40 Blast (50) - 2x magic damage\nL50 Paralyze (35) - Stun 1 round\nL60 Forcefield (75) - Block 2 attacks\nL70 Banish (60) - Instant kill weak enemies\nL100 Meteor (100) - 5x magic damage"
+		},
+		{
+			"title": "TRICKSTER PATH",
+			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy (WIT×4 + DEX×4)\n\n[color=#2F4F4F]Thief[/color] - +15% crit chance, +50% crit damage (2.0x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% gold and XP\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal WITS×10 gold\nL40 Ambush (30) - 1.5x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
+		},
+		{
+			"title": "COMBAT FORMULAS",
+			"keywords": ["combat", "attack", "damage", "defense", "hit", "miss", "dodge", "flee", "crit", "critical", "formula", "calculation", "level", "penalty", "initiative"],
+			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 50% + DEX×2 + speed - level_diff×3\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
+		},
+		{
+			"title": "OUTSMART",
+			"keywords": ["outsmart", "trick", "instant", "win", "intelligence", "dumb", "beast"],
+			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 5% per WITS above 10\n+15% for Tricksters\n+8% per monster INT below 10, -8% per INT above 10\nClamped 2-85% (Tricksters: 2-95%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
+		},
+		{
+			"title": "UNIVERSAL ABILITIES",
+			"keywords": ["cloak", "stealth", "teleport", "travel", "all", "nothing", "gamble", "buff", "advantage"],
+			"content": "[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement, 8% resource per step, no encounters\n[color=#AA66FF]Teleport[/color] - Mage L30, Trickster L45, Warrior L60. Cost: 10 + distance\n[color=#FF00FF]All or Nothing[/color] - ~3% instant kill, fail = monster 2x STR/SPD, +0.1%/use permanent\n[color=#00FF00]Buff Advantage:[/color] Defensive abilities give 75% chance to avoid enemy turn"
+		},
+		{
+			"title": "MONSTER ABILITIES",
+			"keywords": ["monster", "ability", "abilities", "multi", "strike", "berserker", "enrage", "life", "steal", "glass", "cannon", "poison", "blind", "curse", "disarm", "bleed", "drain", "armored", "ethereal", "regeneration", "reflect", "thorns", "death", "summoner", "corrosive", "sunder", "wish", "granter", "gem", "gold", "hoarder"],
+			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (always gems), Gold Hoarder (3x gold)"
+		},
+		{
+			"title": "ITEMS & POTIONS",
+			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding"],
+			"content": "[color=#00FFFF]Potions:[/color] Health, Mana, Stamina, Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Debuff Scrolls:[/color] Weakness, Vulnerability, Slow, Doom\n[color=#A335EE]Special Scrolls:[/color] Summoning (choose monster), Finding (force trait for 5 monsters)"
+		},
+		{
+			"title": "EQUIPMENT & GEAR",
+			"keywords": ["equipment", "gear", "weapon", "armor", "shield", "helm", "boots", "ring", "amulet", "wear", "condition", "broken", "repair", "upgrade", "warrior", "mage", "trickster", "class"],
+			"content": "[color=#AAAAAA]Wear:[/color] Corrosive/Sunder monsters damage gear. 100% wear = broken (no bonuses). Repair at merchants.\n[color=#AAAAAA]Condition:[/color] Pristine → Excellent → Good → Worn → Damaged → BROKEN\n\n[color=#FF6666]Warrior Gear:[/color] Minotaur (t3), Iron Golem (t6), Death Incarnate (t8) - 35% drop\n[color=#66CCCC]Mage Gear:[/color] Wraith (t3), Lich (t5), Elemental/Sphinx (t6), Elder Lich (t7), Time Weaver (t8)\n[color=#66FF66]Trickster Gear:[/color] Goblin (t1), Hobgoblin/Spider (t2), Void Walker (t7)\n[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%) - 35% guaranteed drop"
+		},
+		{
+			"title": "TRADING POSTS & MERCHANTS",
+			"keywords": ["trading", "post", "posts", "merchant", "merchants", "shop", "buy", "sell", "upgrade", "gamble", "recharge", "heal", "haven", "crossroads", "quest", "quests", "safe"],
+			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nHaven (0,10) - Spawn point, beginner quests\nCrossroads (0,0) - The High Seat, hotzone quests\nFrostgate (0,-100) - Boss hunts\n+55 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Upgrade, Gamble"
+		},
+		{
+			"title": "GEMS & PROGRESSION",
+			"keywords": ["gem", "gems", "gold", "currency", "level", "experience", "xp", "drop", "reward", "lucky", "find", "treasure", "legendary", "adventurer"],
+			"content": "[color=#00FFFF]Gems:[/color] Premium currency\n• Drop from monsters 5+ levels ABOVE you\n• Higher level difference = better drop chance\n• Sell to merchants: 1 gem = 1000 gold\n• Pay for upgrades (1 gem = 1000g value)\n\n[color=#FFD700]Lucky Finds:[/color] While moving/hunting you may find:\n• Hidden treasure (gold or items)\n• [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!"
+		},
+		{
+			"title": "TITLES & ENDGAME",
+			"keywords": ["title", "titles", "jarl", "king", "high", "elder", "eternal", "flame", "ring", "crown", "endgame", "chase", "fire", "mountain"],
+			"content": "[color=#AAAAAA]Chase Items:[/color]\n[color=#C0C0C0]Jarl's Ring[/color] - Rare drop from Lv100+ monsters\n[color=#A335EE]Unforged Crown[/color] - Very rare from Lv200+, forge at Fire Mountain (-400,0)\n[color=#00FFFF]Eternal Flame[/color] - Hidden location, only Elders can seek\n\n[color=#AAAAAA]Titles:[/color]\n[color=#C0C0C0]Jarl[/color] (50-500): Ring + claim at (0,0). ONE only. Banish/Curse/Gift.\n[color=#FFD700]High King[/color] (200-1000): Crown + (0,0). ONE only. Survives 1 death!\n[color=#9400D3]Elder[/color] (1000+): Automatic. Heal/Seek Flame/Slap.\n[color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives!"
+		},
+		{
+			"title": "SOCIAL & MISC",
+			"keywords": ["watch", "spectate", "gambling", "dice", "bug", "report", "trade", "trading", "player", "exchange", "give"],
+			"content": "[color=#AAAAAA]Trading:[/color] \"trade <name>\" to request a trade with another player\n• Both players must be at the same location\n• Add items from your inventory, toggle ready when done\n• Trade completes when both players are ready\n• Items display with the owner's class theme until traded\n[color=#AAAAAA]Watch:[/color] \"watch <name>\" to spectate another player (requires approval)\n[color=#AAAAAA]Gambling:[/color] Dice game at merchants - Roll 3d6 vs merchant's 3d6. Triples pay big!\n[color=#AAAAAA]Bug Reports:[/color] \"bug <description>\" to generate a report"
+		},
+		{
+			"title": "MONSTER HP KNOWLEDGE",
+			"keywords": ["hp", "health", "known", "unknown", "estimated", "estimate", "monster", "bar", "question", "marks", "???", "tilde", "knowledge"],
+			"content": "[color=#FFD700]Monster HP Knowledge System[/color]\n\nMonster HP visibility depends on your combat experience:\n\n[color=#FFFFFF]Known HP (150/200)[/color] - Exact HP values\n• You've killed this monster type at this level or higher\n• HP bar shows precise current/max values\n\n[color=#808080]Estimated HP (~150/200)[/color] - Approximation with ~ prefix\n• You've killed this monster type, but at a LOWER level\n• HP is scaled up from your known data\n• May be inaccurate - actual HP could be higher!\n\n[color=#808080]Unknown HP (???)[/color] - No data available\n• You've never killed this monster type\n• Or you are Blinded (hides HP even for known monsters)\n\n[color=#00FFFF]Tip:[/color] Kill monsters to learn their HP! Knowledge persists across sessions.\n[color=#FF4444]Warning:[/color] Magic Bolt's suggested amount uses estimated HP - may not kill if HP is unknown or underestimated."
+		}
+	]
+
+	# Find matching sections
+	var matches = []
+	for section in help_sections:
+		var found = false
+		# Check title
+		if section.title.to_lower().contains(term):
+			found = true
+		# Check keywords
+		if not found:
+			for keyword in section.keywords:
+				if keyword.contains(term) or term.contains(keyword):
+					found = true
+					break
+		# Check content
+		if not found and section.content.to_lower().contains(term):
+			found = true
+
+		if found:
+			matches.append(section)
+
+	# Display results
+	display_game("[font_size=11]")
+	display_game("[b][color=#FFD700]══ SEARCH RESULTS: \"%s\" ══[/color][/b]" % search_term)
+	display_game("")
+
+	if matches.is_empty():
+		display_game("[color=#FF4444]No results found for \"%s\"[/color]" % search_term)
+		display_game("[color=#808080]Try different keywords like: warrior, flee, gems, poison, quest[/color]")
+	else:
+		display_game("[color=#00FF00]Found %d matching section(s):[/color]" % matches.size())
+		display_game("")
+
+		for section in matches:
+			display_game("[b][color=#00FFFF]── %s ──[/color][/b]" % section.title)
+			display_game(section.content)
+			display_game("")
+
+	display_game("[color=#808080]Type /help for full help page | /search <term> to search again[/color]")
+	display_game("[/font_size]")
 
 func display_game(text: String):
 	if game_output:
@@ -10391,19 +10748,22 @@ func _enhance_combat_message(msg: String) -> String:
 	var enhanced = msg
 	var upper_msg = msg.to_upper()
 
-	# Critical hit gets shaking text effect - multiple possible formats
+	# Critical hit gets ASCII explosion burst + shaking text
 	if "CRITICAL" in upper_msg:
-		# Try various critical hit text formats
-		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
-		enhanced = enhanced.replace("Critical Hit", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
-		enhanced = enhanced.replace("critical hit", "[shake rate=25 level=8][color=#FF0000]CRITICAL HIT[/color][/shake]")
-		enhanced = enhanced.replace("Critical!", "[shake rate=25 level=8][color=#FF0000]CRITICAL![/color][/shake]")
-		enhanced = enhanced.replace("CRITICAL!", "[shake rate=25 level=8][color=#FF0000]CRITICAL![/color][/shake]")
+		var crit_burst = "[color=#FF4500]     *  .  *\n   . _\\|/_ .\n  -==  *  ==-\n   ' /|\\ '\n     *  '  *[/color]\n"
+		enhanced = crit_burst + enhanced
+		# Apply shake to critical text
+		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = enhanced.replace("Critical Hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = enhanced.replace("critical hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = enhanced.replace("Critical!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
+		enhanced = enhanced.replace("CRITICAL!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
 
-	# Devastating/massive damage gets wave effect
+	# Devastating/massive damage gets explosion + wave effect
 	if "DEVASTAT" in upper_msg or "MASSIVE" in upper_msg:
-		enhanced = enhanced.replace("Devastating", "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
-		enhanced = enhanced.replace("devastating", "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
+		var impact_burst = "[color=#FF4500]  ╔═══╗\n  ║ ! ║\n  ╚═══╝[/color] "
+		enhanced = enhanced.replace("Devastating", impact_burst + "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
+		enhanced = enhanced.replace("devastating", impact_burst + "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
 		enhanced = enhanced.replace("Massive", "[wave amp=30 freq=5][color=#FF4500]Massive[/color][/wave]")
 
 	# Monster death gets rainbow effect
@@ -10424,6 +10784,118 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("escaped", "[fade start=0 length=10]escaped[/fade]")
 		enhanced = enhanced.replace("Escaped", "[fade start=0 length=10]Escaped[/fade]")
 		enhanced = enhanced.replace("fled", "[fade start=0 length=10]fled[/fade]")
+
+	# Buff activation gets sparkle effect
+	if "BUFF" in upper_msg or "BONUS" in upper_msg or "ADVANTAGE" in upper_msg:
+		enhanced = enhanced.replace("buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ buff ✦[/pulse]")
+		enhanced = enhanced.replace("Buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ Buff ✦[/pulse]")
+		enhanced = enhanced.replace("bonus", "[color=#00FF00]▲ bonus ▲[/color]")
+		enhanced = enhanced.replace("Bonus", "[color=#00FF00]▲ Bonus ▲[/color]")
+		enhanced = enhanced.replace("advantage", "[color=#00FFFF]» advantage «[/color]")
+
+	# Poison/DoT gets sickly wave
+	if "POISON" in upper_msg or "VENOM" in upper_msg:
+		enhanced = enhanced.replace("poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ poisoned ☠[/color][/wave]")
+		enhanced = enhanced.replace("Poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ Poisoned ☠[/color][/wave]")
+		enhanced = enhanced.replace("poison", "[color=#00FF00]☠ poison[/color]")
+
+	# Monster ability effects
+	if "MULTI" in upper_msg and "STRIKE" in upper_msg:
+		enhanced = enhanced.replace("multi-strike", "[shake rate=15 level=4][color=#FF6347]⚔️ multi-strike ⚔️[/color][/shake]")
+		enhanced = enhanced.replace("Multi-Strike", "[shake rate=15 level=4][color=#FF6347]⚔️ Multi-Strike ⚔️[/color][/shake]")
+	if "LIFE STEAL" in upper_msg or "LIFESTEAL" in upper_msg:
+		enhanced = enhanced.replace("life steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 life steal 🩸[/pulse]")
+		enhanced = enhanced.replace("Life Steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 Life Steal 🩸[/pulse]")
+		enhanced = enhanced.replace("steals life", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 steals life 🩸[/pulse]")
+	if "REGENERAT" in upper_msg:
+		enhanced = enhanced.replace("regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]♻️ regenerates ♻️[/pulse]")
+		enhanced = enhanced.replace("Regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]♻️ Regenerates ♻️[/pulse]")
+	if "REFLECT" in upper_msg:
+		enhanced = enhanced.replace("reflects", "[color=#FFD700]↩️ reflects ↩️[/color]")
+		enhanced = enhanced.replace("Reflects", "[color=#FFD700]↩️ Reflects ↩️[/color]")
+		enhanced = enhanced.replace("reflected", "[color=#FFD700]↩️ reflected ↩️[/color]")
+	if "DRAIN" in upper_msg:
+		enhanced = enhanced.replace("drains", "[wave amp=8 freq=4][color=#9932CC]💀 drains 💀[/color][/wave]")
+		enhanced = enhanced.replace("Drains", "[wave amp=8 freq=4][color=#9932CC]💀 Drains 💀[/color][/wave]")
+		enhanced = enhanced.replace("drained", "[wave amp=8 freq=4][color=#9932CC]💀 drained 💀[/color][/wave]")
+	if "ENRAGE" in upper_msg:
+		enhanced = enhanced.replace("enrages", "[shake rate=20 level=6][color=#FF0000]😠 enrages 😠[/color][/shake]")
+		enhanced = enhanced.replace("Enrages", "[shake rate=20 level=6][color=#FF0000]😠 Enrages 😠[/color][/shake]")
+		enhanced = enhanced.replace("enraged", "[shake rate=20 level=6][color=#FF0000]😠 enraged 😠[/color][/shake]")
+	if "AMBUSH" in upper_msg:
+		enhanced = enhanced.replace("ambushes", "[fade start=0 length=6][color=#FF4500]⚠️ ambushes ⚠️[/color][/fade]")
+		enhanced = enhanced.replace("Ambushes", "[fade start=0 length=6][color=#FF4500]⚠️ Ambushes ⚠️[/color][/fade]")
+	if "SUMMON" in upper_msg:
+		enhanced = enhanced.replace("summons", "[wave amp=12 freq=3][color=#9932CC]✨ summons ✨[/color][/wave]")
+		enhanced = enhanced.replace("Summons", "[wave amp=12 freq=3][color=#9932CC]✨ Summons ✨[/color][/wave]")
+	if "CURSE" in upper_msg:
+		enhanced = enhanced.replace("curses", "[wave amp=10 freq=4][color=#800080]👁️ curses 👁️[/color][/wave]")
+		enhanced = enhanced.replace("Curses", "[wave amp=10 freq=4][color=#800080]👁️ Curses 👁️[/color][/wave]")
+		enhanced = enhanced.replace("cursed", "[wave amp=10 freq=4][color=#800080]👁️ cursed 👁️[/color][/wave]")
+	if "DISARM" in upper_msg:
+		enhanced = enhanced.replace("disarms", "[color=#FFA500]🔓 disarms 🔓[/color]")
+		enhanced = enhanced.replace("Disarms", "[color=#FFA500]🔓 Disarms 🔓[/color]")
+		enhanced = enhanced.replace("disarmed", "[color=#FFA500]🔓 disarmed 🔓[/color]")
+	if "ETHEREAL" in upper_msg or "PHASE" in upper_msg:
+		enhanced = enhanced.replace("phases", "[fade start=0 length=8][color=#ADD8E6]👻 phases 👻[/color][/fade]")
+		enhanced = enhanced.replace("ethereal", "[fade start=0 length=8][color=#ADD8E6]👻 ethereal 👻[/color][/fade]")
+	if "FLEE" in upper_msg and "MONSTER" in upper_msg:
+		enhanced = enhanced.replace("flees", "[fade start=0 length=10][color=#808080]💨 flees 💨[/color][/fade]")
+	if "DEATH CURSE" in upper_msg:
+		enhanced = enhanced.replace("death curse", "[shake rate=25 level=8][color=#8B0000]💀 DEATH CURSE 💀[/color][/shake]")
+		enhanced = enhanced.replace("Death Curse", "[shake rate=25 level=8][color=#8B0000]💀 DEATH CURSE 💀[/color][/shake]")
+
+	# Ability cast gets magic sparkle
+	if "CAST" in upper_msg or "INVOKE" in upper_msg:
+		enhanced = enhanced.replace("cast", "[color=#9932CC]✧ cast ✧[/color]")
+		enhanced = enhanced.replace("Cast", "[color=#9932CC]✧ Cast ✧[/color]")
+		enhanced = enhanced.replace("invoke", "[color=#9932CC]✧ invoke ✧[/color]")
+
+	# Shield/defend gets solid border effect
+	if "SHIELD" in upper_msg or "DEFEND" in upper_msg or "BLOCK" in upper_msg:
+		enhanced = enhanced.replace("shield", "[color=#4169E1]『 shield 』[/color]")
+		enhanced = enhanced.replace("Shield", "[color=#4169E1]『 Shield 』[/color]")
+		enhanced = enhanced.replace("blocked", "[color=#4169E1]▣ blocked ▣[/color]")
+		enhanced = enhanced.replace("Blocked", "[color=#4169E1]▣ Blocked ▣[/color]")
+
+	# Mage abilities - magical sparkle effects
+	if "FIREBALL" in upper_msg:
+		enhanced = enhanced.replace("Fireball", "[wave amp=15 freq=4][color=#FF4500]🔥 Fireball 🔥[/color][/wave]")
+		enhanced = enhanced.replace("fireball", "[wave amp=15 freq=4][color=#FF4500]🔥 fireball 🔥[/color][/wave]")
+	if "BOLT" in upper_msg or "MANA BOLT" in upper_msg:
+		enhanced = enhanced.replace("Mana Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]⚡ Mana Bolt ⚡[/pulse]")
+		enhanced = enhanced.replace("Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]⚡ Bolt ⚡[/pulse]")
+	if "MEDITATE" in upper_msg:
+		enhanced = enhanced.replace("Meditate", "[fade start=2 length=8][color=#9932CC]✨ Meditate ✨[/color][/fade]")
+		enhanced = enhanced.replace("meditate", "[fade start=2 length=8][color=#9932CC]✨ meditate ✨[/color][/fade]")
+	if "FORCEFIELD" in upper_msg:
+		enhanced = enhanced.replace("Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]🛡️ Forcefield 🛡️[/pulse]")
+
+	# Warrior abilities - impact effects
+	if "POWER STRIKE" in upper_msg or "POWERSTRIKE" in upper_msg:
+		enhanced = enhanced.replace("Power Strike", "[shake rate=20 level=5][color=#FF6347]💥 Power Strike 💥[/color][/shake]")
+	if "BERSERK" in upper_msg:
+		enhanced = enhanced.replace("Berserk", "[shake rate=30 level=10][color=#FF0000]⚔️ BERSERK ⚔️[/color][/shake]")
+		enhanced = enhanced.replace("berserk", "[shake rate=30 level=10][color=#FF0000]⚔️ berserk ⚔️[/color][/shake]")
+	if "FORTIFY" in upper_msg:
+		enhanced = enhanced.replace("Fortify", "[color=#FFD700]🏰 Fortify 🏰[/color]")
+	if "RALLY" in upper_msg:
+		enhanced = enhanced.replace("Rally", "[wave amp=10 freq=3][color=#FFD700]📯 Rally 📯[/color][/wave]")
+
+	# Trickster abilities - sneaky effects
+	if "BACKSTAB" in upper_msg:
+		enhanced = enhanced.replace("Backstab", "[fade start=0 length=6][color=#00FF00]🗡️ Backstab 🗡️[/color][/fade]")
+	if "SABOTAGE" in upper_msg:
+		enhanced = enhanced.replace("Sabotage", "[wave amp=8 freq=5][color=#32CD32]⚙️ Sabotage ⚙️[/color][/wave]")
+	if "GAMBIT" in upper_msg:
+		enhanced = enhanced.replace("Gambit", "[rainbow freq=1.5 sat=0.8 val=0.9]🎲 Gambit 🎲[/rainbow]")
+	if "ANALYZE" in upper_msg:
+		enhanced = enhanced.replace("Analyze", "[pulse freq=2.0 color=#00FFFF ease=-2.0]🔍 Analyze 🔍[/pulse]")
+
+	# Universal abilities
+	if "CLOAK" in upper_msg:
+		enhanced = enhanced.replace("Cloak", "[fade start=0 length=10][color=#9932CC]👁️ Cloak 👁️[/color][/fade]")
+		enhanced = enhanced.replace("cloaked", "[fade start=0 length=10][color=#9932CC]cloaked[/color][/fade]")
 
 	# Add impact symbols to large damage numbers
 	var regex = RegEx.new()

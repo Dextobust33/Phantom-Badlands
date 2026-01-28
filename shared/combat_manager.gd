@@ -100,26 +100,146 @@ func get_monster_combat_bg_color(monster_name: String) -> String:
 	var art_color = _extract_art_color(raw_art_array)
 	return _get_contrasting_bg_color(art_color)
 
+func get_flock_varied_colors(monster_name: String, flock_count: int) -> Dictionary:
+	"""Get varied art and background colors for flock encounters to add visual variety"""
+	# Use distinct color palette for big, noticeable changes between flock members
+	var color_palette = [
+		"#00FF00",  # Green
+		"#00BFFF",  # Deep Sky Blue
+		"#FF4500",  # Orange Red
+		"#FFD700",  # Gold
+		"#FF00FF",  # Magenta
+		"#00FFFF",  # Cyan
+		"#FF6347",  # Tomato
+		"#ADFF2F",  # Green Yellow
+		"#DA70D6",  # Orchid
+		"#7FFF00",  # Chartreuse
+		"#FF1493",  # Deep Pink
+		"#1E90FF",  # Dodger Blue
+	]
+
+	# Pick color based on flock count to ensure each pack member looks different
+	var varied_art_color = color_palette[flock_count % color_palette.size()]
+	# Use contrasting background for the varied art color
+	var varied_bg_color = _get_contrasting_bg_color(varied_art_color)
+
+	return {
+		"art_color": varied_art_color,
+		"bg_color": varied_bg_color
+	}
+
+func get_random_varied_colors(monster_name: String) -> Dictionary:
+	"""Get randomly varied art and background colors for visual variety on any encounter"""
+	# Use distinct color palette for big, noticeable changes
+	var color_palette = [
+		"#00FF00",  # Green
+		"#00BFFF",  # Deep Sky Blue
+		"#FF4500",  # Orange Red
+		"#FFD700",  # Gold
+		"#FF00FF",  # Magenta
+		"#00FFFF",  # Cyan
+		"#FF6347",  # Tomato
+		"#ADFF2F",  # Green Yellow
+		"#DA70D6",  # Orchid
+		"#7FFF00",  # Chartreuse
+		"#FF1493",  # Deep Pink
+		"#1E90FF",  # Dodger Blue
+	]
+
+	# Pick a random color from the palette
+	var varied_art_color = color_palette[randi() % color_palette.size()]
+	var varied_bg_color = _get_contrasting_bg_color(varied_art_color)
+
+	return {
+		"art_color": varied_art_color,
+		"bg_color": varied_bg_color
+	}
+
+func _shift_color_hue(hex_color: String, degrees: int) -> String:
+	"""Shift the hue of a hex color by the specified degrees (0-360)"""
+	if not hex_color.begins_with("#") or hex_color.length() < 7:
+		return hex_color
+
+	var r = hex_color.substr(1, 2).hex_to_int() / 255.0
+	var g = hex_color.substr(3, 2).hex_to_int() / 255.0
+	var b = hex_color.substr(5, 2).hex_to_int() / 255.0
+
+	# Convert RGB to HSV
+	var max_c = max(r, max(g, b))
+	var min_c = min(r, min(g, b))
+	var delta = max_c - min_c
+
+	var h = 0.0
+	var s = 0.0 if max_c == 0 else delta / max_c
+	var v = max_c
+
+	if delta > 0:
+		if max_c == r:
+			h = 60.0 * fmod((g - b) / delta, 6.0)
+		elif max_c == g:
+			h = 60.0 * ((b - r) / delta + 2.0)
+		else:
+			h = 60.0 * ((r - g) / delta + 4.0)
+
+	if h < 0:
+		h += 360.0
+
+	# Shift hue
+	h = fmod(h + degrees, 360.0)
+
+	# Convert HSV back to RGB
+	var c = v * s
+	var x = c * (1.0 - abs(fmod(h / 60.0, 2.0) - 1.0))
+	var m = v - c
+
+	var r2 = 0.0
+	var g2 = 0.0
+	var b2 = 0.0
+
+	if h < 60:
+		r2 = c; g2 = x; b2 = 0
+	elif h < 120:
+		r2 = x; g2 = c; b2 = 0
+	elif h < 180:
+		r2 = 0; g2 = c; b2 = x
+	elif h < 240:
+		r2 = 0; g2 = x; b2 = c
+	elif h < 300:
+		r2 = x; g2 = 0; b2 = c
+	else:
+		r2 = c; g2 = 0; b2 = x
+
+	var new_r = int((r2 + m) * 255)
+	var new_g = int((g2 + m) * 255)
+	var new_b = int((b2 + m) * 255)
+
+	return "#%02X%02X%02X" % [new_r, new_g, new_b]
+
 func _get_contrasting_bg_color(art_color: String) -> String:
-	"""Generate a dark contrasting background color based on the art's foreground color"""
+	"""Generate a dark complementary background for high contrast with art color"""
 	# Parse the hex color (format: #RRGGBB)
 	if not art_color.begins_with("#") or art_color.length() < 7:
-		return "#1A1A1A"  # Default dark gray
+		return "#0A0A0A"  # Default near-black
 
 	var r = art_color.substr(1, 2).hex_to_int()
 	var g = art_color.substr(3, 2).hex_to_int()
 	var b = art_color.substr(5, 2).hex_to_int()
 
-	# Create a dark version of the color (25% brightness) for background
-	# This creates a noticeable tinted background that complements the art color
-	var bg_r = int(r * 0.25)
-	var bg_g = int(g * 0.25)
-	var bg_b = int(b * 0.25)
+	# Use complementary color (opposite on color wheel) at low brightness
+	# Invert the color then darken it significantly
+	var inv_r = 255 - r
+	var inv_g = 255 - g
+	var inv_b = 255 - b
 
-	# Ensure minimum visibility (not pure black)
-	bg_r = max(bg_r, 20)
-	bg_g = max(bg_g, 20)
-	bg_b = max(bg_b, 20)
+	# Dark version of complementary (20% brightness)
+	var bg_r = int(inv_r * 0.15) + 5
+	var bg_g = int(inv_g * 0.15) + 5
+	var bg_b = int(inv_b * 0.15) + 5
+
+	# Keep it dark but visible
+	bg_r = min(bg_r, 50)
+	bg_g = min(bg_g, 50)
+	bg_b = min(bg_b, 50)
 
 	return "#%02X%02X%02X" % [bg_r, bg_g, bg_b]
 
@@ -172,6 +292,22 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var monster_abilities = monster.get("abilities", [])
 	var ambusher_active = ABILITY_AMBUSHER in monster_abilities
 
+	# === INITIATIVE CHECK ===
+	# Monster can go first if faster than player
+	# Chance = (monster_speed - player_dex) * 2, capped at 30%
+	# Ambusher monsters get +15% initiative bonus
+	var player_dex = character.get_effective_stat("dexterity")
+	var monster_speed = monster.get("speed", 10)
+	var speed_diff = monster_speed - player_dex
+	var monster_initiative_chance = 0
+	if speed_diff > 0:
+		monster_initiative_chance = min(30, speed_diff * 2)
+	if ambusher_active:
+		monster_initiative_chance += 15
+	monster_initiative_chance = min(40, monster_initiative_chance)  # Hard cap at 40%
+
+	var monster_goes_first = monster_initiative_chance > 0 and randi() % 100 < monster_initiative_chance
+
 	# Handle disguise ability - monster appears weaker initially
 	var disguise_active = ABILITY_DISGUISE in monster_abilities
 	var true_stats = {}
@@ -196,12 +332,13 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"character": character,
 		"monster": monster,
 		"round": 1,
-		"player_can_act": true,
+		"player_can_act": not monster_goes_first,  # Monster may act first!
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
 		"outsmart_failed": false,  # Can only attempt outsmart once per combat
 		# Monster ability tracking
 		"ambusher_active": ambusher_active,  # Monster's first attack crits
+		"monster_went_first": monster_goes_first,  # Track for display
 		# Note: Poison is now tracked on character (poison_active, poison_damage, poison_turns_remaining)
 		"enrage_stacks": 0,  # Damage bonus per round
 		"thorns_damage": 0,  # Damage reflected on hit
@@ -242,9 +379,30 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var msg = generate_combat_start_message(character, monster)
 	combat_state.combat_log.append(msg)
 
+	# === MONSTER FIRST STRIKE ===
+	# If monster won initiative, they attack immediately
+	var first_strike_msg = ""
+	if monster_goes_first:
+		first_strike_msg = "\n[color=#FF4444][b]The %s is faster and strikes first![/b][/color]" % monster.name
+		var monster_result = process_monster_turn(combat_state)
+		first_strike_msg += "\n" + monster_result.message
+
+		# Check if player died from first strike
+		if character.current_hp <= 0:
+			return {
+				"success": true,
+				"message": msg + first_strike_msg + "\n[color=#FF0000]You have been defeated![/color]",
+				"combat_state": get_combat_display(peer_id),
+				"combat_ended": true,
+				"victory": false
+			}
+
+		# Player can now act
+		combat_state.player_can_act = true
+
 	return {
 		"success": true,
-		"message": msg,
+		"message": msg + first_strike_msg,
 		"combat_state": get_combat_display(peer_id)
 	}
 
@@ -1420,6 +1578,16 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
 			var wis_reduction = min(0.30, float(monster_wis) / 300.0)  # WIS 90 = 30% reduction
 			var pre_mod_dmg = max(1, int(base_damage * (1.0 - wis_reduction)))
+
+			# Apply class affinity bonus (Mages deal +25% to Magical affinity monsters)
+			var affinity = monster.get("class_affinity", 0)
+			var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
+			pre_mod_dmg = int(pre_mod_dmg * class_multiplier)
+			if class_multiplier > 1.0:
+				messages.append("[color=#00BFFF]Class advantage! +%d%% damage![/color]" % [int((class_multiplier - 1.0) * 100)])
+			elif class_multiplier < 1.0:
+				messages.append("[color=#FF6666]Class disadvantage: -%d%% damage[/color]" % [int((1.0 - class_multiplier) * 100)])
+
 			var final_damage = apply_damage_variance(apply_ability_damage_modifiers(pre_mod_dmg, character.level, monster))
 
 			monster.current_hp -= final_damage
@@ -2246,7 +2414,25 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var monster_level = monster.level
 	var level_diff = monster_level - player_level
 	var hit_chance = 85 + level_diff
-	hit_chance = clamp(hit_chance, 60, 95)
+
+	# DEX provides dodge chance: -1% hit chance per 5 DEX (max -20% at 100 DEX)
+	var player_dex = character.get_effective_stat("dexterity")
+	var dex_dodge = min(20, int(player_dex / 5))
+	hit_chance -= dex_dodge
+
+	# Speed buff (from Haste, equipment, etc.) reduces monster hit chance
+	var speed_buff = character.get_buff_value("speed")
+	if speed_buff > 0:
+		# Speed buff directly reduces hit chance (e.g., +20 speed = -10% hit chance)
+		hit_chance -= int(speed_buff / 2)
+
+	# Equipment speed bonus also helps dodge
+	var equipment_bonuses = character.get_equipment_bonuses()
+	var equipment_speed = equipment_bonuses.get("speed", 0)
+	if equipment_speed > 0:
+		hit_chance -= int(equipment_speed / 3)
+
+	hit_chance = clamp(hit_chance, 40, 95)  # 40% minimum (can dodge well), 95% maximum
 
 	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
 	# but ethereal monsters also have lower hit chance
@@ -2513,9 +2699,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
 		if randi() % 100 < 20:  # 20% chance
 			combat["summoner_triggered"] = true
-			# Use base_name so flock generates correct monster type (may still roll variant)
-			combat["summon_next_fight"] = monster.get("base_name", monster.name)
-			messages.append("[color=#FF4444]The %s calls for reinforcements![/color]" % monster.name)
+			var base_name = monster.get("base_name", monster.name)
+			# Shrieker summons higher-tier monsters with weighted probability
+			if base_name == "Shrieker":
+				var summon_tier = _get_shrieker_summon_tier()
+				var summoned_name = monster_database.get_random_monster_name_from_tier(summon_tier)
+				combat["summon_next_fight"] = summoned_name
+				messages.append("[color=#FF4444]The %s's shriek echoes through the realm, summoning a %s![/color]" % [monster.name, summoned_name])
+			else:
+				# Normal summoner: summons same monster type
+				combat["summon_next_fight"] = base_name
+				messages.append("[color=#FF4444]The %s calls for reinforcements![/color]" % monster.name)
 
 	# Charm ability: player attacks themselves next turn (once per combat)
 	if ABILITY_CHARM in abilities and not combat.get("charm_applied", false):
@@ -2747,6 +2941,23 @@ func _get_player_class_path(character_class: String) -> String:
 			return "trickster"
 		_:
 			return "warrior"  # Default
+
+func _get_shrieker_summon_tier() -> int:
+	"""Get a weighted random tier for Shrieker summons (4-9, lower tiers more likely)"""
+	var roll = randi() % 100
+	# Tier 4: 40%, Tier 5: 25%, Tier 6: 15%, Tier 7: 10%, Tier 8: 7%, Tier 9: 3%
+	if roll < 40:
+		return 4
+	elif roll < 65:
+		return 5
+	elif roll < 80:
+		return 6
+	elif roll < 90:
+		return 7
+	elif roll < 97:
+		return 8
+	else:
+		return 9
 
 func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	"""Calculate monster damage to player (reduced by equipment defense, buffs, and class passives)"""

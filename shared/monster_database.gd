@@ -249,6 +249,15 @@ func _get_tier_info(level: int) -> Dictionary:
 	else:
 		return {"tier": 9, "progress": 1.0}
 
+func get_random_monster_name_from_tier(tier: int) -> String:
+	"""Get a random monster name from a specific tier (public function for summoning)"""
+	var tier_monsters = _get_tier_monsters(tier)
+	if tier_monsters.is_empty():
+		return "Goblin"  # Fallback
+	var monster_type = tier_monsters[randi() % tier_monsters.size()]
+	var base_stats = get_monster_base_stats(monster_type)
+	return base_stats.get("name", "Goblin")
+
 func _get_tier_monsters(tier: int) -> Array:
 	"""Get list of monster types for a specific tier"""
 	match tier:

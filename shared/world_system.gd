@@ -566,18 +566,50 @@ func get_direction_name(direction: int) -> String:
 # Merchants travel between trading posts with deterministic positions based on time
 
 # Total number of wandering merchants in the world
-const TOTAL_WANDERING_MERCHANTS = 110
+# Since positions are calculated on-demand (not simulated), more merchants has minimal server cost
+const TOTAL_WANDERING_MERCHANTS = 260
 
 # Merchant type templates for variety
+# Each type has a specialty that affects inventory and map color
 const MERCHANT_TYPES = [
+	# Weapons (Red on map)
 	{"prefix": "Traveling", "suffix": "Weaponsmith", "specialty": "weapons", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Grizzled", "suffix": "Blademaster", "specialty": "weapons", "services": ["buy", "sell", "upgrade"]},
+	# Armor (Blue on map)
 	{"prefix": "Wandering", "suffix": "Armorer", "specialty": "armor", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Dwarven", "suffix": "Smithy", "specialty": "armor", "services": ["buy", "sell", "upgrade"]},
+	# Jewelry (Purple on map)
 	{"prefix": "Mysterious", "suffix": "Jeweler", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
+	{"prefix": "Exotic", "suffix": "Dealer", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
+	# Potions (Green on map)
+	{"prefix": "Wandering", "suffix": "Alchemist", "specialty": "potions", "services": ["buy", "sell"]},
+	{"prefix": "Hooded", "suffix": "Herbalist", "specialty": "potions", "services": ["buy", "sell"]},
+	# Scrolls (Cyan on map)
+	{"prefix": "Arcane", "suffix": "Scribe", "specialty": "scrolls", "services": ["buy", "sell"]},
+	{"prefix": "Mystical", "suffix": "Sage", "specialty": "scrolls", "services": ["buy", "sell", "gamble"]},
+	# General (Gold on map)
 	{"prefix": "Lucky", "suffix": "Gambler", "specialty": "all", "services": ["buy", "sell", "gamble"]},
 	{"prefix": "Old", "suffix": "Trader", "specialty": "all", "services": ["buy", "sell", "upgrade"]},
 	{"prefix": "Swift", "suffix": "Peddler", "specialty": "all", "services": ["buy", "sell"]},
 	{"prefix": "Master", "suffix": "Merchant", "specialty": "all", "services": ["buy", "sell", "upgrade", "gamble"]},
-	{"prefix": "Exotic", "suffix": "Dealer", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
+	# Elite (White on map) - Rare, sells everything with better odds
+	{"prefix": "Legendary", "suffix": "Collector", "specialty": "elite", "services": ["buy", "sell", "upgrade", "gamble"]},
+	# === AFFIX-FOCUSED MERCHANTS (sell equipment with guaranteed stat affixes) ===
+	# Warrior gear (Orange on map) - STR, CON, Stamina, Attack affixes
+	{"prefix": "Veteran", "suffix": "Outfitter", "specialty": "warrior_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Battle-worn", "suffix": "Supplier", "specialty": "warrior_affixes", "services": ["buy", "sell", "upgrade"]},
+	# Mage gear (Light Blue on map) - INT, WIS, Mana affixes
+	{"prefix": "Enchanted", "suffix": "Emporium", "specialty": "mage_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Arcane", "suffix": "Outfitter", "specialty": "mage_affixes", "services": ["buy", "sell", "upgrade"]},
+	# Trickster gear (Lime on map) - DEX, WITS, Energy, Speed affixes
+	{"prefix": "Shadowy", "suffix": "Fence", "specialty": "trickster_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Cunning", "suffix": "Dealer", "specialty": "trickster_affixes", "services": ["buy", "sell", "upgrade"]},
+	# Tank gear (Gray on map) - HP, Defense, CON affixes
+	{"prefix": "Ironclad", "suffix": "Supplier", "specialty": "tank_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Stalwart", "suffix": "Armorer", "specialty": "tank_affixes", "services": ["buy", "sell", "upgrade"]},
+	# DPS gear (Yellow on map) - Attack, Speed, STR affixes
+	{"prefix": "Keen", "suffix": "Bladedealer", "specialty": "dps_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Swift", "suffix": "Striker", "specialty": "dps_affixes", "services": ["buy", "sell", "upgrade"]},
 ]
 
 # Name parts for generating unique merchant names
@@ -610,9 +642,10 @@ const TRADING_POST_IDS = [
 ]
 
 # Merchant travel parameters
-const MERCHANT_SPEED = 0.05  # Tiles per second (1 tile every 20 seconds - slow)
-const MERCHANT_JOURNEY_TIME = 600.0  # ~10 minutes per journey segment
-const MERCHANT_REST_TIME = 180.0  # 3 minutes rest at each trading post
+# Slower speed so players can follow merchants on the map
+const MERCHANT_SPEED = 0.02  # Tiles per second (1 tile every 50 seconds - very slow, easy to follow)
+const MERCHANT_JOURNEY_TIME = 900.0  # ~15 minutes per journey segment (longer journeys)
+const MERCHANT_REST_TIME = 300.0  # 5 minutes rest at each trading post (longer rest for catchup)
 
 # Cache for merchant positions (cleared periodically)
 var _merchant_cache: Dictionary = {}
@@ -624,29 +657,31 @@ func _get_total_merchants() -> int:
 
 func _get_merchant_route(merchant_idx: int) -> Dictionary:
 	"""Get the route for a specific merchant based on their index.
-	Routes are weighted towards center posts so more merchants are near spawn."""
+	Distribution is spread more evenly so players can find merchants in outer areas."""
 	var num_posts = TRADING_POST_IDS.size()
 
 	# Zone boundaries in TRADING_POST_IDS:
-	# 0-4: Core zone (5 posts) - 40% of merchants
-	# 5-16: Inner zone (12 posts) - 30% of merchants
-	# 17-25: Mid zone (9 posts) - 15% of merchants
-	# 26+: Outer zones (32 posts) - 15% of merchants
+	# 0-4: Core zone (5 posts) - 25% of merchants (reduced from 40%)
+	# 5-16: Inner zone (12 posts) - 25% of merchants (reduced from 30%)
+	# 17-25: Mid zone (9 posts) - 25% of merchants (increased from 15%)
+	# 26+: Outer zones (32 posts) - 25% of merchants (increased from 15%)
+	# This ensures merchants are findable everywhere, not just near spawn
 
 	var home_post_idx: int
 	var zone_roll = merchant_idx % 100
 
-	if zone_roll < 40:  # 40% in core zone
+	if zone_roll < 25:  # 25% in core zone
 		home_post_idx = (merchant_idx * 3) % 5  # Posts 0-4
-	elif zone_roll < 70:  # 30% in inner zone
+	elif zone_roll < 50:  # 25% in inner zone
 		home_post_idx = 5 + ((merchant_idx * 7) % 12)  # Posts 5-16
-	elif zone_roll < 85:  # 15% in mid zone
+	elif zone_roll < 75:  # 25% in mid zone
 		home_post_idx = 17 + ((merchant_idx * 11) % 9)  # Posts 17-25
-	else:  # 15% in outer zones
+	else:  # 25% in outer zones
 		home_post_idx = 26 + ((merchant_idx * 13) % (num_posts - 26))  # Posts 26+
 
-	# Destination is usually nearby (within same or adjacent zone)
-	var dest_offset = ((merchant_idx * 17) % 10) + 1  # 1-10 posts away
+	# Destination varies - some stay local, some travel far
+	# This creates more varied travel patterns visible on the map
+	var dest_offset = ((merchant_idx * 17) % 15) + 1  # 1-15 posts away (increased range)
 	var dest_post_idx = (home_post_idx + dest_offset) % num_posts
 
 	# Ensure destination is different from home
@@ -847,6 +882,23 @@ func _get_merchant_map_color(x: int, y: int) -> String:
 			return "#4488FF"  # Blue for armor
 		"jewelry":
 			return "#AA44FF"  # Purple for jewelry
+		"potions":
+			return "#44FF44"  # Bright green for potions/consumables
+		"scrolls":
+			return "#44FFFF"  # Cyan for scrolls
+		"elite":
+			return "#FFFFFF"  # White for elite/legendary merchants
+		# Affix-focused merchants
+		"warrior_affixes":
+			return "#FF8C00"  # Orange for warrior gear (STR/CON/Stamina)
+		"mage_affixes":
+			return "#87CEEB"  # Light blue for mage gear (INT/WIS/Mana)
+		"trickster_affixes":
+			return "#32CD32"  # Lime green for trickster gear (DEX/WITS/Energy)
+		"tank_affixes":
+			return "#A9A9A9"  # Gray for tank gear (HP/DEF/CON)
+		"dps_affixes":
+			return "#FFFF44"  # Yellow for DPS gear (ATK/Speed/STR)
 		_:
 			return "#FFD700"  # Gold for general merchants
 

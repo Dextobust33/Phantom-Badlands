@@ -188,6 +188,13 @@ const POTION_EFFECTS = {
 	"gold_pouch": {"gold": true, "base": 50, "per_level": 25, "variance": 0.5},  # 50 + 25*level ± 50%
 	# Gem items - grants gems (premium currency)
 	"gem_small": {"gems": true, "base": 1, "per_tier": 1},  # 1 gem + 1 per tier above 1
+	# === NORMALIZED TYPES (used by tiered consumables) ===
+	"health_potion": {"heal": true, "base": 0, "per_level": 0},  # Uses tier system for actual values
+	"mana_potion": {"mana": true, "base": 0, "per_level": 0},
+	"stamina_potion": {"stamina": true, "base": 0, "per_level": 0},
+	"energy_potion": {"energy": true, "base": 0, "per_level": 0},
+	"elixir": {"heal": true, "base": 0, "per_level": 0},
+	# === LEGACY TYPES (for backwards compatibility with old items) ===
 	# Healing potions
 	"potion_minor": {"heal": true, "base": 10, "per_level": 10},
 	"potion_lesser": {"heal": true, "base": 20, "per_level": 12},
@@ -319,32 +326,66 @@ func _roll_item_from_table(table: Array) -> Dictionary:
 
 	return table[-1]  # Fallback to last entry
 
+func _normalize_consumable_type(item_type: String) -> String:
+	"""Normalize consumable type for stacking (e.g., potion_minor -> health_potion)"""
+	# Health potions
+	if item_type in ["potion_minor", "potion_lesser", "potion_standard", "potion_greater", "potion_superior", "potion_master"]:
+		return "health_potion"
+	# Mana potions
+	if item_type in ["mana_minor", "mana_lesser", "mana_standard", "mana_greater", "mana_superior", "mana_master"]:
+		return "mana_potion"
+	# Stamina potions
+	if item_type in ["stamina_minor", "stamina_lesser", "stamina_standard", "stamina_greater"]:
+		return "stamina_potion"
+	# Energy potions
+	if item_type in ["energy_minor", "energy_lesser", "energy_standard", "energy_greater"]:
+		return "energy_potion"
+	# Elixirs
+	if item_type in ["elixir_minor", "elixir_greater", "elixir_divine"]:
+		return "elixir"
+	# Buff potions - already have good names
+	if item_type.begins_with("potion_"):
+		return item_type  # strength, defense, speed, crit, lifesteal, thorns
+	# Scrolls - already have good names
+	if item_type.begins_with("scroll_"):
+		return item_type
+	# Gold/Gems - keep as-is
+	return item_type
+
 func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	"""Generate an actual item from a drop table entry with chance for rarity upgrade."""
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
 
-	# Small chance for rarity upgrade - adds excitement to loot drops!
-	var final_rarity = _maybe_upgrade_rarity(base_rarity)
-
-	# If rarity was upgraded, slightly boost the item level too
-	var final_level = monster_level
-	if final_rarity != base_rarity:
-		final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
-
 	# Check if this is a consumable (potions, resource restorers, scrolls)
+	# Consumables use TIER system, not rarity - tier is based on monster level
 	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_")
+
+	var final_rarity: String
+	var final_level = monster_level
+
+	if is_consumable:
+		# Consumables don't have rarity - they use tiers instead
+		# Set to "common" as a placeholder (won't be displayed)
+		final_rarity = "common"
+	else:
+		# Equipment gets rarity upgrades
+		final_rarity = _maybe_upgrade_rarity(base_rarity)
+		# If rarity was upgraded, slightly boost the item level too
+		if final_rarity != base_rarity:
+			final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
 
 	# Roll for affixes (only for equipment, not consumables)
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	var item = {
 		"id": randi(),
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
-		"name": affix_name + _get_item_name(item_type, final_rarity),
+		"name": affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(final_rarity, final_level)
 	}
@@ -353,17 +394,21 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	if is_consumable:
 		item["is_consumable"] = true
 		item["quantity"] = 1
+		# Normalize type for proper stacking (e.g., potion_minor -> health_potion)
+		item["type"] = _normalize_consumable_type(item_type)
 		# Determine tier based on monster level
 		var tier = get_tier_for_level(final_level)
 		item["tier"] = tier
-		# Update name to include tier name for consumables
+		# Update name to include tier name (no rarity prefix for consumables)
 		var tier_name = get_tier_name(tier)
-		item["name"] = _get_tiered_consumable_name(item_type, tier_name, final_rarity)
+		item["name"] = _get_tiered_consumable_name(item_type, tier_name)
+		# Recalculate value based on tier, not rarity
+		item["value"] = _calculate_consumable_value(tier, item_type)
 
 	return item
 
-func _get_tiered_consumable_name(item_type: String, tier_name: String, rarity: String) -> String:
-	"""Generate display name for tiered consumables"""
+func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String:
+	"""Generate display name for tiered consumables (no rarity, just tier)"""
 	# Map item types to base names
 	var base_names = {
 		"potion_minor": "Health Potion",
@@ -388,57 +433,368 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String, rarity: S
 		"energy_greater": "Energy Potion",
 		"elixir_minor": "Elixir",
 		"elixir_greater": "Elixir",
-		"elixir_divine": "Elixir"
+		"elixir_divine": "Elixir",
+		# Buff potions
+		"potion_strength": "Strength Potion",
+		"potion_defense": "Defense Potion",
+		"potion_speed": "Speed Potion",
+		"potion_crit": "Critical Potion",
+		"potion_lifesteal": "Lifesteal Potion",
+		"potion_thorns": "Thorns Potion",
+		# Gold/Gems (special - don't prefix with tier)
+		"gold_pouch": "Gold Pouch",
+		"gem_small": "Gem",
 	}
 
-	var base_name = base_names.get(item_type, _get_item_name(item_type, rarity))
+	var base_name = base_names.get(item_type, "Consumable")
+
+	# Gold and gem items don't use tier prefix
+	if item_type == "gold_pouch" or item_type == "gem_small":
+		return base_name
+
 	return tier_name + " " + base_name
 
-# Affix definitions: name, stat, value_multiplier (scaled by level)
-const AFFIX_POOL = [
-	{"name": "Healthy", "stat": "hp_bonus", "base": 10, "per_level": 2},
-	{"name": "Vigorous", "stat": "hp_bonus", "base": 20, "per_level": 3},
-	{"name": "Stalwart", "stat": "hp_bonus", "base": 30, "per_level": 5},
+func _calculate_consumable_value(tier: int, item_type: String) -> int:
+	"""Calculate gold value of a consumable based on tier."""
+	# Base values per tier (exponential scaling)
+	var tier_values = {
+		1: 10,      # Minor
+		2: 25,      # Lesser
+		3: 60,      # Standard
+		4: 150,     # Greater
+		5: 400,     # Superior
+		6: 1000,    # Master
+		7: 2500     # Divine
+	}
+	var base_value = tier_values.get(tier, 10)
+
+	# Scrolls are worth more
+	if item_type.begins_with("scroll_"):
+		base_value = int(base_value * 2.5)
+	# Elixirs are worth more
+	elif item_type.begins_with("elixir_"):
+		base_value = int(base_value * 2.0)
+	# Buff potions worth slightly more than basic potions
+	elif item_type.begins_with("potion_") and not item_type in ["potion_minor", "potion_lesser", "potion_standard", "potion_greater", "potion_superior", "potion_master"]:
+		base_value = int(base_value * 1.5)
+
+	return base_value
+
+# Prefix affixes: Adjective-style names that appear BEFORE the item name
+# Example: "Draconic Steel Sword"
+# Monster-themed prefixes are inspired by creatures in the game
+const PREFIX_POOL = [
+	# Attack prefixes (generic)
 	{"name": "Mighty", "stat": "attack_bonus", "base": 2, "per_level": 0.5},
+	{"name": "Brutal", "stat": "attack_bonus", "base": 4, "per_level": 0.8},
+	# Attack prefixes (monster-themed)
+	{"name": "Orcish", "stat": "attack_bonus", "base": 3, "per_level": 0.6},        # Orc
+	{"name": "Draconic", "stat": "attack_bonus", "base": 5, "per_level": 0.9},      # Dragon
+	{"name": "Demonic", "stat": "attack_bonus", "base": 6, "per_level": 1.0},       # Demon
+	{"name": "Balrog-touched", "stat": "attack_bonus", "base": 7, "per_level": 1.2},# Balrog
+	# Defense prefixes (generic)
 	{"name": "Fortified", "stat": "defense_bonus", "base": 2, "per_level": 0.5},
-	{"name": "Swift", "stat": "dex_bonus", "base": 1, "per_level": 0.2},
-	{"name": "Wise", "stat": "wis_bonus", "base": 1, "per_level": 0.2},
+	{"name": "Armored", "stat": "defense_bonus", "base": 4, "per_level": 0.8},
+	# Defense prefixes (monster-themed)
+	{"name": "Skeletal", "stat": "defense_bonus", "base": 3, "per_level": 0.6},     # Skeleton
+	{"name": "Golem-forged", "stat": "defense_bonus", "base": 5, "per_level": 0.9}, # Iron Golem
+	{"name": "Gargoyle-hewn", "stat": "defense_bonus", "base": 6, "per_level": 1.0},# Gargoyle
+	# HP prefixes (generic)
+	{"name": "Healthy", "stat": "hp_bonus", "base": 10, "per_level": 2},
+	{"name": "Stalwart", "stat": "hp_bonus", "base": 20, "per_level": 3},
+	# HP prefixes (monster-themed)
+	{"name": "Trollish", "stat": "hp_bonus", "base": 25, "per_level": 4},           # Troll
+	{"name": "Hydra-scaled", "stat": "hp_bonus", "base": 30, "per_level": 5},       # Hydra
+	{"name": "Titanic", "stat": "hp_bonus", "base": 40, "per_level": 6},            # Titan
+	# Speed prefixes (generic)
+	{"name": "Quick", "stat": "speed_bonus", "base": 2, "per_level": 0.3},
+	{"name": "Swift", "stat": "speed_bonus", "base": 4, "per_level": 0.5},
+	# Speed prefixes (monster-themed)
+	{"name": "Wolfish", "stat": "speed_bonus", "base": 3, "per_level": 0.4},        # Wolf
+	{"name": "Harpy-blessed", "stat": "speed_bonus", "base": 5, "per_level": 0.6},  # Harpy
+	{"name": "Serpentine", "stat": "speed_bonus", "base": 6, "per_level": 0.7},     # World Serpent
+	# Resource prefixes (mana - monster-themed)
+	{"name": "Arcane", "stat": "mana_bonus", "base": 10, "per_level": 2},
+	{"name": "Lich-touched", "stat": "mana_bonus", "base": 15, "per_level": 3},     # Lich
+	{"name": "Sphinx-blessed", "stat": "mana_bonus", "base": 20, "per_level": 4},   # Sphinx
+	# Resource prefixes (stamina - monster-themed)
+	{"name": "Enduring", "stat": "stamina_bonus", "base": 5, "per_level": 1},
+	{"name": "Minotaur-forged", "stat": "stamina_bonus", "base": 8, "per_level": 1.5}, # Minotaur
+	{"name": "Ogre-made", "stat": "stamina_bonus", "base": 10, "per_level": 2},     # Ogre
+	# Resource prefixes (energy - monster-themed)
+	{"name": "Energetic", "stat": "energy_bonus", "base": 5, "per_level": 1},
+	{"name": "Spider-spun", "stat": "energy_bonus", "base": 8, "per_level": 1.5},   # Giant Spider
+	{"name": "Void-touched", "stat": "energy_bonus", "base": 12, "per_level": 2},   # Void Walker
 ]
 
-func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
-	"""Roll for item affixes based on rarity. Higher rarity = more likely and better affixes."""
+# Suffix affixes: "of X" style names that appear AFTER the item name
+# Example: "Steel Sword of the Dragon"
+# Monster-themed suffixes are inspired by creatures in the game
+const SUFFIX_POOL = [
+	# Stat suffixes - STR (generic + monster-themed)
+	{"name": "of Strength", "stat": "str_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Orc", "stat": "str_bonus", "base": 3, "per_level": 0.4},       # Orc
+	{"name": "of the Ogre", "stat": "str_bonus", "base": 4, "per_level": 0.5},      # Ogre
+	{"name": "of the Titan", "stat": "str_bonus", "base": 6, "per_level": 0.7},     # Titan
+	# Stat suffixes - CON (generic + monster-themed)
+	{"name": "of Fortitude", "stat": "con_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Troll", "stat": "con_bonus", "base": 4, "per_level": 0.5},     # Troll
+	{"name": "of the Golem", "stat": "con_bonus", "base": 5, "per_level": 0.6},     # Iron Golem
+	{"name": "of the Hydra", "stat": "con_bonus", "base": 6, "per_level": 0.7},     # Hydra
+	# Stat suffixes - DEX (generic + monster-themed)
+	{"name": "of Dexterity", "stat": "dex_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Spider", "stat": "dex_bonus", "base": 3, "per_level": 0.4},    # Giant Spider
+	{"name": "of the Harpy", "stat": "dex_bonus", "base": 4, "per_level": 0.5},     # Harpy
+	{"name": "of the Serpent", "stat": "dex_bonus", "base": 6, "per_level": 0.7},   # World Serpent
+	# Stat suffixes - INT (generic + monster-themed)
+	{"name": "of Intellect", "stat": "int_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Wight", "stat": "int_bonus", "base": 3, "per_level": 0.4},     # Wight
+	{"name": "of the Lich", "stat": "int_bonus", "base": 5, "per_level": 0.6},      # Lich
+	{"name": "of the Sphinx", "stat": "int_bonus", "base": 6, "per_level": 0.7},    # Sphinx
+	# Stat suffixes - WIS (generic + monster-themed)
+	{"name": "of Wisdom", "stat": "wis_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Wraith", "stat": "wis_bonus", "base": 4, "per_level": 0.5},    # Wraith
+	{"name": "of the Phoenix", "stat": "wis_bonus", "base": 5, "per_level": 0.6},   # Phoenix
+	{"name": "of Entropy", "stat": "wis_bonus", "base": 6, "per_level": 0.7},       # Entropy
+	# Stat suffixes - WITS (generic + monster-themed)
+	{"name": "of Cunning", "stat": "wits_bonus", "base": 2, "per_level": 0.3},
+	{"name": "of the Goblin", "stat": "wits_bonus", "base": 3, "per_level": 0.4},   # Goblin
+	{"name": "of the Mimic", "stat": "wits_bonus", "base": 4, "per_level": 0.5},    # Mimic
+	{"name": "of the Succubus", "stat": "wits_bonus", "base": 6, "per_level": 0.7}, # Succubus
+	# Combat suffixes - attack (generic + monster-themed)
+	{"name": "of Striking", "stat": "attack_bonus", "base": 2, "per_level": 0.4},
+	{"name": "of the Wolf", "stat": "attack_bonus", "base": 3, "per_level": 0.5},   # Wolf
+	{"name": "of the Dragon", "stat": "attack_bonus", "base": 5, "per_level": 0.7}, # Ancient Dragon
+	{"name": "of the Balrog", "stat": "attack_bonus", "base": 6, "per_level": 0.9}, # Balrog
+	# Combat suffixes - defense (generic + monster-themed)
+	{"name": "of Warding", "stat": "defense_bonus", "base": 2, "per_level": 0.4},
+	{"name": "of the Skeleton", "stat": "defense_bonus", "base": 3, "per_level": 0.5}, # Skeleton
+	{"name": "of the Gargoyle", "stat": "defense_bonus", "base": 5, "per_level": 0.7}, # Gargoyle
+	{"name": "of the Nazgul", "stat": "defense_bonus", "base": 6, "per_level": 0.9},# Nazgul
+	# HP suffixes (generic + monster-themed)
+	{"name": "of Vitality", "stat": "hp_bonus", "base": 15, "per_level": 2.5},
+	{"name": "of the Giant", "stat": "hp_bonus", "base": 20, "per_level": 3.5},     # Giant
+	{"name": "of the Cerberus", "stat": "hp_bonus", "base": 25, "per_level": 4},    # Cerberus
+	{"name": "of the Primordial", "stat": "hp_bonus", "base": 35, "per_level": 5},  # Primordial Dragon
+	# Resource suffixes - mana (monster-themed)
+	{"name": "of the Siren", "stat": "mana_bonus", "base": 12, "per_level": 2.5},   # Siren
+	{"name": "of the Elemental", "stat": "mana_bonus", "base": 18, "per_level": 3.5}, # Elemental
+	{"name": "of the Elder Lich", "stat": "mana_bonus", "base": 25, "per_level": 5},# Elder Lich
+	# Resource suffixes - stamina (monster-themed)
+	{"name": "of the Gnoll", "stat": "stamina_bonus", "base": 6, "per_level": 1.2}, # Gnoll
+	{"name": "of the Gryphon", "stat": "stamina_bonus", "base": 10, "per_level": 2},# Gryphon
+	{"name": "of the God Slayer", "stat": "stamina_bonus", "base": 15, "per_level": 3}, # God Slayer
+	# Resource suffixes - energy (monster-themed)
+	{"name": "of the Kobold", "stat": "energy_bonus", "base": 6, "per_level": 1.2}, # Kobold
+	{"name": "of the Vampire", "stat": "energy_bonus", "base": 10, "per_level": 2}, # Vampire
+	{"name": "of the Void", "stat": "energy_bonus", "base": 15, "per_level": 3},    # Void Walker
+]
+
+# Specialty affix pools for class-focused merchants
+# These map merchant specialties to the specific affix stats they should guarantee
+const SPECIALTY_AFFIX_STATS = {
+	# Warrior's Outfitter - STR, CON, Stamina, Attack focused
+	"warrior_affixes": {
+		"prefix_stats": ["attack_bonus", "hp_bonus", "stamina_bonus"],
+		"suffix_stats": ["str_bonus", "con_bonus", "attack_bonus", "stamina_bonus"]
+	},
+	# Mage's Emporium - INT, WIS, Mana focused
+	"mage_affixes": {
+		"prefix_stats": ["mana_bonus"],
+		"suffix_stats": ["int_bonus", "wis_bonus", "mana_bonus"]
+	},
+	# Rogue's Fence - DEX, WITS, Energy, Speed focused
+	"trickster_affixes": {
+		"prefix_stats": ["speed_bonus", "energy_bonus"],
+		"suffix_stats": ["dex_bonus", "wits_bonus", "energy_bonus", "speed_bonus"]
+	},
+	# Ironclad Supplier - HP, Defense, CON focused (tank gear)
+	"tank_affixes": {
+		"prefix_stats": ["defense_bonus", "hp_bonus"],
+		"suffix_stats": ["defense_bonus", "hp_bonus", "con_bonus"]
+	},
+	# Swiftblade Dealer - Attack, Speed, STR focused (DPS gear)
+	"dps_affixes": {
+		"prefix_stats": ["attack_bonus", "speed_bonus"],
+		"suffix_stats": ["attack_bonus", "str_bonus", "speed_bonus"]
+	}
+}
+
+func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
+	"""Get all affixes that have a specific stat from prefix or suffix pool."""
+	var pool = PREFIX_POOL if is_prefix else SUFFIX_POOL
+	var matching = []
+	for affix in pool:
+		if affix.stat == stat:
+			matching.append(affix)
+	return matching
+
+func roll_affixes_for_specialty(specialty: String, rarity: String, item_level: int) -> Dictionary:
+	"""Roll affixes from a specific specialty's affix pool.
+	Guarantees affixes with stats matching the specialty."""
 	var affixes = {}
 
-	# Affix chances by rarity
+	if not SPECIALTY_AFFIX_STATS.has(specialty):
+		# Fall back to normal affix rolling if specialty not found
+		return _roll_affixes(rarity, item_level)
+
+	var spec_data = SPECIALTY_AFFIX_STATS[specialty]
+	var roll_range = _get_stat_roll_range(item_level)
+	var total_roll_quality = 0
+	var affix_count = 0
+
+	# Specialty merchants guarantee at least one affix
+	# Higher rarity = higher chance of getting both prefix AND suffix
 	var affix_chances = {
-		"common": 10,      # 10% chance for 1 affix
-		"uncommon": 25,    # 25% chance
-		"rare": 45,        # 45% chance
-		"epic": 70,        # 70% chance
-		"legendary": 90,   # 90% chance
-		"artifact": 100    # 100% chance
+		"common":    {"prefix": 60, "suffix": 30, "both_bonus": 10},
+		"uncommon":  {"prefix": 75, "suffix": 50, "both_bonus": 20},
+		"rare":      {"prefix": 90, "suffix": 70, "both_bonus": 30},
+		"epic":      {"prefix": 100, "suffix": 85, "both_bonus": 50},
+		"legendary": {"prefix": 100, "suffix": 95, "both_bonus": 70},
+		"artifact":  {"prefix": 100, "suffix": 100, "both_bonus": 90}
 	}
 
-	var chance = affix_chances.get(rarity, 10)
-	var roll = randi() % 100
+	var chances = affix_chances.get(rarity, {"prefix": 60, "suffix": 30, "both_bonus": 10})
 
-	if roll >= chance:
-		return affixes  # No affixes
+	# Roll for prefix from specialty's prefix stats
+	var prefix_roll = randi() % 100
+	if prefix_roll < chances.prefix and spec_data.prefix_stats.size() > 0:
+		# Pick a random stat from the specialty's prefix stats
+		var target_stat = spec_data.prefix_stats[randi() % spec_data.prefix_stats.size()]
+		var matching_prefixes = _get_affixes_for_stat(target_stat, true)
+		if matching_prefixes.size() > 0:
+			var prefix = matching_prefixes[randi() % matching_prefixes.size()]
+			var result = _calculate_affix_value(prefix, item_level, roll_range)
+			affixes[prefix.stat] = result.value
+			affixes["prefix_name"] = prefix.name
+			total_roll_quality += result.quality
+			affix_count += 1
 
-	# Roll for which affix
-	var affix = AFFIX_POOL[randi() % AFFIX_POOL.size()]
-	var value = int(affix.base + affix.per_level * item_level)
+	# Roll for suffix from specialty's suffix stats
+	var suffix_roll = randi() % 100
+	var suffix_chance = chances.suffix
+	if affixes.has("prefix_name"):
+		suffix_chance += chances.both_bonus
 
-	affixes[affix.stat] = value
-	affixes["affix_name"] = affix.name
+	if suffix_roll < suffix_chance and spec_data.suffix_stats.size() > 0:
+		# Pick a random stat from the specialty's suffix stats
+		var target_stat = spec_data.suffix_stats[randi() % spec_data.suffix_stats.size()]
+		var matching_suffixes = _get_affixes_for_stat(target_stat, false)
+		if matching_suffixes.size() > 0:
+			var suffix = matching_suffixes[randi() % matching_suffixes.size()]
+			var result = _calculate_affix_value(suffix, item_level, roll_range)
+
+			# If same stat as prefix, add to existing value
+			if affixes.has(suffix.stat):
+				affixes[suffix.stat] += result.value
+			else:
+				affixes[suffix.stat] = result.value
+			affixes["suffix_name"] = suffix.name
+			total_roll_quality += result.quality
+			affix_count += 1
+
+	# Store average roll quality if we have affixes
+	if affix_count > 0:
+		affixes["roll_quality"] = int(total_roll_quality / affix_count)
 
 	return affixes
 
+func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
+	"""Roll for item affixes based on rarity. Higher rarity = more/better affixes.
+	Items can have a prefix (adjective), suffix (of X), or both."""
+	var affixes = {}
+
+	# Chances for prefix and suffix by rarity
+	# Format: {prefix_chance, suffix_chance, both_chance (bonus for getting both)}
+	var affix_chances = {
+		"common":    {"prefix": 10, "suffix": 5,  "both_bonus": 0},    # 10% prefix, 5% suffix
+		"uncommon":  {"prefix": 25, "suffix": 15, "both_bonus": 5},    # Can get both
+		"rare":      {"prefix": 45, "suffix": 35, "both_bonus": 15},   # 15% bonus for both
+		"epic":      {"prefix": 70, "suffix": 55, "both_bonus": 30},   # Good chance for both
+		"legendary": {"prefix": 90, "suffix": 80, "both_bonus": 50},   # High chance for both
+		"artifact":  {"prefix": 100, "suffix": 95, "both_bonus": 75}   # Almost always both
+	}
+
+	var chances = affix_chances.get(rarity, {"prefix": 10, "suffix": 5, "both_bonus": 0})
+	var roll_range = _get_stat_roll_range(item_level)
+	var total_roll_quality = 0
+	var affix_count = 0
+
+	# Roll for prefix
+	var prefix_roll = randi() % 100
+	if prefix_roll < chances.prefix:
+		var prefix = PREFIX_POOL[randi() % PREFIX_POOL.size()]
+		var result = _calculate_affix_value(prefix, item_level, roll_range)
+		affixes[prefix.stat] = result.value
+		affixes["prefix_name"] = prefix.name
+		total_roll_quality += result.quality
+		affix_count += 1
+
+	# Roll for suffix
+	var suffix_roll = randi() % 100
+	# If we already have a prefix, apply the both_bonus to make suffix more likely
+	var suffix_chance = chances.suffix
+	if affixes.has("prefix_name"):
+		suffix_chance += chances.both_bonus
+
+	if suffix_roll < suffix_chance:
+		var suffix = SUFFIX_POOL[randi() % SUFFIX_POOL.size()]
+		var result = _calculate_affix_value(suffix, item_level, roll_range)
+
+		# If same stat as prefix, add to existing value instead of replacing
+		if affixes.has(suffix.stat):
+			affixes[suffix.stat] += result.value
+		else:
+			affixes[suffix.stat] = result.value
+		affixes["suffix_name"] = suffix.name
+		total_roll_quality += result.quality
+		affix_count += 1
+
+	# Store average roll quality if we have affixes
+	if affix_count > 0:
+		affixes["roll_quality"] = int(total_roll_quality / affix_count)
+
+	return affixes
+
+func _calculate_affix_value(affix: Dictionary, item_level: int, roll_range: Dictionary) -> Dictionary:
+	"""Calculate the value for an affix with roll range applied."""
+	var base_value = affix.base + affix.per_level * item_level
+	var roll_multiplier = randf_range(roll_range.min_mult, roll_range.max_mult)
+	var value = int(base_value * roll_multiplier)
+	value = maxi(1, value)
+
+	var quality = int(((roll_multiplier - roll_range.min_mult) / (roll_range.max_mult - roll_range.min_mult)) * 100)
+	return {"value": value, "quality": quality}
+
+func _get_stat_roll_range(item_level: int) -> Dictionary:
+	"""Get the min/max roll multiplier range based on item level.
+	Higher level items have better minimum rolls (tighter range, higher floor)."""
+	# Clamp level for calculation (1-200 meaningful range)
+	var clamped_level = clampi(item_level, 1, 200)
+
+	# Min multiplier: 0.70 at level 1, scaling to 0.90 at level 100+
+	# Formula: 0.70 + (level/100) * 0.20, capped at 0.90
+	var min_mult = 0.70 + (float(clamped_level) / 100.0) * 0.20
+	min_mult = minf(min_mult, 0.90)
+
+	# Max multiplier: 1.10 at level 1, scaling to 1.30 at level 100+
+	# Formula: 1.10 + (level/100) * 0.20, capped at 1.30
+	var max_mult = 1.10 + (float(clamped_level) / 100.0) * 0.20
+	max_mult = minf(max_mult, 1.30)
+
+	return {"min_mult": min_mult, "max_mult": max_mult}
+
 func _get_affix_prefix(affixes: Dictionary) -> String:
-	"""Get prefix for item name based on affixes."""
-	if affixes.is_empty():
+	"""Get prefix for item name (adjective that goes BEFORE the item name)."""
+	if affixes.is_empty() or not affixes.has("prefix_name"):
 		return ""
-	return affixes.get("affix_name", "") + " "
+	return affixes.get("prefix_name", "") + " "
+
+func _get_affix_suffix(affixes: Dictionary) -> String:
+	"""Get suffix for item name (of X phrase that goes AFTER the item name)."""
+	if affixes.is_empty() or not affixes.has("suffix_name"):
+		return ""
+	return " " + affixes.get("suffix_name", "")
 
 func _maybe_upgrade_rarity(base_rarity: String) -> String:
 	"""Small chance to upgrade item rarity for exciting drops"""
@@ -612,13 +968,14 @@ func generate_weapon(monster_level: int) -> Dictionary:
 
 	var affixes = _roll_affixes(rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	return {
 		"id": randi(),
 		"type": weapon_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Weapon Master's " + _get_item_name(weapon_type, rarity),
+		"name": affix_name + "Weapon Master's " + _get_item_name(weapon_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -652,13 +1009,14 @@ func generate_shield(monster_level: int) -> Dictionary:
 
 	var affixes = _roll_affixes(rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	return {
 		"id": randi(),
 		"type": shield_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Guardian's " + _get_item_name(shield_type, rarity),
+		"name": affix_name + "Guardian's " + _get_item_name(shield_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -678,13 +1036,14 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 
 	var affixes = _roll_affixes(rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Arcane Hoarder's " + _get_item_name(item_type, rarity),
+		"name": affix_name + "Arcane Hoarder's " + _get_item_name(item_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -710,13 +1069,14 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 
 	var affixes = _roll_affixes(rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Cunning Prey's " + _get_item_name(item_type, rarity),
+		"name": affix_name + "Cunning Prey's " + _get_item_name(item_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -736,13 +1096,14 @@ func generate_warrior_gear(monster_level: int) -> Dictionary:
 
 	var affixes = _roll_affixes(rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
 
 	return {
 		"id": randi(),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Warrior Hoarder's " + _get_item_name(item_type, rarity),
+		"name": affix_name + "Warrior Hoarder's " + _get_item_name(item_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -789,3 +1150,31 @@ func _get_rare_drop_rarity(monster_level: int) -> String:
 			return "uncommon"
 		else:
 			return "common"
+
+func generate_shop_item_with_specialty(item_type: String, rarity: String, item_level: int, specialty: String) -> Dictionary:
+	"""Generate a shop item with affixes guaranteed from a specific specialty pool.
+	Used by affix-focused merchants to ensure their items have relevant stats."""
+	# Roll for rarity upgrade
+	var final_rarity = _maybe_upgrade_rarity(rarity)
+	var final_level = item_level
+	if final_rarity != rarity:
+		final_level = int(item_level * 1.1)
+
+	# Use specialty affix rolling instead of random
+	var affixes = roll_affixes_for_specialty(specialty, final_rarity, final_level)
+	var affix_name = _get_affix_prefix(affixes)
+	var affix_suffix = _get_affix_suffix(affixes)
+
+	return {
+		"id": randi(),
+		"type": item_type,
+		"rarity": final_rarity,
+		"level": final_level,
+		"name": affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
+		"affixes": affixes,
+		"value": _calculate_item_value(final_rarity, final_level)
+	}
+
+func is_affix_specialty(specialty: String) -> bool:
+	"""Check if a specialty is an affix-focused specialty."""
+	return SPECIALTY_AFFIX_STATS.has(specialty)

@@ -18,17 +18,25 @@ Export is configured for Windows Desktop via `export_presets.cfg`.
 
 Godot executable location: `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`
 
-**Launch server:**
+**Preferred Launch Method (with output capture for debugging):**
+
+Use Bash tool with `run_in_background: true` and extended timeout (600000ms = 10 min):
+```bash
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" server/server.tscn 2>&1 &
+sleep 3
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" client/client.tscn 2>&1
+```
+
+This launches server first, waits 3 seconds, then launches client. Output is captured to a file for debugging. Use `TaskOutput` or read the output file to see console messages.
+
+**Simple Launch (no output capture):**
 ```bash
 "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" server/server.tscn &
 ```
-
-**Launch client (after server is running):**
+Then:
 ```bash
 "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" client/client.tscn &
 ```
-
-Run server first, then client. Both commands run in background (`&`).
 
 ## Adding ASCII Art to Combat
 
@@ -171,9 +179,27 @@ When game mechanics, formulas, or features change, update the in-game help:
 ## Game Systems
 
 **Character Stats:** STR, CON, DEX, INT, WIS, CHA with derived HP and Mana
-**Combat:** Turn-based with attack, defend, flee, special actions
+**Combat:** Turn-based with attack, defend, flee, special actions. Initiative system allows fast monsters to strike first.
 **World:** Coordinate-based grid with 11 terrain types, special fixed locations (Sanctuary at 0,10, Throne at 0,0)
 **Classes:** Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja
+
+## Combat Initiative & Dodge System
+
+**Monster Initiative (First Strike):**
+- If monster speed > player DEX, monster may attack first
+- Chance = (monster_speed - player_DEX) × 2%, capped at 30%
+- Ambusher monsters get +15% initiative bonus (max 40%)
+- Fast monsters (rats, wolves) are more likely to go first
+
+**Dodge (Monster Miss Chance):**
+- Base monster hit: 85% + level difference
+- DEX reduces hit: -1% per 5 DEX (max -20% at 100 DEX)
+- Speed buff: -1% per 2 speed (Haste gives 20-30 speed)
+- Equipment speed: -1% per 3 speed
+- Final hit chance clamped 40-95%
+
+**Key Files:**
+- `shared/combat_manager.gd` - `start_combat()` for initiative, `process_monster_turn()` for dodge
 
 ## Code Conventions
 

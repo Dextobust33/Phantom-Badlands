@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://dbwq54oox3iif"]
+[gd_scene format=3 uid="uid://dbwq54oox3iif"]
 
 [ext_resource type="Script" uid="uid://dqt7egmp3w0c3" path="res://client/client.gd" id="1_6t3qf"]
 [ext_resource type="FontFile" uid="uid://1qgac8l6iw0p" path="res://font/Consolas/consolas.ttf" id="2_gdxsl"]
@@ -29,12 +29,6 @@ bg_color = Color(0.2, 0.8, 0.2, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_stamina_fill"]
 bg_color = Color(0.9, 0.75, 0.1, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_energy_fill"]
-bg_color = Color(0.2, 0.8, 0.3, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mana_fill"]
-bg_color = Color(0.2, 0.7, 0.8, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n07ed"]
 bg_color = Color(0, 0, 0, 1)
@@ -78,7 +72,7 @@ corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
-[node name="ClientScene" type="Control"]
+[node name="ClientScene" type="Control" unique_id=2064325274]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -87,7 +81,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_6t3qf")
 
-[node name="RootContainer" type="VBoxContainer" parent="."]
+[node name="RootContainer" type="VBoxContainer" parent="." unique_id=86727919]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -96,29 +90,30 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 4
 
-[node name="MainContainer" type="HBoxContainer" parent="RootContainer"]
+[node name="MainContainer" type="HBoxContainer" parent="RootContainer" unique_id=1739630798]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="LeftPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
+[node name="LeftPanel" type="VBoxContainer" parent="RootContainer/MainContainer" unique_id=1932463671]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 2.0
 theme_override_constants/separation = 4
 
-[node name="GameOutputContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel"]
+[node name="GameOutputContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel" unique_id=961281906]
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
 
-[node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
+[node name="GameOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer" unique_id=1248937379]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 2
 theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 14
@@ -127,7 +122,7 @@ bbcode_enabled = true
 scroll_following = true
 selection_enabled = true
 
-[node name="BuffDisplayLabel" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
+[node name="BuffDisplayLabel" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer" unique_id=1424661051]
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
@@ -143,24 +138,24 @@ theme_override_font_sizes/normal_font_size = 12
 bbcode_enabled = true
 fit_content = true
 
-[node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
+[node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel" unique_id=1185303048]
 visible = false
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Label" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar"]
+[node name="Label" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar" unique_id=584434922]
 custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "Enemy:"
 vertical_alignment = 1
 
-[node name="BarContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar"]
+[node name="BarContainer" type="Control" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar" unique_id=2033323773]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Background" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer" unique_id=677563898]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -169,7 +164,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_bg")
 
-[node name="Fill" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer" unique_id=1504674944]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -178,7 +173,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_fill")
 
-[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer"]
+[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/LeftPanel/EnemyHealthBar/BarContainer" unique_id=795406030]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -196,184 +191,185 @@ text = "???"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ActionBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel"]
+[node name="ActionBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel" unique_id=129886576]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Action1" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action1" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1912034009]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1" unique_id=1410895829]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action1" unique_id=376948459]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "Space"
 horizontal_alignment = 1
 
-[node name="Action2" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action2" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1319249390]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2" unique_id=1074871437]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action2" unique_id=1879682488]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "Q"
 horizontal_alignment = 1
 
-[node name="Action3" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action3" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1755555253]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3" unique_id=514057]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action3" unique_id=736441236]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "W"
 horizontal_alignment = 1
 
-[node name="Action4" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action4" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1777547390]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4" unique_id=1614287005]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action4" unique_id=325873887]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "E"
 horizontal_alignment = 1
 
-[node name="Action5" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action5" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=2138971687]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5" unique_id=107726794]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action5" unique_id=34595541]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "R"
 horizontal_alignment = 1
 
-[node name="Action6" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action6" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=908826817]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6" unique_id=243480761]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action6" unique_id=2078186358]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "1"
 horizontal_alignment = 1
 
-[node name="Action7" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action7" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=2125569791]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7" unique_id=722656054]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action7" unique_id=1817151285]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "2"
 horizontal_alignment = 1
 
-[node name="Action8" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action8" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1738445937]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8" unique_id=2071512151]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action8" unique_id=2077062499]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "3"
 horizontal_alignment = 1
 
-[node name="Action9" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action9" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=71874487]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9" unique_id=1732116064]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action9" unique_id=463991644]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "4"
 horizontal_alignment = 1
 
-[node name="Action10" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar"]
+[node name="Action10" type="VBoxContainer" parent="RootContainer/MainContainer/LeftPanel/ActionBar" unique_id=1916491269]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10"]
+[node name="Button" type="Button" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10" unique_id=516207516]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "---"
 
-[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10"]
+[node name="Hotkey" type="Label" parent="RootContainer/MainContainer/LeftPanel/ActionBar/Action10" unique_id=258050665]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "5"
 horizontal_alignment = 1
 
-[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel"]
+[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel" unique_id=1056944860]
 layout_mode = 2
 size_flags_vertical = 3
+focus_mode = 2
 theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_font_sizes/normal_font_size = 14
 theme_override_styles/background = SubResource("StyleBoxFlat_korgu")
@@ -381,15 +377,15 @@ bbcode_enabled = true
 scroll_following = true
 selection_enabled = true
 
-[node name="RightPanel" type="VBoxContainer" parent="RootContainer/MainContainer"]
+[node name="RightPanel" type="VBoxContainer" parent="RootContainer/MainContainer" unique_id=1140487923]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="LevelRow" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel"]
+[node name="LevelRow" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel" unique_id=1090744552]
 layout_mode = 2
 
-[node name="PlayerLevel" type="Label" parent="RootContainer/MainContainer/RightPanel/LevelRow"]
+[node name="PlayerLevel" type="Label" parent="RootContainer/MainContainer/RightPanel/LevelRow" unique_id=1248576763]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
@@ -397,18 +393,18 @@ theme_override_font_sizes/font_size = 16
 text = "Level 1"
 horizontal_alignment = 1
 
-[node name="MusicToggle" type="Button" parent="RootContainer/MainContainer/RightPanel/LevelRow"]
+[node name="MusicToggle" type="Button" parent="RootContainer/MainContainer/RightPanel/LevelRow" unique_id=705364903]
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "♫"
 flat = true
 
-[node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+[node name="PlayerXPBar" type="Control" parent="RootContainer/MainContainer/RightPanel" unique_id=1967647268]
 custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 
-[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar" unique_id=1653256749]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -417,7 +413,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_xp_bg")
 
-[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar" unique_id=735371984]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -425,7 +421,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_xp_fill")
 
-[node name="XPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar"]
+[node name="XPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerXPBar" unique_id=24605989]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -443,11 +439,11 @@ text = "XP: 0 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+[node name="PlayerHealthBar" type="Control" parent="RootContainer/MainContainer/RightPanel" unique_id=280441634]
 custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 
-[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar" unique_id=2086073309]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -456,7 +452,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_bg")
 
-[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar" unique_id=2092456880]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -465,7 +461,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_fill")
 
-[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar"]
+[node name="HPLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/PlayerHealthBar" unique_id=828315729]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -483,11 +479,11 @@ text = "HP: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ResourceBar" type="Control" parent="RootContainer/MainContainer/RightPanel"]
+[node name="ResourceBar" type="Control" parent="RootContainer/MainContainer/RightPanel" unique_id=1790675130]
 custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 
-[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+[node name="Background" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar" unique_id=805751856]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -496,7 +492,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_player_hp_bg")
 
-[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+[node name="Fill" type="Panel" parent="RootContainer/MainContainer/RightPanel/ResourceBar" unique_id=1306796520]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -505,7 +501,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_stamina_fill")
 
-[node name="ResourceLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/ResourceBar"]
+[node name="ResourceLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/ResourceBar" unique_id=477639955]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -523,47 +519,47 @@ text = "Stamina: 100/100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CurrencyDisplay" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel"]
+[node name="CurrencyDisplay" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel" unique_id=2072749487]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="GoldContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay"]
+[node name="GoldContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay" unique_id=896715501]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="GoldIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer"]
+[node name="GoldIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer" unique_id=1065541637]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 14
 text = "Gold:"
 
-[node name="GoldLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer"]
+[node name="GoldLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer" unique_id=1706433810]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 14
 text = "0"
 
-[node name="GemContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay"]
+[node name="GemContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay" unique_id=57881078]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="GemIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer"]
+[node name="GemIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer" unique_id=703040071]
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 1, 1, 1)
 theme_override_font_sizes/font_size = 14
 text = "Gems:"
 
-[node name="GemLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer"]
+[node name="GemLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer" unique_id=1476429451]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0, 1, 1, 1)
 theme_override_font_sizes/font_size = 14
 text = "0"
 
-[node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
+[node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel" unique_id=216649298]
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
@@ -573,83 +569,83 @@ theme_override_font_sizes/normal_font_size = 8
 theme_override_styles/background = SubResource("StyleBoxFlat_n07ed")
 bbcode_enabled = true
 
-[node name="MovementPad" type="GridContainer" parent="RootContainer/MainContainer/RightPanel"]
+[node name="MovementPad" type="GridContainer" parent="RootContainer/MainContainer/RightPanel" unique_id=383632363]
 layout_mode = 2
 theme_override_constants/h_separation = 2
 theme_override_constants/v_separation = 2
 columns = 3
 
-[node name="NW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="NW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=1890746501]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "NW"
 
-[node name="N" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="N" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=2135820205]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "N"
 
-[node name="NE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="NE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=1301359724]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "NE"
 
-[node name="W" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="W" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=188310883]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "W"
 
-[node name="Hunt" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="Hunt" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=96779730]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "Hunt"
 
-[node name="E" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="E" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=1664883742]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "E"
 
-[node name="SW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="SW" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=63211032]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "SW"
 
-[node name="S" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="S" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=170931392]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "S"
 
-[node name="SE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad"]
+[node name="SE" type="Button" parent="RootContainer/MainContainer/RightPanel/MovementPad" unique_id=309097491]
 custom_minimum_size = Vector2(50, 32)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "SE"
 
-[node name="OnlinePlayersLabel" type="Label" parent="RootContainer/MainContainer/RightPanel"]
+[node name="OnlinePlayersLabel" type="Label" parent="RootContainer/MainContainer/RightPanel" unique_id=1014761892]
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 0.75, 0, 1)
 theme_override_font_sizes/font_size = 12
 text = "Online Players"
 horizontal_alignment = 1
 
-[node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel"]
+[node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel" unique_id=941875903]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 size_flags_vertical = 3
@@ -659,12 +655,12 @@ theme_override_styles/background = SubResource("StyleBoxFlat_hlfbj")
 bbcode_enabled = true
 text = "[color=#666666]No players online[/color]"
 
-[node name="BottomBar" type="HBoxContainer" parent="RootContainer"]
+[node name="BottomBar" type="HBoxContainer" parent="RootContainer" unique_id=1399170367]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="InputField" type="LineEdit" parent="RootContainer/BottomBar"]
+[node name="InputField" type="LineEdit" parent="RootContainer/BottomBar" unique_id=1004741320]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0, 0.75, 0, 1)
@@ -675,12 +671,12 @@ placeholder_text = "Type message or command..."
 keep_editing_on_text_submit = true
 caret_blink = true
 
-[node name="SendButton" type="Button" parent="RootContainer/BottomBar"]
+[node name="SendButton" type="Button" parent="RootContainer/BottomBar" unique_id=1317710332]
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 text = "Send"
 
-[node name="LoginPanel" type="Panel" parent="."]
+[node name="LoginPanel" type="Panel" parent="." unique_id=429179656]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -696,7 +692,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
 
-[node name="VBox" type="VBoxContainer" parent="LoginPanel"]
+[node name="VBox" type="VBoxContainer" parent="LoginPanel" unique_id=72858265]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -709,68 +705,68 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="LoginPanel/VBox"]
+[node name="Title" type="Label" parent="LoginPanel/VBox" unique_id=213742926]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 24
 text = "Phantasia Revival"
 horizontal_alignment = 1
 
-[node name="Subtitle" type="Label" parent="LoginPanel/VBox"]
+[node name="Subtitle" type="Label" parent="LoginPanel/VBox" unique_id=2140432393]
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 0.75, 0, 1)
 theme_override_font_sizes/font_size = 12
 text = "Login or Register"
 horizontal_alignment = 1
 
-[node name="UsernameLabel" type="Label" parent="LoginPanel/VBox"]
+[node name="UsernameLabel" type="Label" parent="LoginPanel/VBox" unique_id=1772583391]
 layout_mode = 2
 text = "Username:"
 
-[node name="UsernameField" type="LineEdit" parent="LoginPanel/VBox"]
+[node name="UsernameField" type="LineEdit" parent="LoginPanel/VBox" unique_id=405168193]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 placeholder_text = "Enter username..."
 
-[node name="PasswordLabel" type="Label" parent="LoginPanel/VBox"]
+[node name="PasswordLabel" type="Label" parent="LoginPanel/VBox" unique_id=1092703919]
 layout_mode = 2
 text = "Password:"
 
-[node name="PasswordField" type="LineEdit" parent="LoginPanel/VBox"]
+[node name="PasswordField" type="LineEdit" parent="LoginPanel/VBox" unique_id=419531467]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 placeholder_text = "Enter password..."
 secret = true
 
-[node name="ConfirmPasswordField" type="LineEdit" parent="LoginPanel/VBox"]
+[node name="ConfirmPasswordField" type="LineEdit" parent="LoginPanel/VBox" unique_id=396392125]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 placeholder_text = "Confirm password (for registration)..."
 secret = true
 
-[node name="ButtonContainer" type="HBoxContainer" parent="LoginPanel/VBox"]
+[node name="ButtonContainer" type="HBoxContainer" parent="LoginPanel/VBox" unique_id=1465876472]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="LoginButton" type="Button" parent="LoginPanel/VBox/ButtonContainer"]
+[node name="LoginButton" type="Button" parent="LoginPanel/VBox/ButtonContainer" unique_id=2058080379]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Login"
 
-[node name="RegisterButton" type="Button" parent="LoginPanel/VBox/ButtonContainer"]
+[node name="RegisterButton" type="Button" parent="LoginPanel/VBox/ButtonContainer" unique_id=517085130]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Register"
 
-[node name="StatusLabel" type="RichTextLabel" parent="LoginPanel/VBox"]
+[node name="StatusLabel" type="RichTextLabel" parent="LoginPanel/VBox" unique_id=2053436177]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 bbcode_enabled = true
 fit_content = true
 
-[node name="CharacterSelectPanel" type="Panel" parent="."]
+[node name="CharacterSelectPanel" type="Panel" parent="." unique_id=1122192458]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -786,7 +782,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
 
-[node name="VBox" type="VBoxContainer" parent="CharacterSelectPanel"]
+[node name="VBox" type="VBoxContainer" parent="CharacterSelectPanel" unique_id=1652342752]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -799,57 +795,57 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="CharacterSelectPanel/VBox"]
+[node name="Title" type="Label" parent="CharacterSelectPanel/VBox" unique_id=1713532326]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 20
 text = "Select Character"
 horizontal_alignment = 1
 
-[node name="CharacterList" type="VBoxContainer" parent="CharacterSelectPanel/VBox"]
+[node name="CharacterList" type="VBoxContainer" parent="CharacterSelectPanel/VBox" unique_id=1839726732]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="ButtonContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox"]
+[node name="ButtonContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox" unique_id=218008371]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="CreateButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer"]
+[node name="CreateButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer" unique_id=1511721042]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Create New Character"
 
-[node name="LeaderboardButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer"]
+[node name="LeaderboardButton" type="Button" parent="CharacterSelectPanel/VBox/ButtonContainer" unique_id=763570770]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Leaderboard"
 
-[node name="AccountContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox"]
+[node name="AccountContainer" type="HBoxContainer" parent="CharacterSelectPanel/VBox" unique_id=786791295]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="ChangePasswordButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer"]
+[node name="ChangePasswordButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer" unique_id=1420960186]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Change Password"
 
-[node name="LogoutButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer"]
+[node name="LogoutButton" type="Button" parent="CharacterSelectPanel/VBox/AccountContainer" unique_id=915765810]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Logout"
 
-[node name="StatusLabel" type="RichTextLabel" parent="CharacterSelectPanel/VBox"]
+[node name="StatusLabel" type="RichTextLabel" parent="CharacterSelectPanel/VBox" unique_id=536105864]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 bbcode_enabled = true
 fit_content = true
 
-[node name="CharacterCreatePanel" type="Panel" parent="."]
+[node name="CharacterCreatePanel" type="Panel" parent="." unique_id=1431922727]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -865,7 +861,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
 
-[node name="VBox" type="VBoxContainer" parent="CharacterCreatePanel"]
+[node name="VBox" type="VBoxContainer" parent="CharacterCreatePanel" unique_id=1290920736]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -878,31 +874,31 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="Title" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1951156928]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 20
 text = "Create Character"
 horizontal_alignment = 1
 
-[node name="NameLabel" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="NameLabel" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1894354115]
 layout_mode = 2
 text = "Character Name:"
 
-[node name="NameField" type="LineEdit" parent="CharacterCreatePanel/VBox"]
+[node name="NameField" type="LineEdit" parent="CharacterCreatePanel/VBox" unique_id=1549152325]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 placeholder_text = "Enter character name..."
 
-[node name="RaceLabel" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="RaceLabel" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1821769213]
 layout_mode = 2
 text = "Race:"
 
-[node name="RaceOption" type="OptionButton" parent="CharacterCreatePanel/VBox"]
+[node name="RaceOption" type="OptionButton" parent="CharacterCreatePanel/VBox" unique_id=1655468310]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 
-[node name="RaceDescription" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="RaceDescription" type="Label" parent="CharacterCreatePanel/VBox" unique_id=938826760]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.5, 1)
 theme_override_font_sizes/font_size = 11
@@ -910,53 +906,53 @@ text = "Adaptable and ambitious. Gains +10% bonus experience."
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="ClassLabel" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="ClassLabel" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1293380297]
 layout_mode = 2
 text = "Class:"
 
-[node name="ClassOption" type="OptionButton" parent="CharacterCreatePanel/VBox"]
+[node name="ClassOption" type="OptionButton" parent="CharacterCreatePanel/VBox" unique_id=543707952]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 
-[node name="ClassDescription" type="RichTextLabel" parent="CharacterCreatePanel/VBox"]
+[node name="ClassDescription" type="RichTextLabel" parent="CharacterCreatePanel/VBox" unique_id=398665061]
 layout_mode = 2
-bbcode_enabled = true
 theme_override_colors/default_color = Color(0.5, 0.7, 0.7, 1)
 theme_override_font_sizes/normal_font_size = 11
+bbcode_enabled = true
 text = "Balanced melee warrior with solid defense and offense."
 fit_content = true
 scroll_active = false
 
-[node name="Warning" type="Label" parent="CharacterCreatePanel/VBox"]
+[node name="Warning" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1246312949]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
 theme_override_font_sizes/font_size = 11
 text = "WARNING: Permadeath is enabled!"
 horizontal_alignment = 1
 
-[node name="ButtonContainer" type="HBoxContainer" parent="CharacterCreatePanel/VBox"]
+[node name="ButtonContainer" type="HBoxContainer" parent="CharacterCreatePanel/VBox" unique_id=376395313]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="ConfirmButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer"]
+[node name="ConfirmButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer" unique_id=1789271220]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Create"
 
-[node name="CancelButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer"]
+[node name="CancelButton" type="Button" parent="CharacterCreatePanel/VBox/ButtonContainer" unique_id=582461054]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Cancel"
 
-[node name="StatusLabel" type="RichTextLabel" parent="CharacterCreatePanel/VBox"]
+[node name="StatusLabel" type="RichTextLabel" parent="CharacterCreatePanel/VBox" unique_id=989871107]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 bbcode_enabled = true
 fit_content = true
 
-[node name="DeathPanel" type="Panel" parent="."]
+[node name="DeathPanel" type="Panel" parent="." unique_id=718215254]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -972,7 +968,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_death_bg")
 
-[node name="VBox" type="VBoxContainer" parent="DeathPanel"]
+[node name="VBox" type="VBoxContainer" parent="DeathPanel" unique_id=951685100]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -985,7 +981,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 20
 
-[node name="DeathMessage" type="RichTextLabel" parent="DeathPanel/VBox"]
+[node name="DeathMessage" type="RichTextLabel" parent="DeathPanel/VBox" unique_id=1594147918]
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 theme_override_colors/default_color = Color(1, 1, 1, 1)
@@ -996,7 +992,7 @@ text = "[center][color=#FF0000][b]CHARACTER NAME HAS FALLEN[/b][/color]
 Slain by Monster[/center]"
 fit_content = true
 
-[node name="DeathStats" type="RichTextLabel" parent="DeathPanel/VBox"]
+[node name="DeathStats" type="RichTextLabel" parent="DeathPanel/VBox" unique_id=2072718169]
 custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
 theme_override_colors/default_color = Color(0.8, 0.8, 0.8, 1)
@@ -1007,12 +1003,12 @@ Experience: 0
 Leaderboard Rank: #1[/center]"
 fit_content = true
 
-[node name="ContinueButton" type="Button" parent="DeathPanel/VBox"]
+[node name="ContinueButton" type="Button" parent="DeathPanel/VBox" unique_id=243777115]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 text = "Continue"
 
-[node name="LeaderboardPanel" type="Panel" parent="."]
+[node name="LeaderboardPanel" type="Panel" parent="." unique_id=499405692]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -1028,7 +1024,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard_bg")
 
-[node name="VBox" type="VBoxContainer" parent="LeaderboardPanel"]
+[node name="VBox" type="VBoxContainer" parent="LeaderboardPanel" unique_id=1964376996]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1041,7 +1037,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="LeaderboardList" type="RichTextLabel" parent="LeaderboardPanel/VBox"]
+[node name="LeaderboardList" type="RichTextLabel" parent="LeaderboardPanel/VBox" unique_id=1966583193]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.9, 0.9, 0.9, 1)
@@ -1050,12 +1046,12 @@ bbcode_enabled = true
 text = "[center][b]HALL OF FALLEN HEROES[/b][/center]"
 scroll_following = true
 
-[node name="CloseButton" type="Button" parent="LeaderboardPanel/VBox"]
+[node name="CloseButton" type="Button" parent="LeaderboardPanel/VBox" unique_id=1692867732]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Close"
 
-[node name="PlayerInfoPanel" type="Panel" parent="."]
+[node name="PlayerInfoPanel" type="Panel" parent="." unique_id=7074214]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -1071,7 +1067,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
 
-[node name="VBox" type="VBoxContainer" parent="PlayerInfoPanel"]
+[node name="VBox" type="VBoxContainer" parent="PlayerInfoPanel" unique_id=828960912]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1084,14 +1080,14 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="PlayerInfoPanel/VBox"]
+[node name="Title" type="Label" parent="PlayerInfoPanel/VBox" unique_id=267493184]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 16
 text = "Player Info"
 horizontal_alignment = 1
 
-[node name="PlayerInfoContent" type="RichTextLabel" parent="PlayerInfoPanel/VBox"]
+[node name="PlayerInfoContent" type="RichTextLabel" parent="PlayerInfoPanel/VBox" unique_id=1771203294]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.9, 0.9, 0.9, 1)
@@ -1099,7 +1095,7 @@ theme_override_font_sizes/normal_font_size = 13
 bbcode_enabled = true
 scroll_following = true
 
-[node name="CloseButton" type="Button" parent="PlayerInfoPanel/VBox"]
+[node name="CloseButton" type="Button" parent="PlayerInfoPanel/VBox" unique_id=123693254]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 text = "Close"

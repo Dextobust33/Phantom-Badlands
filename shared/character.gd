@@ -75,6 +75,105 @@ extends Resource
 	"amulet": null
 }
 const MAX_INVENTORY_SIZE = 40
+const MAX_STACK_SIZE = 99
+
+# Thematic Equipment Display - each class sees equipment with themed names
+# Maps class -> slot -> display name for that slot type
+const CLASS_EQUIPMENT_THEMES = {
+	# Warrior Path - Heavy armor, martial weapons
+	"Fighter": {
+		"weapon": "Sword", "shield": "Shield", "armor": "Plate",
+		"helm": "Helm", "boots": "Greaves", "ring": "Signet", "amulet": "Medallion"
+	},
+	"Barbarian": {
+		"weapon": "Axe", "shield": "Buckler", "armor": "Chainmail",
+		"helm": "Helm", "boots": "Boots", "ring": "Band", "amulet": "Torc"
+	},
+	"Paladin": {
+		"weapon": "Mace", "shield": "Aegis", "armor": "Plate",
+		"helm": "Crown", "boots": "Sabatons", "ring": "Ring", "amulet": "Pendant"
+	},
+	# Mage Path - Cloth robes, magical implements
+	"Wizard": {
+		"weapon": "Staff", "shield": "Orb", "armor": "Robes",
+		"helm": "Hood", "boots": "Slippers", "ring": "Ring", "amulet": "Amulet"
+	},
+	"Sorcerer": {
+		"weapon": "Wand", "shield": "Focus", "armor": "Vestments",
+		"helm": "Cowl", "boots": "Shoes", "ring": "Band", "amulet": "Talisman"
+	},
+	"Sage": {
+		"weapon": "Tome", "shield": "Codex", "armor": "Vestments",
+		"helm": "Circlet", "boots": "Sandals", "ring": "Ring", "amulet": "Pendant"
+	},
+	# Trickster Path - Light leather, agile weapons
+	"Thief": {
+		"weapon": "Dagger", "shield": "Parry Blade", "armor": "Leathers",
+		"helm": "Mask", "boots": "Boots", "ring": "Ring", "amulet": "Charm"
+	},
+	"Ranger": {
+		"weapon": "Bow", "shield": "Quiver", "armor": "Leathers",
+		"helm": "Hood", "boots": "Boots", "ring": "Band", "amulet": "Locket"
+	},
+	"Ninja": {
+		"weapon": "Katana", "shield": "Shuriken", "armor": "Garb",
+		"helm": "Mask", "boots": "Tabi", "ring": "Ring", "amulet": "Pendant"
+	}
+}
+
+# Generic slot names used in item generation (these get replaced with themed versions)
+const GENERIC_SLOT_NAMES = {
+	"weapon": ["Weapon", "Sword", "Axe", "Mace", "Staff", "Wand", "Tome", "Dagger", "Bow", "Katana", "Blade"],
+	"shield": ["Shield", "Buckler", "Aegis", "Orb", "Focus", "Codex", "Parry Blade", "Quiver", "Shuriken"],
+	"armor": ["Armor", "Plate", "Chainmail", "Robes", "Vestments", "Leathers", "Garb", "Mail"],
+	"helm": ["Helm", "Helmet", "Crown", "Hood", "Cowl", "Circlet", "Mask", "Cap"],
+	"boots": ["Boots", "Greaves", "Sabatons", "Slippers", "Shoes", "Sandals", "Tabi", "Footwear"],
+	"ring": ["Ring", "Signet", "Band"],
+	"amulet": ["Amulet", "Medallion", "Torc", "Pendant", "Talisman", "Charm", "Locket", "Necklace"]
+}
+
+static func get_themed_item_name(item_name: String, slot: String, class_type: String) -> String:
+	"""Transform an item name to use class-themed slot terminology.
+	Example: 'Mythical Steel Weapon' -> 'Mythical Steel Bow' for Ranger"""
+	if not CLASS_EQUIPMENT_THEMES.has(class_type):
+		return item_name
+	if not CLASS_EQUIPMENT_THEMES[class_type].has(slot):
+		return item_name
+
+	var themed_name = CLASS_EQUIPMENT_THEMES[class_type][slot]
+	var generic_names = GENERIC_SLOT_NAMES.get(slot, [])
+
+	# Replace any generic slot name with the themed version
+	var result = item_name
+	for generic in generic_names:
+		# Case-insensitive replacement that preserves the rest of the name
+		if generic.to_lower() in result.to_lower():
+			# Find the position and replace while preserving surrounding text
+			var lower_result = result.to_lower()
+			var pos = lower_result.find(generic.to_lower())
+			if pos != -1:
+				result = result.substr(0, pos) + themed_name + result.substr(pos + generic.length())
+				break  # Only replace first occurrence
+
+	return result
+
+static func get_item_slot_from_type(item_type: String) -> String:
+	"""Determine which equipment slot an item belongs to based on its type."""
+	if item_type.begins_with("weapon_"):
+		return "weapon"
+	elif item_type.begins_with("armor_"):
+		return "armor"
+	elif item_type.begins_with("helm_"):
+		return "helm"
+	elif item_type.begins_with("shield_"):
+		return "shield"
+	elif item_type.begins_with("boots_"):
+		return "boots"
+	elif item_type.begins_with("ring_"):
+		return "ring"
+	elif item_type.begins_with("amulet_"):
+		return "amulet"
+	return ""
 
 # Tracking / Persistence
 @export var created_at: int = 0
@@ -156,6 +255,9 @@ func initialize(char_name: String, char_class: String, char_race: String = "Huma
 	created_at = int(Time.get_unix_time_from_system())
 	played_time_seconds = 0
 	monsters_killed = 0
+
+	# Reset known monsters for new character (prevents shared dictionary bug)
+	known_monsters = {}
 
 	# Initialize default ability loadout
 	initialize_default_abilities()
@@ -397,6 +499,8 @@ func get_equipment_bonuses() -> Dictionary:
 		"wits": 0,
 		"max_hp": 0,
 		"max_mana": 0,
+		"max_stamina": 0,     # Bonus max stamina from gear
+		"max_energy": 0,      # Bonus max energy from gear
 		"speed": 0,
 		# Class-specific bonuses
 		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
@@ -422,43 +526,9 @@ func get_equipment_bonuses() -> Dictionary:
 		# Base bonus scales with item level, rarity, and wear
 		var base_bonus = int(item_level * rarity_mult * wear_penalty)
 
-		# Check class-specific gear FIRST (before generic types)
-		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
-		if "ring_arcane" in item_type:
-			# Arcane ring (Mage): INT + mana_regen
-			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "ring_shadow" in item_type:
-			# Shadow ring (Trickster): WITS + energy_regen
-			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		elif "amulet_mystic" in item_type:
-			# Mystic amulet (Mage): max_mana + meditate_bonus
-			bonuses.max_mana += int(base_bonus * 2.5)
-			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
-		elif "amulet_evasion" in item_type:
-			# Evasion amulet (Trickster): speed + flee_bonus
-			bonuses.speed += base_bonus
-			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
-		elif "boots_swift" in item_type:
-			# Swift boots (Trickster): Speed + WITS + energy_regen
-			bonuses.speed += int(base_bonus * 1.5)
-			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
-		elif "weapon_warlord" in item_type:
-			# Warlord weapon (Warrior): ATK + STR + stamina_regen
-			bonuses.attack += int(base_bonus * 2.5)
-			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "shield_bulwark" in item_type:
-			# Bulwark shield (Warrior): DEF + HP + stamina_regen
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.max_hp += base_bonus * 4
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		# Generic item types (if not class-specific)
+		# STEP 1: Apply base item type bonuses (all items get these)
 		# Note: Multipliers balanced to make gear valuable but not overwhelming
-		elif "weapon" in item_type:
+		if "weapon" in item_type:
 			bonuses.attack += int(base_bonus * 2.5)  # Weapons give strong attack
 			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 		elif "armor" in item_type:
@@ -485,18 +555,68 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
 
-		# Apply affix bonuses
+		# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
+		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
+		if "ring_arcane" in item_type:
+			# Arcane ring (Mage): extra INT + mana_regen
+			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "ring_shadow" in item_type:
+			# Shadow ring (Trickster): extra WITS + energy_regen
+			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+		elif "amulet_mystic" in item_type:
+			# Mystic amulet (Mage): extra max_mana + meditate_bonus
+			bonuses.max_mana += base_bonus  # Extra mana on top of base
+			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+		elif "amulet_evasion" in item_type:
+			# Evasion amulet (Trickster): extra speed + flee_bonus
+			bonuses.speed += base_bonus
+			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
+		elif "boots_swift" in item_type:
+			# Swift boots (Trickster): extra Speed + WITS + energy_regen
+			bonuses.speed += int(base_bonus * 0.5)  # Extra speed on top of base
+			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
+		elif "weapon_warlord" in item_type:
+			# Warlord weapon (Warrior): extra stamina_regen (base weapon stats already applied)
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		elif "shield_bulwark" in item_type:
+			# Bulwark shield (Warrior): extra stamina_regen (base shield stats already applied)
+			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+
+		# Apply affix bonuses (from randomized item affixes)
 		var affixes = item.get("affixes", {})
+		# HP/Resources
 		if affixes.has("hp_bonus"):
 			bonuses.max_hp += affixes.hp_bonus
+		if affixes.has("mana_bonus"):
+			bonuses.max_mana += affixes.mana_bonus
+		if affixes.has("stamina_bonus"):
+			bonuses.max_stamina += affixes.stamina_bonus
+		if affixes.has("energy_bonus"):
+			bonuses.max_energy += affixes.energy_bonus
+		# Attack/Defense
 		if affixes.has("attack_bonus"):
 			bonuses.attack += affixes.attack_bonus
 		if affixes.has("defense_bonus"):
 			bonuses.defense += affixes.defense_bonus
+		# Core stats
+		if affixes.has("str_bonus"):
+			bonuses.strength += affixes.str_bonus
+		if affixes.has("con_bonus"):
+			bonuses.constitution += affixes.con_bonus
 		if affixes.has("dex_bonus"):
 			bonuses.dexterity += affixes.dex_bonus
+		if affixes.has("int_bonus"):
+			bonuses.intelligence += affixes.int_bonus
 		if affixes.has("wis_bonus"):
 			bonuses.wisdom += affixes.wis_bonus
+		if affixes.has("wits_bonus"):
+			bonuses.wits += affixes.wits_bonus
+		# Speed
+		if affixes.has("speed_bonus"):
+			bonuses.speed += affixes.speed_bonus
 
 	return bonuses
 
@@ -535,6 +655,16 @@ func get_total_max_mana() -> int:
 	"""Get total max mana including equipment bonuses (mainly from amulets)"""
 	var bonuses = get_equipment_bonuses()
 	return max_mana + bonuses.max_mana
+
+func get_total_max_stamina() -> int:
+	"""Get total max stamina including equipment bonuses"""
+	var bonuses = get_equipment_bonuses()
+	return max_stamina + bonuses.max_stamina
+
+func get_total_max_energy() -> int:
+	"""Get total max energy including equipment bonuses"""
+	var bonuses = get_equipment_bonuses()
+	return max_energy + bonuses.max_energy
 
 func get_effective_stat(stat_name: String) -> int:
 	"""Get stat value including equipment bonuses"""
@@ -739,8 +869,10 @@ func to_dict() -> Dictionary:
 		"total_max_mana": get_total_max_mana(),  # Equipment-boosted max mana for display
 		"current_stamina": current_stamina,
 		"max_stamina": max_stamina,
+		"total_max_stamina": get_total_max_stamina(),  # Equipment-boosted max stamina for display
 		"current_energy": current_energy,
 		"max_energy": max_energy,
+		"total_max_energy": get_total_max_energy(),  # Equipment-boosted max energy for display
 		"x": x,
 		"y": y,
 		"health_state": get_health_state(),
@@ -949,8 +1081,6 @@ func get_experience_progress() -> int:
 	return int((float(experience) / experience_to_next_level) * 100)
 
 # Inventory System Stubs
-
-const MAX_STACK_SIZE = 99  # Maximum stack size for consumables
 
 func can_add_item() -> bool:
 	"""Check if inventory has space for another item"""
