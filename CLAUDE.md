@@ -770,3 +770,140 @@ Players can customize which abilities are equipped to their 4 combat slots and c
 
 **Backward Compatibility:**
 If `equipped_abilities` is empty, combat falls back to hardcoded ability slots (MAGE_ABILITY_SLOTS, WARRIOR_ABILITY_SLOTS, TRICKSTER_ABILITY_SLOTS).
+
+## Player Trading System
+
+**Overview:**
+Players can trade items with each other using a request/accept flow.
+
+**Command:** `/trade <playername>` or `trade <playername>`
+
+**Requirements:**
+- Both players must be at the same location
+- Neither player can be in combat
+- Neither player can be in an existing trade
+
+**Trade Flow:**
+1. Player A sends trade request to Player B
+2. Player B accepts (or declines) the request
+3. Both players see trade window with two sections (Your Offer / Their Offer)
+4. Players add/remove items from their offer using action bar
+5. Both players mark themselves as "Ready"
+6. Trade executes when both are ready, swapping items
+
+**Trade Cancellation Triggers:**
+- Either player moves
+- Either player starts combat (hunting)
+- Either player disconnects
+- Either player explicitly cancels
+
+**Item Display During Trade:**
+Items display with the **owner's class theme** until traded (Owner's Perspective). A Ranger's "Bow" stays a "Bow" in the trade window. Once traded to a Wizard, it becomes a "Staff" for them.
+
+**Implementation Files:**
+- **server/server.gd**: `active_trades`, `pending_trade_requests`, `_send_trade_update()`, `_execute_trade()`, `handle_trade_*()` functions
+- **client/client.gd**: `in_trade`, `trade_*` variables, `display_trade_window()`, `handle_trade_command()`
+
+**Message Types:**
+- `trade_request` → `trade_request_received` (to target)
+- `trade_response` → `trade_started` (to both) or `trade_declined`
+- `trade_offer` / `trade_remove` → `trade_update` (to both)
+- `trade_ready` → `trade_update` (to both)
+- `trade_cancel` → `trade_cancelled` (to both)
+
+## Themed Equipment Display System
+
+**Overview:**
+Equipment displays with class-specific names. The same underlying item appears differently based on the viewer's class.
+
+**Example:** A "Steel Weapon" appears as:
+- "Steel Sword" for Fighters
+- "Steel Axe" for Barbarians
+- "Steel Staff" for Wizards
+- "Steel Bow" for Rangers
+
+**Class Theme Mappings (in `shared/character.gd`):**
+
+| Class | Weapon | Shield | Armor | Helm | Boots | Ring | Amulet |
+|-------|--------|--------|-------|------|-------|------|--------|
+| Fighter | Sword | Shield | Plate | Helm | Greaves | Signet | Medallion |
+| Barbarian | Axe | Buckler | Chainmail | Helm | Boots | Band | Torc |
+| Paladin | Mace | Aegis | Plate | Crown | Sabatons | Ring | Pendant |
+| Wizard | Staff | Orb | Robes | Hood | Slippers | Ring | Amulet |
+| Sorcerer | Wand | Focus | Vestments | Cowl | Shoes | Band | Talisman |
+| Sage | Tome | Codex | Vestments | Circlet | Sandals | Ring | Pendant |
+| Thief | Dagger | Parry Blade | Leathers | Mask | Boots | Ring | Charm |
+| Ranger | Bow | Quiver | Leathers | Hood | Boots | Band | Locket |
+| Ninja | Katana | Shuriken | Garb | Mask | Tabi | Ring | Pendant |
+
+**Key Functions:**
+- `Character.get_themed_item_name(item_name, slot, class_type)` - Static function to transform item names
+- `Character.get_item_slot_from_type(item_type)` - Determine slot from item type string
+
+**Usage in Client:**
+```gdscript
+var themed_name = _get_themed_item_name(item, owner_class)
+# owner_class defaults to player's class if not specified
+# For other players' items, pass their class to show their perspective
+```
+
+## Shrieker Summoning Behavior
+
+**Overview:**
+The Shrieker monster has special summoning behavior. Instead of summoning copies of itself, it summons random high-tier monsters.
+
+**Summon Tier Weights:**
+| Tier | Chance | Example Monsters |
+|------|--------|------------------|
+| 4 | 40% | Giant, Dragon Wyrmling, Demon, Vampire |
+| 5 | 25% | Ancient Dragon, Demon Lord, Lich, Titan |
+| 6 | 15% | Elemental, Iron Golem, Sphinx, Hydra |
+| 7 | 10% | Void Walker, World Serpent, Elder Lich |
+| 8 | 7% | Cosmic Horror, Time Weaver, Death Incarnate |
+| 9 | 3% | Avatar of Chaos, The Nameless One, God Slayer, Entropy |
+
+**Implementation:**
+- `combat_manager.gd`: `_get_shrieker_summon_tier()` returns weighted random tier
+- `monster_database.gd`: `get_random_monster_name_from_tier(tier)` returns random monster name
+- Summoned monster spawns at the Shrieker's level
+
+**Message:** "The Shrieker's shriek echoes through the realm, summoning a [Monster Name]!"
+
+## Common Pitfalls & Debugging
+
+**Critical issues encountered and how to avoid them:**
+
+### 1. Duplicate Constant Declarations
+**Error:** `Constant "X" has the same name as a previously declared constant`
+**Cause:** Same `const` defined twice in a file (often from copy-paste or merging)
+**Fix:** Search for the constant name and remove duplicates
+**Prevention:** Before adding constants, grep the file to check if it already exists
+
+### 2. Variable Name Mismatches
+**Error:** `Identifier "X" not declared in the current scope`
+**Example:** Used `monster_db` but the actual variable was `monster_database`
+**Fix:** Check the file's variable declarations for the correct name
+**Prevention:** Use grep to find existing variable names before referencing them
+
+### 3. Slash Command Not Recognized
+**Error:** Commands like `/search` or `/trade` go to chat instead of executing
+**Cause:** Command matching didn't strip the leading `/` from user input
+**Location:** `client/client.gd` in `handle_input_submitted()` and `process_command()`
+**Fix:** Strip leading `/` before matching:
+```gdscript
+if first_word.begins_with("/"):
+    first_word = first_word.substr(1)
+```
+
+### 4. GDScript Validation Command
+**Usage:** Validate a single script file without launching the full editor:
+```bash
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "C:\Users\Dexto\Documents\phantasia-revival" --check-only --script "res://shared/character.gd" 2>&1
+```
+This quickly identifies parse errors without launching the game.
+
+### 5. Static Functions and Class Constants
+Static functions in GDScript 4 CAN access class constants defined in the same file. If you get errors, the issue is likely something else (syntax error, typo, etc.).
+
+### 6. BBCode and String Padding
+BBCode color tags add to string length but don't display. Using `%-30s` format specifiers won't create proper columns when strings contain BBCode. Instead, display items on separate lines with clear labels.
