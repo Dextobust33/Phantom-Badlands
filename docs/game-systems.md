@@ -2,6 +2,95 @@
 
 Detailed documentation for game features and mechanics.
 
+## Monster HP Knowledge System
+
+Players discover monster HP through combat experience, not by seeing actual values.
+
+```mermaid
+flowchart TB
+    subgraph FirstEncounter["First Encounter"]
+        ENC[Encounter Monster] --> KNOWN{Player has<br/>killed this type<br/>at this level?}
+        KNOWN -->|No| UNKNOWN[HP shows ???]
+        KNOWN -->|Yes| SHOW_HP[Show Known HP]
+    end
+
+    subgraph Combat["During Combat"]
+        UNKNOWN --> FIGHT[Combat]
+        SHOW_HP --> FIGHT
+        FIGHT --> TRACK[Track Total<br/>Damage Dealt]
+    end
+
+    subgraph Victory["On Victory"]
+        TRACK --> WIN{Monster<br/>Defeated?}
+        WIN -->|No| FLEE_DEATH[Flee/Death<br/>No HP learned]
+        WIN -->|Yes| CALC[Total Damage = Known HP]
+        CALC --> EXISTING{Already have<br/>Known HP?}
+        EXISTING -->|No| STORE[Store as Known HP]
+        EXISTING -->|Yes| COMPARE{New damage<br/>< old Known HP?}
+        COMPARE -->|Yes| UPDATE[Update to lower value]
+        COMPARE -->|No| KEEP[Keep existing value]
+    end
+
+    subgraph Estimation["HP Estimation"]
+        STORE --> EST
+        UPDATE --> EST
+        KEEP --> EST
+        EST[Known HP at Level X] --> SCALE{Encounter at<br/>Level Y?}
+        SCALE -->|Y ≤ X| CAN_EST[Can estimate<br/>Scale HP down]
+        SCALE -->|Y > X| NO_EST[Cannot estimate<br/>Shows ???]
+    end
+
+    style UNKNOWN fill:#ff6666
+    style SHOW_HP fill:#66ff66
+    style CAN_EST fill:#66ff66
+    style NO_EST fill:#ff6666
+```
+
+### Key Concepts
+
+| Term | Description |
+|------|-------------|
+| **Known HP** | Total damage dealt when defeating a monster (may exceed actual HP due to overkill) |
+| **Estimated HP** | Scaled from Known HP at higher levels |
+| **Discovery** | Players gradually learn true HP by killing more efficiently |
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant P as Player
+    participant C as Client
+    participant S as Server
+
+    Note over P,S: First Kill
+    P->>S: Defeat Goblin L5 (dealt 120 dmg)
+    S->>C: Combat end, record kill
+    C->>C: known_enemy_hp["Goblin_5"] = 120
+
+    Note over P,S: Later Encounter
+    P->>S: Encounter Goblin L3
+    S->>C: combat_start (monster_hp = -1)
+    C->>C: estimate_enemy_hp("Goblin", 3)
+    C->>C: Scale 120 HP from L5 → ~72 HP for L3
+    C->>P: Show "Est. HP: 72"
+
+    Note over P,S: More Efficient Kill
+    P->>S: Defeat Goblin L5 (dealt 95 dmg)
+    S->>C: Combat end, record kill
+    C->>C: 95 < 120, update known_enemy_hp["Goblin_5"] = 95
+```
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `shared/character.gd` | `knows_monster()` - Server-side kill tracking |
+| `client/client.gd` | `known_enemy_hp` - Client damage tracking |
+| `client/client.gd` | `estimate_enemy_hp()` - Level scaling |
+| `shared/combat_manager.gd` | Sends `monster_hp = -1` for unknown |
+
+---
+
 ## Gem Currency System
 
 Gems are premium currency dropped by high-level monsters.

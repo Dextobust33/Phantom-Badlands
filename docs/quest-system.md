@@ -124,6 +124,61 @@ graph LR
     end
 ```
 
+## Quest Scaling System
+
+Quests dynamically scale to player level to maintain appropriate challenge.
+
+```mermaid
+flowchart TB
+    subgraph Scaling["Quest Difficulty Scaling"]
+        PLAYER[Player Level] --> BASE[Base Requirements<br/>70-80% of player level]
+        BASE --> PROG{Quests completed<br/>at this post?}
+        PROG -->|0-2 quests| EASY[Tier 1-3<br/>Standard difficulty]
+        PROG -->|3-5 quests| MED[Tier 4-6<br/>+15-30% difficulty]
+        PROG -->|6+ quests| HARD[Tier 7+<br/>+45-50% difficulty]
+        HARD --> PUSH[Pushes toward<br/>next Trading Post]
+    end
+
+    subgraph Progression["Progression Quests"]
+        LEVEL{Player level >=<br/>next post level?} -->|Yes| GEN[Generate exploration<br/>quest to next post]
+        GEN --> REWARD[Higher rewards<br/>for progression]
+    end
+```
+
+### Scaling Formula
+
+| Component | Calculation |
+|-----------|-------------|
+| Kill count | `5 + (tier × 2) + (level / 20)` |
+| Min monster level | `player_level × 0.7 × tier_mult` |
+| Hotzone distance | `30 + (tier × 20) + (level / 5)` |
+| Boss level | `player_level × (1.1 + progression_mod)` |
+
+### Tier Multipliers
+
+| Tier | Multiplier | Description |
+|------|------------|-------------|
+| 1-3 | 0.8 - 1.0 | Introductory |
+| 4-7 | 1.0 - 1.45 | Standard to Veteran |
+| 8+ | 1.45+ | Elite challenges |
+
+## Trading Post Progression
+
+```mermaid
+graph LR
+    subgraph Progression["Recommended Level Progression"]
+        H["Haven<br/>L1-10"] --> C["Crossroads<br/>L5-20"]
+        C --> E["Eastwatch<br/>L15-35"]
+        C --> W["Westhold<br/>L15-35"]
+        C --> F["Frostgate<br/>L20-40"]
+        E --> V["Void's Edge<br/>L50-80"]
+        W --> I["Inferno<br/>L50-80"]
+        F --> FR["Frozen Reach<br/>L70-100"]
+        F --> S["Southport<br/>L30-50"]
+        S --> SH["Shadowmere<br/>L80+"]
+    end
+```
+
 ## Reward Multipliers
 
 | Condition | Multiplier |
@@ -132,6 +187,7 @@ graph LR
 | Hotzone Quest | 1.5x - 2.5x |
 | Daily Quest | 1.2x |
 | High-level target | Scales with level |
+| Player level scaling | +2% per level |
 
 ## Character Quest Limits
 
