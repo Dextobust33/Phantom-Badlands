@@ -23,7 +23,8 @@ const CONSUMABLE_CATEGORIES = {
 	"stamina": ["stamina_potion"],
 	"energy": ["energy_potion"],
 	"buff": ["strength_potion", "defense_potion", "speed_potion", "crit_potion", "lifesteal_potion", "thorns_potion"],
-	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision"]
+	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision", "scroll_time_stop", "scroll_resurrect"],
+	"bane": ["potion_dragon_bane", "potion_undead_bane", "potion_beast_bane", "potion_demon_bane", "potion_elemental_bane"]
 }
 
 func get_tier_for_level(monster_level: int) -> int:
@@ -126,53 +127,96 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"}
 	],
 	"tier6": [
-		{"weight": 10, "item_type": "potion_master", "rarity": "rare"},
-		{"weight": 5, "item_type": "mana_master", "rarity": "rare"},
-		{"weight": 16, "item_type": "weapon_elemental", "rarity": "epic"},
-		{"weight": 14, "item_type": "armor_elemental", "rarity": "epic"},
-		{"weight": 10, "item_type": "helm_elemental", "rarity": "epic"},
-		{"weight": 9, "item_type": "shield_elemental", "rarity": "epic"},
-		{"weight": 9, "item_type": "boots_elemental", "rarity": "epic"},
-		{"weight": 10, "item_type": "ring_elemental", "rarity": "epic"},
-		{"weight": 5, "item_type": "amulet_gold", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_defense", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
-		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "epic"},
-		{"weight": 3, "item_type": "scroll_haste", "rarity": "epic"},
-		{"weight": 3, "item_type": "scroll_precision", "rarity": "epic"},
-		{"weight": 3, "item_type": "scroll_thorns", "rarity": "epic"}
+		{"weight": 8, "item_type": "potion_master", "rarity": "rare"},
+		{"weight": 4, "item_type": "mana_master", "rarity": "rare"},
+		{"weight": 14, "item_type": "weapon_elemental", "rarity": "epic"},
+		{"weight": 12, "item_type": "armor_elemental", "rarity": "epic"},
+		{"weight": 8, "item_type": "helm_elemental", "rarity": "epic"},
+		{"weight": 7, "item_type": "shield_elemental", "rarity": "epic"},
+		{"weight": 7, "item_type": "boots_elemental", "rarity": "epic"},
+		{"weight": 8, "item_type": "ring_elemental", "rarity": "epic"},
+		{"weight": 4, "item_type": "amulet_gold", "rarity": "epic"},
+		# High-tier consumables
+		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_dragon_bane", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_undead_bane", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_beast_bane", "rarity": "epic"},
+		# Stat tomes
+		{"weight": 3, "item_type": "tome_strength", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_constitution", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_dexterity", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_intelligence", "rarity": "epic"},
+		# Mystery items
+		{"weight": 3, "item_type": "mysterious_box", "rarity": "epic"},
+		{"weight": 2, "item_type": "cursed_coin", "rarity": "epic"}
 	],
 	"tier7": [
-		{"weight": 10, "item_type": "elixir_minor", "rarity": "epic"},
-		{"weight": 20, "item_type": "weapon_legendary", "rarity": "epic"},
-		{"weight": 18, "item_type": "armor_legendary", "rarity": "epic"},
-		{"weight": 12, "item_type": "helm_legendary", "rarity": "epic"},
-		{"weight": 10, "item_type": "shield_legendary", "rarity": "epic"},
-		{"weight": 10, "item_type": "boots_legendary", "rarity": "epic"},
-		{"weight": 10, "item_type": "amulet_gold", "rarity": "legendary"},
-		{"weight": 10, "item_type": "ring_legendary", "rarity": "legendary"}
+		{"weight": 8, "item_type": "elixir_minor", "rarity": "epic"},
+		{"weight": 16, "item_type": "weapon_legendary", "rarity": "epic"},
+		{"weight": 14, "item_type": "armor_legendary", "rarity": "epic"},
+		{"weight": 10, "item_type": "helm_legendary", "rarity": "epic"},
+		{"weight": 8, "item_type": "shield_legendary", "rarity": "epic"},
+		{"weight": 8, "item_type": "boots_legendary", "rarity": "epic"},
+		{"weight": 8, "item_type": "amulet_gold", "rarity": "legendary"},
+		{"weight": 8, "item_type": "ring_legendary", "rarity": "legendary"},
+		# Stat tomes (all 6)
+		{"weight": 2, "item_type": "tome_strength", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_constitution", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_dexterity", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_intelligence", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_wisdom", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_wits", "rarity": "legendary"},
+		# Skill enhancer tomes
+		{"weight": 2, "item_type": "tome_searing_bolt", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_brutal_strike", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_swift_analyze", "rarity": "legendary"},
+		# Mystery items
+		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"}
 	],
 	"tier8": [
-		{"weight": 8, "item_type": "elixir_greater", "rarity": "epic"},
-		{"weight": 18, "item_type": "weapon_mythic", "rarity": "legendary"},
-		{"weight": 16, "item_type": "armor_mythic", "rarity": "legendary"},
-		{"weight": 12, "item_type": "helm_mythic", "rarity": "legendary"},
-		{"weight": 11, "item_type": "shield_mythic", "rarity": "legendary"},
-		{"weight": 11, "item_type": "boots_mythic", "rarity": "legendary"},
-		{"weight": 12, "item_type": "ring_mythic", "rarity": "legendary"},
-		{"weight": 12, "item_type": "amulet_mythic", "rarity": "legendary"}
+		{"weight": 6, "item_type": "elixir_greater", "rarity": "epic"},
+		{"weight": 14, "item_type": "weapon_mythic", "rarity": "legendary"},
+		{"weight": 12, "item_type": "armor_mythic", "rarity": "legendary"},
+		{"weight": 10, "item_type": "helm_mythic", "rarity": "legendary"},
+		{"weight": 9, "item_type": "shield_mythic", "rarity": "legendary"},
+		{"weight": 9, "item_type": "boots_mythic", "rarity": "legendary"},
+		{"weight": 10, "item_type": "ring_mythic", "rarity": "legendary"},
+		{"weight": 10, "item_type": "amulet_mythic", "rarity": "legendary"},
+		# Powerful consumables (including resurrect!)
+		{"weight": 1, "item_type": "scroll_resurrect", "rarity": "legendary"},
+		{"weight": 2, "item_type": "scroll_time_stop", "rarity": "legendary"},
+		# Skill enhancer tomes
+		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_greater_cleave", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"}
 	],
 	"tier9": [
-		{"weight": 4, "item_type": "elixir_divine", "rarity": "legendary"},
-		{"weight": 16, "item_type": "weapon_divine", "rarity": "legendary"},
-		{"weight": 15, "item_type": "armor_divine", "rarity": "legendary"},
-		{"weight": 12, "item_type": "helm_divine", "rarity": "legendary"},
-		{"weight": 11, "item_type": "shield_divine", "rarity": "legendary"},
-		{"weight": 11, "item_type": "boots_divine", "rarity": "legendary"},
-		{"weight": 11, "item_type": "ring_divine", "rarity": "legendary"},
-		{"weight": 10, "item_type": "amulet_divine", "rarity": "legendary"},
-		{"weight": 10, "item_type": "artifact", "rarity": "artifact"}
+		{"weight": 3, "item_type": "elixir_divine", "rarity": "legendary"},
+		{"weight": 12, "item_type": "weapon_divine", "rarity": "legendary"},
+		{"weight": 11, "item_type": "armor_divine", "rarity": "legendary"},
+		{"weight": 9, "item_type": "helm_divine", "rarity": "legendary"},
+		{"weight": 8, "item_type": "shield_divine", "rarity": "legendary"},
+		{"weight": 8, "item_type": "boots_divine", "rarity": "legendary"},
+		{"weight": 8, "item_type": "ring_divine", "rarity": "legendary"},
+		{"weight": 7, "item_type": "amulet_divine", "rarity": "legendary"},
+		{"weight": 8, "item_type": "artifact", "rarity": "artifact"},
+		# Very powerful consumables
+		{"weight": 2, "item_type": "scroll_resurrect", "rarity": "artifact"},
+		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "artifact"},
+		# All skill enhancer tomes with higher drop rates
+		{"weight": 3, "item_type": "tome_searing_bolt", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_greater_forcefield", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_brutal_strike", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_efficient_strike", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_swift_analyze", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"}
 	],
 	"common": [
 		{"weight": 60, "item_type": "potion_minor", "rarity": "common"},
@@ -254,7 +298,231 @@ const POTION_EFFECTS = {
 	"scroll_doom": {"monster_debuff": "doom", "base": 10, "per_level": 2},  # Monster loses % max HP at start
 	# Target farming scroll - guarantees ability on next N encounters
 	"scroll_target_farm": {"target_farm": true, "encounters": 5},
+	# === HIGH-TIER CONSUMABLES (Tier 5+) ===
+	# Time Stop Scroll - Skip monster's next turn
+	"scroll_time_stop": {"time_stop": true, "battles": 1},
+	# Monster Bane Potions - +50% damage vs specific monster types
+	"potion_dragon_bane": {"monster_bane": "dragon", "damage_bonus": 50, "battles": 3},
+	"potion_undead_bane": {"monster_bane": "undead", "damage_bonus": 50, "battles": 3},
+	"potion_beast_bane": {"monster_bane": "beast", "damage_bonus": 50, "battles": 3},
+	"potion_demon_bane": {"monster_bane": "demon", "damage_bonus": 50, "battles": 3},
+	"potion_elemental_bane": {"monster_bane": "elemental", "damage_bonus": 50, "battles": 3},
+	# Resurrect Scroll - One-time death prevention, revive at 25% HP
+	"scroll_resurrect": {"resurrect": true, "revive_percent": 25, "battles": 1},
+	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
+	# Mysterious Box - Opens to random item from same tier or +1 higher
+	"mysterious_box": {"mystery_box": true},
+	# Cursed Coin - 50% double gold, 50% lose half gold
+	"cursed_coin": {"cursed_coin": true},
+	# === STAT TOMES (Tier 6+) ===
+	# Each tome permanently increases a stat by 1
+	"tome_strength": {"permanent_stat": "strength", "amount": 1},
+	"tome_constitution": {"permanent_stat": "constitution", "amount": 1},
+	"tome_dexterity": {"permanent_stat": "dexterity", "amount": 1},
+	"tome_intelligence": {"permanent_stat": "intelligence", "amount": 1},
+	"tome_wisdom": {"permanent_stat": "wisdom", "amount": 1},
+	"tome_wits": {"permanent_stat": "wits", "amount": 1},
+	# === SKILL ENHANCER TOMES (Tier 7+) ===
+	# Mage skill enhancers
+	"tome_searing_bolt": {"skill_enhance": "magic_bolt", "effect": "damage_bonus", "value": 15},
+	"tome_efficient_bolt": {"skill_enhance": "magic_bolt", "effect": "cost_reduction", "value": 10},
+	"tome_greater_forcefield": {"skill_enhance": "forcefield", "effect": "damage_bonus", "value": 20},  # Shield strength
+	"tome_meteor_mastery": {"skill_enhance": "meteor", "effect": "damage_bonus", "value": 25},
+	# Warrior skill enhancers
+	"tome_brutal_strike": {"skill_enhance": "power_strike", "effect": "damage_bonus", "value": 15},
+	"tome_efficient_strike": {"skill_enhance": "power_strike", "effect": "cost_reduction", "value": 10},
+	"tome_greater_cleave": {"skill_enhance": "cleave", "effect": "damage_bonus", "value": 20},
+	"tome_devastating_berserk": {"skill_enhance": "berserk", "effect": "damage_bonus", "value": 25},
+	# Trickster skill enhancers
+	"tome_swift_analyze": {"skill_enhance": "analyze", "effect": "cost_reduction", "value": 100},  # Free analyze!
+	"tome_greater_ambush": {"skill_enhance": "ambush", "effect": "damage_bonus", "value": 20},
+	"tome_perfect_exploit": {"skill_enhance": "exploit", "effect": "damage_bonus", "value": 25},
+	"tome_efficient_vanish": {"skill_enhance": "vanish", "effect": "cost_reduction", "value": 15},
 }
+
+# Trophy definitions - rare drops from specific powerful monsters
+# Format: {monster_name: {trophy_id, name, description, drop_chance (%)}}
+const TROPHY_DEFINITIONS = {
+	"Primordial Dragon": {
+		"id": "dragon_scale",
+		"name": "Primordial Dragon Scale",
+		"description": "A scale from the most ancient of dragons, shimmering with primordial power.",
+		"drop_chance": 5
+	},
+	"Elder Lich": {
+		"id": "lich_phylactery",
+		"name": "Lich's Phylactery",
+		"description": "The soul vessel of an Elder Lich. It still pulses with dark energy.",
+		"drop_chance": 5
+	},
+	"Titan": {
+		"id": "titan_heart",
+		"name": "Heart of the Titan",
+		"description": "A massive crystallized heart, still warm with the essence of a Titan.",
+		"drop_chance": 5
+	},
+	"Entropy": {
+		"id": "entropy_shard",
+		"name": "Shard of Entropy",
+		"description": "A fragment of pure chaos. Reality bends around it.",
+		"drop_chance": 2
+	},
+	"God Slayer": {
+		"id": "godslayer_blade",
+		"name": "Godslayer's Broken Blade",
+		"description": "A shard of the weapon that felled a deity. Emanates divine fury.",
+		"drop_chance": 2
+	},
+	"The Nameless One": {
+		"id": "nameless_mask",
+		"name": "Mask of the Nameless",
+		"description": "A featureless mask. Looking at it makes you forget your own name.",
+		"drop_chance": 2
+	},
+	"Avatar of Chaos": {
+		"id": "chaos_essence",
+		"name": "Essence of Chaos",
+		"description": "Pure chaotic energy given form. It shifts between colors impossibly.",
+		"drop_chance": 3
+	},
+	"World Serpent": {
+		"id": "serpent_fang",
+		"name": "World Serpent's Fang",
+		"description": "A fang large enough to be a weapon, dripping with venom that dissolves stone.",
+		"drop_chance": 5
+	},
+	"Phoenix": {
+		"id": "phoenix_feather",
+		"name": "Phoenix Feather",
+		"description": "An eternally burning feather that never consumes itself.",
+		"drop_chance": 5
+	},
+	"Death Incarnate": {
+		"id": "death_scythe",
+		"name": "Shard of Death's Scythe",
+		"description": "A fragment of Death's own weapon. Cold to the touch, even in flame.",
+		"drop_chance": 2
+	}
+}
+
+func get_trophy_definition(monster_name: String) -> Dictionary:
+	"""Get trophy definition for a monster, if any."""
+	return TROPHY_DEFINITIONS.get(monster_name, {})
+
+func roll_trophy_drop(monster_name: String) -> Dictionary:
+	"""Roll for a trophy drop from a monster. Returns trophy info if dropped, empty dict otherwise."""
+	var definition = get_trophy_definition(monster_name)
+	if definition.is_empty():
+		return {}
+
+	var drop_chance = definition.get("drop_chance", 0)
+	if randi() % 100 < drop_chance:
+		return {
+			"id": definition.id,
+			"name": definition.name,
+			"description": definition.description
+		}
+	return {}
+
+# Soul Gem definitions - companion items (Tier 7+)
+# Format: {id: {name, description, bonuses: {type: value}, tier, drop_chance}}
+const SOUL_GEM_DEFINITIONS = {
+	"wolf_spirit": {
+		"name": "Wolf Spirit Soul Gem",
+		"description": "Contains the spirit of a great wolf. Grants ferocity in battle.",
+		"bonuses": {"attack": 10},  # +10% attack damage
+		"tier": 7,
+		"drop_chance": 3
+	},
+	"phoenix_ember": {
+		"name": "Phoenix Ember Soul Gem",
+		"description": "A shard of phoenix fire. Grants regeneration.",
+		"bonuses": {"hp_regen": 2},  # Regenerate 2% HP per combat round
+		"tier": 7,
+		"drop_chance": 3
+	},
+	"shadow_wisp": {
+		"name": "Shadow Wisp Soul Gem",
+		"description": "A captured wisp of shadow. Grants evasion.",
+		"bonuses": {"flee_bonus": 15},  # +15% flee chance
+		"tier": 7,
+		"drop_chance": 3
+	},
+	"dragon_essence": {
+		"name": "Dragon Essence Soul Gem",
+		"description": "Pure draconic essence. Grants devastating power.",
+		"bonuses": {"attack": 15, "crit_chance": 5},  # +15% attack, +5% crit
+		"tier": 8,
+		"drop_chance": 2
+	},
+	"titan_soul": {
+		"name": "Titan's Soul Gem",
+		"description": "The bound soul of a Titan. Grants immense fortitude.",
+		"bonuses": {"hp_bonus": 20, "defense": 10},  # +20% max HP, +10% defense
+		"tier": 8,
+		"drop_chance": 2
+	},
+	"void_fragment": {
+		"name": "Void Fragment Soul Gem",
+		"description": "A piece of the void given form. Grants otherworldly power.",
+		"bonuses": {"attack": 20, "lifesteal": 5},  # +20% attack, 5% lifesteal
+		"tier": 9,
+		"drop_chance": 1
+	},
+	"celestial_spark": {
+		"name": "Celestial Spark Soul Gem",
+		"description": "Divine light captured in crystal. Grants divine protection.",
+		"bonuses": {"hp_regen": 5, "defense": 15, "hp_bonus": 10},  # 5% regen, +15% def, +10% HP
+		"tier": 9,
+		"drop_chance": 1
+	}
+}
+
+func get_soul_gem_definition(gem_id: String) -> Dictionary:
+	"""Get soul gem definition by ID."""
+	return SOUL_GEM_DEFINITIONS.get(gem_id, {})
+
+func roll_soul_gem_drop(monster_tier: int) -> Dictionary:
+	"""Roll for a soul gem drop based on monster tier. Returns gem info if dropped, empty dict otherwise."""
+	# Filter gems by tier
+	var available_gems = []
+	for gem_id in SOUL_GEM_DEFINITIONS:
+		var gem = SOUL_GEM_DEFINITIONS[gem_id]
+		if gem.get("tier", 10) <= monster_tier:
+			available_gems.append({"id": gem_id, "data": gem})
+
+	if available_gems.is_empty():
+		return {}
+
+	# Pick a random gem and check drop chance
+	var picked = available_gems[randi() % available_gems.size()]
+	var drop_chance = picked.data.get("drop_chance", 0)
+
+	if randi() % 100 < drop_chance:
+		return {
+			"id": picked.id,
+			"name": picked.data.name,
+			"description": picked.data.description,
+			"bonuses": picked.data.bonuses.duplicate()
+		}
+	return {}
+
+# Monster type categories for bane potions
+# Maps bane type to list of monster names that match that type
+const MONSTER_TYPES = {
+	"dragon": ["Dragon Wyrmling", "Ancient Dragon", "Primordial Dragon", "World Serpent"],
+	"undead": ["Skeleton", "Zombie", "Wight", "Wraith", "Vampire", "Lich", "Elder Lich", "Death Incarnate"],
+	"beast": ["Giant Rat", "Wolf", "Giant Spider", "Troll", "Harpy", "Cerberus", "Gryphon", "Hydra"],
+	"demon": ["Demon", "Succubus", "Balrog", "Demon Lord", "Avatar of Chaos"],
+	"elemental": ["Elemental", "Fire Elemental", "Phoenix", "Golem", "Iron Golem"]
+}
+
+func get_monster_type(monster_name: String) -> String:
+	"""Get the type category for a monster name (for bane potion matching)"""
+	for type_name in MONSTER_TYPES:
+		if monster_name in MONSTER_TYPES[type_name]:
+			return type_name
+	return ""
 
 # Rarity colors for display
 const RARITY_COLORS = {
@@ -620,6 +888,27 @@ const SPECIALTY_AFFIX_STATS = {
 	}
 }
 
+# Proc Suffixes - Special effects that trigger on hit/being hit (Tier 6+ only)
+# These are rarer and more powerful than regular affixes
+# Format: {name, proc_type, value, chance (% per hit)}
+const PROC_SUFFIX_POOL = [
+	# Lifesteal - heal % of damage dealt
+	{"name": "of the Vampire", "proc_type": "lifesteal", "value": 10, "chance": 100},  # Always procs, 10% lifesteal
+	{"name": "of Blood", "proc_type": "lifesteal", "value": 15, "chance": 100},  # Stronger version
+	{"name": "of the Leech", "proc_type": "lifesteal", "value": 20, "chance": 100},  # Tier 8+ version
+	# Shocking - % chance for bonus lightning damage on hit
+	{"name": "of Thunder", "proc_type": "shocking", "value": 15, "chance": 25},  # 25% chance, 15% bonus damage
+	{"name": "of the Storm", "proc_type": "shocking", "value": 25, "chance": 30},  # Stronger
+	{"name": "of Lightning", "proc_type": "shocking", "value": 35, "chance": 35},  # Tier 8+
+	# Damage Reflect - reflect % damage back to attacker when hit
+	{"name": "of Reflection", "proc_type": "damage_reflect", "value": 15, "chance": 100},  # Always active
+	{"name": "of Retaliation", "proc_type": "damage_reflect", "value": 25, "chance": 100},  # Stronger
+	{"name": "of Vengeance", "proc_type": "damage_reflect", "value": 35, "chance": 100},  # Tier 8+
+	# Execute - % chance to deal bonus damage when enemy below 30% HP
+	{"name": "of Execution", "proc_type": "execute", "value": 50, "chance": 25},  # 25% chance, 50% bonus damage
+	{"name": "of the Executioner", "proc_type": "execute", "value": 75, "chance": 30},  # Stronger
+]
+
 func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
 	"""Get all affixes that have a specific stat from prefix or suffix pool."""
 	var pool = PREFIX_POOL if is_prefix else SUFFIX_POOL
@@ -754,7 +1043,43 @@ func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
 	if affix_count > 0:
 		affixes["roll_quality"] = int(total_roll_quality / affix_count)
 
+	# Roll for proc suffix (Tier 6+ only, based on item level)
+	# Chance: 5% at tier 6, 10% at tier 7, 15% at tier 8, 20% at tier 9
+	var tier = get_tier_for_level(item_level)
+	if tier >= 6:
+		var proc_chance = (tier - 5) * 5  # 5% at tier 6, 20% at tier 9
+		if rarity in ["epic", "legendary", "artifact"]:
+			proc_chance += 10  # +10% for high rarity
+		if randi() % 100 < proc_chance:
+			var proc = _roll_proc_suffix(tier)
+			if not proc.is_empty():
+				affixes["proc_type"] = proc.proc_type
+				affixes["proc_value"] = proc.value
+				affixes["proc_chance"] = proc.chance
+				affixes["proc_name"] = proc.name
+				# Replace suffix name with proc name if no regular suffix
+				if not affixes.has("suffix_name"):
+					affixes["suffix_name"] = proc.name
+
 	return affixes
+
+func _roll_proc_suffix(tier: int) -> Dictionary:
+	"""Roll a proc suffix appropriate for the tier level."""
+	# Filter procs by tier appropriateness
+	var available_procs = []
+	for proc in PROC_SUFFIX_POOL:
+		# Tier 6: basic procs (lower values)
+		# Tier 7-8: medium procs
+		# Tier 9: powerful procs
+		if proc.value <= 15 or tier >= 7:
+			if proc.value <= 25 or tier >= 8:
+				if proc.value <= 35 or tier >= 9:
+					available_procs.append(proc)
+
+	if available_procs.is_empty():
+		return {}
+
+	return available_procs[randi() % available_procs.size()]
 
 func _calculate_affix_value(affix: Dictionary, item_level: int, roll_range: Dictionary) -> Dictionary:
 	"""Calculate the value for an affix with roll range applied."""
@@ -854,12 +1179,74 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"scroll_vulnerability": "Scroll of Vulnerability",
 			"scroll_slow": "Scroll of Slow",
 			"scroll_doom": "Scroll of Doom",
-			"scroll_target_farm": "Scroll of Finding"
+			"scroll_target_farm": "Scroll of Finding",
+			"scroll_time_stop": "Scroll of Time Stop",
+			"scroll_resurrect": "Scroll of Resurrection"
 		}
 		var base_name = scroll_names.get(item_type, "Mysterious Scroll")
 		match rarity:
 			"epic": return "Ancient " + base_name
 			"legendary": return "Arcane " + base_name
+			_: return base_name
+
+	# Special handling for bane potions
+	if item_type.begins_with("potion_") and "_bane" in item_type:
+		var bane_names = {
+			"potion_dragon_bane": "Dragon Bane Potion",
+			"potion_undead_bane": "Undead Bane Potion",
+			"potion_beast_bane": "Beast Bane Potion",
+			"potion_demon_bane": "Demon Bane Potion",
+			"potion_elemental_bane": "Elemental Bane Potion"
+		}
+		var base_name = bane_names.get(item_type, "Bane Potion")
+		match rarity:
+			"epic": return "Potent " + base_name
+			"legendary": return "Supreme " + base_name
+			_: return base_name
+
+	# Special handling for mystery/gambling items
+	if item_type == "mysterious_box":
+		match rarity:
+			"epic": return "Ornate Mysterious Box"
+			"legendary": return "Ancient Mysterious Box"
+			_: return "Mysterious Box"
+
+	if item_type == "cursed_coin":
+		match rarity:
+			"epic": return "Ominous Cursed Coin"
+			"legendary": return "Dread Cursed Coin"
+			_: return "Cursed Coin"
+
+	# Special handling for stat tomes and skill enhancer tomes
+	if item_type.begins_with("tome_"):
+		var tome_names = {
+			# Stat tomes
+			"tome_strength": "Tome of Strength",
+			"tome_constitution": "Tome of Constitution",
+			"tome_dexterity": "Tome of Dexterity",
+			"tome_intelligence": "Tome of Intelligence",
+			"tome_wisdom": "Tome of Wisdom",
+			"tome_wits": "Tome of Wits",
+			# Mage skill enhancer tomes
+			"tome_searing_bolt": "Tome of Searing Bolt",
+			"tome_efficient_bolt": "Tome of Efficient Bolt",
+			"tome_greater_forcefield": "Tome of Greater Forcefield",
+			"tome_meteor_mastery": "Tome of Meteor Mastery",
+			# Warrior skill enhancer tomes
+			"tome_brutal_strike": "Tome of Brutal Strikes",
+			"tome_efficient_strike": "Tome of Efficient Strikes",
+			"tome_greater_cleave": "Tome of Greater Cleave",
+			"tome_devastating_berserk": "Tome of Devastating Berserk",
+			# Trickster skill enhancer tomes
+			"tome_swift_analyze": "Tome of Swift Analysis",
+			"tome_greater_ambush": "Tome of Greater Ambush",
+			"tome_perfect_exploit": "Tome of Perfect Exploit",
+			"tome_efficient_vanish": "Tome of Efficient Vanish"
+		}
+		var base_name = tome_names.get(item_type, "Tome of Power")
+		match rarity:
+			"epic": return "Ancient " + base_name
+			"legendary": return "Divine " + base_name
 			_: return base_name
 
 	# Special handling for resource potions
@@ -1178,3 +1565,32 @@ func generate_shop_item_with_specialty(item_type: String, rarity: String, item_l
 func is_affix_specialty(specialty: String) -> bool:
 	"""Check if a specialty is an affix-focused specialty."""
 	return SPECIALTY_AFFIX_STATS.has(specialty)
+
+func generate_mystery_box_item(box_tier: int) -> Dictionary:
+	"""Generate a random item from a mystery box. 50% same tier, 50% one tier higher (max 9)."""
+	var target_tier = box_tier
+	if randf() < 0.5 and box_tier < 9:
+		target_tier = box_tier + 1
+
+	var tier_key = "tier" + str(target_tier)
+	if not DROP_TABLES.has(tier_key):
+		tier_key = "tier" + str(box_tier)
+
+	var table = DROP_TABLES.get(tier_key, [])
+	if table.is_empty():
+		return {}
+
+	# Roll an item from the tier table
+	var item_entry = _roll_item_from_table(table)
+	if item_entry.is_empty():
+		return {}
+
+	# Calculate level based on tier
+	var level_ranges = {
+		1: [1, 10], 2: [11, 25], 3: [26, 50], 4: [51, 100],
+		5: [101, 250], 6: [251, 500], 7: [501, 1000], 8: [1001, 2500], 9: [2501, 5000]
+	}
+	var lvl_range = level_ranges.get(target_tier, [1, 10])
+	var item_level = randi_range(lvl_range[0], lvl_range[1])
+
+	return _generate_item(item_entry, item_level)

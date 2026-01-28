@@ -65,8 +65,8 @@ const FONT_SIZE_OVERRIDES = {
 	"Avatar of Chaos": 4,
 	"Cerberus": 4,
 	"Hydra": 4,
-	"Kelpie": 4,
 	"Giant Spider": 4,
+	# Note: Kelpie uses default font (wide art like Goblin)
 
 	# 100+ lines - large art needs smaller font, font 3 (110×3=330)
 	"Ancient Dragon": 3,

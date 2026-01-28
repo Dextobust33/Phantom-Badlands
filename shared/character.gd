@@ -216,6 +216,26 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 @export var title: String = ""  # Current title: "", "jarl", "high_king", "elder", "eternal"
 @export var title_data: Dictionary = {}  # Title-specific data (lives for Eternal, etc.)
 
+# Permanent Stat Bonuses - from stat tomes (persists forever)
+# Format: {stat_name: bonus_value} e.g. {"strength": 5, "intelligence": 3}
+@export var permanent_stat_bonuses: Dictionary = {}
+
+# Skill Enhancements - from skill enhancer tomes (persists forever)
+# Format: {ability_name: {effect: value}} e.g. {"magic_bolt": {"cost_reduction": 10, "damage_bonus": 15}}
+@export var skill_enhancements: Dictionary = {}
+
+# Trophies - rare drops from powerful monsters (prestige/collectibles)
+# Format: [{id: String, obtained_at: int (unix timestamp), monster_name: String, monster_level: int}]
+@export var trophies: Array = []
+
+# Active Companion - from soul gems (only one active at a time)
+# Format: {id: String, name: String, bonuses: {attack: %, hp_regen: %, flee_bonus: %}, level: int}
+@export var active_companion: Dictionary = {}
+
+# Collected Soul Gems - companions that have been obtained (can switch between them)
+# Format: [{id: String, name: String, bonuses: Dictionary, obtained_at: int}]
+@export var soul_gems: Array = []
+
 func _init():
 	# Constructor
 	pass
@@ -666,26 +686,68 @@ func get_total_max_energy() -> int:
 	var bonuses = get_equipment_bonuses()
 	return max_energy + bonuses.max_energy
 
+func get_equipment_procs() -> Dictionary:
+	"""Get all proc effects from equipped items.
+	Returns {lifesteal: %, shocking: {value, chance}, damage_reflect: %, execute: {value, chance}}"""
+	var procs = {
+		"lifesteal": 0,
+		"shocking": {"value": 0, "chance": 0},
+		"damage_reflect": 0,
+		"execute": {"value": 0, "chance": 0}
+	}
+
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+
+		var affixes = item.get("affixes", {})
+		if not affixes.has("proc_type"):
+			continue
+
+		var proc_type = affixes.get("proc_type", "")
+		var proc_value = affixes.get("proc_value", 0)
+		var proc_chance = affixes.get("proc_chance", 100)
+
+		match proc_type:
+			"lifesteal":
+				procs.lifesteal += proc_value
+			"shocking":
+				# Stack damage, take highest chance
+				procs.shocking.value += proc_value
+				procs.shocking.chance = max(procs.shocking.chance, proc_chance)
+			"damage_reflect":
+				procs.damage_reflect += proc_value
+			"execute":
+				# Stack damage, take highest chance
+				procs.execute.value += proc_value
+				procs.execute.chance = max(procs.execute.chance, proc_chance)
+
+	return procs
+
 func get_effective_stat(stat_name: String) -> int:
-	"""Get stat value including equipment bonuses"""
+	"""Get stat value including equipment bonuses and permanent bonuses from tomes"""
 	var base_stat = get_stat(stat_name)
 	var bonuses = get_equipment_bonuses()
 
+	# Get permanent bonus from stat tomes
+	var perm_bonus = permanent_stat_bonuses.get(stat_name.to_lower(), 0)
+
 	match stat_name.to_lower():
 		"strength", "str":
-			return base_stat + bonuses.strength
+			return base_stat + bonuses.strength + perm_bonus + permanent_stat_bonuses.get("strength", 0)
 		"constitution", "con":
-			return base_stat + bonuses.constitution
+			return base_stat + bonuses.constitution + perm_bonus + permanent_stat_bonuses.get("constitution", 0)
 		"dexterity", "dex":
-			return base_stat + bonuses.dexterity
+			return base_stat + bonuses.dexterity + perm_bonus + permanent_stat_bonuses.get("dexterity", 0)
 		"intelligence", "int":
-			return base_stat + bonuses.intelligence
+			return base_stat + bonuses.intelligence + perm_bonus + permanent_stat_bonuses.get("intelligence", 0)
 		"wisdom", "wis":
-			return base_stat + bonuses.wisdom
+			return base_stat + bonuses.wisdom + perm_bonus + permanent_stat_bonuses.get("wisdom", 0)
 		"wits", "wit":
-			return base_stat + bonuses.wits
+			return base_stat + bonuses.wits + perm_bonus + permanent_stat_bonuses.get("wits", 0)
 		_:
-			return base_stat
+			return base_stat + perm_bonus
 
 func get_attack_damage() -> Dictionary:
 	"""Calculate attack damage range including equipment"""
@@ -904,7 +966,12 @@ func to_dict() -> Dictionary:
 		"ability_keybinds": ability_keybinds,
 		"cloak_active": cloak_active,
 		"title": title,
-		"title_data": title_data
+		"title_data": title_data,
+		"permanent_stat_bonuses": permanent_stat_bonuses,
+		"skill_enhancements": skill_enhancements,
+		"trophies": trophies,
+		"active_companion": active_companion,
+		"soul_gems": soul_gems
 	}
 
 func from_dict(data: Dictionary):
@@ -1005,6 +1072,19 @@ func from_dict(data: Dictionary):
 	# Title system
 	title = data.get("title", "")
 	title_data = data.get("title_data", {})
+
+	# Permanent stat bonuses from tomes
+	permanent_stat_bonuses = data.get("permanent_stat_bonuses", {})
+
+	# Skill enhancements from skill tomes
+	skill_enhancements = data.get("skill_enhancements", {})
+
+	# Trophies
+	trophies = data.get("trophies", [])
+
+	# Companions
+	active_companion = data.get("active_companion", {})
+	soul_gems = data.get("soul_gems", [])
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
@@ -1684,6 +1764,143 @@ func get_slot_for_keybind(key: String) -> int:
 		if ability_keybinds[slot] == upper_key:
 			return slot
 	return -1
+
+# ===== PERMANENT STAT BONUSES =====
+
+func apply_permanent_stat_bonus(stat_name: String, amount: int) -> int:
+	"""Apply a permanent stat bonus from a tome. Returns new total bonus for that stat."""
+	var lower_stat = stat_name.to_lower()
+	if not permanent_stat_bonuses.has(lower_stat):
+		permanent_stat_bonuses[lower_stat] = 0
+	permanent_stat_bonuses[lower_stat] += amount
+	return permanent_stat_bonuses[lower_stat]
+
+func get_permanent_stat_bonus(stat_name: String) -> int:
+	"""Get the permanent stat bonus for a specific stat."""
+	return permanent_stat_bonuses.get(stat_name.to_lower(), 0)
+
+func get_all_permanent_stat_bonuses() -> Dictionary:
+	"""Get all permanent stat bonuses."""
+	return permanent_stat_bonuses.duplicate()
+
+# ===== SKILL ENHANCEMENTS =====
+
+func enhance_skill(ability_name: String, effect: String, value: float) -> float:
+	"""Add a skill enhancement. Effects stack additively. Returns new total value."""
+	var lower_ability = ability_name.to_lower()
+	if not skill_enhancements.has(lower_ability):
+		skill_enhancements[lower_ability] = {}
+	if not skill_enhancements[lower_ability].has(effect):
+		skill_enhancements[lower_ability][effect] = 0.0
+	skill_enhancements[lower_ability][effect] += value
+	return skill_enhancements[lower_ability][effect]
+
+func get_skill_enhancement(ability_name: String, effect: String) -> float:
+	"""Get the enhancement value for an ability's effect. Returns 0 if not enhanced."""
+	var lower_ability = ability_name.to_lower()
+	if not skill_enhancements.has(lower_ability):
+		return 0.0
+	return skill_enhancements[lower_ability].get(effect, 0.0)
+
+func get_skill_cost_reduction(ability_name: String) -> float:
+	"""Get the cost reduction percentage for an ability (0-100)."""
+	return get_skill_enhancement(ability_name, "cost_reduction")
+
+func get_skill_damage_bonus(ability_name: String) -> float:
+	"""Get the damage bonus percentage for an ability."""
+	return get_skill_enhancement(ability_name, "damage_bonus")
+
+func get_all_skill_enhancements() -> Dictionary:
+	"""Get all skill enhancements."""
+	return skill_enhancements.duplicate(true)
+
+# ===== TROPHY SYSTEM =====
+
+func add_trophy(trophy_id: String, monster_name: String, monster_level: int) -> bool:
+	"""Add a trophy to the collection. Returns true if added (not a duplicate)."""
+	# Check if already have this trophy
+	for trophy in trophies:
+		if trophy.get("id") == trophy_id:
+			return false  # Already have it
+	trophies.append({
+		"id": trophy_id,
+		"monster_name": monster_name,
+		"monster_level": monster_level,
+		"obtained_at": int(Time.get_unix_time_from_system())
+	})
+	return true
+
+func has_trophy(trophy_id: String) -> bool:
+	"""Check if character has a specific trophy."""
+	for trophy in trophies:
+		if trophy.get("id") == trophy_id:
+			return true
+	return false
+
+func get_trophy_count() -> int:
+	"""Get total number of trophies collected."""
+	return trophies.size()
+
+func get_all_trophies() -> Array:
+	"""Get all trophies."""
+	return trophies.duplicate(true)
+
+# ===== COMPANION SYSTEM =====
+
+func add_soul_gem(gem_id: String, gem_name: String, bonuses: Dictionary) -> bool:
+	"""Add a soul gem to the collection. Returns true if added (not duplicate)."""
+	for gem in soul_gems:
+		if gem.get("id") == gem_id:
+			return false  # Already have it
+	soul_gems.append({
+		"id": gem_id,
+		"name": gem_name,
+		"bonuses": bonuses,
+		"obtained_at": int(Time.get_unix_time_from_system())
+	})
+	return true
+
+func has_soul_gem(gem_id: String) -> bool:
+	"""Check if character has a specific soul gem."""
+	for gem in soul_gems:
+		if gem.get("id") == gem_id:
+			return true
+	return false
+
+func activate_companion(gem_id: String) -> bool:
+	"""Activate a companion from owned soul gems. Returns true if successful."""
+	for gem in soul_gems:
+		if gem.get("id") == gem_id:
+			active_companion = {
+				"id": gem.id,
+				"name": gem.name,
+				"bonuses": gem.bonuses.duplicate()
+			}
+			return true
+	return false
+
+func dismiss_companion() -> void:
+	"""Dismiss the active companion."""
+	active_companion = {}
+
+func get_companion_bonus(bonus_type: String) -> float:
+	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus')."""
+	if active_companion.is_empty():
+		return 0.0
+	var bonuses = active_companion.get("bonuses", {})
+	return bonuses.get(bonus_type, 0.0)
+
+func has_active_companion() -> bool:
+	"""Check if a companion is active."""
+	return not active_companion.is_empty()
+
+func get_active_companion() -> Dictionary:
+	"""Get the active companion data."""
+	return active_companion.duplicate(true)
+
+func get_all_soul_gems() -> Array:
+	"""Get all collected soul gems."""
+	return soul_gems.duplicate(true)
 
 # ===== CLOAK SYSTEM =====
 

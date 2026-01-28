@@ -86,6 +86,20 @@ JSON over TCP, newline-delimited. Key types:
 - `move`, `combat_action`, `chat` (client→server)
 - `location_update`, `combat_start/update/end`, `character_update` (server→client)
 
+## High-Tier Drops (Tier 6+)
+
+| Category | Items | Effect |
+|----------|-------|--------|
+| **Scrolls** | Time Stop, Monster Bane, Resurrect | Combat buffs |
+| **Mystery** | Box, Cursed Coin | Gambling items |
+| **Stat Tomes** | Tome of STR/INT/etc. | +1 permanent stat |
+| **Skill Tomes** | Various | -10% cost or +15% dmg |
+| **Proc Gear** | Vampire, Thunder, Reflect, Slayer | Equipment effects |
+| **Trophies** | Dragon Scale, etc. | 5% from bosses (T8+) |
+| **Soul Gems** | Wolf, Phoenix, Shadow, etc. | Summon companions |
+
+Key files: `drop_tables.gd` (definitions), `character.gd` (storage), `combat_manager.gd` (effects)
+
 ## Common Tasks
 
 ### Adding a Monster Ability

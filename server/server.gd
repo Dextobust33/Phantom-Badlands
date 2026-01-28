@@ -2580,14 +2580,14 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 		"wits": "shows you how to read your opponents"
 	}
 
-	var msg = "[color=#FFD700]╔════════════════════════════════════════╗[/color]\n"
-	msg += "[color=#FFD700]║[/color]  [color=#FF69B4]✦ LEGENDARY ENCOUNTER ✦[/color]  [color=#FFD700]║[/color]\n"
-	msg += "[color=#FFD700]╠════════════════════════════════════════╣[/color]\n"
-	msg += "[color=#FFD700]║[/color] [color=#E6CC80]%s[/color] [color=#FFD700]║[/color]\n" % adventurer
-	msg += "[color=#FFD700]║[/color] %s! [color=#FFD700]║[/color]\n" % training_msgs[stat]
-	msg += "[color=#FFD700]╠════════════════════════════════════════╣[/color]\n"
-	msg += "[color=#FFD700]║[/color] [color=#00FF00]+%d %s permanently![/color] [color=#FFD700]║[/color]\n" % [bonus, stat_name]
-	msg += "[color=#FFD700]╚════════════════════════════════════════╝[/color]"
+	var msg = "[color=#FFD700]╔════════════════════════════════════════════════╗[/color]\n"
+	msg += "[color=#FFD700]║[/color]       [color=#FF69B4]✦ LEGENDARY ENCOUNTER ✦[/color]       [color=#FFD700]║[/color]\n"
+	msg += "[color=#FFD700]╠════════════════════════════════════════════════╣[/color]\n"
+	msg += "[color=#FFD700]║[/color] [color=#E6CC80]%s[/color]\n" % adventurer
+	msg += "[color=#FFD700]║[/color] %s!\n" % training_msgs[stat]
+	msg += "[color=#FFD700]╠════════════════════════════════════════════════╣[/color]\n"
+	msg += "[color=#FFD700]║[/color] [color=#00FF00]+%d %s permanently![/color]\n" % [bonus, stat_name]
+	msg += "[color=#FFD700]╚════════════════════════════════════════════════╝[/color]"
 
 	# Send special encounter message that requires acknowledgment
 	send_to_peer(peer_id, {
@@ -2858,6 +2858,108 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 		# Don't update character yet - wait for selection
 		return
+	elif effect.has("time_stop"):
+		# Time Stop Scroll - Skip monster's next turn (lasts 1 battle)
+		var battles = effect.get("battles", 1)
+		character.add_persistent_buff("time_stop", 1, battles)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#9932CC]You read the %s![/color]\n[color=#FFD700]Time itself bends to your will! Your next enemy will be frozen in place for one turn![/color]" % item_name
+		})
+	elif effect.has("monster_bane"):
+		# Monster Bane Potion - +damage vs specific monster type
+		var bane_type = effect.monster_bane
+		var damage_bonus = effect.damage_bonus
+		var battles = effect.get("battles", 3)
+		# Use a special buff type format: monster_bane_<type>
+		var buff_key = "monster_bane_" + bane_type
+		character.add_persistent_buff(buff_key, damage_bonus, battles)
+		var type_display = bane_type.capitalize()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battles, you deal +%d%% damage to %s creatures![/color]" % [item_name, battles, damage_bonus, type_display]
+		})
+	elif effect.has("resurrect"):
+		# Resurrect Scroll - One-time death prevention
+		var revive_percent = effect.get("revive_percent", 25)
+		var battles = effect.get("battles", 1)
+		# Store the revive percent as the buff value
+		character.add_persistent_buff("resurrect", revive_percent, battles)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You read the %s![/color]\n[color=#00FF00]A divine aura surrounds you! If you would die in the next battle, you will be resurrected at %d%% HP instead![/color]" % [item_name, revive_percent]
+		})
+	elif effect.has("mystery_box"):
+		# Mysterious Box - Opens to random item from same tier or +1 higher
+		var box_tier = item_tier if item_tier > 0 else drop_tables.get_tier_for_level(item_level)
+		var generated_item = drop_tables.generate_mystery_box_item(box_tier)
+		if generated_item.is_empty():
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#808080]The %s crumbles to dust... nothing inside.[/color]" % item_name
+			})
+		else:
+			# Try to add to inventory
+			if character.add_item(generated_item):
+				var item_color = drop_tables.get_rarity_color(generated_item.get("rarity", "common"))
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FF00FF]You open the %s...[/color]\n[color=#FFD700]A bright flash reveals:[/color] [color=%s]%s[/color]!" % [item_name, item_color, generated_item.get("name", "Unknown Item")]
+				})
+			else:
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FF00FF]You open the %s...[/color]\n[color=#FF0000]But your inventory is full! The item is lost![/color]" % item_name
+				})
+	elif effect.has("cursed_coin"):
+		# Cursed Coin - 50% double gold, 50% lose half gold
+		var current_gold = character.gold
+		if randf() < 0.5:
+			# Win! Double gold
+			character.gold *= 2
+			var gained = character.gold - current_gold
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]You flip the %s...[/color]\n[color=#00FF00][b]FORTUNE SMILES![/b] Your gold DOUBLES![/color]\n[color=#FFD700]+%d gold! (Total: %d)[/color]" % [item_name, gained, character.gold]
+			})
+		else:
+			# Lose! Halve gold
+			var lost = current_gold / 2
+			character.gold = current_gold - lost
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#9932CC]You flip the %s...[/color]\n[color=#FF0000][b]MISFORTUNE STRIKES![/b] Half your gold vanishes![/color]\n[color=#FF4444]-%d gold! (Total: %d)[/color]" % [item_name, lost, character.gold]
+			})
+	elif effect.has("permanent_stat"):
+		# Stat Tome - Permanently increase a stat
+		var stat_name = effect.permanent_stat
+		var amount = effect.get("amount", 1)
+		var new_total = character.apply_permanent_stat_bonus(stat_name, amount)
+		var stat_display = stat_name.capitalize()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You study the %s![/color]\n[color=#00FF00][b]PERMANENT BONUS![/b] +%d %s![/color]\n[color=#00FFFF](Total permanent %s bonus: +%d)[/color]" % [item_name, amount, stat_display, stat_display, new_total]
+		})
+	elif effect.has("skill_enhance"):
+		# Skill Enhancer Tome - Permanently enhance an ability
+		var ability_name = effect.skill_enhance
+		var enhance_effect = effect.get("effect", "damage_bonus")
+		var value = effect.get("value", 10)
+		var new_total = character.enhance_skill(ability_name, enhance_effect, value)
+		# Format effect for display
+		var effect_display = ""
+		match enhance_effect:
+			"damage_bonus":
+				effect_display = "+%d%% damage" % int(value)
+			"cost_reduction":
+				effect_display = "-%d%% cost" % int(value)
+			_:
+				effect_display = "+%d %s" % [int(value), enhance_effect]
+		var ability_display = ability_name.replace("_", " ").capitalize()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF00FF]You master the secrets of the %s![/color]\n[color=#00FF00][b]SKILL ENHANCED![/b] %s: %s![/color]\n[color=#00FFFF](Total %s %s: +%d%%)[/color]" % [item_name, ability_display, effect_display, ability_display, enhance_effect.replace("_", " "), int(new_total)]
+		})
 
 	# Update character data
 	send_character_update(peer_id)

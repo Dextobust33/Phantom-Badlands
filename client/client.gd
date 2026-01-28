@@ -185,6 +185,7 @@ var ability_popup_resource_label: Label = null
 var ability_popup_input: LineEdit = null
 var ability_popup_confirm: Button = null
 var ability_popup_cancel: Button = null
+var ability_popup_active: bool = false  # Flag to track popup state for input handling
 
 # UI References - Gambling Popup (created dynamically)
 var gamble_popup: Panel = null
@@ -397,6 +398,7 @@ var current_enemy_abilities: Array = []  # Monster abilities for damage calculat
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
+var analyze_revealed_max_hp: int = -1  # Actual max HP revealed by Analyze ability this combat
 var current_forcefield: int = 0  # Current forcefield/shield value from combat
 
 # Shield bar overlay (created dynamically)
@@ -1689,7 +1691,8 @@ func _process(delta):
 	# Skip if ability_popup is visible (typing in the input field)
 	# Note: quest_log_mode handled separately below to allow Space (Continue) but block number keys
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
-	var ability_popup_open = ability_popup != null and ability_popup.visible
+	# Use flag for ability popup (more reliable than visibility alone)
+	var ability_popup_open = ability_popup_active
 	var gamble_popup_open = gamble_popup != null and gamble_popup.visible
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
@@ -1799,19 +1802,32 @@ func _process(delta):
 
 func _input(event):
 	# Handle numpad input for popup LineEdits (higher priority than other handlers)
+	# NOTE: Use active flags instead of just visibility - more reliable for input handling
 	if event is InputEventKey and event.pressed and not event.echo:
 		var popup_input: LineEdit = null
-		if ability_popup != null and ability_popup.visible and ability_popup_input != null and ability_popup_input.has_focus():
+		# Check ability popup using flag (more reliable than visibility alone)
+		if ability_popup_active and ability_popup_input != null:
 			popup_input = ability_popup_input
-		elif gamble_popup != null and gamble_popup.visible and gamble_popup_input != null and gamble_popup_input.has_focus():
+			# Ensure focus is grabbed if not already
+			if not ability_popup_input.has_focus():
+				ability_popup_input.grab_focus()
+		elif gamble_popup != null and gamble_popup.visible and gamble_popup_input != null:
 			popup_input = gamble_popup_input
-		elif upgrade_popup != null and upgrade_popup.visible and upgrade_popup_input != null and upgrade_popup_input.has_focus():
+			if not gamble_popup_input.has_focus():
+				gamble_popup_input.grab_focus()
+		elif upgrade_popup != null and upgrade_popup.visible and upgrade_popup_input != null:
 			popup_input = upgrade_popup_input
+			if not upgrade_popup_input.has_focus():
+				upgrade_popup_input.grab_focus()
 		elif teleport_popup != null and teleport_popup.visible:
 			if teleport_popup_x_input != null and teleport_popup_x_input.has_focus():
 				popup_input = teleport_popup_x_input
 			elif teleport_popup_y_input != null and teleport_popup_y_input.has_focus():
 				popup_input = teleport_popup_y_input
+			elif teleport_popup_x_input != null:
+				# Default to X input if no focus
+				popup_input = teleport_popup_x_input
+				teleport_popup_x_input.grab_focus()
 
 		if popup_input != null:
 			var numpad_map = {
@@ -3529,7 +3545,17 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 
 	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
 	var suggested_amount = 0
-	if ability == "magic_bolt" and current_enemy_max_hp > 0 and current_enemy_hp > 0:
+	var using_estimated_hp = false
+	var target_hp = current_enemy_hp
+
+	# If actual HP is unknown, try to estimate from previous kills of this monster type
+	if target_hp <= 0 and current_enemy_name != "" and current_enemy_level > 0:
+		var estimated = estimate_enemy_hp(current_enemy_name, current_enemy_level)
+		if estimated > 0:
+			target_hp = estimated
+			using_estimated_hp = true
+
+	if ability == "magic_bolt" and target_hp > 0:
 		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS, defense, and level penalty
 		# Calculate mana needed based on player INT
 		var stats = character_data.get("stats", {})
@@ -3630,7 +3656,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		effective_multiplier *= 0.85
 
 		# Calculate mana needed (small buffer for any remaining variance)
-		var mana_needed = ceili(float(current_enemy_hp) / effective_multiplier * 1.05)
+		var mana_needed = ceili(float(target_hp) / effective_multiplier * 1.05)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		# Display shows the conservative damage per mana (after all reductions)
@@ -3638,7 +3664,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
 		if bonus_text != "":
 			bonus_text = "\n" + bonus_text
-		ability_popup_description.text = "[center]~%.1f dmg/mana (INT %d)%s\nEnemy HP: %d[/center]" % [damage_per_mana, int_stat, bonus_text, current_enemy_hp]
+		var hp_label = "Est. HP" if using_estimated_hp else "Enemy HP"
+		ability_popup_description.text = "[center]~%.1f dmg/mana (INT %d)%s\n%s: %d[/center]" % [damage_per_mana, int_stat, bonus_text, hp_label, target_hp]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -3652,10 +3679,12 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	ability_popup.position = (viewport_size - ability_popup.size) / 2
 
 	ability_popup.visible = true
+	ability_popup_active = true  # Set flag for input handling
 	ability_popup_input.grab_focus()
 
 func _hide_ability_popup():
 	"""Hide the ability input popup."""
+	ability_popup_active = false  # Clear flag for input handling
 	if ability_popup:
 		ability_popup.visible = false
 		ability_popup_input.release_focus()
@@ -6701,13 +6730,16 @@ func prompt_inventory_action(action_type: String):
 				return
 			pending_inventory_action = "unequip_item"
 			set_inventory_background("unequip")
+			var player_class = character_data.get("class", "")
 			# Display equipped items with numbers
 			display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
 			for i in range(slots_with_items.size()):
 				var slot = slots_with_items[i]
 				var item = equipped.get(slot)
 				var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-				display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+				var themed_name = _get_themed_item_name(item, player_class)
+				var slot_display = _get_themed_slot_name(slot, player_class)
+				display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot_display, rarity_color, themed_name])
 			display_game("")
 			display_game("[color=#FFD700]%s to unequip an item:[/color]" % get_selection_keys_text(slots_with_items.size()))
 			# Store slots for number key selection
@@ -6724,13 +6756,16 @@ func prompt_inventory_action(action_type: String):
 				return
 			pending_inventory_action = "inspect_equipped_item"
 			set_inventory_background("inspect")
+			var player_class = character_data.get("class", "")
 			# Display equipped items with numbers
 			display_game("[color=#FFD700]===== INSPECT EQUIPPED =====[/color]")
 			for i in range(slots_with_items.size()):
 				var slot = slots_with_items[i]
 				var item = equipped.get(slot)
 				var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-				display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+				var themed_name = _get_themed_item_name(item, player_class)
+				var slot_display = _get_themed_slot_name(slot, player_class)
+				display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot_display, rarity_color, themed_name])
 			display_game("")
 			display_game("[color=#FFD700]%s to inspect an equipped item:[/color]" % get_selection_keys_text(slots_with_items.size()))
 			# Store slots for number key selection
@@ -6761,13 +6796,16 @@ func _show_unequip_slots():
 		display_inventory()
 		return
 
+	var player_class = character_data.get("class", "")
 	# Display equipped items with numbers
 	display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
 	for i in range(slots_with_items.size()):
 		var slot = slots_with_items[i]
 		var item = equipped.get(slot)
 		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-		display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot.capitalize(), rarity_color, item.get("name", "Unknown")])
+		var themed_name = _get_themed_item_name(item, player_class)
+		var slot_display = _get_themed_slot_name(slot, player_class)
+		display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot_display, rarity_color, themed_name])
 	display_game("")
 	display_game("[color=#FFD700]%s to unequip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(slots_with_items.size()), get_action_key_name(0)])
 	# Store slots for number key selection
@@ -7120,6 +7158,7 @@ func _display_equippable_items_page():
 	"""Display current page of equippable items with stats and comparison"""
 	var equippable_items = get_meta("equippable_items", [])
 	var equipped = character_data.get("equipped", {})
+	var player_class = character_data.get("class", "")
 
 	var total_pages = int(ceil(float(equippable_items.size()) / INVENTORY_PAGE_SIZE))
 	var start_idx = equip_page * INVENTORY_PAGE_SIZE
@@ -7134,7 +7173,7 @@ func _display_equippable_items_page():
 	for j in range(start_idx, end_idx):
 		var entry = equippable_items[j]
 		var item = entry.item
-		var item_name = item.get("name", "Unknown")
+		var item_name = _get_themed_item_name(item, player_class)
 		var item_type = item.get("type", "")
 		var rarity = item.get("rarity", "common")
 		var level = item.get("level", 1)
@@ -7731,25 +7770,30 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	var fill = bar_container.get_node("Fill")
 	var hp_label = bar_container.get_node("HPLabel")
 
-	# Use actual HP values if provided (from server), otherwise estimate
-	if actual_hp >= 0 and actual_max_hp > 0:
-		# Actual HP values from server - always accurate
-		var percent = (float(actual_hp) / float(actual_max_hp)) * 100.0
+	# DISCOVERY SYSTEM: Player discovers HP by defeating monsters, not from server
+	# Exception: Analyze ability reveals actual HP for the current combat
+
+	# Check if Analyze revealed actual HP this combat
+	if analyze_revealed_max_hp > 0:
+		# Analyze revealed true HP - use actual values for this combat
+		var current_hp = max(0, analyze_revealed_max_hp - damage_dealt)
+		if current_hp == 0 and in_combat:
+			current_hp = 1  # Monster still alive
+		var percent = (float(current_hp) / float(analyze_revealed_max_hp)) * 100.0
 		if fill:
 			animate_hp_bar_change(fill, percent, false)
 		if hp_label:
-			hp_label.text = "%d/%d" % [actual_hp, actual_max_hp]
-		# Store for future reference
-		known_enemy_hp[enemy_key] = actual_max_hp
+			hp_label.text = "%d/%d" % [current_hp, analyze_revealed_max_hp]
 		return
 
-	# Fallback to estimation (only used if server doesn't send HP)
+	# Use player's discovered knowledge (from previous kills)
 	var suspected_max = 0
 	var is_estimate = false
 	if known_enemy_hp.has(enemy_key):
+		# Player has killed this exact monster+level before
 		suspected_max = known_enemy_hp[enemy_key]
 	else:
-		# Try to estimate based on known data from similar monsters
+		# Try to estimate based on known data from similar monsters at other levels
 		suspected_max = estimate_enemy_hp(enemy_name, enemy_level)
 		is_estimate = suspected_max > 0
 
@@ -7769,6 +7813,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 			else:
 				hp_label.text = "%d/%d" % [suspected_current, suspected_max]
 	else:
+		# No knowledge at all - show unknown
 		if fill:
 			animate_hp_bar_change(fill, 100.0, false)
 		if hp_label:
@@ -7779,13 +7824,42 @@ func show_enemy_hp_bar(show: bool):
 		enemy_health_bar.visible = show
 
 func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: int):
+	"""Record enemy defeat and update known HP.
+
+	If Analyze was used this combat, store the actual max HP revealed by Analyze.
+	Otherwise, use discovery system: known HP = damage dealt, and can only go DOWN."""
 	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
-	known_enemy_hp[enemy_key] = total_damage
+	var hp_to_store: int
+
+	# If Analyze revealed actual max HP, use that (player learned the true HP)
+	if analyze_revealed_max_hp > 0:
+		hp_to_store = analyze_revealed_max_hp
+		# Analyze gives exact HP, so always store it (replaces any previous knowledge)
+		known_enemy_hp[enemy_key] = hp_to_store
+	else:
+		# Normal discovery: known HP = damage dealt
+		# Known HP can only go DOWN - if player defeats with less damage, we learn actual HP is lower
+		hp_to_store = total_damage
+		if known_enemy_hp.has(enemy_key):
+			var old_known = known_enemy_hp[enemy_key]
+			known_enemy_hp[enemy_key] = mini(old_known, total_damage)
+		else:
+			known_enemy_hp[enemy_key] = total_damage
+
 	# Also store by monster name only for level-based estimation
 	var monster_key = "monster_%s" % enemy_name
 	if not known_enemy_hp.has(monster_key):
 		known_enemy_hp[monster_key] = {}
-	known_enemy_hp[monster_key][enemy_level] = total_damage
+
+	# Same logic for the level-based tracking
+	if analyze_revealed_max_hp > 0:
+		# Analyze gives exact HP
+		known_enemy_hp[monster_key][enemy_level] = hp_to_store
+	elif known_enemy_hp[monster_key].has(enemy_level):
+		var old_known = known_enemy_hp[monster_key][enemy_level]
+		known_enemy_hp[monster_key][enemy_level] = mini(old_known, total_damage)
+	else:
+		known_enemy_hp[monster_key][enemy_level] = total_damage
 
 func _get_base_monster_name(monster_name: String) -> String:
 	"""Strip variant prefixes from monster name to get the base type.
@@ -8379,6 +8453,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
 			current_enemy_abilities = combat_state.get("monster_abilities", [])
 			damage_dealt_to_current_enemy = 0
+			analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
 			# Get actual monster HP from server
 			current_enemy_hp = combat_state.get("monster_hp", -1)
 			current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
@@ -8424,20 +8499,19 @@ func handle_server_message(message: Dictionary):
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 
 		"enemy_hp_revealed":
-			# Analyze ability revealed enemy HP - update the health bar
+			# Analyze ability revealed enemy HP - update the health bar for THIS combat
+			# Store the revealed max HP so we can use it when player defeats the monster
 			var max_hp = message.get("max_hp", 0)
 			var current_hp = message.get("current_hp", max_hp)
 			if max_hp > 0 and current_enemy_name != "":
-				var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
-				known_enemy_hp[enemy_key] = max_hp
-				# Also store for level-based estimation
-				var monster_key = "monster_%s" % current_enemy_name
-				if not known_enemy_hp.has(monster_key):
-					known_enemy_hp[monster_key] = {}
-				known_enemy_hp[monster_key][current_enemy_level] = max_hp
+				# Store revealed HP as current combat values for display
+				current_enemy_hp = current_hp
+				current_enemy_max_hp = max_hp
+				# Mark that Analyze revealed the true max HP - will be stored as known HP on defeat
+				analyze_revealed_max_hp = max_hp
 				# Calculate damage dealt from revealed HP
 				damage_dealt_to_current_enemy = max_hp - current_hp
-				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 
 		"combat_update":
 			var state = message.get("combat_state", {})
@@ -8486,7 +8560,8 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
-				if damage_dealt_to_current_enemy > 0:
+				# Record defeat if damage was dealt OR if Analyze revealed HP (e.g., Outsmart victory after Analyze)
+				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
 					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
 				if message.has("character"):
 					character_data = message.character
@@ -8553,6 +8628,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_name = ""
 			current_enemy_level = 0
 			damage_dealt_to_current_enemy = 0
+			analyze_revealed_max_hp = -1  # Reset Analyze flag
 
 			# Note: Background reset is handled in acknowledge_continue() when player presses Space
 
@@ -10483,7 +10559,9 @@ func show_help():
 [b][color=#FFD700]══ ITEMS ══[/color][/b]
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
-[color=#A335EE]Debuff Scrolls:[/color] Weakness, Vulnerability, Slow, Doom | [color=#A335EE]Special:[/color] Summoning, Finding (choose trait×5)
+[color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
+[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x gold or lose half)
+[color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
 [color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% wear = broken (no stats). Repair at merchants.
 
 [b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
@@ -10491,6 +10569,7 @@ func show_help():
 [color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%%
 [color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
 [color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
+[color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%%HP)
 
 [color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
 
@@ -10511,6 +10590,8 @@ func show_help():
   [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Exile/Knight/Cure. Survives 1 death!
   [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Seek Flame/Slap. Can find Eternal Flame.
   [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Smite/Restore/Bless/Proclaim.
+[color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
+[color=#00FFFF]Companions:[/color] Soul Gems summon pets! Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) + more
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
@@ -10584,8 +10665,8 @@ func search_help(search_term: String):
 		},
 		{
 			"title": "ITEMS & POTIONS",
-			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding"],
-			"content": "[color=#00FFFF]Potions:[/color] Health, Mana, Stamina, Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Debuff Scrolls:[/color] Weakness, Vulnerability, Slow, Doom\n[color=#A335EE]Special Scrolls:[/color] Summoning (choose monster), Finding (force trait for 5 monsters)"
+			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding", "time", "stop", "resurrect", "bane", "mystery", "box", "cursed", "coin", "tome", "stat", "skill"],
+			"content": "[color=#00FFFF]Potions:[/color] Health, Mana, Stamina, Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double gold, 50% lose half gold\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
 		},
 		{
 			"title": "EQUIPMENT & GEAR",
@@ -10616,6 +10697,21 @@ func search_help(search_term: String):
 			"title": "MONSTER HP KNOWLEDGE",
 			"keywords": ["hp", "health", "known", "unknown", "estimated", "estimate", "monster", "bar", "question", "marks", "???", "tilde", "knowledge"],
 			"content": "[color=#FFD700]Monster HP Knowledge System[/color]\n\nMonster HP visibility depends on your combat experience:\n\n[color=#FFFFFF]Known HP (150/200)[/color] - Exact HP values\n• You've killed this monster type at this level or higher\n• HP bar shows precise current/max values\n\n[color=#808080]Estimated HP (~150/200)[/color] - Approximation with ~ prefix\n• You've killed this monster type, but at a LOWER level\n• HP is scaled up from your known data\n• May be inaccurate - actual HP could be higher!\n\n[color=#808080]Unknown HP (???)[/color] - No data available\n• You've never killed this monster type\n• Or you are Blinded (hides HP even for known monsters)\n\n[color=#00FFFF]Tip:[/color] Kill monsters to learn their HP! Knowledge persists across sessions.\n[color=#FF4444]Warning:[/color] Magic Bolt's suggested amount uses estimated HP - may not kill if HP is unknown or underestimated."
+		},
+		{
+			"title": "PROC EQUIPMENT",
+			"keywords": ["proc", "procs", "vampire", "lifesteal", "thunder", "shocking", "reflection", "reflect", "slayer", "execute", "suffix", "special", "gear", "effect"],
+			"content": "[color=#A335EE]Proc Equipment (Tier 6+)[/color]\n\nHigh-tier monsters can drop equipment with special proc effects:\n\n[color=#FF4444]of the Vampire[/color] - Lifesteal: Heal 10% of damage dealt\n[color=#FFFF00]of Thunder[/color] - Shocking: 20% chance for +15% bonus lightning damage\n[color=#6666FF]of Reflection[/color] - Damage Reflect: Return 20% of damage taken to attacker\n[color=#FF6666]of the Slayer[/color] - Execute: 15% chance to instant-kill monsters below 20% HP\n\n[color=#00FFFF]Note:[/color] Proc effects stack from multiple equipped items!"
+		},
+		{
+			"title": "TROPHIES",
+			"keywords": ["trophy", "trophies", "dragon", "scale", "phylactery", "titan", "heart", "entropy", "shard", "collector", "prestige", "collectible"],
+			"content": "[color=#FF69B4]Trophy Drops (Tier 8+)[/color]\n\nPowerful monsters have a chance to drop rare trophies:\n\n[color=#FFD700]• Dragon Scale[/color] - 5% from Primordial Dragon\n[color=#A335EE]• Lich Phylactery[/color] - 5% from Elder Lich\n[color=#FFA500]• Titan Heart[/color] - 5% from Titan\n[color=#00FFFF]• Entropy Shard[/color] - 2% from Entropy\n[color=#FF00FF]• Phoenix Feather[/color] - 5% from Phoenix\n...and more!\n\n[color=#00FFFF]Trophies are prestige collectibles[/color] - show them off in your status!"
+		},
+		{
+			"title": "COMPANIONS",
+			"keywords": ["companion", "companions", "soul", "gem", "gems", "pet", "wolf", "phoenix", "shadow", "wisp", "guardian", "spirit", "ember", "bonus"],
+			"content": "[color=#00FFFF]Companion System (Tier 7+)[/color]\n\nSoul Gems summon companion spirits that provide combat bonuses:\n\n[color=#808080]Wolf Spirit[/color] - +10% attack damage\n[color=#FF6666]Phoenix Ember[/color] - Regenerate 2% HP per combat round\n[color=#9932CC]Shadow Wisp[/color] - +15% flee chance\n[color=#4169E1]Frost Guardian[/color] - +10% defense\n[color=#FFD700]Storm Spirit[/color] - +5% critical chance\n[color=#00FF00]Nature's Bond[/color] - +3% HP regen per round\n[color=#FF00FF]Void Familiar[/color] - +8% damage, +8% crit\n\n[color=#AAAAAA]Only one companion active at a time. Use soul gems from inventory to summon/dismiss.[/color]"
 		}
 	]
 

@@ -628,6 +628,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if actual_heal > 0:
 			messages.append("[color=#FFD700]Divine Favor heals %d HP.[/color]" % actual_heal)
 
+	# === COMPANION BONUS: HP regeneration ===
+	var companion_regen = character.get_companion_bonus("hp_regen")
+	if companion_regen > 0:
+		var regen_amount = max(1, int(character.max_hp * companion_regen / 100.0))
+		var actual_heal = character.heal(regen_amount)
+		if actual_heal > 0:
+			messages.append("[color=#00FFFF]Companion heals %d HP.[/color]" % actual_heal)
+
 	if is_vanished or hit_roll < hit_chance:
 		# Hit!
 		var damage_result = calculate_damage(character, monster, combat)
@@ -670,6 +678,33 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			var actual_heal = character.heal(heal_amount)
 			if actual_heal > 0:
 				messages.append("[color=#00FF00]Lifesteal heals you for %d HP![/color]" % actual_heal)
+
+		# === EQUIPMENT PROC EFFECTS ===
+		var procs = character.get_equipment_procs()
+
+		# Lifesteal from equipment
+		if procs.lifesteal > 0:
+			var proc_heal = max(1, int(damage * procs.lifesteal / 100.0))
+			var actual_proc_heal = character.heal(proc_heal)
+			if actual_proc_heal > 0:
+				messages.append("[color=#FF00FF]Vampiric gear drains %d HP![/color]" % actual_proc_heal)
+
+		# Shocking proc (bonus lightning damage on hit)
+		if procs.shocking.chance > 0 and procs.shocking.value > 0:
+			if randi() % 100 < procs.shocking.chance:
+				var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
+				monster.current_hp -= lightning_damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#00FFFF]⚡ Shocking strikes for %d bonus damage![/color]" % lightning_damage)
+
+		# Execute proc (bonus damage when enemy below 30% HP)
+		if procs.execute.chance > 0 and procs.execute.value > 0:
+			var monster_hp_percent = float(monster.current_hp) / float(monster.max_hp)
+			if monster_hp_percent <= 0.30 and randi() % 100 < procs.execute.chance:
+				var execute_damage = max(1, int(damage * procs.execute.value / 100.0))
+				monster.current_hp -= execute_damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#FF4444]💀 Execute strikes for %d bonus damage![/color]" % execute_damage)
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
@@ -872,6 +907,67 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
 
+	# Trophy drops - rare collectibles from powerful monsters
+	if drop_tables != null:
+		var trophy = drop_tables.roll_trophy_drop(monster.name)
+		if not trophy.is_empty():
+			var trophy_id = trophy.get("id", "")
+			var trophy_name = trophy.get("name", "Unknown Trophy")
+			var trophy_desc = trophy.get("description", "")
+			# Check if player already has this trophy
+			if character.has_trophy(trophy_id):
+				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+				messages.append("[color=#A335EE]★ TROPHY DROP: %s ★[/color]" % trophy_name)
+				messages.append("[color=#808080]%s[/color]" % trophy_desc)
+				messages.append("[color=#FFFF00](You already have this trophy!)[/color]")
+				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			else:
+				character.add_trophy(trophy_id, monster.name, monster.level)
+				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+				messages.append("[color=#A335EE]★★★ NEW TROPHY COLLECTED! ★★★[/color]")
+				messages.append("[color=#FFD700]%s[/color]" % trophy_name)
+				messages.append("[color=#808080]%s[/color]" % trophy_desc)
+				messages.append("[color=#00FF00]Trophy added to your collection! (%d total)[/color]" % character.get_trophy_count())
+				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+
+	# Soul Gem drops - companions (Tier 7+)
+	if drop_tables != null:
+		var monster_tier = drop_tables.get_tier_for_level(monster.level)
+		if monster_tier >= 7:
+			var soul_gem = drop_tables.roll_soul_gem_drop(monster_tier)
+			if not soul_gem.is_empty():
+				var gem_id = soul_gem.get("id", "")
+				var gem_name = soul_gem.get("name", "Unknown Soul Gem")
+				var gem_desc = soul_gem.get("description", "")
+				var gem_bonuses = soul_gem.get("bonuses", {})
+				if character.has_soul_gem(gem_id):
+					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+					messages.append("[color=#00FFFF]✧ SOUL GEM DROP: %s ✧[/color]" % gem_name)
+					messages.append("[color=#808080]%s[/color]" % gem_desc)
+					messages.append("[color=#FFFF00](You already have this soul gem!)[/color]")
+					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+				else:
+					character.add_soul_gem(gem_id, gem_name, gem_bonuses)
+					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+					messages.append("[color=#00FFFF]✧✧✧ NEW SOUL GEM ACQUIRED! ✧✧✧[/color]")
+					messages.append("[color=#FFD700]%s[/color]" % gem_name)
+					messages.append("[color=#808080]%s[/color]" % gem_desc)
+					# Show bonuses
+					var bonus_text = []
+					for bonus_type in gem_bonuses:
+						var val = gem_bonuses[bonus_type]
+						match bonus_type:
+							"attack": bonus_text.append("+%d%% attack" % val)
+							"hp_regen": bonus_text.append("+%d%% HP/round" % val)
+							"flee_bonus": bonus_text.append("+%d%% flee chance" % val)
+							"crit_chance": bonus_text.append("+%d%% crit chance" % val)
+							"hp_bonus": bonus_text.append("+%d%% max HP" % val)
+							"defense": bonus_text.append("+%d%% defense" % val)
+							"lifesteal": bonus_text.append("+%d%% lifesteal" % val)
+					messages.append("[color=#00FF00]Bonuses: %s[/color]" % ", ".join(bonus_text))
+					messages.append("[color=#808080]Use /companion to activate this companion![/color]")
+					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+
 	# Title item drops (Jarl's Ring, Unforged Crown)
 	var title_item = roll_title_item_drop(monster.level)
 	if not title_item.is_empty():
@@ -977,6 +1073,12 @@ func process_flee(combat: Dictionary) -> Dictionary:
 		var ninja_flee_bonus = int(passive_effects.get("flee_bonus", 0) * 100)
 		flee_chance += ninja_flee_bonus
 		messages.append("[color=#191970]Shadow Step: +%d%% flee chance![/color]" % ninja_flee_bonus)
+
+	# === COMPANION BONUS: Flee chance ===
+	var companion_flee = character.get_companion_bonus("flee_bonus")
+	if companion_flee > 0:
+		flee_chance += int(companion_flee)
+		messages.append("[color=#00FFFF]Companion: +%d%% flee chance![/color]" % int(companion_flee))
 
 	# Apply slow aura debuff (from monster ability)
 	var slow_penalty = combat.get("player_slow", 0)
@@ -1545,6 +1647,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if damage_buff > 0:
 				base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
+			# Apply skill enhancement damage bonus
+			var enhanced_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage)
+			if enhanced_damage > base_damage:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(character.get_skill_damage_bonus("magic_bolt")))
+				base_damage = enhanced_damage
+
 			# === CLASS PASSIVE: Wizard Arcane Precision ===
 			# +15% spell damage
 			if passive_effects.has("spell_damage_bonus"):
@@ -1804,7 +1912,12 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	if character.level < ability_info.level:
 		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
 
-	var stamina_cost = ability_info.cost
+	var base_stamina_cost = ability_info.cost
+	var stamina_cost = apply_skill_cost_reduction(character, ability_name, base_stamina_cost)
+
+	if stamina_cost < base_stamina_cost:
+		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(character.get_skill_cost_reduction(ability_name)))
+
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
 
@@ -1834,6 +1947,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
 			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
+			# Apply skill enhancement damage bonus
+			var enhanced_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
+			if enhanced_dmg > base_dmg:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(character.get_skill_damage_bonus("power_strike")))
+				base_dmg = enhanced_dmg
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -1946,7 +2064,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	if character.level < ability_info.level:
 		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
 
-	var energy_cost = ability_info.cost
+	var base_energy_cost = ability_info.cost
+	var energy_cost = apply_skill_cost_reduction(character, ability_name, base_energy_cost)
+
+	if energy_cost < base_energy_cost and energy_cost > 0:
+		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(character.get_skill_cost_reduction(ability_name)))
+	elif energy_cost == 0 and base_energy_cost > 0:
+		messages.append("[color=#00FFFF]Skill Enhancement: FREE![/color]")
 
 	if not character.use_energy(energy_cost):
 		return {"success": false, "messages": ["[color=#FF4444]Not enough energy! (Need %d)[/color]" % energy_cost], "combat_ended": false, "skip_monster_turn": true}
@@ -2256,6 +2380,24 @@ func _process_victory(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat and return victory result - redirects to ability-aware version"""
 	return _process_victory_with_abilities(combat, messages)
 
+func apply_skill_cost_reduction(character: Character, ability_name: String, base_cost: int) -> int:
+	"""Apply skill enhancement cost reduction to an ability's cost.
+	Returns the reduced cost (minimum 1 unless reduction is 100%)."""
+	var cost_reduction = character.get_skill_cost_reduction(ability_name)
+	if cost_reduction <= 0:
+		return base_cost
+	if cost_reduction >= 100:
+		return 0  # Free ability!
+	return max(1, int(base_cost * (1.0 - cost_reduction / 100.0)))
+
+func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int) -> int:
+	"""Apply skill enhancement damage bonus to an ability's damage.
+	Returns the boosted damage."""
+	var damage_bonus = character.get_skill_damage_bonus(ability_name)
+	if damage_bonus <= 0:
+		return base_damage
+	return int(base_damage * (1.0 + damage_bonus / 100.0))
+
 func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	"""Process using an item during combat. Returns result with messages."""
 	if not active_combats.has(peer_id):
@@ -2350,6 +2492,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if stun_turns - 1 <= 0:
 			combat.erase("monster_stunned")
 		return {"success": true, "message": "[color=#808080]The %s is paralyzed and cannot act! (%d turn(s) remaining)[/color]" % [monster.name, max(0, stun_turns - 1)]}
+
+	# Check for Time Stop scroll buff (monster skips turn)
+	if character.has_buff("time_stop"):
+		character.remove_buff("time_stop")
+		return {"success": true, "message": "[color=#9932CC]Time freezes around the %s! It cannot move or act this turn![/color]" % monster.name}
 
 	# === PRE-ATTACK ABILITIES ===
 
@@ -2563,6 +2710,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]Thorns reflect %d damage back![/color]" % thorns_damage)
 
+		# Equipment damage reflect proc
+		var procs = character.get_equipment_procs()
+		if procs.damage_reflect > 0 and total_damage > 0:
+			var reflect_dmg = max(1, int(total_damage * procs.damage_reflect / 100.0))
+			monster.current_hp -= reflect_dmg
+			monster.current_hp = max(0, monster.current_hp)
+			messages.append("[color=#9932CC]Retribution gear reflects %d damage![/color]" % reflect_dmg)
+			# Check if reflection killed monster
+			if monster.current_hp <= 0:
+				return _process_victory(combat, messages)
+
 		# Check for Dwarf Last Stand (survive lethal damage with 1 HP)
 		if character.current_hp <= 0:
 			if character.try_last_stand():
@@ -2570,6 +2728,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]The %s attacks and deals %d damage![/color]" % [monster.name, total_damage])
 				messages.append("[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]")
 				return {"success": true, "message": "\n".join(messages), "last_stand": true}
+
+		# Check for Resurrect scroll buff (survive lethal damage and revive at % HP)
+		if character.current_hp <= 0:
+			var resurrect_percent = character.get_buff_value("resurrect")
+			if resurrect_percent > 0:
+				character.remove_buff("resurrect")
+				var revive_hp = max(1, int(character.get_total_max_hp() * resurrect_percent / 100.0))
+				character.current_hp = revive_hp
+				messages.append("[color=#FF4444]The %s attacks and deals a lethal blow![/color]" % monster.name)
+				messages.append("[color=#FFD700][b]RESURRECTION![/b] Divine magic pulls you back from death![/color]")
+				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
+				return {"success": true, "message": "\n".join(messages), "resurrected": true}
 
 		character.current_hp = max(0, character.current_hp)
 
@@ -2803,6 +2973,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
 
+	# === COMPANION BONUS: Attack damage ===
+	var companion_attack = character.get_companion_bonus("attack")
+	if companion_attack > 0:
+		raw_damage = int(raw_damage * (1.0 + companion_attack / 100.0))
+		passive_messages.append("[color=#00FFFF]Companion: +%d%% damage![/color]" % int(companion_attack))
+
 	# === CLASS PASSIVE: Barbarian Blood Rage ===
 	# +3% damage per 10% HP missing, max +30%
 	if effects.has("damage_per_missing_hp"):
@@ -2824,6 +3000,11 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# Add crit bonus from scrolls/potions
 	var crit_bonus = combat.get("crit_bonus", 0)
 	crit_chance += crit_bonus
+
+	# Add companion crit bonus
+	var companion_crit = character.get_companion_bonus("crit_chance")
+	if companion_crit > 0:
+		crit_chance += int(companion_crit)
 
 	# === CLASS PASSIVE: Thief Backstab ===
 	# +15% base crit chance
@@ -2904,6 +3085,18 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		if "beast" in monster_type or "animal" in monster_type or monster.name.to_lower() in beast_names:
 			total = int(total * (1.0 + effects.get("bonus_vs_beasts", 0)))
 			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(effects.get("bonus_vs_beasts", 0) * 100))
+
+	# === MONSTER BANE POTIONS ===
+	# Check for monster_bane_<type> buffs that give +damage% vs specific monster types
+	var bane_types = ["dragon", "undead", "beast", "demon", "elemental"]
+	for bane_type in bane_types:
+		var bane_buff_key = "monster_bane_" + bane_type
+		var bane_bonus = character.get_buff_value(bane_buff_key)
+		if bane_bonus > 0:
+			# Check if monster matches this type using drop_tables lookup
+			if drop_tables and drop_tables.get_monster_type(monster.name) == bane_type:
+				total = int(total * (1.0 + bane_bonus / 100.0))
+				passive_messages.append("[color=#FF4500]%s Bane: +%d%% damage![/color]" % [bane_type.capitalize(), bane_bonus])
 
 	return {"damage": max(1, total), "is_crit": is_crit, "passive_messages": passive_messages, "backfire_damage": backfire_damage}
 
