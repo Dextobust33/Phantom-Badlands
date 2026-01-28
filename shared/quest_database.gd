@@ -654,7 +654,45 @@ func get_quest(quest_id: String) -> Dictionary:
 	if "_dynamic_" in quest_id:
 		return _regenerate_dynamic_quest(quest_id)
 
+	# Handle progression quest IDs (format: progression_to_postid)
+	if quest_id.begins_with("progression_to_"):
+		return _regenerate_progression_quest(quest_id)
+
 	return {}
+
+func _regenerate_progression_quest(quest_id: String) -> Dictionary:
+	"""Regenerate a progression quest from its ID."""
+	# Parse ID: progression_to_postid
+	var dest_post_id = quest_id.replace("progression_to_", "")
+
+	if not TRADING_POST_COORDS.has(dest_post_id):
+		return {}
+
+	var dest_coords = TRADING_POST_COORDS.get(dest_post_id, Vector2i(0, 0))
+	var distance = sqrt(dest_coords.x * dest_coords.x + dest_coords.y * dest_coords.y)
+	var recommended_level = max(1, int(distance))
+
+	# Get destination name from the key
+	var dest_name = dest_post_id.replace("_", " ").capitalize()
+
+	# Calculate rewards based on distance
+	var base_xp = int(distance * 2)
+	var base_gold = int(distance)
+	var gems = max(0, int(distance / 100))
+
+	return {
+		"id": quest_id,
+		"name": "Journey to " + dest_name,
+		"description": "Travel to %s to expand your horizons. (Recommended Level: %d)" % [dest_name, recommended_level],
+		"type": QuestType.EXPLORATION,
+		"trading_post": "",  # Origin unknown when regenerating
+		"target": 1,
+		"destinations": [dest_post_id],
+		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"is_daily": false,
+		"prerequisite": "",
+		"is_progression": true
+	}
 
 func _get_area_level_for_post(trading_post_id: String) -> int:
 	"""Get the expected monster level for an area around a trading post."""
@@ -747,11 +785,18 @@ func get_quests_for_trading_post(trading_post_id: String) -> Array:
 			quests.append(scaled_quest)
 	return quests
 
-func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary) -> Array:
-	"""Get quests available for a player at a Trading Post, considering prerequisites and cooldowns."""
+func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary, player_level: int = 1) -> Array:
+	"""Get quests available for a player at a Trading Post, considering prerequisites, cooldowns, and player level.
+	Quests are scaled to player level with progressive difficulty."""
 	var available = []
 	var current_time = Time.get_unix_time_from_system()
 	var area_level = _get_area_level_for_post(trading_post_id)
+
+	# Count completed quests at this post to determine difficulty progression
+	var completed_at_post = 0
+	for quest_id in QUESTS:
+		if QUESTS[quest_id].trading_post == trading_post_id and quest_id in completed_quests:
+			completed_at_post += 1
 
 	# Get static quests for this trading post
 	for quest_id in QUESTS:
@@ -779,16 +824,71 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 		if quest.prerequisite != "" and quest.prerequisite not in completed_quests:
 			continue
 
-		# Scale quest rewards based on area level
-		var scaled_quest = _scale_quest_rewards(quest.duplicate(true), area_level)
+		# Scale quest rewards AND requirements based on player level and progression
+		var scaled_quest = _scale_quest_for_player(quest.duplicate(true), player_level, completed_at_post, area_level)
 		available.append(scaled_quest)
 
-	# If no static quests available, generate dynamic quests
+	# If no static quests available, generate dynamic quests scaled to player
 	if available.is_empty():
-		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids)
+		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
 		available.append_array(dynamic_quests)
 
 	return available
+
+func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_completed_at_post: int, area_level: int) -> Dictionary:
+	"""Scale quest requirements and rewards based on player level and progression.
+	Quests get progressively harder as player completes more at the same post."""
+
+	# First scale rewards
+	quest = _scale_quest_rewards(quest, area_level)
+
+	# Calculate difficulty modifier based on progression (0.0 to 0.5 bonus)
+	# More completed quests = harder requirements, pushing toward next post
+	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
+
+	# Base target level on player level with progression
+	var base_level = player_level
+	var target_level = int(base_level * (1.0 + progression_modifier))
+
+	# Scale kill requirements based on quest type
+	var quest_type = quest.get("type", -1)
+
+	match quest_type:
+		QuestType.KILL_ANY:
+			# Scale kill count: base + (player_level / 10) + progression bonus
+			var base_target = quest.get("target", 5)
+			var scaled_target = base_target + int(player_level / 10) + quests_completed_at_post
+			quest["target"] = max(base_target, min(scaled_target, base_target * 3))  # Cap at 3x original
+			quest["scaled_description"] = "Defeat %d monsters." % quest["target"]
+
+		QuestType.KILL_LEVEL:
+			# Monster level requirement scales with player level + progression
+			var min_level = max(1, int(target_level * 0.8))  # 80% of target level
+			quest["target"] = min_level
+			if quest.has("kill_count"):
+				var base_count = quest.get("kill_count", 1)
+				quest["kill_count"] = base_count + int(quests_completed_at_post / 2)
+			quest["scaled_description"] = "Defeat monsters of level %d or higher." % min_level
+
+		QuestType.HOTZONE_KILL:
+			# Scale both monster level and kill count
+			var min_monster_level = max(1, int(target_level * 0.7))
+			quest["min_monster_level"] = min_monster_level
+			var base_target = quest.get("target", 3)
+			quest["target"] = base_target + int(quests_completed_at_post / 2)
+			quest["scaled_description"] = "Kill %d monsters (Lv%d+) in hotzones." % [quest["target"], min_monster_level]
+
+		QuestType.BOSS_HUNT:
+			# Boss level scales with player level + significant progression bonus
+			var boss_level = int(target_level * (1.0 + progression_modifier * 0.5))
+			quest["target"] = boss_level
+			quest["scaled_description"] = "Defeat a powerful monster of level %d or higher." % boss_level
+
+	# Mark quest as scaled
+	quest["player_level_scaled"] = player_level
+	quest["difficulty_tier"] = quests_completed_at_post
+
+	return quest
 
 # ===== DYNAMIC QUEST GENERATION =====
 
@@ -829,16 +929,9 @@ const TRADING_POST_COORDS = {
 	"dragons_rest": Vector2i(300, -300)
 }
 
-func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array) -> Array:
-	"""Generate procedural quests when all static quests are completed."""
+func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0) -> Array:
+	"""Generate procedural quests scaled to player level when all static quests are completed."""
 	var quests = []
-
-	# Count completed static quests from this post to determine tier
-	var static_count = 0
-	for quest_id in QUESTS:
-		if QUESTS[quest_id].trading_post == trading_post_id:
-			if quest_id in completed_quests:
-				static_count += 1
 
 	# Count completed dynamic quests from this post
 	var dynamic_completed = 0
@@ -846,14 +939,17 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 		if quest_id.begins_with(trading_post_id + "_dynamic_"):
 			dynamic_completed += 1
 
-	# Calculate tier based on total completions
+	# Calculate tier based on completions
 	var tier = dynamic_completed + 1
 
 	# Get this trading post's coordinates
 	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 
-	# Generate 2-3 quests of increasing difficulty
+	# Calculate difficulty modifier based on progression
+	var progression_modifier = min(0.5, (quests_completed_at_post + dynamic_completed) * 0.05)
+
+	# Generate 2-3 quests of increasing difficulty, scaled to player level
 	for i in range(3):
 		var quest_tier = tier + i
 		var quest_id = "%s_dynamic_%d_%d" % [trading_post_id, tier, i]
@@ -862,7 +958,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 		if quest_id in active_quest_ids or quest_id in completed_quests:
 			continue
 
-		var quest = _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
+		var quest = _generate_quest_for_tier_scaled(trading_post_id, quest_id, quest_tier, post_distance, player_level, progression_modifier)
 		if not quest.is_empty():
 			quests.append(quest)
 
@@ -958,6 +1054,105 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		quest["max_distance"] = hotzone_distance
 		quest["min_intensity"] = 0.0 if tier < 5 else 0.3
 		quest["min_monster_level"] = hotzone_min_monster_level
+
+	return quest
+
+func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, tier: int, post_distance: float, player_level: int, progression_modifier: float) -> Dictionary:
+	"""Generate a single quest based on tier, scaled to player level and progression."""
+
+	# Base difficulty on player level instead of just post distance
+	var effective_level = player_level * (1.0 + progression_modifier)
+
+	# Tier multiplier for progressive difficulty within the post
+	var tier_multiplier: float
+	if tier <= 3:
+		tier_multiplier = 0.8 + (tier - 1) * 0.1  # 0.8, 0.9, 1.0
+	elif tier <= 7:
+		tier_multiplier = 1.0 + (tier - 3) * 0.15   # 1.0, 1.15, 1.3, 1.45
+	else:
+		tier_multiplier = 1.45 + (tier - 7) * 0.2  # 1.45, 1.65, 1.85...
+
+	# Scale requirements to player level
+	var kill_count = int(5 + (tier * 2) + (player_level / 20))  # Scales slowly with level
+	var min_monster_level = int(effective_level * 0.7 * tier_multiplier)  # 70-100%+ of player level
+	var hotzone_distance = 30.0 + (tier * 20.0) + (player_level / 5)  # Distance increases with level
+	var hotzone_kills = int(3 + tier + (player_level / 30))
+	var hotzone_min_level = int(effective_level * 0.6 * tier_multiplier)  # 60%+ of player level
+
+	# Rewards scale with player level and tier
+	var level_reward_mult = 1.0 + (player_level / 50.0)  # +2% per level
+	var base_xp = int((80 + (100 * tier)) * level_reward_mult * tier_multiplier)
+	var base_gold = int((40 + (50 * tier)) * level_reward_mult * tier_multiplier)
+	var gems = max(0, int((tier - 2 + player_level / 50) * tier_multiplier))  # Gems scale with level too
+
+	# Quest type varies by tier - simpler quests early
+	var quest_type: int
+	var quest_name: String
+	var quest_desc: String
+	var target: int
+
+	# Early tiers prefer simpler KILL_ANY quests
+	var effective_tier_type = tier if tier > 2 else 0
+
+	match effective_tier_type % 4:
+		0:  # Kill any monsters
+			quest_type = QuestType.KILL_ANY
+			quest_name = "Slayer's Contract %d" % tier
+			quest_desc = "Eliminate %d monsters to prove your continued valor." % kill_count
+			target = kill_count
+		1:  # Kill high-level monsters
+			quest_type = QuestType.KILL_LEVEL
+			quest_name = "Veteran's Challenge %d" % tier
+			quest_desc = "Defeat a monster of level %d or higher." % min_monster_level
+			target = min_monster_level
+		2:  # Hotzone quest
+			quest_type = QuestType.HOTZONE_KILL
+			quest_name = "Danger Zone Bounty %d" % tier
+			quest_desc = "Kill %d monsters (level %d+) in hotzones within %.0f tiles." % [hotzone_kills, hotzone_min_level, hotzone_distance]
+			target = hotzone_kills
+		3:  # Boss hunt - scale to push player toward next post
+			var boss_level = int(effective_level * (1.1 + progression_modifier))  # 10%+ above player level
+			quest_type = QuestType.BOSS_HUNT
+			quest_name = "Elite Hunt %d" % tier
+			quest_desc = "Track down and defeat a monster of level %d or higher." % boss_level
+			target = boss_level
+
+	# Calculate area level for display
+	var area_level = max(1, int(post_distance * 0.5))
+
+	# Determine reward tier
+	var reward_tier: String
+	if tier_multiplier < 1.1:
+		reward_tier = "standard"
+	elif tier_multiplier < 1.4:
+		reward_tier = "veteran"
+	elif tier_multiplier < 1.7:
+		reward_tier = "elite"
+	else:
+		reward_tier = "legendary"
+
+	var quest = {
+		"id": quest_id,
+		"name": quest_name,
+		"description": quest_desc,
+		"type": quest_type,
+		"trading_post": trading_post_id,
+		"target": target,
+		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"is_daily": false,
+		"prerequisite": "",
+		"is_dynamic": true,
+		"area_level": area_level,
+		"reward_tier": reward_tier,
+		"player_level_scaled": player_level,
+		"difficulty_tier": tier
+	}
+
+	# Add hotzone-specific fields
+	if quest_type == QuestType.HOTZONE_KILL:
+		quest["max_distance"] = hotzone_distance
+		quest["min_intensity"] = 0.0 if tier < 5 else 0.3
+		quest["min_monster_level"] = hotzone_min_level
 
 	return quest
 

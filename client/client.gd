@@ -1837,10 +1837,19 @@ func _input(event):
 			}
 			if numpad_map.has(event.keycode):
 				var char_to_insert = numpad_map[event.keycode]
-				var caret_pos = popup_input.caret_column
-				var current_text = popup_input.text
-				popup_input.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
-				popup_input.caret_column = caret_pos + 1
+				# Check if text is selected - if so, replace the selection
+				if popup_input.has_selection():
+					var sel_from = popup_input.get_selection_from_column()
+					var sel_to = popup_input.get_selection_to_column()
+					var text_before = popup_input.text.substr(0, sel_from)
+					var text_after = popup_input.text.substr(sel_to)
+					popup_input.text = text_before + char_to_insert + text_after
+					popup_input.caret_column = sel_from + 1
+				else:
+					var caret_pos = popup_input.caret_column
+					var current_text = popup_input.text
+					popup_input.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
+					popup_input.caret_column = caret_pos + 1
 				get_viewport().set_input_as_handled()
 				return
 			elif event.keycode == KEY_KP_ENTER:
@@ -3497,6 +3506,7 @@ func _create_ability_popup():
 	ability_popup_input.placeholder_text = "Enter amount..."
 	ability_popup_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ability_popup_input.custom_minimum_size = Vector2(0, 35)
+	ability_popup_input.select_all_on_focus = true  # Auto-select text when focused so typing replaces it
 	ability_popup_input.text_submitted.connect(_on_ability_popup_input_submitted)
 	ability_popup_input.gui_input.connect(_on_popup_input_gui_input.bind(ability_popup_input))
 	vbox.add_child(ability_popup_input)
@@ -3544,16 +3554,24 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
 	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
+	# IMPORTANT: Only use client's damage-based HP tracking, not server's actual HP
+	# This ensures suggestions are based on player knowledge (damage dealt in past fights)
 	var suggested_amount = 0
 	var using_estimated_hp = false
-	var target_hp = current_enemy_hp
+	var target_hp = 0
 
-	# If actual HP is unknown, try to estimate from previous kills of this monster type
-	if target_hp <= 0 and current_enemy_name != "" and current_enemy_level > 0:
-		var estimated = estimate_enemy_hp(current_enemy_name, current_enemy_level)
-		if estimated > 0:
-			target_hp = estimated
-			using_estimated_hp = true
+	# Check client's HP knowledge based on previous kills (damage dealt)
+	if current_enemy_name != "" and current_enemy_level > 0:
+		# First try exact match (known HP for this monster at this level)
+		var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
+		if known_enemy_hp.has(enemy_key):
+			target_hp = known_enemy_hp[enemy_key]
+		else:
+			# Try to estimate from kills at other levels
+			var estimated = estimate_enemy_hp(current_enemy_name, current_enemy_level)
+			if estimated > 0:
+				target_hp = estimated
+				using_estimated_hp = true
 
 	if ability == "magic_bolt" and target_hp > 0:
 		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS, defense, and level penalty
@@ -3681,6 +3699,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	ability_popup.visible = true
 	ability_popup_active = true  # Set flag for input handling
 	ability_popup_input.grab_focus()
+	# Use deferred call to ensure selection happens after focus is fully established
+	ability_popup_input.call_deferred("select_all")
 
 func _hide_ability_popup():
 	"""Hide the ability input popup."""
@@ -3739,10 +3759,19 @@ func _on_popup_input_gui_input(event: InputEvent, line_edit: LineEdit):
 		}
 		if numpad_map.has(event.keycode):
 			var char_to_insert = numpad_map[event.keycode]
-			var caret_pos = line_edit.caret_column
-			var current_text = line_edit.text
-			line_edit.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
-			line_edit.caret_column = caret_pos + 1
+			# Check if text is selected - if so, replace the selection
+			if line_edit.has_selection():
+				var sel_from = line_edit.get_selection_from_column()
+				var sel_to = line_edit.get_selection_to_column()
+				var text_before = line_edit.text.substr(0, sel_from)
+				var text_after = line_edit.text.substr(sel_to)
+				line_edit.text = text_before + char_to_insert + text_after
+				line_edit.caret_column = sel_from + 1
+			else:
+				var caret_pos = line_edit.caret_column
+				var current_text = line_edit.text
+				line_edit.text = current_text.substr(0, caret_pos) + char_to_insert + current_text.substr(caret_pos)
+				line_edit.caret_column = caret_pos + 1
 			line_edit.accept_event()
 		elif event.keycode == KEY_KP_ENTER:
 			# Treat numpad enter same as regular enter
@@ -5354,7 +5383,11 @@ func display_shop_inventory():
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
-				compare_text = " " + _get_compare_arrow(item, equipped_item)
+				var diff_parts = _get_item_comparison_parts(item, equipped_item)
+				if diff_parts.size() > 0:
+					compare_text = " [%s]" % ", ".join(diff_parts)
+				else:
+					compare_text = " [color=#FFFF66]=[/color]"
 
 			# Build stats string using computed bonuses
 			var stats_parts = []
@@ -5922,6 +5955,44 @@ func _get_compare_arrow(new_item: Dictionary, equipped_item) -> String:
 		return "[color=#FF6666]↓[/color]"
 	else:
 		return "[color=#FFFF66]=[/color]"
+
+func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
+	"""Get array of stat difference strings for inline comparison display.
+	   If old_item is null, shows new item's stats as gains."""
+	var new_bonuses = _compute_item_bonuses(new_item)
+	var old_bonuses = {}
+	if old_item != null and old_item is Dictionary:
+		old_bonuses = _compute_item_bonuses(old_item)
+	var diff_parts = []
+
+	# Stats to compare with their display labels (ordered by importance)
+	var stats_to_compare = [
+		["attack", "ATK"],
+		["defense", "DEF"],
+		["max_hp", "HP"],
+		["max_mana", "MP"],
+		["max_stamina", "STA"],
+		["max_energy", "EN"],
+		["speed", "SPD"],
+		["strength", "STR"],
+		["constitution", "CON"],
+		["dexterity", "DEX"],
+		["intelligence", "INT"],
+		["wisdom", "WIS"],
+		["wits", "WIT"]
+	]
+
+	for stat_info in stats_to_compare:
+		var stat = stat_info[0]
+		var label = stat_info[1]
+		var new_val = new_bonuses.get(stat, 0)
+		var old_val = old_bonuses.get(stat, 0)
+		var diff = new_val - old_val
+		if diff != 0:
+			var c = "#00FF00" if diff > 0 else "#FF6666"
+			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
+
+	return diff_parts
 
 func _get_compare_stat_label(stat: String) -> String:
 	"""Get display label for a comparison stat"""
@@ -6545,7 +6616,11 @@ func display_inventory():
 			var slot = _get_slot_for_item_type(item_type)
 			if slot != "":
 				var equipped_item = equipped.get(slot)
-				compare_text = _get_compare_arrow(item, equipped_item)
+				var diff_parts = _get_item_comparison_parts(item, equipped_item)
+				if diff_parts.size() > 0:
+					compare_text = "[%s] " % ", ".join(diff_parts)
+				else:
+					compare_text = "[color=#FFFF66]=[/color] "
 
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
@@ -7197,37 +7272,11 @@ func _display_equippable_items_page():
 		var slot = _get_slot_for_item_type(item_type)
 		if slot != "":
 			var equipped_item = equipped.get(slot)
-			if equipped_item != null and equipped_item is Dictionary:
-				# Calculate stat differences
-				var new_bonuses = _compute_item_bonuses(item)
-				var old_bonuses = _compute_item_bonuses(equipped_item)
-				var diff_parts = []
-
-				# Check key stats for comparison
-				var atk_diff = new_bonuses.get("attack", 0) - old_bonuses.get("attack", 0)
-				var def_diff = new_bonuses.get("defense", 0) - old_bonuses.get("defense", 0)
-				var hp_diff = new_bonuses.get("max_hp", 0) - old_bonuses.get("max_hp", 0)
-				var spd_diff = new_bonuses.get("speed", 0) - old_bonuses.get("speed", 0)
-
-				if atk_diff != 0:
-					var c = "#00FF00" if atk_diff > 0 else "#FF6666"
-					diff_parts.append("[color=%s]%+dATK[/color]" % [c, atk_diff])
-				if def_diff != 0:
-					var c = "#00FF00" if def_diff > 0 else "#FF6666"
-					diff_parts.append("[color=%s]%+dDEF[/color]" % [c, def_diff])
-				if hp_diff != 0:
-					var c = "#00FF00" if hp_diff > 0 else "#FF6666"
-					diff_parts.append("[color=%s]%+dHP[/color]" % [c, hp_diff])
-				if spd_diff != 0:
-					var c = "#00FF00" if spd_diff > 0 else "#FF6666"
-					diff_parts.append("[color=%s]%+dSPD[/color]" % [c, spd_diff])
-
-				if diff_parts.size() > 0:
-					compare_text = " [%s]" % ", ".join(diff_parts)
-				else:
-					compare_text = " [color=#FFFF66]=[/color]"
+			var diff_parts = _get_item_comparison_parts(item, equipped_item)
+			if diff_parts.size() > 0:
+				compare_text = " [%s]" % ", ".join(diff_parts)
 			else:
-				compare_text = " [color=#00FF00]NEW[/color]"
+				compare_text = " [color=#FFFF66]=[/color]"
 
 		# Display number is 1-9 for current page
 		var display_num = (j - start_idx) + 1
@@ -8282,7 +8331,11 @@ func handle_server_message(message: Dictionary):
 								var slot = _get_slot_for_item_type(item_type)
 								if slot != "":
 									var equipped_item = equipped.get(slot)
-									compare_text = " " + _get_compare_arrow(item, equipped_item)
+									var diff_parts = _get_item_comparison_parts(item, equipped_item)
+									if diff_parts.size() > 0:
+										compare_text = " [%s]" % ", ".join(diff_parts)
+									else:
+										compare_text = " [color=#FFFF66]=[/color]"
 
 								if stats_str != "":
 									display_game("[%d] [color=%s]%s[/color] (Lv%d)%s - %s" % [j + 1, color, item_name, level, compare_text, stats_str])

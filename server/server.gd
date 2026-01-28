@@ -2480,12 +2480,12 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		# Fallback to gold
 		var gold_amount = max(10, area_level * (randi() % 10 + 5))
 		character.gold += gold_amount
-		# Pad gold text to fit in box (34 chars inner width)
+		# Pad gold text to fit in box (34 chars inner width, plus 2 spaces = 36 total)
 		var gold_text = "Found %d gold!" % gold_amount
 		if gold_text.length() < 34:
 			gold_text = gold_text + " ".repeat(34 - gold_text.length())
 		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]          [color=#00FF00]✦ LUCKY FIND! ✦[/color]           [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
 		msg += "[color=#FFD700]║[/color] You discover a hidden cache!      [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=#FFD700]%s[/color] [color=#FFD700]║[/color]\n" % gold_text
@@ -2498,14 +2498,14 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 			item_data = item
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		var item_name = item.get("name", "Unknown Item")
-		# Pad item name to fit in box (34 chars inner width)
+		# Pad item name to fit in box (34 chars inner width, plus 2 spaces = 36 total)
 		var padded_name = item_name
 		if padded_name.length() < 34:
 			padded_name = padded_name + " ".repeat(34 - padded_name.length())
 		msg = "[color=#FFD700]╔════════════════════════════════════╗[/color]\n"
-		msg += "[color=#FFD700]║[/color]       [color=#00FF00]✦ LUCKY FIND! ✦[/color]       [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color]          [color=#00FF00]✦ LUCKY FIND! ✦[/color]           [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]╠════════════════════════════════════╣[/color]\n"
-		msg += "[color=#FFD700]║[/color] You discover something valuable!  [color=#FFD700]║[/color]\n"
+		msg += "[color=#FFD700]║[/color] You discover something valuable!   [color=#FFD700]║[/color]\n"
 		msg += "[color=#FFD700]║[/color] [color=%s]%s[/color] [color=#FFD700]║[/color]\n" % [rarity_color, padded_name]
 		msg += "[color=#FFD700]╚════════════════════════════════════╝[/color]"
 		if not character.can_add_item() and items.size() > 0:
@@ -4488,7 +4488,7 @@ func trigger_trading_post_encounter(peer_id: int):
 		active_quest_ids.append(q.quest_id)
 
 	var available_quests = quest_db.get_available_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level)
 
 	# Check for quests ready to turn in
 	var quests_to_turn_in = []
@@ -4583,9 +4583,14 @@ func handle_trading_post_quests(peer_id: int):
 	for q in character.active_quests:
 		active_quest_ids.append(q.quest_id)
 
-	# Get available quests
+	# Get available quests scaled to player level
 	var available_quests = quest_db.get_available_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level)
+
+	# Add progression quest if player is high enough level for next post
+	var progression_quest = _generate_progression_quest(tp.id, character.level, character.completed_quests, active_quest_ids)
+	if not progression_quest.is_empty():
+		available_quests.append(progression_quest)
 
 	# Get quests ready to turn in at this Trading Post
 	var quests_to_turn_in = []
@@ -4626,6 +4631,57 @@ func handle_trading_post_quests(peer_id: int):
 		"active_count": character.active_quests.size(),
 		"max_quests": Character.MAX_ACTIVE_QUESTS
 	})
+
+func _generate_progression_quest(current_post_id: String, player_level: int, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
+	"""Generate a dynamic exploration quest to guide player to the next trading post."""
+	# Check if player already has a progression quest active
+	for quest_id in active_quest_ids:
+		if quest_id.begins_with("progression_to_"):
+			return {}
+
+	# Check if player has recently completed a progression quest to this destination
+	# (prevents spam by requiring them to actually go there)
+	for quest_id in completed_quests:
+		if quest_id.begins_with("progression_to_"):
+			# Already completed a progression quest, don't offer another from same post
+			# until they visit the destination
+			pass
+
+	# Get the next recommended trading post
+	var next_post = trading_post_db.get_next_progression_post(current_post_id, player_level)
+	if next_post.is_empty():
+		return {}
+
+	var next_post_id = next_post.get("id", "")
+	var next_post_name = next_post.get("name", "Unknown")
+	var recommended_level = next_post.get("recommended_level", player_level)
+	var distance = next_post.get("distance_from_origin", 0)
+
+	# Generate quest ID
+	var quest_id = "progression_to_" + next_post_id
+
+	# Skip if already completed this specific progression quest
+	if quest_id in completed_quests:
+		return {}
+
+	# Calculate rewards based on distance (further = better rewards)
+	var base_xp = int(distance * 2)
+	var base_gold = int(distance)
+	var gems = max(0, int(distance / 100))
+
+	return {
+		"id": quest_id,
+		"name": "Journey to " + next_post_name,
+		"description": "Travel to %s to expand your horizons. (Recommended Level: %d)" % [next_post_name, recommended_level],
+		"type": 4,  # QuestType.EXPLORATION
+		"trading_post": current_post_id,
+		"target": 1,
+		"destinations": [next_post_id],
+		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"is_daily": false,
+		"prerequisite": "",
+		"is_progression": true  # Flag to identify progression quests
+	}
 
 func handle_trading_post_recharge(peer_id: int):
 	"""Recharge resources at Trading Post (50% discount, cures poison)"""
