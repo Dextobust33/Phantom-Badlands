@@ -5851,37 +5851,37 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	var stats_shown = false
 
 	if bonuses.get("attack", 0) > 0:
-		display_game("[color=#FF6666]+%d Attack[/color]" % bonuses.attack)
+		display_game("[color=#FFFF00]+%d Attack[/color]" % bonuses.attack)
 		stats_shown = true
 	if bonuses.get("defense", 0) > 0:
-		display_game("[color=#66FFFF]+%d Defense[/color]" % bonuses.defense)
+		display_game("[color=#00FF00]+%d Defense[/color]" % bonuses.defense)
 		stats_shown = true
 	if bonuses.get("max_hp", 0) > 0:
-		display_game("[color=#00FF00]+%d Max HP[/color]" % bonuses.max_hp)
+		display_game("[color=#FF6666]+%d Max HP[/color]" % bonuses.max_hp)
 		stats_shown = true
 	if bonuses.get("max_mana", 0) > 0:
 		display_game("[color=#9999FF]+%d Max Mana[/color]" % bonuses.max_mana)
 		stats_shown = true
 	if bonuses.get("strength", 0) > 0:
-		display_game("+%d Strength" % bonuses.strength)
+		display_game("[color=#FF6666]+%d Strength[/color]" % bonuses.strength)
 		stats_shown = true
 	if bonuses.get("constitution", 0) > 0:
-		display_game("+%d Constitution" % bonuses.constitution)
+		display_game("[color=#00FF00]+%d Constitution[/color]" % bonuses.constitution)
 		stats_shown = true
 	if bonuses.get("dexterity", 0) > 0:
-		display_game("+%d Dexterity" % bonuses.dexterity)
+		display_game("[color=#FFFF00]+%d Dexterity[/color]" % bonuses.dexterity)
 		stats_shown = true
 	if bonuses.get("intelligence", 0) > 0:
-		display_game("+%d Intelligence" % bonuses.intelligence)
+		display_game("[color=#9999FF]+%d Intelligence[/color]" % bonuses.intelligence)
 		stats_shown = true
 	if bonuses.get("wisdom", 0) > 0:
-		display_game("+%d Wisdom" % bonuses.wisdom)
+		display_game("[color=#66CCFF]+%d Wisdom[/color]" % bonuses.wisdom)
 		stats_shown = true
 	if bonuses.get("wits", 0) > 0:
-		display_game("+%d Wits" % bonuses.wits)
+		display_game("[color=#FF00FF]+%d Wits[/color]" % bonuses.wits)
 		stats_shown = true
 	if bonuses.get("speed", 0) > 0:
-		display_game("[color=#FFFF00]+%d Speed[/color]" % bonuses.speed)
+		display_game("[color=#FFA500]+%d Speed[/color]" % bonuses.speed)
 		stats_shown = true
 	if bonuses.get("max_stamina", 0) > 0:
 		display_game("[color=#FFCC00]+%d Max Stamina[/color]" % bonuses.max_stamina)
@@ -8497,9 +8497,9 @@ func handle_server_message(message: Dictionary):
 					# For flock, prepend the "Another X appears!" message with pack number
 					if message.get("is_flock", false):
 						var flock_count = message.get("flock_count", 1)
-						display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
+						display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n[center]%s[/center]\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
 					else:
-						display_msg = local_art + "\n" + encounter_text
+						display_msg = "[center]" + local_art + "[/center]\n" + encounter_text
 			display_game(display_msg)
 
 			# combat_state already fetched above for client-side art
@@ -10211,13 +10211,22 @@ func display_character_status():
 	# === STATS ===
 	text += "[color=#808080]── Base Stats ──[/color]\n"
 	var stat_parts = []
-	for pair in [["STR", "strength"], ["CON", "constitution"], ["DEX", "dexterity"], ["INT", "intelligence"], ["WIS", "wisdom"], ["WIT", "wits"]]:
-		var base_val = stats.get(pair[1], 0)
-		var bonus_val = bonuses.get(pair[1], 0)
+	# [label, key, color]
+	var stat_colors = [
+		["STR", "strength", "#FF6666"],
+		["CON", "constitution", "#00FF00"],
+		["DEX", "dexterity", "#FFFF00"],
+		["INT", "intelligence", "#9999FF"],
+		["WIS", "wisdom", "#66CCFF"],
+		["WIT", "wits", "#FF00FF"]
+	]
+	for stat_info in stat_colors:
+		var base_val = stats.get(stat_info[1], 0)
+		var bonus_val = bonuses.get(stat_info[1], 0)
 		if bonus_val > 0:
-			stat_parts.append("%s: %d [color=#00FF00]+%d[/color]" % [pair[0], base_val, bonus_val])
+			stat_parts.append("[color=%s]%s:[/color] %d [color=#00FF00]+%d[/color]" % [stat_info[2], stat_info[0], base_val, bonus_val])
 		else:
-			stat_parts.append("%s: %d" % [pair[0], base_val])
+			stat_parts.append("[color=%s]%s:[/color] %d" % [stat_info[2], stat_info[0], base_val])
 	text += "%s\n" % "  |  ".join(stat_parts)
 	text += "\n"
 
