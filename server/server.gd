@@ -2718,8 +2718,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	var item_tier = item.get("tier", 0)  # 0 means old-style item
 	var is_consumable = item.get("is_consumable", false)
 
-	# Infer tier from item name for legacy tier-based consumables (potions only, not scrolls)
-	# Scrolls use their own base+per_level scaling and shouldn't use the tier system
+	# Normalize item type for consumables (e.g., mana_minor -> mana_potion)
+	var normalized_type = drop_tables._normalize_consumable_type(item_type)
+	if normalized_type != item_type:
+		item_type = normalized_type
+
+	# Infer tier from item name for legacy tier-based consumables
 	if item_tier == 0 and _is_tier_based_consumable(item_type):
 		item_tier = _infer_tier_from_name(item_name)
 

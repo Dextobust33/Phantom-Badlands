@@ -10857,14 +10857,45 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 	# Show notable abilities from combat_state
 	var abilities = combat_state.get("monster_abilities", [])
 	var notable_abilities = []
+	# Combat-affecting abilities (offensive)
+	if "berserker" in abilities:
+		notable_abilities.append("[color=#FF6600]Berserker[/color]")
+	if "enrage" in abilities:
+		notable_abilities.append("[color=#FF4444]Enrages[/color]")
 	if "glass_cannon" in abilities:
 		notable_abilities.append("[color=#FF4444]Glass Cannon[/color]")
-	if "regeneration" in abilities:
-		notable_abilities.append("[color=#00FF00]Regenerates[/color]")
-	if "poison" in abilities:
-		notable_abilities.append("[color=#FF00FF]Venomous[/color]")
+	if "multi_strike" in abilities:
+		notable_abilities.append("[color=#FF8800]Multi-Strike[/color]")
 	if "life_steal" in abilities:
 		notable_abilities.append("[color=#FF4444]Life Stealer[/color]")
+	if "ambusher" in abilities:
+		notable_abilities.append("[color=#FF00FF]Ambusher[/color]")
+	# Defensive abilities
+	if "regeneration" in abilities:
+		notable_abilities.append("[color=#00FF00]Regenerates[/color]")
+	if "armored" in abilities:
+		notable_abilities.append("[color=#6666FF]Armored[/color]")
+	if "ethereal" in abilities:
+		notable_abilities.append("[color=#AAAAFF]Ethereal[/color]")
+	if "thorns" in abilities:
+		notable_abilities.append("[color=#AA4400]Thorns[/color]")
+	# Debuff abilities
+	if "poison" in abilities:
+		notable_abilities.append("[color=#FF00FF]Venomous[/color]")
+	if "blind" in abilities:
+		notable_abilities.append("[color=#808080]Blinding[/color]")
+	if "bleed" in abilities:
+		notable_abilities.append("[color=#CC0000]Bleeder[/color]")
+	if "curse" in abilities:
+		notable_abilities.append("[color=#800080]Curses[/color]")
+	if "disarm" in abilities:
+		notable_abilities.append("[color=#888888]Disarms[/color]")
+	if "slow_aura" in abilities:
+		notable_abilities.append("[color=#4444AA]Slowing[/color]")
+	# Death effects
+	if "death_curse" in abilities:
+		notable_abilities.append("[color=#660066]Death Curse[/color]")
+	# Reward abilities (show last)
 	if "gem_bearer" in abilities:
 		notable_abilities.append("[color=#00FFFF]Gem Bearer[/color]")
 	if "wish_granter" in abilities:
@@ -10877,6 +10908,9 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 		notable_abilities.append("[color=#66CCCC]★ ARCANE HOARDER ★[/color]")
 	if "cunning_prey" in abilities:
 		notable_abilities.append("[color=#66FF66]★ CUNNING PREY ★[/color]")
+	if "warrior_hoarder" in abilities:
+		notable_abilities.append("[color=#FF6666]★ WARRIOR HOARDER ★[/color]")
+	# Danger abilities (equipment damage)
 	if "corrosive" in abilities:
 		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
 	if "sunder" in abilities:
