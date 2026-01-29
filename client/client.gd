@@ -11546,6 +11546,13 @@ func abandon_quest_by_index(index: int):
 	# Send abandon request to server
 	send_to_server({"type": "quest_abandon", "quest_id": quest_id})
 
+	# Mark the corresponding action bar hotkey as pressed to prevent it from
+	# triggering later in this same _process frame when we clear quest_log_mode
+	# Item key 0 (KEY_1) = action_5, item key 1 (KEY_2) = action_6, etc.
+	var action_index = index + 5  # Map item index to action bar slot
+	if action_index < 10:
+		set_meta("hotkey_%d_pressed" % action_index, true)
+
 	# Clear the quest log mode
 	quest_log_mode = false
 	quest_log_quests = []
