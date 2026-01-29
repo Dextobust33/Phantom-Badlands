@@ -3128,10 +3128,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
 	total = int(total * class_multiplier)
 
-	# Apply level difference penalty (3% per level, max 50%)
+	# Apply level difference penalty (1.5% per level, max 25%)
+	# At 25 level gap: 37.5% penalty, at 50 level gap: 75% penalty (capped at 25%)
+	# Good gear should help bridge ~15-20 level gaps, not infinite
 	var lvl_diff = monster.get("level", 1) - character.level
 	if lvl_diff > 0:
-		var lvl_penalty = min(0.50, lvl_diff * 0.03)
+		var lvl_penalty = min(0.25, lvl_diff * 0.015)
 		total = int(total * (1.0 - lvl_penalty))
 
 	# === CLASS PASSIVE: Paladin Divine Favor ===
@@ -3264,16 +3266,13 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	var damage_reduction = defense_ratio * defense_max
 	var total = int(raw_damage * (1.0 - damage_reduction))
 
-	# Level difference bonus: monsters higher level deal extra damage
-	# REVERT NOTE: Old exponential formula was: pow(1.04, min(level_diff, 75))
-	# Changed to linear (same as player penalty) for balance - v0.8.82
+	# Level difference bonus: monsters higher level deal extra damage (exponential)
 	var level_diff = monster.level - character.level
 	if level_diff > 0:
-		# Linear scaling: 3% bonus per level, max 50% (mirrors player penalty)
-		var level_penalty_per_level = cfg.get("monster_level_diff_per_level", 0.03)
-		var level_penalty_max = cfg.get("monster_level_diff_max", 0.50)
-		var level_bonus = min(level_penalty_max, level_diff * level_penalty_per_level)
-		total = int(total * (1.0 + level_bonus))
+		var level_base = cfg.get("monster_level_diff_base", 1.04)
+		var level_cap = cfg.get("monster_level_diff_cap", 75)
+		var level_multiplier = pow(level_base, min(level_diff, level_cap))
+		total = int(total * level_multiplier)
 
 	# Minimum damage based on monster level (higher level = higher floor)
 	var min_damage = max(1, monster.level / 5)
