@@ -3697,11 +3697,12 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var defense_reduction = def_ratio * 0.6 * 0.5
 		effective_multiplier *= (1.0 - defense_reduction)
 
-		# === NEW: Apply level penalty if monster level > player level ===
+		# === Apply level penalty if monster level > player level ===
+		# Must match combat_manager.gd player damage penalty (1.5% per level, max 25%)
 		var player_level = character_data.get("level", 1)
 		var level_diff = current_enemy_level - player_level
 		if level_diff > 0:
-			var level_penalty = minf(0.40, level_diff * 0.015)  # 1.5% per level, max 40%
+			var level_penalty = minf(0.25, level_diff * 0.015)  # 1.5% per level, max 25%
 			effective_multiplier *= (1.0 - level_penalty)
 			if level_penalty >= 0.05:
 				bonus_parts.append("[color=#FF6666]-%d%% lvl[/color]" % int(level_penalty * 100))
@@ -10724,9 +10725,9 @@ func show_help():
 
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
 [color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
-[color=#00FFFF]Lvl Penalty:[/color] -3%%atk/lvl (max-50%%), -1.5%%ability/lvl (max-40%%) vs higher monsters
+[color=#00FFFF]Lvl Penalty:[/color] -1.5%%/lvl (max-25%%) for attacks vs higher monsters. [color=#FF4444]Monster +4%%/lvl exponential![/color]
 [color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 50%%+DEX×2+spd-lvldiff×3 | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5-spd/2 [40-95%%]
-[color=#FF4444]Initiative:[/color] (mon_spd-DEX)×2%% chance enemy strikes first (max 30%%, ambusher +15%%)
+[color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
 [color=#FF6666]WARRIOR (Stam=STR×4+CON×4)[/color]                          [color=#66FFFF]MAGE (Mana=INT×12+WIS×6)[/color]
