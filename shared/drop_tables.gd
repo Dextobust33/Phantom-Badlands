@@ -628,6 +628,11 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
 
+	# Special handling for generic "artifact" type - convert to random equipment slot
+	if item_type == "artifact":
+		var artifact_slots = ["weapon_artifact", "armor_artifact", "helm_artifact", "shield_artifact", "boots_artifact", "ring_artifact", "amulet_artifact"]
+		item_type = artifact_slots[randi() % artifact_slots.size()]
+
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
 	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin"

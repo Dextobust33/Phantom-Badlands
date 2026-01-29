@@ -60,8 +60,8 @@ const TITLE_ITEMS = {
 		"rarity": "legendary",
 		"description": "An arm ring of silver and oath. Claim The High Seat at (0,0).",
 		"is_title_item": true,
-		"drop_level_min": 100,
-		"drop_chance": 0.5  # 0.5% chance from level 100+ monsters
+		"drop_level_min": 50,
+		"drop_chance": 0.5  # 0.5% chance from level 50+ monsters
 	},
 	"unforged_crown": {
 		"type": "unforged_crown",
@@ -191,8 +191,8 @@ const ETERNAL_ABILITIES = {
 	},
 	"bless": {
 		"name": "Bless",
-		"cost": 1,
-		"resource": "lives",
+		"cost": 50,
+		"resource": "mana_percent",
 		"description": "Grant permanent +5 to random stat",
 		"target": "player"
 	},

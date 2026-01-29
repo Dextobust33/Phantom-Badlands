@@ -4829,7 +4829,7 @@ func roll_title_item_drop(monster_level: int) -> Dictionary:
 			}
 
 	# Check Jarl's Ring
-	if monster_level >= 100:
+	if monster_level >= 50:
 		var ring_info = title_items.get("jarls_ring", {})
 		var ring_chance = ring_info.get("drop_chance", 0.5)
 		if randf() * 100 < ring_chance:

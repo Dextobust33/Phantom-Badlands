@@ -583,6 +583,11 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_unequip_ability(peer_id, message)
 		"set_ability_keybind":
 			handle_set_ability_keybind(peer_id, message)
+		# Companion system handlers
+		"activate_companion":
+			handle_activate_companion(peer_id, message)
+		"dismiss_companion":
+			handle_dismiss_companion(peer_id)
 		# Title system handlers
 		"claim_title":
 			handle_claim_title(peer_id, message)
@@ -5532,6 +5537,64 @@ func handle_set_ability_keybind(peer_id: int, message: Dictionary):
 		save_character(peer_id)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Could not set keybind."})
+
+# ===== COMPANION SYSTEM =====
+
+func handle_activate_companion(peer_id: int, message: Dictionary):
+	"""Handle activating a companion from soul gems"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var gem_name = message.get("name", "").strip_edges()
+
+	if gem_name.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Please specify a companion name."})
+		return
+
+	# Find the gem by name (case-insensitive partial match)
+	var soul_gems = character.get_all_soul_gems()
+	var matched_gem = {}
+
+	for gem in soul_gems:
+		var name = gem.get("name", "")
+		if name.to_lower() == gem_name.to_lower():
+			matched_gem = gem
+			break
+		elif name.to_lower().begins_with(gem_name.to_lower()):
+			matched_gem = gem
+
+	if matched_gem.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]No companion found matching '%s'.[/color]" % gem_name})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Use /companion to see your soul gems.[/color]"})
+		return
+
+	var gem_id = matched_gem.get("id", "")
+	if character.activate_companion(gem_id):
+		var companion_name = matched_gem.get("name", "Unknown")
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]%s is now your active companion![/color]" % companion_name})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Could not activate companion."})
+
+func handle_dismiss_companion(peer_id: int):
+	"""Handle dismissing the active companion"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if not character.has_active_companion():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You don't have an active companion.[/color]"})
+		return
+
+	var old_companion = character.get_active_companion()
+	var companion_name = old_companion.get("name", "Unknown")
+	character.dismiss_companion()
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s has been dismissed.[/color]" % companion_name})
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 # ===== TITLE SYSTEM =====
 

@@ -291,6 +291,8 @@ var ability_mode: bool = false
 var ability_data: Dictionary = {}  # Cached ability data from server
 var pending_ability_action: String = ""  # "equip", "unequip", "keybind"
 var selected_ability_slot: int = -1  # Slot being modified
+var ability_choice_page: int = 0  # Page for ability selection (0-indexed)
+const ABILITY_PAGE_SIZE: int = 9  # Abilities per page (keys 1-9)
 
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
@@ -1697,7 +1699,8 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open:
+	var should_process_action_bar = game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open and not title_mode
+	if should_process_action_bar:
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
@@ -2001,7 +2004,28 @@ func _input(event):
 			return
 
 		if pending_ability_action == "choose_ability":
-			# Choosing from ability list
+			# Choosing from ability list with pagination
+			var unlocked = ability_data.get("unlocked_abilities", [])
+			var total_pages = max(1, (unlocked.size() + ABILITY_PAGE_SIZE - 1) / ABILITY_PAGE_SIZE)
+
+			# Page navigation
+			var action_1_key = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+			var action_2_key = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
+			if keycode == action_1_key and total_pages > 1:
+				# Previous page
+				ability_choice_page = max(0, ability_choice_page - 1)
+				display_ability_choice_list()
+				update_action_bar()
+				get_viewport().set_input_as_handled()
+				return
+			elif keycode == action_2_key and total_pages > 1:
+				# Next page
+				ability_choice_page = min(total_pages - 1, ability_choice_page + 1)
+				display_ability_choice_list()
+				update_action_bar()
+				get_viewport().set_input_as_handled()
+				return
+
 			if keycode >= KEY_1 and keycode <= KEY_9:
 				var choice = keycode - KEY_0
 				handle_ability_choice(choice)
@@ -2016,8 +2040,8 @@ func _input(event):
 				return
 
 		if pending_ability_action in ["select_ability", "select_unequip_slot", "select_keybind_slot"]:
-			# Selecting a slot (1-4)
-			if keycode >= KEY_1 and keycode <= KEY_4:
+			# Selecting a slot (1-6)
+			if keycode >= KEY_1 and keycode <= KEY_6:
 				var slot_num = keycode - KEY_0
 				handle_ability_slot_selection(slot_num)
 				get_viewport().set_input_as_handled()
@@ -2767,15 +2791,25 @@ func update_action_bar():
 	elif ability_mode:
 		# Ability management mode
 		if pending_ability_action == "choose_ability":
-			# Choosing an ability from list
+			# Choosing an ability from list (with pagination)
 			var unlocked = ability_data.get("unlocked_abilities", [])
+			var total_pages = max(1, (unlocked.size() + ABILITY_PAGE_SIZE - 1) / ABILITY_PAGE_SIZE)
+			var start_idx = ability_choice_page * ABILITY_PAGE_SIZE
+			var end_idx = min(start_idx + ABILITY_PAGE_SIZE, unlocked.size())
+			var items_on_page = end_idx - start_idx
+
+			var prev_label = "Prev" if ability_choice_page > 0 else "---"
+			var prev_action = "ability_prev_page" if ability_choice_page > 0 else ""
+			var next_label = "Next" if ability_choice_page < total_pages - 1 else "---"
+			var next_action = "ability_next_page" if ability_choice_page < total_pages - 1 else ""
+
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
+				{"label": prev_label, "action_type": "local" if prev_action else "none", "action_data": prev_action, "enabled": prev_action != ""},
+				{"label": next_label, "action_type": "local" if next_action else "none", "action_data": next_action, "enabled": next_action != ""},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "1-%d Select" % unlocked.size(), "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % items_on_page, "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2796,7 +2830,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_ability_action in ["select_ability", "select_unequip_slot", "select_keybind_slot"]:
-			# Selecting a slot (1-5)
+			# Selecting a slot (1-6)
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4583,7 +4617,7 @@ func _has_usable_combat_items() -> bool:
 	var inventory = character_data.get("inventory", [])
 	for item in inventory:
 		var item_type = item.get("type", "")
-		if "potion" in item_type or "elixir" in item_type:
+		if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type:
 			return true
 	return false
 
@@ -4813,7 +4847,8 @@ func show_combat_item_menu():
 		var item = inventory[i]
 		var item_type = item.get("type", "")
 		# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
-		if "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+		# Also check the is_consumable flag as a fallback
+		if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 			usable_items.append({"index": i, "item": item})
 
 	if usable_items.is_empty():
@@ -5197,6 +5232,16 @@ func execute_local_action(action: String):
 			pending_ability_action = ""
 			selected_ability_slot = -1
 			display_ability_menu()
+			update_action_bar()
+		"ability_prev_page":
+			ability_choice_page = max(0, ability_choice_page - 1)
+			display_ability_choice_list()
+			update_action_bar()
+		"ability_next_page":
+			var unlocked = ability_data.get("unlocked_abilities", [])
+			var total_pages = max(1, (unlocked.size() + ABILITY_PAGE_SIZE - 1) / ABILITY_PAGE_SIZE)
+			ability_choice_page = min(total_pages - 1, ability_choice_page + 1)
+			display_ability_choice_list()
 			update_action_bar()
 		# Settings actions
 		"settings_close":
@@ -6857,7 +6902,8 @@ func prompt_inventory_action(action_type: String):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
-				if "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+				# Also check the is_consumable flag as a fallback
+				if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 					usable_items.append({"index": i, "item": item})
 			if usable_items.is_empty():
 				display_game("[color=#FF0000]No usable items in inventory.[/color]")
@@ -7173,8 +7219,8 @@ func show_keybind_prompt():
 
 func handle_ability_slot_selection(slot_num: int):
 	"""Handle when a slot number is selected in ability mode"""
-	if slot_num < 1 or slot_num > 4:
-		display_game("[color=#FF0000]Invalid slot. Use 1-4.[/color]")
+	if slot_num < 1 or slot_num > 6:
+		display_game("[color=#FF0000]Invalid slot. Use 1-6.[/color]")
 		return
 
 	var slot_index = slot_num - 1
@@ -7184,14 +7230,8 @@ func handle_ability_slot_selection(slot_num: int):
 			# Show list of abilities to choose from
 			selected_ability_slot = slot_index
 			pending_ability_action = "choose_ability"
-			display_game("")
-			display_game("[color=#FFD700]Select ability for slot %d:[/color]" % slot_num)
-			var unlocked = ability_data.get("unlocked_abilities", [])
-			for i in range(unlocked.size()):
-				var ability = unlocked[i]
-				var display_name = ability.get("display", ability.name.capitalize())
-				display_game("  %d. %s" % [i + 1, display_name])
-			display_game("[color=#808080]Press 1-%d to select, %s to cancel[/color]" % [unlocked.size(), get_action_key_name(0)])
+			ability_choice_page = 0  # Reset to first page
+			display_ability_choice_list()
 			update_action_bar()
 
 		"select_unequip_slot":
@@ -7205,14 +7245,39 @@ func handle_ability_slot_selection(slot_num: int):
 			display_game("[color=#FFD700]Press a key for slot %d (Q/W/E/R or any letter):[/color]" % slot_num)
 			update_action_bar()
 
-func handle_ability_choice(choice_num: int):
-	"""Handle when an ability is chosen from the list"""
+func display_ability_choice_list():
+	"""Display paginated list of abilities to choose from"""
 	var unlocked = ability_data.get("unlocked_abilities", [])
-	if choice_num < 1 or choice_num > unlocked.size():
+	var total_pages = max(1, (unlocked.size() + ABILITY_PAGE_SIZE - 1) / ABILITY_PAGE_SIZE)
+	ability_choice_page = clamp(ability_choice_page, 0, total_pages - 1)
+
+	var start_idx = ability_choice_page * ABILITY_PAGE_SIZE
+	var end_idx = min(start_idx + ABILITY_PAGE_SIZE, unlocked.size())
+
+	display_game("")
+	display_game("[color=#FFD700]Select ability for slot %d:[/color]" % (selected_ability_slot + 1))
+
+	for i in range(start_idx, end_idx):
+		var ability = unlocked[i]
+		var display_name = ability.get("display", ability.name.capitalize())
+		var display_num = (i - start_idx) + 1  # 1-9 on screen
+		display_game("  %d. %s" % [display_num, display_name])
+
+	if total_pages > 1:
+		display_game("[color=#808080]Page %d/%d - [%s] Prev [%s] Next[/color]" % [ability_choice_page + 1, total_pages, get_action_key_name(1), get_action_key_name(2)])
+	display_game("[color=#808080]Press 1-%d to select, %s to cancel[/color]" % [end_idx - start_idx, get_action_key_name(0)])
+
+func handle_ability_choice(choice_num: int):
+	"""Handle when an ability is chosen from the list (1-9 on current page)"""
+	var unlocked = ability_data.get("unlocked_abilities", [])
+	var start_idx = ability_choice_page * ABILITY_PAGE_SIZE
+	var actual_index = start_idx + choice_num - 1  # Convert page-relative to actual index
+
+	if actual_index < 0 or actual_index >= unlocked.size():
 		display_game("[color=#FF0000]Invalid choice.[/color]")
 		return
 
-	var ability = unlocked[choice_num - 1]
+	var ability = unlocked[actual_index]
 	send_to_server({"type": "equip_ability", "slot": selected_ability_slot, "ability": ability.name})
 	pending_ability_action = ""
 	selected_ability_slot = -1
@@ -8847,6 +8912,11 @@ func handle_server_message(message: Dictionary):
 				pending_inventory_action = ""
 				selected_item_index = -1
 				target_farm_mode = true
+				# Initialize key press state for any currently-held keys to prevent
+				# the key used to activate the scroll from immediately selecting an option
+				for i in range(5):
+					if is_item_select_key_pressed(i):
+						set_meta("targetfarmkey_%d_pressed" % i, true)
 				display_game(message.get("message", "Choose a trait to hunt:"))
 				display_target_farm_options()
 				update_action_bar()
@@ -9091,7 +9161,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade", "companion", "pet"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -9605,6 +9675,27 @@ func process_command(text: String):
 				else:
 					display_game("[color=#FF0000]Usage: /trade <playername>[/color]")
 					display_game("[color=#808080]Request to trade items with another player.[/color]")
+			else:
+				display_game("You don't have a character yet")
+		"companion", "pet":
+			if has_character:
+				if parts.size() > 1:
+					var subcommand = parts[1].to_lower()
+					match subcommand:
+						"dismiss", "release":
+							send_to_server({"type": "dismiss_companion"})
+						"summon", "activate", "switch":
+							if parts.size() > 2:
+								var gem_name = " ".join(parts.slice(2))
+								send_to_server({"type": "activate_companion", "name": gem_name})
+							else:
+								display_game("[color=#FF0000]Usage: /companion summon <name>[/color]")
+						_:
+							# Try to summon by name directly
+							var gem_name = " ".join(parts.slice(1))
+							send_to_server({"type": "activate_companion", "name": gem_name})
+				else:
+					show_companion_info()
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -10479,6 +10570,63 @@ func _get_condition_color(wear: int) -> String:
 		return "#FF0000"  # Bright red - Nearly Broken
 	else:
 		return "#808080"  # Gray - Broken
+
+func show_companion_info():
+	"""Display information about active companion and soul gems"""
+	var companion = character_data.get("active_companion", {})
+	var soul_gems = character_data.get("soul_gems", [])
+
+	display_game("")
+	display_game("[color=#FFD700]═══════ COMPANION ═══════[/color]")
+
+	if companion.is_empty():
+		display_game("[color=#808080]No active companion.[/color]")
+	else:
+		var name = companion.get("name", "Unknown")
+		var bonuses = companion.get("bonuses", {})
+		display_game("[color=#00FFFF]Active: %s[/color]" % name)
+
+		var bonus_parts = []
+		if bonuses.get("attack", 0) > 0:
+			bonus_parts.append("[color=#FF6666]+%d%% Attack[/color]" % int(bonuses.attack))
+		if bonuses.get("hp_regen", 0) > 0:
+			bonus_parts.append("[color=#66FF66]+%d%% HP Regen[/color]" % int(bonuses.hp_regen))
+		if bonuses.get("flee_bonus", 0) > 0:
+			bonus_parts.append("[color=#6666FF]+%d%% Flee[/color]" % int(bonuses.flee_bonus))
+		if bonuses.get("crit_chance", 0) > 0:
+			bonus_parts.append("[color=#FFFF66]+%d%% Crit[/color]" % int(bonuses.crit_chance))
+		if bonuses.get("gold_find", 0) > 0:
+			bonus_parts.append("[color=#FFD700]+%d%% Gold[/color]" % int(bonuses.gold_find))
+		if bonuses.get("hp_bonus", 0) > 0:
+			bonus_parts.append("[color=#00FF00]+%d%% Max HP[/color]" % int(bonuses.hp_bonus))
+		if bonuses.get("defense", 0) > 0:
+			bonus_parts.append("[color=#87CEEB]+%d%% Defense[/color]" % int(bonuses.defense))
+		if bonuses.get("lifesteal", 0) > 0:
+			bonus_parts.append("[color=#FF00FF]+%d%% Lifesteal[/color]" % int(bonuses.lifesteal))
+
+		if bonus_parts.size() > 0:
+			display_game("  Bonuses: %s" % ", ".join(bonus_parts))
+
+	if soul_gems.size() > 0:
+		display_game("")
+		display_game("[color=#A335EE]Soul Gems (%d):[/color]" % soul_gems.size())
+		for gem in soul_gems:
+			var gem_name = gem.get("name", "Unknown")
+			var is_active = not companion.is_empty() and companion.get("id", "") == gem.get("id", "")
+			if is_active:
+				display_game("  [color=#00FFFF]● %s (Active)[/color]" % gem_name)
+			else:
+				display_game("  [color=#808080]○ %s[/color]" % gem_name)
+	else:
+		display_game("")
+		display_game("[color=#808080]No soul gems collected.[/color]")
+		display_game("[color=#808080]Defeat special monsters to obtain soul gems![/color]")
+
+	display_game("")
+	display_game("[color=#808080]Commands:[/color]")
+	display_game("[color=#808080]  /companion <name> - Summon a companion[/color]")
+	display_game("[color=#808080]  /companion dismiss - Dismiss active companion[/color]")
+	display_game("[color=#FFD700]═════════════════════════[/color]")
 
 func _get_status_effects_text() -> String:
 	"""Generate status effects section for character status display"""
@@ -12295,8 +12443,9 @@ func handle_title_key_input(key: int) -> bool:
 			return true
 		return true
 
-	# Space to exit
-	if key == KEY_SPACE:
+	# Action_0 to exit (default: Space)
+	var exit_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+	if key == exit_key:
 		title_mode = false
 		title_ability_mode = false
 		display_game("")
@@ -12315,10 +12464,14 @@ func handle_title_key_input(key: int) -> bool:
 			title_mode = false
 			return true
 
-	# Q/W/E/R keys for abilities (if has title)
+	# Action keys for abilities (if has title)
 	if not abilities.is_empty():
-		var ability_keys = [KEY_Q, KEY_W, KEY_E, KEY_R]
-		var ability_idx = ability_keys.find(key)
+		var ability_idx = -1
+		for i in range(4):  # action_1 through action_4
+			var action_key = keybinds.get("action_%d" % (i + 1), default_keybinds.get("action_%d" % (i + 1), KEY_Q + i))
+			if key == action_key:
+				ability_idx = i
+				break
 		if ability_idx >= 0:
 			var ability_ids = abilities.keys()
 			if ability_idx < ability_ids.size():

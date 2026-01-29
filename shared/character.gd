@@ -173,6 +173,9 @@ static func get_item_slot_from_type(item_type: String) -> String:
 		return "ring"
 	elif item_type.begins_with("amulet_"):
 		return "amulet"
+	# Handle generic "artifact" type (legacy items) - default to weapon slot
+	elif item_type == "artifact":
+		return "weapon"
 	return ""
 
 # Tracking / Persistence
