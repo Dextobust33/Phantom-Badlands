@@ -23,7 +23,7 @@ const CONSUMABLE_CATEGORIES = {
 	"stamina": ["stamina_potion"],
 	"energy": ["energy_potion"],
 	"buff": ["strength_potion", "defense_potion", "speed_potion", "crit_potion", "lifesteal_potion", "thorns_potion"],
-	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision", "scroll_time_stop", "scroll_resurrect"],
+	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision", "scroll_time_stop", "scroll_resurrect_lesser", "scroll_resurrect_greater"],
 	"bane": ["potion_dragon_bane", "potion_undead_bane", "potion_beast_bane", "potion_demon_bane", "potion_elemental_bane"]
 }
 
@@ -182,8 +182,8 @@ const DROP_TABLES = {
 		{"weight": 9, "item_type": "boots_mythic", "rarity": "legendary"},
 		{"weight": 10, "item_type": "ring_mythic", "rarity": "legendary"},
 		{"weight": 10, "item_type": "amulet_mythic", "rarity": "legendary"},
-		# Powerful consumables (including resurrect!)
-		{"weight": 1, "item_type": "scroll_resurrect", "rarity": "legendary"},
+		# Powerful consumables (including lesser resurrect!)
+		{"weight": 1, "item_type": "scroll_resurrect_lesser", "rarity": "legendary"},
 		{"weight": 2, "item_type": "scroll_time_stop", "rarity": "legendary"},
 		# Skill enhancer tomes
 		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "legendary"},
@@ -204,7 +204,8 @@ const DROP_TABLES = {
 		{"weight": 7, "item_type": "amulet_divine", "rarity": "legendary"},
 		{"weight": 8, "item_type": "artifact", "rarity": "artifact"},
 		# Very powerful consumables
-		{"weight": 2, "item_type": "scroll_resurrect", "rarity": "artifact"},
+		{"weight": 2, "item_type": "scroll_resurrect_lesser", "rarity": "artifact"},
+		{"weight": 1, "item_type": "scroll_resurrect_greater", "rarity": "artifact"},
 		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "artifact"},
 		# All skill enhancer tomes with higher drop rates
 		{"weight": 3, "item_type": "tome_searing_bolt", "rarity": "artifact"},
@@ -307,8 +308,10 @@ const POTION_EFFECTS = {
 	"potion_beast_bane": {"monster_bane": "beast", "damage_bonus": 50, "battles": 3},
 	"potion_demon_bane": {"monster_bane": "demon", "damage_bonus": 50, "battles": 3},
 	"potion_elemental_bane": {"monster_bane": "elemental", "damage_bonus": 50, "battles": 3},
-	# Resurrect Scroll - One-time death prevention, revive at 25% HP
-	"scroll_resurrect": {"resurrect": true, "revive_percent": 25, "battles": 1},
+	# Lesser Resurrect Scroll - Death prevention for 1 battle, revive at 25% HP
+	"scroll_resurrect_lesser": {"resurrect": true, "revive_percent": 25, "battles": 1},
+	# Greater Resurrect Scroll - Persists until you actually die, revive at 50% HP
+	"scroll_resurrect_greater": {"resurrect": true, "revive_percent": 50, "battles": -1},  # -1 = until death
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
@@ -724,7 +727,8 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"scroll_doom": "Scroll of Doom",
 		"scroll_target_farm": "Scroll of Finding",
 		"scroll_time_stop": "Scroll of Time Stop",
-		"scroll_resurrect": "Scroll of Resurrection",
+		"scroll_resurrect_lesser": "Lesser Scroll of Resurrection",
+		"scroll_resurrect_greater": "Greater Scroll of Resurrection",
 		# Gold/Gems (special - don't prefix with tier)
 		"gold_pouch": "Gold Pouch",
 		"gem_small": "Gem",
@@ -1197,7 +1201,8 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"scroll_doom": "Scroll of Doom",
 			"scroll_target_farm": "Scroll of Finding",
 			"scroll_time_stop": "Scroll of Time Stop",
-			"scroll_resurrect": "Scroll of Resurrection"
+			"scroll_resurrect_lesser": "Lesser Scroll of Resurrection",
+			"scroll_resurrect_greater": "Greater Scroll of Resurrection"
 		}
 		var base_name = scroll_names.get(item_type, "Mysterious Scroll")
 		match rarity:

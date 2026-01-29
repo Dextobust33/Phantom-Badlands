@@ -2937,14 +2937,20 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battles, you deal +%d%% damage to %s creatures![/color]" % [item_name, battles, damage_bonus, type_display]
 		})
 	elif effect.has("resurrect"):
-		# Resurrect Scroll - One-time death prevention
+		# Resurrect Scroll - Death prevention
 		var revive_percent = effect.get("revive_percent", 25)
 		var battles = effect.get("battles", 1)
 		# Store the revive percent as the buff value
+		# -1 battles = permanent until death (greater scroll)
 		character.add_persistent_buff("resurrect", revive_percent, battles)
+		var duration_msg: String
+		if battles == -1:
+			duration_msg = "If you would die, you will be resurrected at %d%% HP instead! (Persists until triggered)" % revive_percent
+		else:
+			duration_msg = "If you would die in the next battle, you will be resurrected at %d%% HP instead!" % revive_percent
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FFD700]You read the %s![/color]\n[color=#00FF00]A divine aura surrounds you! If you would die in the next battle, you will be resurrected at %d%% HP instead![/color]" % [item_name, revive_percent]
+			"message": "[color=#FFD700]You read the %s![/color]\n[color=#00FF00]A divine aura surrounds you! %s[/color]" % [item_name, duration_msg]
 		})
 	elif effect.has("mystery_box"):
 		# Mysterious Box - Opens to random item from same tier or +1 higher

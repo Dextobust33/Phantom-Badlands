@@ -1319,10 +1319,14 @@ func tick_buffs() -> Array:
 	return expired_buffs
 
 func tick_persistent_buffs() -> Array:
-	"""Decrement persistent buff battles by 1. Call when combat ends. Returns expired buff info."""
+	"""Decrement persistent buff battles by 1. Call when combat ends. Returns expired buff info.
+	Buffs with battles_remaining = -1 are permanent (until triggered) and don't expire."""
 	var expired_indices = []
 	var expired_buffs = []
 	for i in range(persistent_buffs.size()):
+		# Skip permanent buffs (-1 = until triggered, like Greater Resurrect)
+		if persistent_buffs[i].battles_remaining == -1:
+			continue
 		persistent_buffs[i].battles_remaining -= 1
 		if persistent_buffs[i].battles_remaining <= 0:
 			expired_indices.append(i)
@@ -1376,7 +1380,13 @@ func get_persistent_buff_display() -> String:
 		return ""
 	var parts = []
 	for buff in persistent_buffs:
-		parts.append("+%d %s (%d battles)" % [buff.value, buff.type, buff.battles_remaining])
+		if buff.battles_remaining == -1:
+			# Permanent buff (until triggered, like Greater Resurrect)
+			parts.append("+%d%% %s (Until death)" % [buff.value, buff.type])
+		elif buff.battles_remaining == 1:
+			parts.append("+%d%% %s (1 battle)" % [buff.value, buff.type])
+		else:
+			parts.append("+%d%% %s (%d battles)" % [buff.value, buff.type, buff.battles_remaining])
 	return "[color=#00FFFF]Buffs: %s[/color]" % ", ".join(parts)
 
 # ===== RACIAL PASSIVE ABILITIES =====
