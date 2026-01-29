@@ -2079,6 +2079,15 @@ func show_login_panel():
 	hide_all_panels()
 	if login_panel:
 		login_panel.visible = true
+		# Clear password field for security
+		if password_field:
+			password_field.clear()
+		# Clear confirm password field if exists
+		if confirm_password_field:
+			confirm_password_field.clear()
+		# Clear any previous status messages
+		if login_status:
+			login_status.text = ""
 		if username_field:
 			# Populate with last used username if available
 			if last_username != "" and username_field.text == "":
@@ -2794,7 +2803,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "1-5 Slot", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-6 Slot", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2893,7 +2902,7 @@ func update_action_bar():
 				attack_action,  # Attack moves to slot 5
 			]
 			# Add remaining abilities (skip first since it's on slot 1)
-			for i in range(1, min(5, ability_actions.size())):
+			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
 			# Normal: Attack on Space
@@ -2904,7 +2913,7 @@ func update_action_bar():
 				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
 			]
 			# Add all ability slots
-			for i in range(min(5, ability_actions.size())):
+			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 	elif flock_pending:
 		current_actions = [
@@ -3283,7 +3292,7 @@ func update_action_bar():
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
 			teleport_action,
-			{"label": "Logout", "action_type": "local", "action_data": "logout_account", "enabled": true},
+			{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
 		]
 	else:
 		current_actions = [
@@ -7014,12 +7023,12 @@ func display_ability_menu():
 	var unlocked = ability_data.get("unlocked_abilities", [])
 	var all_abilities = ability_data.get("all_abilities", [])
 
-	# Show currently equipped abilities in 4 slots
+	# Show currently equipped abilities in 6 slots
 	# Combat action bar: indices 0-3 are Attack/UseItem/Flee/Outsmart, indices 4-9 are ability slots
 	# So ability slot i maps to action bar index (4 + i)
 	display_game("[color=#00FFFF]Your Combat Slots:[/color] (press these keys during combat)")
 	display_game("")
-	for i in range(4):
+	for i in range(6):
 		var ability_name = equipped[i] if i < equipped.size() else ""
 		var combat_key = get_action_key_name(4 + i)  # Ability slots start at action bar index 4
 		if ability_name != "" and ability_name != null:
@@ -7144,21 +7153,21 @@ func show_ability_equip_prompt():
 	"""Show prompt to select an ability to equip"""
 	pending_ability_action = "select_ability"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-5) to equip to:[/color]")
+	display_game("[color=#FFD700]Select slot (1-6) to equip to:[/color]")
 	update_action_bar()
 
 func show_ability_unequip_prompt():
 	"""Show prompt to select slot to unequip"""
 	pending_ability_action = "select_unequip_slot"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-5) to unequip:[/color]")
+	display_game("[color=#FFD700]Select slot (1-6) to unequip:[/color]")
 	update_action_bar()
 
 func show_keybind_prompt():
 	"""Show prompt to change keybinds"""
 	pending_ability_action = "select_keybind_slot"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-5) to change keybind:[/color]")
+	display_game("[color=#FFD700]Select slot (1-6) to change keybind:[/color]")
 	update_action_bar()
 
 func handle_ability_slot_selection(slot_num: int):

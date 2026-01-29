@@ -203,10 +203,10 @@ const MAX_ACTIVE_QUESTS = 5
 # Ability Loadout System - which abilities are equipped and their keybinds
 # equipped_abilities: Array of ability names in slot order (max 5 slots)
 @export var equipped_abilities: Array = []
-# ability_keybinds: Dictionary mapping slot index to key string {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
-@export var ability_keybinds: Dictionary = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
-const MAX_ABILITY_SLOTS = 5
-const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
+# ability_keybinds: Dictionary mapping slot index to key string {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+@export var ability_keybinds: Dictionary = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+const MAX_ABILITY_SLOTS = 6
+const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 
 # Combat action bar customization - swap Attack with first ability
 @export var swap_attack_with_ability: bool = false
