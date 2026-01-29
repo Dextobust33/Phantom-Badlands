@@ -489,7 +489,7 @@ const MAGE_ABILITY_SLOTS = [
 	["cloak", "Cloak", 25, 30, "mana"],
 	["blast", "Blast", 40, 50, "mana"],
 	["forcefield", "Field", 60, 75, "mana"],
-	["teleport", "Teleport", 80, 40, "mana"],
+	["teleport", "Teleport", 80, 1000, "mana"],
 ]
 
 const WARRIOR_ABILITY_SLOTS = [
@@ -3577,9 +3577,13 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 
 	if ability == "magic_bolt" and target_hp > 0:
 		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS, defense, and level penalty
-		# Calculate mana needed based on player INT
+		# Calculate mana needed based on player effective INT (base + equipment)
 		var stats = character_data.get("stats", {})
-		var int_stat = stats.get("intelligence", 10)
+		var base_int = stats.get("intelligence", 10)
+		# Add equipment INT bonus for accurate damage prediction
+		var equipped = character_data.get("equipped", {})
+		var equip_bonuses = _calculate_equipment_bonuses(equipped)
+		var int_stat = base_int + equip_bonuses.get("intelligence", 0)
 		var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x damage per mana
 
 		# Apply damage buff (War Cry, potions, etc.) - from active_buffs and persistent_buffs
@@ -4722,7 +4726,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"shield": {"display": "Shield", "cost": 20, "resource_type": "mana"},
 		"blast": {"display": "Blast", "cost": 50, "resource_type": "mana"},
 		"forcefield": {"display": "Field", "cost": 75, "resource_type": "mana"},
-		"teleport": {"display": "Teleport", "cost": 40, "resource_type": "mana"},
+		"teleport": {"display": "Teleport", "cost": 1000, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "resource_type": "mana"},
 		"haste": {"display": "Haste", "cost": 35, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "resource_type": "mana"},

@@ -14,9 +14,9 @@ enum CombatAction {
 }
 
 # Ability lookup for parsing commands
-const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "shield", "cloak", "blast", "forcefield", "teleport", "meteor"]
-const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate"]
-const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist"]
+const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "shield", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
+const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
 const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
 
 # Active combats (peer_id -> combat_state)

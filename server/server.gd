@@ -1354,6 +1354,14 @@ func handle_rest(peer_id: int):
 	var class_type = character.class_type
 	var is_mage = class_type in ["Wizard", "Sorcerer", "Sage"]
 
+	# Break cloak if active - resting reveals you
+	if character.cloak_active:
+		character.cloak_active = false
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#9932CC]Your cloak fades as you rest.[/color]"
+		})
+
 	# Mages use Meditate instead of Rest
 	if is_mage:
 		_handle_meditate(peer_id, character)
@@ -4770,7 +4778,7 @@ func _generate_progression_quest(current_post_id: String, player_level: int, com
 	}
 
 func handle_trading_post_recharge(peer_id: int):
-	"""Recharge resources at Trading Post (50% discount, cures poison)"""
+	"""Recharge resources at Trading Post (cost scales with distance from origin, cures poison)"""
 	if not at_trading_post.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
 		return
@@ -4781,9 +4789,14 @@ func handle_trading_post_recharge(peer_id: int):
 	var character = characters[peer_id]
 	var tp = at_trading_post[peer_id]
 
-	# Trading Posts give 50% discount on recharge
+	# Calculate cost based on level and trading post distance from origin
+	# Remote trading posts charge more for their services
 	var base_cost = _get_recharge_cost(character.level)
-	var cost = int(base_cost * 0.5)
+	var tp_x = tp.get("x", 0)
+	var tp_y = tp.get("y", 0)
+	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
+	var distance_multiplier = 1.0 + (distance_from_origin / 200.0)  # +1x per 200 distance
+	var cost = int(base_cost * distance_multiplier)
 
 	# Check if already at full resources and not poisoned/blinded
 	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
@@ -4803,7 +4816,7 @@ func handle_trading_post_recharge(peer_id: int):
 	if character.gold < cost:
 		send_to_peer(peer_id, {
 			"type": "trading_post_message",
-			"message": "[color=#FF0000]You don't have enough gold! Recharge costs %d gold (50%% off).[/color]" % cost
+			"message": "[color=#FF0000]You don't have enough gold! Recharge costs %d gold.[/color]" % cost
 		})
 		return
 
@@ -4830,7 +4843,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_message",
-		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d gold, 50%% discount)[/color]" % [tp.name, ", ".join(restored).capitalize(), cost]
+		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d gold)[/color]" % [tp.name, ", ".join(restored).capitalize(), cost]
 	})
 
 	send_character_update(peer_id)
@@ -5320,9 +5333,9 @@ func handle_teleport(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Coordinates must be between -1000 and 1000."})
 		return
 
-	# Calculate cost based on distance
+	# Calculate cost based on distance (25x multiplier for significant mana investment)
 	var distance = sqrt(pow(target_x - character.x, 2) + pow(target_y - character.y, 2))
-	var cost = int(10 + distance)
+	var cost = int((10 + distance) * 25)
 
 	# Determine resource type based on class path
 	var resource_name = "mana"
