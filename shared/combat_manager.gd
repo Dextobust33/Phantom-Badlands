@@ -1900,6 +1900,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
 				combat["monster_stunned"] = stun_duration
 				messages.append("[color=#FFFF00]You paralyze the %s for %d turn(s)![/color]" % [monster.name, stun_duration])
+				is_buff_ability = true  # 75% chance to avoid monster's retaliation while casting
 			else:
 				messages.append("[color=#FF4444]The %s resists your paralysis![/color]" % monster.name)
 

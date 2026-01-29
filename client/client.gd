@@ -6832,8 +6832,8 @@ func prompt_inventory_action(action_type: String):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				# Equippable items have types like: weapon_*, armor_*, helm_*, shield_*, boots_*, ring_*, amulet_*
-				# Consumables have types like: potion_*, elixir_*, scroll_*, gold_*, gem_*, mana_*, stamina_*, energy_*
-				var is_consumable = "potion" in item_type or "elixir" in item_type or "scroll" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_")
+				# Consumables have types like: potion_*, elixir_*, scroll_*, gold_*, gem_*, mana_*, stamina_*, energy_*, tome_*
+				var is_consumable = "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "tome" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type == "mysterious_box" or item_type == "cursed_coin"
 				if not is_consumable:
 					equippable_items.append({"index": i, "item": item})
 			if equippable_items.is_empty():
@@ -8336,7 +8336,7 @@ func handle_server_message(message: Dictionary):
 						for ii in range(inv.size()):
 							var itm = inv[ii]
 							var itm_type = itm.get("type", "")
-							var is_consumable = "potion" in itm_type or "elixir" in itm_type or "scroll" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_")
+							var is_consumable = "potion" in itm_type or "elixir" in itm_type or "scroll" in itm_type or "tome" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_") or itm_type == "mysterious_box" or itm_type == "cursed_coin"
 							if not is_consumable:
 								equippable_items.append({"index": ii, "item": itm})
 						set_meta("equippable_items", equippable_items)
