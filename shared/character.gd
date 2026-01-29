@@ -667,24 +667,39 @@ func get_equipment_defense() -> int:
 	return bonuses.defense
 
 func get_total_max_hp() -> int:
-	"""Get total max HP including equipment bonuses (mainly from shields)"""
+	"""Get total max HP including equipment bonuses.
+	Formula: base max_hp + equipment HP + (equipment CON * 5)"""
 	var bonuses = get_equipment_bonuses()
-	return max_hp + bonuses.max_hp
+	# Equipment CON also contributes to HP via the CON*5 formula
+	var con_hp_bonus = bonuses.constitution * 5
+	return max_hp + bonuses.max_hp + con_hp_bonus
 
 func get_total_max_mana() -> int:
-	"""Get total max mana including equipment bonuses (mainly from amulets)"""
+	"""Get total max mana including equipment bonuses.
+	Formula: base max_mana + equipment mana + (equipment INT * 12) + (equipment WIS * 6)"""
 	var bonuses = get_equipment_bonuses()
-	return max_mana + bonuses.max_mana
+	# Equipment INT/WIS also contribute to mana via the INT*12 + WIS*6 formula
+	var int_mana_bonus = bonuses.intelligence * 12
+	var wis_mana_bonus = bonuses.wisdom * 6
+	return max_mana + bonuses.max_mana + int_mana_bonus + wis_mana_bonus
 
 func get_total_max_stamina() -> int:
-	"""Get total max stamina including equipment bonuses"""
+	"""Get total max stamina including equipment bonuses.
+	Formula: base max_stamina + equipment stamina + (equipment STR * 4) + (equipment CON * 4)"""
 	var bonuses = get_equipment_bonuses()
-	return max_stamina + bonuses.max_stamina
+	# Equipment STR/CON also contribute to stamina via the (STR*4 + CON*4) formula
+	var str_stamina_bonus = bonuses.strength * 4
+	var con_stamina_bonus = bonuses.constitution * 4
+	return max_stamina + bonuses.max_stamina + str_stamina_bonus + con_stamina_bonus
 
 func get_total_max_energy() -> int:
-	"""Get total max energy including equipment bonuses"""
+	"""Get total max energy including equipment bonuses.
+	Formula: base max_energy + equipment energy + (equipment WIT * 4) + (equipment DEX * 4)"""
 	var bonuses = get_equipment_bonuses()
-	return max_energy + bonuses.max_energy
+	# Equipment WIT/DEX also contribute to energy via the (WIT*4 + DEX*4) formula
+	var wit_energy_bonus = bonuses.wits * 4
+	var dex_energy_bonus = bonuses.dexterity * 4
+	return max_energy + bonuses.max_energy + wit_energy_bonus + dex_energy_bonus
 
 func get_equipment_procs() -> Dictionary:
 	"""Get all proc effects from equipped items.

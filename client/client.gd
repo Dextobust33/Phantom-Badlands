@@ -10210,11 +10210,15 @@ func display_character_status():
 	var total_hp = char.get("total_max_hp", base_hp)
 	var base_mana = char.get("max_mana", 0)
 	var total_mana = char.get("total_max_mana", base_mana)
+	var base_stamina = char.get("max_stamina", 0)
+	var total_stamina = char.get("total_max_stamina", base_stamina)
+	var base_energy = char.get("max_energy", 0)
+	var total_energy = char.get("total_max_energy", base_energy)
 	text += "[color=#FF6666]HP:[/color] %d/%d  |  [color=#9999FF]Mana:[/color] %d/%d  |  [color=#FFCC00]Stam:[/color] %d/%d  |  [color=#66FF66]Ener:[/color] %d/%d\n" % [
 		char.get("current_hp", 0), total_hp,
 		char.get("current_mana", 0), total_mana,
-		char.get("current_stamina", 0), char.get("max_stamina", 0),
-		char.get("current_energy", 0), char.get("max_energy", 0)
+		char.get("current_stamina", 0), total_stamina,
+		char.get("current_energy", 0), total_energy
 	]
 	text += "\n"
 
