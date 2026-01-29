@@ -1,6 +1,6 @@
-# Balance Revert Notes (v0.8.83)
+# Balance Revert Notes (v0.8.84)
 
-This file documents balance changes made in v0.8.79-v0.8.83 and how to revert them.
+This file documents balance changes made in v0.8.79-v0.8.84 and how to revert them.
 
 ## Changes Made
 
@@ -57,7 +57,19 @@ if speed_diff > 0:
 # Only had chance when monster speed > player dex
 ```
 
-### 5. Trading Post Healing Cost (server.gd ~line 4800)
+### 5. Magic Bolt Suggestions (client.gd ~line 3704)
+**Current (v0.8.84):**
+```gdscript
+# Must match combat_manager.gd player damage penalty
+var level_penalty = minf(0.25, level_diff * 0.015)  # 1.5% per level, max 25%
+```
+
+**Original:**
+```gdscript
+var level_penalty = minf(0.40, level_diff * 0.015)  # 1.5% per level, max 40%
+```
+
+### 6. Trading Post Healing Cost (server.gd ~line 4800)
 **Current (v0.8.80):**
 ```gdscript
 var distance_multiplier = 7.0 * (1.0 + (distance_from_origin / 50.0))
