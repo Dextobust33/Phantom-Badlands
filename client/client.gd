@@ -1891,6 +1891,7 @@ func _input(event):
 			var key_action_2 = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
 			var key_action_3 = keybinds.get("action_3", default_keybinds.get("action_3", KEY_E))
 			var key_action_4 = keybinds.get("action_4", default_keybinds.get("action_4", KEY_R))
+			var key_action_5 = keybinds.get("action_5", default_keybinds.get("action_5", KEY_1))
 			var key_action_0 = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
 
 			if keycode == key_action_1:
@@ -1910,6 +1911,8 @@ func _input(event):
 				update_action_bar()
 			elif keycode == key_action_4:
 				reset_keybinds_to_defaults()
+			elif keycode == key_action_5:
+				toggle_swap_attack_setting()
 			elif keycode == key_action_0:
 				close_settings()
 			get_viewport().set_input_as_handled()
@@ -2874,15 +2877,35 @@ func update_action_bar():
 		var ability_actions = _get_combat_ability_actions()
 		var has_items = _has_usable_combat_items()
 		var can_outsmart = not combat_outsmart_failed  # Track if outsmart already failed this combat
-		current_actions = [
-			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
-			{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-			{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
-		]
-		# Add 6 ability slots (R, 1, 2, 3, 4, 5)
-		for i in range(min(6, ability_actions.size())):
-			current_actions.append(ability_actions[i])
+		var swap_attack = character_data.get("swap_attack_with_ability", false)
+
+		# Build base combat actions
+		var attack_action = {"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true}
+		var first_ability = ability_actions[0] if ability_actions.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+
+		if swap_attack and ability_actions.size() > 0:
+			# Swap: First ability on Space, Attack on slot 5 (R key)
+			current_actions = [
+				first_ability,
+				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+				attack_action,  # Attack moves to slot 5
+			]
+			# Add remaining abilities (skip first since it's on slot 1)
+			for i in range(1, min(5, ability_actions.size())):
+				current_actions.append(ability_actions[i])
+		else:
+			# Normal: Attack on Space
+			current_actions = [
+				attack_action,
+				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+			]
+			# Add all ability slots
+			for i in range(min(5, ability_actions.size())):
+				current_actions.append(ability_actions[i])
 	elif flock_pending:
 		current_actions = [
 			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
@@ -9798,6 +9821,9 @@ func display_settings_menu():
 	display_game("[%s] Configure Movement Keys" % get_action_key_name(2))
 	display_game("[%s] Configure Item Selection Keys" % get_action_key_name(3))
 	display_game("[%s] Reset All to Defaults" % get_action_key_name(4))
+	var swap_enabled = character_data.get("swap_attack_with_ability", false)
+	var swap_status = "[color=#00FF00]ON[/color]" if swap_enabled else "[color=#FF6666]OFF[/color]"
+	display_game("[%s] Swap Attack with First Ability: %s" % [get_action_key_name(5), swap_status])
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")
@@ -9915,6 +9941,27 @@ func reset_keybinds_to_defaults():
 	display_game("[color=#00FF00]All keybinds reset to defaults![/color]")
 	await get_tree().create_timer(1.0).timeout
 	display_settings_menu()
+
+func toggle_swap_attack_setting():
+	"""Toggle the swap attack with first ability setting"""
+	var current = character_data.get("swap_attack_with_ability", false)
+	var new_value = not current
+	# Update local character data
+	character_data["swap_attack_with_ability"] = new_value
+	# Send to server to persist
+	send_to_server({"type": "toggle_swap_attack", "enabled": new_value})
+	# Refresh settings display
+	game_output.clear()
+	var status = "[color=#00FF00]ENABLED[/color]" if new_value else "[color=#FF6666]DISABLED[/color]"
+	display_game("[color=#00FF00]Swap Attack with First Ability: %s[/color]" % status)
+	if new_value:
+		display_game("[color=#808080]Your first equipped ability will now appear on the primary action key (Space).[/color]")
+		display_game("[color=#808080]Attack will move to the first ability slot (R key).[/color]")
+	else:
+		display_game("[color=#808080]Attack is now on the primary action key (Space).[/color]")
+	await get_tree().create_timer(1.5).timeout
+	display_settings_menu()
+	update_action_bar()
 
 func _create_connection_panel():
 	"""Create the connection panel UI dynamically"""

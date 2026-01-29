@@ -201,12 +201,15 @@ const MAX_ACTIVE_QUESTS = 5
 @export var known_monsters: Dictionary = {}
 
 # Ability Loadout System - which abilities are equipped and their keybinds
-# equipped_abilities: Array of ability names in slot order (max 4 slots)
+# equipped_abilities: Array of ability names in slot order (max 5 slots)
 @export var equipped_abilities: Array = []
-# ability_keybinds: Dictionary mapping slot index to key string {0: "Q", 1: "W", 2: "E", 3: "R"}
-@export var ability_keybinds: Dictionary = {0: "Q", 1: "W", 2: "E", 3: "R"}
-const MAX_ABILITY_SLOTS = 4
-const DEFAULT_ABILITY_KEYBINDS = {0: "Q", 1: "W", 2: "E", 3: "R"}
+# ability_keybinds: Dictionary mapping slot index to key string {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
+@export var ability_keybinds: Dictionary = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
+const MAX_ABILITY_SLOTS = 5
+const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4"}
+
+# Combat action bar customization - swap Attack with first ability
+@export var swap_attack_with_ability: bool = false
 
 # Cloak System - universal stealth ability
 @export var cloak_active: bool = false
@@ -979,6 +982,7 @@ func to_dict() -> Dictionary:
 		"known_monsters": known_monsters,
 		"equipped_abilities": equipped_abilities,
 		"ability_keybinds": ability_keybinds,
+		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"title": title,
 		"title_data": title_data,
@@ -1080,6 +1084,7 @@ func from_dict(data: Dictionary):
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
 		if not ability_keybinds.has(slot):
 			ability_keybinds[slot] = DEFAULT_ABILITY_KEYBINDS[slot]
+	swap_attack_with_ability = data.get("swap_attack_with_ability", false)
 
 	# Cloak system - always starts off when loading (no free permanent cloak)
 	cloak_active = false

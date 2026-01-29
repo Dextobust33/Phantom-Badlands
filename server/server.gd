@@ -571,6 +571,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_watch_stop(peer_id)
 		"toggle_cloak":
 			handle_toggle_cloak(peer_id)
+		"toggle_swap_attack":
+			handle_toggle_swap_attack(peer_id, message)
 		"teleport":
 			handle_teleport(peer_id, message)
 		"get_abilities":
@@ -5297,6 +5299,17 @@ func handle_toggle_cloak(peer_id: int):
 	# Update character state
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func handle_toggle_swap_attack(peer_id: int, message: Dictionary):
+	"""Handle toggle for swapping Attack with first ability on action bar"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var enabled = message.get("enabled", false)
+	character.swap_attack_with_ability = enabled
+	save_character(peer_id)
+	send_character_update(peer_id)
 
 func handle_teleport(peer_id: int, message: Dictionary):
 	"""Handle teleport ability - allows player to teleport to coordinates"""
