@@ -77,8 +77,8 @@ var default_keybinds = {
 var keybinds: Dictionary = {}  # Active keybinds (loaded from file or defaults)
 
 # Inventory comparison stat setting (what the ↑↓ arrows compare)
-var inventory_compare_stat: String = "level"  # Options: level, hp, atk, def, wit, mana, speed
-const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "stamina", "energy", "speed"]
+var inventory_compare_stat: String = "level"  # Options: level, hp, atk, def, wit, mana, speed, str, con, dex, int, wis
+const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "stamina", "energy", "speed", "str", "con", "dex", "int", "wis"]
 var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare)
 
 # Settings mode
@@ -5951,6 +5951,21 @@ func _get_item_compare_value(item: Dictionary, stat: String) -> int:
 		"speed":
 			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("speed", 0)
+		"str":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("strength", 0)
+		"con":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("constitution", 0)
+		"dex":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("dexterity", 0)
+		"int":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("intelligence", 0)
+		"wis":
+			var bonuses = _compute_item_bonuses(item)
+			return bonuses.get("wisdom", 0)
 		_:
 			return item.get("level", 1)
 
@@ -6021,6 +6036,11 @@ func _get_compare_stat_label(stat: String) -> String:
 		"stamina": return "Stamina"
 		"energy": return "Energy"
 		"speed": return "Speed"
+		"str": return "Strength"
+		"con": return "Constitution"
+		"dex": return "Dexterity"
+		"int": return "Intelligence"
+		"wis": return "Wisdom"
 		_: return stat.capitalize()
 
 func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
@@ -10522,8 +10542,14 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 			bonuses.attack += int(affixes.attack_bonus * wear_penalty)
 		if affixes.has("defense_bonus"):
 			bonuses.defense += int(affixes.defense_bonus * wear_penalty)
+		if affixes.has("str_bonus"):
+			bonuses.strength += int(affixes.str_bonus * wear_penalty)
+		if affixes.has("con_bonus"):
+			bonuses.constitution += int(affixes.con_bonus * wear_penalty)
 		if affixes.has("dex_bonus"):
 			bonuses.dexterity += int(affixes.dex_bonus * wear_penalty)
+		if affixes.has("int_bonus"):
+			bonuses.intelligence += int(affixes.int_bonus * wear_penalty)
 		if affixes.has("wis_bonus"):
 			bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
 
