@@ -6611,8 +6611,14 @@ func display_inventory():
 			var item_level = item.get("level", 1)
 			var bonus_text = _get_item_bonus_summary(item)
 			var themed_name = _get_themed_item_name(item, player_class)
-			display_game("  %s: [color=%s]%s[/color] (Lv%d) %s" % [
-				slot_display, rarity_color, themed_name, item_level, bonus_text
+			# Show wear condition
+			var wear = item.get("wear", 0)
+			var wear_text = ""
+			if wear > 0:
+				var condition_color = _get_condition_color(wear)
+				wear_text = " [color=%s](%d%% worn)[/color]" % [condition_color, wear]
+			display_game("  %s: [color=%s]%s[/color] (Lv%d) %s%s" % [
+				slot_display, rarity_color, themed_name, item_level, bonus_text, wear_text
 			])
 		else:
 			display_game("  %s: [color=#555555](empty)[/color]" % slot_display)
@@ -6673,8 +6679,14 @@ func display_inventory():
 				var bonus_text = _get_item_bonus_summary(item)
 				var slot_abbr = _get_slot_abbreviation(item_type)
 				var themed_name = _get_themed_item_name(item, player_class)
-				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s%s" % [
-					display_num, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, compare_text
+				# Show wear condition if damaged
+				var wear = item.get("wear", 0)
+				var wear_text = ""
+				if wear > 0:
+					var condition_color = _get_condition_color(wear)
+					wear_text = " [color=%s]%d%%[/color]" % [condition_color, wear]
+				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s%s%s" % [
+					display_num, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, wear_text, compare_text
 				])
 
 	display_game("")
@@ -9125,6 +9137,11 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		display_game("[color=#00FFFF]Quantity:[/color] %d" % quantity)
 	else:
 		display_game("[color=#00FFFF]Level:[/color] %d" % level)
+		# Show wear/condition for equipment
+		var wear = item.get("wear", 0)
+		var condition_text = _get_condition_string(wear)
+		var condition_color = _get_condition_color(wear)
+		display_game("[color=#00FFFF]Condition:[/color] [color=%s]%s (%d%% wear)[/color]" % [condition_color, condition_text, wear])
 
 	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
 	display_game("")
