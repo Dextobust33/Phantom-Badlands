@@ -7036,41 +7036,67 @@ func _get_ability_cost_text(ability_name: String) -> String:
 	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
 	var resource_color = "#66CCFF" if path == "mage" else ("#FFCC66" if path == "warrior" else "#66FF66")
 
-	# Get cost from ability info
-	var cost = 0
+	# Get base cost and cost percentage for mage abilities
+	var base_cost = 0
+	var cost_percent = 0
 	match ability_name:
-		# Mage abilities
-		"magic_bolt": cost = 0  # Variable
-		"shield": cost = 20
-		"blast": cost = 50
-		"forcefield": cost = 75
-		"teleport": cost = 40
-		"meteor": cost = 100
-		"haste": cost = 35
-		"paralyze": cost = 60
-		"banish": cost = 80
+		# Mage abilities - use percentage-based scaling
+		"magic_bolt":
+			base_cost = 0  # Variable
+			cost_percent = 0
+		"shield":
+			base_cost = 20
+			cost_percent = 2
+		"blast":
+			base_cost = 50
+			cost_percent = 5
+		"forcefield":
+			base_cost = 75
+			cost_percent = 7
+		"teleport":
+			base_cost = 40
+			cost_percent = 0  # Distance-based
+		"meteor":
+			base_cost = 100
+			cost_percent = 12
+		"haste":
+			base_cost = 35
+			cost_percent = 3
+		"paralyze":
+			base_cost = 60
+			cost_percent = 6
+		"banish":
+			base_cost = 80
+			cost_percent = 10
 		# Warrior abilities
-		"power_strike": cost = 10
-		"war_cry": cost = 15
-		"shield_bash": cost = 20
-		"cleave": cost = 30
-		"berserk": cost = 40
-		"iron_skin": cost = 35
-		"devastate": cost = 60
-		"fortify": cost = 25
-		"rally": cost = 45
+		"power_strike": base_cost = 10
+		"war_cry": base_cost = 15
+		"shield_bash": base_cost = 20
+		"cleave": base_cost = 30
+		"berserk": base_cost = 40
+		"iron_skin": base_cost = 35
+		"devastate": base_cost = 60
+		"fortify": base_cost = 25
+		"rally": base_cost = 45
 		# Trickster abilities
-		"analyze": cost = 5
-		"distract": cost = 15
-		"pickpocket": cost = 20
-		"ambush": cost = 30
-		"vanish": cost = 40
-		"exploit": cost = 35
-		"perfect_heist": cost = 50
-		"sabotage": cost = 25
-		"gambit": cost = 35
+		"analyze": base_cost = 5
+		"distract": base_cost = 15
+		"pickpocket": base_cost = 20
+		"ambush": base_cost = 30
+		"vanish": base_cost = 40
+		"exploit": base_cost = 35
+		"perfect_heist": base_cost = 50
+		"sabotage": base_cost = 25
+		"gambit": base_cost = 35
 		# Universal
-		"cloak": cost = 0  # % based
+		"cloak": base_cost = 0  # % based
+
+	# Calculate actual cost for mage abilities (max of base or percentage)
+	var cost = base_cost
+	if path == "mage" and cost_percent > 0:
+		var max_mana = character_data.get("total_max_mana", character_data.get("max_mana", 100))
+		var percent_cost = int(max_mana * cost_percent / 100.0)
+		cost = max(base_cost, percent_cost)
 
 	if ability_name == "magic_bolt":
 		return "[color=%s](variable mana)[/color]" % resource_color

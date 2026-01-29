@@ -1654,7 +1654,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	if character.level < ability_info.level:
 		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
 
-	var mana_cost = ability_info.cost
+	# Calculate mana cost - use percentage of max mana or base cost, whichever is higher
+	# This ensures abilities scale with late-game mana pools
+	var base_cost = ability_info.cost
+	var cost_percent = ability_info.get("cost_percent", 0)
+	var percent_cost = int(character.get_total_max_mana() * cost_percent / 100.0)
+	var mana_cost = max(base_cost, percent_cost)
 
 	# Get class passive for spell modifications
 	var passive = character.get_class_passive()
@@ -2386,16 +2391,17 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 
 	match path:
 		"mage":
+			# Mage abilities use percentage-based mana costs for late-game scaling
 			match ability_name:
-				"magic_bolt": return {"level": 1, "cost": 0, "name": "Magic Bolt"}
-				"shield": return {"level": 10, "cost": 20, "name": "Shield"}
-				"haste": return {"level": 30, "cost": 35, "name": "Haste"}
-				"blast": return {"level": 40, "cost": 50, "name": "Blast"}
-				"paralyze": return {"level": 50, "cost": 60, "name": "Paralyze"}
-				"forcefield": return {"level": 60, "cost": 75, "name": "Forcefield"}
-				"banish": return {"level": 70, "cost": 80, "name": "Banish"}
-				"teleport": return {"level": 80, "cost": 40, "name": "Teleport"}
-				"meteor": return {"level": 100, "cost": 100, "name": "Meteor"}
+				"magic_bolt": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Magic Bolt"}
+				"shield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Shield"}
+				"haste": return {"level": 30, "cost": 35, "cost_percent": 3, "name": "Haste"}
+				"blast": return {"level": 40, "cost": 50, "cost_percent": 5, "name": "Blast"}
+				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6, "name": "Paralyze"}
+				"forcefield": return {"level": 60, "cost": 75, "cost_percent": 7, "name": "Forcefield"}
+				"banish": return {"level": 70, "cost": 80, "cost_percent": 10, "name": "Banish"}
+				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0, "name": "Teleport"}  # Uses distance-based cost
+				"meteor": return {"level": 100, "cost": 100, "cost_percent": 12, "name": "Meteor"}
 		"warrior":
 			match ability_name:
 				"power_strike": return {"level": 1, "cost": 10, "name": "Power Strike"}
