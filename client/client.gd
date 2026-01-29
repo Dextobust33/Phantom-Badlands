@@ -8856,6 +8856,9 @@ func handle_server_message(message: Dictionary):
 		"watch_output":
 			handle_watch_output(message)
 
+		"watch_combat_start":
+			handle_watch_combat_start(message)
+
 		"watch_location":
 			handle_watch_location(message)
 
@@ -11766,6 +11769,36 @@ func handle_watch_output(message: Dictionary):
 	var output = message.get("output", "")
 	if output != "":
 		display_game(output)
+
+func handle_watch_combat_start(message: Dictionary):
+	"""Handle combat start from watched player with proper art display"""
+	if watching_player == "":
+		return
+
+	# Clear game output for fresh combat display (like the actual player gets)
+	game_output.clear()
+
+	# Apply combat background color
+	var combat_bg_color = message.get("combat_bg_color", "")
+	if combat_bg_color != "":
+		set_combat_background(combat_bg_color)
+
+	# Build encounter text with monster art from monster_art.gd
+	var monster_name = message.get("monster_name", "")
+	var use_client_art = message.get("use_client_art", false)
+	var base_message = message.get("message", "")
+
+	display_game("[color=#808080]--- %s's Combat ---[/color]" % watching_player)
+
+	if use_client_art and monster_name != "":
+		# Render monster art locally using MonsterArt class (same as player does)
+		var local_art = _get_monster_art().get_bordered_art_with_font(monster_name)
+		if local_art != "":
+			display_game("[center]" + local_art + "[/center]")
+			display_game("")
+
+	# Display the combat message (without the server-generated art since we rendered locally)
+	display_game(base_message)
 
 func handle_watcher_left(message: Dictionary):
 	"""Handle notification that a watcher stopped watching us"""

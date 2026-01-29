@@ -7,13 +7,13 @@ extends Node
 # Consumable tier definitions
 # Tiers replace level-based scaling with fixed power levels that stack
 const CONSUMABLE_TIERS = {
-	1: {"name": "Minor", "healing": 50, "buff_value": 3, "level_min": 1, "level_max": 10},
-	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "level_min": 11, "level_max": 25},
-	3: {"name": "Standard", "healing": 200, "buff_value": 8, "level_min": 26, "level_max": 50},
-	4: {"name": "Greater", "healing": 400, "buff_value": 12, "level_min": 51, "level_max": 100},
-	5: {"name": "Superior", "healing": 800, "buff_value": 18, "level_min": 101, "level_max": 250},
-	6: {"name": "Master", "healing": 1600, "buff_value": 25, "level_min": 251, "level_max": 500},
-	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "level_min": 501, "level_max": 99999}
+	1: {"name": "Minor", "healing": 50, "buff_value": 3, "forcefield_value": 1500, "level_min": 1, "level_max": 10},
+	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "forcefield_value": 2500, "level_min": 11, "level_max": 25},
+	3: {"name": "Standard", "healing": 200, "buff_value": 8, "forcefield_value": 4000, "level_min": 26, "level_max": 50},
+	4: {"name": "Greater", "healing": 400, "buff_value": 12, "forcefield_value": 6000, "level_min": 51, "level_max": 100},
+	5: {"name": "Superior", "healing": 800, "buff_value": 18, "forcefield_value": 10000, "level_min": 101, "level_max": 250},
+	6: {"name": "Master", "healing": 1600, "buff_value": 25, "forcefield_value": 15000, "level_min": 251, "level_max": 500},
+	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "forcefield_value": 25000, "level_min": 501, "level_max": 99999}
 }
 
 # Consumable categories for combat quick-use

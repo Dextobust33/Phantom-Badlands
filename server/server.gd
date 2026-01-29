@@ -2480,8 +2480,8 @@ func trigger_encounter(peer_id: int):
 			"combat_bg_color": combat_bg_color,
 			"use_client_art": true  # Client should render ASCII art locally
 		})
-		# Forward encounter to watchers
-		forward_to_watchers(peer_id, result.message)
+		# Forward combat start to watchers with monster info for proper art display
+		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""
@@ -2821,7 +2821,10 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		# Buff potion
 		var buff_type = effect.buff
 		var buff_value: int
-		if tier_data.has("buff_value"):
+		# Use forcefield_value for forcefield buffs (shields need much higher values)
+		if buff_type == "forcefield" and tier_data.has("forcefield_value"):
+			buff_value = tier_data.forcefield_value
+		elif tier_data.has("buff_value"):
 			buff_value = tier_data.buff_value
 		else:
 			buff_value = effect.base + (effect.per_level * item_level)
@@ -5199,6 +5202,20 @@ func forward_to_watchers(peer_id: int, output: String):
 		send_to_peer(watcher_id, {
 			"type": "watch_output",
 			"output": output
+		})
+
+func forward_combat_start_to_watchers(peer_id: int, message: String, monster_name: String, combat_bg_color: String):
+	"""Forward combat start to watchers with monster info for proper art display"""
+	if not watchers.has(peer_id) or watchers[peer_id].is_empty():
+		return
+
+	for watcher_id in watchers[peer_id]:
+		send_to_peer(watcher_id, {
+			"type": "watch_combat_start",
+			"message": message,
+			"monster_name": monster_name,
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true
 		})
 
 func send_combat_message(peer_id: int, message: String):
