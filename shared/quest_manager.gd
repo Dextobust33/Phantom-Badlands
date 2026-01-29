@@ -205,12 +205,48 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 		# Multiplier: 1.5x at edge (intensity 0), up to 2.5x at center (intensity 1.0)
 		multiplier = 1.5 + avg_intensity
 
+	# Scale gem rewards based on player level - gems are rare at low levels
+	var base_gems = base_rewards.get("gems", 0)
+	var scaled_gems = _scale_gem_reward(base_gems, character.level, quest.get("area_level", 1))
+
 	return {
 		"xp": int(base_rewards.get("xp", 0) * multiplier),
 		"gold": int(base_rewards.get("gold", 0) * multiplier),
-		"gems": int(base_rewards.get("gems", 0) * multiplier),
+		"gems": int(scaled_gems * multiplier),
 		"multiplier": multiplier
 	}
+
+func _scale_gem_reward(base_gems: int, player_level: int, area_level: int) -> int:
+	"""Scale gem rewards based on player level - gems should be rare at low levels"""
+	if base_gems <= 0:
+		return 0
+
+	# Level-based gem scaling:
+	# Level 1-15: No gems (still learning the game)
+	# Level 16-30: 25% of base gems
+	# Level 31-50: 50% of base gems
+	# Level 51-75: 75% of base gems
+	# Level 76+: 100% of base gems
+	var level_multiplier: float
+	if player_level <= 15:
+		level_multiplier = 0.0
+	elif player_level <= 30:
+		level_multiplier = 0.25
+	elif player_level <= 50:
+		level_multiplier = 0.50
+	elif player_level <= 75:
+		level_multiplier = 0.75
+	else:
+		level_multiplier = 1.0
+
+	# Bonus for high-difficulty quests (area_level significantly above player level)
+	# If quest area is 20+ levels above player, give bonus gems
+	var difficulty_bonus = 0.0
+	if area_level > player_level + 20:
+		difficulty_bonus = 0.25
+
+	var final_multiplier = level_multiplier + difficulty_bonus
+	return int(base_gems * final_multiplier)
 
 func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	"""Turn in a completed quest and grant rewards. Returns {success, message, rewards}"""
@@ -333,21 +369,26 @@ func format_available_quests(quests: Array, character: Character) -> String:
 		output += "[%d] [color=#FFD700]%s[/color]%s\n" % [index, quest.name, daily_tag]
 		output += "    %s\n" % quest.description
 
-		# Rewards preview
+		# Rewards preview - scale gems based on player level
 		var rewards = quest.get("rewards", {})
 		var base_xp = rewards.get("xp", 0)
 		var base_gold = rewards.get("gold", 0)
 		var base_gems = rewards.get("gems", 0)
+		var area_level = quest.get("area_level", 1)
+		var scaled_gems = _scale_gem_reward(base_gems, character.level, area_level)
 
 		var reward_parts = []
 		if base_xp > 0:
 			reward_parts.append("%d XP" % base_xp)
 		if base_gold > 0:
 			reward_parts.append("%d Gold" % base_gold)
-		if base_gems > 0:
-			reward_parts.append("%d Gems" % base_gems)
+		if scaled_gems > 0:
+			reward_parts.append("%d Gems" % scaled_gems)
 		if not reward_parts.is_empty():
-			output += "    [color=#00FF00]Base Rewards: %s[/color]\n" % ", ".join(reward_parts)
+			output += "    [color=#00FF00]Rewards: %s[/color]\n" % ", ".join(reward_parts)
+		# Show hint if gems are reduced due to level
+		if base_gems > 0 and scaled_gems < base_gems:
+			output += "    [color=#808080](Gem rewards increase at higher levels)[/color]\n"
 
 		# Show hotzone requirements and bonus potential for hotzone quests
 		if quest.get("type", -1) == QuestDatabaseScript.QuestType.HOTZONE_KILL:
@@ -356,13 +397,13 @@ func format_available_quests(quests: Array, character: Character) -> String:
 				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
 			var max_xp = int(base_xp * 2.5)
 			var max_gold = int(base_gold * 2.5)
-			var max_gems = int(base_gems * 2.5) if base_gems > 0 else 0
+			var max_gems = int(scaled_gems * 2.5) if scaled_gems > 0 else 0
 			var bonus_parts = []
 			if max_xp > base_xp:
 				bonus_parts.append("up to %d XP" % max_xp)
 			if max_gold > base_gold:
 				bonus_parts.append("up to %d Gold" % max_gold)
-			if max_gems > base_gems:
+			if max_gems > scaled_gems:
 				bonus_parts.append("up to %d Gems" % max_gems)
 			if not bonus_parts.is_empty():
 				output += "    [color=#FF6600]Hotzone Bonus: %s[/color]\n" % ", ".join(bonus_parts)
