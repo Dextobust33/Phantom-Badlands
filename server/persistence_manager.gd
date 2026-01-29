@@ -245,9 +245,63 @@ func load_character(account_id: String, char_name: String) -> Dictionary:
 		file.close()
 
 		if error == OK:
-			return json.data
+			var data = json.data
+			# Migrate legacy items to new tiered format
+			if data.has("inventory"):
+				data["inventory"] = _migrate_legacy_items(data["inventory"])
+			return data
 
 	return {}
+
+# ===== LEGACY ITEM MIGRATION =====
+
+# Mapping from legacy types to new normalized types with tier
+const LEGACY_ITEM_MIGRATIONS = {
+	# Health potions
+	"potion_minor": {"type": "health_potion", "tier": 1},
+	"potion_lesser": {"type": "health_potion", "tier": 2},
+	"potion_standard": {"type": "health_potion", "tier": 3},
+	"potion_greater": {"type": "health_potion", "tier": 4},
+	"potion_superior": {"type": "health_potion", "tier": 5},
+	"potion_master": {"type": "health_potion", "tier": 6},
+	# Mana potions
+	"mana_minor": {"type": "mana_potion", "tier": 1},
+	"mana_lesser": {"type": "mana_potion", "tier": 2},
+	"mana_standard": {"type": "mana_potion", "tier": 3},
+	"mana_greater": {"type": "mana_potion", "tier": 4},
+	"mana_superior": {"type": "mana_potion", "tier": 5},
+	"mana_master": {"type": "mana_potion", "tier": 6},
+	# Stamina potions
+	"stamina_minor": {"type": "stamina_potion", "tier": 1},
+	"stamina_lesser": {"type": "stamina_potion", "tier": 2},
+	"stamina_standard": {"type": "stamina_potion", "tier": 3},
+	"stamina_greater": {"type": "stamina_potion", "tier": 4},
+	# Energy potions
+	"energy_minor": {"type": "energy_potion", "tier": 1},
+	"energy_lesser": {"type": "energy_potion", "tier": 2},
+	"energy_standard": {"type": "energy_potion", "tier": 3},
+	"energy_greater": {"type": "energy_potion", "tier": 4},
+	# Elixirs
+	"elixir_minor": {"type": "elixir", "tier": 1},
+	"elixir_greater": {"type": "elixir", "tier": 4},
+	"elixir_divine": {"type": "elixir", "tier": 7},
+}
+
+func _migrate_legacy_items(inventory: Array) -> Array:
+	"""Migrate legacy item types to new tiered format"""
+	var migrated = false
+	for item in inventory:
+		if not item is Dictionary:
+			continue
+		var item_type = item.get("type", "")
+		if LEGACY_ITEM_MIGRATIONS.has(item_type):
+			var migration = LEGACY_ITEM_MIGRATIONS[item_type]
+			item["type"] = migration["type"]
+			item["tier"] = migration["tier"]
+			migrated = true
+	if migrated:
+		print("Migrated legacy items in inventory")
+	return inventory
 
 func load_character_as_object(account_id: String, char_name: String) -> Character:
 	"""Load character data and return a Character object"""
