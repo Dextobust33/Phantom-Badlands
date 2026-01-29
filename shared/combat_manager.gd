@@ -3264,13 +3264,16 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	var damage_reduction = defense_ratio * defense_max
 	var total = int(raw_damage * (1.0 - damage_reduction))
 
-	# Level difference bonus: monsters higher level deal extra damage (configurable)
+	# Level difference bonus: monsters higher level deal extra damage
+	# REVERT NOTE: Old exponential formula was: pow(1.04, min(level_diff, 75))
+	# Changed to linear (same as player penalty) for balance - v0.8.82
 	var level_diff = monster.level - character.level
 	if level_diff > 0:
-		var level_base = cfg.get("monster_level_diff_base", 1.04)
-		var level_cap = cfg.get("monster_level_diff_cap", 75)
-		var level_multiplier = pow(level_base, min(level_diff, level_cap))
-		total = int(total * level_multiplier)
+		# Linear scaling: 3% bonus per level, max 50% (mirrors player penalty)
+		var level_penalty_per_level = cfg.get("monster_level_diff_per_level", 0.03)
+		var level_penalty_max = cfg.get("monster_level_diff_max", 0.50)
+		var level_bonus = min(level_penalty_max, level_diff * level_penalty_per_level)
+		total = int(total * (1.0 + level_bonus))
 
 	# Minimum damage based on monster level (higher level = higher floor)
 	var min_damage = max(1, monster.level / 5)

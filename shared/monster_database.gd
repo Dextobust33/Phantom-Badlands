@@ -1459,11 +1459,11 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	return monster
 
 func _estimate_player_equipment_attack(player_level: int) -> int:
-	"""Estimate BASELINE player attack bonus - intentionally conservative.
-	This ensures players with good gear feel overpowered, not just 'normal'."""
-	# Assume player has weapon at ~50% of level with common rarity (worst case baseline)
-	var effective_item_level = int(player_level * 0.5)
-	var rarity_mult = 1.0  # Common baseline
+	"""Estimate player attack bonus for monster scaling.
+	REVERT NOTE: Old values were 0.5 level mult and 1.0 rarity - changed v0.8.82"""
+	# Assume player has weapon at ~80% of level with uncommon rarity
+	var effective_item_level = int(player_level * 0.8)  # Was 0.5
+	var rarity_mult = 1.5  # Uncommon baseline (was 1.0 common)
 
 	# Only weapon assumed (some players may not have ring)
 	var weapon_attack = int(effective_item_level * rarity_mult * 2)
@@ -1471,11 +1471,11 @@ func _estimate_player_equipment_attack(player_level: int) -> int:
 	return weapon_attack
 
 func _estimate_player_equipment_defense(player_level: int) -> int:
-	"""Estimate BASELINE player defense bonus - intentionally conservative.
-	This ensures players with good armor feel tanky, not just 'adequate'."""
-	# Assume player has only armor at ~50% of level with common rarity
-	var effective_item_level = int(player_level * 0.5)
-	var rarity_mult = 1.0  # Common baseline
+	"""Estimate player defense bonus for monster scaling.
+	REVERT NOTE: Old values were 0.5 level mult and 1.0 rarity - changed v0.8.82"""
+	# Assume player has armor at ~80% of level with uncommon rarity
+	var effective_item_level = int(player_level * 0.8)  # Was 0.5
+	var rarity_mult = 1.5  # Uncommon baseline (was 1.0 common)
 
 	# Only armor assumed (some players may not have full set)
 	var armor_defense = int(effective_item_level * rarity_mult * 2)
