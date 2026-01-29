@@ -4825,6 +4825,13 @@ func use_combat_item_by_number(number: int):
 		return
 
 	var actual_index = usable_items[absolute_index].index
+
+	# Mark the corresponding action bar hotkey as pressed to prevent it from
+	# triggering later in this same _process frame (item 1 = action_5, etc.)
+	var action_index = (number - 1) + 5
+	if action_index < 10:
+		set_meta("hotkey_%d_pressed" % action_index, true)
+
 	combat_item_mode = false
 	update_action_bar()
 
