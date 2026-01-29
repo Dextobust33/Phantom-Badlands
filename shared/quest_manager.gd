@@ -76,7 +76,10 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 
 	for quest_data in character.active_quests:
 		var quest_id = quest_data.quest_id
-		var quest = quest_db.get_quest(quest_id)
+		# Use stored player level for proper dynamic quest regeneration
+		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
+		var completed_at_post = quest_data.get("completed_at_post", 0)
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
 		if quest.is_empty():
 			continue
 

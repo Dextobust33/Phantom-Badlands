@@ -1689,7 +1689,7 @@ func _process(delta):
 	# Skip if in combat_item_mode (to prevent item selection from also triggering combat abilities)
 	# Skip if in monster_select_mode (to prevent monster selection from also triggering action bar)
 	# Skip if ability_popup is visible (typing in the input field)
-	# Skip if quest_log_mode (quest abandonment uses number keys, not action bar)
+	# Note: quest_log_mode only blocks slots 5-9 (number keys 1-5 used for abandonment), not slot 0 (Continue)
 	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
 	# Use flag for ability popup (more reliable than visibility alone)
 	var ability_popup_open = ability_popup_active
@@ -1697,8 +1697,12 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not quest_log_mode and not any_popup_open:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open:
 		for i in range(10):  # All 10 action bar slots
+			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
+			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
+			if quest_log_mode and i >= 5:
+				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):

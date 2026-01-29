@@ -102,9 +102,10 @@ Target: [Cancel] [---] [---] [---] [---] [1-9 Select] [---] [---] [---] [---]
 **Special Case: Quest Log Mode (`quest_log_mode`)**
 
 When viewing the quest log from the world map (not at a trading post), `quest_log_mode` is set alongside `pending_continue`. In this mode:
-- Action bar shows Continue button only
-- Number keys (1-5) are used to abandon quests, NOT action bar slots
-- Action bar hotkey processing is disabled to prevent conflicts
+- Action bar shows Continue button only (slot 0, Space key)
+- Number keys (1-5) are used to abandon quests, NOT action bar slots 5-9
+- Action bar slots 5-9 are blocked to prevent conflicts with quest abandonment
+- Slot 0 (Continue/Space) remains active so player can exit the quest log
 
 ### 13. Merchant (`at_merchant`)
 ```mermaid
