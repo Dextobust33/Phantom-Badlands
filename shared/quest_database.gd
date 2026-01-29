@@ -642,8 +642,9 @@ const QUESTS = {
 	}
 }
 
-func get_quest(quest_id: String) -> Dictionary:
-	"""Get quest data by ID. Returns empty dict if not found."""
+func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
+	"""Get quest data by ID. Returns empty dict if not found.
+	For dynamic quests, pass player_level and quests_completed_at_post to get accurate scaling."""
 	if QUESTS.has(quest_id):
 		var quest = QUESTS[quest_id].duplicate(true)
 		# Scale rewards based on trading post area level
@@ -652,7 +653,7 @@ func get_quest(quest_id: String) -> Dictionary:
 
 	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:
-		return _regenerate_dynamic_quest(quest_id)
+		return _regenerate_dynamic_quest(quest_id, player_level, quests_completed_at_post)
 
 	# Handle progression quest IDs (format: progression_to_postid)
 	if quest_id.begins_with("progression_to_"):
@@ -752,8 +753,9 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 
 	return quest
 
-func _regenerate_dynamic_quest(quest_id: String) -> Dictionary:
-	"""Regenerate a dynamic quest from its ID."""
+func _regenerate_dynamic_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
+	"""Regenerate a dynamic quest from its ID.
+	If player_level is provided, uses _generate_quest_for_tier_scaled for accurate scaling."""
 	# Parse ID: postid_dynamic_tier_index
 	var parts = quest_id.split("_dynamic_")
 	if parts.size() != 2:
@@ -772,6 +774,13 @@ func _regenerate_dynamic_quest(quest_id: String) -> Dictionary:
 	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 
+	# If player_level is provided, use the scaled version (matches what was displayed to player)
+	if player_level > 0:
+		# Calculate progression modifier based on completed quests
+		var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
+		return _generate_quest_for_tier_scaled(trading_post_id, quest_id, quest_tier, post_distance, player_level, progression_modifier)
+
+	# Fallback to unscaled version (for backward compatibility)
 	return _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
 
 func get_quests_for_trading_post(trading_post_id: String) -> Array:

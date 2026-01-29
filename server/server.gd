@@ -4855,24 +4855,28 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 	var origin_y = character.y
 
 	# Get the scaled description if at a trading post (quests are scaled at display time)
-	# Re-scale the quest to get the correct description for this player
+	# For dynamic quests, pass player_level to regenerate with same scaling as when displayed
 	var description = ""
+	var completed_at_post = 0
 	if at_trading_post.has(peer_id):
 		var tp = at_trading_post[peer_id]
-		var completed_at_post = 0
+		# Count static quests completed at this post
 		for qid in quest_db.QUESTS:
 			if quest_db.QUESTS[qid].trading_post == tp.id and qid in character.completed_quests:
 				completed_at_post += 1
-		# Get scaled quest to extract description
-		var quest = quest_db.get_quest(quest_id)
-		var area_level = quest_db._get_area_level_for_post(tp.id)
-		var scaled_quest = quest_db._scale_quest_for_player(quest.duplicate(true), character.level, completed_at_post, area_level)
+		# Count dynamic quests completed at this post
+		for qid in character.completed_quests:
+			if qid.begins_with(tp.id + "_dynamic_"):
+				completed_at_post += 1
+		# Get quest with player-level scaling (for dynamic quests, this uses the same
+		# generation function as when the quest was displayed to the player)
+		var scaled_quest = quest_db.get_quest(quest_id, character.level, completed_at_post)
 		description = scaled_quest.get("description", "")
 
-	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y, description)
+	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y, description, character.level, completed_at_post)
 
 	if result.success:
-		var quest = quest_db.get_quest(quest_id)
+		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post)
 		send_to_peer(peer_id, {
 			"type": "quest_accepted",
 			"quest_id": quest_id,

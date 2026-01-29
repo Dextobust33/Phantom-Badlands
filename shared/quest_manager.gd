@@ -42,13 +42,13 @@ func can_accept_quest(character: Character, quest_id: String) -> Dictionary:
 
 	return {"can_accept": true, "reason": ""}
 
-func accept_quest(character: Character, quest_id: String, origin_x: int, origin_y: int, description: String = "") -> Dictionary:
+func accept_quest(character: Character, quest_id: String, origin_x: int, origin_y: int, description: String = "", player_level: int = 1, completed_at_post: int = 0) -> Dictionary:
 	"""Accept a quest for the character. Returns {success: bool, message: String}"""
 	var check = can_accept_quest(character, quest_id)
 	if not check.can_accept:
 		return {"success": false, "message": check.reason}
 
-	var quest = quest_db.get_quest(quest_id)
+	var quest = quest_db.get_quest(quest_id, player_level, completed_at_post)
 	var quest_type = quest.get("type", -1)
 	var target = quest.get("target", 1)
 
@@ -62,7 +62,7 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	# Use scaled description if provided, otherwise use quest's base description
 	var quest_description = description if not description.is_empty() else quest.get("description", "")
 
-	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description):
+	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
 
 	return {"success": false, "message": "Failed to accept quest"}
@@ -255,7 +255,10 @@ func format_quest_log(character: Character) -> String:
 	var index = 1
 	for quest_data in character.active_quests:
 		var quest_id = quest_data.quest_id
-		var quest = quest_db.get_quest(quest_id)
+		# Use stored player level and completion count for proper dynamic quest regeneration
+		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
+		var completed_at_post = quest_data.get("completed_at_post", 0)
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
 		if quest.is_empty():
 			continue
 
