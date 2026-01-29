@@ -605,38 +605,38 @@ func get_equipment_bonuses() -> Dictionary:
 			# Bulwark shield (Warrior): extra stamina_regen (base shield stats already applied)
 			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 
-		# Apply affix bonuses (from randomized item affixes)
+		# Apply affix bonuses (from randomized item affixes) - also affected by wear
 		var affixes = item.get("affixes", {})
 		# HP/Resources
 		if affixes.has("hp_bonus"):
-			bonuses.max_hp += affixes.hp_bonus
+			bonuses.max_hp += int(affixes.hp_bonus * wear_penalty)
 		if affixes.has("mana_bonus"):
-			bonuses.max_mana += affixes.mana_bonus
+			bonuses.max_mana += int(affixes.mana_bonus * wear_penalty)
 		if affixes.has("stamina_bonus"):
-			bonuses.max_stamina += affixes.stamina_bonus
+			bonuses.max_stamina += int(affixes.stamina_bonus * wear_penalty)
 		if affixes.has("energy_bonus"):
-			bonuses.max_energy += affixes.energy_bonus
+			bonuses.max_energy += int(affixes.energy_bonus * wear_penalty)
 		# Attack/Defense
 		if affixes.has("attack_bonus"):
-			bonuses.attack += affixes.attack_bonus
+			bonuses.attack += int(affixes.attack_bonus * wear_penalty)
 		if affixes.has("defense_bonus"):
-			bonuses.defense += affixes.defense_bonus
+			bonuses.defense += int(affixes.defense_bonus * wear_penalty)
 		# Core stats
 		if affixes.has("str_bonus"):
-			bonuses.strength += affixes.str_bonus
+			bonuses.strength += int(affixes.str_bonus * wear_penalty)
 		if affixes.has("con_bonus"):
-			bonuses.constitution += affixes.con_bonus
+			bonuses.constitution += int(affixes.con_bonus * wear_penalty)
 		if affixes.has("dex_bonus"):
-			bonuses.dexterity += affixes.dex_bonus
+			bonuses.dexterity += int(affixes.dex_bonus * wear_penalty)
 		if affixes.has("int_bonus"):
-			bonuses.intelligence += affixes.int_bonus
+			bonuses.intelligence += int(affixes.int_bonus * wear_penalty)
 		if affixes.has("wis_bonus"):
-			bonuses.wisdom += affixes.wis_bonus
+			bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
 		if affixes.has("wits_bonus"):
-			bonuses.wits += affixes.wits_bonus
+			bonuses.wits += int(affixes.wits_bonus * wear_penalty)
 		# Speed
 		if affixes.has("speed_bonus"):
-			bonuses.speed += affixes.speed_bonus
+			bonuses.speed += int(affixes.speed_bonus * wear_penalty)
 
 	return bonuses
 

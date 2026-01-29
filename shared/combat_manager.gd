@@ -2880,10 +2880,10 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if ABILITY_CORROSIVE in abilities and hits > 0:
 		var corrosive_chance = ability_cfg.get("corrosive_chance", 15)
 		if randi() % 100 < corrosive_chance:
-			# Damage a random piece of equipment
-			var slots_to_damage = ["weapon", "shield", "armor", "helm", "boots"]
-			slots_to_damage.shuffle()
-			for slot in slots_to_damage:
+			# Damage one random piece of equipment (all slots including ring/amulet)
+			var all_slots = ["weapon", "shield", "armor", "helm", "boots", "ring", "amulet"]
+			all_slots.shuffle()
+			for slot in all_slots:
 				var result = character.damage_equipment(slot, randi_range(5, 15))
 				if result.success:
 					if result.is_broken:

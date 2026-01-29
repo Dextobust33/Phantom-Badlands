@@ -633,9 +633,9 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 15,
 				"drop_table_id": "tier3",
 				"drop_chance": 12,
-				"description": "A regenerating monster with terrible claws",
+				"description": "A regenerating monster with terrible claws that rend equipment",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_REGENERATION],
+				"abilities": [ABILITY_REGENERATION, ABILITY_SUNDER],
 				"death_message": "The troll stops regenerating. Finally."
 			}
 		MonsterType.WRAITH:
@@ -797,9 +797,9 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 15,
 				"drop_table_id": "tier4",
 				"drop_chance": 15,
-				"description": "A fiend from the lower planes",
+				"description": "A fiend from the lower planes with hellfire that melts equipment",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE],
+				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_CORROSIVE],
 				"death_message": "The demon curses your bloodline as it's banished."
 			}
 		MonsterType.VAMPIRE:
@@ -889,9 +889,9 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier5",
 				"drop_chance": 20,
-				"description": "A legendary wyrm of immense age and power",
+				"description": "A legendary wyrm whose breath dissolves armor",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER],
+				"abilities": [ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER, ABILITY_CORROSIVE],
 				"death_message": "The ancient dragon's eyes dim as centuries of wisdom fade."
 			}
 		MonsterType.DEMON_LORD:
@@ -1035,9 +1035,9 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 10,
-				"description": "An animated construct of living metal",
+				"description": "An animated construct of living metal with crushing fists",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ARMORED, ABILITY_THORNS, ABILITY_WARRIOR_HOARDER],
+				"abilities": [ABILITY_ARMORED, ABILITY_THORNS, ABILITY_WARRIOR_HOARDER, ABILITY_SUNDER],
 				"death_message": "The golem's core shatters. It salutes you... wait, that's new."
 			}
 		MonsterType.SPHINX:
@@ -1071,9 +1071,9 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"flock_chance": 0,
 				"drop_table_id": "tier6",
 				"drop_chance": 15,
-				"description": "A many-headed serpent that regenerates",
+				"description": "A many-headed serpent with acidic venom",
 				"class_affinity": ClassAffinity.NEUTRAL,
-				"abilities": [ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_ENRAGE],
+				"abilities": [ABILITY_REGENERATION, ABILITY_MULTI_STRIKE, ABILITY_ENRAGE, ABILITY_CORROSIVE],
 				"death_message": "All seven heads finally stop bickering. Permanently."
 			}
 		MonsterType.PHOENIX:
