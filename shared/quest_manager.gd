@@ -42,7 +42,7 @@ func can_accept_quest(character: Character, quest_id: String) -> Dictionary:
 
 	return {"can_accept": true, "reason": ""}
 
-func accept_quest(character: Character, quest_id: String, origin_x: int, origin_y: int) -> Dictionary:
+func accept_quest(character: Character, quest_id: String, origin_x: int, origin_y: int, description: String = "") -> Dictionary:
 	"""Accept a quest for the character. Returns {success: bool, message: String}"""
 	var check = can_accept_quest(character, quest_id)
 	if not check.can_accept:
@@ -59,7 +59,10 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	elif quest_type == QuestDatabaseScript.QuestType.KILL_LEVEL or quest_type == QuestDatabaseScript.QuestType.BOSS_HUNT:
 		target = 1  # Kill 1 monster of the required level
 
-	if character.add_quest(quest_id, target, origin_x, origin_y):
+	# Use scaled description if provided, otherwise use quest's base description
+	var quest_description = description if not description.is_empty() else quest.get("description", "")
+
+	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
 
 	return {"success": false, "message": "Failed to accept quest"}
@@ -264,8 +267,11 @@ func format_quest_log(character: Character) -> String:
 		var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
 		output += "[%d] [color=#FFD700]%s[/color]%s\n" % [index, quest.name, daily_tag]
 
-		# Description
-		output += "    %s\n" % quest.description
+		# Description - use stored description if available (scaled at accept time)
+		var description = quest_data.get("description", "")
+		if description.is_empty():
+			description = quest.description
+		output += "    %s\n" % description
 
 		# Progress bar
 		var progress_pct = min(1.0, float(progress) / float(target))

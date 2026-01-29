@@ -1534,7 +1534,7 @@ func get_quest_progress(quest_id: String) -> Dictionary:
 			return quest
 	return {}
 
-func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int = 0) -> bool:
+func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int = 0, description: String = "") -> bool:
 	"""Add a new quest to active quests. Returns false if at max or already has quest."""
 	if not can_accept_quest() or has_quest(quest_id):
 		return false
@@ -1547,7 +1547,8 @@ func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int =
 		"origin_x": origin_x,
 		"origin_y": origin_y,
 		"accumulated_intensity": 0.0,  # For hotzone quests
-		"kills_in_hotzone": 0  # Track kills specifically in hotzones
+		"kills_in_hotzone": 0,  # Track kills specifically in hotzones
+		"description": description  # Store scaled description for display
 	})
 	return true
 

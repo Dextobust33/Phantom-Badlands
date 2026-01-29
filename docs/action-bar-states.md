@@ -99,6 +99,13 @@ Target: [Cancel] [---] [---] [---] [---] [1-9 Select] [---] [---] [---] [---]
 [Continue] [---] [---] [---] [---] [---] [---] [---] [---] [---]
 ```
 
+**Special Case: Quest Log Mode (`quest_log_mode`)**
+
+When viewing the quest log from the world map (not at a trading post), `quest_log_mode` is set alongside `pending_continue`. In this mode:
+- Action bar shows Continue button only
+- Number keys (1-5) are used to abandon quests, NOT action bar slots
+- Action bar hotkey processing is disabled to prevent conflicts
+
 ### 13. Merchant (`at_merchant`)
 ```mermaid
 stateDiagram-v2
@@ -210,7 +217,7 @@ After changing ANY of these variables, you MUST call `update_action_bar()`:
 - `title_mode`, `title_target_mode`
 - `combat_item_mode`
 - `in_combat`
-- `flock_pending`, `pending_continue`
+- `flock_pending`, `pending_continue`, `quest_log_mode`
 - `at_merchant`, `pending_merchant_action`
 - `inventory_mode`, `pending_inventory_action`, `sort_menu_page`
 - `at_trading_post`, `quest_view_mode`

@@ -4854,7 +4854,22 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 	var origin_x = character.x
 	var origin_y = character.y
 
-	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y)
+	# Get the scaled description if at a trading post (quests are scaled at display time)
+	# Re-scale the quest to get the correct description for this player
+	var description = ""
+	if at_trading_post.has(peer_id):
+		var tp = at_trading_post[peer_id]
+		var completed_at_post = 0
+		for qid in quest_db.QUESTS:
+			if quest_db.QUESTS[qid].trading_post == tp.id and qid in character.completed_quests:
+				completed_at_post += 1
+		# Get scaled quest to extract description
+		var quest = quest_db.get_quest(quest_id)
+		var area_level = quest_db._get_area_level_for_post(tp.id)
+		var scaled_quest = quest_db._scale_quest_for_player(quest.duplicate(true), character.level, completed_at_post, area_level)
+		description = scaled_quest.get("description", "")
+
+	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y, description)
 
 	if result.success:
 		var quest = quest_db.get_quest(quest_id)

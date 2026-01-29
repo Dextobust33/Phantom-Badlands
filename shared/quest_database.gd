@@ -859,7 +859,7 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 			var base_target = quest.get("target", 5)
 			var scaled_target = base_target + int(player_level / 10) + quests_completed_at_post
 			quest["target"] = max(base_target, min(scaled_target, base_target * 3))  # Cap at 3x original
-			quest["scaled_description"] = "Defeat %d monsters." % quest["target"]
+			quest["description"] = "Defeat %d monsters." % quest["target"]
 
 		QuestType.KILL_LEVEL:
 			# Monster level requirement scales with player level + progression
@@ -868,7 +868,7 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 			if quest.has("kill_count"):
 				var base_count = quest.get("kill_count", 1)
 				quest["kill_count"] = base_count + int(quests_completed_at_post / 2)
-			quest["scaled_description"] = "Defeat monsters of level %d or higher." % min_level
+			quest["description"] = "Defeat monsters of level %d or higher." % min_level
 
 		QuestType.HOTZONE_KILL:
 			# Scale both monster level and kill count
@@ -876,13 +876,13 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 			quest["min_monster_level"] = min_monster_level
 			var base_target = quest.get("target", 3)
 			quest["target"] = base_target + int(quests_completed_at_post / 2)
-			quest["scaled_description"] = "Kill %d monsters (Lv%d+) in hotzones." % [quest["target"], min_monster_level]
+			quest["description"] = "Kill %d monsters (Lv%d+) in hotzones." % [quest["target"], min_monster_level]
 
 		QuestType.BOSS_HUNT:
 			# Boss level scales with player level + significant progression bonus
 			var boss_level = int(target_level * (1.0 + progression_modifier * 0.5))
 			quest["target"] = boss_level
-			quest["scaled_description"] = "Defeat a powerful monster of level %d or higher." % boss_level
+			quest["description"] = "Defeat a powerful monster of level %d or higher." % boss_level
 
 	# Mark quest as scaled
 	quest["player_level_scaled"] = player_level
