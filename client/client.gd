@@ -2787,14 +2787,14 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_ability_action in ["select_ability", "select_unequip_slot", "select_keybind_slot"]:
-			# Selecting a slot (1-4)
+			# Selecting a slot (1-5)
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "ability_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "1-4 Slot", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-5 Slot", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4742,44 +4742,56 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	"""Get combat info for an ability (display name, cost, resource type)"""
 	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
 
-	# Ability definitions with display name and cost
+	# Ability definitions with display name, base cost, and cost percentage (for mage scaling)
 	var ability_defs = {
-		# Mage abilities
-		"magic_bolt": {"display": "Bolt", "cost": 0, "resource_type": "mana"},
-		"shield": {"display": "Shield", "cost": 20, "resource_type": "mana"},
-		"blast": {"display": "Blast", "cost": 50, "resource_type": "mana"},
-		"forcefield": {"display": "Field", "cost": 75, "resource_type": "mana"},
-		"teleport": {"display": "Teleport", "cost": 1000, "resource_type": "mana"},
-		"meteor": {"display": "Meteor", "cost": 100, "resource_type": "mana"},
-		"haste": {"display": "Haste", "cost": 35, "resource_type": "mana"},
-		"paralyze": {"display": "Paralyze", "cost": 60, "resource_type": "mana"},
-		"banish": {"display": "Banish", "cost": 80, "resource_type": "mana"},
+		# Mage abilities - use percentage-based scaling
+		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
+		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},
+		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "resource_type": "mana"},
+		"forcefield": {"display": "Field", "cost": 75, "cost_percent": 7, "resource_type": "mana"},
+		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
+		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 12, "resource_type": "mana"},
+		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
+		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "resource_type": "mana"},
+		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "resource_type": "mana"},
 		# Warrior abilities
-		"power_strike": {"display": "Strike", "cost": 10, "resource_type": "stamina"},
-		"war_cry": {"display": "Cry", "cost": 15, "resource_type": "stamina"},
-		"shield_bash": {"display": "Bash", "cost": 20, "resource_type": "stamina"},
-		"cleave": {"display": "Cleave", "cost": 30, "resource_type": "stamina"},
-		"berserk": {"display": "Berserk", "cost": 40, "resource_type": "stamina"},
-		"iron_skin": {"display": "Iron", "cost": 35, "resource_type": "stamina"},
-		"devastate": {"display": "Devastate", "cost": 60, "resource_type": "stamina"},
-		"fortify": {"display": "Fortify", "cost": 25, "resource_type": "stamina"},
-		"rally": {"display": "Rally", "cost": 45, "resource_type": "stamina"},
+		"power_strike": {"display": "Strike", "cost": 10, "cost_percent": 0, "resource_type": "stamina"},
+		"war_cry": {"display": "Cry", "cost": 15, "cost_percent": 0, "resource_type": "stamina"},
+		"shield_bash": {"display": "Bash", "cost": 20, "cost_percent": 0, "resource_type": "stamina"},
+		"cleave": {"display": "Cleave", "cost": 30, "cost_percent": 0, "resource_type": "stamina"},
+		"berserk": {"display": "Berserk", "cost": 40, "cost_percent": 0, "resource_type": "stamina"},
+		"iron_skin": {"display": "Iron", "cost": 35, "cost_percent": 0, "resource_type": "stamina"},
+		"devastate": {"display": "Devastate", "cost": 60, "cost_percent": 0, "resource_type": "stamina"},
+		"fortify": {"display": "Fortify", "cost": 25, "cost_percent": 0, "resource_type": "stamina"},
+		"rally": {"display": "Rally", "cost": 45, "cost_percent": 0, "resource_type": "stamina"},
 		# Trickster abilities
-		"analyze": {"display": "Analyze", "cost": 5, "resource_type": "energy"},
-		"distract": {"display": "Distract", "cost": 15, "resource_type": "energy"},
-		"pickpocket": {"display": "Steal", "cost": 20, "resource_type": "energy"},
-		"ambush": {"display": "Ambush", "cost": 30, "resource_type": "energy"},
-		"vanish": {"display": "Vanish", "cost": 40, "resource_type": "energy"},
-		"exploit": {"display": "Exploit", "cost": 35, "resource_type": "energy"},
-		"perfect_heist": {"display": "Heist", "cost": 50, "resource_type": "energy"},
-		"sabotage": {"display": "Sabotage", "cost": 25, "resource_type": "energy"},
-		"gambit": {"display": "Gambit", "cost": 35, "resource_type": "energy"},
+		"analyze": {"display": "Analyze", "cost": 5, "cost_percent": 0, "resource_type": "energy"},
+		"distract": {"display": "Distract", "cost": 15, "cost_percent": 0, "resource_type": "energy"},
+		"pickpocket": {"display": "Steal", "cost": 20, "cost_percent": 0, "resource_type": "energy"},
+		"ambush": {"display": "Ambush", "cost": 30, "cost_percent": 0, "resource_type": "energy"},
+		"vanish": {"display": "Vanish", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
+		"exploit": {"display": "Exploit", "cost": 35, "cost_percent": 0, "resource_type": "energy"},
+		"perfect_heist": {"display": "Heist", "cost": 50, "cost_percent": 0, "resource_type": "energy"},
+		"sabotage": {"display": "Sabotage", "cost": 25, "cost_percent": 0, "resource_type": "energy"},
+		"gambit": {"display": "Gambit", "cost": 35, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
-		"cloak": {"display": "Cloak", "cost": 30, "resource_type": resource_type},
-		"all_or_nothing": {"display": "All/None", "cost": 1, "resource_type": resource_type},
+		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
+		"all_or_nothing": {"display": "All/None", "cost": 1, "cost_percent": 0, "resource_type": resource_type},
 	}
 
-	return ability_defs.get(ability_name, {})
+	var result = ability_defs.get(ability_name, {})
+	if result.is_empty():
+		return result
+
+	# Calculate actual cost for mage abilities with percentage scaling
+	var base_cost = result.cost
+	var cost_percent = result.get("cost_percent", 0)
+	if path == "mage" and cost_percent > 0:
+		var max_mana = character_data.get("total_max_mana", character_data.get("max_mana", 100))
+		var percent_cost = int(max_mana * cost_percent / 100.0)
+		result.cost = max(base_cost, percent_cost)
+
+	return result
 
 func show_combat_item_menu():
 	"""Display usable items for combat selection."""
@@ -7133,21 +7145,21 @@ func show_ability_equip_prompt():
 	"""Show prompt to select an ability to equip"""
 	pending_ability_action = "select_ability"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-4) to equip to:[/color]")
+	display_game("[color=#FFD700]Select slot (1-5) to equip to:[/color]")
 	update_action_bar()
 
 func show_ability_unequip_prompt():
 	"""Show prompt to select slot to unequip"""
 	pending_ability_action = "select_unequip_slot"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-4) to unequip:[/color]")
+	display_game("[color=#FFD700]Select slot (1-5) to unequip:[/color]")
 	update_action_bar()
 
 func show_keybind_prompt():
 	"""Show prompt to change keybinds"""
 	pending_ability_action = "select_keybind_slot"
 	display_game("")
-	display_game("[color=#FFD700]Select slot (1-4) to change keybind:[/color]")
+	display_game("[color=#FFD700]Select slot (1-5) to change keybind:[/color]")
 	update_action_bar()
 
 func handle_ability_slot_selection(slot_num: int):

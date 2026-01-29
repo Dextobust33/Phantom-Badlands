@@ -4797,7 +4797,7 @@ func handle_trading_post_recharge(peer_id: int):
 	var tp_x = tp.get("x", 0)
 	var tp_y = tp.get("y", 0)
 	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
-	var distance_multiplier = 1.0 + (distance_from_origin / 200.0)  # +1x per 200 distance
+	var distance_multiplier = 1.0 + (distance_from_origin / 50.0)  # +1x per 50 distance
 	var cost = int(base_cost * distance_multiplier)
 
 	# Check if already at full resources and not poisoned/blinded

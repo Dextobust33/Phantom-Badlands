@@ -340,17 +340,17 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 
 	# === INITIATIVE CHECK ===
 	# Monster can go first if faster than player
-	# Chance = (monster_speed - player_dex) * 2, capped at 30%
+	# Base 5% chance + (monster_speed - player_dex) * 2, capped at 30% from speed
 	# Ambusher monsters get +15% initiative bonus
 	var player_dex = character.get_effective_stat("dexterity")
 	var monster_speed = monster.get("speed", 10)
 	var speed_diff = monster_speed - player_dex
-	var monster_initiative_chance = 0
+	var monster_initiative_chance = 5  # Base 5% chance for any monster
 	if speed_diff > 0:
-		monster_initiative_chance = min(30, speed_diff * 2)
+		monster_initiative_chance += min(30, speed_diff * 2)
 	if ambusher_active:
 		monster_initiative_chance += 15
-	monster_initiative_chance = min(40, monster_initiative_chance)  # Hard cap at 40%
+	monster_initiative_chance = min(45, monster_initiative_chance)  # Hard cap at 45%
 
 	var monster_goes_first = monster_initiative_chance > 0 and randi() % 100 < monster_initiative_chance
 
