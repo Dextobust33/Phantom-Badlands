@@ -4594,6 +4594,14 @@ func trigger_trading_post_encounter(peer_id: int):
 			if quest_data.progress >= quest_data.target:
 				quests_to_turn_in.append(quest_data.quest_id)
 
+	# Calculate recharge cost to send to client
+	var base_cost = _get_recharge_cost(character.level)
+	var tp_x = tp.get("x", 0)
+	var tp_y = tp.get("y", 0)
+	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
+	var distance_multiplier = 7.0 * (1.0 + (distance_from_origin / 50.0))  # 7x base, +7x per 50 distance
+	var recharge_cost = int(base_cost * distance_multiplier)
+
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
 		"name": tp.name,
@@ -4601,7 +4609,8 @@ func trigger_trading_post_encounter(peer_id: int):
 		"quest_giver": tp.quest_giver,
 		"services": ["shop", "quests", "recharge"],
 		"available_quests": available_quests.size(),
-		"quests_to_turn_in": quests_to_turn_in.size()
+		"quests_to_turn_in": quests_to_turn_in.size(),
+		"recharge_cost": recharge_cost
 	})
 
 func handle_trading_post_shop(peer_id: int):
@@ -4797,7 +4806,7 @@ func handle_trading_post_recharge(peer_id: int):
 	var tp_x = tp.get("x", 0)
 	var tp_y = tp.get("y", 0)
 	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
-	var distance_multiplier = 1.0 + (distance_from_origin / 50.0)  # +1x per 50 distance
+	var distance_multiplier = 7.0 * (1.0 + (distance_from_origin / 50.0))  # 7x base, +7x per 50 distance
 	var cost = int(base_cost * distance_multiplier)
 
 	# Check if already at full resources and not poisoned/blinded

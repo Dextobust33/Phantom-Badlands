@@ -3234,9 +3234,8 @@ func update_action_bar():
 			]
 		else:
 			# Main Trading Post menu (player walks out to leave)
-			# Calculate recharge cost (50 + level*10, then 50% off at Trading Post)
-			var player_level = character_data.get("level", 1)
-			var recharge_cost = int((50 + player_level * 10) * 0.5)
+			# Get recharge cost from server (includes distance scaling)
+			var recharge_cost = trading_post_data.get("recharge_cost", 100)
 			current_actions = [
 				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
