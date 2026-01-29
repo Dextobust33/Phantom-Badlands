@@ -11132,6 +11132,22 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("Cloak", "[fade start=0 length=10][color=#9932CC]👁️ Cloak 👁️[/color][/fade]")
 		enhanced = enhanced.replace("cloaked", "[fade start=0 length=10][color=#9932CC]cloaked[/color][/fade]")
 
+	# Haste ability - speed effect
+	if "HASTE" in upper_msg:
+		enhanced = enhanced.replace("Haste", "[wave amp=8 freq=6][color=#00FFFF]⚡ Haste ⚡[/color][/wave]")
+		enhanced = enhanced.replace("haste", "[wave amp=8 freq=6][color=#00FFFF]⚡ haste ⚡[/color][/wave]")
+
+	# Paralyze ability - static effect
+	if "PARALYZE" in upper_msg or "PARALYZ" in upper_msg:
+		enhanced = enhanced.replace("paralyze", "[shake rate=15 level=4][color=#FFFF00]⚡ paralyze ⚡[/color][/shake]")
+		enhanced = enhanced.replace("Paralyze", "[shake rate=15 level=4][color=#FFFF00]⚡ Paralyze ⚡[/color][/shake]")
+		enhanced = enhanced.replace("paralyzed", "[shake rate=15 level=4][color=#FFFF00]paralyzed[/color][/shake]")
+
+	# Banish ability - dimensional effect
+	if "BANISH" in upper_msg:
+		enhanced = enhanced.replace("banish", "[fade start=0 length=8][color=#FF00FF]✦ banish ✦[/color][/fade]")
+		enhanced = enhanced.replace("Banish", "[fade start=0 length=8][color=#FF00FF]✦ Banish ✦[/color][/fade]")
+
 	# Add impact symbols to large damage numbers
 	var regex = RegEx.new()
 	regex.compile("(\\d{3,}) damage")  # 3+ digit damage
