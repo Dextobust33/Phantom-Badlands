@@ -3680,12 +3680,14 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		suggested_amount = mini(mana_needed, current_resource)
 
 		# Display shows the conservative damage per mana (after all reductions)
-		var damage_per_mana = snapped(effective_multiplier, 0.1)
+		# Note: We don't show damage_per_mana anymore as it's misleading - actual damage
+		# varies based on many factors the player can't easily predict
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
 		if bonus_text != "":
-			bonus_text = "\n" + bonus_text
-		var hp_label = "Est. HP" if using_estimated_hp else "Enemy HP"
-		ability_popup_description.text = "[center]~%.1f dmg/mana (INT %d)%s\n%s: %d[/center]" % [damage_per_mana, int_stat, bonus_text, hp_label, target_hp]
+			bonus_text = bonus_text + "\n"
+		var hp_label = "~HP" if using_estimated_hp else "HP"
+		var estimate_note = "[color=#808080](conservative estimate)[/color]" if target_hp > 0 else ""
+		ability_popup_description.text = "[center]%s%s: %d %s[/center]" % [bonus_text, hp_label, target_hp, estimate_note]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -10682,7 +10684,7 @@ func search_help(search_term: String):
 		{
 			"title": "MAGE PATH",
 			"keywords": ["mage", "wizard", "sorcerer", "sage", "mana", "magic", "spell", "bolt", "blast", "meteor", "shield", "haste", "paralyze", "forcefield", "banish", "meditate", "intelligence"],
-			"content": "[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana (INT×12 + WIS×6)\n\n[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance\n[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance\n[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% meditate bonus\n\n[color=#AAAAAA]Abilities:[/color]\nMeditate - Restore HP + 4% mana (8% if full HP)\nL1 Magic Bolt (variable) - Mana × (1 + INT/50) damage\nL10 Shield (20) - +50% defense, 3 rounds\nL30 Haste (35) - Speed buff, 5 rounds\nL40 Blast (50) - 2x magic damage\nL50 Paralyze (35) - Stun 1 round\nL60 Forcefield (75) - Block 2 attacks\nL70 Banish (60) - Instant kill weak enemies\nL100 Meteor (100) - 5x magic damage"
+			"content": "[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana (INT×12 + WIS×6)\n\n[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance\n[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance\n[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% meditate bonus\n\n[color=#AAAAAA]Abilities:[/color]\nMeditate - Restore HP + 4% mana (8% if full HP)\nL1 Magic Bolt (variable) - Mana × (1 + INT/50) damage\nL10 Shield (20) - +50% defense, 3 rounds\nL30 Haste (35) - Speed buff, 5 rounds\nL40 Blast (50) - 2x magic damage\nL50 Paralyze (35) - Stun 1 round\nL60 Forcefield (75) - Block 2 attacks\nL70 Banish (60) - Instant kill weak enemies\nL100 Meteor (100) - 5x magic damage\n\n[color=#FFD700]Magic Bolt Suggestion:[/color] The suggested mana is intentionally high to ensure a kill. It accounts for: monster defense, WIS resistance, level penalty, class affinity, damage variance, and Armored ability. Use less if you want to conserve mana (but may not kill)."
 		},
 		{
 			"title": "TRICKSTER PATH",
@@ -10742,7 +10744,7 @@ func search_help(search_term: String):
 		{
 			"title": "MONSTER HP KNOWLEDGE",
 			"keywords": ["hp", "health", "known", "unknown", "estimated", "estimate", "monster", "bar", "question", "marks", "???", "tilde", "knowledge"],
-			"content": "[color=#FFD700]Monster HP Knowledge System[/color]\n\nMonster HP visibility depends on your combat experience:\n\n[color=#FFFFFF]Known HP (150/200)[/color] - Exact HP values\n• You've killed this monster type at this level or higher\n• HP bar shows precise current/max values\n\n[color=#808080]Estimated HP (~150/200)[/color] - Approximation with ~ prefix\n• You've killed this monster type, but at a LOWER level\n• HP is scaled up from your known data\n• May be inaccurate - actual HP could be higher!\n\n[color=#808080]Unknown HP (???)[/color] - No data available\n• You've never killed this monster type\n• Or you are Blinded (hides HP even for known monsters)\n\n[color=#00FFFF]Tip:[/color] Kill monsters to learn their HP! Knowledge persists across sessions.\n[color=#FF4444]Warning:[/color] Magic Bolt's suggested amount uses estimated HP - may not kill if HP is unknown or underestimated."
+			"content": "[color=#FFD700]Monster HP Knowledge System[/color]\n\nMonster HP visibility depends on your combat experience:\n\n[color=#FFFFFF]Known HP (150/200)[/color] - Exact HP values\n• You've killed this monster type at this level or higher\n• HP bar shows precise current/max values\n\n[color=#808080]Estimated HP (~150/200)[/color] - Approximation with ~ prefix\n• You've killed this monster type, but at a LOWER level\n• HP is scaled up from your known data\n• May be inaccurate - actual HP could be higher!\n\n[color=#808080]Unknown HP (???)[/color] - No data available\n• You've never killed this monster type\n• Or you are Blinded (hides HP even for known monsters)\n\n[color=#00FFFF]Tip:[/color] Kill monsters to learn their HP! Knowledge persists across sessions.\n\n[color=#FFD700]Magic Bolt Suggestions:[/color]\nThe suggested mana is a [color=#FFFFFF]conservative estimate[/color] that accounts for:\n• Monster defense and WIS resistance\n• Level penalty (if monster is higher level)\n• Class affinity (+25% vs blue, -15% vs yellow/green)\n• Worst-case damage variance (85% roll)\n• Armored ability (+50% defense)\nThis ensures a kill in most cases. Use less to save mana, but risk not killing."
 		},
 		{
 			"title": "PROC EQUIPMENT",
