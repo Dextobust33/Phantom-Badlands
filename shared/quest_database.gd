@@ -903,14 +903,26 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 
 # Trading post locations for distance calculations
 const TRADING_POST_COORDS = {
+	# Core Zone (0-30 distance)
 	"haven": Vector2i(0, 10),
 	"crossroads": Vector2i(0, 0),
 	"south_gate": Vector2i(0, -25),
 	"east_market": Vector2i(25, 10),
 	"west_shrine": Vector2i(-25, 10),
+	# Inner Zone (30-75 distance)
+	"northeast_farm": Vector2i(40, 40),
+	"northwest_mill": Vector2i(-40, 40),
+	"southeast_mine": Vector2i(45, -35),
+	"southwest_grove": Vector2i(-45, -35),
 	"northwatch": Vector2i(0, 75),
 	"eastern_camp": Vector2i(75, 0),
 	"western_refuge": Vector2i(-75, 0),
+	"southern_watch": Vector2i(0, -65),
+	"northeast_tower": Vector2i(55, 55),
+	"northwest_inn": Vector2i(-55, 55),
+	"southeast_bridge": Vector2i(60, -50),
+	"southwest_temple": Vector2i(-60, -50),
+	# Mid Zone (75-200 distance)
 	"frostgate": Vector2i(0, -100),
 	"highland_post": Vector2i(0, 150),
 	"eastwatch": Vector2i(150, 0),
@@ -920,6 +932,7 @@ const TRADING_POST_COORDS = {
 	"northwest_lodge": Vector2i(-120, 120),
 	"southeast_outpost": Vector2i(120, -120),
 	"southwest_camp": Vector2i(-120, -120),
+	# Outer Zone (200-350 distance)
 	"far_east_station": Vector2i(250, 0),
 	"far_west_haven": Vector2i(-250, 0),
 	"deep_south_port": Vector2i(0, -275),
@@ -928,6 +941,7 @@ const TRADING_POST_COORDS = {
 	"northwest_citadel": Vector2i(-200, 200),
 	"southeast_garrison": Vector2i(200, -200),
 	"southwest_fortress": Vector2i(-200, -200),
+	# Remote Zone (350-500 distance)
 	"shadowmere": Vector2i(300, 300),
 	"inferno_outpost": Vector2i(-350, 0),
 	"voids_edge": Vector2i(350, 0),
@@ -935,7 +949,25 @@ const TRADING_POST_COORDS = {
 	"abyssal_depths": Vector2i(-300, -300),
 	"celestial_spire": Vector2i(-300, 300),
 	"storm_peak": Vector2i(0, 350),
-	"dragons_rest": Vector2i(300, -300)
+	"dragons_rest": Vector2i(300, -300),
+	# Extreme Zone (500-700 distance)
+	"primordial_sanctum": Vector2i(0, 500),
+	"nether_gate": Vector2i(0, -550),
+	"eastern_terminus": Vector2i(500, 0),
+	"western_terminus": Vector2i(-500, 0),
+	"chaos_refuge": Vector2i(400, 400),
+	"entropy_station": Vector2i(-400, -400),
+	"oblivion_watch": Vector2i(-450, 400),
+	"genesis_point": Vector2i(450, -400),
+	# World's Edge (700+ distance)
+	"world_spine_north": Vector2i(0, 700),
+	"world_spine_south": Vector2i(0, -700),
+	"eternal_east": Vector2i(700, 0),
+	"eternal_west": Vector2i(-700, 0),
+	"apex_northeast": Vector2i(550, 550),
+	"apex_southeast": Vector2i(550, -550),
+	"apex_northwest": Vector2i(-550, 550),
+	"apex_southwest": Vector2i(-550, -550)
 }
 
 func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0) -> Array:

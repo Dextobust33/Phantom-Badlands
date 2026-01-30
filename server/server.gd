@@ -4617,7 +4617,7 @@ func trigger_trading_post_encounter(peer_id: int):
 		return
 
 	# Record discovery of this trading post
-	var newly_discovered = character.discover_trading_post(tp.name, tp.x, tp.y)
+	var newly_discovered = character.discover_trading_post(tp.name, tp.center.x, tp.center.y)
 	if newly_discovered:
 		save_character(peer_id)
 
@@ -4647,8 +4647,8 @@ func trigger_trading_post_encounter(peer_id: int):
 		recharge_cost = 20
 	else:
 		var base_cost = _get_recharge_cost(character.level)
-		var tp_x = tp.get("x", 0)
-		var tp_y = tp.get("y", 0)
+		var tp_x = tp.center.x
+		var tp_y = tp.center.y
 		var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
 		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
 		recharge_cost = int(base_cost * distance_multiplier)
@@ -4862,8 +4862,8 @@ func handle_trading_post_recharge(peer_id: int):
 		# Calculate cost based on level and trading post distance from origin
 		# Remote trading posts charge more for their services
 		var base_cost = _get_recharge_cost(character.level)
-		var tp_x = tp.get("x", 0)
-		var tp_y = tp.get("y", 0)
+		var tp_x = tp.center.x
+		var tp_y = tp.center.y
 		var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
 		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
 		cost = int(base_cost * distance_multiplier)
