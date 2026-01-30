@@ -11218,7 +11218,10 @@ func show_help():
 [b][color=#FFD700]══ PROGRESSION ══[/color][/b]
 [color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
 [color=#FFD700]Lucky Finds:[/color] Treasure, [color=#FF69B4]Legendary Adventurer[/color] (perm stat!) - Press [%s] to continue.
-[color=#00FFFF]Level Up:[/color] Full heal + stat gains by class.
+[color=#00FFFF]Level Up:[/color] Full heal + stat gains by class (2.5 total/level):
+[color=#FF6666]WARRIOR:[/color] [color=#C0C0C0]Fighter[/color]=STR1.25/CON.75/DEX.25/WIT.25 | [color=#8B0000]Barbarian[/color]=STR1.5/CON.75/DEX.25 | [color=#FFD700]Paladin[/color]=STR.75/CON1/DEX.25/WIS.25/WIT.25
+[color=#66FFFF]MAGE:[/color] [color=#4169E1]Wizard[/color]=INT1.25/WIS.75/CON.25/DEX.25 | [color=#9400D3]Sorcerer[/color]=INT1.5/WIS.5/CON.25/DEX.25 | [color=#20B2AA]Sage[/color]=WIS1/INT.75/CON.5/DEX.25
+[color=#66FF66]TRICK:[/color] [color=#2F4F4F]Thief[/color]=WIT1.5/DEX.75/CON.25 | [color=#228B22]Ranger[/color]=DEX.75/WIT.75/STR.5/CON.5 | [color=#191970]Ninja[/color]=DEX1.25/WIT.75/STR.25/CON.25
 
 [b][color=#FFD700]══ ENDGAME ══[/color][/b]
 [color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv100+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
@@ -11288,8 +11291,8 @@ func search_help(search_term: String):
 		},
 		{
 			"title": "STATS",
-			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy"],
-			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = +3% spell damage per point | Contributes to Mana pool\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Increases mana pool | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = +5% Outsmart chance per point above 10 | Contributes to Energy pool"
+			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy", "level", "up", "gain", "gains", "per"],
+			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = +3% spell damage per point | Contributes to Mana pool\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Increases mana pool | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = +5% Outsmart chance per point above 10 | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.25/WIS.75/CON.25/DEX.25 | Sorcerer=INT1.5/WIS.5/CON.25/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Thief=WIT1.5/DEX.75/CON.25 | Ranger=DEX.75/WIT.75/STR.5/CON.5 | Ninja=DEX1.25/WIT.75/STR.25/CON.25"
 		},
 		{
 			"title": "RACES",
