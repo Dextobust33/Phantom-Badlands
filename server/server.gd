@@ -676,7 +676,7 @@ func handle_list_characters(peer_id: int):
 		"type": "character_list",
 		"characters": char_list,
 		"can_create": can_create,
-		"max_characters": 3
+		"max_characters": 6
 	})
 
 func handle_select_character(peer_id: int, message: Dictionary):
@@ -715,6 +715,21 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	# Set character ID to peer ID for combat tracking
 	character.character_id = peer_id
+
+	# === BALANCE MIGRATION v0.8.5 ===
+	# Move existing characters to safety on first login after balance changes
+	if not character.balance_migrated_v085:
+		var old_x = character.x
+		var old_y = character.y
+		# Teleport to a safe spot near 0,0 (within the expanded safe zone)
+		character.x = randi_range(-5, 5)
+		character.y = randi_range(5, 15)  # Start at Sanctuary area
+		character.balance_migrated_v085 = true
+		# Recalculate stats with new formulas
+		character.calculate_derived_stats()
+		log_message("Balance migration: %s moved from (%d,%d) to (%d,%d)" % [char_name, old_x, old_y, character.x, character.y])
+		# Save the character immediately with migration flag
+		persistence.save_character(account_id, character)
 
 	# Store character in active characters
 	characters[peer_id] = character
@@ -760,7 +775,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	if not persistence.can_create_character(account_id):
 		send_to_peer(peer_id, {
 			"type": "error",
-			"message": "Maximum characters reached (3)"
+			"message": "Maximum characters reached (6)"
 		})
 		return
 
@@ -818,7 +833,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 
 	# Validate race
 	var char_race = message.get("race", "Human")
-	var valid_races = ["Human", "Elf", "Dwarf", "Ogre"]
+	var valid_races = ["Dwarf", "Elf", "Gnome", "Halfling", "Human", "Ogre", "Orc", "Undead"]
 	if char_race not in valid_races:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -1141,10 +1156,13 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Regenerate health and resources on movement (small amount per step)
 	var regen_percent = 0.02  # 2% per move for resources
 	var hp_regen_percent = 0.01  # 1% per move for health
+	var total_max_mana = character.get_total_max_mana()
+	var total_max_stamina = character.get_total_max_stamina()
+	var total_max_energy = character.get_total_max_energy()
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + max(1, int(character.get_total_max_hp() * hp_regen_percent)))
-	character.current_mana = min(character.get_total_max_mana(), character.current_mana + int(character.max_mana * regen_percent))
-	character.current_stamina = min(character.max_stamina, character.current_stamina + int(character.max_stamina * regen_percent))
-	character.current_energy = min(character.max_energy, character.current_energy + int(character.max_energy * regen_percent))
+	character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * regen_percent)))
+	character.current_stamina = min(total_max_stamina, character.current_stamina + max(1, int(total_max_stamina * regen_percent)))
+	character.current_energy = min(total_max_energy, character.current_energy + max(1, int(total_max_energy * regen_percent)))
 
 	# Process cloak drain (costs resource per movement, happens AFTER regen so cost > regen)
 	var cloak_result = character.process_cloak_on_move()
@@ -1158,11 +1176,18 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Tick poison on movement (counts as a round)
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
-		if poison_dmg > 0:
-			character.current_hp -= poison_dmg
-			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+		if poison_dmg != 0:
 			var turns_left = character.poison_turns_remaining
-			var poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			var poison_msg = ""
+			if poison_dmg < 0:
+				# Undead: poison heals instead of damages
+				var heal_amount = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+				poison_msg = "[color=#708090]Your undead form absorbs the poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)  # Poison can't kill
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
 			if turns_left > 0:
 				poison_msg += " (%d rounds remaining)" % turns_left
 			else:
@@ -1283,11 +1308,18 @@ func handle_hunt(peer_id: int):
 	# Tick poison on hunt (counts as a round)
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
-		if poison_dmg > 0:
-			character.current_hp -= poison_dmg
-			character.current_hp = max(1, character.current_hp)  # Poison can't kill
+		if poison_dmg != 0:
 			var turns_left = character.poison_turns_remaining
-			var poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			var poison_msg = ""
+			if poison_dmg < 0:
+				# Undead: poison heals instead of damages
+				var heal_amount = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+				poison_msg = "[color=#708090]Your undead form absorbs the poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)  # Poison can't kill
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
 			if turns_left > 0:
 				poison_msg += " (%d rounds remaining)" % turns_left
 			else:
@@ -1374,36 +1406,37 @@ func handle_rest(peer_id: int):
 		_handle_meditate(peer_id, character)
 		return
 
-	# Non-mages: Already at full HP
-	if character.current_hp >= character.get_total_max_hp():
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#808080]You are already at full health.[/color]",
-			"clear_output": true
-		})
-		return
-
-	# Restore 10-25% of max HP
-	var heal_percent = randf_range(0.10, 0.25)
-	var heal_amount = int(character.get_total_max_hp() * heal_percent)
-	heal_amount = max(1, heal_amount)  # At least 1 HP
-
-	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-
-	# Regenerate primary resource on rest (same as movement - 2%)
+	# Regenerate primary resource on rest (same as movement - 2%, min 1)
 	var regen_percent = 0.02
-	var stamina_regen = int(character.max_stamina * regen_percent)
-	var energy_regen = int(character.max_energy * regen_percent)
-	character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_regen)
-	character.current_energy = min(character.max_energy, character.current_energy + energy_regen)
+	var total_max_stamina = character.get_total_max_stamina()
+	var total_max_energy = character.get_total_max_energy()
+	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
+	var energy_regen = max(1, int(total_max_energy * regen_percent))
+	character.current_stamina = min(total_max_stamina, character.current_stamina + stamina_regen)
+	character.current_energy = min(total_max_energy, character.current_energy + energy_regen)
+
+	# Non-mages: Check if HP is already full
+	var hp_full = character.current_hp >= character.get_total_max_hp()
+	var heal_amount = 0
+
+	if not hp_full:
+		# Restore 10-25% of max HP
+		var heal_percent = randf_range(0.10, 0.25)
+		heal_amount = int(character.get_total_max_hp() * heal_percent)
+		heal_amount = max(1, heal_amount)  # At least 1 HP
+		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 
 	# Build rest message with resource info
-	var rest_msg = "[color=#00FF00]You rest and recover %d HP" % heal_amount
+	var rest_msg = ""
+	if hp_full:
+		rest_msg = "[color=#00FF00]You rest"
+	else:
+		rest_msg = "[color=#00FF00]You rest and recover %d HP" % heal_amount
 
 	# Show resource regen based on class path
-	if class_type in ["Fighter", "Barbarian", "Paladin"] and stamina_regen > 0:
+	if class_type in ["Fighter", "Barbarian", "Paladin"]:
 		rest_msg += " and %d Stamina" % stamina_regen
-	elif class_type in ["Thief", "Ranger", "Ninja"] and energy_regen > 0:
+	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
 		rest_msg += " and %d Energy" % energy_regen
 	rest_msg += ".[/color]"
 
@@ -1452,9 +1485,10 @@ func _handle_meditate(peer_id: int, character: Character):
 		mana_percent *= 2.0  # 8% when HP is full
 	mana_percent *= bonus_mult  # Apply equipment + class meditate bonus
 
-	var mana_regen = int(character.max_mana * mana_percent)
+	var total_max_mana = character.get_total_max_mana()
+	var mana_regen = int(total_max_mana * mana_percent)
 	mana_regen = max(1, mana_regen)
-	character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_regen)
+	character.current_mana = min(total_max_mana, character.current_mana + mana_regen)
 
 	var meditate_msg = ""
 	var bonus_text = ""
@@ -2568,7 +2602,7 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		"item": item_data
 	})
 
-	persistence.save_character(character)
+	save_character(peer_id)
 
 func trigger_legendary_adventurer(peer_id: int, character: Character, area_level: int):
 	"""Trigger a legendary adventurer training encounter"""
@@ -2812,7 +2846,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		else:
 			stamina_amount = effect.base + (effect.per_level * item_level)
 		var old_stamina = character.current_stamina
-		character.current_stamina = min(character.max_stamina, character.current_stamina + stamina_amount)
+		character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + stamina_amount)
 		var actual_restore = character.current_stamina - old_stamina
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -2826,7 +2860,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		else:
 			energy_amount = effect.base + (effect.per_level * item_level)
 		var old_energy = character.current_energy
-		character.current_energy = min(character.max_energy, character.current_energy + energy_amount)
+		character.current_energy = min(character.get_total_max_energy(), character.current_energy + energy_amount)
 		var actual_restore = character.current_energy - old_energy
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -4017,9 +4051,9 @@ func handle_merchant_recharge(peer_id: int):
 
 	# Check if already at full resources and not poisoned/blinded
 	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
-						  character.current_mana < character.max_mana or
-						  character.current_stamina < character.max_stamina or
-						  character.current_energy < character.max_energy or
+						  character.current_mana < character.get_total_max_mana() or
+						  character.current_stamina < character.get_total_max_stamina() or
+						  character.current_energy < character.get_total_max_energy() or
 						  character.poison_active or
 						  character.blind_active)
 
@@ -4055,8 +4089,8 @@ func handle_merchant_recharge(peer_id: int):
 	character.gold -= cost
 	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.get_total_max_mana()
-	character.current_stamina = character.max_stamina
-	character.current_energy = character.max_energy
+	character.current_stamina = character.get_total_max_stamina()
+	character.current_energy = character.get_total_max_energy()
 	restored.append("HP and resources restored")
 
 	send_to_peer(peer_id, {
@@ -4219,26 +4253,28 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 			# Elite merchants: higher quality items, biased toward premium/legendary
 			var level_roll = rng.randi() % 100
 			if level_roll < 20:
-				# Standard tier (rare): player level to +10
-				item_level = maxi(1, player_level + rng.randi_range(0, 10))
+				# Standard tier (rare): player level to +10 (capped at 2x)
+				item_level = mini(player_level * 2, maxi(1, player_level + rng.randi_range(0, 10)))
 			elif level_roll < 60:
-				# Premium tier: player level +10 to +30
-				item_level = player_level + rng.randi_range(10, 30)
+				# Premium tier: player level +10 to +20 (capped at 3x)
+				item_level = mini(player_level * 3, player_level + rng.randi_range(10, 20))
 			else:
-				# Legendary tier: player level +30 to +75
-				item_level = player_level + rng.randi_range(30, 75)
+				# Legendary tier: player level +20 to +40 (capped at 5x)
+				item_level = mini(player_level * 5, player_level + rng.randi_range(20, 40))
+			item_level = maxi(1, item_level)
 		else:
-			# Normal shop: item level ranges around player level
+			# Normal shop: item level ranges around player level with reasonable caps
 			var level_roll = rng.randi() % 100
 			if level_roll < 50:
 				# Standard tier: player level -5 to +5
 				item_level = maxi(1, player_level + rng.randi_range(-5, 5))
 			elif level_roll < 80:
-				# Premium tier: player level +5 to +20
-				item_level = player_level + rng.randi_range(5, 20)
+				# Premium tier: player level +5 to +10 (capped at 2x player level)
+				item_level = mini(player_level * 2, player_level + rng.randi_range(5, 10))
 			else:
-				# Legendary tier: player level +20 to +50
-				item_level = player_level + rng.randi_range(20, 50)
+				# Aspirational tier: player level +10 to +20 (capped at 3x player level)
+				item_level = mini(player_level * 3, player_level + rng.randi_range(10, 20))
+			item_level = maxi(1, item_level)
 
 		# Check if this is an affix-focused merchant
 		var is_affix_specialty = drop_tables.is_affix_specialty(specialty)
@@ -4580,6 +4616,11 @@ func trigger_trading_post_encounter(peer_id: int):
 	if tp.is_empty():
 		return
 
+	# Record discovery of this trading post
+	var newly_discovered = character.discover_trading_post(tp.name, tp.x, tp.y)
+	if newly_discovered:
+		save_character(peer_id)
+
 	# Store Trading Post data for this player
 	at_trading_post[peer_id] = tp
 
@@ -4600,12 +4641,17 @@ func trigger_trading_post_encounter(peer_id: int):
 				quests_to_turn_in.append(quest_data.quest_id)
 
 	# Calculate recharge cost to send to client
-	var base_cost = _get_recharge_cost(character.level)
-	var tp_x = tp.get("x", 0)
-	var tp_y = tp.get("y", 0)
-	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
-	var distance_multiplier = 7.0 * (1.0 + (distance_from_origin / 50.0))  # 7x base, +7x per 50 distance
-	var recharge_cost = int(base_cost * distance_multiplier)
+	var is_starter_post = tp.id in STARTER_TRADING_POSTS
+	var recharge_cost: int
+	if is_starter_post:
+		recharge_cost = 20
+	else:
+		var base_cost = _get_recharge_cost(character.level)
+		var tp_x = tp.get("x", 0)
+		var tp_y = tp.get("y", 0)
+		var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
+		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
+		recharge_cost = int(base_cost * distance_multiplier)
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
@@ -4804,21 +4850,29 @@ func handle_trading_post_recharge(peer_id: int):
 
 	var character = characters[peer_id]
 	var tp = at_trading_post[peer_id]
+	var tp_id = tp.get("id", "")
 
-	# Calculate cost based on level and trading post distance from origin
-	# Remote trading posts charge more for their services
-	var base_cost = _get_recharge_cost(character.level)
-	var tp_x = tp.get("x", 0)
-	var tp_y = tp.get("y", 0)
-	var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
-	var distance_multiplier = 7.0 * (1.0 + (distance_from_origin / 50.0))  # 7x base, +7x per 50 distance
-	var cost = int(base_cost * distance_multiplier)
+	# Starter trading posts have flat low cost to help new players
+	var is_starter_post = tp_id in STARTER_TRADING_POSTS
+	var cost: int
+	if is_starter_post:
+		# Flat 20 gold for starter areas regardless of level
+		cost = 20
+	else:
+		# Calculate cost based on level and trading post distance from origin
+		# Remote trading posts charge more for their services
+		var base_cost = _get_recharge_cost(character.level)
+		var tp_x = tp.get("x", 0)
+		var tp_y = tp.get("y", 0)
+		var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
+		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
+		cost = int(base_cost * distance_multiplier)
 
 	# Check if already at full resources and not poisoned/blinded
 	var needs_recharge = (character.current_hp < character.get_total_max_hp() or
-						  character.current_mana < character.max_mana or
-						  character.current_stamina < character.max_stamina or
-						  character.current_energy < character.max_energy or
+						  character.current_mana < character.get_total_max_mana() or
+						  character.current_stamina < character.get_total_max_stamina() or
+						  character.current_energy < character.get_total_max_energy() or
 						  character.poison_active or
 						  character.blind_active)
 
@@ -4853,8 +4907,8 @@ func handle_trading_post_recharge(peer_id: int):
 	character.gold -= cost
 	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.get_total_max_mana()
-	character.current_stamina = character.max_stamina
-	character.current_energy = character.max_energy
+	character.current_stamina = character.get_total_max_stamina()
+	character.current_energy = character.get_total_max_energy()
 	restored.append("HP and resources restored")
 
 	send_to_peer(peer_id, {
@@ -6253,8 +6307,8 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			if target:
 				target.current_hp = target.get_total_max_hp()
 				target.current_mana = target.get_total_max_mana()
-				target.current_stamina = target.max_stamina
-				target.current_energy = target.max_energy
+				target.current_stamina = target.get_total_max_stamina()
+				target.current_energy = target.get_total_max_energy()
 				target.cure_poison()
 				target.cure_blind()
 				target.active_buffs.clear()

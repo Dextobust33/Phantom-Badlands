@@ -20,6 +20,12 @@ extends Resource
 @export var wisdom: int = 10
 @export var wits: int = 10  # Renamed from charisma - used for outsmarting enemies
 
+# Fractional stat accumulators (for class-specific stat gains that use decimals)
+@export var stat_accumulator: Dictionary = {
+	"strength": 0.0, "constitution": 0.0, "dexterity": 0.0,
+	"intelligence": 0.0, "wisdom": 0.0, "wits": 0.0
+}
+
 # Current State
 @export var current_hp: int = 100
 @export var max_hp: int = 100
@@ -196,6 +202,8 @@ static func get_item_slot_from_type(item_type: String) -> String:
 @export var completed_quests: Array = []
 # daily_quest_cooldowns: {quest_id: unix_timestamp} - when daily quests can be accepted again
 @export var daily_quest_cooldowns: Dictionary = {}
+# Discovered trading posts: Array of {name: String, x: int, y: int}
+@export var discovered_posts: Array = []
 const MAX_ACTIVE_QUESTS = 5
 
 # Monster Knowledge System - tracks which monsters the player has killed
@@ -221,6 +229,9 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # Title System - prestigious titles with special abilities
 @export var title: String = ""  # Current title: "", "jarl", "high_king", "elder", "eternal"
 @export var title_data: Dictionary = {}  # Title-specific data (lives for Eternal, etc.)
+
+# Balance migration flag - characters without this get teleported to safety on first login
+@export var balance_migrated_v085: bool = false  # v0.8.5 balance changes
 
 # Permanent Stat Bonuses - from stat tomes (persists forever)
 # Format: {stat_name: bonus_value} e.g. {"strength": 5, "intelligence": 3}
@@ -376,13 +387,14 @@ func get_class_passive() -> Dictionary:
 			}
 		# Tricksters
 		"Thief":
+			# Nerfed: crit damage 50% → 35%, crit chance 15% → 10%
 			return {
 				"name": "Backstab",
-				"description": "+50% crit damage, +15% base crit chance",
+				"description": "+35% crit damage, +10% base crit chance",
 				"color": "#2F4F4F",
 				"effects": {
-					"crit_damage_bonus": 0.50,
-					"crit_chance_bonus": 0.15
+					"crit_damage_bonus": 0.35,  # Reduced from 0.50
+					"crit_chance_bonus": 0.10   # Reduced from 0.15
 				}
 			}
 		"Ranger":
@@ -477,10 +489,27 @@ func get_class_attack_description(damage: int, monster_name: String, is_crit: bo
 
 func calculate_derived_stats():
 	"""Calculate HP, mana, stamina, energy from primary stats"""
-	max_hp = 50 + (constitution * 5)  # Base 50 + CON × 5
-	max_mana = (intelligence * 12) + (wisdom * 6)     # Mage resource (increased for Magic Bolt)
-	max_stamina = (strength * 4) + (constitution * 4)  # Warrior resource
-	max_energy = (wits * 4) + (dexterity * 4)          # Trickster resource
+	# HP formula: Base 50 + CON × 5 + primary stat contribution
+	var primary_stat_bonus = _get_primary_stat_for_hp()
+	max_hp = 50 + (constitution * 5) + primary_stat_bonus
+
+	# Resource pools reduced by ~75% from original values for balance
+	var base_mana = int((intelligence * 3) + (wisdom * 1.5))  # Mage resource (was INT×12 + WIS×6)
+	max_mana = int(base_mana * get_mana_multiplier())         # Apply Elf racial bonus (+25%)
+	max_stamina = strength + constitution                      # Warrior resource (was (STR+CON)×4)
+	max_energy = int((wits + dexterity) * 0.75)                # Trickster resource (was (WITS+DEX)×4)
+
+func _get_primary_stat_for_hp() -> int:
+	"""Get primary stat bonus for HP based on class type"""
+	match class_type:
+		"Fighter", "Barbarian", "Paladin":
+			return strength  # Warriors get STR added to HP
+		"Wizard", "Sorcerer", "Sage":
+			return int(intelligence * 0.5)  # Mages get half INT added to HP
+		"Thief", "Ranger", "Ninja":
+			return int(wits * 0.5)  # Tricksters get half WITS added to HP
+		_:
+			return strength
 
 func get_health_state() -> String:
 	"""Get current health state description"""
@@ -549,8 +578,11 @@ func get_equipment_bonuses() -> Dictionary:
 		var wear = item.get("wear", 0)
 		var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness, 100% wear = 0%
 
-		# Base bonus scales with item level, rarity, and wear
-		var base_bonus = int(item_level * rarity_mult * wear_penalty)
+		# Apply diminishing returns for items above level 100
+		var effective_level = _get_effective_item_level(item_level)
+
+		# Base bonus scales with effective item level, rarity, and wear
+		var base_bonus = int(effective_level * rarity_mult * wear_penalty)
 
 		# STEP 1: Apply base item type bonuses (all items get these)
 		# Note: Multipliers balanced to make gear valuable but not overwhelming
@@ -644,6 +676,27 @@ func get_equipment_bonuses() -> Dictionary:
 		if affixes.has("speed_bonus"):
 			bonuses.speed += int(affixes.speed_bonus * wear_penalty)
 
+	# Universal resource conversion: all resource bonuses apply to your class's resource
+	# Mana bonuses are ~2x larger than stamina/energy, so scale accordingly:
+	# - Mana → Stamina/Energy: 0.5x
+	# - Stamina/Energy → Mana: 2x
+	var mana_contrib = bonuses.max_mana
+	var stam_energy_contrib = bonuses.max_stamina + bonuses.max_energy
+	bonuses.max_mana = 0
+	bonuses.max_stamina = 0
+	bonuses.max_energy = 0
+
+	match class_type:
+		"Wizard", "Sorcerer", "Sage":
+			# Mana class: mana stays 1:1, stamina/energy scale up 2x
+			bonuses.max_mana = mana_contrib + (stam_energy_contrib * 2)
+		"Fighter", "Barbarian", "Paladin":
+			# Stamina class: stamina/energy stay 1:1, mana scales down 0.5x
+			bonuses.max_stamina = int(mana_contrib * 0.5) + stam_energy_contrib
+		"Thief", "Ranger", "Ninja", "Trickster":
+			# Energy class: stamina/energy stay 1:1, mana scales down 0.5x
+			bonuses.max_energy = int(mana_contrib * 0.5) + stam_energy_contrib
+
 	return bonuses
 
 func _get_rarity_multiplier(rarity: String) -> float:
@@ -656,6 +709,21 @@ func _get_rarity_multiplier(rarity: String) -> float:
 		"legendary": return 4.5
 		"artifact": return 6.0
 		_: return 1.0
+
+func _get_effective_item_level(item_level: int) -> float:
+	"""Apply diminishing returns for items above level 100.
+	   Items 1-100: Full linear scaling
+	   Items 101+: Logarithmic scaling (100 + 20 * log2(level - 99))
+	   This means a L200 item is ~equivalent to L133, L500 to L160, L1000 to ~L180"""
+	if item_level <= 100:
+		return float(item_level)
+	# Above 100: diminishing returns using log scaling
+	# Formula: 100 + 20 * log2(level - 99)
+	# L200 = 100 + 20 * log2(101) ≈ 100 + 20 * 6.66 = 133
+	# L500 = 100 + 20 * log2(401) ≈ 100 + 20 * 8.65 = 173
+	# L1000 = 100 + 20 * log2(901) ≈ 100 + 20 * 9.82 = 196
+	var excess = item_level - 99
+	return 100.0 + 20.0 * log(excess) / log(2.0)
 
 func get_total_attack() -> int:
 	"""Get total attack power including equipment"""
@@ -682,30 +750,29 @@ func get_total_max_hp() -> int:
 
 func get_total_max_mana() -> int:
 	"""Get total max mana including equipment bonuses.
-	Formula: base max_mana + equipment mana + (equipment INT * 12) + (equipment WIS * 6)"""
+	Formula: base max_mana + equipment mana + (equipment INT * 3) + (equipment WIS * 1.5)"""
 	var bonuses = get_equipment_bonuses()
-	# Equipment INT/WIS also contribute to mana via the INT*12 + WIS*6 formula
-	var int_mana_bonus = bonuses.intelligence * 12
-	var wis_mana_bonus = bonuses.wisdom * 6
+	# Equipment INT/WIS contribute to mana via the reduced formula
+	var int_mana_bonus = int(bonuses.intelligence * 3)
+	var wis_mana_bonus = int(bonuses.wisdom * 1.5)
 	return max_mana + bonuses.max_mana + int_mana_bonus + wis_mana_bonus
 
 func get_total_max_stamina() -> int:
 	"""Get total max stamina including equipment bonuses.
-	Formula: base max_stamina + equipment stamina + (equipment STR * 4) + (equipment CON * 4)"""
+	Formula: base max_stamina + equipment stamina + equipment STR + equipment CON"""
 	var bonuses = get_equipment_bonuses()
-	# Equipment STR/CON also contribute to stamina via the (STR*4 + CON*4) formula
-	var str_stamina_bonus = bonuses.strength * 4
-	var con_stamina_bonus = bonuses.constitution * 4
+	# Equipment STR/CON contribute to stamina via the reduced formula
+	var str_stamina_bonus = bonuses.strength
+	var con_stamina_bonus = bonuses.constitution
 	return max_stamina + bonuses.max_stamina + str_stamina_bonus + con_stamina_bonus
 
 func get_total_max_energy() -> int:
 	"""Get total max energy including equipment bonuses.
-	Formula: base max_energy + equipment energy + (equipment WIT * 4) + (equipment DEX * 4)"""
+	Formula: base max_energy + equipment energy + (equipment WIT + DEX) * 0.75"""
 	var bonuses = get_equipment_bonuses()
-	# Equipment WIT/DEX also contribute to energy via the (WIT*4 + DEX*4) formula
-	var wit_energy_bonus = bonuses.wits * 4
-	var dex_energy_bonus = bonuses.dexterity * 4
-	return max_energy + bonuses.max_energy + wit_energy_bonus + dex_energy_bonus
+	# Equipment WIT/DEX contribute to energy via the reduced formula
+	var equip_energy_bonus = int((bonuses.wits + bonuses.dexterity) * 0.75)
+	return max_energy + bonuses.max_energy + equip_energy_bonus
 
 func get_equipment_procs() -> Dictionary:
 	"""Get all proc effects from equipped items.
@@ -903,25 +970,24 @@ func level_up():
 	# Full heal on level up (including equipment bonuses)
 	current_hp = get_total_max_hp()
 	current_mana = get_total_max_mana()
-	current_stamina = max_stamina
-	current_energy = max_energy
+	current_stamina = get_total_max_stamina()
+	current_energy = get_total_max_energy()
 
 func get_stat_gains_for_class() -> Dictionary:
-	"""Get stat increases per level based on class"""
+	"""Get stat increases per level based on class (2.5 total stats per level, class-specific distribution)"""
 	var gains = {
-		# Warrior Path (primary: STR, secondary: CON)
-		"Fighter": {"strength": 3, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "wits": 1},
-		"Barbarian": {"strength": 4, "constitution": 2, "dexterity": 1, "intelligence": 0, "wisdom": 0, "wits": 0},
-		# Mage Path (primary: INT, secondary: WIS)
-		"Wizard": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 4, "wisdom": 2, "wits": 0},
-		"Sage": {"strength": 0, "constitution": 2, "dexterity": 1, "intelligence": 2, "wisdom": 3, "wits": 0},
-		# Trickster Path (primary: WITS, secondary: DEX)
-		"Thief": {"strength": 1, "constitution": 1, "dexterity": 2, "intelligence": 0, "wisdom": 0, "wits": 4},
-		"Ranger": {"strength": 2, "constitution": 2, "dexterity": 2, "intelligence": 0, "wisdom": 0, "wits": 2},
-		# Legacy classes (for existing characters)
-		"Paladin": {"strength": 2, "constitution": 3, "dexterity": 1, "intelligence": 1, "wisdom": 2, "wits": 2},
-		"Sorcerer": {"strength": 0, "constitution": 1, "dexterity": 1, "intelligence": 5, "wisdom": 1, "wits": 1},
-		"Ninja": {"strength": 2, "constitution": 1, "dexterity": 5, "intelligence": 2, "wisdom": 1, "wits": 1}
+		# Warrior Path (primary: STR, secondary: CON) - Total: 2.5
+		"Fighter": {"strength": 1.25, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.25},
+		"Barbarian": {"strength": 1.5, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.0},
+		"Paladin": {"strength": 0.75, "constitution": 1.0, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.25, "wits": 0.25},
+		# Mage Path (primary: INT, secondary: WIS) - Total: 2.5
+		"Wizard": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.25, "intelligence": 1.25, "wisdom": 0.75, "wits": 0.0},
+		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 0.75, "wisdom": 1.0, "wits": 0.0},
+		"Sorcerer": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.25, "intelligence": 1.5, "wisdom": 0.5, "wits": 0.0},
+		# Trickster Path (primary: WITS/DEX, secondary: varies) - Total: 2.5
+		"Thief": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
+		"Ranger": {"strength": 0.5, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.75},
+		"Ninja": {"strength": 0.25, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.75}
 	}
 
 	return gains.get(class_type, gains["Fighter"])
@@ -989,11 +1055,13 @@ func to_dict() -> Dictionary:
 		"cloak_active": cloak_active,
 		"title": title,
 		"title_data": title_data,
+		"balance_migrated_v085": balance_migrated_v085,
 		"permanent_stat_bonuses": permanent_stat_bonuses,
 		"skill_enhancements": skill_enhancements,
 		"trophies": trophies,
 		"active_companion": active_companion,
-		"soul_gems": soul_gems
+		"soul_gems": soul_gems,
+		"discovered_posts": discovered_posts
 	}
 
 func from_dict(data: Dictionary):
@@ -1076,6 +1144,7 @@ func from_dict(data: Dictionary):
 	active_quests = data.get("active_quests", [])
 	completed_quests = data.get("completed_quests", [])
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
+	discovered_posts = data.get("discovered_posts", [])
 
 	# Monster knowledge system
 	known_monsters = data.get("known_monsters", {})
@@ -1095,6 +1164,9 @@ func from_dict(data: Dictionary):
 	# Title system
 	title = data.get("title", "")
 	title_data = data.get("title_data", {})
+
+	# Balance migration flag
+	balance_migrated_v085 = data.get("balance_migrated_v085", false)
 
 	# Permanent stat bonuses from tomes
 	permanent_stat_bonuses = data.get("permanent_stat_bonuses", {})
@@ -1132,6 +1204,16 @@ func record_monster_kill(monster_name: String, monster_level: int = 1):
 		# Only update if this is a higher level than previously killed
 		known_monsters[monster_name] = max(known_monsters[monster_name], monster_level)
 
+func discover_trading_post(post_name: String, post_x: int, post_y: int) -> bool:
+	"""Record that the player has discovered a trading post. Returns true if newly discovered."""
+	# Check if already discovered
+	for post in discovered_posts:
+		if post.x == post_x and post.y == post_y:
+			return false  # Already discovered
+	# Add new discovery
+	discovered_posts.append({"name": post_name, "x": post_x, "y": post_y})
+	return true
+
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus."""
 	# Apply Human racial XP bonus (+10%)
@@ -1139,38 +1221,49 @@ func add_experience(amount: int) -> Dictionary:
 	experience += final_amount
 	var leveled_up = false
 	var levels_gained = 0
-	
+
 	# Check for level ups (can gain multiple levels)
 	while experience >= experience_to_next_level:
 		experience -= experience_to_next_level
 		level += 1
 		levels_gained += 1
 		leveled_up = true
-		
-		# Increase stats on level up
-		strength += 1
-		constitution += 1
-		dexterity += 1
-		intelligence += 1
-		wisdom += 1
-		wits += 1
-		
-		# Increase HP, Mana, Stamina, Energy
-		max_hp += 10 + (constitution / 2)
-		max_mana += 10 + intelligence  # Increased mana growth for mages
-		max_stamina = (strength * 4) + (constitution * 4)  # Recalculate from new stats
-		max_energy = (wits * 4) + (dexterity * 4)         # Recalculate from new stats
 
-		# Fully restore resources on level up (including equipment bonuses)
-		current_hp = get_total_max_hp()
-		current_mana = get_total_max_mana()
-		current_stamina = max_stamina
-		current_energy = max_energy
+		# Get class-specific stat gains (fractional, totaling 2.5 per level)
+		var gains = get_stat_gains_for_class()
+
+		# Accumulate fractional stats and apply whole numbers
+		for stat_name in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
+			stat_accumulator[stat_name] += gains.get(stat_name, 0.0)
+			var whole_gain = int(stat_accumulator[stat_name])
+			if whole_gain >= 1:
+				stat_accumulator[stat_name] -= whole_gain
+				match stat_name:
+					"strength": strength += whole_gain
+					"constitution": constitution += whole_gain
+					"dexterity": dexterity += whole_gain
+					"intelligence": intelligence += whole_gain
+					"wisdom": wisdom += whole_gain
+					"wits": wits += whole_gain
+
+		# Recalculate derived stats with new formulas
+		calculate_derived_stats()
+
+		# Restore only 10% of resources on level up (prevents ability spam exploit)
+		var hp_restore = int(get_total_max_hp() * 0.10)
+		var mana_restore = int(get_total_max_mana() * 0.10)
+		var stamina_restore = int(get_total_max_stamina() * 0.10)
+		var energy_restore = int(get_total_max_energy() * 0.10)
+
+		current_hp = min(get_total_max_hp(), current_hp + hp_restore)
+		current_mana = min(get_total_max_mana(), current_mana + mana_restore)
+		current_stamina = min(get_total_max_stamina(), current_stamina + stamina_restore)
+		current_energy = min(get_total_max_energy(), current_energy + energy_restore)
 
 		# Calculate next level requirement using polynomial scaling
 		# Formula: (level+1)^2.2 * 50 - scales reasonably up to level 10000
 		experience_to_next_level = int(pow(level + 1, 2.2) * 50)
-	
+
 	return {
 		"leveled_up": leveled_up,
 		"levels_gained": levels_gained,
@@ -1275,11 +1368,11 @@ func unequip_slot(slot: String) -> Dictionary:
 	return item
 
 func _clamp_resources_to_max():
-	"""Clamp all resources to their current maximum values."""
+	"""Clamp all resources to their current maximum values (including equipment)."""
 	current_hp = min(current_hp, get_total_max_hp())
 	current_mana = min(current_mana, get_total_max_mana())
-	current_stamina = min(current_stamina, max_stamina)
-	current_energy = min(current_energy, max_energy)
+	current_stamina = min(current_stamina, get_total_max_stamina())
+	current_energy = min(current_energy, get_total_max_energy())
 
 # ===== BUFF SYSTEM =====
 
@@ -1415,6 +1508,18 @@ func get_poison_damage_multiplier() -> float:
 		return 0.5
 	return 1.0
 
+func get_magic_resistance() -> float:
+	"""Get magic damage resistance. Elf gets 20% magic resistance."""
+	if race == "Elf":
+		return 0.20
+	return 0.0
+
+func get_mana_multiplier() -> float:
+	"""Get mana pool multiplier. Elf gets +25% mana."""
+	if race == "Elf":
+		return 1.25
+	return 1.0
+
 func cure_poison():
 	"""Cure poison status effect."""
 	poison_active = false
@@ -1428,7 +1533,8 @@ func apply_poison(damage: int, duration: int = 20):
 	poison_turns_remaining = duration
 
 func tick_poison() -> int:
-	"""Process one turn of poison. Returns damage dealt. Called each combat turn."""
+	"""Process one turn of poison. Returns damage dealt (negative = healing for Undead).
+	Called each combat turn."""
 	if not poison_active or poison_turns_remaining <= 0:
 		return 0
 
@@ -1436,6 +1542,11 @@ func tick_poison() -> int:
 	if poison_turns_remaining <= 0:
 		cure_poison()
 		return 0
+
+	# Undead racial: poison heals instead of damages
+	if does_poison_heal():
+		var heal_amount = int(poison_damage * 0.5)  # Heal for 50% of poison damage
+		return -max(1, heal_amount)  # Negative indicates healing
 
 	# Apply racial resistance
 	var final_damage = int(poison_damage * get_poison_damage_multiplier())
@@ -1492,6 +1603,39 @@ func get_heal_multiplier() -> float:
 		return 2.0
 	return 1.0
 
+func get_dodge_bonus() -> float:
+	"""Get dodge chance bonus from racial passive. Halfling gets +10% dodge."""
+	if race == "Halfling":
+		return 0.10
+	return 0.0
+
+func get_gold_multiplier() -> float:
+	"""Get gold multiplier from racial passive. Halfling gets +15% gold."""
+	if race == "Halfling":
+		return 1.15
+	return 1.0
+
+func get_low_hp_damage_bonus() -> float:
+	"""Get damage bonus when below 50% HP. Orc gets +20% damage."""
+	if race == "Orc":
+		if current_hp < get_total_max_hp() * 0.5:
+			return 0.20
+	return 0.0
+
+func get_ability_cost_multiplier() -> float:
+	"""Get ability cost multiplier from racial passive. Gnome gets -15% costs."""
+	if race == "Gnome":
+		return 0.85
+	return 1.0
+
+func is_immune_to_death_curse() -> bool:
+	"""Check if character is immune to death curse. Undead racial."""
+	return race == "Undead"
+
+func does_poison_heal() -> bool:
+	"""Check if poison heals instead of damages. Undead racial."""
+	return race == "Undead"
+
 # ===== RESOURCE MANAGEMENT =====
 
 func use_stamina(amount: int) -> bool:
@@ -1517,24 +1661,26 @@ func use_mana(amount: int) -> bool:
 
 func regenerate_stamina_defending() -> int:
 	"""Regenerate 10% stamina while defending. Returns amount regenerated."""
-	var regen = int(max_stamina * 0.10)
+	var total_max = get_total_max_stamina()
+	var regen = int(total_max * 0.10)
 	regen = max(1, regen)  # At least 1
-	current_stamina = min(max_stamina, current_stamina + regen)
+	current_stamina = min(total_max, current_stamina + regen)
 	return regen
 
 func regenerate_energy() -> int:
 	"""Regenerate 15% energy each combat round automatically. Returns amount regenerated."""
-	var regen = int(max_energy * 0.15)
+	var total_max = get_total_max_energy()
+	var regen = int(total_max * 0.15)
 	regen = max(1, regen)  # At least 1
-	current_energy = min(max_energy, current_energy + regen)
+	current_energy = min(total_max, current_energy + regen)
 	return regen
 
 func restore_all_resources():
 	"""Restore all resources to full (for resting or sanctuaries)."""
 	current_hp = get_total_max_hp()
 	current_mana = get_total_max_mana()
-	current_stamina = max_stamina
-	current_energy = max_energy
+	current_stamina = get_total_max_stamina()
+	current_energy = get_total_max_energy()
 
 # ===== QUEST SYSTEM =====
 

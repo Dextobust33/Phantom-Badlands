@@ -14,7 +14,7 @@ enum CombatAction {
 }
 
 # Ability lookup for parsing commands
-const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "shield", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
 const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
@@ -700,6 +700,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
 		messages.append(attack_desc)
 
+		# === TRICKSTER DOUBLE STRIKE ===
+		# Tricksters have 25% chance for a bonus attack at 50% damage
+		var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+		if is_trickster and monster.current_hp > 0 and randi() % 100 < 25:
+			var second_damage = int(damage * 0.5)
+			monster.current_hp -= second_damage
+			monster.current_hp = max(0, monster.current_hp)
+			messages.append("[color=#66FF66]Quick Strike! +%d bonus damage![/color]" % second_damage)
+
 		# Lifesteal from scroll/potion buff
 		var lifesteal_percent = combat.get("lifesteal_percent", 0)
 		if lifesteal_percent > 0:
@@ -777,12 +786,24 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	else:
 		messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
 
-	# Death curse ability: deal damage on death
+	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
+	# Undead racial: immune to death curses
 	if ABILITY_DEATH_CURSE in abilities:
-		var curse_damage = int(monster.max_hp * 0.25)
-		character.current_hp -= curse_damage
-		character.current_hp = max(1, character.current_hp)
-		messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
+		if character.is_immune_to_death_curse():
+			messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
+		else:
+			var base_curse_damage = int(monster.max_hp * 0.10)  # Reduced from 25% to 10%
+			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
+			var player_wis = character.get_effective_stat("wisdom")
+			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
+			var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
+			curse_damage = max(1, curse_damage)
+			character.current_hp -= curse_damage
+			character.current_hp = max(1, character.current_hp)
+			if wis_reduction > 0:
+				messages.append("[color=#FF00FF]The %s's death curse deals %d damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+			else:
+				messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
 
 	# Calculate XP with level difference bonus
 	var base_xp = monster.experience_reward
@@ -802,6 +823,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if ABILITY_GOLD_HOARDER in abilities:
 		gold = gold * 3
 		messages.append("[color=#FFD700]The gold hoarder drops a massive treasure![/color]")
+
+	# Halfling racial: +15% gold from kills
+	var halfling_gold_mult = character.get_gold_multiplier()
+	if halfling_gold_mult > 1.0:
+		gold = int(gold * halfling_gold_mult)
 
 	# Easy prey: reduced rewards
 	if ABILITY_EASY_PREY in abilities:
@@ -1197,22 +1223,25 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Base chance is very low - outsmart is situational
 	var base_chance = 5
 
-	# WIT bonus: +3% per point above 10 (reduced from +5%)
-	var wits_bonus = max(0, (player_wits - 10) * 3)
+	# WIT bonus: logarithmic scaling for diminishing returns
+	# Formula: 15 * log2(WITS/10) = ~15% at WITS 20, ~30% at WITS 40, ~45% at WITS 80
+	var wits_bonus = 0
+	if player_wits > 10:
+		wits_bonus = int(15.0 * log(float(player_wits) / 10.0) / log(2.0))
 
 	# Trickster class bonus (+15%)
 	var class_type = character.class_type
 	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
 	var trickster_bonus = 15 if is_trickster else 0
 
-	# Dumb monster bonus: +5% per INT below 10 (reduced from +8%)
-	var dumb_bonus = max(0, (10 - monster_intelligence) * 5)
+	# Dumb monster bonus: +3% per INT below 10
+	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
 
-	# Smart monster penalty: -5% per INT above 10 (reduced from -8%)
-	var smart_penalty = max(0, (monster_intelligence - 10) * 5)
+	# Smart monster penalty: -2% per INT above 10
+	var smart_penalty = max(0, (monster_intelligence - 10) * 2)
 
-	# Additional penalty if monster INT exceeds your wits (-3% per point)
-	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 3)
+	# Additional penalty if monster INT exceeds your wits (-2% per point)
+	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
 
 	# LEVEL DIFFERENCE PENALTY - This is the big balancing factor
 	# Fighting monsters much higher level is risky for Outsmart
@@ -1231,10 +1260,14 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Level BONUS for fighting weaker monsters (small bonus)
 	var level_bonus = 0
 	if level_diff < 0:
-		level_bonus = min(20, abs(level_diff))  # Up to +20% for fighting weaker monsters
+		level_bonus = min(15, abs(level_diff))  # Up to +15% for fighting weaker monsters
 
 	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
-	var max_chance = 85 if is_trickster else 70  # Reduced max caps
+
+	# INT-based cap: High monster INT reduces maximum success chance
+	# Base max: 85% for tricksters, 70% for others. Reduced by monster INT/2
+	var base_max_chance = 85 if is_trickster else 70
+	var max_chance = max(30, base_max_chance - int(monster_intelligence / 2))  # Min 30% cap
 	outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
@@ -1481,7 +1514,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	if ability_name == "cloak" or ability_name == "all_or_nothing":
 		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
-	elif ability_name in ["magic_bolt", "shield", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
+	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
 		result = _process_mage_ability(combat, ability_name, arg)
 	# Warrior abilities (use stamina)
 	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
@@ -1676,18 +1709,23 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if bolt_amount <= 0:
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana![/color]"], "combat_ended": false, "skip_monster_turn": true}
 
-			# === CLASS PASSIVE: Sage Mana Mastery ===
-			# 25% reduced mana costs - apply to actual mana spent
+			# === RACIAL/CLASS COST REDUCTIONS ===
+			# Gnome racial: -15% ability costs, Sage: -25% mana costs
 			var actual_mana_cost = bolt_amount
+			var gnome_mult = character.get_ability_cost_multiplier()
+			if gnome_mult < 1.0:
+				actual_mana_cost = int(actual_mana_cost * gnome_mult)
 			if passive_effects.has("mana_cost_reduction"):
-				actual_mana_cost = int(bolt_amount * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
-				actual_mana_cost = max(1, actual_mana_cost)
-				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % actual_mana_cost)
+				actual_mana_cost = int(actual_mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
+			actual_mana_cost = max(1, actual_mana_cost)
+			if actual_mana_cost < bolt_amount:
+				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % actual_mana_cost)
 			character.current_mana -= actual_mana_cost
 
 			# Calculate INT-based damage (based on intended bolt_amount, not reduced cost)
+			# Formula changed from 1+INT/50 to 1+sqrt(INT)/5 for diminishing returns
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x, INT 100 = 3x
+			var int_multiplier = 1.0 + (sqrt(float(int_stat)) / 5.0)  # INT 25=2x, INT 100=3x, INT 225=4x
 			var base_damage = int(bolt_amount * int_multiplier)
 
 			# Apply damage buff (from War Cry, potions, etc.)
@@ -1751,13 +1789,6 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % bolt_amount)
 			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
 
-		"shield":
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			character.add_buff("defense", 50, 3)  # +50% defense for 3 rounds
-			messages.append("[color=#FF00FF]You cast Shield! (+50%% defense for 3 rounds)[/color]" % [])
-			is_buff_ability = true
-
 		"cloak":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
@@ -1766,14 +1797,18 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			is_buff_ability = true
 
 		"blast":
-			# Apply Sage mana cost reduction
+			# Apply Gnome racial and Sage mana cost reduction
 			var blast_cost = mana_cost
+			var gnome_mult = character.get_ability_cost_multiplier()
+			if gnome_mult < 1.0:
+				blast_cost = int(blast_cost * gnome_mult)
 			if passive_effects.has("mana_cost_reduction"):
-				blast_cost = max(1, int(mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0))))
+				blast_cost = int(blast_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
+			blast_cost = max(1, blast_cost)
 			if not character.use_mana(blast_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % blast_cost], "combat_ended": false, "skip_monster_turn": true}
 			if blast_cost < mana_cost:
-				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % blast_cost)
+				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % blast_cost)
 			# Base damage 50, scaled by INT (+3% per point) and multiplied by 2
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
@@ -1818,9 +1853,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"forcefield":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			# Forcefield provides flat damage reduction = 50 + INT
+			# Forcefield provides flat damage absorption = 100 + INT × 2 (buffed, replaces Shield)
 			var int_stat = character.get_effective_stat("intelligence")
-			var shield_value = 50 + int_stat
+			var shield_value = 100 + (int_stat * 2)
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 			is_buff_ability = true
@@ -1838,14 +1873,18 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			}
 
 		"meteor":
-			# Apply Sage mana cost reduction
+			# Apply Gnome racial and Sage mana cost reduction
 			var meteor_cost = mana_cost
+			var gnome_mult = character.get_ability_cost_multiplier()
+			if gnome_mult < 1.0:
+				meteor_cost = int(meteor_cost * gnome_mult)
 			if passive_effects.has("mana_cost_reduction"):
-				meteor_cost = max(1, int(mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0))))
+				meteor_cost = int(meteor_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
+			meteor_cost = max(1, meteor_cost)
 			if not character.use_mana(meteor_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % meteor_cost], "combat_ended": false, "skip_monster_turn": true}
 			if meteor_cost < mana_cost:
-				messages.append("[color=#20B2AA]Mana Mastery: Only costs %d mana![/color]" % meteor_cost)
+				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % meteor_cost)
 			# Base damage 100, scaled by INT (+3% per point), multiplied by 3-4x (random)
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
@@ -1964,8 +2003,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	var base_stamina_cost = ability_info.cost
 	var stamina_cost = apply_skill_cost_reduction(character, ability_name, base_stamina_cost)
 
-	if stamina_cost < base_stamina_cost:
-		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(character.get_skill_cost_reduction(ability_name)))
+	# Show skill enhancement message only if player has skill enhancement (not just racial)
+	var skill_reduction = character.get_skill_cost_reduction(ability_name)
+	if skill_reduction > 0:
+		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(skill_reduction))
 
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
@@ -1993,9 +2034,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	match ability_name:
 		"power_strike":
+			# Buffed: 2× damage multiplier (was 1.5×), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
-			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
+			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)  # Sqrt scaling
+			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult)  # 2× (was 1.5×)
 			# Apply skill enhancement damage bonus
 			var enhanced_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
 			if enhanced_dmg > base_dmg:
@@ -2009,15 +2051,17 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
 
 		"war_cry":
-			character.add_buff("damage", 25, 3)  # +25% damage for 3 rounds
+			# Buffed: +35% damage (was +25%) for 4 rounds (was 3)
+			character.add_buff("damage", 35, 4)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
-			messages.append("[color=#FFD700]+25%% damage for 3 rounds![/color]" % [])
+			messages.append("[color=#FFD700]+35%% damage for 4 rounds![/color]" % [])
 			is_buff_ability = true
 
 		"shield_bash":
+			# Buffed: 1.5× damage multiplier (was 1×), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
-			var base_dmg = int(total_attack * damage_multiplier * str_mult)
+			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
+			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)  # 1.5× (was 1×)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2027,41 +2071,43 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 
 		"cleave":
+			# Buffed: 2.5× damage multiplier (was 2×), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
-			var base_dmg = int(total_attack * 2 * damage_multiplier * str_mult)
+			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
+			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult)  # 2.5× (was 2×)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]CLEAVE![/color]")
 			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
-			# Apply bleed DoT (15% of STR per round for 4 rounds)
-			var bleed_damage = max(1, int(str_stat * 0.15))
+			# Apply bleed DoT (20% of STR per round for 4 rounds)
+			var bleed_damage = max(1, int(str_stat * 0.20))  # Buffed from 15%
 			combat["monster_bleed"] = {"damage": bleed_damage, "rounds": 4}
 			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
 
 		"berserk":
-			# Berserk scales with missing HP: +50% to +150% damage based on HP missing
-			# At full HP: +50% damage. At 1% HP: +150% damage
+			# Buffed: +75% to +200% damage (was +50% to +150%)
 			var hp_percent = float(character.current_hp) / float(character.max_hp)
 			var missing_hp_percent = 1.0 - hp_percent
-			var damage_bonus = int(50 + (missing_hp_percent * 100))  # 50-150%
-			character.add_buff("damage", damage_bonus, 3)
-			character.add_buff("defense_penalty", -50, 3)  # -50% defense for 3 rounds
+			var damage_bonus = int(75 + (missing_hp_percent * 125))  # 75-200% (was 50-150%)
+			character.add_buff("damage", damage_bonus, 4)  # 4 rounds (was 3)
+			character.add_buff("defense_penalty", -40, 4)  # Reduced penalty from -50%
 			messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), -50%% defense for 3 rounds![/color]" % damage_bonus)
+			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), -40%% defense for 4 rounds![/color]" % damage_bonus)
 
 		"iron_skin":
-			character.add_buff("damage_reduction", 50, 3)  # Block 50% damage for 3 rounds
+			# Buffed: 60% damage reduction (was 50%) for 4 rounds (was 3)
+			character.add_buff("damage_reduction", 60, 4)
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
-			messages.append("[color=#00FF00]Block 50%% damage for 3 rounds![/color]" % [])
+			messages.append("[color=#00FF00]Block 60%% damage for 4 rounds![/color]" % [])
 			is_buff_ability = true
 
 		"devastate":
+			# Buffed: 5× damage (was 4×), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var str_mult = 1.0 + (str_stat * 0.02)  # +2% per STR
-			var base_dmg = int(total_attack * 4 * damage_multiplier * str_mult)
+			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
+			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult)  # 5× (was 4×)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2070,17 +2116,17 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]A catastrophic blow deals %d damage![/color]" % damage)
 
 		"fortify":
-			# Defense buff - reduces incoming damage
+			# Buffed: Higher base defense, sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var defense_bonus = 25 + int(str_stat / 4)  # 25% base + 0.25% per STR
+			var defense_bonus = 30 + int(sqrt(float(str_stat)) * 3)  # 30% base + sqrt(STR)×3
 			character.add_buff("defense", defense_bonus, 5)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
 			is_buff_ability = true
 
 		"rally":
-			# Heal + minor strength buff - warrior sustain ability
+			# Buffed: Better heal scaling with sqrt CON
 			var con_stat = character.get_effective_stat("constitution")
-			var heal_amount = 20 + int(con_stat * 2)  # 20 base + 2 per CON
+			var heal_amount = 30 + int(sqrt(float(con_stat)) * 10)  # 30 base + sqrt(CON)×10
 			var actual_heal = character.heal(heal_amount)
 			var str_bonus = 10 + int(character.get_effective_stat("strength") / 5)
 			character.add_buff("strength", str_bonus, 3)
@@ -2139,11 +2185,14 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var player_level = character.level
 			var monster_level = monster.level
 			var base_chance = 5
-			var wits_bonus = max(0, (player_wits - 10) * 3)
+			# Logarithmic WITS scaling
+			var wits_bonus = 0
+			if player_wits > 10:
+				wits_bonus = int(15.0 * log(float(player_wits) / 10.0) / log(2.0))
 			var trickster_bonus = 15 if is_trickster else 0
-			var dumb_bonus = max(0, (10 - monster_int) * 5)
-			var smart_penalty = max(0, (monster_int - 10) * 5)
-			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 3)
+			var dumb_bonus = max(0, (10 - monster_int) * 3)
+			var smart_penalty = max(0, (monster_int - 10) * 2)
+			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 2)
 			# Level difference penalty
 			var level_diff = monster_level - player_level
 			var level_penalty = 0
@@ -2156,9 +2205,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					level_penalty = 60 + int((level_diff - 50) * 0.5)
 			var level_bonus = 0
 			if level_diff < 0:
-				level_bonus = min(20, abs(level_diff))
+				level_bonus = min(15, abs(level_diff))
 			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
-			var max_chance = 85 if is_trickster else 70
+			# INT-based cap
+			var base_max_chance = 85 if is_trickster else 70
+			var max_chance = max(30, base_max_chance - int(monster_int / 2))
 			outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 			var level_warning = ""
 			if level_diff > 10:
@@ -2217,13 +2268,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			# Ambush uses weapon damage + WITS multiplier, affected by damage buffs
+			# Ambush uses weapon damage × 3 + WITS multiplier (high-risk/reward Trickster ability)
 			var wits_stat = character.get_effective_stat("wits")
-			var wits_mult = 1.0 + (wits_stat * 0.02)  # +2% per WITS
+			var wits_mult = 1.0 + (sqrt(float(wits_stat)) / 10.0)  # Sqrt scaling for WITS
 			var base_damage = character.get_total_attack()
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var base_dmg = int(base_damage * 1.5 * damage_multiplier * wits_mult)
+			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3× multiplier (was 1.5)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
@@ -2394,11 +2445,11 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 			# Mage abilities use percentage-based mana costs for late-game scaling
 			match ability_name:
 				"magic_bolt": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Magic Bolt"}
-				"shield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Shield"}
+				# Shield removed - use Forcefield instead
 				"haste": return {"level": 30, "cost": 35, "cost_percent": 3, "name": "Haste"}
 				"blast": return {"level": 40, "cost": 50, "cost_percent": 5, "name": "Blast"}
 				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6, "name": "Paralyze"}
-				"forcefield": return {"level": 60, "cost": 75, "cost_percent": 7, "name": "Forcefield"}
+				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Forcefield"}
 				"banish": return {"level": 70, "cost": 80, "cost_percent": 10, "name": "Banish"}
 				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0, "name": "Teleport"}  # Uses distance-based cost
 				"meteor": return {"level": 100, "cost": 100, "cost_percent": 12, "name": "Meteor"}
@@ -2431,14 +2482,23 @@ func _process_victory(combat: Dictionary, messages: Array) -> Dictionary:
 	return _process_victory_with_abilities(combat, messages)
 
 func apply_skill_cost_reduction(character: Character, ability_name: String, base_cost: int) -> int:
-	"""Apply skill enhancement cost reduction to an ability's cost.
+	"""Apply skill enhancement cost reduction and racial bonuses to an ability's cost.
 	Returns the reduced cost (minimum 1 unless reduction is 100%)."""
+	var cost = base_cost
+
+	# Gnome racial: -15% ability costs
+	var racial_mult = character.get_ability_cost_multiplier()
+	if racial_mult < 1.0:
+		cost = int(cost * racial_mult)
+
+	# Skill enhancement cost reduction
 	var cost_reduction = character.get_skill_cost_reduction(ability_name)
-	if cost_reduction <= 0:
-		return base_cost
 	if cost_reduction >= 100:
 		return 0  # Free ability!
-	return max(1, int(base_cost * (1.0 - cost_reduction / 100.0)))
+	if cost_reduction > 0:
+		cost = int(cost * (1.0 - cost_reduction / 100.0))
+
+	return max(1, cost)
 
 func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int) -> int:
 	"""Apply skill enhancement damage bonus to an ability's damage.
@@ -2652,6 +2712,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if equipment_speed > 0:
 		hit_chance -= int(equipment_speed / 3)
 
+	# Halfling racial: +10% dodge chance (reduces monster hit chance)
+	var racial_dodge = character.get_dodge_bonus()
+	if racial_dodge > 0:
+		hit_chance -= int(racial_dodge * 100)
+
 	hit_chance = clamp(hit_chance, 40, 95)  # 40% minimum (can dodge well), 95% maximum
 
 	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
@@ -2825,36 +2890,47 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# === POST-ATTACK ABILITIES ===
 
-	# Poison ability: apply poison if not already active (lasts 20 turns, persists outside combat)
+	# Poison ability: apply poison if not already active (lasts 35 turns, persists outside combat)
+	# WIS reduces poison chance and damage
 	if ABILITY_POISON in abilities and not character.poison_active:
-		if randi() % 100 < 40:  # 40% chance to poison
-			var poison_dmg = max(1, int(monster.strength * 0.30))  # 30% of monster STR (up from 20%)
-			character.apply_poison(poison_dmg, 35)  # 35 combat turns (nearly double from 20)
-			messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns)[/color]" % poison_dmg)
+		var player_wis = character.get_effective_stat("wisdom")
+		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance at WIS 100+
+		var poison_chance = int(40 * (1.0 - wis_resist))  # Base 40%, reduced by WIS
+		if randi() % 100 < poison_chance:
+			var base_poison_dmg = max(1, int(monster.strength * 0.30))
+			var poison_dmg = max(1, int(base_poison_dmg * (1.0 - wis_resist)))  # WIS also reduces damage
+			character.apply_poison(poison_dmg, 35)
+			if wis_resist > 0:
+				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
+			else:
+				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns)[/color]" % poison_dmg)
 
 	# Mana drain ability - drains the character's primary resource based on class path
+	# WIS reduces drain amount
 	if ABILITY_MANA_DRAIN in abilities and hits > 0:
-		var drain = randi_range(5, 20) + int(monster_level / 10)
+		var player_wis = character.get_effective_stat("wisdom")
+		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance
+		var base_drain = randi_range(5, 20) + int(monster_level / 10)
+		var drain = max(1, int(base_drain * (1.0 - wis_resist)))
 		var resource_name = ""
 		# Determine primary resource based on class type
 		match character.class_type:
 			"Wizard", "Sage", "Sorcerer":
-				# Mage path - uses Mana
 				character.current_mana = max(0, character.current_mana - drain)
 				resource_name = "mana"
 			"Fighter", "Barbarian", "Paladin":
-				# Warrior path - uses Stamina
 				character.current_stamina = max(0, character.current_stamina - drain)
 				resource_name = "stamina"
 			"Thief", "Ranger", "Ninja":
-				# Trickster path - uses Energy
 				character.current_energy = max(0, character.current_energy - drain)
 				resource_name = "energy"
 			_:
-				# Default to mana for unknown classes
 				character.current_mana = max(0, character.current_mana - drain)
 				resource_name = "mana"
-		messages.append("[color=#FF00FF]The %s drains %d %s![/color]" % [monster.name, drain, resource_name])
+		if wis_resist > 0:
+			messages.append("[color=#FF00FF]The %s drains %d %s! (WIS resists %d%%)[/color]" % [monster.name, drain, resource_name, int(wis_resist * 100)])
+		else:
+			messages.append("[color=#FF00FF]The %s drains %d %s![/color]" % [monster.name, drain, resource_name])
 
 	# Stamina drain ability
 	if ABILITY_STAMINA_DRAIN in abilities and hits > 0:
@@ -2868,12 +2944,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		character.current_energy = max(0, character.current_energy - drain)
 		messages.append("[color=#FFA500]The %s drains %d energy![/color]" % [monster.name, drain])
 
-	# Curse ability: reduce a random stat for rest of combat (once)
+	# Curse ability: reduce defense for rest of combat (once)
+	# WIS reduces curse chance and effect
 	if ABILITY_CURSE in abilities and not combat.get("curse_applied", false):
-		if randi() % 100 < 30:  # 30% chance
+		var player_wis = character.get_effective_stat("wisdom")
+		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance
+		var curse_chance = int(30 * (1.0 - wis_resist))  # Base 30%, reduced by WIS
+		if randi() % 100 < curse_chance:
 			combat["curse_applied"] = true
-			character.add_buff("defense_penalty", -25, 999)  # Lasts entire combat
-			messages.append("[color=#FF00FF]The %s curses you! (-25%% defense)[/color]" % monster.name)
+			var curse_penalty = int(-25 * (1.0 - wis_resist))  # WIS reduces penalty too
+			character.add_buff("defense_penalty", curse_penalty, 999)  # Lasts entire combat
+			if wis_resist > 0:
+				messages.append("[color=#FF00FF]The %s curses you! (%d%% defense, WIS resists %d%%)[/color]" % [monster.name, curse_penalty, int(wis_resist * 100)])
+			else:
+				messages.append("[color=#FF00FF]The %s curses you! (-25%% defense)[/color]" % monster.name)
 
 	# Disarm ability: reduce weapon damage temporarily (once)
 	if ABILITY_DISARM in abilities and not combat.get("disarm_applied", false):
@@ -3061,6 +3145,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		if rage_bonus > 0.01:
 			raw_damage = int(raw_damage * (1.0 + rage_bonus))
 			passive_messages.append("[color=#8B0000]Blood Rage: +%d%% damage![/color]" % int(rage_bonus * 100))
+
+	# === RACIAL PASSIVE: Orc Low HP Damage ===
+	# +20% damage when below 50% HP
+	var orc_damage_bonus = character.get_low_hp_damage_bonus()
+	if orc_damage_bonus > 0:
+		raw_damage = int(raw_damage * (1.0 + orc_damage_bonus))
+		passive_messages.append("[color=#556B2F]Orcish Fury: +%d%% damage![/color]" % int(orc_damage_bonus * 100))
 
 	# Critical hit check (configurable base, per-dex, max, and damage multiplier)
 	var dex_stat = character.get_effective_stat("dexterity")
@@ -3368,6 +3459,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_affinity": affinity,
 		"monster_abilities": monster.get("abilities", []),  # For client-side trait display
 		"monster_known": knows_monster,  # Let client know if HP is real or estimated
+		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
 		"can_act": combat.player_can_act,
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,
@@ -4764,44 +4856,58 @@ func _get_rarity_color(rarity: String) -> String:
 	return colors.get(rarity, "#FFFFFF")
 
 func roll_gem_drops(monster: Dictionary, character: Character) -> int:
-	"""Roll for gem drops. Returns number of gems earned."""
+	"""Roll for gem drops. Returns number of gems earned.
+	   Gems are the primary high-level currency - drop more often at high monster levels."""
 	var monster_level = monster.get("level", 1)
 	var player_level = character.level
 	var level_diff = monster_level - player_level
 
-	# No gem chance unless monster is higher level than player
-	if level_diff < 5:
-		return 0
+	# Base gem chance from high monster levels (regardless of player level)
+	var level_gem_chance = 0
+	if monster_level >= 500:
+		level_gem_chance = 40  # L500+ monsters always have good gem chance
+	elif monster_level >= 200:
+		level_gem_chance = 25
+	elif monster_level >= 100:
+		level_gem_chance = 15
+	elif monster_level >= 50:
+		level_gem_chance = 5
 
-	# Gem drop chance based on level difference
-	var gem_chance = 0
+	# Bonus gem chance from fighting higher-level monsters
+	var diff_gem_chance = 0
 	if level_diff >= 100:
-		gem_chance = 50
+		diff_gem_chance = 50
 	elif level_diff >= 75:
-		gem_chance = 35
+		diff_gem_chance = 35
 	elif level_diff >= 50:
-		gem_chance = 25
+		diff_gem_chance = 25
 	elif level_diff >= 30:
-		gem_chance = 18
+		diff_gem_chance = 18
 	elif level_diff >= 20:
-		gem_chance = 12
+		diff_gem_chance = 12
 	elif level_diff >= 15:
-		gem_chance = 8
+		diff_gem_chance = 8
 	elif level_diff >= 10:
-		gem_chance = 5
-	else:  # level_diff >= 5
-		gem_chance = 2
+		diff_gem_chance = 5
+	elif level_diff >= 5:
+		diff_gem_chance = 2
+
+	# Combined chance (capped at 80%)
+	var gem_chance = mini(80, level_gem_chance + diff_gem_chance)
+
+	if gem_chance <= 0:
+		return 0
 
 	# Roll for gem drop
 	var roll = randi() % 100
 	if roll >= gem_chance:
 		return 0
 
-	# Gem quantity formula: scales with monster lethality and level (configurable)
+	# Gem quantity formula: scales with monster level
 	var cfg = balance_config.get("rewards", {})
 	var lethality = monster.get("lethality", 0)
 	var lethality_divisor = cfg.get("gem_lethality_divisor", 1000)
-	var level_divisor = cfg.get("gem_level_divisor", 100)
+	var level_divisor = cfg.get("gem_level_divisor", 50)  # Reduced from 100 for more gems
 	var gem_count = max(1, int(lethality / lethality_divisor) + int(monster_level / level_divisor))
 
 	return gem_count

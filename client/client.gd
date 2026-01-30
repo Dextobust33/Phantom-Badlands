@@ -81,6 +81,9 @@ var inventory_compare_stat: String = "level"  # Options: level, hp, atk, def, wi
 const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "stamina", "energy", "speed", "str", "con", "dex", "int", "wis"]
 var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare)
 
+# Combat action bar swap settings (per-client)
+var swap_attack_outsmart: bool = false  # Swap Attack (slot 0) with Outsmart (slot 3)
+
 # Settings mode
 var settings_mode: bool = false
 var settings_submenu: String = ""  # "", "action_keys", "movement_keys", "item_keys"
@@ -397,6 +400,7 @@ var current_enemy_name: String = ""
 var current_enemy_level: int = 0
 var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class affinity
 var current_enemy_abilities: Array = []  # Monster abilities for damage calculation
+var current_enemy_is_rare_variant: bool = false  # For visual indicator on rare monsters
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
@@ -463,9 +467,13 @@ const COMBAT_SOUND_COOLDOWN: float = 0.15  # Minimum time between combat sounds
 # ===== RACE DESCRIPTIONS =====
 const RACE_DESCRIPTIONS = {
 	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
-	"Elf": "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",
+	"Elf": "Ancient and resilient. 50% reduced poison damage, +20% magic resistance, +25% mana.",
 	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat).",
-	"Ogre": "Massive and regenerative. All healing effects are doubled."
+	"Ogre": "Massive and regenerative. All healing effects are doubled.",
+	"Halfling": "Lucky and nimble. +10% dodge chance, +15% gold from monster kills.",
+	"Orc": "Fierce and relentless. +20% damage when below 50% HP.",
+	"Gnome": "Clever and efficient. All ability costs reduced by 15%.",
+	"Undead": "Deathless and cursed. Immune to death curses, poison heals instead of damages."
 }
 
 const CLASS_DESCRIPTIONS = {
@@ -481,17 +489,15 @@ const CLASS_DESCRIPTIONS = {
 }
 
 # ===== ABILITY SYSTEM CONSTANTS =====
-const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
 
 # Ability slots: [command, display_name, required_level, resource_cost, resource_type]
 # resource_type: "mana", "stamina", "energy"
 const MAGE_ABILITY_SLOTS = [
 	["magic_bolt", "Bolt", 1, 0, "mana"],
-	["shield", "Shield", 10, 20, "mana"],
+	["forcefield", "Field", 10, 20, "mana"],  # Buffed: was L60, replaces Shield
 	["cloak", "Cloak", 25, 30, "mana"],
 	["blast", "Blast", 40, 50, "mana"],
-	["forcefield", "Field", 60, 75, "mana"],
-	["teleport", "Teleport", 80, 1000, "mana"],
+	["teleport", "Teleport", 60, 1000, "mana"],  # Moved from L80
 ]
 
 const WARRIOR_ABILITY_SLOTS = [
@@ -592,7 +598,7 @@ func _ready():
 	# Setup race options
 	if race_option:
 		race_option.clear()
-		for r in ["Human", "Elf", "Dwarf", "Ogre"]:
+		for r in ["Dwarf", "Elf", "Gnome", "Halfling", "Human", "Ogre", "Orc", "Undead"]:
 			race_option.add_item(r)
 		race_option.item_selected.connect(_on_race_selected)
 		_update_race_description()  # Set initial description
@@ -1895,6 +1901,7 @@ func _input(event):
 			var key_action_3 = keybinds.get("action_3", default_keybinds.get("action_3", KEY_E))
 			var key_action_4 = keybinds.get("action_4", default_keybinds.get("action_4", KEY_R))
 			var key_action_5 = keybinds.get("action_5", default_keybinds.get("action_5", KEY_1))
+			var key_action_6 = keybinds.get("action_6", default_keybinds.get("action_6", KEY_2))
 			var key_action_0 = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
 
 			if keycode == key_action_1:
@@ -1916,6 +1923,8 @@ func _input(event):
 				reset_keybinds_to_defaults()
 			elif keycode == key_action_5:
 				toggle_swap_attack_setting()
+			elif keycode == key_action_6:
+				toggle_swap_outsmart_setting()
 			elif keycode == key_action_0:
 				close_settings()
 			get_viewport().set_input_as_handled()
@@ -2939,13 +2948,24 @@ func update_action_bar():
 			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
-			# Normal: Attack on Space
-			current_actions = [
-				attack_action,
-				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
-			]
+			# Normal layout (with optional Attack/Outsmart swap)
+			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart}
+			if swap_attack_outsmart:
+				# Swap: Outsmart on Space, Attack on E
+				current_actions = [
+					outsmart_action,
+					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+					attack_action,
+				]
+			else:
+				# Default: Attack on Space
+				current_actions = [
+					attack_action,
+					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+					outsmart_action,
+				]
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
@@ -3641,15 +3661,15 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 				using_estimated_hp = true
 
 	if ability == "magic_bolt" and target_hp > 0:
-		# Magic Bolt damage = mana * (1 + INT/50) * damage_buff, reduced by monster WIS, defense, and level penalty
-		# Calculate mana needed based on player effective INT (base + equipment)
+		# Magic Bolt damage = mana * (1 + sqrt(INT)/5) * damage_buff, reduced by monster WIS, defense, and level penalty
+		# Formula uses sqrt scaling for diminishing returns at high INT
 		var stats = character_data.get("stats", {})
 		var base_int = stats.get("intelligence", 10)
 		# Add equipment INT bonus for accurate damage prediction
 		var equipped = character_data.get("equipped", {})
 		var equip_bonuses = _calculate_equipment_bonuses(equipped)
 		var int_stat = base_int + equip_bonuses.get("intelligence", 0)
-		var int_multiplier = 1.0 + (float(int_stat) / 50.0)  # INT 50 = 2x damage per mana
+		var int_multiplier = 1.0 + (sqrt(float(int_stat)) / 5.0)  # INT 25=2x, INT 100=3x, INT 225=4x
 
 		# Apply damage buff (War Cry, potions, etc.) - from active_buffs and persistent_buffs
 		var damage_buff = _get_buff_value("damage")
@@ -4622,27 +4642,17 @@ func _has_usable_combat_items() -> bool:
 	return false
 
 func _get_player_active_path() -> String:
-	"""Determine player's active path based on highest stat > threshold."""
-	var stats = character_data.get("stats", {})
-	var str_stat = stats.get("strength", 0)
-	var int_stat = stats.get("intelligence", 0)
-	var wits_stat = stats.get("wits", stats.get("charisma", 0))
-
-	# Find highest stat above threshold
-	var highest_stat = 0
-	var active_path = ""
-
-	if str_stat > PATH_STAT_THRESHOLD and str_stat > highest_stat:
-		highest_stat = str_stat
-		active_path = "warrior"
-	if int_stat > PATH_STAT_THRESHOLD and int_stat > highest_stat:
-		highest_stat = int_stat
-		active_path = "mage"
-	if wits_stat > PATH_STAT_THRESHOLD and wits_stat > highest_stat:
-		highest_stat = wits_stat
-		active_path = "trickster"
-
-	return active_path
+	"""Determine player's active path based on class type."""
+	var char_class = character_data.get("class", "Fighter")
+	match char_class:
+		"Fighter", "Barbarian", "Paladin":
+			return "warrior"
+		"Wizard", "Sorcerer", "Sage":
+			return "mage"
+		"Thief", "Ranger", "Ninja":
+			return "trickster"
+		_:
+			return "warrior"
 
 func _get_teleport_unlock_level() -> int:
 	"""Get the level at which teleport unlocks based on class path."""
@@ -4789,9 +4799,8 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	var ability_defs = {
 		# Mage abilities - use percentage-based scaling
 		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
-		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},
 		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "resource_type": "mana"},
-		"forcefield": {"display": "Field", "cost": 75, "cost_percent": 7, "resource_type": "mana"},
+		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Buffed, replaces Shield
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 12, "resource_type": "mana"},
 		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
@@ -5504,8 +5513,29 @@ func display_shop_inventory():
 				stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
 			if bonuses.get("max_hp", 0) > 0:
 				stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
-			if bonuses.get("max_mana", 0) > 0:
-				stats_parts.append("[color=#9999FF]+%d Mana[/color]" % bonuses.max_mana)
+			# Universal resource display with scaling
+			var mana_val = bonuses.get("max_mana", 0)
+			var stam_energy_val = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
+			if mana_val > 0 or stam_energy_val > 0:
+				var player_class = character_data.get("class", "")
+				var resource_name = "Resource"
+				var resource_color = "#9999FF"
+				var scaled_val = 0
+				match player_class:
+					"Wizard", "Sorcerer", "Sage":
+						resource_name = "Mana"
+						resource_color = "#9999FF"
+						scaled_val = mana_val + (stam_energy_val * 2)
+					"Fighter", "Barbarian", "Paladin":
+						resource_name = "Stamina"
+						resource_color = "#FFCC00"
+						scaled_val = int(mana_val * 0.5) + stam_energy_val
+					"Thief", "Ranger", "Ninja", "Trickster":
+						resource_name = "Energy"
+						resource_color = "#66FF66"
+						scaled_val = int(mana_val * 0.5) + stam_energy_val
+				if scaled_val > 0:
+					stats_parts.append("[color=%s]+%d %s[/color]" % [resource_color, scaled_val, resource_name])
 			if bonuses.get("strength", 0) > 0:
 				stats_parts.append("[color=#FF6666]+%d STR[/color]" % bonuses.strength)
 			if bonuses.get("constitution", 0) > 0:
@@ -5965,9 +5995,31 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	if bonuses.get("max_hp", 0) > 0:
 		display_game("[color=#FF6666]+%d Max HP[/color]" % bonuses.max_hp)
 		stats_shown = true
-	if bonuses.get("max_mana", 0) > 0:
-		display_game("[color=#9999FF]+%d Max Mana[/color]" % bonuses.max_mana)
-		stats_shown = true
+	# Universal resource display - combine all resource bonuses with scaling
+	# Mana bonuses are ~2x larger, so: mana→stam/energy at 0.5x, stam/energy→mana at 2x
+	var mana_bonus = bonuses.get("max_mana", 0)
+	var stam_energy_bonus = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
+	if mana_bonus > 0 or stam_energy_bonus > 0:
+		var player_class = character_data.get("class", "")
+		var resource_name = "Resource"
+		var resource_color = "#9999FF"
+		var scaled_total = 0
+		match player_class:
+			"Wizard", "Sorcerer", "Sage":
+				resource_name = "Mana"
+				resource_color = "#9999FF"
+				scaled_total = mana_bonus + (stam_energy_bonus * 2)
+			"Fighter", "Barbarian", "Paladin":
+				resource_name = "Stamina"
+				resource_color = "#FFCC00"
+				scaled_total = int(mana_bonus * 0.5) + stam_energy_bonus
+			"Thief", "Ranger", "Ninja", "Trickster":
+				resource_name = "Energy"
+				resource_color = "#66FF66"
+				scaled_total = int(mana_bonus * 0.5) + stam_energy_bonus
+		if scaled_total > 0:
+			display_game("[color=%s]+%d Max %s[/color]" % [resource_color, scaled_total, resource_name])
+			stats_shown = true
 	if bonuses.get("strength", 0) > 0:
 		display_game("[color=#FF6666]+%d Strength[/color]" % bonuses.strength)
 		stats_shown = true
@@ -5989,12 +6041,7 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	if bonuses.get("speed", 0) > 0:
 		display_game("[color=#FFA500]+%d Speed[/color]" % bonuses.speed)
 		stats_shown = true
-	if bonuses.get("max_stamina", 0) > 0:
-		display_game("[color=#FFCC00]+%d Max Stamina[/color]" % bonuses.max_stamina)
-		stats_shown = true
-	if bonuses.get("max_energy", 0) > 0:
-		display_game("[color=#66FF66]+%d Max Energy[/color]" % bonuses.max_energy)
-		stats_shown = true
+	# Note: max_stamina and max_energy are combined with max_mana above as universal resource
 
 	# Class-specific bonuses
 	if bonuses.get("mana_regen", 0) > 0:
@@ -6032,15 +6079,19 @@ func _get_item_compare_value(item: Dictionary, stat: String) -> int:
 		"wit":
 			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("wits", 0)
-		"mana":
+		"mana", "stamina", "energy", "resource":
+			# Universal resource - combined with scaling (mana is 2x larger)
 			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("max_mana", 0)
-		"stamina":
-			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("max_stamina", 0)
-		"energy":
-			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("max_energy", 0)
+			var mana_val = bonuses.get("max_mana", 0)
+			var stam_energy_val = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
+			var player_class = character_data.get("class", "")
+			match player_class:
+				"Wizard", "Sorcerer", "Sage":
+					return mana_val + (stam_energy_val * 2)
+				"Fighter", "Barbarian", "Paladin", "Thief", "Ranger", "Ninja", "Trickster":
+					return int(mana_val * 0.5) + stam_energy_val
+				_:
+					return mana_val + stam_energy_val
 		"speed":
 			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("speed", 0)
@@ -6087,13 +6138,11 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	var diff_parts = []
 
 	# Stats to compare with their display labels and colors (ordered by importance)
+	# Note: resource stats (mana/stamina/energy) are handled separately below
 	var stats_to_compare = [
 		["attack", "ATK", "#FFFF00"],      # Yellow
 		["defense", "DEF", "#00FF00"],     # Green
 		["max_hp", "HP", "#FF6666"],       # Light red
-		["max_mana", "MP", "#9999FF"],     # Purple
-		["max_stamina", "STA", "#FFCC00"], # Orange-yellow
-		["max_energy", "EN", "#66FF66"],   # Light green
 		["speed", "SPD", "#FFA500"],       # Orange
 		["strength", "STR", "#FF6666"],    # Red
 		["constitution", "CON", "#00FF00"], # Green
@@ -6114,6 +6163,40 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 			# Use stat color but dim it for negative values
 			var c = stat_color if diff > 0 else "#808080"
 			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
+
+	# Universal resource comparison with scaling (mana is 2x larger than stam/energy)
+	var new_mana = new_bonuses.get("max_mana", 0)
+	var new_stam_energy = new_bonuses.get("max_stamina", 0) + new_bonuses.get("max_energy", 0)
+	var old_mana = old_bonuses.get("max_mana", 0)
+	var old_stam_energy = old_bonuses.get("max_stamina", 0) + old_bonuses.get("max_energy", 0)
+
+	var player_class = character_data.get("class", "")
+	var resource_label = "RES"
+	var resource_color = "#9999FF"
+	var new_scaled = 0
+	var old_scaled = 0
+
+	match player_class:
+		"Wizard", "Sorcerer", "Sage":
+			resource_label = "MP"
+			resource_color = "#9999FF"
+			new_scaled = new_mana + (new_stam_energy * 2)
+			old_scaled = old_mana + (old_stam_energy * 2)
+		"Fighter", "Barbarian", "Paladin":
+			resource_label = "STA"
+			resource_color = "#FFCC00"
+			new_scaled = int(new_mana * 0.5) + new_stam_energy
+			old_scaled = int(old_mana * 0.5) + old_stam_energy
+		"Thief", "Ranger", "Ninja", "Trickster":
+			resource_label = "EN"
+			resource_color = "#66FF66"
+			new_scaled = int(new_mana * 0.5) + new_stam_energy
+			old_scaled = int(old_mana * 0.5) + old_stam_energy
+
+	var resource_diff = new_scaled - old_scaled
+	if resource_diff != 0:
+		var c = resource_color if resource_diff > 0 else "#808080"
+		diff_parts.append("[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label])
 
 	return diff_parts
 
@@ -6142,14 +6225,11 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 	var old_bonuses = _compute_item_bonuses(old_item)
 	var comparisons = []
 
-	# Compare all stats
+	# Compare all stats (excluding resource pools which are combined below)
 	var stat_labels = {
 		"attack": "ATK",
 		"defense": "DEF",
 		"max_hp": "HP",
-		"max_mana": "Mana",
-		"max_stamina": "Stamina",
-		"max_energy": "Energy",
 		"strength": "STR",
 		"constitution": "CON",
 		"dexterity": "DEX",
@@ -6172,6 +6252,36 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 			var diff = new_val - old_val
 			var color = "#00FF00" if diff > 0 else "#FF6666"
 			comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, stat_labels[stat]])
+
+	# Universal resource comparison - combine with scaling (mana is 2x larger than stam/energy)
+	var player_class = character_data.get("class", "")
+	var resource_label = "Resource"
+	var new_scaled = 0
+	var old_scaled = 0
+
+	var new_mana = new_bonuses.get("max_mana", 0)
+	var new_stam_energy = new_bonuses.get("max_stamina", 0) + new_bonuses.get("max_energy", 0)
+	var old_mana = old_bonuses.get("max_mana", 0)
+	var old_stam_energy = old_bonuses.get("max_stamina", 0) + old_bonuses.get("max_energy", 0)
+
+	match player_class:
+		"Wizard", "Sorcerer", "Sage":
+			resource_label = "Mana"
+			new_scaled = new_mana + (new_stam_energy * 2)
+			old_scaled = old_mana + (old_stam_energy * 2)
+		"Fighter", "Barbarian", "Paladin":
+			resource_label = "Stamina"
+			new_scaled = int(new_mana * 0.5) + new_stam_energy
+			old_scaled = int(old_mana * 0.5) + old_stam_energy
+		"Thief", "Ranger", "Ninja", "Trickster":
+			resource_label = "Energy"
+			new_scaled = int(new_mana * 0.5) + new_stam_energy
+			old_scaled = int(old_mana * 0.5) + old_stam_energy
+
+	if new_scaled != old_scaled:
+		var diff = new_scaled - old_scaled
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, resource_label])
 
 	# Compare level
 	var new_lvl = new_item.get("level", 1)
@@ -6816,7 +6926,25 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 	elif "ring" in item_type:
 		return "[color=#FF6666]+%d Atk[/color]" % int(base * 0.5)
 	elif "amulet" in item_type:
-		return "[color=#FF66FF]+%d Mana[/color]" % (base * 2)
+		# Amulets give mana, but display as class resource with scaling
+		var mana_val = base * 2
+		var player_class = character_data.get("class", "")
+		var resource_name = "Resource"
+		var resource_color = "#FF66FF"
+		var scaled_val = mana_val
+		match player_class:
+			"Wizard", "Sorcerer", "Sage":
+				resource_name = "Mana"
+				resource_color = "#9999FF"
+			"Fighter", "Barbarian", "Paladin":
+				resource_name = "Stamina"
+				resource_color = "#FFCC00"
+				scaled_val = int(mana_val * 0.5)
+			"Thief", "Ranger", "Ninja", "Trickster":
+				resource_name = "Energy"
+				resource_color = "#66FF66"
+				scaled_val = int(mana_val * 0.5)
+		return "[color=%s]+%d %s[/color]" % [resource_color, scaled_val, resource_name]
 	return ""
 
 func _get_slot_for_item_type(item_type: String) -> String:
@@ -7237,6 +7365,8 @@ func handle_ability_slot_selection(slot_num: int):
 		"select_unequip_slot":
 			send_to_server({"type": "unequip_ability", "slot": slot_index})
 			pending_ability_action = ""
+			display_ability_menu()
+			update_action_bar()
 
 		"select_keybind_slot":
 			selected_ability_slot = slot_index
@@ -7975,7 +8105,11 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 
 	if label_node:
 		# Display enemy name with level (color is shown in main combat text)
-		label_node.text = "%s (Lvl %d):" % [enemy_name, enemy_level]
+		# Add star indicator for rare variants (more XP/drops)
+		if current_enemy_is_rare_variant:
+			label_node.text = "★ %s (Lvl %d):" % [enemy_name, enemy_level]
+		else:
+			label_node.text = "%s (Lvl %d):" % [enemy_name, enemy_level]
 		# Set label color based on class affinity
 		match current_enemy_color:
 			"#FFFF00":  # Yellow - Physical
@@ -8668,6 +8802,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_level = combat_state.get("monster_level", 1)
 			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
 			current_enemy_abilities = combat_state.get("monster_abilities", [])
+			current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
 			damage_dealt_to_current_enemy = 0
 			analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
 			# Get actual monster HP from server
@@ -8843,6 +8978,7 @@ func handle_server_message(message: Dictionary):
 			show_enemy_hp_bar(false)
 			current_enemy_name = ""
 			current_enemy_level = 0
+			current_enemy_is_rare_variant = false
 			damage_dealt_to_current_enemy = 0
 			analyze_revealed_max_hp = -1  # Reset Analyze flag
 
@@ -9536,7 +9672,20 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		var mana_bonus = base_bonus * 2
 		var wis_bonus = int(base_bonus * 0.3)
 		var wit_bonus = int(base_bonus * 0.2)
-		return "+%d Max Mana, +%d WIS, +%d WIT" % [mana_bonus, wis_bonus, wit_bonus]
+		# Show resource as player's class resource type with scaling (mana→stam/energy at 0.5x)
+		var player_class = character_data.get("class", "")
+		var resource_name = "Resource"
+		var scaled_bonus = mana_bonus
+		match player_class:
+			"Wizard", "Sorcerer", "Sage":
+				resource_name = "Mana"
+			"Fighter", "Barbarian", "Paladin":
+				resource_name = "Stamina"
+				scaled_bonus = int(mana_bonus * 0.5)
+			"Thief", "Ranger", "Ninja", "Trickster":
+				resource_name = "Energy"
+				scaled_bonus = int(mana_bonus * 0.5)
+		return "+%d Max %s, +%d WIS, +%d WIT" % [scaled_bonus, resource_name, wis_bonus, wit_bonus]
 	elif "gold_pouch" in item_type:
 		return "Contains %d-%d gold" % [level * 10, level * 50]
 	elif "gem" in item_type:
@@ -9765,12 +9914,16 @@ func _load_keybinds():
 				# Load compare stat setting
 				if data.has("inventory_compare_stat") and data["inventory_compare_stat"] in COMPARE_STAT_OPTIONS:
 					inventory_compare_stat = data["inventory_compare_stat"]
+				# Load combat swap settings
+				if data.has("swap_attack_outsmart"):
+					swap_attack_outsmart = data["swap_attack_outsmart"]
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
 	var save_data = keybinds.duplicate()
 	# Include other persistent settings
 	save_data["inventory_compare_stat"] = inventory_compare_stat
+	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -9933,9 +10086,11 @@ func display_settings_menu():
 	display_game("[%s] Configure Movement Keys" % get_action_key_name(2))
 	display_game("[%s] Configure Item Selection Keys" % get_action_key_name(3))
 	display_game("[%s] Reset All to Defaults" % get_action_key_name(4))
-	var swap_enabled = character_data.get("swap_attack_with_ability", false)
-	var swap_status = "[color=#00FF00]ON[/color]" if swap_enabled else "[color=#FF6666]OFF[/color]"
-	display_game("[%s] Swap Attack with First Ability: %s" % [get_action_key_name(5), swap_status])
+	var swap_ability_enabled = character_data.get("swap_attack_with_ability", false)
+	var swap_ability_status = "[color=#00FF00]ON[/color]" if swap_ability_enabled else "[color=#FF6666]OFF[/color]"
+	display_game("[%s] Swap Attack with First Ability: %s" % [get_action_key_name(5), swap_ability_status])
+	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
+	display_game("[%s] Swap Attack with Outsmart: %s" % [get_action_key_name(6), swap_outsmart_status])
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")
@@ -10069,6 +10224,23 @@ func toggle_swap_attack_setting():
 	if new_value:
 		display_game("[color=#808080]Your first equipped ability will now appear on the primary action key (Space).[/color]")
 		display_game("[color=#808080]Attack will move to the first ability slot (R key).[/color]")
+	else:
+		display_game("[color=#808080]Attack is now on the primary action key (Space).[/color]")
+	await get_tree().create_timer(1.5).timeout
+	display_settings_menu()
+	update_action_bar()
+
+func toggle_swap_outsmart_setting():
+	"""Toggle the swap attack with outsmart setting (per-client)"""
+	swap_attack_outsmart = not swap_attack_outsmart
+	_save_keybinds()  # Persist to client settings
+	# Refresh settings display
+	game_output.clear()
+	var status = "[color=#00FF00]ENABLED[/color]" if swap_attack_outsmart else "[color=#FF6666]DISABLED[/color]"
+	display_game("[color=#00FF00]Swap Attack with Outsmart: %s[/color]" % status)
+	if swap_attack_outsmart:
+		display_game("[color=#808080]Outsmart will now appear on the primary action key (Space).[/color]")
+		display_game("[color=#808080]Attack will move to the Outsmart slot (E key).[/color]")
 	else:
 		display_game("[color=#808080]Attack is now on the primary action key (Space).[/color]")
 	await get_tree().create_timer(1.5).timeout
@@ -10847,29 +11019,49 @@ func show_help():
 	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
 	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
-	var help_text = """[font_size=11]
+	var help_text = """[font_size=12]
 [b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
 [color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
+
+[b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
+[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage. [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)
+  Start hunting immediately. Use Power Strike for damage. War Cry when hurt. Tank and outlast enemies.
+  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing. [color=#808080]Races: Dwarf(survive), Orc(damage), Ogre(healing)[/color]
+
+[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
+  Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
+  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
+
+[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
+  Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.
+  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist. [color=#808080]Races: Halfling(gold+dodge), Gnome(costs)[/color]
+
+[b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
+[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2%% attack damage per point[/color] | Contributes to Stamina pool
+[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
+[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1%% hit chance, +2%% flee chance[/color] | +0.5%% crit per point | Contributes to Energy pool
+[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3%% spell damage per point[/color] | Contributes to Mana pool
+[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
+[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]+5%% Outsmart chance per point above 10[/color] | Contributes to Energy pool
+
+[b][color=#FFD700]══ RACES ══[/color][/b]
+[color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=+50%%poison res,+20%%magic res,+25%%mana | [color=#FFA366]Dwarf[/color]=25%%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
+[color=#D2691E]Halfling[/color]=+10%%dodge,+15%%gold | [color=#556B2F]Orc[/color]=+20%%dmg below 50%%HP | [color=#DDA0DD]Gnome[/color]=-15%%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
 [color=#00FFFF]Cmds:[/color] inventory ([%s]) | abilities ([%s]) | status | who | examine <name> | help | clear
 [color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
 
-[b][color=#FFD700]══ STATS & RACES ══[/color][/b]
-[color=#FF6666]STR[/color]=+2%%atk, Warrior | [color=#66FF66]CON[/color]=HP(50+×5), DEF(÷2) | [color=#66FFFF]DEX[/color]=+1%%hit, +2%%flee, crit(5%%+0.5%%/pt)
-[color=#FF66FF]INT[/color]=+3%%spell, Mage | [color=#FFFF66]WIS[/color]=Mana, resist | [color=#FFA500]WIT[/color]=Outsmart(+5%%/pt), Trickster
-[color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=50%%poison res | [color=#FFA366]Dwarf[/color]=25%%survive | [color=#8B4513]Ogre[/color]=2x heal
-
-[b][color=#FFD700]══ CLASS PATHS ══[/color][/b]
-[color=#FF6666]WARRIOR (STR>10, Stamina)[/color]                         [color=#66FFFF]MAGE (INT>10, Mana)[/color]
+[b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
+[color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
   [color=#C0C0C0]Fighter[/color] - 20%% less cost, +15%% DEF               [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% crit
   [color=#8B0000]Barbarian[/color] - +3%%dmg/10%%HP lost, +25%% cost        [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 5%% backfire
   [color=#FFD700]Paladin[/color] - 3%%HP/rnd heal, +25%% vs undead          [color=#20B2AA]Sage[/color] - 25%% less cost, +50%% meditate
 
-[color=#66FF66]TRICKSTER (WIT>10, Energy)[/color]
-  [color=#2F4F4F]Thief[/color] - +15%% crit chance, +50%% crit dmg    [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% rewards
-  [color=#191970]Ninja[/color] - +40%% flee, no dmg on fail
+[color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
+  [color=#2F4F4F]Thief[/color] - +10%% crit chance, +35%% crit dmg    [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% rewards
+  [color=#191970]Ninja[/color] - +40%% flee, no dmg on fail | [color=#66FF66]25%% chance Quick Strike (+50%% dmg)[/color]
 
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
 [color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
@@ -10878,22 +11070,22 @@ func show_help():
 [color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
-[color=#FF6666]WARRIOR (Stam=STR×4+CON×4)[/color]                          [color=#66FFFF]MAGE (Mana=INT×12+WIS×6)[/color]
-  L1 Power Strike(10) 1.5x | L10 War Cry(15) +25%%      L1 Bolt(var) mana×(1+INT/50) | L10 Shield(20) +50%%def
-  L25 Shield Bash(20) stun | L40 Cleave(30) 2x          L30 Haste(35) spd buff | L40 Blast(50) 2x
-  L60 Berserk(40) +100%%/-50%% | L80 Iron Skin(35)        L50 Paralyze(35) stun | L60 Forcefield(75)
-  L100 Devastate(50) 4x                                 L70 Banish(60) instakill weak | L100 Meteor(100) 5x
-                                                        [color=#66FFFF]Meditate[/color] - Restore HP + 4%% mana (8%% if full)
-[color=#FFA500]TRICKSTER (Energy=WIT×4+DEX×4)[/color]
-  L1 Analyze(5) stats | L10 Distract(15) -50%%acc | L25 Pickpocket(20) WIT×10g | L40 Ambush(30) 1.5x+crit
+[color=#FF6666]WARRIOR (Stam=STR+CON)[/color]                              [color=#66FFFF]MAGE (Mana=INT×3+WIS×1.5)[/color]
+  L1 Power Strike(10) 2x | L10 War Cry(15) +35%%        L1 Bolt(var) mana×(1+√INT/5) | L10 Field(20) absorb
+  L25 Shield Bash(20) 1.5x+stun | L40 Cleave(30) 2.5x   L25 Cloak(30) | L40 Blast(50) 2x | L60 Teleport(1000)
+  L60 Berserk(40) +75-200%%/-40%% | L80 Iron(35) 60%%     [color=#66FFFF]Meditate[/color] - Restore HP + 4%% mana (8%% if full)
+  L100 Devastate(50) 5x
+[color=#FFA500]TRICKSTER (Energy=(WIT+DEX)×0.75)[/color]
+  L1 Analyze(5) stats | L10 Distract(15) -50%%acc | L25 Pickpocket(20) WIT×10g | L40 Ambush(30) 3x+crit
   L60 Vanish(40) invis+crit | L80 Exploit(35) 10%%HP | L100 Perfect Heist(50) win+2x
 
-[color=#AAAAAA]Outsmart:[/color] 5%%+(WIT-10)×5%% ±8%%/INT diff. Best vs beasts/undead. Fail=free enemy attack.
+[color=#AAAAAA]Outsmart:[/color] 5%%+15×log₂(WIT/10). INT-based cap. Best vs beasts/undead. Fail=free enemy attack.
 [color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
 [color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 25%%)
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Shield,Haste,War Cry,etc) = 75%% dodge enemy turn!
 
 [b][color=#FFD700]══ MONSTERS ══[/color][/b]
+[color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
 [color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+dmg/rnd) | Life Steal | Glass Cannon(3x,½HP)
 [color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(DoT×3) | Slow(-flee) | Drain(res) | [color=#FF00FF]Poison[/color](35rnd) | [color=#808080]Blind[/color](15rnd)
 [color=#6666FF]Defense:[/color] Armored(+50%%def) | Ethereal(50%%dodge) | Regen | Reflect(25%%) | Thorns
@@ -10944,10 +11136,36 @@ func show_help():
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
-[color=#AAAAAA]Formulas:[/color] HP=50+CON×5 | Mana=INT×12+WIS×6 | Stam=STR×4+CON×4 | Energy=WIT×4+DEX×4 | DEF=CON/2+gear
+[color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
+[color=#00FFFF]v0.8.5:[/color] Stat scaling reduced, sqrt formulas, gear DR at L100+, WIS resists abilities, gems at high levels
 [/font_size]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k2]
 	display_game(help_text)
+
+	# Add discovered trading posts section (dynamic per character)
+	var discovered = character_data.get("discovered_posts", [])
+	if discovered.size() > 0:
+		display_game("")
+		display_game("[b][color=#FFD700]══ YOUR DISCOVERED POSTS ══[/color][/b]")
+		# Sort by name for readability
+		var sorted_posts = discovered.duplicate()
+		sorted_posts.sort_custom(func(a, b): return a.name < b.name)
+		# Format in columns for horizontal space usage
+		var post_strings = []
+		for post in sorted_posts:
+			post_strings.append("[color=#00FF00]%s[/color](%d,%d)" % [post.name, post.x, post.y])
+		# Display 3 posts per line
+		var line = ""
+		for i in range(post_strings.size()):
+			if i > 0 and i % 3 == 0:
+				display_game(line)
+				line = ""
+			if line != "":
+				line += " | "
+			line += post_strings[i]
+		if line != "":
+			display_game(line)
+		display_game("[color=#808080](%d/%d posts discovered)[/color]" % [discovered.size(), 58])
 
 func search_help(search_term: String):
 	"""Search the help text and display matching sections with context"""
@@ -10961,6 +11179,11 @@ func search_help(search_term: String):
 	# Define searchable help sections with keywords
 	var help_sections = [
 		{
+			"title": "GETTING STARTED",
+			"keywords": ["start", "starting", "begin", "beginner", "new", "player", "how", "play", "guide", "tutorial", "first", "tips", "advice", "build", "focus"],
+			"content": "[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage.\n  [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)\n  Start hunting immediately. Use Power Strike for damage. Tank and outlast enemies.\n  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing\n\n[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management.\n  [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)\n  Use Magic Bolt to kill. Meditate to recover HP+mana.\n  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient\n\n[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options.\n  [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)\n  Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.\n  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist"
+		},
+		{
 			"title": "CONTROLS & BASICS",
 			"keywords": ["controls", "keys", "keyboard", "numpad", "move", "movement", "escape", "action", "bar", "commands", "inventory", "abilities", "status", "help", "clear", "map"],
 			"content": "[color=#00FFFF]Keys:[/color] [Esc]=Toggle mode | [NUMPAD]=Move (789/456/123) | Type+Enter=Chat\n[color=#00FFFF]Action Bar:[/color] [Space]=Primary | [Q][W][E][R]=Quick | [1][2][3][4]=Additional\n[color=#00FFFF]Commands:[/color] inventory/i, abilities, status, who, examine <name>, help, clear\n[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Trading Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You"
@@ -10968,12 +11191,12 @@ func search_help(search_term: String):
 		{
 			"title": "STATS",
 			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy"],
-			"content": "[color=#FF6666]STR[/color] = +2% attack per point, Warrior path\n[color=#66FF66]CON[/color] = HP (50 + CON×5), Defense (CON/2)\n[color=#66FFFF]DEX[/color] = +1% hit, +2% flee, crit chance (5% + 0.5%/pt)\n[color=#FF66FF]INT[/color] = +3% spell damage, Mana (INT×12 + WIS×6), Mage path\n[color=#FFFF66]WIS[/color] = Mana pool, spell resistance\n[color=#FFA500]WIT[/color] = Outsmart (+5%/pt above 10), Trickster path"
+			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = +3% spell damage per point | Contributes to Mana pool\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Increases mana pool | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = +5% Outsmart chance per point above 10 | Contributes to Energy pool"
 		},
 		{
 			"title": "RACES",
-			"keywords": ["race", "races", "human", "elf", "dwarf", "ogre", "poison", "lethal", "heal", "xp", "experience"],
-			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources"
+			"keywords": ["race", "races", "human", "elf", "dwarf", "ogre", "halfling", "orc", "gnome", "undead", "poison", "lethal", "heal", "xp", "experience", "dodge", "gold", "damage", "cost", "curse", "death"],
+			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance, +20% magic resistance, +25% mana\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources\n[color=#D2691E]Halfling[/color] = +10% dodge chance, +15% gold from kills\n[color=#556B2F]Orc[/color] = +20% damage when below 50% HP\n[color=#DDA0DD]Gnome[/color] = -15% ability costs\n[color=#708090]Undead[/color] = Immune to death curses, poison heals instead of damages"
 		},
 		{
 			"title": "WARRIOR PATH",
@@ -10988,7 +11211,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRICKSTER PATH",
 			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
-			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy (WIT×4 + DEX×4)\n\n[color=#2F4F4F]Thief[/color] - +15% crit chance, +50% crit damage (2.0x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% gold and XP\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal WITS×10 gold\nL40 Ambush (30) - 1.5x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% gold and XP\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal WITS×10 gold\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
 		},
 		{
 			"title": "COMBAT FORMULAS",
@@ -11032,8 +11255,8 @@ func search_help(search_term: String):
 		},
 		{
 			"title": "TITLES & ENDGAME",
-			"keywords": ["title", "titles", "jarl", "king", "high", "elder", "eternal", "flame", "ring", "crown", "endgame", "chase", "fire", "mountain"],
-			"content": "[color=#AAAAAA]Chase Items:[/color]\n[color=#C0C0C0]Jarl's Ring[/color] - Rare drop from Lv100+ monsters\n[color=#A335EE]Unforged Crown[/color] - Very rare from Lv200+, forge at Fire Mountain (-400,0)\n[color=#00FFFF]Eternal Flame[/color] - Hidden location, only Elders can seek\n\n[color=#AAAAAA]Titles:[/color]\n[color=#C0C0C0]Jarl[/color] (50-500): Ring + claim at (0,0). ONE only. Banish/Curse/Gift.\n[color=#FFD700]High King[/color] (200-1000): Crown + (0,0). ONE only. Survives 1 death!\n[color=#9400D3]Elder[/color] (1000+): Automatic. Heal/Seek Flame/Slap.\n[color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives!"
+			"keywords": ["title", "titles", "jarl", "king", "high", "elder", "eternal", "flame", "ring", "crown", "endgame", "chase", "fire", "mountain", "obtain", "get", "claim"],
+			"content": "[color=#FFD700]HOW TO OBTAIN TITLES[/color]\n\n[color=#C0C0C0]Jarl[/color] [color=#808080](Level 50-500, ONE per realm)[/color]\n1. Hunt monsters level 50+ for a rare [color=#C0C0C0]Jarl's Ring[/color] drop\n2. Travel to The High Seat at (0,0)\n3. Use the ring to claim the title\n• Abilities: Banish, Curse, Gift of Silver, Claim Tribute\n\n[color=#FFD700]High King[/color] [color=#808080](Level 200-1000, ONE per realm)[/color]\n1. Hunt monsters level 200+ for a rare [color=#A335EE]Unforged Crown[/color] drop\n2. Travel to Fire Mountain at (-400,0) to forge it into the [color=#FF8C00]Crown of the North[/color]\n3. Travel to The High Seat at (0,0) and claim the throne\n• Abilities: Exile, Knight, Cure, Royal Decree\n\n[color=#9400D3]Elder[/color] [color=#808080](Level 1000+)[/color]\n• Automatically granted when you reach level 1000\n• Abilities: Heal, Seek Flame, Slap\n\n[color=#00FFFF]Eternal[/color] [color=#808080](Elder only, max 3 in realm)[/color]\n1. Reach Elder status (level 1000)\n2. Use 'Seek Flame' ability to find the [color=#00FFFF]Eternal Flame[/color]\n3. Travel to its hidden location and claim it\n• Has 3 lives - loses title after 3 deaths\n• Abilities: Smite, Restore, Bless, Proclaim"
 		},
 		{
 			"title": "SOCIAL & MISC",

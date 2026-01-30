@@ -1154,9 +1154,9 @@ func _maybe_upgrade_rarity(base_rarity: String) -> String:
 	if current_index < 0 or current_index >= rarity_order.size() - 1:
 		return base_rarity  # Already max or unknown
 
-	# Roll for upgrade - decreasing chance for higher tiers
-	# Common->Uncommon: 8%, Uncommon->Rare: 5%, Rare->Epic: 3%, Epic->Legendary: 1.5%, Legendary->Artifact: 0.5%
-	var upgrade_chances = [8.0, 5.0, 3.0, 1.5, 0.5]
+	# Roll for upgrade - decreasing chance for higher tiers (reduced for balance)
+	# Common->Uncommon: 4%, Uncommon->Rare: 2.5%, Rare->Epic: 1.5%, Epic->Legendary: 0.75%, Legendary->Artifact: 0.25%
+	var upgrade_chances = [4.0, 2.5, 1.5, 0.75, 0.25]
 	var chance = upgrade_chances[current_index] if current_index < upgrade_chances.size() else 0.5
 
 	var roll = randf() * 100.0

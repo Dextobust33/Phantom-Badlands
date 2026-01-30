@@ -9,7 +9,7 @@ const LEADERBOARD_FILE = "user://data/leaderboard.json"
 const CHARACTERS_DIR = "user://data/characters/"
 
 const MAX_LEADERBOARD_ENTRIES = 100
-const DEFAULT_MAX_CHARACTERS = 3
+const DEFAULT_MAX_CHARACTERS = 6
 
 # Cached data
 var accounts_data: Dictionary = {}

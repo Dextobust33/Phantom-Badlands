@@ -3,11 +3,11 @@
 class_name WorldSystem
 extends Node
 
-# World boundaries (Phantasia 4 had a large world)
-const WORLD_MIN_X = -1000
-const WORLD_MAX_X = 1000
-const WORLD_MIN_Y = -1000
-const WORLD_MAX_Y = 1000
+# World boundaries (expanded for better level progression)
+const WORLD_MIN_X = -2000
+const WORLD_MAX_X = 2000
+const WORLD_MIN_Y = -2000
+const WORLD_MAX_Y = 2000
 
 # Terrain types (matching P4)
 enum Terrain {
@@ -407,8 +407,8 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 	# Apply hotspot multiplier to base level
 	var adjusted_level = int(base_level * hotspot_multiplier)
 
-	# Calculate variance range (+/- 15%)
-	var variance = max(1, int(adjusted_level * 0.15))
+	# Calculate variance range (+/- 10% for more predictable encounters)
+	var variance = max(1, int(adjusted_level * 0.10))  # Reduced from 15%
 	var min_level = max(1, adjusted_level - variance)
 	var max_level = min(10000, adjusted_level + variance)
 
@@ -421,35 +421,41 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 	}
 
 func _distance_to_level(distance: float) -> int:
-	"""Convert distance from origin to monster level (0-1414 -> 1-10000)"""
-	# Safe zone (distance 0-5)
-	if distance <= 5:
+	"""Convert distance from origin to monster level (0-2828 -> 1-10000).
+	   Expanded world with more gradual level progression."""
+	# Safe zone (distance 0-10)
+	if distance <= 10:
 		return 1
 
-	# Distance 5-100: Levels 1-50 (gentle curve)
-	if distance <= 100:
-		var t = (distance - 5) / 95.0  # 0 to 1
+	# Distance 10-150: Levels 1-50 (gentle curve for new players)
+	if distance <= 150:
+		var t = (distance - 10) / 140.0  # 0 to 1
 		return int(1 + t * 49)
 
-	# Distance 100-300: Levels 50-300 (moderate growth)
-	if distance <= 300:
-		var t = (distance - 100) / 200.0  # 0 to 1
-		return int(50 + t * 250)
+	# Distance 150-400: Levels 50-200 (moderate growth)
+	if distance <= 400:
+		var t = (distance - 150) / 250.0  # 0 to 1
+		return int(50 + t * 150)
 
-	# Distance 300-600: Levels 300-1500 (accelerating)
-	if distance <= 600:
-		var t = (distance - 300) / 300.0  # 0 to 1
-		return int(300 + t * 1200)
+	# Distance 400-800: Levels 200-600 (steady)
+	if distance <= 800:
+		var t = (distance - 400) / 400.0  # 0 to 1
+		return int(200 + t * 400)
 
-	# Distance 600-900: Levels 1500-5000 (steep)
-	if distance <= 900:
-		var t = (distance - 600) / 300.0  # 0 to 1
-		return int(1500 + t * 3500)
+	# Distance 800-1200: Levels 600-1500 (accelerating)
+	if distance <= 1200:
+		var t = (distance - 800) / 400.0  # 0 to 1
+		return int(600 + t * 900)
 
-	# Distance 900+: Levels 5000-10000 (approaching max)
-	# Max distance is ~1414 (corners of 1000x1000 world)
-	var t = min(1.0, (distance - 900) / 514.0)  # 0 to 1
-	return int(5000 + t * 5000)
+	# Distance 1200-1800: Levels 1500-4000 (steep)
+	if distance <= 1800:
+		var t = (distance - 1200) / 600.0  # 0 to 1
+		return int(1500 + t * 2500)
+
+	# Distance 1800+: Levels 4000-10000 (approaching max)
+	# Max distance is ~2828 (corners of 2000x2000 world)
+	var t = min(1.0, (distance - 1800) / 1028.0)  # 0 to 1
+	return int(4000 + t * 6000)
 
 func get_hotspot_at(x: int, y: int) -> Dictionary:
 	"""Get hotspot info for a location. Returns {in_hotspot: bool, intensity: float}"""

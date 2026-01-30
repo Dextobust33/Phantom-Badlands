@@ -205,7 +205,8 @@ func get_all_monster_names() -> Array:
 	return names
 
 func select_monster_type(level: int) -> MonsterType:
-	"""Select an appropriate monster type for the level, with chance for higher-tier bleed"""
+	"""Select an appropriate monster type for the level, with tier blending.
+	Lower tier monsters become rarer but never completely disappear."""
 	# Get tier bleed settings from config
 	var spawn_cfg = balance_config.get("monster_spawning", {})
 	var base_bleed_chance = spawn_cfg.get("tier_bleed_chance", 7)
@@ -216,17 +217,47 @@ func select_monster_type(level: int) -> MonsterType:
 	var current_tier = tier_info.tier
 	var tier_progress = tier_info.progress  # 0.0 to 1.0
 
-	# Calculate actual bleed chance
+	# Calculate higher tier bleed chance (chance to encounter next tier up)
 	var bleed_chance = base_bleed_chance
 	if scale_to_area:
-		# Scale chance based on how far into the tier we are (higher at end of tier)
 		bleed_chance = int(base_bleed_chance * (0.5 + tier_progress))
 
-	# Roll for tier bleed (only if not already at highest tier)
-	var use_higher_tier = current_tier < 9 and randi() % 100 < bleed_chance
+	# Check for higher tier bleed
+	var target_tier = current_tier
+	if current_tier < 9 and randi() % 100 < bleed_chance:
+		target_tier = current_tier + 1
 
-	var possible_types = _get_tier_monsters(current_tier if not use_higher_tier else current_tier + 1)
-	return possible_types[randi() % possible_types.size()]
+	# Build weighted pool from target tier and all lower tiers
+	# Weights: target tier = 100, each tier below gets progressively rarer
+	# Formula: weight = 100 / (3 ^ tiers_below) - so tier-1=33%, tier-2=11%, tier-3=4%, tier-4=1%
+	var weighted_pool: Array[Dictionary] = []
+	var total_weight = 0
+
+	for tier in range(1, target_tier + 1):
+		var tiers_below = target_tier - tier
+		var weight: int
+		if tiers_below == 0:
+			weight = 100  # Current/target tier
+		else:
+			# Exponential decay: 30, 10, 3, 1 for tiers below
+			weight = max(1, int(100.0 / pow(3.0, tiers_below)))
+
+		var tier_monsters = _get_tier_monsters(tier)
+		for monster in tier_monsters:
+			weighted_pool.append({"monster": monster, "weight": weight})
+			total_weight += weight
+
+	# Select from weighted pool
+	var roll = randi() % total_weight
+	var cumulative = 0
+	for entry in weighted_pool:
+		cumulative += entry.weight
+		if roll < cumulative:
+			return entry.monster
+
+	# Fallback (shouldn't happen)
+	var fallback = _get_tier_monsters(current_tier)
+	return fallback[randi() % fallback.size()]
 
 func _get_tier_info(level: int) -> Dictionary:
 	"""Get the tier number and progress through that tier (0.0 to 1.0)"""
@@ -1537,15 +1568,23 @@ func _calculate_experience_reward(hp: int, strength: int, defense: int, level: i
 	return max(10, int(lethality * bonus / 10))
 
 func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: int) -> int:
-	"""Calculate gold reward with level bonus for high-level monsters"""
+	"""Calculate gold reward with diminishing returns at high levels.
+	   Gold caps at level 100 with log scaling beyond - gems become the primary high-level reward."""
 	var base_gold = base_stats.base_gold
 	var gold_scale = max(0.5, stat_scale)
 	var gold_reward = base_gold * gold_scale
 
-	# Add level bonus for level 100+
+	# Diminishing returns above level 100 - gold caps, gems take over
 	if level >= 100:
-		var level_bonus = 1.0 + log(level / 100.0) * 0.5
+		# Gold bonus is capped with log scaling: 1 + 0.3 * log2(level/100)
+		# L200: 1.3x, L500: 1.69x, L1000: 2.0x (was much higher before)
+		var level_bonus = 1.0 + 0.3 * log(float(level) / 100.0) / log(2.0)
 		gold_reward *= level_bonus
+
+	# Hard cap on gold to push players toward gems at high levels
+	var gold_cap = 10000.0  # Max 10k gold per kill
+	if gold_reward > gold_cap:
+		gold_reward = gold_cap
 
 	# Apply variance
 	gold_reward *= randf_range(0.8, 1.2)
