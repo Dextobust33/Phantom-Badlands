@@ -11140,7 +11140,7 @@ func show_help():
 [color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1%% hit chance, +2%% flee chance[/color] | +0.5%% crit per point | Contributes to Energy pool
 [color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3%% spell damage per point[/color] | Contributes to Mana pool
 [color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
-[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]+5%% Outsmart chance per point above 10[/color] | Contributes to Energy pool
+[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Outsmart: 15×log₂(WIT/10) bonus[/color] | Contributes to Energy pool
 
 [b][color=#FFD700]══ RACES ══[/color][/b]
 [color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=+50%%poison res,+20%%magic res,+25%%mana | [color=#FFA366]Dwarf[/color]=25%%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
@@ -11292,7 +11292,7 @@ func search_help(search_term: String):
 		{
 			"title": "STATS",
 			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy", "level", "up", "gain", "gains", "per"],
-			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = +3% spell damage per point | Contributes to Mana pool\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Increases mana pool | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = +5% Outsmart chance per point above 10 | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.25/WIS.75/CON.25/DEX.25 | Sorcerer=INT1.5/WIS.5/CON.25/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Thief=WIT1.5/DEX.75/CON.25 | Ranger=DEX.75/WIT.75/STR.5/CON.5 | Ninja=DEX1.25/WIT.75/STR.25/CON.25"
+			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = +3% spell damage per point | Contributes to Mana pool\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Increases mana pool | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = Outsmart: 15×log₂(WIT/10) bonus | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.25/WIS.75/CON.25/DEX.25 | Sorcerer=INT1.5/WIS.5/CON.25/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Thief=WIT1.5/DEX.75/CON.25 | Ranger=DEX.75/WIT.75/STR.5/CON.5 | Ninja=DEX1.25/WIT.75/STR.25/CON.25"
 		},
 		{
 			"title": "RACES",
@@ -11322,7 +11322,7 @@ func search_help(search_term: String):
 		{
 			"title": "OUTSMART",
 			"keywords": ["outsmart", "trick", "instant", "win", "intelligence", "dumb", "beast"],
-			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 5% per WITS above 10\n+15% for Tricksters\n+8% per monster INT below 10, -8% per INT above 10\nClamped 2-85% (Tricksters: 2-95%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
+			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 15×log₂(WIT/10) bonus\n+15% for Tricksters\n+3% per monster INT below 10, -2% per INT above 10\n-2% per point monster INT exceeds your WIT\nLevel penalty: -2%/lvl (1-10), -1%/lvl (11-50) above you\nCap: 85% Trickster, 70% others (reduced by monster INT/2, min 30%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
 		},
 		{
 			"title": "UNIVERSAL ABILITIES",
