@@ -2186,7 +2186,7 @@ func update_character_list_display():
 	if create_char_button:
 		create_char_button.disabled = not can_create_character
 		if not can_create_character:
-			create_char_button.text = "Max Characters (3)"
+			create_char_button.text = "Max Characters (6)"
 		else:
 			create_char_button.text = "Create New Character"
 
