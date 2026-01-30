@@ -387,6 +387,12 @@ var title_online_players: Array = []  # List of online players for targeting
 var title_broadcast_mode: bool = false  # Whether entering broadcast text
 var forge_available: bool = false  # Whether at Infernal Forge with Unforged Crown
 
+# Ability mode entry tracking
+var ability_entered_from_settings: bool = false
+
+# Leaderboard mode
+var leaderboard_mode: String = "fallen_heroes"  # "fallen_heroes" or "monster_kills"
+
 # Password change mode
 var changing_password: bool = false
 var password_change_step: int = 0  # 0=old, 1=new, 2=confirm
@@ -583,6 +589,10 @@ func _ready():
 	# Connect leaderboard signals
 	if close_leaderboard_button:
 		close_leaderboard_button.pressed.connect(_on_close_leaderboard_pressed)
+	# Connect leaderboard toggle button
+	var leaderboard_toggle = leaderboard_panel.get_node_or_null("VBox/ToggleButton") if leaderboard_panel else null
+	if leaderboard_toggle:
+		leaderboard_toggle.pressed.connect(_on_leaderboard_toggle_pressed)
 
 	# Connect player info panel signals
 	if close_player_info_button:
@@ -1902,6 +1912,7 @@ func _input(event):
 			var key_action_4 = keybinds.get("action_4", default_keybinds.get("action_4", KEY_R))
 			var key_action_5 = keybinds.get("action_5", default_keybinds.get("action_5", KEY_1))
 			var key_action_6 = keybinds.get("action_6", default_keybinds.get("action_6", KEY_2))
+			var key_action_7 = keybinds.get("action_7", default_keybinds.get("action_7", KEY_3))
 			var key_action_0 = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
 
 			if keycode == key_action_1:
@@ -1925,6 +1936,11 @@ func _input(event):
 				toggle_swap_attack_setting()
 			elif keycode == key_action_6:
 				toggle_swap_outsmart_setting()
+			elif keycode == key_action_7:
+				# Open Abilities from Settings
+				ability_entered_from_settings = true
+				settings_mode = false
+				enter_ability_mode()
 			elif keycode == key_action_0:
 				close_settings()
 			get_viewport().set_input_as_handled()
@@ -2159,7 +2175,13 @@ func show_death_panel(char_name: String, level: int, experience: int, cause: Str
 func show_leaderboard_panel():
 	if leaderboard_panel:
 		leaderboard_panel.visible = true
-	send_to_server({"type": "get_leaderboard", "limit": 20})
+	# Request data based on current mode
+	if leaderboard_mode == "monster_kills":
+		send_to_server({"type": "get_monster_kills_leaderboard", "limit": 20})
+	else:
+		send_to_server({"type": "get_leaderboard", "limit": 20})
+	# Update toggle button text
+	_update_leaderboard_toggle_button()
 
 func show_game_ui():
 	hide_all_panels()
@@ -2199,6 +2221,7 @@ func update_leaderboard_display(entries: Array):
 
 	if entries.is_empty():
 		leaderboard_list.append_text("[center][color=#555555]No entries yet. Be the first![/color][/center]")
+		_reset_leaderboard_scroll.call_deferred()
 		return
 
 	for entry in entries:
@@ -2220,6 +2243,67 @@ func update_leaderboard_display(entries: Array):
 		leaderboard_list.append_text("[color=%s]#%d %s[/color]\n" % [color, rank, name])
 		leaderboard_list.append_text("   Level %d %s - %d XP\n" % [level, cls, exp])
 		leaderboard_list.append_text("   [color=#555555]Slain by: %s[/color]\n\n" % cause)
+
+	# Reset scroll to top after layout updates
+	_reset_leaderboard_scroll.call_deferred()
+
+func update_monster_kills_display(entries: Array):
+	"""Display the monster kills leaderboard"""
+	if not leaderboard_list:
+		return
+
+	leaderboard_list.clear()
+	leaderboard_list.append_text("[center][b]DEADLIEST MONSTERS[/b][/center]\n\n")
+
+	if entries.is_empty():
+		leaderboard_list.append_text("[center][color=#555555]No kills recorded yet.[/color][/center]")
+		_reset_leaderboard_scroll.call_deferred()
+		return
+
+	var rank = 1
+	for entry in entries:
+		var monster_name = entry.get("monster_name", "Unknown")
+		var kills = entry.get("kills", 0)
+
+		var color = "#FFFFFF"
+		if rank == 1:
+			color = "#FF0000"  # Red for deadliest
+		elif rank == 2:
+			color = "#FF6600"  # Orange
+		elif rank == 3:
+			color = "#FF9900"  # Light orange
+
+		var kill_text = "kill" if kills == 1 else "kills"
+		leaderboard_list.append_text("[color=%s]#%d %s[/color]\n" % [color, rank, monster_name])
+		leaderboard_list.append_text("   [color=#FF4444]%d player %s[/color]\n\n" % [kills, kill_text])
+		rank += 1
+
+	# Reset scroll to top after layout updates
+	_reset_leaderboard_scroll.call_deferred()
+
+func _reset_leaderboard_scroll():
+	"""Reset leaderboard scroll to top (called deferred after layout update)"""
+	if leaderboard_list:
+		leaderboard_list.get_v_scroll_bar().value = 0
+
+func _update_leaderboard_toggle_button():
+	"""Update the toggle button text based on current mode"""
+	var toggle_button = leaderboard_panel.get_node_or_null("VBox/ToggleButton")
+	if toggle_button:
+		if leaderboard_mode == "fallen_heroes":
+			toggle_button.text = "Show Deadliest Monsters"
+		else:
+			toggle_button.text = "Show Fallen Heroes"
+
+func _on_leaderboard_toggle_pressed():
+	"""Toggle between Fallen Heroes and Monster Kills views"""
+	if leaderboard_mode == "fallen_heroes":
+		leaderboard_mode = "monster_kills"
+		send_to_server({"type": "get_monster_kills_leaderboard", "limit": 20})
+	else:
+		leaderboard_mode = "fallen_heroes"
+		send_to_server({"type": "get_leaderboard", "limit": 20})
+	_update_leaderboard_toggle_button()
 
 func update_online_players(players: Array):
 	"""Update the online players list display with clickable names"""
@@ -2690,7 +2774,7 @@ func update_action_bar():
 				{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -3342,7 +3426,7 @@ func update_action_bar():
 			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
 			fourth_action,
 			fifth_action,
-			{"label": "Abilities", "action_type": "local", "action_data": "abilities", "enabled": true},
+			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
 			teleport_action,
@@ -5289,6 +5373,10 @@ func execute_local_action(action: String):
 		"settings_rebind_move_right":
 			start_rebinding("move_right")
 			update_action_bar()
+		"settings_abilities":
+			ability_entered_from_settings = true
+			settings_mode = false
+			enter_ability_mode()
 		# Trade actions
 		"trade_accept":
 			send_to_server({"type": "trade_response", "accept": true})
@@ -7181,8 +7269,14 @@ func exit_ability_mode():
 	pending_ability_action = ""
 	selected_ability_slot = -1
 	ability_data.clear()
-	display_game("[color=#808080]Exited ability management.[/color]")
-	update_action_bar()
+
+	# Return to settings if we entered from there
+	if ability_entered_from_settings:
+		ability_entered_from_settings = false
+		open_settings()
+	else:
+		display_game("[color=#808080]Exited ability management.[/color]")
+		update_action_bar()
 
 func display_ability_menu():
 	"""Display the ability loadout management screen"""
@@ -8482,6 +8576,9 @@ func handle_server_message(message: Dictionary):
 
 		"leaderboard":
 			update_leaderboard_display(message.get("entries", []))
+
+		"monster_kills_leaderboard":
+			update_monster_kills_display(message.get("entries", []))
 
 		"leaderboard_top5":
 			# A player entered the Hall of Heroes (top 5) - show in chat only
@@ -10091,6 +10188,7 @@ func display_settings_menu():
 	display_game("[%s] Swap Attack with First Ability: %s" % [get_action_key_name(5), swap_ability_status])
 	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
 	display_game("[%s] Swap Attack with Outsmart: %s" % [get_action_key_name(6), swap_outsmart_status])
+	display_game("[%s] Manage Abilities" % get_action_key_name(7))
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")

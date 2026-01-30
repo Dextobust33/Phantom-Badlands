@@ -309,7 +309,7 @@ Stealth ability unlocked at level 20 for all classes.
 
 Customize which abilities are equipped to 4 combat slots.
 
-**Access:** Action bar [1] "Abilities" or `/abilities` command
+**Access:** Settings menu [7] "Manage Abilities" or `/abilities` command
 
 **Features:**
 - 4 slots for combat abilities (Q, W, E, R default)
@@ -432,3 +432,24 @@ The Shrieker summons random high-tier monsters instead of copies.
 | 7 | 10% | Void Walker, World Serpent |
 | 8 | 7% | Cosmic Horror, Time Weaver |
 | 9 | 3% | Avatar of Chaos, Entropy |
+
+---
+
+## Leaderboards
+
+Two leaderboard views accessible via the "Leaders" button on the action bar or `/leaders` command.
+
+### Hall of Fallen Heroes
+Ranks deceased characters by experience gained before death.
+
+**Display:** Character name, level, class, XP, cause of death
+**Ranking:** Top 100 by experience (descending)
+
+### Deadliest Monsters
+Tracks which monsters have killed the most players (permadeath only).
+
+**Display:** Monster name, total player kills
+**Grouping:** All monster levels combined (e.g., all Ogres count together)
+**Ranking:** Top 20 by kill count (descending)
+
+**Toggle:** Use the "Show Deadliest Monsters" / "Show Fallen Heroes" button to switch views.

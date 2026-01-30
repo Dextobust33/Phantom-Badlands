@@ -177,7 +177,7 @@ Quests: [Back] [---] [---] [---] [---] [---] [---] [---] [---] [---]
 
 ### 16. Normal Movement (`has_character`)
 ```
-[Status] [Inventory] [Rest/Meditate] [Title/Help] [Quests/Forge] [Abilities] [Settings] [Cloak*] [Teleport*] [Logout]
+[Status] [Inventory] [Rest/Meditate] [Title/Help] [Quests/Forge] [Leaders] [Settings] [Cloak*] [Teleport*] [Logout]
 
 * Cloak appears at level 20+
 * Teleport appears at level 30+ (Mage), 45+ (Trickster), 60+ (Warrior)

@@ -482,6 +482,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_delete_character(peer_id, message)
 		"get_leaderboard":
 			handle_get_leaderboard(peer_id, message)
+		"get_monster_kills_leaderboard":
+			handle_get_monster_kills_leaderboard(peer_id, message)
 		"chat":
 			handle_chat(peer_id, message)
 		"move":
@@ -918,6 +920,17 @@ func handle_get_leaderboard(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {
 		"type": "leaderboard",
+		"entries": entries
+	})
+
+func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
+	var limit = message.get("limit", 20)
+	limit = clamp(limit, 1, 100)
+
+	var entries = persistence.get_monster_kills_leaderboard(limit)
+
+	send_to_peer(peer_id, {
+		"type": "monster_kills_leaderboard",
 		"entries": entries
 	})
 
@@ -2071,6 +2084,9 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		character.title_data = {}
 
 	print("PERMADEATH: %s (Level %d) killed by %s" % [character.name, character.level, cause_of_death])
+
+	# Record monster kill for Monster Kills leaderboard
+	persistence.record_monster_kill(cause_of_death)
 
 	# Add to leaderboard
 	var rank = persistence.add_to_leaderboard(character, cause_of_death, username)

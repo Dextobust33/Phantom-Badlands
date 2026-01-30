@@ -1046,6 +1046,11 @@ bbcode_enabled = true
 text = "[center][b]HALL OF FALLEN HEROES[/b][/center]"
 scroll_following = true
 
+[node name="ToggleButton" type="Button" parent="LeaderboardPanel/VBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "Show Deadliest Monsters"
+
 [node name="CloseButton" type="Button" parent="LeaderboardPanel/VBox" unique_id=1692867732]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2

@@ -19,6 +19,7 @@ func _ready():
 	ensure_data_directories()
 	load_accounts()
 	load_leaderboard()
+	load_monster_kills()
 
 # ===== DIRECTORY SETUP =====
 
@@ -526,3 +527,103 @@ func admin_get_account_info(username: String) -> Dictionary:
 		"max_characters": account.max_characters,
 		"characters": account.character_slots
 	}
+
+# ===== MONSTER KILLS LEADERBOARD =====
+
+const MONSTER_KILLS_FILE = "user://data/monster_kills_leaderboard.json"
+
+var monster_kills_data: Dictionary = {}
+
+func load_monster_kills():
+	"""Load monster kills leaderboard from file"""
+	if not FileAccess.file_exists(MONSTER_KILLS_FILE):
+		monster_kills_data = {"monsters": {}}
+		save_monster_kills()
+		return
+
+	var file = FileAccess.open(MONSTER_KILLS_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+
+		if error == OK:
+			monster_kills_data = json.data
+			_migrate_monster_kills_data()
+		else:
+			monster_kills_data = {"monsters": {}}
+
+func _migrate_monster_kills_data():
+	"""Migrate old monster kill entries that have level info to base names"""
+	if not monster_kills_data.has("monsters"):
+		return
+
+	var migrated = false
+	var new_monsters = {}
+
+	for monster_name in monster_kills_data.monsters.keys():
+		var kills = monster_kills_data.monsters[monster_name]
+		var base_name = monster_name
+
+		# Strip level info (format: "Monster Name (Lvl X)")
+		var lvl_pos = monster_name.find(" (Lvl ")
+		if lvl_pos > 0:
+			base_name = monster_name.substr(0, lvl_pos)
+			migrated = true
+
+		# Combine kills for same base monster
+		if new_monsters.has(base_name):
+			new_monsters[base_name] += kills
+		else:
+			new_monsters[base_name] = kills
+
+	if migrated:
+		monster_kills_data.monsters = new_monsters
+		save_monster_kills()
+		print("Migrated monster kills data to use base names")
+
+func save_monster_kills():
+	"""Save monster kills leaderboard to file"""
+	var file = FileAccess.open(MONSTER_KILLS_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(monster_kills_data, "\t"))
+		file.close()
+
+func record_monster_kill(monster_name: String):
+	"""Record a player kill by a monster (strips level info to group by base name)"""
+	if not monster_kills_data.has("monsters"):
+		monster_kills_data["monsters"] = {}
+
+	# Strip level info from monster name (format: "Monster Name (Lvl X)")
+	var base_name = monster_name
+	var lvl_pos = monster_name.find(" (Lvl ")
+	if lvl_pos > 0:
+		base_name = monster_name.substr(0, lvl_pos)
+
+	if not monster_kills_data.monsters.has(base_name):
+		monster_kills_data.monsters[base_name] = 0
+
+	monster_kills_data.monsters[base_name] += 1
+	save_monster_kills()
+	print("Monster kill recorded: %s (total: %d)" % [base_name, monster_kills_data.monsters[base_name]])
+
+func get_monster_kills_leaderboard(limit: int = 20) -> Array:
+	"""Get top monster killers sorted by kill count"""
+	if not monster_kills_data.has("monsters"):
+		return []
+
+	var entries = []
+	for monster_name in monster_kills_data.monsters.keys():
+		entries.append({
+			"monster_name": monster_name,
+			"kills": monster_kills_data.monsters[monster_name]
+		})
+
+	# Sort by kills descending
+	entries.sort_custom(func(a, b): return a.kills > b.kills)
+
+	# Limit results
+	if entries.size() > limit:
+		entries.resize(limit)
+
+	return entries
