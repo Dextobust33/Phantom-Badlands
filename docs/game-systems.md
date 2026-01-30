@@ -2,6 +2,151 @@
 
 Detailed documentation for game features and mechanics.
 
+## Account Limits
+
+- **Max characters per account:** 6
+- **Character deletion:** Permanent on death (permadeath)
+
+---
+
+## Universal Resource Bonuses
+
+Equipment resource stats (mana, stamina, energy) convert to your class's primary resource.
+
+```mermaid
+flowchart TB
+    subgraph Input["Equipment Bonuses"]
+        MANA["+20 Mana"]
+        STAM["+10 Stamina"]
+        ENRG["+10 Energy"]
+    end
+
+    subgraph Conversion["Conversion by Class"]
+        MANA --> WARRIOR_M["×0.5 = +10"]
+        MANA --> MAGE_M["×1 = +20"]
+        MANA --> TRICK_M["×0.5 = +10"]
+
+        STAM --> WARRIOR_S["+10"]
+        STAM --> MAGE_S["×2 = +20"]
+        STAM --> TRICK_S["+10"]
+
+        ENRG --> WARRIOR_E["+10"]
+        ENRG --> MAGE_E["×2 = +20"]
+        ENRG --> TRICK_E["+10"]
+    end
+
+    subgraph Output["Final Bonus"]
+        WARRIOR_M --> WAR_TOTAL["Warrior: +30 STA"]
+        WARRIOR_S --> WAR_TOTAL
+        WARRIOR_E --> WAR_TOTAL
+
+        MAGE_M --> MAGE_TOTAL["Mage: +60 MP"]
+        MAGE_S --> MAGE_TOTAL
+        MAGE_E --> MAGE_TOTAL
+
+        TRICK_M --> TRICK_TOTAL["Trickster: +30 EN"]
+        TRICK_S --> TRICK_TOTAL
+        TRICK_E --> TRICK_TOTAL
+    end
+
+    style WAR_TOTAL fill:#FFD700
+    style MAGE_TOTAL fill:#4169E1
+    style TRICK_TOTAL fill:#32CD32
+```
+
+### Conversion Rules
+
+| Your Class Path | Primary Resource | Conversion |
+|-----------------|------------------|------------|
+| Warrior (Fighter, Barbarian, Paladin) | Stamina | Mana×0.5 + Stamina + Energy |
+| Mage (Wizard, Sorcerer, Sage) | Mana | Mana + (Stamina+Energy)×2 |
+| Trickster (Thief, Ranger, Ninja) | Energy | Mana×0.5 + Stamina + Energy |
+
+### Why Scaling?
+
+Mana affixes on equipment roll ~2× larger values than stamina/energy affixes. The scaling ensures balanced conversion:
+- **Mana → Stamina/Energy:** 0.5× (halved because mana values are larger)
+- **Stamina/Energy → Mana:** 2× (doubled to match mana's larger scale)
+
+### Display
+
+- Item tooltips show the converted value with your class's resource label (STA/EN/MP)
+- Item comparison brackets show class-appropriate resource differences
+- Equipment bonuses in stats screen show final converted values
+
+### Implementation
+
+See `shared/character.gd` `get_equipment_bonuses()` for conversion logic.
+
+---
+
+## Rare Monster Variants
+
+Some monsters spawn as rare variants with enhanced stats.
+
+### Variant Bonuses
+- +50% HP
+- +25% damage
+- +50% XP reward
+- +50% gold reward
+- Better loot quality
+
+### Visual Indicator
+
+Rare variants display a **★** symbol before their name in the combat HP bar:
+```
+★ Goblin Warrior (Lvl 12): [████████░░] 85/170
+```
+
+### Flock Encounters
+
+Rare variants can appear in flock encounters (multi-monster battles). Each monster in a flock has an independent chance to be a rare variant.
+
+---
+
+## Trading Post Discovery
+
+Players can track which trading posts they've visited.
+
+```mermaid
+sequenceDiagram
+    participant P as Player
+    participant S as Server
+    participant DB as SQLite
+
+    Note over P,S: First Visit to Trading Post
+    P->>S: Enter trading post location
+    S->>S: Check character.discovered_posts
+    alt Not Previously Discovered
+        S->>S: Add post to discovered_posts
+        S->>DB: Save character
+        S->>P: "You discovered [Post Name]!"
+    else Already Discovered
+        S->>P: Normal trading post interaction
+    end
+
+    Note over P,S: Viewing Discoveries
+    P->>P: Type "help"
+    P->>P: Scroll to "YOUR DISCOVERED POSTS"
+    P->>P: See: "Haven (0, 10), Crossroads (0, 0)..."
+```
+
+### How It Works
+
+1. When you enter a trading post for the first time, it's recorded to your character
+2. Discovered posts appear in your Help page under "YOUR DISCOVERED POSTS"
+3. Shows post name and coordinates for easy navigation
+
+### Persistence
+
+Discovered posts are saved with your character data and persist across sessions.
+
+### Viewing Discoveries
+
+Type `help` and search for "discovered" or scroll to the Trading Posts section.
+
+---
+
 ## Monster HP Knowledge System
 
 Players discover monster HP through combat experience, not by seeing actual values.

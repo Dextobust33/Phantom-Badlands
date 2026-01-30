@@ -145,6 +145,52 @@ flowchart LR
     end
 ```
 
+## Rare Monster Variants
+
+Some monsters spawn as rare variants with enhanced stats and rewards.
+
+```mermaid
+flowchart LR
+    subgraph Spawn["Monster Spawn"]
+        GEN[Generate Monster] --> ROLL{Variant Roll}
+        ROLL -->|~10% Chance| RARE[Rare Variant]
+        ROLL -->|~90%| NORMAL[Normal Monster]
+    end
+
+    subgraph RareBonus["Rare Variant Bonuses"]
+        RARE --> HP["+50% HP"]
+        RARE --> DMG["+25% Damage"]
+        RARE --> XP["+50% XP"]
+        RARE --> GOLD["+50% Gold"]
+        RARE --> LOOT["Better Loot"]
+    end
+
+    subgraph Display["Combat Display"]
+        RARE --> STAR["★ Monster Name"]
+        NORMAL --> PLAIN["Monster Name"]
+    end
+
+    style RARE fill:#FFD700
+    style STAR fill:#FFD700
+```
+
+**Visual Indicator:** Rare variants show a **★** before their name:
+```
+★ Goblin Warrior (Lvl 12): [████████░░] 85/170
+```
+
+| Bonus | Amount |
+|-------|--------|
+| HP | +50% |
+| Damage | +25% |
+| XP Reward | +50% |
+| Gold Reward | +50% |
+| Loot Quality | Improved |
+
+**Flock Encounters:** Rare variants can appear in flock encounters - each monster rolls independently.
+
+---
+
 ## Monster Ability Effects
 
 | Ability | When | Effect |

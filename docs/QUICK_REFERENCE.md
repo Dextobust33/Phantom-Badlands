@@ -56,6 +56,11 @@ The action bar (`update_action_bar()` at line ~2550 in client.gd) checks states 
 
 **RULE:** After changing ANY state variable, call `update_action_bar()`.
 
+### Account Limits
+
+- **Max characters:** 6 per account
+- **Permadeath:** Characters deleted on death
+
 ### Classes & Paths
 
 | Path | Resource | Classes |
@@ -63,6 +68,8 @@ The action bar (`update_action_bar()` at line ~2550 in client.gd) checks states 
 | Warrior | Stamina | Fighter, Barbarian, Paladin |
 | Mage | Mana | Wizard, Sorcerer, Sage |
 | Trickster | Energy | Thief, Ranger, Ninja |
+
+**Universal Resource Bonuses:** Equipment resource stats convert to your class's primary resource (with scaling: mana affixes are 2× larger, so mana→stamina/energy is 0.5×).
 
 ### Key Locations
 
