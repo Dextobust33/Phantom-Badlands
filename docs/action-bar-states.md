@@ -10,12 +10,14 @@ States are checked in this exact order. **First match wins.**
 stateDiagram-v2
     [*] --> settings_mode: Highest Priority
     settings_mode --> pending_trade_request
-    pending_trade_request --> in_trade
+    pending_trade_request --> pending_summon
+    pending_summon --> in_trade
     in_trade --> wish_selection_mode
     wish_selection_mode --> monster_select_mode
     monster_select_mode --> target_farm_mode
     target_farm_mode --> ability_mode
-    ability_mode --> title_mode
+    ability_mode --> title_stat_selection
+    title_stat_selection --> title_mode
     title_mode --> combat_item_mode
     combat_item_mode --> in_combat
     in_combat --> flock_pending
@@ -75,9 +77,17 @@ Select Slot:    [Cancel] [---] [---] [---] [---] [1-4 Slot] [---] [---] [---] [-
 
 ### 8. Title Mode (`title_mode`)
 ```
-Main:   [Back] [Ability1] [Ability2] [Ability3] [Ability4] [---] [---] [---] [---] [---]
-Target: [Cancel] [---] [---] [---] [---] [1-9 Select] [---] [---] [---] [---]
+Main:         [Back] [Ability1] [Ability2] [Ability3] [Ability4] [---] [---] [---] [---] [---]
+Target:       [Cancel] [---] [---] [---] [---] [1-9 Select] [---] [---] [---] [---]
+Stat Select:  [Cancel] [STR] [DEX] [CON] [INT] [WIS] [WIT] [---] [---] [---]
+              (for Bless ability - title_stat_selection_mode)
 ```
+
+### 8a. Summon Consent (`pending_summon_from != ""`)
+```
+[Accept] [Decline] [---] [---] [---] [---] [---] [---] [---] [---]
+```
+Shown when another player with Summon ability targets you. Accept teleports you to their location.
 
 ### 9. Combat Item Mode (`combat_item_mode`)
 ```

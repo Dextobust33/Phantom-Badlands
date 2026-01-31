@@ -134,6 +134,42 @@ sequenceDiagram
 | `unequip_ability` | `slot` | Clear ability slot |
 | `set_ability_keybind` | `slot`, `key` | Change keybind |
 
+### Title System
+
+| Message | Fields | Description |
+|---------|--------|-------------|
+| `title_menu` | - | Open title menu |
+| `claim_title` | `title_id` | Claim Jarl/High King title |
+| `title_ability` | `ability_id`, `target` | Use title ability |
+| `title_ability` | `ability_id`, `target`, `stat` | Bless with stat choice |
+| `pilgrimage_donate` | `amount` | Donate gold to Shrine of Wealth |
+| `start_crucible` | - | Start the Crucible gauntlet |
+| `summon_response` | `accepted` | Accept/decline summon request |
+| `forge_crown` | - | Forge crown at Fire Mountain |
+
+### Title Ability Flow (Summon with Consent)
+
+```mermaid
+sequenceDiagram
+    participant J as Title Holder
+    participant S as Server
+    participant T as Target
+
+    J->>S: {"type": "title_ability", "ability_id": "summon", "target": "PlayerB"}
+    S->>S: Validate & deduct gold cost
+    S->>T: {"type": "summon_request", "from": "PlayerA", "x": 100, "y": 50}
+    Note over T: Action bar shows Accept/Decline
+
+    alt Accept
+        T->>S: {"type": "summon_response", "accepted": true}
+        S->>T: Teleport to (100, 50)
+        S->>J: {"type": "game_message", "message": "PlayerB accepted your summon"}
+    else Decline
+        T->>S: {"type": "summon_response", "accepted": false}
+        S->>J: {"type": "game_message", "message": "PlayerB declined your summon"}
+    end
+```
+
 ## Server → Client Messages
 
 ### Game State Updates
@@ -147,6 +183,10 @@ sequenceDiagram
 | `combat_end` | `victory`, `rewards`, `message` | Battle ends |
 | `chat_message` | `sender`, `message`, `channel` | Chat received |
 | `quest_progress` | `quest_id`, `progress`, `completed` | Quest update |
+| `title_menu_data` | `titles`, `current_title`, `abilities`, `hints` | Title menu content |
+| `summon_request` | `from`, `x`, `y` | Incoming summon request |
+| `crucible_start` | `boss_number`, `monster` | Crucible boss spawned |
+| `crucible_complete` | - | Pilgrimage complete, Eternal granted |
 
 ### Combat State Object
 

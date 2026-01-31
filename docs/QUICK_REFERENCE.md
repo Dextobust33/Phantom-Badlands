@@ -38,21 +38,23 @@ The action bar (`update_action_bar()` at line ~2550 in client.gd) checks states 
 
 1. `settings_mode`
 2. `pending_trade_request`
-3. `in_trade`
-4. `wish_selection_mode`
-5. `monster_select_mode`
-6. `target_farm_mode`
-7. `ability_mode`
-8. `title_mode`
-9. `combat_item_mode`
-10. `in_combat`
-11. `flock_pending`
-12. `pending_continue`
-13. `at_merchant` + `pending_merchant_action`
-14. `inventory_mode` + `pending_inventory_action`
-15. `at_trading_post`
-16. `has_character` (normal mode)
-17. No character
+3. `pending_summon` (summon consent)
+4. `in_trade`
+5. `wish_selection_mode`
+6. `monster_select_mode`
+7. `target_farm_mode`
+8. `ability_mode`
+9. `title_stat_selection_mode` (Bless stat choice)
+10. `title_mode`
+11. `combat_item_mode`
+12. `in_combat`
+13. `flock_pending`
+14. `pending_continue`
+15. `at_merchant` + `pending_merchant_action`
+16. `inventory_mode` + `pending_inventory_action`
+17. `at_trading_post`
+18. `has_character` (normal mode)
+19. No character
 
 **RULE:** After changing ANY state variable, call `update_action_bar()`.
 
@@ -132,6 +134,15 @@ Location: `client/monster_art.gd` in `get_art_map()`
 
 - **Wide art (>50 chars):** Copy exactly, preserve whitespace
 - **Small art (≤50 chars):** Just the art, auto-centered with border
+
+### Title System Commands
+
+| Command | Description |
+|---------|-------------|
+| `/donate <amount>` | Donate gold at Shrine of Wealth (pilgrimage) |
+| `/crucible` | Start the Crucible gauntlet (pilgrimage final) |
+
+**Access:** "High Seat" action bar button at (0,0) trading post, or "Title" button if title holder
 
 ## Theme Colors
 

@@ -453,3 +453,225 @@ Tracks which monsters have killed the most players (permadeath only).
 **Ranking:** Top 20 by kill count (descending)
 
 **Toggle:** Use the "Show Deadliest Monsters" / "Show Fallen Heroes" button to switch views.
+
+---
+
+## Title System
+
+Endgame progression through unique titles with powerful abilities.
+
+### Title Hierarchy
+
+```mermaid
+flowchart TB
+    subgraph Titles["Title Progression"]
+        JARL["[Jarl]<br/>Lv50-500<br/>1 per realm"] --> HIGH_KING["[High King]<br/>Lv200-1000<br/>1 per realm"]
+        HIGH_KING --> ELDER["[Elder]<br/>Lv1000+<br/>Auto-granted"]
+        ELDER --> ETERNAL["[Eternal]<br/>Lv1000+<br/>Max 3, 3 lives"]
+    end
+
+    subgraph Items["Required Items"]
+        RING["Jarl's Ring<br/>0.5% from Lv50+"] --> JARL
+        CROWN_U["Unforged Crown<br/>0.2% from Lv200+"] --> FORGE["Infernal Forge<br/>(-400,0)"]
+        FORGE --> CROWN_N["Crown of the North"] --> HIGH_KING
+    end
+
+    subgraph Locations["Claim Locations"]
+        HIGH_SEAT["The High Seat<br/>(0,0)"]
+        JARL -.-> HIGH_SEAT
+        HIGH_KING -.-> HIGH_SEAT
+    end
+
+    style JARL fill:#C0C0C0
+    style HIGH_KING fill:#FFD700
+    style ELDER fill:#9400D3,color:#fff
+    style ETERNAL fill:#00FFFF
+```
+
+### Title Requirements
+
+| Title | Level | Item | Location | Unique |
+|-------|-------|------|----------|--------|
+| Jarl | 50-500 | Jarl's Ring | (0,0) | 1 per realm |
+| High King | 200-1000 | Crown of the North | (0,0) | 1 per realm |
+| Elder | 1000+ | None (auto) | N/A | Unlimited |
+| Eternal | 1000+ | Pilgrimage | N/A | Max 3 |
+
+### Title Abilities & Costs
+
+```mermaid
+flowchart LR
+    subgraph Jarl["Jarl Abilities"]
+        J1["Summon<br/>500g"]
+        J2["Tax<br/>1,000g"]
+        J3["Gift of Silver<br/>5% of gold"]
+        J4["Collect Tribute<br/>1hr CD"]
+    end
+
+    subgraph HighKing["High King Abilities"]
+        HK1["Knight<br/>50K + 5 gems"]
+        HK2["Cure<br/>5,000g"]
+        HK3["Exile<br/>10,000g"]
+        HK4["Royal Treasury<br/>2hr CD"]
+    end
+
+    subgraph Elder["Elder Abilities"]
+        E1["Heal<br/>10,000g"]
+        E2["Mentor<br/>500K + 25 gems"]
+        E3["Seek Flame<br/>25,000g"]
+    end
+
+    subgraph Eternal["Eternal Abilities"]
+        ET1["Restore<br/>50,000g"]
+        ET2["Bless<br/>5M + 100 gems"]
+        ET3["Smite<br/>100K + 10 gems"]
+        ET4["Guardian<br/>2M + 50 gems"]
+    end
+
+    style Jarl fill:#C0C0C0
+    style HighKing fill:#FFD700
+    style Elder fill:#9400D3,color:#fff
+    style Eternal fill:#00FFFF
+```
+
+### Special Statuses
+
+| Status | Granted By | Bonuses | Duration |
+|--------|------------|---------|----------|
+| Knight | High King | +15% dmg, +10% gold | Until replaced |
+| Mentee | Elder | +30% XP, +20% gold | Until replaced |
+| Guardian Save | Eternal | One death prevented | Until used |
+
+### Summon Consent System
+
+```mermaid
+sequenceDiagram
+    participant J as Jarl
+    participant S as Server
+    participant T as Target
+
+    J->>S: Use Summon on Target
+    S->>S: Deduct 500 gold
+    S->>T: summon_request message
+    T->>T: Action bar shows Accept/Decline
+    alt Accept
+        T->>S: summon_response (accept)
+        S->>T: Teleport to Jarl's location
+        S->>J: "Target accepted summon"
+    else Decline
+        T->>S: summon_response (decline)
+        S->>J: "Target declined summon"
+    end
+```
+
+---
+
+## Eternal Pilgrimage
+
+The path to becoming Eternal requires completing 6 stages.
+
+### Pilgrimage Flow
+
+```mermaid
+flowchart TB
+    subgraph Stage1["Stage 1: The Awakening"]
+        A1["Slay 5,000 monsters"]
+    end
+
+    subgraph Stage2["Stage 2-4: The Three Trials"]
+        T1["Trial of Blood<br/>1,000 Tier 8+ kills<br/>Reward: +3 STR"]
+        T2["Trial of Mind<br/>200 Outsmarts<br/>Reward: +3 WIT"]
+        T3["Trial of Wealth<br/>Donate 10M gold<br/>Reward: +3 WIS"]
+    end
+
+    subgraph Stage5["Stage 5: Ember Hunt"]
+        E1["Collect 500 Flame Embers<br/>T8: 10%, T9: 25%"]
+    end
+
+    subgraph Stage6["Stage 6: The Crucible"]
+        C1["Defeat 10 consecutive<br/>Tier 9 bosses"]
+    end
+
+    A1 --> T1
+    T1 --> T2
+    T2 --> T3
+    T3 --> E1
+    E1 --> C1
+    C1 --> ETERNAL["[Eternal] Title"]
+
+    style ETERNAL fill:#00FFFF
+```
+
+### Pilgrimage Commands
+
+| Command | Description |
+|---------|-------------|
+| Seek Flame | Check pilgrimage progress (Elder ability, 25K gold) |
+| `/donate <amount>` | Donate gold at Shrine of Wealth (Trial of Wealth) |
+| `/crucible` | Start the Crucible gauntlet (final stage) |
+
+### Ember Drop Rates
+
+| Source | Chance | Amount |
+|--------|--------|--------|
+| Tier 8 monster | 10% | 1 |
+| Tier 9 monster | 25% | 1-3 |
+| Rare variant | 100% | 2 |
+| Boss monster | 100% | 5 |
+
+### The Crucible
+
+The final pilgrimage stage is a gauntlet of 10 consecutive Tier 9 boss fights.
+
+**Rules:**
+- Bosses are spawned one at a time
+- Victory spawns the next boss immediately
+- Death resets Crucible progress (but keeps previous trial completions)
+- Cannot flee during Crucible
+- Victory completes the pilgrimage and grants Eternal title
+
+---
+
+## Tax Collector System
+
+Roaming tax collectors take gold from players.
+
+**Trigger:** 5% chance per movement when carrying 100+ gold
+
+**Tax Rate:** 8% of current gold (minimum 10g)
+
+**Immunity:** Jarls and High Kings are immune to tax collection
+
+**Variants:**
+| Type | Effect |
+|------|--------|
+| Quick | Standard 8% tax |
+| Bumbling | Only 5% tax |
+| Veteran | 10% tax |
+| Negotiator | Standard tax + 5% gold find for 3 battles |
+
+---
+
+## Abuse Prevention
+
+Title holders can lose their title through abuse of power.
+
+### Abuse Points
+
+| Action | Points |
+|--------|--------|
+| Same target within 30 min | +3 |
+| Targeting 20+ levels lower | +2 |
+| Targeting player in combat | +3 |
+| Spam (3+ abilities in 10 min) | +2 |
+
+### Thresholds
+
+| Title | Threshold |
+|-------|-----------|
+| Jarl | 8 points |
+| High King | 15 points |
+
+**Decay:** 1 point per hour
+
+**Consequence:** Losing title removes all abilities and the title prefix
