@@ -615,6 +615,13 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_trade_ready(peer_id)
 		"trade_cancel":
 			handle_trade_cancel(peer_id)
+		# Pilgrimage system handlers
+		"pilgrimage_donate":
+			handle_pilgrimage_donate(peer_id, message)
+		"summon_response":
+			handle_summon_response(peer_id, message)
+		"start_crucible":
+			handle_start_crucible(peer_id)
 		_:
 			pass
 
@@ -1659,6 +1666,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							]
 						})
 
+			# Handle crucible victory (Stage 4)
+			if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+				var monster_data = result.get("monster", {})
+				if monster_data.get("is_crucible", false):
+					handle_crucible_victory(peer_id)
+
 			# Record monster knowledge (player now knows this monster type's HP at this level)
 			var killed_monster_name = result.get("monster_name", "")
 			var killed_monster_level = result.get("monster_level", 1)
@@ -2155,6 +2168,22 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	var account_id = peers[peer_id].account_id
 	var username = peers[peer_id].username
 
+	# Check for Guardian death save (granted by Eternal)
+	if character.guardian_death_save:
+		character.guardian_death_save = false
+		character.guardian_granted_by = ""
+		character.current_hp = int(character.get_total_max_hp() * 0.25)  # Survive with 25% HP
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]The Guardian's blessing protects you from death![/color]"
+		})
+		# Handle crucible death if in crucible - reset progress
+		if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+			handle_crucible_death(peer_id)
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return  # Don't actually die
+
 	# Check for High King "Escape Death" ability
 	if character.title == "high_king" and not character.title_data.get("escape_death_used", false):
 		character.title_data["escape_death_used"] = true
@@ -2167,6 +2196,9 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		character.title = ""
 		character.title_data = {}
 		current_high_king_id = -1
+		# Handle crucible death if in crucible - reset progress
+		if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+			handle_crucible_death(peer_id)
 		send_character_update(peer_id)
 		save_character(peer_id)
 		return  # Don't actually die
@@ -2181,9 +2213,16 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 				"type": "text",
 				"message": "[color=#00FFFF]Your eternal essence prevents death! Lives remaining: %d[/color]" % (lives - 1)
 			})
+			# Handle crucible death if in crucible - reset progress
+			if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+				handle_crucible_death(peer_id)
 			send_character_update(peer_id)
 			save_character(peer_id)
 			return  # Don't actually die
+
+	# Handle crucible death if in crucible before actual permadeath
+	if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+		handle_crucible_death(peer_id)
 
 	# Handle title loss on death
 	if not character.title.is_empty():
@@ -6590,17 +6629,24 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 		# ===== JARL ABILITIES =====
 		"summon":
 			if target:
-				# TODO: Implement consent system - for now just teleport
-				target.x = character.x
-				target.y = character.y
+				# Send summon request to target (requires consent)
+				pending_summons[target_peer_id] = {
+					"from_peer_id": peer_id,
+					"from_name": character.name,
+					"x": character.x,
+					"y": character.y,
+					"timestamp": Time.get_unix_time_from_system()
+				}
 				send_to_peer(target_peer_id, {
-					"type": "text",
-					"message": "[color=#C0C0C0]The Jarl has summoned you to their location (%d, %d)![/color]" % [target.x, target.y]
+					"type": "summon_request",
+					"from_name": character.name,
+					"x": character.x,
+					"y": character.y
 				})
-				_broadcast_chat_from_title(character.name, character.title, "has summoned %s!" % target.name)
-				send_location_update(target_peer_id)
-				send_character_update(target_peer_id)
-				save_character(target_peer_id)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#C0C0C0]Summon request sent to %s. Awaiting response...[/color]" % target.name
+				})
 
 		"tax_player":
 			if target:
@@ -6868,7 +6914,8 @@ func _show_pilgrimage_progress(peer_id: int, character: Character):
 			if wealth_done:
 				msg += "[color=#00FF00][X] Shrine of Wealth - COMPLETE[/color]\n"
 			else:
-				msg += "[color=#FFD700][ ] Shrine of Wealth: %d / %d gold donated[/color]" % [donated, gold_req]
+				msg += "[color=#FFD700][ ] Shrine of Wealth: %d / %d gold donated[/color]\n" % [donated, gold_req]
+				msg += "[color=#808080]    Use /donate <amount> to donate gold[/color]"
 
 			# Check if all done
 			if blood_done and mind_done and wealth_done:
@@ -6891,7 +6938,7 @@ func _show_pilgrimage_progress(peer_id: int, character: Character):
 			msg += "[color=#FFD700]Stage 4: The Crucible[/color]\n"
 			msg += "Defeat 10 Tier 9 bosses in succession.\n"
 			msg += "[color=#FF4444]Progress: %d / %d bosses[/color]" % [bosses, required]
-			msg += "\n[color=#808080]Death resets progress. Find a Tier 9 zone to begin.[/color]"
+			msg += "\n[color=#808080]Death resets progress. Use /crucible to begin in a T9 zone.[/color]"
 			if bosses >= required:
 				msg += "\n[color=#00FFFF]THE CRUCIBLE IS COMPLETE![/color]"
 				msg += "\n[color=#FFD700]The Eternal Flame reveals itself...[/color]"
@@ -6917,6 +6964,259 @@ func _broadcast_chat_from_title(player_name: String, title_id: String, action_te
 
 	for peer_id in characters.keys():
 		send_to_peer(peer_id, {"type": "chat", "sender": "Realm", "message": msg})
+
+# ===== PILGRIMAGE SYSTEM HANDLERS =====
+
+func handle_pilgrimage_donate(peer_id: int, message: Dictionary):
+	"""Handle gold donation for Trial of Wealth"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var amount = message.get("amount", 0)
+
+	# Validate Elder status
+	if character.title != "elder":
+		send_to_peer(peer_id, {"type": "error", "message": "Only Elders can donate to the Shrine of Wealth."})
+		return
+
+	# Validate pilgrimage stage
+	var stage = character.get_pilgrimage_stage()
+	if stage not in ["trial_blood", "trial_mind", "trial_wealth"]:
+		send_to_peer(peer_id, {"type": "error", "message": "You must complete The Awakening before donating."})
+		return
+
+	# Check if wealth shrine already complete
+	if character.is_pilgrimage_shrine_complete("wealth"):
+		send_to_peer(peer_id, {"type": "error", "message": "You have already completed the Trial of Wealth."})
+		return
+
+	# Validate amount
+	if amount <= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid donation amount."})
+		return
+
+	if character.gold < amount:
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have enough gold."})
+		return
+
+	# Process donation
+	character.gold -= amount
+	character.add_pilgrimage_gold_donation(amount)
+
+	var total_donated = character.pilgrimage_progress.get("gold_donated", 0)
+	var required = TitlesScript.PILGRIMAGE_STAGES["trial_wealth"].requirement
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]You donate %d gold to the Shrine of Wealth.[/color]\n[color=#808080]Total donated: %d / %d gold[/color]" % [amount, total_donated, required]
+	})
+
+	# Check if shrine complete
+	if total_donated >= required and not character.is_pilgrimage_shrine_complete("wealth"):
+		character.complete_pilgrimage_shrine("wealth")
+		# Award wisdom bonus
+		var bonus = TitlesScript.PILGRIMAGE_STAGES["trial_wealth"].get("shrine_reward_amount", 3)
+		character.wisdom += bonus
+		character.calculate_derived_stats()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]The Shrine of Wealth glows with acceptance![/color]\n[color=#00FF00]+%d Wisdom! The Trial of Wealth is COMPLETE![/color]" % bonus
+		})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+# Pending summon requests: {target_peer_id: {from_peer_id, from_name, x, y, timestamp}}
+var pending_summons: Dictionary = {}
+
+func handle_summon_response(peer_id: int, message: Dictionary):
+	"""Handle player's response to a summon request"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var accept = message.get("accept", false)
+
+	# Check for pending summon
+	if not pending_summons.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No pending summon request."})
+		return
+
+	var summon = pending_summons[peer_id]
+	pending_summons.erase(peer_id)
+	var from_peer_id = summon.from_peer_id
+
+	if accept:
+		# Teleport player to summoner's location
+		character.x = summon.x
+		character.y = summon.y
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#C0C0C0]You accept the summon and appear at (%d, %d)![/color]" % [character.x, character.y]
+		})
+		if characters.has(from_peer_id):
+			send_to_peer(from_peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]%s has accepted your summon![/color]" % character.name
+			})
+		_broadcast_chat_from_title(characters[from_peer_id].name if characters.has(from_peer_id) else "A Jarl", "jarl", "has summoned %s!" % character.name)
+		send_location_update(peer_id)
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		# Decline
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You decline the summon.[/color]"})
+		if characters.has(from_peer_id):
+			send_to_peer(from_peer_id, {
+				"type": "text",
+				"message": "[color=#FF4444]%s has declined your summon.[/color]" % character.name
+			})
+			# Refund costs
+			var abilities = TitlesScript.get_title_abilities("jarl")
+			var gold_cost = abilities.get("summon", {}).get("gold_cost", 500)
+			characters[from_peer_id].gold += gold_cost
+			send_to_peer(from_peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]%d gold refunded.[/color]" % gold_cost
+			})
+			send_character_update(from_peer_id)
+			save_character(from_peer_id)
+
+# Crucible state tracking: {peer_id: {in_crucible: bool, progress: int, current_boss: int}}
+var crucible_state: Dictionary = {}
+
+func handle_start_crucible(peer_id: int):
+	"""Handle player starting the Crucible gauntlet"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Validate Elder status and pilgrimage stage
+	if character.title != "elder":
+		send_to_peer(peer_id, {"type": "error", "message": "Only Elders can attempt the Crucible."})
+		return
+
+	var stage = character.get_pilgrimage_stage()
+	if stage != "crucible":
+		send_to_peer(peer_id, {"type": "error", "message": "You must complete the Ember Hunt before the Crucible."})
+		return
+
+	# Check if already in crucible
+	if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+		send_to_peer(peer_id, {"type": "error", "message": "You are already in the Crucible."})
+		return
+
+	# Check location - must be in a T9 zone
+	var loc_info = world_system.get_location_info(Vector2i(character.x, character.y))
+	var terrain = loc_info.get("terrain", "Plains")
+	var terrain_data = world_system.get_terrain_info(terrain)
+	var monster_level_range = terrain_data.get("monster_level_range", [1, 10])
+	if monster_level_range[1] < 300:  # T9 monsters are level 300+
+		send_to_peer(peer_id, {"type": "error", "message": "You must be in a high-level zone to start the Crucible."})
+		return
+
+	# Initialize crucible state
+	crucible_state[peer_id] = {
+		"in_crucible": true,
+		"progress": character.pilgrimage_progress.get("crucible_progress", 0),
+		"current_boss": character.pilgrimage_progress.get("crucible_progress", 0) + 1
+	}
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF4444]═══ THE CRUCIBLE BEGINS ═══[/color]\n\n[color=#FFD700]Face 10 consecutive Tier 9 bosses![/color]\n[color=#FF0000]Death will reset all progress.[/color]\n\n[color=#00FFFF]Progress: %d/10[/color]\n\nThe first champion approaches..." % crucible_state[peer_id].progress
+	})
+
+	# Spawn first crucible boss
+	_spawn_crucible_boss(peer_id)
+
+func _spawn_crucible_boss(peer_id: int):
+	"""Spawn a crucible boss for the player"""
+	if not characters.has(peer_id) or not crucible_state.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var state = crucible_state[peer_id]
+	var boss_num = state.current_boss
+
+	# Get a T9 boss monster
+	var boss_names = ["Ancient Dragon", "Void Lord", "Titan", "Arch-Demon", "Elder God"]
+	var boss_name = boss_names[(boss_num - 1) % boss_names.size()]
+	var boss_level = 350 + (boss_num * 10)  # Scales with progress
+
+	var monster = monster_db.generate_monster_for_level(boss_level)
+	if monster == null:
+		monster = monster_db.create_specific_monster(boss_name, boss_level)
+
+	# Enhance for crucible
+	monster["is_boss"] = true
+	monster["is_crucible"] = true
+	monster["crucible_number"] = boss_num
+	monster["current_hp"] = int(monster.get("hp", 1000) * 1.5)  # 50% more HP
+	monster["hp"] = int(monster.get("hp", 1000) * 1.5)
+	monster["strength"] = int(monster.get("strength", 50) * 1.25)  # 25% more strength
+
+	# Start combat
+	var result = combat_mgr.start_combat(peer_id, character, monster)
+	if result.success:
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"monster": monster,
+			"enemy_hp": monster.hp,
+			"enemy_max_hp": monster.hp,
+			"player_hp": character.current_hp,
+			"player_max_hp": character.get_total_max_hp(),
+			"special_message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level]
+		})
+
+func handle_crucible_victory(peer_id: int):
+	"""Handle player defeating a crucible boss"""
+	if not characters.has(peer_id) or not crucible_state.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var state = crucible_state[peer_id]
+
+	state.progress += 1
+	state.current_boss += 1
+	character.add_pilgrimage_crucible_progress()
+
+	if state.progress >= 10:
+		# Crucible complete!
+		crucible_state.erase(peer_id)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]═══ THE CRUCIBLE IS COMPLETE! ═══[/color]\n\n[color=#FFD700]You have proven your worth![/color]\n[color=#00FF00]The Eternal Flame's location is now revealed.[/color]\n\nUse [Seek Flame] to find it."
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]Boss defeated! Progress: %d/10[/color]\n\nThe next champion approaches..." % state.progress
+		})
+		# Spawn next boss after brief delay (handled in _process or via timer)
+		_spawn_crucible_boss(peer_id)
+
+	save_character(peer_id)
+
+func handle_crucible_death(peer_id: int):
+	"""Handle player dying in the Crucible"""
+	if not characters.has(peer_id) or not crucible_state.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Reset crucible progress
+	character.reset_pilgrimage_crucible()
+	crucible_state.erase(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF4444]═══ THE CRUCIBLE FAILED ═══[/color]\n\n[color=#808080]Your progress has been reset.[/color]\n[color=#FFD700]Return when you are stronger.[/color]"
+	})
+
+	save_character(peer_id)
 
 func handle_get_title_menu(peer_id: int):
 	"""Send title menu data to client"""

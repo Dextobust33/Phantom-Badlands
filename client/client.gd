@@ -341,6 +341,14 @@ var trade_partner_ready: bool = false
 var pending_trade_request: String = ""  # Name of player requesting to trade with us
 var trade_pending_add: bool = false  # Waiting for player to select item to add
 
+# Summon consent system
+var pending_summon_from: String = ""  # Name of Jarl requesting to summon us
+var pending_summon_location: Vector2i = Vector2i(0, 0)  # Location we'd be summoned to
+
+# Bless stat selection
+var title_stat_selection_mode: bool = false  # Waiting for stat selection for Bless
+var pending_bless_target: String = ""  # Target player for Bless
+
 # Font size constants for responsive scaling
 const CHAT_BASE_FONT_SIZE = 12  # Base size in windowed mode
 const CHAT_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
@@ -2794,6 +2802,34 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+	elif pending_summon_from != "":
+		# Incoming summon request - Accept or Decline
+		current_actions = [
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Accept", "action_type": "local", "action_data": "summon_accept", "enabled": true},
+			{"label": "Decline", "action_type": "local", "action_data": "summon_decline", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif title_stat_selection_mode:
+		# Bless stat selection - Choose which stat to give +5 to
+		current_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "bless_cancel", "enabled": true},
+			{"label": "STR", "action_type": "local", "action_data": "bless_stat_str", "enabled": true},
+			{"label": "CON", "action_type": "local", "action_data": "bless_stat_con", "enabled": true},
+			{"label": "DEX", "action_type": "local", "action_data": "bless_stat_dex", "enabled": true},
+			{"label": "INT", "action_type": "local", "action_data": "bless_stat_int", "enabled": true},
+			{"label": "WIS", "action_type": "local", "action_data": "bless_stat_wis", "enabled": true},
+			{"label": "WIT", "action_type": "local", "action_data": "bless_stat_wit", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif pending_trade_request != "":
 		# Incoming trade request - Accept or Decline
 		current_actions = [
@@ -5430,6 +5466,49 @@ func execute_local_action(action: String):
 			send_to_server({"type": "trade_cancel"})
 			_exit_trade_mode()
 			update_action_bar()
+		# Summon response actions
+		"summon_accept":
+			send_to_server({"type": "summon_response", "accept": true})
+			pending_summon_from = ""
+			update_action_bar()
+		"summon_decline":
+			send_to_server({"type": "summon_response", "accept": false})
+			pending_summon_from = ""
+			update_action_bar()
+		# Bless stat selection actions
+		"bless_stat_str":
+			_send_bless_with_stat("strength")
+		"bless_stat_con":
+			_send_bless_with_stat("constitution")
+		"bless_stat_dex":
+			_send_bless_with_stat("dexterity")
+		"bless_stat_int":
+			_send_bless_with_stat("intelligence")
+		"bless_stat_wis":
+			_send_bless_with_stat("wisdom")
+		"bless_stat_wit":
+			_send_bless_with_stat("wits")
+		"bless_cancel":
+			title_stat_selection_mode = false
+			pending_bless_target = ""
+			display_title_menu()
+			update_action_bar()
+		# Crucible action
+		"start_crucible":
+			send_to_server({"type": "start_crucible"})
+
+func _send_bless_with_stat(stat: String):
+	"""Send bless ability with chosen stat"""
+	send_to_server({
+		"type": "title_ability",
+		"ability": "bless",
+		"target": pending_bless_target,
+		"stat_choice": stat
+	})
+	title_stat_selection_mode = false
+	title_mode = false
+	pending_bless_target = ""
+	update_action_bar()
 
 func select_wish(index: int):
 	"""Send wish selection to server"""
@@ -9324,6 +9403,18 @@ func handle_server_message(message: Dictionary):
 			forge_available = true
 			update_action_bar()
 
+		"summon_request":
+			# Handle incoming summon request
+			pending_summon_from = message.get("from_name", "")
+			pending_summon_location = Vector2i(message.get("x", 0), message.get("y", 0))
+			display_game("")
+			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#C0C0C0]SUMMON REQUEST[/color]")
+			display_game("[color=#FFD700]%s (Jarl) wants to summon you to (%d, %d)[/color]" % [pending_summon_from, pending_summon_location.x, pending_summon_location.y])
+			display_game("[color=#808080][Q] Accept  |  [W] Decline[/color]")
+			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
 		# Trading system messages
 		"trade_request_received":
 			pending_trade_request = message.get("from_name", "")
@@ -9437,7 +9528,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible"]
 	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -9949,6 +10040,21 @@ func process_command(text: String):
 							send_to_server({"type": "activate_companion", "name": gem_name})
 				else:
 					show_companion_info()
+			else:
+				display_game("You don't have a character yet")
+		"donate":
+			if has_character:
+				if parts.size() > 1 and parts[1].is_valid_int():
+					var amount = int(parts[1])
+					send_to_server({"type": "pilgrimage_donate", "amount": amount})
+				else:
+					display_game("[color=#FF0000]Usage: /donate <amount>[/color]")
+					display_game("[color=#808080]Donate gold to the Shrine of Wealth (Elder pilgrimage).[/color]")
+			else:
+				display_game("You don't have a character yet")
+		"crucible":
+			if has_character:
+				send_to_server({"type": "start_crucible"})
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -12794,6 +12900,18 @@ func handle_title_key_input(key: int) -> bool:
 		var target_idx = _key_to_selection_index(key)
 		if target_idx >= 0 and target_idx < title_online_players.size():
 			var target_name = title_online_players[target_idx]
+
+			# For Bless, enter stat selection mode
+			if pending_title_ability == "bless":
+				pending_bless_target = target_name
+				title_stat_selection_mode = true
+				title_target_mode = false
+				pending_title_ability = ""
+				_display_stat_selection()
+				update_action_bar()
+				return true
+
+			# Regular ability with target
 			send_to_server({
 				"type": "title_ability",
 				"ability": pending_title_ability,
@@ -12885,6 +13003,22 @@ func _display_target_selection():
 			if i < 9:
 				display_game("  [%d] %s" % [i + 1, title_online_players[i]])
 
+	display_game("")
+	display_game("[color=#808080]Press [%s] to cancel[/color]" % get_action_key_name(0))
+
+func _display_stat_selection():
+	"""Display stat selection for Bless ability"""
+	game_output.clear()
+	display_game("[color=#00FFFF]═══ BLESS ═══[/color]")
+	display_game("")
+	display_game("Choose which stat to grant [color=#00FF00]+5[/color] to [color=#FFD700]%s[/color]:" % pending_bless_target)
+	display_game("")
+	display_game("[%s] [color=#FF6666]STR[/color] - Strength (damage)" % get_action_key_name(1))
+	display_game("[%s] [color=#00FF00]CON[/color] - Constitution (health)" % get_action_key_name(2))
+	display_game("[%s] [color=#FFFF00]DEX[/color] - Dexterity (crit chance)" % get_action_key_name(3))
+	display_game("[%s] [color=#6666FF]INT[/color] - Intelligence (magic power)" % get_action_key_name(4))
+	display_game("[%s] [color=#FF66FF]WIS[/color] - Wisdom (mana/regen)" % get_action_key_name(5))
+	display_game("[%s] [color=#66FFFF]WIT[/color] - Wits (outsmart chance)" % get_action_key_name(6))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to cancel[/color]" % get_action_key_name(0))
 
