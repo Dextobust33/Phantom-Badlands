@@ -48,6 +48,7 @@ const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 const ABILITY_WARRIOR_HOARDER = "warrior_hoarder"  # 35% chance to drop warrior gear
+const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff for 20 rounds
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
@@ -830,7 +831,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A fiend from the lower planes with hellfire that melts equipment",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_CORROSIVE],
+				"abilities": [ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_CORROSIVE, ABILITY_WEAKNESS],
 				"death_message": "The demon curses your bloodline as it's banished."
 			}
 		MonsterType.VAMPIRE:
@@ -1140,7 +1141,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A wraith king bound to a ring of power",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL, ABILITY_WEAKNESS],
 				"death_message": "The Nazgul screams as its ring shatters, freeing what remains of its soul."
 			}
 
@@ -1196,7 +1197,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "An undead sorcerer of unfathomable age",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_MANA_DRAIN, ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_ARCANE_HOARDER],
+				"abilities": [ABILITY_MANA_DRAIN, ABILITY_SUMMONER, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_ARCANE_HOARDER, ABILITY_WEAKNESS],
 				"death_message": "'I have seen the end times... you are not it.' *crumbles*"
 			}
 		MonsterType.PRIMORDIAL_DRAGON:

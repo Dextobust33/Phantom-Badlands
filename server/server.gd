@@ -622,6 +622,11 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_summon_response(peer_id, message)
 		"start_crucible":
 			handle_start_crucible(peer_id)
+		# Wandering NPC encounter handlers
+		"blacksmith_choice":
+			handle_blacksmith_choice(peer_id, message)
+		"healer_choice":
+			handle_healer_choice(peer_id, message)
 		_:
 			pass
 
@@ -1269,6 +1274,14 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check for tax collector encounter (before trading post - can happen anywhere)
 	if check_tax_collector_encounter(peer_id):
 		send_character_update(peer_id)  # Update gold display
+
+	# Check for wandering blacksmith encounter (3% when player has damaged gear)
+	if check_blacksmith_encounter(peer_id):
+		return  # Wait for player response before continuing
+
+	# Check for wandering healer encounter (4% when HP < 80%)
+	if check_healer_encounter(peer_id):
+		return  # Wait for player response before continuing
 
 	# Check for Trading Post first (safe zone with services)
 	if world_system.is_trading_post_tile(new_pos.x, new_pos.y):
@@ -2958,6 +2971,261 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 	save_character(peer_id)
 	return true
 
+# Track pending blacksmith/healer encounters (peer_id -> repair costs/heal costs)
+var pending_blacksmith_encounters: Dictionary = {}
+var pending_healer_encounters: Dictionary = {}
+
+func check_blacksmith_encounter(peer_id: int) -> bool:
+	"""Check for a wandering blacksmith encounter. Returns true if encounter occurred."""
+	if not characters.has(peer_id):
+		return false
+
+	var character = characters[peer_id]
+
+	# 3% encounter rate
+	if randf() >= 0.03:
+		return false
+
+	# Check if player has damaged gear
+	var damaged_items = []
+	var total_repair_cost = 0
+
+	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipment.get(slot_name)
+		if item and item.has("wear"):
+			var wear = item.get("wear", 0)
+			if wear > 0:
+				var item_level = item.get("level", 1)
+				var repair_cost = int(wear * item_level * 5)
+				damaged_items.append({
+					"slot": slot_name,
+					"name": item.get("name", slot_name.capitalize()),
+					"wear": wear,
+					"cost": repair_cost
+				})
+				total_repair_cost += repair_cost
+
+	# No damaged gear - no encounter
+	if damaged_items.size() == 0:
+		return false
+
+	# Store encounter data for when player responds
+	var repair_all_cost = int(total_repair_cost * 0.9)  # 10% discount for full repair
+	pending_blacksmith_encounters[peer_id] = {
+		"items": damaged_items,
+		"total_cost": total_repair_cost,
+		"repair_all_cost": repair_all_cost
+	}
+
+	# Send encounter message
+	send_to_peer(peer_id, {
+		"type": "blacksmith_encounter",
+		"message": "[color=#DAA520]A wandering Blacksmith stops you on the road.[/color]\n'I can fix up that gear for you, traveler. Fair prices.'",
+		"items": damaged_items,
+		"repair_all_cost": repair_all_cost,
+		"player_gold": character.gold
+	})
+
+	return true
+
+func handle_blacksmith_choice(peer_id: int, message: Dictionary):
+	"""Handle player's choice for blacksmith encounter."""
+	if not characters.has(peer_id):
+		return
+	if not pending_blacksmith_encounters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No blacksmith encounter pending."})
+		return
+
+	var character = characters[peer_id]
+	var encounter = pending_blacksmith_encounters[peer_id]
+	var choice = message.get("choice", "decline")
+
+	if choice == "decline":
+		pending_blacksmith_encounters.erase(peer_id)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]The Blacksmith nods and continues on his way.[/color]"
+		})
+		send_to_peer(peer_id, {"type": "blacksmith_done"})
+		return
+
+	if choice == "repair_all":
+		var cost = encounter.repair_all_cost
+		if character.gold < cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+			return
+
+		character.gold -= cost
+		# Repair all items
+		for item_data in encounter.items:
+			var slot = item_data.slot
+			if character.equipment.has(slot):
+				character.equipment[slot]["wear"] = 0
+
+		pending_blacksmith_encounters.erase(peer_id)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]The Blacksmith repairs all your gear for %d gold (10%% discount!).[/color]" % cost
+		})
+		send_to_peer(peer_id, {"type": "blacksmith_done"})
+		save_character(peer_id)
+		send_character_update(peer_id)
+		return
+
+	if choice == "repair_single":
+		var slot = message.get("slot", "")
+		var item_data = null
+		for item in encounter.items:
+			if item.slot == slot:
+				item_data = item
+				break
+
+		if not item_data:
+			send_to_peer(peer_id, {"type": "error", "message": "Invalid item slot."})
+			return
+
+		var cost = item_data.cost
+		if character.gold < cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+			return
+
+		character.gold -= cost
+		character.equipment[slot]["wear"] = 0
+
+		# Update encounter data
+		encounter.items.erase(item_data)
+		encounter.total_cost -= cost
+		encounter.repair_all_cost = int(encounter.total_cost * 0.9)
+
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]The Blacksmith repairs your %s for %d gold.[/color]" % [item_data.name, cost]
+		})
+
+		if encounter.items.size() == 0:
+			# All items repaired
+			pending_blacksmith_encounters.erase(peer_id)
+			send_to_peer(peer_id, {"type": "blacksmith_done"})
+		else:
+			# Send updated encounter
+			send_to_peer(peer_id, {
+				"type": "blacksmith_encounter",
+				"message": "[color=#DAA520]'Anything else need fixing?'[/color]",
+				"items": encounter.items,
+				"repair_all_cost": encounter.repair_all_cost,
+				"player_gold": character.gold
+			})
+
+		save_character(peer_id)
+		send_character_update(peer_id)
+
+func check_healer_encounter(peer_id: int) -> bool:
+	"""Check for a wandering healer encounter. Returns true if encounter occurred."""
+	if not characters.has(peer_id):
+		return false
+
+	var character = characters[peer_id]
+
+	# 4% encounter rate
+	if randf() >= 0.04:
+		return false
+
+	# Only trigger if HP < 80%
+	var hp_percent = float(character.hp) / float(character.max_hp)
+	if hp_percent >= 0.80:
+		return false
+
+	# Calculate heal costs based on player level
+	var level = character.level
+	var quick_heal_cost = level * 25
+	var full_heal_cost = level * 100
+	var cure_all_cost = level * 200
+
+	# Check for debuffs
+	var has_debuffs = character.persistent_buffs.size() > 0
+
+	# Store encounter data
+	pending_healer_encounters[peer_id] = {
+		"quick_heal_cost": quick_heal_cost,
+		"full_heal_cost": full_heal_cost,
+		"cure_all_cost": cure_all_cost,
+		"has_debuffs": has_debuffs
+	}
+
+	# Send encounter message
+	send_to_peer(peer_id, {
+		"type": "healer_encounter",
+		"message": "[color=#00FF00]A wandering Healer approaches, their staff glowing softly.[/color]\n'You look injured, traveler. Let me help.'",
+		"quick_heal_cost": quick_heal_cost,
+		"full_heal_cost": full_heal_cost,
+		"cure_all_cost": cure_all_cost,
+		"has_debuffs": has_debuffs,
+		"player_gold": character.gold,
+		"current_hp": character.hp,
+		"max_hp": character.max_hp
+	})
+
+	return true
+
+func handle_healer_choice(peer_id: int, message: Dictionary):
+	"""Handle player's choice for healer encounter."""
+	if not characters.has(peer_id):
+		return
+	if not pending_healer_encounters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No healer encounter pending."})
+		return
+
+	var character = characters[peer_id]
+	var encounter = pending_healer_encounters[peer_id]
+	var choice = message.get("choice", "decline")
+
+	pending_healer_encounters.erase(peer_id)
+
+	if choice == "decline":
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]The Healer bows and fades into the distance.[/color]"
+		})
+		send_to_peer(peer_id, {"type": "healer_done"})
+		return
+
+	var cost = 0
+	var heal_amount = 0
+	var heal_percent = 0
+	var cure_debuffs = false
+
+	match choice:
+		"quick":
+			cost = encounter.quick_heal_cost
+			heal_percent = 25
+		"full":
+			cost = encounter.full_heal_cost
+			heal_percent = 100
+		"cure_all":
+			cost = encounter.cure_all_cost
+			heal_percent = 100
+			cure_debuffs = true
+
+	if character.gold < cost:
+		send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+		send_to_peer(peer_id, {"type": "healer_done"})
+		return
+
+	character.gold -= cost
+	heal_amount = int(character.max_hp * heal_percent / 100.0)
+	character.hp = mini(character.hp + heal_amount, character.max_hp)
+
+	var msg = "[color=#00FF00]The Healer channels their magic. You are healed for %d HP! (-%d gold)[/color]" % [heal_amount, cost]
+
+	if cure_debuffs:
+		character.persistent_buffs.clear()
+		msg += "\n[color=#00FFFF]All ailments have been purged![/color]"
+
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	send_to_peer(peer_id, {"type": "healer_done"})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
@@ -4570,14 +4838,14 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 		else:
 			# Normal shop: item level ranges around player level with reasonable caps
 			var level_roll = rng.randi() % 100
-			if level_roll < 50:
-				# Standard tier: player level -5 to +5
+			if level_roll < 86:
+				# Standard tier (86%): player level -5 to +5
 				item_level = maxi(1, player_level + rng.randi_range(-5, 5))
-			elif level_roll < 80:
-				# Premium tier: player level +5 to +10 (capped at 2x player level)
+			elif level_roll < 96:
+				# Premium tier (10%): player level +5 to +10 (capped at 2x player level)
 				item_level = mini(player_level * 2, player_level + rng.randi_range(5, 10))
 			else:
-				# Aspirational tier: player level +10 to +20 (capped at 3x player level)
+				# Aspirational tier (4%): player level +10 to +20 (capped at 3x player level)
 				item_level = mini(player_level * 3, player_level + rng.randi_range(10, 20))
 			item_level = maxi(1, item_level)
 
@@ -5051,6 +5319,10 @@ func handle_trading_post_quests(peer_id: int):
 	var available_quests = quest_db.get_available_quests_for_player(
 		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level)
 
+	# Get locked quests (unmet prerequisites)
+	var locked_quests = quest_db.get_locked_quests_for_player(
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+
 	# Add progression quest if player is high enough level for next post
 	var progression_quest = _generate_progression_quest(tp.id, character.level, character.completed_quests, active_quest_ids)
 	if not progression_quest.is_empty():
@@ -5060,14 +5332,27 @@ func handle_trading_post_quests(peer_id: int):
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id)
-		if not quest.is_empty() and quest.trading_post == tp.id:
-			if quest_data.progress >= quest_data.target:
-				var rewards = quest_mgr.calculate_rewards(character, quest_data.quest_id)
-				quests_to_turn_in.append({
-					"quest_id": quest_data.quest_id,
-					"name": quest.name,
-					"rewards": rewards
-				})
+		if quest.is_empty():
+			continue
+
+		# Check if quest can be turned in here
+		var can_turn_in = false
+		if quest.trading_post == tp.id:
+			# Normal case: at the origin trading post
+			can_turn_in = true
+		elif quest_data.quest_id.begins_with("progression_to_"):
+			# Progression quests can also be turned in at their destination
+			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
+			if tp.id == dest_post_id:
+				can_turn_in = true
+
+		if can_turn_in and quest_data.progress >= quest_data.target:
+			var rewards = quest_mgr.calculate_rewards(character, quest_data.quest_id)
+			quests_to_turn_in.append({
+				"quest_id": quest_data.quest_id,
+				"name": quest.name,
+				"rewards": rewards
+			})
 
 	# Build active quests list for unified display (with abandon option)
 	var active_quests_display = []
@@ -5090,6 +5375,7 @@ func handle_trading_post_quests(peer_id: int):
 		"trading_post": tp.name,
 		"trading_post_id": tp.id,
 		"available_quests": available_quests,
+		"locked_quests": locked_quests,
 		"quests_to_turn_in": quests_to_turn_in,
 		"active_quests": active_quests_display,
 		"active_count": character.active_quests.size(),
@@ -5337,12 +5623,36 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 
 	if at_trading_post.has(peer_id):
 		var tp = at_trading_post[peer_id]
-		if quest.trading_post != tp.id:
+		var can_turn_in = false
+
+		# Check if quest can be turned in at current location
+		if quest.trading_post == tp.id:
+			# Normal case: at the origin trading post
+			can_turn_in = true
+		elif quest_id.begins_with("progression_to_"):
+			# Progression quests can also be turned in at their destination
+			var dest_post_id = quest_id.replace("progression_to_", "")
+			if tp.id == dest_post_id:
+				can_turn_in = true
+
+		if not can_turn_in:
 			var required_tp = trading_post_db.TRADING_POSTS.get(quest.trading_post, {})
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "You must return to %s to turn in this quest." % required_tp.get("name", "the quest giver")
-			})
+			# For progression quests, give helpful message about both locations
+			if quest_id.begins_with("progression_to_"):
+				var dest_post_id = quest_id.replace("progression_to_", "")
+				var dest_tp = trading_post_db.TRADING_POSTS.get(dest_post_id, {})
+				send_to_peer(peer_id, {
+					"type": "error",
+					"message": "Turn in this quest at %s (origin) or %s (destination)." % [
+						required_tp.get("name", "the quest giver"),
+						dest_tp.get("name", "the destination")
+					]
+				})
+			else:
+				send_to_peer(peer_id, {
+					"type": "error",
+					"message": "You must return to %s to turn in this quest." % required_tp.get("name", "the quest giver")
+				})
 			return
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to turn in quests"})

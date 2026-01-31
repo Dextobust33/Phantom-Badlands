@@ -844,6 +844,43 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 
 	return available
 
+func get_locked_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary) -> Array:
+	"""Get quests that are locked due to unmet prerequisites at a Trading Post."""
+	var locked = []
+	var current_time = Time.get_unix_time_from_system()
+
+	for quest_id in QUESTS:
+		var quest = QUESTS[quest_id]
+
+		# Must be at this Trading Post
+		if quest.trading_post != trading_post_id:
+			continue
+
+		# Can't be already active
+		if quest_id in active_quest_ids:
+			continue
+
+		# Check if non-daily quest is already completed
+		if not quest.is_daily and quest_id in completed_quests:
+			continue
+
+		# Check daily cooldown - skip if on cooldown (not locked, just unavailable)
+		if quest.is_daily:
+			if daily_cooldowns.has(quest_id):
+				if current_time < daily_cooldowns[quest_id]:
+					continue
+
+		# Only include quests with unmet prerequisites
+		if quest.prerequisite != "" and quest.prerequisite not in completed_quests:
+			var locked_quest = quest.duplicate(true)
+			locked_quest["quest_id"] = quest_id
+			# Get the prerequisite quest name for display
+			var prereq_quest = QUESTS.get(quest.prerequisite, {})
+			locked_quest["prerequisite_name"] = prereq_quest.get("name", quest.prerequisite)
+			locked.append(locked_quest)
+
+	return locked
+
 func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_completed_at_post: int, area_level: int) -> Dictionary:
 	"""Scale quest requirements and rewards based on player level and progression.
 	Quests get progressively harder as player completes more at the same post."""

@@ -1510,6 +1510,19 @@ func remove_buff(buff_type: String) -> bool:
 			return true
 	return false
 
+func has_debuff(debuff_type: String) -> bool:
+	"""Check if character has a specific debuff (negative buff) active."""
+	return has_buff(debuff_type)
+
+func apply_debuff(debuff_type: String, value: int, rounds: int):
+	"""Apply a debuff (negative buff) that persists outside combat.
+	Uses the persistent buff system with negative connotation."""
+	add_persistent_buff(debuff_type, value, rounds)
+
+func get_debuff_value(debuff_type: String) -> int:
+	"""Get the current value of a debuff. Returns 0 if not active."""
+	return get_buff_value(debuff_type)
+
 func get_persistent_buff_display() -> String:
 	"""Get display string for persistent buffs."""
 	if persistent_buffs.is_empty():

@@ -300,6 +300,13 @@ const ABILITY_PAGE_SIZE: int = 9  # Abilities per page (keys 1-9)
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 
+# Wandering NPC encounter states
+var pending_blacksmith: bool = false
+var blacksmith_items: Array = []  # Items available to repair
+var blacksmith_repair_all_cost: int = 0
+var pending_healer: bool = false
+var healer_costs: Dictionary = {}  # quick_heal_cost, full_heal_cost, cure_all_cost
+
 # Track which action bar indices triggered actions this frame (to block item selection for same key)
 var action_triggered_this_frame: Array = []
 
@@ -1683,6 +1690,21 @@ func _process(delta):
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
 
+	# Blacksmith item selection with number keys (1-9)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_blacksmith:
+		for i in range(min(9, blacksmith_items.size())):  # Up to 9 items
+			var regular_key_pressed = is_item_select_key_pressed(i)
+			var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+			if regular_key_pressed or numpad_key_pressed:
+				if not get_meta("blacksmithkey_%d_pressed" % i, false):
+					set_meta("blacksmithkey_%d_pressed" % i, true)
+					# Get the slot name from the item at this index
+					if i < blacksmith_items.size():
+						var slot = blacksmith_items[i].get("slot", "")
+						send_blacksmith_choice("repair_single", slot)
+			else:
+				set_meta("blacksmithkey_%d_pressed" % i, false)
+
 	# NOTE: Inventory page navigation removed from here - now handled via action bar buttons
 	# to avoid conflicts with Sort (key 2) and Salvage (key 3) action bar buttons
 
@@ -2803,11 +2825,11 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif pending_summon_from != "":
-		# Incoming summon request - Accept or Decline
+		# Incoming summon request - Decline (slot 0), Accept (slot 1)
 		current_actions = [
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "Accept", "action_type": "local", "action_data": "summon_accept", "enabled": true},
 			{"label": "Decline", "action_type": "local", "action_data": "summon_decline", "enabled": true},
+			{"label": "Accept", "action_type": "local", "action_data": "summon_accept", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2831,12 +2853,40 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif pending_trade_request != "":
-		# Incoming trade request - Accept or Decline
+		# Incoming trade request - Decline (slot 0), Accept (slot 1)
 		current_actions = [
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "Accept", "action_type": "local", "action_data": "trade_accept", "enabled": true},
 			{"label": "Decline", "action_type": "local", "action_data": "trade_decline", "enabled": true},
+			{"label": "Accept", "action_type": "local", "action_data": "trade_accept", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif pending_blacksmith:
+		# Wandering blacksmith encounter - Repair options
+		current_actions = [
+			{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
+			{"label": "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif pending_healer:
+		# Wandering healer encounter - Heal options
+		current_actions = [
+			{"label": "Decline", "action_type": "local", "action_data": "healer_decline", "enabled": true},
+			{"label": "Quick", "action_type": "local", "action_data": "healer_quick", "enabled": true},
+			{"label": "Full", "action_type": "local", "action_data": "healer_full", "enabled": true},
+			{"label": "Cure", "action_type": "local", "action_data": "healer_cure_all", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -2891,10 +2941,10 @@ func update_action_bar():
 		]
 	elif monster_select_mode:
 		if monster_select_confirm_mode:
-			# Confirmation mode - Space=Confirm, Q=Back to list
+			# Confirmation mode - Back (slot 0), Confirm (slot 1)
 			current_actions = [
-				{"label": "Confirm", "action_type": "local", "action_data": "monster_select_confirm", "enabled": true},
 				{"label": "Back", "action_type": "local", "action_data": "monster_select_back", "enabled": true},
+				{"label": "Confirm", "action_type": "local", "action_data": "monster_select_confirm", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5509,6 +5559,20 @@ func execute_local_action(action: String):
 			send_to_server({"type": "summon_response", "accept": false})
 			pending_summon_from = ""
 			update_action_bar()
+		# Blacksmith encounter actions
+		"blacksmith_decline":
+			send_blacksmith_choice("decline")
+		"blacksmith_repair_all":
+			send_blacksmith_choice("repair_all")
+		# Healer encounter actions
+		"healer_decline":
+			send_healer_choice("decline")
+		"healer_quick":
+			send_healer_choice("quick")
+		"healer_full":
+			send_healer_choice("full")
+		"healer_cure_all":
+			send_healer_choice("cure_all")
 		# Bless stat selection actions
 		"bless_stat_str":
 			_send_bless_with_stat("strength")
@@ -9503,6 +9567,23 @@ func handle_server_message(message: Dictionary):
 			_exit_trade_mode()
 			update_action_bar()
 
+		# Wandering NPC encounter messages
+		"blacksmith_encounter":
+			handle_blacksmith_encounter(message)
+
+		"blacksmith_done":
+			pending_blacksmith = false
+			blacksmith_items = []
+			update_action_bar()
+
+		"healer_encounter":
+			handle_healer_encounter(message)
+
+		"healer_done":
+			pending_healer = false
+			healer_costs = {}
+			update_action_bar()
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -11332,7 +11413,8 @@ func show_help():
 [b][color=#FFD700]══ MONSTERS ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
 [color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+dmg/rnd) | Life Steal | Glass Cannon(3x,½HP)
-[color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(DoT×3) | Slow(-flee) | Drain(res) | [color=#FF00FF]Poison[/color](35rnd) | [color=#808080]Blind[/color](15rnd)
+[color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(stacks×3,DoT) | Slow(-flee) | Drain(mana/stam/energy)
+  [color=#FF00FF]Poison[/color]=50 rounds, persists outside combat | [color=#808080]Blind[/color]=15rnd,-30%%hit | [color=#FFA500]Weakness[/color]=20rnd,-25%%atk
 [color=#6666FF]Defense:[/color] Armored(+50%%def) | Ethereal(50%%dodge) | Regen | Reflect(25%%) | Thorns
 [color=#FFD700]Special:[/color] Death Curse | Summoner | Corrosive/Sunder(gear dmg)
 [color=#00FF00]Rewards:[/color] Wish Granter(10%%) | Weapon/Shield Master(35%%) | Arcane/Cunning(35%%) | Gem Bearer | Gold×3
@@ -11345,7 +11427,7 @@ func show_help():
 [color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
 [color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x gold or lose half)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
-[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% wear = broken (no stats). Repair at merchants.
+[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% = BROKEN (no stats). Repair via wandering blacksmiths only!
 
 [b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
 [color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35%% drop
@@ -11373,21 +11455,28 @@ func show_help():
 [b][color=#FFD700]══ ENDGAME ══[/color][/b]
 [color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv50+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
 [color=#AAAAAA]Titles:[/color]
-  [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Banish/Curse/Gift. Lost on death or Lv500+.
-  [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Exile/Knight/Cure. Survives 1 death!
-  [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Seek Flame/Slap. Can find Eternal Flame.
-  [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Smite/Restore/Bless/Proclaim.
+  [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Summon/Tax/Gift/Tribute. Lost on death or Lv500+.
+  [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Knight/Cure/Exile/Treasury. Survives 1 death!
+  [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Mentor/Seek Flame. Can find Eternal Flame.
+  [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Restore/Bless/Smite/Guardian.
 [color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
 [color=#00FFFF]Companions:[/color] Soul Gems summon pets! Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) + more
+
+[b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
+[color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
+  Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
+[color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
+  [%s] Quick (25%% HP) = level×25g | [%s] Full (100%% HP) = level×100g | [%s] Cure All (full+debuffs) = level×200g
+[color=#DAA520]Tax Collector[/color] (5%% chance): Takes 10%% of gold. Jarls/High Kings are immune. Gold goes to realm treasury.
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.8.5:[/color] Stat scaling reduced, sqrt formulas, gear DR at L100+, WIS resists abilities, gems at high levels
+[color=#00FFFF]v0.8.98:[/color] Title system revamp, pilgrimage features, wandering NPCs, debuff enhancements
 [/font_size]
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k2]
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
 	# Add discovered trading posts section (dynamic per character)
@@ -11414,6 +11503,10 @@ func show_help():
 		if line != "":
 			display_game(line)
 		display_game("[color=#808080](%d/%d posts discovered)[/color]" % [discovered.size(), 58])
+
+	# Scroll to top after displaying help
+	await get_tree().process_frame
+	game_output.scroll_to_line(0)
 
 func search_help(search_term: String):
 	"""Search the help text and display matching sections with context"""
@@ -11933,6 +12026,90 @@ func update_map(map_text: String):
 		map_display.clear()
 		map_display.append_text(map_text)
 
+# ===== WANDERING NPC ENCOUNTER FUNCTIONS =====
+
+func handle_blacksmith_encounter(message: Dictionary):
+	"""Handle blacksmith encounter display"""
+	pending_blacksmith = true
+	blacksmith_items = message.get("items", [])
+	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
+	var player_gold = message.get("player_gold", 0)
+
+	game_output.clear()
+	display_game(message.get("message", ""))
+	display_game("")
+	display_game("[color=#FFD700]=== Repair Options ===[/color]")
+
+	# Show individual items
+	for i in range(blacksmith_items.size()):
+		var item = blacksmith_items[i]
+		var wear_pct = item.get("wear", 0)
+		var cost = item.get("cost", 0)
+		var can_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < cost else ""
+		var key_name = str(i + 1)  # Keys 1-9 for items
+		display_game("[%s] %s (%d%% worn) - %d gold%s" % [key_name, item.get("name", "Item"), wear_pct, cost, can_afford])
+
+	display_game("")
+	# Show repair all option
+	var all_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < blacksmith_repair_all_cost else ""
+	display_game("[%s] Repair All - %d gold (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
+	display_game("[%s] Decline" % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]Your gold: %d[/color]" % player_gold)
+
+	update_action_bar()
+
+func send_blacksmith_choice(choice: String, slot: String = ""):
+	"""Send blacksmith choice to server"""
+	var msg = {"type": "blacksmith_choice", "choice": choice}
+	if slot != "":
+		msg["slot"] = slot
+	send_to_server(msg)
+
+func handle_healer_encounter(message: Dictionary):
+	"""Handle healer encounter display"""
+	pending_healer = true
+	healer_costs = {
+		"quick": message.get("quick_heal_cost", 0),
+		"full": message.get("full_heal_cost", 0),
+		"cure_all": message.get("cure_all_cost", 0)
+	}
+	var has_debuffs = message.get("has_debuffs", false)
+	var player_gold = message.get("player_gold", 0)
+	var current_hp = message.get("current_hp", 0)
+	var max_hp = message.get("max_hp", 100)
+
+	game_output.clear()
+	display_game(message.get("message", ""))
+	display_game("")
+	display_game("[color=#00FF00]=== Healing Options ===[/color]")
+	display_game("[color=#808080]Current HP: %d / %d[/color]" % [current_hp, max_hp])
+	display_game("")
+
+	# Quick heal (25% HP)
+	var quick_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.quick else ""
+	display_game("[%s] Quick Heal (25%% HP) - %d gold%s" % [get_action_key_name(1), healer_costs.quick, quick_afford])
+
+	# Full heal (100% HP)
+	var full_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.full else ""
+	display_game("[%s] Full Heal (100%% HP) - %d gold%s" % [get_action_key_name(2), healer_costs.full, full_afford])
+
+	# Cure All (100% HP + remove debuffs)
+	var cure_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.cure_all else ""
+	var debuff_note = " [color=#808080](no active debuffs)[/color]" if not has_debuffs else ""
+	display_game("[%s] Full + Cure All - %d gold%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note])
+
+	display_game("")
+	display_game("[%s] Decline" % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]Your gold: %d[/color]" % player_gold)
+
+	update_action_bar()
+
+func send_healer_choice(choice: String):
+	"""Send healer choice to server"""
+	send_to_server({"type": "healer_choice", "choice": choice})
+
 # ===== TRADING POST FUNCTIONS =====
 
 func handle_trading_post_start(message: Dictionary):
@@ -12083,8 +12260,18 @@ func handle_quest_list(message: Dictionary):
 			display_game("")
 			key_index += 1
 
+	# SECTION 4: Locked quests (unmet prerequisites)
+	var locked_quests = message.get("locked_quests", [])
+	if locked_quests.size() > 0:
+		display_game("[color=#808080]=== Locked Quests ===[/color]")
+		for quest in locked_quests:
+			var prereq_name = quest.get("prerequisite_name", "another quest")
+			display_game("  [color=#555555]🔒 %s[/color]" % quest.get("name", "Quest"))
+			display_game("    [color=#808080]Requires: Complete '%s' first[/color]" % prereq_name)
+			display_game("")
+
 	# Show message if nothing available
-	if quests_to_turn_in.size() == 0 and available_quests.size() == 0 and active_quests_display.size() == 0:
+	if quests_to_turn_in.size() == 0 and available_quests.size() == 0 and active_quests_display.size() == 0 and locked_quests.size() == 0:
 		display_game("[color=#808080]No quests available at this time.[/color]")
 
 	display_game("")

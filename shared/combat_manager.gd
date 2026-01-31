@@ -80,6 +80,7 @@ const ABILITY_SLOW_AURA = "slow_aura"            # Reduces player flee chance
 const ABILITY_ARCANE_HOARDER = "arcane_hoarder"  # 35% chance to drop mage gear
 const ABILITY_CUNNING_PREY = "cunning_prey"      # 35% chance to drop trickster gear
 const ABILITY_WARRIOR_HOARDER = "warrior_hoarder"  # 35% chance to drop warrior gear
+const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff for 20 rounds
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
@@ -2901,7 +2902,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# === POST-ATTACK ABILITIES ===
 
-	# Poison ability: apply poison if not already active (lasts 35 turns, persists outside combat)
+	# Poison ability: apply poison if not already active (lasts 50 turns, persists outside combat)
 	# WIS reduces poison chance and damage
 	if ABILITY_POISON in abilities and not character.poison_active:
 		var player_wis = character.get_effective_stat("wisdom")
@@ -2910,11 +2911,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if randi() % 100 < poison_chance:
 			var base_poison_dmg = max(1, int(monster.strength * 0.30))
 			var poison_dmg = max(1, int(base_poison_dmg * (1.0 - wis_resist)))  # WIS also reduces damage
-			character.apply_poison(poison_dmg, 35)
+			character.apply_poison(poison_dmg, 50)
 			if wis_resist > 0:
-				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
+				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 50 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
 			else:
-				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 35 turns)[/color]" % poison_dmg)
+				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 50 turns)[/color]" % poison_dmg)
 
 	# Mana drain ability - drains the character's primary resource based on class path
 	# WIS reduces drain amount
@@ -3032,6 +3033,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		var slow_reduction = ability_cfg.get("slow_aura_flee_reduction", 25)
 		combat["player_slow"] = slow_reduction
 		messages.append("[color=#808080]The %s's aura slows you! (-%d%% flee chance)[/color]" % [monster.name, slow_reduction])
+
+	# Weakness ability: applies -25% attack debuff for 20 rounds (persists outside combat)
+	if ABILITY_WEAKNESS in abilities and hits > 0 and not character.has_debuff("weakness"):
+		var weakness_chance = ability_cfg.get("weakness_chance", 30)  # 30% chance
+		if randi() % 100 < weakness_chance:
+			character.apply_debuff("weakness", 25, 20)  # 25% reduction, 20 rounds
+			messages.append("[color=#FFA500]The %s's attack weakens you! (-25%% attack damage for 20 turns)[/color]" % monster.name)
 
 	# Summoner ability: call reinforcements (once per combat)
 	if ABILITY_SUMMONER in abilities and not combat.get("summoner_triggered", false):
@@ -3282,6 +3290,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 			if drop_tables and drop_tables.get_monster_type(monster.name) == bane_type:
 				total = int(total * (1.0 + bane_bonus / 100.0))
 				passive_messages.append("[color=#FF4500]%s Bane: +%d%% damage![/color]" % [bane_type.capitalize(), bane_bonus])
+
+	# === WEAKNESS DEBUFF ===
+	# Apply -25% damage if the player has the Weakness debuff
+	var weakness_penalty = character.get_debuff_value("weakness")
+	if weakness_penalty > 0:
+		total = int(total * (1.0 - weakness_penalty / 100.0))
+		passive_messages.append("[color=#FFA500]Weakness: -%d%% damage![/color]" % weakness_penalty)
 
 	return {"damage": max(1, total), "is_crit": is_crit, "passive_messages": passive_messages, "backfire_damage": backfire_damage}
 
