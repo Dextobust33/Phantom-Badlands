@@ -3154,27 +3154,30 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 	character.gold -= tax_amount
 	persistence.add_to_realm_treasury(tax_amount)
 
-	# Send encounter messages
+	# Build encounter message
+	var full_message = ""
 	var messages = encounter.get("messages", [])
 	for i in range(messages.size()):
 		var msg = messages[i]
 		# Replace %d placeholder with tax amount
 		if "%d" in msg:
 			msg = msg % tax_amount
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#DAA520]%s[/color]" % msg
-		})
+		full_message += "[color=#DAA520]%s[/color]\n" % msg
 
 	# Handle special bonuses (like the negotiator's gold find buff)
 	if encounter.has("bonus"):
 		var bonus = encounter.bonus
 		if bonus.type == "gold_find":
 			character.add_persistent_buff("gold_find", bonus.value, bonus.battles)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FF00]+%d%% gold find for %d battles![/color]" % [bonus.value, bonus.battles]
-			})
+			full_message += "[color=#00FF00]+%d%% gold find for %d battles![/color]\n" % [bonus.value, bonus.battles]
+
+	# Send as NPC encounter that requires acknowledgment
+	send_to_peer(peer_id, {
+		"type": "npc_encounter",
+		"npc_type": "tax_collector",
+		"message": full_message.strip_edges(),
+		"character": character.to_dict()
+	})
 
 	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, persistence.get_realm_treasury()])
 	save_character(peer_id)

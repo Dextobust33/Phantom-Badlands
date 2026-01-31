@@ -9231,6 +9231,24 @@ func handle_server_message(message: Dictionary):
 			pending_continue = true
 			update_action_bar()
 
+		"npc_encounter":
+			# NPC encounters (tax collector, etc.) require acknowledgment before continuing
+			game_output.clear()
+			var npc_msg = message.get("message", "An NPC approaches!")
+			display_game(npc_msg)
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			# Update character data (gold/stats may have changed)
+			if message.has("character"):
+				character_data = message.character
+				update_player_level()
+				update_player_hp_bar()
+				update_resource_bar()
+				update_player_xp_bar()
+				update_currency_display()
+			pending_continue = true
+			update_action_bar()
+
 		"character_update":
 			if message.has("character"):
 				character_data = message.character
@@ -11904,7 +11922,7 @@ func show_help():
   Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
 [color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
   [%s] Quick (25%% HP) = level×25g | [%s] Full (100%% HP) = level×100g | [%s] Cure All (full+debuffs) = level×200g
-[color=#DAA520]Tax Collector[/color] (5%% chance): Takes 10%% of gold. Jarls/High Kings are immune. Gold goes to realm treasury.
+[color=#DAA520]Tax Collector[/color] (5%% chance when 100+g): 8%% tax (min 10g). Bumbling=5%%, Veteran=10%%. Jarls/High Kings immune.
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
