@@ -9,6 +9,13 @@ func _get_monster_art():
 		_monster_art_script = load("res://client/monster_art.gd")
 	return _monster_art_script
 
+# Trader art helper - for wandering NPCs (blacksmith, healer)
+var _trader_art_script = null
+func _get_trader_art():
+	if _trader_art_script == null:
+		_trader_art_script = load("res://client/trader_art.gd")
+	return _trader_art_script
+
 # Character script for thematic item display
 const CharacterScript = preload("res://shared/character.gd")
 
@@ -9376,6 +9383,12 @@ func handle_server_message(message: Dictionary):
 		"merchant_start":
 			at_merchant = true
 			merchant_data = message.get("merchant", {})
+			# Display trader art for wandering merchants (they have destination)
+			if merchant_data.has("destination") and merchant_data.get("destination", "") != "":
+				game_output.clear()
+				var trader_art = _get_trader_art().get_random_trader_art()
+				display_game(trader_art)
+				display_game("")
 			display_game(message.get("message", "A merchant appears!"))
 			update_action_bar()
 
@@ -12036,6 +12049,12 @@ func handle_blacksmith_encounter(message: Dictionary):
 	var player_gold = message.get("player_gold", 0)
 
 	game_output.clear()
+
+	# Display random trader ASCII art
+	var trader_art = _get_trader_art().get_random_trader_art()
+	display_game(trader_art)
+	display_game("")
+
 	display_game(message.get("message", ""))
 	display_game("")
 	display_game("[color=#FFD700]=== Repair Options ===[/color]")
@@ -12080,6 +12099,12 @@ func handle_healer_encounter(message: Dictionary):
 	var max_hp = message.get("max_hp", 100)
 
 	game_output.clear()
+
+	# Display random trader ASCII art
+	var trader_art = _get_trader_art().get_random_trader_art()
+	display_game(trader_art)
+	display_game("")
+
 	display_game(message.get("message", ""))
 	display_game("")
 	display_game("[color=#00FF00]=== Healing Options ===[/color]")
