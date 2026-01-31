@@ -1805,14 +1805,31 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Monster fled - check if it summoned a replacement (Shrieker behavior)
 			var summon_next = result.get("summon_next_fight", "")
 			if summon_next != "":
-				# Summoner fled but called reinforcements - new combat begins immediately
+				# Summoner fled but called reinforcements - queue flock encounter
 				var monster_level = result.get("monster_level", characters[peer_id].level)
+
+				# Track flock count for visual variety
+				if not flock_counts.has(peer_id):
+					flock_counts[peer_id] = 1
+				else:
+					flock_counts[peer_id] += 1
+
+				# Queue the summoned monster as a pending flock
+				pending_flocks[peer_id] = {
+					"monster_name": summon_next,
+					"monster_level": monster_level,
+					"flock_count": flock_counts[peer_id]
+				}
+
+				# End current combat and notify about incoming monster
 				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#FF4444]A %s answers the call and attacks![/color]" % summon_next
+					"type": "combat_end",
+					"monster_fled": true,
+					"character": characters[peer_id].to_dict(),
+					"flock_incoming": true,
+					"flock_message": "[color=#FF4444]A %s answers the call! Press Continue to face it.[/color]" % summon_next
 				})
-				# Trigger encounter with the summoned monster
-				_trigger_specific_encounter(peer_id, summon_next, monster_level)
+				save_character(peer_id)
 			else:
 				# Regular monster fled (coward ability) - combat ends, no loot
 				if pending_flock_drops.has(peer_id):

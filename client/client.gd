@@ -9056,8 +9056,27 @@ func handle_server_message(message: Dictionary):
 					# Pause to let player read rewards
 					pending_continue = true
 					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			elif message.get("monster_fled", false):
+				# Monster fled (Coward ability or Shrieker summon)
+				if message.has("character"):
+					character_data = message.character
+					update_player_level()
+					update_player_hp_bar()
+					update_resource_bar()
+					update_player_xp_bar()
+					update_currency_display()
+				# Check if another monster is incoming (Shrieker summoned replacement)
+				if message.get("flock_incoming", false):
+					flock_pending = true
+					var flock_msg = message.get("flock_message", "[color=#FF4444]Another enemy approaches![/color]")
+					display_game(flock_msg)
+					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
+				else:
+					display_game("[color=#FFD700]The enemy fled! No loot earned.[/color]")
+					pending_continue = true
+					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("fled", false):
-				# Fled - reset combat XP tracking but keep previous XP gain highlight
+				# Player fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
 				# Update position if server moved us
 				if message.has("new_x") and message.has("new_y"):
