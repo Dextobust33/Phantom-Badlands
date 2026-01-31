@@ -230,6 +230,27 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 @export var title: String = ""  # Current title: "", "jarl", "high_king", "elder", "eternal"
 @export var title_data: Dictionary = {}  # Title-specific data (lives for Eternal, etc.)
 
+# Knight/Mentee Status - granted by High King/Elder
+# Format: {granted_by: String, granted_by_id: int, granted_at: int (unix timestamp)}
+@export var knight_status: Dictionary = {}  # Knighted by High King
+@export var mentee_status: Dictionary = {}  # Mentored by Elder
+
+# Guardian Death Save - granted by Eternal (permanent until used)
+@export var guardian_death_save: bool = false
+@export var guardian_granted_by: String = ""  # Name of Eternal who granted it
+
+# Pilgrimage Progress - Elder's journey to become Eternal
+# Format: {stage: String, kills: int, tier8_kills: int, outsmarts: int, gold_donated: int, embers: int, crucible_progress: int}
+@export var pilgrimage_progress: Dictionary = {}
+
+# Title Abuse Tracking - for Jarl/High King
+# Format: {points: int, last_decay: int (unix timestamp), recent_targets: [{name: String, time: int}], recent_abilities: [int (timestamps)]}
+@export var title_abuse: Dictionary = {}
+
+# Title Ability Cooldowns - tracks when abilities can be used again
+# Format: {ability_id: int (unix timestamp when available)}
+@export var title_cooldowns: Dictionary = {}
+
 # Balance migration flag - characters without this get teleported to safety on first login
 @export var balance_migrated_v085: bool = false  # v0.8.5 balance changes
 
@@ -1055,6 +1076,13 @@ func to_dict() -> Dictionary:
 		"cloak_active": cloak_active,
 		"title": title,
 		"title_data": title_data,
+		"knight_status": knight_status,
+		"mentee_status": mentee_status,
+		"guardian_death_save": guardian_death_save,
+		"guardian_granted_by": guardian_granted_by,
+		"pilgrimage_progress": pilgrimage_progress,
+		"title_abuse": title_abuse,
+		"title_cooldowns": title_cooldowns,
 		"balance_migrated_v085": balance_migrated_v085,
 		"permanent_stat_bonuses": permanent_stat_bonuses,
 		"skill_enhancements": skill_enhancements,
@@ -1164,6 +1192,13 @@ func from_dict(data: Dictionary):
 	# Title system
 	title = data.get("title", "")
 	title_data = data.get("title_data", {})
+	knight_status = data.get("knight_status", {})
+	mentee_status = data.get("mentee_status", {})
+	guardian_death_save = data.get("guardian_death_save", false)
+	guardian_granted_by = data.get("guardian_granted_by", "")
+	pilgrimage_progress = data.get("pilgrimage_progress", {})
+	title_abuse = data.get("title_abuse", {})
+	title_cooldowns = data.get("title_cooldowns", {})
 
 	# Balance migration flag
 	balance_migrated_v085 = data.get("balance_migrated_v085", false)
@@ -2163,3 +2198,243 @@ func process_cloak_on_move() -> Dictionary:
 	else:
 		cloak_active = false
 		return {"cloaked": false, "dropped": true, "message": "Your cloak fades as you run out of %s!" % get_primary_resource()}
+
+# ===== KNIGHT/MENTEE STATUS =====
+
+func is_knighted() -> bool:
+	"""Check if character has Knight status"""
+	return not knight_status.is_empty()
+
+func is_mentored() -> bool:
+	"""Check if character has Mentee status"""
+	return not mentee_status.is_empty()
+
+func get_knight_damage_bonus() -> float:
+	"""Get damage bonus from Knight status (0.15 = +15%)"""
+	if is_knighted():
+		return 0.15
+	return 0.0
+
+func get_knight_gold_bonus() -> float:
+	"""Get gold bonus from Knight status (0.10 = +10%)"""
+	if is_knighted():
+		return 0.10
+	return 0.0
+
+func get_mentee_xp_bonus() -> float:
+	"""Get XP bonus from Mentee status (0.30 = +30%)"""
+	if is_mentored():
+		return 0.30
+	return 0.0
+
+func get_mentee_gold_bonus() -> float:
+	"""Get gold bonus from Mentee status (0.20 = +20%)"""
+	if is_mentored():
+		return 0.20
+	return 0.0
+
+func clear_knight_status():
+	"""Remove Knight status"""
+	knight_status = {}
+
+func clear_mentee_status():
+	"""Remove Mentee status"""
+	mentee_status = {}
+
+func set_knight_status(granter_name: String, granter_id: int):
+	"""Set Knight status"""
+	knight_status = {
+		"granted_by": granter_name,
+		"granted_by_id": granter_id,
+		"granted_at": int(Time.get_unix_time_from_system())
+	}
+
+func set_mentee_status(granter_name: String, granter_id: int):
+	"""Set Mentee status"""
+	mentee_status = {
+		"granted_by": granter_name,
+		"granted_by_id": granter_id,
+		"granted_at": int(Time.get_unix_time_from_system())
+	}
+
+# ===== GUARDIAN DEATH SAVE =====
+
+func has_guardian_death_save() -> bool:
+	"""Check if character has a death save from Guardian ability"""
+	return guardian_death_save
+
+func use_guardian_death_save() -> bool:
+	"""Use the death save. Returns true if it was available."""
+	if guardian_death_save:
+		guardian_death_save = false
+		guardian_granted_by = ""
+		return true
+	return false
+
+func grant_guardian_death_save(granter_name: String):
+	"""Grant a death save from the Guardian ability"""
+	guardian_death_save = true
+	guardian_granted_by = granter_name
+
+# ===== PILGRIMAGE PROGRESS =====
+
+func get_pilgrimage_stage() -> String:
+	"""Get current pilgrimage stage, or empty string if not started"""
+	return pilgrimage_progress.get("stage", "")
+
+func init_pilgrimage():
+	"""Initialize pilgrimage progress for a new Elder"""
+	pilgrimage_progress = {
+		"stage": "awakening",
+		"kills": 0,
+		"tier8_kills": 0,
+		"outsmarts": 0,
+		"gold_donated": 0,
+		"embers": 0,
+		"crucible_progress": 0,
+		"shrines_completed": []
+	}
+
+func add_pilgrimage_kills(count: int = 1):
+	"""Add kills to pilgrimage progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["kills"] = pilgrimage_progress.get("kills", 0) + count
+
+func add_pilgrimage_tier8_kills(count: int = 1):
+	"""Add tier 8+ kills to pilgrimage progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["tier8_kills"] = pilgrimage_progress.get("tier8_kills", 0) + count
+
+func add_pilgrimage_outsmarts(count: int = 1):
+	"""Add outsmarts to pilgrimage progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["outsmarts"] = pilgrimage_progress.get("outsmarts", 0) + count
+
+func add_pilgrimage_gold_donation(amount: int):
+	"""Add gold donation to pilgrimage progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["gold_donated"] = pilgrimage_progress.get("gold_donated", 0) + amount
+
+func add_pilgrimage_embers(count: int = 1):
+	"""Add embers to pilgrimage progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["embers"] = pilgrimage_progress.get("embers", 0) + count
+
+func add_pilgrimage_crucible_progress():
+	"""Add crucible boss progress"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["crucible_progress"] = pilgrimage_progress.get("crucible_progress", 0) + 1
+
+func reset_pilgrimage_crucible():
+	"""Reset crucible progress (on death during crucible)"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["crucible_progress"] = 0
+
+func complete_pilgrimage_shrine(shrine_id: String):
+	"""Mark a shrine as completed"""
+	if pilgrimage_progress.is_empty():
+		return
+	var shrines = pilgrimage_progress.get("shrines_completed", [])
+	if shrine_id not in shrines:
+		shrines.append(shrine_id)
+		pilgrimage_progress["shrines_completed"] = shrines
+
+func is_pilgrimage_shrine_complete(shrine_id: String) -> bool:
+	"""Check if a shrine is completed"""
+	var shrines = pilgrimage_progress.get("shrines_completed", [])
+	return shrine_id in shrines
+
+func advance_pilgrimage_stage(new_stage: String):
+	"""Advance to the next pilgrimage stage"""
+	if pilgrimage_progress.is_empty():
+		return
+	pilgrimage_progress["stage"] = new_stage
+
+# ===== TITLE ABUSE TRACKING =====
+
+func get_abuse_points() -> int:
+	"""Get current abuse points"""
+	return title_abuse.get("points", 0)
+
+func add_abuse_points(points: int):
+	"""Add abuse points"""
+	title_abuse["points"] = title_abuse.get("points", 0) + points
+	title_abuse["last_activity"] = int(Time.get_unix_time_from_system())
+
+func decay_abuse_points():
+	"""Decay abuse points based on time elapsed"""
+	var now = int(Time.get_unix_time_from_system())
+	var last_decay = title_abuse.get("last_decay", now)
+	var elapsed = now - last_decay
+	var decay_interval = 3600  # 1 hour
+	var decays = int(elapsed / decay_interval)
+	if decays > 0:
+		var current = title_abuse.get("points", 0)
+		title_abuse["points"] = max(0, current - decays)
+		title_abuse["last_decay"] = now
+
+func record_ability_target(target_name: String):
+	"""Record that an ability was used on a target"""
+	var now = int(Time.get_unix_time_from_system())
+	var recent = title_abuse.get("recent_targets", [])
+	recent.append({"name": target_name, "time": now})
+	# Keep only last 30 minutes of targets
+	recent = recent.filter(func(t): return now - t.time < 1800)
+	title_abuse["recent_targets"] = recent
+
+func count_recent_targets(target_name: String, window_seconds: int = 1800) -> int:
+	"""Count how many times a target was hit in the time window"""
+	var now = int(Time.get_unix_time_from_system())
+	var recent = title_abuse.get("recent_targets", [])
+	var count = 0
+	for t in recent:
+		if t.name == target_name and now - t.time < window_seconds:
+			count += 1
+	return count
+
+func record_ability_use():
+	"""Record that an ability was used (for spam detection)"""
+	var now = int(Time.get_unix_time_from_system())
+	var recent = title_abuse.get("recent_abilities", [])
+	recent.append(now)
+	# Keep only last 10 minutes
+	recent = recent.filter(func(t): return now - t < 600)
+	title_abuse["recent_abilities"] = recent
+
+func count_recent_ability_uses(window_seconds: int = 600) -> int:
+	"""Count how many abilities were used in the time window"""
+	var now = int(Time.get_unix_time_from_system())
+	var recent = title_abuse.get("recent_abilities", [])
+	return recent.filter(func(t): return now - t < window_seconds).size()
+
+func clear_abuse_tracking():
+	"""Clear all abuse tracking (on title loss)"""
+	title_abuse = {}
+
+# ===== TITLE COOLDOWNS =====
+
+func is_ability_on_cooldown(ability_id: String) -> bool:
+	"""Check if an ability is on cooldown"""
+	var available_at = title_cooldowns.get(ability_id, 0)
+	return int(Time.get_unix_time_from_system()) < available_at
+
+func get_ability_cooldown_remaining(ability_id: String) -> int:
+	"""Get seconds remaining on cooldown"""
+	var available_at = title_cooldowns.get(ability_id, 0)
+	var now = int(Time.get_unix_time_from_system())
+	return max(0, available_at - now)
+
+func set_ability_cooldown(ability_id: String, cooldown_seconds: int):
+	"""Set an ability on cooldown"""
+	title_cooldowns[ability_id] = int(Time.get_unix_time_from_system()) + cooldown_seconds
+
+func clear_ability_cooldowns():
+	"""Clear all ability cooldowns"""
+	title_cooldowns = {}

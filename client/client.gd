@@ -9436,8 +9436,9 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade", "companion", "pet", "settings", "keybinds", "keys"]
-	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
+	# Reduced command set - most actions available via action bar
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet"]
+	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
 	if first_word.begins_with("/"):
@@ -9888,22 +9889,6 @@ func process_command(text: String):
 		"clear":
 			game_output.clear()
 			chat_output.clear()
-		"status":
-			if has_character:
-				display_character_status()
-			else:
-				display_game("You don't have a character yet")
-		"inventory", "inv", "i":
-			if has_character:
-				open_inventory()
-			else:
-				display_game("You don't have a character yet")
-		"attack", "a":
-			send_to_server({"type": "combat", "command": "attack"})
-		"defend", "d":
-			send_to_server({"type": "combat", "command": "defend"})
-		"flee", "f", "run":
-			send_to_server({"type": "combat", "command": "flee"})
 		"who", "players":
 			request_player_list()
 			display_game("[color=#808080]Refreshing player list...[/color]")
@@ -9912,36 +9897,16 @@ func process_command(text: String):
 				var target = parts[1]
 				send_to_server({"type": "examine_player", "name": target})
 			else:
-				display_game("[color=#FF0000]Usage: examine <playername>[/color]")
+				display_game("[color=#FF0000]Usage: /examine <playername>[/color]")
 		"watch":
 			if parts.size() > 1:
 				var target = parts[1]
 				request_watch_player(target)
 			else:
-				display_game("[color=#FF0000]Usage: watch <playername>[/color]")
+				display_game("[color=#FF0000]Usage: /watch <playername>[/color]")
 				display_game("[color=#808080]Watch another player's game output (requires their approval).[/color]")
 		"unwatch":
 			stop_watching()
-		"settings", "keybinds", "keys":
-			if has_character:
-				open_settings()
-			else:
-				display_game("You don't have a character yet")
-		"abilities", "loadout":
-			if has_character:
-				enter_ability_mode()
-			else:
-				display_game("You don't have a character yet")
-		"title":
-			if has_character:
-				open_title_menu()
-			else:
-				display_game("You don't have a character yet")
-		"leaders", "leaderboard":
-			if has_character:
-				show_leaderboard_panel()
-			else:
-				display_game("You don't have a character yet")
 		"bug", "report":
 			# Get optional description from rest of command
 			var description = ""
@@ -11379,7 +11344,7 @@ func search_help(search_term: String):
 		{
 			"title": "ITEMS & POTIONS",
 			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding", "time", "stop", "resurrect", "bane", "mystery", "box", "cursed", "coin", "tome", "stat", "skill"],
-			"content": "[color=#00FFFF]Potions:[/color] Health, Mana, Stamina, Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double gold, 50% lose half gold\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
+			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double gold, 50% lose half gold\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
 		},
 		{
 			"title": "EQUIPMENT & GEAR",
@@ -12736,10 +12701,17 @@ func display_title_menu():
 			var lives = title_menu_data.get("title_data", {}).get("lives", 3)
 			display_game("Lives remaining: [color=#00FFFF]%d[/color]" % lives)
 
-		# Show realm treasury for Jarl
-		if current_title == "jarl":
+		# Show realm treasury for Jarl/High King
+		if current_title in ["jarl", "high_king"]:
 			var treasury = title_menu_data.get("realm_treasury", 0)
 			display_game("Realm Treasury: [color=#FFD700]%d gold[/color]" % treasury)
+
+			# Show abuse points warning if any
+			var abuse_points = title_menu_data.get("abuse_points", 0)
+			var abuse_threshold = title_menu_data.get("abuse_threshold", 8)
+			if abuse_points > 0:
+				var color = "#FFFF00" if abuse_points < abuse_threshold / 2 else "#FF4444"
+				display_game("[color=%s]Abuse: %d/%d points[/color]" % [color, abuse_points, abuse_threshold])
 
 	display_game("")
 
@@ -12758,22 +12730,47 @@ func display_title_menu():
 		var idx = 1
 		for ability_id in abilities.keys():
 			var ability = abilities[ability_id]
-			var cost_text = ""
-			if ability.get("cost", 0) > 0:
+			var cost_parts = []
+
+			# Build cost string from new format
+			if ability.get("gold_cost", 0) > 0:
+				cost_parts.append(_format_gold(ability.gold_cost))
+			if ability.get("gold_cost_percent", 0) > 0:
+				cost_parts.append("%d%% gold" % ability.gold_cost_percent)
+			if ability.get("gem_cost", 0) > 0:
+				cost_parts.append("%d gems" % ability.gem_cost)
+			if ability.get("cooldown", 0) > 0:
+				var hours = ability.cooldown / 3600
+				if hours >= 1:
+					cost_parts.append("%dhr CD" % hours)
+				else:
+					cost_parts.append("%dmin CD" % (ability.cooldown / 60))
+
+			# Legacy cost format fallback
+			if cost_parts.is_empty() and ability.get("cost", 0) > 0:
 				var resource = ability.get("resource", "mana")
 				if resource == "mana_percent":
-					cost_text = " (%d%% Mana)" % ability.cost
+					cost_parts.append("%d%% Mana" % ability.cost)
 				elif resource == "gems":
-					cost_text = " (%d Gems)" % ability.cost
-				elif resource == "lives":
-					cost_text = " (%d Lives)" % ability.cost
-				else:
-					cost_text = " (%d %s)" % [ability.cost, resource.capitalize()]
+					cost_parts.append("%d Gems" % ability.cost)
+				elif resource != "none":
+					cost_parts.append("%d %s" % [ability.cost, resource.capitalize()])
+
+			var cost_text = " (" + ", ".join(cost_parts) + ")" if not cost_parts.is_empty() else ""
 			display_game("  [%s] %s%s - %s" % [get_action_key_name(idx), ability.get("name", ability_id), cost_text, ability.get("description", "")])
 			idx += 1
 		display_game("")
 
 	display_game("[color=#808080]Press [%s] to exit[/color]" % get_action_key_name(0))
+
+func _format_gold(amount: int) -> String:
+	"""Format gold amount with K/M suffixes"""
+	if amount >= 1000000:
+		return "%.1fM gold" % (amount / 1000000.0)
+	elif amount >= 1000:
+		return "%.1fK gold" % (amount / 1000.0)
+	else:
+		return "%d gold" % amount
 
 func handle_title_key_input(key: int) -> bool:
 	"""Handle key input in title mode. Returns true if handled."""

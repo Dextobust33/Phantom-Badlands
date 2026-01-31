@@ -50,8 +50,11 @@ var pending_trade_requests = {}  # {peer_id: requesting_peer_id} - pending incom
 var current_jarl_id: int = -1              # peer_id of current Jarl (-1 if none)
 var current_high_king_id: int = -1         # peer_id of current High King (-1 if none)
 var current_eternal_ids: Array = []        # peer_ids of current Eternals (max 3)
+var current_knight_peer_id: int = -1       # peer_id of current Knight (-1 if none)
+var current_mentee_peer_ids: Dictionary = {}  # {elder_peer_id: mentee_peer_id} - each Elder can have one Mentee
 var eternal_flame_location: Vector2i = Vector2i(0, 0)  # Hidden location, moves when found
-var realm_treasury: int = 0                # Gold collected from tribute
+var realm_treasury: int = 0                # Gold collected from tax collectors
+var pilgrimage_shrines: Dictionary = {}    # {peer_id: {blood: Vector2i, mind: Vector2i, wealth: Vector2i}}
 
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
@@ -1256,6 +1259,10 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Notify nearby players of the movement (so they see us on their map)
 	send_nearby_players_map_update(peer_id, old_x, old_y)
 
+	# Check for tax collector encounter (before trading post - can happen anywhere)
+	if check_tax_collector_encounter(peer_id):
+		send_character_update(peer_id)  # Update gold display
+
 	# Check for Trading Post first (safe zone with services)
 	if world_system.is_trading_post_tile(new_pos.x, new_pos.y):
 		# Check exploration quest progress
@@ -1365,6 +1372,10 @@ func handle_hunt(peer_id: int):
 			})
 		if not expired.is_empty():
 			send_character_update(peer_id)
+
+	# Check for tax collector encounter while hunting
+	if check_tax_collector_encounter(peer_id):
+		send_character_update(peer_id)
 
 	# Check if in safe zone (can't hunt there)
 	var terrain = world_system.get_terrain_at(character.x, character.y)
@@ -1599,6 +1610,54 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if result.has("victory") and result.victory:
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
+
+			# Track pilgrimage progress for Elders
+			var char = characters[peer_id]
+			if char.title == "elder" and not char.pilgrimage_progress.is_empty():
+				var monster_lvl = result.get("monster_level", 1)
+				var monster_tier = drop_tables.get_tier_for_level(monster_lvl)
+				var was_outsmart = result.get("victory_type", "") == "outsmart"
+
+				# Track kills for awakening stage
+				char.add_pilgrimage_kills(1)
+
+				# Track tier 8+ kills for Trial of Blood
+				if monster_tier >= 8:
+					char.add_pilgrimage_tier8_kills(1)
+
+				# Track outsmarts for Trial of Mind
+				if was_outsmart:
+					char.add_pilgrimage_outsmarts(1)
+
+				# Roll for ember drops (Stage 3: Ember Hunt)
+				if char.get_pilgrimage_stage() == "ember_hunt":
+					var ember_roll = randf()
+					var embers_earned = 0
+					var is_rare = result.get("is_rare_variant", false)
+					var is_boss = result.get("is_boss", false)
+
+					if is_boss and monster_tier >= 9:
+						# Boss T9+: guaranteed 5 embers
+						embers_earned = 5
+					elif is_rare:
+						# Rare variants: guaranteed 2 embers
+						embers_earned = 2
+					elif monster_tier >= 9 and ember_roll < TitlesScript.EMBER_DROP_RATES.tier9.chance:
+						embers_earned = randi_range(TitlesScript.EMBER_DROP_RATES.tier9.min, TitlesScript.EMBER_DROP_RATES.tier9.max)
+					elif monster_tier >= 8 and ember_roll < TitlesScript.EMBER_DROP_RATES.tier8.chance:
+						embers_earned = TitlesScript.EMBER_DROP_RATES.tier8.min
+
+					if embers_earned > 0:
+						char.add_pilgrimage_embers(embers_earned)
+						send_to_peer(peer_id, {
+							"type": "text",
+							"message": "[color=#FF6600]You found %d Flame Ember%s! (%d/%d)[/color]" % [
+								embers_earned,
+								"s" if embers_earned > 1 else "",
+								char.pilgrimage_progress.get("embers", 0),
+								TitlesScript.PILGRIMAGE_STAGES["ember_hunt"].requirement
+							]
+						})
 
 			# Record monster knowledge (player now knows this monster type's HP at this level)
 			var killed_monster_name = result.get("monster_name", "")
@@ -2785,6 +2844,81 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
+func check_tax_collector_encounter(peer_id: int) -> bool:
+	"""Check for and handle a tax collector encounter. Returns true if encounter occurred."""
+	if not characters.has(peer_id):
+		return false
+
+	var character = characters[peer_id]
+
+	# Check if player is tax-immune (Jarl or High King)
+	if TitlesScript.is_title_tax_immune(character.title):
+		# Small chance to show immunity flavor
+		if randf() < 0.02:  # 2% chance to show message
+			var title_name = TitlesScript.get_title_name(character.title)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#808080]A Tax Collector approaches... then recognizes your sigil.[/color]"
+			})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#C0C0C0]'My %s! Forgive my intrusion. The realm prospers under your rule.'[/color]" % title_name
+			})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]He bows and leaves without collecting.[/color]"
+			})
+		return false
+
+	# Check encounter rate (5%)
+	if randf() >= TitlesScript.TAX_COLLECTOR.encounter_rate:
+		return false
+
+	# Check minimum gold
+	if character.gold < TitlesScript.TAX_COLLECTOR.minimum_gold:
+		return false
+
+	# Select a random encounter type
+	var encounters = TitlesScript.TAX_ENCOUNTERS
+	var encounter = encounters[randi() % encounters.size()]
+	var encounter_type = encounter.get("type", "quick")
+
+	# Calculate tax amount
+	var tax_rate = TitlesScript.TAX_COLLECTOR.tax_rate
+	if encounter.has("tax_modifier"):
+		tax_rate *= encounter.tax_modifier
+	var tax_amount = max(TitlesScript.TAX_COLLECTOR.minimum_tax, int(character.gold * tax_rate))
+
+	# Deduct gold and add to treasury
+	character.gold -= tax_amount
+	realm_treasury += tax_amount
+
+	# Send encounter messages
+	var messages = encounter.get("messages", [])
+	for i in range(messages.size()):
+		var msg = messages[i]
+		# Replace %d placeholder with tax amount
+		if "%d" in msg:
+			msg = msg % tax_amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#DAA520]%s[/color]" % msg
+		})
+
+	# Handle special bonuses (like the negotiator's gold find buff)
+	if encounter.has("bonus"):
+		var bonus = encounter.bonus
+		if bonus.type == "gold_find":
+			character.add_persistent_buff("gold_find", bonus.value, bonus.battles)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]+%d%% gold find for %d battles![/color]" % [bonus.value, bonus.battles]
+			})
+
+	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, realm_treasury])
+	save_character(peer_id)
+	return true
+
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
@@ -2916,47 +3050,56 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item_name, actual_heal]
 		})
-	elif effect.has("mana"):
-		# Mana potion - use tier healing value if available (mana uses similar scaling)
-		var mana_amount: int
+	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
+		# Resource potion - restores the player's PRIMARY resource based on class path
+		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
+		var resource_amount: int
 		if tier_data.has("healing"):
-			mana_amount = int(tier_data.healing * 0.6)  # Mana is roughly 60% of HP healing
+			resource_amount = int(tier_data.healing * 0.6)  # Resource is roughly 60% of HP healing
 		else:
-			mana_amount = effect.base + (effect.per_level * item_level)
-		var old_mana = character.current_mana
-		character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
-		var actual_restore = character.current_mana - old_mana
+			# Legacy calculation - use the effect that exists
+			if effect.has("mana"):
+				resource_amount = effect.base + (effect.per_level * item_level)
+			elif effect.has("stamina"):
+				resource_amount = effect.base + (effect.per_level * item_level)
+			elif effect.has("energy"):
+				resource_amount = effect.base + (effect.per_level * item_level)
+			else:
+				resource_amount = effect.base + (effect.per_level * item_level)
+
+		# Restore the player's primary resource based on their class path
+		var primary_resource = character.get_primary_resource()
+		var old_value: int
+		var actual_restore: int
+		var color: String
+
+		match primary_resource:
+			"mana":
+				old_value = character.current_mana
+				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
+				actual_restore = character.current_mana - old_value
+				color = "#00FFFF"
+			"stamina":
+				old_value = character.current_stamina
+				character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + resource_amount)
+				actual_restore = character.current_stamina - old_value
+				color = "#FFCC00"
+			"energy":
+				old_value = character.current_energy
+				character.current_energy = min(character.get_total_max_energy(), character.current_energy + resource_amount)
+				actual_restore = character.current_energy - old_value
+				color = "#66FF66"
+			_:
+				# Fallback to mana
+				old_value = character.current_mana
+				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
+				actual_restore = character.current_mana - old_value
+				color = "#00FFFF"
+				primary_resource = "mana"
+
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#00FFFF]You use %s and restore %d mana![/color]" % [item_name, actual_restore]
-		})
-	elif effect.has("stamina"):
-		# Stamina potion
-		var stamina_amount: int
-		if tier_data.has("healing"):
-			stamina_amount = int(tier_data.healing * 0.5)
-		else:
-			stamina_amount = effect.base + (effect.per_level * item_level)
-		var old_stamina = character.current_stamina
-		character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + stamina_amount)
-		var actual_restore = character.current_stamina - old_stamina
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FFCC00]You use %s and restore %d stamina![/color]" % [item_name, actual_restore]
-		})
-	elif effect.has("energy"):
-		# Energy potion
-		var energy_amount: int
-		if tier_data.has("healing"):
-			energy_amount = int(tier_data.healing * 0.5)
-		else:
-			energy_amount = effect.base + (effect.per_level * item_level)
-		var old_energy = character.current_energy
-		character.current_energy = min(character.get_total_max_energy(), character.current_energy + energy_amount)
-		var actual_restore = character.current_energy - old_energy
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#66FF66]You use %s and restore %d energy![/color]" % [item_name, actual_restore]
+			"message": "[color=%s]You use %s and restore %d %s![/color]" % [color, item_name, actual_restore, primary_resource]
 		})
 	elif effect.has("buff"):
 		# Buff potion
@@ -6258,11 +6401,12 @@ func check_elder_auto_grant(peer_id: int):
 	if character.level >= 1000:
 		character.title = "elder"
 		character.title_data = {}
+		character.init_pilgrimage()  # Start the Eternal Pilgrimage journey
 		broadcast_title_change(character.name, "elder", "achieved")
 		send_to_peer(peer_id, {
 			"type": "title_achieved",
 			"title": "elder",
-			"message": "[color=#9400D3]You have reached level 1000 and become an Elder of the realm![/color]"
+			"message": "[color=#9400D3]You have reached level 1000 and become an Elder of the realm![/color]\n[color=#FFD700]Your journey to become Eternal begins... Use Seek Flame to check your progress.[/color]"
 		})
 		save_character(peer_id)
 
@@ -6274,7 +6418,7 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var ability_id = message.get("ability", "")
 	var target_name = message.get("target", "")
-	var broadcast_text = message.get("broadcast_text", "")
+	var stat_choice = message.get("stat_choice", "")  # For Bless ability
 
 	if character.title.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "You don't have a title."})
@@ -6286,32 +6430,35 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 		return
 
 	var ability = abilities[ability_id]
-	var cost = ability.get("cost", 0)
-	var resource = ability.get("resource", "none")
 
-	# Check and consume resource cost
-	if resource == "mana":
-		if character.current_mana < cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough mana (%d required)." % cost})
+	# Check cooldown
+	if ability.has("cooldown") and character.is_ability_on_cooldown(ability_id):
+		var remaining = character.get_ability_cooldown_remaining(ability_id)
+		var hours = remaining / 3600
+		var minutes = (remaining % 3600) / 60
+		var time_str = ""
+		if hours > 0:
+			time_str = "%dh %dm" % [hours, minutes]
+		else:
+			time_str = "%dm" % minutes
+		send_to_peer(peer_id, {"type": "error", "message": "Ability on cooldown (%s remaining)." % time_str})
+		return
+
+	# Check and consume gold cost
+	var gold_cost = ability.get("gold_cost", 0)
+	if ability.has("gold_cost_percent"):
+		gold_cost = int(character.gold * ability.gold_cost_percent / 100.0)
+	if gold_cost > 0:
+		if character.gold < gold_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold (%d required)." % gold_cost})
 			return
-		character.current_mana -= cost
-	elif resource == "mana_percent":
-		var mana_cost = int(character.max_mana * cost / 100.0)
-		if character.current_mana < mana_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough mana (%d%% required)." % cost})
+
+	# Check gem cost
+	var gem_cost = ability.get("gem_cost", 0)
+	if gem_cost > 0:
+		if character.gems < gem_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems (%d required)." % gem_cost})
 			return
-		character.current_mana -= mana_cost
-	elif resource == "gems":
-		if character.gems < cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems (%d required)." % cost})
-			return
-		character.gems -= cost
-	elif resource == "lives":
-		var lives = character.title_data.get("lives", 3)
-		if lives < cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough lives (%d required)." % cost})
-			return
-		character.title_data["lives"] = lives - cost
 
 	# Find target if needed
 	var target_peer_id = -1
@@ -6323,88 +6470,205 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 			return
 		target = characters.get(target_peer_id)
 
+		# Check max target level for Mentor
+		if ability.has("max_target_level") and target.level > ability.max_target_level:
+			send_to_peer(peer_id, {"type": "error", "message": "Target must be below level %d." % ability.max_target_level})
+			return
+
+	# Deduct costs after all checks pass
+	if gold_cost > 0:
+		character.gold -= gold_cost
+	if gem_cost > 0:
+		character.gems -= gem_cost
+
+	# Set cooldown
+	if ability.has("cooldown"):
+		character.set_ability_cooldown(ability_id, ability.cooldown)
+
+	# Track abuse for negative abilities
+	if ability.get("is_negative", false) and target:
+		_track_title_abuse(peer_id, character, target_peer_id, target)
+
 	# Execute ability
-	_execute_title_ability(peer_id, character, ability_id, target_peer_id, target, broadcast_text)
+	_execute_title_ability(peer_id, character, ability_id, target_peer_id, target, stat_choice)
 	send_character_update(peer_id)
 	save_character(peer_id)
 
-func _execute_title_ability(peer_id: int, character: Character, ability_id: String, target_peer_id: int, target: Character, broadcast_text: String):
+func _track_title_abuse(peer_id: int, character: Character, target_peer_id: int, target: Character):
+	"""Track abuse points for negative title abilities"""
+	# Decay existing points first
+	character.decay_abuse_points()
+
+	# Check for same target within window
+	var same_target_count = character.count_recent_targets(target.name)
+	if same_target_count > 0:
+		character.add_abuse_points(TitlesScript.ABUSE_SETTINGS.same_target_points)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Warning: Targeting the same player repeatedly (+%d abuse points)[/color]" % TitlesScript.ABUSE_SETTINGS.same_target_points
+		})
+
+	# Check for punching down (level difference)
+	var level_diff = character.level - target.level
+	if level_diff >= TitlesScript.ABUSE_SETTINGS.level_diff_threshold:
+		character.add_abuse_points(TitlesScript.ABUSE_SETTINGS.level_diff_points)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Warning: Targeting much lower level player (+%d abuse points)[/color]" % TitlesScript.ABUSE_SETTINGS.level_diff_points
+		})
+
+	# Check if target is in combat
+	if combat_mgr.is_in_combat(target_peer_id):
+		character.add_abuse_points(TitlesScript.ABUSE_SETTINGS.combat_interference_points)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Warning: Interfering with player in combat (+%d abuse points)[/color]" % TitlesScript.ABUSE_SETTINGS.combat_interference_points
+		})
+
+	# Record this target
+	character.record_ability_target(target.name)
+	character.record_ability_use()
+
+	# Check for spam
+	var recent_uses = character.count_recent_ability_uses()
+	if recent_uses >= TitlesScript.ABUSE_SETTINGS.spam_threshold:
+		character.add_abuse_points(TitlesScript.ABUSE_SETTINGS.spam_points)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Warning: Spamming abilities (+%d abuse points)[/color]" % TitlesScript.ABUSE_SETTINGS.spam_points
+		})
+
+	# Check if over threshold - lose title
+	var threshold = TitlesScript.get_abuse_threshold(character.title)
+	if character.get_abuse_points() >= threshold:
+		_revoke_title_for_abuse(peer_id, character)
+
+func _revoke_title_for_abuse(peer_id: int, character: Character):
+	"""Revoke a title due to abuse"""
+	var old_title = character.title
+	var title_name = TitlesScript.get_title_name(old_title)
+
+	# Clear title
+	character.title = ""
+	character.title_data = {}
+	character.clear_abuse_tracking()
+	character.clear_ability_cooldowns()
+
+	# Update tracking
+	if old_title == "jarl":
+		current_jarl_id = -1
+	elif old_title == "high_king":
+		current_high_king_id = -1
+		# Also clear knight status
+		if current_knight_peer_id != -1 and characters.has(current_knight_peer_id):
+			var knight = characters[current_knight_peer_id]
+			knight.clear_knight_status()
+			send_to_peer(current_knight_peer_id, {
+				"type": "text",
+				"message": "[color=#FF4444]Your Knight status has been revoked - the High King has fallen![/color]"
+			})
+			save_character(current_knight_peer_id)
+		current_knight_peer_id = -1
+
+	# Notify player
+	send_to_peer(peer_id, {
+		"type": "title_lost",
+		"title": old_title,
+		"message": "[color=#FF4444]You have abused your powers as %s! Your title has been REVOKED![/color]" % title_name
+	})
+
+	# Broadcast to realm
+	broadcast_title_change(character.name, old_title, "revoked for abuse")
+	save_character(peer_id)
+
+func _execute_title_ability(peer_id: int, character: Character, ability_id: String, target_peer_id: int, target: Character, stat_choice: String):
 	"""Execute a specific title ability"""
 	var title_color = TitlesScript.get_title_color(character.title)
-	var title_prefix = TitlesScript.get_title_prefix(character.title)
+	var title_name = TitlesScript.get_title_name(character.title)
 
 	match ability_id:
-		# Jarl abilities
-		"banish":
+		# ===== JARL ABILITIES =====
+		"summon":
 			if target:
-				var offset_x = randi_range(-50, 50)
-				var offset_y = randi_range(-50, 50)
-				target.x = clampi(target.x + offset_x, -1000, 1000)
-				target.y = clampi(target.y + offset_y, -1000, 1000)
+				# TODO: Implement consent system - for now just teleport
+				target.x = character.x
+				target.y = character.y
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#C0C0C0]The Jarl has banished you! You find yourself at (%d, %d).[/color]" % [target.x, target.y]
+					"message": "[color=#C0C0C0]The Jarl has summoned you to their location (%d, %d)![/color]" % [target.x, target.y]
 				})
-				_broadcast_chat_from_title(character.name, character.title, "has banished %s!" % target.name)
+				_broadcast_chat_from_title(character.name, character.title, "has summoned %s!" % target.name)
 				send_location_update(target_peer_id)
+				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
-		"curse":
+		"tax_player":
 			if target:
-				target.apply_poison(5, 10)
-				target.current_energy = max(0, int(target.current_energy * 0.8))
+				var tax_amount = mini(10000, int(target.gold * 0.10))
+				target.gold -= tax_amount
+				character.gold += tax_amount
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#C0C0C0]The Jarl has cursed you! Poison courses through your veins.[/color]"
+					"message": "[color=#C0C0C0]The Jarl has taxed you %d gold![/color]" % tax_amount
 				})
-				_broadcast_chat_from_title(character.name, character.title, "has cursed %s!" % target.name)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]You collected %d gold in taxes from %s.[/color]" % [tax_amount, target.name]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has taxed %s!" % target.name)
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
 		"gift_silver":
 			if target:
-				target.gold += 5000
+				var gift_amount = int(character.gold * 0.08)  # They already paid 5%, give 8%
+				target.gold += gift_amount
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]The Jarl has gifted you 5000 gold![/color]"
+					"message": "[color=#FFD700]The Jarl has gifted you %d gold![/color]" % gift_amount
+				})
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]You gifted %d gold to %s.[/color]" % [gift_amount, target.name]
 				})
 				_broadcast_chat_from_title(character.name, character.title, "has gifted %s with silver!" % target.name)
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
-		"claim_tribute":
-			var tribute = int(realm_treasury * 0.1)
+		"collect_tribute":
+			var abilities = TitlesScript.get_title_abilities(character.title)
+			var treasury_percent = abilities["collect_tribute"].get("treasury_percent", 15)
+			var tribute = int(realm_treasury * treasury_percent / 100.0)
 			if tribute > 0:
 				character.gold += tribute
 				realm_treasury -= tribute
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You claim %d gold from the realm treasury.[/color]" % tribute
+					"message": "[color=#FFD700]You claim %d gold from the realm treasury (%d%% of %d).[/color]" % [tribute, treasury_percent, realm_treasury + tribute]
 				})
 			else:
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
 
-		# High King abilities
-		"exile":
-			if target:
-				var angle = randf() * TAU
-				var edge_dist = 200
-				target.x = clampi(int(cos(angle) * edge_dist), -1000, 1000)
-				target.y = clampi(int(sin(angle) * edge_dist), -1000, 1000)
-				send_to_peer(target_peer_id, {
-					"type": "text",
-					"message": "[color=#FFD700]The High King has exiled you to the edge of the realm! You find yourself at (%d, %d).[/color]" % [target.x, target.y]
-				})
-				_broadcast_chat_from_title(character.name, character.title, "has exiled %s from the kingdom!" % target.name)
-				send_location_update(target_peer_id)
-				save_character(target_peer_id)
-
+		# ===== HIGH KING ABILITIES =====
 		"knight":
 			if target:
-				target.add_persistent_buff("knighted", 25, 10)  # +25% damage for 10 battles
+				# Remove previous knight if exists
+				if current_knight_peer_id != -1 and characters.has(current_knight_peer_id):
+					var old_knight = characters[current_knight_peer_id]
+					old_knight.clear_knight_status()
+					send_to_peer(current_knight_peer_id, {
+						"type": "text",
+						"message": "[color=#808080]Your Knight status has ended - a new Knight has been appointed.[/color]"
+					})
+					send_character_update(current_knight_peer_id)
+					save_character(current_knight_peer_id)
+
+				# Set new knight
+				target.set_knight_status(character.name, peer_id)
+				current_knight_peer_id = target_peer_id
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]The High King has knighted you! +25% damage for 10 battles.[/color]"
+					"message": "[color=#87CEEB]The High King has knighted you! You gain +15%% damage and +10%% gold permanently![/color]"
 				})
 				_broadcast_chat_from_title(character.name, character.title, "has knighted %s!" % target.name)
 				send_character_update(target_peer_id)
@@ -6414,7 +6678,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			if target:
 				target.cure_poison()
 				target.cure_blind()
-				target.active_buffs.clear()  # Clear debuffs (they're stored as negative buffs)
+				# Only clear negative buffs, not positive ones
 				send_to_peer(target_peer_id, {
 					"type": "text",
 					"message": "[color=#00FF00]The High King has cured all your ailments![/color]"
@@ -6423,14 +6687,36 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
-		"royal_decree":
-			if not broadcast_text.is_empty():
-				var decree_msg = "[color=#FFD700][ROYAL DECREE] %s[/color]" % broadcast_text
-				for other_peer_id in characters.keys():
-					send_to_peer(other_peer_id, {"type": "text", "message": decree_msg})
-					send_to_peer(other_peer_id, {"type": "chat", "sender": "High King %s" % character.name, "message": broadcast_text})
+		"exile":
+			if target:
+				var angle = randf() * TAU
+				var offset_x = int(cos(angle) * 100)
+				var offset_y = int(sin(angle) * 100)
+				target.x = clampi(target.x + offset_x, -1000, 1000)
+				target.y = clampi(target.y + offset_y, -1000, 1000)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]The High King has exiled you! You find yourself at (%d, %d).[/color]" % [target.x, target.y]
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has exiled %s!" % target.name)
+				send_location_update(target_peer_id)
+				save_character(target_peer_id)
 
-		# Elder abilities
+		"royal_treasury":
+			var abilities = TitlesScript.get_title_abilities(character.title)
+			var treasury_percent = abilities["royal_treasury"].get("treasury_percent", 30)
+			var tribute = int(realm_treasury * treasury_percent / 100.0)
+			if tribute > 0:
+				character.gold += tribute
+				realm_treasury -= tribute
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFD700]You claim %d gold from the royal treasury (%d%% of %d).[/color]" % [tribute, treasury_percent, realm_treasury + tribute]
+				})
+			else:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
+
+		# ===== ELDER ABILITIES =====
 		"heal_other":
 			if target:
 				var heal_amount = int(target.get_total_max_hp() * 0.5)
@@ -6443,48 +6729,37 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
-		"seek_flame":
-			var dx = eternal_flame_location.x - character.x
-			var dy = eternal_flame_location.y - character.y
-			var distance = sqrt(dx * dx + dy * dy)
-			var direction = ""
-			if abs(dx) > abs(dy):
-				direction = "east" if dx > 0 else "west"
-			else:
-				direction = "north" if dy > 0 else "south"
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FFFF]The Eternal Flame calls from %d tiles to the %s...[/color]" % [int(distance), direction]
-			})
-
-		"slap":
+		"mentor":
 			if target:
-				var offset_x = randi_range(-20, 20)
-				var offset_y = randi_range(-20, 20)
-				target.x = clampi(target.x + offset_x, -1000, 1000)
-				target.y = clampi(target.y + offset_y, -1000, 1000)
+				# Remove previous mentee if exists for this elder
+				if current_mentee_peer_ids.has(peer_id):
+					var old_mentee_id = current_mentee_peer_ids[peer_id]
+					if characters.has(old_mentee_id):
+						var old_mentee = characters[old_mentee_id]
+						old_mentee.clear_mentee_status()
+						send_to_peer(old_mentee_id, {
+							"type": "text",
+							"message": "[color=#808080]Your Mentee status has ended - your Elder has taken a new student.[/color]"
+						})
+						send_character_update(old_mentee_id)
+						save_character(old_mentee_id)
+
+				# Set new mentee
+				target.set_mentee_status(character.name, peer_id)
+				current_mentee_peer_ids[peer_id] = target_peer_id
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#9400D3]Elder %s has slapped you across the realm! You find yourself at (%d, %d).[/color]" % [character.name, target.x, target.y]
+					"message": "[color=#DDA0DD]Elder %s has taken you as their Mentee! You gain +30%% XP and +20%% gold permanently![/color]" % character.name
 				})
-				_broadcast_chat_from_title(character.name, character.title, "has slapped %s!" % target.name)
-				send_location_update(target_peer_id)
-				save_character(target_peer_id)
-
-		# Eternal abilities
-		"smite":
-			if target:
-				target.apply_poison(50, 5)
-				# -50% stats debuff stored in title_data temporarily
-				target.add_buff("smite_debuff", 50, 5)  # 50% stat reduction for 5 rounds
-				send_to_peer(target_peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]Eternal %s has SMITED you! Devastating curse applied.[/color]" % character.name
-				})
-				_broadcast_chat_from_title(character.name, character.title, "has unleashed divine wrath upon %s!" % target.name)
+				_broadcast_chat_from_title(character.name, character.title, "has taken %s as their Mentee!" % target.name)
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
+		"seek_flame":
+			# Show pilgrimage progress instead of just flame location
+			_show_pilgrimage_progress(peer_id, character)
+
+		# ===== ETERNAL ABILITIES =====
 		"restore":
 			if target:
 				target.current_hp = target.get_total_max_hp()
@@ -6493,7 +6768,6 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				target.current_energy = target.get_total_max_energy()
 				target.cure_poison()
 				target.cure_blind()
-				target.active_buffs.clear()
 				send_to_peer(target_peer_id, {
 					"type": "text",
 					"message": "[color=#00FFFF]Eternal %s has fully restored you![/color]" % character.name
@@ -6504,8 +6778,9 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 
 		"bless":
 			if target:
-				var stats = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
-				var chosen_stat = stats[randi() % stats.size()]
+				# Use chosen stat if provided, otherwise random
+				var valid_stats = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+				var chosen_stat = stat_choice.to_lower() if stat_choice.to_lower() in valid_stats else valid_stats[randi() % valid_stats.size()]
 				match chosen_stat:
 					"strength": target.strength += 5
 					"constitution": target.constitution += 5
@@ -6522,12 +6797,117 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
-		"proclaim":
-			if not broadcast_text.is_empty():
-				var proclaim_msg = "[color=#00FFFF][ETERNAL PROCLAMATION] %s[/color]" % broadcast_text
-				for other_peer_id in characters.keys():
-					send_to_peer(other_peer_id, {"type": "text", "message": proclaim_msg})
-					send_to_peer(other_peer_id, {"type": "chat", "sender": "Eternal %s" % character.name, "message": broadcast_text})
+		"smite":
+			if target:
+				target.apply_poison(25, 10)  # 25 poison for 10 rounds
+				target.add_buff("smite_debuff", 25, 10)  # -25% damage for 10 rounds
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]Eternal %s has SMITED you! You are cursed.[/color]" % character.name
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has unleashed divine wrath upon %s!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+		"guardian":
+			if target:
+				target.grant_guardian_death_save(character.name)
+				send_to_peer(target_peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]Eternal %s has granted you the Guardian's blessing! You will survive one fatal blow.[/color]" % character.name
+				})
+				_broadcast_chat_from_title(character.name, character.title, "has blessed %s with the Guardian's protection!" % target.name)
+				send_character_update(target_peer_id)
+				save_character(target_peer_id)
+
+func _show_pilgrimage_progress(peer_id: int, character: Character):
+	"""Show the Elder's progress towards becoming Eternal"""
+	if character.pilgrimage_progress.is_empty():
+		character.init_pilgrimage()
+
+	var stage = character.get_pilgrimage_stage()
+	var progress = character.pilgrimage_progress
+	var msg = "[color=#9400D3]═══ ETERNAL PILGRIMAGE ═══[/color]\n"
+
+	match stage:
+		"awakening":
+			var kills = progress.get("kills", 0)
+			var required = TitlesScript.PILGRIMAGE_STAGES["awakening"].requirement
+			msg += "[color=#FFD700]Stage 1: The Awakening[/color]\n"
+			msg += "Slay monsters to awaken the flame within.\n"
+			msg += "[color=#00FF00]Progress: %d / %d kills[/color]" % [kills, required]
+			if kills >= required:
+				msg += "\n[color=#00FFFF]COMPLETE! Beginning the Three Trials...[/color]"
+				character.advance_pilgrimage_stage("trial_blood")
+
+		"trial_blood", "trial_mind", "trial_wealth":
+			msg += "[color=#FFD700]Stage 2: The Three Trials[/color]\n\n"
+
+			# Blood
+			var t8_kills = progress.get("tier8_kills", 0)
+			var t8_req = TitlesScript.PILGRIMAGE_STAGES["trial_blood"].requirement
+			var blood_done = character.is_pilgrimage_shrine_complete("blood")
+			if blood_done:
+				msg += "[color=#00FF00][X] Shrine of Blood - COMPLETE[/color]\n"
+			else:
+				msg += "[color=#FF6666][ ] Shrine of Blood: %d / %d Tier 8+ kills[/color]\n" % [t8_kills, t8_req]
+
+			# Mind
+			var outsmarts = progress.get("outsmarts", 0)
+			var out_req = TitlesScript.PILGRIMAGE_STAGES["trial_mind"].requirement
+			var mind_done = character.is_pilgrimage_shrine_complete("mind")
+			if mind_done:
+				msg += "[color=#00FF00][X] Shrine of Mind - COMPLETE[/color]\n"
+			else:
+				msg += "[color=#6666FF][ ] Shrine of Mind: %d / %d outsmarts[/color]\n" % [outsmarts, out_req]
+
+			# Wealth
+			var donated = progress.get("gold_donated", 0)
+			var gold_req = TitlesScript.PILGRIMAGE_STAGES["trial_wealth"].requirement
+			var wealth_done = character.is_pilgrimage_shrine_complete("wealth")
+			if wealth_done:
+				msg += "[color=#00FF00][X] Shrine of Wealth - COMPLETE[/color]\n"
+			else:
+				msg += "[color=#FFD700][ ] Shrine of Wealth: %d / %d gold donated[/color]" % [donated, gold_req]
+
+			# Check if all done
+			if blood_done and mind_done and wealth_done:
+				msg += "\n\n[color=#00FFFF]ALL TRIALS COMPLETE! Beginning the Ember Hunt...[/color]"
+				character.advance_pilgrimage_stage("ember_hunt")
+
+		"ember_hunt":
+			var embers = progress.get("embers", 0)
+			var required = TitlesScript.PILGRIMAGE_STAGES["ember_hunt"].requirement
+			msg += "[color=#FFD700]Stage 3: The Ember Hunt[/color]\n"
+			msg += "Collect Flame Embers from powerful monsters.\n"
+			msg += "[color=#FF6600]Progress: %d / %d embers[/color]" % [embers, required]
+			if embers >= required:
+				msg += "\n[color=#00FFFF]COMPLETE! The Crucible awaits...[/color]"
+				character.advance_pilgrimage_stage("crucible")
+
+		"crucible":
+			var bosses = progress.get("crucible_progress", 0)
+			var required = TitlesScript.PILGRIMAGE_STAGES["crucible"].requirement
+			msg += "[color=#FFD700]Stage 4: The Crucible[/color]\n"
+			msg += "Defeat 10 Tier 9 bosses in succession.\n"
+			msg += "[color=#FF4444]Progress: %d / %d bosses[/color]" % [bosses, required]
+			msg += "\n[color=#808080]Death resets progress. Find a Tier 9 zone to begin.[/color]"
+			if bosses >= required:
+				msg += "\n[color=#00FFFF]THE CRUCIBLE IS COMPLETE![/color]"
+				msg += "\n[color=#FFD700]The Eternal Flame reveals itself...[/color]"
+				# Reveal flame location
+				var dx = eternal_flame_location.x - character.x
+				var dy = eternal_flame_location.y - character.y
+				var distance = sqrt(dx * dx + dy * dy)
+				var direction = ""
+				if abs(dx) > abs(dy):
+					direction = "east" if dx > 0 else "west"
+				else:
+					direction = "north" if dy > 0 else "south"
+				msg += "\n[color=#00FFFF]The Eternal Flame burns %d-%d tiles to the %s![/color]" % [int(distance * 0.9), int(distance * 1.1), direction]
+
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	save_character(peer_id)
 
 func _broadcast_chat_from_title(player_name: String, title_id: String, action_text: String):
 	"""Broadcast a chat message for a title action"""
@@ -6567,6 +6947,14 @@ func handle_get_title_menu(peer_id: int):
 		if pid != peer_id:
 			online_players.append(characters[pid].name)
 
+	# Get abuse tracking info for Jarl/High King
+	var abuse_points = 0
+	var abuse_threshold = 999
+	if character.title in ["jarl", "high_king"]:
+		character.decay_abuse_points()  # Decay points before displaying
+		abuse_points = character.get_abuse_points()
+		abuse_threshold = TitlesScript.get_abuse_threshold(character.title)
+
 	send_to_peer(peer_id, {
 		"type": "title_menu",
 		"current_title": character.title,
@@ -6574,7 +6962,9 @@ func handle_get_title_menu(peer_id: int):
 		"claimable": claimable,
 		"abilities": abilities,
 		"online_players": online_players,
-		"realm_treasury": realm_treasury if character.title == "jarl" else 0
+		"realm_treasury": realm_treasury if character.title in ["jarl", "high_king"] else 0,
+		"abuse_points": abuse_points,
+		"abuse_threshold": abuse_threshold
 	})
 
 # ===== TRADING SYSTEM HANDLERS =====

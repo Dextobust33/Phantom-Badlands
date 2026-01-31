@@ -14,6 +14,8 @@ const TITLE_DATA = {
 		"requires_item": "jarls_ring",
 		"requires_location": Vector2i(0, 0),  # The High Seat at Crossroads
 		"unique": true,               # Only one allowed
+		"tax_immune": true,           # Exempt from tax collectors
+		"abuse_threshold": 8,         # Lose title at this many abuse points
 		"description": "Chieftain of the realm. Claim The High Seat with a Jarl's Ring."
 	},
 	"high_king": {
@@ -26,6 +28,8 @@ const TITLE_DATA = {
 		"requires_location": Vector2i(0, 0),  # The High Seat at Crossroads
 		"unique": true,
 		"replaces": "jarl",           # Claiming High King removes Jarl
+		"tax_immune": true,           # Exempt from tax collectors
+		"abuse_threshold": 15,        # Lose title at this many abuse points
 		"description": "Supreme ruler. Forge the Crown of the North and claim The High Seat."
 	},
 	"elder": {
@@ -42,15 +46,106 @@ const TITLE_DATA = {
 		"color": "#00FFFF",           # Cyan
 		"prefix": "[Eternal]",
 		"min_level": 1000,
-		"requires_item": "eternal_flame",
 		"max_count": 3,               # Up to 3 Eternals allowed
 		"lives": 3,                   # Loses title after 3 deaths
-		"description": "Immortal legend. Find the Eternal Flame as an Elder."
+		"description": "Immortal legend. Complete the Eternal Pilgrimage as an Elder."
 	}
+}
+
+# Knight status (granted by High King)
+const KNIGHT_STATUS = {
+	"name": "Knight",
+	"color": "#87CEEB",               # Light blue
+	"prefix": "[Knight]",
+	"damage_bonus": 0.15,             # +15% damage
+	"gold_bonus": 0.10,               # +10% gold find
+	"description": "Knighted by the High King. Permanent until King dies or knights another."
+}
+
+# Mentee status (granted by Elder)
+const MENTEE_STATUS = {
+	"name": "Mentee",
+	"color": "#DDA0DD",               # Plum
+	"prefix": "[Mentee]",
+	"xp_bonus": 0.30,                 # +30% XP
+	"gold_bonus": 0.20,               # +20% gold find
+	"max_level": 500,                 # Can only mentor players below this level
+	"description": "Mentored by an Elder. Permanent until Elder dies or mentors another."
 }
 
 # Title hierarchy (higher index = more powerful)
 const TITLE_HIERARCHY = ["jarl", "high_king", "elder", "eternal"]
+
+# Abuse point settings
+const ABUSE_SETTINGS = {
+	"same_target_window": 1800,       # 30 minutes in seconds
+	"same_target_points": 3,          # Points for targeting same player within window
+	"level_diff_threshold": 20,       # Level difference for "punching down"
+	"level_diff_points": 2,           # Points for punching down
+	"combat_interference_points": 3,  # Points for targeting player in combat
+	"spam_window": 600,               # 10 minutes in seconds
+	"spam_threshold": 3,              # Number of abilities before spam penalty
+	"spam_points": 2,                 # Points for spamming
+	"decay_rate": 1,                  # Points decayed per hour
+	"decay_interval": 3600            # Seconds between decay (1 hour)
+}
+
+# Eternal Pilgrimage stages and requirements
+const PILGRIMAGE_STAGES = {
+	"awakening": {
+		"name": "The Awakening",
+		"description": "Slay 5,000 monsters to awaken the flame within.",
+		"requirement": 5000,
+		"type": "kills"
+	},
+	"trial_blood": {
+		"name": "Trial of Blood",
+		"description": "Defeat 1,000 Tier 8+ monsters (Level 250+).",
+		"requirement": 1000,
+		"type": "tier8_kills",
+		"shrine_reward_stat": "strength",
+		"shrine_reward_amount": 3
+	},
+	"trial_mind": {
+		"name": "Trial of Mind",
+		"description": "Outsmart 200 monsters.",
+		"requirement": 200,
+		"type": "outsmarts",
+		"shrine_reward_stat": "wits",
+		"shrine_reward_amount": 3
+	},
+	"trial_wealth": {
+		"name": "Trial of Wealth",
+		"description": "Donate 10,000,000 gold to the Shrine of Wealth.",
+		"requirement": 10000000,
+		"type": "gold_donated",
+		"shrine_reward_stat": "wisdom",
+		"shrine_reward_amount": 3
+	},
+	"ember_hunt": {
+		"name": "The Ember Hunt",
+		"description": "Collect 500 Flame Embers from powerful monsters.",
+		"requirement": 500,
+		"type": "embers"
+	},
+	"crucible": {
+		"name": "The Crucible",
+		"description": "Complete a gauntlet of 10 consecutive Tier 9 boss fights.",
+		"requirement": 10,
+		"type": "crucible_bosses"
+	}
+}
+
+# Pilgrimage stage order
+const PILGRIMAGE_ORDER = ["awakening", "trial_blood", "trial_mind", "trial_wealth", "ember_hunt", "crucible"]
+
+# Ember drop rates
+const EMBER_DROP_RATES = {
+	"tier8": {"chance": 0.10, "min": 1, "max": 1},      # 10% chance, 1 ember
+	"tier9": {"chance": 0.25, "min": 1, "max": 3},      # 25% chance, 1-3 embers
+	"rare": {"chance": 1.0, "min": 2, "max": 2},        # 100% from rare variants
+	"boss": {"chance": 1.0, "min": 5, "max": 5}         # 100% from bosses, 5 embers
+}
 
 # Title items
 const TITLE_ITEMS = {
@@ -87,65 +182,141 @@ const TITLE_LOCATIONS = {
 	"infernal_forge": Vector2i(-400, 0) # Fire Mountain - where Crown is forged
 }
 
-# Title abilities
-const JARL_ABILITIES = {
-	"banish": {
-		"name": "Banish",
-		"cost": 50,
-		"resource": "mana",
-		"description": "Relocate a player randomly (50 tiles)",
-		"target": "player"
+# Tax collector settings
+const TAX_COLLECTOR = {
+	"encounter_rate": 0.05,           # 5% chance per movement
+	"tax_rate": 0.08,                 # 8% of current gold
+	"minimum_gold": 100,              # Don't trigger if player has less than this
+	"minimum_tax": 10                 # Minimum tax collected
+}
+
+# Tax collector encounter messages (randomly selected)
+const TAX_ENCOUNTERS = [
+	{
+		"type": "quick",
+		"messages": [
+			"A Tax Collector steps forward. 'The realm requires its due.'",
+			"You pay %d gold."
+		]
 	},
-	"curse": {
-		"name": "Curse",
-		"cost": 30,
-		"resource": "mana",
-		"description": "Apply 5 poison + drain 20% energy to target",
-		"target": "player"
+	{
+		"type": "slip",
+		"messages": [
+			"A hooded figure steps from the shadows... but you slip past!",
+			"The Tax Collector appears anyway. 'Nice try. The realm requires %d gold.'"
+		],
+		"delay": true
+	},
+	{
+		"type": "negotiator",
+		"messages": [
+			"A well-dressed Tax Collector bows. 'Good citizen, the Crown requests a modest contribution.'",
+			"'Your %d gold is noted. May fortune favor you.'",
+			"[color=#00FF00]+5% gold find for 3 battles![/color]"
+		],
+		"bonus": {"type": "gold_find", "value": 5, "battles": 3}
+	},
+	{
+		"type": "bumbling",
+		"messages": [
+			"A nervous Tax Collector fumbles with his ledger. 'Er, let me see... you owe...'",
+			"'...%d gold! Yes, that's it. Sorry for the trouble.'"
+		],
+		"tax_modifier": 0.625  # Only takes 5% instead of 8%
+	},
+	{
+		"type": "veteran",
+		"messages": [
+			"A scarred Tax Collector blocks your path. 'Don't even think about running.'",
+			"'I've been doing this longer than you've been alive. %d gold. Now.'"
+		],
+		"tax_modifier": 1.25  # Takes 10% instead of 8%
+	},
+	{
+		"type": "duo",
+		"messages": [
+			"Two Tax Collectors approach from opposite directions.",
+			"'Nowhere to run!' laughs one. 'The realm requires %d gold,' says the other.",
+			"They split your payment and vanish into the crowd."
+		]
+	}
+]
+
+# Title ruler immunity message
+const TAX_IMMUNITY_MESSAGE = [
+	"A Tax Collector approaches... then recognizes your sigil.",
+	"'My %s! Forgive my intrusion. The realm prospers under your rule.'",
+	"[color=#00FF00]He bows and leaves without collecting.[/color]"
+]
+
+# Title abilities - REVISED with economic costs
+const JARL_ABILITIES = {
+	"summon": {
+		"name": "Summon",
+		"gold_cost": 500,
+		"resource": "none",
+		"description": "Teleport a willing player to your location",
+		"target": "player",
+		"requires_consent": true
+	},
+	"tax_player": {
+		"name": "Tax",
+		"gold_cost": 1000,
+		"resource": "none",
+		"description": "Take 10% of target's gold (max 10,000)",
+		"target": "player",
+		"is_negative": true
 	},
 	"gift_silver": {
 		"name": "Gift of Silver",
-		"cost": 5,
-		"resource": "gems",
-		"description": "Give 5000 gold to a player",
+		"gold_cost_percent": 5,           # Costs 5% of your gold
+		"gold_gift_percent": 8,           # Target receives 8% of your gold
+		"resource": "none",
+		"description": "Gift 8% of your gold to a player (costs 5%)",
 		"target": "player"
 	},
-	"claim_tribute": {
-		"name": "Claim Tribute",
-		"cost": 0,
+	"collect_tribute": {
+		"name": "Collect Tribute",
+		"gold_cost": 0,
 		"resource": "none",
-		"description": "Collect 10% of realm treasury",
+		"cooldown": 3600,                 # 1 hour cooldown
+		"treasury_percent": 15,           # Collect 15% of realm treasury
+		"description": "Collect 15% of realm treasury (1 hour cooldown)",
 		"target": "self"
 	}
 }
 
 const HIGH_KING_ABILITIES = {
-	"exile": {
-		"name": "Exile",
-		"cost": 100,
-		"resource": "mana",
-		"description": "Teleport player to random edge (200 tiles)",
-		"target": "player"
-	},
 	"knight": {
 		"name": "Knight",
-		"cost": 50,
-		"resource": "mana",
-		"description": "Grant +25% damage buff (10 battles) to player",
+		"gold_cost": 50000,
+		"gem_cost": 5,
+		"resource": "none",
+		"description": "Grant permanent Knight status (+15% dmg, +10% gold)",
 		"target": "player"
 	},
 	"cure": {
 		"name": "Cure",
-		"cost": 75,
-		"resource": "mana",
+		"gold_cost": 5000,
+		"resource": "none",
 		"description": "Remove all debuffs from a player",
 		"target": "player"
 	},
-	"royal_decree": {
-		"name": "Royal Decree",
-		"cost": 0,
+	"exile": {
+		"name": "Exile",
+		"gold_cost": 10000,
 		"resource": "none",
-		"description": "Broadcast message to all players",
+		"description": "Teleport player 100 tiles in random direction",
+		"target": "player",
+		"is_negative": true
+	},
+	"royal_treasury": {
+		"name": "Royal Treasury",
+		"gold_cost": 0,
+		"resource": "none",
+		"cooldown": 7200,                 # 2 hour cooldown
+		"treasury_percent": 30,           # Collect 30% of realm treasury
+		"description": "Collect 30% of realm treasury (2 hour cooldown)",
 		"target": "self"
 	}
 }
@@ -153,55 +324,61 @@ const HIGH_KING_ABILITIES = {
 const ELDER_ABILITIES = {
 	"heal_other": {
 		"name": "Heal",
-		"cost": 25,
-		"resource": "mana_percent",
+		"gold_cost": 10000,
+		"resource": "none",
 		"description": "Restore 50% HP to another player",
 		"target": "player"
 	},
+	"mentor": {
+		"name": "Mentor",
+		"gold_cost": 500000,
+		"gem_cost": 25,
+		"resource": "none",
+		"description": "Grant permanent Mentee status (+30% XP, +20% gold) to player below Lv500",
+		"target": "player",
+		"max_target_level": 500
+	},
 	"seek_flame": {
 		"name": "Seek Flame",
-		"cost": 50,
-		"resource": "mana_percent",
-		"description": "Reveal distance to Eternal Flame",
+		"gold_cost": 25000,
+		"resource": "none",
+		"description": "Check Eternal Pilgrimage progress",
 		"target": "self"
-	},
-	"slap": {
-		"name": "Slap",
-		"cost": 10,
-		"resource": "mana_percent",
-		"description": "Relocate player 20 tiles",
-		"target": "player"
 	}
 }
 
 const ETERNAL_ABILITIES = {
-	"smite": {
-		"name": "Smite",
-		"cost": 25,
-		"resource": "mana_percent",
-		"description": "Devastating curse (50 poison, -50% stats, 5 rounds)",
-		"target": "player"
-	},
 	"restore": {
 		"name": "Restore",
-		"cost": 25,
-		"resource": "mana_percent",
+		"gold_cost": 50000,
+		"resource": "none",
 		"description": "Fully heal and cure all ailments",
 		"target": "player"
 	},
 	"bless": {
 		"name": "Bless",
-		"cost": 50,
-		"resource": "mana_percent",
-		"description": "Grant permanent +5 to random stat",
+		"gold_cost": 5000000,
+		"gem_cost": 100,
+		"resource": "none",
+		"description": "Grant permanent +5 to a chosen stat",
 		"target": "player"
 	},
-	"proclaim": {
-		"name": "Proclaim",
-		"cost": 0,
+	"smite": {
+		"name": "Smite",
+		"gold_cost": 100000,
+		"gem_cost": 10,
 		"resource": "none",
-		"description": "Global broadcast (special formatting)",
-		"target": "self"
+		"description": "Curse target (25 poison, -25% damage for 10 rounds)",
+		"target": "player",
+		"is_negative": true
+	},
+	"guardian": {
+		"name": "Guardian",
+		"gold_cost": 2000000,
+		"gem_cost": 50,
+		"resource": "none",
+		"description": "Grant 1 permanent death save (until used)",
+		"target": "player"
 	}
 }
 
@@ -276,3 +453,58 @@ static func get_item_for_title(title_id: String) -> String:
 	"""Get the required item type for a title"""
 	var title_info = TITLE_DATA.get(title_id, {})
 	return title_info.get("requires_item", "")
+
+static func is_title_tax_immune(title_id: String) -> bool:
+	"""Check if a title grants tax immunity"""
+	var title_info = TITLE_DATA.get(title_id, {})
+	return title_info.get("tax_immune", false)
+
+static func get_abuse_threshold(title_id: String) -> int:
+	"""Get the abuse point threshold for losing a title"""
+	var title_info = TITLE_DATA.get(title_id, {})
+	return title_info.get("abuse_threshold", 999)
+
+static func get_pilgrimage_stage_info(stage_id: String) -> Dictionary:
+	"""Get pilgrimage stage definition"""
+	return PILGRIMAGE_STAGES.get(stage_id, {})
+
+static func get_next_pilgrimage_stage(current_stage: String) -> String:
+	"""Get the next stage in the pilgrimage"""
+	var idx = PILGRIMAGE_ORDER.find(current_stage)
+	if idx < 0 or idx >= PILGRIMAGE_ORDER.size() - 1:
+		return ""
+	return PILGRIMAGE_ORDER[idx + 1]
+
+static func format_ability_cost(ability: Dictionary) -> String:
+	"""Format the cost of an ability for display"""
+	var parts = []
+
+	if ability.has("gold_cost") and ability.gold_cost > 0:
+		parts.append("%s gold" % _format_number(ability.gold_cost))
+
+	if ability.has("gold_cost_percent") and ability.gold_cost_percent > 0:
+		parts.append("%d%% of your gold" % ability.gold_cost_percent)
+
+	if ability.has("gem_cost") and ability.gem_cost > 0:
+		parts.append("%d gems" % ability.gem_cost)
+
+	if ability.has("cooldown") and ability.cooldown > 0:
+		var hours = ability.cooldown / 3600
+		if hours >= 1:
+			parts.append("%dhr CD" % hours)
+		else:
+			parts.append("%dmin CD" % (ability.cooldown / 60))
+
+	if parts.is_empty():
+		return "Free"
+
+	return ", ".join(parts)
+
+static func _format_number(num: int) -> String:
+	"""Format a number with K/M suffixes for readability"""
+	if num >= 1000000:
+		return "%.1fM" % (num / 1000000.0)
+	elif num >= 1000:
+		return "%.1fK" % (num / 1000.0)
+	else:
+		return str(num)

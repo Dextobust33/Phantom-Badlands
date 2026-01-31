@@ -1452,6 +1452,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"messages": messages,
 			"combat_ended": true,
 			"victory": true,
+			"victory_type": "outsmart",  # For pilgrimage tracking
 			"monster_name": monster.name,
 			"monster_level": monster.level,
 			"monster_base_name": monster.get("base_name", monster.name),

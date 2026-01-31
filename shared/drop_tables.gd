@@ -19,9 +19,7 @@ const CONSUMABLE_TIERS = {
 # Consumable categories for combat quick-use
 const CONSUMABLE_CATEGORIES = {
 	"health": ["health_potion"],
-	"mana": ["mana_potion"],
-	"stamina": ["stamina_potion"],
-	"energy": ["energy_potion"],
+	"resource": ["mana_potion", "stamina_potion", "energy_potion"],  # All restore primary resource
 	"buff": ["strength_potion", "defense_potion", "speed_potion", "crit_potion", "lifesteal_potion", "thorns_potion"],
 	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision", "scroll_time_stop", "scroll_resurrect_lesser", "scroll_resurrect_greater"],
 	"bane": ["potion_dragon_bane", "potion_undead_bane", "potion_beast_bane", "potion_demon_bane", "potion_elemental_bane"]
@@ -693,20 +691,20 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"potion_greater": "Health Potion",
 		"potion_superior": "Health Potion",
 		"potion_master": "Health Potion",
-		"mana_minor": "Mana Potion",
-		"mana_lesser": "Mana Potion",
-		"mana_standard": "Mana Potion",
-		"mana_greater": "Mana Potion",
-		"mana_superior": "Mana Potion",
-		"mana_master": "Mana Potion",
-		"stamina_minor": "Stamina Potion",
-		"stamina_lesser": "Stamina Potion",
-		"stamina_standard": "Stamina Potion",
-		"stamina_greater": "Stamina Potion",
-		"energy_minor": "Energy Potion",
-		"energy_lesser": "Energy Potion",
-		"energy_standard": "Energy Potion",
-		"energy_greater": "Energy Potion",
+		"mana_minor": "Resource Potion",
+		"mana_lesser": "Resource Potion",
+		"mana_standard": "Resource Potion",
+		"mana_greater": "Resource Potion",
+		"mana_superior": "Resource Potion",
+		"mana_master": "Resource Potion",
+		"stamina_minor": "Resource Potion",
+		"stamina_lesser": "Resource Potion",
+		"stamina_standard": "Resource Potion",
+		"stamina_greater": "Resource Potion",
+		"energy_minor": "Resource Potion",
+		"energy_lesser": "Resource Potion",
+		"energy_standard": "Resource Potion",
+		"energy_greater": "Resource Potion",
 		"elixir_minor": "Elixir",
 		"elixir_greater": "Elixir",
 		"elixir_divine": "Elixir",
@@ -1275,13 +1273,16 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"legendary": return "Divine " + base_name
 			_: return base_name
 
-	# Special handling for resource potions
+	# Special handling for resource potions (unified - mana/stamina/energy all restore primary resource)
+	if item_type.begins_with("mana_"):
+		var tier = item_type.replace("mana_", "").capitalize()
+		return tier + " Resource Potion"
 	if item_type.begins_with("stamina_"):
 		var tier = item_type.replace("stamina_", "").capitalize()
-		return tier + " Stamina Potion"
+		return tier + " Resource Potion"
 	if item_type.begins_with("energy_"):
 		var tier = item_type.replace("energy_", "").capitalize()
-		return tier + " Energy Potion"
+		return tier + " Resource Potion"
 
 	# Class-specific gear names
 	var class_item_names = {
