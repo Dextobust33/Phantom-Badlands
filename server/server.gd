@@ -733,6 +733,11 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		# Save the character immediately with migration flag
 		persistence.save_character(account_id, character)
 
+	# === TITLE ITEM MIGRATION ===
+	# Fix any corrupted title items (e.g., Jarl's Ring themed as "Jarl's Band" with stats)
+	if _migrate_title_items(character):
+		persistence.save_character(account_id, character)
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -3554,6 +3559,12 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		var item_level = item.get("level", 1)
 		var should_salvage = false
 
+		# Never salvage title items or locked items
+		if item.get("is_title_item", false):
+			continue
+		if item.get("locked", false):
+			continue
+
 		match mode:
 			"below_level":
 				should_salvage = item_level < threshold
@@ -3752,8 +3763,17 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	# Note: Don't call _send_merchant_inventory here - client handles pagination via display_merchant_sell_list()
 
+func _is_consumable_type(item_type: String) -> bool:
+	"""Check if an item type is a consumable (potion, scroll, etc.)"""
+	return (item_type.begins_with("potion_") or item_type.begins_with("mana_") or
+			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
+			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
+			item_type == "gold_pouch" or item_type.begins_with("gem_") or
+			item_type == "mysterious_box" or item_type == "cursed_coin" or
+			item_type == "soul_gem")
+
 func handle_merchant_sell_all(peer_id: int):
-	"""Handle selling all inventory items to a merchant"""
+	"""Handle selling all EQUIPMENT items to a merchant (skips consumables and title items)"""
 	if not at_merchant.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
 		return
@@ -3768,29 +3788,45 @@ func handle_merchant_sell_all(peer_id: int):
 		return
 
 	var total_gold = 0
-	var item_count = character.inventory.size()
+	var items_sold = 0
+	var items_to_remove = []
 
-	# Calculate total value and clear inventory
-	for item in character.inventory:
+	# Identify equipment items to sell (skip consumables, title items, and locked items)
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
 		var item_type = item.get("type", "")
-		var item_level = item.get("level", 1)
-		var sell_price = item.get("value", 10) / 2  # Default: Sell for half value
 
-		# Special handling for gold pouches - sell for their gold content
-		if item_type == "gold_pouch":
-			sell_price = item_level * 30
-		# Special handling for gems - always worth 1000 gold
-		elif item_type.begins_with("gem_"):
-			sell_price = 1000
+		# Skip title items
+		if item.get("is_title_item", false):
+			continue
 
+		# Skip locked/protected items
+		if item.get("locked", false):
+			continue
+
+		# Only sell equipment
+		if not _is_equipment_type(item_type):
+			continue
+
+		var sell_price = item.get("value", 10) / 2
 		total_gold += sell_price
+		items_sold += 1
+		items_to_remove.append(i)
 
-	character.inventory.clear()
+	if items_to_remove.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "No equipment to sell! (Use Sell to sell individual items)"})
+		return
+
+	# Remove items in reverse order to preserve indices
+	items_to_remove.reverse()
+	for idx in items_to_remove:
+		character.remove_item(idx)
+
 	character.gold += total_gold
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FFD700]You sell %d items for %d gold![/color]" % [item_count, total_gold]
+		"message": "[color=#FFD700]You sell %d equipment items for %d gold![/color]" % [items_sold, total_gold]
 	})
 
 	send_character_update(peer_id)
@@ -5501,9 +5537,9 @@ func handle_teleport(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Coordinates must be between -1000 and 1000."})
 		return
 
-	# Calculate cost based on distance (25x multiplier for significant mana investment)
+	# Calculate cost based on distance: base 10 + 1 per tile distance
 	var distance = sqrt(pow(target_x - character.x, 2) + pow(target_y - character.y, 2))
-	var cost = int((10 + distance) * 25)
+	var cost = int(10 + distance)
 
 	# Determine resource type based on class path
 	var resource_name = "mana"
@@ -5934,6 +5970,65 @@ func broadcast_title_change(player_name: String, title_id: String, action: Strin
 		send_to_peer(other_peer_id, {"type": "chat", "sender": "Realm", "message": msg})
 
 	log_message("Title change: %s %s %s" % [player_name, action, title_id])
+
+func _migrate_title_items(character: Character) -> bool:
+	"""Migrate any corrupted title items in inventory to proper format.
+	Returns true if any items were fixed."""
+	var fixed_any = false
+	var title_items_data = TitlesScript.TITLE_ITEMS
+
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		var item_name = item.get("name", "").to_lower()
+		var item_type = item.get("type", "")
+
+		# Check for Jarl's Ring variants (including themed "Band" versions)
+		if ("jarl" in item_name and ("ring" in item_name or "band" in item_name)) or item_type == "jarls_ring":
+			var proper_item = title_items_data.get("jarls_ring", {})
+			if not proper_item.is_empty():
+				# Only fix if item is corrupted (has stats, wrong type, missing is_title_item)
+				if item.get("is_title_item", false) == false or item.has("level") or item.has("attack_bonus") or item.has("str_bonus") or item.has("dex_bonus"):
+					character.inventory[i] = {
+						"type": "jarls_ring",
+						"name": proper_item.get("name", "Jarl's Ring"),
+						"rarity": proper_item.get("rarity", "legendary"),
+						"description": proper_item.get("description", ""),
+						"is_title_item": true
+					}
+					fixed_any = true
+					log_message("Fixed corrupted Jarl's Ring for %s" % character.name)
+
+		# Check for Unforged Crown variants
+		elif "unforged" in item_name and "crown" in item_name or item_type == "unforged_crown":
+			var proper_item = title_items_data.get("unforged_crown", {})
+			if not proper_item.is_empty():
+				if item.get("is_title_item", false) == false or item.has("level") or item.has("attack_bonus"):
+					character.inventory[i] = {
+						"type": "unforged_crown",
+						"name": proper_item.get("name", "Unforged Crown"),
+						"rarity": proper_item.get("rarity", "legendary"),
+						"description": proper_item.get("description", ""),
+						"is_title_item": true
+					}
+					fixed_any = true
+					log_message("Fixed corrupted Unforged Crown for %s" % character.name)
+
+		# Check for Crown of the North variants
+		elif ("crown" in item_name and "north" in item_name) or item_type == "crown_of_north":
+			var proper_item = title_items_data.get("crown_of_north", {})
+			if not proper_item.is_empty():
+				if item.get("is_title_item", false) == false or item.has("level") or item.has("attack_bonus"):
+					character.inventory[i] = {
+						"type": "crown_of_north",
+						"name": proper_item.get("name", "Crown of the North"),
+						"rarity": proper_item.get("rarity", "artifact"),
+						"description": proper_item.get("description", ""),
+						"is_title_item": true
+					}
+					fixed_any = true
+					log_message("Fixed corrupted Crown of the North for %s" % character.name)
+
+	return fixed_any
 
 func _has_title_item(character: Character, item_type: String) -> bool:
 	"""Check if character has a specific title item in inventory"""

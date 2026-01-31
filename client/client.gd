@@ -1717,6 +1717,9 @@ func _process(delta):
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
 	var should_process_action_bar = game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
+		# Determine if we're in item selection mode (need to let item keys through)
+		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
+
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
@@ -1724,6 +1727,19 @@ func _process(delta):
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+
+			# In item selection mode, skip action bar slots whose keys conflict with item selection keys
+			# This allows number keys to be used for item selection even if bound to action bar
+			if in_item_selection_mode:
+				var key_conflicts_with_item_select = false
+				for item_idx in range(9):
+					if key == get_item_select_keycode(item_idx):
+						key_conflicts_with_item_select = true
+						break
+				if key_conflicts_with_item_select:
+					set_meta("hotkey_%d_pressed" % i, false)
+					continue
+
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
 					set_meta("hotkey_%d_pressed" % i, true)
@@ -3096,7 +3112,7 @@ func update_action_bar():
 				{"label": "Prev", "action_type": "local", "action_data": "sell_prev_page", "enabled": sell_page > 0},
 				{"label": "Next", "action_type": "local", "action_data": "sell_next_page", "enabled": sell_page < total_pages - 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_items", "enabled": has_items},
+				{"label": "Sell Equip", "action_type": "local", "action_data": "sell_all_items", "enabled": has_items},
 				{"label": "1-9 Sell", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7073,8 +7089,14 @@ func _get_slot_abbreviation(item_type: String) -> String:
 
 func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String:
 	"""Get the item name themed for a specific class.
-	If owner_class is empty, uses the current player's class."""
+	If owner_class is empty, uses the current player's class.
+	Title items are never themed - they keep their original names."""
 	var item_name = item.get("name", "Unknown")
+
+	# Title items should never be themed - they keep their original names
+	if item.get("is_title_item", false):
+		return item_name
+
 	var item_type = item.get("type", "")
 	var slot = _get_slot_for_item_type(item_type)
 
@@ -9414,7 +9436,7 @@ func send_input():
 		return
 
 	# Commands
-	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade", "companion", "pet"]
+	var command_keywords = ["help", "clear", "status", "who", "players", "examine", "ex", "inventory", "inv", "i", "watch", "unwatch", "abilities", "loadout", "leaders", "leaderboard", "bug", "report", "title", "search", "find", "trade", "companion", "pet", "settings", "keybinds", "keys"]
 	var combat_keywords = ["attack", "a", "defend", "d", "flee", "f", "run"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -11244,7 +11266,7 @@ func show_help():
 [color=#66FF66]TRICK:[/color] [color=#2F4F4F]Thief[/color]=WIT1.5/DEX.75/CON.25 | [color=#228B22]Ranger[/color]=DEX.75/WIT.75/STR.5/CON.5 | [color=#191970]Ninja[/color]=DEX1.25/WIT.75/STR.25/CON.25
 
 [b][color=#FFD700]══ ENDGAME ══[/color][/b]
-[color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv100+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
+[color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv50+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
 [color=#AAAAAA]Titles:[/color]
   [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Banish/Curse/Gift. Lost on death or Lv500+.
   [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Exile/Knight/Cure. Survives 1 death!
