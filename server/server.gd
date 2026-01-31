@@ -3919,6 +3919,14 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 	var item = inventory[index]
 	var item_type = item.get("type", "")
 
+	# Title items cannot be equipped - they're turn-in items
+	if item.get("is_title_item", false):
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]%s[/color] cannot be worn. %s" % [item.get("name", "This item"), item.get("description", "Check the item for instructions.")]
+		})
+		return
+
 	# Determine slot based on item type
 	var slot = ""
 	if "weapon" in item_type:

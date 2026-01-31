@@ -7487,6 +7487,9 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
+	# Title items are never equipment (jarls_ring, unforged_crown, crown_of_north)
+	if item_type in ["jarls_ring", "unforged_crown", "crown_of_north"]:
+		return ""
 	if "weapon" in item_type:
 		return "weapon"
 	elif "armor" in item_type:
@@ -7505,6 +7508,9 @@ func _get_slot_for_item_type(item_type: String) -> String:
 
 func _get_slot_abbreviation(item_type: String) -> String:
 	"""Get a short slot indicator for inventory display"""
+	# Title items are not equipment
+	if item_type in ["jarls_ring", "unforged_crown", "crown_of_north"]:
+		return "[color=#FFD700][QST][/color]"
 	if "weapon" in item_type:
 		return "[color=#666666][WPN][/color]"
 	elif "armor" in item_type:
@@ -10070,6 +10076,7 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 	var value = item.get("value", 0)
 	var rarity_color = _get_item_rarity_color(rarity)
 	var is_consumable = item.get("is_consumable", false)
+	var is_title_item = item.get("is_title_item", false)
 
 	# Use themed name based on owner's class (or current player if not specified)
 	var display_class = owner_class if owner_class != "" else character_data.get("class", "")
@@ -10079,6 +10086,19 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, themed_name])
 	display_game("[color=#808080]%s[/color]" % source.capitalize())
 	display_game("")
+
+	# Title items show description and instructions instead of stats
+	if is_title_item:
+		display_game("[color=#00FFFF]Type:[/color] Title Quest Item")
+		display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
+		display_game("")
+		var desc = item.get("description", "This is a special item.")
+		display_game("[color=#E6CC80]%s[/color]" % desc)
+		display_game("")
+		display_game("[color=#808080]This item cannot be equipped or sold.[/color]")
+		display_game("")
+		return
+
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
 
