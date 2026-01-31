@@ -11474,7 +11474,7 @@ func show_help():
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.8.98:[/color] Title system revamp, pilgrimage features, wandering NPCs, debuff enhancements
+[color=#00FFFF]v0.8.99:[/color] Wandering NPCs (blacksmith/healer), quest improvements, debuff enhancements
 [/font_size]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
