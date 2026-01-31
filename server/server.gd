@@ -4947,26 +4947,29 @@ func trigger_trading_post_encounter(peer_id: int):
 
 	# Calculate recharge cost to send to client
 	var is_starter_post = tp.id in STARTER_TRADING_POSTS
+	var tp_x = tp.center.x
+	var tp_y = tp.center.y
 	var recharge_cost: int
 	if is_starter_post:
 		recharge_cost = 20
 	else:
 		var base_cost = _get_recharge_cost(character.level)
-		var tp_x = tp.center.x
-		var tp_y = tp.center.y
 		var distance_from_origin = sqrt(tp_x * tp_x + tp_y * tp_y)
 		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
 		recharge_cost = int(base_cost * distance_multiplier)
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
+		"id": tp.id,
 		"name": tp.name,
 		"description": tp.description,
 		"quest_giver": tp.quest_giver,
 		"services": ["shop", "quests", "recharge"],
 		"available_quests": available_quests.size(),
 		"quests_to_turn_in": quests_to_turn_in.size(),
-		"recharge_cost": recharge_cost
+		"recharge_cost": recharge_cost,
+		"x": tp_x,
+		"y": tp_y
 	})
 
 func handle_trading_post_shop(peer_id: int):
@@ -6219,6 +6222,54 @@ func _has_title_item(character: Character, item_type: String) -> bool:
 			return true
 	return false
 
+func _convert_bugged_title_items(character: Character) -> bool:
+	"""Convert bugged title items (rings/crowns with stats) to proper title items.
+	Returns true if any conversion was made."""
+	var converted = false
+
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		var item_name = item.get("name", "").to_lower()
+		var item_type = item.get("type", "")
+
+		# Check for bugged Jarl's Ring (has stats, wrong type)
+		if "jarl" in item_name and "ring" in item_name and item_type != "jarls_ring":
+			character.inventory[i] = {
+				"type": "jarls_ring",
+				"name": "Jarl's Ring",
+				"rarity": "legendary",
+				"description": "An arm ring of silver and oath. Claim The High Seat at (0,0).",
+				"is_title_item": true
+			}
+			converted = true
+			print("[TITLE] Converted bugged Jarl's Ring for %s" % character.name)
+
+		# Check for bugged Unforged Crown
+		if "unforged" in item_name and "crown" in item_name and item_type != "unforged_crown":
+			character.inventory[i] = {
+				"type": "unforged_crown",
+				"name": "Unforged Crown",
+				"rarity": "legendary",
+				"description": "Take this to the Infernal Forge at Fire Mountain (-400,0).",
+				"is_title_item": true
+			}
+			converted = true
+			print("[TITLE] Converted bugged Unforged Crown for %s" % character.name)
+
+		# Check for bugged Crown of the North
+		if "crown" in item_name and "north" in item_name and item_type != "crown_of_north":
+			character.inventory[i] = {
+				"type": "crown_of_north",
+				"name": "Crown of the North",
+				"rarity": "artifact",
+				"description": "Forged in flame. Claim the throne of the High King at (0,0).",
+				"is_title_item": true
+			}
+			converted = true
+			print("[TITLE] Converted bugged Crown of the North for %s" % character.name)
+
+	return converted
+
 func _remove_title_item(character: Character, item_type: String) -> bool:
 	"""Remove a title item from character inventory. Returns true if found and removed."""
 	for i in range(character.inventory.size()):
@@ -7225,16 +7276,50 @@ func handle_get_title_menu(peer_id: int):
 
 	var character = characters[peer_id]
 
+	# Convert any bugged title items first
+	if _convert_bugged_title_items(character):
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]Your title items have been fixed![/color]"
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+
 	# Get available claimable titles
 	var claimable = []
+	var title_hints = []  # Hints about what's needed to claim titles
 	if character.x == 0 and character.y == 0:
 		# At The High Seat - check for claimable titles
-		if _has_title_item(character, "jarls_ring") and current_high_king_id == -1:
-			if character.level >= 50 and character.level <= 500:
+		var has_jarls_ring = _has_title_item(character, "jarls_ring")
+		var has_crown = _has_title_item(character, "crown_of_north")
+
+		# Jarl claim check
+		if has_jarls_ring:
+			if current_jarl_id != -1 and current_high_king_id == -1:
+				title_hints.append("Jarl position already held")
+			elif current_high_king_id != -1:
+				title_hints.append("A High King rules - no Jarl needed")
+			elif character.level < 50:
+				title_hints.append("Jarl requires level 50+")
+			elif character.level > 500:
+				title_hints.append("Jarl max level is 500")
+			else:
 				claimable.append({"id": "jarl", "name": "Jarl"})
-		if _has_title_item(character, "crown_of_north"):
-			if character.level >= 200 and character.level <= 1000:
+		else:
+			title_hints.append("Need Jarl's Ring (drops from Lv50+ monsters)")
+
+		# High King claim check
+		if has_crown:
+			if character.level < 200:
+				title_hints.append("High King requires level 200+")
+			elif character.level > 1000:
+				title_hints.append("High King max level is 1000")
+			else:
 				claimable.append({"id": "high_king", "name": "High King"})
+		else:
+			title_hints.append("Need Crown of the North (forge Unforged Crown at Fire Mountain)")
+	else:
+		title_hints.append("Travel to The High Seat (0,0) to claim titles")
 
 	# Get current title abilities
 	var abilities = {}
@@ -7264,7 +7349,8 @@ func handle_get_title_menu(peer_id: int):
 		"online_players": online_players,
 		"realm_treasury": realm_treasury if character.title in ["jarl", "high_king"] else 0,
 		"abuse_points": abuse_points,
-		"abuse_threshold": abuse_threshold
+		"abuse_threshold": abuse_threshold,
+		"title_hints": title_hints
 	})
 
 # ===== TRADING SYSTEM HANDLERS =====

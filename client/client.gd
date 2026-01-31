@@ -3435,12 +3435,26 @@ func update_action_bar():
 			# Main Trading Post menu (player walks out to leave)
 			# Get recharge cost from server (includes distance scaling)
 			var recharge_cost = trading_post_data.get("recharge_cost", 100)
+			# Check if at special title locations (use trading post position)
+			var tp_x = trading_post_data.get("x", -999)
+			var tp_y = trading_post_data.get("y", -999)
+			var at_high_seat = (tp_x == 0 and tp_y == 0)
+			var player_title = character_data.get("title", "")
+			var has_title = not player_title.is_empty()
+			# Fifth slot: High Seat at (0,0) or Title if has title
+			var fifth_action: Dictionary
+			if has_title:
+				fifth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true}
+			elif at_high_seat:
+				fifth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
+			else:
+				fifth_action = {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 			current_actions = [
 				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": true},
 				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				fifth_action,
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3462,10 +3476,27 @@ func update_action_bar():
 		# Title button if player has a title
 		var player_title = character_data.get("title", "")
 		var has_title = not player_title.is_empty()
-		# Use "Title" button for titled players, otherwise "Help"
-		var fourth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true} if has_title else {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
-		# Forge button if at Infernal Forge with Unforged Crown
-		var fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true} if forge_available else {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
+		# Check if at special title locations
+		var player_x = character_data.get("x", 0)
+		var player_y = character_data.get("y", 0)
+		var at_high_seat = (player_x == 0 and player_y == 0)
+		var at_fire_mountain = (player_x == -400 and player_y == 0)
+		# Use "Title" button for titled players, "High Seat" at (0,0), otherwise "Help"
+		var fourth_action: Dictionary
+		if has_title:
+			fourth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true}
+		elif at_high_seat:
+			fourth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
+		else:
+			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
+		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
+		var fifth_action: Dictionary
+		if forge_available:
+			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
+		elif at_fire_mountain:
+			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
+		else:
+			fifth_action = {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
 		var cloak_action = {"label": cloak_label, "action_type": "server", "action_data": "toggle_cloak", "enabled": true} if cloak_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 		# Teleport unlocks at different levels: Mage 30, Trickster 45, Warrior 60
@@ -5367,6 +5398,9 @@ func execute_local_action(action: String):
 			send_to_server({"type": "forge_crown"})
 			forge_available = false
 			update_action_bar()
+		"check_forge":
+			# Check if player can forge at Fire Mountain
+			send_to_server({"type": "forge_crown"})
 		"ability_equip":
 			show_ability_equip_prompt()
 		"ability_unequip":
@@ -12865,6 +12899,14 @@ func display_title_menu():
 			var cost_text = " (" + ", ".join(cost_parts) + ")" if not cost_parts.is_empty() else ""
 			display_game("  [%s] %s%s - %s" % [get_action_key_name(idx), ability.get("name", ability_id), cost_text, ability.get("description", "")])
 			idx += 1
+		display_game("")
+
+	# Show title hints if no claimable titles and no current title
+	var hints = title_menu_data.get("title_hints", [])
+	if claimable.is_empty() and current_title.is_empty() and not hints.is_empty():
+		display_game("[color=#808080]Title Requirements:[/color]")
+		for hint in hints:
+			display_game("[color=#808080]  • %s[/color]" % hint)
 		display_game("")
 
 	display_game("[color=#808080]Press [%s] to exit[/color]" % get_action_key_name(0))
