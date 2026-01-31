@@ -6012,6 +6012,7 @@ func display_shop_inventory():
 	var gold = character_data.get("gold", 0)
 	var gems = character_data.get("gems", 0)
 	var equipped = character_data.get("equipped", {})
+	var player_class = character_data.get("class", "")
 
 	display_game("[color=#FFD700]===== MERCHANT SHOP =====[/color]")
 	display_game("Your gold: %d  |  Your gems: %d" % [gold, gems])
@@ -6055,7 +6056,6 @@ func display_shop_inventory():
 			var mana_val = bonuses.get("max_mana", 0)
 			var stam_energy_val = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
 			if mana_val > 0 or stam_energy_val > 0:
-				var player_class = character_data.get("class", "")
 				var resource_name = "Resource"
 				var resource_color = "#9999FF"
 				var scaled_val = 0
@@ -6091,7 +6091,8 @@ func display_shop_inventory():
 
 			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
 
-			display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, item.get("name", "Unknown"), level, compare_text, price])
+			var themed_name = _get_themed_item_name(item, player_class)
+			display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
 			if stats_str != "":
 				display_game("    %s" % stats_str)
 
@@ -6330,7 +6331,6 @@ func cancel_shop_inspection():
 
 func display_shop_item_details(item: Dictionary):
 	"""Display detailed stats for a shop item"""
-	var name = item.get("name", "Unknown Item")
 	var item_type = item.get("type", "unknown")
 	var rarity = item.get("rarity", "common")
 	var level = item.get("level", 1)
@@ -6338,9 +6338,11 @@ func display_shop_item_details(item: Dictionary):
 	var gem_price = int(ceil(price / 1000.0))
 	var gold = character_data.get("gold", 0)
 	var rarity_color = _get_item_rarity_color(rarity)
+	var player_class = character_data.get("class", "")
+	var themed_name = _get_themed_item_name(item, player_class)
 
 	display_game("")
-	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, name])
+	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, themed_name])
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
@@ -6361,7 +6363,8 @@ func display_shop_item_details(item: Dictionary):
 		var equipped = character_data.get("equipped", {})
 		var equipped_item = equipped.get(slot)
 		if equipped_item != null and equipped_item is Dictionary:
-			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_item.get("name", "item"))
+			var equipped_themed = _get_themed_item_name(equipped_item, player_class)
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % equipped_themed)
 			_display_item_comparison(item, equipped_item)
 		else:
 			display_game("[color=#00FF00]You have nothing equipped in this slot.[/color]")
@@ -8458,6 +8461,33 @@ func update_buff_display():
 	else:
 		buff_display_label.text = "".join(parts)
 
+func _get_buff_display_name(buff_type: String) -> String:
+	"""Get display name for a buff type"""
+	match buff_type.to_lower():
+		"strength": return "Strength"
+		"defense": return "Defense"
+		"speed": return "Speed"
+		"damage": return "Damage"
+		"crit", "crit_chance": return "Crit Chance"
+		"lifesteal": return "Lifesteal"
+		"thorns": return "Thorns"
+		"forcefield": return "Forcefield"
+		"damage_reduction": return "Damage Reduction"
+		"damage_penalty": return "Damage Penalty"
+		"defense_penalty": return "Defense Penalty"
+		"gold_find": return "Gold Find"
+		"xp_bonus": return "XP Bonus"
+		"war_cry": return "War Cry"
+		"berserk": return "Berserk"
+		"iron_skin": return "Iron Skin"
+		"haste": return "Haste"
+		"vanish": return "Vanish"
+		"cloak", "invisibility": return "Invisibility"
+		"shield": return "Shield"
+		"rally": return "Rally"
+		"fortify": return "Fortify"
+		_: return buff_type.replace("_", " ").capitalize()
+
 func _get_buff_color(buff_type: String) -> String:
 	"""Get color for buff type display"""
 	match buff_type.to_lower():
@@ -8472,6 +8502,16 @@ func _get_buff_color(buff_type: String) -> String:
 		"damage_reduction": return "#00CED1"  # Dark cyan (Iron Skin)
 		"damage_penalty": return "#FF4444"  # Dark red (debuff)
 		"defense_penalty": return "#4444FF" # Dark blue (debuff)
+		"gold_find": return "#FFD700"    # Gold
+		"xp_bonus": return "#9B59B6"     # Purple (XP color)
+		"war_cry": return "#FF6666"      # Red (warrior)
+		"berserk": return "#8B0000"      # Dark red
+		"iron_skin": return "#C0C0C0"    # Silver
+		"haste": return "#00FF00"        # Bright green
+		"vanish", "cloak", "invisibility": return "#9932CC"  # Purple (cloak color)
+		"shield": return "#87CEEB"       # Light blue
+		"rally": return "#FFD700"        # Gold
+		"fortify": return "#C0C0C0"      # Silver
 		_: return "#FFFFFF"  # White default
 
 func _get_buff_letter(buff_type: String) -> String:
@@ -11385,6 +11425,10 @@ func _get_status_effects_text_compact() -> String:
 	"""Generate compact status effects for character status display"""
 	var parts = []
 
+	# Cloak status
+	if character_data.get("cloak_active", false):
+		parts.append("[color=#9932CC]Cloaked[/color]")
+
 	if character_data.get("poison_active", false):
 		var poison_dmg = character_data.get("poison_damage", 0)
 		var poison_turns = character_data.get("poison_turns_remaining", 0)
@@ -11394,11 +11438,23 @@ func _get_status_effects_text_compact() -> String:
 		var blind_turns = character_data.get("blind_turns_remaining", 0)
 		parts.append("[color=#808080]Blind x%d[/color]" % blind_turns)
 
+	# Active combat buffs (use duration)
 	var active_buffs = character_data.get("active_buffs", [])
 	for buff in active_buffs:
-		var buff_type = buff.get("type", "Unknown")
+		var buff_type = buff.get("type", "")
+		var remaining = buff.get("duration", 0)
+		var color = _get_buff_color(buff_type)
+		var display_name = _get_buff_display_name(buff_type)
+		parts.append("[color=%s]%s x%d[/color]" % [color, display_name, remaining])
+
+	# Persistent buffs (use battles_remaining)
+	var persistent_buffs = character_data.get("persistent_buffs", [])
+	for buff in persistent_buffs:
+		var buff_type = buff.get("type", "")
 		var remaining = buff.get("battles_remaining", 0)
-		parts.append("[color=#00FF00]%s x%d[/color]" % [buff_type, remaining])
+		var color = _get_buff_color(buff_type)
+		var display_name = _get_buff_display_name(buff_type)
+		parts.append("[color=%s]%s x%d[/color]" % [color, display_name, remaining])
 
 	if parts.size() > 0:
 		return "[color=#FFFF00]Effects:[/color] %s\n" % " | ".join(parts)
@@ -11499,6 +11555,10 @@ func _get_status_effects_text() -> String:
 	"""Generate status effects section for character status display"""
 	var lines = []
 
+	# Cloak status (special mode)
+	if character_data.get("cloak_active", false):
+		lines.append("  [color=#9932CC]Cloaked[/color] - Invisible to monsters (drains resource on movement)")
+
 	# Poison (debuff)
 	if character_data.get("poison_active", false):
 		var poison_dmg = character_data.get("poison_damage", 0)
@@ -11513,20 +11573,28 @@ func _get_status_effects_text() -> String:
 	# Active combat buffs (round-based)
 	var active_buffs = character_data.get("active_buffs", [])
 	for buff in active_buffs:
-		var buff_type = buff.get("type", "").capitalize()
+		var buff_type = buff.get("type", "")
 		var buff_value = buff.get("value", 0)
 		var buff_dur = buff.get("duration", 0)
-		var color = _get_buff_color(buff_type.to_lower())
-		lines.append("  [color=%s]%s +%d[/color] - %d rounds remaining" % [color, buff_type, buff_value, buff_dur])
+		var display_name = _get_buff_display_name(buff_type)
+		var color = _get_buff_color(buff_type)
+		if buff_value > 0:
+			lines.append("  [color=%s]%s +%d[/color] - %d rounds remaining" % [color, display_name, buff_value, buff_dur])
+		else:
+			lines.append("  [color=%s]%s[/color] - %d rounds remaining" % [color, display_name, buff_dur])
 
 	# Persistent buffs (battle-based)
 	var persistent_buffs = character_data.get("persistent_buffs", [])
 	for buff in persistent_buffs:
-		var buff_type = buff.get("type", "").capitalize()
+		var buff_type = buff.get("type", "")
 		var buff_value = buff.get("value", 0)
 		var battles = buff.get("battles_remaining", 0)
-		var color = _get_buff_color(buff_type.to_lower())
-		lines.append("  [color=%s]%s +%d[/color] - %d battles remaining" % [color, buff_type, buff_value, battles])
+		var display_name = _get_buff_display_name(buff_type)
+		var color = _get_buff_color(buff_type)
+		if buff_value > 0:
+			lines.append("  [color=%s]%s +%d%%[/color] - %d battles remaining" % [color, display_name, buff_value, battles])
+		else:
+			lines.append("  [color=%s]%s[/color] - %d battles remaining" % [color, display_name, battles])
 
 	if lines.is_empty():
 		return ""
