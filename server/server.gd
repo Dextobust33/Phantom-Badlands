@@ -60,7 +60,7 @@ var current_eternal_ids: Array = []        # peer_ids of current Eternals (max 3
 var current_knight_peer_id: int = -1       # peer_id of current Knight (-1 if none)
 var current_mentee_peer_ids: Dictionary = {}  # {elder_peer_id: mentee_peer_id} - each Elder can have one Mentee
 var eternal_flame_location: Vector2i = Vector2i(0, 0)  # Hidden location, moves when found
-var realm_treasury: int = 0                # Gold collected from tax collectors
+# realm_treasury is now persisted via persistence.get_realm_treasury() / persistence.add_to_realm_treasury()
 var pilgrimage_shrines: Dictionary = {}    # {peer_id: {blood: Vector2i, mind: Vector2i, wealth: Vector2i}}
 
 var monster_db: MonsterDatabase
@@ -3150,9 +3150,9 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 		tax_rate *= encounter.tax_modifier
 	var tax_amount = max(TitlesScript.TAX_COLLECTOR.minimum_tax, int(character.gold * tax_rate))
 
-	# Deduct gold and add to treasury
+	# Deduct gold and add to treasury (persisted)
 	character.gold -= tax_amount
-	realm_treasury += tax_amount
+	persistence.add_to_realm_treasury(tax_amount)
 
 	# Send encounter messages
 	var messages = encounter.get("messages", [])
@@ -3176,7 +3176,7 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 				"message": "[color=#00FF00]+%d%% gold find for %d battles![/color]" % [bonus.value, bonus.battles]
 			})
 
-	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, realm_treasury])
+	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, persistence.get_realm_treasury()])
 	save_character(peer_id)
 	return true
 
@@ -7271,13 +7271,14 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 		"collect_tribute":
 			var abilities = TitlesScript.get_title_abilities(character.title)
 			var treasury_percent = abilities["collect_tribute"].get("treasury_percent", 15)
-			var tribute = int(realm_treasury * treasury_percent / 100.0)
+			var current_treasury = persistence.get_realm_treasury()
+			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
-				character.gold += tribute
-				realm_treasury -= tribute
+				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
+				character.gold += withdrawn
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You claim %d gold from the realm treasury (%d%% of %d).[/color]" % [tribute, treasury_percent, realm_treasury + tribute]
+					"message": "[color=#FFD700]You claim %d gold from the realm treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
 				})
 			else:
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
@@ -7338,13 +7339,14 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 		"royal_treasury":
 			var abilities = TitlesScript.get_title_abilities(character.title)
 			var treasury_percent = abilities["royal_treasury"].get("treasury_percent", 30)
-			var tribute = int(realm_treasury * treasury_percent / 100.0)
+			var current_treasury = persistence.get_realm_treasury()
+			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
-				character.gold += tribute
-				realm_treasury -= tribute
+				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
+				character.gold += withdrawn
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You claim %d gold from the royal treasury (%d%% of %d).[/color]" % [tribute, treasury_percent, realm_treasury + tribute]
+					"message": "[color=#FFD700]You claim %d gold from the royal treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
 				})
 			else:
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
@@ -7883,7 +7885,7 @@ func handle_get_title_menu(peer_id: int):
 		"claimable": claimable,
 		"abilities": abilities,
 		"online_players": online_players,
-		"realm_treasury": realm_treasury if character.title in ["jarl", "high_king"] else 0,
+		"realm_treasury": persistence.get_realm_treasury() if character.title in ["jarl", "high_king"] else 0,
 		"abuse_points": abuse_points,
 		"abuse_threshold": abuse_threshold,
 		"title_hints": title_hints

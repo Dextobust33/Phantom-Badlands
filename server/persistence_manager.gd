@@ -6,6 +6,7 @@ extends Node
 const DATA_DIR = "user://data/"
 const ACCOUNTS_FILE = "user://data/accounts.json"
 const LEADERBOARD_FILE = "user://data/leaderboard.json"
+const REALM_STATE_FILE = "user://data/realm_state.json"
 const CHARACTERS_DIR = "user://data/characters/"
 
 const MAX_LEADERBOARD_ENTRIES = 100
@@ -14,12 +15,14 @@ const DEFAULT_MAX_CHARACTERS = 6
 # Cached data
 var accounts_data: Dictionary = {}
 var leaderboard_data: Dictionary = {}
+var realm_state_data: Dictionary = {}
 
 func _ready():
 	ensure_data_directories()
 	load_accounts()
 	load_leaderboard()
 	load_monster_kills()
+	load_realm_state()
 
 # ===== DIRECTORY SETUP =====
 
@@ -430,6 +433,50 @@ func get_leaderboard(limit: int = 10) -> Array:
 
 	return result
 
+# ===== REALM STATE PERSISTENCE =====
+
+func load_realm_state():
+	"""Load realm state (treasury, etc.) from file"""
+	if not FileAccess.file_exists(REALM_STATE_FILE):
+		realm_state_data = {"treasury": 0}
+		save_realm_state()
+		return
+
+	var file = FileAccess.open(REALM_STATE_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+
+		if error == OK:
+			realm_state_data = json.data
+		else:
+			realm_state_data = {"treasury": 0}
+
+func save_realm_state():
+	"""Save realm state to file"""
+	var file = FileAccess.open(REALM_STATE_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(realm_state_data, "\t"))
+		file.close()
+
+func get_realm_treasury() -> int:
+	"""Get the current realm treasury balance"""
+	return realm_state_data.get("treasury", 0)
+
+func add_to_realm_treasury(amount: int):
+	"""Add gold to the realm treasury"""
+	realm_state_data["treasury"] = realm_state_data.get("treasury", 0) + amount
+	save_realm_state()
+
+func withdraw_from_realm_treasury(amount: int) -> int:
+	"""Withdraw gold from the realm treasury. Returns actual amount withdrawn."""
+	var current = realm_state_data.get("treasury", 0)
+	var withdraw_amount = min(amount, current)
+	realm_state_data["treasury"] = current - withdraw_amount
+	save_realm_state()
+	return withdraw_amount
+
 # ===== PASSWORD CHANGE =====
 
 func change_password(account_id: String, old_password: String, new_password: String) -> Dictionary:
@@ -627,3 +674,62 @@ func get_monster_kills_leaderboard(limit: int = 20) -> Array:
 		entries.resize(limit)
 
 	return entries
+
+func get_trophy_leaderboard() -> Array:
+	"""Get trophy hall of fame - first collector of each trophy type"""
+	# Dictionary to track first collector of each trophy type
+	# Format: {trophy_id: {name, collector, collected_at, monster_name, total_collectors}}
+	var trophy_first_collectors: Dictionary = {}
+	var trophy_total_counts: Dictionary = {}
+
+	# Scan all accounts and their characters
+	for account_id in accounts_data.accounts.keys():
+		var account = accounts_data.accounts[account_id]
+		for char_name in account.character_slots:
+			var char_data = load_character(account_id, char_name)
+			if char_data.is_empty():
+				continue
+
+			var trophies = char_data.get("trophies", [])
+			for trophy in trophies:
+				var trophy_id = trophy.get("id", "")
+				if trophy_id.is_empty():
+					continue
+
+				var collected_at = trophy.get("collected_at", 0)
+
+				# Count total collectors
+				if not trophy_total_counts.has(trophy_id):
+					trophy_total_counts[trophy_id] = 0
+				trophy_total_counts[trophy_id] += 1
+
+				# Track first collector
+				if not trophy_first_collectors.has(trophy_id):
+					trophy_first_collectors[trophy_id] = {
+						"trophy_id": trophy_id,
+						"trophy_name": trophy.get("name", trophy_id),
+						"collector": char_data.get("name", "Unknown"),
+						"collected_at": collected_at,
+						"monster_name": trophy.get("monster_name", "Unknown")
+					}
+				elif collected_at > 0 and collected_at < trophy_first_collectors[trophy_id].get("collected_at", 999999999999):
+					# Earlier collection found
+					trophy_first_collectors[trophy_id] = {
+						"trophy_id": trophy_id,
+						"trophy_name": trophy.get("name", trophy_id),
+						"collector": char_data.get("name", "Unknown"),
+						"collected_at": collected_at,
+						"monster_name": trophy.get("monster_name", "Unknown")
+					}
+
+	# Build result array with total counts
+	var result = []
+	for trophy_id in trophy_first_collectors.keys():
+		var entry = trophy_first_collectors[trophy_id]
+		entry["total_collectors"] = trophy_total_counts.get(trophy_id, 1)
+		result.append(entry)
+
+	# Sort by collected_at (earliest first)
+	result.sort_custom(func(a, b): return a.get("collected_at", 0) < b.get("collected_at", 0))
+
+	return result

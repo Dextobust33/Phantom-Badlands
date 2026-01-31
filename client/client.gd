@@ -1916,8 +1916,8 @@ func _process(delta):
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
-	# Enter key to focus chat input (only in movement mode)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not at_trading_post:
+	# Enter key to focus chat input (only in movement mode, not when popups are open)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not at_trading_post and not any_popup_open:
 		if Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_KP_ENTER):
 			if not get_meta("enter_pressed", false):
 				set_meta("enter_pressed", true)
