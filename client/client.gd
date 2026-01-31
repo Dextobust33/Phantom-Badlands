@@ -1965,7 +1965,11 @@ func _process(delta):
 
 				if move_dir > 0:
 					send_move(move_dir)
-					clear_game_output()
+					# Don't clear trading post UI - server will notify if we leave
+					if at_trading_post:
+						_display_trading_post_ui()
+					else:
+						clear_game_output()
 					last_move_time = current_time
 				elif is_hunt:
 					clear_game_output()
@@ -5876,6 +5880,10 @@ func acknowledge_continue():
 	# Reset combat background when player continues (not during flock)
 	if not flock_pending:
 		reset_combat_background()
+
+	# Ensure we're in movement mode, not chat mode (e.g., after Teleport)
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
 
 	# If at trading post, go back to quest menu so player can turn in more
 	if at_trading_post:
@@ -11166,7 +11174,11 @@ func _on_move_button(direction: int):
 	var current_time = Time.get_ticks_msec() / 1000.0
 	if current_time - last_move_time >= MOVE_COOLDOWN:
 		send_move(direction)
-		clear_game_output()
+		# Don't clear trading post UI - server will notify if we leave
+		if at_trading_post:
+			_display_trading_post_ui()
+		else:
+			clear_game_output()
 		last_move_time = current_time
 
 func _on_hunt_button():
@@ -12471,11 +12483,19 @@ func handle_trading_post_start(message: Dictionary):
 	quest_view_mode = false
 	pending_trading_post_action = ""
 
-	var tp_name = message.get("name", "Trading Post")
-	var tp_id = message.get("id", "default")
-	var quest_giver = message.get("quest_giver", "Quest Giver")
-	var avail_quests = message.get("available_quests", 0)
-	var ready_quests = message.get("quests_to_turn_in", 0)
+	_display_trading_post_ui()
+	update_action_bar()
+
+func _display_trading_post_ui():
+	"""Display the trading post UI (art, services, quest info)"""
+	if not at_trading_post or trading_post_data.is_empty():
+		return
+
+	var tp_name = trading_post_data.get("name", "Trading Post")
+	var tp_id = trading_post_data.get("id", "default")
+	var quest_giver = trading_post_data.get("quest_giver", "Quest Giver")
+	var avail_quests = trading_post_data.get("available_quests", 0)
+	var ready_quests = trading_post_data.get("quests_to_turn_in", 0)
 
 	game_output.clear()
 
@@ -12493,8 +12513,6 @@ func handle_trading_post_start(message: Dictionary):
 		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
 	display_game("")
 	display_game("[color=#808080]Walk in any direction to leave.[/color]")
-
-	update_action_bar()
 
 func handle_trading_post_end(message: Dictionary):
 	"""Handle leaving a Trading Post"""
