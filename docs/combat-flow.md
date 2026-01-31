@@ -252,28 +252,60 @@ graph LR
 ## Outsmart Formula
 
 ```
-Success Chance = 30% + (Player_WITS - Monster_INT) * 0.5%
+Base Chance: 5%
 
-Minimum: 5%
-Maximum: 75%
+WITS Bonus (if WITS > 10):
+  + 15 × log₂(WITS / 10)
+  Examples: WITS 20 = +15%, WITS 40 = +30%, WITS 80 = +45%
+
+Class Bonus:
+  + 15% for Tricksters (Thief, Ranger, Ninja)
+
+Monster Intelligence:
+  + 3% per INT below 10 (dumb monsters easier)
+  - 2% per INT above 10 (smart monsters harder)
+  - 2% per point monster INT exceeds your WITS
+
+Level Difference:
+  - 2% per level (1-10 levels above you)
+  - 1% per level (11-50 levels above you)
+  + 1% per level below you (max +15%)
+
+Cap: 85% for Tricksters, 70% for others
+  - Reduced by monster INT / 2
+  - Minimum cap: 30%
+
+Minimum: 2%
 
 Rewards on Success:
-- Full XP (no penalty)
-- Full Gold (no penalty)
-- 50% chance to skip negative ability effects
+- Full XP and Gold
+- Instant victory
+
+Failure Penalty:
+- Monster gets free attack
+- Cannot retry Outsmart this combat
 ```
 
 ## Flee Formula
 
 ```
-Base Chance = 40%
-+ DEX Bonus: +(DEX - 10) * 0.5%
-+ Speed Bonus: +Equipment_Speed * 0.3%
-- Level Penalty: -(Monster_Level - Player_Level) * 2% (if higher)
-+ Trickster Bonus: +10% (Thief, Ranger, Ninja)
+Base Chance: 40%
 
-Minimum: 10%
-Maximum: 90%
++ DEX: +1% per point
++ Equipment Speed: +1% per point (from boots)
++ Speed Buff: +1% per point (from potions/abilities)
++ Flee Bonus: +1% per point (from evasion gear)
+- Level Penalty: -3% per level monster is above you
 
-Slow Aura: -20% flee chance
+Class Passives:
++ Ninja Shadow Step: +40% flee chance
++ Ninja: No damage on failed flee
+
+Companion Bonus: +flee_bonus% if applicable
+
+Monster Debuffs:
+- Slow Aura: -25% flee chance
+
+Minimum: 5%
+Maximum: 95%
 ```

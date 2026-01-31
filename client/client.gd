@@ -11317,12 +11317,12 @@ func search_help(search_term: String):
 		{
 			"title": "COMBAT FORMULAS",
 			"keywords": ["combat", "attack", "damage", "defense", "hit", "miss", "dodge", "flee", "crit", "critical", "formula", "calculation", "level", "penalty", "initiative"],
-			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 50% + DEX×2 + speed - level_diff×3\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
+			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed - level_diff×3\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
 		},
 		{
 			"title": "OUTSMART",
 			"keywords": ["outsmart", "trick", "instant", "win", "intelligence", "dumb", "beast"],
-			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 15×log₂(WIT/10) bonus\n+15% for Tricksters\n+3% per monster INT below 10, -2% per INT above 10\n-2% per point monster INT exceeds your WIT\nLevel penalty: -2%/lvl (1-10), -1%/lvl (11-50) above you\nCap: 85% Trickster, 70% others (reduced by monster INT/2, min 30%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
+			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 15×log₂(WIT/10) bonus\n+15% for Tricksters\n+3% per monster INT below 10, -1% per INT above 10\n-2% per point monster INT exceeds your WIT\nLevel penalty: -2%/lvl (1-10), -1%/lvl (11-50) above you\nCap: 85% Trickster, 70% others (reduced by monster INT/2, min 30%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
 		},
 		{
 			"title": "UNIVERSAL ABILITIES",

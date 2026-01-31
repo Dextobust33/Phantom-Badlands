@@ -1167,15 +1167,18 @@ func handle_move(peer_id: int, message: Dictionary):
 	character.y = new_pos.y
 
 	# Regenerate health and resources on movement (small amount per step)
+	# Resource regen is DISABLED while cloaked - cloak drains resources
 	var regen_percent = 0.02  # 2% per move for resources
 	var hp_regen_percent = 0.01  # 1% per move for health
 	var total_max_mana = character.get_total_max_mana()
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + max(1, int(character.get_total_max_hp() * hp_regen_percent)))
-	character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * regen_percent)))
-	character.current_stamina = min(total_max_stamina, character.current_stamina + max(1, int(total_max_stamina * regen_percent)))
-	character.current_energy = min(total_max_energy, character.current_energy + max(1, int(total_max_energy * regen_percent)))
+	if not character.cloak_active:
+		# Only regenerate resources when NOT cloaked
+		character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * regen_percent)))
+		character.current_stamina = min(total_max_stamina, character.current_stamina + max(1, int(total_max_stamina * regen_percent)))
+		character.current_energy = min(total_max_energy, character.current_energy + max(1, int(total_max_energy * regen_percent)))
 
 	# Process cloak drain (costs resource per movement, happens AFTER regen so cost > regen)
 	var cloak_result = character.process_cloak_on_move()
@@ -1410,9 +1413,12 @@ func handle_rest(peer_id: int):
 	if character.cloak_active:
 		character.cloak_active = false
 		send_to_peer(peer_id, {
-			"type": "text",
+			"type": "status_effect",
+			"effect": "cloak_dropped",
 			"message": "[color=#9932CC]Your cloak fades as you rest.[/color]"
 		})
+		# Send character update to refresh action bar
+		send_character_update(peer_id)
 
 	# Mages use Meditate instead of Rest
 	if is_mage:
@@ -1785,19 +1791,31 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				"new_y": characters[peer_id].y
 			})
 		elif result.get("monster_fled", false):
-			# Monster fled (coward ability) - combat ends, no loot
-			if pending_flock_drops.has(peer_id):
-				pending_flock_drops.erase(peer_id)
-			if pending_flock_gems.has(peer_id):
-				pending_flock_gems.erase(peer_id)
-			if flock_counts.has(peer_id):
-				flock_counts.erase(peer_id)
-			send_to_peer(peer_id, {
-				"type": "combat_end",
-				"monster_fled": true,
-				"character": characters[peer_id].to_dict()
-			})
-			save_character(peer_id)
+			# Monster fled - check if it summoned a replacement (Shrieker behavior)
+			var summon_next = result.get("summon_next_fight", "")
+			if summon_next != "":
+				# Summoner fled but called reinforcements - new combat begins immediately
+				var monster_level = result.get("monster_level", characters[peer_id].level)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FF4444]A %s answers the call and attacks![/color]" % summon_next
+				})
+				# Trigger encounter with the summoned monster
+				_trigger_specific_encounter(peer_id, summon_next, monster_level)
+			else:
+				# Regular monster fled (coward ability) - combat ends, no loot
+				if pending_flock_drops.has(peer_id):
+					pending_flock_drops.erase(peer_id)
+				if pending_flock_gems.has(peer_id):
+					pending_flock_gems.erase(peer_id)
+				if flock_counts.has(peer_id):
+					flock_counts.erase(peer_id)
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"monster_fled": true,
+					"character": characters[peer_id].to_dict()
+				})
+				save_character(peer_id)
 		else:
 			# Defeated - PERMADEATH! Clear any pending drops and gems
 			if pending_flock_drops.has(peer_id):
@@ -2547,6 +2565,31 @@ func trigger_encounter(peer_id: int):
 		})
 		# Forward combat start to watchers with monster info for proper art display
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+
+func _trigger_specific_encounter(peer_id: int, monster_name: String, monster_level: int):
+	"""Trigger an encounter with a specific monster (used for summoner abilities like Shrieker)"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Generate the specific monster at the given level
+	var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
+
+	var result = combat_mgr.start_combat(peer_id, character, monster)
+
+	if result.success:
+		var combat_monster_name = result.combat_state.get("monster_name", "")
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(combat_monster_name)
+
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"message": result.message,
+			"combat_state": result.combat_state,
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true
+		})
+		forward_combat_start_to_watchers(peer_id, result.message, combat_monster_name, combat_bg_color)
 
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""

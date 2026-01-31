@@ -523,7 +523,17 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	if combat.monster.current_hp > 0:
 		var monster_result = process_monster_turn(combat)
 		result.messages.append(monster_result.message)
-		
+
+		# Check if monster fled (Coward, Flee Attack, or Shrieker summon)
+		if monster_result.get("monster_fled", false):
+			result.combat_ended = true
+			result.victory = false
+			result["monster_fled"] = true
+			result["summon_next_fight"] = monster_result.get("summon_next_fight", "")
+			result["monster_level"] = monster_result.get("monster_level", combat.monster.level)
+			end_combat(peer_id, false)
+			return result
+
 		# Check if player died
 		if combat.character.current_hp <= 0:
 			result.combat_ended = true
@@ -582,17 +592,17 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if actual_regen > 0:
 			messages.append("[color=#66CCFF]Arcane gear restores %d mana.[/color]" % actual_regen)
 
-	if energy_regen > 0 and character.current_energy < character.max_energy:
+	if energy_regen > 0 and character.current_energy < character.get_total_max_energy():
 		var old_energy = character.current_energy
-		character.current_energy = mini(character.max_energy, character.current_energy + energy_regen)
+		character.current_energy = mini(character.get_total_max_energy(), character.current_energy + energy_regen)
 		var actual_regen = character.current_energy - old_energy
 		if actual_regen > 0:
 			messages.append("[color=#66FF66]Shadow gear restores %d energy.[/color]" % actual_regen)
 
 	var stamina_regen = bonuses.get("stamina_regen", 0)
-	if stamina_regen > 0 and character.current_stamina < character.max_stamina:
+	if stamina_regen > 0 and character.current_stamina < character.get_total_max_stamina():
 		var old_stam = character.current_stamina
-		character.current_stamina = mini(character.max_stamina, character.current_stamina + stamina_regen)
+		character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + stamina_regen)
 		var actual_regen = character.current_stamina - old_stam
 		if actual_regen > 0:
 			messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
@@ -1114,7 +1124,7 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var passive_effects = passive.get("effects", {})
 
 	# Flee chance based on level difference, DEX, and equipment speed
-	# Base 50% + (DEX × 2) + equipment_speed + speed_buff + flee_bonus - (level_diff × 3)
+	# Base 40% + DEX + equipment_speed + speed_buff + flee_bonus - (level_diff × 3)
 	var equipment_bonuses = character.get_equipment_bonuses()
 	var player_dex = character.get_effective_stat("dexterity")
 	var speed_buff = character.get_buff_value("speed")
@@ -1124,9 +1134,9 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var player_level = character.level
 	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
 
-	# Base 50%, +2% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
+	# Base 40%, +1% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
 	# -3% per level the monster is above you (fighting +20 level = -60%)
-	var flee_chance = 50 + (player_dex * 2) + equipment_speed + speed_buff + flee_bonus - (level_diff * 3)
+	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus - (level_diff * 3)
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
 	# +40% flee success chance
@@ -1237,8 +1247,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Dumb monster bonus: +3% per INT below 10
 	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
 
-	# Smart monster penalty: -2% per INT above 10
-	var smart_penalty = max(0, (monster_intelligence - 10) * 2)
+	# Smart monster penalty: -1% per INT above 10 (reduced from -2% for better balance)
+	var smart_penalty = max(0, monster_intelligence - 10)
 
 	# Additional penalty if monster INT exceeds your wits (-2% per point)
 	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
@@ -2191,7 +2201,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				wits_bonus = int(15.0 * log(float(player_wits) / 10.0) / log(2.0))
 			var trickster_bonus = 15 if is_trickster else 0
 			var dumb_bonus = max(0, (10 - monster_int) * 3)
-			var smart_penalty = max(0, (monster_int - 10) * 2)
+			var smart_penalty = max(0, monster_int - 10)  # -1% per INT above 10
 			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 2)
 			# Level difference penalty
 			var level_diff = monster_level - player_level
@@ -3032,7 +3042,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				var summon_tier = _get_shrieker_summon_tier()
 				var summoned_name = monster_database.get_random_monster_name_from_tier(summon_tier)
 				combat["summon_next_fight"] = summoned_name
+				combat["monster_fled"] = true  # Shrieker flees after summoning
 				messages.append("[color=#FF4444]The %s's shriek echoes through the realm, summoning a %s![/color]" % [monster.name, summoned_name])
+				messages.append("[color=#FFA500]The %s scurries away as its call is answered![/color]" % monster.name)
 			else:
 				# Normal summoner: summons same monster type
 				combat["summon_next_fight"] = base_name
@@ -3099,7 +3111,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["monster_fled"] = true
 			messages.append("[color=#FFA500]The %s strikes one last time and flees into the shadows![/color]" % monster.name)
 
-	return {"success": true, "message": "\n".join(messages)}
+	# Build return result - include monster_fled and summon_next_fight if set
+	var result = {"success": true, "message": "\n".join(messages)}
+	if combat.get("monster_fled", false):
+		result["monster_fled"] = true
+		result["summon_next_fight"] = combat.get("summon_next_fight", "")
+		result["monster_level"] = monster.level
+	return result
 
 func calculate_damage(character: Character, monster: Dictionary, combat: Dictionary = {}) -> Dictionary:
 	"""Calculate player damage to monster (includes equipment, buffs, crits, class passives, and class advantage)
