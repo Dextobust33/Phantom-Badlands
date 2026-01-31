@@ -29,16 +29,36 @@ static func get_trader_art_list() -> Array:
 	]
 
 static func get_random_trader_art() -> String:
+	"""Get random trader art (for encounters without persistent ID)"""
 	var art_list = get_trader_art_list()
 	var art_lines = art_list[randi() % art_list.size()]
 	var color = TRADER_COLORS[randi() % TRADER_COLORS.size()]
-	
+
 	# Build the art string with color
 	var result = "[color=" + color + "]\n"
 	for line in art_lines:
 		result += line + "\n"
 	result += "[/color]"
-	
+
+	# Wrap in font size
+	return "[font_size=" + str(TRADER_FONT_SIZE) + "][center]" + result + "[/center][/font_size]"
+
+static func get_trader_art_for_id(merchant_hash: int) -> String:
+	"""Get consistent trader art based on merchant hash/ID"""
+	var art_list = get_trader_art_list()
+	# Use hash to deterministically select art and color
+	var art_index = abs(merchant_hash) % art_list.size()
+	var color_index = abs(merchant_hash / 7) % TRADER_COLORS.size()  # Divide by 7 to vary color separately
+
+	var art_lines = art_list[art_index]
+	var color = TRADER_COLORS[color_index]
+
+	# Build the art string with color
+	var result = "[color=" + color + "]\n"
+	for line in art_lines:
+		result += line + "\n"
+	result += "[/color]"
+
 	# Wrap in font size
 	return "[font_size=" + str(TRADER_FONT_SIZE) + "][center]" + result + "[/center][/font_size]"
 

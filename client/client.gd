@@ -9386,7 +9386,9 @@ func handle_server_message(message: Dictionary):
 			# Display trader art for wandering merchants (they have destination)
 			if merchant_data.has("destination") and merchant_data.get("destination", "") != "":
 				game_output.clear()
-				var trader_art = _get_trader_art().get_random_trader_art()
+				# Use merchant hash for consistent art per merchant
+				var merchant_hash = merchant_data.get("hash", randi())
+				var trader_art = _get_trader_art().get_trader_art_for_id(merchant_hash)
 				display_game(trader_art)
 				display_game("")
 			display_game(message.get("message", "A merchant appears!"))
