@@ -8791,8 +8791,9 @@ func handle_server_message(message: Dictionary):
 			# Update HP bar since poison may have dealt damage
 			if message.get("effect", "") == "poison":
 				update_player_hp_bar()
-			# Update action bar if cloak dropped (to reflect new state)
+			# Update cloak state and action bar if cloak dropped
 			if message.get("effect", "") == "cloak_dropped":
+				character_data["cloak_active"] = false
 				update_action_bar()
 
 		"cloak_toggle":

@@ -1409,20 +1409,23 @@ func handle_rest(peer_id: int):
 	var class_type = character.class_type
 	var is_mage = class_type in ["Wizard", "Sorcerer", "Sage"]
 
+	# Track if cloak was dropped for message combining
+	var cloak_was_dropped = false
+
 	# Break cloak if active - resting reveals you
 	if character.cloak_active:
 		character.cloak_active = false
+		cloak_was_dropped = true
+		# Send status_effect to update client cloak state and action bar
 		send_to_peer(peer_id, {
 			"type": "status_effect",
 			"effect": "cloak_dropped",
-			"message": "[color=#9932CC]Your cloak fades as you rest.[/color]"
+			"message": ""  # Message will be combined with rest message below
 		})
-		# Send character update to refresh action bar
-		send_character_update(peer_id)
 
 	# Mages use Meditate instead of Rest
 	if is_mage:
-		_handle_meditate(peer_id, character)
+		_handle_meditate(peer_id, character, cloak_was_dropped)
 		return
 
 	# Regenerate primary resource on rest (same as movement - 2%, min 1)
@@ -1447,10 +1450,13 @@ func handle_rest(peer_id: int):
 
 	# Build rest message with resource info
 	var rest_msg = ""
+	# Include cloak drop message if applicable
+	if cloak_was_dropped:
+		rest_msg = "[color=#9932CC]Your cloak fades as you rest.[/color]\n"
 	if hp_full:
-		rest_msg = "[color=#00FF00]You rest"
+		rest_msg += "[color=#00FF00]You rest"
 	else:
-		rest_msg = "[color=#00FF00]You rest and recover %d HP" % heal_amount
+		rest_msg += "[color=#00FF00]You rest and recover %d HP" % heal_amount
 
 	# Show resource regen based on class path
 	if class_type in ["Fighter", "Barbarian", "Paladin"]:
@@ -1480,7 +1486,7 @@ func handle_rest(peer_id: int):
 		})
 		trigger_encounter(peer_id)
 
-func _handle_meditate(peer_id: int, character: Character):
+func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false):
 	"""Handle Meditate action for mages - restores HP and mana, always works"""
 	var at_full_hp = character.current_hp >= character.get_total_max_hp()
 
@@ -1518,16 +1524,21 @@ func _handle_meditate(peer_id: int, character: Character):
 	elif sage_meditate_bonus > 0:
 		bonus_text = " [color=#20B2AA](+%d%% Mana Mastery)[/color]" % int(sage_meditate_bonus * 100)
 
+	# Include cloak drop message if applicable
+	var cloak_prefix = ""
+	if cloak_was_dropped:
+		cloak_prefix = "[color=#9932CC]Your cloak fades as you meditate.[/color]\n"
+
 	if at_full_hp:
 		# Full HP: focus entirely on mana
-		meditate_msg = "[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [mana_regen, bonus_text]
+		meditate_msg = "%s[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [cloak_prefix, mana_regen, bonus_text]
 	else:
 		# Not full HP: also heal
 		var heal_percent = randf_range(0.10, 0.25)
 		var heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-		meditate_msg = "[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [heal_amount, mana_regen, bonus_text]
+		meditate_msg = "%s[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [cloak_prefix, heal_amount, mana_regen, bonus_text]
 
 	send_to_peer(peer_id, {
 		"type": "text",
