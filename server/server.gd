@@ -5055,30 +5055,32 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 				# Aspirational: level 10-15
 				item_level = 10 + rng.randi() % 6
 		elif specialty == "elite":
-			# Elite merchants: higher quality items, biased toward premium/legendary
+			# Elite merchants: VERY RARE (only 4 in the world), slightly better items
+			# Caps: 1.1x / 1.2x / 1.35x (heavily nerfed from original 2x/3x/5x)
 			var level_roll = rng.randi() % 100
 			if level_roll < 20:
-				# Standard tier (rare): player level to +10 (capped at 2x)
-				item_level = mini(player_level * 2, maxi(1, player_level + rng.randi_range(0, 10)))
+				# Standard tier (20%): player level to +8 (capped at 1.1x)
+				item_level = mini(int(player_level * 1.1), maxi(1, player_level + rng.randi_range(0, 8)))
 			elif level_roll < 60:
-				# Premium tier: player level +10 to +20 (capped at 3x)
-				item_level = mini(player_level * 3, player_level + rng.randi_range(10, 20))
+				# Premium tier (40%): player level +8 to +15 (capped at 1.2x)
+				item_level = mini(int(player_level * 1.2), player_level + rng.randi_range(8, 15))
 			else:
-				# Legendary tier: player level +20 to +40 (capped at 5x)
-				item_level = mini(player_level * 5, player_level + rng.randi_range(20, 40))
+				# Legendary tier (40%): player level +15 to +20 (capped at 1.35x)
+				item_level = mini(int(player_level * 1.35), player_level + rng.randi_range(15, 20))
 			item_level = maxi(1, item_level)
 		else:
-			# Normal shop: item level ranges around player level with reasonable caps
+			# Normal shop: item level ranges around player level with tight caps
+			# Caps: 1.1x / 1.15x (heavily nerfed from original 2x/3x)
 			var level_roll = rng.randi() % 100
 			if level_roll < 86:
 				# Standard tier (86%): player level -5 to +5
 				item_level = maxi(1, player_level + rng.randi_range(-5, 5))
 			elif level_roll < 96:
-				# Premium tier (10%): player level +5 to +10 (capped at 2x player level)
-				item_level = mini(player_level * 2, player_level + rng.randi_range(5, 10))
+				# Premium tier (10%): player level +5 to +8 (capped at 1.1x player level)
+				item_level = mini(int(player_level * 1.1), player_level + rng.randi_range(5, 8))
 			else:
-				# Aspirational tier (4%): player level +10 to +20 (capped at 3x player level)
-				item_level = mini(player_level * 3, player_level + rng.randi_range(10, 20))
+				# Aspirational tier (4%): player level +8 to +12 (capped at 1.15x player level)
+				item_level = mini(int(player_level * 1.15), player_level + rng.randi_range(8, 12))
 			item_level = maxi(1, item_level)
 
 		# Check if this is an affix-focused merchant

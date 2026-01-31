@@ -661,9 +661,66 @@ const MERCHANT_CACHE_DURATION = 30.0  # Recalculate every 30 seconds
 func _get_total_merchants() -> int:
 	return TOTAL_WANDERING_MERCHANTS
 
+func _get_elite_merchant_route(merchant_idx: int) -> Dictionary:
+	"""Get route for elite merchants - they stay in outer zones (100+ from center).
+	Destinations are weighted toward the outer edge of the map."""
+	# Find all posts that are at least 100 distance from center
+	var outer_posts: Array = []
+	for i in range(TRADING_POST_IDS.size()):
+		var post_id = TRADING_POST_IDS[i]
+		var post = trading_post_db.get_trading_post_by_id(post_id)
+		if post.is_empty():
+			continue
+		var dist = sqrt(pow(post.center.x, 2) + pow(post.center.y, 2))
+		if dist >= 100:
+			outer_posts.append({"idx": i, "id": post_id, "dist": dist})
+
+	if outer_posts.size() < 2:
+		# Fallback if not enough outer posts
+		return {"home_id": "shadowmere", "dest_id": "voids_edge", "home_idx": 26, "dest_idx": 27}
+
+	# Use merchant index to pick home post from outer posts
+	var home_idx_in_outer = merchant_idx % outer_posts.size()
+	var home_post = outer_posts[home_idx_in_outer]
+
+	# Pick destination weighted toward furthest posts
+	# Sort by distance descending and pick from top half more often
+	outer_posts.sort_custom(func(a, b): return a.dist > b.dist)
+
+	# Use a different seed for destination selection
+	var dest_seed = (merchant_idx * 31 + 17) % outer_posts.size()
+	# Bias toward outer posts: 70% chance to pick from outer half
+	var pick_outer = ((merchant_idx * 7) % 10) < 7
+	var dest_idx_in_outer: int
+	if pick_outer and outer_posts.size() > 1:
+		# Pick from outer half (sorted by distance, so first half is furthest)
+		dest_idx_in_outer = dest_seed % maxi(1, outer_posts.size() / 2)
+	else:
+		# Pick from anywhere in outer posts
+		dest_idx_in_outer = dest_seed
+
+	# Make sure destination is different from home
+	if dest_idx_in_outer == home_idx_in_outer:
+		dest_idx_in_outer = (dest_idx_in_outer + 1) % outer_posts.size()
+
+	var dest_post = outer_posts[dest_idx_in_outer]
+
+	return {
+		"home_id": home_post.id,
+		"dest_id": dest_post.id,
+		"home_idx": home_post.idx,
+		"dest_idx": dest_post.idx
+	}
+
 func _get_merchant_route(merchant_idx: int) -> Dictionary:
 	"""Get the route for a specific merchant based on their index.
-	Distribution is spread more evenly so players can find merchants in outer areas."""
+	Elite merchants (0-7) use special outer-zone routing.
+	Other merchants are spread evenly across all zones."""
+
+	# Elite merchants have special routing - they stay in outer zones
+	if _is_elite_merchant(merchant_idx):
+		return _get_elite_merchant_route(merchant_idx)
+
 	var num_posts = TRADING_POST_IDS.size()
 
 	# Zone boundaries in TRADING_POST_IDS:
@@ -673,21 +730,24 @@ func _get_merchant_route(merchant_idx: int) -> Dictionary:
 	# 26+: Outer zones (32 posts) - 25% of merchants (increased from 15%)
 	# This ensures merchants are findable everywhere, not just near spawn
 
+	# Adjust merchant_idx to account for elite merchants (0-7)
+	var adjusted_idx = merchant_idx - 8
+
 	var home_post_idx: int
-	var zone_roll = merchant_idx % 100
+	var zone_roll = adjusted_idx % 100
 
 	if zone_roll < 25:  # 25% in core zone
-		home_post_idx = (merchant_idx * 3) % 5  # Posts 0-4
+		home_post_idx = (adjusted_idx * 3) % 5  # Posts 0-4
 	elif zone_roll < 50:  # 25% in inner zone
-		home_post_idx = 5 + ((merchant_idx * 7) % 12)  # Posts 5-16
+		home_post_idx = 5 + ((adjusted_idx * 7) % 12)  # Posts 5-16
 	elif zone_roll < 75:  # 25% in mid zone
-		home_post_idx = 17 + ((merchant_idx * 11) % 9)  # Posts 17-25
+		home_post_idx = 17 + ((adjusted_idx * 11) % 9)  # Posts 17-25
 	else:  # 25% in outer zones
-		home_post_idx = 26 + ((merchant_idx * 13) % (num_posts - 26))  # Posts 26+
+		home_post_idx = 26 + ((adjusted_idx * 13) % (num_posts - 26))  # Posts 26+
 
 	# Destination varies - some stay local, some travel far
 	# This creates more varied travel patterns visible on the map
-	var dest_offset = ((merchant_idx * 17) % 15) + 1  # 1-15 posts away (increased range)
+	var dest_offset = ((adjusted_idx * 17) % 15) + 1  # 1-15 posts away (increased range)
 	var dest_post_idx = (home_post_idx + dest_offset) % num_posts
 
 	# Ensure destination is different from home
@@ -753,11 +813,32 @@ func _get_merchant_position(merchant_idx: int, current_time: float) -> Dictionar
 # Inventory refresh interval (5 minutes)
 const INVENTORY_REFRESH_INTERVAL = 300.0
 
+func _is_elite_merchant(merchant_idx: int) -> bool:
+	"""Check if a merchant index is one of the 8 elite merchants."""
+	# Elite merchants are indices 0-7 (the first 8 merchants are elite)
+	# They have special routing that keeps them in outer zones
+	return merchant_idx < 8
+
 func _get_merchant_info(merchant_idx: int) -> Dictionary:
 	"""Generate merchant info based on index (deterministic)"""
-	var type_idx = merchant_idx % MERCHANT_TYPES.size()
 	var name_idx = merchant_idx % MERCHANT_FIRST_NAMES.size()
-	var merchant_type = MERCHANT_TYPES[type_idx]
+
+	# Elite merchants are VERY rare - only 8 total, they roam the outer zones
+	var merchant_type: Dictionary
+	if _is_elite_merchant(merchant_idx):
+		# Find the elite type in MERCHANT_TYPES
+		for mt in MERCHANT_TYPES:
+			if mt.specialty == "elite":
+				merchant_type = mt
+				break
+	else:
+		# Normal merchant type assignment (skip elite type at index 14)
+		# Offset by 8 since indices 0-7 are reserved for elite
+		var adjusted_idx = merchant_idx - 8
+		var type_idx = adjusted_idx % (MERCHANT_TYPES.size() - 1)  # -1 to exclude elite
+		if type_idx >= 14:  # Elite is at index 14, skip it
+			type_idx += 1
+		merchant_type = MERCHANT_TYPES[type_idx]
 
 	# Inventory seed changes every 5 minutes
 	var time_window = int(Time.get_unix_time_from_system() / INVENTORY_REFRESH_INTERVAL)
@@ -908,6 +989,19 @@ func _get_merchant_map_color(x: int, y: int) -> String:
 		_:
 			return "#FFD700"  # Gold for general merchants
 
+func _get_merchant_map_char(x: int, y: int) -> String:
+	"""Get the map display character for a merchant. Elite merchants get ★, others get $."""
+	_refresh_merchant_cache()
+	var key = "%d,%d" % [x, y]
+
+	if not _merchant_cache.has(key):
+		return "$"  # Default
+
+	var merchant_idx = _merchant_cache[key][0]
+	if _is_elite_merchant(merchant_idx):
+		return "★"  # Elite merchants are visually distinct
+	return "$"  # Normal merchants
+
 func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
 	"""Generate ASCII map with merchants, Trading Posts, and other players shown.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
@@ -963,9 +1057,11 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 					# Interior - light background
 					line_parts.append("[color=#C4A84B] .[/color]")
 			elif is_merchant_at(x, y):
-				# Show merchant $ with color based on specialty
+				# Show merchant with color based on specialty
+				# Elite merchants get a special ★ symbol, others get $
 				var merchant_color = _get_merchant_map_color(x, y)
-				line_parts.append("[color=%s] $[/color]" % merchant_color)
+				var merchant_char = _get_merchant_map_char(x, y)
+				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
