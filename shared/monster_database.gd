@@ -1552,21 +1552,28 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	return max(0.25, scale)
 
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
-	"""Calculate XP reward using tiered formula for high levels"""
-	var lethality = hp + (strength * 3) + defense
+	"""Calculate XP reward - NERFED significantly for balance.
+	   XP should scale slowly - same-level fights shouldn't give a full level.
+	   Higher tier monsters naturally have better stats, giving them higher lethality."""
+	var lethality = hp + (strength * 2) + defense  # Reduced strength weight from 3 to 2
 
-	# Level 1-100: (lethality * level) / 10
-	if level <= 100:
-		return max(10, int((lethality * level) / 10))
+	# Level 1-50: (lethality * level) / 20 - Basic linear scaling
+	if level <= 50:
+		return max(5, int((lethality * level) / 20))
 
-	# Level 101-1000: lethality * (100 + sqrt(level-100) * 20) / 10
-	if level <= 1000:
-		var bonus = 100 + sqrt(level - 100) * 20
-		return max(10, int(lethality * bonus / 10))
+	# Level 51-200: lethality * (50 + sqrt(level-50) * 5) / 20 - Slow growth
+	if level <= 200:
+		var bonus = 50 + sqrt(level - 50) * 5
+		return max(10, int(lethality * bonus / 20))
 
-	# Level 1000+: lethality * (1000 + log(level) * 200) / 10
-	var bonus = 1000 + log(level) * 200
-	return max(10, int(lethality * bonus / 10))
+	# Level 201-500: Even slower growth with log scaling
+	if level <= 500:
+		var bonus = 50 + sqrt(150) * 5 + log(level - 200) * 10  # Continue from 200 with log
+		return max(20, int(lethality * bonus / 20))
+
+	# Level 500+: Heavily diminishing returns
+	var bonus = 50 + sqrt(150) * 5 + log(300) * 10 + log(level - 500) * 5
+	return max(30, int(lethality * bonus / 20))
 
 func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: int) -> int:
 	"""Calculate gold reward with diminishing returns at high levels.

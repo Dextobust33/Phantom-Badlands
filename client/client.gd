@@ -288,15 +288,15 @@ var combat_use_page: int = 0  # Current page for combat usable items list (0-ind
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 
 # Consumable tier system for display purposes (matches server calculations)
-# mana = healing * 0.6, stamina/energy = healing * 0.5
+# resource = 60% of healing for all classes
 const CONSUMABLE_TIERS = {
-	1: {"name": "Minor", "healing": 50, "buff_value": 3, "mana": 30, "resource": 25},
-	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "mana": 60, "resource": 50},
-	3: {"name": "Standard", "healing": 200, "buff_value": 8, "mana": 120, "resource": 100},
-	4: {"name": "Greater", "healing": 400, "buff_value": 12, "mana": 240, "resource": 200},
-	5: {"name": "Superior", "healing": 800, "buff_value": 18, "mana": 480, "resource": 400},
-	6: {"name": "Master", "healing": 1600, "buff_value": 25, "mana": 960, "resource": 800},
-	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "mana": 1800, "resource": 1500}
+	1: {"name": "Minor", "healing": 50, "buff_value": 3, "resource": 30},
+	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "resource": 60},
+	3: {"name": "Standard", "healing": 200, "buff_value": 8, "resource": 120},
+	4: {"name": "Greater", "healing": 400, "buff_value": 12, "resource": 240},
+	5: {"name": "Superior", "healing": 800, "buff_value": 18, "resource": 480},
+	6: {"name": "Master", "healing": 1600, "buff_value": 25, "resource": 960},
+	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "resource": 1800}
 }
 
 var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)

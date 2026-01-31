@@ -433,6 +433,12 @@ func get_leaderboard(limit: int = 10) -> Array:
 
 	return result
 
+func reset_leaderboard():
+	"""Reset the leaderboard - clears all entries"""
+	leaderboard_data = {"entries": []}
+	save_leaderboard()
+	print("Leaderboard has been reset!")
+
 # ===== REALM STATE PERSISTENCE =====
 
 func load_realm_state():
@@ -674,6 +680,12 @@ func get_monster_kills_leaderboard(limit: int = 20) -> Array:
 		entries.resize(limit)
 
 	return entries
+
+func reset_monster_kills():
+	"""Reset the monster kills leaderboard - clears all entries"""
+	monster_kills_data = {"monsters": {}}
+	save_monster_kills()
+	print("Monster kills leaderboard has been reset!")
 
 func get_trophy_leaderboard() -> Array:
 	"""Get trophy hall of fame - first collector of each trophy type"""

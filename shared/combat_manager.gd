@@ -811,18 +811,30 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			else:
 				messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
 
-	# Calculate XP with level difference bonus
+	# Calculate XP with tier bonus for fighting above your weight class
 	var base_xp = monster.experience_reward
 	var xp_level_diff = monster.level - character.level
 	var xp_multiplier = 1.0
 
-	if xp_level_diff > 0:
-		if xp_level_diff <= 50:
-			xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-		else:
-			xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+	# Get tier difference - THIS is the main way to get big XP rewards
+	var xp_player_tier = _get_tier_for_level(character.level)
+	var xp_monster_tier = _get_tier_for_level(monster.level)
+	var xp_tier_diff = xp_monster_tier - xp_player_tier
 
-	var final_xp = int(base_xp * xp_multiplier)
+	# TIER BONUS: Fighting higher tier monsters is very rewarding!
+	# Each tier above gives 2x XP multiplier (stacks multiplicatively)
+	# This rewards players for taking on scary fights via scrolls, shriekers, etc.
+	var xp_tier_bonus = 1.0
+	if xp_tier_diff > 0:
+		xp_tier_bonus = pow(2.0, xp_tier_diff)  # 2x per tier: T+1=2x, T+2=4x, T+3=8x
+		messages.append("[color=#FF00FF]★ TIER CHALLENGE: +%dx XP bonus! ★[/color]" % int(xp_tier_bonus))
+
+	# Small level difference bonus (within same tier)
+	# +2% per level difference, capped at 50% (same-tier fights shouldn't give huge bonuses)
+	if xp_level_diff > 0 and xp_tier_diff == 0:
+		xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
+
+	var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus)
 
 	# Gold calculation with gold hoarder bonus
 	var gold = monster.gold_reward
@@ -1010,21 +1022,20 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var trophy_id = trophy.get("id", "")
 			var trophy_name = trophy.get("name", "Unknown Trophy")
 			var trophy_desc = trophy.get("description", "")
-			# Check if player already has this trophy
-			if character.has_trophy(trophy_id):
-				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
-				messages.append("[color=#A335EE]★ TROPHY DROP: %s ★[/color]" % trophy_name)
-				messages.append("[color=#808080]%s[/color]" % trophy_desc)
-				messages.append("[color=#FFFF00](You already have this trophy!)[/color]")
-				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
-			else:
-				character.add_trophy(trophy_id, monster.name, monster.level)
-				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			var is_first = not character.has_trophy(trophy_id)
+			var trophy_count = character.add_trophy(trophy_id, monster.name, monster.level)
+			messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			if is_first:
 				messages.append("[color=#A335EE]★★★ NEW TROPHY COLLECTED! ★★★[/color]")
-				messages.append("[color=#FFD700]%s[/color]" % trophy_name)
-				messages.append("[color=#808080]%s[/color]" % trophy_desc)
+			else:
+				messages.append("[color=#A335EE]★ TROPHY DROP! ★[/color]")
+			messages.append("[color=#FFD700]%s[/color]" % trophy_name)
+			messages.append("[color=#808080]%s[/color]" % trophy_desc)
+			if trophy_count > 1:
+				messages.append("[color=#00FF00]Trophy added! (x%d of this type, %d total)[/color]" % [trophy_count, character.get_trophy_count()])
+			else:
 				messages.append("[color=#00FF00]Trophy added to your collection! (%d total)[/color]" % character.get_trophy_count())
-				messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
 
 	# Soul Gem drops - companions (Tier 7+)
 	if drop_tables != null:
@@ -1305,14 +1316,22 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		var xp_level_diff = monster.level - character.level
 		var xp_multiplier = 1.0
 
-		# XP bonus for fighting stronger monsters
-		if xp_level_diff > 0:
-			if xp_level_diff <= 50:
-				xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-			else:
-				xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+		# Get tier difference - big rewards for fighting above your tier!
+		var player_tier = _get_tier_for_level(character.level)
+		var monster_tier = _get_tier_for_level(monster.level)
+		var tier_diff = monster_tier - player_tier
 
-		var final_xp = int(base_xp * xp_multiplier)
+		# TIER BONUS: Fighting higher tier monsters is very rewarding!
+		var xp_tier_bonus = 1.0
+		if tier_diff > 0:
+			xp_tier_bonus = pow(2.0, tier_diff)  # 2x per tier
+			messages.append("[color=#FF00FF]★ TIER CHALLENGE: +%dx XP bonus! ★[/color]" % int(xp_tier_bonus))
+
+		# Small level difference bonus (within same tier)
+		if xp_level_diff > 0 and tier_diff == 0:
+			xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
+
+		var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus)
 		var gold = monster.gold_reward
 
 		# Add XP and gold
@@ -2319,37 +2338,41 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]You exploit a weakness for %d damage! (%d%% of max HP)[/color]" % [damage, base_percent])
 
 		"perfect_heist":
-			# Chance-based instant win with double rewards
+			# Chance-based instant win with slight bonus rewards
+			# NERFED: Much harder against higher level monsters, smaller rewards
 			var wits = character.get_effective_stat("wits")
 			var monster_int = monster.get("intelligence", 15)
-			# Base 45% success, +2% per wits over monster intelligence (buffed from 40%)
-			var success_chance = 45 + ((wits - monster_int) * 2)
-			success_chance = clampi(success_chance, 20, 90)  # Increased caps from 15-85 to 20-90
+			var level_diff = monster.level - character.level
+
+			# Base 30% success, +1.5% per wits over monster intelligence
+			var success_chance = 30 + int((wits - monster_int) * 1.5)
+			# Heavy penalty for fighting above your level: -2% per level difference
+			if level_diff > 0:
+				success_chance -= level_diff * 2
+			# Cap at 5-60% (was 20-90%)
+			success_chance = clampi(success_chance, 5, 60)
 
 			var roll = randi() % 100
 			if roll < success_chance:
 				messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
 				messages.append("[color=#00FF00]You execute a flawless heist![/color]")
 
-				# Double XP and gold
-				var base_xp = monster.experience_reward * 2
-				var xp_level_diff = monster.level - character.level
+				# Slight bonus XP and gold (1.25x, was 2x)
+				var base_xp = int(monster.experience_reward * 1.25)
+				# Small bonus for level difference, capped at 1.5x max
 				var xp_multiplier = 1.0
-				if xp_level_diff > 0:
-					if xp_level_diff <= 50:
-						xp_multiplier = 1.0 + (xp_level_diff * 0.10)
-					else:
-						xp_multiplier = 6.0 + ((xp_level_diff - 50) * 0.05)
+				if level_diff > 0:
+					xp_multiplier = 1.0 + min(0.5, level_diff * 0.02)  # +2% per level, max +50%
 
 				var final_xp = int(base_xp * xp_multiplier)
-				var gold = monster.gold_reward * 2
+				var gold = int(monster.gold_reward * 1.25)
 
 				var heist_old_level = character.level
 				var level_result = character.add_experience(final_xp)
 				character.gold += gold
 
-				messages.append("[color=#FF00FF]+%d XP (doubled!)[/color]" % final_xp)
-				messages.append("[color=#FFD700]+%d gold (doubled!)[/color]" % gold)
+				messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
+				messages.append("[color=#FFD700]+%d gold[/color]" % gold)
 
 				if level_result.leveled_up:
 					messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
@@ -2366,20 +2389,20 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 						messages.append("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
 						messages.append("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
 
-				# Roll for item drops (double chance)
+				# Roll for item drops (normal chance, was doubled)
 				var dropped_items = []
 				var gems_earned = 0
 				if drop_tables:
 					var drops_result = drop_tables.roll_drops(
 						monster.get("drop_table_id", "tier1"),
-						monster.get("drop_chance", 5) * 2,
+						monster.get("drop_chance", 5),
 						monster.level
 					)
 					dropped_items = drops_result
-					gems_earned = roll_gem_drops(monster, character) * 2
+					gems_earned = roll_gem_drops(monster, character)
 					if gems_earned > 0:
 						character.gems += gems_earned
-						messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gems (doubled!)![/color][color=#00FFFF] ◆ ✦[/color]" % gems_earned)
+						messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] ◆ ✦[/color]" % gems_earned)
 
 				return {
 					"success": true,
@@ -2591,8 +2614,11 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
 		var resource_amount: int
-		if tier_data.has("healing"):
-			resource_amount = int(tier_data.healing * 0.6)  # Resource is roughly 60% of HP healing
+		if tier_data.has("resource"):
+			resource_amount = tier_data.resource
+		elif tier_data.has("healing"):
+			# Fallback to calculated value from healing
+			resource_amount = int(tier_data.healing * 0.6)
 		else:
 			resource_amount = effect.base + (effect.per_level * item_level)
 
@@ -3379,6 +3405,27 @@ func _get_shrieker_summon_tier() -> int:
 	elif roll < 90:
 		return 7
 	elif roll < 97:
+		return 8
+	else:
+		return 9
+
+func _get_tier_for_level(level: int) -> int:
+	"""Get monster/player tier based on level (matches monster_database tier ranges)"""
+	if level <= 5:
+		return 1
+	elif level <= 15:
+		return 2
+	elif level <= 30:
+		return 3
+	elif level <= 50:
+		return 4
+	elif level <= 100:
+		return 5
+	elif level <= 500:
+		return 6
+	elif level <= 2000:
+		return 7
+	elif level <= 5000:
 		return 8
 	else:
 		return 9
@@ -4894,9 +4941,10 @@ func set_drop_tables(tables: Node):
 	"""Set the drop tables reference for item drops"""
 	drop_tables = tables
 
-func roll_combat_drops(monster: Dictionary, _character: Character) -> Array:
+func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
 	"""Roll for item drops after defeating a monster. Returns array of items.
-	NOTE: Does NOT add items to inventory - server handles that to avoid duplication."""
+	NOTE: Does NOT add items to inventory - server handles that to avoid duplication.
+	TIER BONUS: Fighting higher tier monsters gives +50% drop chance per tier above."""
 	# If drop tables not initialized, return empty
 	if drop_tables == null:
 		return []
@@ -4904,6 +4952,15 @@ func roll_combat_drops(monster: Dictionary, _character: Character) -> Array:
 	var drop_table_id = monster.get("drop_table_id", "common")
 	var drop_chance = monster.get("drop_chance", 5)
 	var monster_level = monster.get("level", 1)
+
+	# Apply tier bonus to drop chance - fighting above your tier is rewarding!
+	var player_tier = _get_tier_for_level(character.level)
+	var monster_tier = _get_tier_for_level(monster_level)
+	var tier_diff = monster_tier - player_tier
+	if tier_diff > 0:
+		# +50% drop chance per tier above (multiplicative)
+		var tier_mult = pow(1.5, tier_diff)  # T+1=1.5x, T+2=2.25x, T+3=3.4x
+		drop_chance = int(drop_chance * tier_mult)
 
 	# Roll for drops - server will handle adding to inventory
 	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)

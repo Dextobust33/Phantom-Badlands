@@ -3570,8 +3570,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
 		var resource_amount: int
-		if tier_data.has("healing"):
-			resource_amount = int(tier_data.healing * 0.6)  # Resource is roughly 60% of HP healing
+		if tier_data.has("resource"):
+			resource_amount = tier_data.resource
+		elif tier_data.has("healing"):
+			# Fallback to calculated value from healing
+			resource_amount = int(tier_data.healing * 0.6)
 		else:
 			# Legacy calculation - use the effect that exists
 			if effect.has("mana"):

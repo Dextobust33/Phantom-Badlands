@@ -606,33 +606,33 @@ func get_equipment_bonuses() -> Dictionary:
 		var base_bonus = int(effective_level * rarity_mult * wear_penalty)
 
 		# STEP 1: Apply base item type bonuses (all items get these)
-		# Note: Multipliers balanced to make gear valuable but not overwhelming
+		# NERFED: Reduced multipliers significantly for balance
 		if "weapon" in item_type:
-			bonuses.attack += int(base_bonus * 2.5)  # Weapons give strong attack
-			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.attack += int(base_bonus * 1.5)  # Nerfed from 2.5x
+			bonuses.strength += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		elif "armor" in item_type:
-			bonuses.defense += int(base_bonus * 1.75)  # Armor gives defense
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.max_hp += int(base_bonus * 2.5)
+			bonuses.defense += int(base_bonus * 1.0)  # Nerfed from 1.75x
+			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.max_hp += int(base_bonus * 1.5)  # Nerfed from 2.5x
 		elif "helm" in item_type:
-			bonuses.defense += base_bonus
-			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.defense += int(base_bonus * 0.6)  # Nerfed from 1.0x
+			bonuses.wisdom += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "shield" in item_type:
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.max_hp += base_bonus * 4  # Shields give good HP
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+			bonuses.max_hp += int(base_bonus * 2.0)  # Nerfed from 4x
+			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "ring" in item_type:
-			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.attack += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.intelligence += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "amulet" in item_type:
-			bonuses.max_mana += int(base_bonus * 1.75)
-			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.max_mana += int(base_bonus * 1.0)  # Nerfed from 1.75x
+			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.wits += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
-			bonuses.speed += base_bonus  # Speed bonus for flee chance
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.speed += int(base_bonus * 0.6)  # Nerfed from 1.0x
+			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 
 		# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
 		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
@@ -721,30 +721,32 @@ func get_equipment_bonuses() -> Dictionary:
 	return bonuses
 
 func _get_rarity_multiplier(rarity: String) -> float:
-	"""Get multiplier for item rarity"""
+	"""Get multiplier for item rarity - NERFED for balance"""
 	match rarity:
 		"common": return 1.0
-		"uncommon": return 1.5
-		"rare": return 2.0
-		"epic": return 3.0
-		"legendary": return 4.5
-		"artifact": return 6.0
+		"uncommon": return 1.2
+		"rare": return 1.4
+		"epic": return 1.7
+		"legendary": return 2.0
+		"artifact": return 2.5
 		_: return 1.0
 
 func _get_effective_item_level(item_level: int) -> float:
-	"""Apply diminishing returns for items above level 100.
-	   Items 1-100: Full linear scaling
-	   Items 101+: Logarithmic scaling (100 + 20 * log2(level - 99))
-	   This means a L200 item is ~equivalent to L133, L500 to L160, L1000 to ~L180"""
-	if item_level <= 100:
+	"""Apply diminishing returns for items above level 50.
+	   Items 1-50: Full linear scaling
+	   Items 51+: Logarithmic scaling (50 + 15 * log2(level - 49))
+	   NERFED: Starts earlier (50 vs 100), smaller scaling factor (15 vs 20)
+	   This means a L100 item is ~equivalent to L80, L200 to ~L100, L500 to ~L120"""
+	if item_level <= 50:
 		return float(item_level)
-	# Above 100: diminishing returns using log scaling
-	# Formula: 100 + 20 * log2(level - 99)
-	# L200 = 100 + 20 * log2(101) ≈ 100 + 20 * 6.66 = 133
-	# L500 = 100 + 20 * log2(401) ≈ 100 + 20 * 8.65 = 173
-	# L1000 = 100 + 20 * log2(901) ≈ 100 + 20 * 9.82 = 196
-	var excess = item_level - 99
-	return 100.0 + 20.0 * log(excess) / log(2.0)
+	# Above 50: diminishing returns using log scaling
+	# Formula: 50 + 15 * log2(level - 49)
+	# L100 = 50 + 15 * log2(51) ≈ 50 + 15 * 5.67 = 85
+	# L200 = 50 + 15 * log2(151) ≈ 50 + 15 * 7.24 = 109
+	# L500 = 50 + 15 * log2(451) ≈ 50 + 15 * 8.82 = 132
+	# L1000 = 50 + 15 * log2(951) ≈ 50 + 15 * 9.89 = 148
+	var excess = item_level - 49
+	return 50.0 + 15.0 * log(excess) / log(2.0)
 
 func get_total_attack() -> int:
 	"""Get total attack power including equipment"""
@@ -2031,30 +2033,41 @@ func get_all_skill_enhancements() -> Dictionary:
 
 # ===== TROPHY SYSTEM =====
 
-func add_trophy(trophy_id: String, monster_name: String, monster_level: int) -> bool:
-	"""Add a trophy to the collection. Returns true if added (not a duplicate)."""
-	# Check if already have this trophy
-	for trophy in trophies:
-		if trophy.get("id") == trophy_id:
-			return false  # Already have it
+func add_trophy(trophy_id: String, monster_name: String, monster_level: int) -> int:
+	"""Add a trophy to the collection. Returns the count of this trophy type after adding."""
 	trophies.append({
 		"id": trophy_id,
 		"monster_name": monster_name,
 		"monster_level": monster_level,
 		"obtained_at": int(Time.get_unix_time_from_system())
 	})
-	return true
+	return get_trophy_count_by_id(trophy_id)
 
 func has_trophy(trophy_id: String) -> bool:
-	"""Check if character has a specific trophy."""
+	"""Check if character has at least one of a specific trophy."""
 	for trophy in trophies:
 		if trophy.get("id") == trophy_id:
 			return true
 	return false
 
+func get_trophy_count_by_id(trophy_id: String) -> int:
+	"""Get the count of a specific trophy type."""
+	var count = 0
+	for trophy in trophies:
+		if trophy.get("id") == trophy_id:
+			count += 1
+	return count
+
 func get_trophy_count() -> int:
-	"""Get total number of trophies collected."""
+	"""Get total number of trophies collected (including duplicates)."""
 	return trophies.size()
+
+func get_unique_trophy_count() -> int:
+	"""Get number of unique trophy types collected."""
+	var unique_ids = {}
+	for trophy in trophies:
+		unique_ids[trophy.get("id", "")] = true
+	return unique_ids.size()
 
 func get_all_trophies() -> Array:
 	"""Get all trophies."""
