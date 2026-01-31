@@ -123,9 +123,10 @@ const TRICKSTER_ABILITIES = {
 	"analyze": {"level": 1, "cost": 5, "name": "Analyze", "desc": "Reveal monster HP, damage, intelligence"},
 	"distract": {"level": 10, "cost": 15, "name": "Distract", "desc": "Enemy -50% accuracy next attack"},
 	"pickpocket": {"level": 25, "cost": 20, "name": "Pickpocket", "desc": "Steal WITS*10 gold (fail = attacked)"},
-	"ambush": {"level": 40, "cost": 30, "name": "Ambush", "desc": "WITS*1.5 damage + 50% crit chance"},
+	"ambush": {"level": 40, "cost": 30, "name": "Ambush", "desc": "3x damage with WITS scaling + 50% crit"},
+	"gambit": {"level": 50, "cost": 35, "name": "Gambit", "desc": "4.5x damage, +75% gold & +1 gem on kill (risky)"},
 	"vanish": {"level": 60, "cost": 40, "name": "Vanish", "desc": "Go invisible, next attack crits"},
-	"exploit": {"level": 80, "cost": 35, "name": "Exploit", "desc": "Deal 10% of monster's current HP"},
+	"exploit": {"level": 80, "cost": 35, "name": "Exploit", "desc": "Deal 15-35% of monster's max HP"},
 	"perfect_heist": {"level": 100, "cost": 50, "name": "Perfect Heist", "desc": "Instant win + double rewards"}
 }
 
@@ -155,7 +156,6 @@ const LOCATION_TOWN_SQUARE = "town_square"
 # Combat Actions
 const ACTION_ATTACK = "attack"
 const ACTION_POWER_ATTACK = "power_attack"
-const ACTION_DEFEND = "defend"
 const ACTION_CAST_SPELL = "cast_spell"
 const ACTION_USE_ITEM = "use_item"
 const ACTION_FLEE = "flee"

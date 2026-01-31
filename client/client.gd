@@ -16,6 +16,13 @@ func _get_trader_art():
 		_trader_art_script = load("res://client/trader_art.gd")
 	return _trader_art_script
 
+# Trading post art helper - for trading post buildings
+var _trading_post_art_script = null
+func _get_trading_post_art():
+	if _trading_post_art_script == null:
+		_trading_post_art_script = load("res://client/trading_post_art.gd")
+	return _trading_post_art_script
+
 # Character script for thematic item display
 const CharacterScript = preload("res://shared/character.gd")
 
@@ -240,6 +247,7 @@ var username = ""
 var account_id = ""
 var character_list = []
 var can_create_character = true
+var last_whisper_from = ""  # For /reply command
 
 # Character data
 var character_data = {}
@@ -413,7 +421,7 @@ var forge_available: bool = false  # Whether at Infernal Forge with Unforged Cro
 var ability_entered_from_settings: bool = false
 
 # Leaderboard mode
-var leaderboard_mode: String = "fallen_heroes"  # "fallen_heroes" or "monster_kills"
+var leaderboard_mode: String = "fallen_heroes"  # "fallen_heroes", "monster_kills", or "trophy_hall"
 
 # Password change mode
 var changing_password: bool = false
@@ -479,6 +487,12 @@ var top5_player: AudioStreamPlayer = null
 # Quest complete sound
 var quest_complete_player: AudioStreamPlayer = null
 var quests_sound_played: Dictionary = {}  # Track which quests have played completion sound
+
+# Whisper notification sound
+var whisper_player: AudioStreamPlayer = null
+
+# Server announcement sound
+var server_announcement_player: AudioStreamPlayer = null
 
 # Danger warning sound (heavy damage taken)
 var danger_player: AudioStreamPlayer = null
@@ -666,6 +680,18 @@ func _ready():
 	quest_complete_player.volume_db = -15.0  # Quiet but noticeable
 	add_child(quest_complete_player)
 	_generate_quest_complete_sound()
+
+	# Initialize whisper notification sound player
+	whisper_player = AudioStreamPlayer.new()
+	whisper_player.volume_db = -16.0  # Quiet but audible notification
+	add_child(whisper_player)
+	_generate_whisper_sound()
+
+	# Initialize server announcement sound player
+	server_announcement_player = AudioStreamPlayer.new()
+	server_announcement_player.volume_db = -10.0  # More prominent for announcements
+	add_child(server_announcement_player)
+	_generate_server_announcement_sound()
 
 	# Initialize danger warning sound player
 	danger_player = AudioStreamPlayer.new()
@@ -1060,6 +1086,106 @@ func play_quest_complete_sound():
 	"""Play the quest complete chime"""
 	if quest_complete_player and quest_complete_player.stream:
 		quest_complete_player.play()
+
+func _generate_whisper_sound():
+	"""Generate a soft, gentle notification chime for private messages"""
+	var sample_rate = 44100
+	var duration = 0.35  # Short but pleasant
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	# Soft two-tone chime (G5 and E6 - gentle interval)
+	var freq1 = 784.0  # G5
+	var freq2 = 1318.5  # E6
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var progress = float(i) / samples
+
+		# First note (G5) then second note (E6)
+		var note_progress = progress * 2.0
+		var value = 0.0
+
+		if note_progress < 1.0:
+			# First note with quick fade
+			var note_t = note_progress
+			var env = sin(note_t * PI) * (1.0 - note_t * 0.3)
+			value = sin(t * TAU * freq1) * env * 0.4
+		else:
+			# Second note (higher)
+			var note_t = note_progress - 1.0
+			var env = sin(note_t * PI) * (1.0 - note_t * 0.5)
+			value = sin(t * TAU * freq2) * env * 0.35
+
+		var sample = int(clamp(value * 32767, -32767, 32767))
+		data[i * 2] = sample & 0xFF
+		data[i * 2 + 1] = (sample >> 8) & 0xFF
+
+	audio.data = data
+	whisper_player.stream = audio
+
+func play_whisper_notification():
+	"""Play the whisper notification sound"""
+	if whisper_player and whisper_player.stream:
+		whisper_player.play()
+
+func _generate_server_announcement_sound():
+	"""Generate an attention-getting announcement sound (three ascending tones)"""
+	var sample_rate = 44100
+	var duration = 0.6  # Longer for more impact
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = false
+
+	var data = PackedByteArray()
+	data.resize(samples * 2)
+
+	# Three ascending tones (C5, E5, G5) - attention-grabbing arpeggio
+	var freq1 = 523.25  # C5
+	var freq2 = 659.25  # E5
+	var freq3 = 783.99  # G5
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var progress = float(i) / samples
+		var value = 0.0
+
+		# Three notes in sequence
+		var note_phase = progress * 3.0
+		if note_phase < 1.0:
+			var note_t = note_phase
+			var env = sin(note_t * PI) * 0.8
+			value = sin(t * TAU * freq1) * env * 0.5
+		elif note_phase < 2.0:
+			var note_t = note_phase - 1.0
+			var env = sin(note_t * PI) * 0.85
+			value = sin(t * TAU * freq2) * env * 0.5
+		else:
+			var note_t = note_phase - 2.0
+			var env = sin(note_t * PI) * 0.9
+			value = sin(t * TAU * freq3) * env * 0.5
+
+		var sample = int(clamp(value * 32767, -32767, 32767))
+		data[i * 2] = sample & 0xFF
+		data[i * 2 + 1] = (sample >> 8) & 0xFF
+
+	audio.data = data
+	server_announcement_player.stream = audio
+
+func play_server_announcement():
+	"""Play the server announcement sound"""
+	if server_announcement_player and server_announcement_player.stream:
+		server_announcement_player.play()
 
 func _generate_danger_sound():
 	"""Generate a low warning tone for heavy damage taken"""
@@ -1752,7 +1878,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
@@ -1992,9 +2118,13 @@ func _input(event):
 			elif keycode == key_action_7:
 				# Open Abilities from Settings
 				ability_entered_from_settings = true
+				# Mark hotkey as pressed to prevent double-trigger
+				set_meta("hotkey_7_pressed", true)
 				settings_mode = false
 				enter_ability_mode()
 			elif keycode == key_action_0:
+				# Mark action_0 hotkey as pressed to prevent double-trigger
+				set_meta("hotkey_0_pressed", true)
 				close_settings()
 			get_viewport().set_input_as_handled()
 		elif settings_submenu == "action_keys":
@@ -2135,6 +2265,8 @@ func _input(event):
 		if pending_ability_action == "":
 			if keycode == KEY_SPACE or keycode == KEY_ESCAPE:
 				# Exit ability mode
+				# Mark action_0 hotkey as pressed to prevent double-trigger in _process
+				set_meta("hotkey_0_pressed", true)
 				exit_ability_mode()
 				get_viewport().set_input_as_handled()
 				return
@@ -2231,6 +2363,8 @@ func show_leaderboard_panel():
 	# Request data based on current mode
 	if leaderboard_mode == "monster_kills":
 		send_to_server({"type": "get_monster_kills_leaderboard", "limit": 20})
+	elif leaderboard_mode == "trophy_hall":
+		send_to_server({"type": "get_trophy_leaderboard"})
 	else:
 		send_to_server({"type": "get_leaderboard", "limit": 20})
 	# Update toggle button text
@@ -2334,6 +2468,44 @@ func update_monster_kills_display(entries: Array):
 	# Reset scroll to top after layout updates
 	_reset_leaderboard_scroll.call_deferred()
 
+func update_trophy_leaderboard_display(entries: Array):
+	"""Display the trophy hall leaderboard - first collectors of each trophy type"""
+	if not leaderboard_list:
+		return
+
+	leaderboard_list.clear()
+	leaderboard_list.append_text("[center][b]TROPHY HALL OF FAME[/b][/center]\n\n")
+
+	if entries.is_empty():
+		leaderboard_list.append_text("[center][color=#555555]No trophies collected yet.[/color][/center]")
+		_reset_leaderboard_scroll.call_deferred()
+		return
+
+	for entry in entries:
+		var trophy_name = entry.get("trophy_name", "Unknown")
+		var monster_name = entry.get("monster_name", "Unknown")
+		var first_collector = entry.get("collector", "Unknown")
+		var total_collectors = entry.get("total_collectors", 0)
+
+		# Color based on trophy rarity (more collectors = more common)
+		var color = "#A335EE"  # Purple for rare
+		if total_collectors >= 10:
+			color = "#FFFFFF"  # White for common
+		elif total_collectors >= 5:
+			color = "#0070DD"  # Blue for uncommon
+		elif total_collectors >= 2:
+			color = "#A335EE"  # Purple for rare
+		else:
+			color = "#FF8000"  # Orange for unique (only 1 collector)
+
+		leaderboard_list.append_text("[color=%s]%s[/color]\n" % [color, trophy_name])
+		leaderboard_list.append_text("   [color=#555555]From: %s[/color]\n" % monster_name)
+		leaderboard_list.append_text("   [color=#FFD700]First: %s[/color]\n" % first_collector)
+		leaderboard_list.append_text("   [color=#555555]Total collectors: %d[/color]\n\n" % total_collectors)
+
+	# Reset scroll to top after layout updates
+	_reset_leaderboard_scroll.call_deferred()
+
 func _reset_leaderboard_scroll():
 	"""Reset leaderboard scroll to top (called deferred after layout update)"""
 	if leaderboard_list:
@@ -2345,15 +2517,20 @@ func _update_leaderboard_toggle_button():
 	if toggle_button:
 		if leaderboard_mode == "fallen_heroes":
 			toggle_button.text = "Show Deadliest Monsters"
-		else:
+		elif leaderboard_mode == "monster_kills":
+			toggle_button.text = "Show Trophy Hall"
+		else:  # trophy_hall
 			toggle_button.text = "Show Fallen Heroes"
 
 func _on_leaderboard_toggle_pressed():
-	"""Toggle between Fallen Heroes and Monster Kills views"""
+	"""Toggle between Fallen Heroes, Monster Kills, and Trophy Hall views"""
 	if leaderboard_mode == "fallen_heroes":
 		leaderboard_mode = "monster_kills"
 		send_to_server({"type": "get_monster_kills_leaderboard", "limit": 20})
-	else:
+	elif leaderboard_mode == "monster_kills":
+		leaderboard_mode = "trophy_hall"
+		send_to_server({"type": "get_trophy_leaderboard"})
+	else:  # trophy_hall
 		leaderboard_mode = "fallen_heroes"
 		send_to_server({"type": "get_leaderboard", "limit": 20})
 	_update_leaderboard_toggle_button()
@@ -2666,8 +2843,22 @@ func show_player_info_popup(data: Dictionary):
 	var xp_remaining = xp_needed - exp
 
 	var char_race = data.get("race", "Human")
+	var title = data.get("title", "")
+	var gold = data.get("gold", 0)
+	var gems = data.get("gems", 0)
+	var deaths = data.get("deaths", 0)
+	var quests_done = data.get("quests_completed", 0)
+	var play_time = data.get("play_time", 0)
+
 	player_info_content.clear()
-	player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
+
+	# Name with title if present
+	if not title.is_empty():
+		var title_display = title.capitalize().replace("_", " ")
+		player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color]\n[color=#FF00FF]%s[/color][/center]\n" % [pname, title_display])
+	else:
+		player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
+
 	player_info_content.append_text("[center]Level %d %s %s[/center]\n" % [level, char_race, cls])
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
@@ -2717,7 +2908,31 @@ func show_player_info_popup(data: Dictionary):
 	if has_equipment:
 		player_info_content.append_text("\n")
 
-	player_info_content.append_text("[color=#FFA500]Monsters Slain:[/color] %d" % kills)
+	# Wealth
+	player_info_content.append_text("[color=#FFD700]Gold:[/color] %s  [color=#00FFFF]Gems:[/color] %d\n\n" % [format_number(gold), gems])
+
+	# Statistics
+	player_info_content.append_text("[color=#FFA500]Statistics:[/color]\n")
+	player_info_content.append_text("  Monsters Slain: %d\n" % kills)
+	player_info_content.append_text("  Deaths: %d\n" % deaths)
+	player_info_content.append_text("  Quests Completed: %d\n" % quests_done)
+
+	# Format play time
+	var hours = play_time / 3600
+	var minutes = (play_time % 3600) / 60
+	if hours > 0:
+		player_info_content.append_text("  Time Played: %dh %dm\n" % [hours, minutes])
+	else:
+		player_info_content.append_text("  Time Played: %dm\n" % minutes)
+
+	# Title holders can see player locations (unless player is cloaked)
+	if data.get("viewer_has_title", false):
+		if data.get("location_hidden", false):
+			player_info_content.append_text("\n[color=#9932CC]Location: Hidden (Cloaked)[/color]")
+		elif data.has("location_x") and data.has("location_y"):
+			var loc_x = data.get("location_x", 0)
+			var loc_y = data.get("location_y", 0)
+			player_info_content.append_text("\n[color=#00FFFF]Location: (%d, %d)[/color]" % [loc_x, loc_y])
 
 	player_info_panel.visible = true
 
@@ -3371,7 +3586,21 @@ func update_action_bar():
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
 				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
-				{"label": "All Items", "action_type": "local", "action_data": "salvage_all", "enabled": true},
+				{"label": "All Equipment", "action_type": "local", "action_data": "salvage_all", "enabled": true},
+				{"label": "Consumables", "action_type": "local", "action_data": "salvage_consumables_prompt", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "salvage_consumables_confirm":
+			# Confirmation prompt for salvaging consumables
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
+				{"label": "Confirm", "action_type": "local", "action_data": "salvage_consumables", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3666,8 +3895,6 @@ func _start_combat_command_animation(command: String):
 			start_combat_animation("Fleeing...", "#808080")
 		"outsmart", "o":
 			start_combat_animation("Outsmarting...", "#00FFFF")
-		"defend", "d":
-			start_combat_animation("Defending...", "#00FF00")
 		# Mage abilities
 		"bolt", "magic_bolt":
 			start_combat_animation("Casting Bolt...", "#00BFFF")
@@ -4785,6 +5012,10 @@ func _hide_teleport_popup():
 		teleport_popup.visible = false
 		teleport_popup_x_input.release_focus()
 		teleport_popup_y_input.release_focus()
+	# Ensure the main input field doesn't steal focus after teleport
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	update_action_bar()
 
 func _on_teleport_coords_changed(_new_text: String):
 	"""Update cost display when coordinates change."""
@@ -5269,6 +5500,17 @@ func execute_local_action(action: String):
 		"salvage_cancel":
 			pending_inventory_action = ""
 			display_inventory()
+			update_action_bar()
+		"salvage_consumables_prompt":
+			# Mark the hotkey as pressed to prevent double-trigger
+			set_meta("hotkey_8_pressed", true)  # Slot 3 = key_action_8 in salvage mode
+			pending_inventory_action = "salvage_consumables_confirm"
+			display_game("[color=#FF4444]WARNING: This will salvage ALL consumables![/color]")
+			display_game("[color=#FFD700]Press Confirm to proceed or Cancel to abort.[/color]")
+			update_action_bar()
+		"salvage_consumables":
+			pending_inventory_action = ""
+			send_to_server({"type": "inventory_salvage", "mode": "consumables"})
 			update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
@@ -8566,12 +8808,45 @@ func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 						best_hp = known_levels[known_level]
 
 		if best_level > 0 and best_hp > 0:
-			# Scale HP estimate based on level difference
-			# Rough formula: HP scales with level (higher level = more HP)
-			var level_ratio = float(enemy_level) / float(best_level)
-			return int(best_hp * level_ratio)
+			# Scale HP estimate using tiered scaling (matching monster_database.gd)
+			# Monster HP scales with tiered percentages per level
+			var known_scale = _calculate_tiered_stat_scale(best_level)
+			var target_scale = _calculate_tiered_stat_scale(enemy_level)
+			# Ratio of scales gives us the multiplier
+			var scale_ratio = target_scale / known_scale if known_scale > 0 else 1.0
+			return int(best_hp * scale_ratio)
 
 	return 0
+
+func _calculate_tiered_stat_scale(level: int) -> float:
+	"""Calculate stat scaling using tiered percentages (matching monster_database.gd).
+	Used for HP estimation."""
+	var scale = 1.0
+
+	# Tier 1: Levels 1-100 at 12% per level
+	if level > 1:
+		var levels_in_tier = min(level, 100) - 1
+		if levels_in_tier > 0:
+			scale += levels_in_tier * 0.12
+
+	# Tier 2: Levels 101-500 at 5% per level
+	if level > 100:
+		var levels_in_tier = min(level, 500) - 100
+		if levels_in_tier > 0:
+			scale += levels_in_tier * 0.05
+
+	# Tier 3: Levels 501-2000 at 2% per level
+	if level > 500:
+		var levels_in_tier = min(level, 2000) - 500
+		if levels_in_tier > 0:
+			scale += levels_in_tier * 0.02
+
+	# Tier 4: Levels 2000+ at 0.5% per level
+	if level > 2000:
+		var levels_in_tier = level - 2000
+		scale += levels_in_tier * 0.005
+
+	return scale
 
 func parse_monster_healing(msg: String) -> int:
 	"""Parse healing done BY the monster (life steal, regeneration).
@@ -8786,6 +9061,9 @@ func handle_server_message(message: Dictionary):
 		"monster_kills_leaderboard":
 			update_monster_kills_display(message.get("entries", []))
 
+		"trophy_leaderboard":
+			update_trophy_leaderboard_display(message.get("entries", []))
+
 		"leaderboard_top5":
 			# A player entered the Hall of Heroes (top 5) - show in chat only
 			var char_name = message.get("character_name", "Unknown")
@@ -8826,6 +9104,22 @@ func handle_server_message(message: Dictionary):
 					char_select_status.text = text
 				# Also show in game output for players in the world
 				display_game(text)
+
+		"private_message":
+			# Received a whisper from another player
+			var sender = message.get("sender", "Unknown")
+			var sender_name = message.get("sender_name", sender)  # Plain name for reply
+			var text = message.get("message", "")
+			last_whisper_from = sender_name
+			display_chat("[color=#FF69B4][From %s]:[/color] %s" % [sender, text])
+			# Play notification sound
+			play_whisper_notification()
+
+		"private_message_sent":
+			# Confirmation that our whisper was sent
+			var target = message.get("target", "Unknown")
+			var text = message.get("message", "")
+			display_chat("[color=#FF69B4][To %s]:[/color] %s" % [target, text])
 
 		"text":
 			# Clear game output if requested (e.g., rest command)
@@ -8979,6 +9273,8 @@ func handle_server_message(message: Dictionary):
 				display_game("")
 				# Also show in chat
 				display_chat("[color=#FF4444][SERVER] %s[/color]" % broadcast_msg)
+				# Play announcement sound
+				play_server_announcement()
 
 		"error":
 			var error_msg = message.get("message", "Unknown error")
@@ -9356,6 +9652,11 @@ func handle_server_message(message: Dictionary):
 				selected_item_index = -1
 				monster_select_mode = true
 				monster_select_page = 0
+				# Initialize key press state for any currently-held keys to prevent
+				# the key used to activate the scroll from immediately selecting a monster
+				for i in range(9):  # Monster select uses keys 1-9
+					if is_item_select_key_pressed(i):
+						set_meta("monsterselectkey_%d_pressed" % i, true)
 				display_game(message.get("message", "Choose a monster to summon:"))
 				display_monster_select_page()
 				update_action_bar()
@@ -9658,7 +9959,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r"]
 	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -10119,6 +10420,27 @@ func process_command(text: String):
 				send_to_server({"type": "examine_player", "name": target})
 			else:
 				display_game("[color=#FF0000]Usage: /examine <playername>[/color]")
+		"whisper", "w", "msg", "tell":
+			# Private message: /whisper <player> <message>
+			if parts.size() > 2:
+				var target = parts[1]
+				# Join remaining parts as the message
+				var msg_parts = parts.slice(2)
+				var msg = " ".join(msg_parts)
+				send_to_server({"type": "private_message", "target": target, "message": msg})
+			else:
+				display_game("[color=#FF0000]Usage: /whisper <player> <message>[/color]")
+				display_game("[color=#808080]Example: /w Gandalf Hello there![/color]")
+		"reply", "r":
+			# Reply to last whisper
+			if last_whisper_from.is_empty():
+				display_game("[color=#FF0000]No one has whispered you yet![/color]")
+			elif parts.size() > 1:
+				var msg_parts = parts.slice(1)
+				var msg = " ".join(msg_parts)
+				send_to_server({"type": "private_message", "target": last_whisper_from, "message": msg})
+			else:
+				display_game("[color=#FF0000]Usage: /reply <message>[/color]")
 		"watch":
 			if parts.size() > 1:
 				var target = parts[1]
@@ -11587,7 +11909,7 @@ func search_help(search_term: String):
 		{
 			"title": "MONSTER ABILITIES",
 			"keywords": ["monster", "ability", "abilities", "multi", "strike", "berserker", "enrage", "life", "steal", "glass", "cannon", "poison", "blind", "curse", "disarm", "bleed", "drain", "armored", "ethereal", "regeneration", "reflect", "thorns", "death", "summoner", "corrosive", "sunder", "wish", "granter", "gem", "gold", "hoarder"],
-			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (always gems), Gold Hoarder (3x gold)"
+			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (gems scale with level), Gold Hoarder (3x gold)"
 		},
 		{
 			"title": "ITEMS & POTIONS",
@@ -12023,7 +12345,10 @@ func _trigger_combat_sounds(msg: String):
 
 func display_chat(text: String):
 	if chat_output:
-		chat_output.append_text(text + "\n")
+		# Add timestamp to chat messages
+		var time_dict = Time.get_time_dict_from_system()
+		var timestamp = "[color=#808080][%02d:%02d][/color] " % [time_dict.hour, time_dict.minute]
+		chat_output.append_text(timestamp + text + "\n")
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
@@ -12147,11 +12472,17 @@ func handle_trading_post_start(message: Dictionary):
 	pending_trading_post_action = ""
 
 	var tp_name = message.get("name", "Trading Post")
+	var tp_id = message.get("id", "default")
 	var quest_giver = message.get("quest_giver", "Quest Giver")
 	var avail_quests = message.get("available_quests", 0)
 	var ready_quests = message.get("quests_to_turn_in", 0)
 
 	game_output.clear()
+
+	# Display trading post ASCII art
+	var post_art = _get_trading_post_art().get_trading_post_art(tp_id)
+	display_game(post_art)
+
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
 	display_game("")
@@ -13070,12 +13401,19 @@ func display_title_menu():
 			var treasury = title_menu_data.get("realm_treasury", 0)
 			display_game("Realm Treasury: [color=#FFD700]%d gold[/color]" % treasury)
 
-			# Show abuse points warning if any
+			# Always show abuse points status for title holders
 			var abuse_points = title_menu_data.get("abuse_points", 0)
 			var abuse_threshold = title_menu_data.get("abuse_threshold", 8)
-			if abuse_points > 0:
+			if abuse_points == 0:
+				display_game("[color=#00FF00]Abuse: 0/%d points (Safe)[/color]" % abuse_threshold)
+			else:
 				var color = "#FFFF00" if abuse_points < abuse_threshold / 2 else "#FF4444"
-				display_game("[color=%s]Abuse: %d/%d points[/color]" % [color, abuse_points, abuse_threshold])
+				var warning = ""
+				if abuse_points >= abuse_threshold:
+					warning = " - [color=#FF0000]TITLE AT RISK![/color]"
+				elif abuse_points >= abuse_threshold * 0.75:
+					warning = " - [color=#FF4444]Warning: Near threshold![/color]"
+				display_game("[color=%s]Abuse: %d/%d points[/color]%s" % [color, abuse_points, abuse_threshold, warning])
 
 	display_game("")
 
@@ -13186,8 +13524,17 @@ func handle_title_key_input(key: int) -> bool:
 			title_target_mode = false
 			title_mode = false
 			pending_title_ability = ""
+			# Mark the corresponding action bar hotkey as pressed to prevent double-trigger
+			var action_slot = target_idx + 5
+			if action_slot < 10:
+				set_meta("hotkey_%d_pressed" % action_slot, true)
 			update_action_bar()
 			return true
+		# Mark hotkey as pressed even if target index was out of range
+		if target_idx >= 0:
+			var action_slot = target_idx + 5
+			if action_slot < 10:
+				set_meta("hotkey_%d_pressed" % action_slot, true)
 		return true
 
 	# Action_0 to exit (default: Space)
@@ -13195,6 +13542,8 @@ func handle_title_key_input(key: int) -> bool:
 	if key == exit_key:
 		title_mode = false
 		title_ability_mode = false
+		# Mark action_0 hotkey as pressed to prevent double-trigger
+		set_meta("hotkey_0_pressed", true)
 		display_game("")
 		update_action_bar()
 		return true
@@ -13209,6 +13558,11 @@ func handle_title_key_input(key: int) -> bool:
 			var title_to_claim = claimable[idx]
 			send_to_server({"type": "claim_title", "title": title_to_claim.get("id", "")})
 			title_mode = false
+			# Mark the corresponding action bar hotkey as pressed to prevent double-trigger
+			# Item key index 0 (KEY_1) = action_5, index 1 (KEY_2) = action_6, etc.
+			var action_slot = idx + 5
+			if action_slot < 10:
+				set_meta("hotkey_%d_pressed" % action_slot, true)
 			return true
 
 	# Action keys for abilities (if has title)
@@ -13251,6 +13605,9 @@ func handle_title_key_input(key: int) -> bool:
 					"ability": ability_id
 				})
 				title_mode = false
+				# Mark the corresponding action bar hotkey as pressed to prevent double-trigger
+				# ability_idx 0-3 corresponds to action_1 through action_4
+				set_meta("hotkey_%d_pressed" % (ability_idx + 1), true)
 				update_action_bar()
 				return true
 

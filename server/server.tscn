@@ -123,6 +123,17 @@ custom_minimum_size = Vector2(120, 35)
 layout_mode = 2
 text = "Restart Server"
 
+[node name="PendingUpdateButton" type="Button" parent="VBox/ButtonRow"]
+custom_minimum_size = Vector2(140, 35)
+layout_mode = 2
+text = "Pending Update"
+
+[node name="CancelUpdateButton" type="Button" parent="VBox/ButtonRow"]
+custom_minimum_size = Vector2(120, 35)
+layout_mode = 2
+visible = false
+text = "Cancel Update"
+
 [node name="Spacer" type="Control" parent="VBox/ButtonRow"]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -1707,21 +1707,6 @@ func use_mana(amount: int) -> bool:
 	current_mana -= amount
 	return true
 
-func regenerate_stamina_defending() -> int:
-	"""Regenerate 10% stamina while defending. Returns amount regenerated."""
-	var total_max = get_total_max_stamina()
-	var regen = int(total_max * 0.10)
-	regen = max(1, regen)  # At least 1
-	current_stamina = min(total_max, current_stamina + regen)
-	return regen
-
-func regenerate_energy() -> int:
-	"""Regenerate 15% energy each combat round automatically. Returns amount regenerated."""
-	var total_max = get_total_max_energy()
-	var regen = int(total_max * 0.15)
-	regen = max(1, regen)  # At least 1
-	current_energy = min(total_max, current_energy + regen)
-	return regen
 
 func restore_all_resources():
 	"""Restore all resources to full (for resting or sanctuaries)."""

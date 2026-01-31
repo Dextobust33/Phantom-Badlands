@@ -65,7 +65,7 @@ sequenceDiagram
 |---------|--------|-------------|
 | `combat_action` | `action`, `arg` | Combat command |
 
-**Actions:** `attack`, `flee`, `outsmart`, `defend`, ability names
+**Actions:** `attack`, `flee`, `outsmart`, ability names
 
 ### Inventory & Equipment
 

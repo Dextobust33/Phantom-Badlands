@@ -6,7 +6,6 @@ extends Node
 # Combat actions
 enum CombatAction {
 	ATTACK,
-	DEFEND,
 	FLEE,
 	SPECIAL,
 	OUTSMART,
@@ -474,8 +473,6 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 	match cmd:
 		"attack", "a":
 			action = CombatAction.ATTACK
-		"defend", "d":
-			action = CombatAction.DEFEND
 		"flee", "f", "run":
 			action = CombatAction.FLEE
 		"special", "s":
@@ -486,7 +483,7 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			# Check if it's an ability command
 			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS:
 				return process_ability_command(peer_id, cmd, arg)
-			return {"success": false, "message": "Unknown combat command! Use: attack, defend, flee, outsmart"}
+			return {"success": false, "message": "Unknown combat command! Use: attack, flee, outsmart, or abilities"}
 
 	return process_combat_action(peer_id, action)
 
@@ -506,8 +503,6 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	match action:
 		CombatAction.ATTACK:
 			result = process_attack(combat)
-		CombatAction.DEFEND:
-			result = process_defend(combat)
 		CombatAction.FLEE:
 			result = process_flee(combat)
 		CombatAction.SPECIAL:
@@ -835,6 +830,12 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		gold = gold * 3
 		messages.append("[color=#FFD700]The gold hoarder drops a massive treasure![/color]")
 
+	# Gambit kill bonus: +75% gold, +1 gem awarded later
+	var gambit_kill = combat.get("gambit_kill", false)
+	if gambit_kill:
+		gold = int(gold * 1.75)
+		messages.append("[color=#FFD700]Your gambit paid off! +75% gold bonus![/color]")
+
 	# Halfling racial: +15% gold from kills
 	var halfling_gold_mult = character.get_gold_multiplier()
 	if halfling_gold_mult > 1.0:
@@ -866,15 +867,44 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	character.add_experience(final_xp)
 	character.gold += gold
 
-	# Gem drops with gem bearer bonus
+	# Normal gem drops (from high-level monsters)
 	var gems_earned = roll_gem_drops(monster, character)
-	if ABILITY_GEM_BEARER in abilities:
-		gems_earned = max(1, gems_earned * 2) if gems_earned > 0 else randi_range(1, 3)
-		messages.append("[color=#00FFFF]✧ The gem bearer's hoard glitters! ✧[/color]")
-
 	if gems_earned > 0:
 		character.gems += gems_earned
 		messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+
+	# Gambit kill bonus: +1 gem
+	if gambit_kill:
+		character.gems += 1
+		messages.append("[color=#FFD700]✦ Gambit bonus: +1 gem! ✦[/color]")
+
+	# Gem Bearer bonus (separate from normal drops, scales with monster level)
+	if ABILITY_GEM_BEARER in abilities:
+		var monster_level = monster.get("level", 1)
+		# Calculate tier bonus based on monster level - scales generously
+		var tier_bonus = 0
+		if monster_level >= 5000:
+			tier_bonus = 15
+		elif monster_level >= 2000:
+			tier_bonus = 10
+		elif monster_level >= 1000:
+			tier_bonus = 8
+		elif monster_level >= 500:
+			tier_bonus = 6
+		elif monster_level >= 250:
+			tier_bonus = 4
+		elif monster_level >= 100:
+			tier_bonus = 3
+		elif monster_level >= 50:
+			tier_bonus = 2
+		elif monster_level >= 25:
+			tier_bonus = 1
+
+		# Gem Bearer always drops: 2-5 base + tier bonus
+		var bearer_gems = randi_range(2, 5) + tier_bonus
+		character.gems += bearer_gems
+		gems_earned += bearer_gems
+		messages.append("[color=#00FFFF]✧ The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ✧[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
 
 	# Weapon Master ability: 35% chance to drop a weapon
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
@@ -1080,35 +1110,6 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"wish_pending": combat.get("wish_pending", false),
 		"wish_options": combat.get("wish_options", [])
-	}
-
-func process_defend(combat: Dictionary) -> Dictionary:
-	"""Process player defend action (legacy - not currently in action bar)"""
-	var character = combat.character
-	var messages = []
-
-	# Process status effects (poison/blind tick)
-	_process_status_ticks(character, messages)
-
-	# Defending gives temporary defense bonus and small HP recovery
-	var defense_bonus = character.get_effective_stat("constitution") / 4
-	var heal_amount = max(1, character.get_total_max_hp() / 20)
-
-	character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-
-	messages.append("[color=#87CEEB]You take a defensive stance![/color]")
-	messages.append("[color=#00FF00]You recover %d HP![/color]" % heal_amount)
-	
-	# Apply temporary defense for monster's attack
-	combat.defending = true
-	combat.defense_bonus = defense_bonus
-	
-	combat.player_can_act = false
-	
-	return {
-		"success": true,
-		"messages": messages,
-		"combat_ended": false
 	}
 
 func process_flee(combat: Dictionary) -> Dictionary:
@@ -1573,9 +1574,8 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	for buff in expired_buffs:
 		var buff_name = buff.type.capitalize()
 		result.messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
-	# Note: Energy no longer regenerates automatically each round
-	# Stamina regenerates when defending (10%), Mana doesn't auto-regen
-	# Energy is the Trickster's precious resource - use it wisely!
+	# Note: Resources do not auto-regenerate in combat
+	# Resource regen comes from gear (Shadow/Warlord/Mystic) or out-of-combat rest/meditate
 
 	return result
 
@@ -2280,13 +2280,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			# Ambush uses weapon damage × 3 + WITS multiplier (high-risk/reward Trickster ability)
+			# Ambush: 3× multiplier, 50% crit chance, sqrt WITS scaling
 			var wits_stat = character.get_effective_stat("wits")
 			var wits_mult = 1.0 + (sqrt(float(wits_stat)) / 10.0)  # Sqrt scaling for WITS
 			var base_damage = character.get_total_attack()
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3× multiplier (was 1.5)
+			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3× multiplier
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
@@ -2300,26 +2300,31 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
 
 		"vanish":
+			# Auto-crit on next attack, skips monster turn
 			combat["vanished"] = true  # Next attack auto-crits
 			messages.append("[color=#00FF00]VANISH![/color]")
 			messages.append("[color=#808080]You fade into shadow... Next attack will crit![/color]")
 			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"exploit":
-			var damage = int(monster.current_hp * 0.10)  # 10% of current HP
-			damage = max(1, damage)
+			# FIXED: Uses monster's MAX HP, not current HP. Scales with WIT.
+			var wits = character.get_effective_stat("wits")
+			var base_percent = 15 + int(wits / 4)  # 15% base + 0.25% per WIT
+			base_percent = min(35, base_percent)  # Cap at 35%
+			var damage = int(monster.max_hp * (base_percent / 100.0))
+			damage = max(10, damage)  # Minimum 10 damage
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#00FF00]EXPLOIT WEAKNESS![/color]")
-			messages.append("[color=#FFFF00]You exploit a weakness for %d damage![/color]" % damage)
+			messages.append("[color=#FFFF00]You exploit a weakness for %d damage! (%d%% of max HP)[/color]" % [damage, base_percent])
 
 		"perfect_heist":
 			# Chance-based instant win with double rewards
 			var wits = character.get_effective_stat("wits")
 			var monster_int = monster.get("intelligence", 15)
-			# Base 40% success, +2% per wits over monster intelligence
-			var success_chance = 40 + ((wits - monster_int) * 2)
-			success_chance = clampi(success_chance, 15, 85)
+			# Base 45% success, +2% per wits over monster intelligence (buffed from 40%)
+			var success_chance = 45 + ((wits - monster_int) * 2)
+			success_chance = clampi(success_chance, 20, 90)  # Increased caps from 15-85 to 20-90
 
 			var roll = randi() % 100
 			if roll < success_chance:
@@ -2416,21 +2421,27 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			is_buff_ability = true
 
 		"gambit":
-			# High risk/reward - big damage but chance of backfire
+			# High-risk, high-reward ability - big damage with WITS scaling, bonus loot on kill
 			var wits = character.get_effective_stat("wits")
 			var success_chance = 55 + int(wits / 4)  # 55% base + 0.25% per WITS
 			success_chance = min(80, success_chance)  # Cap at 80%
 
 			if randf() * 100 < success_chance:
-				# Success - deal big damage (2.5x normal)
+				# Success - deal big damage with WITS scaling (4.5× multiplier)
+				var wits_mult = 1.0 + (sqrt(float(wits)) / 10.0)  # Same scaling as Ambush
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
-				var damage = apply_damage_variance(int(total_attack * 2.5 * damage_multiplier))
+				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult)
+				var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+				var damage = apply_damage_variance(mod_dmg)
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FFD700][b]GAMBIT SUCCESS![/b][/color]")
 				messages.append("[color=#00FF00]Your risky gambit pays off for %d damage![/color]" % damage)
+				# Mark for bonus loot if this kills the monster
+				if monster.current_hp <= 0:
+					combat["gambit_kill"] = true
 			else:
 				# Failure - take damage yourself
 				var self_damage = max(5, int(character.get_total_max_hp() * 0.15))  # 15% max HP
@@ -2576,17 +2587,46 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 			heal_amount = effect.base + (effect.per_level * item_level)
 		var actual_heal = character.heal(heal_amount)
 		messages.append("[color=#00FF00]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
-	elif effect.has("mana"):
-		# Mana potion - use tier healing value if available
-		var mana_amount: int
+	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
+		# Resource potion - restores the player's PRIMARY resource based on class path
+		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
+		var resource_amount: int
 		if tier_data.has("healing"):
-			mana_amount = int(tier_data.healing * 0.6)  # Mana is roughly 60% of HP healing
+			resource_amount = int(tier_data.healing * 0.6)  # Resource is roughly 60% of HP healing
 		else:
-			mana_amount = effect.base + (effect.per_level * item_level)
-		var old_mana = character.current_mana
-		character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
-		var actual_restore = character.current_mana - old_mana
-		messages.append("[color=#00FFFF]You drink %s and restore %d mana![/color]" % [item_name, actual_restore])
+			resource_amount = effect.base + (effect.per_level * item_level)
+
+		# Restore the player's primary resource based on their class path
+		var primary_resource = character.get_primary_resource()
+		var old_value: int
+		var actual_restore: int
+		var color: String
+
+		match primary_resource:
+			"mana":
+				old_value = character.current_mana
+				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
+				actual_restore = character.current_mana - old_value
+				color = "#00FFFF"
+			"stamina":
+				old_value = character.current_stamina
+				character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + resource_amount)
+				actual_restore = character.current_stamina - old_value
+				color = "#FFCC00"
+			"energy":
+				old_value = character.current_energy
+				character.current_energy = min(character.get_total_max_energy(), character.current_energy + resource_amount)
+				actual_restore = character.current_energy - old_value
+				color = "#66FF66"
+			_:
+				# Fallback to mana
+				old_value = character.current_mana
+				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
+				actual_restore = character.current_mana - old_value
+				color = "#00FFFF"
+				primary_resource = "mana"
+
+		messages.append("[color=%s]You drink %s and restore %d %s![/color]" % [color, item_name, actual_restore, primary_resource])
 	elif effect.has("buff"):
 		# Buff potion - can be round-based or battle-based
 		var buff_type = effect.buff
@@ -2735,15 +2775,6 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	# but ethereal monsters also have lower hit chance
 	if ABILITY_ETHEREAL in abilities:
 		hit_chance -= 10  # Ethereal creatures are less precise
-
-	# Defending reduces monster hit chance
-	var is_defending = combat.get("defending", false)
-	if is_defending:
-		hit_chance -= 15
-
-	# Clear defend status
-	combat.defending = false
-	combat.defense_bonus = 0
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
 	# Take no damage after failed flee attempt

@@ -28,14 +28,12 @@ flowchart TB
         PLAYER_ACTION -->|Flee| FLEE
         PLAYER_ACTION -->|Outsmart| OUTSMART
         PLAYER_ACTION -->|Ability| ABILITY
-        PLAYER_ACTION -->|Defend| DEFEND
         PLAYER_ACTION -->|Use Item| ITEM
 
         ATTACK --> CALC_DMG[Calculate Damage]
         FLEE --> FLEE_CHECK{Flee Success?}
         OUTSMART --> OUTSMART_CHECK{WITS Check?}
         ABILITY --> ABILITY_EFFECT[Apply Ability Effect]
-        DEFEND --> DEF_BUFF[+50% Defense This Round]
         ITEM --> ITEM_EFFECT[Apply Item Effect]
 
         CALC_DMG --> ETHEREAL{Ethereal<br/>Monster?}
@@ -208,6 +206,7 @@ flowchart LR
 | `ambusher` | First Attack | Guaranteed crit (2x) |
 | `summoner` | 20% per turn | Call reinforcement |
 | `wish_granter` | Death | Grant powerful buff |
+| `gem_bearer` | Death | Bonus gems (separate from normal drops): 2-5 base + level bonus (L25+1, L50+2, L100+3, L250+4, L500+6, L1000+8, L2000+10, L5000+15) |
 | `death_curse` | Death | Deal 25% max HP damage |
 | `coward` | Below 20% HP | Flee (no loot) |
 | `life_steal` | Hit | Heal 50% of damage |

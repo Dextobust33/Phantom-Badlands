@@ -10,9 +10,16 @@ var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 @onready var player_list = $VBox/PlayerList
 @onready var server_log = $VBox/ServerLog
 @onready var restart_button = $VBox/ButtonRow/RestartButton
+@onready var pending_update_button = $VBox/ButtonRow/PendingUpdateButton
+@onready var cancel_update_button = $VBox/ButtonRow/CancelUpdateButton
 @onready var confirm_dialog = $ConfirmDialog
 @onready var broadcast_input = $VBox/BroadcastRow/BroadcastInput
 @onready var broadcast_button = $VBox/BroadcastRow/BroadcastButton
+
+# Pending update shutdown state
+var pending_update_active: bool = false
+var pending_update_seconds_remaining: float = 0.0
+var pending_update_last_announcement: int = -1  # Track which announcement was last sent
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
@@ -165,6 +172,12 @@ func _ready():
 	if broadcast_input:
 		broadcast_input.text_submitted.connect(_on_broadcast_submitted)
 
+	# Connect pending update buttons
+	if pending_update_button:
+		pending_update_button.pressed.connect(_on_pending_update_pressed)
+	if cancel_update_button:
+		cancel_update_button.pressed.connect(_on_cancel_update_pressed)
+
 func log_message(msg: String):
 	"""Log a message to console and server UI."""
 	print(msg)
@@ -200,6 +213,100 @@ func _send_broadcast(message: String):
 
 	for peer_id in peers.keys():
 		send_to_peer(peer_id, broadcast_msg)
+
+func _on_pending_update_pressed():
+	"""Start the 5-minute shutdown countdown."""
+	if pending_update_active:
+		return  # Already counting down
+
+	pending_update_active = true
+	pending_update_seconds_remaining = 300.0  # 5 minutes
+	pending_update_last_announcement = -1
+
+	# Update button visibility
+	if pending_update_button:
+		pending_update_button.visible = false
+	if cancel_update_button:
+		cancel_update_button.visible = true
+
+	log_message("[SHUTDOWN] Pending update initiated - server will shut down in 5 minutes")
+	_send_broadcast("⚠️ SERVER SHUTDOWN: The server will shut down for updates in 5 minutes. Please find a safe place!")
+
+func _on_cancel_update_pressed():
+	"""Cancel the pending shutdown."""
+	if not pending_update_active:
+		return
+
+	pending_update_active = false
+	pending_update_seconds_remaining = 0.0
+	pending_update_last_announcement = -1
+
+	# Update button visibility
+	if pending_update_button:
+		pending_update_button.visible = true
+	if cancel_update_button:
+		cancel_update_button.visible = false
+
+	log_message("[SHUTDOWN] Pending update cancelled")
+	_send_broadcast("✅ SERVER UPDATE CANCELLED: The scheduled shutdown has been cancelled. Carry on adventuring!")
+
+func _check_pending_update_announcements():
+	"""Check if we need to send a countdown announcement."""
+	var seconds = int(pending_update_seconds_remaining)
+
+	# Define announcement points (in seconds)
+	# 5min=300, 4min=240, 3min=180, 2min=120, 1min=60, 30sec=30
+	var announcement_made = false
+
+	if seconds <= 30 and pending_update_last_announcement != 30:
+		_send_broadcast("⚠️ SERVER SHUTDOWN IN 30 SECONDS! Find safety NOW!")
+		pending_update_last_announcement = 30
+		announcement_made = true
+	elif seconds <= 60 and seconds > 30 and pending_update_last_announcement != 60:
+		_send_broadcast("⚠️ SERVER SHUTDOWN: 1 minute remaining!")
+		pending_update_last_announcement = 60
+		announcement_made = true
+	elif seconds <= 120 and seconds > 60 and pending_update_last_announcement != 120:
+		_send_broadcast("⚠️ SERVER SHUTDOWN: 2 minutes remaining. Find a safe place!")
+		pending_update_last_announcement = 120
+		announcement_made = true
+	elif seconds <= 180 and seconds > 120 and pending_update_last_announcement != 180:
+		_send_broadcast("⚠️ SERVER SHUTDOWN: 3 minutes remaining.")
+		pending_update_last_announcement = 180
+		announcement_made = true
+	elif seconds <= 240 and seconds > 180 and pending_update_last_announcement != 240:
+		_send_broadcast("⚠️ SERVER SHUTDOWN: 4 minutes remaining.")
+		pending_update_last_announcement = 240
+		announcement_made = true
+
+	# Update button text to show countdown
+	if pending_update_button and announcement_made:
+		var mins = seconds / 60
+		var secs = seconds % 60
+		log_message("[SHUTDOWN] %d:%02d remaining" % [mins, secs])
+
+func _execute_pending_shutdown():
+	"""Execute the server shutdown after countdown expires."""
+	log_message("[SHUTDOWN] Executing server shutdown...")
+	_send_broadcast("🔌 SERVER SHUTTING DOWN NOW. See you after the update!")
+
+	# Save all characters before shutdown
+	save_all_active_characters()
+
+	# Give a moment for the broadcast to be sent
+	await get_tree().create_timer(1.0).timeout
+
+	# Disconnect all peers gracefully
+	for peer_id in peers.keys():
+		var peer = peers[peer_id]
+		if peer.connection:
+			peer.connection.disconnect_from_host()
+
+	# Close the server
+	server.stop()
+
+	# Quit the application
+	get_tree().quit()
 
 func load_balance_config():
 	"""Load balance configuration from JSON file. Falls back to defaults if missing."""
@@ -363,6 +470,13 @@ func _process(delta):
 			merchant_update_timer = 0.0
 			send_merchant_movement_updates()
 
+	# Process pending update countdown
+	if pending_update_active:
+		pending_update_seconds_remaining -= delta
+		_check_pending_update_announcements()
+		if pending_update_seconds_remaining <= 0:
+			_execute_pending_shutdown()
+
 	# Check for new connections
 	if server.is_connection_available():
 		var peer = server.take_connection()
@@ -487,8 +601,12 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_get_leaderboard(peer_id, message)
 		"get_monster_kills_leaderboard":
 			handle_get_monster_kills_leaderboard(peer_id, message)
+		"get_trophy_leaderboard":
+			handle_get_trophy_leaderboard(peer_id)
 		"chat":
 			handle_chat(peer_id, message)
+		"private_message":
+			handle_private_message(peer_id, message)
 		"move":
 			handle_move(peer_id, message)
 		"hunt":
@@ -954,6 +1072,14 @@ func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
 		"entries": entries
 	})
 
+func handle_get_trophy_leaderboard(peer_id: int):
+	var entries = persistence.get_trophy_leaderboard()
+
+	send_to_peer(peer_id, {
+		"type": "trophy_leaderboard",
+		"entries": entries
+	})
+
 func handle_get_players(peer_id: int):
 	"""Get list of all online players"""
 	var player_list = []
@@ -984,12 +1110,19 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 		})
 		return
 
+	# Check if requester has a title (for location viewing privilege)
+	var requester_has_title = false
+	if characters.has(peer_id):
+		var requester = characters[peer_id]
+		requester_has_title = requester.title in ["jarl", "high_king"]
+
 	# Find the target player
 	for pid in characters.keys():
 		var char = characters[pid]
 		if char.name.to_lower() == target_name.to_lower():
 			var bonuses = char.get_equipment_bonuses()
-			send_to_peer(peer_id, {
+			var is_cloaked = char.has_buff("cloak") or char.has_buff("invisibility")
+			var result = {
 				"type": "examine_result",
 				"name": char.name,
 				"race": char.race,
@@ -1010,8 +1143,24 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"total_attack": char.get_total_attack(),
 				"total_defense": char.get_total_defense(),
 				"monsters_killed": char.monsters_killed,
-				"in_combat": combat_mgr.is_in_combat(pid)
-			})
+				"in_combat": combat_mgr.is_in_combat(pid),
+				"cloak_active": is_cloaked,
+				"gold": char.gold,
+				"gems": char.gems,
+				"title": char.title,
+				"deaths": char.deaths,
+				"quests_completed": char.quests_completed.size() if char.quests_completed else 0,
+				"play_time": char.play_time
+			}
+			# Title holders can see player locations (unless cloaked)
+			if requester_has_title:
+				result["viewer_has_title"] = true
+				if not is_cloaked:
+					result["location_x"] = char.x
+					result["location_y"] = char.y
+				else:
+					result["location_hidden"] = true
+			send_to_peer(peer_id, result)
 			return
 
 	send_to_peer(peer_id, {
@@ -1140,6 +1289,66 @@ func handle_chat(peer_id: int, message: Dictionary):
 				"sender": display_name,
 				"message": text
 			})
+
+func handle_private_message(peer_id: int, message: Dictionary):
+	"""Handle sending a private message to another player"""
+	if not peers[peer_id].authenticated:
+		return
+
+	if not characters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must have a character to send messages!"})
+		return
+
+	var target_name = message.get("target", "")
+	var text = message.get("message", "")
+
+	if target_name.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "No target specified!"})
+		return
+
+	if text.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Message cannot be empty!"})
+		return
+
+	# Get sender's character name
+	var sender_name = characters[peer_id].name
+
+	# Can't message yourself
+	if target_name.to_lower() == sender_name.to_lower():
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot whisper to yourself!"})
+		return
+
+	# Find the target player (case-insensitive match)
+	var target_peer_id = -1
+	for other_peer_id in characters.keys():
+		if characters[other_peer_id].name.to_lower() == target_name.to_lower():
+			target_peer_id = other_peer_id
+			target_name = characters[other_peer_id].name  # Get actual name with correct casing
+			break
+
+	if target_peer_id == -1:
+		send_to_peer(peer_id, {"type": "error", "message": "%s is not online!" % target_name})
+		return
+
+	# Get sender's title prefix if they have one
+	var sender_display = sender_name
+	if not characters[peer_id].title.is_empty():
+		sender_display = TitlesScript.format_titled_name(sender_name, characters[peer_id].title)
+
+	# Send to target
+	send_to_peer(target_peer_id, {
+		"type": "private_message",
+		"sender": sender_display,
+		"sender_name": sender_name,
+		"message": text
+	})
+
+	# Send confirmation to sender
+	send_to_peer(peer_id, {
+		"type": "private_message_sent",
+		"target": target_name,
+		"message": text
+	})
 
 func handle_move(peer_id: int, message: Dictionary):
 	if not characters.has(peer_id):
@@ -4007,6 +4216,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	for i in range(inventory.size()):
 		var item = inventory[i]
 		var item_level = item.get("level", 1)
+		var item_type = item.get("type", "")
 		var should_salvage = false
 
 		# Never salvage title items or locked items
@@ -4015,11 +4225,19 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		if item.get("locked", false):
 			continue
 
+		# Check if item is a consumable
+		var is_consumable = _is_consumable_type(item_type)
+
 		match mode:
 			"below_level":
-				should_salvage = item_level < threshold
+				# Below level mode excludes consumables
+				should_salvage = item_level < threshold and not is_consumable
 			"all":
-				should_salvage = true
+				# All mode excludes consumables (use "consumables" mode for those)
+				should_salvage = not is_consumable
+			"consumables":
+				# Consumables-only mode
+				should_salvage = is_consumable
 
 		if should_salvage:
 			# Calculate salvage value (25% of item value)
