@@ -33,6 +33,55 @@ enum QuestType {
 # All quests in the game
 const QUESTS = {
 	# ===== HAVEN (0, 10) - Guard Captain - Beginner Quests =====
+	# --- KILL_TYPE Quests (specific monster hunting) ---
+	"haven_goblin_slayer": {
+		"id": "haven_goblin_slayer",
+		"name": "Goblin Slayer",
+		"description": "The goblins near Haven have become a nuisance. Kill 10 Goblins.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"monster_type": "Goblin",
+		"target": 10,
+		"rewards": {"xp": 100, "gold": 50, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"haven_rat_catcher": {
+		"id": "haven_rat_catcher",
+		"name": "Rat Catcher",
+		"description": "Giant Rats have infested the cellars. Exterminate 8 Giant Rats.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"monster_type": "Giant Rat",
+		"target": 8,
+		"rewards": {"xp": 60, "gold": 30, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"haven_wolf_hunt": {
+		"id": "haven_wolf_hunt",
+		"name": "Wolf Hunt",
+		"description": "Wolves are threatening travelers. Hunt down 12 Wolves.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"monster_type": "Wolf",
+		"target": 12,
+		"rewards": {"xp": 120, "gold": 60, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"haven_skeleton_purge": {
+		"id": "haven_skeleton_purge",
+		"name": "Skeleton Purge",
+		"description": "Undead have risen from the old cemetery. Destroy 15 Skeletons.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"monster_type": "Skeleton",
+		"target": 15,
+		"rewards": {"xp": 150, "gold": 75, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"haven_first_steps": {
 		"id": "haven_first_steps",
 		"name": "First Steps",
@@ -113,6 +162,43 @@ const QUESTS = {
 	},
 
 	# ===== CROSSROADS (0, 0) - Royal Herald - Mixed Quests =====
+	# --- KILL_TYPE Quests ---
+	"crossroads_orc_bounty": {
+		"id": "crossroads_orc_bounty",
+		"name": "Orc Bounty",
+		"description": "Orcs are raiding caravans. Slay 10 Orcs for the bounty.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "crossroads",
+		"monster_type": "Orc",
+		"target": 10,
+		"rewards": {"xp": 200, "gold": 100, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"crossroads_spider_nest": {
+		"id": "crossroads_spider_nest",
+		"name": "Spider Nest",
+		"description": "Giant Spiders have nested near the roads. Kill 12 Giant Spiders.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "crossroads",
+		"monster_type": "Giant Spider",
+		"target": 12,
+		"rewards": {"xp": 180, "gold": 90, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"crossroads_zombie_outbreak": {
+		"id": "crossroads_zombie_outbreak",
+		"name": "Zombie Outbreak",
+		"description": "The dead are walking! Put down 15 Zombies.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "crossroads",
+		"monster_type": "Zombie",
+		"target": 15,
+		"rewards": {"xp": 220, "gold": 110, "gems": 0},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"crossroads_patrol": {
 		"id": "crossroads_patrol",
 		"name": "Crossroads Patrol",
@@ -289,6 +375,43 @@ const QUESTS = {
 	},
 
 	# ===== FROSTGATE (0, -100) - Guild Master - Exploration/Boss =====
+	# --- KILL_TYPE Quests ---
+	"frostgate_troll_slayer": {
+		"id": "frostgate_troll_slayer",
+		"name": "Troll Slayer",
+		"description": "Trolls have been attacking travelers. Eliminate 8 Trolls.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "frostgate",
+		"monster_type": "Troll",
+		"target": 8,
+		"rewards": {"xp": 400, "gold": 200, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"frostgate_wyvern_hunt": {
+		"id": "frostgate_wyvern_hunt",
+		"name": "Wyvern Hunt",
+		"description": "Wyverns threaten the skies. Bring down 6 Wyverns.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "frostgate",
+		"monster_type": "Wyvern",
+		"target": 6,
+		"rewards": {"xp": 500, "gold": 250, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"frostgate_minotaur_maze": {
+		"id": "frostgate_minotaur_maze",
+		"name": "Minotaur Maze",
+		"description": "Minotaurs guard ancient ruins. Defeat 5 Minotaurs.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "frostgate",
+		"monster_type": "Minotaur",
+		"target": 5,
+		"rewards": {"xp": 450, "gold": 225, "gems": 1},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"frostgate_know_world": {
 		"id": "frostgate_know_world",
 		"name": "Know Your World",
@@ -337,6 +460,43 @@ const QUESTS = {
 	},
 
 	# ===== EASTWATCH (150, 0) - Bounty Hunter - Mid-level Kill Quests =====
+	# --- KILL_TYPE Quests ---
+	"eastwatch_dragon_wyrmling": {
+		"id": "eastwatch_dragon_wyrmling",
+		"name": "Dragon Wyrmling Hunt",
+		"description": "Young dragons threaten the east. Slay 5 Dragon Wyrmlings.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "eastwatch",
+		"monster_type": "Dragon Wyrmling",
+		"target": 5,
+		"rewards": {"xp": 800, "gold": 400, "gems": 2},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"eastwatch_demon_purge": {
+		"id": "eastwatch_demon_purge",
+		"name": "Demon Purge",
+		"description": "Demons have breached into our world. Banish 8 Demons.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "eastwatch",
+		"monster_type": "Demon",
+		"target": 8,
+		"rewards": {"xp": 900, "gold": 450, "gems": 2},
+		"is_daily": false,
+		"prerequisite": ""
+	},
+	"eastwatch_vampire_hunt": {
+		"id": "eastwatch_vampire_hunt",
+		"name": "Vampire Hunt",
+		"description": "Vampires stalk the night. Destroy 6 Vampires before dawn.",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "eastwatch",
+		"monster_type": "Vampire",
+		"target": 6,
+		"rewards": {"xp": 850, "gold": 425, "gems": 2},
+		"is_daily": false,
+		"prerequisite": ""
+	},
 	"eastwatch_wilderness_threat": {
 		"id": "eastwatch_wilderness_threat",
 		"name": "Bounty: Wilderness Threat",

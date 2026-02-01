@@ -508,6 +508,405 @@ func roll_soul_gem_drop(monster_tier: int) -> Dictionary:
 		}
 	return {}
 
+# ===== COMPANION & EGG SYSTEM =====
+# Every monster in the game has a companion variant and egg
+# Companions are miniature versions that fight alongside the player
+
+# Monster to companion name mapping (monster_name -> companion info)
+# All 55+ monsters can become companions with tier-appropriate bonuses
+const COMPANION_DATA = {
+	# Tier 1 (Levels 1-5) - Basic companions with single stat bonus
+	"Goblin": {"companion_name": "Goblin Sprite", "tier": 1, "bonuses": {"attack": 2}},
+	"Giant Rat": {"companion_name": "Rat Familiar", "tier": 1, "bonuses": {"speed": 3}},
+	"Kobold": {"companion_name": "Kobold Helper", "tier": 1, "bonuses": {"gold_find": 5}},
+	"Skeleton": {"companion_name": "Bone Servant", "tier": 1, "bonuses": {"defense": 2}},
+	"Wolf": {"companion_name": "Wolf Pup", "tier": 1, "bonuses": {"attack": 3}},
+	# Tier 2 (Levels 6-15) - Stronger single stat or weak dual stat
+	"Orc": {"companion_name": "Orc Grunt", "tier": 2, "bonuses": {"attack": 4}},
+	"Hobgoblin": {"companion_name": "Hobgoblin Scout", "tier": 2, "bonuses": {"attack": 3, "speed": 2}},
+	"Gnoll": {"companion_name": "Gnoll Pup", "tier": 2, "bonuses": {"attack": 5}},
+	"Zombie": {"companion_name": "Zombie Thrall", "tier": 2, "bonuses": {"hp_bonus": 5}},
+	"Giant Spider": {"companion_name": "Spider Hatchling", "tier": 2, "bonuses": {"speed": 4, "attack": 2}},
+	"Wight": {"companion_name": "Wight Wisp", "tier": 2, "bonuses": {"mana_regen": 1}},
+	"Siren": {"companion_name": "Siren Sprite", "tier": 2, "bonuses": {"mana_bonus": 5}},
+	"Kelpie": {"companion_name": "Kelpie Foal", "tier": 2, "bonuses": {"speed": 5}},
+	"Mimic": {"companion_name": "Mimic Trinket", "tier": 2, "bonuses": {"gold_find": 10}},
+	# Tier 3 (Levels 16-30) - Moderate bonuses, more dual stats
+	"Ogre": {"companion_name": "Ogre Youngling", "tier": 3, "bonuses": {"attack": 5, "hp_bonus": 3}},
+	"Troll": {"companion_name": "Troll Runt", "tier": 3, "bonuses": {"hp_regen": 2}},
+	"Wraith": {"companion_name": "Wraith Wisp", "tier": 3, "bonuses": {"mana_bonus": 7, "mana_regen": 1}},
+	"Wyvern": {"companion_name": "Wyvern Hatchling", "tier": 3, "bonuses": {"attack": 6, "speed": 3}},
+	"Minotaur": {"companion_name": "Minotaur Calf", "tier": 3, "bonuses": {"attack": 7}},
+	"Gargoyle": {"companion_name": "Gargoyle Fragment", "tier": 3, "bonuses": {"defense": 6}},
+	"Harpy": {"companion_name": "Harpy Chick", "tier": 3, "bonuses": {"speed": 7}},
+	"Shrieker": {"companion_name": "Shrieker Spore", "tier": 3, "bonuses": {"flee_bonus": 10}},
+	# Tier 4 (Levels 31-50) - Strong bonuses
+	"Giant": {"companion_name": "Giant Sprite", "tier": 4, "bonuses": {"hp_bonus": 10, "attack": 5}},
+	"Dragon Wyrmling": {"companion_name": "Baby Dragon", "tier": 4, "bonuses": {"attack": 8, "defense": 4}},
+	"Demon": {"companion_name": "Demon Imp", "tier": 4, "bonuses": {"attack": 10}},
+	"Vampire": {"companion_name": "Vampire Bat", "tier": 4, "bonuses": {"lifesteal": 3}},
+	"Gryphon": {"companion_name": "Gryphon Hatchling", "tier": 4, "bonuses": {"speed": 8, "attack": 5}},
+	"Chimaera": {"companion_name": "Chimaera Cub", "tier": 4, "bonuses": {"attack": 7, "defense": 5}},
+	"Succubus": {"companion_name": "Succubus Familiar", "tier": 4, "bonuses": {"mana_regen": 2, "energy_regen": 2}},
+	# Tier 5 (Levels 51-100) - Very strong bonuses
+	"Ancient Dragon": {"companion_name": "Dragon Whelp", "tier": 5, "bonuses": {"attack": 12, "defense": 6}},
+	"Demon Lord": {"companion_name": "Demon Spawn", "tier": 5, "bonuses": {"attack": 11, "hp_bonus": 7}},
+	"Lich": {"companion_name": "Lich Apprentice", "tier": 5, "bonuses": {"mana_bonus": 15, "mana_regen": 2}},
+	"Titan": {"companion_name": "Titan Spawn", "tier": 5, "bonuses": {"hp_bonus": 15, "defense": 8}},
+	"Balrog": {"companion_name": "Balrog Ember", "tier": 5, "bonuses": {"attack": 12, "crit_chance": 3}},
+	"Cerberus": {"companion_name": "Cerberus Pup", "tier": 5, "bonuses": {"attack": 10, "speed": 6}},
+	"Jabberwock": {"companion_name": "Jabberwock Hatchling", "tier": 5, "bonuses": {"attack": 11, "hp_regen": 2}},
+	# Tier 6 (Levels 101-500) - Powerful bonuses, often triple stat
+	"Elemental": {"companion_name": "Elemental Core", "tier": 6, "bonuses": {"attack": 12, "defense": 10}},
+	"Iron Golem": {"companion_name": "Golem Fragment", "tier": 6, "bonuses": {"defense": 15, "hp_bonus": 10}},
+	"Sphinx": {"companion_name": "Sphinx Kitten", "tier": 6, "bonuses": {"mana_bonus": 12, "wisdom_bonus": 5}},
+	"Hydra": {"companion_name": "Hydra Sprout", "tier": 6, "bonuses": {"hp_regen": 4, "attack": 10}},
+	"Phoenix": {"companion_name": "Phoenix Chick", "tier": 6, "bonuses": {"hp_regen": 5, "attack": 8}},
+	"Nazgul": {"companion_name": "Nazgul Shadow", "tier": 6, "bonuses": {"attack": 14, "flee_bonus": 15}},
+	# Tier 7 (Levels 501-2000) - Elite bonuses
+	"Void Walker": {"companion_name": "Void Wisp", "tier": 7, "bonuses": {"attack": 16, "speed": 10, "defense": 8}},
+	"World Serpent": {"companion_name": "Serpent Hatchling", "tier": 7, "bonuses": {"attack": 18, "hp_bonus": 15}},
+	"Elder Lich": {"companion_name": "Elder Shade", "tier": 7, "bonuses": {"mana_bonus": 20, "mana_regen": 4, "attack": 12}},
+	"Primordial Dragon": {"companion_name": "Primordial Whelp", "tier": 7, "bonuses": {"attack": 20, "defense": 12, "hp_bonus": 10}},
+	# Tier 8 (Levels 2001-5000) - Legendary bonuses
+	"Cosmic Horror": {"companion_name": "Cosmic Shard", "tier": 8, "bonuses": {"attack": 20, "hp_bonus": 18, "defense": 12}},
+	"Time Weaver": {"companion_name": "Time Fragment", "tier": 8, "bonuses": {"speed": 20, "attack": 15, "crit_chance": 5}},
+	"Death Incarnate": {"companion_name": "Death's Echo", "tier": 8, "bonuses": {"attack": 22, "lifesteal": 5}},
+	# Tier 9 (Levels 5001+) - Mythic bonuses
+	"Avatar of Chaos": {"companion_name": "Chaos Spark", "tier": 9, "bonuses": {"attack": 25, "crit_chance": 8, "hp_bonus": 15}},
+	"The Nameless One": {"companion_name": "Nameless Whisper", "tier": 9, "bonuses": {"attack": 22, "defense": 18, "speed": 12}},
+	"God Slayer": {"companion_name": "Godslayer Shard", "tier": 9, "bonuses": {"attack": 28, "crit_damage": 15}},
+	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4}}
+}
+
+# Hatching steps scale by tier (higher tier = more steps)
+const EGG_HATCH_STEPS_BY_TIER = {
+	1: 50,    # Tier 1: 50 steps
+	2: 75,    # Tier 2: 75 steps
+	3: 100,   # Tier 3: 100 steps
+	4: 150,   # Tier 4: 150 steps
+	5: 200,   # Tier 5: 200 steps
+	6: 300,   # Tier 6: 300 steps
+	7: 400,   # Tier 7: 400 steps
+	8: 500,   # Tier 8: 500 steps
+	9: 750    # Tier 9: 750 steps
+}
+
+# Base egg drop chance (%) by tier - higher tiers are rarer
+const EGG_DROP_CHANCE_BY_TIER = {
+	1: 3,     # 3% chance from T1 monsters
+	2: 2,     # 2% from T2
+	3: 2,     # 2% from T3
+	4: 1,     # 1% from T4
+	5: 1,     # 1% from T5
+	6: 0,     # T6+ eggs only from dungeons
+	7: 0,
+	8: 0,
+	9: 0
+}
+
+func get_companion_data(monster_name: String) -> Dictionary:
+	"""Get companion data for a monster. Returns empty dict if none."""
+	return COMPANION_DATA.get(monster_name, {})
+
+func get_egg_for_monster(monster_name: String) -> Dictionary:
+	"""Generate an egg dictionary for a given monster type."""
+	var companion = COMPANION_DATA.get(monster_name, {})
+	if companion.is_empty():
+		return {}
+
+	var tier = companion.get("tier", 1)
+	var hatch_steps = EGG_HATCH_STEPS_BY_TIER.get(tier, 100)
+	var companion_name = companion.get("companion_name", monster_name + " Companion")
+
+	return {
+		"id": "egg_" + monster_name.to_lower().replace(" ", "_"),
+		"monster_type": monster_name,
+		"companion_name": companion_name,
+		"name": companion_name + " Egg",
+		"tier": tier,
+		"hatch_steps": hatch_steps,
+		"bonuses": companion.get("bonuses", {}).duplicate()
+	}
+
+func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
+	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped."""
+	var drop_chance = EGG_DROP_CHANCE_BY_TIER.get(monster_tier, 0)
+	if drop_chance <= 0:
+		return {}
+
+	# Check if monster has companion data
+	if not COMPANION_DATA.has(monster_name):
+		return {}
+
+	if randi() % 100 < drop_chance:
+		return get_egg_for_monster(monster_name)
+
+	return {}
+
+func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary) -> int:
+	"""Calculate damage dealt by companion in combat."""
+	# Base damage scales with tier
+	var base_damage = companion_tier * 5  # T1=5, T2=10, ... T9=45
+	# Add player level scaling
+	var level_bonus = int(player_level * 0.5)
+	var total = base_damage + level_bonus
+	# Apply companion's attack bonus to itself
+	var attack_bonus = companion_bonuses.get("attack", 0)
+	return int(total * (1.0 + float(attack_bonus) / 100.0))
+
+func get_all_companion_names() -> Array:
+	"""Get list of all companion names for display/selection."""
+	var names = []
+	for monster_name in COMPANION_DATA:
+		names.append(COMPANION_DATA[monster_name].companion_name)
+	names.sort()
+	return names
+
+# ===== FISHING SYSTEM =====
+# Fishing catches and materials for crafting
+
+# Fishing catch tables by water type
+const FISHING_CATCHES = {
+	"shallow": [
+		# Common catches (60%)
+		{"weight": 25, "item": "small_fish", "name": "Small Fish", "type": "fish", "value": 5},
+		{"weight": 20, "item": "medium_fish", "name": "Medium Fish", "type": "fish", "value": 15},
+		{"weight": 15, "item": "seaweed", "name": "Seaweed", "type": "material", "value": 8},
+		# Uncommon catches (25%)
+		{"weight": 10, "item": "large_fish", "name": "Large Fish", "type": "fish", "value": 30},
+		{"weight": 8, "item": "freshwater_pearl", "name": "Freshwater Pearl", "type": "material", "value": 50},
+		{"weight": 7, "item": "river_crab", "name": "River Crab", "type": "fish", "value": 25},
+		# Rare catches (12%)
+		{"weight": 5, "item": "golden_fish", "name": "Golden Fish", "type": "fish", "value": 100},
+		{"weight": 4, "item": "enchanted_kelp", "name": "Enchanted Kelp", "type": "material", "value": 75},
+		{"weight": 3, "item": "fish_scale_armor", "name": "Fish Scale", "type": "material", "value": 40},
+		# Treasure (3%)
+		{"weight": 2, "item": "small_treasure_chest", "name": "Small Treasure Chest", "type": "treasure", "value": 150},
+		{"weight": 1, "item": "companion_egg_random", "name": "Mysterious Egg", "type": "egg", "value": 500}
+	],
+	"deep": [
+		# Common catches (45%)
+		{"weight": 15, "item": "deep_sea_fish", "name": "Deep Sea Fish", "type": "fish", "value": 40},
+		{"weight": 15, "item": "magic_kelp", "name": "Magic Kelp", "type": "material", "value": 60},
+		{"weight": 15, "item": "abyssal_crab", "name": "Abyssal Crab", "type": "fish", "value": 50},
+		# Uncommon catches (35%)
+		{"weight": 12, "item": "giant_pearl", "name": "Giant Pearl", "type": "material", "value": 150},
+		{"weight": 10, "item": "leviathan_scale", "name": "Leviathan Scale", "type": "material", "value": 200},
+		{"weight": 8, "item": "rare_fish", "name": "Rare Fish", "type": "fish", "value": 100},
+		{"weight": 5, "item": "prismatic_fish", "name": "Prismatic Fish", "type": "fish", "value": 250},
+		# Rare catches (15%)
+		{"weight": 6, "item": "sea_dragon_fang", "name": "Sea Dragon Fang", "type": "material", "value": 300},
+		{"weight": 5, "item": "ancient_relic", "name": "Ancient Relic", "type": "treasure", "value": 400},
+		{"weight": 4, "item": "kraken_ink", "name": "Kraken Ink", "type": "material", "value": 350},
+		# Treasure (5%)
+		{"weight": 3, "item": "large_treasure_chest", "name": "Large Treasure Chest", "type": "treasure", "value": 500},
+		{"weight": 2, "item": "companion_egg_rare", "name": "Ancient Egg", "type": "egg", "value": 1000}
+	]
+}
+
+# Fishing skill XP per catch type
+const FISHING_XP = {
+	"small_fish": 5,
+	"medium_fish": 10,
+	"large_fish": 20,
+	"seaweed": 5,
+	"freshwater_pearl": 25,
+	"river_crab": 15,
+	"golden_fish": 50,
+	"enchanted_kelp": 30,
+	"fish_scale_armor": 20,
+	"small_treasure_chest": 40,
+	"companion_egg_random": 100,
+	"deep_sea_fish": 25,
+	"magic_kelp": 30,
+	"abyssal_crab": 35,
+	"giant_pearl": 50,
+	"leviathan_scale": 60,
+	"rare_fish": 45,
+	"prismatic_fish": 75,
+	"sea_dragon_fang": 80,
+	"ancient_relic": 100,
+	"kraken_ink": 70,
+	"large_treasure_chest": 90,
+	"companion_egg_rare": 150
+}
+
+func roll_fishing_catch(water_type: String, fishing_skill: int) -> Dictionary:
+	"""Roll for a fishing catch based on water type and skill level.
+	Higher skill improves chances for rare catches."""
+	var catches = FISHING_CATCHES.get(water_type, FISHING_CATCHES.get("shallow"))
+
+	# Calculate total weight with skill bonus for rare items
+	var modified_catches = []
+	var total_weight = 0
+
+	for catch in catches:
+		var weight = catch.weight
+		# Skill bonus: +0.5% weight to rare/treasure items per skill level
+		if catch.type in ["treasure", "egg"] or catch.value >= 100:
+			weight = int(weight * (1.0 + fishing_skill * 0.005))
+		modified_catches.append({"catch": catch, "weight": weight})
+		total_weight += weight
+
+	# Roll
+	var roll = randi() % total_weight
+	var cumulative = 0
+
+	for entry in modified_catches:
+		cumulative += entry.weight
+		if roll < cumulative:
+			var catch = entry.catch
+			return {
+				"item_id": catch.item,
+				"name": catch.name,
+				"type": catch.type,
+				"value": catch.value,
+				"xp": FISHING_XP.get(catch.item, 10)
+			}
+
+	# Fallback
+	var fallback = catches[0]
+	return {
+		"item_id": fallback.item,
+		"name": fallback.name,
+		"type": fallback.type,
+		"value": fallback.value,
+		"xp": FISHING_XP.get(fallback.item, 10)
+	}
+
+func get_fishing_wait_time(fishing_skill: int) -> float:
+	"""Get wait time range for a fishing bite. Higher skill = shorter waits."""
+	var base_min = 3.0  # 3 seconds minimum
+	var base_max = 8.0  # 8 seconds maximum
+	# Skill reduces wait time: -0.02s per skill level
+	var skill_reduction = fishing_skill * 0.02
+	var min_time = max(1.5, base_min - skill_reduction)
+	var max_time = max(3.0, base_max - skill_reduction * 1.5)
+	return randf_range(min_time, max_time)
+
+func get_fishing_reaction_window(fishing_skill: int) -> float:
+	"""Get reaction window for catching fish. Higher skill = longer window."""
+	var base_window = 1.5  # 1.5 seconds base
+	# Skill adds time: +0.01s per skill level
+	var skill_bonus = fishing_skill * 0.01
+	return min(3.0, base_window + skill_bonus)  # Cap at 3 seconds
+
+# ===== CRAFTING MATERIAL DROPS =====
+# Materials drop from monsters based on their tier
+
+# Material drops by tier (lower tiers drop more common materials)
+const CRAFTING_MATERIAL_DROPS = {
+	1: [  # T1 monsters
+		{"weight": 40, "material": "copper_ore", "quantity": 1},
+		{"weight": 30, "material": "ragged_leather", "quantity": 1},
+		{"weight": 20, "material": "healing_herb", "quantity": 1},
+		{"weight": 10, "material": "magic_dust", "quantity": 1}
+	],
+	2: [  # T2 monsters
+		{"weight": 35, "material": "copper_ore", "quantity": 2},
+		{"weight": 25, "material": "iron_ore", "quantity": 1},
+		{"weight": 20, "material": "leather_scraps", "quantity": 1},
+		{"weight": 10, "material": "mana_blossom", "quantity": 1},
+		{"weight": 10, "material": "vigor_root", "quantity": 1}
+	],
+	3: [  # T3 monsters
+		{"weight": 30, "material": "iron_ore", "quantity": 2},
+		{"weight": 25, "material": "steel_ore", "quantity": 1},
+		{"weight": 20, "material": "thick_leather", "quantity": 1},
+		{"weight": 15, "material": "shadowleaf", "quantity": 1},
+		{"weight": 10, "material": "arcane_crystal", "quantity": 1}
+	],
+	4: [  # T4 monsters
+		{"weight": 30, "material": "steel_ore", "quantity": 2},
+		{"weight": 25, "material": "mithril_ore", "quantity": 1},
+		{"weight": 20, "material": "enchanted_leather", "quantity": 1},
+		{"weight": 15, "material": "soul_shard", "quantity": 1},
+		{"weight": 10, "material": "phoenix_petal", "quantity": 1}
+	],
+	5: [  # T5 monsters
+		{"weight": 30, "material": "mithril_ore", "quantity": 2},
+		{"weight": 25, "material": "adamantine_ore", "quantity": 1},
+		{"weight": 20, "material": "dragonhide", "quantity": 1},
+		{"weight": 15, "material": "phoenix_petal", "quantity": 1},
+		{"weight": 10, "material": "void_essence", "quantity": 1}
+	],
+	6: [  # T6 monsters
+		{"weight": 30, "material": "adamantine_ore", "quantity": 2},
+		{"weight": 25, "material": "orichalcum_ore", "quantity": 1},
+		{"weight": 20, "material": "dragon_blood", "quantity": 1},
+		{"weight": 15, "material": "void_essence", "quantity": 1},
+		{"weight": 10, "material": "primordial_spark", "quantity": 1}
+	],
+	7: [  # T7 monsters
+		{"weight": 30, "material": "orichalcum_ore", "quantity": 2},
+		{"weight": 25, "material": "void_ore", "quantity": 1},
+		{"weight": 25, "material": "void_silk", "quantity": 1},
+		{"weight": 20, "material": "essence_of_life", "quantity": 1}
+	],
+	8: [  # T8 monsters
+		{"weight": 35, "material": "void_ore", "quantity": 2},
+		{"weight": 30, "material": "celestial_ore", "quantity": 1},
+		{"weight": 20, "material": "primordial_spark", "quantity": 1},
+		{"weight": 15, "material": "essence_of_life", "quantity": 2}
+	],
+	9: [  # T9 monsters
+		{"weight": 40, "material": "celestial_ore", "quantity": 2},
+		{"weight": 35, "material": "primordial_ore", "quantity": 1},
+		{"weight": 25, "material": "primordial_spark", "quantity": 2}
+	]
+}
+
+# Base drop chance for materials by tier (percentage)
+const MATERIAL_DROP_CHANCE_BY_TIER = {
+	1: 25,  # 25% chance
+	2: 28,
+	3: 30,
+	4: 32,
+	5: 35,
+	6: 38,
+	7: 40,
+	8: 45,
+	9: 50   # 50% chance at T9
+}
+
+func roll_crafting_material_drop(monster_tier: int) -> Dictionary:
+	"""Roll for a crafting material drop from a defeated monster."""
+	# Clamp tier to valid range
+	var tier = clampi(monster_tier, 1, 9)
+
+	# Check drop chance
+	var drop_chance = MATERIAL_DROP_CHANCE_BY_TIER.get(tier, 25)
+	if randi() % 100 >= drop_chance:
+		return {}  # No drop
+
+	# Get drop table for this tier
+	var drops = CRAFTING_MATERIAL_DROPS.get(tier, [])
+	if drops.is_empty():
+		return {}
+
+	# Roll for which material
+	var total_weight = 0
+	for entry in drops:
+		total_weight += entry.weight
+
+	var roll = randi() % total_weight
+	var cumulative = 0
+
+	for entry in drops:
+		cumulative += entry.weight
+		if roll < cumulative:
+			return {
+				"material_id": entry.material,
+				"quantity": entry.quantity
+			}
+
+	# Fallback
+	return {
+		"material_id": drops[0].material,
+		"quantity": drops[0].quantity
+	}
+
 # Monster type categories for bane potions
 # Maps bane type to list of monster names that match that type
 const MONSTER_TYPES = {

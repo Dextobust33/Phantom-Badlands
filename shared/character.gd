@@ -274,6 +274,40 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # Format: [{id: String, name: String, bonuses: Dictionary, obtained_at: int}]
 @export var soul_gems: Array = []
 
+# ===== NEW COMPANION SYSTEM (replaces soul gems for egg-based companions) =====
+# Incubating Eggs - eggs that are being hatched via movement
+# Format: [{egg_id: String, monster_type: String, companion_name: String, tier: int,
+#           steps_remaining: int, hatch_steps: int, bonuses: Dictionary, obtained_at: int}]
+@export var incubating_eggs: Array = []
+const MAX_INCUBATING_EGGS = 3  # Can only incubate 3 eggs at a time
+
+# Collected Companions - companions that have been hatched (can switch between them)
+# Format: [{id: String, monster_type: String, name: String, tier: int, bonuses: Dictionary,
+#           obtained_at: int, battles_fought: int}]
+@export var collected_companions: Array = []
+
+# ===== FISHING SYSTEM =====
+@export var fishing_skill: int = 1  # Fishing skill level (1-100)
+@export var fishing_xp: int = 0     # XP towards next fishing level
+@export var fish_caught: int = 0    # Total fish caught (tracking)
+
+# ===== CRAFTING SYSTEM =====
+@export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1}
+@export var crafting_xp: Dictionary = {"blacksmithing": 0, "alchemy": 0, "enchanting": 0}
+@export var known_recipes: Array = []  # Recipe IDs player has learned
+@export var crafting_materials: Dictionary = {}  # {material_id: quantity}
+
+# ===== DUNGEON SYSTEM =====
+@export var in_dungeon: bool = false
+@export var current_dungeon_id: String = ""  # Instance ID of current dungeon
+@export var current_dungeon_type: String = ""  # Type ID (e.g., "goblin_cave")
+@export var dungeon_floor: int = 0  # Current floor (0-indexed)
+@export var dungeon_x: int = 0  # Position on floor grid
+@export var dungeon_y: int = 0
+@export var dungeon_encounters_cleared: int = 0  # Total encounters cleared this run
+@export var dungeon_cooldowns: Dictionary = {}  # {dungeon_type: timestamp when available}
+@export var dungeons_completed: Dictionary = {}  # {dungeon_type: times_completed}
+
 func _init():
 	# Constructor
 	pass
@@ -2130,6 +2164,206 @@ func get_all_soul_gems() -> Array:
 	"""Get all collected soul gems."""
 	return soul_gems.duplicate(true)
 
+# ===== EGG-BASED COMPANION SYSTEM =====
+
+func add_egg(egg_data: Dictionary) -> Dictionary:
+	"""Add an egg to incubating_eggs. Returns {success: bool, message: String}."""
+	if incubating_eggs.size() >= MAX_INCUBATING_EGGS:
+		return {"success": false, "message": "You can only incubate %d eggs at a time." % MAX_INCUBATING_EGGS}
+
+	var egg = {
+		"egg_id": egg_data.get("id", ""),
+		"monster_type": egg_data.get("monster_type", ""),
+		"companion_name": egg_data.get("companion_name", ""),
+		"tier": egg_data.get("tier", 1),
+		"steps_remaining": egg_data.get("hatch_steps", 100),
+		"hatch_steps": egg_data.get("hatch_steps", 100),
+		"bonuses": egg_data.get("bonuses", {}).duplicate(),
+		"obtained_at": int(Time.get_unix_time_from_system())
+	}
+	incubating_eggs.append(egg)
+	return {"success": true, "message": "Now incubating: %s" % egg.companion_name}
+
+func process_egg_steps(steps: int = 1) -> Array:
+	"""Process movement steps for all incubating eggs. Returns array of hatched companions."""
+	var hatched = []
+	var remaining_eggs = []
+
+	for egg in incubating_eggs:
+		egg.steps_remaining -= steps
+		if egg.steps_remaining <= 0:
+			# Egg hatched!
+			var companion = _hatch_egg(egg)
+			hatched.append(companion)
+		else:
+			remaining_eggs.append(egg)
+
+	incubating_eggs = remaining_eggs
+	return hatched
+
+func _hatch_egg(egg: Dictionary) -> Dictionary:
+	"""Hatch an egg into a companion and add to collected_companions."""
+	var companion = {
+		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
+		"monster_type": egg.monster_type,
+		"name": egg.companion_name,
+		"tier": egg.tier,
+		"bonuses": egg.bonuses.duplicate(),
+		"obtained_at": int(Time.get_unix_time_from_system()),
+		"battles_fought": 0
+	}
+	collected_companions.append(companion)
+	return companion
+
+func activate_hatched_companion(companion_id: String) -> bool:
+	"""Activate a companion from collected_companions. Returns true if successful."""
+	for companion in collected_companions:
+		if companion.get("id") == companion_id:
+			active_companion = {
+				"id": companion.id,
+				"name": companion.name,
+				"monster_type": companion.get("monster_type", ""),
+				"tier": companion.get("tier", 1),
+				"bonuses": companion.bonuses.duplicate()
+			}
+			return true
+	return false
+
+func get_incubating_eggs() -> Array:
+	"""Get all incubating eggs with progress info."""
+	var result = []
+	for egg in incubating_eggs:
+		var progress = 100.0 * (1.0 - float(egg.steps_remaining) / float(egg.hatch_steps))
+		result.append({
+			"egg_id": egg.egg_id,
+			"companion_name": egg.companion_name,
+			"tier": egg.tier,
+			"steps_remaining": egg.steps_remaining,
+			"hatch_steps": egg.hatch_steps,
+			"progress_percent": progress
+		})
+	return result
+
+func get_collected_companions() -> Array:
+	"""Get all collected (hatched) companions."""
+	return collected_companions.duplicate(true)
+
+func has_companion_of_type(monster_type: String) -> bool:
+	"""Check if player has a companion from a specific monster type."""
+	for companion in collected_companions:
+		if companion.get("monster_type", "") == monster_type:
+			return true
+	return false
+
+func get_companion_tier() -> int:
+	"""Get the tier of the active companion (0 if none)."""
+	return active_companion.get("tier", 0)
+
+# ===== FISHING SYSTEM =====
+
+func add_fishing_xp(xp: int) -> Dictionary:
+	"""Add fishing XP and check for level up. Returns {leveled_up: bool, new_level: int}."""
+	fishing_xp += xp
+	var leveled_up = false
+	var xp_needed = _get_fishing_xp_needed(fishing_skill)
+
+	while fishing_xp >= xp_needed and fishing_skill < 100:
+		fishing_xp -= xp_needed
+		fishing_skill += 1
+		leveled_up = true
+		xp_needed = _get_fishing_xp_needed(fishing_skill)
+
+	return {"leveled_up": leveled_up, "new_level": fishing_skill}
+
+func _get_fishing_xp_needed(current_level: int) -> int:
+	"""Get XP needed for next fishing level."""
+	# Simple formula: 50 * level^1.5
+	return int(50 * pow(current_level, 1.5))
+
+func record_fish_caught():
+	"""Record a successful catch."""
+	fish_caught += 1
+
+func get_fishing_stats() -> Dictionary:
+	"""Get fishing statistics."""
+	return {
+		"skill": fishing_skill,
+		"xp": fishing_xp,
+		"xp_needed": _get_fishing_xp_needed(fishing_skill),
+		"total_caught": fish_caught
+	}
+
+# ===== CRAFTING SYSTEM =====
+
+func add_crafting_material(material_id: String, quantity: int = 1) -> int:
+	"""Add crafting materials. Returns new total."""
+	if not crafting_materials.has(material_id):
+		crafting_materials[material_id] = 0
+	crafting_materials[material_id] += quantity
+	return crafting_materials[material_id]
+
+func remove_crafting_material(material_id: String, quantity: int = 1) -> bool:
+	"""Remove crafting materials. Returns true if successful."""
+	if not crafting_materials.has(material_id):
+		return false
+	if crafting_materials[material_id] < quantity:
+		return false
+	crafting_materials[material_id] -= quantity
+	if crafting_materials[material_id] <= 0:
+		crafting_materials.erase(material_id)
+	return true
+
+func has_crafting_materials(materials: Dictionary) -> bool:
+	"""Check if player has required materials. Format: {material_id: quantity}"""
+	for mat_id in materials:
+		var needed = materials[mat_id]
+		var owned = crafting_materials.get(mat_id, 0)
+		if owned < needed:
+			return false
+	return true
+
+func get_crafting_skill(skill_name: String) -> int:
+	"""Get a crafting skill level."""
+	return crafting_skills.get(skill_name.to_lower(), 1)
+
+func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
+	"""Add XP to a crafting skill. Returns {leveled_up: bool, new_level: int}."""
+	var skill = skill_name.to_lower()
+	if not crafting_xp.has(skill):
+		crafting_xp[skill] = 0
+	if not crafting_skills.has(skill):
+		crafting_skills[skill] = 1
+
+	crafting_xp[skill] += xp
+	var leveled_up = false
+	var current_level = crafting_skills[skill]
+	var xp_needed = _get_crafting_xp_needed(current_level)
+
+	while crafting_xp[skill] >= xp_needed and current_level < 100:
+		crafting_xp[skill] -= xp_needed
+		current_level += 1
+		crafting_skills[skill] = current_level
+		leveled_up = true
+		xp_needed = _get_crafting_xp_needed(current_level)
+
+	return {"leveled_up": leveled_up, "new_level": current_level}
+
+func _get_crafting_xp_needed(current_level: int) -> int:
+	"""Get XP needed for next crafting level."""
+	# Formula: 100 * level^1.5
+	return int(100 * pow(current_level, 1.5))
+
+func learn_recipe(recipe_id: String) -> bool:
+	"""Learn a new recipe. Returns true if newly learned."""
+	if recipe_id in known_recipes:
+		return false
+	known_recipes.append(recipe_id)
+	return true
+
+func knows_recipe(recipe_id: String) -> bool:
+	"""Check if player knows a recipe."""
+	return recipe_id in known_recipes
+
 # ===== CLOAK SYSTEM =====
 
 func get_primary_resource() -> String:
@@ -2449,3 +2683,56 @@ func set_ability_cooldown(ability_id: String, cooldown_seconds: int):
 func clear_ability_cooldowns():
 	"""Clear all ability cooldowns"""
 	title_cooldowns = {}
+
+# ===== DUNGEON SYSTEM =====
+
+func enter_dungeon(instance_id: String, dungeon_type: String, start_x: int, start_y: int):
+	"""Enter a dungeon instance"""
+	in_dungeon = true
+	current_dungeon_id = instance_id
+	current_dungeon_type = dungeon_type
+	dungeon_floor = 0
+	dungeon_x = start_x
+	dungeon_y = start_y
+	dungeon_encounters_cleared = 0
+
+func exit_dungeon():
+	"""Exit current dungeon"""
+	in_dungeon = false
+	current_dungeon_id = ""
+	current_dungeon_type = ""
+	dungeon_floor = 0
+	dungeon_x = 0
+	dungeon_y = 0
+	dungeon_encounters_cleared = 0
+
+func advance_dungeon_floor(new_x: int, new_y: int):
+	"""Move to the next floor of the dungeon"""
+	dungeon_floor += 1
+	dungeon_x = new_x
+	dungeon_y = new_y
+
+func is_dungeon_on_cooldown(dungeon_type: String) -> bool:
+	"""Check if a dungeon type is on cooldown for this character"""
+	var available_at = dungeon_cooldowns.get(dungeon_type, 0)
+	return int(Time.get_unix_time_from_system()) < available_at
+
+func get_dungeon_cooldown_remaining(dungeon_type: String) -> int:
+	"""Get seconds remaining on dungeon cooldown"""
+	var available_at = dungeon_cooldowns.get(dungeon_type, 0)
+	var now = int(Time.get_unix_time_from_system())
+	return max(0, available_at - now)
+
+func set_dungeon_cooldown(dungeon_type: String, cooldown_hours: int):
+	"""Set a dungeon on cooldown"""
+	dungeon_cooldowns[dungeon_type] = int(Time.get_unix_time_from_system()) + (cooldown_hours * 3600)
+
+func record_dungeon_completion(dungeon_type: String):
+	"""Record completing a dungeon"""
+	if not dungeons_completed.has(dungeon_type):
+		dungeons_completed[dungeon_type] = 0
+	dungeons_completed[dungeon_type] += 1
+
+func get_dungeon_completions(dungeon_type: String) -> int:
+	"""Get number of times player has completed a dungeon type"""
+	return dungeons_completed.get(dungeon_type, 0)

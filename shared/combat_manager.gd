@@ -750,6 +750,26 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FF4444]💀 Execute strikes for %d bonus damage![/color]" % execute_damage)
 
+		# === COMPANION ATTACK ===
+		# Companions attack alongside the player each round
+		if monster.current_hp > 0 and character.has_active_companion():
+			var companion = character.get_active_companion()
+			var companion_tier = companion.get("tier", 1)
+			var companion_bonuses = companion.get("bonuses", {})
+			# Calculate companion damage using drop_tables function
+			var companion_damage = 0
+			if drop_tables:
+				companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses)
+			else:
+				# Fallback if drop_tables not available
+				companion_damage = companion_tier * 5 + int(character.level * 0.5)
+			# Apply some variance (80-120%)
+			companion_damage = int(companion_damage * randf_range(0.8, 1.2))
+			companion_damage = max(1, companion_damage)
+			monster.current_hp -= companion_damage
+			monster.current_hp = max(0, monster.current_hp)
+			messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
+
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
 			var thorn_damage = max(1, int(damage * 0.25))

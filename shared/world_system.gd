@@ -22,7 +22,9 @@ enum Terrain {
 	DESERT,          # Very high danger
 	VOLCANO,         # Extreme danger
 	DARK_CIRCLE,     # Special area
-	VOID             # Beyond the edge
+	VOID,            # Beyond the edge
+	WATER,           # Shallow water - fishable
+	DEEP_WATER       # Deep water - rare catches, fishable
 }
 
 # Special locations - major landmarks only (Trading Posts handled separately)
@@ -54,6 +56,12 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 	# Check special locations
 	if SPECIAL_LOCATIONS.has(pos):
 		return SPECIAL_LOCATIONS[pos].terrain
+
+	# Check for water bodies (lakes and rivers)
+	if _is_water_at(x, y):
+		return Terrain.WATER
+	if _is_deep_water_at(x, y):
+		return Terrain.DEEP_WATER
 
 	# Distance-based terrain
 	var distance_from_center = sqrt(x * x + y * y)
@@ -92,8 +100,54 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 	else:
 		# Far regions - very dangerous
 		return Terrain.VOID
-	
+
 	return Terrain.PLAINS
+
+func _is_water_at(x: int, y: int) -> bool:
+	"""Check if coordinates should be shallow water (lakes and rivers)"""
+	# Lake near Southport (-30 to 30, -160 to -140)
+	if x >= -30 and x <= 30 and y >= -160 and y <= -140:
+		return true
+	# River along y = -50 (east-west flowing river)
+	if y >= -52 and y <= -48 and x >= -100 and x <= 100:
+		return true
+	# Lake near East Market (40 to 60, 0 to 20)
+	if x >= 40 and x <= 60 and y >= 0 and y <= 20:
+		return true
+	# Northern lake (Highland Post area: -20 to 20, 140 to 160)
+	if x >= -20 and x <= 20 and y >= 140 and y <= 160:
+		return true
+	# Use hash-based water spots for scattered ponds
+	var water_hash = abs(x * 31 + y * 53) % 1000
+	if water_hash < 5:  # 0.5% chance of random water
+		return true
+	return false
+
+func _is_deep_water_at(x: int, y: int) -> bool:
+	"""Check if coordinates should be deep water (ocean edges)"""
+	# Deep water near southern coast (y < -250, within certain x range)
+	if y <= -250 and y >= -300 and abs(x) <= 100:
+		return true
+	# Deep water in center of lakes (smaller areas within water)
+	if x >= -10 and x <= 10 and y >= -155 and y <= -145:
+		return true  # Center of Southport lake
+	if x >= 47 and x <= 53 and y >= 7 and y <= 13:
+		return true  # Center of East Market lake
+	return false
+
+func is_fishing_spot(x: int, y: int) -> bool:
+	"""Check if coordinates are a valid fishing location"""
+	var terrain = get_terrain_at(x, y)
+	return terrain == Terrain.WATER or terrain == Terrain.DEEP_WATER
+
+func get_fishing_type(x: int, y: int) -> String:
+	"""Get the type of fishing available at coordinates (shallow/deep)"""
+	var terrain = get_terrain_at(x, y)
+	if terrain == Terrain.DEEP_WATER:
+		return "deep"
+	elif terrain == Terrain.WATER:
+		return "shallow"
+	return ""
 
 func get_terrain_info(terrain: Terrain) -> Dictionary:
 	"""Get information about a terrain type"""
@@ -218,7 +272,31 @@ func get_terrain_info(terrain: Terrain) -> Dictionary:
 				"monster_level_min": 100,
 				"monster_level_max": 200
 			}
-	
+		Terrain.WATER:
+			return {
+				"name": "Water",
+				"char": "w",  # Single ASCII character
+				"color": "#4169E1",
+				"safe": false,
+				"encounter_rate": 0.1,  # Low encounter rate - focus on fishing
+				"monster_level_min": 5,
+				"monster_level_max": 20,
+				"fishable": true,
+				"fish_type": "shallow"
+			}
+		Terrain.DEEP_WATER:
+			return {
+				"name": "Deep Water",
+				"char": "W",  # Single ASCII character (uppercase for deep)
+				"color": "#00008B",
+				"safe": false,
+				"encounter_rate": 0.2,
+				"monster_level_min": 20,
+				"monster_level_max": 50,
+				"fishable": true,
+				"fish_type": "deep"
+			}
+
 	return {"name": "Unknown", "char": "?", "color": "#FFFFFF", "safe": false}
 
 func get_location_name(x: int, y: int) -> String:

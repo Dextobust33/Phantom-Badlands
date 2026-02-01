@@ -26,6 +26,8 @@ const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
 const TitlesScript = preload("res://shared/titles.gd")
+const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
+const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 
 var server = TCPServer.new()
 var peers = {}
@@ -62,6 +64,14 @@ var current_mentee_peer_ids: Dictionary = {}  # {elder_peer_id: mentee_peer_id} 
 var eternal_flame_location: Vector2i = Vector2i(0, 0)  # Hidden location, moves when found
 # realm_treasury is now persisted via persistence.get_realm_treasury() / persistence.add_to_realm_treasury()
 var pilgrimage_shrines: Dictionary = {}    # {peer_id: {blood: Vector2i, mind: Vector2i, wealth: Vector2i}}
+
+# Dungeon system state
+var active_dungeons: Dictionary = {}  # instance_id -> dungeon_instance data
+var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
+var next_dungeon_id: int = 1
+const MAX_ACTIVE_DUNGEONS = 10
+const DUNGEON_SPAWN_CHECK_INTERVAL = 1800.0  # 30 minutes
+var dungeon_spawn_timer: float = 0.0
 
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
@@ -711,6 +721,25 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_activate_companion(peer_id, message)
 		"dismiss_companion":
 			handle_dismiss_companion(peer_id)
+		# Fishing system handlers
+		"fish_start":
+			handle_fish_start(peer_id)
+		"fish_catch":
+			handle_fish_catch(peer_id, message)
+		# Crafting system handlers
+		"craft_list":
+			handle_craft_list(peer_id, message)
+		"craft_item":
+			handle_craft_item(peer_id, message)
+		# Dungeon system handlers
+		"dungeon_list":
+			handle_dungeon_list(peer_id)
+		"dungeon_enter":
+			handle_dungeon_enter(peer_id, message)
+		"dungeon_move":
+			handle_dungeon_move(peer_id, message)
+		"dungeon_exit":
+			handle_dungeon_exit(peer_id)
 		# Title system handlers
 		"claim_title":
 			handle_claim_title(peer_id, message)
@@ -1473,6 +1502,20 @@ func handle_move(peer_id: int, message: Dictionary):
 				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
 			})
 
+	# Process egg incubation - each movement step counts toward hatching
+	if character.incubating_eggs.size() > 0:
+		var hatched = character.process_egg_steps(1)
+		for companion in hatched:
+			send_to_peer(peer_id, {
+				"type": "egg_hatched",
+				"companion": companion,
+				"message": "[color=#A335EE]✦ Your %s Egg has hatched! ✦[/color]" % companion.name
+			})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]%s is now your companion![/color] Use /companion to manage companions." % companion.name
+			})
+
 	# Send location and character updates
 	send_location_update(peer_id)
 	send_character_update(peer_id)
@@ -1902,7 +1945,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 			# Check quest progress for kill-based quests
 			var monster_level_for_quest = result.get("monster_level", 1)
-			check_kill_quest_progress(peer_id, monster_level_for_quest)
+			check_kill_quest_progress(peer_id, monster_level_for_quest, killed_monster_name)
 
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
@@ -2017,12 +2060,52 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if flock_counts.has(peer_id):
 					flock_counts.erase(peer_id)
 
+				# Roll for companion egg drop
+				var egg_drop = drop_tables.roll_egg_drop(killed_monster_name, _get_monster_tier(killed_monster_level))
+				if not egg_drop.is_empty():
+					all_drops.append({
+						"type": "companion_egg",
+						"name": egg_drop.get("name", "Mysterious Egg"),
+						"egg_data": egg_drop,
+						"rarity": "epic"  # Eggs are always epic rarity for display
+					})
+
+				# Roll for crafting material drop
+				var material_drop = drop_tables.roll_crafting_material_drop(_get_monster_tier(killed_monster_level))
+				if not material_drop.is_empty():
+					all_drops.append({
+						"type": "crafting_material",
+						"material_id": material_drop.material_id,
+						"quantity": material_drop.quantity,
+						"rarity": "uncommon"
+					})
+
 				# Give all drops to player now
 				var drop_messages = []
 				var drop_data = []  # For client sound effects
 				var player_level = characters[peer_id].level
 				for item in all_drops:
-					if characters[peer_id].can_add_item():
+					# Special handling for companion eggs
+					if item.get("type", "") == "companion_egg":
+						var egg_data = item.get("egg_data", {})
+						var egg_result = characters[peer_id].add_egg(egg_data)
+						if egg_result.success:
+							drop_messages.append("[color=#A335EE]✦ COMPANION EGG: %s[/color]" % egg_data.get("name", "Mysterious Egg"))
+							drop_messages.append("[color=#808080]  Walk %d steps to hatch it![/color]" % egg_data.get("hatch_steps", 100))
+							drop_data.append({"rarity": "epic", "level": 1, "level_diff": 0, "is_egg": true})
+						else:
+							drop_messages.append("[color=#FF4444]Egg Lost: %s (%s)[/color]" % [egg_data.get("name", "Egg"), egg_result.message])
+					# Special handling for crafting materials
+					elif item.get("type", "") == "crafting_material":
+						var mat_id = item.get("material_id", "")
+						var quantity = item.get("quantity", 1)
+						var mat_info = CraftingDatabaseScript.get_material(mat_id)
+						var mat_name = mat_info.get("name", mat_id) if not mat_info.is_empty() else mat_id
+						characters[peer_id].add_crafting_material(mat_id, quantity)
+						var qty_text = " x%d" % quantity if quantity > 1 else ""
+						drop_messages.append("[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text])
+						drop_data.append({"rarity": "uncommon", "level": 1, "level_diff": 0, "is_material": true})
+					elif characters[peer_id].can_add_item():
 						characters[peer_id].add_item(item)
 						# Format with rarity symbol for visual distinction
 						var rarity = item.get("rarity", "common")
@@ -2078,6 +2161,20 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				save_character(peer_id)
 				send_buff_expiration_notifications(peer_id)
 
+				# Handle dungeon combat victory - clear tile and send updated state
+				var combat_state = combat_mgr.get_combat_state(peer_id)
+				if combat_state and combat_state.get("is_dungeon_combat", false):
+					var character = characters[peer_id]
+					if character.in_dungeon:
+						var is_boss = combat_state.get("is_boss_fight", false)
+						_clear_dungeon_tile(peer_id)
+						if is_boss:
+							# Boss defeated - complete dungeon
+							_complete_dungeon(peer_id)
+						else:
+							# Regular encounter - send updated dungeon state
+							_send_dungeon_state(peer_id)
+
 		elif result.has("fled") and result.fled:
 			# Fled successfully - lose any pending flock drops and gems
 			if pending_flock_drops.has(peer_id):
@@ -2094,12 +2191,35 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				characters[peer_id].y = flee_pos.y
 				save_character(peer_id)
 
-			send_to_peer(peer_id, {
-				"type": "combat_end",
-				"fled": true,
-				"new_x": characters[peer_id].x,
-				"new_y": characters[peer_id].y
-			})
+			# Check if fleeing from dungeon - eject from dungeon
+			var combat_state = combat_mgr.get_combat_state(peer_id)
+			if combat_state and combat_state.get("is_dungeon_combat", false):
+				var character = characters[peer_id]
+				if character.in_dungeon:
+					var dungeon_name = ""
+					var instance_id = character.current_dungeon_id
+					if active_dungeons.has(instance_id):
+						dungeon_name = active_dungeons[instance_id].get("name", "Dungeon")
+					character.exit_dungeon()
+					save_character(peer_id)
+					send_to_peer(peer_id, {
+						"type": "combat_end",
+						"fled": true,
+						"new_x": characters[peer_id].x,
+						"new_y": characters[peer_id].y
+					})
+					send_to_peer(peer_id, {
+						"type": "dungeon_exit",
+						"reason": "fled",
+						"dungeon_name": dungeon_name
+					})
+			else:
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"fled": true,
+					"new_x": characters[peer_id].x,
+					"new_y": characters[peer_id].y
+				})
 		elif result.get("monster_fled", false):
 			# Monster fled - check if it summoned a replacement (Shrieker behavior)
 			var summon_next = result.get("summon_next_fight", "")
@@ -2454,6 +2574,10 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		character.title = ""
 		character.title_data = {}
 
+	# Clear dungeon state if player was in a dungeon
+	if character.in_dungeon:
+		character.exit_dungeon()
+
 	print("PERMADEATH: %s (Level %d) killed by %s" % [character.name, character.level, cause_of_death])
 
 	# Record monster kill for Monster Kills leaderboard
@@ -2522,12 +2646,18 @@ func send_location_update(peer_id: int):
 	# Get complete map display (includes location info at top)
 	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players)
 
+	# Check if player is at a fishable water tile
+	var is_at_water = world_system.is_fishing_spot(character.x, character.y)
+	var water_type = world_system.get_fishing_type(character.x, character.y) if is_at_water else ""
+
 	# Send map display as description
 	send_to_peer(peer_id, {
 		"type": "location",
 		"x": character.x,
 		"y": character.y,
-		"description": map_display
+		"description": map_display,
+		"at_water": is_at_water,
+		"water_type": water_type
 	})
 
 	# Forward location/map to watchers
@@ -4963,6 +5093,18 @@ func _level_to_tier(level: int) -> String:
 	if level <= 5000: return "tier8"
 	return "tier9"
 
+func _get_monster_tier(level: int) -> int:
+	"""Convert level to tier number for egg drops"""
+	if level <= 5: return 1
+	if level <= 15: return 2
+	if level <= 30: return 3
+	if level <= 50: return 4
+	if level <= 100: return 5
+	if level <= 500: return 6
+	if level <= 2000: return 7
+	if level <= 5000: return 8
+	return 9
+
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
 	match rarity:
@@ -5972,7 +6114,7 @@ func check_exploration_quest_progress(peer_id: int, x: int, y: int):
 	if not updates.is_empty():
 		save_character(peer_id)
 
-func check_kill_quest_progress(peer_id: int, monster_level: int):
+func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: String = ""):
 	"""Check and update kill quest progress after combat victory"""
 	if not characters.has(peer_id):
 		return
@@ -5986,7 +6128,7 @@ func check_kill_quest_progress(peer_id: int, monster_level: int):
 		hotzone_intensity = hotspot_info.intensity
 
 	var updates = quest_mgr.check_kill_progress(
-		character, monster_level, character.x, character.y, hotzone_intensity, world_system)
+		character, monster_level, character.x, character.y, hotzone_intensity, world_system, monster_name)
 
 	for update in updates:
 		send_to_peer(peer_id, {
@@ -6447,32 +6589,56 @@ func handle_set_ability_keybind(peer_id: int, message: Dictionary):
 # ===== COMPANION SYSTEM =====
 
 func handle_activate_companion(peer_id: int, message: Dictionary):
-	"""Handle activating a companion from soul gems"""
+	"""Handle activating a companion from soul gems or hatched companions"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
-	var gem_name = message.get("name", "").strip_edges()
+	var companion_name_input = message.get("name", "").strip_edges()
 
-	if gem_name.is_empty():
+	if companion_name_input.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Please specify a companion name."})
 		return
 
-	# Find the gem by name (case-insensitive partial match)
+	# First check hatched companions (new egg system)
+	var hatched_companions = character.get_collected_companions()
+	var matched_hatched = {}
+
+	for comp in hatched_companions:
+		var name = comp.get("name", "")
+		if name.to_lower() == companion_name_input.to_lower():
+			matched_hatched = comp
+			break
+		elif name.to_lower().begins_with(companion_name_input.to_lower()):
+			matched_hatched = comp
+
+	if not matched_hatched.is_empty():
+		var comp_id = matched_hatched.get("id", "")
+		if character.activate_hatched_companion(comp_id):
+			var companion_name = matched_hatched.get("name", "Unknown")
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]%s is now your active companion![/color]" % companion_name})
+			send_character_update(peer_id)
+			save_character(peer_id)
+			return
+		else:
+			send_to_peer(peer_id, {"type": "error", "message": "Could not activate companion."})
+			return
+
+	# Fall back to soul gems (legacy system)
 	var soul_gems = character.get_all_soul_gems()
 	var matched_gem = {}
 
 	for gem in soul_gems:
 		var name = gem.get("name", "")
-		if name.to_lower() == gem_name.to_lower():
+		if name.to_lower() == companion_name_input.to_lower():
 			matched_gem = gem
 			break
-		elif name.to_lower().begins_with(gem_name.to_lower()):
+		elif name.to_lower().begins_with(companion_name_input.to_lower()):
 			matched_gem = gem
 
 	if matched_gem.is_empty():
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]No companion found matching '%s'.[/color]" % gem_name})
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Use /companion to see your soul gems.[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]No companion found matching '%s'.[/color]" % companion_name_input})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Use /companion to see your companions.[/color]"})
 		return
 
 	var gem_id = matched_gem.get("id", "")
@@ -6503,6 +6669,913 @@ func handle_dismiss_companion(peer_id: int):
 	save_character(peer_id)
 
 # ===== TITLE SYSTEM =====
+
+# ===== FISHING SYSTEM =====
+
+func handle_fish_start(peer_id: int):
+	"""Handle player starting to fish"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Check if in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot fish while in combat!"})
+		return
+
+	# Check if at a water tile
+	if not world_system.is_fishing_spot(character.x, character.y):
+		send_to_peer(peer_id, {"type": "error", "message": "You need to be at water to fish!"})
+		return
+
+	# Get water type and fishing data
+	var water_type = world_system.get_fishing_type(character.x, character.y)
+	var wait_time = drop_tables.get_fishing_wait_time(character.fishing_skill)
+	var reaction_window = drop_tables.get_fishing_reaction_window(character.fishing_skill)
+
+	send_to_peer(peer_id, {
+		"type": "fish_start",
+		"water_type": water_type,
+		"wait_time": wait_time,
+		"reaction_window": reaction_window,
+		"fishing_skill": character.fishing_skill,
+		"message": "[color=#4169E1]You cast your line into the %s water...[/color]" % water_type
+	})
+
+func handle_fish_catch(peer_id: int, message: Dictionary):
+	"""Handle player attempting to catch a fish"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var success = message.get("success", false)
+	var water_type = message.get("water_type", "shallow")
+
+	if not success:
+		send_to_peer(peer_id, {
+			"type": "fish_result",
+			"success": false,
+			"message": "[color=#FF4444]The fish got away![/color]"
+		})
+		return
+
+	# Roll for catch
+	var catch_result = drop_tables.roll_fishing_catch(water_type, character.fishing_skill)
+
+	# Add XP
+	var xp_result = character.add_fishing_xp(catch_result.xp)
+	character.record_fish_caught()
+
+	# Handle different catch types
+	var catch_message = ""
+	var extra_messages = []
+
+	match catch_result.type:
+		"fish":
+			# Add as crafting material
+			character.add_crafting_material(catch_result.item_id, 1)
+			catch_message = "[color=#00FF00]You caught a %s![/color]" % catch_result.name
+		"material":
+			character.add_crafting_material(catch_result.item_id, 1)
+			catch_message = "[color=#00BFFF]You found %s![/color]" % catch_result.name
+		"treasure":
+			# Give gold based on value
+			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			character.gold += gold_amount
+			catch_message = "[color=#FFD700]You found a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
+		"egg":
+			# Try to add a random egg
+			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else [4, 5, 6]
+			var tier = egg_tiers[randi() % egg_tiers.size()]
+			var monster_names = []
+			for monster_name in drop_tables.COMPANION_DATA:
+				if drop_tables.COMPANION_DATA[monster_name].tier == tier:
+					monster_names.append(monster_name)
+			if monster_names.size() > 0:
+				var random_monster = monster_names[randi() % monster_names.size()]
+				var egg_data = drop_tables.get_egg_for_monster(random_monster)
+				var egg_result = character.add_egg(egg_data)
+				if egg_result.success:
+					catch_message = "[color=#A335EE]★ You found a %s! ★[/color]" % egg_data.name
+					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
+				else:
+					# Failed to add egg, give gold instead
+					character.gold += catch_result.value
+					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+			else:
+				character.gold += catch_result.value
+				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+
+	# Build level up message if applicable
+	if xp_result.leveled_up:
+		extra_messages.append("[color=#FFFF00]★ Fishing skill increased to %d! ★[/color]" % xp_result.new_level)
+
+	send_to_peer(peer_id, {
+		"type": "fish_result",
+		"success": true,
+		"catch": catch_result,
+		"xp_gained": catch_result.xp,
+		"leveled_up": xp_result.leveled_up,
+		"new_level": xp_result.new_level,
+		"message": catch_message,
+		"extra_messages": extra_messages
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+# ===== CRAFTING SYSTEM =====
+
+func handle_craft_list(peer_id: int, message: Dictionary):
+	"""Send list of available recipes to player"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Must be at a trading post to craft
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to craft!"})
+		return
+
+	var skill_name = message.get("skill", "blacksmithing").to_lower()
+	var skill_enum: int
+	match skill_name:
+		"blacksmithing":
+			skill_enum = CraftingDatabaseScript.CraftingSkill.BLACKSMITHING
+		"alchemy":
+			skill_enum = CraftingDatabaseScript.CraftingSkill.ALCHEMY
+		"enchanting":
+			skill_enum = CraftingDatabaseScript.CraftingSkill.ENCHANTING
+		_:
+			send_to_peer(peer_id, {"type": "error", "message": "Unknown crafting skill: %s" % skill_name})
+			return
+
+	var skill_level = character.get_crafting_skill(skill_name)
+	var recipes = CraftingDatabaseScript.get_available_recipes(skill_enum, skill_level)
+
+	# Get trading post bonus
+	var tp_data = at_trading_post[peer_id]
+	var tp_id = tp_data.get("id", "")
+	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
+
+	# Build recipe list with player's materials
+	var recipe_list = []
+	for recipe_entry in recipes:
+		var recipe_id = recipe_entry.id
+		var recipe = recipe_entry.data
+		var can_craft = character.has_crafting_materials(recipe.materials)
+		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, post_bonus)
+
+		recipe_list.append({
+			"id": recipe_id,
+			"name": recipe.name,
+			"skill_required": recipe.skill_required,
+			"difficulty": recipe.difficulty,
+			"materials": recipe.materials,
+			"can_craft": can_craft,
+			"success_chance": success_chance,
+			"output_type": recipe.output_type
+		})
+
+	send_to_peer(peer_id, {
+		"type": "craft_list",
+		"skill": skill_name,
+		"skill_level": skill_level,
+		"post_bonus": post_bonus,
+		"recipes": recipe_list,
+		"materials": character.crafting_materials
+	})
+
+func handle_craft_item(peer_id: int, message: Dictionary):
+	"""Attempt to craft an item"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Must be at a trading post
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to craft!"})
+		return
+
+	var recipe_id = message.get("recipe_id", "")
+	var recipe = CraftingDatabaseScript.get_recipe(recipe_id)
+	if recipe.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Unknown recipe: %s" % recipe_id})
+		return
+
+	# Get skill info
+	var skill_name = CraftingDatabaseScript.get_skill_name(recipe.skill)
+	var skill_level = character.get_crafting_skill(skill_name)
+
+	# Check skill requirement
+	if skill_level < recipe.skill_required:
+		send_to_peer(peer_id, {"type": "error", "message": "Requires %s level %d (you have %d)" % [skill_name.capitalize(), recipe.skill_required, skill_level]})
+		return
+
+	# Check materials
+	if not character.has_crafting_materials(recipe.materials):
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have the required materials!"})
+		return
+
+	# Consume materials
+	for mat_id in recipe.materials:
+		character.remove_crafting_material(mat_id, recipe.materials[mat_id])
+
+	# Get trading post bonus
+	var tp_data = at_trading_post[peer_id]
+	var tp_id = tp_data.get("id", "")
+	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
+
+	# Roll for quality
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, post_bonus)
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
+
+	# Calculate XP
+	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
+	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
+
+	# Build result message
+	var result_message = ""
+	var crafted_item = {}
+
+	if quality == CraftingDatabaseScript.CraftingQuality.FAILED:
+		result_message = "[color=#FF4444]Crafting failed! Materials lost.[/color]"
+	else:
+		# Create the item based on output type
+		match recipe.output_type:
+			"weapon", "armor":
+				crafted_item = _create_crafted_equipment(recipe, quality)
+				if crafted_item.is_empty():
+					result_message = "[color=#FF4444]Failed to create item![/color]"
+				else:
+					# Add to inventory
+					character.inventory.append(crafted_item)
+					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+			"consumable":
+				crafted_item = _create_crafted_consumable(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+			"enhancement":
+				# Enhancements are applied directly to equipment - not implemented yet
+				result_message = "[color=#FFFF00]Enhancement scrolls coming soon![/color]"
+				# For now, give gold equivalent
+				var gold_value = recipe.difficulty * 10
+				character.gold += gold_value
+				result_message = "[color=#FFD700]Received %d gold instead.[/color]" % gold_value
+
+	# Send result
+	send_to_peer(peer_id, {
+		"type": "craft_result",
+		"success": quality != CraftingDatabaseScript.CraftingQuality.FAILED,
+		"recipe_id": recipe_id,
+		"recipe_name": recipe.name,
+		"quality": quality,
+		"quality_name": quality_name,
+		"quality_color": quality_color,
+		"xp_gained": xp_gained,
+		"leveled_up": xp_result.leveled_up,
+		"new_level": xp_result.new_level,
+		"skill_name": skill_name,
+		"message": result_message,
+		"crafted_item": crafted_item
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a crafted equipment item"""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var base_stats = recipe.get("base_stats", {})
+	var scaled_stats = CraftingDatabaseScript.apply_quality_to_stats(base_stats, quality)
+
+	# Generate unique ID
+	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
+
+	var item = {
+		"id": item_id,
+		"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+		"type": recipe.output_type,
+		"slot": recipe.get("output_slot", ""),
+		"level": scaled_stats.get("level", 1),
+		"rarity": _quality_to_rarity(quality),
+		"crafted": true,
+		"quality": quality
+	}
+
+	# Add stats
+	if scaled_stats.has("attack"):
+		item["attack"] = scaled_stats["attack"]
+	if scaled_stats.has("defense"):
+		item["defense"] = scaled_stats["defense"]
+	if scaled_stats.has("hp"):
+		item["hp"] = scaled_stats["hp"]
+	if scaled_stats.has("speed"):
+		item["speed"] = scaled_stats["speed"]
+	if scaled_stats.has("mana"):
+		item["mana"] = scaled_stats["mana"]
+
+	return item
+
+func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a crafted consumable item"""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var effect = recipe.get("effect", {})
+	var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
+
+	# Scale effect by quality
+	var scaled_effect = effect.duplicate()
+	if scaled_effect.has("amount"):
+		scaled_effect["amount"] = int(scaled_effect["amount"] * multiplier)
+
+	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
+
+	var item = {
+		"id": item_id,
+		"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+		"type": "consumable",
+		"slot": "",
+		"level": 1,
+		"rarity": _quality_to_rarity(quality),
+		"crafted": true,
+		"quality": quality,
+		"effect": scaled_effect
+	}
+
+	return item
+
+func _quality_to_rarity(quality: int) -> String:
+	"""Convert crafting quality to item rarity"""
+	match quality:
+		CraftingDatabaseScript.CraftingQuality.POOR:
+			return "common"
+		CraftingDatabaseScript.CraftingQuality.STANDARD:
+			return "uncommon"
+		CraftingDatabaseScript.CraftingQuality.FINE:
+			return "rare"
+		CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+			return "epic"
+		_:
+			return "common"
+
+# ===== DUNGEON SYSTEM =====
+
+func handle_dungeon_list(peer_id: int):
+	"""Send list of available dungeons to player"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Get dungeons appropriate for player level
+	var available_types = DungeonDatabaseScript.get_dungeons_for_level(character.level)
+
+	# Build list with cooldown info
+	var dungeon_list = []
+	for dungeon_type in available_types:
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+		var on_cooldown = character.is_dungeon_on_cooldown(dungeon_type)
+		var cooldown_remaining = character.get_dungeon_cooldown_remaining(dungeon_type)
+		var completions = character.get_dungeon_completions(dungeon_type)
+
+		# Find active instance of this type
+		var active_instance = ""
+		var instance_location = Vector2i(0, 0)
+		for inst_id in active_dungeons:
+			var inst = active_dungeons[inst_id]
+			if inst.dungeon_type == dungeon_type:
+				active_instance = inst_id
+				instance_location = Vector2i(inst.world_x, inst.world_y)
+				break
+
+		dungeon_list.append({
+			"type": dungeon_type,
+			"name": dungeon_data.name,
+			"description": dungeon_data.description,
+			"tier": dungeon_data.tier,
+			"min_level": dungeon_data.min_level,
+			"max_level": dungeon_data.max_level,
+			"floors": dungeon_data.floors,
+			"on_cooldown": on_cooldown,
+			"cooldown_remaining": cooldown_remaining,
+			"completions": completions,
+			"active_instance": active_instance,
+			"location": {"x": instance_location.x, "y": instance_location.y} if active_instance != "" else null,
+			"color": dungeon_data.color
+		})
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_list",
+		"dungeons": dungeon_list,
+		"player_level": character.level,
+		"in_dungeon": character.in_dungeon
+	})
+
+func handle_dungeon_enter(peer_id: int, message: Dictionary):
+	"""Handle player entering a dungeon"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Already in dungeon?
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are already in a dungeon!"})
+		return
+
+	# In combat?
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot enter a dungeon while in combat!"})
+		return
+
+	# Accept either dungeon_type directly or find type from provided instance_id
+	var dungeon_type = message.get("dungeon_type", "")
+	var provided_instance_id = message.get("instance_id", "")
+
+	if dungeon_type == "" and provided_instance_id != "":
+		# Look up type from instance
+		if active_dungeons.has(provided_instance_id):
+			dungeon_type = active_dungeons[provided_instance_id].dungeon_type
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Unknown dungeon type!"})
+		return
+
+	# Check level requirement
+	if character.level < dungeon_data.min_level:
+		send_to_peer(peer_id, {"type": "error", "message": "You need to be level %d to enter this dungeon!" % dungeon_data.min_level})
+		return
+
+	# Check cooldown
+	if character.is_dungeon_on_cooldown(dungeon_type):
+		var remaining = character.get_dungeon_cooldown_remaining(dungeon_type)
+		var hours = remaining / 3600
+		var minutes = (remaining % 3600) / 60
+		send_to_peer(peer_id, {"type": "error", "message": "Dungeon on cooldown! Available in %dh %dm" % [hours, minutes]})
+		return
+
+	# Find existing instance or create new one
+	var instance_id = ""
+	# First check if provided instance_id is valid
+	if provided_instance_id != "" and active_dungeons.has(provided_instance_id):
+		instance_id = provided_instance_id
+	else:
+		# Look for any active instance of this dungeon type
+		for inst_id in active_dungeons:
+			if active_dungeons[inst_id].dungeon_type == dungeon_type:
+				instance_id = inst_id
+				break
+
+	if instance_id == "":
+		# Create new instance
+		instance_id = _create_dungeon_instance(dungeon_type)
+		if instance_id == "":
+			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
+			return
+
+	var instance = active_dungeons[instance_id]
+
+	# Get starting position (entrance tile)
+	var floor_grid = dungeon_floors[instance_id][0]
+	var start_pos = _find_tile_position(floor_grid, DungeonDatabaseScript.TileType.ENTRANCE)
+
+	# Enter dungeon
+	character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+
+	# Add to active players
+	if not instance.active_players.has(peer_id):
+		instance.active_players.append(peer_id)
+
+	# Send dungeon state to player
+	_send_dungeon_state(peer_id)
+	save_character(peer_id)
+
+	log_message("Player %s entered dungeon %s (instance %s)" % [character.name, dungeon_data.name, instance_id])
+
+func handle_dungeon_move(peer_id: int, message: Dictionary):
+	"""Handle player movement within dungeon"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
+		return
+
+	# In combat?
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while in combat!"})
+		return
+
+	# Accept direction strings from client
+	var direction = message.get("direction", "")
+	var dx = 0
+	var dy = 0
+
+	match direction:
+		"n":
+			dy = -1
+		"s":
+			dy = 1
+		"w":
+			dx = -1
+		"e":
+			dx = 1
+		"none":
+			# Just refresh state, no movement
+			_send_dungeon_state(peer_id)
+			return
+		_:
+			# Try dx/dy format
+			dx = message.get("dx", 0)
+			dy = message.get("dy", 0)
+
+	# Clamp movement to one tile
+	dx = clampi(dx, -1, 1)
+	dy = clampi(dy, -1, 1)
+
+	if dx == 0 and dy == 0:
+		_send_dungeon_state(peer_id)
+		return
+
+	var new_x = character.dungeon_x + dx
+	var new_y = character.dungeon_y + dy
+
+	# Get current floor grid
+	var instance_id = character.current_dungeon_id
+	if not dungeon_floors.has(instance_id):
+		send_to_peer(peer_id, {"type": "error", "message": "Dungeon instance not found!"})
+		character.exit_dungeon()
+		return
+
+	var floor_grids = dungeon_floors[instance_id]
+	if character.dungeon_floor >= floor_grids.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid floor!"})
+		return
+
+	var grid = floor_grids[character.dungeon_floor]
+
+	# Check bounds
+	if new_y < 0 or new_y >= grid.size() or new_x < 0 or new_x >= grid[0].size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You can't go that way.[/color]"})
+		return
+
+	# Check for wall
+	var tile = grid[new_y][new_x]
+	if tile == DungeonDatabaseScript.TileType.WALL:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]A wall blocks your path.[/color]"})
+		return
+
+	# Move player
+	character.dungeon_x = new_x
+	character.dungeon_y = new_y
+
+	# Handle tile interaction
+	match tile:
+		DungeonDatabaseScript.TileType.ENCOUNTER:
+			_start_dungeon_encounter(peer_id, false)
+		DungeonDatabaseScript.TileType.BOSS:
+			_start_dungeon_encounter(peer_id, true)
+		DungeonDatabaseScript.TileType.TREASURE:
+			_open_dungeon_treasure(peer_id)
+		DungeonDatabaseScript.TileType.EXIT:
+			_advance_dungeon_floor(peer_id)
+		_:
+			_send_dungeon_state(peer_id)
+
+func handle_dungeon_exit(peer_id: int):
+	"""Handle player exiting dungeon"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
+		return
+
+	# Remove from dungeon
+	var instance_id = character.current_dungeon_id
+	if active_dungeons.has(instance_id):
+		var instance = active_dungeons[instance_id]
+		instance.active_players.erase(peer_id)
+
+	# Exit dungeon
+	character.exit_dungeon()
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_exit",
+		"message": "[color=#FFD700]You leave the dungeon.[/color]"
+	})
+
+	send_location_update(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _create_dungeon_instance(dungeon_type: String) -> String:
+	"""Create a new dungeon instance. Returns instance ID."""
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		return ""
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return ""
+
+	var instance_id = "dungeon_%d" % next_dungeon_id
+	next_dungeon_id += 1
+
+	# Get spawn location
+	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+
+	# Create instance
+	active_dungeons[instance_id] = {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": spawn_loc.x,
+		"world_y": spawn_loc.y,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
+	}
+
+	# Generate all floor grids
+	var floor_grids = []
+	for floor_num in range(dungeon_data.floors):
+		var is_boss_floor = floor_num == dungeon_data.floors - 1
+		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(grid)
+
+	dungeon_floors[instance_id] = floor_grids
+
+	log_message("Created dungeon instance: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_loc.x, spawn_loc.y])
+	return instance_id
+
+func _send_dungeon_state(peer_id: int):
+	"""Send current dungeon state to player"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	if not character.in_dungeon:
+		return
+
+	var instance_id = character.current_dungeon_id
+	if not active_dungeons.has(instance_id) or not dungeon_floors.has(instance_id):
+		return
+
+	var instance = active_dungeons[instance_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var floor_grids = dungeon_floors[instance_id]
+	var grid = floor_grids[character.dungeon_floor]
+
+	# Get current tile
+	var current_tile = grid[character.dungeon_y][character.dungeon_x]
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_state",
+		"dungeon_type": character.current_dungeon_type,
+		"dungeon_name": dungeon_data.name,
+		"floor": character.dungeon_floor + 1,
+		"total_floors": dungeon_data.floors,
+		"grid": grid,
+		"player_x": character.dungeon_x,
+		"player_y": character.dungeon_y,
+		"current_tile": current_tile,
+		"encounters_cleared": character.dungeon_encounters_cleared,
+		"color": dungeon_data.color
+	})
+
+func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
+	"""Find position of a tile type in grid"""
+	for y in range(grid.size()):
+		for x in range(grid[y].size()):
+			if grid[y][x] == tile_type:
+				return Vector2i(x, y)
+	return Vector2i(1, grid.size() - 2)  # Default to bottom-left interior
+
+func _start_dungeon_encounter(peer_id: int, is_boss: bool):
+	"""Start a dungeon combat encounter"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+	if not active_dungeons.has(instance_id):
+		return
+
+	var instance = active_dungeons[instance_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+
+	# Generate monster
+	var monster_info: Dictionary
+	if is_boss:
+		monster_info = DungeonDatabaseScript.get_boss_for_dungeon(character.current_dungeon_type, instance.dungeon_level)
+	else:
+		monster_info = DungeonDatabaseScript.get_monster_for_encounter(character.current_dungeon_type, character.dungeon_floor, instance.dungeon_level)
+
+	if monster_info.is_empty():
+		_send_dungeon_state(peer_id)
+		return
+
+	# Create combat
+	var monster = monster_db.get_monster_for_level(monster_info.level)
+	monster.name = monster_info.name
+	monster.level = monster_info.level
+	monster.is_dungeon_monster = true
+
+	# Apply boss multipliers
+	if is_boss:
+		monster.max_hp = int(monster.max_hp * monster_info.get("hp_mult", 2.0))
+		monster.current_hp = monster.max_hp
+		monster.attack = int(monster.attack * monster_info.get("attack_mult", 1.5))
+		monster.is_boss = true
+
+	# Start combat
+	combat_mgr.start_combat(peer_id, character, monster)
+	var combat_state = combat_mgr.get_combat_state(peer_id)
+
+	# Mark as dungeon combat for special handling
+	combat_state["is_dungeon_combat"] = true
+	combat_state["is_boss_fight"] = is_boss
+
+	send_to_peer(peer_id, {
+		"type": "combat_start",
+		"monster_name": monster.name,
+		"monster_level": monster.level,
+		"monster_hp": monster.max_hp if character.knows_monster(monster.name, monster.level) else -1,
+		"combat_state": combat_state,
+		"is_dungeon_combat": true,
+		"is_boss": is_boss,
+		"combat_bg_color": dungeon_data.color
+	})
+
+func _open_dungeon_treasure(peer_id: int):
+	"""Open a treasure chest in dungeon"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+
+	# Get treasure
+	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor)
+
+	# Give rewards
+	var reward_messages = []
+
+	# Gold
+	if treasure.gold > 0:
+		character.gold += treasure.gold
+		reward_messages.append("[color=#FFD700]+%d Gold[/color]" % treasure.gold)
+
+	# Materials
+	for mat in treasure.get("materials", []):
+		character.add_crafting_material(mat.id, mat.quantity)
+		var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
+		reward_messages.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.capitalize().replace("_", " "), qty_text])
+
+	# Egg
+	var egg_info = treasure.get("egg", {})
+	if not egg_info.is_empty():
+		var egg_data = drop_tables.get_egg_for_monster(egg_info.monster)
+		if not egg_data.is_empty():
+			var egg_result = character.add_egg(egg_data)
+			if egg_result.success:
+				reward_messages.append("[color=#A335EE]★ %s ★[/color]" % egg_data.name)
+
+	# Mark tile as cleared
+	_clear_dungeon_tile(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_treasure",
+		"rewards": reward_messages,
+		"message": "[color=#FFD700]You open the treasure chest![/color]"
+	})
+
+	_send_dungeon_state(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _advance_dungeon_floor(peer_id: int):
+	"""Move player to next floor of dungeon"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+
+	# Check if this was the last floor
+	if character.dungeon_floor >= dungeon_data.floors - 1:
+		# Dungeon complete!
+		_complete_dungeon(peer_id)
+		return
+
+	# Get next floor grid
+	var floor_grids = dungeon_floors[instance_id]
+	var next_floor = character.dungeon_floor + 1
+
+	if next_floor >= floor_grids.size():
+		_complete_dungeon(peer_id)
+		return
+
+	# Find entrance on next floor
+	var next_grid = floor_grids[next_floor]
+	var entrance_pos = _find_tile_position(next_grid, DungeonDatabaseScript.TileType.ENTRANCE)
+
+	# Advance floor
+	character.advance_dungeon_floor(entrance_pos.x, entrance_pos.y)
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_floor_change",
+		"floor": character.dungeon_floor + 1,
+		"total_floors": dungeon_data.floors,
+		"message": "[color=#FFFF00]You descend to floor %d...[/color]" % (character.dungeon_floor + 1)
+	})
+
+	_send_dungeon_state(peer_id)
+	save_character(peer_id)
+
+func _complete_dungeon(peer_id: int):
+	"""Handle dungeon completion"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var dungeon_type = character.current_dungeon_type
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	var instance_id = character.current_dungeon_id
+
+	# Calculate rewards
+	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1)
+
+	# Give rewards
+	character.gold += rewards.gold
+	var xp_result = character.gain_experience(rewards.xp, character.level)
+
+	# Set cooldown
+	character.set_dungeon_cooldown(dungeon_type, dungeon_data.cooldown_hours)
+	character.record_dungeon_completion(dungeon_type)
+
+	# Remove from dungeon
+	if active_dungeons.has(instance_id):
+		active_dungeons[instance_id].active_players.erase(peer_id)
+
+	character.exit_dungeon()
+
+	# Build completion message
+	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
+	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
+	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, rewards.total_floors]
+	completion_msg += "[color=#FFD700]+%d Gold[/color]\n" % rewards.gold
+	completion_msg += "[color=#00BFFF]+%d XP[/color]" % rewards.xp
+
+	if xp_result.leveled_up:
+		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_complete",
+		"dungeon_name": dungeon_data.name,
+		"rewards": rewards,
+		"leveled_up": xp_result.leveled_up,
+		"new_level": character.level,
+		"message": completion_msg
+	})
+
+	send_location_update(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	log_message("Player %s completed dungeon %s!" % [character.name, dungeon_data.name])
+
+func _clear_dungeon_tile(peer_id: int):
+	"""Mark current dungeon tile as cleared"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+
+	if not dungeon_floors.has(instance_id):
+		return
+
+	var floor_grids = dungeon_floors[instance_id]
+	if character.dungeon_floor >= floor_grids.size():
+		return
+
+	var grid = floor_grids[character.dungeon_floor]
+	var current_tile = grid[character.dungeon_y][character.dungeon_x]
+
+	# Only clear encounter/treasure tiles
+	if current_tile in [DungeonDatabaseScript.TileType.ENCOUNTER, DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.BOSS]:
+		grid[character.dungeon_y][character.dungeon_x] = DungeonDatabaseScript.TileType.CLEARED
+		character.dungeon_encounters_cleared += 1
 
 func _randomize_eternal_flame_location():
 	"""Set the Eternal Flame to a random location within 500 distance from origin"""

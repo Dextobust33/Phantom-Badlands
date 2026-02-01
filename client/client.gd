@@ -347,6 +347,20 @@ var at_trading_post: bool = false
 var trading_post_data: Dictionary = {}
 var pending_trading_post_action: String = ""
 
+# Crafting mode (only at trading posts)
+var crafting_mode: bool = false
+var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
+var crafting_recipes: Array = []  # Available recipes from server
+var crafting_materials: Dictionary = {}  # Player's materials
+var crafting_skill_level: int = 1  # Current skill level
+var crafting_post_bonus: int = 0  # Trading post specialization bonus
+var crafting_selected_recipe: int = -1  # Index of selected recipe
+var crafting_page: int = 0  # Page for recipe list
+const CRAFTING_PAGE_SIZE = 5
+
+# Water/Fishing location
+var at_water: bool = false  # Whether player is at a fishable water tile
+
 # Watch/Inspect mode - observe another player's game output
 var watching_player: String = ""  # Name of player we're watching (empty = not watching)
 var watch_request_pending: String = ""  # Player who requested to watch us (waiting for approval)
@@ -422,6 +436,22 @@ var ability_entered_from_settings: bool = false
 
 # Leaderboard mode
 var leaderboard_mode: String = "fallen_heroes"  # "fallen_heroes", "monster_kills", or "trophy_hall"
+
+# Fishing mode
+var fishing_mode: bool = false
+var fishing_phase: String = ""  # "waiting", "reaction"
+var fishing_wait_timer: float = 0.0
+var fishing_reaction_timer: float = 0.0
+var fishing_reaction_window: float = 1.5  # How long player has to react (from server)
+var fishing_target_slot: int = -1  # Which slot to press (0-4 mapped to action bar 5-9)
+var fishing_water_type: String = "shallow"  # "shallow" or "deep"
+
+# Dungeon mode
+var dungeon_mode: bool = false
+var dungeon_data: Dictionary = {}  # Current dungeon state from server
+var dungeon_floor_grid: Array = []  # 2D array of tile types
+var dungeon_available: Array = []  # List of available dungeons to enter
+var dungeon_list_mode: bool = false  # Viewing dungeon list
 
 # Password change mode
 var changing_password: bool = false
@@ -1608,6 +1638,18 @@ func _process(delta):
 			var frame_time = fmod(ANIMATION_DURATION - combat_animation_timer, SPINNER_SPEED * combat_spinner_frames.size())
 			combat_spinner_index = int(frame_time / SPINNER_SPEED) % combat_spinner_frames.size()
 
+	# Update fishing timers
+	if fishing_mode:
+		if fishing_phase == "waiting":
+			fishing_wait_timer -= delta
+			if fishing_wait_timer <= 0:
+				start_fishing_reaction_phase()
+		elif fishing_phase == "reaction":
+			fishing_reaction_timer -= delta
+			if fishing_reaction_timer <= 0:
+				# Timeout - fish escaped
+				send_to_server({"type": "fish_catch", "success": false, "water_type": fishing_water_type})
+
 	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
 		if Input.is_action_just_pressed("ui_cancel"):
@@ -1711,6 +1753,30 @@ func _process(delta):
 					select_quest_option(i)  # 0-based index
 			else:
 				set_meta("questkey_%d_pressed" % i, false)
+
+	# Crafting recipe selection with keybinds (1-5 for recipes on current page)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0:
+		for i in range(5):  # Only 5 recipes per page
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("craftkey_%d_pressed" % i, false):
+					set_meta("craftkey_%d_pressed" % i, true)
+					select_craft_recipe(i)  # 0-based index
+			else:
+				set_meta("craftkey_%d_pressed" % i, false)
+
+	# Dungeon selection with keybinds when viewing dungeon list
+	if game_state == GameState.PLAYING and not input_field.has_focus() and dungeon_list_mode:
+		for i in range(min(dungeon_available.size(), 9)):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("dungeonkey_%d_pressed" % i, false):
+					set_meta("dungeonkey_%d_pressed" % i, true)
+					select_dungeon(i)  # 0-based index
+			else:
+				set_meta("dungeonkey_%d_pressed" % i, false)
 
 	# Quest log abandonment with keybinds when viewing quest log
 	if game_state == GameState.PLAYING and not input_field.has_focus() and quest_log_mode and pending_continue:
@@ -3120,6 +3186,66 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif fishing_mode:
+		# Fishing minigame
+		if fishing_phase == "waiting":
+			# Waiting for bite - only cancel option
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "fishing_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Wait...", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Reaction phase - show catch buttons (slots 5-9 correspond to target slots 0-4)
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "CATCH!" if fishing_target_slot == 0 else "---", "action_type": "local", "action_data": "fishing_catch_0", "enabled": fishing_target_slot == 0},
+				{"label": "CATCH!" if fishing_target_slot == 1 else "---", "action_type": "local", "action_data": "fishing_catch_1", "enabled": fishing_target_slot == 1},
+				{"label": "CATCH!" if fishing_target_slot == 2 else "---", "action_type": "local", "action_data": "fishing_catch_2", "enabled": fishing_target_slot == 2},
+				{"label": "CATCH!" if fishing_target_slot == 3 else "---", "action_type": "local", "action_data": "fishing_catch_3", "enabled": fishing_target_slot == 3},
+				{"label": "CATCH!" if fishing_target_slot == 4 else "---", "action_type": "local", "action_data": "fishing_catch_4", "enabled": fishing_target_slot == 4},
+			]
+	elif dungeon_list_mode:
+		# Viewing list of available dungeons - select with 1-9
+		var total_pages = max(1, ceili(float(dungeon_available.size()) / 5.0))
+		var current_page = 0  # Always page 0 for now
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "dungeon_list_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif dungeon_mode:
+		# In dungeon - movement and actions
+		current_actions = [
+			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
+			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
+			{"label": "S", "action_type": "local", "action_data": "dungeon_move_s", "enabled": true},
+			{"label": "W", "action_type": "local", "action_data": "dungeon_move_w", "enabled": true},
+			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif in_trade:
 		# Active trade session
 		if trade_pending_add:
@@ -3707,7 +3833,54 @@ func update_action_bar():
 			]
 	elif at_trading_post:
 		# Trading Post mode
-		if quest_view_mode:
+		if crafting_mode:
+			# Crafting sub-menu
+			if crafting_skill == "":
+				# Skill selection
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "crafting_cancel", "enabled": true},
+					{"label": "Smith", "action_type": "local", "action_data": "crafting_skill_blacksmithing", "enabled": true},
+					{"label": "Alchemy", "action_type": "local", "action_data": "crafting_skill_alchemy", "enabled": true},
+					{"label": "Enchant", "action_type": "local", "action_data": "crafting_skill_enchanting", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif crafting_selected_recipe >= 0:
+				# Recipe confirm
+				current_actions = [
+					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
+					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				# Recipe list
+				var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
+				var has_prev = crafting_page > 0
+				var has_next = crafting_page < total_pages - 1
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "crafting_skill_cancel", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Prev Pg", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
+					{"label": "Next Pg", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
+				]
+		elif quest_view_mode:
 			# Quest selection sub-menu
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "trading_post_cancel", "enabled": true},
@@ -3731,21 +3904,21 @@ func update_action_bar():
 			var at_high_seat = (tp_x == 0 and tp_y == 0)
 			var player_title = character_data.get("title", "")
 			var has_title = not player_title.is_empty()
-			# Fifth slot: High Seat at (0,0) or Title if has title
+			# Fifth slot: High Seat at (0,0) or Title if has title, else Craft
 			var fifth_action: Dictionary
 			if has_title:
 				fifth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true}
 			elif at_high_seat:
 				fifth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
 			else:
-				fifth_action = {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+				fifth_action = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true}
 			current_actions = [
 				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": true},
 				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
 				fifth_action,
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3780,11 +3953,15 @@ func update_action_bar():
 		else:
 			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
+		# Or Fish button at water tiles
 		var fifth_action: Dictionary
 		if forge_available:
 			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
 		elif at_fire_mountain:
 			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
+		elif at_water:
+			var water_label = "Deep Fish" if fishing_water_type == "deep" else "Fish"
+			fifth_action = {"label": water_label, "action_type": "local", "action_data": "start_fishing", "enabled": true}
 		else:
 			fifth_action = {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
@@ -5732,6 +5909,9 @@ func execute_local_action(action: String):
 		"check_forge":
 			# Check if player can forge at Fire Mountain
 			send_to_server({"type": "forge_crown"})
+		"start_fishing":
+			# Start the fishing minigame
+			start_fishing()
 		"ability_equip":
 			show_ability_equip_prompt()
 		"ability_unequip":
@@ -5854,6 +6034,64 @@ func execute_local_action(action: String):
 			send_healer_choice("full")
 		"healer_cure_all":
 			send_healer_choice("cure_all")
+		# Fishing actions
+		"fishing_cancel":
+			end_fishing(false, "You stopped fishing.")
+		"fishing_catch_0":
+			handle_fishing_catch(0)
+		"fishing_catch_1":
+			handle_fishing_catch(1)
+		"fishing_catch_2":
+			handle_fishing_catch(2)
+		"fishing_catch_3":
+			handle_fishing_catch(3)
+		"fishing_catch_4":
+			handle_fishing_catch(4)
+		# Crafting actions
+		"open_crafting":
+			open_crafting()
+		"crafting_cancel":
+			close_crafting()
+		"crafting_skill_blacksmithing":
+			request_craft_list("blacksmithing")
+		"crafting_skill_alchemy":
+			request_craft_list("alchemy")
+		"crafting_skill_enchanting":
+			request_craft_list("enchanting")
+		"crafting_skill_cancel":
+			crafting_skill = ""
+			open_crafting()
+		"crafting_recipe_cancel":
+			crafting_selected_recipe = -1
+			display_craft_recipe_list()
+			update_action_bar()
+		"crafting_confirm":
+			confirm_craft()
+		"crafting_prev_page":
+			crafting_page = max(0, crafting_page - 1)
+			display_craft_recipe_list()
+			update_action_bar()
+		"crafting_next_page":
+			var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
+			crafting_page = min(total_pages - 1, crafting_page + 1)
+			display_craft_recipe_list()
+			update_action_bar()
+		# Dungeon actions
+		"dungeon_list_cancel":
+			dungeon_list_mode = false
+			dungeon_available = []
+			game_output.clear()
+			update_action_bar()
+		"dungeon_exit":
+			send_to_server({"type": "dungeon_exit"})
+		"dungeon_move_n":
+			send_to_server({"type": "dungeon_move", "direction": "n"})
+		"dungeon_move_s":
+			send_to_server({"type": "dungeon_move", "direction": "s"})
+		"dungeon_move_w":
+			send_to_server({"type": "dungeon_move", "direction": "w"})
+		"dungeon_move_e":
+			send_to_server({"type": "dungeon_move", "direction": "e"})
 		# Bless stat selection actions
 		"bless_stat_str":
 			_send_bless_with_stat("strength")
@@ -9185,6 +9423,16 @@ func handle_server_message(message: Dictionary):
 			# Don't clear game_output on location updates - map is displayed separately
 			# Only update the map display panel
 			update_map(desc)
+			# Update water/fishing location status
+			var was_at_water = at_water
+			at_water = message.get("at_water", false)
+			fishing_water_type = message.get("water_type", "shallow")
+			# Cancel fishing if we moved away from water
+			if was_at_water and not at_water and fishing_mode:
+				end_fishing(false, "You moved away from the water.")
+			# Update action bar if water status changed
+			if was_at_water != at_water:
+				update_action_bar()
 
 		"chat":
 			var sender = message.get("sender", "Unknown")
@@ -10014,6 +10262,36 @@ func handle_server_message(message: Dictionary):
 			healer_costs = {}
 			update_action_bar()
 
+		"fish_start":
+			handle_fish_start(message)
+
+		"fish_result":
+			handle_fish_result(message)
+
+		"craft_list":
+			handle_craft_list(message)
+
+		"craft_result":
+			handle_craft_result(message)
+
+		"dungeon_list":
+			handle_dungeon_list(message)
+
+		"dungeon_state":
+			handle_dungeon_state(message)
+
+		"dungeon_treasure":
+			handle_dungeon_treasure(message)
+
+		"dungeon_floor_change":
+			handle_dungeon_floor_change(message)
+
+		"dungeon_complete":
+			handle_dungeon_complete(message)
+
+		"dungeon_exit":
+			handle_dungeon_exit(message)
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -10073,7 +10351,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon"]
 	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -10637,6 +10915,24 @@ func process_command(text: String):
 		"crucible":
 			if has_character:
 				send_to_server({"type": "start_crucible"})
+			else:
+				display_game("You don't have a character yet")
+		"fish":
+			if has_character:
+				start_fishing()
+			else:
+				display_game("You don't have a character yet")
+		"craft":
+			if has_character:
+				if at_trading_post:
+					open_crafting()
+				else:
+					display_game("[color=#FF4444]You can only craft at Trading Posts![/color]")
+			else:
+				display_game("You don't have a character yet")
+		"dungeons", "dungeon":
+			if has_character:
+				request_dungeon_list()
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -12626,6 +12922,630 @@ func handle_healer_encounter(message: Dictionary):
 func send_healer_choice(choice: String):
 	"""Send healer choice to server"""
 	send_to_server({"type": "healer_choice", "choice": choice})
+
+# ===== FISHING FUNCTIONS =====
+
+func start_fishing():
+	"""Start the fishing minigame"""
+	if not at_water:
+		display_game("[color=#FF4444]You need to be at a water tile to fish![/color]")
+		return
+
+	if in_combat:
+		display_game("[color=#FF4444]You can't fish while in combat![/color]")
+		return
+
+	if fishing_mode:
+		display_game("[color=#808080]You're already fishing.[/color]")
+		return
+
+	# Request fishing start from server (validates cooldowns, gets wait time based on skill)
+	send_to_server({"type": "fish_start", "water_type": fishing_water_type})
+
+func handle_fish_start(message: Dictionary):
+	"""Handle server response to start fishing"""
+	# Server sends fish_start with data on success, or error message beforehand
+	fishing_mode = true
+	fishing_phase = "waiting"
+	fishing_wait_timer = message.get("wait_time", 4.0)
+	fishing_reaction_window = message.get("reaction_window", 1.5)
+	fishing_water_type = message.get("water_type", "shallow")
+
+	game_output.clear()
+	display_fishing_waiting()
+	update_action_bar()
+
+func display_fishing_waiting():
+	"""Display the fishing waiting screen with ASCII art"""
+	var water_name = "Deep Waters" if fishing_water_type == "deep" else "Shallow Waters"
+	display_game("[color=#00BFFF]===== Fishing: %s =====[/color]" % water_name)
+	display_game("")
+	# Simple fishing bobber ASCII art
+	display_game("[color=#87CEEB]        ~  ~  ~  ~  ~[/color]")
+	display_game("[color=#87CEEB]    ~        o        ~[/color]")
+	display_game("[color=#87CEEB]        ~  ~│~  ~  ~[/color]")
+	display_game("[color=#0077BE]    ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈[/color]")
+	display_game("[color=#005f87]    ≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋[/color]")
+	display_game("")
+	display_game("[color=#FFFF00]Your line is in the water...[/color]")
+	display_game("[color=#808080]Wait for a bite![/color]")
+
+func display_fishing_bite():
+	"""Display the fishing bite screen - player must react quickly"""
+	game_output.clear()
+	var water_name = "Deep Waters" if fishing_water_type == "deep" else "Shallow Waters"
+	display_game("[color=#00BFFF]===== Fishing: %s =====[/color]" % water_name)
+	display_game("")
+	# Splashing bobber ASCII art
+	display_game("[color=#87CEEB]    ~  ~ [color=#FFFF00]!!!![/color] ~  ~[/color]")
+	display_game("[color=#87CEEB]      [color=#FFFFFF]* SPLASH *[/color][/color]")
+	display_game("[color=#0077BE]    ≈≈[color=#FFFF00]><>[/color]≈≈≈≈≈≈≈≈≈≈≈≈[/color]")
+	display_game("[color=#005f87]    ≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋[/color]")
+	display_game("")
+	display_game("[color=#FF4444][font_size=18]!!! FISH ON THE LINE !!![/font_size][/color]")
+	display_game("")
+	# Show which button to press
+	var slot_key = get_action_key_name(5 + fishing_target_slot)  # Slots 5-9 for fishing
+	display_game("[color=#00FF00]Quick! Press [%s] to catch it![/color]" % slot_key)
+
+func start_fishing_reaction_phase():
+	"""Transition from waiting to reaction phase"""
+	fishing_phase = "reaction"
+	# Pick a random slot (0-4) for the player to hit
+	fishing_target_slot = randi() % 5
+	# Use reaction window from server (based on fishing skill)
+	fishing_reaction_timer = fishing_reaction_window
+
+	display_fishing_bite()
+	update_action_bar()
+
+	# Play a notification sound for the bite
+	play_whisper_notification()
+
+func handle_fishing_catch(slot_pressed: int):
+	"""Player pressed a catch button - check if correct"""
+	if not fishing_mode or fishing_phase != "reaction":
+		return
+
+	if slot_pressed == fishing_target_slot:
+		# Correct slot! Send catch success to server
+		send_to_server({"type": "fish_catch", "success": true, "water_type": fishing_water_type})
+	else:
+		# Wrong slot - fish escapes
+		end_fishing(false, "Wrong button! The fish escaped...")
+
+func end_fishing(caught: bool, message: String = ""):
+	"""End the fishing minigame"""
+	fishing_mode = false
+	fishing_phase = ""
+	fishing_wait_timer = 0.0
+	fishing_reaction_timer = 0.0
+	fishing_target_slot = -1
+
+	if message != "":
+		display_game("[color=#FF4444]%s[/color]" % message)
+
+	update_action_bar()
+
+func handle_fish_result(message: Dictionary):
+	"""Handle the result of a fishing attempt from server"""
+	fishing_mode = false
+	fishing_phase = ""
+	fishing_wait_timer = 0.0
+	fishing_reaction_timer = 0.0
+	fishing_target_slot = -1
+
+	game_output.clear()
+
+	if message.get("success", false):
+		var catch_data = message.get("catch", {})
+		var catch_name = catch_data.get("name", "something")
+		var xp_gained = message.get("xp_gained", 0)
+		var new_level = message.get("new_level", 1)
+		var leveled_up = message.get("leveled_up", false)
+		var main_message = message.get("message", "")
+		var extra_messages = message.get("extra_messages", [])
+
+		# Success ASCII art
+		display_game("[color=#00FF00]===== CATCH! =====[/color]")
+		display_game("")
+		display_game("[color=#87CEEB]      ><>  [color=#FFD700]✦[/color]  <><[/color]")
+		display_game("")
+		# Display the server's catch message
+		if main_message != "":
+			display_game(main_message)
+		if xp_gained > 0:
+			display_game("[color=#00BFFF]+%d Fishing XP[/color]" % xp_gained)
+		# Display any extra messages (level up, egg hatch steps, etc.)
+		for extra_msg in extra_messages:
+			display_game(extra_msg)
+		display_game("")
+		display_game("[color=#808080]Fishing skill: Level %d[/color]" % new_level)
+	else:
+		# Failure - fish escaped (timeout or wrong button)
+		var fail_message = message.get("message", "The fish got away!")
+		display_game("[color=#FF4444]===== Too Slow! =====[/color]")
+		display_game("")
+		display_game(fail_message)
+		display_game("[color=#808080]Better luck next time![/color]")
+
+	update_action_bar()
+
+# ===== CRAFTING FUNCTIONS =====
+
+func open_crafting():
+	"""Open the crafting menu"""
+	if not at_trading_post:
+		display_game("[color=#FF4444]You can only craft at Trading Posts![/color]")
+		return
+
+	crafting_mode = true
+	crafting_skill = ""
+	crafting_recipes = []
+	crafting_selected_recipe = -1
+	crafting_page = 0
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== CRAFTING =====[/color]")
+	display_game("")
+	display_game("Select a crafting skill:")
+	display_game("")
+	display_game("[%s] [color=#FF6600]Blacksmithing[/color] - Weapons & Armor" % get_action_key_name(1))
+	display_game("[%s] [color=#00FF00]Alchemy[/color] - Potions & Consumables" % get_action_key_name(2))
+	display_game("[%s] [color=#A335EE]Enchanting[/color] - Enhance Equipment" % get_action_key_name(3))
+	display_game("")
+	display_game("[%s] Back to Trading Post" % get_action_key_name(0))
+
+	update_action_bar()
+
+func request_craft_list(skill_name: String):
+	"""Request recipe list from server for a skill"""
+	crafting_skill = skill_name
+	send_to_server({"type": "craft_list", "skill": skill_name})
+
+func handle_craft_list(message: Dictionary):
+	"""Handle recipe list from server"""
+	crafting_skill = message.get("skill", "blacksmithing")
+	crafting_skill_level = message.get("skill_level", 1)
+	crafting_post_bonus = message.get("post_bonus", 0)
+	crafting_recipes = message.get("recipes", [])
+	crafting_materials = message.get("materials", {})
+	crafting_page = 0
+	crafting_selected_recipe = -1
+
+	display_craft_recipe_list()
+	update_action_bar()
+
+func display_craft_recipe_list():
+	"""Display the list of available recipes"""
+	game_output.clear()
+
+	var skill_display = crafting_skill.capitalize()
+	var skill_color = "#FFFFFF"
+	match crafting_skill:
+		"blacksmithing":
+			skill_color = "#FF6600"
+		"alchemy":
+			skill_color = "#00FF00"
+		"enchanting":
+			skill_color = "#A335EE"
+
+	display_game("[color=%s]===== %s (Level %d) =====[/color]" % [skill_color, skill_display, crafting_skill_level])
+	if crafting_post_bonus > 0:
+		display_game("[color=#00FFFF]Trading Post Bonus: +%d%% success[/color]" % crafting_post_bonus)
+	display_game("")
+
+	if crafting_recipes.is_empty():
+		display_game("[color=#808080]No recipes available at your skill level.[/color]")
+		display_game("")
+		display_game("[%s] Back" % get_action_key_name(0))
+		return
+
+	# Paginate recipes
+	var start_idx = crafting_page * CRAFTING_PAGE_SIZE
+	var end_idx = min(start_idx + CRAFTING_PAGE_SIZE, crafting_recipes.size())
+	var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
+
+	display_game("Recipes (Page %d/%d):" % [crafting_page + 1, total_pages])
+	display_game("")
+
+	for i in range(start_idx, end_idx):
+		var recipe = crafting_recipes[i]
+		var display_idx = (i - start_idx) + 1  # 1-5 for display
+		var can_craft = recipe.get("can_craft", false)
+		var success_chance = recipe.get("success_chance", 50)
+		var name = recipe.get("name", "Unknown")
+		var skill_req = recipe.get("skill_required", 1)
+
+		var color = "#00FF00" if can_craft else "#808080"
+		var craftable_text = "" if can_craft else " [color=#FF4444](Missing materials)[/color]"
+
+		display_game("[%s] [color=%s]%s[/color] (Lv%d) - %d%% success%s" % [
+			get_action_key_name(display_idx + 4),  # Keys 1-5 map to action slots 5-9
+			color, name, skill_req, success_chance, craftable_text
+		])
+
+	display_game("")
+	display_game("[%s] Back | [%s/%s] Prev/Next Page" % [get_action_key_name(0), get_action_key_name(8), get_action_key_name(9)])
+
+func select_craft_recipe(index: int):
+	"""Select a recipe to view details/confirm crafting"""
+	var actual_idx = crafting_page * CRAFTING_PAGE_SIZE + index
+	if actual_idx >= crafting_recipes.size():
+		return
+
+	crafting_selected_recipe = actual_idx
+	display_craft_recipe_details()
+	update_action_bar()
+
+func display_craft_recipe_details():
+	"""Display details of selected recipe"""
+	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
+		return
+
+	var recipe = crafting_recipes[crafting_selected_recipe]
+	var name = recipe.get("name", "Unknown")
+	var skill_req = recipe.get("skill_required", 1)
+	var difficulty = recipe.get("difficulty", 10)
+	var success_chance = recipe.get("success_chance", 50)
+	var can_craft = recipe.get("can_craft", false)
+	var materials = recipe.get("materials", {})
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== %s =====[/color]" % name)
+	display_game("")
+	display_game("Skill Required: %d" % skill_req)
+	display_game("Difficulty: %d" % difficulty)
+	display_game("Success Chance: [color=#00FF00]%d%%[/color]" % success_chance)
+	display_game("")
+	display_game("[color=#87CEEB]Materials Required:[/color]")
+
+	# Display materials with owned count
+	for mat_id in materials:
+		var required = materials[mat_id]
+		var owned = crafting_materials.get(mat_id, 0)
+		var mat_name = mat_id.capitalize().replace("_", " ")
+		var color = "#00FF00" if owned >= required else "#FF4444"
+		display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+
+	display_game("")
+	display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
+	display_game("[color=#808080]Higher skill = better quality items![/color]")
+	display_game("")
+
+	if can_craft:
+		display_game("[%s] [color=#00FF00]CRAFT![/color] | [%s] Cancel" % [get_action_key_name(1), get_action_key_name(0)])
+	else:
+		display_game("[color=#FF4444]Missing required materials![/color]")
+		display_game("[%s] Cancel" % get_action_key_name(0))
+
+func confirm_craft():
+	"""Send craft request to server"""
+	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
+		return
+
+	var recipe = crafting_recipes[crafting_selected_recipe]
+	var recipe_id = recipe.get("id", "")
+
+	send_to_server({"type": "craft_item", "recipe_id": recipe_id})
+
+func handle_craft_result(message: Dictionary):
+	"""Handle crafting result from server"""
+	var success = message.get("success", false)
+	var recipe_name = message.get("recipe_name", "item")
+	var quality_name = message.get("quality_name", "Standard")
+	var quality_color = message.get("quality_color", "#FFFFFF")
+	var xp_gained = message.get("xp_gained", 0)
+	var leveled_up = message.get("leveled_up", false)
+	var new_level = message.get("new_level", 1)
+	var skill_name = message.get("skill_name", "crafting")
+	var result_message = message.get("message", "")
+
+	game_output.clear()
+
+	if success:
+		# Success animation
+		display_game("[color=#00FF00]===== CRAFTING SUCCESS! =====[/color]")
+		display_game("")
+		display_game("[color=%s]✦ %s %s ✦[/color]" % [quality_color, quality_name, recipe_name])
+		display_game("")
+		display_game(result_message)
+	else:
+		# Failure
+		display_game("[color=#FF4444]===== CRAFTING FAILED =====[/color]")
+		display_game("")
+		display_game(result_message)
+
+	display_game("")
+	display_game("[color=#00BFFF]+%d %s XP[/color]" % [xp_gained, skill_name.capitalize()])
+
+	if leveled_up:
+		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
+
+	display_game("")
+	display_game("[color=#808080]Press any action key to continue...[/color]")
+
+	# Reset crafting state
+	crafting_selected_recipe = -1
+
+	# Request updated recipe list
+	request_craft_list(crafting_skill)
+
+func close_crafting():
+	"""Close crafting menu and return to trading post"""
+	crafting_mode = false
+	crafting_skill = ""
+	crafting_recipes = []
+	crafting_selected_recipe = -1
+	crafting_page = 0
+
+	_display_trading_post_ui()
+	update_action_bar()
+
+# ===== DUNGEON FUNCTIONS =====
+
+func request_dungeon_list():
+	"""Request list of nearby dungeons from server"""
+	send_to_server({"type": "dungeon_list"})
+
+func handle_dungeon_list(message: Dictionary):
+	"""Handle list of available dungeons from server"""
+	dungeon_available = message.get("dungeons", [])
+
+	if dungeon_available.is_empty():
+		display_game("[color=#808080]No dungeons are currently available nearby.[/color]")
+		display_game("[color=#808080]Dungeons spawn at random locations - keep exploring![/color]")
+		return
+
+	dungeon_list_mode = true
+	game_output.clear()
+	display_game("[color=#FFD700]===== NEARBY DUNGEONS =====[/color]")
+	display_game("")
+
+	var idx = 1
+	for dungeon in dungeon_available:
+		var name = dungeon.get("name", "Unknown Dungeon")
+		var tier = dungeon.get("tier", 1)
+		var min_level = dungeon.get("min_level", 1)
+		var max_level = dungeon.get("max_level", 100)
+		var distance = dungeon.get("distance", 0)
+		var on_cooldown = dungeon.get("on_cooldown", false)
+		var color = dungeon.get("color", "#FFFFFF")
+
+		var status = ""
+		if on_cooldown:
+			status = "[color=#FF4444](On Cooldown)[/color]"
+
+		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, name, status])
+		display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
+		display_game("")
+		idx += 1
+
+	display_game("[color=#808080]Enter a dungeon number to explore, or press [%s] to cancel.[/color]" % get_action_key_name(0))
+	update_action_bar()
+
+func handle_dungeon_state(message: Dictionary):
+	"""Handle dungeon state update from server"""
+	dungeon_mode = true
+	dungeon_list_mode = false
+	dungeon_data = message
+	dungeon_floor_grid = message.get("floor_grid", [])
+
+	display_dungeon_floor()
+	update_action_bar()
+
+func handle_dungeon_treasure(message: Dictionary):
+	"""Handle opening a treasure chest in dungeon"""
+	var gold = message.get("gold", 0)
+	var materials = message.get("materials", [])
+	var egg = message.get("egg", {})
+
+	game_output.clear()
+	display_game("[color=#FFD700]===== TREASURE! =====[/color]")
+	display_game("")
+	display_game("[color=#FFD700]  $$$[/color]")
+	display_game("[color=#8B4513] [===][/color]")
+	display_game("")
+
+	display_game("[color=#FFD700]Found %d gold![/color]" % gold)
+
+	if not materials.is_empty():
+		display_game("")
+		display_game("[color=#87CEEB]Materials:[/color]")
+		for mat in materials:
+			var mat_name = mat.get("id", "unknown").capitalize().replace("_", " ")
+			var quantity = mat.get("quantity", 1)
+			display_game("  + %d x %s" % [quantity, mat_name])
+
+	if not egg.is_empty():
+		var egg_monster = egg.get("monster", "Unknown")
+		display_game("")
+		display_game("[color=#A335EE]★ Found a %s Egg! ★[/color]" % egg_monster)
+
+	display_game("")
+	display_game("[color=#808080]Continue exploring...[/color]")
+
+	# Request updated dungeon state
+	send_to_server({"type": "dungeon_move", "direction": "none"})
+
+func handle_dungeon_floor_change(message: Dictionary):
+	"""Handle advancing to next dungeon floor"""
+	var new_floor = message.get("floor", 1)
+	var total_floors = message.get("total_floors", 1)
+	var dungeon_name = message.get("dungeon_name", "Dungeon")
+
+	game_output.clear()
+	display_game("[color=#FFFF00]===== FLOOR %d =====[/color]" % new_floor)
+	display_game("")
+	display_game("You descend deeper into the %s..." % dungeon_name)
+	display_game("")
+
+	if new_floor == total_floors:
+		display_game("[color=#FF4444]This is the final floor. The boss awaits![/color]")
+	else:
+		display_game("Floors remaining: %d" % (total_floors - new_floor))
+
+	display_game("")
+	display_game("[color=#808080]Continue exploring...[/color]")
+
+func handle_dungeon_complete(message: Dictionary):
+	"""Handle dungeon completion"""
+	dungeon_mode = false
+	dungeon_data = {}
+	dungeon_floor_grid = []
+
+	var dungeon_name = message.get("dungeon_name", "Dungeon")
+	var floors_cleared = message.get("floors_cleared", 0)
+	var total_floors = message.get("total_floors", 0)
+	var xp_reward = message.get("xp", 0)
+	var gold_reward = message.get("gold", 0)
+	var full_clear = message.get("full_clear", false)
+
+	game_output.clear()
+
+	if full_clear:
+		display_game("[color=#00FF00]===== DUNGEON COMPLETE! =====[/color]")
+		display_game("")
+		display_game("[color=#FFD700]★★★ VICTORY! ★★★[/color]")
+	else:
+		display_game("[color=#FFFF00]===== DUNGEON CLEARED =====[/color]")
+
+	display_game("")
+	display_game("You have conquered the %s!" % dungeon_name)
+	display_game("Floors cleared: %d/%d" % [floors_cleared, total_floors])
+	display_game("")
+	display_game("[color=#FFD700]Rewards:[/color]")
+	display_game("  + %d XP" % xp_reward)
+	display_game("  + %d Gold" % gold_reward)
+	display_game("")
+	display_game("[color=#808080]You return to the surface.[/color]")
+
+	update_action_bar()
+
+func handle_dungeon_exit(message: Dictionary):
+	"""Handle exiting a dungeon (voluntary or death)"""
+	dungeon_mode = false
+	dungeon_data = {}
+	dungeon_floor_grid = []
+
+	var reason = message.get("reason", "exit")
+	var dungeon_name = message.get("dungeon_name", "Dungeon")
+
+	game_output.clear()
+
+	if reason == "fled":
+		display_game("[color=#FF4444]===== RETREAT =====[/color]")
+		display_game("")
+		display_game("You fled from the %s." % dungeon_name)
+		display_game("[color=#808080]The dungeon resets behind you.[/color]")
+	else:
+		display_game("[color=#808080]You left the %s.[/color]" % dungeon_name)
+
+	update_action_bar()
+
+func display_dungeon_floor():
+	"""Display the current dungeon floor with ASCII map"""
+	if not dungeon_mode or dungeon_data.is_empty():
+		return
+
+	var dungeon_name = dungeon_data.get("dungeon_name", "Dungeon")
+	var dungeon_color = dungeon_data.get("dungeon_color", "#FFFFFF")
+	var floor_num = dungeon_data.get("floor", 1)
+	var total_floors = dungeon_data.get("total_floors", 1)
+	var player_x = dungeon_data.get("player_x", 0)
+	var player_y = dungeon_data.get("player_y", 0)
+	var encounters_cleared = dungeon_data.get("encounters_cleared", 0)
+
+	game_output.clear()
+	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
+	display_game("Floor %d/%d | Cleared: %d" % [floor_num, total_floors, encounters_cleared])
+	display_game("")
+
+	# Display the dungeon grid
+	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
+	display_game(grid_display)
+
+	display_game("")
+	display_game("[color=#808080]Legend: @ You  ? Encounter  $ Treasure  > Exit  B Boss[/color]")
+	display_game("")
+	display_game("[%s] Exit | [%s] N | [%s] S | [%s] W | [%s] E" % [
+		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
+		get_action_key_name(3), get_action_key_name(4)
+	])
+
+func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
+	"""Render dungeon grid to BBCode string"""
+	if grid.is_empty():
+		return "[color=#808080]No floor data[/color]"
+
+	var lines = []
+	var width = grid[0].size() if grid.size() > 0 else 0
+
+	# Top border
+	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
+
+	# Grid rows
+	for y in range(grid.size()):
+		var line = "[color=#FFD700]|[/color]"
+		for x in range(grid[y].size()):
+			if x == player_x and y == player_y:
+				line += "[color=#00FF00]@[/color]"
+			else:
+				var tile = grid[y][x]
+				var tile_info = _get_dungeon_tile_display(tile)
+				line += "[color=%s]%s[/color]" % [tile_info.color, tile_info.char]
+		line += "[color=#FFD700]|[/color]"
+		lines.append(line)
+
+	# Bottom border
+	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
+
+	return "\n".join(lines)
+
+func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
+	"""Get display character and color for a dungeon tile type"""
+	# Matches DungeonDatabase.TileType enum
+	match tile_type:
+		0:  # EMPTY
+			return {"char": ".", "color": "#404040"}
+		1:  # WALL
+			return {"char": "#", "color": "#808080"}
+		2:  # ENTRANCE
+			return {"char": "E", "color": "#00FF00"}
+		3:  # EXIT
+			return {"char": ">", "color": "#FFFF00"}
+		4:  # ENCOUNTER
+			return {"char": "?", "color": "#FF4444"}
+		5:  # TREASURE
+			return {"char": "$", "color": "#FFD700"}
+		6:  # BOSS
+			return {"char": "B", "color": "#FF0000"}
+		7:  # CLEARED
+			return {"char": "·", "color": "#303030"}
+		_:
+			return {"char": "?", "color": "#FFFFFF"}
+
+func select_dungeon(index: int):
+	"""Select a dungeon from the list to enter"""
+	if not dungeon_list_mode:
+		return
+
+	if index < 0 or index >= dungeon_available.size():
+		display_game("[color=#FF4444]Invalid dungeon selection.[/color]")
+		return
+
+	var dungeon = dungeon_available[index]
+	var dungeon_type = dungeon.get("type", "")
+	var instance_id = dungeon.get("active_instance", "")
+
+	if dungeon.get("on_cooldown", false):
+		display_game("[color=#FF4444]This dungeon is still on cooldown.[/color]")
+		return
+
+	dungeon_list_mode = false
+	dungeon_available = []
+	# Send both type and instance_id - server will create instance if needed
+	send_to_server({"type": "dungeon_enter", "dungeon_type": dungeon_type, "instance_id": instance_id})
 
 # ===== TRADING POST FUNCTIONS =====
 

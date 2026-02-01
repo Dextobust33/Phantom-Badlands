@@ -70,7 +70,7 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 # ===== PROGRESS TRACKING =====
 
 func check_kill_progress(character: Character, monster_level: int, player_x: int, player_y: int,
-						 hotzone_intensity: float, world_system: WorldSystem) -> Array:
+						 hotzone_intensity: float, world_system: WorldSystem, killed_monster_name: String = "") -> Array:
 	"""Check and update all kill-based quest progress. Returns array of {quest_id, progress, target, completed, message}"""
 	var updates = []
 
@@ -90,6 +90,12 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 		match quest_type:
 			QuestDatabaseScript.QuestType.KILL_ANY:
 				should_update = true
+
+			QuestDatabaseScript.QuestType.KILL_TYPE:
+				# Must kill specific monster type
+				var required_type = quest.get("monster_type", "")
+				if required_type != "" and killed_monster_name == required_type:
+					should_update = true
 
 			QuestDatabaseScript.QuestType.KILL_LEVEL, QuestDatabaseScript.QuestType.BOSS_HUNT:
 				var min_level = quest.get("target", 1)
