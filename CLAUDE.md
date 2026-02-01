@@ -24,8 +24,10 @@ Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScr
 - New features should be accessible via the Action Bar, not `/commands`
 - The Action Bar has 10 slots (Space, Q, W, E, R, 1-5) with contextual buttons
 - Slot 4 (R key) is the "contextual location action" - shows different buttons based on location:
-  - At water: Fish
-  - At dungeon entrance: Dungeon
+  - At water (~): Fish
+  - At ore deposit (mountains): Mine
+  - At dense forest: Chop
+  - At dungeon entrance (D): Dungeon
   - At Infernal Forge: Forge
   - Otherwise: Quests
 - Chat commands can exist as fallbacks but shouldn't be the primary interface
@@ -196,7 +198,9 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 | `shared/world_system.gd` | Terrain, hotspots, coordinates |
 | `shared/monster_database.gd` | Monster definitions (9 tiers) |
 | `shared/quest_database.gd` | Quest definitions |
-| `shared/drop_tables.gd` | Item generation |
+| `shared/dungeon_database.gd` | Dungeon types, floors, bosses |
+| `shared/drop_tables.gd` | Item generation, fishing/mining/logging catches, salvage |
+| `shared/crafting_database.gd` | Crafting recipes, materials |
 
 ## Adding ASCII Art
 
@@ -291,6 +295,28 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 - Client: `estimate_enemy_hp()` scales known HP to estimate for other levels
 
 **Files:** `shared/character.gd` (knows_monster), `client/client.gd` (known_enemy_hp, estimate_enemy_hp)
+
+## Gathering & Crafting System
+
+**Gathering modes** (Fishing, Mining, Logging) follow the same pattern:
+1. Player arrives at location (water/ore/forest) → `at_water`, `at_ore_deposit`, `at_dense_forest` flags set
+2. Action bar slot 4 shows contextual button (Fish/Mine/Chop)
+3. Player starts gathering → client enters `fishing_mode`/`mining_mode`/`logging_mode`
+4. Minigame: Wait phase → Reaction phase (press correct key)
+5. Server validates and returns catch → client displays result
+
+**Terrain detection:** `world_system.gd` has `is_water_tile()`, `is_ore_deposit()`, `is_dense_forest()` using hash-based procedural placement.
+
+**Tier scaling:** Mining (9 tiers) and Logging (6 tiers) scale by distance from origin. Higher tiers require more successful reactions (T1-2: 1, T3-5: 2, T6+: 3).
+
+**Salvage system:** Inventory → Salvage → select item. Converts items to Salvage Essence (ESS) with bonus material chance. Values in `drop_tables.gd` `SALVAGE_VALUES`.
+
+**Materials viewing:** Inventory → Materials shows gathered resources grouped by type.
+
+**Key files:**
+- `shared/drop_tables.gd` - `FISHING_CATCHES`, `MINING_CATCHES`, `LOGGING_CATCHES`, `SALVAGE_VALUES`
+- `shared/world_system.gd` - Terrain detection functions
+- `shared/character.gd` - `fishing_skill`, `mining_skill`, `logging_skill`, `salvage_essence`
 
 ## Common Pitfalls
 
