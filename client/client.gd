@@ -12641,10 +12641,20 @@ func show_help():
 
 [color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
 
+[b][color=#FFD700]══ CRAFTING & GATHERING ══[/color][/b]
+[color=#AA66FF]Salvage:[/color] Inventory→Salvage destroys items for [color=#AA66FF]Essence[/color] (ESS). Value = rarity × level. Bonus materials possible!
+[color=#00FFFF]Materials:[/color] Inventory→Materials shows your gathered resources by category (ore, wood, fish, etc.)
+[color=#FFA500]Fishing([%s]):[/color] At water ([color=#00FFFF]~[/color]), press [%s] to fish. Wait for bite, react with shown key. Shallow/deep water vary.
+[color=#8B4513]Mining([%s]):[/color] At ore deposits (mountains), press [%s] to mine. Tier 1-9 by distance. T3-5=2 reactions, T6+=3.
+[color=#228B22]Logging([%s]):[/color] At dense forests, press [%s] to chop. Tier 1-6 by distance. Higher skill = better catches.
+[color=#808080]Skills:[/color] Fishing/Mining/Logging gain XP from catches. Higher skill = faster catches + better rare odds.
+
 [b][color=#FFD700]══ WORLD ══[/color][/b]
 [color=#00FF00]Posts(58):[/color] Haven(0,10)=spawn | Crossroads(0,0)=throne | Frostgate(0,-100)=boss. Recharge([%s])!
-[color=#FFD700]Merchants(110):[/color] [color=#FF4444]$[/color]=Weapon [color=#4488FF]$[/color]=Armor [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General. Buy/sell/upgrade/gamble!
-[color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#00FFFF]Quests([%s]):[/color] Kill, Hotzone(bonus!), Explore, Boss
+[color=#FFD700]Merchants(110):[/color] [color=#FF4444]$[/color]=Weapon [color=#4488FF]$[/color]=Armor [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General. Buy/sell/gamble!
+[color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (explore to find!)
+[color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
+[color=#9932CC]Dungeons([%s]):[/color] Multi-floor instances! Clear floors, fight boss. [color=#FFD700]GUARANTEED[/color] companion egg on completion!
 
 [b][color=#FFD700]══ PROGRESSION ══[/color][/b]
 [color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
@@ -12662,7 +12672,9 @@ func show_help():
   [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Mentor/Seek Flame. Can find Eternal Flame.
   [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Restore/Bless/Smite/Guardian.
 [color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
-[color=#00FFFF]Companions:[/color] Soul Gems summon pets! Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) + more
+[color=#00FFFF]Companions:[/color] Soul Gems summon combat pets (from dungeons, fishing, mining, logging)!
+  Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) | Frost(+10%%def) | Storm(+5%%crit) + more
+  One active at a time. Use Soul Gem from inventory to summon/swap. Status shows active companion.
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
 [color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
@@ -12676,9 +12688,9 @@ func show_help():
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.9.10:[/color] Fixed stat displays, quest progress, ability costs, resource potions. 10%% cheaper healing, 10%% more XP
+[color=#00FFFF]v0.9.13:[/color] Crafting overhaul: Salvage, Mining, Logging, Materials viewing. Gathering skill progression.
 [/font_size]
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
 	# Add discovered trading posts section (dynamic per character)
@@ -12834,7 +12846,22 @@ func search_help(search_term: String):
 		{
 			"title": "COMPANIONS",
 			"keywords": ["companion", "companions", "soul", "gem", "gems", "pet", "wolf", "phoenix", "shadow", "wisp", "guardian", "spirit", "ember", "bonus"],
-			"content": "[color=#00FFFF]Companion System (Tier 7+)[/color]\n\nSoul Gems summon companion spirits that provide combat bonuses:\n\n[color=#808080]Wolf Spirit[/color] - +10% attack damage\n[color=#FF6666]Phoenix Ember[/color] - Regenerate 2% HP per combat round\n[color=#9932CC]Shadow Wisp[/color] - +15% flee chance\n[color=#4169E1]Frost Guardian[/color] - +10% defense\n[color=#FFD700]Storm Spirit[/color] - +5% critical chance\n[color=#00FF00]Nature's Bond[/color] - +3% HP regen per round\n[color=#FF00FF]Void Familiar[/color] - +8% damage, +8% crit\n\n[color=#AAAAAA]Only one companion active at a time. Use soul gems from inventory to summon/dismiss.[/color]"
+			"content": "[color=#00FFFF]Companion System[/color]\n\nSoul Gems summon companion spirits that provide combat bonuses:\n\n[color=#808080]Wolf Spirit[/color] - +10% attack damage\n[color=#FF6666]Phoenix Ember[/color] - Regenerate 2% HP per combat round\n[color=#9932CC]Shadow Wisp[/color] - +15% flee chance\n[color=#4169E1]Frost Guardian[/color] - +10% defense\n[color=#FFD700]Storm Spirit[/color] - +5% critical chance\n[color=#00FF00]Nature's Bond[/color] - +3% HP regen per round\n[color=#FF00FF]Void Familiar[/color] - +8% damage, +8% crit\n\n[color=#AAAAAA]Sources:[/color] Dungeon completion (GUARANTEED!), fishing, mining, logging (rare drops)\n[color=#AAAAAA]Only one companion active at a time. Use soul gems from inventory to summon/swap.[/color]"
+		},
+		{
+			"title": "CRAFTING & GATHERING",
+			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials"],
+			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for Salvage Essence (ESS)\n• Value scales with rarity and item level\n• Bonus chance for crafting materials (ore from weapons, leather from armor, etc.)\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the shown key to catch\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests, companion eggs!\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions\n• Drops: ore, gems, herbs, treasure, eggs\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• Drops: wood, herbs, sap, enchanting materials, eggs\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster waits"
+		},
+		{
+			"title": "DUNGEONS",
+			"keywords": ["dungeon", "dungeons", "floor", "floors", "boss", "instance", "clear", "entrance", "explore"],
+			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#00FFFF]How to Find:[/color]\n• Explore the world - dungeons appear as [color=#9932CC]D[/color] on the map\n• Press R at dungeon entrance to enter\n• Different dungeon types spawn in different regions\n\n[color=#00FFFF]Inside Dungeons:[/color]\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion Soul Gem on boss kill!\n• Bonus rewards for full clear\n\n[color=#AAAAAA]Dungeon quests at trading posts offer bonus rewards for completion.[/color]"
+		},
+		{
+			"title": "QUESTS",
+			"keywords": ["quest", "quests", "kill", "slay", "hunt", "bounty", "reward", "trading", "post", "daily", "hotzone", "boss"],
+			"content": "[color=#00FFFF]Quest System[/color]\n\nAccept quests at trading posts (press R → Quests):\n\n[color=#FF6666]Kill Any[/color] - Slay X monsters of any type\n[color=#FFA500]Kill Type[/color] - Hunt specific monster species\n[color=#FFD700]Kill Level[/color] - Defeat a monster above target level\n[color=#FF4444]Hotzone Kill[/color] - Kill in danger zones (!) for bonus rewards\n[color=#A335EE]Boss Hunt[/color] - Track down and slay a powerful monster\n[color=#9932CC]Dungeon Clear[/color] - Complete a dungeon instance\n\n[color=#00FFFF]Rewards:[/color] XP, Gold, Gems (at higher tiers)\n[color=#00FFFF]Scaling:[/color] Quest difficulty and rewards scale with your level\n[color=#00FFFF]Tip:[/color] Hotzone quests give bonus rewards - look for [color=#FF6600]![/color] on the map!"
 		}
 	]
 
