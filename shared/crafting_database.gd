@@ -79,6 +79,35 @@ const MATERIALS = {
 	"celestial_ore": {"name": "Celestial Ore", "type": "ore", "tier": 8, "value": 1000},
 	"primordial_ore": {"name": "Primordial Ore", "type": "ore", "tier": 9, "value": 2000},
 
+	# Wood (from logging)
+	"common_wood": {"name": "Common Wood", "type": "wood", "tier": 1, "value": 6},
+	"oak_wood": {"name": "Oak Wood", "type": "wood", "tier": 2, "value": 12},
+	"ash_wood": {"name": "Ash Wood", "type": "wood", "tier": 3, "value": 25},
+	"ironwood": {"name": "Ironwood", "type": "wood", "tier": 4, "value": 50},
+	"darkwood": {"name": "Darkwood", "type": "wood", "tier": 5, "value": 100},
+	"worldtree_branch": {"name": "Worldtree Branch", "type": "wood", "tier": 6, "value": 200},
+	"heartwood": {"name": "Heartwood", "type": "wood", "tier": 4, "value": 80},
+	"elderwood": {"name": "Elderwood", "type": "wood", "tier": 5, "value": 150},
+	"worldtree_heartwood": {"name": "Worldtree Heartwood", "type": "wood", "tier": 6, "value": 400},
+
+	# Mining extras (gems, minerals)
+	"stone": {"name": "Stone", "type": "mineral", "tier": 1, "value": 2},
+	"coal": {"name": "Coal", "type": "mineral", "tier": 1, "value": 5},
+	"rough_gem": {"name": "Rough Gem", "type": "gem", "tier": 1, "value": 25},
+	"polished_gem": {"name": "Polished Gem", "type": "gem", "tier": 2, "value": 75},
+	"flawless_gem": {"name": "Flawless Gem", "type": "gem", "tier": 3, "value": 150},
+	"perfect_gem": {"name": "Perfect Gem", "type": "gem", "tier": 4, "value": 300},
+	"star_gem": {"name": "Star Gem", "type": "gem", "tier": 5, "value": 500},
+	"celestial_gem": {"name": "Celestial Gem", "type": "gem", "tier": 6, "value": 800},
+	"primordial_gem": {"name": "Primordial Gem", "type": "gem", "tier": 7, "value": 1500},
+
+	# Logging extras (saps, resins)
+	"bark": {"name": "Bark", "type": "plant", "tier": 1, "value": 3},
+	"sap": {"name": "Tree Sap", "type": "plant", "tier": 1, "value": 8},
+	"acorn": {"name": "Golden Acorn", "type": "plant", "tier": 1, "value": 20},
+	"enchanted_resin": {"name": "Enchanted Resin", "type": "enchant", "tier": 3, "value": 75},
+	"celestial_shard": {"name": "Celestial Shard", "type": "enchant", "tier": 7, "value": 400},
+
 	# Leather/Cloth (from monster drops)
 	"ragged_leather": {"name": "Ragged Leather", "type": "leather", "tier": 1, "value": 5},
 	"leather_scraps": {"name": "Leather Scraps", "type": "leather", "tier": 2, "value": 10},
@@ -436,6 +465,314 @@ const RECIPES = {
 		"effect": {"type": "enhance", "stat": "all", "bonus": 5},
 		"craft_time": 8.0
 	},
+
+	# ===== ENCHANTMENT RECIPES (modify equipped gear in-place) =====
+	# Attack Enchantments (weapons only)
+	"minor_attack_enchant": {
+		"name": "Minor Attack Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 5,
+		"difficulty": 10,
+		"materials": {"magic_dust": 3},
+		"salvage_cost": 25,
+		"output_type": "enchantment",
+		"target_slot": "weapon",
+		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 5},
+		"craft_time": 2.0
+	},
+	"standard_attack_enchant": {
+		"name": "Standard Attack Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 25,
+		"difficulty": 30,
+		"materials": {"arcane_crystal": 2, "magic_dust": 3},
+		"salvage_cost": 75,
+		"output_type": "enchantment",
+		"target_slot": "weapon",
+		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 15},
+		"craft_time": 4.0
+	},
+	"greater_attack_enchant": {
+		"name": "Greater Attack Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 50,
+		"difficulty": 55,
+		"materials": {"void_essence": 2, "soul_shard": 2, "arcane_crystal": 3},
+		"salvage_cost": 200,
+		"output_type": "enchantment",
+		"target_slot": "weapon",
+		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 35},
+		"craft_time": 6.0
+	},
+
+	# Defense Enchantments (armor only)
+	"minor_defense_enchant": {
+		"name": "Minor Defense Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 5,
+		"difficulty": 10,
+		"materials": {"magic_dust": 3},
+		"salvage_cost": 25,
+		"output_type": "enchantment",
+		"target_slot": "armor",
+		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 5},
+		"craft_time": 2.0
+	},
+	"standard_defense_enchant": {
+		"name": "Standard Defense Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 25,
+		"difficulty": 30,
+		"materials": {"arcane_crystal": 2, "magic_dust": 3},
+		"salvage_cost": 75,
+		"output_type": "enchantment",
+		"target_slot": "armor",
+		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 15},
+		"craft_time": 4.0
+	},
+	"greater_defense_enchant": {
+		"name": "Greater Defense Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 50,
+		"difficulty": 55,
+		"materials": {"void_essence": 2, "soul_shard": 2, "arcane_crystal": 3},
+		"salvage_cost": 200,
+		"output_type": "enchantment",
+		"target_slot": "armor",
+		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 35},
+		"craft_time": 6.0
+	},
+
+	# HP Enchantments (helm, armor, shield)
+	"minor_hp_enchant": {
+		"name": "Minor HP Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"healing_herb": 5, "magic_dust": 2},
+		"salvage_cost": 30,
+		"output_type": "enchantment",
+		"target_slot": "helm,armor,shield",
+		"effect": {"type": "enchant_stat", "stat": "max_hp", "bonus": 25},
+		"craft_time": 2.5
+	},
+	"greater_hp_enchant": {
+		"name": "Greater HP Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 40,
+		"difficulty": 45,
+		"materials": {"phoenix_petal": 2, "dragon_blood": 1, "soul_shard": 2},
+		"salvage_cost": 150,
+		"output_type": "enchantment",
+		"target_slot": "helm,armor,shield",
+		"effect": {"type": "enchant_stat", "stat": "max_hp", "bonus": 100},
+		"craft_time": 5.0
+	},
+
+	# Mana Enchantments (amulet, ring)
+	"minor_mana_enchant": {
+		"name": "Minor Mana Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"mana_blossom": 5, "magic_dust": 2},
+		"salvage_cost": 30,
+		"output_type": "enchantment",
+		"target_slot": "amulet,ring",
+		"effect": {"type": "enchant_stat", "stat": "max_mana", "bonus": 20},
+		"craft_time": 2.5
+	},
+	"greater_mana_enchant": {
+		"name": "Greater Mana Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 40,
+		"difficulty": 45,
+		"materials": {"arcane_crystal": 3, "void_essence": 1, "soul_shard": 2},
+		"salvage_cost": 150,
+		"output_type": "enchantment",
+		"target_slot": "amulet,ring",
+		"effect": {"type": "enchant_stat", "stat": "max_mana", "bonus": 75},
+		"craft_time": 5.0
+	},
+
+	# Speed Enchantments (boots)
+	"minor_speed_enchant": {
+		"name": "Minor Speed Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 15,
+		"difficulty": 20,
+		"materials": {"vigor_root": 3, "magic_dust": 3},
+		"salvage_cost": 40,
+		"output_type": "enchantment",
+		"target_slot": "boots",
+		"effect": {"type": "enchant_stat", "stat": "speed", "bonus": 3},
+		"craft_time": 3.0
+	},
+	"greater_speed_enchant": {
+		"name": "Greater Speed Enchantment",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 45,
+		"difficulty": 50,
+		"materials": {"shadowleaf": 3, "arcane_crystal": 2, "void_essence": 1},
+		"salvage_cost": 175,
+		"output_type": "enchantment",
+		"target_slot": "boots",
+		"effect": {"type": "enchant_stat", "stat": "speed", "bonus": 10},
+		"craft_time": 5.5
+	},
+
+	# ===== UPGRADE RECIPES (replace merchant upgrades) =====
+	# Weapon upgrades
+	"weapon_upgrade_1": {
+		"name": "Weapon Upgrade (+1)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 5,
+		"difficulty": 10,
+		"materials": {"copper_ore": 2, "coal": 1},
+		"salvage_cost": 20,
+		"output_type": "upgrade",
+		"target_slot": "weapon",
+		"effect": {"type": "upgrade_level", "levels": 1},
+		"craft_time": 2.0
+	},
+	"weapon_upgrade_5": {
+		"name": "Weapon Upgrade (+5)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 25,
+		"difficulty": 35,
+		"materials": {"iron_ore": 3, "steel_ore": 2, "coal": 2},
+		"salvage_cost": 100,
+		"output_type": "upgrade",
+		"target_slot": "weapon",
+		"effect": {"type": "upgrade_level", "levels": 5},
+		"craft_time": 5.0
+	},
+	"weapon_upgrade_10": {
+		"name": "Weapon Upgrade (+10)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 50,
+		"difficulty": 60,
+		"materials": {"mithril_ore": 3, "adamantine_ore": 2, "magic_dust": 5},
+		"salvage_cost": 300,
+		"output_type": "upgrade",
+		"target_slot": "weapon",
+		"effect": {"type": "upgrade_level", "levels": 10},
+		"craft_time": 8.0
+	},
+
+	# Armor upgrades
+	"armor_upgrade_1": {
+		"name": "Armor Upgrade (+1)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 5,
+		"difficulty": 10,
+		"materials": {"copper_ore": 2, "ragged_leather": 1},
+		"salvage_cost": 20,
+		"output_type": "upgrade",
+		"target_slot": "armor",
+		"effect": {"type": "upgrade_level", "levels": 1},
+		"craft_time": 2.0
+	},
+	"armor_upgrade_5": {
+		"name": "Armor Upgrade (+5)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 25,
+		"difficulty": 35,
+		"materials": {"iron_ore": 3, "steel_ore": 2, "thick_leather": 2},
+		"salvage_cost": 100,
+		"output_type": "upgrade",
+		"target_slot": "armor",
+		"effect": {"type": "upgrade_level", "levels": 5},
+		"craft_time": 5.0
+	},
+	"armor_upgrade_10": {
+		"name": "Armor Upgrade (+10)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 50,
+		"difficulty": 60,
+		"materials": {"mithril_ore": 3, "enchanted_leather": 2, "magic_dust": 5},
+		"salvage_cost": 300,
+		"output_type": "upgrade",
+		"target_slot": "armor",
+		"effect": {"type": "upgrade_level", "levels": 10},
+		"craft_time": 8.0
+	},
+
+	# Accessory upgrades (ring, amulet)
+	"accessory_upgrade_1": {
+		"name": "Accessory Upgrade (+1)",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 5,
+		"difficulty": 10,
+		"materials": {"rough_gem": 1, "magic_dust": 2},
+		"salvage_cost": 25,
+		"output_type": "upgrade",
+		"target_slot": "ring,amulet",
+		"effect": {"type": "upgrade_level", "levels": 1},
+		"craft_time": 2.0
+	},
+	"accessory_upgrade_5": {
+		"name": "Accessory Upgrade (+5)",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 25,
+		"difficulty": 35,
+		"materials": {"polished_gem": 2, "arcane_crystal": 2},
+		"salvage_cost": 125,
+		"output_type": "upgrade",
+		"target_slot": "ring,amulet",
+		"effect": {"type": "upgrade_level", "levels": 5},
+		"craft_time": 5.0
+	},
+	"accessory_upgrade_10": {
+		"name": "Accessory Upgrade (+10)",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 50,
+		"difficulty": 60,
+		"materials": {"flawless_gem": 2, "soul_shard": 2, "void_essence": 1},
+		"salvage_cost": 350,
+		"output_type": "upgrade",
+		"target_slot": "ring,amulet",
+		"effect": {"type": "upgrade_level", "levels": 10},
+		"craft_time": 8.0
+	},
+
+	# ===== AFFIX RECIPES (add or replace ONE affix) =====
+	"warrior_affix_infusion": {
+		"name": "Warrior Affix Infusion",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 40,
+		"difficulty": 50,
+		"materials": {"dragon_blood": 2, "void_essence": 2, "soul_shard": 3},
+		"salvage_cost": 250,
+		"output_type": "affix",
+		"target_slot": "weapon,armor,helm,shield",
+		"effect": {"type": "add_affix", "affix_pool": ["strength", "constitution", "attack"]},
+		"craft_time": 6.0
+	},
+	"mage_affix_infusion": {
+		"name": "Mage Affix Infusion",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 40,
+		"difficulty": 50,
+		"materials": {"essence_of_life": 1, "void_essence": 2, "arcane_crystal": 4},
+		"salvage_cost": 250,
+		"output_type": "affix",
+		"target_slot": "weapon,armor,amulet,ring",
+		"effect": {"type": "add_affix", "affix_pool": ["intelligence", "wisdom", "mana"]},
+		"craft_time": 6.0
+	},
+	"trickster_affix_infusion": {
+		"name": "Trickster Affix Infusion",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 40,
+		"difficulty": 50,
+		"materials": {"phoenix_petal": 2, "shadowleaf": 4, "soul_shard": 3},
+		"salvage_cost": 250,
+		"output_type": "affix",
+		"target_slot": "weapon,armor,boots,ring",
+		"effect": {"type": "add_affix", "affix_pool": ["dexterity", "wits", "speed"]},
+		"craft_time": 6.0
+	},
 }
 
 # Trading post specializations (bonus to success chance)
@@ -478,6 +815,10 @@ static func get_recipe(recipe_id: String) -> Dictionary:
 
 static func get_material(material_id: String) -> Dictionary:
 	return MATERIALS.get(material_id, {})
+
+static func get_material_name(material_id: String) -> String:
+	var mat = MATERIALS.get(material_id, {})
+	return mat.get("name", material_id.replace("_", " ").capitalize())
 
 static func get_recipes_for_skill(skill: CraftingSkill) -> Array:
 	"""Get all recipes for a specific skill"""

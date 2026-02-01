@@ -149,6 +149,42 @@ func get_fishing_type(x: int, y: int) -> String:
 		return "shallow"
 	return ""
 
+# ===== GATHERING SYSTEM (Mining & Logging) =====
+
+func is_ore_deposit(x: int, y: int) -> bool:
+	"""Check if coordinates are a valid mining location (ore deposit in mountains)"""
+	var terrain = get_terrain_at(x, y)
+	if terrain != Terrain.MOUNTAINS:
+		return false
+	# Use hash-based ore deposits - 2% of mountain tiles have ore
+	var ore_hash = abs(x * 47 + y * 83) % 1000
+	return ore_hash < 20  # 2% chance
+
+func is_dense_forest(x: int, y: int) -> bool:
+	"""Check if coordinates are a valid logging location (dense forest with harvestable trees)"""
+	var terrain = get_terrain_at(x, y)
+	if terrain != Terrain.FOREST and terrain != Terrain.DEEP_FOREST:
+		return false
+	# Use hash-based tree nodes - 3% of forests have harvestable trees
+	var wood_hash = abs(x * 67 + y * 97) % 1000
+	return wood_hash < 30  # 3% chance
+
+func get_ore_tier(x: int, y: int) -> int:
+	"""Get the ore tier based on distance from origin (center is T1, edges are higher)"""
+	var distance = sqrt(x * x + y * y)
+	# Tier scaling: T1 at 0-50, T2 at 50-100, T3 at 100-150, etc.
+	# Max tier 9 at 400+ distance
+	var tier = int(distance / 50) + 1
+	return clampi(tier, 1, 9)
+
+func get_wood_tier(x: int, y: int) -> int:
+	"""Get the wood tier based on distance from origin"""
+	var distance = sqrt(x * x + y * y)
+	# Tier scaling similar to ore
+	# Max tier 6 for wood
+	var tier = int(distance / 60) + 1
+	return clampi(tier, 1, 6)
+
 func get_terrain_info(terrain: Terrain) -> Dictionary:
 	"""Get information about a terrain type"""
 	match terrain:

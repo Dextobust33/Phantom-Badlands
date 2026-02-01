@@ -1,11 +1,11 @@
-[gd_scene load_steps=3 format=3 uid="uid://cd1kavjk5igmr"]
+[gd_scene format=3 uid="uid://cd1kavjk5igmr"]
 
 [ext_resource type="Script" uid="uid://bu1youbs45e2o" path="res://server/server.gd" id="1_pcfvm"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
 bg_color = Color(0.1, 0.1, 0.12, 1)
 
-[node name="Server" type="Control"]
+[node name="Server" type="Control" unique_id=748050048]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -14,7 +14,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_pcfvm")
 
-[node name="VBox" type="VBoxContainer" parent="."]
+[node name="VBox" type="VBoxContainer" parent="." unique_id=2045973915]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -27,30 +27,30 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="VBox"]
+[node name="Title" type="Label" parent="VBox" unique_id=475567324]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
 theme_override_font_sizes/font_size = 24
 text = "Phantasia Revival Server"
 horizontal_alignment = 1
 
-[node name="StatusRow" type="HBoxContainer" parent="VBox"]
+[node name="StatusRow" type="HBoxContainer" parent="VBox" unique_id=1683786104]
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="StatusIndicator" type="Label" parent="VBox/StatusRow"]
+[node name="StatusIndicator" type="Label" parent="VBox/StatusRow" unique_id=1614703745]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.2, 0.8, 0.2, 1)
 theme_override_font_sizes/font_size = 16
 text = "● ONLINE"
 
-[node name="PortLabel" type="Label" parent="VBox/StatusRow"]
+[node name="PortLabel" type="Label" parent="VBox/StatusRow" unique_id=381904856]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 14
 text = "Port: 9080"
 
-[node name="PlayerCountLabel" type="Label" parent="VBox/StatusRow"]
+[node name="PlayerCountLabel" type="Label" parent="VBox/StatusRow" unique_id=1891018395]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
@@ -58,16 +58,16 @@ theme_override_font_sizes/font_size = 14
 text = "Players: 0"
 horizontal_alignment = 2
 
-[node name="Separator" type="HSeparator" parent="VBox"]
+[node name="Separator" type="HSeparator" parent="VBox" unique_id=1896138698]
 layout_mode = 2
 
-[node name="PlayersTitle" type="Label" parent="VBox"]
+[node name="PlayersTitle" type="Label" parent="VBox" unique_id=1001458250]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
 theme_override_font_sizes/font_size = 14
 text = "Connected Players:"
 
-[node name="PlayerList" type="RichTextLabel" parent="VBox"]
+[node name="PlayerList" type="RichTextLabel" parent="VBox" unique_id=127949702]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.9, 0.9, 0.9, 1)
@@ -77,13 +77,13 @@ bbcode_enabled = true
 text = "[color=#666666]No players connected[/color]"
 scroll_following = true
 
-[node name="LogTitle" type="Label" parent="VBox"]
+[node name="LogTitle" type="Label" parent="VBox" unique_id=178006942]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
 theme_override_font_sizes/font_size = 14
 text = "Server Log:"
 
-[node name="ServerLog" type="RichTextLabel" parent="VBox"]
+[node name="ServerLog" type="RichTextLabel" parent="VBox" unique_id=1172234617]
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 2.0
@@ -94,54 +94,54 @@ bbcode_enabled = true
 text = "[color=#666666]Server starting...[/color]"
 scroll_following = true
 
-[node name="BroadcastRow" type="HBoxContainer" parent="VBox"]
+[node name="BroadcastRow" type="HBoxContainer" parent="VBox" unique_id=1604528432]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="BroadcastLabel" type="Label" parent="VBox/BroadcastRow"]
+[node name="BroadcastLabel" type="Label" parent="VBox/BroadcastRow" unique_id=673632224]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
 theme_override_font_sizes/font_size = 12
 text = "Broadcast:"
 
-[node name="BroadcastInput" type="LineEdit" parent="VBox/BroadcastRow"]
+[node name="BroadcastInput" type="LineEdit" parent="VBox/BroadcastRow" unique_id=298308644]
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Enter message to broadcast to all players..."
 
-[node name="BroadcastButton" type="Button" parent="VBox/BroadcastRow"]
+[node name="BroadcastButton" type="Button" parent="VBox/BroadcastRow" unique_id=167552181]
 custom_minimum_size = Vector2(80, 0)
 layout_mode = 2
 text = "Send"
 
-[node name="ButtonRow" type="HBoxContainer" parent="VBox"]
+[node name="ButtonRow" type="HBoxContainer" parent="VBox" unique_id=837119808]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="RestartButton" type="Button" parent="VBox/ButtonRow"]
+[node name="RestartButton" type="Button" parent="VBox/ButtonRow" unique_id=398240171]
 custom_minimum_size = Vector2(120, 35)
 layout_mode = 2
 text = "Restart Server"
 
-[node name="PendingUpdateButton" type="Button" parent="VBox/ButtonRow"]
+[node name="PendingUpdateButton" type="Button" parent="VBox/ButtonRow" unique_id=1770215057]
 custom_minimum_size = Vector2(140, 35)
 layout_mode = 2
 text = "Pending Update"
 
-[node name="CancelUpdateButton" type="Button" parent="VBox/ButtonRow"]
+[node name="CancelUpdateButton" type="Button" parent="VBox/ButtonRow" unique_id=1007460514]
+visible = false
 custom_minimum_size = Vector2(120, 35)
 layout_mode = 2
-visible = false
 text = "Cancel Update"
 
-[node name="Spacer" type="Control" parent="VBox/ButtonRow"]
+[node name="Spacer" type="Control" parent="VBox/ButtonRow" unique_id=571777013]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ConfirmDialog" type="ConfirmationDialog" parent="."]
+[node name="ConfirmDialog" type="ConfirmationDialog" parent="." unique_id=247735062]
 title = "Confirm Server Restart"
 initial_position = 1
 size = Vector2i(350, 120)
+ok_button_text = "Restart"
 dialog_text = "Are you sure you want to restart the server?
 All connected players will be disconnected."
-ok_button_text = "Restart"

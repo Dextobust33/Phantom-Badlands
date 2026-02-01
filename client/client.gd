@@ -136,6 +136,7 @@ var game_state = GameState.DISCONNECTED
 @onready var map_display = $RootContainer/MainContainer/RightPanel/MapDisplay
 @onready var input_field = $RootContainer/BottomBar/InputField
 @onready var send_button = $RootContainer/BottomBar/SendButton
+@onready var bug_button = $RootContainer/BottomBar/BugButton
 @onready var action_bar = $RootContainer/MainContainer/LeftPanel/ActionBar
 @onready var enemy_health_bar = $RootContainer/MainContainer/LeftPanel/EnemyHealthBar
 @onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
@@ -361,6 +362,14 @@ const CRAFTING_PAGE_SIZE = 5
 # Water/Fishing location
 var at_water: bool = false  # Whether player is at a fishable water tile
 
+# Ore/Mining location
+var at_ore_deposit: bool = false  # Whether player is at a mineable ore deposit
+var ore_tier: int = 1  # Tier of the ore deposit (1-9)
+
+# Forest/Logging location
+var at_dense_forest: bool = false  # Whether player is at a harvestable forest
+var wood_tier: int = 1  # Tier of the wood (1-6)
+
 # Dungeon entrance location
 var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
 var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
@@ -450,6 +459,28 @@ var fishing_reaction_window: float = 1.5  # How long player has to react (from s
 var fishing_target_slot: int = -1  # Which slot to press (0-4 mapped to action bar 5-9)
 var fishing_water_type: String = "shallow"  # "shallow" or "deep"
 
+# Mining mode
+var mining_mode: bool = false
+var mining_phase: String = ""  # "waiting", "reaction"
+var mining_wait_timer: float = 0.0
+var mining_reaction_timer: float = 0.0
+var mining_reaction_window: float = 1.2
+var mining_target_slot: int = -1
+var mining_current_tier: int = 1
+var mining_reactions_required: int = 1  # How many successful reactions needed
+var mining_reactions_completed: int = 0  # How many we've done
+
+# Logging mode
+var logging_mode: bool = false
+var logging_phase: String = ""  # "waiting", "reaction"
+var logging_wait_timer: float = 0.0
+var logging_reaction_timer: float = 0.0
+var logging_reaction_window: float = 1.2
+var logging_target_slot: int = -1
+var logging_current_tier: int = 1
+var logging_reactions_required: int = 1
+var logging_reactions_completed: int = 0
+
 # Dungeon mode
 var dungeon_mode: bool = false
 var dungeon_data: Dictionary = {}  # Current dungeon state from server
@@ -462,6 +493,9 @@ var changing_password: bool = false
 var password_change_step: int = 0  # 0=old, 1=new, 2=confirm
 var temp_old_password: String = ""
 var temp_new_password: String = ""
+
+# Bug report mode
+var bug_report_mode: bool = false  # Waiting for optional description
 
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
@@ -616,6 +650,8 @@ func _ready():
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
+	if bug_button:
+		bug_button.pressed.connect(_on_bug_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
 	input_field.focus_entered.connect(_on_input_focus_entered)
 	input_field.focus_exited.connect(_on_input_focus_exited)
@@ -750,7 +786,7 @@ func _ready():
 	_generate_combat_victory_sound()
 
 	combat_ability_player = AudioStreamPlayer.new()
-	combat_ability_player.volume_db = -18.0  # Audible magical sound
+	combat_ability_player.volume_db = -20.0  # Audible magical sound
 	add_child(combat_ability_player)
 	_generate_combat_ability_sound()
 
@@ -1654,6 +1690,30 @@ func _process(delta):
 				# Timeout - fish escaped
 				send_to_server({"type": "fish_catch", "success": false, "water_type": fishing_water_type})
 
+	# Update mining timers
+	if mining_mode:
+		if mining_phase == "waiting":
+			mining_wait_timer -= delta
+			if mining_wait_timer <= 0:
+				start_mining_reaction_phase()
+		elif mining_phase == "reaction":
+			mining_reaction_timer -= delta
+			if mining_reaction_timer <= 0:
+				# Timeout - partial success based on reactions completed
+				send_to_server({"type": "mine_catch", "success": false, "partial_success": mining_reactions_completed, "ore_tier": mining_current_tier})
+
+	# Update logging timers
+	if logging_mode:
+		if logging_phase == "waiting":
+			logging_wait_timer -= delta
+			if logging_wait_timer <= 0:
+				start_logging_reaction_phase()
+		elif logging_phase == "reaction":
+			logging_reaction_timer -= delta
+			if logging_reaction_timer <= 0:
+				# Timeout - partial success based on reactions completed
+				send_to_server({"type": "log_catch", "success": false, "partial_success": logging_reactions_completed, "wood_tier": logging_current_tier})
+
 	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
 		if Input.is_action_just_pressed("ui_cancel"):
@@ -1688,7 +1748,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -3220,6 +3280,66 @@ func update_action_bar():
 				{"label": "CATCH!" if fishing_target_slot == 3 else "---", "action_type": "local", "action_data": "fishing_catch_3", "enabled": fishing_target_slot == 3},
 				{"label": "CATCH!" if fishing_target_slot == 4 else "---", "action_type": "local", "action_data": "fishing_catch_4", "enabled": fishing_target_slot == 4},
 			]
+	elif mining_mode:
+		# Mining minigame
+		if mining_phase == "waiting":
+			var progress = "%d/%d" % [mining_reactions_completed, mining_reactions_required] if mining_reactions_required > 1 else ""
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "mining_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Mining..." + progress, "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Reaction phase
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "STRIKE!" if mining_target_slot == 0 else "---", "action_type": "local", "action_data": "mining_catch_0", "enabled": mining_target_slot == 0},
+				{"label": "STRIKE!" if mining_target_slot == 1 else "---", "action_type": "local", "action_data": "mining_catch_1", "enabled": mining_target_slot == 1},
+				{"label": "STRIKE!" if mining_target_slot == 2 else "---", "action_type": "local", "action_data": "mining_catch_2", "enabled": mining_target_slot == 2},
+				{"label": "STRIKE!" if mining_target_slot == 3 else "---", "action_type": "local", "action_data": "mining_catch_3", "enabled": mining_target_slot == 3},
+				{"label": "STRIKE!" if mining_target_slot == 4 else "---", "action_type": "local", "action_data": "mining_catch_4", "enabled": mining_target_slot == 4},
+			]
+	elif logging_mode:
+		# Logging minigame
+		if logging_phase == "waiting":
+			var progress = "%d/%d" % [logging_reactions_completed, logging_reactions_required] if logging_reactions_required > 1 else ""
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "logging_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Chopping..." + progress, "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Reaction phase
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "CHOP!" if logging_target_slot == 0 else "---", "action_type": "local", "action_data": "logging_catch_0", "enabled": logging_target_slot == 0},
+				{"label": "CHOP!" if logging_target_slot == 1 else "---", "action_type": "local", "action_data": "logging_catch_1", "enabled": logging_target_slot == 1},
+				{"label": "CHOP!" if logging_target_slot == 2 else "---", "action_type": "local", "action_data": "logging_catch_2", "enabled": logging_target_slot == 2},
+				{"label": "CHOP!" if logging_target_slot == 3 else "---", "action_type": "local", "action_data": "logging_catch_3", "enabled": logging_target_slot == 3},
+				{"label": "CHOP!" if logging_target_slot == 4 else "---", "action_type": "local", "action_data": "logging_catch_4", "enabled": logging_target_slot == 4},
+			]
 	elif dungeon_list_mode:
 		# Viewing list of available dungeons - select with 1-9
 		var total_pages = max(1, ceili(float(dungeon_available.size()) / 5.0))
@@ -3713,8 +3833,22 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
+		elif pending_inventory_action == "viewing_materials":
+			# Materials view - show back button
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "materials_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_inventory_action == "salvage_select":
-			# Salvage submenu - show salvage options
+			# Salvage submenu - show salvage and discard options
 			var player_level = character_data.get("level", 1)
 			var threshold = max(1, player_level - 5)
 			current_actions = [
@@ -3722,7 +3856,7 @@ func update_action_bar():
 				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
 				{"label": "All Equipment", "action_type": "local", "action_data": "salvage_all", "enabled": true},
 				{"label": "Consumables", "action_type": "local", "action_data": "salvage_consumables_prompt", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -3831,7 +3965,7 @@ func update_action_bar():
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
 				{"label": "Sort", "action_type": "local", "action_data": "inventory_sort", "enabled": true},
 				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
-				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
+				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
 				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
 				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 			]
@@ -3957,7 +4091,7 @@ func update_action_bar():
 		else:
 			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
-		# Or Fish button at water tiles, or Dungeon button at dungeon entrances
+		# Or gathering actions (Fish/Mine/Chop) at appropriate tiles, or Dungeon at dungeon entrances
 		var fifth_action: Dictionary
 		if forge_available:
 			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
@@ -3968,6 +4102,10 @@ func update_action_bar():
 		elif at_water:
 			var water_label = "Deep Fish" if fishing_water_type == "deep" else "Fish"
 			fifth_action = {"label": water_label, "action_type": "local", "action_data": "start_fishing", "enabled": true}
+		elif at_ore_deposit:
+			fifth_action = {"label": "Mine T%d" % ore_tier, "action_type": "local", "action_data": "start_mining", "enabled": true}
+		elif at_dense_forest:
+			fifth_action = {"label": "Chop T%d" % wood_tier, "action_type": "local", "action_data": "start_logging", "enabled": true}
 		else:
 			fifth_action = {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
@@ -3977,9 +4115,9 @@ func update_action_bar():
 		var teleport_unlocked = player_level >= teleport_unlock_level
 		var teleport_action = {"label": "Teleport", "action_type": "local", "action_data": "teleport", "enabled": true} if teleport_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 		current_actions = [
-			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
-			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
+			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
+			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			fourth_action,
 			fifth_action,
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
@@ -5704,13 +5842,27 @@ func execute_local_action(action: String):
 			display_game("[color=#00FF00]Compare stat changed to: %s[/color]" % _get_compare_stat_label(inventory_compare_stat))
 			_save_keybinds()  # Persist the setting
 			update_action_bar()  # Update button label
-		"salvage_all":
+		"view_materials":
+			# Display crafting materials - exit sort menu and show materials
+			pending_inventory_action = "viewing_materials"
+			display_materials()
+			update_action_bar()
+		"materials_back":
+			# Return to inventory from materials view
 			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
+		"salvage_all":
+			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "all"})
+			game_output.clear()
+			display_game("[color=#AA66FF]Salvaging all items...[/color]")
 			update_action_bar()
 		"salvage_below_level":
-			pending_inventory_action = ""
+			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
+			game_output.clear()
+			display_game("[color=#AA66FF]Salvaging items below level threshold...[/color]")
 			update_action_bar()
 		"salvage_cancel":
 			pending_inventory_action = ""
@@ -5724,8 +5876,10 @@ func execute_local_action(action: String):
 			display_game("[color=#FFD700]Press Confirm to proceed or Cancel to abort.[/color]")
 			update_action_bar()
 		"salvage_consumables":
-			pending_inventory_action = ""
+			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "consumables"})
+			game_output.clear()
+			display_game("[color=#AA66FF]Salvaging consumables...[/color]")
 			update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
@@ -5918,6 +6072,12 @@ func execute_local_action(action: String):
 		"start_fishing":
 			# Start the fishing minigame
 			start_fishing()
+		"start_mining":
+			# Start the mining minigame
+			start_mining()
+		"start_logging":
+			# Start the logging minigame
+			start_logging()
 		"enter_dungeon":
 			# Enter a dungeon at this location
 			enter_dungeon_at_location()
@@ -6056,6 +6216,32 @@ func execute_local_action(action: String):
 			handle_fishing_catch(3)
 		"fishing_catch_4":
 			handle_fishing_catch(4)
+		# Mining actions
+		"mining_cancel":
+			end_mining(false, "You stopped mining.")
+		"mining_catch_0":
+			handle_mining_catch(0)
+		"mining_catch_1":
+			handle_mining_catch(1)
+		"mining_catch_2":
+			handle_mining_catch(2)
+		"mining_catch_3":
+			handle_mining_catch(3)
+		"mining_catch_4":
+			handle_mining_catch(4)
+		# Logging actions
+		"logging_cancel":
+			end_logging(false, "You stopped chopping.")
+		"logging_catch_0":
+			handle_logging_catch(0)
+		"logging_catch_1":
+			handle_logging_catch(1)
+		"logging_catch_2":
+			handle_logging_catch(2)
+		"logging_catch_3":
+			handle_logging_catch(3)
+		"logging_catch_4":
+			handle_logging_catch(4)
 		# Crafting actions
 		"open_crafting":
 			open_crafting()
@@ -7601,22 +7787,47 @@ func open_salvage_menu():
 	var player_level = character_data.get("level", 1)
 	var threshold = max(1, player_level - 5)
 
-	# Count items that would be salvaged
+	# Count items that would be salvaged and estimate essence
 	var below_level_count = 0
-	var total_count = inventory.size()
+	var total_count = 0
+	var below_level_essence = 0
+	var total_essence = 0
 	for item in inventory:
-		if item.get("level", 1) < threshold:
-			below_level_count += 1
+		var item_level = item.get("level", 1)
+		var rarity = item.get("rarity", "common")
+		var is_consumable = _is_consumable_type(item.get("type", ""))
+		var is_locked = item.get("locked", false) or item.get("is_title_item", false)
+
+		if is_locked:
+			continue
+
+		# Calculate essence using salvage formula: base + (level * per_level)
+		var salvage_values = {"common": [5, 1], "uncommon": [10, 2], "rare": [25, 3], "epic": [50, 5], "legendary": [100, 8], "artifact": [200, 12]}
+		var sv = salvage_values.get(rarity, [5, 1])
+		var essence = sv[0] + (item_level * sv[1])
+
+		if not is_consumable:
+			total_count += 1
+			total_essence += essence
+			if item_level < threshold:
+				below_level_count += 1
+				below_level_essence += essence
+
+	var current_essence = character_data.get("salvage_essence", 0)
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== SALVAGE ITEMS =====[/color]")
 	display_game("")
-	display_game("Convert items to gold. Returns 25% of item value.")
+	display_game("Convert items to [color=#AA66FF]Salvage Essence[/color], used for crafting upgrades.")
+	display_game("Current Essence: [color=#AA66FF]%d[/color]" % current_essence)
 	display_game("")
-	display_game("[color=#FFA500]All (<Lv%d)[/color] - Salvage %d items below level %d" % [threshold, below_level_count, threshold])
-	display_game("[color=#FF0000]All Items[/color] - Salvage all %d items (use with caution!)" % total_count)
+	display_game("[color=#FFA500]All (<Lv%d)[/color] - %d items → ~%d essence" % [threshold, below_level_count, below_level_essence])
+	display_game("[color=#FF0000]All Items[/color] - %d items → ~%d essence (use with caution!)" % [total_count, total_essence])
 	display_game("")
-	display_game("[color=#808080]Note: Equipped items are not affected.[/color]")
+	display_game("[color=#808080]Note: Equipped items, locked items, and consumables not affected.[/color]")
+	display_game("[color=#808080]Bonus materials may drop based on item type![/color]")
+	display_game("")
+	display_game("[color=#808080]Use Discard to destroy a single item without salvaging.[/color]")
 	display_game("")
 	update_action_bar()
 
@@ -7630,6 +7841,12 @@ func display_inventory():
 
 	var inventory = character_data.get("inventory", [])
 	var equipped = character_data.get("equipped", {})
+
+	# Show crafting resources summary above inventory header
+	var resources_line = _get_resources_summary()
+	if resources_line != "":
+		display_game(resources_line)
+		display_game("")
 
 	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
 
@@ -7737,6 +7954,82 @@ func display_inventory():
 		display_game("")
 		display_game(last_item_use_result)
 
+func display_materials():
+	"""Display the player's crafting materials organized by type"""
+	if not has_character:
+		return
+
+	game_output.clear()
+	var materials = character_data.get("crafting_materials", {})
+	var salvage_essence = character_data.get("salvage_essence", 0)
+
+	display_game("[color=#FFD700]===== CRAFTING MATERIALS =====[/color]")
+	display_game("")
+	display_game("[color=#AA66FF]Salvage Essence:[/color] %d" % salvage_essence)
+	display_game("")
+
+	if materials.is_empty():
+		display_game("[color=#808080]No materials collected yet.[/color]")
+		display_game("")
+		display_game("[color=#808080]Gather materials by:[/color]")
+		display_game("  - Fishing at water tiles")
+		display_game("  - Mining at ore deposits")
+		display_game("  - Chopping at dense forests")
+		display_game("  - Monster drops")
+		display_game("  - Salvaging items (bonus materials)")
+		return
+
+	# Material definitions for display (type -> display name and color)
+	var type_info = {
+		"ore": {"name": "Ores", "color": "#C0C0C0"},
+		"wood": {"name": "Wood", "color": "#8B4513"},
+		"leather": {"name": "Leather", "color": "#CD853F"},
+		"cloth": {"name": "Cloth", "color": "#DDA0DD"},
+		"herb": {"name": "Herbs", "color": "#32CD32"},
+		"fish": {"name": "Fish", "color": "#4169E1"},
+		"enchant": {"name": "Enchanting", "color": "#9400D3"},
+		"gem": {"name": "Gems", "color": "#00CED1"},
+		"essence": {"name": "Essences", "color": "#FF69B4"},
+		"plant": {"name": "Plants", "color": "#228B22"},
+		"mineral": {"name": "Minerals", "color": "#708090"}
+	}
+
+	# Group materials by type
+	var grouped: Dictionary = {}
+	for mat_id in materials:
+		var mat_data = CraftingDatabase.get_material(mat_id)
+		var mat_type = mat_data.get("type", "misc")
+		if not grouped.has(mat_type):
+			grouped[mat_type] = []
+		grouped[mat_type].append({
+			"id": mat_id,
+			"name": mat_data.get("name", mat_id),
+			"tier": mat_data.get("tier", 1),
+			"quantity": materials[mat_id]
+		})
+
+	# Sort each group by tier
+	for mat_type in grouped:
+		grouped[mat_type].sort_custom(func(a, b): return a.tier < b.tier)
+
+	# Display in order
+	var display_order = ["ore", "wood", "leather", "cloth", "herb", "fish", "enchant", "gem", "essence", "plant", "mineral"]
+	for mat_type in display_order:
+		if grouped.has(mat_type):
+			var info = type_info.get(mat_type, {"name": mat_type.capitalize(), "color": "#FFFFFF"})
+			display_game("[color=%s]%s:[/color]" % [info.color, info.name])
+			for mat in grouped[mat_type]:
+				display_game("  [color=#AAAAAA]T%d[/color] %s x%d" % [mat.tier, mat.name, mat.quantity])
+			display_game("")
+
+	# Show any ungrouped materials
+	for mat_type in grouped:
+		if mat_type not in display_order:
+			display_game("[color=#FFFFFF]%s:[/color]" % mat_type.capitalize())
+			for mat in grouped[mat_type]:
+				display_game("  [color=#AAAAAA]T%d[/color] %s x%d" % [mat.tier, mat.name, mat.quantity])
+			display_game("")
+
 func _get_item_bonus_summary(item: Dictionary) -> String:
 	"""Get a short summary of item bonuses"""
 	var item_type = item.get("type", "")
@@ -7776,6 +8069,15 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 				scaled_val = int(mana_val * 0.5)
 		return "[color=%s]+%d %s[/color]" % [resource_color, scaled_val, resource_name]
 	return ""
+
+func _is_consumable_type(item_type: String) -> bool:
+	"""Check if an item type is a consumable (potion, scroll, etc.)"""
+	return (item_type.begins_with("potion_") or item_type.begins_with("mana_") or
+			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
+			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
+			item_type == "gold_pouch" or item_type.begins_with("gem_") or
+			item_type == "mysterious_box" or item_type == "cursed_coin" or
+			item_type == "soul_gem")
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
@@ -7840,6 +8142,46 @@ func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String
 		return item_name
 
 	return CharacterScript.get_themed_item_name(item_name, slot, class_type)
+
+func _get_resources_summary() -> String:
+	"""Get a compact summary line of crafting resources for inventory header"""
+	var parts = []
+
+	# Salvage Essence
+	var essence = character_data.get("salvage_essence", 0)
+	if essence > 0:
+		parts.append("[color=#AA66FF]ESS:%d[/color]" % essence)
+
+	# Count materials by type
+	var materials = character_data.get("crafting_materials", {})
+	var type_counts = {"ore": 0, "wood": 0, "leather": 0, "fish": 0, "herb": 0, "gem": 0, "enchant": 0}
+
+	for mat_id in materials:
+		var mat_data = CraftingDatabase.get_material(mat_id)
+		var mat_type = mat_data.get("type", "misc")
+		if type_counts.has(mat_type):
+			type_counts[mat_type] += materials[mat_id]
+
+	# Add non-zero counts with abbreviations and colors
+	if type_counts["ore"] > 0:
+		parts.append("[color=#C0C0C0]ORE:%d[/color]" % type_counts["ore"])
+	if type_counts["wood"] > 0:
+		parts.append("[color=#8B4513]WD:%d[/color]" % type_counts["wood"])
+	if type_counts["leather"] > 0:
+		parts.append("[color=#CD853F]LTH:%d[/color]" % type_counts["leather"])
+	if type_counts["fish"] > 0:
+		parts.append("[color=#4169E1]FSH:%d[/color]" % type_counts["fish"])
+	if type_counts["herb"] > 0:
+		parts.append("[color=#32CD32]HRB:%d[/color]" % type_counts["herb"])
+	if type_counts["gem"] > 0:
+		parts.append("[color=#00CED1]GEM:%d[/color]" % type_counts["gem"])
+	if type_counts["enchant"] > 0:
+		parts.append("[color=#9400D3]ENC:%d[/color]" % type_counts["enchant"])
+
+	if parts.is_empty():
+		return ""
+
+	return " ".join(parts)
 
 func _get_themed_slot_name(slot: String, class_type: String = "") -> String:
 	"""Get the themed name for an equipment slot based on class."""
@@ -9439,12 +9781,26 @@ func handle_server_message(message: Dictionary):
 			# Cancel fishing if we moved away from water
 			if was_at_water and not at_water and fishing_mode:
 				end_fishing(false, "You moved away from the water.")
+			# Update ore/mining location status
+			var was_at_ore = at_ore_deposit
+			at_ore_deposit = message.get("at_ore_deposit", false)
+			ore_tier = message.get("ore_tier", 1)
+			# Cancel mining if we moved away from ore
+			if was_at_ore and not at_ore_deposit and mining_mode:
+				end_mining(false, "You moved away from the ore deposit.")
+			# Update forest/logging location status
+			var was_at_forest = at_dense_forest
+			at_dense_forest = message.get("at_dense_forest", false)
+			wood_tier = message.get("wood_tier", 1)
+			# Cancel logging if we moved away from forest
+			if was_at_forest and not at_dense_forest and logging_mode:
+				end_logging(false, "You moved away from the trees.")
 			# Update dungeon entrance status
 			var was_at_dungeon = at_dungeon_entrance
 			at_dungeon_entrance = message.get("at_dungeon", false)
 			dungeon_entrance_info = message.get("dungeon_info", {})
-			# Update action bar if water or dungeon status changed
-			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance:
+			# Update action bar if any gathering location status changed
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest:
 				update_action_bar()
 
 		"chat":
@@ -9617,6 +9973,17 @@ func handle_server_message(message: Dictionary):
 							update_action_bar()  # Update to show main inventory menu with Back option
 					elif pending_inventory_action == "unequip_item":
 						_show_unequip_slots()
+					elif pending_inventory_action == "awaiting_salvage_result":
+						# Salvage result will be shown via "text" message - don't redisplay inventory yet
+						# Clear the pending action but stay in inventory mode
+						pending_inventory_action = ""
+						# Show a prompt to continue
+						display_game("")
+						display_game("[color=#808080]Press [%s] for Backpack or [%s] to exit.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+						update_action_bar()
+					elif pending_inventory_action == "viewing_materials":
+						# Materials view - don't redisplay inventory, keep showing materials
+						pass
 					else:
 						display_inventory()
 						update_action_bar()
@@ -10281,6 +10648,18 @@ func handle_server_message(message: Dictionary):
 		"fish_result":
 			handle_fish_result(message)
 
+		"mine_start":
+			handle_mine_start(message)
+
+		"mine_result":
+			handle_mine_result(message)
+
+		"log_start":
+			handle_log_start(message)
+
+		"log_result":
+			handle_log_result(message)
+
 		"craft_list":
 			handle_craft_list(message)
 
@@ -10362,9 +10741,16 @@ func send_input():
 		process_title_broadcast(text)
 		return
 
+	# Check for bug report mode (waiting for optional description)
+	if bug_report_mode:
+		bug_report_mode = false
+		input_field.placeholder_text = ""
+		generate_bug_report(text)
+		return
+
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats"]
 	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -10946,6 +11332,11 @@ func process_command(text: String):
 		"dungeons", "dungeon":
 			if has_character:
 				request_dungeon_list()
+			else:
+				display_game("You don't have a character yet")
+		"materials", "mats":
+			if has_character:
+				display_materials()
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -13084,6 +13475,303 @@ func handle_fish_result(message: Dictionary):
 
 	update_action_bar()
 
+# ===== MINING FUNCTIONS =====
+
+func start_mining():
+	"""Start the mining minigame"""
+	if not at_ore_deposit:
+		display_game("[color=#FF4444]You need to be at an ore deposit to mine![/color]")
+		return
+
+	if in_combat:
+		display_game("[color=#FF4444]You can't mine while in combat![/color]")
+		return
+
+	if mining_mode:
+		display_game("[color=#808080]You're already mining.[/color]")
+		return
+
+	send_to_server({"type": "mine_start"})
+
+func handle_mine_start(message: Dictionary):
+	"""Handle server response to start mining"""
+	mining_mode = true
+	mining_phase = "waiting"
+	mining_wait_timer = message.get("wait_time", 8.0)
+	mining_reaction_window = message.get("reaction_window", 1.2)
+	mining_current_tier = message.get("ore_tier", 1)
+	mining_reactions_required = message.get("reactions_required", 1)
+	mining_reactions_completed = 0
+
+	game_output.clear()
+	display_mining_waiting()
+	update_action_bar()
+
+func display_mining_waiting():
+	"""Display the mining waiting screen"""
+	display_game("[color=#C0C0C0]===== Mining: Tier %d Ore =====[/color]" % mining_current_tier)
+	display_game("")
+	display_game("[color=#808080]       /\\      /\\[/color]")
+	display_game("[color=#808080]      /  \\    /  \\[/color]")
+	display_game("[color=#A0522D]     / [color=#C0C0C0]◊◊[/color] \\/[color=#C0C0C0]◊◊[/color] \\[/color]")
+	display_game("[color=#8B4513]    /   [color=#FFD700]○[/color]    [color=#FFD700]○[/color]   \\[/color]")
+	display_game("[color=#654321]   /________________\\[/color]")
+	display_game("")
+	display_game("[color=#FFFF00]Swinging your pickaxe...[/color]")
+	if mining_reactions_required > 1:
+		display_game("[color=#808080]Progress: %d/%d strikes needed[/color]" % [mining_reactions_completed, mining_reactions_required])
+
+func display_mining_strike():
+	"""Display the mining strike screen"""
+	game_output.clear()
+	display_game("[color=#C0C0C0]===== Mining: Tier %d Ore =====[/color]" % mining_current_tier)
+	display_game("")
+	display_game("[color=#808080]       /\\[color=#FFFF00]⚡[/color]/\\[/color]")
+	display_game("[color=#808080]      /  [color=#FF4444]★[/color]  \\[/color]")
+	display_game("[color=#A0522D]     / [color=#C0C0C0]◊◊[/color] [color=#FFFFFF]*CRACK*[/color] \\[/color]")
+	display_game("[color=#8B4513]    /        \\[/color]")
+	display_game("[color=#654321]   /________________\\[/color]")
+	display_game("")
+	display_game("[color=#FF4444][font_size=18]!!! STRIKE NOW !!![/font_size][/color]")
+	display_game("")
+	var slot_key = get_action_key_name(5 + mining_target_slot)
+	display_game("[color=#00FF00]Quick! Press [%s] to strike![/color]" % slot_key)
+	if mining_reactions_required > 1:
+		display_game("[color=#808080]Strike %d of %d[/color]" % [mining_reactions_completed + 1, mining_reactions_required])
+
+func start_mining_reaction_phase():
+	"""Transition to mining reaction phase"""
+	mining_phase = "reaction"
+	mining_target_slot = randi() % 5
+	mining_reaction_timer = mining_reaction_window
+
+	display_mining_strike()
+	update_action_bar()
+	play_whisper_notification()
+
+func handle_mining_catch(slot_pressed: int):
+	"""Player pressed a strike button"""
+	if not mining_mode or mining_phase != "reaction":
+		return
+
+	if slot_pressed == mining_target_slot:
+		mining_reactions_completed += 1
+		if mining_reactions_completed >= mining_reactions_required:
+			# All strikes successful
+			send_to_server({"type": "mine_catch", "success": true, "ore_tier": mining_current_tier})
+		else:
+			# Need more strikes - go back to waiting
+			mining_phase = "waiting"
+			mining_wait_timer = mining_reaction_window * 1.5  # Shorter wait between strikes
+			game_output.clear()
+			display_mining_waiting()
+			display_game("[color=#00FF00]Good strike![/color]")
+			update_action_bar()
+	else:
+		# Wrong button - partial failure
+		send_to_server({"type": "mine_catch", "success": false, "partial_success": mining_reactions_completed, "ore_tier": mining_current_tier})
+
+func end_mining(success: bool, message: String = ""):
+	"""End the mining minigame"""
+	mining_mode = false
+	mining_phase = ""
+	mining_wait_timer = 0.0
+	mining_reaction_timer = 0.0
+	mining_target_slot = -1
+	mining_reactions_completed = 0
+
+	if message != "":
+		display_game("[color=#FF4444]%s[/color]" % message)
+
+	update_action_bar()
+
+func handle_mine_result(message: Dictionary):
+	"""Handle the result of a mining attempt from server"""
+	mining_mode = false
+	mining_phase = ""
+	mining_wait_timer = 0.0
+	mining_reaction_timer = 0.0
+	mining_target_slot = -1
+	mining_reactions_completed = 0
+
+	game_output.clear()
+
+	if message.get("success", false):
+		var catch_data = message.get("catch", {})
+		var quantity = message.get("quantity", 1)
+		var xp_gained = message.get("xp_gained", 0)
+		var new_level = message.get("new_level", 1)
+		var main_message = message.get("message", "")
+		var extra_messages = message.get("extra_messages", [])
+
+		display_game("[color=#C0C0C0]===== SUCCESS! =====[/color]")
+		display_game("")
+		display_game("[color=#808080]  [color=#FFD700]◊[/color]  [color=#C0C0C0]◊◊[/color]  [color=#FFD700]◊[/color][/color]")
+		display_game("")
+		if main_message != "":
+			display_game(main_message)
+		if xp_gained > 0:
+			display_game("[color=#C0C0C0]+%d Mining XP[/color]" % xp_gained)
+		for extra_msg in extra_messages:
+			display_game(extra_msg)
+		display_game("")
+		display_game("[color=#808080]Mining skill: Level %d[/color]" % new_level)
+	else:
+		var fail_message = message.get("message", "The vein crumbled!")
+		display_game("[color=#FF4444]===== Failed! =====[/color]")
+		display_game("")
+		display_game(fail_message)
+
+	update_action_bar()
+
+# ===== LOGGING FUNCTIONS =====
+
+func start_logging():
+	"""Start the logging minigame"""
+	if not at_dense_forest:
+		display_game("[color=#FF4444]You need to be at a harvestable tree to chop![/color]")
+		return
+
+	if in_combat:
+		display_game("[color=#FF4444]You can't chop while in combat![/color]")
+		return
+
+	if logging_mode:
+		display_game("[color=#808080]You're already chopping.[/color]")
+		return
+
+	send_to_server({"type": "log_start"})
+
+func handle_log_start(message: Dictionary):
+	"""Handle server response to start logging"""
+	logging_mode = true
+	logging_phase = "waiting"
+	logging_wait_timer = message.get("wait_time", 8.0)
+	logging_reaction_window = message.get("reaction_window", 1.2)
+	logging_current_tier = message.get("wood_tier", 1)
+	logging_reactions_required = message.get("reactions_required", 1)
+	logging_reactions_completed = 0
+
+	game_output.clear()
+	display_logging_waiting()
+	update_action_bar()
+
+func display_logging_waiting():
+	"""Display the logging waiting screen"""
+	display_game("[color=#8B4513]===== Logging: Tier %d Wood =====[/color]" % logging_current_tier)
+	display_game("")
+	display_game("[color=#228B22]        🌲[/color]")
+	display_game("[color=#228B22]       /|\\[/color]")
+	display_game("[color=#228B22]      / | \\[/color]")
+	display_game("[color=#228B22]     /  |  \\[/color]")
+	display_game("[color=#8B4513]       |||[/color]")
+	display_game("[color=#654321]      ░░░░░[/color]")
+	display_game("")
+	display_game("[color=#FFFF00]Swinging your axe...[/color]")
+	if logging_reactions_required > 1:
+		display_game("[color=#808080]Progress: %d/%d chops needed[/color]" % [logging_reactions_completed, logging_reactions_required])
+
+func display_logging_chop():
+	"""Display the logging chop screen"""
+	game_output.clear()
+	display_game("[color=#8B4513]===== Logging: Tier %d Wood =====[/color]" % logging_current_tier)
+	display_game("")
+	display_game("[color=#228B22]        🌲 [color=#FFFF00]⚡[/color][/color]")
+	display_game("[color=#228B22]       /|[color=#FFFFFF]*CRACK*[/color][/color]")
+	display_game("[color=#228B22]      / |[/color]")
+	display_game("[color=#228B22]     /  |[/color]")
+	display_game("[color=#8B4513]       |||[/color]")
+	display_game("[color=#654321]      ░░░░░[/color]")
+	display_game("")
+	display_game("[color=#FF4444][font_size=18]!!! CHOP NOW !!![/font_size][/color]")
+	display_game("")
+	var slot_key = get_action_key_name(5 + logging_target_slot)
+	display_game("[color=#00FF00]Quick! Press [%s] to chop![/color]" % slot_key)
+	if logging_reactions_required > 1:
+		display_game("[color=#808080]Chop %d of %d[/color]" % [logging_reactions_completed + 1, logging_reactions_required])
+
+func start_logging_reaction_phase():
+	"""Transition to logging reaction phase"""
+	logging_phase = "reaction"
+	logging_target_slot = randi() % 5
+	logging_reaction_timer = logging_reaction_window
+
+	display_logging_chop()
+	update_action_bar()
+	play_whisper_notification()
+
+func handle_logging_catch(slot_pressed: int):
+	"""Player pressed a chop button"""
+	if not logging_mode or logging_phase != "reaction":
+		return
+
+	if slot_pressed == logging_target_slot:
+		logging_reactions_completed += 1
+		if logging_reactions_completed >= logging_reactions_required:
+			send_to_server({"type": "log_catch", "success": true, "wood_tier": logging_current_tier})
+		else:
+			logging_phase = "waiting"
+			logging_wait_timer = logging_reaction_window * 1.5
+			game_output.clear()
+			display_logging_waiting()
+			display_game("[color=#00FF00]Good chop![/color]")
+			update_action_bar()
+	else:
+		send_to_server({"type": "log_catch", "success": false, "partial_success": logging_reactions_completed, "wood_tier": logging_current_tier})
+
+func end_logging(success: bool, message: String = ""):
+	"""End the logging minigame"""
+	logging_mode = false
+	logging_phase = ""
+	logging_wait_timer = 0.0
+	logging_reaction_timer = 0.0
+	logging_target_slot = -1
+	logging_reactions_completed = 0
+
+	if message != "":
+		display_game("[color=#FF4444]%s[/color]" % message)
+
+	update_action_bar()
+
+func handle_log_result(message: Dictionary):
+	"""Handle the result of a logging attempt from server"""
+	logging_mode = false
+	logging_phase = ""
+	logging_wait_timer = 0.0
+	logging_reaction_timer = 0.0
+	logging_target_slot = -1
+	logging_reactions_completed = 0
+
+	game_output.clear()
+
+	if message.get("success", false):
+		var catch_data = message.get("catch", {})
+		var quantity = message.get("quantity", 1)
+		var xp_gained = message.get("xp_gained", 0)
+		var new_level = message.get("new_level", 1)
+		var main_message = message.get("message", "")
+		var extra_messages = message.get("extra_messages", [])
+
+		display_game("[color=#8B4513]===== SUCCESS! =====[/color]")
+		display_game("")
+		display_game("[color=#228B22]  🌲  [color=#8B4513]█[/color]  🌲[/color]")
+		display_game("")
+		if main_message != "":
+			display_game(main_message)
+		if xp_gained > 0:
+			display_game("[color=#8B4513]+%d Logging XP[/color]" % xp_gained)
+		for extra_msg in extra_messages:
+			display_game(extra_msg)
+		display_game("")
+		display_game("[color=#808080]Logging skill: Level %d[/color]" % new_level)
+	else:
+		var fail_message = message.get("message", "The branch broke!")
+		display_game("[color=#FF4444]===== Failed! =====[/color]")
+		display_game("")
+		display_game(fail_message)
+
+	update_action_bar()
+
 # ===== CRAFTING FUNCTIONS =====
 
 func open_crafting():
@@ -13637,9 +14325,14 @@ func handle_trading_post_end(message: Dictionary):
 	available_quests = []
 	quests_to_turn_in = []
 
+	# Clear the trading post UI from game output
+	game_output.clear()
+
 	var msg = message.get("message", "")
 	if msg != "":
 		display_game(msg)
+	else:
+		display_game("[color=#808080]You leave the trading post.[/color]")
 
 	update_action_bar()
 
@@ -14357,6 +15050,19 @@ func handle_watch_character(message: Dictionary):
 
 const BUG_REPORT_PATH = "user://bug_reports.txt"
 
+func _on_bug_button_pressed():
+	"""Handle bug report button press - prompt for optional description"""
+	if not connected:
+		display_game("[color=#FF0000]You must be connected to submit a bug report.[/color]")
+		return
+
+	bug_report_mode = true
+	input_field.placeholder_text = "Describe the bug (or press Enter to skip)..."
+	input_field.grab_focus()
+	display_game("[color=#FFD700]===== BUG REPORT =====[/color]")
+	display_game("[color=#00FFFF]Please describe the bug, or press Enter to submit without a description.[/color]")
+	display_game("[color=#808080]The report will include your character info, location, and game state automatically.[/color]")
+
 func generate_bug_report(description: String = ""):
 	"""Generate a bug report with client state for troubleshooting"""
 	var timestamp = Time.get_datetime_string_from_system(false, true)
@@ -14460,26 +15166,26 @@ func generate_bug_report(description: String = ""):
 
 	var report_text = "\n".join(report_lines)
 
-	# Save to file
-	var file = FileAccess.open(BUG_REPORT_PATH, FileAccess.READ_WRITE if FileAccess.file_exists(BUG_REPORT_PATH) else FileAccess.WRITE)
-	if file:
-		file.seek_end()
-		file.store_string(report_text + "\n")
-		file.close()
-
-	# Display to user
-	display_game("[color=#FFD700]===== BUG REPORT GENERATED =====[/color]")
-	display_game("[color=#808080]Saved to: %s[/color]" % ProjectSettings.globalize_path(BUG_REPORT_PATH))
-	display_game("")
-	display_game("[color=#00FFFF]Copy the report below and paste it to Claude:[/color]")
-	display_game("")
-	for line in report_lines:
-		if line.begins_with("====="):
-			display_game("[color=#FFD700]%s[/color]" % line)
-		elif line.begins_with("=="):
-			display_game("[color=#00FF00]%s[/color]" % line)
-		else:
-			display_game("[color=#FFFFFF]%s[/color]" % line)
+	# Send to server for saving
+	if connected:
+		send_to_server({
+			"type": "bug_report",
+			"report": report_text,
+			"player": username if username else "Unknown",
+			"description": description
+		})
+		display_game("[color=#00FF00]Bug report submitted to server![/color]")
+		display_game("[color=#808080]Thank you for helping improve the game.[/color]")
+	else:
+		# Fallback: save locally if not connected
+		var file = FileAccess.open(BUG_REPORT_PATH, FileAccess.READ_WRITE if FileAccess.file_exists(BUG_REPORT_PATH) else FileAccess.WRITE)
+		if file:
+			file.seek_end()
+			file.store_string(report_text + "\n")
+			file.close()
+		display_game("[color=#FFD700]===== BUG REPORT SAVED LOCALLY =====[/color]")
+		display_game("[color=#808080]Saved to: %s[/color]" % ProjectSettings.globalize_path(BUG_REPORT_PATH))
+		display_game("[color=#808080]Connect to server to submit reports directly.[/color]")
 
 func get_version() -> String:
 	"""Get current game version from VERSION.txt"""

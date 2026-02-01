@@ -281,15 +281,42 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 @export var incubating_eggs: Array = []
 const MAX_INCUBATING_EGGS = 3  # Can only incubate 3 eggs at a time
 
+# Companion color variants - assigned randomly when hatched for visual variety
+# Each variant has a display name and color code for rendering
+const COMPANION_VARIANTS = [
+	{"name": "Normal", "color": "#FFFFFF", "rarity": 40},      # White/default - common
+	{"name": "Crimson", "color": "#DC143C", "rarity": 10},     # Red variant
+	{"name": "Azure", "color": "#007FFF", "rarity": 10},       # Blue variant
+	{"name": "Verdant", "color": "#228B22", "rarity": 10},     # Green variant
+	{"name": "Golden", "color": "#FFD700", "rarity": 8},       # Gold variant - uncommon
+	{"name": "Shadow", "color": "#2F2F2F", "rarity": 8},       # Dark/shadow variant
+	{"name": "Violet", "color": "#9400D3", "rarity": 6},       # Purple variant
+	{"name": "Frost", "color": "#87CEEB", "rarity": 4},        # Ice blue variant - rare
+	{"name": "Infernal", "color": "#FF4500", "rarity": 2},     # Fire orange - very rare
+	{"name": "Prismatic", "color": "#FF69B4", "rarity": 1},    # Rainbow/pink - legendary
+	{"name": "Void", "color": "#4B0082", "rarity": 1}          # Deep purple - legendary
+]
+
 # Collected Companions - companions that have been hatched (can switch between them)
 # Format: [{id: String, monster_type: String, name: String, tier: int, bonuses: Dictionary,
-#           obtained_at: int, battles_fought: int}]
+#           obtained_at: int, battles_fought: int, variant: String, variant_color: String}]
 @export var collected_companions: Array = []
 
 # ===== FISHING SYSTEM =====
 @export var fishing_skill: int = 1  # Fishing skill level (1-100)
 @export var fishing_xp: int = 0     # XP towards next fishing level
 @export var fish_caught: int = 0    # Total fish caught (tracking)
+
+# ===== GATHERING SYSTEM =====
+@export var mining_skill: int = 1   # Mining skill level (1-100)
+@export var mining_xp: int = 0      # XP towards next mining level
+@export var ore_gathered: int = 0   # Total ore gathered (tracking)
+@export var logging_skill: int = 1  # Logging skill level (1-100)
+@export var logging_xp: int = 0     # XP towards next logging level
+@export var wood_gathered: int = 0  # Total wood gathered (tracking)
+
+# ===== SALVAGE SYSTEM =====
+@export var salvage_essence: int = 0  # Currency from salvaging items
 
 # ===== CRAFTING SYSTEM =====
 @export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1}
@@ -1125,7 +1152,15 @@ func to_dict() -> Dictionary:
 		"trophies": trophies,
 		"active_companion": active_companion,
 		"soul_gems": soul_gems,
-		"discovered_posts": discovered_posts
+		"discovered_posts": discovered_posts,
+		"crafting_materials": crafting_materials,
+		"salvage_essence": salvage_essence,
+		"mining_skill": mining_skill,
+		"mining_xp": mining_xp,
+		"ore_gathered": ore_gathered,
+		"logging_skill": logging_skill,
+		"logging_xp": logging_xp,
+		"wood_gathered": wood_gathered
 	}
 
 func from_dict(data: Dictionary):
@@ -1251,6 +1286,16 @@ func from_dict(data: Dictionary):
 	# Companions
 	active_companion = data.get("active_companion", {})
 	soul_gems = data.get("soul_gems", [])
+
+	# Crafting and gathering
+	crafting_materials = data.get("crafting_materials", {})
+	salvage_essence = data.get("salvage_essence", 0)
+	mining_skill = data.get("mining_skill", 1)
+	mining_xp = data.get("mining_xp", 0)
+	ore_gathered = data.get("ore_gathered", 0)
+	logging_skill = data.get("logging_skill", 1)
+	logging_xp = data.get("logging_xp", 0)
+	wood_gathered = data.get("wood_gathered", 0)
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
@@ -2201,8 +2246,28 @@ func process_egg_steps(steps: int = 1) -> Array:
 	incubating_eggs = remaining_eggs
 	return hatched
 
+func _roll_companion_variant() -> Dictionary:
+	"""Roll for a random companion color variant using weighted rarity."""
+	var total_weight = 0
+	for variant in COMPANION_VARIANTS:
+		total_weight += variant.rarity
+
+	var roll = randi() % total_weight
+	var current = 0
+	for variant in COMPANION_VARIANTS:
+		current += variant.rarity
+		if roll < current:
+			return variant
+
+	# Fallback to normal
+	return COMPANION_VARIANTS[0]
+
 func _hatch_egg(egg: Dictionary) -> Dictionary:
-	"""Hatch an egg into a companion and add to collected_companions."""
+	"""Hatch an egg into a companion and add to collected_companions.
+	Assigns a random color variant for visual variety."""
+	# Roll for color variant
+	var variant = _roll_companion_variant()
+
 	var companion = {
 		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
 		"monster_type": egg.monster_type,
@@ -2210,7 +2275,9 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		"tier": egg.tier,
 		"bonuses": egg.bonuses.duplicate(),
 		"obtained_at": int(Time.get_unix_time_from_system()),
-		"battles_fought": 0
+		"battles_fought": 0,
+		"variant": variant.name,
+		"variant_color": variant.color
 	}
 	collected_companions.append(companion)
 	return companion
@@ -2224,7 +2291,9 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				"name": companion.name,
 				"monster_type": companion.get("monster_type", ""),
 				"tier": companion.get("tier", 1),
-				"bonuses": companion.bonuses.duplicate()
+				"bonuses": companion.bonuses.duplicate(),
+				"variant": companion.get("variant", "Normal"),
+				"variant_color": companion.get("variant_color", "#FFFFFF")
 			}
 			return true
 	return false
@@ -2292,6 +2361,85 @@ func get_fishing_stats() -> Dictionary:
 		"xp_needed": _get_fishing_xp_needed(fishing_skill),
 		"total_caught": fish_caught
 	}
+
+# ===== GATHERING SYSTEM (Mining & Logging) =====
+
+func add_mining_xp(xp: int) -> Dictionary:
+	"""Add mining XP and check for level up. Returns {leveled_up: bool, new_level: int}."""
+	mining_xp += xp
+	var leveled_up = false
+	var xp_needed = _get_gathering_xp_needed(mining_skill)
+
+	while mining_xp >= xp_needed and mining_skill < 100:
+		mining_xp -= xp_needed
+		mining_skill += 1
+		leveled_up = true
+		xp_needed = _get_gathering_xp_needed(mining_skill)
+
+	return {"leveled_up": leveled_up, "new_level": mining_skill}
+
+func add_logging_xp(xp: int) -> Dictionary:
+	"""Add logging XP and check for level up. Returns {leveled_up: bool, new_level: int}."""
+	logging_xp += xp
+	var leveled_up = false
+	var xp_needed = _get_gathering_xp_needed(logging_skill)
+
+	while logging_xp >= xp_needed and logging_skill < 100:
+		logging_xp -= xp_needed
+		logging_skill += 1
+		leveled_up = true
+		xp_needed = _get_gathering_xp_needed(logging_skill)
+
+	return {"leveled_up": leveled_up, "new_level": logging_skill}
+
+func _get_gathering_xp_needed(current_level: int) -> int:
+	"""Get XP needed for next gathering skill level."""
+	# Same formula as fishing: 50 * level^1.5
+	return int(50 * pow(current_level, 1.5))
+
+func record_ore_gathered():
+	"""Record a successful mining gather."""
+	ore_gathered += 1
+
+func record_wood_gathered():
+	"""Record a successful logging gather."""
+	wood_gathered += 1
+
+func get_mining_stats() -> Dictionary:
+	"""Get mining statistics."""
+	return {
+		"skill": mining_skill,
+		"xp": mining_xp,
+		"xp_needed": _get_gathering_xp_needed(mining_skill),
+		"total_gathered": ore_gathered
+	}
+
+func get_logging_stats() -> Dictionary:
+	"""Get logging statistics."""
+	return {
+		"skill": logging_skill,
+		"xp": logging_xp,
+		"xp_needed": _get_gathering_xp_needed(logging_skill),
+		"total_gathered": wood_gathered
+	}
+
+# ===== SALVAGE SYSTEM =====
+
+func add_salvage_essence(amount: int) -> int:
+	"""Add salvage essence. Returns new total."""
+	salvage_essence += amount
+	return salvage_essence
+
+func remove_salvage_essence(amount: int) -> bool:
+	"""Remove salvage essence. Returns true if successful."""
+	if salvage_essence < amount:
+		return false
+	salvage_essence -= amount
+	return true
+
+func has_salvage_essence(amount: int) -> bool:
+	"""Check if player has enough salvage essence."""
+	return salvage_essence >= amount
 
 # ===== CRAFTING SYSTEM =====
 

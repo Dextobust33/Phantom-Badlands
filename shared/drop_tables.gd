@@ -25,6 +25,97 @@ const CONSUMABLE_CATEGORIES = {
 	"bane": ["potion_dragon_bane", "potion_undead_bane", "potion_beast_bane", "potion_demon_bane", "potion_elemental_bane"]
 }
 
+# ===== SALVAGE SYSTEM =====
+# Salvage values by rarity: {base: int, per_level: int}
+# Formula: base + (item_level * per_level)
+const SALVAGE_VALUES = {
+	"common": {"base": 5, "per_level": 1},
+	"uncommon": {"base": 10, "per_level": 2},
+	"rare": {"base": 25, "per_level": 3},
+	"epic": {"base": 50, "per_level": 5},
+	"legendary": {"base": 100, "per_level": 8},
+	"artifact": {"base": 200, "per_level": 12}
+}
+
+# Material bonus from salvaging based on item type
+# When salvaging, there's a chance to get bonus crafting materials
+const SALVAGE_MATERIAL_BONUS = {
+	"weapon": {"material": "ore", "chance": 0.3},      # 30% chance for ore
+	"armor": {"material": "leather", "chance": 0.3},   # 30% chance for leather
+	"helm": {"material": "leather", "chance": 0.2},    # 20% chance for leather
+	"shield": {"material": "ore", "chance": 0.25},     # 25% chance for ore
+	"boots": {"material": "leather", "chance": 0.2},   # 20% chance for leather
+	"ring": {"material": "enchant", "chance": 0.4},    # 40% chance for enchanting mat
+	"amulet": {"material": "enchant", "chance": 0.4},  # 40% chance for enchanting mat
+	"belt": {"material": "leather", "chance": 0.15}    # 15% chance for leather
+}
+
+# Maps material type to actual material ID based on item tier/level
+# NOTE: These must match IDs in crafting_database.gd MATERIALS
+const SALVAGE_MATERIAL_TIERS = {
+	"ore": ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"],
+	"leather": ["ragged_leather", "leather_scraps", "thick_leather", "enchanted_leather", "dragonhide", "void_silk"],
+	"enchant": ["magic_dust", "arcane_crystal", "soul_shard", "void_essence", "primordial_spark"]
+}
+
+func get_salvage_value(item: Dictionary) -> Dictionary:
+	"""Calculate salvage essence value and potential material bonus for an item."""
+	var rarity = item.get("rarity", "common")
+	var level = item.get("level", 1)
+	var item_type = item.get("type", "")
+
+	# Get base salvage values
+	var salvage_data = SALVAGE_VALUES.get(rarity, SALVAGE_VALUES["common"])
+	var essence = salvage_data.base + (level * salvage_data.per_level)
+
+	# Check for material bonus
+	var material_bonus = null
+	if SALVAGE_MATERIAL_BONUS.has(item_type):
+		var bonus_data = SALVAGE_MATERIAL_BONUS[item_type]
+		if randf() < bonus_data.chance:
+			# Determine material tier based on item level
+			var tier_index = clampi(int(level / 15), 0, 8)  # Every ~15 levels = new tier
+			var material_type = bonus_data.material
+			if SALVAGE_MATERIAL_TIERS.has(material_type):
+				var materials = SALVAGE_MATERIAL_TIERS[material_type]
+				tier_index = mini(tier_index, materials.size() - 1)
+				material_bonus = {
+					"material_id": materials[tier_index],
+					"quantity": randi_range(1, 2)
+				}
+
+	return {
+		"essence": essence,
+		"material_bonus": material_bonus
+	}
+
+func get_salvage_preview(item: Dictionary) -> Dictionary:
+	"""Get expected salvage value range for preview (without random material roll)."""
+	var rarity = item.get("rarity", "common")
+	var level = item.get("level", 1)
+	var item_type = item.get("type", "")
+
+	var salvage_data = SALVAGE_VALUES.get(rarity, SALVAGE_VALUES["common"])
+	var essence = salvage_data.base + (level * salvage_data.per_level)
+
+	var possible_material = null
+	var material_chance = 0.0
+	if SALVAGE_MATERIAL_BONUS.has(item_type):
+		var bonus_data = SALVAGE_MATERIAL_BONUS[item_type]
+		material_chance = bonus_data.chance
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var material_type = bonus_data.material
+		if SALVAGE_MATERIAL_TIERS.has(material_type):
+			var materials = SALVAGE_MATERIAL_TIERS[material_type]
+			tier_index = mini(tier_index, materials.size() - 1)
+			possible_material = materials[tier_index]
+
+	return {
+		"essence": essence,
+		"possible_material": possible_material,
+		"material_chance": material_chance
+	}
+
 func get_tier_for_level(monster_level: int) -> int:
 	"""Get the appropriate consumable tier for a monster level"""
 	for tier in range(7, 0, -1):  # Check from highest to lowest
@@ -592,14 +683,15 @@ const EGG_HATCH_STEPS_BY_TIER = {
 	9: 750    # Tier 9: 750 steps
 }
 
-# Base egg drop chance (%) by tier - higher tiers are rarer
+# Companion eggs are now DUNGEON-EXCLUSIVE
+# All tiers set to 0 - eggs only drop from dungeon treasure chests
 const EGG_DROP_CHANCE_BY_TIER = {
-	1: 3,     # 3% chance from T1 monsters
-	2: 2,     # 2% from T2
-	3: 2,     # 2% from T3
-	4: 1,     # 1% from T4
-	5: 1,     # 1% from T5
-	6: 0,     # T6+ eggs only from dungeons
+	1: 0,     # All eggs from dungeons only
+	2: 0,
+	3: 0,
+	4: 0,
+	5: 0,
+	6: 0,
 	7: 0,
 	8: 0,
 	9: 0
@@ -791,6 +883,307 @@ func get_fishing_reaction_window(fishing_skill: int) -> float:
 	# Skill adds time: +0.01s per skill level
 	var skill_bonus = fishing_skill * 0.01
 	return min(3.0, base_window + skill_bonus)  # Cap at 3 seconds
+
+# ===== MINING SYSTEM =====
+# Ore deposits in mountains - tiered by distance from origin
+
+# Mining catches by tier (1-9, matching ore tiers by distance)
+const MINING_CATCHES = {
+	1: [  # T1: 0-50 distance
+		{"weight": 40, "item": "copper_ore", "name": "Copper Ore", "type": "ore", "value": 8},
+		{"weight": 25, "item": "stone", "name": "Stone", "type": "mineral", "value": 2},
+		{"weight": 15, "item": "coal", "name": "Coal", "type": "mineral", "value": 5},
+		{"weight": 10, "item": "rough_gem", "name": "Rough Gem", "type": "gem", "value": 25},
+		{"weight": 8, "item": "healing_herb", "name": "Cave Moss", "type": "herb", "value": 10},
+		{"weight": 2, "item": "small_treasure_chest", "name": "Buried Chest", "type": "treasure", "value": 100}
+	],
+	2: [  # T2: 50-100 distance
+		{"weight": 35, "item": "iron_ore", "name": "Iron Ore", "type": "ore", "value": 15},
+		{"weight": 20, "item": "copper_ore", "name": "Copper Ore", "type": "ore", "value": 8},
+		{"weight": 15, "item": "coal", "name": "Coal", "type": "mineral", "value": 5},
+		{"weight": 12, "item": "rough_gem", "name": "Rough Gem", "type": "gem", "value": 25},
+		{"weight": 10, "item": "mana_blossom", "name": "Crystal Flower", "type": "herb", "value": 20},
+		{"weight": 5, "item": "polished_gem", "name": "Polished Gem", "type": "gem", "value": 75},
+		{"weight": 3, "item": "small_treasure_chest", "name": "Buried Chest", "type": "treasure", "value": 150}
+	],
+	3: [  # T3: 100-150 distance
+		{"weight": 35, "item": "steel_ore", "name": "Steel Ore", "type": "ore", "value": 30},
+		{"weight": 20, "item": "iron_ore", "name": "Iron Ore", "type": "ore", "value": 15},
+		{"weight": 15, "item": "shadowleaf", "name": "Shadow Crystal", "type": "enchant", "value": 40},
+		{"weight": 12, "item": "polished_gem", "name": "Polished Gem", "type": "gem", "value": 75},
+		{"weight": 10, "item": "arcane_crystal", "name": "Arcane Crystal", "type": "enchant", "value": 50},
+		{"weight": 5, "item": "flawless_gem", "name": "Flawless Gem", "type": "gem", "value": 150},
+		{"weight": 3, "item": "large_treasure_chest", "name": "Ancient Chest", "type": "treasure", "value": 300}
+	],
+	4: [  # T4: 150-200 distance
+		{"weight": 35, "item": "mithril_ore", "name": "Mithril Ore", "type": "ore", "value": 60},
+		{"weight": 20, "item": "steel_ore", "name": "Steel Ore", "type": "ore", "value": 30},
+		{"weight": 15, "item": "soul_shard", "name": "Soul Shard", "type": "enchant", "value": 80},
+		{"weight": 12, "item": "flawless_gem", "name": "Flawless Gem", "type": "gem", "value": 150},
+		{"weight": 10, "item": "phoenix_petal", "name": "Fire Crystal", "type": "essence", "value": 100},
+		{"weight": 5, "item": "perfect_gem", "name": "Perfect Gem", "type": "gem", "value": 300},
+		{"weight": 3, "item": "companion_egg_random", "name": "Stone Egg", "type": "egg", "value": 500}
+	],
+	5: [  # T5: 200-250 distance
+		{"weight": 35, "item": "adamantine_ore", "name": "Adamantine Ore", "type": "ore", "value": 120},
+		{"weight": 20, "item": "mithril_ore", "name": "Mithril Ore", "type": "ore", "value": 60},
+		{"weight": 15, "item": "void_essence", "name": "Deep Earth Essence", "type": "enchant", "value": 150},
+		{"weight": 12, "item": "perfect_gem", "name": "Perfect Gem", "type": "gem", "value": 300},
+		{"weight": 10, "item": "dragon_blood", "name": "Magma Blood", "type": "essence", "value": 200},
+		{"weight": 5, "item": "star_gem", "name": "Star Gem", "type": "gem", "value": 500},
+		{"weight": 3, "item": "companion_egg_rare", "name": "Crystal Egg", "type": "egg", "value": 1000}
+	],
+	6: [  # T6: 250-300 distance
+		{"weight": 35, "item": "orichalcum_ore", "name": "Orichalcum Ore", "type": "ore", "value": 250},
+		{"weight": 20, "item": "adamantine_ore", "name": "Adamantine Ore", "type": "ore", "value": 120},
+		{"weight": 15, "item": "void_essence", "name": "Void Essence", "type": "enchant", "value": 200},
+		{"weight": 12, "item": "star_gem", "name": "Star Gem", "type": "gem", "value": 500},
+		{"weight": 10, "item": "essence_of_life", "name": "Primal Essence", "type": "essence", "value": 400},
+		{"weight": 5, "item": "celestial_gem", "name": "Celestial Gem", "type": "gem", "value": 800},
+		{"weight": 3, "item": "companion_egg_rare", "name": "Ancient Stone Egg", "type": "egg", "value": 1500}
+	],
+	7: [  # T7: 300-350 distance
+		{"weight": 40, "item": "void_ore", "name": "Void Ore", "type": "ore", "value": 500},
+		{"weight": 25, "item": "orichalcum_ore", "name": "Orichalcum Ore", "type": "ore", "value": 250},
+		{"weight": 15, "item": "celestial_shard", "name": "Celestial Shard", "type": "enchant", "value": 400},
+		{"weight": 10, "item": "celestial_gem", "name": "Celestial Gem", "type": "gem", "value": 800},
+		{"weight": 7, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
+		{"weight": 3, "item": "companion_egg_legendary", "name": "Void Egg", "type": "egg", "value": 2500}
+	],
+	8: [  # T8: 350-400 distance
+		{"weight": 40, "item": "celestial_ore", "name": "Celestial Ore", "type": "ore", "value": 1000},
+		{"weight": 25, "item": "void_ore", "name": "Void Ore", "type": "ore", "value": 500},
+		{"weight": 15, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
+		{"weight": 10, "item": "primordial_gem", "name": "Primordial Gem", "type": "gem", "value": 1500},
+		{"weight": 7, "item": "essence_of_life", "name": "Pure Essence", "type": "essence", "value": 600},
+		{"weight": 3, "item": "companion_egg_legendary", "name": "Celestial Egg", "type": "egg", "value": 3000}
+	],
+	9: [  # T9: 400+ distance
+		{"weight": 40, "item": "primordial_ore", "name": "Primordial Ore", "type": "ore", "value": 2000},
+		{"weight": 25, "item": "celestial_ore", "name": "Celestial Ore", "type": "ore", "value": 1000},
+		{"weight": 15, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
+		{"weight": 10, "item": "primordial_gem", "name": "Primordial Gem", "type": "gem", "value": 1500},
+		{"weight": 7, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 1000},
+		{"weight": 3, "item": "companion_egg_legendary", "name": "Primordial Egg", "type": "egg", "value": 5000}
+	]
+}
+
+# Mining XP per item
+const MINING_XP = {
+	"copper_ore": 10, "iron_ore": 20, "steel_ore": 35, "mithril_ore": 50,
+	"adamantine_ore": 70, "orichalcum_ore": 100, "void_ore": 150, "celestial_ore": 200, "primordial_ore": 300,
+	"stone": 3, "coal": 5, "rough_gem": 15, "polished_gem": 30, "flawless_gem": 50,
+	"perfect_gem": 80, "star_gem": 120, "celestial_gem": 180, "primordial_gem": 250,
+	"healing_herb": 5, "mana_blossom": 10, "shadowleaf": 15, "arcane_crystal": 25,
+	"soul_shard": 40, "void_essence": 60, "celestial_shard": 100, "primordial_spark": 150,
+	"phoenix_petal": 30, "dragon_blood": 50, "essence_of_life": 80,
+	"small_treasure_chest": 50, "large_treasure_chest": 100,
+	"companion_egg_random": 100, "companion_egg_rare": 200, "companion_egg_legendary": 400
+}
+
+func roll_mining_catch(ore_tier: int, mining_skill: int) -> Dictionary:
+	"""Roll for a mining catch based on ore tier and skill level."""
+	var tier = clampi(ore_tier, 1, 9)
+	var catches = MINING_CATCHES[tier]
+
+	var modified_catches = []
+	var total_weight = 0
+
+	for catch in catches:
+		var weight = catch.weight
+		# Skill bonus: +0.5% weight to rare items per skill level
+		if catch.type in ["treasure", "egg", "gem"] or catch.value >= 100:
+			weight = int(weight * (1.0 + mining_skill * 0.005))
+		modified_catches.append({"catch": catch, "weight": weight})
+		total_weight += weight
+
+	var roll = randi() % total_weight
+	var cumulative = 0
+
+	for entry in modified_catches:
+		cumulative += entry.weight
+		if roll < cumulative:
+			var catch = entry.catch
+			return {
+				"item_id": catch.item,
+				"name": catch.name,
+				"type": catch.type,
+				"value": catch.value,
+				"xp": MINING_XP.get(catch.item, 10)
+			}
+
+	# Fallback
+	var fallback = catches[0]
+	return {
+		"item_id": fallback.item,
+		"name": fallback.name,
+		"type": fallback.type,
+		"value": fallback.value,
+		"xp": MINING_XP.get(fallback.item, 10)
+	}
+
+func get_mining_wait_time(mining_skill: int) -> float:
+	"""Get wait time for mining. Longer than fishing (6-16 sec base vs 3-8 for fishing)."""
+	var base_min = 6.0
+	var base_max = 16.0
+	var skill_reduction = mining_skill * 0.04
+	var min_time = max(3.0, base_min - skill_reduction)
+	var max_time = max(6.0, base_max - skill_reduction * 1.5)
+	return randf_range(min_time, max_time)
+
+func get_mining_reaction_window(mining_skill: int) -> float:
+	"""Get reaction window for mining. Higher skill = longer window."""
+	var base_window = 1.2  # Slightly shorter than fishing
+	var skill_bonus = mining_skill * 0.01
+	return min(2.5, base_window + skill_bonus)
+
+func get_mining_reactions_required(ore_tier: int) -> int:
+	"""Get number of successful reactions required for this tier.
+	T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions"""
+	if ore_tier <= 2:
+		return 1
+	elif ore_tier <= 5:
+		return 2
+	else:
+		return 3
+
+# ===== LOGGING SYSTEM =====
+# Trees in forests - tiered by distance from origin
+
+const LOGGING_CATCHES = {
+	1: [  # T1: 0-60 distance
+		{"weight": 40, "item": "common_wood", "name": "Common Wood", "type": "wood", "value": 6},
+		{"weight": 25, "item": "bark", "name": "Bark", "type": "plant", "value": 3},
+		{"weight": 15, "item": "sap", "name": "Tree Sap", "type": "plant", "value": 8},
+		{"weight": 10, "item": "healing_herb", "name": "Forest Herb", "type": "herb", "value": 10},
+		{"weight": 7, "item": "acorn", "name": "Golden Acorn", "type": "plant", "value": 20},
+		{"weight": 3, "item": "small_treasure_chest", "name": "Tree Hollow Cache", "type": "treasure", "value": 100}
+	],
+	2: [  # T2: 60-120 distance
+		{"weight": 40, "item": "oak_wood", "name": "Oak Wood", "type": "wood", "value": 12},
+		{"weight": 20, "item": "common_wood", "name": "Common Wood", "type": "wood", "value": 6},
+		{"weight": 15, "item": "sap", "name": "Amber Sap", "type": "plant", "value": 15},
+		{"weight": 10, "item": "mana_blossom", "name": "Forest Blossom", "type": "herb", "value": 20},
+		{"weight": 8, "item": "vigor_root", "name": "Oak Root", "type": "herb", "value": 25},
+		{"weight": 5, "item": "magic_dust", "name": "Pollen Dust", "type": "enchant", "value": 30},
+		{"weight": 2, "item": "companion_egg_random", "name": "Nest Egg", "type": "egg", "value": 500}
+	],
+	3: [  # T3: 120-180 distance
+		{"weight": 40, "item": "ash_wood", "name": "Ash Wood", "type": "wood", "value": 25},
+		{"weight": 20, "item": "oak_wood", "name": "Oak Wood", "type": "wood", "value": 12},
+		{"weight": 15, "item": "shadowleaf", "name": "Shadow Leaf", "type": "herb", "value": 40},
+		{"weight": 10, "item": "arcane_crystal", "name": "Crystallized Sap", "type": "enchant", "value": 50},
+		{"weight": 8, "item": "phoenix_petal", "name": "Fire Blossom", "type": "herb", "value": 60},
+		{"weight": 5, "item": "enchanted_resin", "name": "Enchanted Resin", "type": "enchant", "value": 75},
+		{"weight": 2, "item": "companion_egg_rare", "name": "Ancient Nest Egg", "type": "egg", "value": 1000}
+	],
+	4: [  # T4: 180-240 distance
+		{"weight": 40, "item": "ironwood", "name": "Ironwood", "type": "wood", "value": 50},
+		{"weight": 20, "item": "ash_wood", "name": "Ash Wood", "type": "wood", "value": 25},
+		{"weight": 15, "item": "soul_shard", "name": "Spirit Sap", "type": "enchant", "value": 80},
+		{"weight": 10, "item": "dragon_blood", "name": "Blood Sap", "type": "essence", "value": 100},
+		{"weight": 8, "item": "heartwood", "name": "Heartwood", "type": "wood", "value": 80},
+		{"weight": 5, "item": "void_essence", "name": "Shadow Essence", "type": "enchant", "value": 120},
+		{"weight": 2, "item": "companion_egg_rare", "name": "Spirit Egg", "type": "egg", "value": 1500}
+	],
+	5: [  # T5: 240-300 distance
+		{"weight": 40, "item": "darkwood", "name": "Darkwood", "type": "wood", "value": 100},
+		{"weight": 20, "item": "ironwood", "name": "Ironwood", "type": "wood", "value": 50},
+		{"weight": 15, "item": "void_essence", "name": "Void Sap", "type": "enchant", "value": 150},
+		{"weight": 10, "item": "essence_of_life", "name": "Life Essence", "type": "essence", "value": 200},
+		{"weight": 8, "item": "elderwood", "name": "Elderwood", "type": "wood", "value": 150},
+		{"weight": 5, "item": "celestial_shard", "name": "Starlight Shard", "type": "enchant", "value": 300},
+		{"weight": 2, "item": "companion_egg_legendary", "name": "Elder Egg", "type": "egg", "value": 2500}
+	],
+	6: [  # T6: 300+ distance
+		{"weight": 40, "item": "worldtree_branch", "name": "Worldtree Branch", "type": "wood", "value": 200},
+		{"weight": 20, "item": "darkwood", "name": "Darkwood", "type": "wood", "value": 100},
+		{"weight": 15, "item": "primordial_spark", "name": "Primordial Sap", "type": "enchant", "value": 400},
+		{"weight": 10, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 500},
+		{"weight": 8, "item": "worldtree_heartwood", "name": "Worldtree Heartwood", "type": "wood", "value": 400},
+		{"weight": 5, "item": "primordial_spark", "name": "Creation Spark", "type": "enchant", "value": 800},
+		{"weight": 2, "item": "companion_egg_legendary", "name": "Worldtree Egg", "type": "egg", "value": 5000}
+	]
+}
+
+# Logging XP per item
+const LOGGING_XP = {
+	"common_wood": 10, "oak_wood": 20, "ash_wood": 35, "ironwood": 55,
+	"darkwood": 80, "worldtree_branch": 150, "heartwood": 40, "elderwood": 70, "worldtree_heartwood": 200,
+	"bark": 3, "sap": 8, "acorn": 12, "enchanted_resin": 30,
+	"healing_herb": 5, "mana_blossom": 10, "vigor_root": 12, "shadowleaf": 20,
+	"phoenix_petal": 30, "dragon_blood": 50, "essence_of_life": 80,
+	"magic_dust": 10, "arcane_crystal": 25, "soul_shard": 40,
+	"void_essence": 60, "celestial_shard": 100, "primordial_spark": 150,
+	"small_treasure_chest": 50, "large_treasure_chest": 100,
+	"companion_egg_random": 100, "companion_egg_rare": 200, "companion_egg_legendary": 400
+}
+
+func roll_logging_catch(wood_tier: int, logging_skill: int) -> Dictionary:
+	"""Roll for a logging catch based on wood tier and skill level."""
+	var tier = clampi(wood_tier, 1, 6)
+	var catches = LOGGING_CATCHES[tier]
+
+	var modified_catches = []
+	var total_weight = 0
+
+	for catch in catches:
+		var weight = catch.weight
+		# Skill bonus: +0.5% weight to rare items per skill level
+		if catch.type in ["treasure", "egg", "essence"] or catch.value >= 100:
+			weight = int(weight * (1.0 + logging_skill * 0.005))
+		modified_catches.append({"catch": catch, "weight": weight})
+		total_weight += weight
+
+	var roll = randi() % total_weight
+	var cumulative = 0
+
+	for entry in modified_catches:
+		cumulative += entry.weight
+		if roll < cumulative:
+			var catch = entry.catch
+			return {
+				"item_id": catch.item,
+				"name": catch.name,
+				"type": catch.type,
+				"value": catch.value,
+				"xp": LOGGING_XP.get(catch.item, 10)
+			}
+
+	# Fallback
+	var fallback = catches[0]
+	return {
+		"item_id": fallback.item,
+		"name": fallback.name,
+		"type": fallback.type,
+		"value": fallback.value,
+		"xp": LOGGING_XP.get(fallback.item, 10)
+	}
+
+func get_logging_wait_time(logging_skill: int) -> float:
+	"""Get wait time for logging. Similar to mining (6-16 sec base)."""
+	var base_min = 6.0
+	var base_max = 16.0
+	var skill_reduction = logging_skill * 0.04
+	var min_time = max(3.0, base_min - skill_reduction)
+	var max_time = max(6.0, base_max - skill_reduction * 1.5)
+	return randf_range(min_time, max_time)
+
+func get_logging_reaction_window(logging_skill: int) -> float:
+	"""Get reaction window for logging. Higher skill = longer window."""
+	var base_window = 1.2
+	var skill_bonus = logging_skill * 0.01
+	return min(2.5, base_window + skill_bonus)
+
+func get_logging_reactions_required(wood_tier: int) -> int:
+	"""Get number of successful reactions required for this tier.
+	T1-2: 1 reaction, T3-4: 2 reactions, T5+: 3 reactions"""
+	if wood_tier <= 2:
+		return 1
+	elif wood_tier <= 4:
+		return 2
+	else:
+		return 3
 
 # ===== CRAFTING MATERIAL DROPS =====
 # Materials drop from monsters based on their tier

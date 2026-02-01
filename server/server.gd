@@ -73,6 +73,10 @@ const MAX_ACTIVE_DUNGEONS = 10
 const DUNGEON_SPAWN_CHECK_INTERVAL = 1800.0  # 30 minutes
 var dungeon_spawn_timer: float = 0.0
 
+# Tax collector cooldown tracking (peer_id -> steps since last encounter)
+var tax_collector_cooldowns: Dictionary = {}  # peer_id -> steps remaining
+const TAX_COLLECTOR_COOLDOWN_STEPS = 50  # Minimum steps between tax encounters
+
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -671,10 +675,6 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_merchant_sell_all(peer_id)
 		"merchant_sell_gems":
 			handle_merchant_sell_gems(peer_id, message)
-		"merchant_upgrade":
-			handle_merchant_upgrade(peer_id, message)
-		"merchant_upgrade_all":
-			handle_merchant_upgrade_all(peer_id)
 		"merchant_gamble":
 			handle_merchant_gamble(peer_id, message)
 		"merchant_buy":
@@ -736,6 +736,16 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_fish_start(peer_id)
 		"fish_catch":
 			handle_fish_catch(peer_id, message)
+		# Mining system handlers
+		"mine_start":
+			handle_mine_start(peer_id)
+		"mine_catch":
+			handle_mine_catch(peer_id, message)
+		# Logging system handlers
+		"log_start":
+			handle_log_start(peer_id)
+		"log_catch":
+			handle_log_catch(peer_id, message)
 		# Crafting system handlers
 		"craft_list":
 			handle_craft_list(peer_id, message)
@@ -784,6 +794,9 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_blacksmith_choice(peer_id, message)
 		"healer_choice":
 			handle_healer_choice(peer_id, message)
+		# Bug report handler
+		"bug_report":
+			handle_bug_report(peer_id, message)
 		_:
 			pass
 
@@ -897,7 +910,7 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		var old_y = character.y
 		# Teleport to a safe spot near 0,0 (within the expanded safe zone)
 		character.x = randi_range(-5, 5)
-		character.y = randi_range(5, 15)  # Start at Sanctuary area
+		character.y = randi_range(-5, 5)  # Start near Crossroads trading post
 		character.balance_migrated_v085 = true
 		# Recalculate stats with new formulas
 		character.calculate_derived_stats()
@@ -1655,9 +1668,8 @@ func handle_hunt(peer_id: int):
 		if not expired.is_empty():
 			send_character_update(peer_id)
 
-	# Check for tax collector encounter while hunting
-	if check_tax_collector_encounter(peer_id):
-		send_character_update(peer_id)
+	# Tax collector check removed from hunting - only happens on movement
+	# to prevent double-checking (was causing excessive encounters)
 
 	# Check if in safe zone (can't hunt there)
 	var terrain = world_system.get_terrain_at(character.x, character.y)
@@ -2172,7 +2184,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				send_buff_expiration_notifications(peer_id)
 
 				# Handle dungeon combat victory - clear tile and send updated state
-				var combat_state = combat_mgr.get_combat_state(peer_id)
+				var combat_state = combat_mgr.get_active_combat(peer_id)
 				if combat_state and combat_state.get("is_dungeon_combat", false):
 					var character = characters[peer_id]
 					if character.in_dungeon:
@@ -2653,6 +2665,14 @@ func send_location_update(peer_id: int):
 	var is_at_water = world_system.is_fishing_spot(character.x, character.y)
 	var water_type = world_system.get_fishing_type(character.x, character.y) if is_at_water else ""
 
+	# Check if player is at an ore deposit (mining)
+	var is_at_ore = world_system.is_ore_deposit(character.x, character.y)
+	var current_ore_tier = world_system.get_ore_tier(character.x, character.y) if is_at_ore else 1
+
+	# Check if player is at a dense forest (logging)
+	var is_at_forest = world_system.is_dense_forest(character.x, character.y)
+	var current_wood_tier = world_system.get_wood_tier(character.x, character.y) if is_at_forest else 1
+
 	# Check if player is at a dungeon entrance
 	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y)
 	var at_dungeon = not dungeon_entrance.is_empty()
@@ -2665,6 +2685,10 @@ func send_location_update(peer_id: int):
 		"description": map_display,
 		"at_water": is_at_water,
 		"water_type": water_type,
+		"at_ore_deposit": is_at_ore,
+		"ore_tier": current_ore_tier,
+		"at_dense_forest": is_at_forest,
+		"wood_tier": current_wood_tier,
 		"at_dungeon": at_dungeon,
 		"dungeon_info": dungeon_entrance
 	})
@@ -3251,6 +3275,14 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 
 	var character = characters[peer_id]
 
+	# Check cooldown first - decrement and skip if still on cooldown
+	if tax_collector_cooldowns.has(peer_id):
+		tax_collector_cooldowns[peer_id] -= 1
+		if tax_collector_cooldowns[peer_id] > 0:
+			return false
+		else:
+			tax_collector_cooldowns.erase(peer_id)
+
 	# Check if player is tax-immune (Jarl or High King)
 	if TitlesScript.is_title_tax_immune(character.title):
 		# Small chance to show immunity flavor
@@ -3270,8 +3302,8 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 			})
 		return false
 
-	# Check encounter rate (5%)
-	if randf() >= TitlesScript.TAX_COLLECTOR.encounter_rate:
+	# Check encounter rate (halved from 5% to 2.5% and only on movement now)
+	if randf() >= TitlesScript.TAX_COLLECTOR.encounter_rate * 0.5:
 		return false
 
 	# Check minimum gold
@@ -3320,6 +3352,10 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 
 	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, persistence.get_realm_treasury()])
 	save_character(peer_id)
+
+	# Set cooldown to prevent back-to-back encounters
+	tax_collector_cooldowns[peer_id] = TAX_COLLECTOR_COOLDOWN_STEPS
+
 	return true
 
 # Track pending blacksmith/healer encounters (peer_id -> repair costs/heal costs)
@@ -3342,7 +3378,7 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 	var total_repair_cost = 0
 
 	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = character.equipment.get(slot_name)
+		var item = character.equipped.get(slot_name)
 		if item and item.has("wear"):
 			var wear = item.get("wear", 0)
 			if wear > 0:
@@ -3482,7 +3518,7 @@ func check_healer_encounter(peer_id: int) -> bool:
 		return false
 
 	# Only trigger if HP < 80%
-	var hp_percent = float(character.hp) / float(character.max_hp)
+	var hp_percent = float(character.current_hp) / float(character.max_hp)
 	if hp_percent >= 0.80:
 		return false
 
@@ -3576,6 +3612,42 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "healer_done"})
 	save_character(peer_id)
 	send_character_update(peer_id)
+
+# ===== BUG REPORT HANDLER =====
+
+const BUG_REPORT_FOLDER = "C:/Users/Dexto/Desktop/Bug Reports"
+
+func handle_bug_report(peer_id: int, message: Dictionary):
+	"""Save bug report from client to desktop folder"""
+	var report_text = message.get("report", "")
+	var player_name = message.get("player", "Unknown")
+	var description = message.get("description", "")
+
+	if report_text.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Empty bug report."})
+		return
+
+	# Create folder if it doesn't exist
+	var dir = DirAccess.open("C:/Users/Dexto/Desktop")
+	if dir:
+		if not dir.dir_exists("Bug Reports"):
+			dir.make_dir("Bug Reports")
+
+	# Generate unique filename with timestamp
+	var timestamp = Time.get_datetime_string_from_system(false, true).replace(":", "-").replace("T", "_")
+	var safe_player_name = player_name.validate_filename() if player_name else "Unknown"
+	var filename = "%s/%s_%s.txt" % [BUG_REPORT_FOLDER, timestamp, safe_player_name]
+
+	# Save report
+	var file = FileAccess.open(filename, FileAccess.WRITE)
+	if file:
+		file.store_string(report_text)
+		file.close()
+		print("[Bug Report] Saved from %s to: %s" % [player_name, filename])
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]Bug report saved successfully! Thank you for your feedback.[/color]"})
+	else:
+		print("[Bug Report] ERROR: Failed to save report from %s" % player_name)
+		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1):
 	"""Trigger a flock encounter with the same monster type"""
@@ -4346,7 +4418,7 @@ func handle_inventory_sort(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 
 func handle_inventory_salvage(peer_id: int, message: Dictionary):
-	"""Handle bulk salvaging items for gold"""
+	"""Handle bulk salvaging items for salvage essence"""
 	if not characters.has(peer_id):
 		return
 
@@ -4363,7 +4435,8 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 
 	var threshold = max(1, character.level - 5)
 	var items_to_remove = []
-	var total_gold = 0
+	var total_essence = 0
+	var materials_gained: Dictionary = {}  # {material_id: quantity}
 
 	# Identify items to salvage based on mode
 	for i in range(inventory.size()):
@@ -4393,12 +4466,18 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 				should_salvage = is_consumable
 
 		if should_salvage:
-			# Calculate salvage value (25% of item value)
-			var base_value = item_level * 10
-			var rarity_mult = {"common": 1.0, "uncommon": 1.5, "rare": 2.0, "epic": 3.0, "legendary": 5.0}
-			var mult = rarity_mult.get(item.get("rarity", "common"), 1.0)
-			var salvage_value = int(base_value * mult * 0.25)
-			total_gold += salvage_value
+			# Calculate salvage value using drop_tables
+			var salvage_result = drop_tables.get_salvage_value(item)
+			total_essence += salvage_result.essence
+
+			# Check for material bonus
+			if salvage_result.material_bonus != null:
+				var mat_id = salvage_result.material_bonus.material_id
+				var mat_qty = salvage_result.material_bonus.quantity
+				if not materials_gained.has(mat_id):
+					materials_gained[mat_id] = 0
+				materials_gained[mat_id] += mat_qty
+
 			items_to_remove.append(i)
 
 	if items_to_remove.is_empty():
@@ -4414,12 +4493,25 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	for idx in items_to_remove:
 		character.remove_item(idx)
 
-	# Add gold
-	character.gold += total_gold
+	# Add salvage essence
+	character.add_salvage_essence(total_essence)
+
+	# Add any bonus materials
+	for mat_id in materials_gained:
+		character.add_crafting_material(mat_id, materials_gained[mat_id])
+
+	# Build result message
+	var result_msg = "[color=#AA66FF]Salvaged %d items for %d essence![/color]" % [salvaged_count, total_essence]
+	if not materials_gained.is_empty():
+		var mat_strings = []
+		for mat_id in materials_gained:
+			var mat_name = CraftingDatabaseScript.get_material_name(mat_id)
+			mat_strings.append("%dx %s" % [materials_gained[mat_id], mat_name])
+		result_msg += "\n[color=#00FF00]Bonus materials: %s[/color]" % ", ".join(mat_strings)
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FFD700]Salvaged %d items for %d gold![/color]" % [salvaged_count, total_gold]
+		"message": result_msg
 	})
 
 	save_character(peer_id)
@@ -4681,148 +4773,6 @@ func handle_merchant_sell_gems(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#00FFFF]You sell %d gem%s for %d gold![/color]" % [amount, "s" if amount > 1 else "", gold_value]
-	})
-
-	send_character_update(peer_id)
-
-func handle_merchant_upgrade(peer_id: int, message: Dictionary):
-	"""Handle upgrading an equipped item (supports multi-upgrade)"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	var merchant = at_merchant[peer_id]
-	if not "upgrade" in merchant.services:
-		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer upgrades."})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var slot = message.get("slot", "")
-	var count = message.get("count", 1)  # Number of upgrades to perform
-	var use_gems = message.get("use_gems", false)  # Pay with gems instead of gold
-
-	count = clampi(count, 1, 100)  # Limit to 100 upgrades at once
-
-	if not slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment slot"})
-		return
-
-	var item = character.equipped.get(slot)
-	if item == null:
-		send_to_peer(peer_id, {"type": "error", "message": "Nothing equipped in that slot"})
-		return
-
-	# Calculate total upgrade cost for all requested upgrades
-	var current_level = item.get("level", 1)
-	var total_cost = 0
-	for i in range(count):
-		total_cost += int(pow(current_level + i + 1, 2) * 10)
-
-	# Check if paying with gems
-	if use_gems:
-		var gem_cost = int(ceil(total_cost / 1000.0))
-		if character.gems < gem_cost:
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FF4444]You need %d gems for %d upgrade%s. You have %d gems.[/color]" % [gem_cost, count, "s" if count > 1 else "", character.gems]
-			})
-			return
-
-		# Perform upgrades with gem payment
-		character.gems -= gem_cost
-		item["level"] = current_level + count
-		item["value"] = int(item.get("value", 100) * pow(1.5, count))
-
-		var rarity = item.get("rarity", "common")
-		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
-
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]%s upgraded %d level%s (now +%d) for %d gems![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, gem_cost]
-		})
-	else:
-		# Standard gold payment
-		if character.gold < total_cost:
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FF4444]You need %d gold for %d upgrade%s. You have %d gold.[/color]" % [total_cost, count, "s" if count > 1 else "", character.gold]
-			})
-			return
-
-		# Perform upgrades
-		character.gold -= total_cost
-		item["level"] = current_level + count
-		item["value"] = int(item.get("value", 100) * pow(1.5, count))
-
-		var rarity = item.get("rarity", "common")
-		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
-
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]%s upgraded %d level%s (now +%d) for %d gold![/color]" % [item.get("name", "Item"), count, "s" if count > 1 else "", item["level"] - 1, total_cost]
-		})
-
-	send_character_update(peer_id)
-
-func handle_merchant_upgrade_all(peer_id: int):
-	"""Handle upgrading all equipped items by 1 level each"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	var merchant = at_merchant[peer_id]
-	if not "upgrade" in merchant.services:
-		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer upgrades."})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-
-	# Calculate total cost for all equipped items
-	var total_cost = 0
-	var items_to_upgrade = []
-	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = character.equipped.get(slot)
-		if item != null:
-			var current_level = item.get("level", 1)
-			var upgrade_cost = int(pow(current_level + 1, 2) * 10)
-			total_cost += upgrade_cost
-			items_to_upgrade.append({"slot": slot, "item": item, "cost": upgrade_cost})
-
-	if items_to_upgrade.is_empty():
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]No items equipped to upgrade.[/color]"
-		})
-		return
-
-	if character.gold < total_cost:
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]You need %d gold to upgrade all items. You have %d gold.[/color]" % [total_cost, character.gold]
-		})
-		return
-
-	# Perform all upgrades
-	character.gold -= total_cost
-	var upgraded_names = []
-	for entry in items_to_upgrade:
-		var item = entry.item
-		var current_level = item.get("level", 1)
-		item["level"] = current_level + 1
-		item["value"] = int(item.get("value", 100) * 1.5)
-		var rarity = item.get("rarity", "common")
-		item["name"] = _get_upgraded_item_name(item.get("type", ""), rarity, item["level"])
-		upgraded_names.append("%s +%d" % [entry.slot.capitalize(), item["level"] - 1])
-
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#00FF00]Upgraded %d items for %d gold![/color]\n[color=#808080]%s[/color]" % [items_to_upgrade.size(), total_cost, ", ".join(upgraded_names)]
 	})
 
 	send_character_update(peer_id)
@@ -6794,6 +6744,264 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	save_character(peer_id)
 
+# ===== MINING SYSTEM =====
+
+func handle_mine_start(peer_id: int):
+	"""Handle player starting to mine"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Check if in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot mine while in combat!"})
+		return
+
+	# Check if at an ore deposit
+	if not world_system.is_ore_deposit(character.x, character.y):
+		send_to_peer(peer_id, {"type": "error", "message": "You need to be at an ore deposit to mine!"})
+		return
+
+	# Get ore tier and mining data
+	var ore_tier = world_system.get_ore_tier(character.x, character.y)
+	var wait_time = drop_tables.get_mining_wait_time(character.mining_skill)
+	var reaction_window = drop_tables.get_mining_reaction_window(character.mining_skill)
+	var reactions_required = drop_tables.get_mining_reactions_required(ore_tier)
+
+	send_to_peer(peer_id, {
+		"type": "mine_start",
+		"ore_tier": ore_tier,
+		"wait_time": wait_time,
+		"reaction_window": reaction_window,
+		"reactions_required": reactions_required,
+		"mining_skill": character.mining_skill,
+		"message": "[color=#C0C0C0]You begin mining the ore vein (Tier %d)...[/color]" % ore_tier
+	})
+
+func handle_mine_catch(peer_id: int, message: Dictionary):
+	"""Handle player completing a mining attempt"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var success = message.get("success", false)
+	var partial_success = message.get("partial_success", 0)  # Number of successful reactions
+	var ore_tier = message.get("ore_tier", 1)
+
+	if not success and partial_success == 0:
+		send_to_peer(peer_id, {
+			"type": "mine_result",
+			"success": false,
+			"message": "[color=#FF4444]The vein crumbles - you got nothing![/color]"
+		})
+		return
+
+	# Roll for catch (reduced rewards on partial success)
+	var catch_result = drop_tables.roll_mining_catch(ore_tier, character.mining_skill)
+
+	# Calculate quantity based on success level
+	var quantity = 1
+	if success:
+		quantity = 1 + randi() % 2  # 1-2 on full success
+	# Partial success: 1 item but reduced XP
+
+	# Add XP (reduced on partial success)
+	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_mining_reactions_required(ore_tier))
+	var xp_gained = int(catch_result.xp * xp_multiplier)
+	var xp_result = character.add_mining_xp(xp_gained)
+	character.record_ore_gathered()
+
+	# Handle different catch types
+	var catch_message = ""
+	var extra_messages = []
+
+	match catch_result.type:
+		"ore":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#C0C0C0]You mined %dx %s![/color]" % [quantity, catch_result.name]
+		"mineral":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#708090]You found %dx %s![/color]" % [quantity, catch_result.name]
+		"gem":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#00CED1]★ You found %dx %s! ★[/color]" % [quantity, catch_result.name]
+		"enchant", "essence":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#9400D3]You discovered %dx %s![/color]" % [quantity, catch_result.name]
+		"herb":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#32CD32]You found %dx %s growing in the cave![/color]" % [quantity, catch_result.name]
+		"treasure":
+			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			character.gold += gold_amount
+			catch_message = "[color=#FFD700]You unearthed a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
+		"egg":
+			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else ([4, 5] if catch_result.item_id == "companion_egg_rare" else [6, 7])
+			var tier = egg_tiers[randi() % egg_tiers.size()]
+			var monster_names = []
+			for monster_name in drop_tables.COMPANION_DATA:
+				if drop_tables.COMPANION_DATA[monster_name].tier == tier:
+					monster_names.append(monster_name)
+			if monster_names.size() > 0:
+				var random_monster = monster_names[randi() % monster_names.size()]
+				var egg_data = drop_tables.get_egg_for_monster(random_monster)
+				var egg_result = character.add_egg(egg_data)
+				if egg_result.success:
+					catch_message = "[color=#A335EE]★ You unearthed a %s! ★[/color]" % egg_data.name
+					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
+				else:
+					character.gold += catch_result.value
+					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+			else:
+				character.gold += catch_result.value
+				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+
+	if xp_result.leveled_up:
+		extra_messages.append("[color=#FFFF00]★ Mining skill increased to %d! ★[/color]" % xp_result.new_level)
+
+	send_to_peer(peer_id, {
+		"type": "mine_result",
+		"success": true,
+		"catch": catch_result,
+		"quantity": quantity,
+		"xp_gained": xp_gained,
+		"leveled_up": xp_result.leveled_up,
+		"new_level": xp_result.new_level,
+		"message": catch_message,
+		"extra_messages": extra_messages
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+# ===== LOGGING SYSTEM =====
+
+func handle_log_start(peer_id: int):
+	"""Handle player starting to log (chop wood)"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Check if in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot chop wood while in combat!"})
+		return
+
+	# Check if at a dense forest
+	if not world_system.is_dense_forest(character.x, character.y):
+		send_to_peer(peer_id, {"type": "error", "message": "You need to be at a harvestable tree to chop!"})
+		return
+
+	# Get wood tier and logging data
+	var wood_tier = world_system.get_wood_tier(character.x, character.y)
+	var wait_time = drop_tables.get_logging_wait_time(character.logging_skill)
+	var reaction_window = drop_tables.get_logging_reaction_window(character.logging_skill)
+	var reactions_required = drop_tables.get_logging_reactions_required(wood_tier)
+
+	send_to_peer(peer_id, {
+		"type": "log_start",
+		"wood_tier": wood_tier,
+		"wait_time": wait_time,
+		"reaction_window": reaction_window,
+		"reactions_required": reactions_required,
+		"logging_skill": character.logging_skill,
+		"message": "[color=#8B4513]You begin chopping the tree (Tier %d)...[/color]" % wood_tier
+	})
+
+func handle_log_catch(peer_id: int, message: Dictionary):
+	"""Handle player completing a logging attempt"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var success = message.get("success", false)
+	var partial_success = message.get("partial_success", 0)
+	var wood_tier = message.get("wood_tier", 1)
+
+	if not success and partial_success == 0:
+		send_to_peer(peer_id, {
+			"type": "log_result",
+			"success": false,
+			"message": "[color=#FF4444]The branch breaks - you got nothing![/color]"
+		})
+		return
+
+	# Roll for catch
+	var catch_result = drop_tables.roll_logging_catch(wood_tier, character.logging_skill)
+
+	# Calculate quantity based on success level
+	var quantity = 1
+	if success:
+		quantity = 1 + randi() % 2
+
+	# Add XP (reduced on partial success)
+	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_logging_reactions_required(wood_tier))
+	var xp_gained = int(catch_result.xp * xp_multiplier)
+	var xp_result = character.add_logging_xp(xp_gained)
+	character.record_wood_gathered()
+
+	# Handle different catch types
+	var catch_message = ""
+	var extra_messages = []
+
+	match catch_result.type:
+		"wood":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#8B4513]You gathered %dx %s![/color]" % [quantity, catch_result.name]
+		"plant":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#228B22]You found %dx %s![/color]" % [quantity, catch_result.name]
+		"herb":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#32CD32]You harvested %dx %s![/color]" % [quantity, catch_result.name]
+		"enchant", "essence":
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#9400D3]You discovered %dx %s![/color]" % [quantity, catch_result.name]
+		"treasure":
+			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			character.gold += gold_amount
+			catch_message = "[color=#FFD700]You found a %s hidden in the trunk containing %d gold![/color]" % [catch_result.name, gold_amount]
+		"egg":
+			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else ([4, 5] if catch_result.item_id == "companion_egg_rare" else [6, 7])
+			var tier = egg_tiers[randi() % egg_tiers.size()]
+			var monster_names = []
+			for monster_name in drop_tables.COMPANION_DATA:
+				if drop_tables.COMPANION_DATA[monster_name].tier == tier:
+					monster_names.append(monster_name)
+			if monster_names.size() > 0:
+				var random_monster = monster_names[randi() % monster_names.size()]
+				var egg_data = drop_tables.get_egg_for_monster(random_monster)
+				var egg_result = character.add_egg(egg_data)
+				if egg_result.success:
+					catch_message = "[color=#A335EE]★ You found a %s in a nest! ★[/color]" % egg_data.name
+					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
+				else:
+					character.gold += catch_result.value
+					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+			else:
+				character.gold += catch_result.value
+				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+
+	if xp_result.leveled_up:
+		extra_messages.append("[color=#FFFF00]★ Logging skill increased to %d! ★[/color]" % xp_result.new_level)
+
+	send_to_peer(peer_id, {
+		"type": "log_result",
+		"success": true,
+		"catch": catch_result,
+		"quantity": quantity,
+		"xp_gained": xp_gained,
+		"leveled_up": xp_result.leveled_up,
+		"new_level": xp_result.new_level,
+		"message": catch_message,
+		"extra_messages": extra_messages
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
 # ===== CRAFTING SYSTEM =====
 
 func handle_craft_list(peer_id: int, message: Dictionary):
@@ -7322,7 +7530,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	dungeon_floors[instance_id] = floor_grids
 
-	log_message("Created dungeon instance: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_loc.x, spawn_loc.y])
+	log_message("Created dungeon instance: %s (%s)" % [instance_id, dungeon_data.name])
 	return instance_id
 
 func _check_dungeon_spawns():
@@ -7463,7 +7671,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 
 	# Start combat
 	combat_mgr.start_combat(peer_id, character, monster)
-	var combat_state = combat_mgr.get_combat_state(peer_id)
+	var combat_state = combat_mgr.get_active_combat(peer_id)
 
 	# Mark as dungeon combat for special handling
 	combat_state["is_dungeon_combat"] = true
@@ -7584,9 +7792,33 @@ func _complete_dungeon(peer_id: int):
 	character.gold += rewards.gold
 	var xp_result = character.gain_experience(rewards.xp, character.level)
 
+	# Give GUARANTEED boss egg!
+	var boss_egg_given = false
+	var boss_egg_name = ""
+	var boss_egg_monster = rewards.get("boss_egg", "")
+	if boss_egg_monster != "":
+		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster)
+		if not egg_data.is_empty():
+			var egg_result = character.add_egg(egg_data)
+			if egg_result.success:
+				boss_egg_given = true
+				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
+
 	# Set cooldown
 	character.set_dungeon_cooldown(dungeon_type, dungeon_data.cooldown_hours)
 	character.record_dungeon_completion(dungeon_type)
+
+	# Check dungeon quest progress
+	var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)
+	for update in quest_updates:
+		send_to_peer(peer_id, {
+			"type": "quest_progress",
+			"quest_id": update.quest_id,
+			"progress": update.progress,
+			"target": update.target,
+			"completed": update.completed,
+			"message": update.message
+		})
 
 	# Remove from dungeon
 	if active_dungeons.has(instance_id):
@@ -7599,7 +7831,13 @@ func _complete_dungeon(peer_id: int):
 	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
 	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, rewards.total_floors]
 	completion_msg += "[color=#FFD700]+%d Gold[/color]\n" % rewards.gold
-	completion_msg += "[color=#00BFFF]+%d XP[/color]" % rewards.xp
+	completion_msg += "[color=#00BFFF]+%d XP[/color]\n" % rewards.xp
+
+	# Show boss egg reward!
+	if boss_egg_given:
+		completion_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % boss_egg_name
+	elif boss_egg_monster != "":
+		completion_msg += "[color=#808080](Egg storage full - %s Egg not collected)[/color]" % boss_egg_monster
 
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level

@@ -31,6 +31,136 @@ Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScr
 - Chat commands can exist as fallbacks but shouldn't be the primary interface
 - See `docs/action-bar-states.md` for the full state machine
 
+## Player-Visible Output Rule
+
+**CRITICAL: All feature results MUST be visible to the player.**
+
+### The Problem
+The server frequently sends messages (`character_update`, `location`, `text`, etc.) that can trigger UI refreshes. When the client receives these while in ANY mode (inventory, merchant, trading post, crafting, etc.), the default behavior often calls a display function that clears `game_output`. This wipes out any results the player was trying to read.
+
+**This affects ALL modes and actions, not just inventory:**
+- `inventory_mode` → `display_inventory()` clears output
+- `at_merchant` → merchant display functions clear output
+- `at_trading_post` → trading post display clears output
+- `crafting_mode` → crafting display clears output
+- `ability_mode` → ability mapping display clears output
+- `settings_mode` → settings display clears output
+- Using items → result message cleared by character_update
+- Viewing materials → cleared by inventory refresh
+- Any action with results → can be wiped by incoming messages
+
+**Specific actions that have caused this bug:**
+- Salvaging items (result message wiped)
+- Viewing crafting materials (view cleared immediately)
+- Mapping abilities to slots (confirmation wiped)
+- Using consumables (effect message wiped)
+- Any "view" or "inspect" action in a submenu
+
+### Mandatory Checklist for New Actions in ANY Mode
+
+When implementing ANY new action that displays something the player needs to read, you MUST:
+
+**Step 1: Create a pending/state flag**
+```gdscript
+# Use the appropriate pending variable for the mode:
+pending_inventory_action = "my_new_action"      # For inventory mode
+pending_merchant_action = "my_new_action"       # For merchant mode
+pending_trading_post_action = "my_new_action"   # For trading post mode
+pending_ability_action = "my_new_action"        # For ability mode
+rebinding_action = "my_new_action"              # For settings/keybind mode
+# Or create a new state variable if needed for entirely new modes
+```
+
+**Existing state flags to be aware of:**
+- `awaiting_item_use_result` - Prevents text message from displaying during item use
+- `awaiting_salvage_result` - Prevents inventory refresh after salvage
+- `viewing_materials` - Prevents inventory refresh while viewing materials
+- `sort_select`, `salvage_select` - Submenu states in inventory
+- `equip_confirm`, `unequip_item` - Equipment action states
+
+**Step 2: Add action bar state for the new view**
+Find the appropriate mode's action bar section in `update_action_bar()` (~line 3700-4200) and add:
+```gdscript
+elif pending_xxx_action == "my_new_action":
+    current_actions = [
+        {"label": "Back", "action_type": "local", "action_data": "my_action_back", "enabled": true},
+        # ... other buttons
+    ]
+```
+
+**Step 3: CRITICAL - Add bypass in message handlers**
+Find where incoming messages trigger UI refreshes and add your state to prevent clearing:
+
+```gdscript
+# In "character_update" handler (~line 9910-9990):
+# Find the mode check (e.g., `if inventory_mode:`) and add:
+elif pending_inventory_action == "my_new_action":
+    pass  # Don't redisplay - keep showing current view
+
+# Similar patterns exist for other modes - search for where
+# display functions are called after receiving server messages
+```
+
+**Step 4: Add handler to exit the view**
+```gdscript
+"my_action_back":
+    pending_xxx_action = ""
+    display_xxx()  # Return to parent view
+    update_action_bar()
+```
+
+**Step 5: CRITICAL - Add to item selection exclusion list** (~line 1751 in client.gd)
+The `_process()` function has item selection handling that checks `pending_inventory_action`. If your new state isn't excluded, number key presses will be processed as item selections AND action bar presses simultaneously, causing immediate unwanted actions.
+
+```gdscript
+# Find this line and add your state to the exclusion list:
+if ... and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "YOUR_NEW_STATE"] and ...
+```
+
+### Common Patterns That Cause This Bug
+1. Server sends result via `"text"` message → displayed correctly
+2. Server sends `"character_update"` immediately after → triggers mode refresh
+3. Mode refresh calls `display_xxx()` → clears the text message
+4. Player sees results for a split second, then gone
+
+**Real examples from this codebase:**
+- Player salvages items → "Salvaged 5 items for 150 essence!" appears → character_update arrives → `display_inventory()` called → message gone
+- Player views materials → materials list shows → character_update arrives → `display_inventory()` called → back to inventory
+- Player uses potion → "+50 HP!" appears → character_update arrives → combat/inventory refresh → message gone
+- Player maps ability → "Ability assigned to slot 3" → character_update → ability list refreshes → message gone
+- Player changes setting → "Setting saved" → any update → settings redisplay → message gone
+
+**Another common cause - Item Selection Conflict:**
+The `_process()` function (~line 1751) handles item selection with number keys (1-9). If your new `pending_inventory_action` state isn't in the exclusion list, pressing a number key to select an action bar button ALSO triggers item selection handling, which can immediately call `display_inventory()` or other functions.
+
+Example: Player presses "3" for Materials button → action bar processes "view_materials" → BUT _process() also sees key "3" as item selection → processes item at index 3 → calls display_inventory() → materials view immediately replaced
+
+### How to Verify Your Implementation
+1. Trigger your new action
+2. Confirm the output displays
+3. Wait 1-2 seconds (server messages arrive)
+4. Output should STILL be visible
+5. Test pressing Back - should return to parent view correctly
+
+### Quick Reference - Where Refreshes Happen
+Search client.gd for these to find where to add bypasses:
+- `if inventory_mode:` in character_update handler (~line 9926)
+- `if at_merchant` in character_update handler
+- `if at_trading_post` in various handlers
+- `if ability_mode` in relevant handlers
+- `if settings_mode` in relevant handlers
+- Any `display_xxx()` call triggered by incoming messages
+- Any `game_output.clear()` call in message handlers
+
+**Key message types that trigger refreshes:**
+- `"character_update"` - Most common culprit, sent after almost every server action
+- `"location"` - Sent on movement, can affect displayed state
+- `"text"` - Usually safe, but check `awaiting_item_use_result` pattern
+- `"combat_update"` - Refreshes combat display
+- `"inventory_update"` - If it exists, will refresh inventory
+
+**Features are useless if players can't see what happened.**
+
 ## Running the Project
 
 **Godot executable:** `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`

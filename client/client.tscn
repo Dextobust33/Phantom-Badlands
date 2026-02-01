@@ -676,6 +676,12 @@ custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 text = "Send"
 
+[node name="BugButton" type="Button" parent="RootContainer/BottomBar"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+tooltip_text = "Report a Bug"
+text = "🐛"
+
 [node name="LoginPanel" type="Panel" parent="." unique_id=429179656]
 visible = false
 layout_mode = 1
