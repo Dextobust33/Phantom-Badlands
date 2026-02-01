@@ -2191,34 +2191,27 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				characters[peer_id].y = flee_pos.y
 				save_character(peer_id)
 
-			# Check if fleeing from dungeon - eject from dungeon
-			var combat_state = combat_mgr.get_combat_state(peer_id)
-			if combat_state and combat_state.get("is_dungeon_combat", false):
-				var character = characters[peer_id]
-				if character.in_dungeon:
-					var dungeon_name = ""
-					var instance_id = character.current_dungeon_id
-					if active_dungeons.has(instance_id):
-						dungeon_name = active_dungeons[instance_id].get("name", "Dungeon")
-					character.exit_dungeon()
-					save_character(peer_id)
-					send_to_peer(peer_id, {
-						"type": "combat_end",
-						"fled": true,
-						"new_x": characters[peer_id].x,
-						"new_y": characters[peer_id].y
-					})
-					send_to_peer(peer_id, {
-						"type": "dungeon_exit",
-						"reason": "fled",
-						"dungeon_name": dungeon_name
-					})
-			else:
+			# Always send combat_end for flee
+			send_to_peer(peer_id, {
+				"type": "combat_end",
+				"fled": true,
+				"new_x": characters[peer_id].x,
+				"new_y": characters[peer_id].y
+			})
+
+			# Check if fleeing from dungeon - also eject from dungeon
+			var character = characters[peer_id]
+			if character.in_dungeon:
+				var dungeon_name = ""
+				var instance_id = character.current_dungeon_id
+				if active_dungeons.has(instance_id):
+					dungeon_name = active_dungeons[instance_id].get("name", "Dungeon")
+				character.exit_dungeon()
+				save_character(peer_id)
 				send_to_peer(peer_id, {
-					"type": "combat_end",
-					"fled": true,
-					"new_x": characters[peer_id].x,
-					"new_y": characters[peer_id].y
+					"type": "dungeon_exit",
+					"reason": "fled",
+					"dungeon_name": dungeon_name
 				})
 		elif result.get("monster_fled", false):
 			# Monster fled - check if it summoned a replacement (Shrieker behavior)
