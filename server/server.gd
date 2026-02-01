@@ -170,6 +170,10 @@ func _ready():
 	log_message("Waiting for connections...")
 	update_player_list()
 
+	# Spawn initial dungeons
+	log_message("Spawning initial dungeons...")
+	_check_dungeon_spawns()
+
 	# Connect restart button and confirmation dialog
 	if restart_button:
 		restart_button.pressed.connect(_on_restart_button_pressed)
@@ -486,6 +490,12 @@ func _process(delta):
 		_check_pending_update_announcements()
 		if pending_update_seconds_remaining <= 0:
 			_execute_pending_shutdown()
+
+	# Dungeon spawn timer - periodically spawn new dungeons
+	dungeon_spawn_timer += delta
+	if dungeon_spawn_timer >= DUNGEON_SPAWN_CHECK_INTERVAL:
+		dungeon_spawn_timer = 0.0
+		_check_dungeon_spawns()
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -2643,6 +2653,10 @@ func send_location_update(peer_id: int):
 	var is_at_water = world_system.is_fishing_spot(character.x, character.y)
 	var water_type = world_system.get_fishing_type(character.x, character.y) if is_at_water else ""
 
+	# Check if player is at a dungeon entrance
+	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y)
+	var at_dungeon = not dungeon_entrance.is_empty()
+
 	# Send map display as description
 	send_to_peer(peer_id, {
 		"type": "location",
@@ -2650,7 +2664,9 @@ func send_location_update(peer_id: int):
 		"y": character.y,
 		"description": map_display,
 		"at_water": is_at_water,
-		"water_type": water_type
+		"water_type": water_type,
+		"at_dungeon": at_dungeon,
+		"dungeon_info": dungeon_entrance
 	})
 
 	# Forward location/map to watchers
@@ -7308,6 +7324,62 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	log_message("Created dungeon instance: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_loc.x, spawn_loc.y])
 	return instance_id
+
+func _check_dungeon_spawns():
+	"""Periodically check and spawn new dungeons at random locations"""
+	# Don't spawn if at max
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		return
+
+	# Clean up expired dungeons first
+	var current_time = int(Time.get_unix_time_from_system())
+	var dungeons_to_remove = []
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var duration_hours = dungeon_data.get("cooldown_hours", 24)
+		var max_age = duration_hours * 3600
+		if current_time - instance.spawned_at > max_age and instance.active_players.is_empty():
+			dungeons_to_remove.append(instance_id)
+
+	for instance_id in dungeons_to_remove:
+		log_message("Dungeon expired: %s" % instance_id)
+		active_dungeons.erase(instance_id)
+		dungeon_floors.erase(instance_id)
+
+	# Spawn new dungeons based on what's missing
+	var dungeon_types = DungeonDatabaseScript.DUNGEON_TYPES.keys()
+	for dungeon_type in dungeon_types:
+		# Check if this type already has an active instance
+		var has_instance = false
+		for instance_id in active_dungeons:
+			if active_dungeons[instance_id].dungeon_type == dungeon_type:
+				has_instance = true
+				break
+
+		if not has_instance and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
+			# Roll spawn chance based on dungeon weight
+			var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+			var spawn_chance = dungeon_data.get("spawn_weight", 10)
+			if randi() % 100 < spawn_chance:
+				_create_dungeon_instance(dungeon_type)
+
+func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
+	"""Check if there's a dungeon entrance at the given coordinates"""
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		if instance.world_x == x and instance.world_y == y:
+			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+			return {
+				"instance_id": instance_id,
+				"dungeon_type": instance.dungeon_type,
+				"name": dungeon_data.name,
+				"tier": dungeon_data.tier,
+				"min_level": dungeon_data.min_level,
+				"max_level": dungeon_data.max_level,
+				"color": dungeon_data.color
+			}
+	return {}
 
 func _send_dungeon_state(peer_id: int):
 	"""Send current dungeon state to player"""

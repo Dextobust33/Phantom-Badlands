@@ -361,6 +361,10 @@ const CRAFTING_PAGE_SIZE = 5
 # Water/Fishing location
 var at_water: bool = false  # Whether player is at a fishable water tile
 
+# Dungeon entrance location
+var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
+var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
+
 # Watch/Inspect mode - observe another player's game output
 var watching_player: String = ""  # Name of player we're watching (empty = not watching)
 var watch_request_pending: String = ""  # Player who requested to watch us (waiting for approval)
@@ -3953,12 +3957,14 @@ func update_action_bar():
 		else:
 			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
-		# Or Fish button at water tiles
+		# Or Fish button at water tiles, or Dungeon button at dungeon entrances
 		var fifth_action: Dictionary
 		if forge_available:
 			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
 		elif at_fire_mountain:
 			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
+		elif at_dungeon_entrance:
+			fifth_action = {"label": "Dungeon", "action_type": "local", "action_data": "enter_dungeon", "enabled": true}
 		elif at_water:
 			var water_label = "Deep Fish" if fishing_water_type == "deep" else "Fish"
 			fifth_action = {"label": water_label, "action_type": "local", "action_data": "start_fishing", "enabled": true}
@@ -5912,6 +5918,9 @@ func execute_local_action(action: String):
 		"start_fishing":
 			# Start the fishing minigame
 			start_fishing()
+		"enter_dungeon":
+			# Enter a dungeon at this location
+			enter_dungeon_at_location()
 		"ability_equip":
 			show_ability_equip_prompt()
 		"ability_unequip":
@@ -9430,8 +9439,12 @@ func handle_server_message(message: Dictionary):
 			# Cancel fishing if we moved away from water
 			if was_at_water and not at_water and fishing_mode:
 				end_fishing(false, "You moved away from the water.")
-			# Update action bar if water status changed
-			if was_at_water != at_water:
+			# Update dungeon entrance status
+			var was_at_dungeon = at_dungeon_entrance
+			at_dungeon_entrance = message.get("at_dungeon", false)
+			dungeon_entrance_info = message.get("dungeon_info", {})
+			# Update action bar if water or dungeon status changed
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance:
 				update_action_bar()
 
 		"chat":
@@ -13525,8 +13538,36 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
+func enter_dungeon_at_location():
+	"""Enter the dungeon at the player's current location (via action bar)"""
+	if not at_dungeon_entrance or dungeon_entrance_info.is_empty():
+		display_game("[color=#FF4444]There's no dungeon entrance here.[/color]")
+		return
+
+	if in_combat:
+		display_game("[color=#FF4444]You can't enter a dungeon while in combat![/color]")
+		return
+
+	var instance_id = dungeon_entrance_info.get("instance_id", "")
+	var dungeon_type = dungeon_entrance_info.get("dungeon_type", "")
+	var dungeon_name = dungeon_entrance_info.get("name", "Dungeon")
+	var min_level = dungeon_entrance_info.get("min_level", 1)
+
+	# Show dungeon info before entering
+	game_output.clear()
+	var color = dungeon_entrance_info.get("color", "#FFFFFF")
+	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
+	display_game("")
+	display_game("Tier %d Dungeon" % dungeon_entrance_info.get("tier", 1))
+	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])
+	display_game("")
+	display_game("[color=#FFFF00]Entering dungeon...[/color]")
+
+	# Send enter request
+	send_to_server({"type": "dungeon_enter", "dungeon_type": dungeon_type, "instance_id": instance_id})
+
 func select_dungeon(index: int):
-	"""Select a dungeon from the list to enter"""
+	"""Select a dungeon from the list to enter (legacy /dungeons command)"""
 	if not dungeon_list_mode:
 		return
 

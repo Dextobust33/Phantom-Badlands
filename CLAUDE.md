@@ -17,6 +17,20 @@ This file provides guidance to Claude Code when working with this repository.
 
 Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScript. Client-server architecture with turn-based combat, procedural world generation, and 9 class archetypes.
 
+## UI Design Principle: Action Bar First
+
+**IMPORTANT: Always prefer Action Bar over chat commands when implementing new features.**
+
+- New features should be accessible via the Action Bar, not `/commands`
+- The Action Bar has 10 slots (Space, Q, W, E, R, 1-5) with contextual buttons
+- Slot 4 (R key) is the "contextual location action" - shows different buttons based on location:
+  - At water: Fish
+  - At dungeon entrance: Dungeon
+  - At Infernal Forge: Forge
+  - Otherwise: Quests
+- Chat commands can exist as fallbacks but shouldn't be the primary interface
+- See `docs/action-bar-states.md` for the full state machine
+
 ## Running the Project
 
 **Godot executable:** `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`
