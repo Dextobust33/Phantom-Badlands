@@ -675,3 +675,126 @@ Title holders can lose their title through abuse of power.
 **Decay:** 1 point per hour
 
 **Consequence:** Losing title removes all abilities and the title prefix
+
+---
+
+## Dungeon System
+
+Procedural dungeons that spawn at random world locations.
+
+### Dungeon Types
+
+| Dungeon | Tier | Level Range | Floors | Boss |
+|---------|------|-------------|--------|------|
+| Goblin Cave | T3 | 16-35 | 3 | Goblin King |
+| Spider Nest | T4 | 31-55 | 4 | Broodmother |
+| Undead Crypt | T5 | 51-110 | 5 | Lich Lord |
+| Dragon's Lair | T6 | 101-260 | 5 | Elder Dragon |
+| Demon Fortress | T7 | 251-550 | 6 | Demon Prince |
+| Void Sanctum | T8 | 500-1200 | 7 | Void Lord |
+
+### Dungeon Flow
+
+1. **Find Entrance** - Dungeons spawn at random world coordinates (higher tier = further from origin)
+2. **Enter** - Press R (Action Bar) when at entrance
+3. **Explore** - Navigate grid-based floors using Q/W/E/R for N/S/W/E movement
+4. **Encounters** - Step on `?` tiles to fight monsters
+5. **Treasures** - Step on `$` tiles for loot (gold, materials, rare eggs)
+6. **Boss** - Final floor has a boss at center, defeat to complete
+7. **Cooldown** - Each dungeon type has a cooldown before you can enter again
+
+### Dungeon Tiles
+
+| Symbol | Meaning |
+|--------|---------|
+| `@` | Player position |
+| `.` | Empty (walkable) |
+| `#` | Wall |
+| `E` | Entrance |
+| `>` | Exit to next floor |
+| `?` | Encounter (monster) |
+| `$` | Treasure chest |
+| `B` | Boss |
+| `·` | Cleared encounter |
+
+---
+
+## Crafting System
+
+Skill-based crafting available at Trading Posts.
+
+### Crafting Skills
+
+| Skill | Products |
+|-------|----------|
+| Blacksmithing | Weapons, Armor |
+| Alchemy | Potions, Consumables |
+| Enchanting | Equipment Upgrades |
+
+### Quality System
+
+Quality is determined by skill level vs recipe difficulty:
+
+| Quality | Stat Multiplier | Condition |
+|---------|-----------------|-----------|
+| Failed | 0% (materials lost) | Roll > success+30 |
+| Poor | 50% | Roll > success+15 |
+| Standard | 100% | Within ±15 |
+| Fine | 125% | Roll < success-15 |
+| Masterwork | 150% | Roll ≤ success-30 |
+
+**Base Success = 50 + (skill_level - recipe_difficulty) × 2**
+
+Trading posts may have specialization bonuses for certain skills.
+
+---
+
+## Fishing System
+
+Reaction-based minigame at water tiles.
+
+### Fishing Flow
+
+1. Stand on water tile (blue `~` on map)
+2. Press R to start fishing
+3. **Wait Phase** - Line in water, wait for bite (2-8 seconds)
+4. **Reaction Phase** - "FISH!" appears, press highlighted button quickly (1.5 sec window)
+5. **Result** - Correct button = catch, wrong/timeout = fish escapes
+
+### Catch Types
+
+- **Fish** - Basic catches, used in alchemy
+- **Materials** - Crafting materials (seaweed, pearls, etc.)
+- **Treasure Chests** - Rare, contain gold and sometimes eggs
+
+### Skill Progression
+
+Higher fishing skill = shorter wait times, longer reaction windows, better catches.
+
+---
+
+## Companion System
+
+Companions are miniature monsters that fight alongside you.
+
+### Obtaining Companions
+
+1. **Eggs drop** from dungeons, fishing, and monster kills
+2. **Hatch eggs** by walking (each step decrements hatch counter)
+3. **Equip companion** via `/companion` command
+
+### Companion Bonuses by Tier
+
+| Tier | Bonus Range |
+|------|-------------|
+| T1-T2 | +2-5% single stat |
+| T3-T4 | +5-10% or dual stats |
+| T5-T6 | +10-15% or dual stats |
+| T7-T8 | +15-22% or triple stats |
+| T9 | +22-25% or unique effects |
+
+### Combat Role
+
+- Companions attack automatically each round
+- Companion damage scales with tier and player level
+- Companions cannot be targeted or damaged

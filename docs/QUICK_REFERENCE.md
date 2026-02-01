@@ -167,6 +167,33 @@ See `/docs/` for detailed mermaid diagrams:
 - `networking-protocol.md` - Message types
 - `quest-system.md` - Quest flow
 
+## New Feature Systems (v0.9.11+)
+
+### Dungeons
+- Spawn at random world locations (higher tier = further from origin)
+- Enter via Action Bar "Dungeon" button (R key) at entrance
+- Grid-based exploration: Q=N, W=S, E=W, R=E
+- Files: `dungeon_database.gd` (definitions), `character.gd` (state), `server.gd` (handlers)
+
+### Crafting
+- Available at Trading Posts via Action Bar
+- Three skills: Blacksmithing, Alchemy, Enchanting
+- Quality system: Failed → Poor → Standard → Fine → Masterwork
+- Files: `crafting_database.gd` (recipes), `character.gd` (skills), `server.gd` (handlers)
+
+### Fishing
+- Available at water tiles via Action Bar "Fish" button (R key)
+- Reaction minigame: wait for bite, press correct button quickly
+- Files: `world_system.gd` (water detection), `server.gd` (handlers), `client.gd` (UI)
+
+### Companions
+- Eggs drop from dungeons, fishing, monster kills
+- Hatch by walking (steps decrement counter)
+- Fight alongside player in combat
+- Files: `drop_tables.gd` (eggs), `character.gd` (companion data)
+
+**See `docs/ROADMAP.md` for full implementation details.**
+
 ## Gotchas
 
 1. **Key conflicts:** Action bar slots 5-9 share keys with item selection (1-5). Exclude new modes from item selection at ~line 1451.
@@ -176,5 +203,7 @@ See `/docs/` for detailed mermaid diagrams:
 3. **Backward compat:** Server may have old clients. Keep message format stable.
 
 4. **SQLite:** Persistence uses `addons/godot-sqlite`. Character saves on logout and periodic auto-save.
+
+5. **Action Bar First:** New features should use Action Bar, not chat commands. Slot 4 (R key) is contextual by location.
 
 5. **Permadeath:** Characters are deleted on death. No recovery.
