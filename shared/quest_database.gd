@@ -644,12 +644,17 @@ const QUESTS = {
 
 func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
 	"""Get quest data by ID. Returns empty dict if not found.
-	For dynamic quests, pass player_level and quests_completed_at_post to get accurate scaling."""
+	For dynamic quests, pass player_level and quests_completed_at_post to get accurate scaling.
+	For static quests with player_level provided, also applies requirement scaling to match display."""
 	if QUESTS.has(quest_id):
 		var quest = QUESTS[quest_id].duplicate(true)
 		# Scale rewards based on trading post area level
 		var area_level = _get_area_level_for_post(quest.trading_post)
-		return _scale_quest_rewards(quest, area_level)
+		quest = _scale_quest_rewards(quest, area_level)
+		# If player_level provided, also scale requirements to match what was displayed
+		if player_level > 0:
+			quest = _scale_quest_for_player(quest, player_level, area_level, quests_completed_at_post)
+		return quest
 
 	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:

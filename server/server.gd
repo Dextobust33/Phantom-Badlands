@@ -3347,11 +3347,11 @@ func check_healer_encounter(peer_id: int) -> bool:
 	if hp_percent >= 0.80:
 		return false
 
-	# Calculate heal costs based on player level
+	# Calculate heal costs based on player level (reduced 10% for economy balance)
 	var level = character.level
-	var quick_heal_cost = level * 25
-	var full_heal_cost = level * 100
-	var cure_all_cost = level * 200
+	var quick_heal_cost = level * 22
+	var full_heal_cost = level * 90
+	var cure_all_cost = level * 180
 
 	# Check for debuffs
 	var has_debuffs = character.persistent_buffs.size() > 0
@@ -4838,9 +4838,9 @@ func handle_merchant_leave(peer_id: int):
 		})
 
 func _get_recharge_cost(player_level: int) -> int:
-	"""Calculate recharge cost based on player level"""
-	# Base cost 50 gold, scales with level
-	return 50 + (player_level * 10)
+	"""Calculate recharge cost based on player level (reduced 10% for economy balance)"""
+	# Base cost 45 gold, scales with level
+	return 45 + (player_level * 9)
 
 func handle_merchant_recharge(peer_id: int):
 	"""Handle recharging resources at a merchant"""

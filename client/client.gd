@@ -5300,8 +5300,36 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	if path == "mage" and cost_percent > 0:
 		var max_mana = character_data.get("total_max_mana", character_data.get("max_mana", 100))
 		var percent_cost = int(max_mana * cost_percent / 100.0)
-		result.cost = max(base_cost, percent_cost)
+		base_cost = max(base_cost, percent_cost)
 
+	# Apply race and class cost modifiers to match server calculations
+	var final_cost = base_cost
+	var player_race = character_data.get("race", "")
+	var player_class = character_data.get("class", "")
+	var ability_resource_type = result.resource_type
+
+	# Gnome racial: -15% ability costs (all resource types)
+	if player_race == "Gnome":
+		final_cost = int(final_cost * 0.85)
+
+	# Class-specific cost modifiers
+	if ability_resource_type == "stamina":
+		# Fighter: 20% reduced stamina costs
+		if player_class == "Fighter":
+			final_cost = int(final_cost * 0.80)
+		# Barbarian: 25% increased stamina costs
+		elif player_class == "Barbarian":
+			final_cost = int(final_cost * 1.25)
+	elif ability_resource_type == "mana":
+		# Sage: 25% reduced mana costs
+		if player_class == "Sage":
+			final_cost = int(final_cost * 0.75)
+
+	# Minimum cost of 1 (unless base was 0)
+	if base_cost > 0 and final_cost < 1:
+		final_cost = 1
+
+	result.cost = final_cost
 	return result
 
 func show_combat_item_menu():
@@ -6379,6 +6407,17 @@ func display_shop_item_details(item: Dictionary):
 	display_game("")
 	display_game("[color=#808080][%s] Buy  |  [%s] Back to list[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
+func _get_effective_item_level_for_display(item_level: int) -> float:
+	"""Apply diminishing returns for items above level 50.
+	   Items 1-50: Full linear scaling
+	   Items 51+: Logarithmic scaling (50 + 15 * log2(level - 49))
+	   This mirrors the server's _get_effective_item_level in character.gd"""
+	if item_level <= 50:
+		return float(item_level)
+	# Above 50: diminishing returns using log scaling
+	var excess = item_level - 49
+	return 50.0 + 15.0 * log(excess) / log(2.0)
+
 func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 	"""Compute the actual bonuses an item provides (mirrors character.gd logic)"""
 	var bonuses = {
@@ -6411,37 +6450,40 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 	var wear = item.get("wear", 0)
 	var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness
 
-	# Base bonus scales with item level, rarity, and wear
-	var base_bonus = int(item_level * rarity_mult * wear_penalty)
+	# Apply diminishing returns for items above level 50 (matches server character.gd)
+	var effective_level = _get_effective_item_level_for_display(item_level)
+
+	# Base bonus scales with effective item level, rarity, and wear
+	var base_bonus = int(effective_level * rarity_mult * wear_penalty)
 
 	# STEP 1: Apply base item type bonuses (all items get these)
-	# Note: Multipliers match server's character.gd exactly
+	# Note: Multipliers match server's character.gd NERFED values exactly
 	if "weapon" in item_type:
-		bonuses.attack += int(base_bonus * 2.5)  # Weapons give strong attack
-		bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.attack += int(base_bonus * 1.5)  # Nerfed from 2.5x
+		bonuses.strength += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 	elif "armor" in item_type:
-		bonuses.defense += int(base_bonus * 1.75)  # Armor gives defense
-		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.max_hp += int(base_bonus * 2.5)
+		bonuses.defense += int(base_bonus * 1.0)  # Nerfed from 1.75x
+		bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.max_hp += int(base_bonus * 1.5)  # Nerfed from 2.5x
 	elif "helm" in item_type:
-		bonuses.defense += base_bonus
-		bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.defense += int(base_bonus * 0.6)  # Nerfed from 1.0x
+		bonuses.wisdom += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 	elif "shield" in item_type:
-		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.max_hp += base_bonus * 4  # Shields give good HP
-		bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.defense += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+		bonuses.max_hp += int(base_bonus * 2.0)  # Nerfed from 4x
+		bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 	elif "ring" in item_type:
-		bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-		bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.attack += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.intelligence += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 	elif "amulet" in item_type:
-		bonuses.max_mana += int(base_bonus * 1.75)
-		bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.max_mana += int(base_bonus * 1.0)  # Nerfed from 1.75x
+		bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.wits += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 	elif "boots" in item_type:
-		bonuses.speed += base_bonus
-		bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.speed += int(base_bonus * 0.6)  # Nerfed from 1.0x
+		bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.defense += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 
 	# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
 	if "ring_arcane" in item_type:
@@ -10286,18 +10328,20 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	if is_tier_value and (item_type == "health_potion" or item_type == "elixir" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type) or item_type.begins_with("elixir_")):
 		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		return "Restores %d HP when used" % tier_data.healing
-	# Mana potions (mana_minor, mana_lesser, etc. or mana_potion)
-	elif is_tier_value and (item_type == "mana_potion" or item_type.begins_with("mana_")):
+	# Resource potions (mana/stamina/energy - all restore player's PRIMARY resource)
+	elif is_tier_value and (item_type == "mana_potion" or item_type.begins_with("mana_") or item_type == "stamina_potion" or item_type.begins_with("stamina_") or item_type == "energy_potion" or item_type.begins_with("energy_")):
 		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
-		return "Restores %d Mana when used" % tier_data.mana
-	# Stamina potions
-	elif is_tier_value and (item_type == "stamina_potion" or item_type.begins_with("stamina_")):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
-		return "Restores %d Stamina when used" % tier_data.resource
-	# Energy potions
-	elif is_tier_value and (item_type == "energy_potion" or item_type.begins_with("energy_")):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
-		return "Restores %d Energy when used" % tier_data.resource
+		# Show the player's primary resource type
+		var player_class = character_data.get("class", "")
+		var resource_name = "Resource"
+		match player_class:
+			"Wizard", "Sorcerer", "Sage":
+				resource_name = "Mana"
+			"Fighter", "Barbarian", "Paladin":
+				resource_name = "Stamina"
+			"Thief", "Ranger", "Ninja":
+				resource_name = "Energy"
+		return "Restores %d %s when used" % [tier_data.resource, resource_name]
 	# Buff potions (check tier versions)
 	elif is_tier_value and (item_type == "strength_potion" or "potion_strength" in item_type or "potion_power" in item_type or "elixir_might" in item_type):
 		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
@@ -11692,37 +11736,40 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 		var wear = item.get("wear", 0)
 		var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness
 
-		# Base bonus scales with item level, rarity, and wear
-		var base_bonus = int(item_level * rarity_mult * wear_penalty)
+		# Apply diminishing returns for items above level 50 (matches server character.gd)
+		var effective_level = _get_effective_item_level_for_display(item_level)
+
+		# Base bonus scales with effective item level, rarity, and wear
+		var base_bonus = int(effective_level * rarity_mult * wear_penalty)
 
 		# STEP 1: Apply base item type bonuses (all items get these)
-		# Matches _compute_item_bonuses and server character.gd exactly
+		# Matches _compute_item_bonuses and server character.gd NERFED values exactly
 		if "weapon" in item_type:
-			bonuses.attack += int(base_bonus * 2.5)
-			bonuses.strength += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.attack += int(base_bonus * 1.5)  # Nerfed from 2.5x
+			bonuses.strength += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 		elif "armor" in item_type:
-			bonuses.defense += int(base_bonus * 1.75)
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.max_hp += int(base_bonus * 2.5)
+			bonuses.defense += int(base_bonus * 1.0)  # Nerfed from 1.75x
+			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.max_hp += int(base_bonus * 1.5)  # Nerfed from 2.5x
 		elif "helm" in item_type:
-			bonuses.defense += base_bonus
-			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.defense += int(base_bonus * 0.6)  # Nerfed from 1.0x
+			bonuses.wisdom += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "shield" in item_type:
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.max_hp += base_bonus * 4
-			bonuses.constitution += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+			bonuses.max_hp += int(base_bonus * 2.0)  # Nerfed from 4x
+			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "ring" in item_type:
-			bonuses.attack += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.intelligence += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.attack += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.intelligence += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "amulet" in item_type:
-			bonuses.max_mana += int(base_bonus * 1.75)
-			bonuses.wisdom += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.wits += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.max_mana += int(base_bonus * 1.0)  # Nerfed from 1.75x
+			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.wits += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 		elif "boots" in item_type:
-			bonuses.speed += base_bonus
-			bonuses.dexterity += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.defense += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+			bonuses.speed += int(base_bonus * 0.6)  # Nerfed from 1.0x
+			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.defense += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 
 		# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
 		if "ring_arcane" in item_type:
@@ -11775,14 +11822,14 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 	return bonuses
 
 func _get_rarity_multiplier_for_status(rarity: String) -> float:
-	"""Get multiplier for item rarity"""
+	"""Get multiplier for item rarity - NERFED values to match server"""
 	match rarity:
 		"common": return 1.0
-		"uncommon": return 1.5
-		"rare": return 2.0
-		"epic": return 3.0
-		"legendary": return 4.5
-		"artifact": return 6.0
+		"uncommon": return 1.2
+		"rare": return 1.4
+		"epic": return 1.7
+		"legendary": return 2.0
+		"artifact": return 2.5
 		_: return 1.0
 
 func show_help():
@@ -11921,7 +11968,7 @@ func show_help():
 [color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
   Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
 [color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
-  [%s] Quick (25%% HP) = level×25g | [%s] Full (100%% HP) = level×100g | [%s] Cure All (full+debuffs) = level×200g
+  [%s] Quick (25%% HP) = level×22g | [%s] Full (100%% HP) = level×90g | [%s] Cure All (full+debuffs) = level×180g
 [color=#DAA520]Tax Collector[/color] (5%% chance when 100+g): 8%% tax (min 10g). Bumbling=5%%, Veteran=10%%. Jarls/High Kings immune.
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
@@ -11929,7 +11976,7 @@ func show_help():
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.8.99:[/color] Wandering NPCs (blacksmith/healer), quest improvements, debuff enhancements
+[color=#00FFFF]v0.9.10:[/color] Fixed stat displays, quest progress, ability costs, resource potions. 10%% cheaper healing, 10%% more XP
 [/font_size]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)

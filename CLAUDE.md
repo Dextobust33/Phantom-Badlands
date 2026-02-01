@@ -122,6 +122,7 @@ Key rules:
 2. State priority: settings > trade > combat > merchant > inventory > trading_post > movement
 3. Action bar slots 5-9 share keys with item selection (1-5)
 4. When adding sub-menus using buttons, exclude from item selection at ~line 1451
+5. **CRITICAL: Mark hotkeys as pressed when exiting modes via key press** (see Pitfall #7)
 
 ## Monster HP Knowledge System (IMPORTANT)
 
@@ -176,3 +177,26 @@ GDScript 4 static functions CAN access class constants. If errors occur, check f
 **Also for server-side commands:** Add to `server/server.gd`:
 1. `handle_message()` match statement (~line 470)
 2. Create the handler function
+
+### 7. Mode Exit Hotkey Double-Trigger (CRITICAL)
+**Symptom:** When exiting a mode via hotkey (Space, Q, number keys), the action bar also triggers
+**Cause:** `_input()` handles the key and sets `mode = false`, but `_process()` polls `Input.is_physical_key_pressed()` which still sees the key as held, so action bar triggers too
+
+**Fix:** When exiting a mode via key press in `_input()`, mark the corresponding hotkey as pressed:
+```gdscript
+# Before setting mode = false:
+set_meta("hotkey_0_pressed", true)  # For Space/action_0
+set_meta("hotkey_1_pressed", true)  # For Q/action_1
+# etc.
+
+# For number keys 1-5 (item selection keys):
+var action_slot = item_index + 5  # KEY_1 = action_5, KEY_2 = action_6, etc.
+set_meta("hotkey_%d_pressed" % action_slot, true)
+```
+
+**When to apply:**
+- Any mode that handles keys in `_input()` and is NOT in the `should_process_action_bar` exclusion list
+- Currently excluded: `settings_mode`, `combat_item_mode`, `monster_select_mode`, `title_mode`
+- Modes that need this fix when exiting: `ability_mode`, any new custom modes
+
+**Location:** `client/client.gd` ~line 1755 for exclusion list, ~line 1780 for hotkey processing

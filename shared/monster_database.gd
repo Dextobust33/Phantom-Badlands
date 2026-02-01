@@ -1552,28 +1552,31 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	return max(0.25, scale)
 
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
-	"""Calculate XP reward - NERFED significantly for balance.
+	"""Calculate XP reward - balanced for player progression.
 	   XP should scale slowly - same-level fights shouldn't give a full level.
-	   Higher tier monsters naturally have better stats, giving them higher lethality."""
+	   Higher tier monsters naturally have better stats, giving them higher lethality.
+	   Increased by 10% for better progression feel."""
 	var lethality = hp + (strength * 2) + defense  # Reduced strength weight from 3 to 2
 
+	var base_xp: int
 	# Level 1-50: (lethality * level) / 20 - Basic linear scaling
 	if level <= 50:
-		return max(5, int((lethality * level) / 20))
-
+		base_xp = max(5, int((lethality * level) / 20))
 	# Level 51-200: lethality * (50 + sqrt(level-50) * 5) / 20 - Slow growth
-	if level <= 200:
+	elif level <= 200:
 		var bonus = 50 + sqrt(level - 50) * 5
-		return max(10, int(lethality * bonus / 20))
-
+		base_xp = max(10, int(lethality * bonus / 20))
 	# Level 201-500: Even slower growth with log scaling
-	if level <= 500:
+	elif level <= 500:
 		var bonus = 50 + sqrt(150) * 5 + log(level - 200) * 10  # Continue from 200 with log
-		return max(20, int(lethality * bonus / 20))
+		base_xp = max(20, int(lethality * bonus / 20))
+	else:
+		# Level 500+: Heavily diminishing returns
+		var bonus = 50 + sqrt(150) * 5 + log(300) * 10 + log(level - 500) * 5
+		base_xp = max(30, int(lethality * bonus / 20))
 
-	# Level 500+: Heavily diminishing returns
-	var bonus = 50 + sqrt(150) * 5 + log(300) * 10 + log(level - 500) * 5
-	return max(30, int(lethality * bonus / 20))
+	# Apply 10% XP boost for better progression
+	return int(base_xp * 1.1)
 
 func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: int) -> int:
 	"""Calculate gold reward with diminishing returns at high levels.
