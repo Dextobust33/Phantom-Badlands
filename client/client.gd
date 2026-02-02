@@ -4165,7 +4165,7 @@ func update_action_bar():
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			fourth_action,
 			fifth_action,
-			{"label": "Info", "action_type": "local", "action_data": "companions", "enabled": true},
+			{"label": "More", "action_type": "local", "action_data": "companions", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
 			teleport_action,
