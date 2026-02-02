@@ -71,7 +71,10 @@ var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 50  # Increased to support per-player instances
-const DUNGEON_SPAWN_CHECK_INTERVAL = 1800.0  # 30 minutes
+const DUNGEON_SPAWN_CHECK_INTERVAL = 60.0  # Check every minute
+const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
+const MIN_WORLD_DUNGEONS = 8  # Minimum number of world dungeons on map
+const MAX_WORLD_DUNGEONS = 15  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 
 # Tax collector cooldown tracking (peer_id -> steps since last encounter)
@@ -7772,43 +7775,99 @@ func _ensure_starter_dungeon_exists():
 	log_message("Spawned starter dungeon: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_x, spawn_y])
 
 func _check_dungeon_spawns():
-	"""Periodically check and spawn new dungeons at random locations"""
-	# Don't spawn if at max
-	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
-		return
-
-	# Clean up expired dungeons first
+	"""Periodically check and spawn new world dungeons, despawn completed ones"""
 	var current_time = int(Time.get_unix_time_from_system())
 	var dungeons_to_remove = []
+
+	# Count world dungeons (excluding player quest dungeons)
+	var world_dungeon_count = 0
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
-		var duration_hours = dungeon_data.get("cooldown_hours", 24)
-		var max_age = duration_hours * 3600
-		if current_time - instance.spawned_at > max_age and instance.active_players.is_empty():
-			dungeons_to_remove.append(instance_id)
+		# Skip player-owned dungeons (quest dungeons)
+		if instance.get("owner_peer_id", -1) >= 0:
+			continue
+		world_dungeon_count += 1
 
+		# Check if dungeon is completed and should despawn
+		var completed_at = instance.get("completed_at", 0)
+		if completed_at > 0 and instance.active_players.is_empty():
+			if current_time - completed_at >= DUNGEON_DESPAWN_DELAY:
+				dungeons_to_remove.append(instance_id)
+				log_message("Despawning completed dungeon: %s" % instance_id)
+
+		# Also check for very old dungeons (24+ hours) with no players
+		var age = current_time - instance.spawned_at
+		if age > 86400 and instance.active_players.is_empty():  # 24 hours
+			dungeons_to_remove.append(instance_id)
+			log_message("Despawning old dungeon: %s (age: %d hours)" % [instance_id, age / 3600])
+
+	# Remove dungeons marked for removal
 	for instance_id in dungeons_to_remove:
-		log_message("Dungeon expired: %s" % instance_id)
 		active_dungeons.erase(instance_id)
 		dungeon_floors.erase(instance_id)
+		world_dungeon_count -= 1
 
-	# Spawn new dungeons based on what's missing
+	# Spawn new world dungeons if below minimum
 	var dungeon_types = DungeonDatabaseScript.DUNGEON_TYPES.keys()
-	for dungeon_type in dungeon_types:
-		# Check if this type already has an active instance
-		var has_instance = false
-		for instance_id in active_dungeons:
-			if active_dungeons[instance_id].dungeon_type == dungeon_type:
-				has_instance = true
-				break
+	while world_dungeon_count < MIN_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
+		# Pick a random dungeon type
+		var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
+		var instance_id = _create_world_dungeon(dungeon_type)
+		if instance_id != "":
+			world_dungeon_count += 1
+			log_message("Spawned new world dungeon: %s" % instance_id)
+		else:
+			break  # Failed to create, stop trying
 
-		if not has_instance and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
-			# Roll spawn chance based on dungeon weight
-			var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
-			var spawn_chance = dungeon_data.get("spawn_weight", 10)
-			if randi() % 100 < spawn_chance:
-				_create_dungeon_instance(dungeon_type)
+	# Occasionally spawn extra dungeons up to max
+	if world_dungeon_count < MAX_WORLD_DUNGEONS and randf() < 0.3:  # 30% chance per check
+		var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
+		var instance_id = _create_world_dungeon(dungeon_type)
+		if instance_id != "":
+			log_message("Spawned bonus world dungeon: %s" % instance_id)
+
+func _create_world_dungeon(dungeon_type: String) -> String:
+	"""Create a random world dungeon at a random location"""
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		return ""
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return ""
+
+	var instance_id = "world_dungeon_%d" % next_dungeon_id
+	next_dungeon_id += 1
+
+	# Get spawn location based on tier - higher tiers spawn further from origin
+	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+	# Add some randomness to position (within 50 tiles of tier's base location)
+	var offset_x = (randi() % 101) - 50
+	var offset_y = (randi() % 101) - 50
+	var world_x = spawn_loc.x + offset_x
+	var world_y = spawn_loc.y + offset_y
+
+	# Create instance
+	active_dungeons[instance_id] = {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": world_x,
+		"world_y": world_y,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1),
+		"completed_at": 0  # 0 means not completed yet
+	}
+
+	# Generate all floor grids
+	var floor_grids = []
+	for floor_num in range(dungeon_data.floors):
+		var is_boss_floor = floor_num == dungeon_data.floors - 1
+		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(grid)
+
+	dungeon_floors[instance_id] = floor_grids
+
+	return instance_id
 
 func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
 	"""Check if there's a dungeon entrance at the given coordinates"""
@@ -8172,6 +8231,14 @@ func _complete_dungeon(peer_id: int):
 			"completed": update.completed,
 			"message": update.message
 		})
+
+	# Mark the dungeon as completed for despawn timer (world dungeons only)
+	if active_dungeons.has(instance_id):
+		var instance = active_dungeons[instance_id]
+		# Only set completed_at for world dungeons, not player quest dungeons
+		if instance.get("owner_peer_id", -1) < 0:
+			instance["completed_at"] = int(Time.get_unix_time_from_system())
+			log_message("World dungeon %s marked as completed, will despawn in %d seconds" % [instance_id, DUNGEON_DESPAWN_DELAY])
 
 	# Remove from dungeon
 	if active_dungeons.has(instance_id):
