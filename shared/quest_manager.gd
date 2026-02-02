@@ -201,8 +201,9 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 			continue
 
 		# Check if this dungeon type matches the quest requirement
+		# Empty dungeon_type means any dungeon counts
 		var required_dungeon = quest.get("dungeon_type", "")
-		if required_dungeon == dungeon_type:
+		if required_dungeon == "" or required_dungeon == dungeon_type:
 			var result = character.update_quest_progress(quest_id, 1)
 			if result.updated:
 				var message = "Dungeon cleared! Quest '%s': %d/%d" % [quest.name, result.progress, result.target]

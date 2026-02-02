@@ -161,6 +161,18 @@ const QUESTS = {
 		"is_daily": true,
 		"prerequisite": ""
 	},
+	"haven_first_dungeon": {
+		"id": "haven_first_dungeon",
+		"name": "Into the Depths",
+		"description": "Scouts report dangerous lairs beyond the safety of Haven. Travel at least 30 tiles from Crossroads and search for dungeon entrances - they appear as [color=#A335EE]D[/color] on your map. Dungeons spawn in the wilderness in all directions. Clear one to prove your worth!",
+		"type": QuestType.DUNGEON_CLEAR,
+		"trading_post": "haven",
+		"dungeon_type": "",  # Any dungeon counts
+		"target": 1,
+		"rewards": {"xp": 300, "gold": 150, "gems": 2},
+		"is_daily": false,
+		"prerequisite": "haven_first_blood"
+	},
 
 	# ===== CROSSROADS (0, 0) - Royal Herald - Mixed Quests =====
 	# --- KILL_TYPE Quests ---
@@ -1232,6 +1244,14 @@ func _get_max_monster_level_for_area(area_level: int) -> int:
 # Dungeon types by monster tier (matches dungeon_database.gd)
 # Multiple dungeons per tier - randomly selected for variety
 const TIER_DUNGEONS = {
+	1: [
+		{"type": "goblin_caves", "name": "Goblin Caves", "boss": "Goblin King"},
+		{"type": "wolf_den", "name": "Wolf Den", "boss": "Alpha Wolf"}
+	],
+	2: [
+		{"type": "orc_stronghold", "name": "Orc Stronghold", "boss": "Orc Warlord"},
+		{"type": "spider_nest", "name": "Spider Nest", "boss": "Spider Queen"}
+	],
 	3: [
 		{"type": "troll_den", "name": "Troll's Den", "boss": "Troll"},
 		{"type": "wyvern_roost", "name": "Wyvern's Roost", "boss": "Wyvern"}
@@ -1267,7 +1287,7 @@ func _get_dungeon_for_area(area_level: int) -> Dictionary:
 	Randomly selects from available dungeons at the appropriate tier."""
 	var tier = _get_tier_for_area_level(area_level)
 	# Try the exact tier first, then lower tiers
-	for t in range(tier, 2, -1):  # Dungeons start at tier 3
+	for t in range(tier, 0, -1):  # Dungeons available from tier 1
 		if TIER_DUNGEONS.has(t):
 			var dungeons = TIER_DUNGEONS[t]
 			# Randomly select from available dungeons at this tier
@@ -1448,9 +1468,9 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	# Early tiers prefer simpler KILL_ANY quests
 	var effective_tier_type = tier if tier > 2 else 0
 
-	# Check if dungeon quests are available for this area (tier 3+)
+	# Check if dungeon quests are available for this area
 	var dungeon_info = _get_dungeon_for_area(area_level)
-	var can_have_dungeon_quest = not dungeon_info.is_empty() and tier >= 3
+	var can_have_dungeon_quest = not dungeon_info.is_empty() and tier >= 1
 
 	# Use mod 6 if dungeons available, otherwise mod 5
 	var quest_mod = 6 if can_have_dungeon_quest else 5

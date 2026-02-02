@@ -44,6 +44,114 @@ const TILE_COLORS = {
 # that monster's companion egg. Additional eggs can drop from treasure chests
 # with chances based on monster tier (higher tier = rarer drops).
 const DUNGEON_TYPES = {
+	# ===== TIER 1 DUNGEONS (Level 1-10) =====
+	"goblin_caves": {
+		"name": "Goblin Caves",
+		"description": "A network of crude tunnels where goblins have established a small colony.",
+		"tier": 1,
+		"min_level": 1,
+		"max_level": 10,
+		"monster_pool": ["Goblin", "Giant Rat", "Kobold"],
+		"boss": {
+			"name": "Goblin King",
+			"monster_type": "Goblin",
+			"level_mult": 1.5,
+			"hp_mult": 2.0,
+			"attack_mult": 1.3,
+			"abilities": ["Rally Minions", "Dirty Fighting"]
+		},
+		"boss_egg": "Goblin",
+		"floors": 2,
+		"grid_size": 4,
+		"encounters_per_floor": 2,
+		"treasures_per_floor": 1,
+		"egg_drops": ["Goblin", "Kobold"],
+		"material_drops": ["pine_log", "copper_ore"],
+		"cooldown_hours": 4,
+		"spawn_weight": 50,
+		"color": "#32CD32"
+	},
+	"wolf_den": {
+		"name": "Wolf Den",
+		"description": "A cavern where a pack of wolves has made their home, led by a massive alpha.",
+		"tier": 1,
+		"min_level": 3,
+		"max_level": 12,
+		"monster_pool": ["Wolf", "Giant Rat"],
+		"boss": {
+			"name": "Alpha Wolf",
+			"monster_type": "Wolf",
+			"level_mult": 1.5,
+			"hp_mult": 2.0,
+			"attack_mult": 1.4,
+			"abilities": ["Pack Howl", "Savage Bite"]
+		},
+		"boss_egg": "Wolf",
+		"floors": 2,
+		"grid_size": 4,
+		"encounters_per_floor": 2,
+		"treasures_per_floor": 1,
+		"egg_drops": ["Wolf"],
+		"material_drops": ["ragged_leather", "pine_log"],
+		"cooldown_hours": 4,
+		"spawn_weight": 50,
+		"color": "#708090"
+	},
+
+	# ===== TIER 2 DUNGEONS (Level 6-20) =====
+	"orc_stronghold": {
+		"name": "Orc Stronghold",
+		"description": "A fortified camp where orcs prepare for raids on nearby settlements.",
+		"tier": 2,
+		"min_level": 6,
+		"max_level": 20,
+		"monster_pool": ["Orc", "Hobgoblin", "Gnoll"],
+		"boss": {
+			"name": "Orc Warlord",
+			"monster_type": "Orc",
+			"level_mult": 1.5,
+			"hp_mult": 2.2,
+			"attack_mult": 1.4,
+			"abilities": ["War Cry", "Brutal Slam"]
+		},
+		"boss_egg": "Orc",
+		"floors": 2,
+		"grid_size": 5,
+		"encounters_per_floor": 3,
+		"treasures_per_floor": 1,
+		"egg_drops": ["Orc", "Hobgoblin"],
+		"material_drops": ["iron_ore", "copper_ore", "ragged_leather"],
+		"cooldown_hours": 6,
+		"spawn_weight": 40,
+		"color": "#8B4513"
+	},
+	"spider_nest": {
+		"name": "Spider Nest",
+		"description": "A web-covered cavern where a giant spider queen lairs with her brood.",
+		"tier": 2,
+		"min_level": 8,
+		"max_level": 22,
+		"monster_pool": ["Giant Spider", "Kobold"],
+		"boss": {
+			"name": "Spider Queen",
+			"monster_type": "Giant Spider",
+			"level_mult": 1.5,
+			"hp_mult": 2.3,
+			"attack_mult": 1.3,
+			"abilities": ["Web Trap", "Venomous Bite"]
+		},
+		"boss_egg": "Giant Spider",
+		"floors": 2,
+		"grid_size": 5,
+		"encounters_per_floor": 3,
+		"treasures_per_floor": 1,
+		"egg_drops": ["Giant Spider"],
+		"material_drops": ["silk_thread", "venom_sac", "ragged_leather"],
+		"cooldown_hours": 6,
+		"spawn_weight": 40,
+		"color": "#4B0082"
+	},
+
 	# ===== TIER 3 DUNGEONS (Level 16-35) =====
 	"troll_den": {
 		"name": "Troll's Den",
