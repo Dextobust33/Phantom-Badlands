@@ -2316,13 +2316,17 @@ func get_incubating_eggs() -> Array:
 	"""Get all incubating eggs with progress info."""
 	var result = []
 	for egg in incubating_eggs:
-		var progress = 100.0 * (1.0 - float(egg.steps_remaining) / float(egg.hatch_steps))
+		var steps_taken = egg.hatch_steps - egg.steps_remaining
+		var progress = 100.0 * (float(steps_taken) / float(egg.hatch_steps))
 		result.append({
 			"egg_id": egg.egg_id,
+			"egg_type": egg.monster_type,  # Client expects egg_type
 			"companion_name": egg.companion_name,
 			"tier": egg.tier,
 			"steps_remaining": egg.steps_remaining,
 			"hatch_steps": egg.hatch_steps,
+			"steps_taken": steps_taken,  # Client expects this
+			"steps_required": egg.hatch_steps,  # Client expects this
 			"progress_percent": progress
 		})
 	return result

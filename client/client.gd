@@ -12458,11 +12458,10 @@ func display_companions():
 	if incubating_eggs.size() > 0:
 		display_game("[color=#FFAA00]Incubating Eggs (%d):[/color]" % incubating_eggs.size())
 		for egg in incubating_eggs:
-			var egg_type = egg.get("egg_type", "unknown")
+			var egg_name = egg.get("companion_name", "Unknown Egg")
 			var steps = egg.get("steps_taken", 0)
 			var required = egg.get("steps_required", 1000)
-			var progress = int((float(steps) / required) * 100)
-			var egg_name = _get_egg_display_name(egg_type)
+			var progress = int((float(steps) / float(required)) * 100) if required > 0 else 0
 			display_game("  [color=#FFAA00]%s[/color] - %d%% (%d/%d steps)" % [egg_name, progress, steps, required])
 		display_game("")
 
