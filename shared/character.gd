@@ -1162,7 +1162,12 @@ func to_dict() -> Dictionary:
 		"ore_gathered": ore_gathered,
 		"logging_skill": logging_skill,
 		"logging_xp": logging_xp,
-		"wood_gathered": wood_gathered
+		"wood_gathered": wood_gathered,
+		"fishing_skill": fishing_skill,
+		"fishing_xp": fishing_xp,
+		"fish_caught": fish_caught,
+		"crafting_skills": crafting_skills,
+		"crafting_xp": crafting_xp
 	}
 
 func from_dict(data: Dictionary):
@@ -1300,6 +1305,11 @@ func from_dict(data: Dictionary):
 	logging_skill = data.get("logging_skill", 1)
 	logging_xp = data.get("logging_xp", 0)
 	wood_gathered = data.get("wood_gathered", 0)
+	fishing_skill = data.get("fishing_skill", 1)
+	fishing_xp = data.get("fishing_xp", 0)
+	fish_caught = data.get("fish_caught", 0)
+	crafting_skills = data.get("crafting_skills", {"blacksmithing": 1, "alchemy": 1, "enchanting": 1})
+	crafting_xp = data.get("crafting_xp", {"blacksmithing": 0, "alchemy": 0, "enchanting": 0})
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()

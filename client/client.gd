@@ -710,10 +710,12 @@ func _ready():
 	# Create ability input popup
 	_create_ability_popup()
 
-	# Connect online players list for clickable names
+	# Connect online players list for clickable names (single click shows player info)
 	if online_players_list:
-		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
-			online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		# Ensure meta_clicked is connected for clickable player names
+		if online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
+			online_players_list.meta_clicked.disconnect(_on_player_name_clicked)
+		online_players_list.meta_clicked.connect(_on_player_name_clicked)
 
 	# Setup race options
 	if race_option:
