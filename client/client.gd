@@ -2131,8 +2131,8 @@ func _process(delta):
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not any_popup_open:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, or popups)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not any_popup_open:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -3430,15 +3430,30 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif dungeon_mode and not in_combat and not pending_continue:
-		# In dungeon (not fighting, not waiting for continue) - movement and actions
+	elif dungeon_mode and pending_continue:
+		# In dungeon, waiting for player to continue after combat/event
 		current_actions = [
-			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
+			{"label": "Continue", "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending:
+		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
+		# Exit is on slot 5 (key 1) to prevent accidental exits when pressing Space
+		current_actions = [
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
 			{"label": "S", "action_type": "local", "action_data": "dungeon_move_s", "enabled": true},
 			{"label": "W", "action_type": "local", "action_data": "dungeon_move_w", "enabled": true},
 			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6418,6 +6433,11 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"dungeon_exit":
 			send_to_server({"type": "dungeon_exit"})
+		"dungeon_continue":
+			# Continue after combat/event in dungeon
+			pending_continue = false
+			send_to_server({"type": "dungeon_state"})  # Request fresh dungeon state
+			update_action_bar()
 		"dungeon_move_n":
 			send_to_server({"type": "dungeon_move", "direction": "n"})
 		"dungeon_move_s":
@@ -10247,6 +10267,8 @@ func handle_server_message(message: Dictionary):
 			combat_outsmart_failed = false  # Reset outsmart for new combat
 			more_mode = false
 			companions_mode = false
+			pending_continue = false  # Clear any pending continue from previous combat
+			pending_dungeon_continue = false
 			last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 			last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
 			update_action_bar()
@@ -10452,6 +10474,9 @@ func handle_server_message(message: Dictionary):
 
 					# Pause to let player read rewards
 					pending_continue = true
+					# If in dungeon, request fresh state when continuing
+					if dungeon_mode:
+						pending_dungeon_continue = true
 					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -10471,6 +10496,8 @@ func handle_server_message(message: Dictionary):
 				else:
 					display_game("[color=#FFD700]The enemy fled! No loot earned.[/color]")
 					pending_continue = true
+					if dungeon_mode:
+						pending_dungeon_continue = true
 					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("fled", false):
 				# Player fled - reset combat XP tracking but keep previous XP gain highlight
@@ -10483,6 +10510,8 @@ func handle_server_message(message: Dictionary):
 				else:
 					display_game("[color=#FFD700]You escaped from combat![/color]")
 				pending_continue = true
+				if dungeon_mode:
+					pending_dungeon_continue = true
 				display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			else:
 				# Defeat handled by permadeath message
@@ -12469,8 +12498,12 @@ func display_companions():
 		display_game("[color=#FFAA00]Incubating Eggs (%d):[/color]" % incubating_eggs.size())
 		for egg in incubating_eggs:
 			var egg_name = egg.get("companion_name", "Unknown Egg")
+			# Support both raw format (steps_remaining, hatch_steps) and client format (steps_taken, steps_required)
+			var required = egg.get("steps_required", egg.get("hatch_steps", 1000))
 			var steps = egg.get("steps_taken", 0)
-			var required = egg.get("steps_required", 1000)
+			if steps == 0 and egg.has("steps_remaining") and egg.has("hatch_steps"):
+				# Calculate from raw format
+				steps = egg.get("hatch_steps", 1000) - egg.get("steps_remaining", 1000)
 			var progress = int((float(steps) / float(required)) * 100) if required > 0 else 0
 			display_game("  [color=#FFAA00]%s[/color] - %d%% (%d/%d steps)" % [egg_name, progress, steps, required])
 		display_game("")
@@ -14405,11 +14438,13 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_floor_grid = []
 
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
-	var floors_cleared = message.get("floors_cleared", 0)
-	var total_floors = message.get("total_floors", 0)
-	var xp_reward = message.get("xp", 0)
-	var gold_reward = message.get("gold", 0)
-	var full_clear = message.get("full_clear", false)
+	var rewards = message.get("rewards", {})
+	var floors_cleared = rewards.get("floors_cleared", 0)
+	var total_floors = rewards.get("total_floors", 0)
+	var xp_reward = rewards.get("xp", 0)
+	var gold_reward = rewards.get("gold", 0)
+	var full_clear = rewards.get("full_clear", false)
+	var boss_egg = rewards.get("boss_egg", "")
 
 	game_output.clear()
 
@@ -14427,9 +14462,12 @@ func handle_dungeon_complete(message: Dictionary):
 	display_game("[color=#FFD700]Rewards:[/color]")
 	display_game("  + %d XP" % xp_reward)
 	display_game("  + %d Gold" % gold_reward)
+	if boss_egg != "":
+		display_game("[color=#FF69B4]  + %s Egg[/color]" % boss_egg)
 	display_game("")
-	display_game("[color=#808080]You return to the surface.[/color]")
+	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
+	pending_continue = true
 	update_action_bar()
 
 func handle_dungeon_exit(message: Dictionary):

@@ -764,6 +764,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_dungeon_move(peer_id, message)
 		"dungeon_exit":
 			handle_dungeon_exit(peer_id)
+		"dungeon_state":
+			# Client requesting current dungeon state (after combat continue)
+			if characters.has(peer_id) and characters[peer_id].current_dungeon_id != "":
+				_send_dungeon_state(peer_id)
 		# Title system handlers
 		"claim_title":
 			handle_claim_title(peer_id, message)
@@ -2206,11 +2210,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				send_buff_expiration_notifications(peer_id)
 
 				# Handle dungeon combat victory - clear tile and send updated state
-				var combat_state = combat_mgr.get_active_combat(peer_id)
-				if combat_state and combat_state.get("is_dungeon_combat", false):
+				# Note: Combat state is erased by now, so we use result flags instead
+				if result.get("is_dungeon_combat", false):
 					var character = characters[peer_id]
 					if character.in_dungeon:
-						var is_boss = combat_state.get("is_boss_fight", false)
+						var is_boss = result.get("is_boss_fight", false)
 						_clear_dungeon_tile(peer_id)
 						if is_boss:
 							# Boss defeated - complete dungeon
@@ -3748,7 +3752,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	var item_type = item.get("type", "")
 	var item_name = item.get("name", "item")
 	var item_level = item.get("level", 1)
-	var item_tier = item.get("tier", 0)  # 0 means old-style item
+	var item_tier = int(item.get("tier", 0))  # 0 means old-style item, int() ensures proper dict key lookup
 	var is_consumable = item.get("is_consumable", false)
 
 	# Normalize item type for consumables (e.g., mana_minor -> mana_potion)
@@ -7578,6 +7582,20 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	character.dungeon_x = new_x
 	character.dungeon_y = new_y
 
+	# Process egg incubation - dungeon steps also count toward hatching
+	if character.incubating_eggs.size() > 0:
+		var hatched = character.process_egg_steps(1)
+		for companion in hatched:
+			send_to_peer(peer_id, {
+				"type": "egg_hatched",
+				"companion": companion,
+				"message": "[color=#A335EE]✦ Your %s Egg has hatched! ✦[/color]" % companion.name
+			})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]%s is now your companion![/color] Use /companion to manage companions." % companion.name
+			})
+
 	# Always send updated dungeon state first so client sees new position
 	_send_dungeon_state(peer_id)
 
@@ -7602,6 +7620,11 @@ func handle_dungeon_exit(peer_id: int):
 
 	if not character.in_dungeon:
 		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
+		return
+
+	# Cannot exit during combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot exit while in combat!"})
 		return
 
 	# Remove from dungeon
@@ -7646,15 +7669,24 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	var instance_id = "dungeon_%d" % next_dungeon_id
 	next_dungeon_id += 1
 
-	# Get spawn location
-	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+	# Get spawn location - avoid trading posts
+	var spawn_x = 0
+	var spawn_y = 0
+	var max_attempts = 20
+
+	for _attempt in range(max_attempts):
+		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+		spawn_x = spawn_loc.x
+		spawn_y = spawn_loc.y
+		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
+			break
 
 	# Create instance
 	active_dungeons[instance_id] = {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
-		"world_x": spawn_loc.x,
-		"world_y": spawn_loc.y,
+		"world_x": spawn_x,
+		"world_y": spawn_y,
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
 		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
@@ -7695,22 +7727,28 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	var instance_id = "player_dungeon_%d_%d" % [peer_id, next_dungeon_id]
 	next_dungeon_id += 1
 
-	# Get character for spawn location calculation
+	# Get character for spawn location calculation - avoid trading posts
 	var character = characters.get(peer_id)
 	var spawn_x = 0
 	var spawn_y = 0
+	var max_attempts = 20
 
-	if character:
-		# Spawn dungeon 25-40 tiles from the player's current location (or trading post)
-		var distance = 25 + randi() % 16  # 25-40 tiles
-		var angle = randf() * TAU  # Random direction
-		spawn_x = int(character.x + cos(angle) * distance)
-		spawn_y = int(character.y + sin(angle) * distance)
-	else:
-		# Fallback to standard spawn location
-		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
-		spawn_x = spawn_loc.x
-		spawn_y = spawn_loc.y
+	for _attempt in range(max_attempts):
+		if character:
+			# Spawn dungeon 25-40 tiles from the player's current location
+			var distance = 25 + randi() % 16  # 25-40 tiles
+			var angle = randf() * TAU  # Random direction
+			spawn_x = int(character.x + cos(angle) * distance)
+			spawn_y = int(character.y + sin(angle) * distance)
+		else:
+			# Fallback to standard spawn location
+			var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+			spawn_x = spawn_loc.x
+			spawn_y = spawn_loc.y
+
+		# Check if location is valid (not on a trading post)
+		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
+			break
 
 	# Scale dungeon level to player
 	var dungeon_level = max(dungeon_data.min_level, min(player_level, dungeon_data.max_level))
@@ -7892,12 +7930,30 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 
 	# Get spawn location based on tier - higher tiers spawn further from origin
 	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
-	# Add more randomness to position (within 100 tiles of tier's base location)
-	# This creates a wider spread of dungeons across the map
-	var offset_x = (randi() % 201) - 100
-	var offset_y = (randi() % 201) - 100
-	var world_x = spawn_loc.x + offset_x
-	var world_y = spawn_loc.y + offset_y
+
+	# Try to find a valid spawn location (not on a trading post)
+	var world_x = 0
+	var world_y = 0
+	var max_attempts = 20
+	var found_valid = false
+
+	for _attempt in range(max_attempts):
+		# Add more randomness to position (within 100 tiles of tier's base location)
+		# This creates a wider spread of dungeons across the map
+		var offset_x = (randi() % 201) - 100
+		var offset_y = (randi() % 201) - 100
+		world_x = spawn_loc.x + offset_x
+		world_y = spawn_loc.y + offset_y
+
+		# Check if this location overlaps with a trading post
+		if not trading_post_db.is_trading_post_tile(world_x, world_y):
+			found_valid = true
+			break
+
+	if not found_valid:
+		# Couldn't find a valid location after max attempts, skip this dungeon
+		next_dungeon_id -= 1  # Reclaim the ID
+		return ""
 
 	# Create instance
 	active_dungeons[instance_id] = {
@@ -8132,7 +8188,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	if is_boss:
 		monster.max_hp = int(monster.max_hp * monster_info.get("hp_mult", 2.0))
 		monster.current_hp = monster.max_hp
-		monster.attack = int(monster.attack * monster_info.get("attack_mult", 1.5))
+		monster.strength = int(monster.strength * monster_info.get("attack_mult", 1.5))
 		monster.is_boss = true
 
 	# Start combat
@@ -8158,8 +8214,8 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		"combat_state": display_state,
 		"is_dungeon_combat": true,
 		"is_boss": is_boss,
-		"combat_bg_color": dungeon_data.color,
 		"use_client_art": true  # Client renders ASCII art locally
+		# Note: No combat_bg_color - dungeon combat uses same black background as normal combat
 	})
 
 func _open_dungeon_treasure(peer_id: int):
@@ -8267,7 +8323,7 @@ func _complete_dungeon(peer_id: int):
 
 	# Give rewards
 	character.gold += rewards.gold
-	var xp_result = character.gain_experience(rewards.xp, character.level)
+	var xp_result = character.add_experience(rewards.xp)
 
 	# Give GUARANTEED boss egg!
 	var boss_egg_given = false

@@ -1155,7 +1155,7 @@ func to_dict() -> Dictionary:
 		"trophies": trophies,
 		"active_companion": active_companion,
 		"soul_gems": soul_gems,
-		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data, not transformed
+		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data for persistence
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,
@@ -2320,17 +2320,24 @@ func get_incubating_eggs() -> Array:
 	"""Get all incubating eggs with progress info."""
 	var result = []
 	for egg in incubating_eggs:
-		var steps_taken = egg.hatch_steps - egg.steps_remaining
-		var progress = 100.0 * (float(steps_taken) / float(egg.hatch_steps))
+		# Use safe dictionary access for eggs that may have different formats
+		var hatch_steps = egg.get("hatch_steps", 1000)
+		var steps_remaining = egg.get("steps_remaining", hatch_steps)
+		var steps_taken = hatch_steps - steps_remaining
+		var progress = 100.0 * (float(steps_taken) / float(max(1, hatch_steps)))
+
+		# Support both old and new key names for monster type
+		var monster_type = egg.get("monster_type", egg.get("egg_type", egg.get("type", "Unknown")))
+
 		result.append({
-			"egg_id": egg.egg_id,
-			"egg_type": egg.monster_type,  # Client expects egg_type
-			"companion_name": egg.companion_name,
-			"tier": egg.tier,
-			"steps_remaining": egg.steps_remaining,
-			"hatch_steps": egg.hatch_steps,
+			"egg_id": egg.get("egg_id", randi()),
+			"egg_type": monster_type,  # Client expects egg_type
+			"companion_name": egg.get("companion_name", monster_type + " Companion"),
+			"tier": egg.get("tier", 1),
+			"steps_remaining": steps_remaining,
+			"hatch_steps": hatch_steps,
 			"steps_taken": steps_taken,  # Client expects this
-			"steps_required": egg.hatch_steps,  # Client expects this
+			"steps_required": hatch_steps,  # Client expects this
 			"progress_percent": progress
 		})
 	return result

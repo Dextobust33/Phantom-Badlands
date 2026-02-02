@@ -1140,7 +1140,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"wish_pending": combat.get("wish_pending", false),
-		"wish_options": combat.get("wish_options", [])
+		"wish_options": combat.get("wish_options", []),
+		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+		"is_boss_fight": combat.get("is_boss_fight", false)
 	}
 
 func process_flee(combat: Dictionary) -> Dictionary:
@@ -1501,7 +1503,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"dropped_items": all_drops,
 			"gems_earned": gems_earned,
 			"wish_pending": wish_pending,
-			"wish_options": wish_options
+			"wish_options": wish_options,
+			"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+			"is_boss_fight": combat.get("is_boss_fight", false)
 		}
 	else:
 		# FAILURE! Monster gets free attack
@@ -2434,7 +2438,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					"flock_chance": 0,  # No flock after perfect heist
 					"dropped_items": dropped_items,
 					"gems_earned": gems_earned,
-					"skip_monster_turn": true
+					"skip_monster_turn": true,
+					"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+					"is_boss_fight": combat.get("is_boss_fight", false)
 				}
 			else:
 				# Failed heist - take damage and combat continues
@@ -2609,7 +2615,7 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	var messages = []
 	var item_name = item.get("name", "item")
 	var item_level = item.get("level", 1)
-	var item_tier = item.get("tier", 0)
+	var item_tier = int(item.get("tier", 0))  # int() ensures proper dict key lookup (JSON may store as float)
 
 	# Infer tier from item name for legacy tier-based consumables
 	if item_tier == 0 and _is_tier_based_consumable(item_type):
