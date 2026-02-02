@@ -8122,15 +8122,21 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	combat_state["is_dungeon_combat"] = true
 	combat_state["is_boss_fight"] = is_boss
 
+	# Build encounter message
+	var boss_text = " [BOSS]" if is_boss else ""
+	var encounter_msg = "[color=#FF4444]A %s%s appears![/color]" % [monster.name, boss_text]
+
 	send_to_peer(peer_id, {
 		"type": "combat_start",
+		"message": encounter_msg,
 		"monster_name": monster.name,
 		"monster_level": monster.level,
 		"monster_hp": monster.max_hp if character.knows_monster(monster.name, monster.level) else -1,
 		"combat_state": combat_state,
 		"is_dungeon_combat": true,
 		"is_boss": is_boss,
-		"combat_bg_color": dungeon_data.color
+		"combat_bg_color": dungeon_data.color,
+		"use_client_art": true  # Client renders ASCII art locally
 	})
 
 func _open_dungeon_treasure(peer_id: int):

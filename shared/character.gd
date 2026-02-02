@@ -1152,7 +1152,7 @@ func to_dict() -> Dictionary:
 		"trophies": trophies,
 		"active_companion": active_companion,
 		"soul_gems": soul_gems,
-		"incubating_eggs": get_incubating_eggs(),
+		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data, not transformed
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,

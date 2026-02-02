@@ -3461,8 +3461,8 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif dungeon_mode:
-		# In dungeon - movement and actions
+	elif dungeon_mode and not in_combat:
+		# In dungeon (not fighting) - movement and actions
 		current_actions = [
 			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},

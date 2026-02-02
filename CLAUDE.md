@@ -371,9 +371,34 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 
 **Location:** `client/client.gd` ~line 1755 for exclusion list, ~line 1780 for hotkey processing
 
+## Dungeon Combat Issues (Fixed v0.9.31)
+
+**Symptoms reported:**
+1. Stepped on ? tile, enemy HP bar shows but GameOutput is grey/empty
+2. Action bar still showed "Exit N S W E" instead of combat actions
+3. No monster art or encounter text displayed
+
+**Root Causes Found:**
+
+**Issue 1: No monster art/text displayed**
+- Server's `_start_dungeon_encounter()` didn't include `use_client_art: true` in the combat_start message
+- Client checks `message.get("use_client_art", false)` to decide whether to render ASCII art
+- Also needed to add a `message` field with encounter text as fallback
+- **Fix:** Added `use_client_art: true` and `message` to dungeon combat_start (server.gd ~line 8125)
+
+**Issue 2: Action bar showed dungeon navigation during combat**
+- In `update_action_bar()`, `dungeon_mode` check (line ~3464) came before `in_combat` check (line ~3694)
+- When entering combat in dungeon, `dungeon_mode` stayed true, so dungeon actions took precedence
+- **Fix:** Changed condition to `elif dungeon_mode and not in_combat:` (client.gd ~line 3464)
+
+**Key Files:**
+- `server/server.gd` ~line 8125: `_start_dungeon_encounter()` combat_start message
+- `client/client.gd` ~line 3464: `update_action_bar()` dungeon_mode condition
+- `client/client.gd` ~line 10301: combat_start handler checks `use_client_art`
+
 ## KNOWN BUG: Player Info Popup Not Working
 
-**Status:** DEBUG VERSION DEPLOYED (v0.9.30) - Waiting for test results
+**Status:** v0.9.31 - Fixed `selection_enabled=true` blocking clicks
 
 **Feature Goal:** Double-clicking a player name in the Online Players list should open a popup with their detailed info (name, race, class, stats, equipment, HP, location if viewer has title/is nearby).
 
@@ -386,10 +411,11 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 **What's NOT Working:**
 The click detection on the Online Players list (RichTextLabel) is failing.
 
-**Approaches Tried (ALL FAILED):**
-1. **BBCode URL tags** (`[url=name]name[/url]` + `meta_clicked` signal) - Signal never fires
-2. **push_meta/pop_meta API** (recommended by Godot docs) + `meta_clicked` signal - Signal never fires
-3. **gui_input with double-click detection** - Being tested in v0.9.30
+**Approaches Tried:**
+1. **BBCode URL tags** (`[url=name]name[/url]` + `meta_clicked` signal) - Failed, signal never fires
+2. **push_meta/pop_meta API** (recommended by Godot docs) + `meta_clicked` signal - Failed, signal never fires
+3. **gui_input with double-click detection** - v0.9.30 added debug output, revealed clicks just highlight text
+4. **ROOT CAUSE FOUND (v0.9.31):** `selection_enabled = true` in the scene file was consuming mouse clicks for text selection, preventing gui_input from registering double-clicks. Fixed by setting `selection_enabled = false` and `meta_underlined = false` in client.tscn
 
 **Current Debug Implementation (v0.9.30):**
 ```gdscript
