@@ -70,11 +70,11 @@ var active_dungeons: Dictionary = {}  # instance_id -> dungeon_instance data
 var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
-const MAX_ACTIVE_DUNGEONS = 150  # Support many world + player dungeons
+const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
 const DUNGEON_SPAWN_CHECK_INTERVAL = 30.0  # Check every 30 seconds
 const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
-const MIN_WORLD_DUNGEONS = 30  # Minimum number of world dungeons on map
-const MAX_WORLD_DUNGEONS = 50  # Maximum number of world dungeons
+const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
+const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 
 # Tax collector cooldown tracking (peer_id -> steps since last encounter)
