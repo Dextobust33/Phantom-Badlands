@@ -68,8 +68,9 @@ var pilgrimage_shrines: Dictionary = {}    # {peer_id: {blood: Vector2i, mind: V
 # Dungeon system state
 var active_dungeons: Dictionary = {}  # instance_id -> dungeon_instance data
 var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
+var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
-const MAX_ACTIVE_DUNGEONS = 10
+const MAX_ACTIVE_DUNGEONS = 50  # Increased to support per-player instances
 const DUNGEON_SPAWN_CHECK_INTERVAL = 1800.0  # 30 minutes
 var dungeon_spawn_timer: float = 0.0
 
@@ -5705,12 +5706,11 @@ func handle_trading_post_quests(peer_id: int):
 
 			# Add dungeon direction hints for dungeon quests
 			if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
-				var dungeon_type = quest.get("dungeon_type", "")
-				var tier = 1 if quest_data.quest_id.begins_with("haven_") else 0
-				var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
-				if not nearest.is_empty():
-					description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
-						nearest.dungeon_name, nearest.direction_text
+				# Check for player's personal dungeon first
+				var dungeon_info = _get_player_dungeon_info(peer_id, quest_data.quest_id, tp_x, tp_y)
+				if not dungeon_info.is_empty():
+					description += "\n\n[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
+						dungeon_info.dungeon_name, dungeon_info.direction_text
 					]
 
 			active_quests_display.append({
@@ -5921,6 +5921,18 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 
 	if result.success:
 		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post)
+
+		# For DUNGEON_CLEAR quests, create a personal dungeon instance for this player
+		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+			var dungeon_type = quest.get("dungeon_type", "")
+			var instance_id = _create_player_dungeon_instance(peer_id, quest_id, dungeon_type, character.level)
+			if instance_id != "":
+				# Store mapping of quest to dungeon instance for this player
+				if not player_dungeon_instances.has(peer_id):
+					player_dungeon_instances[peer_id] = {}
+				player_dungeon_instances[peer_id][quest_id] = instance_id
+				log_message("Created personal dungeon %s for player %s quest %s" % [instance_id, character.name, quest_id])
+
 		send_to_peer(peer_id, {
 			"type": "quest_accepted",
 			"quest_id": quest_id,
@@ -5928,10 +5940,6 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 			"message": result.message
 		})
 		save_character(peer_id)
-
-		# For the starter dungeon quest, ensure a tier 1 dungeon exists near spawn
-		if quest_id == "haven_first_dungeon":
-			_ensure_starter_dungeon_exists()
 	else:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -5952,6 +5960,9 @@ func handle_quest_abandon(peer_id: int, message: Dictionary):
 	var quest = quest_db.get_quest(quest_id)
 
 	if character.abandon_quest(quest_id):
+		# Clean up personal dungeon if this was a dungeon quest
+		_cleanup_player_dungeon(peer_id, quest_id)
+
 		send_to_peer(peer_id, {
 			"type": "quest_abandoned",
 			"quest_id": quest_id,
@@ -6064,12 +6075,11 @@ func handle_get_quest_log(peer_id: int):
 
 		# Add dungeon direction hints for dungeon quests
 		if quest_data and quest_data.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
-			var dungeon_type = quest_data.get("dungeon_type", "")
-			var tier = 1 if qid.begins_with("haven_") else 0
-			var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
-			if not nearest.is_empty():
-				description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
-					nearest.dungeon_name, nearest.direction_text
+			# Check for player's personal dungeon first
+			var dungeon_info = _get_player_dungeon_info(peer_id, qid, character.x, character.y)
+			if not dungeon_info.is_empty():
+				description += "\n\n[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
+					dungeon_info.dungeon_name, dungeon_info.direction_text
 				]
 
 		active_quests_info.append({
@@ -7390,24 +7400,36 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Dungeon on cooldown! Available in %dh %dm" % [hours, minutes]})
 		return
 
-	# Find existing instance or create new one
+	# Find instance to enter - prioritize player's personal dungeon for quests
 	var instance_id = ""
+
 	# First check if provided instance_id is valid
 	if provided_instance_id != "" and active_dungeons.has(provided_instance_id):
 		instance_id = provided_instance_id
 	else:
-		# Look for any active instance of this dungeon type
-		for inst_id in active_dungeons:
-			if active_dungeons[inst_id].dungeon_type == dungeon_type:
-				instance_id = inst_id
-				break
+		# Check if player has a personal dungeon instance for an active quest
+		if player_dungeon_instances.has(peer_id):
+			for quest_id in player_dungeon_instances[peer_id]:
+				var inst_id = player_dungeon_instances[peer_id][quest_id]
+				if active_dungeons.has(inst_id):
+					var inst = active_dungeons[inst_id]
+					# Match by dungeon_type or accept any if dungeon_type is empty
+					if dungeon_type == "" or inst.dungeon_type == dungeon_type:
+						instance_id = inst_id
+						dungeon_type = inst.dungeon_type  # Update type if was empty
+						break
 
+	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":
-		# Create new instance
-		instance_id = _create_dungeon_instance(dungeon_type)
+		# Players always get their own dungeon instance now
+		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level)
 		if instance_id == "":
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
 			return
+		# Track this as a non-quest dungeon run
+		if not player_dungeon_instances.has(peer_id):
+			player_dungeon_instances[peer_id] = {}
+		player_dungeon_instances[peer_id]["_free_run_" + instance_id] = instance_id
 
 	var instance = active_dungeons[instance_id]
 
@@ -7539,6 +7561,18 @@ func handle_dungeon_exit(peer_id: int):
 		var instance = active_dungeons[instance_id]
 		instance.active_players.erase(peer_id)
 
+	# Clean up free-run (non-quest) dungeons when exiting
+	# Quest dungeons are kept so player can return
+	if player_dungeon_instances.has(peer_id):
+		var free_run_key = "_free_run_" + instance_id
+		if player_dungeon_instances[peer_id].has(free_run_key):
+			player_dungeon_instances[peer_id].erase(free_run_key)
+			# Clean up the instance itself
+			if active_dungeons.has(instance_id):
+				active_dungeons.erase(instance_id)
+			if dungeon_floors.has(instance_id):
+				dungeon_floors.erase(instance_id)
+
 	# Exit dungeon
 	character.exit_dungeon()
 
@@ -7588,6 +7622,97 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	log_message("Created dungeon instance: %s (%s)" % [instance_id, dungeon_data.name])
 	return instance_id
+
+func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int) -> String:
+	"""Create a personal dungeon instance for a player's quest. Returns instance ID."""
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		log_message("Cannot create player dungeon - max dungeons reached")
+		return ""
+
+	# If dungeon_type is empty (any dungeon), pick an appropriate one based on player level
+	if dungeon_type == "":
+		var available = DungeonDatabaseScript.get_dungeons_for_level(player_level)
+		if available.is_empty():
+			# Default to goblin_caves for low level
+			dungeon_type = "goblin_caves"
+		else:
+			dungeon_type = available[randi() % available.size()]
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		log_message("Cannot create player dungeon - invalid dungeon type: %s" % dungeon_type)
+		return ""
+
+	var instance_id = "player_dungeon_%d_%d" % [peer_id, next_dungeon_id]
+	next_dungeon_id += 1
+
+	# Get character for spawn location calculation
+	var character = characters.get(peer_id)
+	var spawn_x = 0
+	var spawn_y = 0
+
+	if character:
+		# Spawn dungeon 25-40 tiles from the player's current location (or trading post)
+		var distance = 25 + randi() % 16  # 25-40 tiles
+		var angle = randf() * TAU  # Random direction
+		spawn_x = int(character.x + cos(angle) * distance)
+		spawn_y = int(character.y + sin(angle) * distance)
+	else:
+		# Fallback to standard spawn location
+		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+		spawn_x = spawn_loc.x
+		spawn_y = spawn_loc.y
+
+	# Scale dungeon level to player
+	var dungeon_level = max(dungeon_data.min_level, min(player_level, dungeon_data.max_level))
+
+	# Create instance
+	active_dungeons[instance_id] = {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": spawn_x,
+		"world_y": spawn_y,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": dungeon_level,
+		"owner_peer_id": peer_id,  # Track who owns this instance
+		"quest_id": quest_id  # Track which quest this is for
+	}
+
+	# Generate all floor grids
+	var floor_grids = []
+	for floor_num in range(dungeon_data.floors):
+		var is_boss_floor = floor_num == dungeon_data.floors - 1
+		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(grid)
+
+	dungeon_floors[instance_id] = floor_grids
+
+	log_message("Created player dungeon instance: %s (%s) for peer %d at (%d, %d)" % [instance_id, dungeon_data.name, peer_id, spawn_x, spawn_y])
+	return instance_id
+
+func _cleanup_player_dungeon(peer_id: int, quest_id: String):
+	"""Clean up a player's personal dungeon instance when quest is completed/abandoned"""
+	if not player_dungeon_instances.has(peer_id):
+		return
+
+	if not player_dungeon_instances[peer_id].has(quest_id):
+		return
+
+	var instance_id = player_dungeon_instances[peer_id][quest_id]
+
+	# Remove from active dungeons
+	if active_dungeons.has(instance_id):
+		active_dungeons.erase(instance_id)
+	if dungeon_floors.has(instance_id):
+		dungeon_floors.erase(instance_id)
+
+	# Remove from player's tracking
+	player_dungeon_instances[peer_id].erase(quest_id)
+	if player_dungeon_instances[peer_id].is_empty():
+		player_dungeon_instances.erase(peer_id)
+
+	log_message("Cleaned up player dungeon %s for peer %d quest %s" % [instance_id, peer_id, quest_id])
 
 func _ensure_starter_dungeon_exists():
 	"""Ensure a tier 1 dungeon exists near the starting area for new players"""
@@ -7777,29 +7902,45 @@ func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: Str
 
 	return nearest
 
-func _add_dungeon_directions_to_quests(quests: Array, tp_x: int, tp_y: int) -> Array:
-	"""Add direction info to dungeon quests"""
+func _add_dungeon_directions_to_quests(quests: Array, _tp_x: int, _tp_y: int) -> Array:
+	"""Add info to dungeon quests about personal dungeon creation"""
 	var updated_quests = []
 	for quest in quests:
 		var updated_quest = quest.duplicate()
 
 		# Check if this is a dungeon quest
 		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
-			var dungeon_type = quest.get("dungeon_type", "")
-			# For starter quest, use tier 1; for dynamic quests, extract tier from quest
-			var tier = 1 if quest.get("id", "").begins_with("haven_") else 0
-
-			var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
-			if not nearest.is_empty():
-				# Add direction info to description
-				var direction_hint = "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
-					nearest.dungeon_name, nearest.direction_text
-				]
-				updated_quest["description"] = quest.get("description", "") + direction_hint
+			# Add note about personal dungeon being created
+			var dungeon_hint = "\n\n[color=#00FFFF]A personal dungeon will be created for you nearby when you accept this quest.[/color]"
+			updated_quest["description"] = quest.get("description", "") + dungeon_hint
 
 		updated_quests.append(updated_quest)
 
 	return updated_quests
+
+func _get_player_dungeon_info(peer_id: int, quest_id: String, from_x: int, from_y: int) -> Dictionary:
+	"""Get info about a player's personal dungeon for a quest. Returns {x, y, direction_text, dungeon_name} or empty."""
+	# Check if player has a personal dungeon for this quest
+	if not player_dungeon_instances.has(peer_id):
+		return {}
+	if not player_dungeon_instances[peer_id].has(quest_id):
+		return {}
+
+	var instance_id = player_dungeon_instances[peer_id][quest_id]
+	if not active_dungeons.has(instance_id):
+		return {}
+
+	var instance = active_dungeons[instance_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+
+	return {
+		"x": instance.world_x,
+		"y": instance.world_y,
+		"direction_text": _get_direction_text(from_x, from_y, instance.world_x, instance.world_y),
+		"dungeon_name": dungeon_data.name,
+		"dungeon_type": instance.dungeon_type,
+		"instance_id": instance_id
+	}
 
 func _send_dungeon_state(peer_id: int):
 	"""Send current dungeon state to player"""
@@ -8035,6 +8176,22 @@ func _complete_dungeon(peer_id: int):
 	# Remove from dungeon
 	if active_dungeons.has(instance_id):
 		active_dungeons[instance_id].active_players.erase(peer_id)
+
+	# Clean up personal dungeon instances for completed quests
+	for update in quest_updates:
+		if update.completed:
+			_cleanup_player_dungeon(peer_id, update.quest_id)
+
+	# Also clean up if this was a free run (non-quest) dungeon
+	if player_dungeon_instances.has(peer_id):
+		var free_run_key = "_free_run_" + instance_id
+		if player_dungeon_instances[peer_id].has(free_run_key):
+			player_dungeon_instances[peer_id].erase(free_run_key)
+			# Clean up the instance itself
+			if active_dungeons.has(instance_id):
+				active_dungeons.erase(instance_id)
+			if dungeon_floors.has(instance_id):
+				dungeon_floors.erase(instance_id)
 
 	character.exit_dungeon()
 
