@@ -374,6 +374,19 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 
 **Location:** `client/client.gd` ~line 1755 for exclusion list, ~line 1780 for hotkey processing
 
+### 8. JSON Float vs Integer Dictionary Keys
+**Symptom:** Dictionary lookup with `.has()` returns false even though key appears to exist
+**Cause:** JSON stores all numbers as floats (e.g., `1.0`), but GDScript const dictionaries use integer keys. `{1: "data"}.has(1.0)` returns `false` because int `1` != float `1.0`.
+
+**Fix:** Always cast to int when reading numeric values from JSON that will be used as dictionary keys:
+```gdscript
+var tier = int(item.get("tier", 0))  # Not just item.get("tier", 0)
+if TIER_DATA.has(tier):  # Now works correctly
+    ...
+```
+
+**Common locations:** Item tier lookups in `server/server.gd` and `shared/combat_manager.gd`
+
 ## Dungeon Combat Issues (Fixed v0.9.31)
 
 **Symptoms reported:**
