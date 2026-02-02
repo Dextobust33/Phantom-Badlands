@@ -70,11 +70,11 @@ var active_dungeons: Dictionary = {}  # instance_id -> dungeon_instance data
 var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
-const MAX_ACTIVE_DUNGEONS = 50  # Increased to support per-player instances
-const DUNGEON_SPAWN_CHECK_INTERVAL = 60.0  # Check every minute
+const MAX_ACTIVE_DUNGEONS = 150  # Support many world + player dungeons
+const DUNGEON_SPAWN_CHECK_INTERVAL = 30.0  # Check every 30 seconds
 const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
-const MIN_WORLD_DUNGEONS = 8  # Minimum number of world dungeons on map
-const MAX_WORLD_DUNGEONS = 15  # Maximum number of world dungeons
+const MIN_WORLD_DUNGEONS = 30  # Minimum number of world dungeons on map
+const MAX_WORLD_DUNGEONS = 50  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 
 # Tax collector cooldown tracking (peer_id -> steps since last encounter)
@@ -5715,6 +5715,15 @@ func handle_trading_post_quests(peer_id: int):
 					description += "\n\n[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
 						dungeon_info.dungeon_name, dungeon_info.direction_text
 					]
+				else:
+					# Fall back to showing nearest world dungeon
+					var dungeon_type = quest.get("dungeon_type", "")
+					var tier = 1 if quest_data.quest_id.begins_with("haven_") else 0
+					var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
+					if not nearest.is_empty():
+						description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+							nearest.dungeon_name, nearest.direction_text
+						]
 
 			active_quests_display.append({
 				"id": quest_data.quest_id,
@@ -6084,6 +6093,15 @@ func handle_get_quest_log(peer_id: int):
 				description += "\n\n[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
 					dungeon_info.dungeon_name, dungeon_info.direction_text
 				]
+			else:
+				# Fall back to showing nearest world dungeon
+				var dungeon_type = quest_data.get("dungeon_type", "")
+				var tier = 1 if qid.begins_with("haven_") else 0
+				var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
+				if not nearest.is_empty():
+					description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+						nearest.dungeon_name, nearest.direction_text
+					]
 
 		active_quests_info.append({
 			"id": qid,
@@ -7819,12 +7837,18 @@ func _check_dungeon_spawns():
 		else:
 			break  # Failed to create, stop trying
 
-	# Occasionally spawn extra dungeons up to max
-	if world_dungeon_count < MAX_WORLD_DUNGEONS and randf() < 0.3:  # 30% chance per check
-		var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
-		var instance_id = _create_world_dungeon(dungeon_type)
-		if instance_id != "":
-			log_message("Spawned bonus world dungeon: %s" % instance_id)
+	# Spawn extra dungeons up to max (spawn multiple per check to fill up faster)
+	while world_dungeon_count < MAX_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
+		if randf() < 0.5:  # 50% chance per dungeon
+			var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
+			var instance_id = _create_world_dungeon(dungeon_type)
+			if instance_id != "":
+				world_dungeon_count += 1
+				log_message("Spawned bonus world dungeon: %s" % instance_id)
+			else:
+				break
+		else:
+			break  # Stop if random check fails
 
 func _create_world_dungeon(dungeon_type: String) -> String:
 	"""Create a random world dungeon at a random location"""
@@ -7840,9 +7864,10 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 
 	# Get spawn location based on tier - higher tiers spawn further from origin
 	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
-	# Add some randomness to position (within 50 tiles of tier's base location)
-	var offset_x = (randi() % 101) - 50
-	var offset_y = (randi() % 101) - 50
+	# Add more randomness to position (within 100 tiles of tier's base location)
+	# This creates a wider spread of dungeons across the map
+	var offset_x = (randi() % 201) - 100
+	var offset_y = (randi() % 201) - 100
 	var world_x = spawn_loc.x + offset_x
 	var world_y = spawn_loc.y + offset_y
 
