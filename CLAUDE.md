@@ -15,7 +15,10 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-Phantasia Revival is a text-based multiplayer RPG built with Godot 4.5 and GDScript. Client-server architecture with turn-based combat, procedural world generation, and 9 class archetypes.
+Phantasia Revival is a text-based multiplayer RPG built with **Godot 4.6** and GDScript. Client-server architecture with turn-based combat, procedural world generation, and 9 class archetypes.
+
+**Godot Version:** 4.6.stable.steam (godot.windows.opt.tools.64.exe)
+**Important:** Some Godot 4.x API methods differ from 4.3/4.4 docs. Example: RichTextLabel uses `pop()` not `pop_meta()`.
 
 ## UI Design Principle: Action Bar First
 
@@ -451,40 +454,48 @@ display_chat("DEBUG: char_idx = X, line = Y")
 ### Attempt 6: [url] tags + meta_clicked signal connection (v0.9.34)
 - **What:**
   - Wrapped player names in `[url=name][color=#22BB22]name[/color][/url]`
-  - Connected `meta_clicked` signal: `online_players_list.meta_clicked.connect(_on_player_name_clicked)`
+  - Connected `meta_clicked` signal
   - Set `meta_underlined = true` for hover feedback
-  - Added debug: `display_chat("Requesting info for: %s")`
-- **Result:** UNTESTED as of this writing
-- **Expected behavior:** Names should underline on hover, single-click shows info
+- **Result:** FAILED - `[url]` tags don't work, meta_clicked never fired
 
-**WHAT WE KNOW:**
-1. Backend works (server examine, popup display) - confirmed by /examine command working
-2. gui_input signal handler is NOT being called (no debug output ever appears)
-3. selection_enabled = false IS set in tscn file (verified in code)
-4. mouse_filter = 0 (MOUSE_FILTER_STOP) IS set in tscn file
-5. Something is preventing mouse events from reaching the RichTextLabel
+### Attempt 7: Restore push_meta/pop() from working commit (v0.9.34)
+- **What:**
+  - Restored `push_meta(pname)` / `pop()` pattern from commit 6618212
+  - Only connected `meta_clicked` signal
+  - Discovered `pop_meta()` doesn't exist in Godot 4.6 - had to use `pop()`
+  - Discovered `get_meta_at_position()` doesn't exist in Godot 4.6
+- **Result:** PARTIAL SUCCESS - Click detection now works! Debug shows:
+  ```
+  DEBUG: meta_clicked signal connected to _on_player_name_clicked
+  DEBUG: _on_player_name_clicked called with meta: Dex_Dead
+  ```
+### Attempt 8: Fix server-side property mismatches (FINAL FIX - v0.9.35)
+- **Root cause discovered:** Server was crashing when building examine_result due to missing/misnamed properties:
+  1. `char.deaths` - Property didn't exist on Character class
+  2. `char.quests_completed` - Should be `char.completed_quests`
+  3. `char.play_time` - Should be `char.played_time_seconds`
+- **Fixes applied:**
+  1. Added `deaths` property to Character class (with to_dict/from_dict serialization)
+  2. Fixed property name mismatches in server's `handle_examine_player()`
+  3. Cast `play_time` to int in client before modulo operation
+  4. Added proximity-based location viewing (within 100 tiles or title holder)
+- **Result:** WORKING! Player info popup now displays when clicking player names.
 
-**POSSIBLE ROOT CAUSES NOT YET INVESTIGATED:**
-1. **Parent container intercepting events** - RightPanel (VBoxContainer) or its parents
-2. **ScrollContainer behavior** - RichTextLabel may have internal scroll handling
-3. **Focus issues** - Control may not be receiving input focus
-4. **Z-order/overlay issues** - Something invisible covering the list
-5. **Godot RichTextLabel bug** - Known issues with click detection in some versions
-
-**ALTERNATIVE APPROACHES TO TRY:**
-1. **ItemList widget** - Has native `item_activated` signal, designed for clickable lists
-2. **VBoxContainer + Label nodes** - Each player as separate Label with gui_input
-3. **VBoxContainer + Button nodes** - Each player as flat Button with pressed signal
-4. **Right-click context menu** - May work better than left-click
-5. **Separate clickable overlay** - Transparent Control on top with mouse handling
+**WORKING SOLUTION:**
+- Use `push_meta(player_name)` / `pop()` to wrap clickable text
+- Connect `meta_clicked` signal to handler
+- Set `selection_enabled = true` (required for meta_clicked to work)
+- Set `meta_underlined = true` for hover feedback
 
 **Key Files:**
 - `client/client.gd`:
   - Line ~720-726: Signal connections
-  - Line ~2748: `update_online_players()` - formats player list
-  - Line ~3043: `_on_player_name_clicked()` handler (meta_clicked)
-  - Line ~2999: `_on_online_players_gui_input()` handler (gui_input backup)
+  - Line ~2748: `update_online_players()` - uses push_meta/pop
+  - Line ~3000: `_on_player_name_clicked()` handler
+  - Line ~3010: `show_player_info_popup()` display function
 - `client/client.tscn`:
-  - Line ~648: OnlinePlayersList RichTextLabel properties
+  - Line ~648: OnlinePlayersList with selection_enabled=true
 - `server/server.gd`:
-  - Line ~1158: handle_examine_player function (THIS WORKS)
+  - Line ~1158: handle_examine_player function
+- `shared/character.gd`:
+  - Line ~191: deaths property

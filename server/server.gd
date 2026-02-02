@@ -1166,11 +1166,15 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Check if requester has a title (for location viewing privilege)
+	# Get requester info for location viewing privilege
 	var requester_has_title = false
+	var requester_x = 0
+	var requester_y = 0
 	if characters.has(peer_id):
 		var requester = characters[peer_id]
-		requester_has_title = requester.title in ["jarl", "high_king"]
+		requester_has_title = not requester.title.is_empty()
+		requester_x = requester.x
+		requester_y = requester.y
 
 	# Find the target player
 	for pid in characters.keys():
@@ -1178,6 +1182,11 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 		if char.name.to_lower() == target_name.to_lower():
 			var bonuses = char.get_equipment_bonuses()
 			var is_cloaked = char.has_buff("cloak") or char.has_buff("invisibility")
+
+			# Calculate distance for proximity-based location viewing
+			var distance = abs(char.x - requester_x) + abs(char.y - requester_y)
+			var is_nearby = distance <= 100
+
 			var result = {
 				"type": "examine_result",
 				"name": char.name,
@@ -1205,10 +1214,11 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"gems": char.gems,
 				"title": char.title,
 				"deaths": char.deaths,
-				"quests_completed": char.quests_completed.size() if char.quests_completed else 0,
-				"play_time": char.play_time
+				"quests_completed": char.completed_quests.size() if char.completed_quests else 0,
+				"play_time": char.played_time_seconds
 			}
-			# Title holders can see player locations (unless cloaked)
+
+			# Location visibility: title holders see all (unless cloaked), nearby players see each other
 			if requester_has_title:
 				result["viewer_has_title"] = true
 				if not is_cloaked:
@@ -1216,6 +1226,14 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 					result["location_y"] = char.y
 				else:
 					result["location_hidden"] = true
+			elif is_nearby and not is_cloaked:
+				# Players within 100 tiles can see each other's location
+				result["location_x"] = char.x
+				result["location_y"] = char.y
+			else:
+				# Location unknown - too far away or cloaked
+				result["location_unknown"] = true
+
 			send_to_peer(peer_id, result)
 			return
 
@@ -2534,6 +2552,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		character.guardian_death_save = false
 		character.guardian_granted_by = ""
 		character.current_hp = int(character.get_total_max_hp() * 0.25)  # Survive with 25% HP
+		character.deaths += 1  # Track near-death
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#00FFFF]The Guardian's blessing protects you from death![/color]"
@@ -2549,6 +2568,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	if character.title == "high_king" and not character.title_data.get("escape_death_used", false):
 		character.title_data["escape_death_used"] = true
 		character.current_hp = int(character.get_total_max_hp() * 0.1)  # Survive with 10% HP
+		character.deaths += 1  # Track near-death
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#FFD700]The Crown of the North saves you from death! But its power is now spent...[/color]"
@@ -2570,6 +2590,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		if lives > 1:
 			character.title_data["lives"] = lives - 1
 			character.current_hp = int(character.get_total_max_hp() * 0.1)  # Survive with 10% HP
+			character.deaths += 1  # Track near-death
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#00FFFF]Your eternal essence prevents death! Lives remaining: %d[/color]" % (lives - 1)

@@ -188,6 +188,7 @@ static func get_item_slot_from_type(item_type: String) -> String:
 @export var created_at: int = 0
 @export var played_time_seconds: int = 0
 @export var monsters_killed: int = 0
+@export var deaths: int = 0
 
 # Active combat buffs - array of {type: String, value: int, duration: int}
 @export var active_buffs: Array = []
@@ -374,6 +375,7 @@ func initialize(char_name: String, char_class: String, char_race: String = "Huma
 	created_at = int(Time.get_unix_time_from_system())
 	played_time_seconds = 0
 	monsters_killed = 0
+	deaths = 0
 
 	# Reset known monsters for new character (prevents shared dictionary bug)
 	known_monsters = {}
@@ -1127,6 +1129,7 @@ func to_dict() -> Dictionary:
 		"created_at": created_at,
 		"played_time_seconds": played_time_seconds,
 		"monsters_killed": monsters_killed,
+		"deaths": deaths,
 		"active_buffs": active_buffs,
 		"persistent_buffs": persistent_buffs,
 		"active_quests": active_quests,
@@ -1239,6 +1242,7 @@ func from_dict(data: Dictionary):
 	created_at = data.get("created_at", 0)
 	played_time_seconds = data.get("played_time_seconds", 0)
 	monsters_killed = data.get("monsters_killed", 0)
+	deaths = data.get("deaths", 0)
 
 	# Active buffs (clear on load - combat buffs don't persist between sessions)
 	active_buffs = []
