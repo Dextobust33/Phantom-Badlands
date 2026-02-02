@@ -13402,6 +13402,11 @@ func handle_blacksmith_encounter(message: Dictionary):
 	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
 	var player_gold = message.get("player_gold", 0)
 
+	# Reset all hotkey pressed states to prevent accidental immediate triggers
+	for i in range(10):
+		set_meta("hotkey_%d_pressed" % i, true)  # Mark as pressed so release is required first
+		set_meta("blacksmithkey_%d_pressed" % i, true)
+
 	game_output.clear()
 
 	# Display random trader ASCII art
@@ -13451,6 +13456,10 @@ func handle_healer_encounter(message: Dictionary):
 	var player_gold = message.get("player_gold", 0)
 	var current_hp = message.get("current_hp", 0)
 	var max_hp = message.get("max_hp", 100)
+
+	# Reset all hotkey pressed states to prevent accidental immediate triggers
+	for i in range(10):
+		set_meta("hotkey_%d_pressed" % i, true)  # Mark as pressed so release is required first
 
 	game_output.clear()
 

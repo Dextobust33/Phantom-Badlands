@@ -3449,8 +3449,8 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		# Repair all items
 		for item_data in encounter.items:
 			var slot = item_data.slot
-			if character.equipment.has(slot):
-				character.equipment[slot]["wear"] = 0
+			if character.equipped.has(slot):
+				character.equipped[slot]["wear"] = 0
 
 		pending_blacksmith_encounters.erase(peer_id)
 		send_to_peer(peer_id, {
@@ -3480,7 +3480,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			return
 
 		character.gold -= cost
-		character.equipment[slot]["wear"] = 0
+		character.equipped[slot]["wear"] = 0
 
 		# Update encounter data
 		encounter.items.erase(item_data)
