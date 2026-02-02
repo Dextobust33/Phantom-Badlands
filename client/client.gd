@@ -713,16 +713,11 @@ func _ready():
 	# Create ability input popup
 	_create_ability_popup()
 
-	# Connect online players list for clickable names (single click shows player info)
+	# Connect online players list for clickable names (click shows player info)
 	if online_players_list:
-		# Use gui_input for more reliable click detection
-		if online_players_list.gui_input.is_connected(_on_online_players_gui_input):
-			online_players_list.gui_input.disconnect(_on_online_players_gui_input)
-		online_players_list.gui_input.connect(_on_online_players_gui_input)
-		# Also connect meta_clicked as backup
-		if online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
-			online_players_list.meta_clicked.disconnect(_on_player_name_clicked)
-		online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		# Use meta_clicked signal for URL/meta tag clicks
+		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
+			online_players_list.meta_clicked.connect(_on_player_name_clicked)
 
 	# Setup race options
 	if race_option:
@@ -2763,14 +2758,15 @@ func update_online_players(players: Array):
 		var pclass = player.get("class", "Unknown")
 		var ptitle = player.get("title", "")
 
-		# Format name with title prefix if present
-		var display_name = pname
+		# Use push_meta/pop_meta for reliable click detection (more reliable than [url] tags)
+		online_players_list.push_meta(pname)
 		if not ptitle.is_empty():
 			var title_info = _get_title_display_info(ptitle)
-			display_name = "[color=%s]%s[/color] %s" % [title_info.color, title_info.prefix, pname]
-
-		# Use URL tags to make names clickable (double-click shows stats)
-		online_players_list.append_text("[url=%s]%s[/url] Lv%d %s\n" % [pname, display_name if ptitle.is_empty() else display_name, plevel, pclass])
+			online_players_list.append_text("[color=%s]%s[/color] %s" % [title_info.color, title_info.prefix, pname])
+		else:
+			online_players_list.append_text(pname)
+		online_players_list.pop_meta()
+		online_players_list.append_text(" Lv%d %s\n" % [plevel, pclass])
 
 func _get_title_display_info(title_id: String) -> Dictionary:
 	"""Get display info for a title (color, prefix, name)"""
@@ -2996,15 +2992,6 @@ func _on_close_leaderboard_pressed():
 		leaderboard_panel.visible = false
 
 # ===== PLAYER INFO POPUP HANDLERS =====
-
-func _on_online_players_gui_input(event: InputEvent):
-	"""Handle clicks on online players list - detect URL clicks manually"""
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if online_players_list:
-			# Get the meta (URL) at the click position
-			var clicked_meta = online_players_list.get_meta_at_position(event.position)
-			if clicked_meta != null and clicked_meta != "":
-				_on_player_name_clicked(clicked_meta)
 
 func _on_player_name_clicked(meta):
 	"""Handle click on player name in online players list - shows player info popup"""
@@ -12883,8 +12870,9 @@ func show_help():
 [color=#AA66FF]Salvage:[/color] Inventory→Salvage destroys items for [color=#AA66FF]Essence[/color] (ESS). Value = rarity × level. Bonus materials possible!
 [color=#00FFFF]Materials:[/color] Inventory→Materials shows your gathered resources by category (ore, wood, fish, etc.)
 [color=#FFA500]Fishing([%s]):[/color] At water ([color=#00FFFF]~[/color]), press [%s] to fish. Wait for bite, react with the [color=#00FF00]correct key shown[/color]!
-[color=#8B4513]Mining([%s]):[/color] At ore deposits (mountains), press [%s] to mine. Tier 1-9 by distance. T3-5=2 reactions, T6+=3.
-[color=#228B22]Logging([%s]):[/color] At dense forests, press [%s] to chop. Tier 1-6 by distance. Higher skill = better catches.
+[color=#CD7F32]Mining([%s]):[/color] At ore deposits ([color=#CD7F32]O[/color] on map), press [%s] to mine. Tier 1-9 by distance. T3-5=2 reactions, T6+=3.
+[color=#228B22]Logging([%s]):[/color] At dense forests ([color=#228B22]T[/color] on map), press [%s] to chop. Tier 1-6 by distance. Higher skill = better catches.
+[color=#808080]Starter nodes:[/color] Ore ([color=#CD7F32]O[/color]) and Trees ([color=#228B22]T[/color]) appear within 35 tiles of origin for new players!
 [color=#FF4444]IMPORTANT:[/color] Press the [color=#00FF00]correct button[/color] when prompted! Wrong key = [color=#FF4444]FAIL[/color]. Watch the action bar!
 [color=#808080]Skills:[/color] Fishing/Mining/Logging gain XP from catches. Higher skill = faster reaction window + better rare odds.
 
@@ -13041,7 +13029,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRADING POSTS & MERCHANTS",
 			"keywords": ["trading", "post", "posts", "merchant", "merchants", "shop", "buy", "sell", "upgrade", "gamble", "recharge", "heal", "haven", "crossroads", "quest", "quests", "safe"],
-			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nHaven (0,10) - Spawn point, beginner quests\nCrossroads (0,0) - The High Seat, hotzone quests\nFrostgate (0,-100) - Boss hunts\n+55 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Upgrade, Gamble"
+			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nHaven (0,10) - Spawn point, beginner quests\nCrossroads (0,0) - The High Seat, hotzone quests\nFrostgate (0,-100) - Boss hunts\n+55 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Gamble | Use [color=#AA66FF]Enchanting[/color] to upgrade gear!"
 		},
 		{
 			"title": "GEMS & PROGRESSION",

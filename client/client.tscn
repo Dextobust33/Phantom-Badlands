@@ -648,12 +648,13 @@ horizontal_alignment = 1
 [node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel" unique_id=941875903]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
+mouse_filter = 0
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_font_sizes/normal_font_size = 11
 theme_override_styles/background = SubResource("StyleBoxFlat_hlfbj")
 bbcode_enabled = true
-selection_enabled = false
+selection_enabled = true
 meta_underlined = true
 text = "[color=#666666]No players online[/color]"
 

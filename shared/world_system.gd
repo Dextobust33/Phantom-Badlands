@@ -151,8 +151,24 @@ func get_fishing_type(x: int, y: int) -> String:
 
 # ===== GATHERING SYSTEM (Mining & Logging) =====
 
+# Starter gathering nodes near origin (within 35 tiles) - training areas for new players
+const STARTER_GATHERING_RADIUS = 35
+const STARTER_NODE_DENSITY = 40  # 4% chance for starter nodes
+
 func is_ore_deposit(x: int, y: int) -> bool:
-	"""Check if coordinates are a valid mining location (ore deposit in mountains)"""
+	"""Check if coordinates are a valid mining location (ore deposit in mountains or starter node)"""
+	var distance = sqrt(x * x + y * y)
+
+	# Starter ore nodes near origin (work on any non-safe terrain)
+	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
+		var terrain = get_terrain_at(x, y)
+		var info = get_terrain_info(terrain)
+		if not info.safe:  # Not in trading posts
+			var ore_hash = abs(x * 47 + y * 83) % 1000
+			if ore_hash < STARTER_NODE_DENSITY:
+				return true
+
+	# Regular ore deposits in mountains
 	var terrain = get_terrain_at(x, y)
 	if terrain != Terrain.MOUNTAINS:
 		return false
@@ -161,7 +177,19 @@ func is_ore_deposit(x: int, y: int) -> bool:
 	return ore_hash < 20  # 2% chance
 
 func is_dense_forest(x: int, y: int) -> bool:
-	"""Check if coordinates are a valid logging location (dense forest with harvestable trees)"""
+	"""Check if coordinates are a valid logging location (dense forest or starter node)"""
+	var distance = sqrt(x * x + y * y)
+
+	# Starter wood nodes near origin (work on any non-safe terrain)
+	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
+		var terrain = get_terrain_at(x, y)
+		var info = get_terrain_info(terrain)
+		if not info.safe:  # Not in trading posts
+			var wood_hash = abs(x * 67 + y * 97) % 1000
+			if wood_hash < STARTER_NODE_DENSITY:
+				return true
+
+	# Regular dense forests
 	var terrain = get_terrain_at(x, y)
 	if terrain != Terrain.FOREST and terrain != Terrain.DEEP_FOREST:
 		return false
@@ -411,6 +439,12 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 			# Player position
 			if dx == 0 and dy == 0:
 				line_parts.append("[color=#FFFF00] @[/color]")  # Space before @ for even spacing
+			elif is_ore_deposit(x, y):
+				# Show ore deposit - brown/copper color
+				line_parts.append("[color=#CD7F32] O[/color]")
+			elif is_dense_forest(x, y):
+				# Show dense forest/logging spot - dark green
+				line_parts.append("[color=#228B22] T[/color]")
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
@@ -1189,6 +1223,12 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				var merchant_color = _get_merchant_map_color(x, y)
 				var merchant_char = _get_merchant_map_char(x, y)
 				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
+			elif is_ore_deposit(x, y):
+				# Show ore deposit - brown/copper color
+				line_parts.append("[color=#CD7F32] O[/color]")
+			elif is_dense_forest(x, y):
+				# Show dense forest/logging spot - dark green
+				line_parts.append("[color=#228B22] T[/color]")
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)

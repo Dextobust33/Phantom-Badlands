@@ -5605,7 +5605,7 @@ func handle_trading_post_shop(peer_id: int):
 	var merchant_info = {
 		"id": merchant_id,  # For persistent inventory tracking
 		"name": tp.name + " Merchant",
-		"services": ["buy", "sell", "upgrade", "gamble"],
+		"services": ["buy", "sell", "gamble"],
 		"specialty": "all",
 		"x": tp.center.x,
 		"y": tp.center.y,
@@ -5619,8 +5619,7 @@ func handle_trading_post_shop(peer_id: int):
 	# Build services message similar to regular merchants
 	var services_text = []
 	services_text.append("[Q] Sell items")
-	services_text.append("[W] Upgrade equipment")
-	services_text.append("[E] Gamble")
+	services_text.append("[W] Gamble")
 	if shop_items.size() > 0:
 		services_text.append("[R] Buy items (%d available)" % shop_items.size())
 	if character.gems > 0:
@@ -5665,6 +5664,11 @@ func handle_trading_post_quests(peer_id: int):
 	var progression_quest = _generate_progression_quest(tp.id, character.level, character.completed_quests, active_quest_ids)
 	if not progression_quest.is_empty():
 		available_quests.append(progression_quest)
+
+	# Add dungeon direction hints to dungeon quests
+	var tp_x = tp.center.x
+	var tp_y = tp.center.y
+	available_quests = _add_dungeon_directions_to_quests(available_quests, tp_x, tp_y)
 
 	# Get quests ready to turn in at this Trading Post
 	var quests_to_turn_in = []
@@ -7686,6 +7690,89 @@ func get_visible_dungeons(center_x: int, center_y: int, radius: int) -> Array:
 				"color": dungeon_data.color
 			})
 	return visible
+
+func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
+	"""Get a compass direction text from one point to another"""
+	var dx = to_x - from_x
+	var dy = to_y - from_y
+	var distance = int(sqrt(dx * dx + dy * dy))
+
+	# Determine direction based on angle
+	var direction = ""
+	if abs(dy) < abs(dx) / 3:
+		# Mostly horizontal
+		direction = "east" if dx > 0 else "west"
+	elif abs(dx) < abs(dy) / 3:
+		# Mostly vertical
+		direction = "north" if dy > 0 else "south"
+	else:
+		# Diagonal
+		var ns = "north" if dy > 0 else "south"
+		var ew = "east" if dx > 0 else "west"
+		direction = ns + ew
+
+	return "%d tiles %s" % [distance, direction]
+
+func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: String, tier: int) -> Dictionary:
+	"""Find the nearest dungeon matching the quest requirements. Returns {x, y, distance, direction_text} or empty dict."""
+	var nearest = {}
+	var nearest_dist = 999999
+
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+
+		# Check if this dungeon matches the quest requirements
+		var matches = false
+		if dungeon_type.is_empty():
+			# Any dungeon - check tier matches (tier 1 dungeons for early quests)
+			if tier <= 0 or dungeon_data.tier <= tier:
+				matches = true
+		else:
+			# Specific dungeon type required
+			if instance.dungeon_type == dungeon_type:
+				matches = true
+
+		if matches:
+			var dx = instance.world_x - from_x
+			var dy = instance.world_y - from_y
+			var dist = sqrt(dx * dx + dy * dy)
+			if dist < nearest_dist:
+				nearest_dist = dist
+				nearest = {
+					"x": instance.world_x,
+					"y": instance.world_y,
+					"distance": int(dist),
+					"direction_text": _get_direction_text(from_x, from_y, instance.world_x, instance.world_y),
+					"dungeon_type": instance.dungeon_type,
+					"dungeon_name": dungeon_data.name
+				}
+
+	return nearest
+
+func _add_dungeon_directions_to_quests(quests: Array, tp_x: int, tp_y: int) -> Array:
+	"""Add direction info to dungeon quests"""
+	var updated_quests = []
+	for quest in quests:
+		var updated_quest = quest.duplicate()
+
+		# Check if this is a dungeon quest
+		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+			var dungeon_type = quest.get("dungeon_type", "")
+			# For starter quest, use tier 1; for dynamic quests, extract tier from quest
+			var tier = 1 if quest.get("id", "").begins_with("haven_") else 0
+
+			var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
+			if not nearest.is_empty():
+				# Add direction info to description
+				var direction_hint = "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+					nearest.dungeon_name, nearest.direction_text
+				]
+				updated_quest["description"] = quest.get("description", "") + direction_hint
+
+		updated_quests.append(updated_quest)
+
+	return updated_quests
 
 func _send_dungeon_state(peer_id: int):
 	"""Send current dungeon state to player"""
