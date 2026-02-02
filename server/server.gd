@@ -8100,10 +8100,11 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		_send_dungeon_state(peer_id)
 		return
 
-	# Create combat
-	var monster = monster_db.get_monster_for_level(monster_info.level)
-	monster.name = monster_info.name
-	monster.level = monster_info.level
+	# Create combat - use the monster name from dungeon pool
+	var monster = monster_db.generate_monster_by_name(monster_info.name, monster_info.level)
+	if monster.is_empty():
+		# Fallback: generate a generic monster for the level
+		monster = monster_db.generate_monster(monster_info.level, monster_info.level)
 	monster.is_dungeon_monster = true
 
 	# Apply boss multipliers
@@ -8172,10 +8173,13 @@ func _open_dungeon_treasure(peer_id: int):
 	send_to_peer(peer_id, {
 		"type": "dungeon_treasure",
 		"rewards": reward_messages,
-		"message": "[color=#FFD700]You open the treasure chest![/color]"
+		"message": "[color=#FFD700]You open the treasure chest![/color]",
+		"gold": treasure.gold,
+		"materials": treasure.get("materials", []),
+		"egg": egg_info
 	})
 
-	_send_dungeon_state(peer_id)
+	# Don't send dungeon_state here - let client request it after player acknowledges
 	send_character_update(peer_id)
 	save_character(peer_id)
 

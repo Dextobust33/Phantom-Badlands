@@ -315,6 +315,7 @@ const ABILITY_PAGE_SIZE: int = 9  # Abilities per page (keys 1-9)
 
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
+var pending_dungeon_continue: bool = false  # Request fresh dungeon state when continuing
 
 # Wandering NPC encounter states
 var pending_blacksmith: bool = false
@@ -6461,6 +6462,8 @@ func select_wish(index: int):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
+	var need_dungeon_refresh = pending_dungeon_continue
+	pending_dungeon_continue = false
 	# Reset quest log mode if active
 	quest_log_mode = false
 	quest_log_quests = []
@@ -6481,7 +6484,11 @@ func acknowledge_continue():
 
 	# If in dungeon, refresh the dungeon display
 	if dungeon_mode:
-		display_dungeon_floor()
+		if need_dungeon_refresh:
+			# Request fresh state from server (e.g., after treasure collection cleared tile)
+			send_to_server({"type": "dungeon_move", "direction": "none"})
+		else:
+			display_dungeon_floor()
 
 	update_action_bar()
 
@@ -9902,10 +9909,12 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
-			var desc = message.get("description", "")
-			# Don't clear game_output on location updates - map is displayed separately
-			# Only update the map display panel
-			update_map(desc)
+			# Don't update map when in dungeon - dungeon has its own map display
+			if not dungeon_mode:
+				var desc = message.get("description", "")
+				# Don't clear game_output on location updates - map is displayed separately
+				# Only update the map display panel
+				update_map(desc)
 			# Update water/fishing location status
 			var was_at_water = at_water
 			at_water = message.get("at_water", false)
@@ -14311,7 +14320,10 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
 
-	display_dungeon_floor()
+	# Don't clear game output if player needs to acknowledge something
+	# (e.g., combat victory, treasure found, floor change)
+	if not pending_continue:
+		display_dungeon_floor()
 	update_action_bar()
 
 func handle_dungeon_treasure(message: Dictionary):
@@ -14343,10 +14355,12 @@ func handle_dungeon_treasure(message: Dictionary):
 		display_game("[color=#A335EE]★ Found a %s Egg! ★[/color]" % egg_monster)
 
 	display_game("")
-	display_game("[color=#808080]Continue exploring...[/color]")
+	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
-	# Request updated dungeon state
-	send_to_server({"type": "dungeon_move", "direction": "none"})
+	# Set pending continue - dungeon state will be requested when player acknowledges
+	pending_continue = true
+	pending_dungeon_continue = true
+	update_action_bar()
 
 func handle_dungeon_floor_change(message: Dictionary):
 	"""Handle advancing to next dungeon floor"""
@@ -14366,7 +14380,11 @@ func handle_dungeon_floor_change(message: Dictionary):
 		display_game("Floors remaining: %d" % (total_floors - new_floor))
 
 	display_game("")
-	display_game("[color=#808080]Continue exploring...[/color]")
+	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+
+	# Set pending continue so player must acknowledge before dungeon state updates display
+	pending_continue = true
+	update_action_bar()
 
 func handle_dungeon_complete(message: Dictionary):
 	"""Handle dungeon completion"""
