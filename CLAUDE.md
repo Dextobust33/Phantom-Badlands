@@ -370,3 +370,83 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 - Modes that need this fix when exiting: `ability_mode`, any new custom modes
 
 **Location:** `client/client.gd` ~line 1755 for exclusion list, ~line 1780 for hotkey processing
+
+## KNOWN BUG: Player Info Popup Not Working
+
+**Status:** DEBUG VERSION DEPLOYED (v0.9.30) - Waiting for test results
+
+**Feature Goal:** Double-clicking a player name in the Online Players list should open a popup with their detailed info (name, race, class, stats, equipment, HP, location if viewer has title/is nearby).
+
+**What's Implemented:**
+- `PlayerInfoPanel` exists in client.tscn with `PlayerInfoContent` RichTextLabel
+- `show_player_info_popup()` function in client.gd (~line 3010) correctly builds and displays info
+- Server's `handle_examine_player()` (~line 1158 in server.gd) correctly returns full player data
+- Client's `examine_result` handler (~line 9934) routes to popup when `pending_player_info_request` matches
+
+**What's NOT Working:**
+The click detection on the Online Players list (RichTextLabel) is failing.
+
+**Approaches Tried (ALL FAILED):**
+1. **BBCode URL tags** (`[url=name]name[/url]` + `meta_clicked` signal) - Signal never fires
+2. **push_meta/pop_meta API** (recommended by Godot docs) + `meta_clicked` signal - Signal never fires
+3. **gui_input with double-click detection** - Being tested in v0.9.30
+
+**Current Debug Implementation (v0.9.30):**
+```gdscript
+# In _ready():
+online_players_list.gui_input.connect(_on_online_players_gui_input)
+
+# Handler function:
+func _on_online_players_gui_input(event: InputEvent):
+    if event is InputEventMouseButton:
+        if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+            var current_time = Time.get_ticks_msec() / 1000.0
+            if current_time - last_online_click_time < DOUBLE_CLICK_TIME:
+                _handle_online_player_double_click(event.position)
+            last_online_click_time = current_time
+
+func _handle_online_player_double_click(click_pos: Vector2):
+    # Gets char_idx from get_character_at_position()
+    # Gets line_num from get_character_line(char_idx)
+    # Looks up player name from cached online_players_names array
+    # INCLUDES DEBUG OUTPUT TO CHAT to verify what's happening
+```
+
+**Debug Output to Look For:**
+When user double-clicks on Online Players list, chat should show one of:
+- `DEBUG: online_players_list is null` - Signal connected but node ref broken
+- `DEBUG: No player names cached` - Players list isn't being cached properly
+- `DEBUG: Click outside text (char_idx=X)` - Click not hitting text
+- `DEBUG: Clicked line X, char Y` - Click detected, line found
+- `Showing info for: PlayerName` - Request being sent
+- If nothing shows at all - gui_input signal isn't being connected or isn't firing
+
+**Key Files:**
+- `client/client.gd`:
+  - Line ~149: `@onready var online_players_list`
+  - Line ~194-196: PlayerInfoPanel node refs
+  - Line ~542: `pending_player_info_request` tracking variable
+  - Line ~543-545: New debug variables (`online_players_names`, `last_online_click_time`, `DOUBLE_CLICK_TIME`)
+  - Line ~718-721: Signal connection
+  - Line ~2745: `update_online_players()` - caches player names
+  - Line ~2997: `_on_online_players_gui_input()` handler
+  - Line ~3010: `show_player_info_popup()` display function
+  - Line ~9934: `examine_result` message handler
+- `client/client.tscn`:
+  - Line ~648: OnlinePlayersList RichTextLabel (mouse_filter=0, selection_enabled=true)
+  - Line ~1068: PlayerInfoPanel
+- `server/server.gd`:
+  - Line ~654: examine_player message routing
+  - Line ~1158: handle_examine_player function
+
+**Possible Root Causes to Investigate:**
+1. gui_input signal not being emitted by RichTextLabel at all
+2. Another control intercepting mouse events before they reach the list
+3. The scroll container within RichTextLabel eating the events
+4. Focus issues preventing input registration
+
+**Alternative Approaches to Consider:**
+1. Replace RichTextLabel with ItemList (has native item_activated signal)
+2. Use separate Button nodes for each player name
+3. Add a context menu on right-click instead of double-click
+4. Use a separate clickable area overlay
