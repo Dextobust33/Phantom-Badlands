@@ -7143,6 +7143,17 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				var gold_value = recipe.difficulty * 10
 				character.gold += gold_value
 				result_message = "[color=#FFD700]Received %d gold instead.[/color]" % gold_value
+			"material":
+				# Creates crafting materials - add directly to materials inventory
+				var output_item = recipe.get("output_item", "")
+				var base_quantity = recipe.get("output_quantity", 1)
+				var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
+				var final_quantity = int(base_quantity * multiplier)
+				if output_item != "" and final_quantity > 0:
+					character.add_crafting_material(output_item, final_quantity)
+					result_message = "[color=%s]Created %d %s %s![/color]" % [quality_color, final_quantity, quality_name, recipe.name.replace("Refine ", "")]
+				else:
+					result_message = "[color=#FF4444]Failed to create materials![/color]"
 
 	# Send result
 	send_to_peer(peer_id, {
@@ -7173,11 +7184,18 @@ func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 	# Generate unique ID
 	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
 
+	# For armor pieces, use the slot as the type (helm, boots, armor, shield)
+	# This ensures _get_slot_for_item_type works correctly
+	var output_slot = recipe.get("output_slot", "")
+	var item_type = recipe.output_type
+	if recipe.output_type == "armor" and output_slot != "":
+		item_type = output_slot + "_crafted"  # e.g., "helm_crafted", "boots_crafted"
+
 	var item = {
 		"id": item_id,
 		"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
-		"type": recipe.output_type,
-		"slot": recipe.get("output_slot", ""),
+		"type": item_type,
+		"slot": output_slot,
 		"level": scaled_stats.get("level", 1),
 		"rarity": _quality_to_rarity(quality),
 		"crafted": true,

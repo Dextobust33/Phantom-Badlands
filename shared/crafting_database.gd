@@ -167,8 +167,30 @@ const RECIPES = {
 		"difficulty": 12,
 		"materials": {"copper_ore": 3, "ragged_leather": 1},
 		"output_type": "armor",
-		"output_slot": "head",
+		"output_slot": "helm",
 		"base_stats": {"defense": 3, "hp": 10, "level": 5},
+		"craft_time": 2.0
+	},
+	"copper_armor": {
+		"name": "Copper Armor",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"copper_ore": 5, "ragged_leather": 2},
+		"output_type": "armor",
+		"output_slot": "armor",
+		"base_stats": {"defense": 5, "hp": 15, "level": 5},
+		"craft_time": 3.0
+	},
+	"copper_boots": {
+		"name": "Copper Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 12,
+		"difficulty": 14,
+		"materials": {"copper_ore": 3, "ragged_leather": 2},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 2, "speed": 1, "level": 5},
 		"craft_time": 2.0
 	},
 
@@ -191,7 +213,7 @@ const RECIPES = {
 		"difficulty": 25,
 		"materials": {"iron_ore": 6, "leather_scraps": 2},
 		"output_type": "armor",
-		"output_slot": "chest",
+		"output_slot": "armor",
 		"base_stats": {"defense": 10, "hp": 25, "level": 15},
 		"craft_time": 4.0
 	},
@@ -205,6 +227,28 @@ const RECIPES = {
 		"output_slot": "shield",
 		"base_stats": {"defense": 8, "level": 15},
 		"craft_time": 3.0
+	},
+	"iron_helm": {
+		"name": "Iron Helm",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 22,
+		"difficulty": 26,
+		"materials": {"iron_ore": 4, "leather_scraps": 1},
+		"output_type": "armor",
+		"output_slot": "helm",
+		"base_stats": {"defense": 6, "hp": 20, "level": 15},
+		"craft_time": 2.5
+	},
+	"iron_boots": {
+		"name": "Iron Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 25,
+		"difficulty": 28,
+		"materials": {"iron_ore": 4, "leather_scraps": 2},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 5, "speed": 2, "level": 15},
+		"craft_time": 2.5
 	},
 
 	# Tier 3 - Steel (Level 30-50)
@@ -226,9 +270,42 @@ const RECIPES = {
 		"difficulty": 40,
 		"materials": {"steel_ore": 8, "thick_leather": 3},
 		"output_type": "armor",
-		"output_slot": "chest",
+		"output_slot": "armor",
 		"base_stats": {"defense": 20, "hp": 50, "level": 30},
 		"craft_time": 5.0
+	},
+	"steel_shield": {
+		"name": "Steel Shield",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 32,
+		"difficulty": 38,
+		"materials": {"steel_ore": 6, "thick_leather": 2},
+		"output_type": "armor",
+		"output_slot": "shield",
+		"base_stats": {"defense": 15, "level": 30},
+		"craft_time": 3.5
+	},
+	"steel_helm": {
+		"name": "Steel Helm",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 38,
+		"difficulty": 42,
+		"materials": {"steel_ore": 5, "thick_leather": 1},
+		"output_type": "armor",
+		"output_slot": "helm",
+		"base_stats": {"defense": 12, "hp": 40, "level": 30},
+		"craft_time": 3.0
+	},
+	"steel_boots": {
+		"name": "Steel Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 40,
+		"difficulty": 45,
+		"materials": {"steel_ore": 5, "thick_leather": 2},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 10, "speed": 4, "level": 30},
+		"craft_time": 3.0
 	},
 
 	# Tier 4 - Mithril (Level 50-100)
@@ -250,9 +327,42 @@ const RECIPES = {
 		"difficulty": 55,
 		"materials": {"mithril_ore": 10, "enchanted_leather": 4},
 		"output_type": "armor",
-		"output_slot": "chest",
+		"output_slot": "armor",
 		"base_stats": {"defense": 35, "hp": 100, "speed": 3, "level": 50},
 		"craft_time": 6.0
+	},
+	"mithril_shield": {
+		"name": "Mithril Shield",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 48,
+		"difficulty": 52,
+		"materials": {"mithril_ore": 7, "enchanted_leather": 2},
+		"output_type": "armor",
+		"output_slot": "shield",
+		"base_stats": {"defense": 25, "speed": 2, "level": 50},
+		"craft_time": 4.0
+	},
+	"mithril_helm": {
+		"name": "Mithril Helm",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 52,
+		"difficulty": 58,
+		"materials": {"mithril_ore": 6, "enchanted_leather": 2},
+		"output_type": "armor",
+		"output_slot": "helm",
+		"base_stats": {"defense": 20, "hp": 75, "speed": 2, "level": 50},
+		"craft_time": 4.0
+	},
+	"mithril_boots": {
+		"name": "Mithril Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 55,
+		"difficulty": 60,
+		"materials": {"mithril_ore": 6, "enchanted_leather": 3},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 18, "speed": 6, "level": 50},
+		"craft_time": 4.0
 	},
 
 	# Tier 5+ - High level crafting
@@ -274,9 +384,75 @@ const RECIPES = {
 		"difficulty": 85,
 		"materials": {"orichalcum_ore": 12, "dragonhide": 4, "void_essence": 1},
 		"output_type": "armor",
-		"output_slot": "chest",
+		"output_slot": "armor",
 		"base_stats": {"defense": 60, "hp": 200, "level": 150},
 		"craft_time": 10.0
+	},
+	"adamantine_shield": {
+		"name": "Adamantine Shield",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 62,
+		"difficulty": 68,
+		"materials": {"adamantine_ore": 6, "dragonhide": 1},
+		"output_type": "armor",
+		"output_slot": "shield",
+		"base_stats": {"defense": 40, "level": 100},
+		"craft_time": 6.0
+	},
+	"adamantine_helm": {
+		"name": "Adamantine Helm",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 68,
+		"difficulty": 72,
+		"materials": {"adamantine_ore": 5, "dragonhide": 1},
+		"output_type": "armor",
+		"output_slot": "helm",
+		"base_stats": {"defense": 35, "hp": 150, "level": 100},
+		"craft_time": 5.0
+	},
+	"adamantine_boots": {
+		"name": "Adamantine Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 70,
+		"difficulty": 75,
+		"materials": {"adamantine_ore": 5, "dragonhide": 2},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 30, "speed": 8, "level": 100},
+		"craft_time": 5.0
+	},
+	"orichalcum_shield": {
+		"name": "Orichalcum Shield",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 78,
+		"difficulty": 82,
+		"materials": {"orichalcum_ore": 8, "dragonhide": 2, "void_essence": 1},
+		"output_type": "armor",
+		"output_slot": "shield",
+		"base_stats": {"defense": 55, "hp": 50, "level": 150},
+		"craft_time": 7.0
+	},
+	"orichalcum_helm": {
+		"name": "Orichalcum Helm",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 82,
+		"difficulty": 88,
+		"materials": {"orichalcum_ore": 8, "dragonhide": 2, "void_essence": 1},
+		"output_type": "armor",
+		"output_slot": "helm",
+		"base_stats": {"defense": 45, "hp": 180, "level": 150},
+		"craft_time": 7.0
+	},
+	"orichalcum_boots": {
+		"name": "Orichalcum Boots",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 85,
+		"difficulty": 90,
+		"materials": {"orichalcum_ore": 8, "dragonhide": 3, "void_essence": 1},
+		"output_type": "armor",
+		"output_slot": "boots",
+		"base_stats": {"defense": 40, "speed": 12, "level": 150},
+		"craft_time": 7.0
 	},
 
 	# ===== ALCHEMY RECIPES =====
@@ -464,6 +640,30 @@ const RECIPES = {
 		"output_slot": "any",
 		"effect": {"type": "enhance", "stat": "all", "bonus": 5},
 		"craft_time": 8.0
+	},
+
+	# ===== BEGINNER ENCHANTING RECIPES =====
+	"refine_magic_dust": {
+		"name": "Refine Magic Dust",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"sap": 2, "acorn": 1},
+		"output_type": "material",
+		"output_item": "magic_dust",
+		"output_quantity": 2,
+		"craft_time": 1.5
+	},
+	"enchanted_kindling": {
+		"name": "Enchanted Kindling",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 1,
+		"difficulty": 3,
+		"materials": {"common_wood": 2, "bark": 1},
+		"output_type": "consumable",
+		"output_slot": "",
+		"effect": {"type": "buff", "stat": "mana_regen", "amount": 5, "duration": 60},
+		"craft_time": 1.0
 	},
 
 	# ===== ENCHANTMENT RECIPES (modify equipped gear in-place) =====

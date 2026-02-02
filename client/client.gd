@@ -357,6 +357,7 @@ var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
 var crafting_selected_recipe: int = -1  # Index of selected recipe
 var crafting_page: int = 0  # Page for recipe list
+var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 const CRAFTING_PAGE_SIZE = 5
 
 # Water/Fishing location
@@ -531,7 +532,7 @@ const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 # Player name click tracking for double-click
 var last_player_click_name: String = ""
 var last_player_click_time: float = 0.0
-const DOUBLE_CLICK_THRESHOLD: float = 0.4  # 400ms for double-click
+const DOUBLE_CLICK_THRESHOLD: float = 0.5  # 500ms for double-click
 var pending_player_info_request: String = ""  # Track pending popup request
 
 # Rare drop sound effect
@@ -709,7 +710,8 @@ func _ready():
 
 	# Connect online players list for clickable names
 	if online_players_list:
-		online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
+			online_players_list.meta_clicked.connect(_on_player_name_clicked)
 
 	# Setup race options
 	if race_option:
@@ -2933,9 +2935,11 @@ func _on_player_name_clicked(meta):
 		last_player_click_name = ""
 		last_player_click_time = 0.0
 	else:
-		# First click - store for potential double-click
+		# First click - store for potential double-click and show feedback
 		last_player_click_name = player_name
 		last_player_click_time = current_time
+		# Show click feedback in chat
+		display_chat("[color=#555555]Click again to view %s's info[/color]" % player_name)
 
 func _on_close_player_info_pressed():
 	if player_info_panel:
@@ -3992,6 +3996,20 @@ func update_action_bar():
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
 					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif awaiting_craft_result:
+				# Showing craft result - wait for player to continue
+				current_actions = [
+					{"label": "Continue", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6271,6 +6289,10 @@ func execute_local_action(action: String):
 			crafting_page = min(total_pages - 1, crafting_page + 1)
 			display_craft_recipe_list()
 			update_action_bar()
+		"crafting_continue":
+			# Player acknowledged craft result, refresh recipe list
+			awaiting_craft_result = false
+			request_craft_list(crafting_skill)
 		# Dungeon actions
 		"dungeon_list_cancel":
 			dungeon_list_mode = false
@@ -13833,6 +13855,7 @@ func request_craft_list(skill_name: String):
 
 func handle_craft_list(message: Dictionary):
 	"""Handle recipe list from server"""
+	# Store data but don't display if waiting for player to acknowledge craft result
 	crafting_skill = message.get("skill", "blacksmithing")
 	crafting_skill_level = message.get("skill_level", 1)
 	crafting_post_bonus = message.get("post_bonus", 0)
@@ -13840,6 +13863,10 @@ func handle_craft_list(message: Dictionary):
 	crafting_materials = message.get("materials", {})
 	crafting_page = 0
 	crafting_selected_recipe = -1
+
+	if awaiting_craft_result:
+		# Don't clear the craft result display - player hasn't acknowledged it yet
+		return
 
 	display_craft_recipe_list()
 	update_action_bar()
@@ -13991,13 +14018,12 @@ func handle_craft_result(message: Dictionary):
 		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
 
 	display_game("")
-	display_game("[color=#808080]Press any action key to continue...[/color]")
+	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
-	# Reset crafting state
+	# Set flag to prevent craft_list from overwriting the result
+	awaiting_craft_result = true
 	crafting_selected_recipe = -1
-
-	# Request updated recipe list
-	request_craft_list(crafting_skill)
+	update_action_bar()
 
 func close_crafting():
 	"""Close crafting menu and return to trading post"""
@@ -14006,6 +14032,7 @@ func close_crafting():
 	crafting_recipes = []
 	crafting_selected_recipe = -1
 	crafting_page = 0
+	awaiting_craft_result = false
 
 	_display_trading_post_ui()
 	update_action_bar()
