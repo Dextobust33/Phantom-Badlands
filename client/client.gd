@@ -540,6 +540,9 @@ const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 
 # Player name click tracking
 var pending_player_info_request: String = ""  # Track pending popup request
+var online_players_names: Array = []  # Cache player names for click detection
+var last_online_click_time: float = 0.0  # Track double-click timing
+const DOUBLE_CLICK_TIME: float = 0.4  # 400ms for double-click
 
 # Rare drop sound effect
 var last_rare_sound_time: float = 0.0
@@ -714,11 +717,11 @@ func _ready():
 	# Create ability input popup
 	_create_ability_popup()
 
-	# Connect online players list for clickable names (click shows player info)
+	# Connect online players list for clickable names (double-click shows player info)
 	if online_players_list:
-		# Use meta_clicked signal for URL/meta tag clicks
-		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
-			online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		# Use gui_input for double-click detection (more reliable than meta_clicked)
+		if not online_players_list.gui_input.is_connected(_on_online_players_gui_input):
+			online_players_list.gui_input.connect(_on_online_players_gui_input)
 
 	# Setup race options
 	if race_option:
@@ -2743,11 +2746,12 @@ func _on_leaderboard_toggle_pressed():
 	_update_leaderboard_toggle_button()
 
 func update_online_players(players: Array):
-	"""Update the online players list display with clickable names"""
+	"""Update the online players list display with clickable names (double-click to view info)"""
 	if not online_players_list:
 		return
 
 	online_players_list.clear()
+	online_players_names.clear()  # Clear cached names
 
 	if players.is_empty():
 		online_players_list.append_text("[color=#555555]No players online[/color]")
@@ -2759,15 +2763,13 @@ func update_online_players(players: Array):
 		var pclass = player.get("class", "Unknown")
 		var ptitle = player.get("title", "")
 
-		# Use push_meta/pop_meta for reliable click detection (more reliable than [url] tags)
-		online_players_list.push_meta(pname)
+		online_players_names.append(pname)  # Cache name for click detection
+
 		if not ptitle.is_empty():
 			var title_info = _get_title_display_info(ptitle)
-			online_players_list.append_text("[color=%s]%s[/color] %s" % [title_info.color, title_info.prefix, pname])
+			online_players_list.append_text("[color=%s]%s[/color] [color=#22BB22]%s[/color] Lv%d %s\n" % [title_info.color, title_info.prefix, pname, plevel, pclass])
 		else:
-			online_players_list.append_text(pname)
-		online_players_list.pop_meta()
-		online_players_list.append_text(" Lv%d %s\n" % [plevel, pclass])
+			online_players_list.append_text("[color=#22BB22]%s[/color] Lv%d %s\n" % [pname, plevel, pclass])
 
 func _get_title_display_info(title_id: String) -> Dictionary:
 	"""Get display info for a title (color, prefix, name)"""
@@ -2994,10 +2996,49 @@ func _on_close_leaderboard_pressed():
 
 # ===== PLAYER INFO POPUP HANDLERS =====
 
+func _on_online_players_gui_input(event: InputEvent):
+	"""Handle double-click on online players list to show player info"""
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var current_time = Time.get_ticks_msec() / 1000.0
+			if current_time - last_online_click_time < DOUBLE_CLICK_TIME:
+				# Double-click detected - find which player was clicked
+				_handle_online_player_double_click(event.position)
+			last_online_click_time = current_time
+
+func _handle_online_player_double_click(click_pos: Vector2):
+	"""Handle double-click to show player info popup"""
+	if not online_players_list:
+		display_chat("[color=#FF4444]DEBUG: online_players_list is null[/color]")
+		return
+
+	if online_players_names.is_empty():
+		display_chat("[color=#FF4444]DEBUG: No player names cached[/color]")
+		return
+
+	# Get character at click position
+	var char_idx = online_players_list.get_character_at_position(click_pos)
+
+	if char_idx < 0:
+		display_chat("[color=#FFFF00]DEBUG: Click outside text (char_idx=%d)[/color]" % char_idx)
+		return
+
+	# Get line number from character index
+	var line_num = online_players_list.get_character_line(char_idx)
+	display_chat("[color=#00FF00]DEBUG: Clicked line %d, char %d[/color]" % [line_num, char_idx])
+
+	# Each player is on one line, so line_num = player index
+	if line_num >= 0 and line_num < online_players_names.size():
+		var player_name = online_players_names[line_num]
+		display_chat("[color=#00FFFF]Showing info for: %s[/color]" % player_name)
+		pending_player_info_request = player_name
+		send_to_server({"type": "examine_player", "name": player_name})
+	else:
+		display_chat("[color=#FF4444]DEBUG: Line %d out of range (max %d)[/color]" % [line_num, online_players_names.size()])
+
 func _on_player_name_clicked(meta):
-	"""Handle click on player name in online players list - shows player info popup"""
+	"""Handle click on player name in online players list - shows player info popup (backup for meta_clicked)"""
 	var player_name = str(meta)
-	# Single click shows player info popup
 	pending_player_info_request = player_name
 	send_to_server({"type": "examine_player", "name": player_name})
 
