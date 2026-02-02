@@ -398,67 +398,93 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 
 ## KNOWN BUG: Player Info Popup Not Working
 
-**Status:** v0.9.31 - Fixed `selection_enabled=true` blocking clicks
+**Status:** BROKEN - Multiple fix attempts have failed. Need different approach.
 
-**Feature Goal:** Double-clicking a player name in the Online Players list should open a popup with their detailed info (name, race, class, stats, equipment, HP, location if viewer has title/is nearby).
+**Feature Goal:** Clicking a player name in the Online Players list should open a popup with their detailed info.
 
-**What's Implemented:**
+**What's Implemented (Backend Works):**
 - `PlayerInfoPanel` exists in client.tscn with `PlayerInfoContent` RichTextLabel
-- `show_player_info_popup()` function in client.gd (~line 3010) correctly builds and displays info
-- Server's `handle_examine_player()` (~line 1158 in server.gd) correctly returns full player data
-- Client's `examine_result` handler (~line 9934) routes to popup when `pending_player_info_request` matches
+- `show_player_info_popup()` function in client.gd correctly builds and displays info
+- Server's `handle_examine_player()` correctly returns full player data
+- Client's `examine_result` handler routes to popup when `pending_player_info_request` matches
+- **The server/popup code is NOT the problem - click detection on RichTextLabel is the problem**
 
-**What's NOT Working:**
-The click detection on the Online Players list (RichTextLabel) has failed multiple times.
+**COMPLETE HISTORY OF ALL FAILED ATTEMPTS:**
 
-**Approaches Tried:**
-1. **BBCode URL tags without signal connection** - Failed, signal never connected
-2. **push_meta/pop_meta API** + `meta_clicked` signal - Failed, signal never fires
-3. **gui_input with double-click detection** - v0.9.30, clicks just highlight text
-4. **Set `selection_enabled = false`** (v0.9.31) - Text highlighting disabled but clicks still not detected
-5. **gui_input signal + position-based click detection** (v0.9.31) - No debug output appears, signal may not be firing
-6. **CURRENT ATTEMPT (v0.9.34):** Proper [url] tags + meta_clicked signal connection
-   - Changed `update_online_players()` to wrap names in `[url=name]name[/url]` tags
-   - Connected `meta_clicked` signal to `_on_player_name_clicked()` handler
-   - Set `meta_underlined = true` so names show underline on hover (visual feedback)
-   - Added debug message: "Requesting info for: X" in chat when clicked
+### Attempt 1: BBCode URL tags (early version)
+- **What:** Added `[url=name]name[/url]` tags to player names
+- **Result:** FAILED - meta_clicked signal never fired
+- **Reason:** Signal wasn't connected
 
-**Current Implementation (v0.9.34):**
+### Attempt 2: push_meta/pop_meta API
+- **What:** Used Godot's recommended push_meta/pop_meta instead of BBCode
+- **Result:** FAILED - meta_clicked signal never fired
+- **Reason:** Unknown - API should work but didn't
+
+### Attempt 3: gui_input with double-click detection (v0.9.30)
+- **What:** Connected gui_input signal, tracked click timing for double-click
+- **Code:**
 ```gdscript
-# In _ready():
-online_players_list.meta_clicked.connect(_on_player_name_clicked)
-
-# Player list formatting (single-click on name):
-online_players_list.append_text("[url=%s][color=#22BB22]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
-
-# Handler:
-func _on_player_name_clicked(meta):
-    var player_name = str(meta)
-    display_chat("[color=#00FFFF]Requesting info for: %s[/color]" % player_name)
-    pending_player_info_request = player_name
-    send_to_server({"type": "examine_player", "name": player_name})
+online_players_list.gui_input.connect(_on_online_players_gui_input)
+func _on_online_players_gui_input(event):
+    if event is InputEventMouseButton and event.pressed:
+        # double-click timing check
+        _handle_online_player_double_click(event.position)
 ```
+- **Result:** FAILED - Clicks just highlighted text, no debug output appeared
+- **Reason:** `selection_enabled = true` was consuming mouse events for text selection
 
-**Debug Output to Look For:**
-- `Requesting info for: PlayerName` in cyan - meta_clicked is working
-- Player info popup appears - full flow is working
-- Nothing in chat - meta_clicked signal not firing
+### Attempt 4: Set selection_enabled = false (v0.9.31)
+- **What:** Changed client.tscn line ~657 from `selection_enabled = true` to `selection_enabled = false`
+- **Result:** FAILED - User reported "clicking a player name just lets me highlight text"
+- **Reason:** Either build wasn't updated, or something else is wrong
 
-**If This Fails, Next Steps:**
-1. **Verify signal connection**: Add `print("meta_clicked connected")` after connection
-2. **Check mouse_filter**: Ensure it's `MOUSE_FILTER_STOP` (0) not `PASS` (1) or `IGNORE` (2)
-3. **Try ItemList instead**: Has native `item_activated` signal for double-click
-4. **Button approach**: Generate Button nodes dynamically for each player
-5. **Check parent containers**: VBoxContainer (RightPanel) might be intercepting events
+### Attempt 5: gui_input + position-based detection with debug output (v0.9.31)
+- **What:** Added extensive debug output to _handle_online_player_double_click:
+```gdscript
+display_chat("DEBUG: Click at position...")
+display_chat("DEBUG: char_idx = X, line = Y")
+```
+- **Result:** FAILED - No debug output appeared at all in chat
+- **Reason:** gui_input signal handler isn't being called - events never reach it
+
+### Attempt 6: [url] tags + meta_clicked signal connection (v0.9.34)
+- **What:**
+  - Wrapped player names in `[url=name][color=#22BB22]name[/color][/url]`
+  - Connected `meta_clicked` signal: `online_players_list.meta_clicked.connect(_on_player_name_clicked)`
+  - Set `meta_underlined = true` for hover feedback
+  - Added debug: `display_chat("Requesting info for: %s")`
+- **Result:** UNTESTED as of this writing
+- **Expected behavior:** Names should underline on hover, single-click shows info
+
+**WHAT WE KNOW:**
+1. Backend works (server examine, popup display) - confirmed by /examine command working
+2. gui_input signal handler is NOT being called (no debug output ever appears)
+3. selection_enabled = false IS set in tscn file (verified in code)
+4. mouse_filter = 0 (MOUSE_FILTER_STOP) IS set in tscn file
+5. Something is preventing mouse events from reaching the RichTextLabel
+
+**POSSIBLE ROOT CAUSES NOT YET INVESTIGATED:**
+1. **Parent container intercepting events** - RightPanel (VBoxContainer) or its parents
+2. **ScrollContainer behavior** - RichTextLabel may have internal scroll handling
+3. **Focus issues** - Control may not be receiving input focus
+4. **Z-order/overlay issues** - Something invisible covering the list
+5. **Godot RichTextLabel bug** - Known issues with click detection in some versions
+
+**ALTERNATIVE APPROACHES TO TRY:**
+1. **ItemList widget** - Has native `item_activated` signal, designed for clickable lists
+2. **VBoxContainer + Label nodes** - Each player as separate Label with gui_input
+3. **VBoxContainer + Button nodes** - Each player as flat Button with pressed signal
+4. **Right-click context menu** - May work better than left-click
+5. **Separate clickable overlay** - Transparent Control on top with mouse handling
 
 **Key Files:**
 - `client/client.gd`:
-  - Line ~720-726: Signal connections (meta_clicked + gui_input backup)
-  - Line ~2748: `update_online_players()` - now uses [url] tags
-  - Line ~3043: `_on_player_name_clicked()` handler
-  - Line ~3053: `show_player_info_popup()` display function
+  - Line ~720-726: Signal connections
+  - Line ~2748: `update_online_players()` - formats player list
+  - Line ~3043: `_on_player_name_clicked()` handler (meta_clicked)
+  - Line ~2999: `_on_online_players_gui_input()` handler (gui_input backup)
 - `client/client.tscn`:
-  - Line ~648: OnlinePlayersList (mouse_filter=0, selection_enabled=false, meta_underlined=true)
+  - Line ~648: OnlinePlayersList RichTextLabel properties
 - `server/server.gd`:
-  - Line ~654: examine_player message routing
-  - Line ~1158: handle_examine_player function
+  - Line ~1158: handle_examine_player function (THIS WORKS)
