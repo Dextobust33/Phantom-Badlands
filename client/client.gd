@@ -717,9 +717,12 @@ func _ready():
 	# Create ability input popup
 	_create_ability_popup()
 
-	# Connect online players list for clickable names (double-click shows player info)
+	# Connect online players list for clickable names (single-click on name shows player info)
 	if online_players_list:
-		# Use gui_input for double-click detection (more reliable than meta_clicked)
+		# Primary: meta_clicked fires when clicking [url] tags (standard Godot way)
+		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
+			online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		# Backup: gui_input for double-click detection if meta_clicked fails
 		if not online_players_list.gui_input.is_connected(_on_online_players_gui_input):
 			online_players_list.gui_input.connect(_on_online_players_gui_input)
 
@@ -2746,7 +2749,7 @@ func _on_leaderboard_toggle_pressed():
 	_update_leaderboard_toggle_button()
 
 func update_online_players(players: Array):
-	"""Update the online players list display with clickable names (double-click to view info)"""
+	"""Update the online players list display with clickable names (click to view info)"""
 	if not online_players_list:
 		return
 
@@ -2765,11 +2768,12 @@ func update_online_players(players: Array):
 
 		online_players_names.append(pname)  # Cache name for click detection
 
+		# Use [url] tags to make player names clickable - meta_clicked signal will fire with pname
 		if not ptitle.is_empty():
 			var title_info = _get_title_display_info(ptitle)
-			online_players_list.append_text("[color=%s]%s[/color] [color=#22BB22]%s[/color] Lv%d %s\n" % [title_info.color, title_info.prefix, pname, plevel, pclass])
+			online_players_list.append_text("[color=%s]%s[/color] [url=%s][color=#22BB22]%s[/color][/url] Lv%d %s\n" % [title_info.color, title_info.prefix, pname, pname, plevel, pclass])
 		else:
-			online_players_list.append_text("[color=#22BB22]%s[/color] Lv%d %s\n" % [pname, plevel, pclass])
+			online_players_list.append_text("[url=%s][color=#22BB22]%s[/color][/url] Lv%d %s\n" % [pname, pname, plevel, pclass])
 
 func _get_title_display_info(title_id: String) -> Dictionary:
 	"""Get display info for a title (color, prefix, name)"""
@@ -3037,8 +3041,9 @@ func _handle_online_player_double_click(click_pos: Vector2):
 		display_chat("[color=#FF4444]DEBUG: Line %d out of range (max %d)[/color]" % [line_num, online_players_names.size()])
 
 func _on_player_name_clicked(meta):
-	"""Handle click on player name in online players list - shows player info popup (backup for meta_clicked)"""
+	"""Handle click on player name in online players list - shows player info popup"""
 	var player_name = str(meta)
+	display_chat("[color=#00FFFF]Requesting info for: %s[/color]" % player_name)
 	pending_player_info_request = player_name
 	send_to_server({"type": "examine_player", "name": player_name})
 
