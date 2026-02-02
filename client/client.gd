@@ -360,6 +360,9 @@ var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 const CRAFTING_PAGE_SIZE = 5
 
+# More menu mode
+var more_mode: bool = false
+
 # Companions mode
 var companions_mode: bool = false
 var companions_page: int = 0
@@ -2087,8 +2090,50 @@ func _process(delta):
 		else:
 			set_meta("enter_pressed", false)
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not any_popup_open:
+	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not any_popup_open:
+		if game_state == GameState.PLAYING:
+			var current_time = Time.get_ticks_msec() / 1000.0
+			if current_time - last_move_time >= MOVE_COOLDOWN:
+				var dungeon_dir = ""
+
+				# Check numpad keys for 4-direction movement
+				var north_key = keybinds.get("move_8", default_keybinds.get("move_8", KEY_KP_8))
+				var south_key = keybinds.get("move_2", default_keybinds.get("move_2", KEY_KP_2))
+				var west_key = keybinds.get("move_4", default_keybinds.get("move_4", KEY_KP_4))
+				var east_key = keybinds.get("move_6", default_keybinds.get("move_6", KEY_KP_6))
+
+				if Input.is_physical_key_pressed(north_key):
+					dungeon_dir = "n"
+				elif Input.is_physical_key_pressed(south_key):
+					dungeon_dir = "s"
+				elif Input.is_physical_key_pressed(west_key):
+					dungeon_dir = "w"
+				elif Input.is_physical_key_pressed(east_key):
+					dungeon_dir = "e"
+
+				# Check arrow keys as alternative
+				if dungeon_dir == "":
+					var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
+					var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
+					var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
+					var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
+
+					if Input.is_physical_key_pressed(up_key):
+						dungeon_dir = "n"
+					elif Input.is_physical_key_pressed(down_key):
+						dungeon_dir = "s"
+					elif Input.is_physical_key_pressed(left_key):
+						dungeon_dir = "w"
+					elif Input.is_physical_key_pressed(right_key):
+						dungeon_dir = "e"
+
+				if dungeon_dir != "":
+					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
+					last_move_time = current_time
+
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, or popups)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not any_popup_open:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -3689,13 +3734,27 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif more_mode:
+		# More menu - contains Companions, Leaders, etc.
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
+			{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
+			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif companions_mode:
 		# Companions viewing mode
 		var collected = character_data.get("collected_companions", [])
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "companions_close", "enabled": true},
 			{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
-			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "1-%d Activate" % min(5, collected.size()), "action_type": "none", "action_data": "", "enabled": false} if collected.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4180,7 +4239,7 @@ func update_action_bar():
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			fourth_action,
 			fifth_action,
-			{"label": "More", "action_type": "local", "action_data": "companions", "enabled": true},
+			{"label": "More", "action_type": "local", "action_data": "more_menu", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
 			teleport_action,
@@ -5815,7 +5874,12 @@ func execute_local_action(action: String):
 		"settings":
 			open_settings()
 		"leaderboard":
+			more_mode = false
 			show_leaderboard_panel()
+		"more_menu":
+			open_more_menu()
+		"more_close":
+			close_more_menu()
 		"companions":
 			show_companion_info()
 		"companions_close":
@@ -10165,6 +10229,8 @@ func handle_server_message(message: Dictionary):
 			flock_monster_name = ""
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset outsmart for new combat
+			more_mode = false
+			companions_mode = false
 			last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 			last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
 			update_action_bar()
@@ -12327,8 +12393,31 @@ func _get_condition_color(wear: int) -> String:
 	else:
 		return "#808080"  # Gray - Broken
 
+func open_more_menu():
+	"""Open the More menu"""
+	more_mode = true
+	display_more_menu()
+	update_action_bar()
+
+func close_more_menu():
+	"""Close the More menu"""
+	more_mode = false
+	game_output.clear()
+	update_action_bar()
+
+func display_more_menu():
+	"""Display the More menu options"""
+	game_output.clear()
+	display_game("[color=#FFD700]═══════ MORE ═══════[/color]")
+	display_game("")
+	display_game("[%s] [color=#00FFFF]Companions[/color] - View and manage your companions" % get_action_key_name(1))
+	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(2))
+	display_game("")
+	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
+
 func show_companion_info():
 	"""Display companions menu - eggs, hatched companions, and active companion"""
+	more_mode = false
 	companions_mode = true
 	companions_page = 0
 	display_companions()
@@ -12444,10 +12533,11 @@ func _get_egg_display_name(egg_type: String) -> String:
 			return egg_type.capitalize().replace("_", " ")
 
 func close_companions():
-	"""Close companions menu"""
+	"""Close companions menu and return to More menu"""
 	companions_mode = false
 	companions_page = 0
-	game_output.clear()
+	more_mode = true
+	display_more_menu()
 	update_action_bar()
 
 func activate_companion_by_index(index: int):
@@ -12824,7 +12914,7 @@ func show_help():
 [color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
 [color=#00FFFF]Companions:[/color] Companion eggs drop from [color=#9932CC]dungeons only[/color] - bosses guarantee their egg, treasure may have extras!
   Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) | Frost(+10%%def) | Storm(+5%%crit) + more
-  Press [color=#00FFFF]More[/color]→view eggs (incubating) and companions. One active at a time. Hatch eggs by playing!
+  Press [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color] to view eggs and companions. One active at a time. Hatch eggs by playing!
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
 [color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
@@ -14221,7 +14311,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_mode = true
 	dungeon_list_mode = false
 	dungeon_data = message
-	dungeon_floor_grid = message.get("floor_grid", [])
+	dungeon_floor_grid = message.get("grid", [])
 
 	display_dungeon_floor()
 	update_action_bar()
@@ -14341,7 +14431,7 @@ func display_dungeon_floor():
 		return
 
 	var dungeon_name = dungeon_data.get("dungeon_name", "Dungeon")
-	var dungeon_color = dungeon_data.get("dungeon_color", "#FFFFFF")
+	var dungeon_color = dungeon_data.get("color", "#FFFFFF")
 	var floor_num = dungeon_data.get("floor", 1)
 	var total_floors = dungeon_data.get("total_floors", 1)
 	var player_x = dungeon_data.get("player_x", 0)
@@ -14360,10 +14450,7 @@ func display_dungeon_floor():
 	display_game("")
 	display_game("[color=#808080]Legend: @ You  ? Encounter  $ Treasure  > Exit  B Boss[/color]")
 	display_game("")
-	display_game("[%s] Exit | [%s] N | [%s] S | [%s] W | [%s] E" % [
-		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
-		get_action_key_name(3), get_action_key_name(4)
-	])
+	display_game("[%s] Exit | Move: Numpad/Arrows (N/S/W/E)" % get_action_key_name(0))
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	"""Render dungeon grid to BBCode string"""

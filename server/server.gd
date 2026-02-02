@@ -5912,6 +5912,10 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 			"message": result.message
 		})
 		save_character(peer_id)
+
+		# For the starter dungeon quest, ensure a tier 1 dungeon exists near spawn
+		if quest_id == "haven_first_dungeon":
+			_ensure_starter_dungeon_exists()
 	else:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -7553,6 +7557,63 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	log_message("Created dungeon instance: %s (%s)" % [instance_id, dungeon_data.name])
 	return instance_id
+
+func _ensure_starter_dungeon_exists():
+	"""Ensure a tier 1 dungeon exists near the starting area for new players"""
+	var STARTER_AREA_RADIUS = 40  # Check within this distance of origin
+	var SPAWN_DISTANCE = 30  # Spawn around this distance from origin
+
+	# Check if there's already a tier 1 dungeon near the origin
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		if dungeon_data.tier == 1:
+			var distance = sqrt(instance.world_x * instance.world_x + instance.world_y * instance.world_y)
+			if distance <= STARTER_AREA_RADIUS:
+				# Already have a tier 1 dungeon near spawn
+				return
+
+	# No tier 1 dungeon near origin - spawn one
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		return  # Can't spawn more
+
+	# Pick a random tier 1 dungeon type
+	var tier1_dungeons = ["goblin_caves", "wolf_den"]
+	var dungeon_type = tier1_dungeons[randi() % tier1_dungeons.size()]
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return
+
+	var instance_id = "dungeon_%d" % next_dungeon_id
+	next_dungeon_id += 1
+
+	# Spawn at a specific distance from origin (around 30 tiles)
+	var angle = randf() * TAU
+	var spawn_x = int(cos(angle) * SPAWN_DISTANCE)
+	var spawn_y = int(sin(angle) * SPAWN_DISTANCE)
+
+	# Create instance
+	active_dungeons[instance_id] = {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": spawn_x,
+		"world_y": spawn_y,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
+	}
+
+	# Generate all floor grids
+	var floor_grids = []
+	for floor_num in range(dungeon_data.floors):
+		var is_boss_floor = floor_num == dungeon_data.floors - 1
+		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(grid)
+
+	dungeon_floors[instance_id] = floor_grids
+
+	log_message("Spawned starter dungeon: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_x, spawn_y])
 
 func _check_dungeon_spawns():
 	"""Periodically check and spawn new dungeons at random locations"""
