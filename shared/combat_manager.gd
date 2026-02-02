@@ -421,6 +421,53 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	if crit_buff > 0:
 		combat_state["crit_bonus"] = crit_buff
 
+	# === COMPANION PASSIVE ABILITIES ===
+	# Apply passive companion abilities at combat start
+	if character.has_active_companion() and drop_tables:
+		var companion = character.get_active_companion()
+		var companion_tier = companion.get("tier", 1)
+		var companion_level = companion.get("level", 1)
+		var companion_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
+
+		# Apply variant multiplier to ability values
+		var variant_mult = character.get_variant_stat_multiplier()
+
+		for ability in companion_abilities:
+			if ability.get("type") == "passive":
+				# Store passive bonuses in combat state
+				var effect = ability.get("effect", "")
+				var value = int(ability.get("value", 0) * variant_mult)
+				if effect == "attack":
+					combat_state["companion_attack_bonus"] = combat_state.get("companion_attack_bonus", 0) + value
+				elif effect == "defense":
+					combat_state["companion_defense_bonus"] = combat_state.get("companion_defense_bonus", 0) + value
+				elif effect == "speed":
+					combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value
+				elif effect == "crit_chance":
+					combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value
+
+				# Also apply secondary/tertiary effects
+				if ability.has("effect2"):
+					var effect2 = ability.get("effect2", "")
+					var value2 = int(ability.get("value2", 0) * variant_mult)
+					if effect2 == "defense":
+						combat_state["companion_defense_bonus"] = combat_state.get("companion_defense_bonus", 0) + value2
+					elif effect2 == "speed":
+						combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value2
+					elif effect2 == "crit_chance":
+						combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value2
+
+				if ability.has("effect3"):
+					var effect3 = ability.get("effect3", "")
+					var value3 = int(ability.get("value3", 0) * variant_mult)
+					if effect3 == "speed":
+						combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value3
+					elif effect3 == "crit_chance":
+						combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value3
+
+		# Track that threshold ability hasn't triggered yet
+		combat_state["companion_threshold_triggered"] = false
+
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
 	combat_state.combat_log.append(msg)
@@ -755,6 +802,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if monster.current_hp > 0 and character.has_active_companion():
 			var companion = character.get_active_companion()
 			var companion_tier = companion.get("tier", 1)
+			var companion_level = companion.get("level", 1)
 			var companion_bonuses = companion.get("bonuses", {})
 			# Calculate companion damage using drop_tables function
 			var companion_damage = 0
@@ -763,12 +811,51 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			else:
 				# Fallback if drop_tables not available
 				companion_damage = companion_tier * 5 + int(character.level * 0.5)
+			# Apply variant multiplier
+			var variant_mult = character.get_variant_stat_multiplier()
+			companion_damage = int(companion_damage * variant_mult)
 			# Apply some variance (80-120%)
 			companion_damage = int(companion_damage * randf_range(0.8, 1.2))
 			companion_damage = max(1, companion_damage)
 			monster.current_hp -= companion_damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
+
+			# === COMPANION CHANCE ABILITIES ===
+			# Check for chance-based abilities that trigger each round
+			if drop_tables and monster.current_hp > 0:
+				var comp_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
+				for ability in comp_abilities:
+					if ability.get("type") == "chance":
+						var trigger_chance = ability.get("chance", 0)
+						if randi() % 100 < trigger_chance:
+							var effect = ability.get("effect", "")
+							var ability_name = ability.get("name", "ability")
+							if effect == "enemy_miss":
+								# Distraction - monster's next attack will miss (handled in monster turn)
+								combat["companion_distraction"] = true
+								messages.append("[color=#FFAA00]%s's %s distracts the enemy![/color]" % [companion.name, ability_name])
+							elif effect == "bonus_damage":
+								var bonus_value = int(ability.get("value", 10) * variant_mult)
+								monster.current_hp -= bonus_value
+								monster.current_hp = max(0, monster.current_hp)
+								messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
+							elif effect == "stun":
+								# Stun - monster skips next turn
+								combat["monster_stunned"] = true
+								messages.append("[color=#FFAA00]%s's attack stuns the %s![/color]" % [companion.name, monster.name])
+
+							# Check for secondary effects (like stun chance on Devastating Strike)
+							if ability.has("effect2") and ability.has("chance2"):
+								if randi() % 100 < ability.get("chance2", 0):
+									var effect2 = ability.get("effect2", "")
+									if effect2 == "stun":
+										combat["monster_stunned"] = true
+										messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
+									elif effect2 == "lifesteal":
+										var steal_value = int(ability.get("value2", 0) * variant_mult * companion_damage / 100.0)
+										character.current_hp = min(character.get_total_max_hp(), character.current_hp + steal_value)
+										messages.append("[color=#00FF00]%s heals you for %d![/color]" % [companion.name, steal_value])
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
@@ -898,6 +985,23 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# Award experience and gold
 	character.add_experience(final_xp)
 	character.gold += gold
+
+	# === COMPANION XP DISTRIBUTION ===
+	# Active companions gain 10% of monster XP
+	if character.has_active_companion():
+		var companion_xp = max(1, int(base_xp * 0.10))
+		var companion_result = character.add_companion_xp(companion_xp)
+		character.increment_companion_battles()
+		if companion_result.leveled_up:
+			var companion = character.get_active_companion()
+			messages.append("[color=#00FFFF]✧ %s leveled up to %d! ✧[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
+			# Notify of unlocked abilities
+			for ability_level in companion_result.abilities_unlocked:
+				if drop_tables:
+					var tier = companion.get("tier", 1)
+					var ability = drop_tables.get_companion_ability(tier, ability_level)
+					if not ability.is_empty():
+						messages.append("[color=#FFD700]★ New ability unlocked: %s! ★[/color]" % ability.get("name", "Unknown"))
 
 	# Normal gem drops (from high-level monsters)
 	var gems_earned = roll_gem_drops(monster, character)
@@ -2847,6 +2951,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		combat.erase("enemy_distracted")
 		hit_chance = int(hit_chance * 0.5)
 
+	# Companion Distraction ability: causes monster to miss (one time)
+	if combat.get("companion_distraction", false):
+		combat.erase("companion_distraction")
+		messages.append("[color=#00FFFF]The %s is distracted by your companion and misses![/color]" % monster.name)
+		return {"success": true, "message": "\n".join(messages)}
+
 	# === DETERMINE NUMBER OF ATTACKS ===
 	var num_attacks = 1
 	if ABILITY_MULTI_STRIKE in abilities:
@@ -2975,6 +3085,41 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				return {"success": true, "message": "\n".join(messages), "resurrected": true}
 
 		character.current_hp = max(0, character.current_hp)
+
+		# === COMPANION THRESHOLD ABILITY ===
+		# Check if companion's threshold ability should trigger (once per combat)
+		if character.current_hp > 0 and character.has_active_companion() and not combat.get("companion_threshold_triggered", false):
+			if drop_tables:
+				var companion = character.get_active_companion()
+				var companion_tier = companion.get("tier", 1)
+				var companion_level = companion.get("level", 1)
+				var variant_mult = character.get_variant_stat_multiplier()
+				var comp_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
+
+				for ability in comp_abilities:
+					if ability.get("type") == "threshold":
+						var hp_threshold = ability.get("hp_percent", 50) / 100.0
+						var current_hp_percent = float(character.current_hp) / float(character.get_total_max_hp())
+
+						if current_hp_percent <= hp_threshold:
+							combat["companion_threshold_triggered"] = true
+							var effect = ability.get("effect", "")
+							var ability_name = ability.get("name", "ability")
+
+							if effect == "defense_buff":
+								var buff_value = int(ability.get("value", 10) * variant_mult)
+								var duration = ability.get("duration", 3)
+								character.add_buff("defense", buff_value, duration)
+								messages.append("[color=#00FFFF]%s uses %s! (+%d%% defense for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "heal":
+								var heal_percent = int(ability.get("value", 10) * variant_mult)
+								var heal_amount = max(1, int(character.get_total_max_hp() * heal_percent / 100.0))
+								character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+								messages.append("[color=#00FF00]%s uses %s and heals you for %d HP![/color]" % [companion.name, ability_name, heal_amount])
+							elif effect == "full_heal":
+								character.current_hp = character.get_total_max_hp()
+								messages.append("[color=#FFD700]%s uses %s! You are fully healed![/color]" % [companion.name, ability_name])
+							break  # Only one threshold ability can trigger
 
 		if num_attacks > 1:
 			messages.append("[color=#FF4444]The %s hits %d times for %d total damage![/color]" % [monster.name, hits, total_damage])

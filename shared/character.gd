@@ -283,24 +283,219 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 const MAX_INCUBATING_EGGS = 3  # Can only incubate 3 eggs at a time
 
 # Companion color variants - assigned randomly when hatched for visual variety
-# Each variant has a display name and color code for rendering
+# Each variant has a display name, color(s), pattern type, and rarity
+# Pattern types: "solid", "gradient_down", "gradient_up", "split_h", "middle", "striped", "edges"
+# Special variants (Shiny, Spectral, Prismatic) give stat bonuses via VARIANT_STAT_MULTIPLIERS
 const COMPANION_VARIANTS = [
-	{"name": "Normal", "color": "#FFFFFF", "rarity": 40},      # White/default - common
-	{"name": "Crimson", "color": "#DC143C", "rarity": 10},     # Red variant
-	{"name": "Azure", "color": "#007FFF", "rarity": 10},       # Blue variant
-	{"name": "Verdant", "color": "#228B22", "rarity": 10},     # Green variant
-	{"name": "Golden", "color": "#FFD700", "rarity": 8},       # Gold variant - uncommon
-	{"name": "Shadow", "color": "#2F2F2F", "rarity": 8},       # Dark/shadow variant
-	{"name": "Violet", "color": "#9400D3", "rarity": 6},       # Purple variant
-	{"name": "Frost", "color": "#87CEEB", "rarity": 4},        # Ice blue variant - rare
-	{"name": "Infernal", "color": "#FF4500", "rarity": 2},     # Fire orange - very rare
-	{"name": "Prismatic", "color": "#FF69B4", "rarity": 1},    # Rainbow/pink - legendary
-	{"name": "Void", "color": "#4B0082", "rarity": 1}          # Deep purple - legendary
+	# === COMMON SOLID COLORS (rarity 8-15) ===
+	{"name": "Normal", "color": "#FFFFFF", "pattern": "solid", "rarity": 15},
+	{"name": "Crimson", "color": "#DC143C", "pattern": "solid", "rarity": 10},
+	{"name": "Azure", "color": "#007FFF", "pattern": "solid", "rarity": 10},
+	{"name": "Verdant", "color": "#228B22", "pattern": "solid", "rarity": 10},
+	{"name": "Golden", "color": "#FFD700", "pattern": "solid", "rarity": 8},
+	{"name": "Shadow", "color": "#2F2F2F", "pattern": "solid", "rarity": 8},
+	{"name": "Violet", "color": "#9400D3", "pattern": "solid", "rarity": 8},
+	{"name": "Coral", "color": "#FF7F50", "pattern": "solid", "rarity": 8},
+	{"name": "Teal", "color": "#008080", "pattern": "solid", "rarity": 8},
+	{"name": "Rose", "color": "#FF007F", "pattern": "solid", "rarity": 8},
+	{"name": "Lime", "color": "#32CD32", "pattern": "solid", "rarity": 8},
+	{"name": "Copper", "color": "#B87333", "pattern": "solid", "rarity": 8},
+
+	# === UNCOMMON SOLID COLORS (rarity 5-7) ===
+	{"name": "Frost", "color": "#87CEEB", "pattern": "solid", "rarity": 6},
+	{"name": "Infernal", "color": "#FF4500", "pattern": "solid", "rarity": 5},
+	{"name": "Toxic", "color": "#ADFF2F", "pattern": "solid", "rarity": 5},
+	{"name": "Amethyst", "color": "#9966CC", "pattern": "solid", "rarity": 5},
+	{"name": "Midnight", "color": "#191970", "pattern": "solid", "rarity": 5},
+	{"name": "Ivory", "color": "#FFFFF0", "pattern": "solid", "rarity": 5},
+	{"name": "Rust", "color": "#B7410E", "pattern": "solid", "rarity": 5},
+	{"name": "Mint", "color": "#98FF98", "pattern": "solid", "rarity": 5},
+
+	# === GRADIENT PATTERNS - TOP TO BOTTOM (rarity 3-4) ===
+	{"name": "Sunset", "color": "#FF4500", "color2": "#FFD700", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Ocean", "color": "#00BFFF", "color2": "#000080", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Forest", "color": "#228B22", "color2": "#006400", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Dusk", "color": "#9400D3", "color2": "#FF1493", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Ember", "color": "#FF0000", "color2": "#8B0000", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Arctic", "color": "#FFFFFF", "color2": "#87CEEB", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Volcanic", "color": "#FF4500", "color2": "#2F2F2F", "pattern": "gradient_down", "rarity": 3},
+	{"name": "Twilight", "color": "#FF69B4", "color2": "#4B0082", "pattern": "gradient_down", "rarity": 3},
+
+	# === GRADIENT PATTERNS - BOTTOM TO TOP (rarity 3-4) ===
+	{"name": "Dawn", "color": "#FFD700", "color2": "#FF6347", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Depths", "color": "#000080", "color2": "#00CED1", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Bloom", "color": "#006400", "color2": "#90EE90", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Rising", "color": "#8B0000", "color2": "#FF6347", "pattern": "gradient_up", "rarity": 3},
+
+	# === MIDDLE HIGHLIGHT PATTERNS (rarity 2-3) ===
+	{"name": "Core", "color": "#2F2F2F", "color2": "#FF4500", "pattern": "middle", "rarity": 3},
+	{"name": "Heart", "color": "#4B0082", "color2": "#FF1493", "pattern": "middle", "rarity": 3},
+	{"name": "Soul", "color": "#000080", "color2": "#00FFFF", "pattern": "middle", "rarity": 3},
+	{"name": "Nexus", "color": "#228B22", "color2": "#ADFF2F", "pattern": "middle", "rarity": 2},
+	{"name": "Beacon", "color": "#2F2F2F", "color2": "#FFD700", "pattern": "middle", "rarity": 2},
+
+	# === STRIPED PATTERNS (rarity 2-3) ===
+	{"name": "Tiger", "color": "#FF8C00", "color2": "#2F2F2F", "pattern": "striped", "rarity": 3},
+	{"name": "Candy", "color": "#FF69B4", "color2": "#FFFFFF", "pattern": "striped", "rarity": 3},
+	{"name": "Electric", "color": "#FFFF00", "color2": "#000000", "pattern": "striped", "rarity": 3},
+	{"name": "Aquatic", "color": "#00CED1", "color2": "#006994", "pattern": "striped", "rarity": 2},
+	{"name": "Regal", "color": "#FFD700", "color2": "#9400D3", "pattern": "striped", "rarity": 2},
+	{"name": "Haunted", "color": "#9400D3", "color2": "#2F2F2F", "pattern": "striped", "rarity": 2},
+
+	# === EDGE/OUTLINE PATTERNS (rarity 2-3) ===
+	{"name": "Outlined", "color": "#FFFFFF", "color2": "#000000", "pattern": "edges", "rarity": 3},
+	{"name": "Glowing", "color": "#2F2F2F", "color2": "#00FF00", "pattern": "edges", "rarity": 3},
+	{"name": "Burning", "color": "#8B0000", "color2": "#FF4500", "pattern": "edges", "rarity": 2},
+	{"name": "Frozen", "color": "#FFFFFF", "color2": "#00BFFF", "pattern": "edges", "rarity": 2},
+	{"name": "Toxic Glow", "color": "#2F2F2F", "color2": "#ADFF2F", "pattern": "edges", "rarity": 2},
+
+	# === DIAGONAL PATTERNS (rarity 2-3) ===
+	{"name": "Slash", "color": "#FF4500", "color2": "#FFD700", "pattern": "diagonal_down", "rarity": 3},
+	{"name": "Lightning", "color": "#FFFF00", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 3},
+	{"name": "Rift", "color": "#00FFFF", "color2": "#FF00FF", "pattern": "diagonal_down", "rarity": 2},
+	{"name": "Shattered", "color": "#87CEEB", "color2": "#2F2F2F", "pattern": "diagonal_down", "rarity": 2},
+	{"name": "Ascendant", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "diagonal_up", "rarity": 3},
+	{"name": "Phoenix", "color": "#FF0000", "color2": "#FFD700", "pattern": "diagonal_up", "rarity": 2},
+	{"name": "Comet", "color": "#00BFFF", "color2": "#FFFFFF", "pattern": "diagonal_up", "rarity": 2},
+	{"name": "Crescent", "color": "#9400D3", "color2": "#E6E6FA", "pattern": "diagonal_up", "rarity": 2},
+
+	# === VERTICAL SPLIT PATTERNS (rarity 2-3) ===
+	{"name": "Split", "color": "#FF0000", "color2": "#0000FF", "pattern": "split_v", "rarity": 3},
+	{"name": "Duality", "color": "#FFFFFF", "color2": "#000000", "pattern": "split_v", "rarity": 3},
+	{"name": "Twilit", "color": "#FF69B4", "color2": "#00CED1", "pattern": "split_v", "rarity": 2},
+	{"name": "Balanced", "color": "#FFD700", "color2": "#9400D3", "pattern": "split_v", "rarity": 2},
+	{"name": "Chimeric", "color": "#FF4500", "color2": "#228B22", "pattern": "split_v", "rarity": 2},
+
+	# === CHECKER/RADIAL PATTERNS (rarity 2-3) ===
+	{"name": "Mosaic", "color": "#FF69B4", "color2": "#00FF00", "pattern": "checker", "rarity": 3},
+	{"name": "Harlequin", "color": "#FF0000", "color2": "#FFD700", "pattern": "checker", "rarity": 2},
+	{"name": "Aura", "color": "#FFD700", "color2": "#4B0082", "pattern": "radial", "rarity": 3},
+	{"name": "Corona", "color": "#FFFFFF", "color2": "#FF4500", "pattern": "radial", "rarity": 2},
+	{"name": "Eclipse", "color": "#000000", "color2": "#FFD700", "pattern": "radial", "rarity": 2},
+
+	# === COLUMN/STRIPE PATTERNS (rarity 2-3) ===
+	{"name": "Barcode", "color": "#FFFFFF", "color2": "#000000", "pattern": "columns", "rarity": 3},
+	{"name": "Zebra", "color": "#FFFFFF", "color2": "#2F2F2F", "pattern": "columns", "rarity": 3},
+	{"name": "Neon Bars", "color": "#00FF00", "color2": "#FF00FF", "pattern": "columns", "rarity": 2},
+	{"name": "Jailbird", "color": "#FF8C00", "color2": "#000000", "pattern": "columns", "rarity": 2},
+
+	# === BAND PATTERNS (rarity 2-3) ===
+	{"name": "Layered", "color": "#8B4513", "color2": "#D2691E", "pattern": "bands", "rarity": 3},
+	{"name": "Stratified", "color": "#4682B4", "color2": "#87CEEB", "pattern": "bands", "rarity": 3},
+	{"name": "Sediment", "color": "#696969", "color2": "#A9A9A9", "pattern": "bands", "rarity": 2},
+
+	# === CORNER PATTERNS (rarity 2-3) ===
+	{"name": "Framed", "color": "#FFFFFF", "color2": "#8B4513", "pattern": "corners", "rarity": 3},
+	{"name": "Gilded", "color": "#2F2F2F", "color2": "#FFD700", "pattern": "corners", "rarity": 2},
+	{"name": "Corrupted", "color": "#FFFFFF", "color2": "#8B0000", "pattern": "corners", "rarity": 2},
+
+	# === CROSS/X PATTERNS (rarity 2-3) ===
+	{"name": "Marked", "color": "#FFFFFF", "color2": "#FF0000", "pattern": "cross", "rarity": 3},
+	{"name": "Hex", "color": "#2F2F2F", "color2": "#9400D3", "pattern": "cross", "rarity": 2},
+	{"name": "Branded", "color": "#D2691E", "color2": "#FF4500", "pattern": "cross", "rarity": 2},
+
+	# === WAVE PATTERNS (rarity 2-3) ===
+	{"name": "Tidal", "color": "#006994", "color2": "#00CED1", "pattern": "wave", "rarity": 3},
+	{"name": "Ripple", "color": "#4B0082", "color2": "#E6E6FA", "pattern": "wave", "rarity": 3},
+	{"name": "Current", "color": "#228B22", "color2": "#90EE90", "pattern": "wave", "rarity": 2},
+	{"name": "Mirage", "color": "#FF8C00", "color2": "#FFFACD", "pattern": "wave", "rarity": 2},
+
+	# === SCATTER PATTERNS (rarity 2-3) ===
+	{"name": "Speckled", "color": "#FFFFFF", "color2": "#2F2F2F", "pattern": "scatter", "rarity": 3},
+	{"name": "Starry", "color": "#191970", "color2": "#FFFFFF", "pattern": "scatter", "rarity": 3},
+	{"name": "Freckled", "color": "#D2691E", "color2": "#8B4513", "pattern": "scatter", "rarity": 2},
+	{"name": "Glittering", "color": "#4B0082", "color2": "#FFD700", "pattern": "scatter", "rarity": 2},
+	{"name": "Spotted", "color": "#FFD700", "color2": "#8B0000", "pattern": "scatter", "rarity": 2},
+
+	# === RING PATTERNS (rarity 2-3) ===
+	{"name": "Ringed", "color": "#4682B4", "color2": "#000080", "pattern": "ring", "rarity": 3},
+	{"name": "Orbital", "color": "#2F2F2F", "color2": "#00FFFF", "pattern": "ring", "rarity": 2},
+	{"name": "Halo", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "ring", "rarity": 2},
+
+	# === FADE PATTERNS (rarity 2-3) ===
+	{"name": "Misty", "color": "#FFFFFF", "color2": "#808080", "pattern": "fade", "rarity": 3},
+	{"name": "Smoky", "color": "#696969", "color2": "#2F2F2F", "pattern": "fade", "rarity": 3},
+	{"name": "Dreamlike", "color": "#E6E6FA", "color2": "#FF69B4", "pattern": "fade", "rarity": 2},
+	{"name": "Fading", "color": "#00BFFF", "color2": "#000080", "pattern": "fade", "rarity": 2},
+
+	# === RARE SPECIAL VARIANTS (+10% stats) (rarity 1-2) ===
+	{"name": "Shiny", "color": "#FFFACD", "pattern": "solid", "rarity": 2},
+	{"name": "Radiant", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "gradient_down", "rarity": 2},
+	{"name": "Blessed", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "edges", "rarity": 1},
+	{"name": "Starfall", "color": "#FFD700", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 1},
+
+	# === VERY RARE VARIANTS (+25% stats) (rarity 1) ===
+	{"name": "Spectral", "color": "#E6E6FA", "color2": "#9400D3", "pattern": "gradient_up", "rarity": 1},
+	{"name": "Ethereal", "color": "#E6E6FA", "color2": "#87CEEB", "pattern": "middle", "rarity": 1},
+	{"name": "Celestial", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "striped", "rarity": 1},
+	{"name": "Bifrost", "color": "#FF0000", "color2": "#00FFFF", "pattern": "diagonal_up", "rarity": 1},
+
+	# === LEGENDARY VARIANTS (+50% stats) (rarity 1) ===
+	{"name": "Prismatic", "color": "#FF69B4", "color2": "#00FFFF", "pattern": "striped", "rarity": 1},
+	{"name": "Void", "color": "#4B0082", "color2": "#000000", "pattern": "gradient_down", "rarity": 1},
+	{"name": "Cosmic", "color": "#FFFFFF", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 1},
+	{"name": "Divine", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "middle", "rarity": 1}
 ]
+
+# Variant stat multipliers - special variants give bonus stats
+const VARIANT_STAT_MULTIPLIERS = {
+	# Common solids (no bonus)
+	"Normal": 1.0, "Crimson": 1.0, "Azure": 1.0, "Verdant": 1.0,
+	"Golden": 1.0, "Shadow": 1.0, "Violet": 1.0, "Coral": 1.0,
+	"Teal": 1.0, "Rose": 1.0, "Lime": 1.0, "Copper": 1.0,
+	# Uncommon solids (no bonus)
+	"Frost": 1.0, "Infernal": 1.0, "Toxic": 1.0, "Amethyst": 1.0,
+	"Midnight": 1.0, "Ivory": 1.0, "Rust": 1.0, "Mint": 1.0,
+	# Gradient patterns (no bonus)
+	"Sunset": 1.0, "Ocean": 1.0, "Forest": 1.0, "Dusk": 1.0,
+	"Ember": 1.0, "Arctic": 1.0, "Volcanic": 1.0, "Twilight": 1.0,
+	"Dawn": 1.0, "Depths": 1.0, "Bloom": 1.0, "Rising": 1.0,
+	# Middle patterns (no bonus)
+	"Core": 1.0, "Heart": 1.0, "Soul": 1.0, "Nexus": 1.0, "Beacon": 1.0,
+	# Striped patterns (no bonus)
+	"Tiger": 1.0, "Candy": 1.0, "Electric": 1.0, "Aquatic": 1.0,
+	"Regal": 1.0, "Haunted": 1.0,
+	# Edge patterns (no bonus)
+	"Outlined": 1.0, "Glowing": 1.0, "Burning": 1.0, "Frozen": 1.0, "Toxic Glow": 1.0,
+	# Diagonal patterns (no bonus)
+	"Slash": 1.0, "Lightning": 1.0, "Rift": 1.0, "Shattered": 1.0,
+	"Ascendant": 1.0, "Phoenix": 1.0, "Comet": 1.0, "Crescent": 1.0,
+	# Vertical split patterns (no bonus)
+	"Split": 1.0, "Duality": 1.0, "Twilit": 1.0, "Balanced": 1.0, "Chimeric": 1.0,
+	# Checker/Radial patterns (no bonus)
+	"Mosaic": 1.0, "Harlequin": 1.0, "Aura": 1.0, "Corona": 1.0, "Eclipse": 1.0,
+	# Column/Stripe patterns (no bonus)
+	"Barcode": 1.0, "Zebra": 1.0, "Neon Bars": 1.0, "Jailbird": 1.0,
+	# Band patterns (no bonus)
+	"Layered": 1.0, "Stratified": 1.0, "Sediment": 1.0,
+	# Corner patterns (no bonus)
+	"Framed": 1.0, "Gilded": 1.0, "Corrupted": 1.0,
+	# Cross patterns (no bonus)
+	"Marked": 1.0, "Hex": 1.0, "Branded": 1.0,
+	# Wave patterns (no bonus)
+	"Tidal": 1.0, "Ripple": 1.0, "Current": 1.0, "Mirage": 1.0,
+	# Scatter patterns (no bonus)
+	"Speckled": 1.0, "Starry": 1.0, "Freckled": 1.0, "Glittering": 1.0, "Spotted": 1.0,
+	# Ring patterns (no bonus)
+	"Ringed": 1.0, "Orbital": 1.0, "Halo": 1.0,
+	# Fade patterns (no bonus)
+	"Misty": 1.0, "Smoky": 1.0, "Dreamlike": 1.0, "Fading": 1.0,
+	# Rare special (+10% stats)
+	"Shiny": 1.10, "Radiant": 1.10, "Blessed": 1.10, "Starfall": 1.10,
+	# Very rare (+25% stats)
+	"Spectral": 1.25, "Ethereal": 1.25, "Celestial": 1.25, "Bifrost": 1.25,
+	# Legendary (+50% stats)
+	"Prismatic": 1.50, "Void": 1.50, "Cosmic": 1.50
+}
+
+# Companion level constants
+const COMPANION_MAX_LEVEL = 50
+const COMPANION_XP_BASE = 20  # XP formula: (level+1)^1.8 * 20
 
 # Collected Companions - companions that have been hatched (can switch between them)
 # Format: [{id: String, monster_type: String, name: String, tier: int, bonuses: Dictionary,
-#           obtained_at: int, battles_fought: int, variant: String, variant_color: String}]
+#           obtained_at: int, battles_fought: int, variant: String, variant_color: String,
+#           level: int, xp: int}]
 @export var collected_companions: Array = []
 
 # ===== FISHING SYSTEM =====
@@ -1300,6 +1495,28 @@ func from_dict(data: Dictionary):
 	incubating_eggs = data.get("incubating_eggs", [])
 	collected_companions = data.get("collected_companions", [])
 
+	# Migrate companions: add level/xp/pattern fields if missing (for existing saves)
+	for companion in collected_companions:
+		if not companion.has("level"):
+			companion["level"] = 1
+		if not companion.has("xp"):
+			companion["xp"] = 0
+		if not companion.has("variant_color2"):
+			companion["variant_color2"] = ""
+		if not companion.has("variant_pattern"):
+			companion["variant_pattern"] = "solid"
+
+	# Migrate active_companion if needed
+	if not active_companion.is_empty():
+		if not active_companion.has("variant_color2"):
+			active_companion["variant_color2"] = ""
+		if not active_companion.has("variant_pattern"):
+			active_companion["variant_pattern"] = "solid"
+		if not active_companion.has("level"):
+			active_companion["level"] = 1
+		if not active_companion.has("xp"):
+			active_companion["xp"] = 0
+
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})
 	salvage_essence = data.get("salvage_essence", 0)
@@ -2209,11 +2426,16 @@ func dismiss_companion() -> void:
 	active_companion = {}
 
 func get_companion_bonus(bonus_type: String) -> float:
-	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus')."""
+	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus').
+	Applies variant stat multiplier automatically."""
 	if active_companion.is_empty():
 		return 0.0
 	var bonuses = active_companion.get("bonuses", {})
-	return bonuses.get(bonus_type, 0.0)
+	var base_value = bonuses.get(bonus_type, 0.0)
+	# Apply variant multiplier
+	var variant = active_companion.get("variant", "Normal")
+	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
+	return base_value * multiplier
 
 func has_active_companion() -> bool:
 	"""Check if a companion is active."""
@@ -2295,7 +2517,11 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		"obtained_at": int(Time.get_unix_time_from_system()),
 		"battles_fought": 0,
 		"variant": variant.name,
-		"variant_color": variant.color
+		"variant_color": variant.color,
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"level": 1,
+		"xp": 0
 	}
 	collected_companions.append(companion)
 	return companion
@@ -2311,7 +2537,11 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				"tier": companion.get("tier", 1),
 				"bonuses": companion.bonuses.duplicate(),
 				"variant": companion.get("variant", "Normal"),
-				"variant_color": companion.get("variant_color", "#FFFFFF")
+				"variant_color": companion.get("variant_color", "#FFFFFF"),
+				"variant_color2": companion.get("variant_color2", ""),
+				"variant_pattern": companion.get("variant_pattern", "solid"),
+				"level": companion.get("level", 1),
+				"xp": companion.get("xp", 0)
 			}
 			return true
 	return false
@@ -2356,6 +2586,130 @@ func has_companion_of_type(monster_type: String) -> bool:
 func get_companion_tier() -> int:
 	"""Get the tier of the active companion (0 if none)."""
 	return active_companion.get("tier", 0)
+
+# ===== COMPANION LEVELING SYSTEM =====
+
+func get_companion_xp_to_next_level(companion_level: int) -> int:
+	"""Calculate XP needed to reach the next level. Formula: (level+1)^1.8 * 20"""
+	if companion_level >= COMPANION_MAX_LEVEL:
+		return 0
+	return int(pow(companion_level + 1, 1.8) * COMPANION_XP_BASE)
+
+func add_companion_xp(xp_amount: int) -> Dictionary:
+	"""Add XP to the active companion. Returns {leveled_up: bool, new_level: int, xp: int, xp_to_next: int, abilities_unlocked: Array}"""
+	if active_companion.is_empty():
+		return {"leveled_up": false, "new_level": 0, "xp": 0, "xp_to_next": 0, "abilities_unlocked": []}
+
+	var companion_id = active_companion.get("id", "")
+	var companion_index = -1
+	for i in range(collected_companions.size()):
+		if collected_companions[i].get("id") == companion_id:
+			companion_index = i
+			break
+
+	if companion_index == -1:
+		return {"leveled_up": false, "new_level": 0, "xp": 0, "xp_to_next": 0, "abilities_unlocked": []}
+
+	var companion = collected_companions[companion_index]
+	var current_level = companion.get("level", 1)
+	var current_xp = companion.get("xp", 0)
+
+	if current_level >= COMPANION_MAX_LEVEL:
+		return {"leveled_up": false, "new_level": current_level, "xp": current_xp, "xp_to_next": 0, "abilities_unlocked": []}
+
+	current_xp += xp_amount
+	var xp_needed = get_companion_xp_to_next_level(current_level)
+	var leveled_up = false
+	var abilities_unlocked = []
+
+	while current_xp >= xp_needed and current_level < COMPANION_MAX_LEVEL:
+		current_xp -= xp_needed
+		current_level += 1
+		leveled_up = true
+		# Check for ability unlocks at levels 10, 25, 50
+		if current_level == 10:
+			abilities_unlocked.append(10)
+		elif current_level == 25:
+			abilities_unlocked.append(25)
+		elif current_level == 50:
+			abilities_unlocked.append(50)
+		xp_needed = get_companion_xp_to_next_level(current_level)
+
+	# Update the companion data
+	collected_companions[companion_index]["level"] = current_level
+	collected_companions[companion_index]["xp"] = current_xp
+
+	# Also update active_companion
+	active_companion["level"] = current_level
+	active_companion["xp"] = current_xp
+
+	return {
+		"leveled_up": leveled_up,
+		"new_level": current_level,
+		"xp": current_xp,
+		"xp_to_next": get_companion_xp_to_next_level(current_level),
+		"abilities_unlocked": abilities_unlocked
+	}
+
+func increment_companion_battles() -> void:
+	"""Increment battles_fought for active companion."""
+	if active_companion.is_empty():
+		return
+
+	var companion_id = active_companion.get("id", "")
+	for i in range(collected_companions.size()):
+		if collected_companions[i].get("id") == companion_id:
+			var battles = collected_companions[i].get("battles_fought", 0)
+			collected_companions[i]["battles_fought"] = battles + 1
+			break
+
+func get_companion_effective_bonuses() -> Dictionary:
+	"""Get active companion bonuses with variant multiplier applied."""
+	if active_companion.is_empty():
+		return {}
+
+	var base_bonuses = active_companion.get("bonuses", {}).duplicate()
+	var variant = active_companion.get("variant", "Normal")
+	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
+
+	if multiplier != 1.0:
+		for key in base_bonuses.keys():
+			base_bonuses[key] = base_bonuses[key] * multiplier
+
+	return base_bonuses
+
+func get_companion_unlocked_abilities() -> Array:
+	"""Get list of unlocked abilities based on companion tier and level."""
+	if active_companion.is_empty():
+		return []
+
+	var companion_level = active_companion.get("level", 1)
+	var unlocked = []
+
+	# Abilities unlock at levels 10, 25, 50
+	if companion_level >= 10:
+		unlocked.append(10)
+	if companion_level >= 25:
+		unlocked.append(25)
+	if companion_level >= 50:
+		unlocked.append(50)
+
+	return unlocked
+
+func get_companion_level() -> int:
+	"""Get active companion's level."""
+	return active_companion.get("level", 1)
+
+func get_companion_xp() -> int:
+	"""Get active companion's current XP."""
+	return active_companion.get("xp", 0)
+
+func get_variant_stat_multiplier() -> float:
+	"""Get the stat multiplier for active companion's variant."""
+	if active_companion.is_empty():
+		return 1.0
+	var variant = active_companion.get("variant", "Normal")
+	return VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
 
 # ===== FISHING SYSTEM =====
 

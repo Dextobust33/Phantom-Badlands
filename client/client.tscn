@@ -60,6 +60,18 @@ corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_companion_bg"]
+bg_color = Color(0, 0, 0, 0.7)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0, 0.8, 0.8, 0.5)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_bg"]
 bg_color = Color(0, 0, 0, 1)
 border_width_left = 2
@@ -137,6 +149,29 @@ theme_override_colors/default_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/normal_font_size = 12
 bbcode_enabled = true
 fit_content = true
+
+[node name="CompanionArtOverlay" type="RichTextLabel" parent="RootContainer/MainContainer/LeftPanel/GameOutputContainer"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -280.0
+offset_right = -5.0
+offset_bottom = -30.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_fonts/normal_font = ExtResource("2_gdxsl")
+theme_override_font_sizes/normal_font_size = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_companion_bg")
+bbcode_enabled = true
+autowrap_mode = 0
+fit_content = true
+scroll_active = false
+mouse_filter = 2
 
 [node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer/MainContainer/LeftPanel" unique_id=1185303048]
 visible = false
@@ -654,7 +689,7 @@ theme_override_colors/default_color = Color(0.13, 0.75, 0.13, 1)
 theme_override_font_sizes/normal_font_size = 11
 theme_override_styles/background = SubResource("StyleBoxFlat_hlfbj")
 bbcode_enabled = true
-selection_enabled = false
+selection_enabled = true
 meta_underlined = true
 text = "[color=#666666]No players online[/color]"
 

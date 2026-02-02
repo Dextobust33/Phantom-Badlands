@@ -735,6 +735,12 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_activate_companion(peer_id, message)
 		"dismiss_companion":
 			handle_dismiss_companion(peer_id)
+		"release_companion":
+			handle_release_companion(peer_id, message)
+		"release_all_companions":
+			handle_release_all_companions(peer_id)
+		"debug_hatch":
+			handle_debug_hatch(peer_id)
 		# Fishing system handlers
 		"fish_start":
 			handle_fish_start(peer_id)
@@ -2021,11 +2027,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				else:
 					flock_counts[peer_id] += 1
 
-				# Queue the summoned monster
+				# Queue the summoned monster (preserve dungeon flags for tile clearing)
 				pending_flocks[peer_id] = {
 					"monster_name": summon_next,
 					"monster_level": monster_level,
-					"flock_count": flock_counts[peer_id]  # For visual variety
+					"flock_count": flock_counts[peer_id],  # For visual variety
+					"is_dungeon_combat": result.get("is_dungeon_combat", false),
+					"is_boss_fight": result.get("is_boss_fight", false)
 				}
 
 				send_to_peer(peer_id, {
@@ -2072,11 +2080,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 				# Store pending flock data for this peer (including analyze bonus carry-over)
 				# Use base_name so flock correctly generates same monster type (may still roll variant)
+				# Preserve dungeon combat flags so tile gets cleared after final flock monster
 				pending_flocks[peer_id] = {
 					"monster_name": monster_base_name,
 					"monster_level": monster_level,
 					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id),
-					"flock_count": flock_counts[peer_id]  # For visual variety
+					"flock_count": flock_counts[peer_id],  # For visual variety
+					"is_dungeon_combat": result.get("is_dungeon_combat", false),
+					"is_boss_fight": result.get("is_boss_fight", false)
 				}
 
 				send_to_peer(peer_id, {
@@ -2274,11 +2285,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				else:
 					flock_counts[peer_id] += 1
 
-				# Queue the summoned monster as a pending flock
+				# Queue the summoned monster as a pending flock (preserve dungeon flags)
 				pending_flocks[peer_id] = {
 					"monster_name": summon_next,
 					"monster_level": monster_level,
-					"flock_count": flock_counts[peer_id]
+					"flock_count": flock_counts[peer_id],
+					"is_dungeon_combat": result.get("is_dungeon_combat", false),
+					"is_boss_fight": result.get("is_boss_fight", false)
 				}
 
 				# End current combat and notify about incoming monster
@@ -2967,6 +2980,18 @@ func handle_disconnect(peer_id: int):
 
 	# Update title holder tracking before removing
 	_update_title_holders_on_logout(peer_id)
+
+	# Clean up dungeon state if player was in a dungeon
+	if characters.has(peer_id):
+		var character = characters[peer_id]
+		if character.in_dungeon:
+			var instance_id = character.current_dungeon_id
+			# Remove from dungeon's active players
+			if active_dungeons.has(instance_id):
+				var instance = active_dungeons[instance_id]
+				instance.active_players.erase(peer_id)
+			# Exit dungeon (resets character's dungeon state)
+			character.exit_dungeon()
 
 	if characters.has(peer_id):
 		characters.erase(peer_id)
@@ -3681,7 +3706,7 @@ func handle_bug_report(peer_id: int, message: Dictionary):
 		print("[Bug Report] ERROR: Failed to save report from %s" % player_name)
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1):
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
@@ -3698,6 +3723,13 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	if analyze_bonus > 0:
 		combat_mgr.set_analyze_bonus(peer_id, analyze_bonus)
 
+	# Preserve dungeon combat flags for tile clearing after final flock monster
+	if is_dungeon_combat:
+		var internal_state = combat_mgr.get_active_combat(peer_id)
+		if internal_state:
+			internal_state["is_dungeon_combat"] = true
+			internal_state["is_boss_fight"] = is_boss_fight
+
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s" % [monster.name, flock_count + 1, result.message]
 		# Get varied colors for flock visual variety
@@ -3712,7 +3744,8 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			"clear_output": true,
 			"combat_bg_color": varied_colors.bg_color,
 			"flock_art_color": varied_colors.art_color,  # Client uses this to recolor ASCII art
-			"use_client_art": true  # Client should render ASCII art locally
+			"use_client_art": true,  # Client should render ASCII art locally
+			"is_dungeon_combat": is_dungeon_combat  # Pass to client for UI state
 		})
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
@@ -3725,10 +3758,12 @@ func handle_continue_flock(peer_id: int):
 	var flock_data = pending_flocks[peer_id]
 	pending_flocks.erase(peer_id)
 
-	# Pass analyze bonus and flock count for visual variety
+	# Pass analyze bonus, flock count, and dungeon combat flags
 	var analyze_bonus = flock_data.get("analyze_bonus", 0)
 	var flock_count = flock_data.get("flock_count", 1)
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count)
+	var is_dungeon_combat = flock_data.get("is_dungeon_combat", false)
+	var is_boss_fight = flock_data.get("is_boss_fight", false)
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight)
 
 # ===== INVENTORY HANDLERS =====
 
@@ -6726,6 +6761,100 @@ func handle_dismiss_companion(peer_id: int):
 	send_character_update(peer_id)
 	save_character(peer_id)
 
+func handle_debug_hatch(peer_id: int):
+	"""Debug command to hatch a random companion with a random variant pattern"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Pick a random monster type from COMPANION_DATA
+	var companion_types = DropTables.COMPANION_DATA.keys()
+	var random_type = companion_types[randi() % companion_types.size()]
+	var companion_info = DropTables.COMPANION_DATA[random_type]
+
+	# Create a fake egg and hatch it
+	var fake_egg = {
+		"monster_type": random_type,
+		"companion_name": companion_info.companion_name,
+		"tier": companion_info.tier,
+		"bonuses": companion_info.bonuses.duplicate()
+	}
+
+	var hatched = character._hatch_egg(fake_egg)
+
+	# Auto-activate the new companion
+	character.activate_hatched_companion(hatched.id)
+
+	var pattern_desc = hatched.get("variant_pattern", "solid")
+	var color2 = hatched.get("variant_color2", "")
+	if color2 != "":
+		pattern_desc += " (%s + %s)" % [hatched.variant_color, color2]
+
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]DEBUG: Hatched %s (%s) with %s variant![/color]\nPattern: %s" % [hatched.name, random_type, hatched.variant, pattern_desc]})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_release_companion(peer_id: int, message: Dictionary):
+	"""Handle permanently releasing (deleting) a companion"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var companion_id = message.get("id", "")
+
+	if companion_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]Invalid companion.[/color]"})
+		return
+
+	# Check if trying to release the active companion
+	var active = character.get_active_companion()
+	if not active.is_empty() and active.get("id", "") == companion_id:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]Cannot release your active companion! Dismiss it first.[/color]"})
+		return
+
+	# Find and remove the companion
+	var released_name = ""
+	var released_variant = ""
+	for i in range(character.collected_companions.size()):
+		if character.collected_companions[i].get("id", "") == companion_id:
+			released_name = character.collected_companions[i].get("name", "Unknown")
+			released_variant = character.collected_companions[i].get("variant", "Normal")
+			character.collected_companions.remove_at(i)
+			break
+
+	if released_name != "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Released %s %s. Farewell, friend.[/color]" % [released_variant, released_name]})
+		send_character_update(peer_id)
+		save_character(peer_id)
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]Companion not found.[/color]"})
+
+func handle_release_all_companions(peer_id: int):
+	"""Handle releasing ALL companions at once"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Dismiss active companion first if any
+	if character.has_active_companion():
+		character.dismiss_companion()
+
+	# Count companions before release
+	var count = character.collected_companions.size()
+
+	if count == 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]No companions to release.[/color]"})
+		return
+
+	# Clear all companions
+	character.collected_companions.clear()
+
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Released all %d companions. They have been set free.[/color]" % count})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
 # ===== TITLE SYSTEM =====
 
 # ===== FISHING SYSTEM =====
@@ -7368,12 +7497,10 @@ func handle_dungeon_list(peer_id: int):
 	# Get dungeons appropriate for player level
 	var available_types = DungeonDatabaseScript.get_dungeons_for_level(character.level)
 
-	# Build list with cooldown info
+	# Build dungeon list
 	var dungeon_list = []
 	for dungeon_type in available_types:
 		var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
-		var on_cooldown = character.is_dungeon_on_cooldown(dungeon_type)
-		var cooldown_remaining = character.get_dungeon_cooldown_remaining(dungeon_type)
 		var completions = character.get_dungeon_completions(dungeon_type)
 
 		# Find active instance of this type
@@ -7394,8 +7521,6 @@ func handle_dungeon_list(peer_id: int):
 			"min_level": dungeon_data.min_level,
 			"max_level": dungeon_data.max_level,
 			"floors": dungeon_data.floors,
-			"on_cooldown": on_cooldown,
-			"cooldown_remaining": cooldown_remaining,
 			"completions": completions,
 			"active_instance": active_instance,
 			"location": {"x": instance_location.x, "y": instance_location.y} if active_instance != "" else null,
@@ -7443,14 +7568,6 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	# Check level requirement
 	if character.level < dungeon_data.min_level:
 		send_to_peer(peer_id, {"type": "error", "message": "You need to be level %d to enter this dungeon!" % dungeon_data.min_level})
-		return
-
-	# Check cooldown
-	if character.is_dungeon_on_cooldown(dungeon_type):
-		var remaining = character.get_dungeon_cooldown_remaining(dungeon_type)
-		var hours = remaining / 3600
-		var minutes = (remaining % 3600) / 60
-		send_to_peer(peer_id, {"type": "error", "message": "Dungeon on cooldown! Available in %dh %dm" % [hours, minutes]})
 		return
 
 	# Find instance to enter - prioritize player's personal dungeon for quests
@@ -8337,8 +8454,7 @@ func _complete_dungeon(peer_id: int):
 				boss_egg_given = true
 				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
 
-	# Set cooldown
-	character.set_dungeon_cooldown(dungeon_type, dungeon_data.cooldown_hours)
+	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
 
 	# Check dungeon quest progress

@@ -35,6 +35,262 @@ func _recolor_ascii_art(art: String, new_color: String) -> String:
 	var new_tag = "[color=%s]" % new_color
 	return color_regex.sub(art, new_tag, true)  # true = replace all matches
 
+func _recolor_ascii_art_pattern(art: String, color1: String, color2: String, pattern: String) -> String:
+	"""Apply pattern-based coloring to ASCII art for visual variety.
+	Patterns: solid, gradient_down, gradient_up, middle, striped, edges,
+	          diagonal_down, diagonal_up, split_v, checker, radial
+
+	NOTE: Art from monster_art.gd has structure: [color=#XXX] on first line,
+	art text on middle lines, [/color] on last line. We must wrap each line
+	in its own color tags for patterns to work."""
+	# Safety check - if color2 is empty or pattern is solid, use simple recolor
+	if pattern == "solid" or color2 == "" or color2 == null:
+		return _recolor_ascii_art(art, color1)
+
+	# Split art into lines for pattern application
+	var lines = art.split("\n")
+	var total_lines = lines.size()
+	if total_lines == 0:
+		return art
+
+	# Strip opening/closing color tags from art structure
+	# Art format: line 0 = "[color=#XXXXXX]", lines 1-N = art, last line = "[/color]"
+	var art_lines = []
+	var tag_regex = RegEx.new()
+	tag_regex.compile("\\[/?color[^\\]]*\\]")
+
+	for line in lines:
+		# Strip any color tags from the line to get raw art
+		var stripped = tag_regex.sub(line, "", true)
+		if stripped.strip_edges() != "" or stripped.length() > 5:  # Keep non-empty lines and lines with whitespace
+			art_lines.append(stripped)
+
+	total_lines = art_lines.size()
+	if total_lines == 0:
+		return art
+
+	# Find max line width for diagonal/horizontal patterns
+	var max_width = 1
+	for line in art_lines:
+		max_width = max(max_width, line.length())
+
+	var result_lines = []
+	var center = max(1.0, total_lines / 2.0)
+
+	for i in range(total_lines):
+		var line = art_lines[i]
+		var use_color = color1
+
+		match pattern:
+			"gradient_down":
+				# Top half = color1, bottom half = color2
+				if i >= total_lines / 2:
+					use_color = color2
+			"gradient_up":
+				# Bottom half = color1, top half = color2
+				if i < total_lines / 2:
+					use_color = color2
+			"middle":
+				# Outer thirds = color1, middle third = color2
+				var third = max(1, total_lines / 3)
+				if i >= third and i < total_lines - third:
+					use_color = color2
+			"striped":
+				# Alternating every 3-4 lines
+				if (i / 3) % 2 == 1:
+					use_color = color2
+			"edges":
+				# First 15% and last 15% = color2, middle = color1
+				var edge_size = max(2, total_lines / 7)
+				if i < edge_size or i >= total_lines - edge_size:
+					use_color = color2
+			"diagonal_down":
+				# Diagonal from top-left to bottom-right - process per character
+				result_lines.append(_recolor_line_diagonal_raw(line, color1, color2, i, total_lines, max_width, true))
+				continue
+			"diagonal_up":
+				# Diagonal from bottom-left to top-right - process per character
+				result_lines.append(_recolor_line_diagonal_raw(line, color1, color2, i, total_lines, max_width, false))
+				continue
+			"split_v":
+				# Vertical split - left half color1, right half color2
+				result_lines.append(_recolor_line_split_vertical_raw(line, color1, color2, max_width))
+				continue
+			"checker":
+				# Checkerboard pattern based on line groups
+				if ((i / 5) + (i % 2)) % 2 == 1:
+					use_color = color2
+			"radial":
+				# Center bright, edges darker - approximated by distance from middle row
+				var dist = abs(float(i) - center) / center
+				if dist > 0.5:
+					use_color = color2
+			"thirds":
+				# Three horizontal bands: color1 / color2 / color1
+				var third = max(1, total_lines / 3)
+				if i >= third and i < total_lines - third:
+					use_color = color2
+				# Same as middle but swapped colors conceptually
+			"bands":
+				# Thick alternating horizontal bands (5-6 lines each)
+				if (i / 5) % 2 == 1:
+					use_color = color2
+			"columns":
+				# Vertical stripes - process per character
+				result_lines.append(_recolor_line_columns_raw(line, color1, color2, max_width))
+				continue
+			"corners":
+				# Corners in color2, center in color1
+				var corner_size = max(3, total_lines / 4)
+				if i < corner_size or i >= total_lines - corner_size:
+					# Top or bottom section - use per-char coloring for corners
+					result_lines.append(_recolor_line_corners_raw(line, color1, color2, max_width, i, total_lines))
+					continue
+			"cross":
+				# X pattern through center - per character
+				result_lines.append(_recolor_line_cross_raw(line, color1, color2, i, total_lines, max_width))
+				continue
+			"wave":
+				# Wavy horizontal pattern based on sine
+				var wave_offset = int(sin(float(i) * 0.5) * (max_width * 0.15))
+				result_lines.append(_recolor_line_wave_raw(line, color1, color2, max_width, wave_offset))
+				continue
+			"scatter":
+				# Pseudo-random scatter based on position
+				result_lines.append(_recolor_line_scatter_raw(line, color1, color2, i))
+				continue
+			"ring":
+				# Ring pattern - edges and very center are color2, middle ring is color1
+				var dist_from_center = abs(float(i) - center) / center
+				if dist_from_center > 0.7 or dist_from_center < 0.2:
+					use_color = color2
+			"fade":
+				# Gradual 3-step fade from color1 to mixed to color2
+				var section = int(float(i) / float(total_lines) * 3)
+				if section == 1:
+					# Middle section - alternate between colors
+					use_color = color1 if i % 2 == 0 else color2
+				elif section >= 2:
+					use_color = color2
+
+		# Wrap the raw art line in color tags
+		result_lines.append("[color=%s]%s[/color]" % [use_color, line])
+
+	return "\n".join(result_lines)
+
+func _recolor_line_diagonal_raw(line: String, color1: String, color2: String, row: int, total_rows: int, max_width: int, down: bool) -> String:
+	"""Recolor a raw art line (no existing tags) with diagonal pattern.
+	Splits line at diagonal threshold, wrapping each section in color tags."""
+	# Calculate where the diagonal crosses this row
+	var threshold: int
+	if down:
+		# Top-left to bottom-right: threshold increases with row
+		threshold = int((float(row) / float(max(1, total_rows))) * max_width)
+	else:
+		# Bottom-left to top-right: threshold decreases with row
+		threshold = int((1.0 - float(row) / float(max(1, total_rows))) * max_width)
+
+	# Split line at threshold
+	if threshold <= 0:
+		return "[color=%s]%s[/color]" % [color2, line]
+	elif threshold >= line.length():
+		return "[color=%s]%s[/color]" % [color1, line]
+	else:
+		var left = line.substr(0, threshold)
+		var right = line.substr(threshold)
+		return "[color=%s]%s[/color][color=%s]%s[/color]" % [color1, left, color2, right]
+
+func _recolor_line_split_vertical_raw(line: String, color1: String, color2: String, max_width: int) -> String:
+	"""Recolor a raw art line (no existing tags) with vertical split.
+	Left half = color1, right half = color2."""
+	var threshold = max_width / 2
+
+	if threshold <= 0:
+		return "[color=%s]%s[/color]" % [color2, line]
+	elif threshold >= line.length():
+		return "[color=%s]%s[/color]" % [color1, line]
+	else:
+		var left = line.substr(0, threshold)
+		var right = line.substr(threshold)
+		return "[color=%s]%s[/color][color=%s]%s[/color]" % [color1, left, color2, right]
+
+func _recolor_line_columns_raw(line: String, color1: String, color2: String, max_width: int) -> String:
+	"""Recolor a raw art line with vertical stripes (alternating columns)."""
+	var stripe_width = max(5, max_width / 8)  # 8 stripes across
+	var result = ""
+	var current_color = color1
+	var col_count = 0
+
+	for c in line:
+		if col_count % stripe_width == 0:
+			if result != "":
+				result += "[/color]"
+			current_color = color1 if (col_count / stripe_width) % 2 == 0 else color2
+			result += "[color=%s]" % current_color
+		result += c
+		col_count += 1
+
+	if result != "":
+		result += "[/color]"
+	return result
+
+func _recolor_line_corners_raw(line: String, color1: String, color2: String, max_width: int, row: int, total_rows: int) -> String:
+	"""Recolor a raw art line for corner pattern - corners are color2."""
+	var corner_h = max(3, total_rows / 4)
+	var corner_w = max(10, max_width / 4)
+	var is_top = row < corner_h
+	var is_bottom = row >= total_rows - corner_h
+
+	if not is_top and not is_bottom:
+		return "[color=%s]%s[/color]" % [color1, line]
+
+	# Color corners only
+	var result = ""
+	for i in range(line.length()):
+		var is_left_corner = i < corner_w
+		var is_right_corner = i >= max_width - corner_w
+		var use_color = color2 if (is_left_corner or is_right_corner) else color1
+		result += "[color=%s]%s[/color]" % [use_color, line[i]]
+	return result
+
+func _recolor_line_cross_raw(line: String, color1: String, color2: String, row: int, total_rows: int, max_width: int) -> String:
+	"""Recolor a raw art line with X/cross pattern through center."""
+	# Calculate both diagonal thresholds
+	var threshold_down = int((float(row) / float(max(1, total_rows))) * max_width)
+	var threshold_up = int((1.0 - float(row) / float(max(1, total_rows))) * max_width)
+
+	var result = ""
+	for i in range(line.length()):
+		# Check if near either diagonal
+		var near_down = abs(i - threshold_down) < 8
+		var near_up = abs(i - threshold_up) < 8
+		var use_color = color2 if (near_down or near_up) else color1
+		result += "[color=%s]%s[/color]" % [use_color, line[i]]
+	return result
+
+func _recolor_line_wave_raw(line: String, color1: String, color2: String, max_width: int, wave_offset: int) -> String:
+	"""Recolor a raw art line with wave pattern - threshold shifts by wave offset."""
+	var threshold = (max_width / 2) + wave_offset
+
+	if threshold <= 0:
+		return "[color=%s]%s[/color]" % [color2, line]
+	elif threshold >= line.length():
+		return "[color=%s]%s[/color]" % [color1, line]
+	else:
+		var left = line.substr(0, threshold)
+		var right = line.substr(threshold)
+		return "[color=%s]%s[/color][color=%s]%s[/color]" % [color1, left, color2, right]
+
+func _recolor_line_scatter_raw(line: String, color1: String, color2: String, row: int) -> String:
+	"""Recolor a raw art line with pseudo-random scatter pattern."""
+	var result = ""
+	for i in range(line.length()):
+		# Pseudo-random based on position (deterministic so same pattern each render)
+		var hash_val = (row * 31 + i * 17) % 100
+		var use_color = color2 if hash_val < 25 else color1  # ~25% scatter
+		result += "[color=%s]%s[/color]" % [use_color, line[i]]
+	return result
+
 var connection = StreamPeerTCP.new()
 var connected = false
 var buffer = ""
@@ -132,6 +388,7 @@ var game_state = GameState.DISCONNECTED
 @onready var game_output = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/GameOutput
 @onready var game_output_container = $RootContainer/MainContainer/LeftPanel/GameOutputContainer
 @onready var buff_display_label = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/BuffDisplayLabel
+@onready var companion_art_overlay = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/CompanionArtOverlay
 @onready var chat_output = $RootContainer/MainContainer/LeftPanel/ChatOutput
 @onready var map_display = $RootContainer/MainContainer/RightPanel/MapDisplay
 @onready var input_field = $RootContainer/BottomBar/InputField
@@ -367,6 +624,8 @@ var more_mode: bool = false
 # Companions mode
 var companions_mode: bool = false
 var companions_page: int = 0
+var pending_companion_action: String = ""  # "", "release_select", "release_confirm", "release_all_warn", "release_all_confirm"
+var release_target_companion: Dictionary = {}  # Companion being released
 const COMPANIONS_PAGE_SIZE = 5
 
 # Water/Fishing location
@@ -3762,20 +4021,86 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif companions_mode:
-		# Companions viewing mode
+		# Companions viewing mode with pagination and release
 		var collected = character_data.get("collected_companions", [])
-		current_actions = [
-			{"label": "Back", "action_type": "local", "action_data": "companions_close", "enabled": true},
-			{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "1-%d Activate" % min(5, collected.size()), "action_type": "none", "action_data": "", "enabled": false} if collected.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE))) if collected.size() > 0 else 1
+		var has_prev = companions_page > 0
+		var has_next = companions_page < total_pages - 1
+
+		if pending_companion_action == "release_all_confirm":
+			# FINAL confirmation for releasing ALL companions
+			current_actions = [
+				{"label": "CANCEL", "action_type": "local", "action_data": "release_cancel", "enabled": true},
+				{"label": "DELETE ALL", "action_type": "local", "action_data": "release_all_final", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_companion_action == "release_all_warn":
+			# First warning for releasing ALL companions
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "release_cancel", "enabled": true},
+				{"label": "Continue", "action_type": "local", "action_data": "release_all_continue", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_companion_action == "release_confirm":
+			# Confirmation screen for releasing a companion
+			var comp_name = release_target_companion.get("name", "Unknown")
+			var variant = release_target_companion.get("variant", "Normal")
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "release_cancel", "enabled": true},
+				{"label": "CONFIRM", "action_type": "local", "action_data": "release_confirm", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_companion_action == "release_select":
+			# Selecting which companion to release
+			var page_count = min(COMPANIONS_PAGE_SIZE, collected.size() - companions_page * COMPANIONS_PAGE_SIZE)
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "release_cancel", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "companions_prev", "enabled": has_prev},
+				{"label": "Next >", "action_type": "local", "action_data": "companions_next", "enabled": has_next},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % page_count, "action_type": "none", "action_data": "", "enabled": false} if page_count > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Normal companions menu
+			var page_count = min(COMPANIONS_PAGE_SIZE, collected.size() - companions_page * COMPANIONS_PAGE_SIZE) if collected.size() > 0 else 0
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "companions_close", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "companions_prev", "enabled": has_prev},
+				{"label": "Next >", "action_type": "local", "action_data": "companions_next", "enabled": has_next},
+				{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
+				{"label": "Release", "action_type": "local", "action_data": "companions_release", "enabled": collected.size() > 0},
+				{"label": "1-%d Activate" % page_count, "action_type": "none", "action_data": "", "enabled": false} if page_count > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Rel. All", "action_type": "local", "action_data": "companions_release_all", "enabled": collected.size() > 1},
+			]
 	elif at_merchant:
 		# Merchant mode
 		var services = merchant_data.get("services", [])
@@ -5906,6 +6231,77 @@ func execute_local_action(action: String):
 		"companions_dismiss":
 			send_to_server({"type": "dismiss_companion"})
 			display_companions()
+		"companions_prev":
+			companions_page = max(0, companions_page - 1)
+			display_companions()
+			update_action_bar()
+		"companions_next":
+			var collected = character_data.get("collected_companions", [])
+			var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
+			companions_page = min(total_pages - 1, companions_page + 1)
+			display_companions()
+			update_action_bar()
+		"companions_release":
+			# Enter release selection mode
+			pending_companion_action = "release_select"
+			game_output.clear()
+			display_game("[color=#FF6666]═══════ RELEASE COMPANION ═══════[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]Select a companion to release (PERMANENTLY DELETE):[/color]")
+			display_game("")
+			_display_companions_for_release()
+			update_action_bar()
+		"release_cancel":
+			pending_companion_action = ""
+			release_target_companion = {}
+			display_companions()
+			update_action_bar()
+		"release_confirm":
+			if not release_target_companion.is_empty():
+				send_to_server({"type": "release_companion", "id": release_target_companion.get("id", "")})
+				pending_companion_action = ""
+				release_target_companion = {}
+		"companions_release_all":
+			# First warning for releasing all companions
+			var collected = character_data.get("collected_companions", [])
+			if collected.size() <= 1:
+				display_game("[color=#FF0000]You need more than 1 companion to use Release All.[/color]")
+				return
+			pending_companion_action = "release_all_warn"
+			game_output.clear()
+			display_game("[color=#FF0000]══════ WARNING ══════[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]You are about to release ALL %d companions![/color]" % collected.size())
+			display_game("")
+			display_game("[color=#FF6666]This will PERMANENTLY DELETE all your companions.[/color]")
+			display_game("[color=#FF6666]Your active companion will be dismissed first.[/color]")
+			display_game("")
+			display_game("[color=#808080]Press Continue to proceed to final confirmation.[/color]")
+			display_game("[color=#808080]Press Cancel to go back.[/color]")
+			update_action_bar()
+		"release_all_continue":
+			# Second/final confirmation
+			var collected = character_data.get("collected_companions", [])
+			pending_companion_action = "release_all_confirm"
+			game_output.clear()
+			display_game("[color=#FF0000]══════ FINAL CONFIRMATION ══════[/color]")
+			display_game("")
+			display_game("[color=#FF0000]ARE YOU ABSOLUTELY SURE?[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]This will delete ALL %d companions:[/color]" % collected.size())
+			for i in range(min(5, collected.size())):
+				var comp = collected[i]
+				display_game("  - %s %s Lv.%d" % [comp.get("variant", ""), comp.get("name", "Unknown"), comp.get("level", 1)])
+			if collected.size() > 5:
+				display_game("  ... and %d more" % (collected.size() - 5))
+			display_game("")
+			display_game("[color=#FF0000]THIS CANNOT BE UNDONE![/color]")
+			display_game("")
+			update_action_bar()
+		"release_all_final":
+			# Actually release all companions
+			send_to_server({"type": "release_all_companions"})
+			pending_companion_action = ""
 		"logout_character":
 			logout_character()
 		"logout_account":
@@ -9847,6 +10243,7 @@ func handle_server_message(message: Dictionary):
 			update_resource_bar()
 			update_player_xp_bar()
 			update_currency_display()
+			update_companion_art_overlay()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			display_title_holders(message.get("title_holders", []))
 			display_character_status()
@@ -9877,6 +10274,12 @@ func handle_server_message(message: Dictionary):
 			has_character = false
 			in_combat = false
 			character_data = {}
+			# Reset dungeon state
+			dungeon_mode = false
+			dungeon_data = {}
+			dungeon_floor_grid = []
+			dungeon_available = []
+			dungeon_list_mode = false
 			game_state = GameState.CHARACTER_SELECT
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -9888,6 +10291,12 @@ func handle_server_message(message: Dictionary):
 			character_data = {}
 			character_list = []
 			username = ""
+			# Reset dungeon state
+			dungeon_mode = false
+			dungeon_data = {}
+			dungeon_floor_grid = []
+			dungeon_available = []
+			dungeon_list_mode = false
 			game_state = GameState.LOGIN_SCREEN
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -9970,6 +10379,9 @@ func handle_server_message(message: Dictionary):
 			var was_at_dungeon = at_dungeon_entrance
 			at_dungeon_entrance = message.get("at_dungeon", false)
 			dungeon_entrance_info = message.get("dungeon_info", {})
+			# Display dungeon info when arriving at a dungeon entrance
+			if at_dungeon_entrance and not was_at_dungeon and not dungeon_entrance_info.is_empty():
+				_display_dungeon_entrance_info()
 			# Update action bar if any gathering location status changed
 			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest:
 				update_action_bar()
@@ -10087,6 +10499,7 @@ func handle_server_message(message: Dictionary):
 				update_resource_bar()
 				update_player_xp_bar()
 				update_currency_display()
+				update_companion_art_overlay()
 				# Reset forge_available if not at Fire Mountain (-400, 0)
 				if forge_available:
 					var px = character_data.get("x", 0)
@@ -10272,6 +10685,7 @@ func handle_server_message(message: Dictionary):
 			last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 			last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
 			update_action_bar()
+			update_companion_art_overlay()  # Show companion during combat
 
 			# Track XP before combat for two-color XP bar
 			# Only record at start of combat chain (not flock continuations)
@@ -10932,7 +11346,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch"]
 	var combat_keywords = []  # Combat commands retired - use action bar
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
@@ -11519,6 +11933,11 @@ func process_command(text: String):
 		"materials", "mats":
 			if has_character:
 				display_materials()
+			else:
+				display_game("You don't have a character yet")
+		"debughatch":
+			if has_character:
+				send_to_server({"type": "debug_hatch"})
 			else:
 				display_game("You don't have a character yet")
 		_:
@@ -12150,6 +12569,12 @@ func reset_connection_state():
 	username = ""
 	character_data = {}
 	character_list = []
+	# Reset dungeon state
+	dungeon_mode = false
+	dungeon_data = {}
+	dungeon_floor_grid = []
+	dungeon_available = []
+	dungeon_list_mode = false
 	game_state = GameState.DISCONNECTED
 	update_action_bar()
 	show_connection_panel()
@@ -12469,7 +12894,7 @@ func show_companion_info():
 	update_action_bar()
 
 func display_companions():
-	"""Display the companions list"""
+	"""Display the companions list with level, XP, abilities, and variant info"""
 	game_output.clear()
 
 	var active_companion = character_data.get("active_companion", {})
@@ -12480,14 +12905,60 @@ func display_companions():
 	display_game("[color=#FFD700]═══════ COMPANIONS ═══════[/color]")
 	display_game("")
 
-	# Active companion section
+	# Active companion section - enhanced with level and abilities
 	if not active_companion.is_empty():
 		var comp_name = active_companion.get("name", "Unknown")
+		var comp_level = active_companion.get("level", 1)
+		var comp_xp = active_companion.get("xp", 0)
+		var comp_tier = active_companion.get("tier", 1)
+		var variant = active_companion.get("variant", "Normal")
+		var variant_color = active_companion.get("variant_color", "#FFFFFF")
 		var bonuses = active_companion.get("bonuses", {})
-		display_game("[color=#00FFFF]Active Companion: %s[/color]" % comp_name)
-		var bonus_parts = _get_companion_bonus_parts(bonuses)
+
+		# Calculate XP needed (formula: (level+1)^1.8 * 20)
+		var xp_to_next = 0
+		if comp_level < 50:
+			xp_to_next = int(pow(comp_level + 1, 1.8) * 20)
+
+		# Get variant stat multiplier
+		var variant_mult = _get_variant_multiplier(variant)
+		var variant_bonus_text = ""
+		if variant_mult > 1.0:
+			variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+
+		display_game("[color=#00FFFF]Active Companion:[/color]")
+		display_game("  [color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
+		display_game("  [color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
+
+		# XP bar
+		if comp_level < 50:
+			var xp_percent = int((float(comp_xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
+			var bar_length = 20
+			var filled = int(bar_length * xp_percent / 100)
+			var xp_bar = "[" + "█".repeat(filled) + "░".repeat(bar_length - filled) + "]"
+			display_game("  [color=#00FF00]XP: %s %d/%d (%d%%)[/color]" % [xp_bar, comp_xp, xp_to_next, xp_percent])
+		else:
+			display_game("  [color=#FFD700]MAX LEVEL[/color]")
+
+		# Show bonuses with variant multiplier
+		var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
 		if bonus_parts.size() > 0:
 			display_game("  %s" % ", ".join(bonus_parts))
+
+		# Show unlocked abilities
+		var unlocked_abilities = []
+		if comp_level >= 10:
+			unlocked_abilities.append("Lv.10")
+		if comp_level >= 25:
+			unlocked_abilities.append("Lv.25")
+		if comp_level >= 50:
+			unlocked_abilities.append("Lv.50")
+
+		if unlocked_abilities.size() > 0:
+			display_game("  [color=#A335EE]Abilities: %s[/color]" % ", ".join(unlocked_abilities))
+		else:
+			display_game("  [color=#808080]Abilities: None (unlock at Lv.10)[/color]")
+
 		display_game("")
 	else:
 		display_game("[color=#808080]No active companion[/color]")
@@ -12508,24 +12979,41 @@ func display_companions():
 			display_game("  [color=#FFAA00]%s[/color] - %d%% (%d/%d steps)" % [egg_name, progress, steps, required])
 		display_game("")
 
-	# Hatched companions section
+	# Hatched companions section - enhanced with level and variant (PAGINATED)
 	if collected_companions.size() > 0:
-		display_game("[color=#00FF00]Hatched Companions (%d):[/color]" % collected_companions.size())
-		var idx = 1
-		for companion in collected_companions:
+		var total_pages = int(ceil(float(collected_companions.size()) / float(COMPANIONS_PAGE_SIZE)))
+		companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
+		var start_idx = companions_page * COMPANIONS_PAGE_SIZE
+		var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected_companions.size())
+
+		display_game("[color=#00FF00]Hatched Companions (%d)[/color] [color=#808080]Page %d/%d[/color]" % [collected_companions.size(), companions_page + 1, total_pages])
+
+		for i in range(start_idx, end_idx):
+			var companion = collected_companions[i]
 			var comp_name = companion.get("name", "Unknown")
 			var comp_id = companion.get("id", "")
+			var comp_level = companion.get("level", 1)
+			var variant = companion.get("variant", "Normal")
+			var variant_color = companion.get("variant_color", "#FFFFFF")
 			var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
-			var bonuses = companion.get("bonuses", {})
-			var bonus_parts = _get_companion_bonus_parts(bonuses)
-			var bonus_text = " - " + ", ".join(bonus_parts) if bonus_parts.size() > 0 else ""
+
+			# Get variant bonus indicator
+			var variant_mult = _get_variant_multiplier(variant)
+			var variant_indicator = ""
+			if variant_mult > 1.0:
+				variant_indicator = " [color=#FFD700]★[/color]"  # Star for bonus variants
+
+			var display_num = (i - start_idx) + 1  # 1-5 for current page
 			if is_active:
-				display_game("  [%d] [color=#00FFFF]★ %s (Active)[/color]%s" % [idx, comp_name, bonus_text])
+				display_game("  [%d] [color=#00FFFF]★ %s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, comp_name, comp_level, variant_color, variant, variant_indicator])
 			else:
-				display_game("  [%d] [color=#00FF00]%s[/color]%s" % [idx, comp_name, bonus_text])
-			idx += 1
+				display_game("  [%d] [color=#00FF00]%s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, comp_name, comp_level, variant_color, variant, variant_indicator])
+
 		display_game("")
-		display_game("[color=#808080]Press 1-5 to activate a companion[/color]")
+		if total_pages > 1:
+			display_game("[color=#808080]Press 1-5 to activate | Q/E to change page[/color]")
+		else:
+			display_game("[color=#808080]Press 1-5 to activate a companion[/color]")
 
 	# Soul gems (legacy)
 	if soul_gems.size() > 0:
@@ -12546,6 +13034,63 @@ func display_companions():
 
 	display_game("")
 	display_game("[color=#FFD700]══════════════════════════[/color]")
+
+func _get_variant_multiplier(variant: String) -> float:
+	"""Get the stat multiplier for a companion variant."""
+	# Rare special (+10% stats)
+	if variant in ["Shiny", "Radiant", "Blessed", "Starfall"]:
+		return 1.10
+	# Very rare (+25% stats)
+	if variant in ["Spectral", "Ethereal", "Celestial", "Bifrost"]:
+		return 1.25
+	# Legendary (+50% stats)
+	if variant in ["Prismatic", "Void", "Cosmic"]:
+		return 1.50
+	return 1.0
+
+func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: float) -> Array:
+	"""Get formatted bonus text parts for a companion with variant multiplier applied."""
+	var parts = []
+	if bonuses.get("attack", 0) > 0:
+		var val = int(bonuses.attack * multiplier)
+		parts.append("[color=#FF6666]+%d%% Atk[/color]" % val)
+	if bonuses.get("defense", 0) > 0:
+		var val = int(bonuses.defense * multiplier)
+		parts.append("[color=#87CEEB]+%d%% Def[/color]" % val)
+	if bonuses.get("hp_bonus", 0) > 0:
+		var val = int(bonuses.hp_bonus * multiplier)
+		parts.append("[color=#00FF00]+%d%% HP[/color]" % val)
+	if bonuses.get("hp_regen", 0) > 0:
+		var val = int(bonuses.hp_regen * multiplier)
+		parts.append("[color=#66FF66]+%d%% Regen[/color]" % val)
+	if bonuses.get("crit_chance", 0) > 0:
+		var val = int(bonuses.crit_chance * multiplier)
+		parts.append("[color=#FFFF66]+%d%% Crit[/color]" % val)
+	if bonuses.get("gold_find", 0) > 0:
+		var val = int(bonuses.gold_find * multiplier)
+		parts.append("[color=#FFD700]+%d%% Gold[/color]" % val)
+	if bonuses.get("flee_bonus", 0) > 0:
+		var val = int(bonuses.flee_bonus * multiplier)
+		parts.append("[color=#6666FF]+%d%% Flee[/color]" % val)
+	if bonuses.get("lifesteal", 0) > 0:
+		var val = int(bonuses.lifesteal * multiplier)
+		parts.append("[color=#FF00FF]+%d%% Steal[/color]" % val)
+	if bonuses.get("speed", 0) > 0:
+		var val = int(bonuses.speed * multiplier)
+		parts.append("[color=#00FFFF]+%d%% Speed[/color]" % val)
+	if bonuses.get("mana_bonus", 0) > 0:
+		var val = int(bonuses.mana_bonus * multiplier)
+		parts.append("[color=#0070DD]+%d%% Mana[/color]" % val)
+	if bonuses.get("mana_regen", 0) > 0:
+		var val = int(bonuses.mana_regen * multiplier)
+		parts.append("[color=#0070DD]+%d%% MRegen[/color]" % val)
+	if bonuses.get("wisdom_bonus", 0) > 0:
+		var val = int(bonuses.wisdom_bonus * multiplier)
+		parts.append("[color=#9370DB]+%d%% Wis[/color]" % val)
+	if bonuses.get("crit_damage", 0) > 0:
+		var val = int(bonuses.crit_damage * multiplier)
+		parts.append("[color=#FF4444]+%d%% CDmg[/color]" % val)
+	return parts
 
 func _get_companion_bonus_parts(bonuses: Dictionary) -> Array:
 	"""Get formatted bonus text parts for a companion"""
@@ -12568,6 +13113,128 @@ func _get_companion_bonus_parts(bonuses: Dictionary) -> Array:
 		parts.append("[color=#FF00FF]+%d%% Steal[/color]" % int(bonuses.lifesteal))
 	return parts
 
+func _ensure_readable_color(hex_color: String) -> String:
+	"""Ensure a color is bright enough to be readable against a dark background.
+	Lightens dark colors while preserving their hue."""
+	if hex_color == "":
+		return hex_color
+
+	var color = Color(hex_color)
+	# Calculate perceived brightness
+	var brightness = (color.r * 0.299 + color.g * 0.587 + color.b * 0.114)
+
+	# If too dark, lighten it while keeping the hue
+	if brightness < 0.4:
+		# Convert to HSV, boost value (brightness), convert back
+		var h = color.h
+		var s = color.s
+		var v = color.v
+
+		# Boost the value to make it readable (minimum 0.6)
+		v = max(0.6, v + (0.6 - brightness))
+		# Slightly reduce saturation for very dark colors to make them pop more
+		if brightness < 0.2:
+			s = min(s, 0.7)
+
+		color = Color.from_hsv(h, s, v)
+
+	return "#" + color.to_html(false)
+
+func _get_contrasting_bg_color(hex_color: String, hex_color2: String = "") -> Color:
+	"""Return a consistent dark background for the companion overlay.
+	Text colors are lightened separately to ensure readability."""
+	# Always use a nice dark background - text colors will be lightened if needed
+	return Color(0.05, 0.05, 0.08, 0.92)
+
+func update_companion_art_overlay():
+	"""Update the companion art overlay in the bottom-right of the game output."""
+	if companion_art_overlay == null:
+		return
+
+	var active_companion = character_data.get("active_companion", {})
+	if active_companion.is_empty():
+		companion_art_overlay.visible = false
+		return
+
+	# Get companion info - lighten dark colors for readability
+	var variant_color_raw = active_companion.get("variant_color", "#FFFFFF")
+	var variant_color2_raw = active_companion.get("variant_color2", "")
+	var variant_color = _ensure_readable_color(variant_color_raw)
+	var variant_color2 = _ensure_readable_color(variant_color2_raw) if variant_color2_raw != "" else ""
+	var variant_pattern = active_companion.get("variant_pattern", "solid")
+	var level = active_companion.get("level", 1)
+	var companion_name = active_companion.get("name", "Companion")
+	var tier = active_companion.get("tier", 1)
+	var monster_type = active_companion.get("monster_type", "")
+
+	# Use consistent dark background - colors are already lightened for readability
+	var bg_color = _get_contrasting_bg_color(variant_color, variant_color2)
+	var style = companion_art_overlay.get_theme_stylebox("normal")
+	if style and style is StyleBoxFlat:
+		var new_style = style.duplicate()
+		new_style.bg_color = bg_color
+		# Add subtle border matching the variant color
+		new_style.border_color = Color(variant_color)
+		new_style.border_color.a = 0.6
+		companion_art_overlay.add_theme_stylebox_override("normal", new_style)
+
+	# Try to get art - first by monster_type, then by companion name
+	var art_lines = []
+	var art_map = _get_monster_art().get_art_map()
+
+	# Handle special variants (same as monster_art.gd uses)
+	var lookup_name = monster_type
+
+	# Handle elemental variants - pick Fire or Water Elemental art
+	if lookup_name == "Elemental":
+		var elemental_variants = ["Fire Elemental", "Water Elemental"]
+		lookup_name = elemental_variants[randi() % elemental_variants.size()]
+
+	# Handle siren variants - pick Siren A or Siren B art
+	if lookup_name == "Siren":
+		var siren_variants = ["Siren A", "Siren B"]
+		lookup_name = siren_variants[randi() % siren_variants.size()]
+
+	# Apply name mappings
+	var name_mappings = {
+		"Wolf": "Dire Wolf",
+		"Orc": "Orc Warrior",
+		"Young Dragon": "Dragon Wyrmling"
+	}
+	if name_mappings.has(lookup_name):
+		lookup_name = name_mappings[lookup_name]
+
+	if lookup_name != "" and art_map.has(lookup_name):
+		art_lines = art_map[lookup_name].duplicate()
+	elif art_map.has(companion_name):
+		art_lines = art_map[companion_name].duplicate()
+
+	# Build overlay text - readable header with variant name
+	var variant_name = active_companion.get("variant", "Normal")
+	var overlay_text = "[center][font_size=10][color=%s]%s[/color] [color=#AAAAAA]Lv%d[/color][/font_size]\n[font_size=8][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
+
+	if art_lines.size() > 0:
+		# Join all art lines and apply variant color pattern
+		var art_str = "\n".join(art_lines)
+
+		# Apply pattern-based coloring for visual variety
+		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+
+		# Use font_size=2 for tiny art display, centered
+		overlay_text += "[center][font_size=2]" + art_str + "[/font_size][/center]"
+	else:
+		# No art found - show text-only display
+		overlay_text += "[center][font_size=7][color=#00FFFF]♦ Active ♦[/color][/font_size][/center]"
+
+	companion_art_overlay.clear()
+	companion_art_overlay.append_text(overlay_text)
+	companion_art_overlay.visible = true
+
+func hide_companion_art_overlay():
+	"""Hide the companion art overlay."""
+	if companion_art_overlay:
+		companion_art_overlay.visible = false
+
 func _get_egg_display_name(egg_type: String) -> String:
 	"""Get display name for egg type"""
 	match egg_type:
@@ -12589,15 +13256,78 @@ func close_companions():
 	update_action_bar()
 
 func activate_companion_by_index(index: int):
-	"""Activate a companion from collected_companions by index"""
+	"""Activate a companion from collected_companions by index (or select for release)"""
 	var collected = character_data.get("collected_companions", [])
-	if index < 0 or index >= collected.size():
+	# Adjust index for pagination
+	var actual_index = companions_page * COMPANIONS_PAGE_SIZE + index
+	if actual_index < 0 or actual_index >= collected.size():
 		return
-	var companion = collected[index]
+
+	var companion = collected[actual_index]
+
+	# Handle release selection mode
+	if pending_companion_action == "release_select":
+		# Check if trying to release active companion
+		var active_companion = character_data.get("active_companion", {})
+		if not active_companion.is_empty() and active_companion.get("id", "") == companion.get("id", ""):
+			display_game("[color=#FF0000]Cannot release your active companion! Dismiss it first.[/color]")
+			return
+
+		release_target_companion = companion
+		pending_companion_action = "release_confirm"
+		game_output.clear()
+		var comp_name = companion.get("name", "Unknown")
+		var variant = companion.get("variant", "Normal")
+		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var comp_level = companion.get("level", 1)
+		display_game("[color=#FF0000]═══════ CONFIRM RELEASE ═══════[/color]")
+		display_game("")
+		display_game("[color=#FFAA00]Are you sure you want to PERMANENTLY release:[/color]")
+		display_game("")
+		display_game("  [color=%s]%s %s[/color] [color=#AAAAAA]Level %d[/color]" % [variant_color, variant, comp_name, comp_level])
+		display_game("")
+		display_game("[color=#FF6666]This action cannot be undone![/color]")
+		display_game("")
+		update_action_bar()
+		return
+
+	# Normal activation
 	var companion_name = companion.get("name", "")
 	if companion_name != "":
 		send_to_server({"type": "activate_companion", "name": companion_name})
 		display_game("[color=#00FFFF]Activating %s...[/color]" % companion_name)
+
+func _display_companions_for_release():
+	"""Display companions list for release selection"""
+	var collected = character_data.get("collected_companions", [])
+	var active_companion = character_data.get("active_companion", {})
+
+	if collected.size() == 0:
+		display_game("[color=#808080]No companions to release.[/color]")
+		return
+
+	var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
+	companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
+	var start_idx = companions_page * COMPANIONS_PAGE_SIZE
+	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected.size())
+
+	display_game("[color=#808080]Page %d/%d[/color]" % [companions_page + 1, total_pages])
+	display_game("")
+
+	for i in range(start_idx, end_idx):
+		var companion = collected[i]
+		var comp_name = companion.get("name", "Unknown")
+		var comp_id = companion.get("id", "")
+		var comp_level = companion.get("level", 1)
+		var variant = companion.get("variant", "Normal")
+		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
+
+		var display_num = (i - start_idx) + 1
+		if is_active:
+			display_game("  [%d] [color=#808080]%s Lv.%d (%s) - ACTIVE (cannot release)[/color]" % [display_num, comp_name, comp_level, variant])
+		else:
+			display_game("  [%d] [color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, variant_color, variant, comp_name, comp_level])
 
 func _get_status_effects_text() -> String:
 	"""Generate status effects section for character status display"""
@@ -14340,12 +15070,12 @@ func handle_dungeon_list(message: Dictionary):
 		var min_level = dungeon.get("min_level", 1)
 		var max_level = dungeon.get("max_level", 100)
 		var distance = dungeon.get("distance", 0)
-		var on_cooldown = dungeon.get("on_cooldown", false)
 		var color = dungeon.get("color", "#FFFFFF")
+		var completions = dungeon.get("completions", 0)
 
 		var status = ""
-		if on_cooldown:
-			status = "[color=#FF4444](On Cooldown)[/color]"
+		if completions > 0:
+			status = "[color=#00FF00](%d clears)[/color]" % completions
 
 		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, name, status])
 		display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
@@ -14600,6 +15330,28 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
+func _display_dungeon_entrance_info():
+	"""Display information about the dungeon at the player's current location"""
+	if dungeon_entrance_info.is_empty():
+		return
+
+	var dungeon_name = dungeon_entrance_info.get("name", "Dungeon")
+	var color = dungeon_entrance_info.get("color", "#FFFFFF")
+	var tier = dungeon_entrance_info.get("tier", 1)
+	var min_level = dungeon_entrance_info.get("min_level", 1)
+	var max_level = dungeon_entrance_info.get("max_level", 100)
+	var player_level = character_data.get("level", 1)
+
+	display_game("")
+	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
+	display_game("Tier %d Dungeon | Levels %d-%d" % [tier, min_level, max_level])
+
+	# Show level requirement warning if player is too low
+	if player_level < min_level:
+		display_game("[color=#FF4444]Required Level: %d (You are level %d)[/color]" % [min_level, player_level])
+	else:
+		display_game("[color=#00FF00]Press [%s] to enter[/color]" % get_action_key_name(4))
+
 func enter_dungeon_at_location():
 	"""Enter the dungeon at the player's current location (via action bar)"""
 	if not at_dungeon_entrance or dungeon_entrance_info.is_empty():
@@ -14640,10 +15392,6 @@ func select_dungeon(index: int):
 	var dungeon = dungeon_available[index]
 	var dungeon_type = dungeon.get("type", "")
 	var instance_id = dungeon.get("active_instance", "")
-
-	if dungeon.get("on_cooldown", false):
-		display_game("[color=#FF4444]This dungeon is still on cooldown.[/color]")
-		return
 
 	dungeon_list_mode = false
 	dungeon_available = []

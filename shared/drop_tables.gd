@@ -670,6 +670,82 @@ const COMPANION_DATA = {
 	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4}}
 }
 
+# Companion abilities - unlocked at levels 10, 25, 50
+# Types: "passive" (always active in combat), "chance" (% per round), "threshold" (triggers once when HP < %)
+# Effects: "attack", "defense", "speed", "enemy_miss", "defense_buff", "heal", "bonus_damage", "absorb", "stun"
+const COMPANION_ABILITIES = {
+	1: {  # Tier 1 (Weakest companions)
+		10: {"name": "Encouraging Presence", "type": "passive", "effect": "attack", "value": 2},
+		25: {"name": "Distraction", "type": "chance", "chance": 15, "effect": "enemy_miss"},
+		50: {"name": "Protective Instinct", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 10, "duration": 3}
+	},
+	2: {  # Tier 2
+		10: {"name": "Battle Focus", "type": "passive", "effect": "attack", "value": 3},
+		25: {"name": "Harrying Strike", "type": "chance", "chance": 18, "effect": "bonus_damage", "value": 12},
+		50: {"name": "Guardian Shield", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 12, "duration": 3}
+	},
+	3: {  # Tier 3
+		10: {"name": "Predator's Eye", "type": "passive", "effect": "attack", "value": 3, "effect2": "defense", "value2": 2},
+		25: {"name": "Savage Bite", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 15},
+		50: {"name": "Emergency Heal", "type": "threshold", "hp_percent": 50, "effect": "heal", "value": 10}
+	},
+	4: {  # Tier 4
+		10: {"name": "Primal Fury", "type": "passive", "effect": "attack", "value": 4, "effect2": "speed", "value2": 3},
+		25: {"name": "Vicious Assault", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 18},
+		50: {"name": "Life Bond", "type": "threshold", "hp_percent": 40, "effect": "heal", "value": 12}
+	},
+	5: {  # Tier 5
+		10: {"name": "Battle Synergy", "type": "passive", "effect": "attack", "value": 4, "effect2": "defense", "value2": 3},
+		25: {"name": "Devastating Strike", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 22, "effect2": "stun", "chance2": 10},
+		50: {"name": "Desperate Recovery", "type": "threshold", "hp_percent": 35, "effect": "heal", "value": 15}
+	},
+	6: {  # Tier 6
+		10: {"name": "Elemental Fury", "type": "passive", "effect": "attack", "value": 5, "effect2": "defense", "value2": 4},
+		25: {"name": "Elemental Burst", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 25},
+		50: {"name": "Phoenix Gift", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 18}
+	},
+	7: {  # Tier 7 (Elite)
+		10: {"name": "Void Resonance", "type": "passive", "effect": "attack", "value": 6, "effect2": "defense", "value2": 4, "effect3": "speed", "value3": 3},
+		25: {"name": "Void Strike", "type": "chance", "chance": 23, "effect": "bonus_damage", "value": 30, "effect2": "lifesteal", "value2": 15},
+		50: {"name": "Elder's Blessing", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 22}
+	},
+	8: {  # Tier 8 (Legendary)
+		10: {"name": "Cosmic Alignment", "type": "passive", "effect": "attack", "value": 7, "effect2": "defense", "value2": 5, "effect3": "crit_chance", "value3": 3},
+		25: {"name": "Time Rend", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 35, "effect2": "stun", "chance2": 20},
+		50: {"name": "Death's Reprieve", "type": "threshold", "hp_percent": 25, "effect": "heal", "value": 30}
+	},
+	9: {  # Tier 9 (Mythic)
+		10: {"name": "Divine Presence", "type": "passive", "effect": "attack", "value": 10, "effect2": "defense", "value2": 6, "effect3": "speed", "value3": 5},
+		25: {"name": "Godslayer's Wrath", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 50, "effect2": "lifesteal", "value2": 25},
+		50: {"name": "Immortal's Gift", "type": "threshold", "hp_percent": 20, "effect": "full_heal"}
+	}
+}
+
+func get_companion_ability(tier: int, level_threshold: int) -> Dictionary:
+	"""Get a companion ability definition by tier and level threshold (10, 25, or 50)."""
+	if not COMPANION_ABILITIES.has(tier):
+		return {}
+	var tier_abilities = COMPANION_ABILITIES[tier]
+	if not tier_abilities.has(level_threshold):
+		return {}
+	return tier_abilities[level_threshold].duplicate()
+
+func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
+	"""Get all unlocked abilities for a companion based on tier and level."""
+	var abilities = []
+	if not COMPANION_ABILITIES.has(tier):
+		return abilities
+
+	var tier_abilities = COMPANION_ABILITIES[tier]
+	if companion_level >= 10 and tier_abilities.has(10):
+		abilities.append(tier_abilities[10].duplicate())
+	if companion_level >= 25 and tier_abilities.has(25):
+		abilities.append(tier_abilities[25].duplicate())
+	if companion_level >= 50 and tier_abilities.has(50):
+		abilities.append(tier_abilities[50].duplicate())
+
+	return abilities
+
 # Hatching steps scale by tier (higher tier = more steps)
 const EGG_HATCH_STEPS_BY_TIER = {
 	1: 50,    # Tier 1: 50 steps
