@@ -712,7 +712,11 @@ func _ready():
 
 	# Connect online players list for clickable names (single click shows player info)
 	if online_players_list:
-		# Ensure meta_clicked is connected for clickable player names
+		# Use gui_input for more reliable click detection
+		if online_players_list.gui_input.is_connected(_on_online_players_gui_input):
+			online_players_list.gui_input.disconnect(_on_online_players_gui_input)
+		online_players_list.gui_input.connect(_on_online_players_gui_input)
+		# Also connect meta_clicked as backup
 		if online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
 			online_players_list.meta_clicked.disconnect(_on_player_name_clicked)
 		online_players_list.meta_clicked.connect(_on_player_name_clicked)
@@ -2947,6 +2951,15 @@ func _on_close_leaderboard_pressed():
 		leaderboard_panel.visible = false
 
 # ===== PLAYER INFO POPUP HANDLERS =====
+
+func _on_online_players_gui_input(event: InputEvent):
+	"""Handle clicks on online players list - detect URL clicks manually"""
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if online_players_list:
+			# Get the meta (URL) at the click position
+			var clicked_meta = online_players_list.get_meta_at_position(event.position)
+			if clicked_meta != null and clicked_meta != "":
+				_on_player_name_clicked(clicked_meta)
 
 func _on_player_name_clicked(meta):
 	"""Handle click on player name in online players list - shows player info popup"""
