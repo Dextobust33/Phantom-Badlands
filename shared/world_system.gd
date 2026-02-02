@@ -429,9 +429,10 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
+func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = []) -> String:
 	"""Generate complete map display with location info header.
-	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
+	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
+	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances."""
 	var output = ""
 
 	# Check if at Trading Post
@@ -440,7 +441,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players)
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations)
 		output += "[/center]"
 		return output
 
@@ -471,7 +472,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 
 	# Add the map (centered)
 	output += "[center]"
-	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players)
+	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations)
 	output += "[/center]"
 
 	return output
@@ -1116,9 +1117,10 @@ func _get_merchant_map_char(x: int, y: int) -> String:
 		return "★"  # Elite merchants are visually distinct
 	return "$"  # Normal merchants
 
-func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = []) -> String:
-	"""Generate ASCII map with merchants, Trading Posts, and other players shown.
-	nearby_players is an array of {x, y, name, level} dictionaries for other players to display."""
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = []) -> String:
+	"""Generate ASCII map with merchants, Trading Posts, dungeons, and other players shown.
+	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
+	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances."""
 	var map_lines: PackedStringArray = PackedStringArray()
 
 	# Build a lookup for player positions (excluding self at center)
@@ -1128,6 +1130,12 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 		if not player_positions.has(key):
 			player_positions[key] = []
 		player_positions[key].append(player)
+
+	# Build a lookup for dungeon positions
+	var dungeon_positions = {}
+	for dungeon in dungeon_locations:
+		var key = "%d,%d" % [dungeon.x, dungeon.y]
+		dungeon_positions[key] = dungeon
 
 	for dy in range(radius, -radius - 1, -1):
 		var line_parts: PackedStringArray = PackedStringArray()
@@ -1152,6 +1160,11 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				if players_here.size() > 1:
 					player_char = "*"
 				line_parts.append("[color=#00FFFF] %s[/color]" % player_char)
+			elif dungeon_positions.has(pos_key):
+				# Show dungeon entrance with dungeon's color
+				var dungeon = dungeon_positions[pos_key]
+				var dungeon_color = dungeon.get("color", "#A335EE")  # Default purple if no color
+				line_parts.append("[color=%s] D[/color]" % dungeon_color)
 			elif trading_post_db and trading_post_db.is_trading_post_tile(x, y):
 				# Trading Post tiles with special rendering
 				var tp_char = trading_post_db.get_tile_position_in_post(x, y)

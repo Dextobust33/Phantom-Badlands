@@ -1152,6 +1152,8 @@ func to_dict() -> Dictionary:
 		"trophies": trophies,
 		"active_companion": active_companion,
 		"soul_gems": soul_gems,
+		"incubating_eggs": get_incubating_eggs(),
+		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,
 		"salvage_essence": salvage_essence,
@@ -1286,6 +1288,8 @@ func from_dict(data: Dictionary):
 	# Companions
 	active_companion = data.get("active_companion", {})
 	soul_gems = data.get("soul_gems", [])
+	incubating_eggs = data.get("incubating_eggs", [])
+	collected_companions = data.get("collected_companions", [])
 
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})

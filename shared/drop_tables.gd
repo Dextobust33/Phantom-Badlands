@@ -774,8 +774,7 @@ const FISHING_CATCHES = {
 		{"weight": 4, "item": "enchanted_kelp", "name": "Enchanted Kelp", "type": "material", "value": 75},
 		{"weight": 3, "item": "fish_scale_armor", "name": "Fish Scale", "type": "material", "value": 40},
 		# Treasure (3%)
-		{"weight": 2, "item": "small_treasure_chest", "name": "Small Treasure Chest", "type": "treasure", "value": 150},
-		{"weight": 1, "item": "companion_egg_random", "name": "Mysterious Egg", "type": "egg", "value": 500}
+		{"weight": 3, "item": "small_treasure_chest", "name": "Small Treasure Chest", "type": "treasure", "value": 150}
 	],
 	"deep": [
 		# Common catches (45%)
@@ -792,8 +791,7 @@ const FISHING_CATCHES = {
 		{"weight": 5, "item": "ancient_relic", "name": "Ancient Relic", "type": "treasure", "value": 400},
 		{"weight": 4, "item": "kraken_ink", "name": "Kraken Ink", "type": "material", "value": 350},
 		# Treasure (5%)
-		{"weight": 3, "item": "large_treasure_chest", "name": "Large Treasure Chest", "type": "treasure", "value": 500},
-		{"weight": 2, "item": "companion_egg_rare", "name": "Ancient Egg", "type": "egg", "value": 1000}
+		{"weight": 5, "item": "large_treasure_chest", "name": "Large Treasure Chest", "type": "treasure", "value": 500}
 	]
 }
 
@@ -809,7 +807,6 @@ const FISHING_XP = {
 	"enchanted_kelp": 30,
 	"fish_scale_armor": 20,
 	"small_treasure_chest": 40,
-	"companion_egg_random": 100,
 	"deep_sea_fish": 25,
 	"magic_kelp": 30,
 	"abyssal_crab": 35,
@@ -820,8 +817,7 @@ const FISHING_XP = {
 	"sea_dragon_fang": 80,
 	"ancient_relic": 100,
 	"kraken_ink": 70,
-	"large_treasure_chest": 90,
-	"companion_egg_rare": 150
+	"large_treasure_chest": 90
 }
 
 func roll_fishing_catch(water_type: String, fishing_skill: int) -> Dictionary:
@@ -921,8 +917,7 @@ const MINING_CATCHES = {
 		{"weight": 15, "item": "soul_shard", "name": "Soul Shard", "type": "enchant", "value": 80},
 		{"weight": 12, "item": "flawless_gem", "name": "Flawless Gem", "type": "gem", "value": 150},
 		{"weight": 10, "item": "phoenix_petal", "name": "Fire Crystal", "type": "essence", "value": 100},
-		{"weight": 5, "item": "perfect_gem", "name": "Perfect Gem", "type": "gem", "value": 300},
-		{"weight": 3, "item": "companion_egg_random", "name": "Stone Egg", "type": "egg", "value": 500}
+		{"weight": 8, "item": "perfect_gem", "name": "Perfect Gem", "type": "gem", "value": 300}
 	],
 	5: [  # T5: 200-250 distance
 		{"weight": 35, "item": "adamantine_ore", "name": "Adamantine Ore", "type": "ore", "value": 120},
@@ -930,8 +925,7 @@ const MINING_CATCHES = {
 		{"weight": 15, "item": "void_essence", "name": "Deep Earth Essence", "type": "enchant", "value": 150},
 		{"weight": 12, "item": "perfect_gem", "name": "Perfect Gem", "type": "gem", "value": 300},
 		{"weight": 10, "item": "dragon_blood", "name": "Magma Blood", "type": "essence", "value": 200},
-		{"weight": 5, "item": "star_gem", "name": "Star Gem", "type": "gem", "value": 500},
-		{"weight": 3, "item": "companion_egg_rare", "name": "Crystal Egg", "type": "egg", "value": 1000}
+		{"weight": 8, "item": "star_gem", "name": "Star Gem", "type": "gem", "value": 500}
 	],
 	6: [  # T6: 250-300 distance
 		{"weight": 35, "item": "orichalcum_ore", "name": "Orichalcum Ore", "type": "ore", "value": 250},
@@ -939,32 +933,28 @@ const MINING_CATCHES = {
 		{"weight": 15, "item": "void_essence", "name": "Void Essence", "type": "enchant", "value": 200},
 		{"weight": 12, "item": "star_gem", "name": "Star Gem", "type": "gem", "value": 500},
 		{"weight": 10, "item": "essence_of_life", "name": "Primal Essence", "type": "essence", "value": 400},
-		{"weight": 5, "item": "celestial_gem", "name": "Celestial Gem", "type": "gem", "value": 800},
-		{"weight": 3, "item": "companion_egg_rare", "name": "Ancient Stone Egg", "type": "egg", "value": 1500}
+		{"weight": 8, "item": "celestial_gem", "name": "Celestial Gem", "type": "gem", "value": 800}
 	],
 	7: [  # T7: 300-350 distance
 		{"weight": 40, "item": "void_ore", "name": "Void Ore", "type": "ore", "value": 500},
 		{"weight": 25, "item": "orichalcum_ore", "name": "Orichalcum Ore", "type": "ore", "value": 250},
 		{"weight": 15, "item": "celestial_shard", "name": "Celestial Shard", "type": "enchant", "value": 400},
 		{"weight": 10, "item": "celestial_gem", "name": "Celestial Gem", "type": "gem", "value": 800},
-		{"weight": 7, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
-		{"weight": 3, "item": "companion_egg_legendary", "name": "Void Egg", "type": "egg", "value": 2500}
+		{"weight": 10, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800}
 	],
 	8: [  # T8: 350-400 distance
 		{"weight": 40, "item": "celestial_ore", "name": "Celestial Ore", "type": "ore", "value": 1000},
 		{"weight": 25, "item": "void_ore", "name": "Void Ore", "type": "ore", "value": 500},
 		{"weight": 15, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
 		{"weight": 10, "item": "primordial_gem", "name": "Primordial Gem", "type": "gem", "value": 1500},
-		{"weight": 7, "item": "essence_of_life", "name": "Pure Essence", "type": "essence", "value": 600},
-		{"weight": 3, "item": "companion_egg_legendary", "name": "Celestial Egg", "type": "egg", "value": 3000}
+		{"weight": 10, "item": "essence_of_life", "name": "Pure Essence", "type": "essence", "value": 600}
 	],
 	9: [  # T9: 400+ distance
 		{"weight": 40, "item": "primordial_ore", "name": "Primordial Ore", "type": "ore", "value": 2000},
 		{"weight": 25, "item": "celestial_ore", "name": "Celestial Ore", "type": "ore", "value": 1000},
 		{"weight": 15, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 800},
 		{"weight": 10, "item": "primordial_gem", "name": "Primordial Gem", "type": "gem", "value": 1500},
-		{"weight": 7, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 1000},
-		{"weight": 3, "item": "companion_egg_legendary", "name": "Primordial Egg", "type": "egg", "value": 5000}
+		{"weight": 10, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 1000}
 	]
 }
 
@@ -977,8 +967,7 @@ const MINING_XP = {
 	"healing_herb": 5, "mana_blossom": 10, "shadowleaf": 15, "arcane_crystal": 25,
 	"soul_shard": 40, "void_essence": 60, "celestial_shard": 100, "primordial_spark": 150,
 	"phoenix_petal": 30, "dragon_blood": 50, "essence_of_life": 80,
-	"small_treasure_chest": 50, "large_treasure_chest": 100,
-	"companion_egg_random": 100, "companion_egg_rare": 200, "companion_egg_legendary": 400
+	"small_treasure_chest": 50, "large_treasure_chest": 100
 }
 
 func roll_mining_catch(ore_tier: int, mining_skill: int) -> Dictionary:
@@ -1065,8 +1054,7 @@ const LOGGING_CATCHES = {
 		{"weight": 15, "item": "sap", "name": "Amber Sap", "type": "plant", "value": 15},
 		{"weight": 10, "item": "mana_blossom", "name": "Forest Blossom", "type": "herb", "value": 20},
 		{"weight": 8, "item": "vigor_root", "name": "Oak Root", "type": "herb", "value": 25},
-		{"weight": 5, "item": "magic_dust", "name": "Pollen Dust", "type": "enchant", "value": 30},
-		{"weight": 2, "item": "companion_egg_random", "name": "Nest Egg", "type": "egg", "value": 500}
+		{"weight": 7, "item": "magic_dust", "name": "Pollen Dust", "type": "enchant", "value": 30}
 	],
 	3: [  # T3: 120-180 distance
 		{"weight": 40, "item": "ash_wood", "name": "Ash Wood", "type": "wood", "value": 25},
@@ -1074,8 +1062,7 @@ const LOGGING_CATCHES = {
 		{"weight": 15, "item": "shadowleaf", "name": "Shadow Leaf", "type": "herb", "value": 40},
 		{"weight": 10, "item": "arcane_crystal", "name": "Crystallized Sap", "type": "enchant", "value": 50},
 		{"weight": 8, "item": "phoenix_petal", "name": "Fire Blossom", "type": "herb", "value": 60},
-		{"weight": 5, "item": "enchanted_resin", "name": "Enchanted Resin", "type": "enchant", "value": 75},
-		{"weight": 2, "item": "companion_egg_rare", "name": "Ancient Nest Egg", "type": "egg", "value": 1000}
+		{"weight": 7, "item": "enchanted_resin", "name": "Enchanted Resin", "type": "enchant", "value": 75}
 	],
 	4: [  # T4: 180-240 distance
 		{"weight": 40, "item": "ironwood", "name": "Ironwood", "type": "wood", "value": 50},
@@ -1083,8 +1070,7 @@ const LOGGING_CATCHES = {
 		{"weight": 15, "item": "soul_shard", "name": "Spirit Sap", "type": "enchant", "value": 80},
 		{"weight": 10, "item": "dragon_blood", "name": "Blood Sap", "type": "essence", "value": 100},
 		{"weight": 8, "item": "heartwood", "name": "Heartwood", "type": "wood", "value": 80},
-		{"weight": 5, "item": "void_essence", "name": "Shadow Essence", "type": "enchant", "value": 120},
-		{"weight": 2, "item": "companion_egg_rare", "name": "Spirit Egg", "type": "egg", "value": 1500}
+		{"weight": 7, "item": "void_essence", "name": "Shadow Essence", "type": "enchant", "value": 120}
 	],
 	5: [  # T5: 240-300 distance
 		{"weight": 40, "item": "darkwood", "name": "Darkwood", "type": "wood", "value": 100},
@@ -1092,8 +1078,7 @@ const LOGGING_CATCHES = {
 		{"weight": 15, "item": "void_essence", "name": "Void Sap", "type": "enchant", "value": 150},
 		{"weight": 10, "item": "essence_of_life", "name": "Life Essence", "type": "essence", "value": 200},
 		{"weight": 8, "item": "elderwood", "name": "Elderwood", "type": "wood", "value": 150},
-		{"weight": 5, "item": "celestial_shard", "name": "Starlight Shard", "type": "enchant", "value": 300},
-		{"weight": 2, "item": "companion_egg_legendary", "name": "Elder Egg", "type": "egg", "value": 2500}
+		{"weight": 7, "item": "celestial_shard", "name": "Starlight Shard", "type": "enchant", "value": 300}
 	],
 	6: [  # T6: 300+ distance
 		{"weight": 40, "item": "worldtree_branch", "name": "Worldtree Branch", "type": "wood", "value": 200},
@@ -1101,8 +1086,7 @@ const LOGGING_CATCHES = {
 		{"weight": 15, "item": "primordial_spark", "name": "Primordial Sap", "type": "enchant", "value": 400},
 		{"weight": 10, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 500},
 		{"weight": 8, "item": "worldtree_heartwood", "name": "Worldtree Heartwood", "type": "wood", "value": 400},
-		{"weight": 5, "item": "primordial_spark", "name": "Creation Spark", "type": "enchant", "value": 800},
-		{"weight": 2, "item": "companion_egg_legendary", "name": "Worldtree Egg", "type": "egg", "value": 5000}
+		{"weight": 7, "item": "primordial_spark", "name": "Creation Spark", "type": "enchant", "value": 800}
 	]
 }
 
@@ -1115,8 +1099,7 @@ const LOGGING_XP = {
 	"phoenix_petal": 30, "dragon_blood": 50, "essence_of_life": 80,
 	"magic_dust": 10, "arcane_crystal": 25, "soul_shard": 40,
 	"void_essence": 60, "celestial_shard": 100, "primordial_spark": 150,
-	"small_treasure_chest": 50, "large_treasure_chest": 100,
-	"companion_egg_random": 100, "companion_egg_rare": 200, "companion_egg_legendary": 400
+	"small_treasure_chest": 50, "large_treasure_chest": 100
 }
 
 func roll_logging_catch(wood_tier: int, logging_skill: int) -> Dictionary:

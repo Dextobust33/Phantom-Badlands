@@ -6,11 +6,12 @@ extends Node
 # Quest type constants
 enum QuestType {
 	KILL_ANY,           # Kill X monsters of any type
-	KILL_TYPE,          # Kill X monsters of specific type (not implemented yet)
+	KILL_TYPE,          # Kill X monsters of specific type
 	KILL_LEVEL,         # Kill a monster of level X or higher
 	HOTZONE_KILL,       # Kill X monsters in a hotzone within Y distance
 	EXPLORATION,        # Visit specific coordinates/locations
-	BOSS_HUNT           # Defeat a monster of level X or higher (same as KILL_LEVEL but labeled differently)
+	BOSS_HUNT,          # Defeat a monster of level X or higher (same as KILL_LEVEL but labeled differently)
+	DUNGEON_CLEAR       # Clear a specific dungeon type (defeat boss)
 }
 
 # Quest data structure:
@@ -1002,10 +1003,20 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 		var scaled_quest = _scale_quest_for_player(quest.duplicate(true), player_level, completed_at_post, area_level)
 		available.append(scaled_quest)
 
-	# If no static quests available, generate dynamic quests scaled to player
+	# Only generate dynamic quests if ALL static quests at this post are completed
+	# (not just accepted or locked by prerequisites)
 	if available.is_empty():
-		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
-		available.append_array(dynamic_quests)
+		# Count total non-daily static quests at this trading post
+		var total_static_quests = 0
+		for quest_id in QUESTS:
+			var quest = QUESTS[quest_id]
+			if quest.trading_post == trading_post_id and not quest.is_daily:
+				total_static_quests += 1
+
+		# Only show dynamic quests if player has completed all static quests here
+		if completed_at_post >= total_static_quests:
+			var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
+			available.append_array(dynamic_quests)
 
 	return available
 
@@ -1172,6 +1183,97 @@ const TRADING_POST_COORDS = {
 	"apex_southwest": Vector2i(-550, -550)
 }
 
+# Monster names by tier for KILL_TYPE quests
+# Matches monster_database.gd tier system
+const TIER_MONSTERS = {
+	1: ["Goblin", "Giant Rat", "Kobold", "Skeleton", "Wolf"],
+	2: ["Orc", "Hobgoblin", "Gnoll", "Zombie", "Giant Spider", "Wight", "Siren", "Kelpie", "Mimic"],
+	3: ["Ogre", "Troll", "Wraith", "Wyvern", "Minotaur", "Gargoyle", "Harpy", "Shrieker"],
+	4: ["Giant", "Dragon Wyrmling", "Demon", "Vampire", "Gryphon", "Chimaera", "Succubus"],
+	5: ["Ancient Dragon", "Demon Lord", "Lich", "Titan", "Balrog", "Cerberus", "Jabberwock"],
+	6: ["Elemental", "Iron Golem", "Sphinx", "Hydra", "Phoenix", "Nazgul"],
+	7: ["Void Walker", "World Serpent", "Elder Lich", "Primordial Dragon"],
+	8: ["Cosmic Horror", "Time Weaver", "Death Incarnate"],
+	9: ["Avatar of Chaos", "The Nameless One", "God Slayer", "Entropy"]
+}
+
+# Level ranges for each monster tier
+const TIER_LEVEL_RANGES = {
+	1: {"min": 1, "max": 5},
+	2: {"min": 6, "max": 15},
+	3: {"min": 16, "max": 30},
+	4: {"min": 31, "max": 50},
+	5: {"min": 51, "max": 100},
+	6: {"min": 101, "max": 500},
+	7: {"min": 501, "max": 2000},
+	8: {"min": 2001, "max": 5000},
+	9: {"min": 5001, "max": 10000}
+}
+
+func _get_tier_for_area_level(area_level: int) -> int:
+	"""Get the appropriate monster tier for an area level."""
+	for tier in range(9, 0, -1):
+		if area_level >= TIER_LEVEL_RANGES[tier].min:
+			return tier
+	return 1
+
+func _get_random_monster_for_tier(tier: int) -> String:
+	"""Get a random monster name from the specified tier."""
+	var monsters = TIER_MONSTERS.get(tier, TIER_MONSTERS[1])
+	return monsters[randi() % monsters.size()]
+
+func _get_max_monster_level_for_area(area_level: int) -> int:
+	"""Get the maximum appropriate monster level for an area, with some stretch room."""
+	var tier = _get_tier_for_area_level(area_level)
+	# Allow up to 20% above the tier's max, but cap at area level + 20
+	var tier_max = TIER_LEVEL_RANGES[tier].max
+	return min(tier_max, area_level + 20)
+
+# Dungeon types by monster tier (matches dungeon_database.gd)
+# Multiple dungeons per tier - randomly selected for variety
+const TIER_DUNGEONS = {
+	3: [
+		{"type": "troll_den", "name": "Troll's Den", "boss": "Troll"},
+		{"type": "wyvern_roost", "name": "Wyvern's Roost", "boss": "Wyvern"}
+	],
+	4: [
+		{"type": "giant_keep", "name": "Giant's Keep", "boss": "Giant"},
+		{"type": "vampire_crypt", "name": "Vampire's Crypt", "boss": "Vampire"}
+	],
+	5: [
+		{"type": "lich_sanctum", "name": "Lich's Sanctum", "boss": "Lich"},
+		{"type": "cerberus_pit", "name": "Cerberus's Pit", "boss": "Cerberus"},
+		{"type": "balrog_depths", "name": "Balrog's Depths", "boss": "Balrog"}
+	],
+	6: [
+		{"type": "ancient_dragon_lair", "name": "Ancient Dragon's Lair", "boss": "Ancient Dragon"},
+		{"type": "hydra_swamp", "name": "Hydra's Swamp", "boss": "Hydra"},
+		{"type": "phoenix_nest", "name": "Phoenix's Nest", "boss": "Phoenix"}
+	],
+	7: [
+		{"type": "void_walker_rift", "name": "Void Walker's Rift", "boss": "Void Walker"},
+		{"type": "primordial_dragon_domain", "name": "Primordial Dragon's Domain", "boss": "Primordial Dragon"}
+	],
+	8: [
+		{"type": "cosmic_horror_realm", "name": "Cosmic Horror's Realm", "boss": "Cosmic Horror"}
+	],
+	9: [
+		{"type": "chaos_sanctum", "name": "Avatar of Chaos's Sanctum", "boss": "Avatar of Chaos"}
+	]
+}
+
+func _get_dungeon_for_area(area_level: int) -> Dictionary:
+	"""Get an appropriate dungeon type for the area level. Returns empty dict if none suitable.
+	Randomly selects from available dungeons at the appropriate tier."""
+	var tier = _get_tier_for_area_level(area_level)
+	# Try the exact tier first, then lower tiers
+	for t in range(tier, 2, -1):  # Dungeons start at tier 3
+		if TIER_DUNGEONS.has(t):
+			var dungeons = TIER_DUNGEONS[t]
+			# Randomly select from available dungeons at this tier
+			return dungeons[randi() % dungeons.size()]
+	return {}
+
 func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0) -> Array:
 	"""Generate procedural quests scaled to player level when all static quests are completed."""
 	var quests = []
@@ -1301,10 +1403,17 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 	return quest
 
 func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, tier: int, post_distance: float, player_level: int, progression_modifier: float) -> Dictionary:
-	"""Generate a single quest based on tier, scaled to player level and progression."""
+	"""Generate a single quest based on tier, scaled to player level and area appropriateness."""
 
-	# Base difficulty on player level instead of just post distance
-	var effective_level = player_level * (1.0 + progression_modifier)
+	# Calculate area level FIRST - this determines what monsters are appropriate
+	var area_level = max(1, int(post_distance * 0.5))
+	var monster_tier = _get_tier_for_area_level(area_level)
+	var max_monster_level = _get_max_monster_level_for_area(area_level)
+
+	# Effective level is the lower of player level and what the area supports
+	# This prevents quests requiring level 50 monsters in a level 10 area
+	var capped_level = min(player_level, max_monster_level)
+	var effective_level = capped_level * (1.0 + progression_modifier * 0.5)
 
 	# Tier multiplier for progressive difficulty within the post
 	var tier_multiplier: float
@@ -1315,53 +1424,76 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	else:
 		tier_multiplier = 1.45 + (tier - 7) * 0.2  # 1.45, 1.65, 1.85...
 
-	# Scale requirements to player level
-	var kill_count = int(5 + (tier * 2) + (player_level / 20))  # Scales slowly with level
-	var min_monster_level = int(effective_level * 0.7 * tier_multiplier)  # 70-100%+ of player level
-	var hotzone_distance = 30.0 + (tier * 20.0) + (player_level / 5)  # Distance increases with level
-	var hotzone_kills = int(3 + tier + (player_level / 30))
-	var hotzone_min_level = int(effective_level * 0.6 * tier_multiplier)  # 60%+ of player level
+	# Scale requirements - capped to area-appropriate levels
+	var kill_count = int(5 + (tier * 2) + (capped_level / 20))
+	var min_monster_level = min(int(effective_level * 0.7 * tier_multiplier), max_monster_level)
+	var hotzone_distance = 30.0 + (tier * 20.0) + (capped_level / 5)
+	var hotzone_kills = int(3 + tier + (capped_level / 30))
+	var hotzone_min_level = min(int(effective_level * 0.6 * tier_multiplier), max_monster_level)
 
-	# Rewards scale with player level and tier
-	var level_reward_mult = 1.0 + (player_level / 50.0)  # +2% per level
-	var base_xp = int((80 + (100 * tier)) * level_reward_mult * tier_multiplier)
-	var base_gold = int((40 + (50 * tier)) * level_reward_mult * tier_multiplier)
-	var gems = max(0, int((tier - 2 + player_level / 50) * tier_multiplier))  # Gems scale with level too
+	# Rewards scale with area level and tier (not player level, to prevent exploits)
+	var area_reward_mult = 1.0 + (area_level / 50.0)
+	var base_xp = int((80 + (100 * tier)) * area_reward_mult * tier_multiplier)
+	var base_gold = int((40 + (50 * tier)) * area_reward_mult * tier_multiplier)
+	var gems = max(0, int((tier - 2 + area_level / 50) * tier_multiplier))
 
-	# Quest type varies by tier - simpler quests early
+	# Quest type varies by tier - includes KILL_TYPE and DUNGEON_CLEAR
 	var quest_type: int
 	var quest_name: String
 	var quest_desc: String
 	var target: int
+	var monster_type: String = ""
+	var dungeon_type: String = ""
 
 	# Early tiers prefer simpler KILL_ANY quests
 	var effective_tier_type = tier if tier > 2 else 0
 
-	match effective_tier_type % 4:
+	# Check if dungeon quests are available for this area (tier 3+)
+	var dungeon_info = _get_dungeon_for_area(area_level)
+	var can_have_dungeon_quest = not dungeon_info.is_empty() and tier >= 3
+
+	# Use mod 6 if dungeons available, otherwise mod 5
+	var quest_mod = 6 if can_have_dungeon_quest else 5
+
+	match effective_tier_type % quest_mod:
 		0:  # Kill any monsters
 			quest_type = QuestType.KILL_ANY
 			quest_name = "Slayer's Contract %d" % tier
 			quest_desc = "Eliminate %d monsters to prove your continued valor." % kill_count
 			target = kill_count
-		1:  # Kill high-level monsters
+		1:  # Kill specific monster type
+			quest_type = QuestType.KILL_TYPE
+			monster_type = _get_random_monster_for_tier(monster_tier)
+			var type_kill_count = int(kill_count * 0.6)  # Fewer kills for specific type
+			quest_name = "%s Hunt %d" % [monster_type, tier]
+			quest_desc = "Hunt down and slay %d %ss in this region." % [type_kill_count, monster_type]
+			target = type_kill_count
+		2:  # Kill high-level monsters (capped to area)
 			quest_type = QuestType.KILL_LEVEL
 			quest_name = "Veteran's Challenge %d" % tier
 			quest_desc = "Defeat a monster of level %d or higher." % min_monster_level
 			target = min_monster_level
-		2:  # Hotzone quest
+		3:  # Hotzone quest
 			quest_type = QuestType.HOTZONE_KILL
 			quest_name = "Danger Zone Bounty %d" % tier
 			quest_desc = "Kill %d monsters (level %d+) in hotzones within %.0f tiles." % [hotzone_kills, hotzone_min_level, hotzone_distance]
 			target = hotzone_kills
-		3:  # Boss hunt - scale to push player toward next post
-			var boss_level = int(effective_level * (1.1 + progression_modifier))  # 10%+ above player level
+		4:  # Boss hunt - capped to area-appropriate level
+			var boss_level = min(int(effective_level * 1.1), max_monster_level)
 			quest_type = QuestType.BOSS_HUNT
 			quest_name = "Elite Hunt %d" % tier
 			quest_desc = "Track down and defeat a monster of level %d or higher." % boss_level
 			target = boss_level
-
-	# Calculate area level for display
-	var area_level = max(1, int(post_distance * 0.5))
+		5:  # Dungeon clear quest (only if dungeons available)
+			quest_type = QuestType.DUNGEON_CLEAR
+			dungeon_type = dungeon_info.type
+			quest_name = "Conquer the %s" % dungeon_info.name
+			quest_desc = "Venture into a %s and defeat %s. Dungeons may spawn in the wilderness - explore to find one!" % [dungeon_info.name, dungeon_info.boss]
+			target = 1  # Complete 1 dungeon of this type
+			# Dungeon quests give bonus rewards (gems, companion eggs from dungeon)
+			base_xp = int(base_xp * 2.0)
+			base_gold = int(base_gold * 1.5)
+			gems = max(gems + 2, int(gems * 1.5))
 
 	# Determine reward tier
 	var reward_tier: String
@@ -1391,11 +1523,15 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 		"difficulty_tier": tier
 	}
 
-	# Add hotzone-specific fields
+	# Add type-specific fields
 	if quest_type == QuestType.HOTZONE_KILL:
 		quest["max_distance"] = hotzone_distance
 		quest["min_intensity"] = 0.0 if tier < 5 else 0.3
 		quest["min_monster_level"] = hotzone_min_level
+	elif quest_type == QuestType.KILL_TYPE:
+		quest["monster_type"] = monster_type
+	elif quest_type == QuestType.DUNGEON_CLEAR:
+		quest["dungeon_type"] = dungeon_type
 
 	return quest
 
@@ -1410,3 +1546,7 @@ func is_quest_type_kill(quest_type: int) -> bool:
 func is_quest_type_exploration(quest_type: int) -> bool:
 	"""Check if quest type involves exploration."""
 	return quest_type == QuestType.EXPLORATION
+
+func is_quest_type_dungeon(quest_type: int) -> bool:
+	"""Check if quest type involves dungeon completion."""
+	return quest_type == QuestType.DUNGEON_CLEAR

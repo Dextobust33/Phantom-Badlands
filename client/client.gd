@@ -360,6 +360,11 @@ var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 const CRAFTING_PAGE_SIZE = 5
 
+# Companions mode
+var companions_mode: bool = false
+var companions_page: int = 0
+const COMPANIONS_PAGE_SIZE = 5
+
 # Water/Fishing location
 var at_water: bool = false  # Whether player is at a fishable water tile
 
@@ -529,10 +534,7 @@ const ANIMATION_DURATION: float = 0.6
 var player_list_refresh_timer: float = 0.0
 const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 
-# Player name click tracking for double-click
-var last_player_click_name: String = ""
-var last_player_click_time: float = 0.0
-const DOUBLE_CLICK_THRESHOLD: float = 0.5  # 500ms for double-click
+# Player name click tracking
 var pending_player_info_request: String = ""  # Track pending popup request
 
 # Rare drop sound effect
@@ -1879,6 +1881,19 @@ func _process(delta):
 		else:
 			set_meta("combatitem_cancel_pressed", false)
 
+	# Companion activation with keybinds (1-5)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and companions_mode:
+		var collected = character_data.get("collected_companions", [])
+		for i in range(min(collected.size(), 5)):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("companionkey_%d_pressed" % i, false):
+					set_meta("companionkey_%d_pressed" % i, true)
+					activate_companion_by_index(i)
+			else:
+				set_meta("companionkey_%d_pressed" % i, false)
+
 	# Monster selection with keybinds (from Monster Selection Scroll)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode:
 		if monster_select_confirm_mode:
@@ -2038,13 +2053,22 @@ func _process(delta):
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
 				if not get_meta("hotkey_%d_pressed" % i, false):
 					set_meta("hotkey_%d_pressed" % i, true)
-					# Only mark as triggered if this slot has an enabled action
-					# (prevents blocking item selection when action bar slot is empty)
+					# Only trigger if this slot has an enabled action
+					# (prevents blocking item selection when action bar slot is empty,
+					# and prevents wrong key presses from succeeding in gathering minigames)
 					if i < current_actions.size():
 						var action = current_actions[i]
 						if action.get("enabled", false) and action.get("action_type", "none") != "none":
 							action_triggered_this_frame.append(i)
-					trigger_action(i)
+							trigger_action(i)
+						elif i >= 5:  # Slots 5-9 are fishing/mining/logging catch buttons
+							# Wrong button pressed during gathering reaction phase - fail the attempt
+							if fishing_mode and fishing_phase == "reaction":
+								handle_fishing_catch(i - 5)  # Convert to 0-4 slot, will fail since target != pressed
+							elif mining_mode and mining_phase == "reaction":
+								handle_mining_catch(i - 5)  # Wrong button fails mining
+							elif logging_mode and logging_phase == "reaction":
+								handle_logging_catch(i - 5)  # Wrong button fails logging
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
@@ -2923,23 +2947,11 @@ func _on_close_leaderboard_pressed():
 # ===== PLAYER INFO POPUP HANDLERS =====
 
 func _on_player_name_clicked(meta):
-	"""Handle click on player name in online players list - double-click shows popup"""
+	"""Handle click on player name in online players list - shows player info popup"""
 	var player_name = str(meta)
-	var current_time = Time.get_ticks_msec() / 1000.0
-
-	# Check for double-click
-	if player_name == last_player_click_name and (current_time - last_player_click_time) <= DOUBLE_CLICK_THRESHOLD:
-		# Double-click detected - request player info for popup
-		pending_player_info_request = player_name
-		send_to_server({"type": "examine_player", "name": player_name})
-		last_player_click_name = ""
-		last_player_click_time = 0.0
-	else:
-		# First click - store for potential double-click and show feedback
-		last_player_click_name = player_name
-		last_player_click_time = current_time
-		# Show click feedback in chat
-		display_chat("[color=#555555]Click again to view %s's info[/color]" % player_name)
+	# Single click shows player info popup
+	pending_player_info_request = player_name
+	send_to_server({"type": "examine_player", "name": player_name})
 
 func _on_close_player_info_pressed():
 	if player_info_panel:
@@ -3662,6 +3674,21 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif companions_mode:
+		# Companions viewing mode
+		var collected = character_data.get("collected_companions", [])
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "companions_close", "enabled": true},
+			{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
+			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "1-%d Activate" % min(5, collected.size()), "action_type": "none", "action_data": "", "enabled": false} if collected.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif at_merchant:
 		# Merchant mode
 		var services = merchant_data.get("services", [])
@@ -4138,7 +4165,7 @@ func update_action_bar():
 			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
 			fourth_action,
 			fifth_action,
-			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+			{"label": "Info", "action_type": "local", "action_data": "companions", "enabled": true},
 			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 			cloak_action,
 			teleport_action,
@@ -5774,6 +5801,13 @@ func execute_local_action(action: String):
 			open_settings()
 		"leaderboard":
 			show_leaderboard_panel()
+		"companions":
+			show_companion_info()
+		"companions_close":
+			close_companions()
+		"companions_dismiss":
+			send_to_server({"type": "dismiss_companion"})
+			display_companions()
 		"logout_character":
 			logout_character()
 		"logout_account":
@@ -12279,61 +12313,138 @@ func _get_condition_color(wear: int) -> String:
 		return "#808080"  # Gray - Broken
 
 func show_companion_info():
-	"""Display information about active companion and soul gems"""
-	var companion = character_data.get("active_companion", {})
+	"""Display companions menu - eggs, hatched companions, and active companion"""
+	companions_mode = true
+	companions_page = 0
+	display_companions()
+	update_action_bar()
+
+func display_companions():
+	"""Display the companions list"""
+	game_output.clear()
+
+	var active_companion = character_data.get("active_companion", {})
+	var incubating_eggs = character_data.get("incubating_eggs", [])
+	var collected_companions = character_data.get("collected_companions", [])
 	var soul_gems = character_data.get("soul_gems", [])
 
+	display_game("[color=#FFD700]═══════ COMPANIONS ═══════[/color]")
 	display_game("")
-	display_game("[color=#FFD700]═══════ COMPANION ═══════[/color]")
 
-	if companion.is_empty():
-		display_game("[color=#808080]No active companion.[/color]")
-	else:
-		var name = companion.get("name", "Unknown")
-		var bonuses = companion.get("bonuses", {})
-		display_game("[color=#00FFFF]Active: %s[/color]" % name)
-
-		var bonus_parts = []
-		if bonuses.get("attack", 0) > 0:
-			bonus_parts.append("[color=#FF6666]+%d%% Attack[/color]" % int(bonuses.attack))
-		if bonuses.get("hp_regen", 0) > 0:
-			bonus_parts.append("[color=#66FF66]+%d%% HP Regen[/color]" % int(bonuses.hp_regen))
-		if bonuses.get("flee_bonus", 0) > 0:
-			bonus_parts.append("[color=#6666FF]+%d%% Flee[/color]" % int(bonuses.flee_bonus))
-		if bonuses.get("crit_chance", 0) > 0:
-			bonus_parts.append("[color=#FFFF66]+%d%% Crit[/color]" % int(bonuses.crit_chance))
-		if bonuses.get("gold_find", 0) > 0:
-			bonus_parts.append("[color=#FFD700]+%d%% Gold[/color]" % int(bonuses.gold_find))
-		if bonuses.get("hp_bonus", 0) > 0:
-			bonus_parts.append("[color=#00FF00]+%d%% Max HP[/color]" % int(bonuses.hp_bonus))
-		if bonuses.get("defense", 0) > 0:
-			bonus_parts.append("[color=#87CEEB]+%d%% Defense[/color]" % int(bonuses.defense))
-		if bonuses.get("lifesteal", 0) > 0:
-			bonus_parts.append("[color=#FF00FF]+%d%% Lifesteal[/color]" % int(bonuses.lifesteal))
-
+	# Active companion section
+	if not active_companion.is_empty():
+		var comp_name = active_companion.get("name", "Unknown")
+		var bonuses = active_companion.get("bonuses", {})
+		display_game("[color=#00FFFF]Active Companion: %s[/color]" % comp_name)
+		var bonus_parts = _get_companion_bonus_parts(bonuses)
 		if bonus_parts.size() > 0:
-			display_game("  Bonuses: %s" % ", ".join(bonus_parts))
-
-	if soul_gems.size() > 0:
+			display_game("  %s" % ", ".join(bonus_parts))
 		display_game("")
+	else:
+		display_game("[color=#808080]No active companion[/color]")
+		display_game("")
+
+	# Incubating eggs section
+	if incubating_eggs.size() > 0:
+		display_game("[color=#FFAA00]Incubating Eggs (%d):[/color]" % incubating_eggs.size())
+		for egg in incubating_eggs:
+			var egg_type = egg.get("egg_type", "unknown")
+			var steps = egg.get("steps_taken", 0)
+			var required = egg.get("steps_required", 1000)
+			var progress = int((float(steps) / required) * 100)
+			var egg_name = _get_egg_display_name(egg_type)
+			display_game("  [color=#FFAA00]%s[/color] - %d%% (%d/%d steps)" % [egg_name, progress, steps, required])
+		display_game("")
+
+	# Hatched companions section
+	if collected_companions.size() > 0:
+		display_game("[color=#00FF00]Hatched Companions (%d):[/color]" % collected_companions.size())
+		var idx = 1
+		for companion in collected_companions:
+			var comp_name = companion.get("name", "Unknown")
+			var comp_id = companion.get("id", "")
+			var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
+			var bonuses = companion.get("bonuses", {})
+			var bonus_parts = _get_companion_bonus_parts(bonuses)
+			var bonus_text = " - " + ", ".join(bonus_parts) if bonus_parts.size() > 0 else ""
+			if is_active:
+				display_game("  [%d] [color=#00FFFF]★ %s (Active)[/color]%s" % [idx, comp_name, bonus_text])
+			else:
+				display_game("  [%d] [color=#00FF00]%s[/color]%s" % [idx, comp_name, bonus_text])
+			idx += 1
+		display_game("")
+		display_game("[color=#808080]Press 1-5 to activate a companion[/color]")
+
+	# Soul gems (legacy)
+	if soul_gems.size() > 0:
 		display_game("[color=#A335EE]Soul Gems (%d):[/color]" % soul_gems.size())
 		for gem in soul_gems:
 			var gem_name = gem.get("name", "Unknown")
-			var is_active = not companion.is_empty() and companion.get("id", "") == gem.get("id", "")
+			var is_active = not active_companion.is_empty() and active_companion.get("id", "") == gem.get("id", "")
 			if is_active:
 				display_game("  [color=#00FFFF]● %s (Active)[/color]" % gem_name)
 			else:
 				display_game("  [color=#808080]○ %s[/color]" % gem_name)
-	else:
 		display_game("")
-		display_game("[color=#808080]No soul gems collected.[/color]")
-		display_game("[color=#808080]Defeat special monsters to obtain soul gems![/color]")
+
+	# No companions at all
+	if incubating_eggs.size() == 0 and collected_companions.size() == 0 and soul_gems.size() == 0:
+		display_game("[color=#808080]No companions yet![/color]")
+		display_game("[color=#808080]Find companion eggs in dungeons.[/color]")
 
 	display_game("")
-	display_game("[color=#808080]Commands:[/color]")
-	display_game("[color=#808080]  /companion <name> - Summon a companion[/color]")
-	display_game("[color=#808080]  /companion dismiss - Dismiss active companion[/color]")
-	display_game("[color=#FFD700]═════════════════════════[/color]")
+	display_game("[color=#FFD700]══════════════════════════[/color]")
+
+func _get_companion_bonus_parts(bonuses: Dictionary) -> Array:
+	"""Get formatted bonus text parts for a companion"""
+	var parts = []
+	if bonuses.get("attack", 0) > 0:
+		parts.append("[color=#FF6666]+%d%% Atk[/color]" % int(bonuses.attack))
+	if bonuses.get("defense", 0) > 0:
+		parts.append("[color=#87CEEB]+%d%% Def[/color]" % int(bonuses.defense))
+	if bonuses.get("hp_bonus", 0) > 0:
+		parts.append("[color=#00FF00]+%d%% HP[/color]" % int(bonuses.hp_bonus))
+	if bonuses.get("hp_regen", 0) > 0:
+		parts.append("[color=#66FF66]+%d%% Regen[/color]" % int(bonuses.hp_regen))
+	if bonuses.get("crit_chance", 0) > 0:
+		parts.append("[color=#FFFF66]+%d%% Crit[/color]" % int(bonuses.crit_chance))
+	if bonuses.get("gold_find", 0) > 0:
+		parts.append("[color=#FFD700]+%d%% Gold[/color]" % int(bonuses.gold_find))
+	if bonuses.get("flee_bonus", 0) > 0:
+		parts.append("[color=#6666FF]+%d%% Flee[/color]" % int(bonuses.flee_bonus))
+	if bonuses.get("lifesteal", 0) > 0:
+		parts.append("[color=#FF00FF]+%d%% Steal[/color]" % int(bonuses.lifesteal))
+	return parts
+
+func _get_egg_display_name(egg_type: String) -> String:
+	"""Get display name for egg type"""
+	match egg_type:
+		"companion_egg_random":
+			return "Common Egg"
+		"companion_egg_rare":
+			return "Rare Egg"
+		"companion_egg_legendary":
+			return "Legendary Egg"
+		_:
+			return egg_type.capitalize().replace("_", " ")
+
+func close_companions():
+	"""Close companions menu"""
+	companions_mode = false
+	companions_page = 0
+	game_output.clear()
+	update_action_bar()
+
+func activate_companion_by_index(index: int):
+	"""Activate a companion from collected_companions by index"""
+	var collected = character_data.get("collected_companions", [])
+	if index < 0 or index >= collected.size():
+		return
+	var companion = collected[index]
+	var companion_name = companion.get("name", "")
+	if companion_name != "":
+		send_to_server({"type": "activate_companion", "name": companion_name})
+		display_game("[color=#00FFFF]Activating %s...[/color]" % companion_name)
 
 func _get_status_effects_text() -> String:
 	"""Generate status effects section for character status display"""

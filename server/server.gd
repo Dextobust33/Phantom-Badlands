@@ -2658,8 +2658,11 @@ func send_location_update(peer_id: int):
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
 
+	# Get nearby dungeon entrances for map display
+	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius)
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations)
 
 	# Check if player is at a fishable water tile
 	var is_at_water = world_system.is_fishing_spot(character.x, character.y)
@@ -7606,6 +7609,22 @@ func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
 				"color": dungeon_data.color
 			}
 	return {}
+
+func get_visible_dungeons(center_x: int, center_y: int, radius: int) -> Array:
+	"""Get all dungeon entrances visible within the given radius"""
+	var visible = []
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		var dx = abs(instance.world_x - center_x)
+		var dy = abs(instance.world_y - center_y)
+		if dx <= radius and dy <= radius:
+			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+			visible.append({
+				"x": instance.world_x,
+				"y": instance.world_y,
+				"color": dungeon_data.color
+			})
+	return visible
 
 func _send_dungeon_state(peer_id: int):
 	"""Send current dungeon state to player"""

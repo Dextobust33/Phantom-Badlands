@@ -187,6 +187,37 @@ func check_exploration_progress(character: Character, player_x: int, player_y: i
 
 	return updates
 
+func check_dungeon_progress(character: Character, dungeon_type: String) -> Array:
+	"""Check and update dungeon quest progress when a dungeon is completed. Returns array of updates."""
+	var updates = []
+
+	for quest_data in character.active_quests:
+		var quest_id = quest_data.quest_id
+		var quest = quest_db.get_quest(quest_id)
+		if quest.is_empty():
+			continue
+
+		if quest.get("type", -1) != QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
+			continue
+
+		# Check if this dungeon type matches the quest requirement
+		var required_dungeon = quest.get("dungeon_type", "")
+		if required_dungeon == dungeon_type:
+			var result = character.update_quest_progress(quest_id, 1)
+			if result.updated:
+				var message = "Dungeon cleared! Quest '%s': %d/%d" % [quest.name, result.progress, result.target]
+				if result.completed:
+					message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest.name
+				updates.append({
+					"quest_id": quest_id,
+					"progress": result.progress,
+					"target": result.target,
+					"completed": result.completed,
+					"message": message
+				})
+
+	return updates
+
 # ===== COMPLETION & REWARDS =====
 
 func is_quest_complete(character: Character, quest_id: String) -> bool:
