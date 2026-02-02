@@ -3461,8 +3461,8 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif dungeon_mode and not in_combat:
-		# In dungeon (not fighting) - movement and actions
+	elif dungeon_mode and not in_combat and not pending_continue:
+		# In dungeon (not fighting, not waiting for continue) - movement and actions
 		current_actions = [
 			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
@@ -14360,7 +14360,10 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
 
-	# Don't clear game output if player needs to acknowledge something
+	# Always update the map display (right panel) so player position is current
+	update_dungeon_map()
+
+	# Only update GameOutput if player doesn't need to acknowledge something
 	# (e.g., combat victory, treasure found, floor change)
 	if not pending_continue:
 		display_dungeon_floor()
@@ -14482,7 +14485,7 @@ func handle_dungeon_exit(message: Dictionary):
 	update_action_bar()
 
 func display_dungeon_floor():
-	"""Display the current dungeon floor with ASCII map"""
+	"""Display the current dungeon floor - map goes in MapDisplay, status in GameOutput"""
 	if not dungeon_mode or dungeon_data.is_empty():
 		return
 
@@ -14494,21 +14497,42 @@ func display_dungeon_floor():
 	var player_y = dungeon_data.get("player_y", 0)
 	var encounters_cleared = dungeon_data.get("encounters_cleared", 0)
 
+	# Render the dungeon grid
+	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
+
+	# Update map_display panel with dungeon map (right side panel)
+	if map_display:
+		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
+		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
+		map_text += grid_display
+		map_text += "\n\n[color=#808080]@ You  ? Fight\n$ Loot  > Exit\nB Boss[/color]"
+		map_display.clear()
+		map_display.append_text(map_text)
+
+	# GameOutput shows dungeon status (not the map)
 	game_output.clear()
 	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
-	display_game("Floor %d/%d | Cleared: %d" % [floor_num, total_floors, encounters_cleared])
+	display_game("Floor %d/%d | Encounters cleared: %d" % [floor_num, total_floors, encounters_cleared])
 	display_game("")
+	display_game("Use [color=#FFFF00]N/S/W/E[/color] to move through the dungeon.")
+	display_game("Press [color=#FFFF00][%s][/color] to exit." % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]The dungeon map is displayed on the right.[/color]")
 
-	# Display the dungeon grid in game output
+func update_dungeon_map():
+	"""Update just the dungeon map display (right panel) without touching GameOutput"""
+	if not dungeon_mode or dungeon_data.is_empty():
+		return
+
+	var dungeon_name = dungeon_data.get("dungeon_name", "Dungeon")
+	var dungeon_color = dungeon_data.get("color", "#FFFFFF")
+	var floor_num = dungeon_data.get("floor", 1)
+	var total_floors = dungeon_data.get("total_floors", 1)
+	var player_x = dungeon_data.get("player_x", 0)
+	var player_y = dungeon_data.get("player_y", 0)
+
 	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
-	display_game(grid_display)
 
-	display_game("")
-	display_game("[color=#808080]Legend: @ You  ? Encounter  $ Treasure  > Exit  B Boss[/color]")
-	display_game("")
-	display_game("[%s] Exit | Move: Numpad/Arrows (N/S/W/E)" % get_action_key_name(0))
-
-	# Also update map_display panel with dungeon map
 	if map_display:
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]

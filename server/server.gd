@@ -8116,11 +8116,16 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 
 	# Start combat
 	combat_mgr.start_combat(peer_id, character, monster)
-	var combat_state = combat_mgr.get_active_combat(peer_id)
 
-	# Mark as dungeon combat for special handling
-	combat_state["is_dungeon_combat"] = true
-	combat_state["is_boss_fight"] = is_boss
+	# Mark internal combat state for dungeon-specific handling
+	var internal_state = combat_mgr.get_active_combat(peer_id)
+	internal_state["is_dungeon_combat"] = true
+	internal_state["is_boss_fight"] = is_boss
+
+	# Get display-ready combat state (flattened with monster_name, etc.)
+	var display_state = combat_mgr.get_combat_display(peer_id)
+	display_state["is_dungeon_combat"] = true
+	display_state["is_boss_fight"] = is_boss
 
 	# Build encounter message
 	var boss_text = " [BOSS]" if is_boss else ""
@@ -8129,10 +8134,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	send_to_peer(peer_id, {
 		"type": "combat_start",
 		"message": encounter_msg,
-		"monster_name": monster.name,
-		"monster_level": monster.level,
-		"monster_hp": monster.max_hp if character.knows_monster(monster.name, monster.level) else -1,
-		"combat_state": combat_state,
+		"combat_state": display_state,
 		"is_dungeon_combat": true,
 		"is_boss": is_boss,
 		"combat_bg_color": dungeon_data.color,
