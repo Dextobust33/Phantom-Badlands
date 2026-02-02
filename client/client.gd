@@ -6479,6 +6479,10 @@ func acknowledge_continue():
 		send_to_server({"type": "trading_post_quests"})
 		return
 
+	# If in dungeon, refresh the dungeon display
+	if dungeon_mode:
+		display_dungeon_floor()
+
 	update_action_bar()
 
 func logout_character():
@@ -14437,7 +14441,7 @@ func display_dungeon_floor():
 	display_game("Floor %d/%d | Cleared: %d" % [floor_num, total_floors, encounters_cleared])
 	display_game("")
 
-	# Display the dungeon grid
+	# Display the dungeon grid in game output
 	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
 	display_game(grid_display)
 
@@ -14445,6 +14449,15 @@ func display_dungeon_floor():
 	display_game("[color=#808080]Legend: @ You  ? Encounter  $ Treasure  > Exit  B Boss[/color]")
 	display_game("")
 	display_game("[%s] Exit | Move: Numpad/Arrows (N/S/W/E)" % get_action_key_name(0))
+
+	# Also update map_display panel with dungeon map
+	if map_display:
+		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
+		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
+		map_text += grid_display
+		map_text += "\n\n[color=#808080]@ You  ? Fight\n$ Loot  > Exit\nB Boss[/color]"
+		map_display.clear()
+		map_display.append_text(map_text)
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	"""Render dungeon grid to BBCode string"""
