@@ -5701,12 +5701,24 @@ func handle_trading_post_quests(peer_id: int):
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id)
 		if not quest.is_empty():
+			var description = quest.get("description", "")
+
+			# Add dungeon direction hints for dungeon quests
+			if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+				var dungeon_type = quest.get("dungeon_type", "")
+				var tier = 1 if quest_data.quest_id.begins_with("haven_") else 0
+				var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
+				if not nearest.is_empty():
+					description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+						nearest.dungeon_name, nearest.direction_text
+					]
+
 			active_quests_display.append({
 				"id": quest_data.quest_id,
 				"name": quest.name,
 				"progress": quest_data.progress,
 				"target": quest_data.target,
-				"description": quest.get("description", ""),
+				"description": description,
 				"is_complete": quest_data.progress >= quest_data.target,
 				"trading_post": quest.trading_post
 			})
@@ -6048,11 +6060,24 @@ func handle_get_quest_log(peer_id: int):
 	for quest in character.active_quests:
 		var qid = quest.get("quest_id", "")
 		var quest_data = quest_db.get_quest(qid)
+		var description = quest_data.get("description", "") if quest_data else ""
+
+		# Add dungeon direction hints for dungeon quests
+		if quest_data and quest_data.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+			var dungeon_type = quest_data.get("dungeon_type", "")
+			var tier = 1 if qid.begins_with("haven_") else 0
+			var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
+			if not nearest.is_empty():
+				description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+					nearest.dungeon_name, nearest.direction_text
+				]
+
 		active_quests_info.append({
 			"id": qid,
 			"name": quest_data.get("name", "Unknown Quest") if quest_data else "Unknown Quest",
 			"progress": quest.get("progress", 0),
-			"target": quest.get("target", 1)
+			"target": quest.get("target", 1),
+			"description": description
 		})
 
 	send_to_peer(peer_id, {

@@ -157,11 +157,16 @@ const STARTER_NODE_DENSITY = 40  # 4% chance for starter nodes
 
 func is_ore_deposit(x: int, y: int) -> bool:
 	"""Check if coordinates are a valid mining location (ore deposit in mountains or starter node)"""
+	var terrain = get_terrain_at(x, y)
+
+	# Never show ore on water tiles
+	if terrain == Terrain.WATER or terrain == Terrain.DEEP_WATER:
+		return false
+
 	var distance = sqrt(x * x + y * y)
 
-	# Starter ore nodes near origin (work on any non-safe terrain)
+	# Starter ore nodes near origin (work on any non-safe, non-water terrain)
 	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
-		var terrain = get_terrain_at(x, y)
 		var info = get_terrain_info(terrain)
 		if not info.safe:  # Not in trading posts
 			var ore_hash = abs(x * 47 + y * 83) % 1000
@@ -169,7 +174,6 @@ func is_ore_deposit(x: int, y: int) -> bool:
 				return true
 
 	# Regular ore deposits in mountains
-	var terrain = get_terrain_at(x, y)
 	if terrain != Terrain.MOUNTAINS:
 		return false
 	# Use hash-based ore deposits - 2% of mountain tiles have ore
@@ -178,11 +182,16 @@ func is_ore_deposit(x: int, y: int) -> bool:
 
 func is_dense_forest(x: int, y: int) -> bool:
 	"""Check if coordinates are a valid logging location (dense forest or starter node)"""
+	var terrain = get_terrain_at(x, y)
+
+	# Never show trees on water tiles
+	if terrain == Terrain.WATER or terrain == Terrain.DEEP_WATER:
+		return false
+
 	var distance = sqrt(x * x + y * y)
 
-	# Starter wood nodes near origin (work on any non-safe terrain)
+	# Starter wood nodes near origin (work on any non-safe, non-water terrain)
 	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
-		var terrain = get_terrain_at(x, y)
 		var info = get_terrain_info(terrain)
 		if not info.safe:  # Not in trading posts
 			var wood_hash = abs(x * 67 + y * 97) % 1000
@@ -190,7 +199,6 @@ func is_dense_forest(x: int, y: int) -> bool:
 				return true
 
 	# Regular dense forests
-	var terrain = get_terrain_at(x, y)
 	if terrain != Terrain.FOREST and terrain != Terrain.DEEP_FOREST:
 		return false
 	# Use hash-based tree nodes - 3% of forests have harvestable trees

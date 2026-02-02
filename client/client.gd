@@ -4156,13 +4156,19 @@ func update_action_bar():
 				fifth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
 			else:
 				fifth_action = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true}
+			# Sixth slot: Craft if fifth slot is Title/High Seat, otherwise placeholder
+			var sixth_action: Dictionary
+			if has_title or at_high_seat:
+				sixth_action = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true}
+			else:
+				sixth_action = {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 			current_actions = [
 				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
 				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": true},
 				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
 				fifth_action,
-				{"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true},
+				sixth_action,
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
