@@ -320,8 +320,8 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 
 # ===== QUEST LOG DISPLAY =====
 
-func format_quest_log(character: Character) -> String:
-	"""Format the quest log for display"""
+func format_quest_log(character: Character, extra_info: Dictionary = {}) -> String:
+	"""Format the quest log for display. extra_info is optional dict mapping quest_id to additional text."""
 	var output = "[color=#FFD700]===== Active Quests (%d/%d) =====[/color]\n\n" % [
 		character.get_active_quest_count(), Character.MAX_ACTIVE_QUESTS]
 
@@ -352,6 +352,10 @@ func format_quest_log(character: Character) -> String:
 		if description.is_empty():
 			description = quest.description
 		output += "    %s\n" % description
+
+		# Add any extra info for this quest (e.g., dungeon directions)
+		if extra_info.has(quest_id):
+			output += "    %s\n" % extra_info[quest_id]
 
 		# Progress bar
 		var progress_pct = min(1.0, float(progress) / float(target))

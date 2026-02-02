@@ -6076,9 +6076,9 @@ func handle_get_quest_log(peer_id: int):
 		return
 
 	var character = characters[peer_id]
-	var quest_log = quest_mgr.format_quest_log(character)
 
-	# Build array of active quest info for client-side abandonment
+	# Build dungeon direction info for dungeon quests
+	var extra_info = {}
 	var active_quests_info = []
 	for quest in character.active_quests:
 		var qid = quest.get("quest_id", "")
@@ -6087,10 +6087,11 @@ func handle_get_quest_log(peer_id: int):
 
 		# Add dungeon direction hints for dungeon quests
 		if quest_data and quest_data.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+			var direction_text = ""
 			# Check for player's personal dungeon first
 			var dungeon_info = _get_player_dungeon_info(peer_id, qid, character.x, character.y)
 			if not dungeon_info.is_empty():
-				description += "\n\n[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
+				direction_text = "[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [
 					dungeon_info.dungeon_name, dungeon_info.direction_text
 				]
 			else:
@@ -6099,9 +6100,13 @@ func handle_get_quest_log(peer_id: int):
 				var tier = 1 if qid.begins_with("haven_") else 0
 				var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
 				if not nearest.is_empty():
-					description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+					direction_text = "[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
 						nearest.dungeon_name, nearest.direction_text
 					]
+
+			if not direction_text.is_empty():
+				extra_info[qid] = direction_text
+				description += "\n\n" + direction_text
 
 		active_quests_info.append({
 			"id": qid,
@@ -6110,6 +6115,8 @@ func handle_get_quest_log(peer_id: int):
 			"target": quest.get("target", 1),
 			"description": description
 		})
+
+	var quest_log = quest_mgr.format_quest_log(character, extra_info)
 
 	send_to_peer(peer_id, {
 		"type": "quest_log",
