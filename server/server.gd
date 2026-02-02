@@ -7507,18 +7507,20 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	character.dungeon_x = new_x
 	character.dungeon_y = new_y
 
-	# Handle tile interaction
-	match tile:
-		DungeonDatabaseScript.TileType.ENCOUNTER:
-			_start_dungeon_encounter(peer_id, false)
-		DungeonDatabaseScript.TileType.BOSS:
-			_start_dungeon_encounter(peer_id, true)
-		DungeonDatabaseScript.TileType.TREASURE:
-			_open_dungeon_treasure(peer_id)
-		DungeonDatabaseScript.TileType.EXIT:
-			_advance_dungeon_floor(peer_id)
-		_:
-			_send_dungeon_state(peer_id)
+	# Always send updated dungeon state first so client sees new position
+	_send_dungeon_state(peer_id)
+
+	# Handle tile interaction after sending state update
+	# Using integer comparison for enum values to ensure matching works
+	var tile_int = int(tile)
+	if tile_int == int(DungeonDatabaseScript.TileType.ENCOUNTER):
+		_start_dungeon_encounter(peer_id, false)
+	elif tile_int == int(DungeonDatabaseScript.TileType.BOSS):
+		_start_dungeon_encounter(peer_id, true)
+	elif tile_int == int(DungeonDatabaseScript.TileType.TREASURE):
+		_open_dungeon_treasure(peer_id)
+	elif tile_int == int(DungeonDatabaseScript.TileType.EXIT):
+		_advance_dungeon_floor(peer_id)
 
 func handle_dungeon_exit(peer_id: int):
 	"""Handle player exiting dungeon"""
