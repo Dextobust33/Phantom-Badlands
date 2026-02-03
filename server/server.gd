@@ -6817,23 +6817,33 @@ func handle_activate_companion(peer_id: int, message: Dictionary):
 		return
 
 	var character = characters[peer_id]
+	var companion_id_input = message.get("id", "").strip_edges()
 	var companion_name_input = message.get("name", "").strip_edges()
 
-	if companion_name_input.is_empty():
-		send_to_peer(peer_id, {"type": "error", "message": "Please specify a companion name."})
+	if companion_id_input.is_empty() and companion_name_input.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Please specify a companion to activate."})
 		return
 
 	# First check hatched companions (new egg system)
 	var hatched_companions = character.get_collected_companions()
 	var matched_hatched = {}
 
-	for comp in hatched_companions:
-		var name = comp.get("name", "")
-		if name.to_lower() == companion_name_input.to_lower():
-			matched_hatched = comp
-			break
-		elif name.to_lower().begins_with(companion_name_input.to_lower()):
-			matched_hatched = comp
+	# Priority 1: Match by unique ID (handles duplicates correctly)
+	if not companion_id_input.is_empty():
+		for comp in hatched_companions:
+			if comp.get("id", "") == companion_id_input:
+				matched_hatched = comp
+				break
+
+	# Priority 2: Fall back to name matching (legacy/command support)
+	if matched_hatched.is_empty() and not companion_name_input.is_empty():
+		for comp in hatched_companions:
+			var name = comp.get("name", "")
+			if name.to_lower() == companion_name_input.to_lower():
+				matched_hatched = comp
+				break
+			elif name.to_lower().begins_with(companion_name_input.to_lower()):
+				matched_hatched = comp
 
 	if not matched_hatched.is_empty():
 		var comp_id = matched_hatched.get("id", "")
@@ -8060,6 +8070,16 @@ func handle_dungeon_exit(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot exit while in combat!"})
 		return
 
+	# Clear any pending flock encounters
+	if pending_flocks.has(peer_id):
+		pending_flocks.erase(peer_id)
+	if pending_flock_drops.has(peer_id):
+		pending_flock_drops.erase(peer_id)
+	if pending_flock_gems.has(peer_id):
+		pending_flock_gems.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
+
 	# Remove from dungeon
 	var instance_id = character.current_dungeon_id
 	if active_dungeons.has(instance_id):
@@ -8792,6 +8812,16 @@ func _complete_dungeon(peer_id: int):
 			"completed": update.completed,
 			"message": update.message
 		})
+
+	# Clear any pending flock encounters
+	if pending_flocks.has(peer_id):
+		pending_flocks.erase(peer_id)
+	if pending_flock_drops.has(peer_id):
+		pending_flock_drops.erase(peer_id)
+	if pending_flock_gems.has(peer_id):
+		pending_flock_gems.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
 
 	# Mark the dungeon as completed for despawn timer (world dungeons only)
 	if active_dungeons.has(instance_id):

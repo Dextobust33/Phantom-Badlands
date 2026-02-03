@@ -13516,10 +13516,11 @@ func activate_companion_by_index(index: int):
 		update_action_bar()
 		return
 
-	# Normal activation
-	var companion_name = companion.get("name", "")
-	if companion_name != "":
-		send_to_server({"type": "activate_companion", "name": companion_name})
+	# Normal activation - send ID to uniquely identify companion (handles duplicates)
+	var companion_id = companion.get("id", "")
+	var companion_name = companion.get("name", "Unknown")
+	if companion_id != "":
+		send_to_server({"type": "activate_companion", "id": companion_id})
 		display_game("[color=#00FFFF]Activating %s...[/color]" % companion_name)
 
 func _display_companions_for_release():
