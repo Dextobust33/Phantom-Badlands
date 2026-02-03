@@ -7246,6 +7246,10 @@ func acknowledge_continue():
 		send_to_server({"type": "trading_post_quests"})
 		return
 
+	# If at dungeon entrance in overworld (not in dungeon), show dungeon info
+	if at_dungeon_entrance and not dungeon_mode and not dungeon_entrance_info.is_empty():
+		_display_dungeon_entrance_info()
+
 	# If in dungeon, refresh the dungeon display
 	if dungeon_mode:
 		if need_dungeon_refresh:
