@@ -113,6 +113,14 @@ const MERCHANT_UPDATE_INTERVAL = 10.0  # Check every 10 seconds
 var merchant_update_timer = 0.0
 var last_merchant_cache_positions: Dictionary = {}  # Tracks merchant positions for change detection
 
+# ===== GATHERING NODE SYSTEM =====
+# Simplified node tracking for performance - nodes are deterministic so we only track depleted ones
+# Key format: "x,y" -> respawn_timestamp (Unix time when node respawns)
+var depleted_nodes: Dictionary = {}
+const NODE_RESPAWN_TIME = 300.0  # 5 minutes to respawn
+const NODE_RESPAWN_CHECK_INTERVAL = 10.0  # Only check respawns every 10 seconds
+var node_respawn_timer: float = 0.0
+
 func _ready():
 	# Parse command line arguments for port
 	var args = OS.get_cmdline_args()
@@ -504,6 +512,9 @@ func _process(delta):
 	if dungeon_spawn_timer >= DUNGEON_SPAWN_CHECK_INTERVAL:
 		dungeon_spawn_timer = 0.0
 		_check_dungeon_spawns()
+
+	# Process gathering node respawns
+	process_node_respawns(delta)
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -2272,6 +2283,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"reason": "fled",
 					"dungeon_name": dungeon_name
 				})
+				# Send location update to refresh map with player's position outside dungeon
+				send_location_update(peer_id)
 		elif result.get("monster_fled", false):
 			# Monster fled - check if it summoned a replacement (Shrieker behavior)
 			var summon_next = result.get("summon_next_fight", "")
@@ -2703,20 +2716,32 @@ func send_location_update(peer_id: int):
 	# Get nearby dungeon entrances for map display
 	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius)
 
+	# Get depleted node keys for map display (shows dim markers for depleted nodes)
+	var depleted_keys = depleted_nodes.keys()
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys)
 
-	# Check if player is at a fishable water tile
-	var is_at_water = world_system.is_fishing_spot(character.x, character.y)
-	var water_type = world_system.get_fishing_type(character.x, character.y) if is_at_water else ""
+	# Check for gathering node at this location
+	var gathering_node = get_gathering_node_at(character.x, character.y)
+	var is_at_water = false
+	var water_type = ""
+	var is_at_ore = false
+	var current_ore_tier = 1
+	var is_at_forest = false
+	var current_wood_tier = 1
 
-	# Check if player is at an ore deposit (mining)
-	var is_at_ore = world_system.is_ore_deposit(character.x, character.y)
-	var current_ore_tier = world_system.get_ore_tier(character.x, character.y) if is_at_ore else 1
-
-	# Check if player is at a dense forest (logging)
-	var is_at_forest = world_system.is_dense_forest(character.x, character.y)
-	var current_wood_tier = world_system.get_wood_tier(character.x, character.y) if is_at_forest else 1
+	if not gathering_node.is_empty():
+		match gathering_node.type:
+			"fishing":
+				is_at_water = true
+				water_type = world_system.get_fishing_type(character.x, character.y)
+			"mining":
+				is_at_ore = true
+				current_ore_tier = gathering_node.tier
+			"logging":
+				is_at_forest = true
+				current_wood_tier = gathering_node.tier
 
 	# Check if player is at a dungeon entrance
 	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y)
@@ -2735,7 +2760,8 @@ func send_location_update(peer_id: int):
 		"at_dense_forest": is_at_forest,
 		"wood_tier": current_wood_tier,
 		"at_dungeon": at_dungeon,
-		"dungeon_info": dungeon_entrance
+		"dungeon_info": dungeon_entrance,
+		"gathering_node": gathering_node  # Include full node info for client
 	})
 
 	# Forward location/map to watchers
@@ -7011,15 +7037,21 @@ func handle_fish_start(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot fish while in combat!"})
 		return
 
-	# Check if at a water tile
-	if not world_system.is_fishing_spot(character.x, character.y):
-		send_to_peer(peer_id, {"type": "error", "message": "You need to be at water to fish!"})
+	# Check for gathering node at this location
+	var gathering_node = get_gathering_node_at(character.x, character.y)
+	if gathering_node.is_empty() or gathering_node.type != "fishing":
+		send_to_peer(peer_id, {"type": "error", "message": "No fishing spot here! Look for fish splashing in water nearby."})
 		return
 
 	# Get water type and fishing data
 	var water_type = world_system.get_fishing_type(character.x, character.y)
-	var wait_time = drop_tables.get_fishing_wait_time(character.fishing_skill)
-	var reaction_window = drop_tables.get_fishing_reaction_window(character.fishing_skill)
+	var base_wait_time = drop_tables.get_fishing_wait_time(character.fishing_skill)
+	var base_reaction_window = drop_tables.get_fishing_reaction_window(character.fishing_skill)
+
+	# Apply tool speed bonus (reduces wait time)
+	var tool_speed_bonus = character.equipped_fishing_rod.get("bonuses", {}).get("speed_bonus", 0.0)
+	var wait_time = base_wait_time * (1.0 - tool_speed_bonus)
+	var reaction_window = base_reaction_window * (1.0 + tool_speed_bonus * 0.5)  # Slightly more time too
 
 	send_to_peer(peer_id, {
 		"type": "fish_start",
@@ -7050,22 +7082,32 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 	# Roll for catch
 	var catch_result = drop_tables.roll_fishing_catch(water_type, character.fishing_skill)
 
-	# Add XP
-	var xp_result = character.add_fishing_xp(catch_result.xp)
-	character.record_fish_caught()
-
 	# Handle different catch types
 	var catch_message = ""
 	var extra_messages = []
 
+	# Get tool bonuses
+	var tool_yield_bonus = character.equipped_fishing_rod.get("bonuses", {}).get("yield_bonus", 0)
+
+	# Calculate quantity - base 1-2, with skill bonus, tool bonus, and critical chance
+	var quantity = 1 + randi() % 2 + tool_yield_bonus  # 1-2 base + tool bonus
+	var crit_chance = mini(character.fishing_skill, 50)  # Up to 50% crit chance at skill 50
+	if randi() % 100 < crit_chance:
+		quantity *= 2  # Double on crit
+		extra_messages.append("[color=#FFD700]★ Critical Catch! ★[/color]")
+
+	# Add XP
+	var xp_result = character.add_fishing_xp(catch_result.xp)
+	character.record_fish_caught()
+
 	match catch_result.type:
 		"fish":
 			# Add as crafting material
-			character.add_crafting_material(catch_result.item_id, 1)
-			catch_message = "[color=#00FF00]You caught a %s![/color]" % catch_result.name
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#00FF00]You caught %dx %s![/color]" % [quantity, catch_result.name]
 		"material":
-			character.add_crafting_material(catch_result.item_id, 1)
-			catch_message = "[color=#00BFFF]You found %s![/color]" % catch_result.name
+			character.add_crafting_material(catch_result.item_id, quantity)
+			catch_message = "[color=#00BFFF]You found %dx %s![/color]" % [quantity, catch_result.name]
 		"treasure":
 			# Give gold based on value
 			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
@@ -7098,6 +7140,13 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Fishing skill increased to %d! ★[/color]" % xp_result.new_level)
 
+	# Deplete the gathering node
+	deplete_gathering_node(character.x, character.y)
+
+	# Check if node is now depleted
+	var node = get_gathering_node_at(character.x, character.y)
+	var node_depleted = node.is_empty()
+
 	send_to_peer(peer_id, {
 		"type": "fish_result",
 		"success": true,
@@ -7106,10 +7155,12 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 		"leveled_up": xp_result.leveled_up,
 		"new_level": xp_result.new_level,
 		"message": catch_message,
-		"extra_messages": extra_messages
+		"extra_messages": extra_messages,
+		"node_depleted": node_depleted
 	})
 
 	send_character_update(peer_id)
+	send_location_update(peer_id)  # Refresh location to update node status
 	save_character(peer_id)
 
 # ===== MINING SYSTEM =====
@@ -7126,15 +7177,25 @@ func handle_mine_start(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot mine while in combat!"})
 		return
 
-	# Check if at an ore deposit
-	if not world_system.is_ore_deposit(character.x, character.y):
-		send_to_peer(peer_id, {"type": "error", "message": "You need to be at an ore deposit to mine!"})
+	# Check for gathering node at this location
+	var gathering_node = get_gathering_node_at(character.x, character.y)
+	if gathering_node.is_empty() or gathering_node.type != "mining":
+		send_to_peer(peer_id, {"type": "error", "message": "No ore vein here! Search the mountains for exposed ore."})
 		return
 
-	# Get ore tier and mining data
-	var ore_tier = world_system.get_ore_tier(character.x, character.y)
-	var wait_time = drop_tables.get_mining_wait_time(character.mining_skill)
-	var reaction_window = drop_tables.get_mining_reaction_window(character.mining_skill)
+	# Get ore tier from the node
+	var base_ore_tier = gathering_node.tier
+	var base_wait_time = drop_tables.get_mining_wait_time(character.mining_skill)
+	var base_reaction_window = drop_tables.get_mining_reaction_window(character.mining_skill)
+
+	# Apply tool bonuses
+	var tool_bonuses = character.equipped_pickaxe.get("bonuses", {})
+	var tool_speed_bonus = tool_bonuses.get("speed_bonus", 0.0)
+	var tool_tier_bonus = tool_bonuses.get("tier_bonus", 0)
+
+	var ore_tier = mini(9, base_ore_tier + tool_tier_bonus)  # Cap at tier 9
+	var wait_time = base_wait_time * (1.0 - tool_speed_bonus)
+	var reaction_window = base_reaction_window * (1.0 + tool_speed_bonus * 0.5)
 	var reactions_required = drop_tables.get_mining_reactions_required(ore_tier)
 
 	send_to_peer(peer_id, {
@@ -7168,21 +7229,33 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 	# Roll for catch (reduced rewards on partial success)
 	var catch_result = drop_tables.roll_mining_catch(ore_tier, character.mining_skill)
 
-	# Calculate quantity based on success level
+	# Handle different catch types
+	var catch_message = ""
+	var extra_messages = []
+
+	# Calculate quantity based on success level - increased base yields
+	# Apply tool yield bonus from equipped pickaxe
+	var tool_yield_bonus = character.equipped_pickaxe.get("bonuses", {}).get("yield_bonus", 0)
+
 	var quantity = 1
 	if success:
-		quantity = 1 + randi() % 2  # 1-2 on full success
-	# Partial success: 1 item but reduced XP
+		quantity = 2 + randi() % 2  # 2-3 on full success (up from 1-2)
+		# Critical chance based on skill
+		var crit_chance = mini(character.mining_skill, 50)
+		if randi() % 100 < crit_chance:
+			quantity *= 2
+			extra_messages.append("[color=#FFD700]★ Rich Vein! ★[/color]")
+	else:
+		quantity = 1 + (partial_success / 2)  # 1-2 on partial based on strikes completed
+
+	# Add tool yield bonus
+	quantity += tool_yield_bonus
 
 	# Add XP (reduced on partial success)
 	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_mining_reactions_required(ore_tier))
 	var xp_gained = int(catch_result.xp * xp_multiplier)
 	var xp_result = character.add_mining_xp(xp_gained)
 	character.record_ore_gathered()
-
-	# Handle different catch types
-	var catch_message = ""
-	var extra_messages = []
 
 	match catch_result.type:
 		"ore":
@@ -7228,6 +7301,13 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Mining skill increased to %d! ★[/color]" % xp_result.new_level)
 
+	# Deplete the gathering node
+	deplete_gathering_node(character.x, character.y)
+
+	# Check if node is now depleted
+	var node = get_gathering_node_at(character.x, character.y)
+	var node_depleted = node.is_empty()
+
 	send_to_peer(peer_id, {
 		"type": "mine_result",
 		"success": true,
@@ -7237,10 +7317,12 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 		"leveled_up": xp_result.leveled_up,
 		"new_level": xp_result.new_level,
 		"message": catch_message,
-		"extra_messages": extra_messages
+		"extra_messages": extra_messages,
+		"node_depleted": node_depleted
 	})
 
 	send_character_update(peer_id)
+	send_location_update(peer_id)  # Refresh location to update node status
 	save_character(peer_id)
 
 # ===== LOGGING SYSTEM =====
@@ -7257,15 +7339,27 @@ func handle_log_start(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot chop wood while in combat!"})
 		return
 
-	# Check if at a dense forest
-	if not world_system.is_dense_forest(character.x, character.y):
-		send_to_peer(peer_id, {"type": "error", "message": "You need to be at a harvestable tree to chop!"})
+	# Check for gathering node at this location
+	var gathering_node = get_gathering_node_at(character.x, character.y)
+	if gathering_node.is_empty() or gathering_node.type != "logging":
+		send_to_peer(peer_id, {"type": "error", "message": "No harvestable tree here! Search the forest for fallen logs."})
 		return
 
-	# Get wood tier and logging data
-	var wood_tier = world_system.get_wood_tier(character.x, character.y)
-	var wait_time = drop_tables.get_logging_wait_time(character.logging_skill)
-	var reaction_window = drop_tables.get_logging_reaction_window(character.logging_skill)
+	# Get wood tier from the node
+	var base_wood_tier = gathering_node.tier
+	var base_wait_time = drop_tables.get_logging_wait_time(character.logging_skill)
+	var base_reaction_window = drop_tables.get_logging_reaction_window(character.logging_skill)
+
+	# Apply tool bonuses from equipped axe
+	var tool_bonuses = character.equipped_axe.get("bonuses", {})
+	var tool_speed_bonus = tool_bonuses.get("speed_bonus", 0.0)
+	var tool_tier_bonus = tool_bonuses.get("tier_bonus", 0)
+
+	# Calculate final values with tool bonuses
+	var wood_tier = mini(6, base_wood_tier + tool_tier_bonus)  # Cap at max tier 6
+	var wait_time = base_wait_time * (1.0 - tool_speed_bonus)  # Faster wait with better tools
+	var reaction_window = base_reaction_window * (1.0 + tool_speed_bonus * 0.5)  # Slightly longer window
+
 	var reactions_required = drop_tables.get_logging_reactions_required(wood_tier)
 
 	send_to_peer(peer_id, {
@@ -7299,20 +7393,33 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 	# Roll for catch
 	var catch_result = drop_tables.roll_logging_catch(wood_tier, character.logging_skill)
 
-	# Calculate quantity based on success level
+	# Handle different catch types
+	var catch_message = ""
+	var extra_messages = []
+
+	# Calculate quantity based on success level - increased base yields
+	# Apply tool yield bonus from equipped axe
+	var tool_yield_bonus = character.equipped_axe.get("bonuses", {}).get("yield_bonus", 0)
+
 	var quantity = 1
 	if success:
-		quantity = 1 + randi() % 2
+		quantity = 2 + randi() % 2  # 2-3 on full success (up from 1-2)
+		# Critical chance based on skill
+		var crit_chance = mini(character.logging_skill, 50)
+		if randi() % 100 < crit_chance:
+			quantity *= 2
+			extra_messages.append("[color=#FFD700]★ Perfect Cut! ★[/color]")
+	else:
+		quantity = 1 + (partial_success / 2)  # 1-2 on partial based on chops completed
+
+	# Add tool yield bonus
+	quantity += tool_yield_bonus
 
 	# Add XP (reduced on partial success)
 	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_logging_reactions_required(wood_tier))
 	var xp_gained = int(catch_result.xp * xp_multiplier)
 	var xp_result = character.add_logging_xp(xp_gained)
 	character.record_wood_gathered()
-
-	# Handle different catch types
-	var catch_message = ""
-	var extra_messages = []
 
 	match catch_result.type:
 		"wood":
@@ -7355,6 +7462,13 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Logging skill increased to %d! ★[/color]" % xp_result.new_level)
 
+	# Deplete the gathering node
+	deplete_gathering_node(character.x, character.y)
+
+	# Check if node is now depleted
+	var node = get_gathering_node_at(character.x, character.y)
+	var node_depleted = node.is_empty()
+
 	send_to_peer(peer_id, {
 		"type": "log_result",
 		"success": true,
@@ -7364,11 +7478,93 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 		"leveled_up": xp_result.leveled_up,
 		"new_level": xp_result.new_level,
 		"message": catch_message,
-		"extra_messages": extra_messages
+		"extra_messages": extra_messages,
+		"node_depleted": node_depleted
 	})
 
 	send_character_update(peer_id)
+	send_location_update(peer_id)  # Refresh location to update node status
 	save_character(peer_id)
+
+# ===== GATHERING NODE SYSTEM =====
+# Simplified for performance - nodes are deterministic, we only track depleted ones
+
+func get_coord_key(x: int, y: int) -> String:
+	"""Generate a coordinate key for node dictionaries"""
+	return "%d,%d" % [x, y]
+
+func get_gathering_node_at(x: int, y: int) -> Dictionary:
+	"""Check if there's an active gathering node at the given coordinates.
+	Nodes are deterministic based on world_system functions - we only track depleted ones."""
+	var coord_key = get_coord_key(x, y)
+
+	# Check if this node is depleted (uses timestamp comparison)
+	if depleted_nodes.has(coord_key):
+		var respawn_time = depleted_nodes[coord_key]
+		if Time.get_unix_time_from_system() < respawn_time:
+			return {}  # Still depleted
+		else:
+			# Node has respawned - remove from depleted list
+			depleted_nodes.erase(coord_key)
+
+	# Determine node type using world_system functions (deterministic)
+	return _determine_node_type_at(x, y)
+
+func _determine_node_type_at(x: int, y: int) -> Dictionary:
+	"""Determine if and what type of gathering node exists at coordinates.
+	Uses the same logic as world_system map display for consistency."""
+	var terrain = world_system.get_terrain_at(x, y)
+	var terrain_info = world_system.get_terrain_info(terrain)
+
+	# No nodes in safe zones
+	if terrain_info.safe:
+		return {}
+
+	# Check for fishing spot (uses world_system's is_fishing_spot)
+	if world_system.is_fishing_spot(x, y):
+		return {
+			"type": "fishing",
+			"tier": world_system.get_fishing_tier(x, y)
+		}
+
+	# Check for ore deposit (uses world_system's is_ore_deposit - matches map "O" markers)
+	if world_system.is_ore_deposit(x, y):
+		return {
+			"type": "mining",
+			"tier": world_system.get_ore_tier(x, y)
+		}
+
+	# Check for dense forest (uses world_system's is_dense_forest - matches map "T" markers)
+	if world_system.is_dense_forest(x, y):
+		return {
+			"type": "logging",
+			"tier": world_system.get_wood_tier(x, y)
+		}
+
+	return {}
+
+func deplete_gathering_node(x: int, y: int):
+	"""Mark a gathering node as depleted - it will respawn after NODE_RESPAWN_TIME"""
+	var coord_key = get_coord_key(x, y)
+	# Store the timestamp when this node will respawn
+	depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+
+func process_node_respawns(delta: float):
+	"""Periodically clean up expired entries from depleted_nodes for memory management"""
+	node_respawn_timer += delta
+	if node_respawn_timer < NODE_RESPAWN_CHECK_INTERVAL:
+		return
+	node_respawn_timer = 0.0
+
+	# Clean up respawned nodes (timestamp has passed)
+	var current_time = Time.get_unix_time_from_system()
+	var to_remove = []
+	for coord_key in depleted_nodes:
+		if depleted_nodes[coord_key] <= current_time:
+			to_remove.append(coord_key)
+
+	for coord_key in to_remove:
+		depleted_nodes.erase(coord_key)
 
 # ===== CRAFTING SYSTEM =====
 
@@ -7398,7 +7594,8 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			return
 
 	var skill_level = character.get_crafting_skill(skill_name)
-	var recipes = CraftingDatabaseScript.get_available_recipes(skill_enum, skill_level)
+	# Get ALL recipes for the skill (including locked ones) so players can see what's coming
+	var recipes = CraftingDatabaseScript.get_recipes_for_skill(skill_enum)
 
 	# Get trading post bonus
 	var tp_data = at_trading_post[peer_id]
@@ -7410,8 +7607,12 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 	for recipe_entry in recipes:
 		var recipe_id = recipe_entry.id
 		var recipe = recipe_entry.data
-		var can_craft = character.has_crafting_materials(recipe.materials)
-		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, post_bonus)
+		var is_locked = recipe.skill_required > skill_level
+		var can_craft = not is_locked and character.has_crafting_materials(recipe.materials)
+		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, post_bonus) if not is_locked else 0
+
+		# Build a description of what this recipe does
+		var description = _get_recipe_description(recipe)
 
 		recipe_list.append({
 			"id": recipe_id,
@@ -7421,7 +7622,9 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"materials": recipe.materials,
 			"can_craft": can_craft,
 			"success_chance": success_chance,
-			"output_type": recipe.output_type
+			"output_type": recipe.output_type,
+			"locked": is_locked,
+			"description": description
 		})
 
 	send_to_peer(peer_id, {
@@ -7432,6 +7635,59 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"recipes": recipe_list,
 		"materials": character.crafting_materials
 	})
+
+func _get_recipe_description(recipe: Dictionary) -> String:
+	"""Generate a human-readable description of what a recipe produces"""
+	var output_type = recipe.get("output_type", "")
+	var effect = recipe.get("effect", {})
+
+	match output_type:
+		"consumable":
+			var effect_type = effect.get("type", "")
+			match effect_type:
+				"buff":
+					var stat = effect.get("stat", "").replace("_", " ")
+					var amount = effect.get("amount", 0)
+					var duration = effect.get("duration", 0)
+					return "Buff: +%d %s for %ds" % [amount, stat, duration]
+				"heal":
+					return "Heals %d HP" % effect.get("amount", 0)
+				"restore_mana":
+					return "Restores %d mana" % effect.get("amount", 0)
+				"restore_stamina":
+					return "Restores %d stamina" % effect.get("amount", 0)
+				_:
+					return "Consumable item"
+		"weapon", "armor":
+			var slot = recipe.get("output_slot", "")
+			return "Crafted %s equipment" % slot
+		"enchantment":
+			var stat = effect.get("stat", "attack")
+			var bonus = effect.get("bonus", 0)
+			var target = recipe.get("target_slot", "gear")
+			return "+%d %s to %s" % [bonus, stat, target]
+		"enhancement":
+			var stat = effect.get("stat", "attack")
+			var bonus = effect.get("bonus", 0)
+			if stat == "all":
+				return "+%d to all stats (scroll)" % bonus
+			return "+%d %s (scroll)" % [bonus, stat]
+		"tool":
+			var bonuses = recipe.get("bonuses", {})
+			var tool_type = recipe.get("tool_type", "")
+			var parts = []
+			if bonuses.get("yield_bonus", 0) > 0:
+				parts.append("+%d yield" % bonuses.get("yield_bonus", 0))
+			if bonuses.get("speed_bonus", 0.0) > 0:
+				parts.append("+%d%% speed" % int(bonuses.get("speed_bonus", 0.0) * 100))
+			if bonuses.get("tier_bonus", 0) > 0:
+				parts.append("+%d tier access" % bonuses.get("tier_bonus", 0))
+			var type_name = tool_type.replace("_", " ").capitalize()
+			if parts.is_empty():
+				return "Basic %s" % type_name
+			return "%s: %s" % [type_name, ", ".join(parts)]
+		_:
+			return ""
 
 func handle_craft_item(peer_id: int, message: Dictionary):
 	"""Attempt to craft an item"""
@@ -7446,7 +7702,10 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		return
 
 	var recipe_id = message.get("recipe_id", "")
+	# Check regular recipes first, then gathering tools
 	var recipe = CraftingDatabaseScript.get_recipe(recipe_id)
+	if recipe.is_empty():
+		recipe = CraftingDatabaseScript.get_tool(recipe_id)
 	if recipe.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown recipe: %s" % recipe_id})
 		return
@@ -7697,6 +7956,38 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, target_item.name]
 						else:
 							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, target_item.name, old_value]
+			"tool":
+				# Create a gathering tool (fishing rod, pickaxe, axe)
+				var tool_type = recipe.get("tool_type", "")
+				var tool_tier = recipe.get("tier", 1)
+				var base_bonuses = recipe.get("bonuses", {})
+				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+
+				# Apply quality to bonuses
+				var final_bonuses = {
+					"yield_bonus": int(base_bonuses.get("yield_bonus", 0) * quality_mult),
+					"speed_bonus": base_bonuses.get("speed_bonus", 0.0) * quality_mult,
+					"tier_bonus": base_bonuses.get("tier_bonus", 0)  # Tier bonus doesn't scale
+				}
+
+				var tool_data = {
+					"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+					"tier": tool_tier,
+					"bonuses": final_bonuses,
+					"quality": quality_name.to_lower()
+				}
+
+				# Equip the tool directly (replacing any existing tool of same type)
+				match tool_type:
+					"fishing_rod":
+						character.equipped_fishing_rod = tool_data
+					"pickaxe":
+						character.equipped_pickaxe = tool_data
+					"axe":
+						character.equipped_axe = tool_data
+
+				crafted_item = tool_data
+				result_message = "[color=%s]Crafted and equipped %s![/color]" % [quality_color, tool_data.name]
 			"material":
 				# Creates crafting materials - add directly to materials inventory
 				var output_item = recipe.get("output_item", "")
@@ -7792,7 +8083,8 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 		"rarity": _quality_to_rarity(quality),
 		"crafted": true,
 		"quality": quality,
-		"effect": scaled_effect
+		"effect": scaled_effect,
+		"is_consumable": true  # Flag for client-side consumable detection
 	}
 
 	return item
@@ -7891,9 +8183,19 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown dungeon type!"})
 		return
 
-	# Check level requirement
-	if character.level < dungeon_data.min_level:
-		send_to_peer(peer_id, {"type": "error", "message": "You need to be level %d to enter this dungeon!" % dungeon_data.min_level})
+	# Check level - warn but don't block if player hasn't confirmed
+	var confirmed = message.get("confirmed", false)
+	if character.level < dungeon_data.min_level and not confirmed:
+		# Send warning and require confirmation
+		var level_diff = dungeon_data.min_level - character.level
+		send_to_peer(peer_id, {
+			"type": "dungeon_level_warning",
+			"dungeon_type": dungeon_type,
+			"dungeon_name": dungeon_data.name,
+			"min_level": dungeon_data.min_level,
+			"player_level": character.level,
+			"message": "WARNING: This dungeon is designed for level %d+ players. You are %d levels below the recommended level. Monsters here may be too powerful for you. Are you sure you want to enter?" % [dungeon_data.min_level, level_diff]
+		})
 		return
 
 	# Find instance to enter - prioritize player's personal dungeon for quests
@@ -8638,19 +8940,22 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		_send_dungeon_state(peer_id)
 		return
 
-	# Create combat - use the monster name from dungeon pool
-	var monster = monster_db.generate_monster_by_name(monster_info.name, monster_info.level)
+	# Create combat - use monster_type for boss, name for regular encounters
+	var monster_lookup_name = monster_info.get("monster_type", monster_info.name) if is_boss else monster_info.name
+	var monster = monster_db.generate_monster_by_name(monster_lookup_name, monster_info.level)
 	if monster.is_empty():
 		# Fallback: generate a generic monster for the level
 		monster = monster_db.generate_monster(monster_info.level, monster_info.level)
 	monster.is_dungeon_monster = true
 
-	# Apply boss multipliers
+	# Apply boss multipliers and rename to boss display name
 	if is_boss:
 		monster.max_hp = int(monster.max_hp * monster_info.get("hp_mult", 2.0))
 		monster.current_hp = monster.max_hp
 		monster.strength = int(monster.strength * monster_info.get("attack_mult", 1.5))
 		monster.is_boss = true
+		# Use boss display name (e.g., "Orc Warlord" instead of just "Orc")
+		monster.name = monster_info.name
 
 	# Start combat
 	combat_mgr.start_combat(peer_id, character, monster)

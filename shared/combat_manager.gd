@@ -1723,8 +1723,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# === GEAR RESOURCE REGEN (applies even when using abilities) ===
 	_apply_gear_resource_regen(combat.character, result.messages)
 
-	# === COMPANION ATTACK (companions attack alongside ability usage) ===
-	_process_companion_attack(combat, result.messages)
+	# === COMPANION ATTACK (only if ability takes a combat turn) ===
+	# Don't attack on free actions like Analyze, Pickpocket success, etc.
+	if not result.get("skip_monster_turn", false):
+		_process_companion_attack(combat, result.messages)
 
 	# Check if companion killed the monster
 	if combat.monster.current_hp <= 0:

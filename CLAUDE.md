@@ -321,6 +321,42 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 - `shared/world_system.gd` - Terrain detection functions
 - `shared/character.gd` - `fishing_skill`, `mining_skill`, `logging_skill`, `salvage_essence`
 
+## Dungeon System
+
+**Monster consistency:** All encounters in a dungeon use the same monster type as the boss. The boss's `monster_type` field in `dungeon_database.gd` determines what spawns (e.g., Orc Stronghold = all Orcs).
+
+**Level requirements:** Dungeons have a recommended level (`min_level`) but don't block entry. Instead:
+1. If player level < min_level, server sends `dungeon_level_warning` message
+2. Client shows warning with "Enter Anyway" / "Cancel" buttons
+3. Player can confirm to enter despite the warning
+4. `pending_dungeon_warning` dictionary tracks pending confirmation
+
+**Boss generation:** `get_boss_for_dungeon()` returns both `name` (display name like "Orc Warlord") and `monster_type` (base monster like "Orc"). Server uses `monster_type` to generate the monster, then renames it to the display name.
+
+**Key files:**
+- `shared/dungeon_database.gd` - Dungeon definitions, `get_monster_for_encounter()`, `get_boss_for_dungeon()`
+- `server/server.gd` - `handle_dungeon_enter()`, `_start_dungeon_encounter()`
+
+## Companion System
+
+**Structure:**
+- `companions_mode` - Main companions page (More → Companions)
+- `eggs_mode` - Separate eggs page with ASCII art (More → Eggs)
+- `pending_companion_action` - States: "", "release_select", "release_confirm", "inspect_select", "inspect"
+
+**Eggs display:** Eggs have variant info (color, color2, pattern) set at creation. `display_eggs()` shows ASCII art using `MonsterArt.get_egg_art()` with patterns like solid, gradient, striped, etc.
+
+**Companion inspection:** Select companion → `display_companion_inspection()` shows:
+- Level, XP progress, variant bonuses
+- All abilities (passive/active/threshold) with unlock levels and descriptions
+- Each monster type has unique abilities defined in `drop_tables.gd` `COMPANION_MONSTER_ABILITIES`
+
+**Key files:**
+- `client/client.gd` - `display_companions()`, `display_eggs()`, `display_companion_inspection()`
+- `client/monster_art.gd` - `get_egg_art()`, `EGG_ART_TEMPLATE`
+- `shared/drop_tables.gd` - `get_egg_for_monster()`, `EGG_VARIANTS`, `COMPANION_MONSTER_ABILITIES`
+- `shared/character.gd` - Companion level cap (10000), XP formula
+
 ## Common Pitfalls
 
 ### 1. Duplicate Constants

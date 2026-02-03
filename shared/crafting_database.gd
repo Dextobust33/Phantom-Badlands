@@ -975,6 +975,220 @@ const RECIPES = {
 	},
 }
 
+# ===== GATHERING TOOLS =====
+# Tools that improve gathering efficiency - equipped via inventory
+const GATHERING_TOOLS = {
+	# ===== FISHING RODS =====
+	"wooden_fishing_rod": {
+		"name": "Wooden Fishing Rod",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"common_wood": 5, "sap": 2},
+		"output_type": "tool",
+		"tool_type": "fishing_rod",
+		"bonuses": {"yield_bonus": 0, "speed_bonus": 0.0, "tier_bonus": 0},
+		"tier": 1,
+		"craft_time": 2.0
+	},
+	"bamboo_fishing_rod": {
+		"name": "Bamboo Fishing Rod",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 15,
+		"difficulty": 20,
+		"materials": {"oak_wood": 6, "sap": 4, "seaweed": 3},
+		"output_type": "tool",
+		"tool_type": "fishing_rod",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.1, "tier_bonus": 0},
+		"tier": 2,
+		"craft_time": 3.0
+	},
+	"reinforced_fishing_rod": {
+		"name": "Reinforced Fishing Rod",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 30,
+		"difficulty": 35,
+		"materials": {"ash_wood": 5, "iron_ore": 3, "magic_kelp": 2},
+		"output_type": "tool",
+		"tool_type": "fishing_rod",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.15, "tier_bonus": 1},
+		"tier": 3,
+		"craft_time": 4.0
+	},
+	"mithril_fishing_rod": {
+		"name": "Mithril Fishing Rod",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 50,
+		"difficulty": 55,
+		"materials": {"ironwood": 4, "mithril_ore": 5, "pearl": 2, "arcane_crystal": 1},
+		"output_type": "tool",
+		"tool_type": "fishing_rod",
+		"bonuses": {"yield_bonus": 2, "speed_bonus": 0.2, "tier_bonus": 1},
+		"tier": 4,
+		"craft_time": 6.0
+	},
+	"masterwork_fishing_rod": {
+		"name": "Masterwork Fishing Rod",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 70,
+		"difficulty": 75,
+		"materials": {"darkwood": 4, "adamantine_ore": 3, "black_pearl": 1, "void_essence": 1},
+		"output_type": "tool",
+		"tool_type": "fishing_rod",
+		"bonuses": {"yield_bonus": 3, "speed_bonus": 0.25, "tier_bonus": 2},
+		"tier": 5,
+		"craft_time": 8.0
+	},
+
+	# ===== PICKAXES =====
+	"stone_pickaxe": {
+		"name": "Stone Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"stone": 5, "common_wood": 3},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 0, "speed_bonus": 0.0, "tier_bonus": 0},
+		"tier": 1,
+		"craft_time": 2.0
+	},
+	"copper_pickaxe": {
+		"name": "Copper Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"copper_ore": 6, "oak_wood": 3},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.1, "tier_bonus": 0},
+		"tier": 2,
+		"craft_time": 3.0
+	},
+	"iron_pickaxe": {
+		"name": "Iron Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 25,
+		"difficulty": 30,
+		"materials": {"iron_ore": 8, "ash_wood": 3, "coal": 3},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.15, "tier_bonus": 1},
+		"tier": 3,
+		"craft_time": 4.0
+	},
+	"steel_pickaxe": {
+		"name": "Steel Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 40,
+		"difficulty": 45,
+		"materials": {"steel_ore": 8, "ironwood": 3, "coal": 5},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 2, "speed_bonus": 0.2, "tier_bonus": 1},
+		"tier": 4,
+		"craft_time": 5.0
+	},
+	"mithril_pickaxe": {
+		"name": "Mithril Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 55,
+		"difficulty": 60,
+		"materials": {"mithril_ore": 10, "darkwood": 3, "flawless_gem": 1},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 2, "speed_bonus": 0.25, "tier_bonus": 2},
+		"tier": 5,
+		"craft_time": 6.0
+	},
+	"adamantine_pickaxe": {
+		"name": "Adamantine Pickaxe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 70,
+		"difficulty": 75,
+		"materials": {"adamantine_ore": 10, "worldtree_branch": 2, "perfect_gem": 1, "arcane_crystal": 2},
+		"output_type": "tool",
+		"tool_type": "pickaxe",
+		"bonuses": {"yield_bonus": 3, "speed_bonus": 0.3, "tier_bonus": 2},
+		"tier": 6,
+		"craft_time": 8.0
+	},
+
+	# ===== AXES =====
+	"stone_axe": {
+		"name": "Stone Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"stone": 5, "common_wood": 3},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 0, "speed_bonus": 0.0, "tier_bonus": 0},
+		"tier": 1,
+		"craft_time": 2.0
+	},
+	"copper_axe": {
+		"name": "Copper Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"copper_ore": 6, "oak_wood": 3},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.1, "tier_bonus": 0},
+		"tier": 2,
+		"craft_time": 3.0
+	},
+	"iron_axe": {
+		"name": "Iron Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 25,
+		"difficulty": 30,
+		"materials": {"iron_ore": 8, "ash_wood": 3, "ragged_leather": 2},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 1, "speed_bonus": 0.15, "tier_bonus": 1},
+		"tier": 3,
+		"craft_time": 4.0
+	},
+	"steel_axe": {
+		"name": "Steel Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 40,
+		"difficulty": 45,
+		"materials": {"steel_ore": 8, "ironwood": 3, "thick_leather": 2},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 2, "speed_bonus": 0.2, "tier_bonus": 1},
+		"tier": 4,
+		"craft_time": 5.0
+	},
+	"mithril_axe": {
+		"name": "Mithril Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 55,
+		"difficulty": 60,
+		"materials": {"mithril_ore": 10, "darkwood": 3, "enchanted_leather": 2},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 2, "speed_bonus": 0.25, "tier_bonus": 2},
+		"tier": 5,
+		"craft_time": 6.0
+	},
+	"adamantine_axe": {
+		"name": "Adamantine Axe",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 70,
+		"difficulty": 75,
+		"materials": {"adamantine_ore": 10, "worldtree_branch": 2, "dragonhide": 1, "arcane_crystal": 2},
+		"output_type": "tool",
+		"tool_type": "axe",
+		"bonuses": {"yield_bonus": 3, "speed_bonus": 0.3, "tier_bonus": 2},
+		"tier": 6,
+		"craft_time": 8.0
+	},
+}
+
 # Trading post specializations (bonus to success chance)
 const TRADING_POST_SPECIALIZATIONS = {
 	"haven": {"blacksmithing": 5, "alchemy": 0, "enchanting": 0},
@@ -1013,6 +1227,20 @@ static func get_skill_display_name(skill: CraftingSkill) -> String:
 static func get_recipe(recipe_id: String) -> Dictionary:
 	return RECIPES.get(recipe_id, {})
 
+static func get_tool(tool_id: String) -> Dictionary:
+	"""Get a gathering tool by its ID"""
+	return GATHERING_TOOLS.get(tool_id, {})
+
+static func get_tools_for_type(tool_type: String, skill_level: int = 100) -> Array:
+	"""Get all gathering tools of a specific type (fishing_rod, pickaxe, axe) available at skill level"""
+	var result = []
+	for tool_id in GATHERING_TOOLS:
+		var tool = GATHERING_TOOLS[tool_id]
+		if tool.tool_type == tool_type and tool.skill_required <= skill_level:
+			result.append({"id": tool_id, "data": tool})
+	result.sort_custom(func(a, b): return a.data.tier < b.data.tier)
+	return result
+
 static func get_material(material_id: String) -> Dictionary:
 	return MATERIALS.get(material_id, {})
 
@@ -1021,11 +1249,16 @@ static func get_material_name(material_id: String) -> String:
 	return mat.get("name", material_id.replace("_", " ").capitalize())
 
 static func get_recipes_for_skill(skill: CraftingSkill) -> Array:
-	"""Get all recipes for a specific skill"""
+	"""Get all recipes for a specific skill (includes regular recipes and gathering tools)"""
 	var result = []
+	# Add regular recipes
 	for recipe_id in RECIPES:
 		if RECIPES[recipe_id].skill == skill:
 			result.append({"id": recipe_id, "data": RECIPES[recipe_id]})
+	# Add gathering tools (all are blacksmithing)
+	if skill == CraftingSkill.BLACKSMITHING:
+		for tool_id in GATHERING_TOOLS:
+			result.append({"id": tool_id, "data": GATHERING_TOOLS[tool_id]})
 	# Sort by skill_required
 	result.sort_custom(func(a, b): return a.data.skill_required < b.data.skill_required)
 	return result

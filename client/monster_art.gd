@@ -5384,3 +5384,257 @@ static func get_bordered_art_with_font(monster_name: String) -> String:
 		font_size = FONT_SIZE_OVERRIDES[monster_name]
 
 	return "[font_size=" + str(font_size) + "]" + bordered_art + "[/font_size]"
+
+# ===== EGG ASCII ART SYSTEM =====
+# Eggs display with patterns based on the companion variant they'll hatch into
+
+# Base egg art template (each line represents rows from top to bottom)
+const EGG_ART_TEMPLATE = [
+	"      ████      ",
+	"    ████████    ",
+	"   ██████████   ",
+	"  ████████████  ",
+	"  ████████████  ",
+	"  ████████████  ",
+	"  ████████████  ",
+	"   ██████████   ",
+	"    ████████    ",
+	"      ████      "
+]
+
+# Get ASCII art for an egg with variant coloring
+static func get_egg_art(variant_name: String, color1: String, color2: String = "", pattern: String = "solid") -> String:
+	"""Generate colored egg art based on variant pattern.
+	Returns the egg art with BBCode color tags applied."""
+
+	var lines = []
+	var total_rows = EGG_ART_TEMPLATE.size()
+
+	for row in range(total_rows):
+		var line = EGG_ART_TEMPLATE[row]
+		var colored_line = _apply_egg_pattern(line, row, total_rows, color1, color2, pattern)
+		lines.append(colored_line)
+
+	return "\n".join(lines)
+
+static func _apply_egg_pattern(line: String, row: int, total_rows: int, color1: String, color2: String, pattern: String) -> String:
+	"""Apply pattern coloring to a single line of egg art."""
+
+	# If no second color, use solid pattern
+	if color2.is_empty():
+		return "[color=%s]%s[/color]" % [color1, line]
+
+	var result = ""
+	var line_length = line.length()
+
+	match pattern:
+		"solid":
+			return "[color=%s]%s[/color]" % [color1, line]
+
+		"gradient_down":
+			# Color transitions from top to bottom
+			var threshold = total_rows / 2
+			if row < threshold:
+				return "[color=%s]%s[/color]" % [color1, line]
+			else:
+				return "[color=%s]%s[/color]" % [color2, line]
+
+		"gradient_up":
+			# Color transitions from bottom to top
+			var threshold = total_rows / 2
+			if row >= threshold:
+				return "[color=%s]%s[/color]" % [color1, line]
+			else:
+				return "[color=%s]%s[/color]" % [color2, line]
+
+		"middle":
+			# Center band is different color
+			var band_start = total_rows / 3
+			var band_end = total_rows * 2 / 3
+			if row >= band_start and row < band_end:
+				return "[color=%s]%s[/color]" % [color2, line]
+			else:
+				return "[color=%s]%s[/color]" % [color1, line]
+
+		"striped":
+			# Horizontal stripes
+			if row % 2 == 0:
+				return "[color=%s]%s[/color]" % [color1, line]
+			else:
+				return "[color=%s]%s[/color]" % [color2, line]
+
+		"edges":
+			# Top and bottom edges are different
+			if row <= 1 or row >= total_rows - 2:
+				return "[color=%s]%s[/color]" % [color2, line]
+			else:
+				return "[color=%s]%s[/color]" % [color1, line]
+
+		"diagonal_down", "diagonal_up":
+			# Diagonal pattern - alternate chars based on position
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				else:
+					var use_color2 = false
+					if pattern == "diagonal_down":
+						use_color2 = (i + row) % 4 < 2
+					else:
+						use_color2 = (i - row + total_rows) % 4 < 2
+					if use_color2:
+						result += "[color=%s]%s[/color]" % [color2, char]
+					else:
+						result += "[color=%s]%s[/color]" % [color1, char]
+			return result
+
+		"split_v":
+			# Vertical split
+			var mid = line_length / 2
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif i < mid:
+					result += "[color=%s]%s[/color]" % [color1, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color2, char]
+			return result
+
+		"checker":
+			# Checkerboard pattern
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif (i + row) % 2 == 0:
+					result += "[color=%s]%s[/color]" % [color1, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color2, char]
+			return result
+
+		"scatter":
+			# Random-looking dots
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif (i * 7 + row * 13) % 5 == 0:
+					result += "[color=%s]%s[/color]" % [color2, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color1, char]
+			return result
+
+		"wave":
+			# Wavy pattern
+			var wave_offset = int(sin(row * 0.8) * 3) + 3
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif (i % 6) < wave_offset:
+					result += "[color=%s]%s[/color]" % [color1, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color2, char]
+			return result
+
+		"columns":
+			# Vertical stripes
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif (i / 2) % 2 == 0:
+					result += "[color=%s]%s[/color]" % [color1, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color2, char]
+			return result
+
+		"bands":
+			# Multiple horizontal bands
+			if (row / 2) % 2 == 0:
+				return "[color=%s]%s[/color]" % [color1, line]
+			else:
+				return "[color=%s]%s[/color]" % [color2, line]
+
+		"corners":
+			# Corners are different color
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				else:
+					var is_corner = (row <= 2 or row >= total_rows - 3) and (i <= 5 or i >= line_length - 6)
+					if is_corner:
+						result += "[color=%s]%s[/color]" % [color2, char]
+					else:
+						result += "[color=%s]%s[/color]" % [color1, char]
+			return result
+
+		"cross":
+			# Cross pattern in center
+			var mid_row = total_rows / 2
+			var mid_col = line_length / 2
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif abs(row - mid_row) <= 1 or abs(i - mid_col) <= 2:
+					result += "[color=%s]%s[/color]" % [color2, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color1, char]
+			return result
+
+		"ring":
+			# Ring/circle pattern
+			var center_row = total_rows / 2
+			for i in range(line_length):
+				var char = line[i]
+				if char == " ":
+					result += " "
+				elif row >= 3 and row <= 6 and char == "█":
+					result += "[color=%s]%s[/color]" % [color2, char]
+				else:
+					result += "[color=%s]%s[/color]" % [color1, char]
+			return result
+
+		"fade":
+			# Fade from edges to center
+			var distance_from_edge = mini(row, total_rows - 1 - row)
+			if distance_from_edge <= 2:
+				return "[color=%s]%s[/color]" % [color2, line]
+			else:
+				return "[color=%s]%s[/color]" % [color1, line]
+
+		"radial":
+			# Radial from center
+			var center = total_rows / 2
+			if row >= center - 1 and row <= center + 1:
+				return "[color=%s]%s[/color]" % [color2, line]
+			else:
+				return "[color=%s]%s[/color]" % [color1, line]
+
+		_:
+			# Default to solid color1
+			return "[color=%s]%s[/color]" % [color1, line]
+
+static func get_egg_art_for_display(monster_type: String, variant: String, color1: String, color2: String = "", pattern: String = "solid", tier: int = 1) -> String:
+	"""Get complete egg display with art, name and tier indicator.
+	Returns formatted BBCode string ready for display."""
+
+	var egg_art = get_egg_art(variant, color1, color2, pattern)
+
+	# Add tier stars
+	var tier_display = ""
+	if tier <= 3:
+		tier_display = "[color=#90EE90]" + "★".repeat(tier) + "[/color]"  # Green stars
+	elif tier <= 6:
+		tier_display = "[color=#FFD700]" + "★".repeat(tier) + "[/color]"  # Gold stars
+	else:
+		tier_display = "[color=#FF69B4]" + "★".repeat(tier) + "[/color]"  # Pink stars for high tier
+
+	# Combine with label
+	var label = "%s Egg" % monster_type
+	var variant_label = "[color=%s](%s)[/color]" % [color1, variant]
+
+	return egg_art + "\n[center]%s\n%s %s[/center]" % [label, variant_label, tier_display]

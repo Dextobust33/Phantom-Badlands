@@ -55,7 +55,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Goblin King",
 			"monster_type": "Goblin",
-			"level_mult": 1.5,
+			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.3,
 			"abilities": ["Rally Minions", "Dirty Fighting"]
@@ -81,7 +81,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Alpha Wolf",
 			"monster_type": "Wolf",
-			"level_mult": 1.5,
+			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.4,
 			"abilities": ["Pack Howl", "Savage Bite"]
@@ -109,7 +109,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Orc Warlord",
 			"monster_type": "Orc",
-			"level_mult": 1.5,
+			"level_mult": 1.1,
 			"hp_mult": 2.2,
 			"attack_mult": 1.4,
 			"abilities": ["War Cry", "Brutal Slam"]
@@ -135,7 +135,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Spider Queen",
 			"monster_type": "Giant Spider",
-			"level_mult": 1.5,
+			"level_mult": 1.1,
 			"hp_mult": 2.3,
 			"attack_mult": 1.3,
 			"abilities": ["Web Trap", "Venomous Bite"]
@@ -163,7 +163,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Troll",
 			"monster_type": "Troll",  # Actual monster type for egg drop
-			"level_mult": 1.5,
+			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.4,
 			"abilities": ["Regeneration", "Boulder Throw"]
@@ -189,7 +189,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Wyvern",
 			"monster_type": "Wyvern",
-			"level_mult": 1.6,
+			"level_mult": 1.15,
 			"hp_mult": 2.0,
 			"attack_mult": 1.5,
 			"abilities": ["Diving Strike", "Poison Tail", "Screech"]
@@ -216,7 +216,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Giant",
 			"monster_type": "Giant",
-			"level_mult": 1.7,
+			"level_mult": 1.2,
 			"hp_mult": 3.0,
 			"attack_mult": 1.6,
 			"abilities": ["Ground Slam", "Mighty Throw", "Intimidate"]
@@ -242,7 +242,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Vampire",
 			"monster_type": "Vampire",
-			"level_mult": 1.8,
+			"level_mult": 1.2,
 			"hp_mult": 2.5,
 			"attack_mult": 1.7,
 			"abilities": ["Life Drain", "Charm", "Bat Swarm"]
@@ -269,7 +269,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Lich",
 			"monster_type": "Lich",
-			"level_mult": 1.9,
+			"level_mult": 1.2,
 			"hp_mult": 3.0,
 			"attack_mult": 1.8,
 			"abilities": ["Life Drain", "Bone Storm", "Raise Dead", "Soul Freeze"]
@@ -295,7 +295,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Cerberus",
 			"monster_type": "Cerberus",
-			"level_mult": 2.0,
+			"level_mult": 1.2,
 			"hp_mult": 4.0,
 			"attack_mult": 1.9,
 			"abilities": ["Triple Bite", "Hellfire Breath", "Ferocious Howl"]
@@ -321,7 +321,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Balrog",
 			"monster_type": "Balrog",
-			"level_mult": 2.1,
+			"level_mult": 1.2,
 			"hp_mult": 4.5,
 			"attack_mult": 2.0,
 			"abilities": ["Flame Whip", "Shadow Wings", "Demonic Roar"]
@@ -348,7 +348,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Ancient Dragon",
 			"monster_type": "Ancient Dragon",
-			"level_mult": 2.2,
+			"level_mult": 1.25,
 			"hp_mult": 5.0,
 			"attack_mult": 2.1,
 			"abilities": ["Fire Breath", "Wing Buffet", "Terrifying Roar", "Ancient Fury"]
@@ -374,7 +374,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Hydra",
 			"monster_type": "Hydra",
-			"level_mult": 2.3,
+			"level_mult": 1.25,
 			"hp_mult": 6.0,
 			"attack_mult": 1.8,
 			"abilities": ["Multi-Head Strike", "Regeneration", "Poison Spray", "Head Regrowth"]
@@ -400,7 +400,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Phoenix",
 			"monster_type": "Phoenix",
-			"level_mult": 2.4,
+			"level_mult": 1.25,
 			"hp_mult": 4.0,
 			"attack_mult": 2.2,
 			"abilities": ["Rebirth", "Solar Flare", "Ash Storm", "Purifying Flame"]
@@ -427,7 +427,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Void Walker",
 			"monster_type": "Void Walker",
-			"level_mult": 2.5,
+			"level_mult": 1.25,
 			"hp_mult": 6.0,
 			"attack_mult": 2.4,
 			"abilities": ["Phase Shift", "Void Bolt", "Reality Tear", "Dimensional Prison"]
@@ -453,7 +453,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Primordial Dragon",
 			"monster_type": "Primordial Dragon",
-			"level_mult": 2.7,
+			"level_mult": 1.25,
 			"hp_mult": 7.0,
 			"attack_mult": 2.6,
 			"abilities": ["Primordial Breath", "Time Warp", "Cataclysm", "World Shaker"]
@@ -480,7 +480,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Cosmic Horror",
 			"monster_type": "Cosmic Horror",
-			"level_mult": 3.0,
+			"level_mult": 1.3,
 			"hp_mult": 8.0,
 			"attack_mult": 2.8,
 			"abilities": ["Madness Gaze", "Tentacle Storm", "Reality Warp", "Void Consumption"]
@@ -507,7 +507,7 @@ const DUNGEON_TYPES = {
 		"boss": {
 			"name": "Avatar of Chaos",
 			"monster_type": "Avatar of Chaos",
-			"level_mult": 3.5,
+			"level_mult": 1.3,
 			"hp_mult": 10.0,
 			"attack_mult": 3.0,
 			"abilities": ["Chaos Storm", "Reality Shatter", "Entropy Wave", "Ultimate Destruction"]
@@ -643,17 +643,21 @@ static func grid_to_string(grid: Array, player_x: int, player_y: int) -> String:
 	return "\n".join(lines)
 
 static func get_monster_for_encounter(dungeon_id: String, floor_num: int, dungeon_level: int) -> Dictionary:
-	"""Generate a monster for a dungeon encounter"""
+	"""Generate a monster for a dungeon encounter - uses the dungeon's boss monster type"""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {}
 
-	var monster_pool = dungeon.get("monster_pool", [])
-	if monster_pool.is_empty():
-		return {}
+	# Use the boss's monster_type for all encounters in this dungeon
+	var boss_data = dungeon.get("boss", {})
+	var monster_name = boss_data.get("monster_type", "")
 
-	# Pick random monster from pool
-	var monster_name = monster_pool[randi() % monster_pool.size()]
+	# Fallback to first monster in pool if no boss monster_type defined
+	if monster_name == "":
+		var monster_pool = dungeon.get("monster_pool", [])
+		if monster_pool.is_empty():
+			return {}
+		monster_name = monster_pool[0]
 
 	# Scale level based on floor (deeper = harder)
 	var level_mult = 1.0 + (floor_num * 0.1)  # +10% per floor
@@ -680,7 +684,8 @@ static func get_boss_for_dungeon(dungeon_id: String, dungeon_level: int) -> Dict
 	var attack_mult = boss_data.get("attack_mult", 1.3)
 
 	return {
-		"name": boss_data.name,
+		"name": boss_data.name,  # Display name (e.g., "Orc Warlord")
+		"monster_type": boss_data.get("monster_type", boss_data.name),  # Base monster type for generation (e.g., "Orc")
 		"level": int(dungeon_level * level_mult),
 		"hp_mult": hp_mult,
 		"attack_mult": attack_mult,

@@ -670,59 +670,311 @@ const COMPANION_DATA = {
 	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4}}
 }
 
-# Companion abilities - unlocked at levels 10, 25, 50
-# Types: "passive" (always active in combat), "chance" (% per round), "threshold" (triggers once when HP < %)
-# Effects: "attack", "defense", "speed", "enemy_miss", "defense_buff", "heal", "bonus_damage", "absorb", "stun"
-const COMPANION_ABILITIES = {
-	1: {  # Tier 1 (Weakest companions)
-		10: {"name": "Encouraging Presence", "type": "passive", "effect": "attack", "value": 2},
-		25: {"name": "Distraction", "type": "chance", "chance": 15, "effect": "enemy_miss"},
-		50: {"name": "Protective Instinct", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 10, "duration": 3}
+# Per-monster companion abilities - each monster type has unique abilities based on their original monster abilities
+# Abilities scale with companion level: final_value = base + (scaling * companion_level)
+# Types: "passive" (always active), "active" (chance per turn), "threshold" (triggers once when HP drops below %)
+# Rarer variant companions get a multiplier on these values (see VARIANT_STAT_MULTIPLIERS in character.gd)
+const COMPANION_MONSTER_ABILITIES = {
+	# ===== TIER 1 COMPANIONS =====
+	"Goblin": {
+		"passive": {"name": "Sneaky Support", "effect": "attack", "base": 1, "scaling": 0.03, "description": "Adds attack damage"},
+		"active": {"name": "Dirty Trick", "type": "chance", "base_chance": 8, "chance_scaling": 0.1, "effect": "enemy_miss", "description": "Chance to make enemy miss"},
+		"threshold": {"name": "Cowardly Retreat", "hp_percent": 40, "effect": "flee_bonus", "base": 10, "scaling": 0.2, "duration": 2, "description": "Boosts flee chance when low HP"}
 	},
-	2: {  # Tier 2
-		10: {"name": "Battle Focus", "type": "passive", "effect": "attack", "value": 3},
-		25: {"name": "Harrying Strike", "type": "chance", "chance": 18, "effect": "bonus_damage", "value": 12},
-		50: {"name": "Guardian Shield", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 12, "duration": 3}
+	"Giant Rat": {
+		"passive": {"name": "Scurrying Assistance", "effect": "speed", "base": 2, "scaling": 0.04, "description": "Adds speed"},
+		"active": {"name": "Gnaw", "type": "chance", "base_chance": 10, "chance_scaling": 0.1, "effect": "bleed", "base_damage": 2, "damage_scaling": 0.05, "duration": 2, "description": "Chance to cause bleeding"},
+		"threshold": {"name": "Survival Instinct", "hp_percent": 35, "effect": "speed_buff", "base": 15, "scaling": 0.2, "duration": 3, "description": "Speed boost when low HP"}
 	},
-	3: {  # Tier 3
-		10: {"name": "Predator's Eye", "type": "passive", "effect": "attack", "value": 3, "effect2": "defense", "value2": 2},
-		25: {"name": "Savage Bite", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 15},
-		50: {"name": "Emergency Heal", "type": "threshold", "hp_percent": 50, "effect": "heal", "value": 10}
+	"Kobold": {
+		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "description": "Increases gold find"},
+		"active": {"name": "Trap Trigger", "type": "chance", "base_chance": 8, "chance_scaling": 0.08, "effect": "bonus_damage", "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Hoard Guard", "hp_percent": 45, "effect": "defense_buff", "base": 8, "scaling": 0.15, "duration": 3, "description": "Defense boost when low HP"}
 	},
-	4: {  # Tier 4
-		10: {"name": "Primal Fury", "type": "passive", "effect": "attack", "value": 4, "effect2": "speed", "value2": 3},
-		25: {"name": "Vicious Assault", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 18},
-		50: {"name": "Life Bond", "type": "threshold", "hp_percent": 40, "effect": "heal", "value": 12}
+	"Skeleton": {
+		"passive": {"name": "Bone Guard", "effect": "defense", "base": 2, "scaling": 0.03, "description": "Adds defense"},
+		"active": {"name": "Rattle", "type": "chance", "base_chance": 10, "chance_scaling": 0.1, "effect": "enemy_miss", "description": "Chance to distract enemy"},
+		"threshold": {"name": "Undying Will", "hp_percent": 25, "effect": "absorb", "base": 5, "scaling": 0.15, "duration": 2, "description": "Absorbs some damage when critical"}
 	},
-	5: {  # Tier 5
-		10: {"name": "Battle Synergy", "type": "passive", "effect": "attack", "value": 4, "effect2": "defense", "value2": 3},
-		25: {"name": "Devastating Strike", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 22, "effect2": "stun", "chance2": 10},
-		50: {"name": "Desperate Recovery", "type": "threshold", "hp_percent": 35, "effect": "heal", "value": 15}
+	"Wolf": {
+		"passive": {"name": "Pack Instinct", "effect": "attack", "base": 2, "scaling": 0.04, "description": "Adds attack damage"},
+		"active": {"name": "Ambush Strike", "type": "chance", "base_chance": 12, "chance_scaling": 0.12, "effect": "crit", "crit_mult": 1.5, "description": "Chance to critically strike"},
+		"threshold": {"name": "Alpha Howl", "hp_percent": 35, "effect": "attack_buff", "base": 12, "scaling": 0.2, "duration": 3, "description": "Attack boost when low HP"}
 	},
-	6: {  # Tier 6
-		10: {"name": "Elemental Fury", "type": "passive", "effect": "attack", "value": 5, "effect2": "defense", "value2": 4},
-		25: {"name": "Elemental Burst", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 25},
-		50: {"name": "Phoenix Gift", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 18}
+
+	# ===== TIER 2 COMPANIONS =====
+	"Orc": {
+		"passive": {"name": "Brute Force", "effect": "attack", "base": 3, "scaling": 0.05, "description": "Adds attack damage"},
+		"active": {"name": "Battle Rage", "type": "chance", "base_chance": 12, "chance_scaling": 0.12, "effect": "bonus_damage", "base_damage": 8, "damage_scaling": 0.15, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Berserker Fury", "hp_percent": 30, "effect": "attack_buff", "base": 20, "scaling": 0.3, "duration": 3, "description": "Major attack boost when low HP"}
 	},
-	7: {  # Tier 7 (Elite)
-		10: {"name": "Void Resonance", "type": "passive", "effect": "attack", "value": 6, "effect2": "defense", "value2": 4, "effect3": "speed", "value3": 3},
-		25: {"name": "Void Strike", "type": "chance", "chance": 23, "effect": "bonus_damage", "value": 30, "effect2": "lifesteal", "value2": 15},
-		50: {"name": "Elder's Blessing", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 22}
+	"Hobgoblin": {
+		"passive": {"name": "Tactical Mind", "effect": "attack", "base": 2, "scaling": 0.04, "effect2": "speed", "base2": 1, "scaling2": 0.02, "description": "Adds attack and speed"},
+		"active": {"name": "Coordinated Strike", "type": "chance", "base_chance": 15, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 6, "damage_scaling": 0.12, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Rally Cry", "hp_percent": 40, "effect": "all_buff", "base": 8, "scaling": 0.15, "duration": 2, "description": "Buffs all stats when low HP"}
 	},
-	8: {  # Tier 8 (Legendary)
-		10: {"name": "Cosmic Alignment", "type": "passive", "effect": "attack", "value": 7, "effect2": "defense", "value2": 5, "effect3": "crit_chance", "value3": 3},
-		25: {"name": "Time Rend", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 35, "effect2": "stun", "chance2": 20},
-		50: {"name": "Death's Reprieve", "type": "threshold", "hp_percent": 25, "effect": "heal", "value": 30}
+	"Gnoll": {
+		"passive": {"name": "Savage Strength", "effect": "attack", "base": 4, "scaling": 0.06, "description": "Adds significant attack damage"},
+		"active": {"name": "Rending Claws", "type": "chance", "base_chance": 14, "chance_scaling": 0.12, "effect": "bleed", "base_damage": 4, "damage_scaling": 0.08, "duration": 3, "description": "Chance to cause bleeding"},
+		"threshold": {"name": "Frenzy", "hp_percent": 35, "effect": "attack_buff", "base": 18, "scaling": 0.25, "duration": 3, "description": "Attack boost when low HP"}
 	},
-	9: {  # Tier 9 (Mythic)
-		10: {"name": "Divine Presence", "type": "passive", "effect": "attack", "value": 10, "effect2": "defense", "value2": 6, "effect3": "speed", "value3": 5},
-		25: {"name": "Godslayer's Wrath", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 50, "effect2": "lifesteal", "value2": 25},
-		50: {"name": "Immortal's Gift", "type": "threshold", "hp_percent": 20, "effect": "full_heal"}
+	"Zombie": {
+		"passive": {"name": "Undead Resilience", "effect": "hp_bonus", "base": 4, "scaling": 0.08, "description": "Adds max HP"},
+		"active": {"name": "Infectious Bite", "type": "chance", "base_chance": 10, "chance_scaling": 0.08, "effect": "poison", "base_damage": 3, "damage_scaling": 0.06, "duration": 3, "description": "Chance to poison enemy"},
+		"threshold": {"name": "Risen Again", "hp_percent": 20, "effect": "heal", "base": 8, "scaling": 0.2, "description": "Heals when critically low HP"}
+	},
+	"Giant Spider": {
+		"passive": {"name": "Venomous Presence", "effect": "speed", "base": 3, "scaling": 0.05, "effect2": "attack", "base2": 1, "scaling2": 0.02, "description": "Adds speed and attack"},
+		"active": {"name": "Poison Bite", "type": "chance", "base_chance": 18, "chance_scaling": 0.15, "effect": "poison", "base_damage": 5, "damage_scaling": 0.1, "duration": 3, "description": "Chance to poison enemy"},
+		"threshold": {"name": "Web Trap", "hp_percent": 40, "effect": "slow_enemy", "base": 20, "scaling": 0.2, "duration": 2, "description": "Slows enemy when low HP"}
+	},
+	"Wight": {
+		"passive": {"name": "Spectral Touch", "effect": "mana_regen", "base": 1, "scaling": 0.02, "description": "Adds mana regeneration"},
+		"active": {"name": "Life Siphon", "type": "chance", "base_chance": 12, "chance_scaling": 0.1, "effect": "lifesteal", "base_percent": 10, "percent_scaling": 0.15, "description": "Chance to steal life"},
+		"threshold": {"name": "Wraithform", "hp_percent": 35, "effect": "dodge_buff", "base": 15, "scaling": 0.2, "duration": 2, "description": "Dodge chance when low HP"}
+	},
+	"Siren": {
+		"passive": {"name": "Melodic Aura", "effect": "mana_bonus", "base": 4, "scaling": 0.08, "description": "Adds max mana"},
+		"active": {"name": "Enchanting Song", "type": "chance", "base_chance": 10, "chance_scaling": 0.1, "effect": "charm", "duration": 1, "description": "Chance to charm enemy (skip turn)"},
+		"threshold": {"name": "Desperate Melody", "hp_percent": 35, "effect": "mana_restore", "base": 15, "scaling": 0.3, "description": "Restores mana when low HP"}
+	},
+	"Kelpie": {
+		"passive": {"name": "Swift Currents", "effect": "speed", "base": 4, "scaling": 0.07, "description": "Adds speed"},
+		"active": {"name": "Tidal Strike", "type": "chance", "base_chance": 14, "chance_scaling": 0.12, "effect": "bonus_damage", "base_damage": 7, "damage_scaling": 0.12, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Undertow", "hp_percent": 40, "effect": "slow_enemy", "base": 25, "scaling": 0.25, "duration": 2, "description": "Slows enemy when low HP"}
+	},
+	"Mimic": {
+		"passive": {"name": "Treasure Hunter", "effect": "gold_find", "base": 8, "scaling": 0.15, "description": "Greatly increases gold find"},
+		"active": {"name": "Surprise Attack", "type": "chance", "base_chance": 15, "chance_scaling": 0.12, "effect": "crit", "crit_mult": 1.8, "description": "Chance to critically strike"},
+		"threshold": {"name": "Fake Out", "hp_percent": 30, "effect": "enemy_miss", "duration": 2, "description": "Enemy misses when low HP"}
+	},
+
+	# ===== TIER 3 COMPANIONS =====
+	"Ogre": {
+		"passive": {"name": "Massive Bulk", "effect": "attack", "base": 4, "scaling": 0.06, "effect2": "hp_bonus", "base2": 2, "scaling2": 0.05, "description": "Adds attack and HP"},
+		"active": {"name": "Crushing Blow", "type": "chance", "base_chance": 16, "chance_scaling": 0.12, "effect": "bonus_damage", "base_damage": 12, "damage_scaling": 0.2, "description": "Chance for heavy bonus damage"},
+		"threshold": {"name": "Thick Skin", "hp_percent": 35, "effect": "absorb", "base": 10, "scaling": 0.2, "duration": 3, "description": "Absorbs damage when low HP"}
+	},
+	"Troll": {
+		"passive": {"name": "Regeneration", "effect": "hp_regen", "base": 2, "scaling": 0.04, "description": "Heals HP each turn"},
+		"active": {"name": "Savage Swipe", "type": "chance", "base_chance": 14, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 10, "damage_scaling": 0.18, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Rapid Recovery", "hp_percent": 30, "effect": "heal", "base": 12, "scaling": 0.25, "description": "Major heal when low HP"}
+	},
+	"Wraith": {
+		"passive": {"name": "Ethereal Presence", "effect": "mana_bonus", "base": 5, "scaling": 0.1, "effect2": "mana_regen", "base2": 1, "scaling2": 0.02, "description": "Adds mana and regen"},
+		"active": {"name": "Soul Drain", "type": "chance", "base_chance": 15, "chance_scaling": 0.12, "effect": "mana_drain", "base_amount": 5, "amount_scaling": 0.1, "description": "Chance to drain enemy mana"},
+		"threshold": {"name": "Incorporeal", "hp_percent": 30, "effect": "dodge_buff", "base": 25, "scaling": 0.3, "duration": 2, "description": "High dodge chance when low HP"}
+	},
+	"Wyvern": {
+		"passive": {"name": "Aerial Agility", "effect": "attack", "base": 5, "scaling": 0.08, "effect2": "speed", "base2": 2, "scaling2": 0.04, "description": "Adds attack and speed"},
+		"active": {"name": "Diving Strike", "type": "chance", "base_chance": 16, "chance_scaling": 0.14, "effect": "crit", "crit_mult": 1.7, "description": "Chance to critically strike"},
+		"threshold": {"name": "Poison Tail", "hp_percent": 35, "effect": "poison", "base_damage": 8, "damage_scaling": 0.15, "duration": 3, "description": "Poisons enemy when low HP"}
+	},
+	"Minotaur": {
+		"passive": {"name": "Brutal Strength", "effect": "attack", "base": 6, "scaling": 0.1, "description": "Adds significant attack"},
+		"active": {"name": "Gore", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "bleed", "base_damage": 6, "damage_scaling": 0.12, "duration": 3, "description": "Chance to cause bleeding"},
+		"threshold": {"name": "Enraged Charge", "hp_percent": 30, "effect": "attack_buff", "base": 25, "scaling": 0.35, "duration": 2, "description": "Massive attack boost when low HP"}
+	},
+	"Gargoyle": {
+		"passive": {"name": "Stone Skin", "effect": "defense", "base": 5, "scaling": 0.08, "description": "Adds significant defense"},
+		"active": {"name": "Stone Gaze", "type": "chance", "base_chance": 10, "chance_scaling": 0.08, "effect": "stun", "duration": 1, "description": "Chance to stun enemy"},
+		"threshold": {"name": "Fortify", "hp_percent": 40, "effect": "defense_buff", "base": 30, "scaling": 0.4, "duration": 3, "description": "Major defense boost when low HP"}
+	},
+	"Harpy": {
+		"passive": {"name": "Wind Rider", "effect": "speed", "base": 6, "scaling": 0.1, "description": "Adds significant speed"},
+		"active": {"name": "Screech", "type": "chance", "base_chance": 12, "chance_scaling": 0.1, "effect": "enemy_miss", "description": "Chance to disorient enemy"},
+		"threshold": {"name": "Desperate Flight", "hp_percent": 35, "effect": "flee_bonus", "base": 30, "scaling": 0.4, "duration": 2, "description": "Major flee bonus when low HP"}
+	},
+	"Shrieker": {
+		"passive": {"name": "Warning Cry", "effect": "flee_bonus", "base": 8, "scaling": 0.15, "description": "Increases flee chance"},
+		"active": {"name": "Deafening Shriek", "type": "chance", "base_chance": 14, "chance_scaling": 0.12, "effect": "stun", "duration": 1, "description": "Chance to stun enemy"},
+		"threshold": {"name": "Alert", "hp_percent": 50, "effect": "enemy_miss", "duration": 2, "description": "Enemy misses when HP drops"}
+	},
+
+	# ===== TIER 4 COMPANIONS =====
+	"Giant": {
+		"passive": {"name": "Towering Might", "effect": "hp_bonus", "base": 8, "scaling": 0.15, "effect2": "attack", "base2": 4, "scaling2": 0.08, "description": "Adds HP and attack"},
+		"active": {"name": "Ground Slam", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "bonus_damage", "base_damage": 15, "damage_scaling": 0.25, "effect2": "stun", "stun_chance": 20, "description": "Chance for damage and stun"},
+		"threshold": {"name": "Last Stand", "hp_percent": 25, "effect": "all_buff", "base": 15, "scaling": 0.25, "duration": 3, "description": "All stats boosted when critical"}
+	},
+	"Dragon Wyrmling": {
+		"passive": {"name": "Draconic Power", "effect": "attack", "base": 6, "scaling": 0.1, "effect2": "defense", "base2": 3, "scaling2": 0.06, "description": "Adds attack and defense"},
+		"active": {"name": "Fire Breath", "type": "chance", "base_chance": 20, "chance_scaling": 0.15, "effect": "bonus_damage", "base_damage": 12, "damage_scaling": 0.2, "description": "Chance for fire damage"},
+		"threshold": {"name": "Dragon's Fury", "hp_percent": 30, "effect": "attack_buff", "base": 30, "scaling": 0.4, "duration": 3, "description": "Major attack boost when low HP"}
+	},
+	"Demon": {
+		"passive": {"name": "Infernal Might", "effect": "attack", "base": 8, "scaling": 0.14, "description": "Adds major attack damage"},
+		"active": {"name": "Hellfire", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "bonus_damage", "base_damage": 14, "damage_scaling": 0.22, "description": "Chance for hellfire damage"},
+		"threshold": {"name": "Demonic Pact", "hp_percent": 25, "effect": "lifesteal_buff", "base": 20, "scaling": 0.3, "duration": 3, "description": "Lifesteal when critically low"}
+	},
+	"Vampire": {
+		"passive": {"name": "Blood Drinker", "effect": "lifesteal", "base": 3, "scaling": 0.05, "description": "Steals life with attacks"},
+		"active": {"name": "Drain Life", "type": "chance", "base_chance": 20, "chance_scaling": 0.15, "effect": "lifesteal", "base_percent": 20, "percent_scaling": 0.25, "description": "Chance for major life steal"},
+		"threshold": {"name": "Blood Frenzy", "hp_percent": 25, "effect": "lifesteal_buff", "base": 30, "scaling": 0.4, "duration": 3, "description": "Major lifesteal when critical"}
+	},
+	"Gryphon": {
+		"passive": {"name": "Noble Beast", "effect": "speed", "base": 6, "scaling": 0.1, "effect2": "attack", "base2": 4, "scaling2": 0.07, "description": "Adds speed and attack"},
+		"active": {"name": "Diving Talons", "type": "chance", "base_chance": 20, "chance_scaling": 0.15, "effect": "crit", "crit_mult": 1.8, "description": "Chance for critical strike"},
+		"threshold": {"name": "Majestic Roar", "hp_percent": 35, "effect": "all_buff", "base": 12, "scaling": 0.2, "duration": 3, "description": "All stats boosted when low HP"}
+	},
+	"Chimaera": {
+		"passive": {"name": "Multi-Headed", "effect": "attack", "base": 5, "scaling": 0.09, "effect2": "defense", "base2": 4, "scaling2": 0.07, "description": "Adds attack and defense"},
+		"active": {"name": "Triple Strike", "type": "chance", "base_chance": 16, "chance_scaling": 0.12, "effect": "multi_hit", "hits": 3, "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for triple attack"},
+		"threshold": {"name": "Adaptive Defense", "hp_percent": 30, "effect": "defense_buff", "base": 25, "scaling": 0.35, "duration": 3, "description": "Major defense when low HP"}
+	},
+	"Succubus": {
+		"passive": {"name": "Alluring Presence", "effect": "mana_regen", "base": 2, "scaling": 0.03, "effect2": "energy_regen", "base2": 2, "scaling2": 0.03, "description": "Adds mana and energy regen"},
+		"active": {"name": "Charm", "type": "chance", "base_chance": 15, "chance_scaling": 0.12, "effect": "charm", "duration": 1, "description": "Chance to charm enemy"},
+		"threshold": {"name": "Kiss of Death", "hp_percent": 25, "effect": "lifesteal", "base_percent": 40, "percent_scaling": 0.5, "description": "Major lifesteal when critical"}
+	},
+
+	# ===== TIER 5 COMPANIONS =====
+	"Ancient Dragon": {
+		"passive": {"name": "Ancient Power", "effect": "attack", "base": 10, "scaling": 0.18, "effect2": "defense", "base2": 5, "scaling2": 0.1, "description": "Adds major attack and defense"},
+		"active": {"name": "Dragon Breath", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "bonus_damage", "base_damage": 20, "damage_scaling": 0.3, "description": "Chance for devastating fire"},
+		"threshold": {"name": "Ancient Fury", "hp_percent": 25, "effect": "attack_buff", "base": 40, "scaling": 0.5, "duration": 3, "description": "Massive attack boost when low"}
+	},
+	"Demon Lord": {
+		"passive": {"name": "Demonic Authority", "effect": "attack", "base": 9, "scaling": 0.16, "effect2": "hp_bonus", "base2": 5, "scaling2": 0.1, "description": "Adds attack and HP"},
+		"active": {"name": "Infernal Command", "type": "chance", "base_chance": 20, "chance_scaling": 0.15, "effect": "bonus_damage", "base_damage": 18, "damage_scaling": 0.28, "effect2": "lifesteal", "lifesteal_percent": 15, "description": "Damage with lifesteal"},
+		"threshold": {"name": "Unholy Pact", "hp_percent": 20, "effect": "all_buff", "base": 20, "scaling": 0.3, "duration": 3, "description": "All stats massively boosted"}
+	},
+	"Lich": {
+		"passive": {"name": "Arcane Mastery", "effect": "mana_bonus", "base": 12, "scaling": 0.22, "effect2": "mana_regen", "base2": 2, "scaling2": 0.04, "description": "Adds major mana"},
+		"active": {"name": "Death Bolt", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "bonus_damage", "base_damage": 16, "damage_scaling": 0.25, "effect2": "mana_drain", "drain_amount": 10, "description": "Damage and mana drain"},
+		"threshold": {"name": "Phylactery Shield", "hp_percent": 20, "effect": "absorb", "base": 20, "scaling": 0.35, "duration": 3, "description": "Major damage absorption"}
+	},
+	"Titan": {
+		"passive": {"name": "Titanic Endurance", "effect": "hp_bonus", "base": 12, "scaling": 0.25, "effect2": "defense", "base2": 6, "scaling2": 0.12, "description": "Adds major HP and defense"},
+		"active": {"name": "Titan's Wrath", "type": "chance", "base_chance": 20, "chance_scaling": 0.14, "effect": "bonus_damage", "base_damage": 22, "damage_scaling": 0.32, "description": "Chance for massive damage"},
+		"threshold": {"name": "Unyielding", "hp_percent": 25, "effect": "defense_buff", "base": 50, "scaling": 0.6, "duration": 3, "description": "Massive defense when low HP"}
+	},
+	"Balrog": {
+		"passive": {"name": "Flame Aura", "effect": "attack", "base": 10, "scaling": 0.18, "effect2": "crit_chance", "base2": 2, "scaling2": 0.04, "description": "Adds attack and crit chance"},
+		"active": {"name": "Flame Whip", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "bonus_damage", "base_damage": 18, "damage_scaling": 0.28, "effect2": "bleed", "bleed_damage": 8, "description": "Fire damage with bleed"},
+		"threshold": {"name": "Infernal Rage", "hp_percent": 20, "effect": "attack_buff", "base": 45, "scaling": 0.55, "duration": 3, "description": "Massive attack boost"}
+	},
+	"Cerberus": {
+		"passive": {"name": "Three-Headed Guard", "effect": "attack", "base": 8, "scaling": 0.14, "effect2": "speed", "base2": 5, "scaling2": 0.1, "description": "Adds attack and speed"},
+		"active": {"name": "Triple Bite", "type": "chance", "base_chance": 24, "chance_scaling": 0.18, "effect": "multi_hit", "hits": 3, "base_damage": 8, "damage_scaling": 0.14, "description": "Three rapid bites"},
+		"threshold": {"name": "Hellhound Fury", "hp_percent": 25, "effect": "attack_buff", "base": 35, "scaling": 0.45, "effect2": "speed_buff", "base2": 20, "scaling2": 0.25, "duration": 3, "description": "Attack and speed boost"}
+	},
+	"Jabberwock": {
+		"passive": {"name": "Chaotic Nature", "effect": "attack", "base": 9, "scaling": 0.16, "effect2": "hp_regen", "base2": 2, "scaling2": 0.03, "description": "Adds attack and regen"},
+		"active": {"name": "Vorpal Strike", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "crit", "crit_mult": 2.0, "description": "Chance for devastating crit"},
+		"threshold": {"name": "Reality Warp", "hp_percent": 25, "effect": "dodge_buff", "base": 35, "scaling": 0.4, "duration": 3, "description": "High dodge when low HP"}
+	},
+
+	# ===== TIER 6 COMPANIONS =====
+	"Elemental": {
+		"passive": {"name": "Elemental Core", "effect": "attack", "base": 10, "scaling": 0.18, "effect2": "defense", "base2": 8, "scaling2": 0.15, "description": "Adds attack and defense"},
+		"active": {"name": "Elemental Surge", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "bonus_damage", "base_damage": 22, "damage_scaling": 0.32, "description": "Chance for elemental burst"},
+		"threshold": {"name": "Elemental Shield", "hp_percent": 25, "effect": "absorb", "base": 25, "scaling": 0.4, "duration": 3, "description": "Major damage absorption"}
+	},
+	"Iron Golem": {
+		"passive": {"name": "Ironclad", "effect": "defense", "base": 12, "scaling": 0.22, "effect2": "hp_bonus", "base2": 8, "scaling2": 0.15, "description": "Adds major defense and HP"},
+		"active": {"name": "Iron Fist", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "bonus_damage", "base_damage": 20, "damage_scaling": 0.3, "effect2": "stun", "stun_chance": 25, "description": "Damage with stun chance"},
+		"threshold": {"name": "Steel Fortress", "hp_percent": 20, "effect": "defense_buff", "base": 60, "scaling": 0.7, "duration": 3, "description": "Massive defense boost"}
+	},
+	"Sphinx": {
+		"passive": {"name": "Ancient Wisdom", "effect": "mana_bonus", "base": 10, "scaling": 0.2, "effect2": "wisdom_bonus", "base2": 4, "scaling2": 0.08, "description": "Adds mana and wisdom"},
+		"active": {"name": "Riddle", "type": "chance", "base_chance": 15, "chance_scaling": 0.12, "effect": "charm", "duration": 2, "description": "Chance to confuse enemy"},
+		"threshold": {"name": "Ancient Knowledge", "hp_percent": 25, "effect": "mana_restore", "base": 30, "scaling": 0.5, "description": "Major mana restore"}
+	},
+	"Hydra": {
+		"passive": {"name": "Multi-Headed", "effect": "hp_regen", "base": 4, "scaling": 0.07, "effect2": "attack", "base2": 8, "scaling2": 0.15, "description": "Adds regen and attack"},
+		"active": {"name": "Multi-Strike", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "multi_hit", "hits": 4, "base_damage": 6, "damage_scaling": 0.12, "description": "Four-headed assault"},
+		"threshold": {"name": "Head Regrowth", "hp_percent": 20, "effect": "heal", "base": 25, "scaling": 0.4, "description": "Major heal when critical"}
+	},
+	"Phoenix": {
+		"passive": {"name": "Eternal Flame", "effect": "hp_regen", "base": 5, "scaling": 0.08, "effect2": "attack", "base2": 6, "scaling2": 0.12, "description": "Adds regen and attack"},
+		"active": {"name": "Solar Flare", "type": "chance", "base_chance": 20, "chance_scaling": 0.15, "effect": "bonus_damage", "base_damage": 24, "damage_scaling": 0.35, "description": "Chance for solar damage"},
+		"threshold": {"name": "Rebirth", "hp_percent": 15, "effect": "full_heal", "cooldown": true, "description": "Full heal once when near death"}
+	},
+	"Nazgul": {
+		"passive": {"name": "Shadow Lord", "effect": "attack", "base": 12, "scaling": 0.2, "effect2": "flee_bonus", "base2": 12, "scaling2": 0.22, "description": "Adds attack and flee"},
+		"active": {"name": "Black Breath", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "weakness", "base_reduction": 15, "reduction_scaling": 0.2, "duration": 3, "description": "Weakens enemy attacks"},
+		"threshold": {"name": "Morgul Blade", "hp_percent": 20, "effect": "bonus_damage", "base_damage": 40, "damage_scaling": 0.5, "effect2": "poison", "poison_damage": 15, "description": "Devastating poison attack"}
+	},
+
+	# ===== TIER 7 COMPANIONS =====
+	"Void Walker": {
+		"passive": {"name": "Void Touched", "effect": "attack", "base": 14, "scaling": 0.25, "effect2": "speed", "base2": 8, "scaling2": 0.15, "effect3": "defense", "base3": 6, "scaling3": 0.12, "description": "Adds attack, speed, defense"},
+		"active": {"name": "Phase Strike", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "crit", "crit_mult": 2.2, "effect2": "lifesteal", "lifesteal_percent": 20, "description": "Critical with lifesteal"},
+		"threshold": {"name": "Dimensional Rift", "hp_percent": 20, "effect": "dodge_buff", "base": 50, "scaling": 0.6, "duration": 3, "description": "Massive dodge boost"}
+	},
+	"World Serpent": {
+		"passive": {"name": "Primordial Might", "effect": "attack", "base": 16, "scaling": 0.28, "effect2": "hp_bonus", "base2": 12, "scaling2": 0.22, "description": "Massive attack and HP"},
+		"active": {"name": "Coil Crush", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "bonus_damage", "base_damage": 30, "damage_scaling": 0.45, "effect2": "stun", "stun_chance": 30, "description": "Crushing damage with stun"},
+		"threshold": {"name": "Ouroboros", "hp_percent": 15, "effect": "heal", "base": 35, "scaling": 0.5, "effect2": "attack_buff", "attack_base": 30, "attack_scaling": 0.4, "duration": 3, "description": "Heals and buffs attack"}
+	},
+	"Elder Lich": {
+		"passive": {"name": "Supreme Necromancy", "effect": "mana_bonus", "base": 18, "scaling": 0.35, "effect2": "mana_regen", "base2": 4, "scaling2": 0.07, "effect3": "attack", "base3": 10, "scaling3": 0.18, "description": "Major mana and attack"},
+		"active": {"name": "Soul Harvest", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "bonus_damage", "base_damage": 28, "damage_scaling": 0.4, "effect2": "heal", "heal_percent": 30, "description": "Damage and self-heal"},
+		"threshold": {"name": "Lich's Phylactery", "hp_percent": 10, "effect": "revive", "revive_percent": 50, "cooldown": true, "description": "Revive at 50% HP once"}
+	},
+	"Primordial Dragon": {
+		"passive": {"name": "Primordial Flame", "effect": "attack", "base": 18, "scaling": 0.32, "effect2": "defense", "base2": 10, "scaling2": 0.18, "effect3": "hp_bonus", "base3": 8, "scaling3": 0.15, "description": "Major all stats"},
+		"active": {"name": "Primordial Breath", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "bonus_damage", "base_damage": 35, "damage_scaling": 0.5, "description": "Devastating breath attack"},
+		"threshold": {"name": "Time Warp", "hp_percent": 15, "effect": "all_buff", "base": 30, "scaling": 0.45, "effect2": "heal", "heal_percent": 25, "duration": 3, "description": "All stats and heal"}
+	},
+
+	# ===== TIER 8 COMPANIONS =====
+	"Cosmic Horror": {
+		"passive": {"name": "Eldritch Presence", "effect": "attack", "base": 18, "scaling": 0.32, "effect2": "hp_bonus", "base2": 15, "scaling2": 0.28, "effect3": "defense", "base3": 10, "scaling3": 0.18, "description": "Major all defensive stats"},
+		"active": {"name": "Madness Gaze", "type": "chance", "base_chance": 22, "chance_scaling": 0.16, "effect": "charm", "duration": 2, "effect2": "bonus_damage", "base_damage": 25, "damage_scaling": 0.38, "description": "Charm and damage"},
+		"threshold": {"name": "Reality Shatter", "hp_percent": 15, "effect": "bonus_damage", "base_damage": 60, "damage_scaling": 0.8, "effect2": "stun", "duration": 2, "description": "Massive damage and stun"}
+	},
+	"Time Weaver": {
+		"passive": {"name": "Temporal Mastery", "effect": "speed", "base": 18, "scaling": 0.32, "effect2": "attack", "base2": 12, "scaling2": 0.22, "effect3": "crit_chance", "base3": 4, "scaling3": 0.08, "description": "Speed, attack, crit"},
+		"active": {"name": "Time Stop", "type": "chance", "base_chance": 18, "chance_scaling": 0.14, "effect": "stun", "duration": 2, "effect2": "bonus_attack", "attacks": 2, "description": "Stun and double attack"},
+		"threshold": {"name": "Temporal Rewind", "hp_percent": 10, "effect": "full_heal", "effect2": "reset_cooldowns", "cooldown": true, "description": "Full heal and reset"}
+	},
+	"Death Incarnate": {
+		"passive": {"name": "Death's Touch", "effect": "attack", "base": 20, "scaling": 0.35, "effect2": "lifesteal", "base2": 5, "scaling2": 0.08, "description": "Major attack and lifesteal"},
+		"active": {"name": "Reaping Strike", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "execute", "execute_threshold": 20, "threshold_scaling": 0.1, "description": "Executes low HP enemies"},
+		"threshold": {"name": "Death's Embrace", "hp_percent": 10, "effect": "lifesteal_buff", "base": 50, "scaling": 0.7, "duration": 5, "description": "Massive lifesteal"}
+	},
+
+	# ===== TIER 9 COMPANIONS =====
+	"Avatar of Chaos": {
+		"passive": {"name": "Chaos Incarnate", "effect": "attack", "base": 22, "scaling": 0.4, "effect2": "crit_chance", "base2": 6, "scaling2": 0.12, "effect3": "hp_bonus", "base3": 12, "scaling3": 0.22, "description": "Major attack, crit, HP"},
+		"active": {"name": "Chaos Storm", "type": "chance", "base_chance": 28, "chance_scaling": 0.2, "effect": "multi_hit", "hits": 5, "base_damage": 12, "damage_scaling": 0.2, "effect2": "random_debuff", "description": "5 hits with random effects"},
+		"threshold": {"name": "Entropy Wave", "hp_percent": 10, "effect": "bonus_damage", "base_damage": 100, "damage_scaling": 1.2, "effect2": "all_buff", "buff_base": 40, "buff_scaling": 0.5, "duration": 5, "description": "Devastating damage and buffs"}
+	},
+	"The Nameless One": {
+		"passive": {"name": "Beyond Names", "effect": "attack", "base": 20, "scaling": 0.36, "effect2": "defense", "base2": 15, "scaling2": 0.28, "effect3": "speed", "base3": 10, "scaling3": 0.18, "description": "All stats massively boosted"},
+		"active": {"name": "Oblivion", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "bonus_damage", "base_damage": 40, "damage_scaling": 0.6, "effect2": "weakness", "weakness_base": 25, "weakness_scaling": 0.3, "description": "Damage and weaken enemy"},
+		"threshold": {"name": "Unmaking", "hp_percent": 10, "effect": "execute", "execute_threshold": 30, "threshold_scaling": 0.15, "effect2": "heal", "heal_percent": 40, "description": "Execute and heal"}
+	},
+	"God Slayer": {
+		"passive": {"name": "Divine Bane", "effect": "attack", "base": 25, "scaling": 0.45, "effect2": "crit_damage", "base2": 12, "scaling2": 0.22, "description": "Massive attack and crit damage"},
+		"active": {"name": "Godslayer Strike", "type": "chance", "base_chance": 30, "chance_scaling": 0.2, "effect": "crit", "crit_mult": 3.0, "description": "Devastating critical strike"},
+		"threshold": {"name": "Deicide", "hp_percent": 10, "effect": "attack_buff", "base": 80, "scaling": 1.0, "effect2": "crit_buff", "crit_base": 50, "crit_scaling": 0.6, "duration": 5, "description": "Massive offensive buffs"}
+	},
+	"Entropy": {
+		"passive": {"name": "End of All", "effect": "attack", "base": 22, "scaling": 0.4, "effect2": "hp_regen", "base2": 5, "scaling2": 0.08, "effect3": "lifesteal", "base3": 4, "scaling3": 0.06, "description": "Attack, regen, lifesteal"},
+		"active": {"name": "Decay", "type": "chance", "base_chance": 25, "chance_scaling": 0.18, "effect": "poison", "base_damage": 20, "damage_scaling": 0.35, "duration": 5, "effect2": "weakness", "weakness_base": 20, "description": "Strong poison and weaken"},
+		"threshold": {"name": "Heat Death", "hp_percent": 5, "effect": "full_heal", "effect2": "all_buff", "buff_base": 50, "buff_scaling": 0.6, "duration": 10, "cooldown": true, "description": "Full heal and massive buffs"}
 	}
 }
 
+# Legacy tier-based abilities (kept for backwards compatibility, used as fallback)
+const COMPANION_ABILITIES = {
+	1: {10: {"name": "Encouraging Presence", "type": "passive", "effect": "attack", "value": 2}, 25: {"name": "Distraction", "type": "chance", "chance": 15, "effect": "enemy_miss"}, 50: {"name": "Protective Instinct", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 10, "duration": 3}},
+	2: {10: {"name": "Battle Focus", "type": "passive", "effect": "attack", "value": 3}, 25: {"name": "Harrying Strike", "type": "chance", "chance": 18, "effect": "bonus_damage", "value": 12}, 50: {"name": "Guardian Shield", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 12, "duration": 3}},
+	3: {10: {"name": "Predator's Eye", "type": "passive", "effect": "attack", "value": 3, "effect2": "defense", "value2": 2}, 25: {"name": "Savage Bite", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 15}, 50: {"name": "Emergency Heal", "type": "threshold", "hp_percent": 50, "effect": "heal", "value": 10}},
+	4: {10: {"name": "Primal Fury", "type": "passive", "effect": "attack", "value": 4, "effect2": "speed", "value2": 3}, 25: {"name": "Vicious Assault", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 18}, 50: {"name": "Life Bond", "type": "threshold", "hp_percent": 40, "effect": "heal", "value": 12}},
+	5: {10: {"name": "Battle Synergy", "type": "passive", "effect": "attack", "value": 4, "effect2": "defense", "value2": 3}, 25: {"name": "Devastating Strike", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 22, "effect2": "stun", "chance2": 10}, 50: {"name": "Desperate Recovery", "type": "threshold", "hp_percent": 35, "effect": "heal", "value": 15}},
+	6: {10: {"name": "Elemental Fury", "type": "passive", "effect": "attack", "value": 5, "effect2": "defense", "value2": 4}, 25: {"name": "Elemental Burst", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 25}, 50: {"name": "Phoenix Gift", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 18}},
+	7: {10: {"name": "Void Resonance", "type": "passive", "effect": "attack", "value": 6, "effect2": "defense", "value2": 4, "effect3": "speed", "value3": 3}, 25: {"name": "Void Strike", "type": "chance", "chance": 23, "effect": "bonus_damage", "value": 30, "effect2": "lifesteal", "value2": 15}, 50: {"name": "Elder's Blessing", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 22}},
+	8: {10: {"name": "Cosmic Alignment", "type": "passive", "effect": "attack", "value": 7, "effect2": "defense", "value2": 5, "effect3": "crit_chance", "value3": 3}, 25: {"name": "Time Rend", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 35, "effect2": "stun", "chance2": 20}, 50: {"name": "Death's Reprieve", "type": "threshold", "hp_percent": 25, "effect": "heal", "value": 30}},
+	9: {10: {"name": "Divine Presence", "type": "passive", "effect": "attack", "value": 10, "effect2": "defense", "value2": 6, "effect3": "speed", "value3": 5}, 25: {"name": "Godslayer's Wrath", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 50, "effect2": "lifesteal", "value2": 25}, 50: {"name": "Immortal's Gift", "type": "threshold", "hp_percent": 20, "effect": "full_heal"}}
+}
+
 func get_companion_ability(tier: int, level_threshold: int) -> Dictionary:
-	"""Get a companion ability definition by tier and level threshold (10, 25, or 50)."""
+	"""Legacy function - Get a companion ability by tier and level threshold (10, 25, or 50).
+	Kept for backwards compatibility. Use get_monster_companion_abilities() for new code."""
 	if not COMPANION_ABILITIES.has(tier):
 		return {}
 	var tier_abilities = COMPANION_ABILITIES[tier]
@@ -731,7 +983,8 @@ func get_companion_ability(tier: int, level_threshold: int) -> Dictionary:
 	return tier_abilities[level_threshold].duplicate()
 
 func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
-	"""Get all unlocked abilities for a companion based on tier and level."""
+	"""Legacy function - Get all unlocked abilities for a companion based on tier and level.
+	Kept for backwards compatibility. Use get_monster_companion_abilities() for new code."""
 	var abilities = []
 	if not COMPANION_ABILITIES.has(tier):
 		return abilities
@@ -745,6 +998,101 @@ func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
 		abilities.append(tier_abilities[50].duplicate())
 
 	return abilities
+
+# ===== NEW MONSTER-SPECIFIC COMPANION ABILITY SYSTEM =====
+
+func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0) -> Dictionary:
+	"""Get all abilities for a companion based on monster type and level.
+	Returns dict with 'passive', 'active', 'threshold' keys, each containing scaled ability data.
+	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS)."""
+
+	var result = {"passive": {}, "active": {}, "threshold": {}}
+
+	# Check for monster-specific abilities
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var monster_abilities = COMPANION_MONSTER_ABILITIES[monster_type]
+
+		# Scale passive ability
+		if monster_abilities.has("passive"):
+			result.passive = _scale_companion_ability(monster_abilities.passive, companion_level, variant_multiplier)
+
+		# Scale active ability (unlocks at level 5)
+		if monster_abilities.has("active") and companion_level >= 5:
+			result.active = _scale_companion_ability(monster_abilities.active, companion_level, variant_multiplier)
+
+		# Scale threshold ability (unlocks at level 15)
+		if monster_abilities.has("threshold") and companion_level >= 15:
+			result.threshold = _scale_companion_ability(monster_abilities.threshold, companion_level, variant_multiplier)
+	else:
+		# Fallback to tier-based abilities for unknown monster types
+		var companion_data = COMPANION_DATA.get(monster_type, {})
+		var tier = companion_data.get("tier", 1)
+		var tier_abilities = get_all_companion_abilities(tier, companion_level)
+		if tier_abilities.size() >= 1:
+			result.passive = tier_abilities[0]
+		if tier_abilities.size() >= 2:
+			result.active = tier_abilities[1]
+		if tier_abilities.size() >= 3:
+			result.threshold = tier_abilities[2]
+
+	return result
+
+func _scale_companion_ability(ability_template: Dictionary, companion_level: int, variant_mult: float) -> Dictionary:
+	"""Scale an ability's values based on companion level and variant multiplier."""
+	var scaled = ability_template.duplicate(true)
+
+	# Scale base values with level
+	if scaled.has("base") and scaled.has("scaling"):
+		var base_value = scaled.base * variant_mult
+		scaled["value"] = int(base_value + (scaled.scaling * companion_level * variant_mult))
+
+	# Scale secondary effects
+	if scaled.has("base2") and scaled.has("scaling2"):
+		var base_value2 = scaled.base2 * variant_mult
+		scaled["value2"] = int(base_value2 + (scaled.scaling2 * companion_level * variant_mult))
+
+	# Scale tertiary effects
+	if scaled.has("base3") and scaled.has("scaling3"):
+		var base_value3 = scaled.base3 * variant_mult
+		scaled["value3"] = int(base_value3 + (scaled.scaling3 * companion_level * variant_mult))
+
+	# Scale damage values
+	if scaled.has("base_damage") and scaled.has("damage_scaling"):
+		var base_dmg = scaled.base_damage * variant_mult
+		scaled["damage"] = int(base_dmg + (scaled.damage_scaling * companion_level * variant_mult))
+
+	# Scale chance values
+	if scaled.has("base_chance") and scaled.has("chance_scaling"):
+		var base_chance = scaled.base_chance * variant_mult
+		scaled["chance"] = mini(int(base_chance + (scaled.chance_scaling * companion_level)), 80)  # Cap at 80%
+
+	# Scale percentage values (lifesteal, etc)
+	if scaled.has("base_percent") and scaled.has("percent_scaling"):
+		var base_pct = scaled.base_percent * variant_mult
+		scaled["percent"] = int(base_pct + (scaled.percent_scaling * companion_level * variant_mult))
+
+	return scaled
+
+func get_companion_passive_bonuses(monster_type: String, companion_level: int, variant_multiplier: float = 1.0) -> Dictionary:
+	"""Get the passive stat bonuses from a companion's passive ability.
+	Returns dict like {"attack": 5, "defense": 3} ready to apply to character."""
+	var abilities = get_monster_companion_abilities(monster_type, companion_level, variant_multiplier)
+	var bonuses = {}
+
+	if abilities.passive.is_empty():
+		return bonuses
+
+	var passive = abilities.passive
+
+	# Map effect names to bonus keys
+	if passive.has("effect") and passive.has("value"):
+		bonuses[passive.effect] = passive.value
+	if passive.has("effect2") and passive.has("value2"):
+		bonuses[passive.effect2] = passive.value2
+	if passive.has("effect3") and passive.has("value3"):
+		bonuses[passive.effect3] = passive.value3
+
+	return bonuses
 
 # Hatching steps scale by tier (higher tier = more steps)
 const EGG_HATCH_STEPS_BY_TIER = {
@@ -777,25 +1125,100 @@ func get_companion_data(monster_name: String) -> Dictionary:
 	"""Get companion data for a monster. Returns empty dict if none."""
 	return COMPANION_DATA.get(monster_name, {})
 
-func get_egg_for_monster(monster_name: String) -> Dictionary:
-	"""Generate an egg dictionary for a given monster type."""
+func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}) -> Dictionary:
+	"""Generate an egg dictionary for a given monster type.
+	If pre_rolled_variant is provided, uses that variant. Otherwise rolls a new one.
+	Variant is determined at egg creation and affects egg display and hatch times."""
 	var companion = COMPANION_DATA.get(monster_name, {})
 	if companion.is_empty():
 		return {}
 
 	var tier = companion.get("tier", 1)
-	var hatch_steps = EGG_HATCH_STEPS_BY_TIER.get(tier, 100)
 	var companion_name = companion.get("companion_name", monster_name + " Companion")
 
+	# Roll variant if not provided (variant determines egg appearance and final companion)
+	var variant = pre_rolled_variant
+	if variant.is_empty():
+		variant = _roll_egg_variant()
+
+	# Calculate hatch steps based on tier AND variant rarity
+	var base_hatch_steps = EGG_HATCH_STEPS_BY_TIER.get(tier, 100)
+	var variant_rarity = variant.get("rarity", 10)
+	# Rarer variants (lower rarity number) take longer to hatch
+	# Rarity 15 (common) = 1.0x, Rarity 1 (ultra rare) = 2.5x
+	var rarity_multiplier = 1.0 + (15 - variant_rarity) * 0.1
+	var hatch_steps = int(base_hatch_steps * rarity_multiplier)
+
 	return {
-		"id": "egg_" + monster_name.to_lower().replace(" ", "_"),
+		"id": "egg_" + monster_name.to_lower().replace(" ", "_") + "_" + str(randi()),
 		"monster_type": monster_name,
 		"companion_name": companion_name,
 		"name": companion_name + " Egg",
 		"tier": tier,
 		"hatch_steps": hatch_steps,
-		"bonuses": companion.get("bonuses", {}).duplicate()
+		"bonuses": companion.get("bonuses", {}).duplicate(),
+		# Variant info for display and hatching
+		"variant": variant.get("name", "Normal"),
+		"variant_color": variant.get("color", "#FFFFFF"),
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"variant_rarity": variant_rarity
 	}
+
+# Egg variant rolling - uses same variants as companions but rolls at egg creation
+const EGG_VARIANTS = [
+	# Common (rarity 15-8)
+	{"name": "Normal", "color": "#FFFFFF", "pattern": "solid", "rarity": 15},
+	{"name": "Crimson", "color": "#DC143C", "pattern": "solid", "rarity": 10},
+	{"name": "Azure", "color": "#007FFF", "pattern": "solid", "rarity": 10},
+	{"name": "Verdant", "color": "#228B22", "pattern": "solid", "rarity": 10},
+	{"name": "Golden", "color": "#FFD700", "pattern": "solid", "rarity": 8},
+	{"name": "Shadow", "color": "#2F2F2F", "pattern": "solid", "rarity": 8},
+	{"name": "Violet", "color": "#9400D3", "pattern": "solid", "rarity": 8},
+	{"name": "Coral", "color": "#FF7F50", "pattern": "solid", "rarity": 8},
+	# Uncommon (rarity 6-5)
+	{"name": "Frost", "color": "#87CEEB", "pattern": "solid", "rarity": 6},
+	{"name": "Infernal", "color": "#FF4500", "pattern": "solid", "rarity": 5},
+	{"name": "Toxic", "color": "#ADFF2F", "pattern": "solid", "rarity": 5},
+	{"name": "Amethyst", "color": "#9966CC", "pattern": "solid", "rarity": 5},
+	# Rare gradients (rarity 4-3)
+	{"name": "Sunset", "color": "#FF4500", "color2": "#FFD700", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Ocean", "color": "#00BFFF", "color2": "#000080", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Forest", "color": "#228B22", "color2": "#006400", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Twilight", "color": "#FF69B4", "color2": "#4B0082", "pattern": "gradient_down", "rarity": 3},
+	# Rare patterns (rarity 3-2)
+	{"name": "Tiger", "color": "#FF8C00", "color2": "#2F2F2F", "pattern": "striped", "rarity": 3},
+	{"name": "Electric", "color": "#FFFF00", "color2": "#000000", "pattern": "striped", "rarity": 3},
+	{"name": "Starry", "color": "#191970", "color2": "#FFFFFF", "pattern": "scatter", "rarity": 3},
+	{"name": "Split", "color": "#FF0000", "color2": "#0000FF", "pattern": "split_v", "rarity": 3},
+	{"name": "Harlequin", "color": "#FF0000", "color2": "#FFD700", "pattern": "checker", "rarity": 2},
+	{"name": "Lightning", "color": "#FFFF00", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 3},
+	{"name": "Phoenix", "color": "#FF0000", "color2": "#FFD700", "pattern": "diagonal_up", "rarity": 2},
+	# Very rare (rarity 2)
+	{"name": "Shiny", "color": "#FFFACD", "pattern": "solid", "rarity": 2},
+	{"name": "Blessed", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "edges", "rarity": 1},
+	# Ultra rare (rarity 1)
+	{"name": "Spectral", "color": "#E6E6FA", "color2": "#9400D3", "pattern": "gradient_up", "rarity": 1},
+	{"name": "Prismatic", "color": "#FF69B4", "color2": "#00FFFF", "pattern": "striped", "rarity": 1},
+	{"name": "Void", "color": "#4B0082", "color2": "#000000", "pattern": "gradient_down", "rarity": 1},
+	{"name": "Cosmic", "color": "#FFFFFF", "color2": "#4B0082", "pattern": "scatter", "rarity": 1},
+	{"name": "Divine", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "middle", "rarity": 1}
+]
+
+func _roll_egg_variant() -> Dictionary:
+	"""Roll for a random egg variant using weighted rarity."""
+	var total_weight = 0
+	for variant in EGG_VARIANTS:
+		total_weight += variant.rarity
+
+	var roll = randi() % total_weight
+	var current = 0
+	for variant in EGG_VARIANTS:
+		current += variant.rarity
+		if roll < current:
+			return variant.duplicate()
+
+	return EGG_VARIANTS[0].duplicate()  # Fallback to Normal
 
 func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped."""
@@ -951,10 +1374,10 @@ func get_fishing_wait_time(fishing_skill: int) -> float:
 
 func get_fishing_reaction_window(fishing_skill: int) -> float:
 	"""Get reaction window for catching fish. Higher skill = longer window."""
-	var base_window = 1.5  # 1.5 seconds base
-	# Skill adds time: +0.01s per skill level
-	var skill_bonus = fishing_skill * 0.01
-	return min(3.0, base_window + skill_bonus)  # Cap at 3 seconds
+	var base_window = 2.5  # 2.5 seconds base (increased for slower connections)
+	# Skill adds time: +0.02s per skill level
+	var skill_bonus = fishing_skill * 0.02
+	return min(5.0, base_window + skill_bonus)  # Cap at 5 seconds
 
 # ===== MINING SYSTEM =====
 # Ore deposits in mountains - tiered by distance from origin
@@ -1088,19 +1511,19 @@ func roll_mining_catch(ore_tier: int, mining_skill: int) -> Dictionary:
 	}
 
 func get_mining_wait_time(mining_skill: int) -> float:
-	"""Get wait time for mining. Longer than fishing (6-16 sec base vs 3-8 for fishing)."""
-	var base_min = 6.0
-	var base_max = 16.0
-	var skill_reduction = mining_skill * 0.04
-	var min_time = max(3.0, base_min - skill_reduction)
-	var max_time = max(6.0, base_max - skill_reduction * 1.5)
+	"""Get wait time for mining. Similar to fishing (3-8 sec base)."""
+	var base_min = 3.0
+	var base_max = 8.0
+	var skill_reduction = mining_skill * 0.02
+	var min_time = max(1.5, base_min - skill_reduction)
+	var max_time = max(3.0, base_max - skill_reduction * 1.5)
 	return randf_range(min_time, max_time)
 
 func get_mining_reaction_window(mining_skill: int) -> float:
 	"""Get reaction window for mining. Higher skill = longer window."""
-	var base_window = 1.2  # Slightly shorter than fishing
-	var skill_bonus = mining_skill * 0.01
-	return min(2.5, base_window + skill_bonus)
+	var base_window = 2.5  # 2.5 seconds base (increased for slower connections)
+	var skill_bonus = mining_skill * 0.02
+	return min(5.0, base_window + skill_bonus)  # Cap at 5 seconds
 
 func get_mining_reactions_required(ore_tier: int) -> int:
 	"""Get number of successful reactions required for this tier.
@@ -1220,19 +1643,19 @@ func roll_logging_catch(wood_tier: int, logging_skill: int) -> Dictionary:
 	}
 
 func get_logging_wait_time(logging_skill: int) -> float:
-	"""Get wait time for logging. Similar to mining (6-16 sec base)."""
-	var base_min = 6.0
-	var base_max = 16.0
-	var skill_reduction = logging_skill * 0.04
-	var min_time = max(3.0, base_min - skill_reduction)
-	var max_time = max(6.0, base_max - skill_reduction * 1.5)
+	"""Get wait time for logging. Similar to fishing (3-8 sec base)."""
+	var base_min = 3.0
+	var base_max = 8.0
+	var skill_reduction = logging_skill * 0.02
+	var min_time = max(1.5, base_min - skill_reduction)
+	var max_time = max(3.0, base_max - skill_reduction * 1.5)
 	return randf_range(min_time, max_time)
 
 func get_logging_reaction_window(logging_skill: int) -> float:
 	"""Get reaction window for logging. Higher skill = longer window."""
-	var base_window = 1.2
-	var skill_bonus = logging_skill * 0.01
-	return min(2.5, base_window + skill_bonus)
+	var base_window = 2.5  # 2.5 seconds base (increased for slower connections)
+	var skill_bonus = logging_skill * 0.02
+	return min(5.0, base_window + skill_bonus)  # Cap at 5 seconds
 
 func get_logging_reactions_required(wood_tier: int) -> int:
 	"""Get number of successful reactions required for this tier.

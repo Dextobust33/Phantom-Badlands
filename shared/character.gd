@@ -488,9 +488,10 @@ const VARIANT_STAT_MULTIPLIERS = {
 	"Prismatic": 1.50, "Void": 1.50, "Cosmic": 1.50
 }
 
-# Companion level constants
-const COMPANION_MAX_LEVEL = 50
-const COMPANION_XP_BASE = 20  # XP formula: (level+1)^1.8 * 20
+# Companion leveling - matches player progression, scales to high levels
+# Companions level independently but their effective cap matches the player's level
+const COMPANION_MAX_LEVEL = 10000  # Same as player max (effectively unlimited)
+const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower than players
 
 # Collected Companions - companions that have been hatched (can switch between them)
 # Format: [{id: String, monster_type: String, name: String, tier: int, bonuses: Dictionary,
@@ -510,6 +511,13 @@ const COMPANION_XP_BASE = 20  # XP formula: (level+1)^1.8 * 20
 @export var logging_skill: int = 1  # Logging skill level (1-100)
 @export var logging_xp: int = 0     # XP towards next logging level
 @export var wood_gathered: int = 0  # Total wood gathered (tracking)
+
+# ===== GATHERING TOOLS =====
+# Equipped gathering tools provide bonuses to yield, speed, and tier access
+# Format: {name: String, tier: int, bonuses: {yield_bonus: int, speed_bonus: float, tier_bonus: int}}
+@export var equipped_fishing_rod: Dictionary = {}
+@export var equipped_pickaxe: Dictionary = {}
+@export var equipped_axe: Dictionary = {}
 
 # ===== SALVAGE SYSTEM =====
 @export var salvage_essence: int = 0  # Currency from salvaging items
@@ -561,9 +569,9 @@ func initialize(char_name: String, char_class: String, char_race: String = "Huma
 	current_stamina = max_stamina
 	current_energy = max_energy
 
-	# Starting location - Sanctuary (0, 10) like Phantasia 4
+	# Starting location - near origin (0, 0)
 	x = 0
-	y = 10
+	y = 0
 	gold = 100
 
 	# Tracking fields
@@ -1393,7 +1401,10 @@ func to_dict() -> Dictionary:
 		"fishing_xp": fishing_xp,
 		"fish_caught": fish_caught,
 		"crafting_skills": crafting_skills,
-		"crafting_xp": crafting_xp
+		"crafting_xp": crafting_xp,
+		"equipped_fishing_rod": equipped_fishing_rod,
+		"equipped_pickaxe": equipped_pickaxe,
+		"equipped_axe": equipped_axe
 	}
 
 func from_dict(data: Dictionary):
@@ -1559,6 +1570,11 @@ func from_dict(data: Dictionary):
 	fish_caught = data.get("fish_caught", 0)
 	crafting_skills = data.get("crafting_skills", {"blacksmithing": 1, "alchemy": 1, "enchanting": 1})
 	crafting_xp = data.get("crafting_xp", {"blacksmithing": 0, "alchemy": 0, "enchanting": 0})
+
+	# Gathering tools
+	equipped_fishing_rod = data.get("equipped_fishing_rod", {})
+	equipped_pickaxe = data.get("equipped_pickaxe", {})
+	equipped_axe = data.get("equipped_axe", {})
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
@@ -2627,10 +2643,11 @@ func get_companion_tier() -> int:
 # ===== COMPANION LEVELING SYSTEM =====
 
 func get_companion_xp_to_next_level(companion_level: int) -> int:
-	"""Calculate XP needed to reach the next level. Formula: (level+1)^1.8 * 20"""
+	"""Calculate XP needed to reach the next level. Formula: (level+1)^2.0 * 15
+	Scales similarly to player XP but slightly slower."""
 	if companion_level >= COMPANION_MAX_LEVEL:
 		return 0
-	return int(pow(companion_level + 1, 1.8) * COMPANION_XP_BASE)
+	return int(pow(companion_level + 1, 2.0) * COMPANION_XP_BASE)
 
 func add_companion_xp(xp_amount: int) -> Dictionary:
 	"""Add XP to the active companion. Returns {leveled_up: bool, new_level: int, xp: int, xp_to_next: int, abilities_unlocked: Array}"""
@@ -2716,22 +2733,40 @@ func get_companion_effective_bonuses() -> Dictionary:
 	return base_bonuses
 
 func get_companion_unlocked_abilities() -> Array:
-	"""Get list of unlocked abilities based on companion tier and level."""
+	"""Get list of unlocked ability types for the active companion.
+	New system: passive always, active at level 5, threshold at level 15."""
 	if active_companion.is_empty():
 		return []
 
 	var companion_level = active_companion.get("level", 1)
 	var unlocked = []
 
-	# Abilities unlock at levels 10, 25, 50
-	if companion_level >= 10:
-		unlocked.append(10)
-	if companion_level >= 25:
-		unlocked.append(25)
-	if companion_level >= 50:
-		unlocked.append(50)
+	# Passive ability is always available
+	unlocked.append("passive")
+
+	# Active ability unlocks at level 5
+	if companion_level >= 5:
+		unlocked.append("active")
+
+	# Threshold ability unlocks at level 15
+	if companion_level >= 15:
+		unlocked.append("threshold")
 
 	return unlocked
+
+func get_companion_scaled_abilities() -> Dictionary:
+	"""Get all abilities for the active companion, scaled by level and variant.
+	Returns dict with 'passive', 'active', 'threshold' keys."""
+	if active_companion.is_empty():
+		return {"passive": {}, "active": {}, "threshold": {}}
+
+	var monster_type = active_companion.get("monster_type", "")
+	var companion_level = active_companion.get("level", 1)
+	var variant_mult = get_variant_stat_multiplier()
+
+	# Get scaled abilities from drop_tables
+	var drop_tables = preload("res://shared/drop_tables.gd").new()
+	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult)
 
 func get_companion_level() -> int:
 	"""Get active companion's level."""
@@ -2747,6 +2782,10 @@ func get_variant_stat_multiplier() -> float:
 		return 1.0
 	var variant = active_companion.get("variant", "Normal")
 	return VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
+
+func get_companion_monster_type() -> String:
+	"""Get the monster type of the active companion."""
+	return active_companion.get("monster_type", "")
 
 # ===== FISHING SYSTEM =====
 
@@ -2918,8 +2957,8 @@ func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
 
 func _get_crafting_xp_needed(current_level: int) -> int:
 	"""Get XP needed for next crafting level."""
-	# Formula: 100 * level^1.5
-	return int(100 * pow(current_level, 1.5))
+	# Formula: 50 * level^1.3 (reduced from 100 * level^1.5 for faster progression)
+	return int(50 * pow(current_level, 1.3))
 
 func learn_recipe(recipe_id: String) -> bool:
 	"""Learn a new recipe. Returns true if newly learned."""

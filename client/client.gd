@@ -573,6 +573,7 @@ const ABILITY_PAGE_SIZE: int = 9  # Abilities per page (keys 1-9)
 # Pending continue state (prevents output clearing until player acknowledges)
 var pending_continue: bool = false
 var pending_dungeon_continue: bool = false  # Request fresh dungeon state when continuing
+var queued_combat_message: Dictionary = {}  # Combat that arrived during pending_continue (e.g., egg hatching)
 
 # Wandering NPC encounter states
 var pending_blacksmith: bool = false
@@ -624,9 +625,15 @@ var more_mode: bool = false
 # Companions mode
 var companions_mode: bool = false
 var companions_page: int = 0
-var pending_companion_action: String = ""  # "", "release_select", "release_confirm", "release_all_warn", "release_all_confirm"
+var pending_companion_action: String = ""  # "", "release_select", "release_confirm", "release_all_warn", "release_all_confirm", "inspect"
 var release_target_companion: Dictionary = {}  # Companion being released
+var inspecting_companion: Dictionary = {}  # Companion being inspected
 const COMPANIONS_PAGE_SIZE = 5
+
+# Eggs mode (separate page from companions)
+var eggs_mode: bool = false
+var eggs_page: int = 0
+const EGGS_PAGE_SIZE = 3  # Fewer per page since eggs have ASCII art
 
 # Water/Fishing location
 var at_water: bool = false  # Whether player is at a fishable water tile
@@ -642,6 +649,7 @@ var wood_tier: int = 1  # Tier of the wood (1-6)
 # Dungeon entrance location
 var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
 var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
+var pending_dungeon_warning: Dictionary = {}  # Pending dungeon entry warning awaiting confirmation
 
 # Watch/Inspect mode - observe another player's game output
 var watching_player: String = ""  # Name of player we're watching (empty = not watching)
@@ -749,6 +757,12 @@ var logging_target_slot: int = -1
 var logging_current_tier: int = 1
 var logging_reactions_required: int = 1
 var logging_reactions_completed: int = 0
+
+# Gathering pattern system (DDR-style sequences)
+const GATHERING_PATTERN_KEYS = ["Q", "W", "E", "R"]  # Keys used for patterns
+var gathering_pattern: Array = []  # Current pattern sequence e.g., ["W", "E", "Q", "W"]
+var gathering_pattern_index: int = 0  # Current position in pattern (0-indexed)
+var gathering_pattern_tier: int = 1  # Tier being gathered (affects pattern length)
 
 # Dungeon mode
 var dungeon_mode: bool = false
@@ -2474,14 +2488,8 @@ func _process(delta):
 						if action.get("enabled", false) and action.get("action_type", "none") != "none":
 							action_triggered_this_frame.append(i)
 							trigger_action(i)
-						elif i >= 5:  # Slots 5-9 are fishing/mining/logging catch buttons
-							# Wrong button pressed during gathering reaction phase - fail the attempt
-							if fishing_mode and fishing_phase == "reaction":
-								handle_fishing_catch(i - 5)  # Convert to 0-4 slot, will fail since target != pressed
-							elif mining_mode and mining_phase == "reaction":
-								handle_mining_catch(i - 5)  # Wrong button fails mining
-							elif logging_mode and logging_phase == "reaction":
-								handle_logging_catch(i - 5)  # Wrong button fails logging
+						# Note: Pattern-based gathering input is now handled in _input()
+						# with Q, W, E, R keys - no longer uses action bar slots 5-9
 			else:
 				set_meta("hotkey_%d_pressed" % i, false)
 
@@ -2694,6 +2702,31 @@ func _input(event):
 			complete_rebinding(keycode)
 		get_viewport().set_input_as_handled()
 		return
+
+	# Handle gathering pattern key presses (Q, W, E, R during reaction phase)
+	if event is InputEventKey and event.pressed and not event.echo:
+		var keycode = event.keycode
+		var key_name = ""
+		match keycode:
+			KEY_Q: key_name = "Q"
+			KEY_W: key_name = "W"
+			KEY_E: key_name = "E"
+			KEY_R: key_name = "R"
+
+		if key_name != "":
+			# Check if we're in a gathering reaction phase
+			if fishing_mode and fishing_phase == "reaction":
+				handle_fishing_pattern_key(key_name)
+				get_viewport().set_input_as_handled()
+				return
+			elif mining_mode and mining_phase == "reaction":
+				handle_mining_pattern_key(key_name)
+				get_viewport().set_input_as_handled()
+				return
+			elif logging_mode and logging_phase == "reaction":
+				handle_logging_pattern_key(key_name)
+				get_viewport().set_input_as_handled()
+				return
 
 	# Handle settings mode input
 	if settings_mode and not rebinding_action and event is InputEventKey and event.pressed and not event.echo:
@@ -3746,18 +3779,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Reaction phase - show catch buttons (slots 5-9 correspond to target slots 0-4)
+			# Reaction phase - show pattern keys (Q, W, E, R) with current key highlighted
+			var current_key = gathering_pattern[gathering_pattern_index] if gathering_pattern_index < gathering_pattern.size() else ""
 			current_actions = [
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "[Q]" if current_key == "Q" else "Q", "action_type": "none", "action_data": "", "enabled": current_key == "Q"},
+				{"label": "[W]" if current_key == "W" else "W", "action_type": "none", "action_data": "", "enabled": current_key == "W"},
+				{"label": "[E]" if current_key == "E" else "E", "action_type": "none", "action_data": "", "enabled": current_key == "E"},
+				{"label": "[R]" if current_key == "R" else "R", "action_type": "none", "action_data": "", "enabled": current_key == "R"},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "CATCH!" if fishing_target_slot == 0 else "---", "action_type": "local", "action_data": "fishing_catch_0", "enabled": fishing_target_slot == 0},
-				{"label": "CATCH!" if fishing_target_slot == 1 else "---", "action_type": "local", "action_data": "fishing_catch_1", "enabled": fishing_target_slot == 1},
-				{"label": "CATCH!" if fishing_target_slot == 2 else "---", "action_type": "local", "action_data": "fishing_catch_2", "enabled": fishing_target_slot == 2},
-				{"label": "CATCH!" if fishing_target_slot == 3 else "---", "action_type": "local", "action_data": "fishing_catch_3", "enabled": fishing_target_slot == 3},
-				{"label": "CATCH!" if fishing_target_slot == 4 else "---", "action_type": "local", "action_data": "fishing_catch_4", "enabled": fishing_target_slot == 4},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif mining_mode:
 		# Mining minigame
@@ -3776,18 +3810,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Reaction phase
+			# Reaction phase - show pattern keys (Q, W, E, R) with current key highlighted
+			var current_key = gathering_pattern[gathering_pattern_index] if gathering_pattern_index < gathering_pattern.size() else ""
 			current_actions = [
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "[Q]" if current_key == "Q" else "Q", "action_type": "none", "action_data": "", "enabled": current_key == "Q"},
+				{"label": "[W]" if current_key == "W" else "W", "action_type": "none", "action_data": "", "enabled": current_key == "W"},
+				{"label": "[E]" if current_key == "E" else "E", "action_type": "none", "action_data": "", "enabled": current_key == "E"},
+				{"label": "[R]" if current_key == "R" else "R", "action_type": "none", "action_data": "", "enabled": current_key == "R"},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "STRIKE!" if mining_target_slot == 0 else "---", "action_type": "local", "action_data": "mining_catch_0", "enabled": mining_target_slot == 0},
-				{"label": "STRIKE!" if mining_target_slot == 1 else "---", "action_type": "local", "action_data": "mining_catch_1", "enabled": mining_target_slot == 1},
-				{"label": "STRIKE!" if mining_target_slot == 2 else "---", "action_type": "local", "action_data": "mining_catch_2", "enabled": mining_target_slot == 2},
-				{"label": "STRIKE!" if mining_target_slot == 3 else "---", "action_type": "local", "action_data": "mining_catch_3", "enabled": mining_target_slot == 3},
-				{"label": "STRIKE!" if mining_target_slot == 4 else "---", "action_type": "local", "action_data": "mining_catch_4", "enabled": mining_target_slot == 4},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif logging_mode:
 		# Logging minigame
@@ -3806,18 +3841,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Reaction phase
+			# Reaction phase - show pattern keys (Q, W, E, R) with current key highlighted
+			var current_key = gathering_pattern[gathering_pattern_index] if gathering_pattern_index < gathering_pattern.size() else ""
 			current_actions = [
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "[Q]" if current_key == "Q" else "Q", "action_type": "none", "action_data": "", "enabled": current_key == "Q"},
+				{"label": "[W]" if current_key == "W" else "W", "action_type": "none", "action_data": "", "enabled": current_key == "W"},
+				{"label": "[E]" if current_key == "E" else "E", "action_type": "none", "action_data": "", "enabled": current_key == "E"},
+				{"label": "[R]" if current_key == "R" else "R", "action_type": "none", "action_data": "", "enabled": current_key == "R"},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "CHOP!" if logging_target_slot == 0 else "---", "action_type": "local", "action_data": "logging_catch_0", "enabled": logging_target_slot == 0},
-				{"label": "CHOP!" if logging_target_slot == 1 else "---", "action_type": "local", "action_data": "logging_catch_1", "enabled": logging_target_slot == 1},
-				{"label": "CHOP!" if logging_target_slot == 2 else "---", "action_type": "local", "action_data": "logging_catch_2", "enabled": logging_target_slot == 2},
-				{"label": "CHOP!" if logging_target_slot == 3 else "---", "action_type": "local", "action_data": "logging_catch_3", "enabled": logging_target_slot == 3},
-				{"label": "CHOP!" if logging_target_slot == 4 else "---", "action_type": "local", "action_data": "logging_catch_4", "enabled": logging_target_slot == 4},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif dungeon_list_mode:
 		# Viewing list of available dungeons - select with 1-9
@@ -3849,7 +3885,7 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending:
+	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
 		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2) for item use
 		current_actions = [
@@ -4152,13 +4188,27 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif not pending_dungeon_warning.is_empty():
+		# Dungeon level warning - awaiting confirmation
+		current_actions = [
+			{"label": "Enter Anyway", "action_type": "local", "action_data": "dungeon_warning_confirm", "enabled": true},
+			{"label": "Cancel", "action_type": "local", "action_data": "dungeon_warning_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif more_mode:
-		# More menu - contains Companions, Leaders, etc.
+		# More menu - contains Companions, Eggs, Leaders, etc.
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
 			{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
+			{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4232,6 +4282,20 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_companion_action == "inspect":
+			# Inspecting a companion's details
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "inspect_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:
 			# Normal companions menu
 			var page_count = min(COMPANIONS_PAGE_SIZE, collected.size() - companions_page * COMPANIONS_PAGE_SIZE) if collected.size() > 0 else 0
@@ -4239,14 +4303,32 @@ func update_action_bar():
 				{"label": "Back", "action_type": "local", "action_data": "companions_close", "enabled": true},
 				{"label": "< Prev", "action_type": "local", "action_data": "companions_prev", "enabled": has_prev},
 				{"label": "Next >", "action_type": "local", "action_data": "companions_next", "enabled": has_next},
-				{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
+				{"label": "Inspect", "action_type": "local", "action_data": "companions_inspect", "enabled": collected.size() > 0},
 				{"label": "Release", "action_type": "local", "action_data": "companions_release", "enabled": collected.size() > 0},
-				{"label": "1-%d Activate" % page_count, "action_type": "none", "action_data": "", "enabled": false} if page_count > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % page_count, "action_type": "none", "action_data": "", "enabled": false} if page_count > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Rel. All", "action_type": "local", "action_data": "companions_release_all", "enabled": collected.size() > 1},
 			]
+	elif eggs_mode:
+		# Eggs viewing mode with pagination
+		var eggs = character_data.get("incubating_eggs", [])
+		var total_pages = int(ceil(float(eggs.size()) / float(EGGS_PAGE_SIZE))) if eggs.size() > 0 else 1
+		var has_prev = eggs_page > 0
+		var has_next = eggs_page < total_pages - 1
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "eggs_close", "enabled": true},
+			{"label": "< Prev", "action_type": "local", "action_data": "eggs_prev", "enabled": has_prev},
+			{"label": "Next >", "action_type": "local", "action_data": "eggs_next", "enabled": has_next},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif at_merchant:
 		# Merchant mode
 		var services = merchant_data.get("services", [])
@@ -6448,6 +6530,43 @@ func execute_local_action(action: String):
 			# Actually release all companions
 			send_to_server({"type": "release_all_companions"})
 			pending_companion_action = ""
+		"companions_inspect":
+			# Enter inspect selection mode - use number keys to select companion
+			pending_companion_action = "inspect_select"
+			game_output.clear()
+			display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
+			display_game("")
+			display_game("[color=#AAAAAA]Select a companion to inspect (1-%d):[/color]" % min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size()))
+			display_game("")
+			_display_companions_for_selection()
+			update_action_bar()
+		"inspect_back":
+			pending_companion_action = ""
+			inspecting_companion = {}
+			display_companions()
+			update_action_bar()
+		"eggs_menu":
+			# Open eggs page
+			more_mode = false
+			eggs_mode = true
+			eggs_page = 0
+			display_eggs()
+			update_action_bar()
+		"eggs_close":
+			eggs_mode = false
+			more_mode = true
+			display_more_menu()
+			update_action_bar()
+		"eggs_prev":
+			eggs_page = max(0, eggs_page - 1)
+			display_eggs()
+			update_action_bar()
+		"eggs_next":
+			var eggs = character_data.get("incubating_eggs", [])
+			var total_pages = int(ceil(float(eggs.size()) / float(EGGS_PAGE_SIZE)))
+			eggs_page = min(total_pages - 1, eggs_page + 1)
+			display_eggs()
+			update_action_bar()
 		"logout_character":
 			logout_character()
 		"logout_account":
@@ -6773,6 +6892,19 @@ func execute_local_action(action: String):
 		"enter_dungeon":
 			# Enter a dungeon at this location
 			enter_dungeon_at_location()
+		"dungeon_warning_confirm":
+			# Confirm entering dungeon despite low level warning
+			if not pending_dungeon_warning.is_empty():
+				var dungeon_type = pending_dungeon_warning.get("dungeon_type", "")
+				pending_dungeon_warning = {}
+				send_to_server({"type": "dungeon_enter", "dungeon_type": dungeon_type, "confirmed": true})
+			update_action_bar()
+		"dungeon_warning_cancel":
+			# Cancel entering dungeon
+			pending_dungeon_warning = {}
+			game_output.clear()
+			display_game("[color=#808080]Dungeon entry cancelled.[/color]")
+			update_action_bar()
 		"ability_equip":
 			show_ability_equip_prompt()
 		"ability_unequip":
@@ -6895,45 +7027,15 @@ func execute_local_action(action: String):
 			send_healer_choice("full")
 		"healer_cure_all":
 			send_healer_choice("cure_all")
-		# Fishing actions
+		# Fishing actions (pattern input is handled in _input, only cancel uses action bar)
 		"fishing_cancel":
 			end_fishing(false, "You stopped fishing.")
-		"fishing_catch_0":
-			handle_fishing_catch(0)
-		"fishing_catch_1":
-			handle_fishing_catch(1)
-		"fishing_catch_2":
-			handle_fishing_catch(2)
-		"fishing_catch_3":
-			handle_fishing_catch(3)
-		"fishing_catch_4":
-			handle_fishing_catch(4)
-		# Mining actions
+		# Mining actions (pattern input is handled in _input, only cancel uses action bar)
 		"mining_cancel":
 			end_mining(false, "You stopped mining.")
-		"mining_catch_0":
-			handle_mining_catch(0)
-		"mining_catch_1":
-			handle_mining_catch(1)
-		"mining_catch_2":
-			handle_mining_catch(2)
-		"mining_catch_3":
-			handle_mining_catch(3)
-		"mining_catch_4":
-			handle_mining_catch(4)
-		# Logging actions
+		# Logging actions (pattern input is handled in _input, only cancel uses action bar)
 		"logging_cancel":
 			end_logging(false, "You stopped chopping.")
-		"logging_catch_0":
-			handle_logging_catch(0)
-		"logging_catch_1":
-			handle_logging_catch(1)
-		"logging_catch_2":
-			handle_logging_catch(2)
-		"logging_catch_3":
-			handle_logging_catch(3)
-		"logging_catch_4":
-			handle_logging_catch(4)
 		# Crafting actions
 		"open_crafting":
 			open_crafting()
@@ -7034,6 +7136,14 @@ func select_wish(index: int):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
+
+	# If combat was queued while showing egg hatch celebration, start it now
+	if not queued_combat_message.is_empty():
+		var combat_msg = queued_combat_message.duplicate(true)
+		queued_combat_message = {}
+		_process_combat_start(combat_msg)
+		return
+
 	var need_dungeon_refresh = pending_dungeon_continue
 	pending_dungeon_continue = false
 	# Reset quest log mode if active
@@ -7215,58 +7325,8 @@ func display_shop_inventory():
 				else:
 					compare_text = ""
 
-			# Build stats string using computed bonuses
-			var stats_parts = []
-			var bonuses = _compute_item_bonuses(item)
-			if bonuses.get("attack", 0) > 0:
-				stats_parts.append("[color=#FFFF00]ATK %d[/color]" % bonuses.attack)
-			if bonuses.get("defense", 0) > 0:
-				stats_parts.append("[color=#00FF00]DEF %d[/color]" % bonuses.defense)
-			if bonuses.get("max_hp", 0) > 0:
-				stats_parts.append("[color=#00FF00]+%d HP[/color]" % bonuses.max_hp)
-			# Universal resource display with scaling
-			var mana_val = bonuses.get("max_mana", 0)
-			var stam_energy_val = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
-			if mana_val > 0 or stam_energy_val > 0:
-				var resource_name = "Resource"
-				var resource_color = "#9999FF"
-				var scaled_val = 0
-				match player_class:
-					"Wizard", "Sorcerer", "Sage":
-						resource_name = "Mana"
-						resource_color = "#9999FF"
-						scaled_val = mana_val + (stam_energy_val * 2)
-					"Fighter", "Barbarian", "Paladin":
-						resource_name = "Stamina"
-						resource_color = "#FFCC00"
-						scaled_val = int(mana_val * 0.5) + stam_energy_val
-					"Thief", "Ranger", "Ninja", "Trickster":
-						resource_name = "Energy"
-						resource_color = "#66FF66"
-						scaled_val = int(mana_val * 0.5) + stam_energy_val
-				if scaled_val > 0:
-					stats_parts.append("[color=%s]+%d %s[/color]" % [resource_color, scaled_val, resource_name])
-			if bonuses.get("strength", 0) > 0:
-				stats_parts.append("[color=#FF6666]+%d STR[/color]" % bonuses.strength)
-			if bonuses.get("constitution", 0) > 0:
-				stats_parts.append("[color=#00FF00]+%d CON[/color]" % bonuses.constitution)
-			if bonuses.get("dexterity", 0) > 0:
-				stats_parts.append("[color=#FFFF00]+%d DEX[/color]" % bonuses.dexterity)
-			if bonuses.get("intelligence", 0) > 0:
-				stats_parts.append("[color=#9999FF]+%d INT[/color]" % bonuses.intelligence)
-			if bonuses.get("wisdom", 0) > 0:
-				stats_parts.append("[color=#66CCFF]+%d WIS[/color]" % bonuses.wisdom)
-			if bonuses.get("wits", 0) > 0:
-				stats_parts.append("[color=#FF00FF]+%d WIT[/color]" % bonuses.wits)
-			if bonuses.get("speed", 0) > 0:
-				stats_parts.append("[color=#FFA500]+%d SPD[/color]" % bonuses.speed)
-
-			var stats_str = " | ".join(stats_parts) if stats_parts.size() > 0 else ""
-
 			var themed_name = _get_themed_item_name(item, player_class)
 			display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
-			if stats_str != "":
-				display_game("    %s" % stats_str)
 
 	display_game("")
 	display_game("[color=#808080]%s to buy with gold[/color]" % get_selection_keys_text(shop_items.size()))
@@ -7924,6 +7984,26 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	if resource_diff != 0:
 		var c = resource_color if resource_diff > 0 else "#808080"
 		diff_parts.append("[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label])
+
+	# Class-specific gear bonuses comparison
+	var class_bonuses_to_compare = [
+		["mana_regen", "MP/rnd", "#66CCCC"],       # Mage mana per round
+		["meditate_bonus", "%Med", "#66CCCC"],     # Mage meditate bonus
+		["energy_regen", "EN/rnd", "#66FF66"],     # Trickster energy per round
+		["flee_bonus", "%Flee", "#66FF66"],        # Trickster flee bonus
+		["stamina_regen", "STA/rnd", "#FFCC00"]    # Warrior stamina per round
+	]
+
+	for bonus_info in class_bonuses_to_compare:
+		var stat = bonus_info[0]
+		var label = bonus_info[1]
+		var stat_color = bonus_info[2]
+		var new_val = new_bonuses.get(stat, 0)
+		var old_val = old_bonuses.get(stat, 0)
+		var diff = new_val - old_val
+		if diff != 0:
+			var c = stat_color if diff > 0 else "#808080"
+			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
 
 	return diff_parts
 
@@ -8782,8 +8862,9 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 	return ""
 
 func _is_consumable_type(item_type: String) -> bool:
-	"""Check if an item type is a consumable (potion, scroll, etc.)"""
-	return (item_type.begins_with("potion_") or item_type.begins_with("mana_") or
+	"""Check if an item type is a consumable (potion, scroll, crafted consumable, etc.)"""
+	return (item_type == "consumable" or  # Crafted consumables (Enchanted Kindling, etc.)
+			item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
@@ -8945,8 +9026,8 @@ func prompt_inventory_action(action_type: String):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				# Equippable items have types like: weapon_*, armor_*, helm_*, shield_*, boots_*, ring_*, amulet_*
-				# Consumables have types like: potion_*, elixir_*, scroll_*, gold_*, gem_*, mana_*, stamina_*, energy_*, tome_*
-				var is_consumable = "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "tome" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type == "mysterious_box" or item_type == "cursed_coin"
+				# Consumables have types like: potion_*, elixir_*, scroll_*, gold_*, gem_*, mana_*, stamina_*, energy_*, tome_*, consumable (crafted)
+				var is_consumable = _is_consumable_type(item_type) or "potion" in item_type or "elixir" in item_type
 				if not is_consumable:
 					equippable_items.append({"index": i, "item": item})
 			if equippable_items.is_empty():
@@ -10663,7 +10744,7 @@ func handle_server_message(message: Dictionary):
 						for ii in range(inv.size()):
 							var itm = inv[ii]
 							var itm_type = itm.get("type", "")
-							var is_consumable = "potion" in itm_type or "elixir" in itm_type or "scroll" in itm_type or "tome" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_") or itm_type == "mysterious_box" or itm_type == "cursed_coin"
+							var is_consumable = _is_consumable_type(itm_type) or "potion" in itm_type or "elixir" in itm_type
 							if not is_consumable:
 								equippable_items.append({"index": ii, "item": itm})
 						set_meta("equippable_items", equippable_items)
@@ -10823,90 +10904,11 @@ func handle_server_message(message: Dictionary):
 				send_to_server({"type": "get_abilities"})
 
 		"combat_start":
-			in_combat = true
-			flock_pending = false
-			flock_monster_name = ""
-			combat_item_mode = false
-			combat_outsmart_failed = false  # Reset outsmart for new combat
-			more_mode = false
-			companions_mode = false
-			pending_continue = false  # Clear any pending continue from previous combat
-			pending_dungeon_continue = false
-			last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
-			last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
-			update_action_bar()
-			update_companion_art_overlay()  # Show companion during combat
-
-			# Track XP before combat for two-color XP bar
-			# Only record at start of combat chain (not flock continuations)
-			if xp_before_combat == 0:
-				xp_before_combat = character_data.get("experience", 0)
-
-			# Always clear game output for fresh combat display
-			game_output.clear()
-
-			# Apply combat background color immediately
-			var combat_bg_color = message.get("combat_bg_color", "")
-			if combat_bg_color != "":
-				set_combat_background(combat_bg_color)
-
-			# Check if we should render ASCII art client-side
-			var combat_state = message.get("combat_state", {})
-			var display_msg = message.get("message", "")
-			if message.get("use_client_art", false):
-				var monster_name = combat_state.get("monster_name", "")
-				# Use base_name for art lookup (strips variant prefixes like "Corrosive")
-				var monster_base_name = combat_state.get("monster_base_name", monster_name)
-				if monster_name != "":
-					# Render art locally using MonsterArt class (use base name for art lookup)
-					var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name)
-
-					# Recolor ASCII art for visual variety (works for both flock and regular encounters)
-					var art_color = message.get("flock_art_color", "")  # Flock encounters use flock_art_color
-					if art_color == "":
-						art_color = message.get("art_color", "")  # Regular encounters use art_color
-					if art_color != "":
-						local_art = _recolor_ascii_art(local_art, art_color)
-
-					# Build encounter text with traits
-					var encounter_text = _build_encounter_text(combat_state)
-					# For flock, prepend the "Another X appears!" message with pack number
-					if message.get("is_flock", false):
-						var flock_count = message.get("flock_count", 1)
-						display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n[center]%s[/center]\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
-					else:
-						display_msg = "[center]" + local_art + "[/center]\n" + encounter_text
-			display_game(display_msg)
-
-			# combat_state already fetched above for client-side art
-			current_enemy_name = combat_state.get("monster_name", "Enemy")
-			current_enemy_level = combat_state.get("monster_level", 1)
-			current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
-			current_enemy_abilities = combat_state.get("monster_abilities", [])
-			current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
-			damage_dealt_to_current_enemy = 0
-			analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
-			# Get actual monster HP from server
-			current_enemy_hp = combat_state.get("monster_hp", -1)
-			current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
-
-			# Sync resources from combat state for ability availability
-			if combat_state.has("player_mana"):
-				character_data["current_mana"] = combat_state.get("player_mana", 0)
-				character_data["max_mana"] = combat_state.get("player_max_mana", 0)
-			if combat_state.has("player_stamina"):
-				character_data["current_stamina"] = combat_state.get("player_stamina", 0)
-				character_data["max_stamina"] = combat_state.get("player_max_stamina", 0)
-			if combat_state.has("player_energy"):
-				character_data["current_energy"] = combat_state.get("player_energy", 0)
-				character_data["max_energy"] = combat_state.get("player_max_energy", 0)
-
-			# Track forcefield/shield value for visual display
-			current_forcefield = combat_state.get("forcefield_shield", 0)
-			update_player_hp_bar()  # Refresh HP bar with shield overlay
-
-			show_enemy_hp_bar(true)
-			update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0, current_enemy_hp, current_enemy_max_hp)
+			# If pending_continue is active (e.g., egg hatching celebration), queue combat for after
+			if pending_continue:
+				queued_combat_message = message.duplicate(true)
+				return
+			_process_combat_start(message)
 
 		"combat_message":
 			var combat_msg = message.get("message", "")
@@ -11415,6 +11417,9 @@ func handle_server_message(message: Dictionary):
 		"dungeon_list":
 			handle_dungeon_list(message)
 
+		"dungeon_level_warning":
+			handle_dungeon_level_warning(message)
+
 		"dungeon_state":
 			handle_dungeon_state(message)
 
@@ -11432,6 +11437,93 @@ func handle_server_message(message: Dictionary):
 
 		"egg_hatched":
 			handle_egg_hatched(message)
+
+func _process_combat_start(message: Dictionary):
+	"""Process a combat_start message - separated out so queued combat can call it"""
+	in_combat = true
+	flock_pending = false
+	flock_monster_name = ""
+	combat_item_mode = false
+	combat_outsmart_failed = false  # Reset outsmart for new combat
+	more_mode = false
+	companions_mode = false
+	pending_continue = false  # Clear any pending continue from previous combat
+	pending_dungeon_continue = false
+	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
+	last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
+	update_action_bar()
+	update_companion_art_overlay()  # Show companion during combat
+
+	# Track XP before combat for two-color XP bar
+	# Only record at start of combat chain (not flock continuations)
+	if xp_before_combat == 0:
+		xp_before_combat = character_data.get("experience", 0)
+
+	# Always clear game output for fresh combat display
+	game_output.clear()
+
+	# Apply combat background color immediately
+	var combat_bg_color = message.get("combat_bg_color", "")
+	if combat_bg_color != "":
+		set_combat_background(combat_bg_color)
+
+	# Check if we should render ASCII art client-side
+	var combat_state = message.get("combat_state", {})
+	var display_msg = message.get("message", "")
+	if message.get("use_client_art", false):
+		var monster_name = combat_state.get("monster_name", "")
+		# Use base_name for art lookup (strips variant prefixes like "Corrosive")
+		var monster_base_name = combat_state.get("monster_base_name", monster_name)
+		if monster_name != "":
+			# Render art locally using MonsterArt class (use base name for art lookup)
+			var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name)
+
+			# Recolor ASCII art for visual variety (works for both flock and regular encounters)
+			var art_color = message.get("flock_art_color", "")  # Flock encounters use flock_art_color
+			if art_color == "":
+				art_color = message.get("art_color", "")  # Regular encounters use art_color
+			if art_color != "":
+				local_art = _recolor_ascii_art(local_art, art_color)
+
+			# Build encounter text with traits
+			var encounter_text = _build_encounter_text(combat_state)
+			# For flock, prepend the "Another X appears!" message with pack number
+			if message.get("is_flock", false):
+				var flock_count = message.get("flock_count", 1)
+				display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n[center]%s[/center]\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
+			else:
+				display_msg = "[center]" + local_art + "[/center]\n" + encounter_text
+	display_game(display_msg)
+
+	# combat_state already fetched above for client-side art
+	current_enemy_name = combat_state.get("monster_name", "Enemy")
+	current_enemy_level = combat_state.get("monster_level", 1)
+	current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
+	current_enemy_abilities = combat_state.get("monster_abilities", [])
+	current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
+	damage_dealt_to_current_enemy = 0
+	analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
+	# Get actual monster HP from server
+	current_enemy_hp = combat_state.get("monster_hp", -1)
+	current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
+
+	# Sync resources from combat state for ability availability
+	if combat_state.has("player_mana"):
+		character_data["current_mana"] = combat_state.get("player_mana", 0)
+		character_data["max_mana"] = combat_state.get("player_max_mana", 0)
+	if combat_state.has("player_stamina"):
+		character_data["current_stamina"] = combat_state.get("player_stamina", 0)
+		character_data["max_stamina"] = combat_state.get("player_max_stamina", 0)
+	if combat_state.has("player_energy"):
+		character_data["current_energy"] = combat_state.get("player_energy", 0)
+		character_data["max_energy"] = combat_state.get("player_max_energy", 0)
+
+	# Track forcefield/shield value for visual display
+	current_forcefield = combat_state.get("forcefield_shield", 0)
+	update_player_hp_bar()  # Refresh HP bar with shield overlay
+
+	show_enemy_hp_bar(true)
+	update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0, current_enemy_hp, current_enemy_max_hp)
 
 # ===== INPUT HANDLING =====
 
@@ -12935,6 +13027,26 @@ func display_character_status():
 				]
 		text += "\n"
 
+	# === GATHERING TOOLS ===
+	var equipped_rod = char.get("equipped_fishing_rod", {})
+	var equipped_pick = char.get("equipped_pickaxe", {})
+	var equipped_axe = char.get("equipped_axe", {})
+	if not equipped_rod.is_empty() or not equipped_pick.is_empty() or not equipped_axe.is_empty():
+		text += "[color=#808080]── Gathering Tools ──[/color]\n"
+		if not equipped_rod.is_empty():
+			var rod_bonuses = equipped_rod.get("bonuses", {})
+			var bonus_text = _format_tool_bonuses(rod_bonuses)
+			text += "[color=#00BFFF]Rod:[/color] %s %s\n" % [equipped_rod.get("name", "Unknown"), bonus_text]
+		if not equipped_pick.is_empty():
+			var pick_bonuses = equipped_pick.get("bonuses", {})
+			var bonus_text = _format_tool_bonuses(pick_bonuses)
+			text += "[color=#C0C0C0]Pickaxe:[/color] %s %s\n" % [equipped_pick.get("name", "Unknown"), bonus_text]
+		if not equipped_axe.is_empty():
+			var axe_bonuses = equipped_axe.get("bonuses", {})
+			var bonus_text = _format_tool_bonuses(axe_bonuses)
+			text += "[color=#8B4513]Axe:[/color] %s %s\n" % [equipped_axe.get("name", "Unknown"), bonus_text]
+		text += "\n"
+
 	# === ACTIVE EFFECTS ===
 	var effects_text = _get_status_effects_text_compact()
 	if effects_text != "":
@@ -13016,6 +13128,24 @@ func _get_condition_color(wear: int) -> String:
 	else:
 		return "#808080"  # Gray - Broken
 
+func _format_tool_bonuses(bonuses: Dictionary) -> String:
+	"""Format gathering tool bonuses for display"""
+	var parts = []
+	var yield_bonus = bonuses.get("yield_bonus", 0)
+	var speed_bonus = bonuses.get("speed_bonus", 0.0)
+	var tier_bonus = bonuses.get("tier_bonus", 0)
+
+	if yield_bonus > 0:
+		parts.append("[color=#00FF00]+%d yield[/color]" % yield_bonus)
+	if speed_bonus > 0:
+		parts.append("[color=#FFFF00]+%d%% speed[/color]" % int(speed_bonus * 100))
+	if tier_bonus > 0:
+		parts.append("[color=#00BFFF]+%d tier[/color]" % tier_bonus)
+
+	if parts.is_empty():
+		return ""
+	return "(" + ", ".join(parts) + ")"
+
 func open_more_menu():
 	"""Open the More menu"""
 	more_mode = true
@@ -13034,7 +13164,8 @@ func display_more_menu():
 	display_game("[color=#FFD700]═══════ MORE ═══════[/color]")
 	display_game("")
 	display_game("[%s] [color=#00FFFF]Companions[/color] - View and manage your companions" % get_action_key_name(1))
-	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(2))
+	display_game("[%s] [color=#FFAA00]Eggs[/color] - View incubating eggs" % get_action_key_name(2))
+	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(3))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
 
@@ -13135,19 +13266,9 @@ func display_companions():
 		display_game("[color=#808080]No active companion[/color]")
 		display_game("")
 
-	# Incubating eggs section
+	# Show egg count with link to Eggs page
 	if incubating_eggs.size() > 0:
-		display_game("[color=#FFAA00]Incubating Eggs (%d):[/color]" % incubating_eggs.size())
-		for egg in incubating_eggs:
-			var egg_name = egg.get("companion_name", "Unknown Egg")
-			# Support both raw format (steps_remaining, hatch_steps) and client format (steps_taken, steps_required)
-			var required = egg.get("steps_required", egg.get("hatch_steps", 1000))
-			var steps = egg.get("steps_taken", 0)
-			if steps == 0 and egg.has("steps_remaining") and egg.has("hatch_steps"):
-				# Calculate from raw format
-				steps = egg.get("hatch_steps", 1000) - egg.get("steps_remaining", 1000)
-			var progress = int((float(steps) / float(required)) * 100) if required > 0 else 0
-			display_game("  [color=#FFAA00]%s[/color] - %d%% (%d/%d steps)" % [egg_name, progress, steps, required])
+		display_game("[color=#FFAA00]Incubating Eggs: %d[/color] [color=#808080](View in More > Eggs)[/color]" % incubating_eggs.size())
 		display_game("")
 
 	# Hatched companions section - enhanced with level and variant (PAGINATED)
@@ -13516,6 +13637,14 @@ func activate_companion_by_index(index: int):
 		update_action_bar()
 		return
 
+	# Handle inspect selection mode
+	if pending_companion_action == "inspect_select":
+		inspecting_companion = companion
+		pending_companion_action = "inspect"
+		display_companion_inspection(companion)
+		update_action_bar()
+		return
+
 	# Normal activation - send ID to uniquely identify companion (handles duplicates)
 	var companion_id = companion.get("id", "")
 	var companion_name = companion.get("name", "Unknown")
@@ -13554,6 +13683,259 @@ func _display_companions_for_release():
 			display_game("  [%d] [color=#808080]%s Lv.%d (%s) - ACTIVE (cannot release)[/color]" % [display_num, comp_name, comp_level, variant])
 		else:
 			display_game("  [%d] [color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, variant_color, variant, comp_name, comp_level])
+
+func _display_companions_for_selection():
+	"""Display companions list for inspect selection"""
+	var collected = character_data.get("collected_companions", [])
+	var active_companion = character_data.get("active_companion", {})
+
+	if collected.size() == 0:
+		display_game("[color=#808080]No companions to inspect.[/color]")
+		return
+
+	var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
+	companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
+	var start_idx = companions_page * COMPANIONS_PAGE_SIZE
+	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected.size())
+
+	display_game("[color=#808080]Page %d/%d[/color]" % [companions_page + 1, total_pages])
+	display_game("")
+
+	for i in range(start_idx, end_idx):
+		var companion = collected[i]
+		var comp_name = companion.get("name", "Unknown")
+		var comp_id = companion.get("id", "")
+		var comp_level = companion.get("level", 1)
+		var variant = companion.get("variant", "Normal")
+		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
+
+		var display_num = (i - start_idx) + 1
+		var active_marker = "[color=#00FFFF]★[/color] " if is_active else ""
+		display_game("  [%d] %s[color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, active_marker, variant_color, variant, comp_name, comp_level])
+
+func display_companion_inspection(companion: Dictionary):
+	"""Display detailed info about a companion including abilities"""
+	game_output.clear()
+
+	var comp_name = companion.get("name", "Unknown")
+	var comp_level = companion.get("level", 1)
+	var comp_xp = companion.get("xp", 0)
+	var comp_tier = companion.get("tier", 1)
+	var variant = companion.get("variant", "Normal")
+	var variant_color = companion.get("variant_color", "#FFFFFF")
+	var bonuses = companion.get("bonuses", {})
+	var monster_type = companion.get("monster_type", comp_name)
+
+	# Get variant multiplier
+	var variant_mult = _get_variant_multiplier(variant)
+	var variant_bonus_text = ""
+	if variant_mult > 1.0:
+		variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+
+	display_game("[color=#00FFFF]═══════ COMPANION DETAILS ═══════[/color]")
+	display_game("")
+	display_game("[color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
+	display_game("[color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
+	display_game("")
+
+	# XP Progress
+	var xp_to_next = int(pow(comp_level + 1, 2.0) * 15)
+	if comp_level < 10000:
+		var xp_percent = int((float(comp_xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
+		var bar_length = 20
+		var filled = int(bar_length * xp_percent / 100)
+		var xp_bar = "[" + "█".repeat(filled) + "░".repeat(bar_length - filled) + "]"
+		display_game("[color=#00FF00]XP: %s %d/%d (%d%%)[/color]" % [xp_bar, comp_xp, xp_to_next, xp_percent])
+	else:
+		display_game("[color=#FFD700]MAX LEVEL[/color]")
+	display_game("")
+
+	# Combat Bonuses
+	display_game("[color=#808080]── Combat Bonuses ──[/color]")
+	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
+	if bonus_parts.size() > 0:
+		display_game("  %s" % ", ".join(bonus_parts))
+	else:
+		display_game("  [color=#808080]None[/color]")
+	display_game("")
+
+	# Abilities Section - show all abilities with unlock requirements
+	display_game("[color=#A335EE]── Abilities ──[/color]")
+	display_game("")
+
+	# Get monster-specific abilities from drop_tables
+	var abilities = _get_companion_abilities_for_display(monster_type, comp_level, variant_mult)
+
+	# Passive ability (always active)
+	display_game("[color=#00BFFF]Passive (Always Active):[/color]")
+	if abilities.has("passive"):
+		var passive = abilities.passive
+		var passive_desc = _format_ability_for_inspection(passive, "passive")
+		display_game("  [color=#00FF00]%s[/color]" % passive.get("name", "Unknown"))
+		display_game("  %s" % passive_desc)
+	else:
+		display_game("  [color=#808080]None[/color]")
+	display_game("")
+
+	# Active ability (unlocks at level 5)
+	display_game("[color=#FFA500]Active (Unlocks Lv.5):[/color]")
+	if abilities.has("active"):
+		var active = abilities.active
+		var unlocked = comp_level >= 5
+		var active_desc = _format_ability_for_inspection(active, "active")
+		if unlocked:
+			display_game("  [color=#00FF00]%s[/color]" % active.get("name", "Unknown"))
+			display_game("  %s" % active_desc)
+		else:
+			display_game("  [color=#808080]%s[/color] [color=#666666](Locked - Lv.5)[/color]" % active.get("name", "Unknown"))
+			display_game("  [color=#666666]%s[/color]" % active_desc)
+	else:
+		display_game("  [color=#808080]None[/color]")
+	display_game("")
+
+	# Threshold ability (unlocks at level 15)
+	display_game("[color=#FF4444]Threshold (Unlocks Lv.15):[/color]")
+	if abilities.has("threshold"):
+		var threshold = abilities.threshold
+		var unlocked = comp_level >= 15
+		var threshold_desc = _format_ability_for_inspection(threshold, "threshold")
+		if unlocked:
+			display_game("  [color=#FFD700]%s[/color]" % threshold.get("name", "Unknown"))
+			display_game("  %s" % threshold_desc)
+		else:
+			display_game("  [color=#808080]%s[/color] [color=#666666](Locked - Lv.15)[/color]" % threshold.get("name", "Unknown"))
+			display_game("  [color=#666666]%s[/color]" % threshold_desc)
+	else:
+		display_game("  [color=#808080]None[/color]")
+
+	display_game("")
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
+
+func _get_companion_abilities_for_display(monster_type: String, level: int, variant_mult: float) -> Dictionary:
+	"""Get companion abilities for display (client-side lookup)"""
+	# This is a simplified version - the actual abilities are defined in drop_tables.gd
+	# For now, return tier-based abilities as fallback
+	var result = {}
+
+	# Try to get from COMPANION_ABILITIES based on tier (legacy system)
+	var tier = 1
+	for t in range(9, 0, -1):
+		if COMPANION_ABILITIES.has(t):
+			tier = t
+			break
+
+	# Return placeholder abilities that match the monster type
+	result["passive"] = {"name": "%s's Presence" % monster_type, "type": "stat_boost", "stat": "attack", "value": 5}
+	result["active"] = {"name": "%s Strike" % monster_type, "type": "damage", "value": 10, "chance": 20}
+	result["threshold"] = {"name": "%s's Fury" % monster_type, "type": "damage_boost", "trigger": "low_hp", "value": 25}
+
+	return result
+
+func _format_ability_for_inspection(ability: Dictionary, ability_type: String) -> String:
+	"""Format an ability dictionary for display in inspection"""
+	var desc_parts = []
+
+	var atype = ability.get("type", "unknown")
+	var value = ability.get("value", 0)
+	var chance = ability.get("chance", 0)
+	var trigger = ability.get("trigger", "")
+	var stat = ability.get("stat", "")
+	var duration = ability.get("duration", 0)
+
+	match atype:
+		"stat_boost":
+			desc_parts.append("+%d%% %s" % [value, stat.capitalize()])
+		"damage":
+			if chance > 0:
+				desc_parts.append("%d%% chance to deal %d bonus damage" % [chance, value])
+			else:
+				desc_parts.append("Deals %d bonus damage" % value)
+		"damage_boost":
+			if trigger == "low_hp":
+				desc_parts.append("+%d%% damage when HP below 30%%" % value)
+			else:
+				desc_parts.append("+%d%% damage" % value)
+		"heal":
+			if chance > 0:
+				desc_parts.append("%d%% chance to heal %d HP" % [chance, value])
+			else:
+				desc_parts.append("Heals %d HP" % value)
+		"defense_boost":
+			desc_parts.append("+%d%% defense" % value)
+		"poison":
+			desc_parts.append("%d%% chance to poison for %d damage" % [chance, value])
+		"stun":
+			desc_parts.append("%d%% chance to stun" % chance)
+		"lifesteal":
+			desc_parts.append("Heals for %d%% of damage dealt" % value)
+		_:
+			desc_parts.append("Special effect")
+
+	if duration > 0:
+		desc_parts.append("for %d turns" % duration)
+
+	return " ".join(desc_parts) if desc_parts.size() > 0 else "No description"
+
+func display_eggs():
+	"""Display the eggs page with ASCII art"""
+	game_output.clear()
+
+	var eggs = character_data.get("incubating_eggs", [])
+
+	display_game("[color=#FFAA00]═══════ INCUBATING EGGS ═══════[/color]")
+	display_game("")
+
+	if eggs.size() == 0:
+		display_game("[color=#808080]No eggs incubating.[/color]")
+		display_game("")
+		display_game("[color=#808080]Find companion eggs in dungeon treasure chests![/color]")
+		display_game("")
+		display_game("[color=#FFD700]══════════════════════════════[/color]")
+		return
+
+	var total_pages = int(ceil(float(eggs.size()) / float(EGGS_PAGE_SIZE)))
+	eggs_page = clamp(eggs_page, 0, max(0, total_pages - 1))
+	var start_idx = eggs_page * EGGS_PAGE_SIZE
+	var end_idx = min(start_idx + EGGS_PAGE_SIZE, eggs.size())
+
+	display_game("[color=#808080]Eggs %d-%d of %d | Page %d/%d[/color]" % [start_idx + 1, end_idx, eggs.size(), eggs_page + 1, total_pages])
+	display_game("")
+
+	for i in range(start_idx, end_idx):
+		var egg = eggs[i]
+		var egg_name = egg.get("companion_name", "Unknown")
+		var variant = egg.get("variant", "Normal")
+		var variant_color = egg.get("variant_color", "#FFAA00")
+		var variant_color2 = egg.get("variant_color2", "")
+		var variant_pattern = egg.get("variant_pattern", "solid")
+		var tier = egg.get("tier", 1)
+
+		# Support both raw format (steps_remaining, hatch_steps) and client format (steps_taken, steps_required)
+		var required = egg.get("steps_required", egg.get("hatch_steps", 1000))
+		var steps = egg.get("steps_taken", 0)
+		if steps == 0 and egg.has("steps_remaining") and egg.has("hatch_steps"):
+			steps = egg.get("hatch_steps", 1000) - egg.get("steps_remaining", 1000)
+		var progress = int((float(steps) / float(required)) * 100) if required > 0 else 0
+
+		# Display ASCII egg art with variant colors and pattern
+		var egg_art = MonsterArt.get_egg_art(variant, variant_color, variant_color2, variant_pattern)
+		for line in egg_art.split("\n"):
+			display_game("  %s" % line)
+
+		# Display egg info below the art
+		display_game("  [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]" % [variant_color, variant, egg_name, tier])
+
+		# Progress bar
+		var bar_length = 16
+		var filled = int(bar_length * progress / 100)
+		var progress_bar = "[" + "█".repeat(filled) + "░".repeat(bar_length - filled) + "]"
+		display_game("  [color=#AAAAAA]%s %d%% (%d/%d steps)[/color]" % [progress_bar, progress, steps, required])
+		display_game("")
+
+	display_game("[color=#808080]Walk around to incubate eggs![/color]")
+	display_game("")
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
 
 func _get_status_effects_text() -> String:
 	"""Generate status effects section for character status display"""
@@ -13899,6 +14281,7 @@ func show_help():
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
 [color=#9932CC]Dungeons([%s]):[/color] Multi-floor instances! Clear floors, fight boss. [color=#FFD700]GUARANTEED[/color] companion egg on completion!
+  All monsters match dungeon theme (Orc Stronghold = Orcs). Low level? Get warning, can still enter!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
 [b][color=#FFD700]══ PROGRESSION ══[/color][/b]
@@ -13919,7 +14302,8 @@ func show_help():
 [color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
 [color=#00FFFF]Companions:[/color] Companion eggs drop from [color=#9932CC]dungeons only[/color] - bosses guarantee their egg, treasure may have extras!
   Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) | Frost(+10%%def) | Storm(+5%%crit) + more
-  Press [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color] to view eggs and companions. One active at a time. Hatch eggs by playing!
+  [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color]: View/activate companions, [color=#00FF00]Inspect[/color] for stats & abilities. [color=#FFAA00]Eggs[/color]: View incubating eggs with art!
+  Each monster type has unique abilities (Wolf=Ambush, Spider=Poison, etc). Hatch eggs by walking!
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
 [color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
@@ -14655,8 +15039,34 @@ func display_fishing_waiting():
 	display_game("[color=#FFFF00]Your line is in the water...[/color]")
 	display_game("[color=#808080]Wait for a bite![/color]")
 
+func generate_gathering_pattern(tier: int) -> Array:
+	"""Generate a DDR-style pattern based on tier.
+	T1-2: 2 keys, T3-5: 3 keys, T6+: 4 keys"""
+	var length = 2 if tier <= 2 else (3 if tier <= 5 else 4)
+	var pattern = []
+	for i in range(length):
+		pattern.append(GATHERING_PATTERN_KEYS[randi() % GATHERING_PATTERN_KEYS.size()])
+	return pattern
+
+func get_pattern_display_string(pattern: Array, current_index: int) -> String:
+	"""Format pattern for display with current key highlighted.
+	Shows completed keys dimmed, current key bright, remaining keys normal."""
+	var result = ""
+	for i in range(pattern.size()):
+		var key = pattern[i]
+		if i < current_index:
+			# Already pressed - show green checkmark
+			result += "[color=#00AA00]✓[/color] "
+		elif i == current_index:
+			# Current key to press - bright yellow and larger
+			result += "[color=#FFFF00][%s][/color] " % key
+		else:
+			# Upcoming - dimmed
+			result += "[color=#808080]%s[/color] " % key
+	return result.strip_edges()
+
 func display_fishing_bite():
-	"""Display the fishing bite screen - player must react quickly"""
+	"""Display the fishing bite screen - player must react with pattern"""
 	game_output.clear()
 	var water_name = "Deep Waters" if fishing_water_type == "deep" else "Shallow Waters"
 	display_game("[color=#00BFFF]===== Fishing: %s =====[/color]" % water_name)
@@ -14669,17 +15079,19 @@ func display_fishing_bite():
 	display_game("")
 	display_game("[color=#FF4444][font_size=18]!!! FISH ON THE LINE !!![/font_size][/color]")
 	display_game("")
-	# Show which button to press
-	var slot_key = get_action_key_name(5 + fishing_target_slot)  # Slots 5-9 for fishing
-	display_game("[color=#00FF00]Quick! Press [%s] to catch it![/color]" % slot_key)
+	# Show the pattern to press
+	var pattern_display = get_pattern_display_string(gathering_pattern, gathering_pattern_index)
+	display_game("[color=#00FF00]Press the sequence: %s[/color]" % pattern_display)
 
 func start_fishing_reaction_phase():
 	"""Transition from waiting to reaction phase"""
 	fishing_phase = "reaction"
-	# Pick a random slot (0-4) for the player to hit
-	fishing_target_slot = randi() % 5
-	# Use reaction window from server (based on fishing skill)
-	fishing_reaction_timer = fishing_reaction_window
+	# Generate pattern based on tier (fishing uses shallow=1, deep=3 as tier equivalent)
+	gathering_pattern_tier = 3 if fishing_water_type == "deep" else 1
+	gathering_pattern = generate_gathering_pattern(gathering_pattern_tier)
+	gathering_pattern_index = 0
+	# Use reaction window from server (based on fishing skill) - multiply for pattern length
+	fishing_reaction_timer = fishing_reaction_window * gathering_pattern.size() * 0.6
 
 	display_fishing_bite()
 	update_action_bar()
@@ -14687,17 +15099,28 @@ func start_fishing_reaction_phase():
 	# Play a notification sound for the bite
 	play_whisper_notification()
 
-func handle_fishing_catch(slot_pressed: int):
-	"""Player pressed a catch button - check if correct"""
+func handle_fishing_pattern_key(key_pressed: String):
+	"""Player pressed a pattern key during fishing - check if correct"""
 	if not fishing_mode or fishing_phase != "reaction":
 		return
 
-	if slot_pressed == fishing_target_slot:
-		# Correct slot! Send catch success to server
-		send_to_server({"type": "fish_catch", "success": true, "water_type": fishing_water_type})
+	if gathering_pattern_index >= gathering_pattern.size():
+		return  # Already complete
+
+	var expected_key = gathering_pattern[gathering_pattern_index]
+	if key_pressed == expected_key:
+		# Correct key! Advance pattern
+		gathering_pattern_index += 1
+		if gathering_pattern_index >= gathering_pattern.size():
+			# Pattern complete! Send success
+			send_to_server({"type": "fish_catch", "success": true, "water_type": fishing_water_type})
+		else:
+			# More keys to go - refresh display
+			display_fishing_bite()
+			update_action_bar()
 	else:
-		# Wrong slot - fish escapes
-		end_fishing(false, "Wrong button! The fish escaped...")
+		# Wrong key - fish escapes
+		end_fishing(false, "Wrong key! The fish escaped...")
 
 func end_fishing(caught: bool, message: String = ""):
 	"""End the fishing minigame"""
@@ -14706,6 +15129,8 @@ func end_fishing(caught: bool, message: String = ""):
 	fishing_wait_timer = 0.0
 	fishing_reaction_timer = 0.0
 	fishing_target_slot = -1
+	gathering_pattern = []
+	gathering_pattern_index = 0
 
 	if message != "":
 		display_game("[color=#FF4444]%s[/color]" % message)
@@ -14746,6 +15171,10 @@ func handle_fish_result(message: Dictionary):
 			display_game(extra_msg)
 		display_game("")
 		display_game("[color=#808080]Fishing skill: Level %d[/color]" % new_level)
+		# Check if node was depleted
+		if message.get("node_depleted", false):
+			display_game("")
+			display_game("[color=#FFAA00]The fishing spot has been exhausted. Search for another nearby![/color]")
 	else:
 		# Failure - fish escaped (timeout or wrong button)
 		var fail_message = message.get("message", "The fish got away!")
@@ -14803,7 +15232,7 @@ func display_mining_waiting():
 		display_game("[color=#808080]Progress: %d/%d strikes needed[/color]" % [mining_reactions_completed, mining_reactions_required])
 
 func display_mining_strike():
-	"""Display the mining strike screen"""
+	"""Display the mining strike screen with pattern"""
 	game_output.clear()
 	display_game("[color=#C0C0C0]===== Mining: Tier %d Ore =====[/color]" % mining_current_tier)
 	display_game("")
@@ -14815,41 +15244,60 @@ func display_mining_strike():
 	display_game("")
 	display_game("[color=#FF4444][font_size=18]!!! STRIKE NOW !!![/font_size][/color]")
 	display_game("")
-	var slot_key = get_action_key_name(5 + mining_target_slot)
-	display_game("[color=#00FF00]Quick! Press [%s] to strike![/color]" % slot_key)
+	# Show the pattern to press
+	var pattern_display = get_pattern_display_string(gathering_pattern, gathering_pattern_index)
+	display_game("[color=#00FF00]Press the sequence: %s[/color]" % pattern_display)
 	if mining_reactions_required > 1:
 		display_game("[color=#808080]Strike %d of %d[/color]" % [mining_reactions_completed + 1, mining_reactions_required])
 
 func start_mining_reaction_phase():
 	"""Transition to mining reaction phase"""
 	mining_phase = "reaction"
-	mining_target_slot = randi() % 5
-	mining_reaction_timer = mining_reaction_window
+	# Generate pattern based on ore tier
+	gathering_pattern_tier = mining_current_tier
+	gathering_pattern = generate_gathering_pattern(gathering_pattern_tier)
+	gathering_pattern_index = 0
+	# Reaction time scales with pattern length
+	mining_reaction_timer = mining_reaction_window * gathering_pattern.size() * 0.6
 
 	display_mining_strike()
 	update_action_bar()
 	play_whisper_notification()
 
-func handle_mining_catch(slot_pressed: int):
-	"""Player pressed a strike button"""
+func handle_mining_pattern_key(key_pressed: String):
+	"""Player pressed a pattern key during mining - check if correct"""
 	if not mining_mode or mining_phase != "reaction":
 		return
 
-	if slot_pressed == mining_target_slot:
-		mining_reactions_completed += 1
-		if mining_reactions_completed >= mining_reactions_required:
-			# All strikes successful
-			send_to_server({"type": "mine_catch", "success": true, "ore_tier": mining_current_tier})
+	if gathering_pattern_index >= gathering_pattern.size():
+		return  # Already complete
+
+	var expected_key = gathering_pattern[gathering_pattern_index]
+	if key_pressed == expected_key:
+		# Correct key! Advance pattern
+		gathering_pattern_index += 1
+		if gathering_pattern_index >= gathering_pattern.size():
+			# Pattern complete! Count as one successful reaction
+			mining_reactions_completed += 1
+			if mining_reactions_completed >= mining_reactions_required:
+				# All strikes successful
+				send_to_server({"type": "mine_catch", "success": true, "ore_tier": mining_current_tier})
+			else:
+				# Need more strikes - go back to waiting with new pattern
+				mining_phase = "waiting"
+				mining_wait_timer = mining_reaction_window * 1.5
+				gathering_pattern = []
+				gathering_pattern_index = 0
+				game_output.clear()
+				display_mining_waiting()
+				display_game("[color=#00FF00]Good strike![/color]")
+				update_action_bar()
 		else:
-			# Need more strikes - go back to waiting
-			mining_phase = "waiting"
-			mining_wait_timer = mining_reaction_window * 1.5  # Shorter wait between strikes
-			game_output.clear()
-			display_mining_waiting()
-			display_game("[color=#00FF00]Good strike![/color]")
+			# More keys to go - refresh display
+			display_mining_strike()
 			update_action_bar()
 	else:
-		# Wrong button - partial failure
+		# Wrong key - partial failure
 		send_to_server({"type": "mine_catch", "success": false, "partial_success": mining_reactions_completed, "ore_tier": mining_current_tier})
 
 func end_mining(success: bool, message: String = ""):
@@ -14860,6 +15308,8 @@ func end_mining(success: bool, message: String = ""):
 	mining_reaction_timer = 0.0
 	mining_target_slot = -1
 	mining_reactions_completed = 0
+	gathering_pattern = []
+	gathering_pattern_index = 0
 
 	if message != "":
 		display_game("[color=#FF4444]%s[/color]" % message)
@@ -14874,6 +15324,8 @@ func handle_mine_result(message: Dictionary):
 	mining_reaction_timer = 0.0
 	mining_target_slot = -1
 	mining_reactions_completed = 0
+	gathering_pattern = []
+	gathering_pattern_index = 0
 
 	game_output.clear()
 
@@ -14897,6 +15349,10 @@ func handle_mine_result(message: Dictionary):
 			display_game(extra_msg)
 		display_game("")
 		display_game("[color=#808080]Mining skill: Level %d[/color]" % new_level)
+		# Check if node was depleted
+		if message.get("node_depleted", false):
+			display_game("")
+			display_game("[color=#FFAA00]The ore vein is exhausted. Search for another nearby![/color]")
 	else:
 		var fail_message = message.get("message", "The vein crumbled!")
 		display_game("[color=#FF4444]===== Failed! =====[/color]")
@@ -14953,7 +15409,7 @@ func display_logging_waiting():
 		display_game("[color=#808080]Progress: %d/%d chops needed[/color]" % [logging_reactions_completed, logging_reactions_required])
 
 func display_logging_chop():
-	"""Display the logging chop screen"""
+	"""Display the logging chop screen with pattern"""
 	game_output.clear()
 	display_game("[color=#8B4513]===== Logging: Tier %d Wood =====[/color]" % logging_current_tier)
 	display_game("")
@@ -14966,38 +15422,60 @@ func display_logging_chop():
 	display_game("")
 	display_game("[color=#FF4444][font_size=18]!!! CHOP NOW !!![/font_size][/color]")
 	display_game("")
-	var slot_key = get_action_key_name(5 + logging_target_slot)
-	display_game("[color=#00FF00]Quick! Press [%s] to chop![/color]" % slot_key)
+	# Show the pattern to press
+	var pattern_display = get_pattern_display_string(gathering_pattern, gathering_pattern_index)
+	display_game("[color=#00FF00]Press the sequence: %s[/color]" % pattern_display)
 	if logging_reactions_required > 1:
 		display_game("[color=#808080]Chop %d of %d[/color]" % [logging_reactions_completed + 1, logging_reactions_required])
 
 func start_logging_reaction_phase():
 	"""Transition to logging reaction phase"""
 	logging_phase = "reaction"
-	logging_target_slot = randi() % 5
-	logging_reaction_timer = logging_reaction_window
+	# Generate pattern based on wood tier
+	gathering_pattern_tier = logging_current_tier
+	gathering_pattern = generate_gathering_pattern(gathering_pattern_tier)
+	gathering_pattern_index = 0
+	# Reaction time scales with pattern length
+	logging_reaction_timer = logging_reaction_window * gathering_pattern.size() * 0.6
 
 	display_logging_chop()
 	update_action_bar()
 	play_whisper_notification()
 
-func handle_logging_catch(slot_pressed: int):
-	"""Player pressed a chop button"""
+func handle_logging_pattern_key(key_pressed: String):
+	"""Player pressed a pattern key during logging - check if correct"""
 	if not logging_mode or logging_phase != "reaction":
 		return
 
-	if slot_pressed == logging_target_slot:
-		logging_reactions_completed += 1
-		if logging_reactions_completed >= logging_reactions_required:
-			send_to_server({"type": "log_catch", "success": true, "wood_tier": logging_current_tier})
+	if gathering_pattern_index >= gathering_pattern.size():
+		return  # Already complete
+
+	var expected_key = gathering_pattern[gathering_pattern_index]
+	if key_pressed == expected_key:
+		# Correct key! Advance pattern
+		gathering_pattern_index += 1
+		if gathering_pattern_index >= gathering_pattern.size():
+			# Pattern complete! Count as one successful reaction
+			logging_reactions_completed += 1
+			if logging_reactions_completed >= logging_reactions_required:
+				# All chops successful
+				send_to_server({"type": "log_catch", "success": true, "wood_tier": logging_current_tier})
+			else:
+				# Need more chops - go back to waiting with new pattern
+				logging_phase = "waiting"
+				logging_wait_timer = logging_reaction_window * 1.5
+				gathering_pattern = []
+				gathering_pattern_index = 0
+				game_output.clear()
+				display_logging_waiting()
+				display_game("[color=#00FF00]Good chop![/color]")
+				update_action_bar()
 		else:
-			logging_phase = "waiting"
-			logging_wait_timer = logging_reaction_window * 1.5
-			game_output.clear()
-			display_logging_waiting()
-			display_game("[color=#00FF00]Good chop![/color]")
+			# More keys to go - refresh display
+			display_logging_chop()
 			update_action_bar()
 	else:
+		# Wrong key - partial failure
 		send_to_server({"type": "log_catch", "success": false, "partial_success": logging_reactions_completed, "wood_tier": logging_current_tier})
 
 func end_logging(success: bool, message: String = ""):
@@ -15022,6 +15500,8 @@ func handle_log_result(message: Dictionary):
 	logging_reaction_timer = 0.0
 	logging_target_slot = -1
 	logging_reactions_completed = 0
+	gathering_pattern = []
+	gathering_pattern_index = 0
 
 	game_output.clear()
 
@@ -15045,6 +15525,10 @@ func handle_log_result(message: Dictionary):
 			display_game(extra_msg)
 		display_game("")
 		display_game("[color=#808080]Logging skill: Level %d[/color]" % new_level)
+		# Check if node was depleted
+		if message.get("node_depleted", false):
+			display_game("")
+			display_game("[color=#FFAA00]The tree is fully harvested. Search for another nearby![/color]")
 	else:
 		var fail_message = message.get("message", "The branch broke!")
 		display_game("[color=#FF4444]===== Failed! =====[/color]")
@@ -15123,7 +15607,7 @@ func display_craft_recipe_list():
 	display_game("")
 
 	if crafting_recipes.is_empty():
-		display_game("[color=#808080]No recipes available at your skill level.[/color]")
+		display_game("[color=#808080]No recipes available for this skill.[/color]")
 		display_game("")
 		display_game("[%s] Back" % get_action_key_name(0))
 		return
@@ -15139,18 +15623,30 @@ func display_craft_recipe_list():
 	for i in range(start_idx, end_idx):
 		var recipe = crafting_recipes[i]
 		var display_idx = (i - start_idx) + 1  # 1-5 for display
+		var is_locked = recipe.get("locked", false)
 		var can_craft = recipe.get("can_craft", false)
 		var success_chance = recipe.get("success_chance", 50)
 		var name = recipe.get("name", "Unknown")
 		var skill_req = recipe.get("skill_required", 1)
+		var description = recipe.get("description", "")
 
-		var color = "#00FF00" if can_craft else "#808080"
-		var craftable_text = "" if can_craft else " [color=#FF4444](Missing materials)[/color]"
-
-		display_game("[%s] [color=%s]%s[/color] (Lv%d) - %d%% success%s" % [
-			get_action_key_name(display_idx + 4),  # Keys 1-5 map to action slots 5-9
-			color, name, skill_req, success_chance, craftable_text
-		])
+		if is_locked:
+			# Locked recipe - show with lock icon and unlock level
+			display_game("[color=#555555][%s] %s (Unlocks at Lv%d)[/color]" % [
+				get_action_key_name(display_idx + 4), name, skill_req
+			])
+			if description != "":
+				display_game("[color=#444444]    %s[/color]" % description)
+		else:
+			# Unlocked recipe
+			var color = "#00FF00" if can_craft else "#808080"
+			var craftable_text = "" if can_craft else " [color=#FF4444](Missing materials)[/color]"
+			display_game("[%s] [color=%s]%s[/color] (Lv%d) - %d%% success%s" % [
+				get_action_key_name(display_idx + 4),  # Keys 1-5 map to action slots 5-9
+				color, name, skill_req, success_chance, craftable_text
+			])
+			if description != "":
+				display_game("[color=#888888]    %s[/color]" % description)
 
 	display_game("")
 	display_game("[%s] Back | [%s/%s] Prev/Next Page" % [get_action_key_name(0), get_action_key_name(8), get_action_key_name(9)])
@@ -15159,6 +15655,12 @@ func select_craft_recipe(index: int):
 	"""Select a recipe to view details/confirm crafting"""
 	var actual_idx = crafting_page * CRAFTING_PAGE_SIZE + index
 	if actual_idx >= crafting_recipes.size():
+		return
+
+	var recipe = crafting_recipes[actual_idx]
+	if recipe.get("locked", false):
+		var skill_req = recipe.get("skill_required", 1)
+		display_game("[color=#FF4444]This recipe requires %s level %d to unlock![/color]" % [crafting_skill.capitalize(), skill_req])
 		return
 
 	crafting_selected_recipe = actual_idx
@@ -15424,6 +15926,27 @@ func handle_dungeon_complete(message: Dictionary):
 	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
 	pending_continue = true
+	update_action_bar()
+
+func handle_dungeon_level_warning(message: Dictionary):
+	"""Handle warning about entering a dungeon below recommended level"""
+	pending_dungeon_warning = {
+		"dungeon_type": message.get("dungeon_type", ""),
+		"dungeon_name": message.get("dungeon_name", "Dungeon"),
+		"min_level": message.get("min_level", 1),
+		"player_level": message.get("player_level", 1)
+	}
+
+	game_output.clear()
+	display_game("[color=#FF4444]═══════ WARNING ═══════[/color]")
+	display_game("")
+	display_game("[color=#FFAA00]%s[/color]" % message.get("message", "This dungeon may be too dangerous!"))
+	display_game("")
+	display_game("[color=#FF6666]Recommended Level: %d[/color]" % message.min_level)
+	display_game("[color=#AAAAAA]Your Level: %d[/color]" % message.player_level)
+	display_game("")
+	display_game("[color=#808080]Press [%s] to enter anyway, or [%s] to cancel.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+
 	update_action_bar()
 
 func handle_dungeon_exit(message: Dictionary):

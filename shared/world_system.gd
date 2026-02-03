@@ -69,7 +69,15 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 	if distance_from_center < 5:
 		return Terrain.PLAINS  # Near center is open plains
 	elif distance_from_center < 50:
-		return Terrain.PLAINS
+		# Starter area - add terrain variety for gathering
+		# Small forest groves, rocky outcrops, and mostly plains
+		var hash_val = abs(x * 11 + y * 17) % 100
+		if hash_val < 15:
+			return Terrain.FOREST  # 15% forest for logging
+		elif hash_val < 25:
+			return Terrain.MOUNTAINS  # 10% mountains for mining
+		else:
+			return Terrain.PLAINS  # 75% plains
 	elif distance_from_center < 100:
 		# Use coordinate hash for variety
 		var hash_val = abs(x * 7 + y * 13) % 100
@@ -105,6 +113,9 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 
 func _is_water_at(x: int, y: int) -> bool:
 	"""Check if coordinates should be shallow water (lakes and rivers)"""
+	# Starter pond near origin (15 to 25, -15 to -5) - for early fishing
+	if x >= 15 and x <= 25 and y >= -15 and y <= -5:
+		return true
 	# Lake near Southport (-30 to 30, -160 to -140)
 	if x >= -30 and x <= 30 and y >= -160 and y <= -140:
 		return true
@@ -149,11 +160,37 @@ func get_fishing_type(x: int, y: int) -> String:
 		return "shallow"
 	return ""
 
+func get_fishing_tier(x: int, y: int) -> int:
+	"""Get the fishing tier at coordinates (1-6 based on distance and water type)"""
+	var terrain = get_terrain_at(x, y)
+	var distance = sqrt(x * x + y * y)
+
+	# Base tier from distance (similar to ore/wood tiers)
+	var base_tier = 1
+	if distance < 50:
+		base_tier = 1
+	elif distance < 100:
+		base_tier = 2
+	elif distance < 200:
+		base_tier = 3
+	elif distance < 350:
+		base_tier = 4
+	elif distance < 500:
+		base_tier = 5
+	else:
+		base_tier = 6
+
+	# Deep water adds +1 tier
+	if terrain == Terrain.DEEP_WATER:
+		base_tier = mini(base_tier + 1, 6)
+
+	return base_tier
+
 # ===== GATHERING SYSTEM (Mining & Logging) =====
 
-# Starter gathering nodes near origin (within 35 tiles) - training areas for new players
-const STARTER_GATHERING_RADIUS = 35
-const STARTER_NODE_DENSITY = 40  # 4% chance for starter nodes
+# Starter gathering nodes near origin (within 25 tiles) - training areas for new players
+const STARTER_GATHERING_RADIUS = 25
+const STARTER_NODE_DENSITY = 15  # 1.5% chance for starter nodes (reduced from 4%)
 
 func is_ore_deposit(x: int, y: int) -> bool:
 	"""Check if coordinates are a valid mining location (ore deposit in mountains or starter node)"""
@@ -176,9 +213,9 @@ func is_ore_deposit(x: int, y: int) -> bool:
 	# Regular ore deposits in mountains
 	if terrain != Terrain.MOUNTAINS:
 		return false
-	# Use hash-based ore deposits - 2% of mountain tiles have ore
+	# Use hash-based ore deposits - 1% of mountain tiles have ore (reduced for rarity)
 	var ore_hash = abs(x * 47 + y * 83) % 1000
-	return ore_hash < 20  # 2% chance
+	return ore_hash < 10  # 1% chance
 
 func is_dense_forest(x: int, y: int) -> bool:
 	"""Check if coordinates are a valid logging location (dense forest or starter node)"""
@@ -201,9 +238,9 @@ func is_dense_forest(x: int, y: int) -> bool:
 	# Regular dense forests
 	if terrain != Terrain.FOREST and terrain != Terrain.DEEP_FOREST:
 		return false
-	# Use hash-based tree nodes - 3% of forests have harvestable trees
+	# Use hash-based tree nodes - 1.5% of forests have harvestable trees (reduced for rarity)
 	var wood_hash = abs(x * 67 + y * 97) % 1000
-	return wood_hash < 30  # 3% chance
+	return wood_hash < 15  # 1.5% chance
 
 func get_ore_tier(x: int, y: int) -> int:
 	"""Get the ore tier based on distance from origin (center is T1, edges are higher)"""
@@ -471,10 +508,11 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = []) -> String:
+func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = []) -> String:
 	"""Generate complete map display with location info header.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
-	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances."""
+	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
+	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted."""
 	var output = ""
 
 	# Check if at Trading Post
@@ -483,7 +521,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations)
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes)
 		output += "[/center]"
 		return output
 
@@ -514,7 +552,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 
 	# Add the map (centered)
 	output += "[center]"
-	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations)
+	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes)
 	output += "[/center]"
 
 	return output
@@ -1159,11 +1197,17 @@ func _get_merchant_map_char(x: int, y: int) -> String:
 		return "★"  # Elite merchants are visually distinct
 	return "$"  # Normal merchants
 
-func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = []) -> String:
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = []) -> String:
 	"""Generate ASCII map with merchants, Trading Posts, dungeons, and other players shown.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
-	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances."""
+	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
+	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted."""
 	var map_lines: PackedStringArray = PackedStringArray()
+
+	# Build lookup for depleted nodes
+	var depleted_set = {}
+	for coord_key in depleted_nodes:
+		depleted_set[coord_key] = true
 
 	# Build a lookup for player positions (excluding self at center)
 	var player_positions = {}
@@ -1231,12 +1275,34 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				var merchant_color = _get_merchant_map_color(x, y)
 				var merchant_char = _get_merchant_map_char(x, y)
 				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
+			elif is_fishing_spot(x, y):
+				# Check if this water is in a safe zone (can't fish in safe zones)
+				var water_terrain_info = get_terrain_info(get_terrain_at(x, y))
+				if water_terrain_info.safe:
+					# Safe zone water - show as regular water (not fishable)
+					line_parts.append("[color=#4169E1] ~[/color]")
+				elif depleted_set.has(pos_key):
+					# Depleted - show as dim water
+					line_parts.append("[color=#4A6B8A] ~[/color]")
+				else:
+					# Active fishing spot - bright cyan
+					line_parts.append("[color=#00FFFF] ~[/color]")
 			elif is_ore_deposit(x, y):
-				# Show ore deposit - brown/copper color
-				line_parts.append("[color=#CD7F32] O[/color]")
+				# Show ore deposit - check if depleted
+				if depleted_set.has(pos_key):
+					# Depleted - show as dim rock
+					line_parts.append("[color=#5C4033] ^[/color]")
+				else:
+					# Active ore vein - bright gold
+					line_parts.append("[color=#FFD700] *[/color]")
 			elif is_dense_forest(x, y):
-				# Show dense forest/logging spot - dark green
-				line_parts.append("[color=#228B22] T[/color]")
+				# Show dense forest/logging spot - check if depleted
+				if depleted_set.has(pos_key):
+					# Depleted - show as dim forest
+					line_parts.append("[color=#2E5A2E] &[/color]")
+				else:
+					# Active harvestable tree - bright green
+					line_parts.append("[color=#32CD32] T[/color]")
 			else:
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
