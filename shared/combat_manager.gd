@@ -365,12 +365,13 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	var companion_level = companion.get("level", 1)
 	var companion_bonuses = companion.get("bonuses", {})
 
-	# Calculate companion damage
+	# Calculate companion damage (now scales with companion level)
 	var companion_damage = 0
 	if drop_tables:
-		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses)
+		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level)
 	else:
-		companion_damage = companion_tier * 5 + int(character.level * 0.5)
+		# Fallback formula matching drop_tables
+		companion_damage = companion_tier * 5 + int(character.level * 0.3) + int(companion_level * 0.5)
 
 	# Apply variant multiplier
 	var variant_mult = character.get_variant_stat_multiplier()
@@ -1645,6 +1646,34 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# FAILURE! Monster gets free attack
 		combat.outsmart_failed = true
 		messages.append("[color=#FF4444][b]FAILED![/b] The %s sees through your trick![/color]" % monster.name)
+
+		# Companion still attacks even when outsmart fails - they're loyal!
+		_process_companion_attack(combat, messages)
+
+		# Check if companion killed the monster
+		if monster.current_hp <= 0:
+			messages.append("[color=#00FF00]Your companion saved you by finishing off the %s![/color]" % monster.name)
+			# Give rewards as if outsmart succeeded (companion clutch kill)
+			var base_xp = monster.experience_reward
+			var xp_result = character.add_experience(base_xp)
+			var gold = monster.gold_reward
+			character.gold += gold
+			messages.append("[color=#FFD700]+%d XP, +%d Gold[/color]" % [base_xp, gold])
+			return {
+				"success": true,
+				"messages": messages,
+				"combat_ended": true,
+				"victory": true,
+				"victory_type": "companion_clutch",
+				"monster_name": monster.name,
+				"monster_level": monster.level,
+				"monster_base_name": monster.get("base_name", monster.name),
+				"flock_chance": monster.get("flock_chance", 0),
+				"dropped_items": [],
+				"gems_earned": 0,
+				"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+				"is_boss_fight": combat.get("is_boss_fight", false)
+			}
 
 		# Monster gets a free attack
 		var monster_result = process_monster_turn(combat)

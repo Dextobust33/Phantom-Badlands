@@ -205,22 +205,29 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 
 	for quest_data in character.active_quests:
 		var quest_id = quest_data.quest_id
-		var quest = quest_db.get_quest(quest_id)
-		if quest.is_empty():
-			continue
+		# Use stored player level for proper dynamic quest regeneration
+		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
+		var completed_at_post = quest_data.get("completed_at_post", 0)
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
 
-		if quest.get("type", -1) != QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
+		# Get quest type from stored data (fallback) or regenerated quest
+		var quest_type = quest_data.get("quest_type", quest.get("type", -1))
+		if quest_type != QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
 			continue
 
 		# Check if this dungeon type matches the quest requirement
+		# Get dungeon_type from stored quest_data first (prevents regeneration issues),
+		# then fall back to quest definition
+		var required_dungeon = quest_data.get("dungeon_type", quest.get("dungeon_type", ""))
 		# Empty dungeon_type means any dungeon counts
-		var required_dungeon = quest.get("dungeon_type", "")
 		if required_dungeon == "" or required_dungeon == dungeon_type:
 			var result = character.update_quest_progress(quest_id, 1)
 			if result.updated:
-				var message = "Dungeon cleared! Quest '%s': %d/%d" % [quest.name, result.progress, result.target]
+				# Use stored quest name if available
+				var quest_name = quest_data.get("quest_name", quest.get("name", "Unknown Quest"))
+				var message = "Dungeon cleared! Quest '%s': %d/%d" % [quest_name, result.progress, result.target]
 				if result.completed:
-					message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest.name
+					message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest_name
 				updates.append({
 					"quest_id": quest_id,
 					"progress": result.progress,

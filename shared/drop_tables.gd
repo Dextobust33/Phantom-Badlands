@@ -1235,16 +1235,33 @@ func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 
 	return {}
 
-func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary) -> int:
-	"""Calculate damage dealt by companion in combat."""
-	# Base damage scales with tier
-	var base_damage = companion_tier * 5  # T1=5, T2=10, ... T9=45
-	# Add player level scaling
-	var level_bonus = int(player_level * 0.5)
-	var total = base_damage + level_bonus
-	# Apply companion's attack bonus to itself
+func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1) -> int:
+	"""Calculate damage dealt by companion in combat.
+	Damage scales with tier, player level, and companion level for meaningful progression
+	without trivializing combat."""
+	# Base damage scales with tier (T1=5, T2=10, ... T9=45)
+	var tier_damage = companion_tier * 5
+	# Player level adds moderate scaling (reduced from 0.5 to 0.3)
+	var player_bonus = int(player_level * 0.3)
+	# Companion level adds meaningful but balanced scaling
+	# At max level 50, adds 25 damage - significant but not overwhelming
+	var companion_bonus = int(companion_level * 0.5)
+	var total = tier_damage + player_bonus + companion_bonus
+	# Apply companion's attack bonus percentage
 	var attack_bonus = companion_bonuses.get("attack", 0)
 	return int(total * (1.0 + float(attack_bonus) / 100.0))
+
+func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0) -> Dictionary:
+	"""Estimate companion damage range for display purposes.
+	Returns {min, max, avg} damage values."""
+	var base = get_companion_attack_damage(companion_tier, player_level, companion_bonuses, companion_level)
+	# Apply variant multiplier
+	base = int(base * variant_mult)
+	# Damage has 80-120% variance
+	var min_dmg = max(1, int(base * 0.8))
+	var max_dmg = max(1, int(base * 1.2))
+	var avg_dmg = int((min_dmg + max_dmg) / 2)
+	return {"min": min_dmg, "max": max_dmg, "avg": avg_dmg}
 
 func get_all_companion_names() -> Array:
 	"""Get list of all companion names for display/selection."""

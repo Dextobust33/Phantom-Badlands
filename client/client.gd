@@ -574,6 +574,7 @@ const ABILITY_PAGE_SIZE: int = 9  # Abilities per page (keys 1-9)
 var pending_continue: bool = false
 var pending_dungeon_continue: bool = false  # Request fresh dungeon state when continuing
 var queued_combat_message: Dictionary = {}  # Combat that arrived during pending_continue (e.g., egg hatching)
+var queued_dungeon_complete: Dictionary = {}  # Dungeon completion that arrived during pending_continue (e.g., after boss kill)
 
 # Wandering NPC encounter states
 var pending_blacksmith: bool = false
@@ -906,6 +907,80 @@ const COMPANION_ABILITIES = {
 		10: {"name": "Divine Presence", "type": "passive", "effect": "attack", "value": 10, "effect2": "defense", "value2": 6, "effect3": "speed", "value3": 5},
 		25: {"name": "Godslayer's Wrath", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 50, "effect2": "lifesteal", "value2": 25},
 		50: {"name": "Immortal's Gift", "type": "threshold", "hp_percent": 20, "effect": "full_heal"}
+	}
+}
+
+# ===== MONSTER-SPECIFIC COMPANION ABILITIES (mirrored from drop_tables.gd) =====
+# Each monster type has unique abilities that scale with companion level
+# base + (scaling * companion_level) = final value
+const COMPANION_MONSTER_ABILITIES = {
+	# ===== TIER 1 =====
+	"Goblin": {
+		"passive": {"name": "Sneaky Support", "effect": "attack", "base": 1, "scaling": 0.03, "description": "+Attack damage"},
+		"active": {"name": "Dirty Trick", "base_chance": 8, "chance_scaling": 0.1, "effect": "enemy_miss", "description": "Chance to make enemy miss"},
+		"threshold": {"name": "Cowardly Retreat", "hp_percent": 40, "effect": "flee_bonus", "base": 10, "scaling": 0.2, "description": "Boosts flee chance when low HP"}
+	},
+	"Giant Rat": {
+		"passive": {"name": "Scurrying Assistance", "effect": "speed", "base": 2, "scaling": 0.04, "description": "+Speed"},
+		"active": {"name": "Gnaw", "base_chance": 10, "chance_scaling": 0.1, "effect": "bleed", "base_damage": 2, "damage_scaling": 0.05, "description": "Chance to cause bleeding"},
+		"threshold": {"name": "Survival Instinct", "hp_percent": 35, "effect": "speed_buff", "base": 15, "scaling": 0.2, "description": "Speed boost when low HP"}
+	},
+	"Kobold": {
+		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "description": "+Gold find"},
+		"active": {"name": "Trap Trigger", "base_chance": 8, "chance_scaling": 0.08, "effect": "bonus_damage", "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Hoard Guard", "hp_percent": 45, "effect": "defense_buff", "base": 8, "scaling": 0.15, "description": "Defense boost when low HP"}
+	},
+	"Skeleton": {
+		"passive": {"name": "Bone Guard", "effect": "defense", "base": 2, "scaling": 0.03, "description": "+Defense"},
+		"active": {"name": "Rattle", "base_chance": 10, "chance_scaling": 0.1, "effect": "enemy_miss", "description": "Chance to distract enemy"},
+		"threshold": {"name": "Undying Will", "hp_percent": 25, "effect": "absorb", "base": 5, "scaling": 0.15, "description": "Absorbs damage when critical"}
+	},
+	"Wolf": {
+		"passive": {"name": "Pack Instinct", "effect": "attack", "base": 2, "scaling": 0.04, "description": "+Attack damage"},
+		"active": {"name": "Ambush Strike", "base_chance": 12, "chance_scaling": 0.12, "effect": "crit", "description": "Chance to critically strike"},
+		"threshold": {"name": "Alpha Howl", "hp_percent": 35, "effect": "attack_buff", "base": 12, "scaling": 0.2, "description": "Attack boost when low HP"}
+	},
+	# ===== TIER 2 =====
+	"Orc": {
+		"passive": {"name": "Brute Force", "effect": "attack", "base": 3, "scaling": 0.05, "description": "+Attack damage"},
+		"active": {"name": "Battle Rage", "base_chance": 12, "chance_scaling": 0.12, "effect": "bonus_damage", "base_damage": 8, "damage_scaling": 0.15, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Berserker Fury", "hp_percent": 30, "effect": "attack_buff", "base": 20, "scaling": 0.3, "description": "Major attack boost when low HP"}
+	},
+	"Hobgoblin": {
+		"passive": {"name": "Tactical Mind", "effect": "attack", "base": 2, "scaling": 0.04, "effect2": "speed", "base2": 1, "scaling2": 0.02, "description": "+Attack and speed"},
+		"active": {"name": "Coordinated Strike", "base_chance": 15, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 6, "damage_scaling": 0.12, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Rally Cry", "hp_percent": 40, "effect": "all_buff", "base": 8, "scaling": 0.15, "description": "Buffs all stats when low HP"}
+	},
+	"Gnoll": {
+		"passive": {"name": "Savage Strength", "effect": "attack", "base": 4, "scaling": 0.06, "description": "+Significant attack"},
+		"active": {"name": "Rending Claws", "base_chance": 14, "chance_scaling": 0.1, "effect": "bleed", "base_damage": 4, "damage_scaling": 0.08, "description": "Chance to cause bleeding"},
+		"threshold": {"name": "Pack Frenzy", "hp_percent": 35, "effect": "attack_buff", "base": 15, "scaling": 0.25, "description": "Attack boost when low HP"}
+	},
+	"Spider": {
+		"passive": {"name": "Web Weaver", "effect": "speed", "base": 3, "scaling": 0.05, "description": "+Speed"},
+		"active": {"name": "Venomous Bite", "base_chance": 15, "chance_scaling": 0.12, "effect": "poison", "base_damage": 3, "damage_scaling": 0.06, "description": "Chance to poison"},
+		"threshold": {"name": "Silk Cocoon", "hp_percent": 30, "effect": "defense_buff", "base": 15, "scaling": 0.2, "description": "Defense boost when low HP"}
+	},
+	# ===== TIER 3+ (abbreviated for common types) =====
+	"Troll": {
+		"passive": {"name": "Regeneration", "effect": "regen", "base": 3, "scaling": 0.08, "description": "+HP regen per turn"},
+		"active": {"name": "Crushing Blow", "base_chance": 15, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 12, "damage_scaling": 0.2, "description": "Chance for heavy damage"},
+		"threshold": {"name": "Troll's Resilience", "hp_percent": 25, "effect": "heal", "base": 20, "scaling": 0.4, "description": "Heals when critical"}
+	},
+	"Wyvern": {
+		"passive": {"name": "Aerial Superiority", "effect": "speed", "base": 5, "scaling": 0.08, "effect2": "attack", "base2": 2, "scaling2": 0.04, "description": "+Speed and attack"},
+		"active": {"name": "Dive Attack", "base_chance": 18, "chance_scaling": 0.12, "effect": "bonus_damage", "base_damage": 15, "damage_scaling": 0.25, "description": "Chance for bonus damage"},
+		"threshold": {"name": "Screech", "hp_percent": 40, "effect": "enemy_miss", "base": 30, "scaling": 0.3, "description": "Enemy misses when low HP"}
+	},
+	"Giant": {
+		"passive": {"name": "Towering Might", "effect": "attack", "base": 6, "scaling": 0.1, "effect2": "defense", "base2": 3, "scaling2": 0.05, "description": "+Attack and defense"},
+		"active": {"name": "Ground Slam", "base_chance": 16, "chance_scaling": 0.1, "effect": "stun", "description": "Chance to stun enemy"},
+		"threshold": {"name": "Last Stand", "hp_percent": 25, "effect": "damage_reduction", "base": 25, "scaling": 0.3, "description": "Reduces damage when critical"}
+	},
+	"Dragon": {
+		"passive": {"name": "Dragon's Presence", "effect": "attack", "base": 8, "scaling": 0.15, "effect2": "defense", "base2": 5, "scaling2": 0.1, "description": "+Major attack and defense"},
+		"active": {"name": "Flame Breath", "base_chance": 20, "chance_scaling": 0.15, "effect": "bonus_damage", "base_damage": 25, "damage_scaling": 0.4, "description": "Chance for massive damage"},
+		"threshold": {"name": "Ancient Fury", "hp_percent": 30, "effect": "attack_buff", "base": 35, "scaling": 0.5, "description": "Huge attack boost when low HP"}
 	}
 }
 
@@ -7144,6 +7219,13 @@ func acknowledge_continue():
 		_process_combat_start(combat_msg)
 		return
 
+	# If dungeon completion was queued while showing boss kill results, show it now
+	if not queued_dungeon_complete.is_empty():
+		var complete_msg = queued_dungeon_complete.duplicate(true)
+		queued_dungeon_complete = {}
+		_display_dungeon_complete(complete_msg)
+		return
+
 	var need_dungeon_refresh = pending_dungeon_continue
 	pending_dungeon_continue = false
 	# Reset quest log mode if active
@@ -13340,6 +13422,26 @@ func _get_variant_multiplier(variant: String) -> float:
 		return 1.50
 	return 1.0
 
+func _estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0) -> Dictionary:
+	"""Estimate companion damage range for display purposes.
+	Mirrors the formula in drop_tables.get_companion_attack_damage().
+	Returns {min, max, avg} damage values."""
+	# Base damage formula: tier*5 + player_level*0.3 + companion_level*0.5
+	var tier_damage = companion_tier * 5
+	var player_bonus = int(player_level * 0.3)
+	var companion_bonus = int(companion_level * 0.5)
+	var base_total = tier_damage + player_bonus + companion_bonus
+	# Apply attack bonus from companion bonuses
+	var attack_bonus = companion_bonuses.get("attack", 0)
+	var base = int(base_total * (1.0 + float(attack_bonus) / 100.0))
+	# Apply variant multiplier
+	base = int(base * variant_mult)
+	# Combat applies 80-120% variance
+	var min_dmg = max(1, int(base * 0.8))
+	var max_dmg = max(1, int(base * 1.2))
+	var avg_dmg = int((min_dmg + max_dmg) / 2)
+	return {"min": min_dmg, "max": max_dmg, "avg": avg_dmg}
+
 func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: float) -> Array:
 	"""Get formatted bonus text parts for a companion with variant multiplier applied."""
 	var parts = []
@@ -13751,6 +13853,14 @@ func display_companion_inspection(companion: Dictionary):
 		display_game("[color=#FFD700]MAX LEVEL[/color]")
 	display_game("")
 
+	# Combat Damage Estimation
+	display_game("[color=#FF6666]── Combat Damage ──[/color]")
+	var player_level = character_data.get("level", 1)
+	var damage_est = _estimate_companion_damage(comp_tier, player_level, bonuses, comp_level, variant_mult)
+	display_game("  Attack: [color=#FF6666]%d - %d[/color] damage per turn" % [damage_est.min, damage_est.max])
+	display_game("  [color=#808080](Scales with tier, player level, and companion level)[/color]")
+	display_game("")
+
 	# Combat Bonuses
 	display_game("[color=#808080]── Combat Bonuses ──[/color]")
 	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
@@ -13813,69 +13923,123 @@ func display_companion_inspection(companion: Dictionary):
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
 
 func _get_companion_abilities_for_display(monster_type: String, level: int, variant_mult: float) -> Dictionary:
-	"""Get companion abilities for display (client-side lookup)"""
-	# This is a simplified version - the actual abilities are defined in drop_tables.gd
-	# For now, return tier-based abilities as fallback
+	"""Get companion abilities for display (client-side lookup).
+	Uses COMPANION_MONSTER_ABILITIES for monster-specific abilities with level scaling."""
 	var result = {}
 
-	# Try to get from COMPANION_ABILITIES based on tier (legacy system)
-	var tier = 1
-	for t in range(9, 0, -1):
-		if COMPANION_ABILITIES.has(t):
-			tier = t
-			break
+	# Check for monster-specific abilities first
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var monster_abilities = COMPANION_MONSTER_ABILITIES[monster_type]
 
-	# Return placeholder abilities that match the monster type
-	result["passive"] = {"name": "%s's Presence" % monster_type, "type": "stat_boost", "stat": "attack", "value": 5}
-	result["active"] = {"name": "%s Strike" % monster_type, "type": "damage", "value": 10, "chance": 20}
-	result["threshold"] = {"name": "%s's Fury" % monster_type, "type": "damage_boost", "trigger": "low_hp", "value": 25}
+		# Scale passive ability
+		if monster_abilities.has("passive"):
+			result["passive"] = _scale_ability_for_display(monster_abilities.passive, level, variant_mult)
+
+		# Scale active ability
+		if monster_abilities.has("active"):
+			result["active"] = _scale_ability_for_display(monster_abilities.active, level, variant_mult)
+
+		# Scale threshold ability
+		if monster_abilities.has("threshold"):
+			result["threshold"] = _scale_ability_for_display(monster_abilities.threshold, level, variant_mult)
+	else:
+		# Fallback: Generic abilities based on monster type name
+		result["passive"] = {"name": "%s's Presence" % monster_type, "effect": "attack", "value": int(3 * variant_mult), "description": "+Attack damage"}
+		result["active"] = {"name": "%s Strike" % monster_type, "effect": "bonus_damage", "chance": 15, "value": int(10 * variant_mult), "description": "Chance for bonus damage"}
+		result["threshold"] = {"name": "%s's Fury" % monster_type, "effect": "attack_buff", "hp_percent": 30, "value": int(15 * variant_mult), "description": "Attack boost when low HP"}
 
 	return result
 
-func _format_ability_for_inspection(ability: Dictionary, ability_type: String) -> String:
-	"""Format an ability dictionary for display in inspection"""
-	var desc_parts = []
+func _scale_ability_for_display(ability_template: Dictionary, level: int, variant_mult: float) -> Dictionary:
+	"""Scale an ability's values based on companion level and variant multiplier for display."""
+	var scaled = ability_template.duplicate(true)
 
-	var atype = ability.get("type", "unknown")
+	# Scale base values with level
+	if scaled.has("base") and scaled.has("scaling"):
+		var base_value = scaled.base * variant_mult
+		scaled["value"] = int(base_value + (scaled.scaling * level * variant_mult))
+
+	# Scale secondary effects
+	if scaled.has("base2") and scaled.has("scaling2"):
+		var base_value2 = scaled.base2 * variant_mult
+		scaled["value2"] = int(base_value2 + (scaled.scaling2 * level * variant_mult))
+
+	# Scale damage values
+	if scaled.has("base_damage") and scaled.has("damage_scaling"):
+		var base_dmg = scaled.base_damage * variant_mult
+		scaled["damage"] = int(base_dmg + (scaled.damage_scaling * level * variant_mult))
+
+	# Scale chance values (cap at 80%)
+	if scaled.has("base_chance") and scaled.has("chance_scaling"):
+		var base_chance = scaled.base_chance * variant_mult
+		scaled["chance"] = mini(int(base_chance + (scaled.chance_scaling * level)), 80)
+
+	return scaled
+
+func _format_ability_for_inspection(ability: Dictionary, ability_type: String) -> String:
+	"""Format an ability dictionary for display in inspection.
+	Uses the 'effect' field from COMPANION_MONSTER_ABILITIES format."""
+
+	# First check if ability has a description field - use it directly
+	if ability.has("description"):
+		var desc = ability.description
+		var value = ability.get("value", 0)
+		var chance = ability.get("chance", 0)
+		var damage = ability.get("damage", ability.get("value", 0))
+		var hp_percent = ability.get("hp_percent", 30)
+
+		# Append scaled values to description
+		var effect = ability.get("effect", "")
+		match effect:
+			"attack", "defense", "speed", "gold_find", "regen":
+				return "%s (+%d)" % [desc, value]
+			"bonus_damage":
+				if chance > 0:
+					return "%s (%d%% chance, %d dmg)" % [desc, chance, damage]
+				return "%s (+%d dmg)" % [desc, damage]
+			"bleed", "poison":
+				return "%s (%d%% chance, %d dmg/turn)" % [desc, chance, damage]
+			"enemy_miss":
+				if chance > 0:
+					return "%s (%d%% chance)" % [desc, chance]
+				return desc
+			"stun":
+				return "%s (%d%% chance)" % [desc, chance]
+			"crit":
+				return "%s (%d%% chance)" % [desc, chance]
+			"attack_buff", "defense_buff", "speed_buff", "all_buff":
+				return "%s (+%d%% below %d%% HP)" % [desc, value, hp_percent]
+			"flee_bonus":
+				return "%s (+%d%% below %d%% HP)" % [desc, value, hp_percent]
+			"heal":
+				return "%s (%d HP below %d%% HP)" % [desc, value, hp_percent]
+			"absorb", "damage_reduction":
+				return "%s (%d%% below %d%% HP)" % [desc, value, hp_percent]
+			_:
+				if value > 0:
+					return "%s (+%d)" % [desc, value]
+				return desc
+
+	# Fallback for legacy format
+	var atype = ability.get("type", ability.get("effect", "unknown"))
 	var value = ability.get("value", 0)
 	var chance = ability.get("chance", 0)
-	var trigger = ability.get("trigger", "")
-	var stat = ability.get("stat", "")
-	var duration = ability.get("duration", 0)
 
 	match atype:
-		"stat_boost":
-			desc_parts.append("+%d%% %s" % [value, stat.capitalize()])
-		"damage":
+		"attack", "defense", "speed":
+			return "+%d %s" % [value, atype.capitalize()]
+		"bonus_damage":
 			if chance > 0:
-				desc_parts.append("%d%% chance to deal %d bonus damage" % [chance, value])
-			else:
-				desc_parts.append("Deals %d bonus damage" % value)
-		"damage_boost":
-			if trigger == "low_hp":
-				desc_parts.append("+%d%% damage when HP below 30%%" % value)
-			else:
-				desc_parts.append("+%d%% damage" % value)
-		"heal":
-			if chance > 0:
-				desc_parts.append("%d%% chance to heal %d HP" % [chance, value])
-			else:
-				desc_parts.append("Heals %d HP" % value)
-		"defense_boost":
-			desc_parts.append("+%d%% defense" % value)
-		"poison":
-			desc_parts.append("%d%% chance to poison for %d damage" % [chance, value])
+				return "%d%% chance for %d bonus damage" % [chance, value]
+			return "+%d bonus damage" % value
+		"enemy_miss":
+			return "%d%% chance to make enemy miss" % chance
 		"stun":
-			desc_parts.append("%d%% chance to stun" % chance)
-		"lifesteal":
-			desc_parts.append("Heals for %d%% of damage dealt" % value)
+			return "%d%% chance to stun" % chance
+		"heal":
+			return "Heals %d HP" % value
 		_:
-			desc_parts.append("Special effect")
-
-	if duration > 0:
-		desc_parts.append("for %d turns" % duration)
-
-	return " ".join(desc_parts) if desc_parts.size() > 0 else "No description"
+			return "Special ability"
 
 func display_eggs():
 	"""Display the eggs page with ASCII art"""
@@ -15895,6 +16059,15 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_data = {}
 	dungeon_floor_grid = []
 
+	# If player is still viewing combat results, queue this for after they acknowledge
+	if pending_continue:
+		queued_dungeon_complete = message.duplicate(true)
+		return
+
+	_display_dungeon_complete(message)
+
+func _display_dungeon_complete(message: Dictionary):
+	"""Display the dungeon completion screen"""
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
 	var rewards = message.get("rewards", {})
 	var floors_cleared = rewards.get("floors_cleared", 0)
