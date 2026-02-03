@@ -882,14 +882,13 @@ func _get_area_level_for_post(trading_post_id: String) -> int:
 	return max(1, int(distance * 0.5))
 
 func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
-	"""Scale quest rewards based on the trading post's area level.
+	"""Scale quest rewards based on the trading post's area level using pow() scaling.
 
-	This ensures that quests at higher-level trading posts give appropriate rewards.
-	For example, 'Scout Training' at Northwatch (level 37 area) will give ~700 XP
-	instead of the base 100 XP designed for Haven (level 5 area).
+	This ensures quest XP scales the same way monster XP does, so quests remain
+	competitive with grinding at all levels.
 	"""
 	# Base level for reward scaling (Haven area is ~level 5)
-	const BASE_LEVEL = 5.0
+	const BASE_LEVEL = 5
 
 	# Don't scale if we're at or below base level
 	if area_level <= BASE_LEVEL:
@@ -897,10 +896,11 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 		quest["reward_tier"] = "beginner"
 		return quest
 
-	# Calculate scaling factor based on area level
-	# Level 37 area (Northwatch) = 37/5 = 7.4x multiplier
-	# Cap at 200x for extremely high-level areas
-	var scale_factor = min(200.0, float(area_level) / BASE_LEVEL)
+	# Calculate scaling factor using pow() to match monster XP progression
+	# pow(level+1, 2.2) scaling ensures quest XP keeps pace with level requirements
+	var base_factor = pow(BASE_LEVEL + 1, 2.2)
+	var area_factor = pow(area_level + 1, 2.2)
+	var scale_factor = area_factor / base_factor
 
 	# Scale XP and gold proportionally
 	var original_xp = quest.rewards.get("xp", 0)
@@ -909,22 +909,22 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 
 	var scaled_rewards = {
 		"xp": int(original_xp * scale_factor),
-		"gold": int(original_gold * scale_factor),
-		"gems": original_gems + int((scale_factor - 1) / 5)  # Gems scale slower
+		"gold": int(original_gold * scale_factor * 0.3),  # Gold scales slower than XP
+		"gems": original_gems + int(log(scale_factor + 1) * 2)  # Gems scale with log
 	}
 
 	quest.rewards = scaled_rewards
 	quest["area_level"] = area_level
 	quest["original_rewards"] = {"xp": original_xp, "gold": original_gold, "gems": original_gems}
 
-	# Determine reward tier for display
-	if scale_factor < 2.0:
+	# Determine reward tier for display based on area level
+	if area_level < 15:
 		quest["reward_tier"] = "beginner"
-	elif scale_factor < 5.0:
+	elif area_level < 35:
 		quest["reward_tier"] = "standard"
-	elif scale_factor < 15.0:
+	elif area_level < 60:
 		quest["reward_tier"] = "veteran"
-	elif scale_factor < 50.0:
+	elif area_level < 100:
 		quest["reward_tier"] = "elite"
 	else:
 		quest["reward_tier"] = "legendary"
@@ -1456,10 +1456,13 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	var hotzone_kills = int(3 + tier + (capped_level / 30))
 	var hotzone_min_level = min(int(effective_level * 0.6 * tier_multiplier), max_monster_level)
 
-	# Rewards scale with area level and tier (not player level, to prevent exploits)
-	var area_reward_mult = 1.0 + (area_level / 50.0)
-	var base_xp = int((80 + (100 * tier)) * area_reward_mult * tier_multiplier)
-	var base_gold = int((40 + (50 * tier)) * area_reward_mult * tier_multiplier)
+	# Rewards scale with area level using pow() to match monster XP scaling
+	# This ensures quest rewards remain competitive with grinding at all levels
+	var level_factor = pow(area_level + 1, 2.2)
+	var tier_base_xp = 3 + tier * 2  # 5 for tier 1, up to 13+ for tier 5
+	var tier_base_gold = 2 + tier  # 3 for tier 1, up to 7 for tier 5
+	var base_xp = int(tier_base_xp * level_factor * tier_multiplier)
+	var base_gold = int(tier_base_gold * level_factor * tier_multiplier * 0.1)
 	var gems = max(0, int((tier - 2 + area_level / 50) * tier_multiplier))
 
 	# Quest type varies by tier - includes KILL_TYPE and DUNGEON_CLEAR

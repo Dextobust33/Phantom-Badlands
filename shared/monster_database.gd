@@ -1552,20 +1552,22 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	return max(0.25, scale)
 
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
-	"""Calculate XP reward - balanced for consistent ~48 kills per level.
-	   Base XP scales with level requirements, lethality provides small variance."""
+	"""Calculate XP reward - balanced for ~45 kills per level on average.
+	   Lethality significantly affects XP: weak monsters give less, tough ones more."""
 	var lethality = hp + (strength * 2) + defense
 
-	# Target: ~48 kills per level
+	# Target: ~45 kills per level on average (range 35-60 based on lethality)
 	# XP_needed = pow(level+1, 2.2) * 50
-	# XP_reward = XP_needed / 48 = pow(level+1, 2.2) * 1.04
-	var base_xp = pow(level + 1, 2.2) * 1.04
+	# XP_reward = XP_needed / 45 = pow(level+1, 2.2) * 1.11
+	var base_xp = pow(level + 1, 2.2) * 1.11
 
-	# Add small lethality bonus (5-15% based on how tough the monster is)
-	# Average lethality at level L is roughly 50 + L*10
-	var expected_lethality = 50 + level * 10
-	var lethality_bonus = 1.0 + (float(lethality) / expected_lethality - 1.0) * 0.1
-	lethality_bonus = clamp(lethality_bonus, 0.95, 1.15)
+	# Lethality bonus: weak monsters (0.7x) to tough monsters (1.4x)
+	# Expected lethality at level L is roughly 50 + L*10
+	var expected_lethality = 50.0 + level * 10.0
+	var lethality_ratio = float(lethality) / expected_lethality
+	# Multiplier: 0.3 means 30% variance per 100% deviation from expected
+	var lethality_bonus = 1.0 + (lethality_ratio - 1.0) * 0.3
+	lethality_bonus = clamp(lethality_bonus, 0.7, 1.4)
 
 	return max(5, int(base_xp * lethality_bonus))
 
