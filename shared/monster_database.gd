@@ -1552,31 +1552,22 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 	return max(0.25, scale)
 
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
-	"""Calculate XP reward - balanced for player progression.
-	   XP should scale slowly - same-level fights shouldn't give a full level.
-	   Higher tier monsters naturally have better stats, giving them higher lethality.
-	   Increased by 10% for better progression feel."""
-	var lethality = hp + (strength * 2) + defense  # Reduced strength weight from 3 to 2
+	"""Calculate XP reward - balanced for consistent ~48 kills per level.
+	   Base XP scales with level requirements, lethality provides small variance."""
+	var lethality = hp + (strength * 2) + defense
 
-	var base_xp: int
-	# Level 1-50: (lethality * level) / 20 - Basic linear scaling
-	if level <= 50:
-		base_xp = max(5, int((lethality * level) / 20))
-	# Level 51-200: lethality * (50 + sqrt(level-50) * 5) / 20 - Slow growth
-	elif level <= 200:
-		var bonus = 50 + sqrt(level - 50) * 5
-		base_xp = max(10, int(lethality * bonus / 20))
-	# Level 201-500: Even slower growth with log scaling
-	elif level <= 500:
-		var bonus = 50 + sqrt(150) * 5 + log(level - 200) * 10  # Continue from 200 with log
-		base_xp = max(20, int(lethality * bonus / 20))
-	else:
-		# Level 500+: Heavily diminishing returns
-		var bonus = 50 + sqrt(150) * 5 + log(300) * 10 + log(level - 500) * 5
-		base_xp = max(30, int(lethality * bonus / 20))
+	# Target: ~48 kills per level
+	# XP_needed = pow(level+1, 2.2) * 50
+	# XP_reward = XP_needed / 48 = pow(level+1, 2.2) * 1.04
+	var base_xp = pow(level + 1, 2.2) * 1.04
 
-	# Apply 10% XP boost for better progression
-	return int(base_xp * 1.1)
+	# Add small lethality bonus (5-15% based on how tough the monster is)
+	# Average lethality at level L is roughly 50 + L*10
+	var expected_lethality = 50 + level * 10
+	var lethality_bonus = 1.0 + (float(lethality) / expected_lethality - 1.0) * 0.1
+	lethality_bonus = clamp(lethality_bonus, 0.95, 1.15)
+
+	return max(5, int(base_xp * lethality_bonus))
 
 func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: int) -> int:
 	"""Calculate gold reward with diminishing returns at high levels.
