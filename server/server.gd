@@ -1579,7 +1579,7 @@ func handle_move(peer_id: int, message: Dictionary):
 			})
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#00FF00]%s is now your companion![/color] Use /companion to manage companions." % companion.name
+				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
 
 	# Send location and character updates
@@ -6897,7 +6897,7 @@ func handle_activate_companion(peer_id: int, message: Dictionary):
 
 	if matched_gem.is_empty():
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]No companion found matching '%s'.[/color]" % companion_name_input})
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Use /companion to see your companions.[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Visit More → Companions to see your companions.[/color]"})
 		return
 
 	var gem_id = matched_gem.get("id", "")
@@ -8338,7 +8338,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 			})
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#00FF00]%s is now your companion![/color] Use /companion to manage companions." % companion.name
+				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
 
 	# Always send updated dungeon state first so client sees new position
