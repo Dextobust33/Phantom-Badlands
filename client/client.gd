@@ -11008,6 +11008,20 @@ func handle_server_message(message: Dictionary):
 			# Trigger combat sounds based on message content
 			_trigger_combat_sounds(combat_msg)
 
+			# Trigger shake animations for combat actions
+			# Companion attack: "Your X attacks for" (cyan #00FFFF)
+			if "Your " in combat_msg and " attacks" in combat_msg:
+				shake_companion_art()
+			# Companion ability use: "X uses" or "X's" ability messages (cyan #00FFFF)
+			elif "#00FFFF" in combat_msg and (" uses " in combat_msg or "'s " in combat_msg):
+				shake_companion_art()
+			# Monster attack: "The X attacks" (red #FF4444 or #FF0000)
+			if "The " in combat_msg and " attacks" in combat_msg:
+				shake_game_output()
+			# Monster special attacks: "strikes" patterns
+			elif "strikes" in combat_msg.to_lower() and ("The " in combat_msg or "#FF" in combat_msg):
+				shake_game_output()
+
 			var damage = parse_damage_dealt(combat_msg)
 			if damage > 0:
 				damage_dealt_to_current_enemy += damage
@@ -13687,6 +13701,74 @@ func hide_companion_art_overlay():
 	"""Hide the companion art overlay."""
 	if companion_art_overlay:
 		companion_art_overlay.visible = false
+
+# Store original offsets for shake animations
+var companion_art_original_offset_left: float = -260.0
+var companion_art_original_offset_right: float = -5.0
+var game_output_original_offset_left: float = 0.0
+var game_output_original_offset_right: float = 0.0
+var companion_shake_tween: Tween = null
+var game_output_shake_tween: Tween = null
+
+func shake_companion_art():
+	"""Shake the companion art overlay left and right when companion attacks."""
+	if companion_art_overlay == null or not companion_art_overlay.visible:
+		return
+
+	# Kill any existing shake tween
+	if companion_shake_tween and companion_shake_tween.is_valid():
+		companion_shake_tween.kill()
+
+	# Store original position if not set
+	companion_art_original_offset_left = companion_art_overlay.offset_left
+	companion_art_original_offset_right = companion_art_overlay.offset_right
+
+	var shake_amount = 8.0  # Pixels to shake
+	var shake_duration = 0.06  # Duration per shake direction
+
+	companion_shake_tween = create_tween()
+	# Shake sequence: right, left, right, left, center
+	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left + shake_amount, shake_duration)
+	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right + shake_amount, shake_duration)
+	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left - shake_amount, shake_duration)
+	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right - shake_amount, shake_duration)
+	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left + shake_amount * 0.5, shake_duration)
+	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right + shake_amount * 0.5, shake_duration)
+	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left - shake_amount * 0.5, shake_duration)
+	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right - shake_amount * 0.5, shake_duration)
+	# Return to original
+	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left, shake_duration)
+	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right, shake_duration)
+
+func shake_game_output():
+	"""Shake the game output when monster attacks."""
+	if game_output == null:
+		return
+
+	# Kill any existing shake tween
+	if game_output_shake_tween and game_output_shake_tween.is_valid():
+		game_output_shake_tween.kill()
+
+	# Store original position
+	game_output_original_offset_left = game_output.offset_left
+	game_output_original_offset_right = game_output.offset_right
+
+	var shake_amount = 6.0  # Pixels to shake (slightly less than companion)
+	var shake_duration = 0.05  # Duration per shake direction
+
+	game_output_shake_tween = create_tween()
+	# Shake sequence: right, left, right, left, center
+	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left + shake_amount, shake_duration)
+	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right + shake_amount, shake_duration)
+	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left - shake_amount, shake_duration)
+	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right - shake_amount, shake_duration)
+	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left + shake_amount * 0.5, shake_duration)
+	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right + shake_amount * 0.5, shake_duration)
+	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left - shake_amount * 0.5, shake_duration)
+	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right - shake_amount * 0.5, shake_duration)
+	# Return to original
+	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left, shake_duration)
+	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right, shake_duration)
 
 func _get_egg_display_name(egg_type: String) -> String:
 	"""Get display name for egg type"""
