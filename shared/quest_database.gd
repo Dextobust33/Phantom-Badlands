@@ -1425,6 +1425,11 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, tier: int, post_distance: float, player_level: int, progression_modifier: float) -> Dictionary:
 	"""Generate a single quest based on tier, scaled to player level and area appropriateness."""
 
+	# IMPORTANT: Seed the random generator with the quest_id hash to ensure
+	# the same quest_id always produces the same random choices (monster type, dungeon, etc.)
+	# This prevents the description from changing when regenerating the quest
+	seed(quest_id.hash())
+
 	# Calculate area level FIRST - this determines what monsters are appropriate
 	var area_level = max(1, int(post_distance * 0.5))
 	var monster_tier = _get_tier_for_area_level(area_level)
@@ -1552,6 +1557,9 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 		quest["monster_type"] = monster_type
 	elif quest_type == QuestType.DUNGEON_CLEAR:
 		quest["dungeon_type"] = dungeon_type
+
+	# Restore randomness after using seeded generation
+	randomize()
 
 	return quest
 

@@ -355,14 +355,17 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		var target = quest_data.target
 		var is_complete = progress >= target
 
-		# Quest header
+		# Quest header - use stored quest_name if available (prevents regeneration mismatch)
+		var quest_name = quest_data.get("quest_name", "")
+		if quest_name.is_empty():
+			quest_name = quest.get("name", "Unknown Quest")
 		var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
-		output += "[%d] [color=#FFD700]%s[/color]%s\n" % [index, quest.name, daily_tag]
+		output += "[%d] [color=#FFD700]%s[/color]%s\n" % [index, quest_name, daily_tag]
 
 		# Description - use stored description if available (scaled at accept time)
 		var description = quest_data.get("description", "")
 		if description.is_empty():
-			description = quest.description
+			description = quest.get("description", "")
 		output += "    %s\n" % description
 
 		# Add any extra info for this quest (e.g., dungeon directions)
