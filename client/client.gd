@@ -2535,7 +2535,8 @@ func _process(delta):
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
-			if quest_log_mode and i >= 5:
+			# Same for companions_mode - number keys 1-5 are used for companion selection
+			if (quest_log_mode or companions_mode) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
