@@ -13148,6 +13148,57 @@ func display_character_status():
 			text += "[color=#8B4513]Axe:[/color] %s %s\n" % [equipped_axe.get("name", "Unknown"), bonus_text]
 		text += "\n"
 
+	# === ACTIVE COMPANION ===
+	var active_companion = char.get("active_companion", {})
+	if not active_companion.is_empty():
+		text += "[color=#808080]── Active Companion ──[/color]\n"
+		var comp_name = active_companion.get("name", "Unknown")
+		var comp_level = active_companion.get("level", 1)
+		var comp_variant = active_companion.get("variant", "Normal")
+		var comp_variant_color = active_companion.get("variant_color", "#FFFFFF")
+		var comp_bonuses = active_companion.get("bonuses", {})
+
+		# Apply variant multiplier to display accurate values
+		var variant_mult = 1.0
+		match comp_variant:
+			"Shiny": variant_mult = 1.25
+			"Glittering": variant_mult = 1.5
+			"Radiant": variant_mult = 2.0
+			"Prismatic": variant_mult = 3.0
+
+		text += "[color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]\n" % [comp_variant_color, comp_variant, comp_name, comp_level]
+
+		# Show combat bonuses that are actually applied
+		var comp_bonus_parts = []
+		if comp_bonuses.get("attack", 0) > 0:
+			var attack_val = int(comp_bonuses.get("attack", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#FF6666]+%d%% Damage[/color]" % attack_val)
+		if comp_bonuses.get("crit_chance", 0) > 0:
+			var crit_val = int(comp_bonuses.get("crit_chance", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#FFFF00]+%d%% Crit[/color]" % crit_val)
+		if comp_bonuses.get("hp_regen", 0) > 0:
+			var regen_val = int(comp_bonuses.get("hp_regen", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#00FF00]+%d%% HP/rnd[/color]" % regen_val)
+		if comp_bonuses.get("flee_bonus", 0) > 0:
+			var flee_val = int(comp_bonuses.get("flee_bonus", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#00BFFF]+%d%% Flee[/color]" % flee_val)
+		if comp_bonuses.get("defense", 0) > 0:
+			var def_val = int(comp_bonuses.get("defense", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#00BFFF]+%d Defense[/color]" % def_val)
+		if comp_bonuses.get("lifesteal", 0) > 0:
+			var steal_val = int(comp_bonuses.get("lifesteal", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#FF00FF]+%d%% Lifesteal[/color]" % steal_val)
+		if comp_bonuses.get("gold_find", 0) > 0:
+			var gold_val = int(comp_bonuses.get("gold_find", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#FFD700]+%d%% Gold[/color]" % gold_val)
+		if comp_bonuses.get("speed", 0) > 0:
+			var speed_val = int(comp_bonuses.get("speed", 0) * variant_mult)
+			comp_bonus_parts.append("[color=#FFFF00]+%d Speed[/color]" % speed_val)
+
+		if comp_bonus_parts.size() > 0:
+			text += "[color=#00FFFF]Combat Bonuses:[/color] %s\n" % "  ".join(comp_bonus_parts)
+		text += "\n"
+
 	# === ACTIVE EFFECTS ===
 	var effects_text = _get_status_effects_text_compact()
 	if effects_text != "":
@@ -13678,7 +13729,7 @@ func update_companion_art_overlay():
 
 	# Build overlay text - readable header with variant name
 	var variant_name = active_companion.get("variant", "Normal")
-	var overlay_text = "[center][font_size=10][color=%s]%s[/color] [color=#AAAAAA]Lv%d[/color][/font_size]\n[font_size=8][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
+	var overlay_text = "[center][font_size=14][color=%s]%s[/color] [color=#FFFF00]Lv%d[/color][/font_size]\n[font_size=11][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
 
 	if art_lines.size() > 0:
 		# Join all art lines and apply variant color pattern
