@@ -1418,6 +1418,77 @@ func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> 
 
 	return drops
 
+func generate_fallback_item(item_category: String, item_level: int) -> Dictionary:
+	"""Generate a guaranteed fallback item for merchants when normal generation fails.
+	Used to prevent empty merchant inventories."""
+	var item_type: String
+	var rarity = "common"
+
+	# Determine rarity based on level (slight chance for better)
+	var rarity_roll = randi() % 100
+	if item_level >= 50 and rarity_roll < 15:
+		rarity = "rare"
+	elif item_level >= 20 and rarity_roll < 25:
+		rarity = "uncommon"
+
+	# Pick appropriate item type based on category and level
+	match item_category:
+		"weapon":
+			if item_level <= 5:
+				item_type = "weapon_rusty"
+			elif item_level <= 15:
+				item_type = "weapon_iron"
+			elif item_level <= 30:
+				item_type = "weapon_steel"
+			elif item_level <= 50:
+				item_type = "weapon_enchanted"
+			elif item_level <= 100:
+				item_type = "weapon_magical"
+			else:
+				item_type = "weapon_elemental"
+		"armor":
+			if item_level <= 5:
+				item_type = "armor_leather"
+			elif item_level <= 15:
+				item_type = "armor_chain"
+			elif item_level <= 30:
+				item_type = "armor_plate"
+			elif item_level <= 50:
+				item_type = "armor_enchanted"
+			elif item_level <= 100:
+				item_type = "armor_magical"
+			else:
+				item_type = "armor_elemental"
+		"ring":
+			if item_level <= 15:
+				item_type = "ring_copper"
+			elif item_level <= 50:
+				item_type = "ring_silver"
+			elif item_level <= 100:
+				item_type = "ring_gold"
+			else:
+				item_type = "ring_elemental"
+		"potion":
+			var tier = get_tier_for_level(item_level)
+			var tier_name = get_tier_name(tier)
+			return {
+				"id": randi(),
+				"type": "health_potion",
+				"name": "%s Health Potion" % tier_name,
+				"rarity": "common",
+				"level": item_level,
+				"tier": tier,
+				"is_consumable": true,
+				"quantity": 1,
+				"value": _calculate_consumable_value(tier, "potion_minor")
+			}
+		_:
+			item_type = "weapon_iron"
+
+	# Generate the item using standard generation
+	var drop_entry = {"item_type": item_type, "rarity": rarity}
+	return _generate_item(drop_entry, item_level)
+
 func get_drop_table(table_id: String) -> Array:
 	"""Get a drop table by ID. Returns empty array if not found."""
 	return DROP_TABLES.get(table_id, [])
@@ -1869,9 +1940,10 @@ func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
 
 	# Chances for prefix and suffix by rarity
 	# Format: {prefix_chance, suffix_chance, both_chance (bonus for getting both)}
+	# Common/Uncommon boosted to add gear variety - most items now have a chance for affixes
 	var affix_chances = {
-		"common":    {"prefix": 10, "suffix": 5,  "both_bonus": 0},    # 10% prefix, 5% suffix
-		"uncommon":  {"prefix": 25, "suffix": 15, "both_bonus": 5},    # Can get both
+		"common":    {"prefix": 20, "suffix": 12, "both_bonus": 0},    # ~29% chance for at least one affix
+		"uncommon":  {"prefix": 35, "suffix": 25, "both_bonus": 5},    # ~51% chance for at least one affix
 		"rare":      {"prefix": 45, "suffix": 35, "both_bonus": 15},   # 15% bonus for both
 		"epic":      {"prefix": 70, "suffix": 55, "both_bonus": 30},   # Good chance for both
 		"legendary": {"prefix": 90, "suffix": 80, "both_bonus": 50},   # High chance for both

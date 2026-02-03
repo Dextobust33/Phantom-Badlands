@@ -955,6 +955,34 @@ func get_equipment_bonuses() -> Dictionary:
 		if affixes.has("speed_bonus"):
 			bonuses.speed += int(affixes.speed_bonus * wear_penalty)
 
+		# Apply enchantment bonuses (permanent, NOT affected by wear)
+		var enchants = item.get("enchantments", {})
+		for stat_key in enchants:
+			var enchant_value = enchants[stat_key]
+			match stat_key:
+				"attack":
+					bonuses.attack += enchant_value
+				"defense":
+					bonuses.defense += enchant_value
+				"max_hp":
+					bonuses.max_hp += enchant_value
+				"max_mana":
+					bonuses.max_mana += enchant_value
+				"speed":
+					bonuses.speed += enchant_value
+				"strength":
+					bonuses.strength += enchant_value
+				"constitution":
+					bonuses.constitution += enchant_value
+				"dexterity":
+					bonuses.dexterity += enchant_value
+				"intelligence":
+					bonuses.intelligence += enchant_value
+				"wisdom":
+					bonuses.wisdom += enchant_value
+				"wits":
+					bonuses.wits += enchant_value
+
 	# Universal resource conversion: all resource bonuses apply to your class's resource
 	# Mana bonuses are ~2x larger than stamina/energy, so scale accordingly:
 	# - Mana → Stamina/Energy: 0.5x
@@ -1704,6 +1732,8 @@ func equip_item(item: Dictionary, slot: String) -> Dictionary:
 		return {}
 	var old_item = equipped[slot]
 	equipped[slot] = item
+	# Clamp resources to new max after equipping (in case new gear has lower max)
+	_clamp_resources_to_max()
 	if old_item != null:
 		return old_item
 	return {}
@@ -2062,12 +2092,13 @@ func get_quest_progress(quest_id: String) -> Dictionary:
 			return quest
 	return {}
 
-func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int = 0, description: String = "", player_level_at_accept: int = 1, completed_at_post: int = 0) -> bool:
-	"""Add a new quest to active quests. Returns false if at max or already has quest."""
+func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int = 0, description: String = "", player_level_at_accept: int = 1, completed_at_post: int = 0, extra_data: Dictionary = {}) -> bool:
+	"""Add a new quest to active quests. Returns false if at max or already has quest.
+	extra_data can include: quest_name, quest_type, dungeon_type, monster_type for persistent storage."""
 	if not can_accept_quest() or has_quest(quest_id):
 		return false
 
-	active_quests.append({
+	var quest_entry = {
 		"quest_id": quest_id,
 		"progress": 0,
 		"target": target,
@@ -2079,7 +2110,13 @@ func add_quest(quest_id: String, target: int, origin_x: int = 0, origin_y: int =
 		"description": description,  # Store scaled description for display
 		"player_level_at_accept": player_level_at_accept,  # For regenerating dynamic quests
 		"completed_at_post": completed_at_post  # For regenerating dynamic quests
-	})
+	}
+
+	# Store extra quest data for persistent reference (prevents regeneration issues)
+	for key in extra_data:
+		quest_entry[key] = extra_data[key]
+
+	active_quests.append(quest_entry)
 	return true
 
 func update_quest_progress(quest_id: String, amount: int = 1, hotzone_intensity: float = 0.0) -> Dictionary:

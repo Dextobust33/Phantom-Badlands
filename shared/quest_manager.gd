@@ -62,7 +62,19 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	# Use scaled description if provided, otherwise use quest's base description
 	var quest_description = description if not description.is_empty() else quest.get("description", "")
 
-	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post):
+	# Build extra data to store with quest (prevents regeneration issues for random quests)
+	var extra_data = {
+		"quest_name": quest.get("name", "Unknown Quest"),
+		"quest_type": quest_type
+	}
+	# For dungeon quests, store the specific dungeon type
+	if quest_type == QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
+		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
+	# For monster type quests, store the specific monster type
+	if quest_type == QuestDatabaseScript.QuestType.KILL_TYPE:
+		extra_data["monster_type"] = quest.get("monster_type", "")
+
+	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post, extra_data):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
 
 	return {"success": false, "message": "Failed to accept quest"}

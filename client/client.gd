@@ -843,6 +843,58 @@ var combat_ability_player: AudioStreamPlayer = null  # Ability use
 var last_combat_sound_time: float = 0.0
 const COMBAT_SOUND_COOLDOWN: float = 0.15  # Minimum time between combat sounds
 
+# Egg hatch celebration sound
+var egg_hatch_player: AudioStreamPlayer = null
+
+# ===== COMPANION ABILITIES (mirrored from drop_tables.gd) =====
+const COMPANION_ABILITIES = {
+	1: {  # Tier 1 (Weakest companions)
+		10: {"name": "Encouraging Presence", "type": "passive", "effect": "attack", "value": 2},
+		25: {"name": "Distraction", "type": "chance", "chance": 15, "effect": "enemy_miss"},
+		50: {"name": "Protective Instinct", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 10, "duration": 3}
+	},
+	2: {  # Tier 2
+		10: {"name": "Battle Focus", "type": "passive", "effect": "attack", "value": 3},
+		25: {"name": "Harrying Strike", "type": "chance", "chance": 18, "effect": "bonus_damage", "value": 12},
+		50: {"name": "Guardian Shield", "type": "threshold", "hp_percent": 50, "effect": "defense_buff", "value": 12, "duration": 3}
+	},
+	3: {  # Tier 3
+		10: {"name": "Predator's Eye", "type": "passive", "effect": "attack", "value": 3, "effect2": "defense", "value2": 2},
+		25: {"name": "Savage Bite", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 15},
+		50: {"name": "Emergency Heal", "type": "threshold", "hp_percent": 50, "effect": "heal", "value": 10}
+	},
+	4: {  # Tier 4
+		10: {"name": "Primal Fury", "type": "passive", "effect": "attack", "value": 4, "effect2": "speed", "value2": 3},
+		25: {"name": "Vicious Assault", "type": "chance", "chance": 20, "effect": "bonus_damage", "value": 18},
+		50: {"name": "Life Bond", "type": "threshold", "hp_percent": 40, "effect": "heal", "value": 12}
+	},
+	5: {  # Tier 5
+		10: {"name": "Battle Synergy", "type": "passive", "effect": "attack", "value": 4, "effect2": "defense", "value2": 3},
+		25: {"name": "Devastating Strike", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 22, "effect2": "stun", "chance2": 10},
+		50: {"name": "Desperate Recovery", "type": "threshold", "hp_percent": 35, "effect": "heal", "value": 15}
+	},
+	6: {  # Tier 6
+		10: {"name": "Elemental Fury", "type": "passive", "effect": "attack", "value": 5, "effect2": "defense", "value2": 4},
+		25: {"name": "Elemental Burst", "type": "chance", "chance": 22, "effect": "bonus_damage", "value": 25},
+		50: {"name": "Phoenix Gift", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 18}
+	},
+	7: {  # Tier 7 (Elite)
+		10: {"name": "Void Resonance", "type": "passive", "effect": "attack", "value": 6, "effect2": "defense", "value2": 4, "effect3": "speed", "value3": 3},
+		25: {"name": "Void Strike", "type": "chance", "chance": 23, "effect": "bonus_damage", "value": 30, "effect2": "lifesteal", "value2": 15},
+		50: {"name": "Elder's Blessing", "type": "threshold", "hp_percent": 30, "effect": "heal", "value": 22}
+	},
+	8: {  # Tier 8 (Legendary)
+		10: {"name": "Cosmic Alignment", "type": "passive", "effect": "attack", "value": 7, "effect2": "defense", "value2": 5, "effect3": "crit_chance", "value3": 3},
+		25: {"name": "Time Rend", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 35, "effect2": "stun", "chance2": 20},
+		50: {"name": "Death's Reprieve", "type": "threshold", "hp_percent": 25, "effect": "heal", "value": 30}
+	},
+	9: {  # Tier 9 (Mythic)
+		10: {"name": "Divine Presence", "type": "passive", "effect": "attack", "value": 10, "effect2": "defense", "value2": 6, "effect3": "speed", "value3": 5},
+		25: {"name": "Godslayer's Wrath", "type": "chance", "chance": 25, "effect": "bonus_damage", "value": 50, "effect2": "lifesteal", "value2": 25},
+		50: {"name": "Immortal's Gift", "type": "threshold", "hp_percent": 20, "effect": "full_heal"}
+	}
+}
+
 # ===== RACE DESCRIPTIONS =====
 const RACE_DESCRIPTIONS = {
 	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
@@ -1060,6 +1112,12 @@ func _ready():
 	combat_ability_player.volume_db = -20.0  # Audible magical sound
 	add_child(combat_ability_player)
 	_generate_combat_ability_sound()
+
+	# Initialize egg hatch celebration sound
+	egg_hatch_player = AudioStreamPlayer.new()
+	egg_hatch_player.volume_db = -14.0  # Clear celebratory sound
+	add_child(egg_hatch_player)
+	_generate_egg_hatch_sound()
 
 	# Initialize background music player
 	music_player = AudioStreamPlayer.new()
@@ -1730,6 +1788,94 @@ func _generate_combat_ability_sound():
 	audio.data = data
 	combat_ability_player.stream = audio
 
+func _generate_egg_hatch_sound():
+	"""Generate a magical hatching celebration sound (rising crystalline chime)"""
+	var sample_rate = 44100
+	var duration = 1.2
+	var samples = int(sample_rate * duration)
+
+	var audio = AudioStreamWAV.new()
+	audio.format = AudioStreamWAV.FORMAT_16_BITS
+	audio.mix_rate = sample_rate
+	audio.stereo = true
+
+	var data = PackedByteArray()
+	data.resize(samples * 4)
+
+	# Magical ascending notes with sparkle (C major: C5, E5, G5, C6)
+	var notes = [
+		{"freq": 523.25, "start": 0.0, "dur": 0.4},   # C5
+		{"freq": 659.25, "start": 0.12, "dur": 0.4},  # E5
+		{"freq": 783.99, "start": 0.24, "dur": 0.45}, # G5
+		{"freq": 1046.50, "start": 0.40, "dur": 0.7}, # C6 (triumphant high note)
+	]
+
+	for i in range(samples):
+		var t = float(i) / sample_rate
+		var sample_l = 0.0
+		var sample_r = 0.0
+
+		# Layer each note with bell-like quality
+		for note in notes:
+			var freq = note.freq
+			var start = note.start
+			var dur = note.dur
+
+			if t >= start and t < start + dur:
+				var note_t = t - start
+				# Bell-like envelope: quick attack, long decay
+				var attack = 0.02
+				var env = 0.0
+				if note_t < attack:
+					env = note_t / attack
+				else:
+					env = exp(-(note_t - attack) * 3.5)
+
+				# Crystalline bell harmonics
+				var wave = sin(TAU * freq * t) * 0.30
+				wave += sin(TAU * freq * 2.0 * t) * 0.18
+				wave += sin(TAU * freq * 3.0 * t) * 0.08
+				wave += sin(TAU * freq * 4.0 * t) * 0.04
+
+				sample_l += wave * env * 0.4
+				sample_r += wave * env * 0.4
+
+		# Add magical sparkle overlay
+		if t > 0.3 and t < 1.1:
+			var sparkle_env = 0.0
+			if t < 0.5:
+				sparkle_env = (t - 0.3) / 0.2
+			elif t < 0.9:
+				sparkle_env = 1.0
+			else:
+				sparkle_env = (1.1 - t) / 0.2
+
+			# High frequency shimmer
+			var sparkle = sin(TAU * 2093 * t + sin(TAU * 7 * t) * 0.5) * 0.04  # C7 with wobble
+			sparkle += sin(TAU * 2637 * t) * 0.03  # E7
+			sample_l += sparkle * sparkle_env
+			sample_r += sparkle * sparkle_env * 0.9  # Slight stereo difference
+
+		# Soft limit
+		sample_l = clamp(sample_l, -0.9, 0.9)
+		sample_r = clamp(sample_r, -0.9, 0.9)
+
+		var int_l = int(sample_l * 32767)
+		var int_r = int(sample_r * 32767)
+
+		data[i * 4] = int_l & 0xFF
+		data[i * 4 + 1] = (int_l >> 8) & 0xFF
+		data[i * 4 + 2] = int_r & 0xFF
+		data[i * 4 + 3] = (int_r >> 8) & 0xFF
+
+	audio.data = data
+	egg_hatch_player.stream = audio
+
+func play_egg_hatch_sound():
+	"""Play the egg hatch celebration sound"""
+	if egg_hatch_player and egg_hatch_player.stream:
+		egg_hatch_player.play()
+
 func _can_play_combat_sound() -> bool:
 	"""Check if enough time has passed since last combat sound"""
 	var current_time = Time.get_ticks_msec() / 1000.0
@@ -2349,7 +2495,7 @@ func _process(delta):
 			set_meta("enter_pressed", false)
 
 	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
-	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not any_popup_open:
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not any_popup_open:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -3705,7 +3851,7 @@ func update_action_bar():
 		]
 	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
-		# Exit is on slot 5 (key 1) to prevent accidental exits when pressing Space
+		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2) for item use
 		current_actions = [
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
@@ -3713,7 +3859,7 @@ func update_action_bar():
 			{"label": "W", "action_type": "local", "action_data": "dungeon_move_w", "enabled": true},
 			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
 			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -10586,6 +10732,10 @@ func handle_server_message(message: Dictionary):
 							sell_page = total_pages - 1
 						display_merchant_sell_list()
 					update_action_bar()
+				# Refresh companions display if in companions mode (after activation/dismissal)
+				if companions_mode:
+					display_companions()
+					update_action_bar()
 
 		"server_broadcast":
 			# Server admin broadcast message
@@ -11279,6 +11429,9 @@ func handle_server_message(message: Dictionary):
 
 		"dungeon_exit":
 			handle_dungeon_exit(message)
+
+		"egg_hatched":
+			handle_egg_hatched(message)
 
 # ===== INPUT HANDLING =====
 
@@ -12945,19 +13098,37 @@ func display_companions():
 		if bonus_parts.size() > 0:
 			display_game("  %s" % ", ".join(bonus_parts))
 
-		# Show unlocked abilities
-		var unlocked_abilities = []
-		if comp_level >= 10:
-			unlocked_abilities.append("Lv.10")
-		if comp_level >= 25:
-			unlocked_abilities.append("Lv.25")
-		if comp_level >= 50:
-			unlocked_abilities.append("Lv.50")
+		# Show unlocked abilities with actual names and descriptions
+		display_game("")
+		display_game("  [color=#A335EE]Abilities:[/color]")
+		var tier_abilities = COMPANION_ABILITIES.get(comp_tier, {})
 
-		if unlocked_abilities.size() > 0:
-			display_game("  [color=#A335EE]Abilities: %s[/color]" % ", ".join(unlocked_abilities))
-		else:
-			display_game("  [color=#808080]Abilities: None (unlock at Lv.10)[/color]")
+		# Level 10 ability
+		if tier_abilities.has(10):
+			var ability = tier_abilities[10]
+			var ability_desc = _format_companion_ability(ability)
+			if comp_level >= 10:
+				display_game("    [color=#00FF00]Lv.10: %s[/color] - %s" % [ability.name, ability_desc])
+			else:
+				display_game("    [color=#808080]Lv.10: %s[/color] [color=#666666](Locked)[/color]" % ability.name)
+
+		# Level 25 ability
+		if tier_abilities.has(25):
+			var ability = tier_abilities[25]
+			var ability_desc = _format_companion_ability(ability)
+			if comp_level >= 25:
+				display_game("    [color=#00FF00]Lv.25: %s[/color] - %s" % [ability.name, ability_desc])
+			else:
+				display_game("    [color=#808080]Lv.25: %s[/color] [color=#666666](Locked)[/color]" % ability.name)
+
+		# Level 50 ability
+		if tier_abilities.has(50):
+			var ability = tier_abilities[50]
+			var ability_desc = _format_companion_ability(ability)
+			if comp_level >= 50:
+				display_game("    [color=#FFD700]Lv.50: %s[/color] - %s" % [ability.name, ability_desc])
+			else:
+				display_game("    [color=#808080]Lv.50: %s[/color] [color=#666666](Locked)[/color]" % ability.name)
 
 		display_game("")
 	else:
@@ -13112,6 +13283,60 @@ func _get_companion_bonus_parts(bonuses: Dictionary) -> Array:
 	if bonuses.get("lifesteal", 0) > 0:
 		parts.append("[color=#FF00FF]+%d%% Steal[/color]" % int(bonuses.lifesteal))
 	return parts
+
+func _format_companion_ability(ability: Dictionary) -> String:
+	"""Format a companion ability for display"""
+	var ability_type = ability.get("type", "passive")
+	var effect = ability.get("effect", "")
+	var value = ability.get("value", 0)
+
+	match ability_type:
+		"passive":
+			var desc = ""
+			if effect == "attack":
+				desc = "+%d Attack" % value
+			elif effect == "defense":
+				desc = "+%d Defense" % value
+			elif effect == "speed":
+				desc = "+%d Speed" % value
+			elif effect == "crit_chance":
+				desc = "+%d%% Crit" % value
+			else:
+				desc = "+%d %s" % [value, effect.capitalize()]
+			# Check for secondary effects
+			if ability.has("effect2"):
+				var val2 = ability.get("value2", 0)
+				desc += ", +%d %s" % [val2, ability.effect2.capitalize()]
+			if ability.has("effect3"):
+				var val3 = ability.get("value3", 0)
+				desc += ", +%d %s" % [val3, ability.effect3.capitalize()]
+			return desc
+		"chance":
+			var chance = ability.get("chance", 0)
+			if effect == "enemy_miss":
+				return "%d%% chance to cause enemy miss" % chance
+			elif effect == "bonus_damage":
+				var secondary = ""
+				if ability.has("effect2") and ability.effect2 == "stun":
+					secondary = " (+%d%% stun)" % ability.get("chance2", 0)
+				elif ability.has("effect2") and ability.effect2 == "lifesteal":
+					secondary = " (+%d%% lifesteal)" % ability.get("value2", 0)
+				return "%d%% chance for +%d bonus damage%s" % [chance, value, secondary]
+			else:
+				return "%d%% chance: %s" % [chance, effect]
+		"threshold":
+			var hp_percent = ability.get("hp_percent", 50)
+			if effect == "defense_buff":
+				var duration = ability.get("duration", 3)
+				return "At %d%% HP: +%d defense for %d rounds" % [hp_percent, value, duration]
+			elif effect == "heal":
+				return "At %d%% HP: Heal %d%% of max HP" % [hp_percent, value]
+			elif effect == "full_heal":
+				return "At %d%% HP: Full heal (once per combat)" % hp_percent
+			else:
+				return "At %d%% HP: %s" % [hp_percent, effect]
+		_:
+			return "Unknown ability"
 
 func _ensure_readable_color(hex_color: String) -> String:
 	"""Ensure a color is bright enough to be readable against a dark background.
@@ -15219,6 +15444,65 @@ func handle_dungeon_exit(message: Dictionary):
 	else:
 		display_game("[color=#808080]You left the %s.[/color]" % dungeon_name)
 
+	update_action_bar()
+
+func handle_egg_hatched(message: Dictionary):
+	"""Handle egg hatching notification with sound and Continue prompt"""
+	var companion = message.get("companion", {})
+	var companion_name = companion.get("name", "Companion")
+	var variant = companion.get("variant", "Normal")
+	var variant_color = companion.get("variant_color", "#FFFFFF")
+	var tier = companion.get("tier", 1)
+	var bonuses = companion.get("bonuses", {})
+
+	# Play celebration sound
+	play_egg_hatch_sound()
+
+	# Display hatching celebration
+	game_output.clear()
+	display_game("[color=#FF69B4]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("[color=#FFD700]✦ ✦ ✦  EGG HATCHED!  ✦ ✦ ✦[/color]")
+	display_game("")
+	display_game("[color=#FF69B4]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("Your egg has hatched into:")
+	display_game("")
+	display_game("  [color=%s]%s %s[/color]" % [variant_color, variant, companion_name])
+	display_game("  [color=#AAAAAA]Tier %d Companion[/color]" % tier)
+	display_game("")
+
+	# Show companion bonuses
+	if not bonuses.is_empty():
+		display_game("[color=#00FFFF]Companion Bonuses:[/color]")
+		var bonus_lines = []
+		if bonuses.has("attack") and bonuses.attack > 0:
+			bonus_lines.append("  +%d Attack" % bonuses.attack)
+		if bonuses.has("defense") and bonuses.defense > 0:
+			bonus_lines.append("  +%d Defense" % bonuses.defense)
+		if bonuses.has("hp_bonus") and bonuses.hp_bonus > 0:
+			bonus_lines.append("  +%d Max HP" % bonuses.hp_bonus)
+		if bonuses.has("hp_regen") and bonuses.hp_regen > 0:
+			bonus_lines.append("  +%d HP Regen" % bonuses.hp_regen)
+		if bonuses.has("crit_chance") and bonuses.crit_chance > 0:
+			bonus_lines.append("  +%d%% Crit Chance" % bonuses.crit_chance)
+		if bonuses.has("gold_find") and bonuses.gold_find > 0:
+			bonus_lines.append("  +%d%% Gold Find" % bonuses.gold_find)
+		if bonuses.has("speed") and bonuses.speed > 0:
+			bonus_lines.append("  +%d Speed" % bonuses.speed)
+		if bonuses.has("lifesteal") and bonuses.lifesteal > 0:
+			bonus_lines.append("  +%d%% Lifesteal" % bonuses.lifesteal)
+		if bonuses.has("flee_bonus") and bonuses.flee_bonus > 0:
+			bonus_lines.append("  +%d%% Flee Chance" % bonuses.flee_bonus)
+		for line in bonus_lines:
+			display_game("[color=#00FF00]%s[/color]" % line)
+		display_game("")
+
+	display_game("[color=#808080]Visit the Companions menu to activate your new companion![/color]")
+	display_game("")
+	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+
+	pending_continue = true
 	update_action_bar()
 
 func display_dungeon_floor():

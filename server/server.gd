@@ -3802,6 +3802,86 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	# Get potion effect from drop tables
 	var effect = drop_tables.get_potion_effect(item_type)
 
+	# For crafted consumables, effect is stored in the item itself
+	if effect.is_empty() and item.has("effect"):
+		var crafted_effect = item.get("effect", {})
+		# Convert crafted format to expected format
+		var effect_type = crafted_effect.get("type", "")
+		match effect_type:
+			"heal":
+				effect = {"heal": true, "base": crafted_effect.get("amount", 50), "per_level": 0}
+			"restore_mana":
+				effect = {"mana": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
+			"restore_stamina":
+				effect = {"stamina": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
+			"restore_energy":
+				effect = {"energy": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
+			"buff":
+				# Crafted buff format: {"type": "buff", "stat": "attack", "amount": 15, "duration": 10}
+				var buff_stat = crafted_effect.get("stat", "attack")
+				var buff_amount = crafted_effect.get("amount", 10)
+				var buff_duration = crafted_effect.get("duration", 5)
+				effect = {"buff": buff_stat, "base": buff_amount, "per_level": 0, "base_duration": buff_duration, "duration_per_10_levels": 0}
+				# Crafted buffs are round-based (single combat) by default
+				if crafted_effect.get("battles", false):
+					effect["battles"] = true
+
+	# Check for enhancement scroll (special item type that applies permanent enchantments)
+	if item_type == "enhancement_scroll":
+		var scroll_slot = item.get("slot", "weapon")
+		var scroll_effect = item.get("effect", {})
+		var stat = scroll_effect.get("stat", "attack")
+		var bonus = scroll_effect.get("bonus", 3)
+
+		# For "all" stat scrolls, can be applied to any equipped item
+		var target_item = null
+		var target_slot = ""
+
+		if scroll_slot == "any" or stat == "all":
+			# Find first equipped item (prefer weapon, then armor)
+			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+				if character.equipped.get(slot, null) != null:
+					target_item = character.equipped[slot]
+					target_slot = slot
+					break
+		else:
+			target_item = character.equipped.get(scroll_slot, null)
+			target_slot = scroll_slot
+
+		if target_item == null:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF4444]No equipment to enhance![/color]"
+			})
+			return
+
+		# Initialize enchantments if needed
+		if not target_item.has("enchantments"):
+			target_item["enchantments"] = {}
+
+		# Apply enhancement
+		if stat == "all":
+			# Apply bonus to all 10 stats
+			var all_stats = ["attack", "defense", "speed", "max_hp", "strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+			for s in all_stats:
+				target_item.enchantments[s] = target_item.enchantments.get(s, 0) + bonus
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#A335EE]Enhanced %s with +%d to ALL stats![/color]" % [target_item.name, bonus]
+			})
+		else:
+			target_item.enchantments[stat] = target_item.enchantments.get(stat, 0) + bonus
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]Enhanced %s with +%d %s![/color]" % [target_item.name, bonus, stat]
+			})
+
+		# Remove scroll from inventory
+		character.remove_item(index)
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
 	if effect.is_empty():
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -5203,7 +5283,7 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 		item_count = 3 + rng.randi() % 3  # 3-5 items
 
 	var attempts = 0
-	var max_attempts = item_count * 5  # Prevent infinite loops
+	var max_attempts = item_count * 10  # Increased to reduce empty inventories
 
 	while items.size() < item_count and attempts < max_attempts:
 		attempts += 1
@@ -5289,6 +5369,33 @@ func generate_shop_inventory(player_level: int, merchant_hash: int, specialty: S
 			markup = 2.5
 		item["shop_price"] = int(item.get("value", 100) * markup)
 		items.append(item)
+
+	# Fallback: If merchant has no items after all attempts, generate guaranteed fallback items
+	# This prevents the frustrating "merchant has nothing to sell" situation
+	if items.size() == 0:
+		var fallback_count = 2 + rng.randi() % 2  # 2-3 fallback items
+		for _i in range(fallback_count):
+			var fallback_level = maxi(1, player_level + rng.randi_range(-3, 3))
+			var fallback_item: Dictionary
+
+			# Generate appropriate fallback based on specialty
+			if specialty == "weapons" or specialty == "warrior_affixes" or specialty == "dps_affixes":
+				fallback_item = drop_tables.generate_fallback_item("weapon", fallback_level)
+			elif specialty == "armor" or specialty == "tank_affixes":
+				fallback_item = drop_tables.generate_fallback_item("armor", fallback_level)
+			elif specialty == "jewelry" or specialty == "mage_affixes" or specialty == "trickster_affixes":
+				fallback_item = drop_tables.generate_fallback_item("ring", fallback_level)
+			elif specialty == "potions":
+				fallback_item = drop_tables.generate_fallback_item("potion", fallback_level)
+			else:
+				# General fallback - mix of equipment
+				var fallback_types = ["weapon", "armor", "potion"]
+				fallback_item = drop_tables.generate_fallback_item(fallback_types[rng.randi() % fallback_types.size()], fallback_level)
+
+			if not fallback_item.is_empty():
+				var markup = 2.0  # Standard markup for fallback items
+				fallback_item["shop_price"] = int(fallback_item.get("value", 100) * markup)
+				items.append(fallback_item)
 
 	return items
 
@@ -6142,11 +6249,25 @@ func handle_get_quest_log(peer_id: int):
 	var active_quests_info = []
 	for quest in character.active_quests:
 		var qid = quest.get("quest_id", "")
-		var quest_data = quest_db.get_quest(qid)
-		var description = quest_data.get("description", "") if quest_data else ""
+
+		# Use stored data when available (prevents regeneration issues for random quests)
+		var quest_name = quest.get("quest_name", "")
+		var quest_type = quest.get("quest_type", -1)
+		var description = quest.get("description", "")
+
+		# Fall back to regeneration only if stored data is missing (legacy quests)
+		if quest_name.is_empty() or quest_type < 0:
+			var player_level = quest.get("player_level_at_accept", 1)
+			var completed_at_post = quest.get("completed_at_post", 0)
+			var quest_data = quest_db.get_quest(qid, player_level, completed_at_post)
+			if quest_data:
+				quest_name = quest_data.get("name", "Unknown Quest")
+				quest_type = quest_data.get("type", -1)
+				if description.is_empty():
+					description = quest_data.get("description", "")
 
 		# Add dungeon direction hints for dungeon quests
-		if quest_data and quest_data.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+		if quest_type == quest_db.QuestType.DUNGEON_CLEAR:
 			var direction_text = ""
 			# Check for player's personal dungeon first
 			var dungeon_info = _get_player_dungeon_info(peer_id, qid, character.x, character.y)
@@ -6155,14 +6276,23 @@ func handle_get_quest_log(peer_id: int):
 					dungeon_info.dungeon_name, dungeon_info.direction_text
 				]
 			else:
-				# Fall back to showing nearest world dungeon
-				var dungeon_type = quest_data.get("dungeon_type", "")
-				var tier = 1 if qid.begins_with("haven_") else 0
-				var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
-				if not nearest.is_empty():
-					direction_text = "[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
-						nearest.dungeon_name, nearest.direction_text
-					]
+				# Use stored dungeon_type if available, otherwise try to get from quest data
+				var dungeon_type = quest.get("dungeon_type", "")
+				if dungeon_type.is_empty():
+					var player_level = quest.get("player_level_at_accept", 1)
+					var completed_at_post = quest.get("completed_at_post", 0)
+					var quest_data = quest_db.get_quest(qid, player_level, completed_at_post)
+					dungeon_type = quest_data.get("dungeon_type", "") if quest_data else ""
+
+				if not dungeon_type.is_empty():
+					var tier = 1 if qid.begins_with("haven_") else 0
+					var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
+					if not nearest.is_empty():
+						direction_text = "[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
+							nearest.dungeon_name, nearest.direction_text
+						]
+					else:
+						direction_text = "[color=#808080]No matching dungeon found nearby. Explore the wilderness![/color]"
 
 			if not direction_text.is_empty():
 				extra_info[qid] = direction_text
@@ -6170,7 +6300,7 @@ func handle_get_quest_log(peer_id: int):
 
 		active_quests_info.append({
 			"id": qid,
-			"name": quest_data.get("name", "Unknown Quest") if quest_data else "Unknown Quest",
+			"name": quest_name if not quest_name.is_empty() else "Unknown Quest",
 			"progress": quest.get("progress", 0),
 			"target": quest.get("target", 1),
 			"description": description
@@ -7365,12 +7495,198 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				character.inventory.append(crafted_item)
 				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"enhancement":
-				# Enhancements are applied directly to equipment - not implemented yet
-				result_message = "[color=#FFFF00]Enhancement scrolls coming soon![/color]"
-				# For now, give gold equivalent
-				var gold_value = recipe.difficulty * 10
-				character.gold += gold_value
-				result_message = "[color=#FFD700]Received %d gold instead.[/color]" % gold_value
+				# Create enhancement scroll as inventory item
+				var effect = recipe.get("effect", {})
+				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+				var stat_type = effect.get("stat", "attack")
+
+				# Special handling for "all" stat (Void Enhancement)
+				# Uses +3 base instead of +5, applies to all 10 stats
+				var base_bonus = 3 if stat_type == "all" else effect.get("bonus", 3)
+				var scaled_bonus = int(base_bonus * quality_mult)
+
+				var scroll = {
+					"id": "scroll_%d" % randi(),
+					"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+					"type": "enhancement_scroll",
+					"slot": recipe.get("output_slot", "any"),  # "any" for void enhancement
+					"effect": {
+						"stat": stat_type,  # "attack", "defense", or "all"
+						"bonus": scaled_bonus
+					},
+					"rarity": _quality_to_rarity(quality),
+					"level": 1,
+					"is_consumable": true,
+					"quantity": 1
+				}
+
+				character.inventory.append(scroll)
+				crafted_item = scroll
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
+			"enchantment":
+				# Enchantments add permanent stat bonuses to equipped gear
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					# Refund materials
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					# Parse target slots (can be comma-separated)
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					var target_slot = ""
+
+					# Find first equipped item matching target slots
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							target_slot = slot
+							break
+
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
+						# Refund materials (salvage essence not consumed yet)
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						# Consume salvage essence
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var stat = effect.get("stat", "attack")
+						var bonus = effect.get("bonus", 5)
+
+						# Apply quality scaling to bonus
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						bonus = int(bonus * quality_mult)
+
+						# Initialize enchantments dict if needed
+						if not target_item.has("enchantments"):
+							target_item["enchantments"] = {}
+
+						# Add to existing enchantment (stacking)
+						target_item.enchantments[stat] = target_item.enchantments.get(stat, 0) + bonus
+
+						result_message = "[color=%s]Enchanted %s with +%d %s![/color]" % [quality_color, target_item.name, bonus, stat]
+			"upgrade":
+				# Upgrades increase equipment level
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					# Refund materials
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					var target_slot = ""
+
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							target_slot = slot
+							break
+
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
+						# Refund materials (salvage essence not consumed yet)
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var levels_to_add = effect.get("levels", 1)
+
+						# Apply quality scaling (masterwork = more levels)
+						if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+							levels_to_add = int(levels_to_add * 1.5)
+						elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
+							levels_to_add = int(levels_to_add * 1.25)
+						elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
+							levels_to_add = max(1, int(levels_to_add * 0.5))
+
+						var old_level = target_item.get("level", 1)
+						target_item["level"] = old_level + levels_to_add
+
+						result_message = "[color=%s]Upgraded %s from level %d to %d![/color]" % [quality_color, target_item.name, old_level, target_item.level]
+			"affix":
+				# Affix infusion adds/replaces affixes on equipment
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					# Refund materials
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					var target_slot = ""
+
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							target_slot = slot
+							break
+
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
+						# Refund materials (salvage essence not consumed yet)
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var affix_pool = effect.get("affix_pool", ["attack"])
+
+						# Pick random affix from pool
+						var chosen_affix = affix_pool[randi() % affix_pool.size()]
+
+						# Calculate affix value based on item level and quality
+						var item_level = target_item.get("level", 1)
+						var base_value = 5 + int(item_level * 0.5)  # Scales with item level
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						var affix_value = int(base_value * quality_mult)
+
+						# Map affix pool names to actual affix keys
+						var affix_key_map = {
+							"strength": "str_bonus",
+							"constitution": "con_bonus",
+							"dexterity": "dex_bonus",
+							"intelligence": "int_bonus",
+							"wisdom": "wis_bonus",
+							"wits": "wits_bonus",
+							"attack": "attack_bonus",
+							"defense": "defense_bonus",
+							"speed": "speed_bonus",
+							"mana": "mana_bonus"
+						}
+						var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
+
+						# Initialize affixes dict if needed
+						if not target_item.has("affixes"):
+							target_item["affixes"] = {}
+
+						# Add or replace affix (only if new value is higher)
+						var old_value = target_item.affixes.get(affix_key, 0)
+						var affix_display = chosen_affix.capitalize()
+
+						if affix_value > old_value:
+							target_item.affixes[affix_key] = affix_value
+							if old_value > 0:
+								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, target_item.name, old_value, affix_value]
+							else:
+								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, target_item.name]
+						else:
+							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, target_item.name, old_value]
 			"material":
 				# Creates crafting materials - add directly to materials inventory
 				var output_item = recipe.get("output_item", "")
@@ -8096,9 +8412,13 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	return instance_id
 
 func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
-	"""Check if there's a dungeon entrance at the given coordinates"""
+	"""Check if there's a dungeon entrance at the given coordinates.
+	Excludes completed dungeons (waiting to despawn)."""
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
+		# Skip completed dungeons - they're waiting to despawn
+		if instance.get("completed_at", 0) > 0:
+			continue
 		if instance.world_x == x and instance.world_y == y:
 			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
 			return {
@@ -8113,10 +8433,14 @@ func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
 	return {}
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int) -> Array:
-	"""Get all dungeon entrances visible within the given radius"""
+	"""Get all dungeon entrances visible within the given radius.
+	Excludes completed dungeons (waiting to despawn)."""
 	var visible = []
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
+		# Skip completed dungeons - they're waiting to despawn
+		if instance.get("completed_at", 0) > 0:
+			continue
 		var dx = abs(instance.world_x - center_x)
 		var dy = abs(instance.world_y - center_y)
 		if dx <= radius and dy <= radius:

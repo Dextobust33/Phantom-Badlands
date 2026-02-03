@@ -305,6 +305,117 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 		else:
 			messages.append("[color=#00FF00]Your vision clears![/color]")
 
+func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
+	"""Apply equipment-based and buff-based resource regeneration at start of player turn.
+	Called by both regular attacks and ability usage."""
+	var bonuses = character.get_equipment_bonuses()
+
+	# Combine gear mana_regen with buff mana_regen (from crafted consumables like Enchanted Kindling)
+	var mana_regen = bonuses.get("mana_regen", 0) + character.get_buff_value("mana_regen")
+	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
+		var old_mana = character.current_mana
+		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + mana_regen)
+		var actual_regen = character.current_mana - old_mana
+		if actual_regen > 0:
+			if bonuses.get("mana_regen", 0) > 0 and character.get_buff_value("mana_regen") > 0:
+				messages.append("[color=#66CCFF]Arcane power restores %d mana.[/color]" % actual_regen)
+			elif character.get_buff_value("mana_regen") > 0:
+				messages.append("[color=#66CCFF]Enchantment restores %d mana.[/color]" % actual_regen)
+			else:
+				messages.append("[color=#66CCFF]Arcane gear restores %d mana.[/color]" % actual_regen)
+
+	# Combine gear energy_regen with buff energy_regen
+	var energy_regen = bonuses.get("energy_regen", 0) + character.get_buff_value("energy_regen")
+	if energy_regen > 0 and character.current_energy < character.get_total_max_energy():
+		var old_energy = character.current_energy
+		character.current_energy = mini(character.get_total_max_energy(), character.current_energy + energy_regen)
+		var actual_regen = character.current_energy - old_energy
+		if actual_regen > 0:
+			if character.get_buff_value("energy_regen") > 0:
+				messages.append("[color=#66FF66]Enchantment restores %d energy.[/color]" % actual_regen)
+			else:
+				messages.append("[color=#66FF66]Shadow gear restores %d energy.[/color]" % actual_regen)
+
+	# Combine gear stamina_regen with buff stamina_regen
+	var stamina_regen = bonuses.get("stamina_regen", 0) + character.get_buff_value("stamina_regen")
+	if stamina_regen > 0 and character.current_stamina < character.get_total_max_stamina():
+		var old_stam = character.current_stamina
+		character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + stamina_regen)
+		var actual_regen = character.current_stamina - old_stam
+		if actual_regen > 0:
+			if character.get_buff_value("stamina_regen") > 0:
+				messages.append("[color=#FF6600]Enchantment restores %d stamina.[/color]" % actual_regen)
+			else:
+				messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
+
+func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
+	"""Process companion attack during player's turn.
+	Called by both regular attacks and ability usage."""
+	var character = combat.character
+	var monster = combat.monster
+
+	if monster.current_hp <= 0:
+		return
+
+	if not character.has_active_companion():
+		return
+
+	var companion = character.get_active_companion()
+	var companion_tier = companion.get("tier", 1)
+	var companion_level = companion.get("level", 1)
+	var companion_bonuses = companion.get("bonuses", {})
+
+	# Calculate companion damage
+	var companion_damage = 0
+	if drop_tables:
+		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses)
+	else:
+		companion_damage = companion_tier * 5 + int(character.level * 0.5)
+
+	# Apply variant multiplier
+	var variant_mult = character.get_variant_stat_multiplier()
+	companion_damage = int(companion_damage * variant_mult)
+
+	# Apply some variance (80-120%)
+	companion_damage = int(companion_damage * randf_range(0.8, 1.2))
+	companion_damage = max(1, companion_damage)
+	monster.current_hp -= companion_damage
+	monster.current_hp = max(0, monster.current_hp)
+	messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
+
+	# === COMPANION CHANCE ABILITIES ===
+	if drop_tables and monster.current_hp > 0:
+		var comp_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
+		for ability in comp_abilities:
+			if ability.get("type") == "chance":
+				var trigger_chance = ability.get("chance", 0)
+				if randi() % 100 < trigger_chance:
+					var effect = ability.get("effect", "")
+					var ability_name = ability.get("name", "ability")
+					if effect == "enemy_miss":
+						combat["companion_distraction"] = true
+						messages.append("[color=#FFAA00]%s's %s distracts the enemy![/color]" % [companion.name, ability_name])
+					elif effect == "bonus_damage":
+						var bonus_value = int(ability.get("value", 10) * variant_mult)
+						monster.current_hp -= bonus_value
+						monster.current_hp = max(0, monster.current_hp)
+						messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
+					elif effect == "stun":
+						combat["monster_stunned"] = true
+						messages.append("[color=#FFAA00]%s's attack stuns the %s![/color]" % [companion.name, monster.name])
+
+					# Check for secondary effects
+					if ability.has("effect2") and ability.has("chance2"):
+						if randi() % 100 < ability.get("chance2", 0):
+							var effect2 = ability.get("effect2", "")
+							if effect2 == "stun":
+								combat["monster_stunned"] = true
+								messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
+							elif effect2 == "lifesteal":
+								var steal_value = int(ability.get("value2", 0) * variant_mult * companion_damage / 100.0)
+								character.current_hp = min(character.get_total_max_hp(), character.current_hp + steal_value)
+								messages.append("[color=#00FF00]%s heals you for %d![/color]" % [companion.name, steal_value])
+
 func _infer_tier_from_name(item_name: String) -> int:
 	"""Infer consumable tier from item name for legacy items without tier field"""
 	var name_lower = item_name.to_lower()
@@ -624,31 +735,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var messages = []
 
 	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
-	var bonuses = character.get_equipment_bonuses()
-	var mana_regen = bonuses.get("mana_regen", 0)
-	var energy_regen = bonuses.get("energy_regen", 0)
-
-	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
-		var old_mana = character.current_mana
-		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + mana_regen)
-		var actual_regen = character.current_mana - old_mana
-		if actual_regen > 0:
-			messages.append("[color=#66CCFF]Arcane gear restores %d mana.[/color]" % actual_regen)
-
-	if energy_regen > 0 and character.current_energy < character.get_total_max_energy():
-		var old_energy = character.current_energy
-		character.current_energy = mini(character.get_total_max_energy(), character.current_energy + energy_regen)
-		var actual_regen = character.current_energy - old_energy
-		if actual_regen > 0:
-			messages.append("[color=#66FF66]Shadow gear restores %d energy.[/color]" % actual_regen)
-
-	var stamina_regen = bonuses.get("stamina_regen", 0)
-	if stamina_regen > 0 and character.current_stamina < character.get_total_max_stamina():
-		var old_stam = character.current_stamina
-		character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + stamina_regen)
-		var actual_regen = character.current_stamina - old_stam
-		if actual_regen > 0:
-			messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
+	_apply_gear_resource_regen(character, messages)
 
 	# === POISON & BLIND TICK (at start of player turn) ===
 	_process_status_ticks(character, messages)
@@ -798,64 +885,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]💀 Execute strikes for %d bonus damage![/color]" % execute_damage)
 
 		# === COMPANION ATTACK ===
-		# Companions attack alongside the player each round
-		if monster.current_hp > 0 and character.has_active_companion():
-			var companion = character.get_active_companion()
-			var companion_tier = companion.get("tier", 1)
-			var companion_level = companion.get("level", 1)
-			var companion_bonuses = companion.get("bonuses", {})
-			# Calculate companion damage using drop_tables function
-			var companion_damage = 0
-			if drop_tables:
-				companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses)
-			else:
-				# Fallback if drop_tables not available
-				companion_damage = companion_tier * 5 + int(character.level * 0.5)
-			# Apply variant multiplier
-			var variant_mult = character.get_variant_stat_multiplier()
-			companion_damage = int(companion_damage * variant_mult)
-			# Apply some variance (80-120%)
-			companion_damage = int(companion_damage * randf_range(0.8, 1.2))
-			companion_damage = max(1, companion_damage)
-			monster.current_hp -= companion_damage
-			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
-
-			# === COMPANION CHANCE ABILITIES ===
-			# Check for chance-based abilities that trigger each round
-			if drop_tables and monster.current_hp > 0:
-				var comp_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
-				for ability in comp_abilities:
-					if ability.get("type") == "chance":
-						var trigger_chance = ability.get("chance", 0)
-						if randi() % 100 < trigger_chance:
-							var effect = ability.get("effect", "")
-							var ability_name = ability.get("name", "ability")
-							if effect == "enemy_miss":
-								# Distraction - monster's next attack will miss (handled in monster turn)
-								combat["companion_distraction"] = true
-								messages.append("[color=#FFAA00]%s's %s distracts the enemy![/color]" % [companion.name, ability_name])
-							elif effect == "bonus_damage":
-								var bonus_value = int(ability.get("value", 10) * variant_mult)
-								monster.current_hp -= bonus_value
-								monster.current_hp = max(0, monster.current_hp)
-								messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
-							elif effect == "stun":
-								# Stun - monster skips next turn
-								combat["monster_stunned"] = true
-								messages.append("[color=#FFAA00]%s's attack stuns the %s![/color]" % [companion.name, monster.name])
-
-							# Check for secondary effects (like stun chance on Devastating Strike)
-							if ability.has("effect2") and ability.has("chance2"):
-								if randi() % 100 < ability.get("chance2", 0):
-									var effect2 = ability.get("effect2", "")
-									if effect2 == "stun":
-										combat["monster_stunned"] = true
-										messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
-									elif effect2 == "lifesteal":
-										var steal_value = int(ability.get("value2", 0) * variant_mult * companion_damage / 100.0)
-										character.current_hp = min(character.get_total_max_hp(), character.current_hp + steal_value)
-										messages.append("[color=#00FF00]%s heals you for %d![/color]" % [companion.name, steal_value])
+		_process_companion_attack(combat, messages)
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
@@ -941,7 +971,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if xp_level_diff > 0 and xp_tier_diff == 0:
 		xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
 
-	var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus)
+	var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
 
 	# Gold calculation with gold hoarder bonus
 	var gold = monster.gold_reward
@@ -1457,7 +1487,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		if xp_level_diff > 0 and tier_diff == 0:
 			xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
 
-		var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus)
+		var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
 		var gold = monster.gold_reward
 
 		# Add XP and gold
@@ -1688,6 +1718,22 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
 		end_combat(peer_id, result.get("victory", false))
+		return result
+
+	# === GEAR RESOURCE REGEN (applies even when using abilities) ===
+	_apply_gear_resource_regen(combat.character, result.messages)
+
+	# === COMPANION ATTACK (companions attack alongside ability usage) ===
+	_process_companion_attack(combat, result.messages)
+
+	# Check if companion killed the monster
+	if combat.monster.current_hp <= 0:
+		result.combat_ended = true
+		result.victory = true
+		result.monster_name = "%s (Lvl %d)" % [combat.monster.name, combat.monster.level]
+		result.monster_level = combat.monster.level
+		result.messages.append("[color=#00FF00]Your companion defeats the %s![/color]" % combat.monster.name)
+		end_combat(peer_id, true)
 		return result
 
 	# Monster's turn (if still alive and ability didn't end turn specially)
@@ -2492,7 +2538,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				if level_diff > 0:
 					xp_multiplier = 1.0 + min(0.5, level_diff * 0.02)  # +2% per level, max +50%
 
-				var final_xp = int(base_xp * xp_multiplier)
+				var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 				var gold = int(monster.gold_reward * 1.25)
 
 				var heist_old_level = character.level
