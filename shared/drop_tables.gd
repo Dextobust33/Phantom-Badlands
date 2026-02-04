@@ -1168,11 +1168,17 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 # Egg variant rolling - synced with COMPANION_VARIANTS in character.gd
 # Special variants give stat bonuses: Epic +10%, Legendary +25%, Mythic +50%
 const EGG_VARIANTS = [
-	# === COMMON SOLID COLORS (rarity 8-15) ===
-	{"name": "Normal", "color": "#FFFFFF", "pattern": "solid", "rarity": 15},
+	# === COMMON SOLID COLORS (rarity 8-10) ===
+	# Rarity 10 - Most common tier (8 colors for variety)
 	{"name": "Crimson", "color": "#DC143C", "pattern": "solid", "rarity": 10},
 	{"name": "Azure", "color": "#007FFF", "pattern": "solid", "rarity": 10},
 	{"name": "Verdant", "color": "#228B22", "pattern": "solid", "rarity": 10},
+	{"name": "Silver", "color": "#C0C0C0", "pattern": "solid", "rarity": 10},
+	{"name": "Amber", "color": "#FFBF00", "pattern": "solid", "rarity": 10},
+	{"name": "Obsidian", "color": "#0A0A0A", "pattern": "solid", "rarity": 10},
+	{"name": "Scarlet", "color": "#FF2400", "pattern": "solid", "rarity": 10},
+	{"name": "Cobalt", "color": "#0047AB", "pattern": "solid", "rarity": 10},
+	# Rarity 8 - Second common tier
 	{"name": "Golden", "color": "#FFD700", "pattern": "solid", "rarity": 8},
 	{"name": "Shadow", "color": "#2F2F2F", "pattern": "solid", "rarity": 8},
 	{"name": "Violet", "color": "#9400D3", "pattern": "solid", "rarity": 8},

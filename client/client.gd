@@ -2403,12 +2403,12 @@ func _process(delta):
 			set_meta("combatitem_cancel_pressed", false)
 
 	# Companion activation with keybinds (1-5)
+	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
+	# number keys should ALWAYS select companions, not trigger action bar slots 5-9
 	if game_state == GameState.PLAYING and not input_field.has_focus() and companions_mode:
 		var collected = character_data.get("collected_companions", [])
 		for i in range(min(collected.size(), 5)):
 			if is_item_select_key_pressed(i):
-				if is_item_key_blocked_by_action_bar(i):
-					continue
 				if not get_meta("companionkey_%d_pressed" % i, false):
 					set_meta("companionkey_%d_pressed" % i, true)
 					activate_companion_by_index(i)
@@ -13608,8 +13608,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.58 changes
+	display_game("[color=#00FF00]v0.9.58[/color] [color=#808080](Current)[/color]")
+	display_game("  • Removed 'Normal' companion variant - all companions now have unique colors")
+	display_game("  • Added 5 new common colors: Silver, Amber, Obsidian, Scarlet, Cobalt")
+	display_game("  • Fixed companion selection keys (1-5) not working in Companions menu")
+	display_game("")
+
 	# v0.9.57 changes
-	display_game("[color=#00FF00]v0.9.57[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.57[/color]")
 	display_game("  • Fixed death saves (Eternal, Guardian, High King) not working in combat")
 	display_game("  • Death saves now properly end combat - you can move/rest after being saved")
 	display_game("")
