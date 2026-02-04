@@ -348,6 +348,115 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 			else:
 				messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
 
+func _apply_companion_resource_regen(combat: Dictionary, character: Character, messages: Array) -> void:
+	"""Apply companion passive resource regeneration each turn."""
+	var companion = character.get_active_companion() if character.has_active_companion() else null
+	if companion == null:
+		return
+
+	# HP Regen from companion
+	var hp_regen = combat.get("companion_hp_regen", 0)
+	# Also add from companion base bonus
+	hp_regen += int(character.get_companion_bonus("hp_regen"))
+	if hp_regen > 0 and character.current_hp < character.get_total_max_hp():
+		var heal_amount = max(1, int(character.get_total_max_hp() * hp_regen / 100.0))
+		var old_hp = character.current_hp
+		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+		var actual_heal = character.current_hp - old_hp
+		if actual_heal > 0:
+			messages.append("[color=#00FFFF]%s's presence heals you for %d HP.[/color]" % [companion.name, actual_heal])
+
+	# Mana Regen from companion
+	var mana_regen = combat.get("companion_mana_regen", 0)
+	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
+		var regen_amount = max(1, mana_regen)
+		var old_mana = character.current_mana
+		character.current_mana = min(character.get_total_max_mana(), character.current_mana + regen_amount)
+		var actual_regen = character.current_mana - old_mana
+		if actual_regen > 0:
+			messages.append("[color=#00FFFF]%s restores %d mana.[/color]" % [companion.name, actual_regen])
+
+	# Energy Regen from companion
+	var energy_regen = combat.get("companion_energy_regen", 0)
+	if energy_regen > 0 and character.current_energy < character.get_total_max_energy():
+		var regen_amount = max(1, energy_regen)
+		var old_energy = character.current_energy
+		character.current_energy = min(character.get_total_max_energy(), character.current_energy + regen_amount)
+		var actual_regen = character.current_energy - old_energy
+		if actual_regen > 0:
+			messages.append("[color=#00FFFF]%s restores %d energy.[/color]" % [companion.name, actual_regen])
+
+func _process_monster_dots(combat: Dictionary, monster: Dictionary, messages: Array) -> void:
+	"""Process DoT effects on the monster from companion abilities."""
+	# Bleed damage
+	var bleed_damage = combat.get("monster_bleed", 0)
+	var bleed_duration = combat.get("monster_bleed_duration", 0)
+	if bleed_damage > 0 and bleed_duration > 0:
+		monster.current_hp -= bleed_damage
+		monster.current_hp = max(0, monster.current_hp)
+		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, bleed_damage])
+		combat["monster_bleed_duration"] = bleed_duration - 1
+		if combat["monster_bleed_duration"] <= 0:
+			combat["monster_bleed"] = 0
+
+	# Poison damage
+	var poison_damage = combat.get("monster_poison", 0)
+	var poison_duration = combat.get("monster_poison_duration", 0)
+	if poison_damage > 0 and poison_duration > 0:
+		monster.current_hp -= poison_damage
+		monster.current_hp = max(0, monster.current_hp)
+		messages.append("[color=#00FF00]Poison deals %d damage to the %s![/color]" % [poison_damage, monster.name])
+		combat["monster_poison_duration"] = poison_duration - 1
+		if combat["monster_poison_duration"] <= 0:
+			combat["monster_poison"] = 0
+
+	# Decrement weakness duration
+	var weakness_duration = combat.get("monster_weakness_duration", 0)
+	if weakness_duration > 0:
+		combat["monster_weakness_duration"] = weakness_duration - 1
+		if combat["monster_weakness_duration"] <= 0:
+			combat["monster_weakness"] = 0
+
+	# Decrement slow duration
+	var slow_duration = combat.get("monster_slow_duration", 0)
+	if slow_duration > 0:
+		combat["monster_slow_duration"] = slow_duration - 1
+		if combat["monster_slow_duration"] <= 0:
+			combat["monster_slowed"] = 0
+
+func _apply_companion_passive_effect(combat_state: Dictionary, character: Character, effect: String, value: int) -> void:
+	"""Apply a single companion passive effect to combat state or character."""
+	match effect:
+		"attack":
+			combat_state["companion_attack_bonus"] = combat_state.get("companion_attack_bonus", 0) + value
+		"defense":
+			combat_state["companion_defense_bonus"] = combat_state.get("companion_defense_bonus", 0) + value
+		"speed":
+			combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value
+		"crit_chance":
+			combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value
+		"lifesteal":
+			combat_state["companion_lifesteal_bonus"] = combat_state.get("companion_lifesteal_bonus", 0) + value
+		"hp_bonus":
+			# Increase max HP for this combat (applied as temporary buff)
+			combat_state["companion_hp_bonus"] = combat_state.get("companion_hp_bonus", 0) + value
+		"mana_bonus":
+			combat_state["companion_mana_bonus"] = combat_state.get("companion_mana_bonus", 0) + value
+		"hp_regen":
+			combat_state["companion_hp_regen"] = combat_state.get("companion_hp_regen", 0) + value
+		"mana_regen":
+			combat_state["companion_mana_regen"] = combat_state.get("companion_mana_regen", 0) + value
+		"energy_regen":
+			combat_state["companion_energy_regen"] = combat_state.get("companion_energy_regen", 0) + value
+		"gold_find":
+			combat_state["companion_gold_find"] = combat_state.get("companion_gold_find", 0) + value
+		"flee_bonus":
+			combat_state["companion_flee_bonus"] = combat_state.get("companion_flee_bonus", 0) + value
+		"crit_damage":
+			combat_state["companion_crit_damage"] = combat_state.get("companion_crit_damage", 0) + value
+		"wisdom_bonus":
+			combat_state["companion_wisdom_bonus"] = combat_state.get("companion_wisdom_bonus", 0) + value
+
 func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	"""Process companion attack during player's turn.
 	Called by both regular attacks and ability usage."""
@@ -393,6 +502,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				if randi() % 100 < trigger_chance:
 					var effect = ability.get("effect", "")
 					var ability_name = ability.get("name", "ability")
+					var ability_damage_dealt = 0  # Track damage for lifesteal calc
 					if effect == "enemy_miss":
 						combat["companion_distraction"] = true
 						messages.append("[color=#FFAA00]%s's %s distracts the enemy![/color]" % [companion.name, ability_name])
@@ -400,22 +510,135 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 						var bonus_value = int(ability.get("value", 10) * variant_mult)
 						monster.current_hp -= bonus_value
 						monster.current_hp = max(0, monster.current_hp)
+						ability_damage_dealt = bonus_value
 						messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
 					elif effect == "stun":
 						combat["monster_stunned"] = true
 						messages.append("[color=#FFAA00]%s's attack stuns the %s![/color]" % [companion.name, monster.name])
+					elif effect == "crit":
+						# Critical strike ability
+						var crit_mult = ability.get("crit_mult", 1.5)
+						var crit_damage = int(companion_damage * (crit_mult - 1.0) * variant_mult)
+						monster.current_hp -= crit_damage
+						monster.current_hp = max(0, monster.current_hp)
+						ability_damage_dealt = companion_damage + crit_damage
+						messages.append("[color=#FFD700]%s lands a critical %s for %d bonus damage![/color]" % [companion.name, ability_name, crit_damage])
+					elif effect == "bleed":
+						# Apply bleed DoT to monster
+						var bleed_damage = int(ability.get("base_damage", 5) * variant_mult)
+						var bleed_duration = ability.get("duration", 3)
+						combat["monster_bleed"] = combat.get("monster_bleed", 0) + bleed_damage
+						combat["monster_bleed_duration"] = max(combat.get("monster_bleed_duration", 0), bleed_duration)
+						messages.append("[color=#FF4444]%s's %s causes bleeding! (%d damage/turn)[/color]" % [companion.name, ability_name, bleed_damage])
+					elif effect == "poison":
+						# Apply poison DoT to monster
+						var poison_damage = int(ability.get("base_damage", 5) * variant_mult)
+						var poison_duration = ability.get("duration", 3)
+						combat["monster_poison"] = combat.get("monster_poison", 0) + poison_damage
+						combat["monster_poison_duration"] = max(combat.get("monster_poison_duration", 0), poison_duration)
+						messages.append("[color=#00FF00]%s's %s poisons the enemy! (%d damage/turn)[/color]" % [companion.name, ability_name, poison_damage])
+					elif effect == "charm":
+						# Monster skips its turn
+						var charm_duration = ability.get("duration", 1)
+						combat["monster_charmed"] = charm_duration
+						messages.append("[color=#FF69B4]%s's %s charms the %s! (Skips %d turn(s))[/color]" % [companion.name, ability_name, monster.name, charm_duration])
+					elif effect == "multi_hit":
+						# Multiple hits
+						var num_hits = ability.get("hits", 3)
+						var hit_damage = int(ability.get("base_damage", 5) * variant_mult)
+						var total_multi_damage = hit_damage * num_hits
+						monster.current_hp -= total_multi_damage
+						monster.current_hp = max(0, monster.current_hp)
+						ability_damage_dealt = total_multi_damage
+						messages.append("[color=#FFAA00]%s uses %s! %d hits for %d total damage![/color]" % [companion.name, ability_name, num_hits, total_multi_damage])
+					elif effect == "mana_drain":
+						# Drain mana from monster (reduces magic effectiveness)
+						var drain_amount = int(ability.get("base_amount", 10) * variant_mult)
+						combat["monster_mana_drained"] = combat.get("monster_mana_drained", 0) + drain_amount
+						messages.append("[color=#9966FF]%s's %s drains the enemy's magical power![/color]" % [companion.name, ability_name])
+					elif effect == "weakness":
+						# Reduce monster's attack
+						var weakness_value = int(ability.get("base_reduction", 15) * variant_mult)
+						var weakness_duration = ability.get("duration", 3)
+						combat["monster_weakness"] = weakness_value
+						combat["monster_weakness_duration"] = weakness_duration
+						messages.append("[color=#808080]%s's %s weakens the %s! (-%d%% attack for %d turns)[/color]" % [companion.name, ability_name, monster.name, weakness_value, weakness_duration])
+					elif effect == "execute":
+						# Execute enemies below threshold
+						var execute_threshold = ability.get("execute_threshold", 20) / 100.0
+						var monster_hp_pct = float(monster.current_hp) / float(monster.max_hp)
+						if monster_hp_pct <= execute_threshold:
+							monster.current_hp = 0
+							messages.append("[color=#FF0000]%s's %s executes the %s![/color]" % [companion.name, ability_name, monster.name])
+						else:
+							# If not below threshold, deal bonus damage instead
+							var exec_damage = int(companion_damage * 0.5 * variant_mult)
+							monster.current_hp -= exec_damage
+							monster.current_hp = max(0, monster.current_hp)
+							messages.append("[color=#FFAA00]%s's %s deals %d damage![/color]" % [companion.name, ability_name, exec_damage])
+					elif effect == "lifesteal":
+						# Direct lifesteal effect (not just effect2)
+						var lifesteal_pct = ability.get("base_percent", 20)
+						var steal_value = max(1, int(companion_damage * lifesteal_pct / 100.0 * variant_mult))
+						var actual_heal = character.heal(steal_value)
+						if actual_heal > 0:
+							messages.append("[color=#00FF00]%s's %s drains %d HP for you![/color]" % [companion.name, ability_name, actual_heal])
 
-					# Check for secondary effects
-					if ability.has("effect2") and ability.has("chance2"):
-						if randi() % 100 < ability.get("chance2", 0):
+					# Check for secondary effects (lifesteal, stun, bleed, etc.)
+					if ability.has("effect2"):
+						# If chance2 is specified, roll for it; otherwise effect2 triggers with main effect
+						var effect2_triggers = true
+						if ability.has("chance2"):
+							effect2_triggers = randi() % 100 < ability.get("chance2", 0)
+
+						if effect2_triggers:
 							var effect2 = ability.get("effect2", "")
 							if effect2 == "stun":
 								combat["monster_stunned"] = true
 								messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
 							elif effect2 == "lifesteal":
-								var steal_value = int(ability.get("value2", 0) * variant_mult * companion_damage / 100.0)
-								character.current_hp = min(character.get_total_max_hp(), character.current_hp + steal_value)
-								messages.append("[color=#00FF00]%s heals you for %d![/color]" % [companion.name, steal_value])
+								# Use lifesteal_percent if available, otherwise value2
+								var lifesteal_pct = ability.get("lifesteal_percent", ability.get("value2", 10))
+								var base_damage = ability_damage_dealt if ability_damage_dealt > 0 else companion_damage
+								var steal_value = max(1, int(base_damage * lifesteal_pct / 100.0 * variant_mult))
+								var actual_heal = character.heal(steal_value)
+								if actual_heal > 0:
+									messages.append("[color=#00FF00]%s drains %d HP for you![/color]" % [companion.name, actual_heal])
+							elif effect2 == "bleed":
+								var bleed_damage = int(ability.get("bleed_damage", 5) * variant_mult)
+								combat["monster_bleed"] = combat.get("monster_bleed", 0) + bleed_damage
+								combat["monster_bleed_duration"] = max(combat.get("monster_bleed_duration", 0), 3)
+								messages.append("[color=#FF4444]The %s is bleeding![/color]" % monster.name)
+							elif effect2 == "mana_drain":
+								var drain_amount = int(ability.get("drain_amount", 10) * variant_mult)
+								combat["monster_mana_drained"] = combat.get("monster_mana_drained", 0) + drain_amount
+								messages.append("[color=#9966FF]%s drains the enemy's mana![/color]" % companion.name)
+							elif effect2 == "poison":
+								var poison_damage = int(ability.get("poison_damage", 5) * variant_mult)
+								combat["monster_poison"] = combat.get("monster_poison", 0) + poison_damage
+								combat["monster_poison_duration"] = max(combat.get("monster_poison_duration", 0), 3)
+								messages.append("[color=#00FF00]The %s is poisoned![/color]" % monster.name)
+							elif effect2 == "heal":
+								var heal_pct = ability.get("heal_percent", 10)
+								var heal_amount = max(1, int(character.get_total_max_hp() * heal_pct / 100.0))
+								var actual_heal = character.heal(heal_amount)
+								if actual_heal > 0:
+									messages.append("[color=#00FF00]%s heals you for %d HP![/color]" % [companion.name, actual_heal])
+							elif effect2 == "random_debuff":
+								# Apply a random debuff
+								var debuffs = ["stun", "weakness", "slow"]
+								var chosen = debuffs[randi() % debuffs.size()]
+								if chosen == "stun":
+									combat["monster_stunned"] = true
+									messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
+								elif chosen == "weakness":
+									combat["monster_weakness"] = 15
+									combat["monster_weakness_duration"] = 2
+									messages.append("[color=#808080]The %s is weakened![/color]" % monster.name)
+								elif chosen == "slow":
+									combat["monster_slowed"] = 20
+									combat["monster_slow_duration"] = 2
+									messages.append("[color=#6699FF]The %s is slowed![/color]" % monster.name)
 
 func _infer_tier_from_name(item_name: String) -> int:
 	"""Infer consumable tier from item name for legacy items without tier field"""
@@ -549,33 +772,18 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 				# Store passive bonuses in combat state
 				var effect = ability.get("effect", "")
 				var value = int(ability.get("value", 0) * variant_mult)
-				if effect == "attack":
-					combat_state["companion_attack_bonus"] = combat_state.get("companion_attack_bonus", 0) + value
-				elif effect == "defense":
-					combat_state["companion_defense_bonus"] = combat_state.get("companion_defense_bonus", 0) + value
-				elif effect == "speed":
-					combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value
-				elif effect == "crit_chance":
-					combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value
+				_apply_companion_passive_effect(combat_state, character, effect, value)
 
 				# Also apply secondary/tertiary effects
 				if ability.has("effect2"):
 					var effect2 = ability.get("effect2", "")
 					var value2 = int(ability.get("value2", 0) * variant_mult)
-					if effect2 == "defense":
-						combat_state["companion_defense_bonus"] = combat_state.get("companion_defense_bonus", 0) + value2
-					elif effect2 == "speed":
-						combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value2
-					elif effect2 == "crit_chance":
-						combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value2
+					_apply_companion_passive_effect(combat_state, character, effect2, value2)
 
 				if ability.has("effect3"):
 					var effect3 = ability.get("effect3", "")
 					var value3 = int(ability.get("value3", 0) * variant_mult)
-					if effect3 == "speed":
-						combat_state["companion_speed_bonus"] = combat_state.get("companion_speed_bonus", 0) + value3
-					elif effect3 == "crit_chance":
-						combat_state["companion_crit_bonus"] = combat_state.get("companion_crit_bonus", 0) + value3
+					_apply_companion_passive_effect(combat_state, character, effect3, value3)
 
 		# Track that threshold ability hasn't triggered yet
 		combat_state["companion_threshold_triggered"] = false
@@ -738,6 +946,12 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
 	_apply_gear_resource_regen(character, messages)
 
+	# === COMPANION RESOURCE REGENERATION ===
+	_apply_companion_resource_regen(combat, character, messages)
+
+	# === MONSTER DOT EFFECTS (bleed/poison from companion abilities) ===
+	_process_monster_dots(combat, monster, messages)
+
 	# === POISON & BLIND TICK (at start of player turn) ===
 	_process_status_ticks(character, messages)
 
@@ -867,6 +1081,28 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			var actual_proc_heal = character.heal(proc_heal)
 			if actual_proc_heal > 0:
 				messages.append("[color=#FF00FF]Vampiric gear drains %d HP![/color]" % actual_proc_heal)
+
+		# Lifesteal from companion bonus (Vampire, Death Incarnate, Entropy, etc.)
+		var companion_lifesteal = character.get_companion_bonus("lifesteal")
+		# Also check for companion passive lifesteal from abilities
+		companion_lifesteal += combat.get("companion_lifesteal_bonus", 0)
+		# Also check for companion lifesteal buff from threshold abilities
+		var lifesteal_buff = combat.get("companion_lifesteal_buff", 0)
+		if lifesteal_buff > 0:
+			companion_lifesteal += lifesteal_buff
+			# Decrement duration
+			var buff_duration = combat.get("companion_lifesteal_buff_duration", 0)
+			if buff_duration > 0:
+				combat["companion_lifesteal_buff_duration"] = buff_duration - 1
+				if buff_duration - 1 <= 0:
+					combat["companion_lifesteal_buff"] = 0
+		if companion_lifesteal > 0:
+			var companion_heal = max(1, int(damage * companion_lifesteal / 100.0))
+			var actual_companion_heal = character.heal(companion_heal)
+			if actual_companion_heal > 0:
+				var companion = character.get_active_companion()
+				var comp_name = companion.get("name", "Companion") if companion else "Companion"
+				messages.append("[color=#00FFFF]%s drains %d HP for you![/color]" % [comp_name, actual_companion_heal])
 
 		# Shocking proc (bonus lightning damage on hit)
 		if procs.shocking.chance > 0 and procs.shocking.value > 0:
@@ -1320,6 +1556,21 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	if companion_flee > 0:
 		flee_chance += int(companion_flee)
 		messages.append("[color=#00FFFF]Companion: +%d%% flee chance![/color]" % int(companion_flee))
+	# Add companion flee from passive abilities
+	var companion_flee_ability = combat.get("companion_flee_bonus", 0)
+	if companion_flee_ability > 0:
+		flee_chance += companion_flee_ability
+	# Add companion flee from threshold ability buff
+	var companion_flee_buff = combat.get("companion_flee_buff", 0)
+	if companion_flee_buff > 0:
+		flee_chance += companion_flee_buff
+		messages.append("[color=#00FFFF]Companion ability: +%d%% flee chance![/color]" % companion_flee_buff)
+		# Decrement duration
+		var flee_duration = combat.get("companion_flee_duration", 0)
+		if flee_duration > 0:
+			combat["companion_flee_duration"] = flee_duration - 1
+			if flee_duration - 1 <= 0:
+				combat["companion_flee_buff"] = 0
 
 	# Apply slow aura debuff (from monster ability)
 	var slow_penalty = combat.get("player_slow", 0)
@@ -2916,6 +3167,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		character.remove_buff("time_stop")
 		return {"success": true, "message": "[color=#9932CC]Time freezes around the %s! It cannot move or act this turn![/color]" % monster.name}
 
+	# Check for companion charm effect (monster skips turn)
+	var charmed_turns = combat.get("monster_charmed", 0)
+	if charmed_turns > 0:
+		combat["monster_charmed"] = charmed_turns - 1
+		return {"success": true, "message": "[color=#FF69B4]The %s is charmed and stands motionless![/color]" % monster.name}
+
+	# Check for companion enemy_miss effect (guaranteed miss)
+	var enemy_miss_turns = combat.get("companion_enemy_miss", 0)
+	if enemy_miss_turns > 0:
+		combat["companion_enemy_miss"] = enemy_miss_turns - 1
+		return {"success": true, "message": "[color=#FFAA00]The %s attacks but misses completely![/color]" % monster.name}
+
 	# === PRE-ATTACK ABILITIES ===
 
 	# Coward ability: flee at 20% HP (no loot)
@@ -3002,6 +3265,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if racial_dodge > 0:
 		hit_chance -= int(racial_dodge * 100)
 
+	# Companion dodge buff (from threshold ability)
+	var companion_dodge = combat.get("companion_dodge_buff", 0)
+	if companion_dodge > 0:
+		hit_chance -= companion_dodge
+		# Decrement duration
+		var dodge_duration = combat.get("companion_dodge_duration", 0)
+		if dodge_duration > 0:
+			combat["companion_dodge_duration"] = dodge_duration - 1
+			if dodge_duration - 1 <= 0:
+				combat["companion_dodge_buff"] = 0
+
 	hit_chance = clamp(hit_chance, 40, 95)  # 40% minimum (can dodge well), 95% maximum
 
 	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
@@ -3055,6 +3329,24 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if sabotage_reduction > 0:
 				damage = int(damage * (1.0 - sabotage_reduction / 100.0))
 				damage = max(1, damage)
+
+			# Monster weakness (from companion ability): reduce monster damage
+			var monster_weakness = combat.get("monster_weakness", 0)
+			if monster_weakness > 0:
+				damage = int(damage * (1.0 - monster_weakness / 100.0))
+				damage = max(1, damage)
+
+			# Companion absorb (from threshold ability): reduce damage taken
+			var companion_absorb = combat.get("companion_absorb", 0)
+			if companion_absorb > 0:
+				var absorbed = int(damage * companion_absorb / 100.0)
+				damage = max(1, damage - absorbed)
+				# Decrement duration
+				var absorb_duration = combat.get("companion_absorb_duration", 0)
+				if absorb_duration > 0:
+					combat["companion_absorb_duration"] = absorb_duration - 1
+					if absorb_duration - 1 <= 0:
+						combat["companion_absorb"] = 0
 
 			# Ambusher ability: first attack deals bonus damage (75% chance to trigger)
 			if combat.get("ambusher_active", false):
@@ -3161,6 +3453,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
 				return {"success": true, "message": "\n".join(messages), "resurrected": true}
 
+		# Check for companion revive (from threshold ability like Lich King's Phylactery)
+		if character.current_hp <= 0:
+			var companion_revive = combat.get("companion_revive", 0)
+			if companion_revive > 0:
+				combat.erase("companion_revive")  # One-time use
+				var revive_hp = max(1, int(character.get_total_max_hp() * companion_revive / 100.0))
+				character.current_hp = revive_hp
+				var companion = character.get_active_companion()
+				var comp_name = companion.get("name", "Your companion") if companion else "Your companion"
+				messages.append("[color=#FF4444]The %s attacks and deals a lethal blow![/color]" % monster.name)
+				messages.append("[color=#FFD700][b]COMPANION REVIVE![/b] %s pulls you back from death![/color]" % comp_name)
+				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
+				return {"success": true, "message": "\n".join(messages), "companion_revived": true}
+
 		character.current_hp = max(0, character.current_hp)
 
 		# === COMPANION THRESHOLD ABILITY ===
@@ -3188,14 +3494,143 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 								var duration = ability.get("duration", 3)
 								character.add_buff("defense", buff_value, duration)
 								messages.append("[color=#00FFFF]%s uses %s! (+%d%% defense for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "attack_buff":
+								var buff_value = int(ability.get("base", ability.get("value", 10)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								character.add_buff("strength", buff_value, duration)
+								messages.append("[color=#FF6600]%s uses %s! (+%d%% attack for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "speed_buff":
+								var buff_value = int(ability.get("base", ability.get("value", 10)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								character.add_buff("speed", buff_value, duration)
+								messages.append("[color=#00FFFF]%s uses %s! (+%d%% speed for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "all_buff":
+								var buff_value = int(ability.get("base", ability.get("value", 10)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								character.add_buff("strength", buff_value, duration)
+								character.add_buff("defense", buff_value, duration)
+								character.add_buff("speed", buff_value, duration)
+								messages.append("[color=#FFD700]%s uses %s! (+%d%% to all stats for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "dodge_buff":
+								var buff_value = int(ability.get("base", ability.get("value", 15)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								combat["companion_dodge_buff"] = buff_value
+								combat["companion_dodge_duration"] = duration
+								messages.append("[color=#00FFFF]%s uses %s! (+%d%% dodge for %d rounds)[/color]" % [companion.name, ability_name, buff_value, duration])
+							elif effect == "absorb":
+								var absorb_value = int(ability.get("base", ability.get("value", 10)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								combat["companion_absorb"] = absorb_value
+								combat["companion_absorb_duration"] = duration
+								messages.append("[color=#8888FF]%s uses %s! (Absorbs %d%% damage for %d rounds)[/color]" % [companion.name, ability_name, absorb_value, duration])
 							elif effect == "heal":
-								var heal_percent = int(ability.get("value", 10) * variant_mult)
+								var heal_percent = int(ability.get("base", ability.get("value", 10)) * variant_mult)
 								var heal_amount = max(1, int(character.get_total_max_hp() * heal_percent / 100.0))
 								character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 								messages.append("[color=#00FF00]%s uses %s and heals you for %d HP![/color]" % [companion.name, ability_name, heal_amount])
 							elif effect == "full_heal":
 								character.current_hp = character.get_total_max_hp()
 								messages.append("[color=#FFD700]%s uses %s! You are fully healed![/color]" % [companion.name, ability_name])
+							elif effect == "flee_bonus":
+								var flee_value = int(ability.get("base", ability.get("value", 20)) * variant_mult)
+								var duration = ability.get("duration", 2)
+								combat["companion_flee_buff"] = flee_value
+								combat["companion_flee_duration"] = duration
+								messages.append("[color=#AAAAAA]%s uses %s! (+%d%% flee chance for %d rounds)[/color]" % [companion.name, ability_name, flee_value, duration])
+							elif effect == "slow_enemy":
+								var slow_value = int(ability.get("base", ability.get("value", 20)) * variant_mult)
+								var duration = ability.get("duration", 2)
+								combat["monster_slowed"] = slow_value
+								combat["monster_slow_duration"] = duration
+								messages.append("[color=#6699FF]%s uses %s! The %s is slowed![/color]" % [companion.name, ability_name, monster.name])
+							elif effect == "enemy_miss":
+								var duration = ability.get("duration", 2)
+								combat["companion_enemy_miss"] = duration
+								messages.append("[color=#FFAA00]%s uses %s! The %s will miss its next %d attack(s)![/color]" % [companion.name, ability_name, monster.name, duration])
+							elif effect == "lifesteal_buff":
+								var lifesteal_value = int(ability.get("base", ability.get("value", 20)) * variant_mult)
+								var duration = ability.get("duration", 3)
+								combat["companion_lifesteal_buff"] = lifesteal_value
+								combat["companion_lifesteal_buff_duration"] = duration
+								messages.append("[color=#00FF00]%s uses %s! (+%d%% lifesteal for %d rounds)[/color]" % [companion.name, ability_name, lifesteal_value, duration])
+							elif effect == "lifesteal":
+								# Immediate lifesteal heal
+								var lifesteal_pct = ability.get("base_percent", 20)
+								var heal_amount = max(1, int(character.get_total_max_hp() * lifesteal_pct / 100.0 * variant_mult))
+								character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+								messages.append("[color=#00FF00]%s uses %s and drains %d HP![/color]" % [companion.name, ability_name, heal_amount])
+							elif effect == "mana_restore":
+								var mana_percent = int(ability.get("base", ability.get("value", 20)) * variant_mult)
+								var mana_amount = max(1, int(character.max_mana * mana_percent / 100.0))
+								character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+								messages.append("[color=#6699FF]%s uses %s and restores %d mana![/color]" % [companion.name, ability_name, mana_amount])
+							elif effect == "poison":
+								var poison_damage = int(ability.get("base_damage", 10) * variant_mult)
+								var duration = ability.get("duration", 3)
+								combat["monster_poison"] = combat.get("monster_poison", 0) + poison_damage
+								combat["monster_poison_duration"] = max(combat.get("monster_poison_duration", 0), duration)
+								messages.append("[color=#00FF00]%s uses %s! The %s is poisoned![/color]" % [companion.name, ability_name, monster.name])
+							elif effect == "bonus_damage":
+								var bonus_damage = int(ability.get("base_damage", 20) * variant_mult)
+								monster.current_hp -= bonus_damage
+								monster.current_hp = max(0, monster.current_hp)
+								messages.append("[color=#FF4444]%s uses %s for %d damage![/color]" % [companion.name, ability_name, bonus_damage])
+							elif effect == "execute":
+								var execute_threshold = ability.get("execute_threshold", 20) / 100.0
+								var monster_hp_pct = float(monster.current_hp) / float(monster.max_hp)
+								if monster_hp_pct <= execute_threshold:
+									monster.current_hp = 0
+									messages.append("[color=#FF0000]%s uses %s and executes the %s![/color]" % [companion.name, ability_name, monster.name])
+								else:
+									var exec_damage = int(monster.max_hp * 0.15 * variant_mult)
+									monster.current_hp -= exec_damage
+									monster.current_hp = max(0, monster.current_hp)
+									messages.append("[color=#FF4444]%s uses %s for %d damage![/color]" % [companion.name, ability_name, exec_damage])
+							elif effect == "revive":
+								# Store revive for if player dies
+								var revive_percent = ability.get("revive_percent", 50)
+								combat["companion_revive"] = revive_percent
+								messages.append("[color=#FFD700]%s prepares %s! (Will revive at %d%% HP if killed)[/color]" % [companion.name, ability_name, revive_percent])
+
+							# Check for secondary threshold effects
+							if ability.has("effect2"):
+								var effect2 = ability.get("effect2", "")
+								if effect2 == "attack_buff":
+									var buff_value = int(ability.get("attack_base", 20) * variant_mult)
+									var duration = ability.get("duration", 3)
+									character.add_buff("strength", buff_value, duration)
+								elif effect2 == "speed_buff":
+									var buff_value = int(ability.get("base2", 15) * variant_mult)
+									var duration = ability.get("duration", 3)
+									character.add_buff("speed", buff_value, duration)
+								elif effect2 == "heal":
+									var heal_pct = ability.get("heal_percent", 20)
+									var heal_amount = max(1, int(character.get_total_max_hp() * heal_pct / 100.0))
+									character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+									messages.append("[color=#00FF00]%s also heals you for %d HP![/color]" % [companion.name, heal_amount])
+								elif effect2 == "poison":
+									var poison_damage = int(ability.get("poison_damage", 10) * variant_mult)
+									combat["monster_poison"] = combat.get("monster_poison", 0) + poison_damage
+									combat["monster_poison_duration"] = max(combat.get("monster_poison_duration", 0), 3)
+								elif effect2 == "stun":
+									combat["monster_stunned"] = true
+									messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
+								elif effect2 == "crit_buff":
+									var crit_value = int(ability.get("crit_base", 20) * variant_mult)
+									var duration = ability.get("duration", 3)
+									combat["companion_crit_buff"] = crit_value
+									combat["companion_crit_buff_duration"] = duration
+								elif effect2 == "all_buff":
+									var buff_value = int(ability.get("buff_base", 20) * variant_mult)
+									var duration = ability.get("duration", 3)
+									character.add_buff("strength", buff_value, duration)
+									character.add_buff("defense", buff_value, duration)
+									character.add_buff("speed", buff_value, duration)
+								elif effect2 == "reset_cooldowns":
+									# Reset companion threshold so it can trigger again
+									combat["companion_threshold_triggered"] = false
+									messages.append("[color=#FFD700]Cooldowns reset![/color]")
+
 							break  # Only one threshold ability can trigger
 
 		if num_attacks > 1:
@@ -3497,10 +3932,24 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var crit_bonus = combat.get("crit_bonus", 0)
 	crit_chance += crit_bonus
 
-	# Add companion crit bonus
+	# Add companion crit bonus (from base bonus)
 	var companion_crit = character.get_companion_bonus("crit_chance")
 	if companion_crit > 0:
 		crit_chance += int(companion_crit)
+	# Add companion crit from passive abilities
+	var companion_crit_bonus = combat.get("companion_crit_bonus", 0)
+	if companion_crit_bonus > 0:
+		crit_chance += companion_crit_bonus
+	# Add companion crit from threshold ability buff
+	var companion_crit_buff = combat.get("companion_crit_buff", 0)
+	if companion_crit_buff > 0:
+		crit_chance += companion_crit_buff
+		# Decrement duration
+		var crit_buff_duration = combat.get("companion_crit_buff_duration", 0)
+		if crit_buff_duration > 0:
+			combat["companion_crit_buff_duration"] = crit_buff_duration - 1
+			if crit_buff_duration - 1 <= 0:
+				combat["companion_crit_buff"] = 0
 
 	# === CLASS PASSIVE: Thief Backstab ===
 	# +15% base crit chance
@@ -3515,6 +3964,10 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var final_crit_damage = crit_damage
 	if is_crit and effects.has("crit_damage_bonus"):
 		final_crit_damage += effects.get("crit_damage_bonus", 0)
+	# Companion crit damage bonus (from passive abilities like Godslayer)
+	var companion_crit_damage = combat.get("companion_crit_damage", 0)
+	if is_crit and companion_crit_damage > 0:
+		final_crit_damage += companion_crit_damage / 100.0
 
 	if is_crit:
 		raw_damage = int(raw_damage * final_crit_damage)
