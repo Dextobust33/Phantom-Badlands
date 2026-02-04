@@ -13608,8 +13608,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.60 changes
+	display_game("[color=#00FF00]v0.9.60[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed companion kills not giving rewards when using abilities")
+	display_game("  • Companions now properly award XP, gold, and items when they defeat enemies")
+	display_game("")
+
 	# v0.9.59 changes
-	display_game("[color=#00FF00]v0.9.59[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.59[/color]")
 	display_game("  • Fixed eggs not receiving color variants (bug: variant data wasn't sent to client)")
 	display_game("  • Consolidated variant definitions into single source of truth (drop_tables.gd)")
 	display_game("  • Added error detection: 'MISSING_VARIANT' fallback with hot pink color")

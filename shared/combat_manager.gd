@@ -2015,13 +2015,11 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 
 	# Check if companion killed the monster
 	if combat.monster.current_hp <= 0:
-		result.combat_ended = true
-		result.victory = true
-		result.monster_name = "%s (Lvl %d)" % [combat.monster.name, combat.monster.level]
-		result.monster_level = combat.monster.level
-		result.messages.append("[color=#00FF00]Your companion defeats the %s![/color]" % combat.monster.name)
+		# Process full victory with rewards (XP, gold, items, etc.)
+		result.messages.append("[color=#00FF00]Your companion finishes off the %s![/color]" % combat.monster.name)
+		var victory_result = _process_victory_with_abilities(combat, result.messages)
 		end_combat(peer_id, true)
-		return result
+		return victory_result
 
 	# Monster's turn (if still alive and ability didn't end turn specially)
 	# Buff abilities only give monster 25% chance to attack (player is being defensive/cautious)
