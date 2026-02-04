@@ -13608,8 +13608,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.59 changes
+	display_game("[color=#00FF00]v0.9.59[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed eggs not receiving color variants (bug: variant data wasn't sent to client)")
+	display_game("  • Consolidated variant definitions into single source of truth (drop_tables.gd)")
+	display_game("  • Added error detection: 'MISSING_VARIANT' fallback with hot pink color")
+	display_game("")
+
 	# v0.9.58 changes
-	display_game("[color=#00FF00]v0.9.58[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.58[/color]")
 	display_game("  • Removed 'Normal' companion variant - all companions now have unique colors")
 	display_game("  • Added 5 new common colors: Silver, Amber, Obsidian, Scarlet, Cobalt")
 	display_game("  • Fixed companion selection keys (1-5) not working in Companions menu")

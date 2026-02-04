@@ -1158,15 +1158,15 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"hatch_steps": hatch_steps,
 		"bonuses": companion.get("bonuses", {}).duplicate(),
 		# Variant info for display and hatching
-		"variant": variant.get("name", "Normal"),
-		"variant_color": variant.get("color", "#FFFFFF"),
+		"variant": variant.get("name", "MISSING_VARIANT"),
+		"variant_color": variant.get("color", "#FF00FF"),  # Hot pink = obvious error
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
 		"variant_rarity": variant_rarity
 	}
 
-# Egg variant rolling - synced with COMPANION_VARIANTS in character.gd
-# Special variants give stat bonuses: Epic +10%, Legendary +25%, Mythic +50%
+# Egg variant rolling - this is the SINGLE SOURCE OF TRUTH for all companion variants
+# Special variants give stat bonuses: Shiny/Radiant/etc +10%, Spectral/etc +25%, Prismatic/etc +50%
 const EGG_VARIANTS = [
 	# === COMMON SOLID COLORS (rarity 8-10) ===
 	# Rarity 10 - Most common tier (8 colors for variety)
@@ -1337,7 +1337,7 @@ func _roll_egg_variant() -> Dictionary:
 		if roll < current:
 			return variant.duplicate()
 
-	return EGG_VARIANTS[0].duplicate()  # Fallback to Normal
+	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
 func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped."""
