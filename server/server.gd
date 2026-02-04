@@ -2363,14 +2363,31 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				})
 				save_character(peer_id)
 		else:
-			# Defeated - PERMADEATH! Clear any pending drops and gems
+			# Defeated - check for death saves before permadeath
+			var character = characters[peer_id]
+			var was_saved = _check_death_saves_in_combat(peer_id, character)
+
+			# End combat either way - player escapes or dies
+			combat_mgr.end_combat(peer_id, false)
 			if pending_flock_drops.has(peer_id):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
 			if flock_counts.has(peer_id):
 				flock_counts.erase(peer_id)
-			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
+
+			if was_saved:
+				# Death save triggered - combat ends but player survives
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"victory": false,
+					"death_saved": true,
+					"character": character.to_dict()
+				})
+				send_location_update(peer_id)
+			else:
+				# Actually dead - handle permadeath
+				handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
 	else:
 		# Combat continues - send updated state
 		send_to_peer(peer_id, {
@@ -2399,12 +2416,31 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 	# Check if combat ended (player died)
 	if result.has("combat_ended") and result.combat_ended:
 		if not result.get("victory", false):
-			# Player died after using item
+			# Player died after using item - check for death saves
+			var character = characters[peer_id]
+			var was_saved = _check_death_saves_in_combat(peer_id, character)
+
+			# End combat either way
+			combat_mgr.end_combat(peer_id, false)
 			if pending_flock_drops.has(peer_id):
 				pending_flock_drops.erase(peer_id)
 			if pending_flock_gems.has(peer_id):
 				pending_flock_gems.erase(peer_id)
-			handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
+			if flock_counts.has(peer_id):
+				flock_counts.erase(peer_id)
+
+			if was_saved:
+				# Death save triggered - combat ends but player survives
+				send_to_peer(peer_id, {
+					"type": "combat_end",
+					"victory": false,
+					"death_saved": true,
+					"character": character.to_dict()
+				})
+				send_location_update(peer_id)
+			else:
+				# Actually dead - handle permadeath
+				handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
 	else:
 		# Combat continues - send updated state
 		send_to_peer(peer_id, {
@@ -2597,6 +2633,63 @@ func _find_flee_destination(peer_id: int):
 				return {"x": new_pos.x, "y": new_pos.y}
 
 	return null  # No valid flee destination (very rare)
+
+func _check_death_saves_in_combat(peer_id: int, character: Character) -> bool:
+	"""Check for death saves (guardian, eternal, high king) and restore HP if saved.
+	Returns true if player was saved and combat should continue, false if actually dead."""
+
+	# Check for Guardian death save (granted by Eternal)
+	if character.guardian_death_save:
+		character.guardian_death_save = false
+		character.guardian_granted_by = ""
+		character.current_hp = int(character.get_total_max_hp() * 0.25)  # Survive with 25% HP
+		character.deaths += 1
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]The Guardian's blessing protects you from death![/color]"
+		})
+		if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+			handle_crucible_death(peer_id)
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return true
+
+	# Check for High King crown protection
+	if character.title == "high_king":
+		character.current_hp = int(character.get_total_max_hp() * 0.25)  # Survive with 25% HP
+		character.deaths += 1
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]The Crown of the North saves you from death! But its power is now spent...[/color]"
+		})
+		broadcast_title_change(character.name, "high_king", "lost")
+		character.title = ""
+		character.title_data = {}
+		current_high_king_id = -1
+		if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+			handle_crucible_death(peer_id)
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return true
+
+	# Check for Eternal lives
+	if character.title == "eternal":
+		var lives = character.title_data.get("lives", 3)
+		if lives > 1:
+			character.title_data["lives"] = lives - 1
+			character.current_hp = int(character.get_total_max_hp() * 0.1)  # Survive with 10% HP
+			character.deaths += 1
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FFFF]Your eternal essence prevents death! Lives remaining: %d[/color]" % (lives - 1)
+			})
+			if crucible_state.has(peer_id) and crucible_state[peer_id].get("in_crucible", false):
+				handle_crucible_death(peer_id)
+			send_character_update(peer_id)
+			save_character(peer_id)
+			return true
+
+	return false  # No death save - player actually dies
 
 # ===== PERMADEATH =====
 
@@ -3020,7 +3113,7 @@ func handle_disconnect(peer_id: int):
 	# Only save if player has HP > 0 (if they died, don't restore combat)
 	if combat_mgr.is_in_combat(peer_id) and characters.has(peer_id):
 		var character = characters[peer_id]
-		if character.hp > 0:
+		if character.current_hp > 0:
 			var combat_state = combat_mgr.serialize_combat_state(peer_id)
 			# Include flock info if player was in a flock fight
 			if flock_counts.has(peer_id):

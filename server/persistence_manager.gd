@@ -321,9 +321,9 @@ func load_character_as_object(account_id: String, char_name: String) -> Characte
 
 	# Safety check: ensure HP is at least 1 (unless character is dead via permadeath)
 	# This prevents loading characters with 0 HP due to edge cases like combat disconnects
-	if character.hp <= 0:
-		print("WARNING: Character %s loaded with %d HP, resetting to 1" % [char_name, character.hp])
-		character.hp = 1
+	if character.current_hp <= 0:
+		print("WARNING: Character %s loaded with %d HP, resetting to 1" % [char_name, character.current_hp])
+		character.current_hp = 1
 		# Clear any saved combat state - they effectively lost that fight
 		character.saved_combat_state = {}
 
