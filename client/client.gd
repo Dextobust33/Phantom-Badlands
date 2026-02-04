@@ -13608,8 +13608,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.57 changes
+	display_game("[color=#00FF00]v0.9.57[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed death saves (Eternal, Guardian, High King) not working in combat")
+	display_game("  • Death saves now properly end combat - you can move/rest after being saved")
+	display_game("")
+
+	# v0.9.56 changes
+	display_game("[color=#00FFFF]v0.9.56[/color]")
+	display_game("  • Fixed players loading with 0 HP after disconnecting during combat")
+	display_game("")
+
 	# v0.9.55 changes
-	display_game("[color=#00FF00]v0.9.55[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.55[/color]")
 	display_game("  • Combat now persists through disconnects - rejoin to continue fighting")
 	display_game("  • Fixed corpse dialog not showing after combat on corpse tile")
 	display_game("  • Fixed ability keys going to chat if pressed before combat loaded")
