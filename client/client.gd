@@ -303,6 +303,13 @@ var saved_connections: Array = []  # Array of {name, ip, port}
 const CONNECTION_CONFIG_PATH = "user://connection_settings.json"
 const KEYBIND_CONFIG_PATH = "user://keybinds.json"
 
+# UI Scale settings (multipliers on top of automatic resolution scaling)
+var ui_scale_monster_art: float = 1.0  # Monster ASCII art in combat
+var ui_scale_map: float = 1.0          # World map display
+var ui_scale_game_output: float = 1.0  # Main game text output
+var ui_scale_buttons: float = 1.0      # Action bar buttons
+var ui_scale_chat: float = 1.0         # Chat and online players
+
 # Keybind configuration
 var default_keybinds = {
 	# Action bar (10 slots total)
@@ -514,10 +521,16 @@ var last_move_time = 0.0
 const MOVE_COOLDOWN = 0.5
 const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
 const MAP_MIN_FONT_SIZE = 10
-const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for fullscreen
+const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for 4K
 const GAME_OUTPUT_BASE_FONT_SIZE = 14
-const GAME_OUTPUT_MIN_FONT_SIZE = 12
-const GAME_OUTPUT_MAX_FONT_SIZE = 20
+const GAME_OUTPUT_MIN_FONT_SIZE = 10
+const GAME_OUTPUT_MAX_FONT_SIZE = 56  # Allow larger scaling for 4K
+const BUTTON_BASE_FONT_SIZE = 11  # Base font size for action bar buttons at 720p
+const BUTTON_MIN_FONT_SIZE = 9
+const BUTTON_MAX_FONT_SIZE = 44
+const CHAT_BASE_FONT_SIZE = 12  # Base size for chat at 720p
+const CHAT_MIN_FONT_SIZE = 10
+const CHAT_MAX_FONT_SIZE = 48
 
 # Combat state
 var in_combat = false
@@ -681,12 +694,8 @@ var pending_summon_location: Vector2i = Vector2i(0, 0)  # Location we'd be summo
 var title_stat_selection_mode: bool = false  # Waiting for stat selection for Bless
 var pending_bless_target: String = ""  # Target player for Bless
 
-# Font size constants for responsive scaling
-const CHAT_BASE_FONT_SIZE = 12  # Base size in windowed mode
-const CHAT_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
-const ONLINE_PLAYERS_BASE_FONT_SIZE = 11  # Base size in windowed mode
-const ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE = 14  # Size in fullscreen
-const FULLSCREEN_HEIGHT_THRESHOLD = 900  # Window height above which we use fullscreen sizes
+# Font size constants for responsive scaling (main constants defined near line 520)
+const ONLINE_PLAYERS_BASE_FONT_SIZE = 11  # Base size at 720p
 
 # Quest mode
 var quest_view_mode: bool = false
@@ -2134,43 +2143,48 @@ func _on_music_toggle_pressed():
 		music_toggle.release_focus()
 
 func _on_window_resized():
-	"""Scale font sizes based on window height"""
+	"""Scale font sizes based on window height and user UI scale preferences"""
 	var window_height = get_viewport().get_visible_rect().size.y
 	# Scale based on 720p as baseline
-	var scale_factor = window_height / 720.0
-	var is_large_window = window_height >= FULLSCREEN_HEIGHT_THRESHOLD
+	var base_scale = window_height / 720.0
 
-	# Scale map display (more aggressive scaling with 1.3x multiplier)
+	# Scale map display (includes ASCII terrain)
 	if map_display:
-		var map_font_size = int(MAP_BASE_FONT_SIZE * scale_factor * 1.3)
+		var map_font_size = int(MAP_BASE_FONT_SIZE * base_scale * ui_scale_map)
 		map_font_size = clampi(map_font_size, MAP_MIN_FONT_SIZE, MAP_MAX_FONT_SIZE)
 		map_display.add_theme_font_size_override("normal_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_font_size", map_font_size)
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
 
-	# Scale game output
+	# Scale game output (includes monster ASCII art)
 	if game_output:
-		var game_font_size = int(GAME_OUTPUT_BASE_FONT_SIZE * scale_factor)
+		var game_font_size = int(GAME_OUTPUT_BASE_FONT_SIZE * base_scale * ui_scale_game_output)
 		game_font_size = clampi(game_font_size, GAME_OUTPUT_MIN_FONT_SIZE, GAME_OUTPUT_MAX_FONT_SIZE)
 		game_output.add_theme_font_size_override("normal_font_size", game_font_size)
 		game_output.add_theme_font_size_override("bold_font_size", game_font_size)
 		game_output.add_theme_font_size_override("italics_font_size", game_font_size)
 		game_output.add_theme_font_size_override("bold_italics_font_size", game_font_size)
 
-	# Chat output - smaller in windowed, normal in fullscreen
+	# Scale chat output
 	if chat_output:
-		var chat_size = CHAT_FULLSCREEN_FONT_SIZE if is_large_window else CHAT_BASE_FONT_SIZE
+		var chat_size = int(CHAT_BASE_FONT_SIZE * base_scale * ui_scale_chat)
+		chat_size = clampi(chat_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		chat_output.add_theme_font_size_override("normal_font_size", chat_size)
 
-	# Online players list - normal in windowed, larger in fullscreen
+	# Scale online players list
 	if online_players_list:
-		var online_size = ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE if is_large_window else ONLINE_PLAYERS_BASE_FONT_SIZE
+		var online_size = int(ONLINE_PLAYERS_BASE_FONT_SIZE * base_scale * ui_scale_chat)
+		online_size = clampi(online_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		online_players_list.add_theme_font_size_override("normal_font_size", online_size)
 
 	if online_players_label:
-		var label_size = (ONLINE_PLAYERS_FULLSCREEN_FONT_SIZE + 1) if is_large_window else 12
+		var label_size = int(12 * base_scale * ui_scale_chat)
+		label_size = clampi(label_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		online_players_label.add_theme_font_size_override("font_size", label_size)
+
+	# Scale action bar buttons
+	_scale_action_bar_fonts(base_scale)
 
 func _process(delta):
 	# Clear action triggers from previous frame
@@ -2851,6 +2865,11 @@ func _input(event):
 				set_meta("hotkey_7_pressed", true)
 				settings_mode = false
 				enter_ability_mode()
+			elif keycode == keybinds.get("action_8", default_keybinds.get("action_8", KEY_4)):
+				settings_submenu = "ui_scale"
+				game_output.clear()
+				display_ui_scale_settings()
+				update_action_bar()
 			elif keycode == key_action_0:
 				# Mark action_0 hotkey as pressed to prevent double-trigger
 				set_meta("hotkey_0_pressed", true)
@@ -2914,6 +2933,33 @@ func _input(event):
 				start_rebinding("move_left")
 			elif keycode == key_4:
 				start_rebinding("move_right")
+			elif keycode == back_key:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "ui_scale":
+			# UI Scale settings submenu
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if keycode == KEY_1:
+				adjust_ui_scale("map", 0.1)
+			elif keycode == KEY_2:
+				adjust_ui_scale("map", -0.1)
+			elif keycode == KEY_3:
+				adjust_ui_scale("game_output", 0.1)
+			elif keycode == KEY_4:
+				adjust_ui_scale("game_output", -0.1)
+			elif keycode == KEY_5:
+				adjust_ui_scale("buttons", 0.1)
+			elif keycode == KEY_6:
+				adjust_ui_scale("buttons", -0.1)
+			elif keycode == KEY_7:
+				adjust_ui_scale("chat", 0.1)
+			elif keycode == KEY_8:
+				adjust_ui_scale("chat", -0.1)
+			elif keycode == KEY_9:
+				reset_ui_scales()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -3676,8 +3722,7 @@ func setup_action_bar():
 			if button:
 				action_buttons.append(button)
 				button.pressed.connect(_on_action_button_pressed.bind(i))
-				# Reduce font size for ability bar buttons
-				button.add_theme_font_size_override("font_size", 11)
+				# Font size will be set by _scale_action_bar_fonts()
 
 			# Get hotkey label reference
 			var hotkey_label = action_container.get_node_or_null("Hotkey")
@@ -3692,10 +3737,32 @@ func setup_action_bar():
 				cost_label = Label.new()
 				cost_label.name = "Cost"
 				cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-				cost_label.add_theme_font_size_override("font_size", 9)
 				cost_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
 				action_container.add_child(cost_label)
 			action_cost_labels.append(cost_label)
+
+func _scale_action_bar_fonts(base_scale: float):
+	"""Scale action bar button and label fonts based on window size and user preference"""
+	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons)
+	button_size = clampi(button_size, BUTTON_MIN_FONT_SIZE, BUTTON_MAX_FONT_SIZE)
+
+	var cost_size = int(9 * base_scale * ui_scale_buttons)
+	cost_size = clampi(cost_size, 7, 36)
+
+	var hotkey_size = int(9 * base_scale * ui_scale_buttons)
+	hotkey_size = clampi(hotkey_size, 7, 36)
+
+	for button in action_buttons:
+		if button:
+			button.add_theme_font_size_override("font_size", button_size)
+
+	for cost_label in action_cost_labels:
+		if cost_label:
+			cost_label.add_theme_font_size_override("font_size", cost_size)
+
+	for hotkey_label in action_hotkey_labels:
+		if hotkey_label:
+			hotkey_label.add_theme_font_size_override("font_size", hotkey_size)
 
 	# Initialize hotkey labels with current keybinds
 	update_action_bar_hotkeys()
@@ -3760,6 +3827,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif settings_submenu == "ui_scale":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Press 1-9", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "to adjust", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
@@ -3770,7 +3850,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif pending_summon_from != "":
@@ -7061,6 +7141,11 @@ func execute_local_action(action: String):
 			settings_submenu = "item_keys"
 			game_output.clear()
 			display_item_keybinds()
+			update_action_bar()
+		"settings_ui_scale":
+			settings_submenu = "ui_scale"
+			game_output.clear()
+			display_ui_scale_settings()
 			update_action_bar()
 		"settings_reset":
 			reset_keybinds_to_defaults()
@@ -12422,6 +12507,17 @@ func _load_keybinds():
 				# Load combat swap settings
 				if data.has("swap_attack_outsmart"):
 					swap_attack_outsmart = data["swap_attack_outsmart"]
+				# Load UI scale settings
+				if data.has("ui_scale_monster_art"):
+					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
+				if data.has("ui_scale_map"):
+					ui_scale_map = clampf(float(data["ui_scale_map"]), 0.5, 3.0)
+				if data.has("ui_scale_game_output"):
+					ui_scale_game_output = clampf(float(data["ui_scale_game_output"]), 0.5, 3.0)
+				if data.has("ui_scale_buttons"):
+					ui_scale_buttons = clampf(float(data["ui_scale_buttons"]), 0.5, 3.0)
+				if data.has("ui_scale_chat"):
+					ui_scale_chat = clampf(float(data["ui_scale_chat"]), 0.5, 3.0)
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -12429,6 +12525,12 @@ func _save_keybinds():
 	# Include other persistent settings
 	save_data["inventory_compare_stat"] = inventory_compare_stat
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
+	# Include UI scale settings
+	save_data["ui_scale_monster_art"] = ui_scale_monster_art
+	save_data["ui_scale_map"] = ui_scale_map
+	save_data["ui_scale_game_output"] = ui_scale_game_output
+	save_data["ui_scale_buttons"] = ui_scale_buttons
+	save_data["ui_scale_chat"] = ui_scale_chat
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -12597,6 +12699,7 @@ func display_settings_menu():
 	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
 	display_game("[%s] Swap Attack with Outsmart: %s" % [get_action_key_name(6), swap_outsmart_status])
 	display_game("[%s] Manage Abilities" % get_action_key_name(7))
+	display_game("[%s] UI Scale Settings" % get_action_key_name(8))
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")
@@ -12651,6 +12754,62 @@ func display_movement_keybinds():
 	display_game("[%s] Right: [color=#00FFFF]%s[/color]" % [get_action_key_name(4), get_key_name(keybinds.get("move_right", KEY_RIGHT))])
 	display_game("")
 	display_game("[color=#808080]Press a key to rebind, or %s to go back[/color]" % get_action_key_name(0))
+
+func display_ui_scale_settings():
+	"""Display UI scale settings for adjustment"""
+	display_game("[color=#FFD700]===== UI SCALE SETTINGS =====[/color]")
+	display_game("[color=#808080]Adjust the size of different UI elements (0.5x - 3.0x)[/color]")
+	display_game("")
+	display_game("[color=#E6CC80]Map Display[/color] (ASCII terrain, player marker)")
+	display_game("[1] Increase  [2] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_map * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Game Output[/color] (Monster art, combat text, inventory)")
+	display_game("[3] Increase  [4] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_game_output * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Action Buttons[/color] (Hotbar buttons and labels)")
+	display_game("[5] Increase  [6] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_buttons * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Chat & Players[/color] (Chat output, online players list)")
+	display_game("[7] Increase  [8] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_chat * 100))
+	display_game("")
+	display_game("[9] Reset All to 100%")
+	display_game("[%s] Back to Settings" % get_action_key_name(0))
+
+func adjust_ui_scale(element: String, delta: float):
+	"""Adjust a UI scale setting by the given delta"""
+	match element:
+		"map":
+			ui_scale_map = clampf(ui_scale_map + delta, 0.5, 3.0)
+		"game_output":
+			ui_scale_game_output = clampf(ui_scale_game_output + delta, 0.5, 3.0)
+		"buttons":
+			ui_scale_buttons = clampf(ui_scale_buttons + delta, 0.5, 3.0)
+		"chat":
+			ui_scale_chat = clampf(ui_scale_chat + delta, 0.5, 3.0)
+
+	# Save settings and apply
+	_save_keybinds()
+	_on_window_resized()
+
+	# Redisplay the menu
+	game_output.clear()
+	display_ui_scale_settings()
+
+func reset_ui_scales():
+	"""Reset all UI scales to default (1.0)"""
+	ui_scale_monster_art = 1.0
+	ui_scale_map = 1.0
+	ui_scale_game_output = 1.0
+	ui_scale_buttons = 1.0
+	ui_scale_chat = 1.0
+
+	# Save and apply
+	_save_keybinds()
+	_on_window_resized()
+
+	# Redisplay the menu
+	game_output.clear()
+	display_ui_scale_settings()
 
 func start_rebinding(action: String):
 	"""Start the rebinding process for an action"""
