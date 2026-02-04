@@ -204,6 +204,61 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 | `shared/dungeon_database.gd` | Dungeon types, floors, bosses |
 | `shared/drop_tables.gd` | Item generation, fishing/mining/logging catches, salvage |
 | `shared/crafting_database.gd` | Crafting recipes, materials |
+| `server/balance_config.json` | Combat tuning, lethality weights, ability modifiers |
+| `tools/combat_simulator/` | Combat simulation tool for balance testing |
+
+## Combat Simulator Tool
+
+**Location:** `tools/combat_simulator/`
+
+The combat simulator tests monster lethality against all 9 character classes to calibrate XP rewards. It runs headless simulations of thousands of fights and outputs analysis comparing empirical danger vs formula predictions.
+
+**Run the simulator:**
+```bash
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "C:\Users\Dexto\Documents\phantasia-revival" --script "res://tools/combat_simulator/simulator.gd" 2>&1
+```
+
+**Output files:**
+- `docs/simulation_results/YYYY-MM-DD_results.json` - Raw simulation data
+- `docs/simulation_results/YYYY-MM-DD_summary.md` - Human-readable analysis
+
+**Key files:**
+| File | Purpose |
+|------|---------|
+| `simulator.gd` | Main entry point, orchestrates simulation runs |
+| `combat_engine.gd` | Ports damage formulas from combat_manager.gd, implements class abilities |
+| `simulated_character.gd` | Lightweight character for simulation (stats, equipment, abilities) |
+| `gear_generator.gd` | Generates level-appropriate equipment sets |
+| `results_writer.gd` | JSON and Markdown output generation |
+
+**Configuration:**
+- Classes: All 9 (Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja)
+- Levels: [5, 10, 25, 50, 75, 100]
+- Gear qualities: poor, average, good
+- Monster level offsets: [-5, 0, +5, +10, +20]
+- Iterations per matchup: 1000
+
+**Class abilities implemented:**
+- **Warriors:** Power Strike, War Cry
+- **Mages:** Magic Bolt, Forcefield, Blast, Meteor
+- **Tricksters:** Outsmart, Analyze, Ambush, Gambit, Sabotage
+
+**Expanding the simulator:**
+1. Add new abilities in `combat_engine.gd` - see `MAGE_ABILITIES` and `TRICKSTER_ABILITIES` constants
+2. Update `simulate_single_combat()` AI to use new abilities strategically
+3. Adjust lethality weights in `server/balance_config.json` based on simulation results
+4. The empirical lethality formula: `(1 / win_rate) × (1 + damage_ratio) × 100`
+
+**Lethality Formula (balance_config.json):**
+```
+lethality = (HP × hp_weight) + (STR × str_weight) + (DEF × def_weight) + (Speed × speed_weight)
+lethality *= (1 + sum of ability_modifiers)
+```
+
+**Important notes:**
+- Rare variants (2% spawn rate) may have unreliable data due to small sample sizes
+- Corrosive/Sunder effects are not simulated (players can repair at blacksmiths)
+- Run time: ~8 minutes for full simulation
 
 ## Adding ASCII Art
 
