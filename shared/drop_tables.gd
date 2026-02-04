@@ -1165,9 +1165,10 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"variant_rarity": variant_rarity
 	}
 
-# Egg variant rolling - uses same variants as companions but rolls at egg creation
+# Egg variant rolling - synced with COMPANION_VARIANTS in character.gd
+# Special variants give stat bonuses: Epic +10%, Legendary +25%, Mythic +50%
 const EGG_VARIANTS = [
-	# Common (rarity 15-8)
+	# === COMMON SOLID COLORS (rarity 8-15) ===
 	{"name": "Normal", "color": "#FFFFFF", "pattern": "solid", "rarity": 15},
 	{"name": "Crimson", "color": "#DC143C", "pattern": "solid", "rarity": 10},
 	{"name": "Azure", "color": "#007FFF", "pattern": "solid", "rarity": 10},
@@ -1176,32 +1177,144 @@ const EGG_VARIANTS = [
 	{"name": "Shadow", "color": "#2F2F2F", "pattern": "solid", "rarity": 8},
 	{"name": "Violet", "color": "#9400D3", "pattern": "solid", "rarity": 8},
 	{"name": "Coral", "color": "#FF7F50", "pattern": "solid", "rarity": 8},
-	# Uncommon (rarity 6-5)
+	{"name": "Teal", "color": "#008080", "pattern": "solid", "rarity": 8},
+	{"name": "Rose", "color": "#FF007F", "pattern": "solid", "rarity": 8},
+	{"name": "Lime", "color": "#32CD32", "pattern": "solid", "rarity": 8},
+	{"name": "Copper", "color": "#B87333", "pattern": "solid", "rarity": 8},
+
+	# === UNCOMMON SOLID COLORS (rarity 5-7) ===
 	{"name": "Frost", "color": "#87CEEB", "pattern": "solid", "rarity": 6},
 	{"name": "Infernal", "color": "#FF4500", "pattern": "solid", "rarity": 5},
 	{"name": "Toxic", "color": "#ADFF2F", "pattern": "solid", "rarity": 5},
 	{"name": "Amethyst", "color": "#9966CC", "pattern": "solid", "rarity": 5},
-	# Rare gradients (rarity 4-3)
+	{"name": "Midnight", "color": "#191970", "pattern": "solid", "rarity": 5},
+	{"name": "Ivory", "color": "#FFFFF0", "pattern": "solid", "rarity": 5},
+	{"name": "Rust", "color": "#B7410E", "pattern": "solid", "rarity": 5},
+	{"name": "Mint", "color": "#98FF98", "pattern": "solid", "rarity": 5},
+
+	# === GRADIENT PATTERNS - TOP TO BOTTOM (rarity 3-4) ===
 	{"name": "Sunset", "color": "#FF4500", "color2": "#FFD700", "pattern": "gradient_down", "rarity": 4},
 	{"name": "Ocean", "color": "#00BFFF", "color2": "#000080", "pattern": "gradient_down", "rarity": 4},
 	{"name": "Forest", "color": "#228B22", "color2": "#006400", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Dusk", "color": "#9400D3", "color2": "#FF1493", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Ember", "color": "#FF0000", "color2": "#8B0000", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Arctic", "color": "#FFFFFF", "color2": "#87CEEB", "pattern": "gradient_down", "rarity": 4},
+	{"name": "Volcanic", "color": "#FF4500", "color2": "#2F2F2F", "pattern": "gradient_down", "rarity": 3},
 	{"name": "Twilight", "color": "#FF69B4", "color2": "#4B0082", "pattern": "gradient_down", "rarity": 3},
-	# Rare patterns (rarity 3-2)
+
+	# === GRADIENT PATTERNS - BOTTOM TO TOP (rarity 3-4) ===
+	{"name": "Dawn", "color": "#FFD700", "color2": "#FF6347", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Depths", "color": "#000080", "color2": "#00CED1", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Bloom", "color": "#006400", "color2": "#90EE90", "pattern": "gradient_up", "rarity": 4},
+	{"name": "Rising", "color": "#8B0000", "color2": "#FF6347", "pattern": "gradient_up", "rarity": 3},
+
+	# === MIDDLE HIGHLIGHT PATTERNS (rarity 2-3) ===
+	{"name": "Core", "color": "#2F2F2F", "color2": "#FF4500", "pattern": "middle", "rarity": 3},
+	{"name": "Heart", "color": "#4B0082", "color2": "#FF1493", "pattern": "middle", "rarity": 3},
+	{"name": "Soul", "color": "#000080", "color2": "#00FFFF", "pattern": "middle", "rarity": 3},
+	{"name": "Nexus", "color": "#228B22", "color2": "#ADFF2F", "pattern": "middle", "rarity": 2},
+	{"name": "Beacon", "color": "#2F2F2F", "color2": "#FFD700", "pattern": "middle", "rarity": 2},
+
+	# === STRIPED PATTERNS (rarity 2-3) ===
 	{"name": "Tiger", "color": "#FF8C00", "color2": "#2F2F2F", "pattern": "striped", "rarity": 3},
+	{"name": "Candy", "color": "#FF69B4", "color2": "#FFFFFF", "pattern": "striped", "rarity": 3},
 	{"name": "Electric", "color": "#FFFF00", "color2": "#000000", "pattern": "striped", "rarity": 3},
-	{"name": "Starry", "color": "#191970", "color2": "#FFFFFF", "pattern": "scatter", "rarity": 3},
-	{"name": "Split", "color": "#FF0000", "color2": "#0000FF", "pattern": "split_v", "rarity": 3},
-	{"name": "Harlequin", "color": "#FF0000", "color2": "#FFD700", "pattern": "checker", "rarity": 2},
+	{"name": "Aquatic", "color": "#00CED1", "color2": "#006994", "pattern": "striped", "rarity": 2},
+	{"name": "Regal", "color": "#FFD700", "color2": "#9400D3", "pattern": "striped", "rarity": 2},
+	{"name": "Haunted", "color": "#9400D3", "color2": "#2F2F2F", "pattern": "striped", "rarity": 2},
+
+	# === EDGE/OUTLINE PATTERNS (rarity 2-3) ===
+	{"name": "Outlined", "color": "#FFFFFF", "color2": "#000000", "pattern": "edges", "rarity": 3},
+	{"name": "Glowing", "color": "#2F2F2F", "color2": "#00FF00", "pattern": "edges", "rarity": 3},
+	{"name": "Burning", "color": "#8B0000", "color2": "#FF4500", "pattern": "edges", "rarity": 2},
+	{"name": "Frozen", "color": "#FFFFFF", "color2": "#00BFFF", "pattern": "edges", "rarity": 2},
+	{"name": "Toxic Glow", "color": "#2F2F2F", "color2": "#ADFF2F", "pattern": "edges", "rarity": 2},
+
+	# === DIAGONAL PATTERNS (rarity 2-3) ===
+	{"name": "Slash", "color": "#FF4500", "color2": "#FFD700", "pattern": "diagonal_down", "rarity": 3},
 	{"name": "Lightning", "color": "#FFFF00", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 3},
+	{"name": "Rift", "color": "#00FFFF", "color2": "#FF00FF", "pattern": "diagonal_down", "rarity": 2},
+	{"name": "Shattered", "color": "#87CEEB", "color2": "#2F2F2F", "pattern": "diagonal_down", "rarity": 2},
+	{"name": "Ascendant", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "diagonal_up", "rarity": 3},
 	{"name": "Phoenix", "color": "#FF0000", "color2": "#FFD700", "pattern": "diagonal_up", "rarity": 2},
-	# Very rare (rarity 2)
+	{"name": "Comet", "color": "#00BFFF", "color2": "#FFFFFF", "pattern": "diagonal_up", "rarity": 2},
+	{"name": "Crescent", "color": "#9400D3", "color2": "#E6E6FA", "pattern": "diagonal_up", "rarity": 2},
+
+	# === VERTICAL SPLIT PATTERNS (rarity 2-3) ===
+	{"name": "Split", "color": "#FF0000", "color2": "#0000FF", "pattern": "split_v", "rarity": 3},
+	{"name": "Duality", "color": "#FFFFFF", "color2": "#000000", "pattern": "split_v", "rarity": 3},
+	{"name": "Twilit", "color": "#FF69B4", "color2": "#00CED1", "pattern": "split_v", "rarity": 2},
+	{"name": "Balanced", "color": "#FFD700", "color2": "#9400D3", "pattern": "split_v", "rarity": 2},
+	{"name": "Chimeric", "color": "#FF4500", "color2": "#228B22", "pattern": "split_v", "rarity": 2},
+
+	# === CHECKER/RADIAL PATTERNS (rarity 2-3) ===
+	{"name": "Mosaic", "color": "#FF69B4", "color2": "#00FF00", "pattern": "checker", "rarity": 3},
+	{"name": "Harlequin", "color": "#FF0000", "color2": "#FFD700", "pattern": "checker", "rarity": 2},
+	{"name": "Aura", "color": "#FFD700", "color2": "#4B0082", "pattern": "radial", "rarity": 3},
+	{"name": "Corona", "color": "#FFFFFF", "color2": "#FF4500", "pattern": "radial", "rarity": 2},
+	{"name": "Eclipse", "color": "#000000", "color2": "#FFD700", "pattern": "radial", "rarity": 2},
+
+	# === COLUMN/STRIPE PATTERNS (rarity 2-3) ===
+	{"name": "Barcode", "color": "#FFFFFF", "color2": "#000000", "pattern": "columns", "rarity": 3},
+	{"name": "Zebra", "color": "#FFFFFF", "color2": "#2F2F2F", "pattern": "columns", "rarity": 3},
+	{"name": "Neon Bars", "color": "#00FF00", "color2": "#FF00FF", "pattern": "columns", "rarity": 2},
+	{"name": "Jailbird", "color": "#FF8C00", "color2": "#000000", "pattern": "columns", "rarity": 2},
+
+	# === BAND PATTERNS (rarity 2-3) ===
+	{"name": "Layered", "color": "#8B4513", "color2": "#D2691E", "pattern": "bands", "rarity": 3},
+	{"name": "Stratified", "color": "#4682B4", "color2": "#87CEEB", "pattern": "bands", "rarity": 3},
+	{"name": "Sediment", "color": "#696969", "color2": "#A9A9A9", "pattern": "bands", "rarity": 2},
+
+	# === CORNER PATTERNS (rarity 2-3) ===
+	{"name": "Framed", "color": "#FFFFFF", "color2": "#8B4513", "pattern": "corners", "rarity": 3},
+	{"name": "Gilded", "color": "#2F2F2F", "color2": "#FFD700", "pattern": "corners", "rarity": 2},
+	{"name": "Corrupted", "color": "#FFFFFF", "color2": "#8B0000", "pattern": "corners", "rarity": 2},
+
+	# === CROSS/X PATTERNS (rarity 2-3) ===
+	{"name": "Marked", "color": "#FFFFFF", "color2": "#FF0000", "pattern": "cross", "rarity": 3},
+	{"name": "Hex", "color": "#2F2F2F", "color2": "#9400D3", "pattern": "cross", "rarity": 2},
+	{"name": "Branded", "color": "#D2691E", "color2": "#FF4500", "pattern": "cross", "rarity": 2},
+
+	# === WAVE PATTERNS (rarity 2-3) ===
+	{"name": "Tidal", "color": "#006994", "color2": "#00CED1", "pattern": "wave", "rarity": 3},
+	{"name": "Ripple", "color": "#4B0082", "color2": "#E6E6FA", "pattern": "wave", "rarity": 3},
+	{"name": "Current", "color": "#228B22", "color2": "#90EE90", "pattern": "wave", "rarity": 2},
+	{"name": "Mirage", "color": "#FF8C00", "color2": "#FFFACD", "pattern": "wave", "rarity": 2},
+
+	# === SCATTER PATTERNS (rarity 2-3) ===
+	{"name": "Speckled", "color": "#FFFFFF", "color2": "#2F2F2F", "pattern": "scatter", "rarity": 3},
+	{"name": "Starry", "color": "#191970", "color2": "#FFFFFF", "pattern": "scatter", "rarity": 3},
+	{"name": "Freckled", "color": "#D2691E", "color2": "#8B4513", "pattern": "scatter", "rarity": 2},
+	{"name": "Glittering", "color": "#4B0082", "color2": "#FFD700", "pattern": "scatter", "rarity": 2},
+	{"name": "Spotted", "color": "#FFD700", "color2": "#8B0000", "pattern": "scatter", "rarity": 2},
+
+	# === RING PATTERNS (rarity 2-3) ===
+	{"name": "Ringed", "color": "#4682B4", "color2": "#000080", "pattern": "ring", "rarity": 3},
+	{"name": "Orbital", "color": "#2F2F2F", "color2": "#00FFFF", "pattern": "ring", "rarity": 2},
+	{"name": "Halo", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "ring", "rarity": 2},
+
+	# === FADE PATTERNS (rarity 2-3) ===
+	{"name": "Misty", "color": "#FFFFFF", "color2": "#808080", "pattern": "fade", "rarity": 3},
+	{"name": "Smoky", "color": "#696969", "color2": "#2F2F2F", "pattern": "fade", "rarity": 3},
+	{"name": "Dreamlike", "color": "#E6E6FA", "color2": "#FF69B4", "pattern": "fade", "rarity": 2},
+	{"name": "Fading", "color": "#00BFFF", "color2": "#000080", "pattern": "fade", "rarity": 2},
+
+	# === EPIC VARIANTS (+10% stats) (rarity 2) ===
 	{"name": "Shiny", "color": "#FFFACD", "pattern": "solid", "rarity": 2},
+	{"name": "Radiant", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "gradient_down", "rarity": 2},
 	{"name": "Blessed", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "edges", "rarity": 1},
-	# Ultra rare (rarity 1)
+	{"name": "Starfall", "color": "#FFD700", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 1},
+
+	# === LEGENDARY VARIANTS (+25% stats) (rarity 1) ===
 	{"name": "Spectral", "color": "#E6E6FA", "color2": "#9400D3", "pattern": "gradient_up", "rarity": 1},
+	{"name": "Ethereal", "color": "#E6E6FA", "color2": "#87CEEB", "pattern": "middle", "rarity": 1},
+	{"name": "Celestial", "color": "#FFD700", "color2": "#FFFFFF", "pattern": "striped", "rarity": 1},
+	{"name": "Bifrost", "color": "#FF0000", "color2": "#00FFFF", "pattern": "diagonal_up", "rarity": 1},
+
+	# === MYTHIC VARIANTS (+50% stats) (rarity 1) ===
 	{"name": "Prismatic", "color": "#FF69B4", "color2": "#00FFFF", "pattern": "striped", "rarity": 1},
 	{"name": "Void", "color": "#4B0082", "color2": "#000000", "pattern": "gradient_down", "rarity": 1},
-	{"name": "Cosmic", "color": "#FFFFFF", "color2": "#4B0082", "pattern": "scatter", "rarity": 1},
+	{"name": "Cosmic", "color": "#FFFFFF", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 1},
 	{"name": "Divine", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "middle", "rarity": 1}
 ]
 

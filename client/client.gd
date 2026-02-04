@@ -13362,14 +13362,15 @@ func display_companions():
 		if comp_level < 50:
 			xp_to_next = int(pow(comp_level + 1, 1.8) * 20)
 
-		# Get variant stat multiplier
+		# Get variant stat multiplier and rarity info
 		var variant_mult = _get_variant_multiplier(variant)
 		var variant_bonus_text = ""
 		if variant_mult > 1.0:
 			variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+		var rarity_info = _get_variant_rarity_info(variant)
 
 		display_game("[color=#00FFFF]Active Companion:[/color]")
-		display_game("  [color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
+		display_game("  [color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
 		display_game("  [color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
 
 		# XP bar
@@ -13447,17 +13448,18 @@ func display_companions():
 			var variant_color = companion.get("variant_color", "#FFFFFF")
 			var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
 
-			# Get variant bonus indicator
+			# Get variant bonus indicator and rarity info
 			var variant_mult = _get_variant_multiplier(variant)
 			var variant_indicator = ""
 			if variant_mult > 1.0:
 				variant_indicator = " [color=#FFD700]★[/color]"  # Star for bonus variants
+			var rarity_info = _get_variant_rarity_info(variant)
 
 			var display_num = (i - start_idx) + 1  # 1-5 for current page
 			if is_active:
-				display_game("  [%d] [color=#00FFFF]★ %s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, comp_name, comp_level, variant_color, variant, variant_indicator])
+				display_game("  [%d] [color=%s][%s][/color] [color=#00FFFF]★ %s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, variant_color, variant, variant_indicator])
 			else:
-				display_game("  [%d] [color=#00FF00]%s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, comp_name, comp_level, variant_color, variant, variant_indicator])
+				display_game("  [%d] [color=%s][%s][/color] [color=#00FF00]%s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, variant_color, variant, variant_indicator])
 
 		display_game("")
 		if total_pages > 1:
@@ -13485,6 +13487,62 @@ func display_companions():
 	display_game("")
 	display_game("[color=#FFD700]══════════════════════════[/color]")
 
+func _get_variant_rarity_info(variant: String) -> Dictionary:
+	"""Get rarity tier name and color for a companion variant.
+	Returns {tier: String, color: String} for display."""
+	# Mythic (+50% stats) - rarest
+	if variant in ["Prismatic", "Void", "Cosmic", "Divine"]:
+		return {"tier": "Mythic", "color": "#FF00FF"}
+	# Legendary (+25% stats)
+	if variant in ["Spectral", "Ethereal", "Celestial", "Bifrost"]:
+		return {"tier": "Legendary", "color": "#FF8000"}
+	# Epic (+10% stats)
+	if variant in ["Shiny", "Radiant", "Starfall", "Blessed"]:
+		return {"tier": "Epic", "color": "#A335EE"}
+	# Rare (rarity 2-3, complex patterns)
+	if variant in [
+		# Gradients
+		"Volcanic", "Twilight", "Rising",
+		# Middle patterns
+		"Core", "Heart", "Soul", "Nexus", "Beacon",
+		# Striped
+		"Tiger", "Candy", "Electric", "Aquatic", "Regal", "Haunted",
+		# Edge patterns
+		"Outlined", "Glowing", "Burning", "Frozen", "Toxic Glow",
+		# Diagonal
+		"Slash", "Lightning", "Rift", "Shattered", "Ascendant", "Phoenix", "Comet", "Crescent",
+		# Split
+		"Split", "Duality", "Twilit", "Balanced", "Chimeric",
+		# Checker/Radial
+		"Mosaic", "Harlequin", "Aura", "Corona", "Eclipse",
+		# Columns
+		"Barcode", "Zebra", "Neon Bars", "Jailbird",
+		# Bands
+		"Layered", "Stratified", "Sediment",
+		# Corners
+		"Framed", "Gilded", "Corrupted",
+		# Cross
+		"Marked", "Hex", "Branded",
+		# Wave
+		"Tidal", "Ripple", "Current", "Mirage",
+		# Scatter
+		"Speckled", "Starry", "Freckled", "Glittering", "Spotted",
+		# Ring
+		"Ringed", "Orbital", "Halo",
+		# Fade
+		"Misty", "Smoky", "Dreamlike", "Fading"
+	]:
+		return {"tier": "Rare", "color": "#0070DD"}
+	# Uncommon (rarity 4-6, simple gradients and solids)
+	if variant in [
+		"Frost", "Infernal", "Toxic", "Amethyst", "Midnight", "Ivory", "Rust", "Mint",
+		"Sunset", "Ocean", "Forest", "Dusk", "Ember", "Arctic",
+		"Dawn", "Depths", "Bloom"
+	]:
+		return {"tier": "Uncommon", "color": "#1EFF00"}
+	# Common (rarity 8-15, solid colors)
+	return {"tier": "Common", "color": "#9D9D9D"}
+
 func _get_variant_multiplier(variant: String) -> float:
 	"""Get the stat multiplier for a companion variant."""
 	# Rare special (+10% stats)
@@ -13494,7 +13552,7 @@ func _get_variant_multiplier(variant: String) -> float:
 	if variant in ["Spectral", "Ethereal", "Celestial", "Bifrost"]:
 		return 1.25
 	# Legendary (+50% stats)
-	if variant in ["Prismatic", "Void", "Cosmic"]:
+	if variant in ["Prismatic", "Void", "Cosmic", "Divine"]:
 		return 1.50
 	return 1.0
 
@@ -13926,12 +13984,13 @@ func _display_companions_for_release():
 		var variant = companion.get("variant", "Normal")
 		var variant_color = companion.get("variant_color", "#FFFFFF")
 		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
+		var rarity_info = _get_variant_rarity_info(variant)
 
 		var display_num = (i - start_idx) + 1
 		if is_active:
 			display_game("  [%d] [color=#808080]%s Lv.%d (%s) - ACTIVE (cannot release)[/color]" % [display_num, comp_name, comp_level, variant])
 		else:
-			display_game("  [%d] [color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, variant_color, variant, comp_name, comp_level])
+			display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, comp_level])
 
 func _display_companions_for_selection():
 	"""Display companions list for inspect selection"""
@@ -13958,10 +14017,11 @@ func _display_companions_for_selection():
 		var variant = companion.get("variant", "Normal")
 		var variant_color = companion.get("variant_color", "#FFFFFF")
 		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
+		var rarity_info = _get_variant_rarity_info(variant)
 
 		var display_num = (i - start_idx) + 1
 		var active_marker = "[color=#00FFFF]★[/color] " if is_active else ""
-		display_game("  [%d] %s[color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, active_marker, variant_color, variant, comp_name, comp_level])
+		display_game("  [%d] %s[color=%s][%s][/color] [color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, active_marker, rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, comp_level])
 
 func display_companion_inspection(companion: Dictionary):
 	"""Display detailed info about a companion including abilities, with art on the right"""
@@ -13980,18 +14040,19 @@ func display_companion_inspection(companion: Dictionary):
 	var bonuses = companion.get("bonuses", {})
 	var monster_type = companion.get("monster_type", comp_name)
 
-	# Get variant multiplier
+	# Get variant multiplier and rarity info
 	var variant_mult = _get_variant_multiplier(variant)
 	var variant_bonus_text = ""
 	if variant_mult > 1.0:
 		variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+	var rarity_info = _get_variant_rarity_info(variant)
 
 	display_game("[color=#00FFFF]═══════ COMPANION DETAILS ═══════[/color]")
 	display_game("")
 
 	# Build left side content (info)
 	var info_lines = []
-	info_lines.append("[color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
+	info_lines.append("[color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
 	info_lines.append("[color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
 	info_lines.append("")
 
@@ -14245,6 +14306,7 @@ func display_eggs():
 		var variant_color2 = egg.get("variant_color2", "")
 		var variant_pattern = egg.get("variant_pattern", "solid")
 		var tier = egg.get("tier", 1)
+		var rarity_info = _get_variant_rarity_info(variant)
 
 		# Support both raw format (steps_remaining, hatch_steps) and client format (steps_taken, steps_required)
 		var required = egg.get("steps_required", egg.get("hatch_steps", 1000))
@@ -14258,8 +14320,8 @@ func display_eggs():
 		for line in egg_art.split("\n"):
 			display_game("  %s" % line)
 
-		# Display egg info below the art
-		display_game("  [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]" % [variant_color, variant, egg_name, tier])
+		# Display egg info below the art with rarity tag
+		display_game("  [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]" % [rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier])
 
 		# Progress bar
 		var bar_length = 16

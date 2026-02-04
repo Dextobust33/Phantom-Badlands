@@ -2557,9 +2557,12 @@ func _roll_companion_variant() -> Dictionary:
 
 func _hatch_egg(egg: Dictionary) -> Dictionary:
 	"""Hatch an egg into a companion and add to collected_companions.
-	Assigns a random color variant for visual variety."""
-	# Roll for color variant
-	var variant = _roll_companion_variant()
+	Uses the variant that was rolled when the egg was created."""
+	# Use the egg's pre-rolled variant (from when the egg dropped)
+	var variant_name = egg.get("variant", "Normal")
+	var variant_color = egg.get("variant_color", "#FFFFFF")
+	var variant_color2 = egg.get("variant_color2", "")
+	var variant_pattern = egg.get("variant_pattern", "solid")
 
 	var companion = {
 		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
@@ -2569,10 +2572,10 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		"bonuses": egg.bonuses.duplicate(),
 		"obtained_at": int(Time.get_unix_time_from_system()),
 		"battles_fought": 0,
-		"variant": variant.name,
-		"variant_color": variant.color,
-		"variant_color2": variant.get("color2", ""),
-		"variant_pattern": variant.get("pattern", "solid"),
+		"variant": variant_name,
+		"variant_color": variant_color,
+		"variant_color2": variant_color2,
+		"variant_pattern": variant_pattern,
 		"level": 1,
 		"xp": 0
 	}

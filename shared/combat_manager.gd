@@ -594,8 +594,13 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 						if effect2_triggers:
 							var effect2 = ability.get("effect2", "")
 							if effect2 == "stun":
-								combat["monster_stunned"] = true
-								messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
+								# Stun may have its own stun_chance (e.g., Giant's Ground Slam)
+								var stun_triggers = true
+								if ability.has("stun_chance"):
+									stun_triggers = randi() % 100 < ability.get("stun_chance", 0)
+								if stun_triggers:
+									combat["monster_stunned"] = true
+									messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
 							elif effect2 == "lifesteal":
 								# Use lifesteal_percent if available, otherwise value2
 								var lifesteal_pct = ability.get("lifesteal_percent", ability.get("value2", 10))
