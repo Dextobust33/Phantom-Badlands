@@ -10790,6 +10790,12 @@ func handle_server_message(message: Dictionary):
 		"npc_encounter":
 			# NPC encounters (tax collector, etc.) require acknowledgment before continuing
 			game_output.clear()
+			# Display appropriate art based on NPC type
+			var npc_type = message.get("npc_type", "")
+			if npc_type == "tax_collector":
+				var tax_art = _get_trader_art().get_tax_collector_art()
+				display_game(tax_art)
+				display_game("")
 			var npc_msg = message.get("message", "An NPC approaches!")
 			display_game(npc_msg)
 			display_game("")
@@ -13696,36 +13702,8 @@ func update_companion_art_overlay():
 		new_style.border_color.a = 0.6
 		companion_art_overlay.add_theme_stylebox_override("normal", new_style)
 
-	# Try to get art - first by monster_type, then by companion name
-	var art_lines = []
-	var art_map = _get_monster_art().get_art_map()
-
-	# Handle special variants (same as monster_art.gd uses)
-	var lookup_name = monster_type
-
-	# Handle elemental variants - pick Fire or Water Elemental art
-	if lookup_name == "Elemental":
-		var elemental_variants = ["Fire Elemental", "Water Elemental"]
-		lookup_name = elemental_variants[randi() % elemental_variants.size()]
-
-	# Handle siren variants - pick Siren A or Siren B art
-	if lookup_name == "Siren":
-		var siren_variants = ["Siren A", "Siren B"]
-		lookup_name = siren_variants[randi() % siren_variants.size()]
-
-	# Apply name mappings
-	var name_mappings = {
-		"Wolf": "Dire Wolf",
-		"Orc": "Orc Warrior",
-		"Young Dragon": "Dragon Wyrmling"
-	}
-	if name_mappings.has(lookup_name):
-		lookup_name = name_mappings[lookup_name]
-
-	if lookup_name != "" and art_map.has(lookup_name):
-		art_lines = art_map[lookup_name].duplicate()
-	elif art_map.has(companion_name):
-		art_lines = art_map[companion_name].duplicate()
+	# Get art using helper function
+	var art_lines = _get_companion_art_lines(monster_type, companion_name)
 
 	# Build overlay text - readable header with variant name
 	var variant_name = active_companion.get("variant", "Normal")
@@ -13753,6 +13731,39 @@ func hide_companion_art_overlay():
 	if companion_art_overlay:
 		companion_art_overlay.visible = false
 
+func _get_companion_art_lines(monster_type: String, companion_name: String) -> Array:
+	"""Get ASCII art lines for a companion by monster type or name.
+	Handles special variants and name mappings."""
+	var art_map = _get_monster_art().get_art_map()
+	var lookup_name = monster_type
+
+	# Handle elemental variants - pick Fire or Water Elemental art
+	if lookup_name == "Elemental":
+		var elemental_variants = ["Fire Elemental", "Water Elemental"]
+		lookup_name = elemental_variants[randi() % elemental_variants.size()]
+
+	# Handle siren variants - pick Siren A or Siren B art
+	if lookup_name == "Siren":
+		var siren_variants = ["Siren A", "Siren B"]
+		lookup_name = siren_variants[randi() % siren_variants.size()]
+
+	# Apply name mappings
+	var name_mappings = {
+		"Wolf": "Dire Wolf",
+		"Orc": "Orc Warrior",
+		"Young Dragon": "Dragon Wyrmling"
+	}
+	if name_mappings.has(lookup_name):
+		lookup_name = name_mappings[lookup_name]
+
+	# Try to find art by lookup name first, then companion name
+	if lookup_name != "" and art_map.has(lookup_name):
+		return art_map[lookup_name].duplicate()
+	elif art_map.has(companion_name):
+		return art_map[companion_name].duplicate()
+
+	return []
+
 # Store original offsets for shake animations
 var companion_art_original_offset_left: float = -260.0
 var companion_art_original_offset_right: float = -5.0
@@ -13766,13 +13777,12 @@ func shake_companion_art():
 	if companion_art_overlay == null or not companion_art_overlay.visible:
 		return
 
-	# Kill any existing shake tween
+	# Kill any existing shake tween and reset to original position
 	if companion_shake_tween and companion_shake_tween.is_valid():
 		companion_shake_tween.kill()
-
-	# Store original position if not set
-	companion_art_original_offset_left = companion_art_overlay.offset_left
-	companion_art_original_offset_right = companion_art_overlay.offset_right
+		# Reset to original position immediately to prevent drift
+		companion_art_overlay.offset_left = companion_art_original_offset_left
+		companion_art_overlay.offset_right = companion_art_original_offset_right
 
 	var shake_amount = 8.0  # Pixels to shake
 	var shake_duration = 0.06  # Duration per shake direction
@@ -13796,13 +13806,12 @@ func shake_game_output():
 	if game_output == null:
 		return
 
-	# Kill any existing shake tween
+	# Kill any existing shake tween and reset to original position
 	if game_output_shake_tween and game_output_shake_tween.is_valid():
 		game_output_shake_tween.kill()
-
-	# Store original position
-	game_output_original_offset_left = game_output.offset_left
-	game_output_original_offset_right = game_output.offset_right
+		# Reset to original position immediately to prevent drift
+		game_output.offset_left = game_output_original_offset_left
+		game_output.offset_right = game_output_original_offset_right
 
 	var shake_amount = 6.0  # Pixels to shake (slightly less than companion)
 	var shake_duration = 0.05  # Duration per shake direction
@@ -13955,7 +13964,7 @@ func _display_companions_for_selection():
 		display_game("  [%d] %s[color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]" % [display_num, active_marker, variant_color, variant, comp_name, comp_level])
 
 func display_companion_inspection(companion: Dictionary):
-	"""Display detailed info about a companion including abilities"""
+	"""Display detailed info about a companion including abilities, with art on the right"""
 	game_output.clear()
 
 	var comp_name = companion.get("name", "Unknown")
@@ -13963,7 +13972,11 @@ func display_companion_inspection(companion: Dictionary):
 	var comp_xp = companion.get("xp", 0)
 	var comp_tier = companion.get("tier", 1)
 	var variant = companion.get("variant", "Normal")
-	var variant_color = companion.get("variant_color", "#FFFFFF")
+	var variant_color_raw = companion.get("variant_color", "#FFFFFF")
+	var variant_color2_raw = companion.get("variant_color2", "")
+	var variant_pattern = companion.get("variant_pattern", "solid")
+	var variant_color = _ensure_readable_color(variant_color_raw)
+	var variant_color2 = _ensure_readable_color(variant_color2_raw) if variant_color2_raw != "" else ""
 	var bonuses = companion.get("bonuses", {})
 	var monster_type = companion.get("monster_type", comp_name)
 
@@ -13975,40 +13988,60 @@ func display_companion_inspection(companion: Dictionary):
 
 	display_game("[color=#00FFFF]═══════ COMPANION DETAILS ═══════[/color]")
 	display_game("")
-	display_game("[color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
-	display_game("[color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
-	display_game("")
+
+	# Build left side content (info)
+	var info_lines = []
+	info_lines.append("[color=%s]%s %s[/color]%s" % [variant_color, variant, comp_name, variant_bonus_text])
+	info_lines.append("[color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
+	info_lines.append("")
 
 	# XP Progress
 	var xp_to_next = int(pow(comp_level + 1, 2.0) * 15)
 	if comp_level < 10000:
 		var xp_percent = int((float(comp_xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
-		var bar_length = 20
+		var bar_length = 15
 		var filled = int(bar_length * xp_percent / 100)
 		var xp_bar = "[" + "█".repeat(filled) + "░".repeat(bar_length - filled) + "]"
-		display_game("[color=#00FF00]XP: %s %d/%d (%d%%)[/color]" % [xp_bar, comp_xp, xp_to_next, xp_percent])
+		info_lines.append("[color=#00FF00]XP: %s %d%%[/color]" % [xp_bar, xp_percent])
 	else:
-		display_game("[color=#FFD700]MAX LEVEL[/color]")
-	display_game("")
+		info_lines.append("[color=#FFD700]MAX LEVEL[/color]")
+	info_lines.append("")
 
 	# Combat Damage Estimation
-	display_game("[color=#FF6666]── Combat Damage ──[/color]")
+	info_lines.append("[color=#FF6666]── Combat Damage ──[/color]")
 	var player_level = character_data.get("level", 1)
 	var damage_est = _estimate_companion_damage(comp_tier, player_level, bonuses, comp_level, variant_mult)
-	display_game("  Attack: [color=#FF6666]%d - %d[/color] damage per turn" % [damage_est.min, damage_est.max])
-	display_game("  [color=#808080](Scales with tier, player level, and companion level)[/color]")
-	display_game("")
+	info_lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [damage_est.min, damage_est.max])
+	info_lines.append("")
 
 	# Combat Bonuses
-	display_game("[color=#808080]── Combat Bonuses ──[/color]")
+	info_lines.append("[color=#808080]── Combat Bonuses ──[/color]")
 	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
 	if bonus_parts.size() > 0:
-		display_game("  %s" % ", ".join(bonus_parts))
+		info_lines.append("  %s" % ", ".join(bonus_parts))
 	else:
-		display_game("  [color=#808080]None[/color]")
+		info_lines.append("  [color=#808080]None[/color]")
+
+	# Get companion artwork
+	var art_lines = _get_companion_art_lines(monster_type, comp_name)
+	var art_str = ""
+	if art_lines.size() > 0:
+		art_str = "\n".join(art_lines)
+		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+
+	# Display side-by-side using table if art exists
+	if art_str != "":
+		var info_content = "\n".join(info_lines)
+		# Use table with 2 columns: info on left, art on right
+		display_game("[table=2][cell]%s[/cell][cell][font_size=5]%s[/font_size][/cell][/table]" % [info_content, art_str])
+	else:
+		# No art - just display info normally
+		for line in info_lines:
+			display_game(line)
+
 	display_game("")
 
-	# Abilities Section - show all abilities with unlock requirements
+	# Abilities Section - show all abilities with unlock requirements (full width below)
 	display_game("[color=#A335EE]── Abilities ──[/color]")
 	display_game("")
 
