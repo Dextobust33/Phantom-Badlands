@@ -69,6 +69,9 @@ extends Resource
 # Array of {type: String, value: int} - types: "weakness", "vulnerability", "slow", "doom"
 @export var pending_monster_debuffs: Array = []
 
+# Saved combat state (for disconnect recovery - monster data, flock count, etc.)
+@export var saved_combat_state: Dictionary = {}
+
 # Inventory System (stubs for future item drops)
 @export var inventory: Array = []  # Array of item dictionaries
 @export var equipped: Dictionary = {
@@ -1355,6 +1358,7 @@ func to_dict() -> Dictionary:
 		"target_farm_ability": target_farm_ability,
 		"target_farm_remaining": target_farm_remaining,
 		"pending_monster_debuffs": pending_monster_debuffs,
+		"saved_combat_state": saved_combat_state,
 		"inventory": inventory,
 		"equipped": equipped,
 		"created_at": created_at,
@@ -1465,6 +1469,9 @@ func from_dict(data: Dictionary):
 
 	# Pending monster debuffs (from debuff scrolls)
 	pending_monster_debuffs = data.get("pending_monster_debuffs", [])
+
+	# Saved combat state for disconnect recovery
+	saved_combat_state = data.get("saved_combat_state", {})
 
 	# Inventory system
 	inventory = data.get("inventory", [])

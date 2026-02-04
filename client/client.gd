@@ -7400,6 +7400,10 @@ func acknowledge_continue():
 	if at_dungeon_entrance and not dungeon_mode and not dungeon_entrance_info.is_empty():
 		_display_dungeon_entrance_info()
 
+	# If standing on a corpse after combat, show corpse info so player can loot
+	if at_corpse and not corpse_info.is_empty() and not dungeon_mode:
+		_display_corpse_info()
+
 	# If in dungeon, refresh the dungeon display
 	if dungeon_mode:
 		if need_dungeon_refresh:
@@ -11718,6 +11722,12 @@ func handle_server_message(message: Dictionary):
 
 func _process_combat_start(message: Dictionary):
 	"""Process a combat_start message - separated out so queued combat can call it"""
+	# Release input field focus immediately so ability hotkeys work
+	# This prevents the bug where typing in chat when combat starts causes abilities to be sent as text
+	if input_field and input_field.has_focus():
+		input_field.clear()
+		input_field.release_focus()
+
 	in_combat = true
 	flock_pending = false
 	flock_monster_name = ""
@@ -11870,7 +11880,14 @@ func send_input():
 	# Commands
 	# Reduced command set - most actions available via action bar
 	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch"]
-	var combat_keywords = []  # Combat commands retired - use action bar
+	# Combat commands as typed fallback (action bar is preferred)
+	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
+		# Mage abilities
+		"magic_bolt", "bolt", "heal", "shield", "cloak", "blast", "forcefield", "teleport", "meteor",
+		# Warrior abilities
+		"power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate",
+		# Trickster abilities
+		"analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "outsmart", "gambit", "sabotage", "perfect_heist", "heist"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	# Strip leading "/" for command matching
 	if first_word.begins_with("/"):
@@ -12464,7 +12481,12 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		_:
-			display_game("Unknown command: %s (type 'help')" % command)
+			# Check if this is a combat command while in combat
+			if in_combat:
+				# Send as combat command (e.g., "attack", "flee", ability names)
+				send_combat_command(text)
+			else:
+				display_game("Unknown command: %s (type 'help')" % command)
 
 # ===== CONNECTION FUNCTIONS =====
 
@@ -13586,8 +13608,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.55 changes
+	display_game("[color=#00FF00]v0.9.55[/color] [color=#808080](Current)[/color]")
+	display_game("  • Combat now persists through disconnects - rejoin to continue fighting")
+	display_game("  • Fixed corpse dialog not showing after combat on corpse tile")
+	display_game("  • Fixed ability keys going to chat if pressed before combat loaded")
+	display_game("")
+
 	# v0.9.54 changes
-	display_game("[color=#00FF00]v0.9.54[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.54[/color]")
 	display_game("  • Fixed key 5 not working for Next Page in crafting menus")
 	display_game("  • Fixed permadeath getting stuck (unable to create new character)")
 	display_game("  • Fixed dungeon complete message not appearing with flock bosses")

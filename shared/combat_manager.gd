@@ -5916,3 +5916,106 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 			# Server will handle equipment upgrades
 			return "[color=#FF8000]WISH GRANTED: Upgrading equipment %d time%s...[/color]" % [wish.upgrades, "s" if wish.upgrades > 1 else ""]
 	return "[color=#FFD700]WISH GRANTED![/color]"
+
+# ===== COMBAT PERSISTENCE (for disconnect recovery) =====
+
+func serialize_combat_state(peer_id: int) -> Dictionary:
+	"""Serialize combat state for saving when player disconnects.
+	Returns empty dict if not in combat."""
+	if not active_combats.has(peer_id):
+		return {}
+
+	var combat = active_combats[peer_id]
+	var monster = combat.monster
+
+	# Serialize only what's needed to restore combat
+	return {
+		"monster": {
+			"name": monster.get("name", ""),
+			"level": monster.get("level", 1),
+			"current_hp": monster.get("current_hp", 1),
+			"max_hp": monster.get("max_hp", 1),
+			"strength": monster.get("strength", 10),
+			"defense": monster.get("defense", 0),
+			"speed": monster.get("speed", 10),
+			"abilities": monster.get("abilities", []),
+			"is_rare_variant": monster.get("is_rare_variant", false),
+			"variant_name": monster.get("variant_name", ""),
+			"xp_reward": monster.get("xp_reward", 10),
+			"gold_reward": monster.get("gold_reward", 0),
+			"class_affinity": monster.get("class_affinity", 0)
+		},
+		"round": combat.get("round", 1),
+		"player_can_act": combat.get("player_can_act", true),
+		"outsmart_failed": combat.get("outsmart_failed", false),
+		"analyze_bonus": combat.get("analyze_bonus", 0),
+		"ambusher_active": combat.get("ambusher_active", false),
+		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+		"is_boss_fight": combat.get("is_boss_fight", false),
+		"flock_remaining": combat.get("flock_remaining", 0)
+	}
+
+func restore_combat(peer_id: int, character: Character, saved_state: Dictionary) -> Dictionary:
+	"""Restore combat from saved state after reconnection.
+	Returns result similar to start_combat."""
+	if saved_state.is_empty():
+		return {"success": false, "message": "No saved combat state"}
+
+	var monster = saved_state.get("monster", {})
+	if monster.is_empty():
+		return {"success": false, "message": "Invalid monster data"}
+
+	# Build combat state from saved data
+	var combat_state = {
+		"peer_id": peer_id,
+		"character": character,
+		"monster": monster,
+		"round": saved_state.get("round", 1),
+		"player_can_act": saved_state.get("player_can_act", true),
+		"combat_log": [],
+		"started_at": Time.get_ticks_msec(),
+		"outsmart_failed": saved_state.get("outsmart_failed", false),
+		"ambusher_active": saved_state.get("ambusher_active", false),
+		"analyze_bonus": saved_state.get("analyze_bonus", 0),
+		"is_dungeon_combat": saved_state.get("is_dungeon_combat", false),
+		"is_boss_fight": saved_state.get("is_boss_fight", false),
+		"flock_remaining": saved_state.get("flock_remaining", 0)
+	}
+
+	active_combats[peer_id] = combat_state
+
+	# Mark character as in combat
+	character.in_combat = true
+
+	# Re-apply companion passives if character has active companion
+	if character.has_active_companion() and drop_tables:
+		var companion = character.get_active_companion()
+		var companion_tier = companion.get("tier", 1)
+		var companion_level = companion.get("level", 1)
+		var companion_abilities = drop_tables.get_all_companion_abilities(companion_tier, companion_level)
+
+		var variant_mult = companion.get("variant_multiplier", 1.0)
+
+		for ability in companion_abilities:
+			if ability.get("type") == "passive":
+				var effect = ability.get("effect", "")
+				var value = int(ability.get("value", 0) * variant_mult)
+				_apply_companion_passive_effect(combat_state, character, effect, value)
+
+		combat_state["companion_threshold_triggered"] = false
+
+	# Generate restoration message
+	var msg = "[color=#FFFF00]Combat restored![/color]\n"
+	msg += "[color=#FF4444]You are fighting: %s (Lvl %d)[/color]\n" % [monster.name, monster.level]
+	msg += "[color=#808080]Round %d - Your HP: %d/%d | Enemy HP: %d/%d[/color]" % [
+		combat_state.round,
+		character.current_hp, character.get_total_max_hp(),
+		monster.current_hp, monster.max_hp
+	]
+
+	return {
+		"success": true,
+		"message": msg,
+		"combat_state": get_combat_display(peer_id),
+		"restored": true
+	}

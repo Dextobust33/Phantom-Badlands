@@ -981,6 +981,35 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	if world_system.is_trading_post_tile(character.x, character.y):
 		trigger_trading_post_encounter(peer_id)
 
+	# Check for saved combat state (disconnect recovery)
+	if not character.saved_combat_state.is_empty():
+		var saved_state = character.saved_combat_state
+		var result = combat_mgr.restore_combat(peer_id, character, saved_state)
+		if result.get("success", false):
+			print("COMBAT PERSISTENCE: Restored combat for %s" % character.name)
+			# Restore flock count if it was saved
+			var flock_remaining = saved_state.get("flock_remaining", 0)
+			if flock_remaining > 0:
+				flock_counts[peer_id] = flock_remaining
+			# Clear saved state now that it's restored
+			character.saved_combat_state = {}
+			save_character(peer_id)
+			# Send combat start to client
+			var monster = saved_state.get("monster", {})
+			send_to_peer(peer_id, {
+				"type": "combat_start",
+				"message": result.message,
+				"combat_state": result.combat_state,
+				"monster_name": monster.get("name", "Unknown"),
+				"monster_level": monster.get("level", 1),
+				"use_client_art": true,
+				"combat_restored": true
+			})
+		else:
+			# Failed to restore - clear invalid state
+			character.saved_combat_state = {}
+			save_character(peer_id)
+
 func handle_create_character(peer_id: int, message: Dictionary):
 	if not peers[peer_id].authenticated:
 		send_to_peer(peer_id, {
@@ -2987,14 +3016,25 @@ func handle_disconnect(peer_id: int):
 
 	log_message("Peer %d (%s) disconnected" % [peer_id, username])
 
-	# Save character before removing
+	# Save combat state to character BEFORE ending combat (for disconnect recovery)
+	if combat_mgr.is_in_combat(peer_id) and characters.has(peer_id):
+		var character = characters[peer_id]
+		var combat_state = combat_mgr.serialize_combat_state(peer_id)
+		# Include flock info if player was in a flock fight
+		if flock_counts.has(peer_id):
+			combat_state["flock_remaining"] = flock_counts[peer_id]
+		character.saved_combat_state = combat_state
+		print("COMBAT PERSISTENCE: Saved combat state for %s - fighting %s" % [
+			character.name, combat_state.get("monster", {}).get("name", "Unknown")])
+
+	# Save character before removing (now includes combat state)
 	save_character(peer_id)
 
-	# Remove from combat if needed
+	# Remove from combat (don't count as loss since we saved state)
 	if combat_mgr.is_in_combat(peer_id):
 		combat_mgr.end_combat(peer_id, false)
 
-	# Clear pending flock if any
+	# Clear pending flock if any (saved to character already)
 	if pending_flocks.has(peer_id):
 		pending_flocks.erase(peer_id)
 	if flock_counts.has(peer_id):
