@@ -5359,7 +5359,7 @@ static func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> 
 	return "\n".join(bordered_lines)
 
 # Get bordered art with font size wrapper
-static func get_bordered_art_with_font(monster_name: String) -> String:
+static func get_bordered_art_with_font(monster_name: String, scale: float = 1.0) -> String:
 	var ascii_art = get_monster_ascii_art(monster_name)
 	if ascii_art.is_empty():
 		return ""
@@ -5376,12 +5376,16 @@ static func get_bordered_art_with_font(monster_name: String) -> String:
 	if name_mappings.has(monster_name):
 		resolved_name = name_mappings[monster_name]
 
-	# Get font size for this monster
-	var font_size = ASCII_ART_FONT_SIZE
+	# Get font size for this monster, then apply scale
+	var base_font_size = ASCII_ART_FONT_SIZE
 	if FONT_SIZE_OVERRIDES.has(resolved_name):
-		font_size = FONT_SIZE_OVERRIDES[resolved_name]
+		base_font_size = FONT_SIZE_OVERRIDES[resolved_name]
 	elif FONT_SIZE_OVERRIDES.has(monster_name):
-		font_size = FONT_SIZE_OVERRIDES[monster_name]
+		base_font_size = FONT_SIZE_OVERRIDES[monster_name]
+
+	var font_size = int(base_font_size * scale)
+	if font_size < 1:
+		font_size = 1
 
 	return "[font_size=" + str(font_size) + "]" + bordered_art + "[/font_size]"
 
@@ -5403,9 +5407,10 @@ const EGG_ART_TEMPLATE = [
 ]
 
 # Get ASCII art for an egg with variant coloring
-static func get_egg_art(variant_name: String, color1: String, color2: String = "", pattern: String = "solid") -> String:
+static func get_egg_art(variant_name: String, color1: String, color2: String = "", pattern: String = "solid", scale: float = 1.0) -> String:
 	"""Generate colored egg art based on variant pattern.
-	Returns the egg art with BBCode color tags applied."""
+	Returns the egg art with BBCode color tags applied.
+	Scale parameter adjusts font size (1.0 = default size 10)."""
 
 	var lines = []
 	var total_rows = EGG_ART_TEMPLATE.size()
@@ -5415,7 +5420,13 @@ static func get_egg_art(variant_name: String, color1: String, color2: String = "
 		var colored_line = _apply_egg_pattern(line, row, total_rows, color1, color2, pattern)
 		lines.append(colored_line)
 
-	return "\n".join(lines)
+	var art = "\n".join(lines)
+
+	# Apply font size if scale is not 1.0
+	var font_size = int(10 * scale)
+	if font_size < 1:
+		font_size = 1
+	return "[font_size=%d]%s[/font_size]" % [font_size, art]
 
 static func _apply_egg_pattern(line: String, row: int, total_rows: int, color1: String, color2: String, pattern: String) -> String:
 	"""Apply pattern coloring to a single line of egg art."""

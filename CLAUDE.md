@@ -310,6 +310,7 @@ git push
 ## Maintenance Reminders
 
 - **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 5024)
+- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 13552) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
 - **After significant changes:** Remind user to create a release for players
 
 ## Code Conventions

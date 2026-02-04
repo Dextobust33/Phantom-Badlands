@@ -2639,8 +2639,8 @@ func _process(delta):
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not any_popup_open:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, or popups)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -2947,16 +2947,20 @@ func _input(event):
 			elif keycode == KEY_2:
 				adjust_ui_scale("map", -0.1)
 			elif keycode == KEY_3:
-				adjust_ui_scale("game_output", 0.1)
+				adjust_ui_scale("monster_art", 0.1)
 			elif keycode == KEY_4:
-				adjust_ui_scale("game_output", -0.1)
+				adjust_ui_scale("monster_art", -0.1)
 			elif keycode == KEY_5:
-				adjust_ui_scale("buttons", 0.1)
+				adjust_ui_scale("game_output", 0.1)
 			elif keycode == KEY_6:
-				adjust_ui_scale("buttons", -0.1)
+				adjust_ui_scale("game_output", -0.1)
 			elif keycode == KEY_7:
-				adjust_ui_scale("chat", 0.1)
+				adjust_ui_scale("buttons", 0.1)
 			elif keycode == KEY_8:
+				adjust_ui_scale("buttons", -0.1)
+			elif keycode == KEY_Q:
+				adjust_ui_scale("chat", 0.1)
+			elif keycode == KEY_W:
 				adjust_ui_scale("chat", -0.1)
 			elif keycode == KEY_9:
 				reset_ui_scales()
@@ -3109,6 +3113,7 @@ func show_login_panel():
 
 func show_character_select_panel():
 	hide_all_panels()
+	game_state = GameState.CHARACTER_SELECT
 	if char_select_panel:
 		char_select_panel.visible = true
 	update_character_list_display()
@@ -4384,7 +4389,7 @@ func update_action_bar():
 			{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
 			{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6625,6 +6630,8 @@ func execute_local_action(action: String):
 		"leaderboard":
 			more_mode = false
 			show_leaderboard_panel()
+		"changelog":
+			display_changelog()
 		"more_menu":
 			open_more_menu()
 		"more_close":
@@ -7283,6 +7290,21 @@ func execute_local_action(action: String):
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
+
+			# CRITICAL: Check for queued combat (e.g., egg hatched right before combat started)
+			if not queued_combat_message.is_empty():
+				var combat_msg = queued_combat_message.duplicate(true)
+				queued_combat_message = {}
+				_process_combat_start(combat_msg)
+				return
+
+			# Check for queued dungeon completion (e.g., boss with flock ability)
+			if not queued_dungeon_complete.is_empty():
+				var complete_msg = queued_dungeon_complete.duplicate(true)
+				queued_dungeon_complete = {}
+				_display_dungeon_complete(complete_msg)
+				return
+
 			send_to_server({"type": "dungeon_state"})  # Request fresh dungeon state
 			update_action_bar()
 		"dungeon_move_n":
@@ -10669,6 +10691,10 @@ func handle_server_message(message: Dictionary):
 		"character_list":
 			character_list = message.get("characters", [])
 			can_create_character = message.get("can_create", true)
+			# Clear any stale state from death or previous session
+			has_character = false
+			in_combat = false
+			character_data = {}
 			show_character_select_panel()
 
 		"character_loaded":
@@ -11728,7 +11754,7 @@ func _process_combat_start(message: Dictionary):
 		var monster_base_name = combat_state.get("monster_base_name", monster_name)
 		if monster_name != "":
 			# Render art locally using MonsterArt class (use base name for art lookup)
-			var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name)
+			var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name, ui_scale_monster_art)
 
 			# Recolor ASCII art for visual variety (works for both flock and regular encounters)
 			var art_color = message.get("flock_art_color", "")  # Flock encounters use flock_art_color
@@ -12601,17 +12627,19 @@ func is_item_key_blocked_by_action_bar(index: int) -> bool:
 	for j in range(10):
 		var action_key = "action_%d" % j
 		var action_keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
-		if item_keycode == action_keycode and get_meta("hotkey_%d_pressed" % j, false):
-			# Block if this action bar key triggered an action THIS frame
-			# (prevents item selection when action changes state, like Equip showing item list)
-			if j in action_triggered_this_frame:
-				return true
-			# Also block if that action bar slot currently has an enabled action
-			if j < current_actions.size():
-				var action = current_actions[j]
-				if action.get("enabled", false) and action.get("action_type", "none") != "none":
+		if item_keycode == action_keycode:
+			# Check if this key is currently pressed and has an enabled action
+			# This works even before action bar processing runs in _process()
+			if Input.is_physical_key_pressed(action_keycode) and not Input.is_key_pressed(KEY_SHIFT):
+				if j < current_actions.size():
+					var action = current_actions[j]
+					if action.get("enabled", false) and action.get("action_type", "none") != "none":
+						return true
+			# Also check if action bar already processed this key (for timing safety)
+			if get_meta("hotkey_%d_pressed" % j, false):
+				# Block if this action bar key triggered an action THIS frame
+				if j in action_triggered_this_frame:
 					return true
-			# If no action in slot and didn't trigger this frame, allow item selection
 	return false
 
 func is_item_select_key_pressed(index: int) -> bool:
@@ -12763,14 +12791,17 @@ func display_ui_scale_settings():
 	display_game("[color=#E6CC80]Map Display[/color] (ASCII terrain, player marker)")
 	display_game("[1] Increase  [2] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_map * 100))
 	display_game("")
-	display_game("[color=#E6CC80]Game Output[/color] (Monster art, combat text, inventory)")
-	display_game("[3] Increase  [4] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_game_output * 100))
+	display_game("[color=#E6CC80]Monster Art[/color] (Combat ASCII art, companion/egg art)")
+	display_game("[3] Increase  [4] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_monster_art * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Game Text[/color] (Combat text, inventory, menus)")
+	display_game("[5] Increase  [6] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_game_output * 100))
 	display_game("")
 	display_game("[color=#E6CC80]Action Buttons[/color] (Hotbar buttons and labels)")
-	display_game("[5] Increase  [6] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_buttons * 100))
+	display_game("[7] Increase  [8] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_buttons * 100))
 	display_game("")
 	display_game("[color=#E6CC80]Chat & Players[/color] (Chat output, online players list)")
-	display_game("[7] Increase  [8] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_chat * 100))
+	display_game("[Q] Increase  [W] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_chat * 100))
 	display_game("")
 	display_game("[9] Reset All to 100%")
 	display_game("[%s] Back to Settings" % get_action_key_name(0))
@@ -12780,6 +12811,8 @@ func adjust_ui_scale(element: String, delta: float):
 	match element:
 		"map":
 			ui_scale_map = clampf(ui_scale_map + delta, 0.5, 3.0)
+		"monster_art":
+			ui_scale_monster_art = clampf(ui_scale_monster_art + delta, 0.5, 3.0)
 		"game_output":
 			ui_scale_game_output = clampf(ui_scale_game_output + delta, 0.5, 3.0)
 		"buttons":
@@ -13543,8 +13576,62 @@ func display_more_menu():
 	display_game("[%s] [color=#00FFFF]Companions[/color] - View and manage your companions" % get_action_key_name(1))
 	display_game("[%s] [color=#FFAA00]Eggs[/color] - View incubating eggs" % get_action_key_name(2))
 	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(3))
+	display_game("[%s] [color=#00FF00]Changes[/color] - What's new in recent updates" % get_action_key_name(4))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
+
+func display_changelog():
+	"""Display recent changes and updates"""
+	game_output.clear()
+	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
+	display_game("")
+
+	# v0.9.54 changes
+	display_game("[color=#00FF00]v0.9.54[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed key 5 not working for Next Page in crafting menus")
+	display_game("  • Fixed permadeath getting stuck (unable to create new character)")
+	display_game("  • Fixed dungeon complete message not appearing with flock bosses")
+	display_game("  • Fixed egg hatch during combat causing movement desync")
+	display_game("  • Fixed player being able to move while in Eggs menu")
+	display_game("")
+
+	# v0.9.53 changes
+	display_game("[color=#00FFFF]v0.9.53[/color]")
+	display_game("  • Added What's Changed menu (More → Changes)")
+	display_game("  • Fixed help screen font scaling for high-resolution displays")
+	display_game("")
+
+	# v0.9.52 changes
+	display_game("[color=#00FFFF]v0.9.52[/color]")
+	display_game("  • Added UI scaling system - adjust individual element sizes in Settings")
+	display_game("  • Per-element scale controls: Map, Monster Art, Buttons, Chat")
+	display_game("  • Increased font size caps for 4K display support")
+	display_game("  • Action bar buttons now scale with window size")
+	display_game("")
+
+	# v0.9.51 changes
+	display_game("[color=#00FFFF]v0.9.51[/color]")
+	display_game("  • Added corpse persistence system - find fallen adventurers' remains")
+	display_game("  • Corpses appear as red 'X' on the map")
+	display_game("  • Loot corpses to recover items, companions, eggs, and gems")
+	display_game("  • Corpses persist between server restarts")
+	display_game("")
+
+	# v0.9.50 changes
+	display_game("[color=#00FFFF]v0.9.50[/color]")
+	display_game("  • Added companion rarity tags showing spawn chance")
+	display_game("  • Fixed Stun ability not working correctly")
+	display_game("  • Expanded companion variants to 110 total")
+	display_game("")
+
+	# v0.9.49 changes
+	display_game("[color=#00FFFF]v0.9.49[/color]")
+	display_game("  • Implemented all missing companion ability effects")
+	display_game("  • Added 10 new trader art variants")
+	display_game("  • Fixed GameOutput shake drift issue")
+	display_game("")
+
+	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
 func show_companion_info():
 	"""Display companions menu - eggs, hatched companions, and active companion"""
@@ -14312,8 +14399,11 @@ func display_companion_inspection(companion: Dictionary):
 	# Display side-by-side using table if art exists
 	if art_str != "":
 		var info_content = "\n".join(info_lines)
-		# Use table with 2 columns: info on left, art on right
-		display_game("[table=2][cell]%s[/cell][cell][font_size=5]%s[/font_size][/cell][/table]" % [info_content, art_str])
+		# Use table with 2 columns: info on left, art on right (scaled)
+		var art_font_size = int(5 * ui_scale_monster_art)
+		if art_font_size < 1:
+			art_font_size = 1
+		display_game("[table=2][cell]%s[/cell][cell][font_size=%d]%s[/font_size][/cell][/table]" % [info_content, art_font_size, art_str])
 	else:
 		# No art - just display info normally
 		for line in info_lines:
@@ -14534,10 +14624,9 @@ func display_eggs():
 			steps = egg.get("hatch_steps", 1000) - egg.get("steps_remaining", 1000)
 		var progress = int((float(steps) / float(required)) * 100) if required > 0 else 0
 
-		# Display ASCII egg art with variant colors and pattern
-		var egg_art = MonsterArt.get_egg_art(variant, variant_color, variant_color2, variant_pattern)
-		for line in egg_art.split("\n"):
-			display_game("  %s" % line)
+		# Display ASCII egg art with variant colors and pattern (scaled)
+		var egg_art = MonsterArt.get_egg_art(variant, variant_color, variant_color2, variant_pattern, ui_scale_monster_art)
+		display_game(egg_art)
 
 		# Display egg info below the art with rarity tag
 		display_game("  [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]" % [rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier])
@@ -14787,8 +14876,7 @@ func show_help():
 	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
 	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
-	var help_text = """[font_size=12]
-[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
+	var help_text = """[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
 [color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
 
 [b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
@@ -14934,7 +15022,6 @@ func show_help():
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#00FFFF]v0.9.15:[/color] Early dungeons, gathering minigame fix, dungeon intro quest, map shows dungeons as D.
-[/font_size]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
@@ -15131,7 +15218,6 @@ func search_help(search_term: String):
 			matches.append(section)
 
 	# Display results
-	display_game("[font_size=11]")
 	display_game("[b][color=#FFD700]══ SEARCH RESULTS: \"%s\" ══[/color][/b]" % search_term)
 	display_game("")
 
@@ -15148,7 +15234,6 @@ func search_help(search_term: String):
 			display_game("")
 
 	display_game("[color=#808080]Type /help for full help page | /search <term> to search again[/color]")
-	display_game("[/font_size]")
 
 func display_game(text: String):
 	if game_output:
@@ -16511,8 +16596,10 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_data = {}
 	dungeon_floor_grid = []
 
-	# If player is still viewing combat results, queue this for after they acknowledge
-	if pending_continue:
+	# If player is still viewing combat results or in flock mode, queue this for after they acknowledge
+	# This handles bosses with flock abilities - the dungeon completes when boss dies, but
+	# player still needs to fight the flock before seeing the completion message
+	if pending_continue or flock_pending:
 		queued_dungeon_complete = message.duplicate(true)
 		return
 
@@ -17460,7 +17547,7 @@ func handle_watch_combat_start(message: Dictionary):
 
 	if use_client_art and monster_name != "":
 		# Render monster art locally using MonsterArt class (same as player does)
-		var local_art = _get_monster_art().get_bordered_art_with_font(monster_name)
+		var local_art = _get_monster_art().get_bordered_art_with_font(monster_name, ui_scale_monster_art)
 		if local_art != "":
 			display_game("[center]" + local_art + "[/center]")
 			display_game("")
