@@ -3017,15 +3017,19 @@ func handle_disconnect(peer_id: int):
 	log_message("Peer %d (%s) disconnected" % [peer_id, username])
 
 	# Save combat state to character BEFORE ending combat (for disconnect recovery)
+	# Only save if player has HP > 0 (if they died, don't restore combat)
 	if combat_mgr.is_in_combat(peer_id) and characters.has(peer_id):
 		var character = characters[peer_id]
-		var combat_state = combat_mgr.serialize_combat_state(peer_id)
-		# Include flock info if player was in a flock fight
-		if flock_counts.has(peer_id):
-			combat_state["flock_remaining"] = flock_counts[peer_id]
-		character.saved_combat_state = combat_state
-		print("COMBAT PERSISTENCE: Saved combat state for %s - fighting %s" % [
-			character.name, combat_state.get("monster", {}).get("name", "Unknown")])
+		if character.hp > 0:
+			var combat_state = combat_mgr.serialize_combat_state(peer_id)
+			# Include flock info if player was in a flock fight
+			if flock_counts.has(peer_id):
+				combat_state["flock_remaining"] = flock_counts[peer_id]
+			character.saved_combat_state = combat_state
+			print("COMBAT PERSISTENCE: Saved combat state for %s - fighting %s" % [
+				character.name, combat_state.get("monster", {}).get("name", "Unknown")])
+		else:
+			print("COMBAT PERSISTENCE: Not saving combat for %s - player HP is 0" % character.name)
 
 	# Save character before removing (now includes combat state)
 	save_character(peer_id)
