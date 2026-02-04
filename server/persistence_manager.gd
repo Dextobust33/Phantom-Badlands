@@ -8,6 +8,7 @@ const ACCOUNTS_FILE = "user://data/accounts.json"
 const LEADERBOARD_FILE = "user://data/leaderboard.json"
 const REALM_STATE_FILE = "user://data/realm_state.json"
 const CHARACTERS_DIR = "user://data/characters/"
+const CORPSES_FILE = "user://data/corpses.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
@@ -16,6 +17,7 @@ const DEFAULT_MAX_CHARACTERS = 6
 var accounts_data: Dictionary = {}
 var leaderboard_data: Dictionary = {}
 var realm_state_data: Dictionary = {}
+var corpses_data: Dictionary = {}  # {"corpses": [...]}
 
 func _ready():
 	ensure_data_directories()
@@ -23,6 +25,7 @@ func _ready():
 	load_leaderboard()
 	load_monster_kills()
 	load_realm_state()
+	load_corpses()
 
 # ===== DIRECTORY SETUP =====
 
@@ -745,3 +748,89 @@ func get_trophy_leaderboard() -> Array:
 	result.sort_custom(func(a, b): return a.get("collected_at", 0) < b.get("collected_at", 0))
 
 	return result
+
+# ===== CORPSE PERSISTENCE =====
+
+func load_corpses():
+	"""Load corpses data from file"""
+	if not FileAccess.file_exists(CORPSES_FILE):
+		corpses_data = {"corpses": []}
+		save_corpses()
+		return
+
+	var file = FileAccess.open(CORPSES_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+
+		if error == OK:
+			corpses_data = json.data
+		else:
+			print("Error parsing corpses file: ", json.get_error_message())
+			corpses_data = {"corpses": []}
+
+func save_corpses():
+	"""Save corpses data to file"""
+	var file = FileAccess.open(CORPSES_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(corpses_data, "\t"))
+		file.close()
+
+func add_corpse(corpse: Dictionary):
+	"""Add a corpse to persistence and save"""
+	if not corpses_data.has("corpses"):
+		corpses_data["corpses"] = []
+	corpses_data.corpses.append(corpse)
+	save_corpses()
+	print("Corpse added: %s at (%d, %d)" % [corpse.get("character_name", "Unknown"), corpse.get("x", 0), corpse.get("y", 0)])
+
+func remove_corpse(corpse_id: String) -> Dictionary:
+	"""Remove a corpse by ID and return its data"""
+	if not corpses_data.has("corpses"):
+		return {}
+
+	for i in range(corpses_data.corpses.size()):
+		if corpses_data.corpses[i].get("id", "") == corpse_id:
+			var corpse = corpses_data.corpses[i]
+			corpses_data.corpses.remove_at(i)
+			save_corpses()
+			print("Corpse removed: %s" % corpse_id)
+			return corpse
+
+	return {}
+
+func get_corpses() -> Array:
+	"""Return all corpses"""
+	return corpses_data.get("corpses", [])
+
+func get_corpse_at(x: int, y: int) -> Dictionary:
+	"""Get oldest corpse at a specific location (FIFO)"""
+	if not corpses_data.has("corpses"):
+		return {}
+
+	var oldest_corpse = {}
+	var oldest_time = 9999999999
+
+	for corpse in corpses_data.corpses:
+		if corpse.get("x", -9999) == x and corpse.get("y", -9999) == y:
+			var created_at = corpse.get("created_at", 0)
+			if created_at < oldest_time:
+				oldest_time = created_at
+				oldest_corpse = corpse
+
+	return oldest_corpse
+
+func get_visible_corpses(center_x: int, center_y: int, radius: int) -> Array:
+	"""Get all corpses within the specified radius for map rendering"""
+	var visible = []
+	if not corpses_data.has("corpses"):
+		return visible
+
+	for corpse in corpses_data.corpses:
+		var cx = corpse.get("x", -9999)
+		var cy = corpse.get("y", -9999)
+		if abs(cx - center_x) <= radius and abs(cy - center_y) <= radius:
+			visible.append(corpse)
+
+	return visible

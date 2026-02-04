@@ -785,6 +785,9 @@ func handle_message(peer_id: int, message: Dictionary):
 			# Client requesting current dungeon state (after combat continue)
 			if characters.has(peer_id) and characters[peer_id].current_dungeon_id != "":
 				_send_dungeon_state(peer_id)
+		# Corpse looting
+		"loot_corpse":
+			handle_loot_corpse(peer_id, message)
 		# Title system handlers
 		"claim_title":
 			handle_claim_title(peer_id, message)
@@ -2686,6 +2689,12 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 			"message": death_message
 		})
 
+	# Create corpse from character's possessions BEFORE deleting character
+	var corpse = _create_corpse_from_character(character, cause_of_death)
+	if not corpse.is_empty():
+		persistence.add_corpse(corpse)
+		_broadcast_corpse_spawn(corpse)
+
 	# Delete character from persistence
 	persistence.delete_character(account_id, character.name)
 
@@ -2719,8 +2728,11 @@ func send_location_update(peer_id: int):
 	# Get depleted node keys for map display (shows dim markers for depleted nodes)
 	var depleted_keys = depleted_nodes.keys()
 
+	# Get visible corpses for map display
+	var visible_corpses = persistence.get_visible_corpses(character.x, character.y, vision_radius)
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses)
 
 	# Check for gathering node at this location
 	var gathering_node = get_gathering_node_at(character.x, character.y)
@@ -2747,6 +2759,9 @@ func send_location_update(peer_id: int):
 	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y)
 	var at_dungeon = not dungeon_entrance.is_empty()
 
+	# Check if player is at a corpse
+	var corpse_at_location = persistence.get_corpse_at(character.x, character.y)
+
 	# Send map display as description
 	send_to_peer(peer_id, {
 		"type": "location",
@@ -2761,7 +2776,9 @@ func send_location_update(peer_id: int):
 		"wood_tier": current_wood_tier,
 		"at_dungeon": at_dungeon,
 		"dungeon_info": dungeon_entrance,
-		"gathering_node": gathering_node  # Include full node info for client
+		"gathering_node": gathering_node,  # Include full node info for client
+		"at_corpse": not corpse_at_location.is_empty(),
+		"corpse_info": corpse_at_location
 	})
 
 	# Forward location/map to watchers
@@ -10975,3 +10992,206 @@ func handle_trade_cancel(peer_id: int):
 
 	if active_trades.has(peer_id):
 		_cancel_trade(peer_id, "Trade cancelled.")
+
+# ===== CORPSE SYSTEM =====
+
+func _create_corpse_from_character(character: Character, cause_of_death: String) -> Dictionary:
+	"""Create a corpse from a dead character's possessions."""
+	# Determine death location
+	var death_x = character.x
+	var death_y = character.y
+
+	# If in dungeon, use dungeon entrance coordinates
+	if character.in_dungeon and active_dungeons.has(character.current_dungeon_id):
+		var dungeon = active_dungeons[character.current_dungeon_id]
+		death_x = dungeon.get("world_x", character.x)
+		death_y = dungeon.get("world_y", character.y)
+
+	# Calculate distance from origin and generate spawn location
+	var distance = sqrt(float(death_x * death_x + death_y * death_y))
+	var spawn_location = _generate_random_location_at_distance(distance)
+
+	# Build corpse contents
+	var contents = {
+		"item": null,
+		"companion": null,
+		"egg": null,
+		"gems": 0
+	}
+
+	# Select one random equipped item
+	var equipped_slots = []
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		if character.equipped.get(slot) != null:
+			equipped_slots.append(slot)
+
+	if not equipped_slots.is_empty():
+		var random_slot = equipped_slots[randi() % equipped_slots.size()]
+		contents["item"] = character.equipped[random_slot].duplicate(true)
+
+	# Copy active companion (full persistence)
+	if not character.active_companion.is_empty():
+		contents["companion"] = character.active_companion.duplicate(true)
+
+	# Select one random incubating egg
+	if not character.incubating_eggs.is_empty():
+		var random_idx = randi() % character.incubating_eggs.size()
+		contents["egg"] = character.incubating_eggs[random_idx].duplicate(true)
+
+	# Random percentage of gems (10-50%)
+	if character.gems > 0:
+		var gem_percent = randf_range(0.1, 0.5)
+		contents["gems"] = int(character.gems * gem_percent)
+
+	# Don't create empty corpses
+	if contents["item"] == null and contents["companion"] == null and contents["egg"] == null and contents["gems"] == 0:
+		return {}
+
+	# Generate unique corpse ID
+	var corpse_id = "corpse_%d_%d" % [int(Time.get_unix_time_from_system()), randi() % 10000]
+
+	return {
+		"id": corpse_id,
+		"character_name": character.name,
+		"x": spawn_location.x,
+		"y": spawn_location.y,
+		"death_x": death_x,
+		"death_y": death_y,
+		"created_at": int(Time.get_unix_time_from_system()),
+		"cause_of_death": cause_of_death,
+		"contents": contents
+	}
+
+func _generate_random_location_at_distance(distance: float) -> Vector2i:
+	"""Generate a random location at approximately the same distance from origin."""
+	# Apply ±10% distance variation
+	var varied_distance = distance * randf_range(0.9, 1.1)
+	# Clamp to world bounds
+	varied_distance = clamp(varied_distance, 1.0, 1000.0)
+
+	# Random angle
+	var angle = randf() * TAU
+
+	# Calculate coordinates
+	var x = int(round(cos(angle) * varied_distance))
+	var y = int(round(sin(angle) * varied_distance))
+
+	# Clamp to world bounds
+	x = clampi(x, -1000, 1000)
+	y = clampi(y, -1000, 1000)
+
+	return Vector2i(x, y)
+
+func _broadcast_corpse_spawn(corpse: Dictionary):
+	"""Notify nearby players of a new corpse."""
+	var corpse_x = corpse.get("x", 0)
+	var corpse_y = corpse.get("y", 0)
+	var view_radius = 6
+
+	for peer_id in characters.keys():
+		var char = characters[peer_id]
+		if abs(char.x - corpse_x) <= view_radius and abs(char.y - corpse_y) <= view_radius:
+			send_location_update(peer_id)
+
+func _broadcast_corpse_despawn(corpse: Dictionary):
+	"""Notify nearby players that a corpse was looted."""
+	_broadcast_corpse_spawn(corpse)  # Same effect - refresh location for nearby players
+
+func handle_loot_corpse(peer_id: int, message: Dictionary):
+	"""Handle a player looting a corpse."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var corpse_id = message.get("corpse_id", "")
+
+	# Get corpse at player's location
+	var corpse = persistence.get_corpse_at(character.x, character.y)
+	if corpse.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF0000]There is no corpse here.[/color]"
+		})
+		return
+
+	# Verify corpse ID matches (prevents race conditions)
+	if corpse.get("id", "") != corpse_id:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF0000]That corpse is no longer here.[/color]"
+		})
+		return
+
+	var contents = corpse.get("contents", {})
+	var loot_summary = []
+	var warnings = []
+
+	# Transfer item
+	var item = contents.get("item")
+	if item != null and item is Dictionary and not item.is_empty():
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(item)
+			var item_name = item.get("name", "Unknown Item")
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			loot_summary.append("[color=%s]%s[/color]" % [rarity_color, item_name])
+		else:
+			warnings.append("[color=#FF8800]Inventory full - item lost![/color]")
+
+	# Transfer companion
+	var companion = contents.get("companion")
+	if companion != null and companion is Dictionary and not companion.is_empty():
+		character.collected_companions.append(companion)
+		var comp_name = companion.get("name", "Unknown")
+		var comp_variant = companion.get("variant", "")
+		var comp_level = companion.get("level", 1)
+		loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+
+	# Transfer egg
+	var egg = contents.get("egg")
+	if egg != null and egg is Dictionary and not egg.is_empty():
+		if character.incubating_eggs.size() < 3:
+			character.incubating_eggs.append(egg)
+			var egg_type = egg.get("monster_type", "Unknown")
+			loot_summary.append("[color=#FFD700]%s Egg[/color]" % egg_type)
+		else:
+			warnings.append("[color=#FF8800]Max eggs (3) - egg lost![/color]")
+
+	# Transfer gems
+	var gems = contents.get("gems", 0)
+	if gems > 0:
+		character.gems += gems
+		loot_summary.append("[color=#00BFFF]%d Gems[/color]" % gems)
+
+	# Remove corpse from persistence
+	persistence.remove_corpse(corpse_id)
+
+	# Build loot message
+	var corpse_name = corpse.get("character_name", "Unknown")
+	var loot_message = "[color=#FF6666]═══════ LOOTED CORPSE ═══════[/color]\n"
+	loot_message += "[color=#AAAAAA]The remains of [/color][color=#FFFFFF]%s[/color]\n\n" % corpse_name
+
+	if not loot_summary.is_empty():
+		loot_message += "[color=#00FF00]You obtained:[/color]\n"
+		for item_desc in loot_summary:
+			loot_message += "  • %s\n" % item_desc
+	else:
+		loot_message += "[color=#808080]The corpse was empty.[/color]\n"
+
+	for warning in warnings:
+		loot_message += "\n%s" % warning
+
+	# Send loot result to player
+	send_to_peer(peer_id, {
+		"type": "corpse_looted",
+		"message": loot_message,
+		"corpse_name": corpse_name
+	})
+
+	# Save character and send updates
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_location_update(peer_id)
+
+	# Notify nearby players that corpse is gone
+	_broadcast_corpse_despawn(corpse)

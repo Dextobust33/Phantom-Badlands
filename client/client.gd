@@ -652,6 +652,11 @@ var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
 var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
 var pending_dungeon_warning: Dictionary = {}  # Pending dungeon entry warning awaiting confirmation
 
+# Corpse location
+var at_corpse: bool = false  # Whether player is at a corpse
+var corpse_info: Dictionary = {}  # Info about the corpse at this location
+var pending_corpse_loot: Dictionary = {}  # Pending corpse loot awaiting confirmation
+
 # Watch/Inspect mode - observe another player's game output
 var watching_player: String = ""  # Name of player we're watching (empty = not watching)
 var watch_request_pending: String = ""  # Player who requested to watch us (waiting for approval)
@@ -4278,6 +4283,20 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif not pending_corpse_loot.is_empty():
+		# Corpse loot confirmation - awaiting confirmation
+		current_actions = [
+			{"label": "Loot All", "action_type": "local", "action_data": "corpse_loot_confirm", "enabled": true},
+			{"label": "Cancel", "action_type": "local", "action_data": "corpse_loot_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif more_mode:
 		# More menu - contains Companions, Eggs, Leaders, etc.
 		current_actions = [
@@ -4866,6 +4885,8 @@ func update_action_bar():
 			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
 		elif at_dungeon_entrance:
 			fifth_action = {"label": "Dungeon", "action_type": "local", "action_data": "enter_dungeon", "enabled": true}
+		elif at_corpse:
+			fifth_action = {"label": "Loot", "action_type": "local", "action_data": "corpse_loot", "enabled": true}
 		elif at_water:
 			var water_label = "Deep Fish" if fishing_water_type == "deep" else "Fish"
 			fifth_action = {"label": water_label, "action_type": "local", "action_data": "start_fishing", "enabled": true}
@@ -6980,6 +7001,27 @@ func execute_local_action(action: String):
 			pending_dungeon_warning = {}
 			game_output.clear()
 			display_game("[color=#808080]Dungeon entry cancelled.[/color]")
+			update_action_bar()
+		"corpse_loot":
+			# Start corpse looting - show confirmation
+			if at_corpse and not corpse_info.is_empty():
+				pending_corpse_loot = corpse_info.duplicate(true)
+				_display_corpse_loot_confirmation()
+				update_action_bar()
+		"corpse_loot_confirm":
+			# Confirm looting the corpse
+			if not pending_corpse_loot.is_empty():
+				send_to_server({
+					"type": "loot_corpse",
+					"corpse_id": pending_corpse_loot.get("id", "")
+				})
+				pending_corpse_loot = {}
+				update_action_bar()
+		"corpse_loot_cancel":
+			# Cancel looting
+			pending_corpse_loot = {}
+			game_output.clear()
+			display_game("[color=#808080]Loot cancelled.[/color]")
 			update_action_bar()
 		"ability_equip":
 			show_ability_equip_prompt()
@@ -10649,6 +10691,17 @@ func handle_server_message(message: Dictionary):
 			display_chat("[color=#FFD700]*** %s (Level %d) has entered the Hall of Heroes at #%d! ***[/color]" % [char_name, level, hero_rank])
 			play_top5_sound()
 
+		"corpse_looted":
+			# Display loot results from looting a corpse
+			game_output.clear()
+			var loot_msg = message.get("message", "Corpse looted.")
+			display_game(loot_msg)
+			# Reset corpse state
+			at_corpse = false
+			corpse_info = {}
+			pending_corpse_loot = {}
+			update_action_bar()
+
 		"player_list":
 			update_online_players(message.get("players", []))
 
@@ -10696,8 +10749,15 @@ func handle_server_message(message: Dictionary):
 			# Display dungeon info when arriving at a dungeon entrance
 			if at_dungeon_entrance and not was_at_dungeon and not dungeon_entrance_info.is_empty():
 				_display_dungeon_entrance_info()
-			# Update action bar if any gathering location status changed
-			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest:
+			# Update corpse status
+			var was_at_corpse = at_corpse
+			at_corpse = message.get("at_corpse", false)
+			corpse_info = message.get("corpse_info", {})
+			# Display corpse info when arriving at a corpse
+			if at_corpse and not was_at_corpse and not corpse_info.is_empty():
+				_display_corpse_info()
+			# Update action bar if any location status changed
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_corpse != at_corpse:
 				update_action_bar()
 
 		"chat":
@@ -17838,3 +17898,96 @@ func process_title_broadcast(text: String):
 func open_title_menu():
 	"""Request title menu from server"""
 	send_to_server({"type": "get_title_menu"})
+
+# ===== CORPSE LOOTING SYSTEM =====
+
+func _display_corpse_info():
+	"""Display information about the corpse at the player's current location"""
+	if corpse_info.is_empty():
+		return
+
+	var corpse_name = corpse_info.get("character_name", "Unknown")
+	var cause_of_death = corpse_info.get("cause_of_death", "Unknown")
+	var contents = corpse_info.get("contents", {})
+
+	display_game("")
+	display_game("[color=#FF6666]═══════ CORPSE FOUND ═══════[/color]")
+	display_game("[color=#AAAAAA]The remains of [/color][color=#FFFFFF]%s[/color]" % corpse_name)
+	display_game("[color=#808080]Killed by: %s[/color]" % cause_of_death)
+	display_game("")
+
+	# List contents
+	var has_contents = false
+	var item = contents.get("item")
+	if item != null and item is Dictionary and not item.is_empty():
+		var item_name = item.get("name", "Unknown Item")
+		var rarity = item.get("rarity", "common")
+		var rarity_color = _get_rarity_color(rarity)
+		display_game("  [color=#AAAAAA]Item:[/color] [color=%s]%s[/color]" % [rarity_color, item_name])
+		has_contents = true
+
+	var companion = contents.get("companion")
+	if companion != null and companion is Dictionary and not companion.is_empty():
+		var comp_name = companion.get("name", "Unknown")
+		var comp_variant = companion.get("variant", "")
+		var comp_level = companion.get("level", 1)
+		display_game("  [color=#AAAAAA]Companion:[/color] [color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+		has_contents = true
+
+	var egg = contents.get("egg")
+	if egg != null and egg is Dictionary and not egg.is_empty():
+		var egg_type = egg.get("monster_type", "Unknown")
+		display_game("  [color=#AAAAAA]Egg:[/color] [color=#FFD700]%s Egg[/color]" % egg_type)
+		has_contents = true
+
+	var gems = contents.get("gems", 0)
+	if gems > 0:
+		display_game("  [color=#AAAAAA]Gems:[/color] [color=#00BFFF]%d[/color]" % gems)
+		has_contents = true
+
+	if not has_contents:
+		display_game("[color=#808080]  (Empty)[/color]")
+
+	display_game("")
+	display_game("[color=#808080]Press [%s] to loot[/color]" % get_action_key_name(4))
+
+
+func _display_corpse_loot_confirmation():
+	"""Display confirmation prompt for looting a corpse"""
+	if corpse_info.is_empty():
+		return
+
+	var corpse_name = corpse_info.get("character_name", "Unknown")
+	var contents = corpse_info.get("contents", {})
+
+	game_output.clear()
+	display_game("[color=#FF6666]═══════ LOOT CORPSE ═══════[/color]")
+	display_game("[color=#AAAAAA]Loot the remains of [/color][color=#FFFFFF]%s[/color][color=#AAAAAA]?[/color]" % corpse_name)
+	display_game("")
+
+	# List what will be looted
+	var item = contents.get("item")
+	if item != null and item is Dictionary and not item.is_empty():
+		var item_name = item.get("name", "Unknown Item")
+		var rarity = item.get("rarity", "common")
+		var rarity_color = _get_rarity_color(rarity)
+		display_game("  [color=%s]%s[/color]" % [rarity_color, item_name])
+
+	var companion = contents.get("companion")
+	if companion != null and companion is Dictionary and not companion.is_empty():
+		var comp_name = companion.get("name", "Unknown")
+		var comp_variant = companion.get("variant", "")
+		var comp_level = companion.get("level", 1)
+		display_game("  [color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+
+	var egg = contents.get("egg")
+	if egg != null and egg is Dictionary and not egg.is_empty():
+		var egg_type = egg.get("monster_type", "Unknown")
+		display_game("  [color=#FFD700]%s Egg[/color]" % egg_type)
+
+	var gems = contents.get("gems", 0)
+	if gems > 0:
+		display_game("  [color=#00BFFF]%d Gems[/color]" % gems)
+
+	display_game("")
+	display_game("[color=#808080]Press [%s] to confirm, [%s] to cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])

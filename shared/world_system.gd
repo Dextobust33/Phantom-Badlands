@@ -508,11 +508,12 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = []) -> String:
+func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = []) -> String:
 	"""Generate complete map display with location info header.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
 	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
-	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted."""
+	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted.
+	corpse_locations is an array of {x, y, ...} dictionaries for corpses to display."""
 	var output = ""
 
 	# Check if at Trading Post
@@ -521,7 +522,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes)
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations)
 		output += "[/center]"
 		return output
 
@@ -552,7 +553,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_
 
 	# Add the map (centered)
 	output += "[center]"
-	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes)
+	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations)
 	output += "[/center]"
 
 	return output
@@ -1197,11 +1198,12 @@ func _get_merchant_map_char(x: int, y: int) -> String:
 		return "★"  # Elite merchants are visually distinct
 	return "$"  # Normal merchants
 
-func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = []) -> String:
-	"""Generate ASCII map with merchants, Trading Posts, dungeons, and other players shown.
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = []) -> String:
+	"""Generate ASCII map with merchants, Trading Posts, dungeons, corpses, and other players shown.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
 	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
-	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted."""
+	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted.
+	corpse_locations is an array of {x, y, ...} dictionaries for corpses to display."""
 	var map_lines: PackedStringArray = PackedStringArray()
 
 	# Build lookup for depleted nodes
@@ -1222,6 +1224,12 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 	for dungeon in dungeon_locations:
 		var key = "%d,%d" % [dungeon.x, dungeon.y]
 		dungeon_positions[key] = dungeon
+
+	# Build a lookup for corpse positions
+	var corpse_positions = {}
+	for corpse in corpse_locations:
+		var key = "%d,%d" % [corpse.get("x", -9999), corpse.get("y", -9999)]
+		corpse_positions[key] = corpse
 
 	for dy in range(radius, -radius - 1, -1):
 		var line_parts: PackedStringArray = PackedStringArray()
@@ -1251,6 +1259,9 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")  # Default purple if no color
 				line_parts.append("[color=%s] D[/color]" % dungeon_color)
+			elif corpse_positions.has(pos_key):
+				# Show corpse as red X
+				line_parts.append("[color=#FF0000] X[/color]")
 			elif trading_post_db and trading_post_db.is_trading_post_tile(x, y):
 				# Trading Post tiles with special rendering
 				var tp_char = trading_post_db.get_tile_position_in_post(x, y)
