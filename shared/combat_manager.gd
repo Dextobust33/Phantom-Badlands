@@ -2276,7 +2276,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % bolt_amount)
+			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % actual_mana_cost)
 			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
 
 		"cloak":
