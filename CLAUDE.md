@@ -402,16 +402,94 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 
 **Eggs display:** Eggs have variant info (color, color2, pattern) set at creation. `display_eggs()` shows ASCII art using `MonsterArt.get_egg_art()` with patterns like solid, gradient, striped, etc.
 
+**Egg Freezing:** Players can freeze eggs to pause hatching progress (via More → Eggs action bar). Frozen eggs:
+- Have `frozen: true` field in egg dictionary
+- Are skipped by `process_egg_steps()` in character.gd
+- Display "[FROZEN]" and "PAUSED" status in eggs UI
+- Can still be traded with other players
+- Perfect for saving eggs until player finds a Home Stone
+
+**Companion Sorting:** Players can sort companions on the companions page:
+- Sort options: level, tier, variant (rarity), damage (estimated), name, type
+- Variables: `companion_sort_option`, `companion_sort_ascending`
+- Functions: `_sort_companions()`, `_get_variant_sort_value()`, `_get_companion_sort_damage_value()`
+
+**Companion Trading:** Players can trade companions and eggs:
+- Trade window has tabs: Items, Companions, Eggs (trade_tab variable)
+- Server messages: `trade_add_companion`, `trade_remove_companion`, `trade_add_egg`, `trade_remove_egg`
+- Active companions cannot be traded (must dismiss first)
+- Registered house companions cannot be traded
+
 **Companion inspection:** Select companion → `display_companion_inspection()` shows:
 - Level, XP progress, variant bonuses
 - All abilities (passive/active/threshold) with unlock levels and descriptions
 - Each monster type has unique abilities defined in `drop_tables.gd` `COMPANION_MONSTER_ABILITIES`
 
 **Key files:**
-- `client/client.gd` - `display_companions()`, `display_eggs()`, `display_companion_inspection()`
+- `client/client.gd` - `display_companions()`, `display_eggs()`, `display_companion_inspection()`, `_sort_companions()`
 - `client/monster_art.gd` - `get_egg_art()`, `EGG_ART_TEMPLATE`
 - `shared/drop_tables.gd` - `get_egg_for_monster()`, `EGG_VARIANTS`, `COMPANION_MONSTER_ABILITIES`
-- `shared/character.gd` - Companion level cap (10000), XP formula
+- `shared/character.gd` - Companion level cap (10000), XP formula, `process_egg_steps()` (frozen egg logic)
+
+## Sanctuary (House) System
+
+**Overview:** Account-level persistent home that survives character permadeath. Players see their Sanctuary after login, before character select.
+
+**Data Storage:** `user://data/houses.json` - managed by `persistence_manager.gd`
+
+**House Data Structure:**
+```gdscript
+{
+    "owner_username": String,
+    "created_at": int,
+    "storage": {"slots": 20, "items": [...]},
+    "registered_companions": {"slots": 2, "companions": [...]},
+    "baddie_points": int,
+    "total_baddie_points_earned": int,
+    "upgrades": {
+        "storage_slots": 0,      # +10 per level
+        "companion_slots": 0,    # +1 per level
+        "flee_chance": 0,        # +2% per level
+        "starting_gold": 0,      # +50 per level
+        "xp_bonus": 0,           # +1% per level
+        "gathering_bonus": 0     # +5% per level
+    },
+    "stats": {...}
+}
+```
+
+**Game State Flow:** Login → HOUSE_SCREEN → Character Select → Playing
+
+**Baddie Points:** Meta-currency earned on character death. Formula in `persistence.calculate_baddie_points()`:
+- 1 BP per 100 XP earned
+- 1 BP per 500 gold
+- 5 BP per gem
+- 1 BP per 10 monsters killed
+- 10 BP per completed quest
+- Level milestones: +50 (Lv10), +150 (Lv25), +400 (Lv50), +1000 (Lv100)
+
+**Registered Companions:** Companions registered to house survive character death:
+- Use Home Stone (Companion) to register active companion
+- `character.using_registered_companion` and `character.registered_companion_slot` track checkout
+- On death, `_award_baddie_points_on_death()` calls `persistence.return_companion_to_house()`
+
+**Home Stone Items:** Found in tier 5-7 loot. Types:
+- `home_stone_egg` - Send one incubating egg to house storage
+- `home_stone_supplies` - Send up to 10 consumables to house storage
+- `home_stone_equipment` - Send one equipped item to house storage
+- `home_stone_companion` - Register active companion to house
+
+**Key Files:**
+- `server/persistence_manager.gd` - House CRUD, `HOUSE_UPGRADES` constants, `calculate_baddie_points()`
+- `server/server.gd` - `handle_house_request()`, `handle_house_upgrade()`, `_award_baddie_points_on_death()`
+- `client/client.gd` - `GameState.HOUSE_SCREEN`, `display_house_main()`, `display_house_storage()`, etc.
+- `shared/character.gd` - `house_bonuses`, `using_registered_companion`, `registered_companion_slot`
+- `shared/drop_tables.gd` - Home Stone item definitions in tier 5-7 tables
+
+**Client Variables:**
+- `house_data` - Current house data from server
+- `house_mode` - Current house tab: "", "main", "storage", "companions", "upgrades"
+- `pending_house_action` - Action state within house mode
 
 ## Common Pitfalls
 

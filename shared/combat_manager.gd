@@ -1582,6 +1582,14 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	if slow_penalty > 0:
 		flee_chance -= slow_penalty
 
+	# === FLOCK FLEE BONUS ===
+	# Each monster fought in a flock increases flee chance by 15%
+	var flock_count = combat.get("flock_count", 0)
+	if flock_count > 0:
+		var flock_flee_bonus = flock_count * 15
+		flee_chance += flock_flee_bonus
+		messages.append("[color=#FFD700]Flock fatigue: +%d%% flee chance![/color]" % flock_flee_bonus)
+
 	flee_chance = clamp(flee_chance, 5, 95)  # Hardcap 5-95%
 
 	var roll = randi() % 100

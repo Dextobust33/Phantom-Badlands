@@ -281,7 +281,8 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # ===== NEW COMPANION SYSTEM (replaces soul gems for egg-based companions) =====
 # Incubating Eggs - eggs that are being hatched via movement
 # Format: [{egg_id: String, monster_type: String, companion_name: String, tier: int,
-#           steps_remaining: int, hatch_steps: int, bonuses: Dictionary, obtained_at: int}]
+#           steps_remaining: int, hatch_steps: int, bonuses: Dictionary, obtained_at: int,
+#           frozen: bool (optional - if true, egg won't hatch but can be traded)}]
 @export var incubating_eggs: Array = []
 const MAX_INCUBATING_EGGS = 3  # Can only incubate 3 eggs at a time
 
@@ -390,6 +391,14 @@ const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower
 @export var dungeon_encounters_cleared: int = 0  # Total encounters cleared this run
 @export var dungeon_cooldowns: Dictionary = {}  # {dungeon_type: timestamp when available}
 @export var dungeons_completed: Dictionary = {}  # {dungeon_type: times_completed}
+
+# ===== HOUSE (SANCTUARY) SYSTEM =====
+# House bonuses applied from account-level upgrades
+# Format: {flee_chance: int, starting_gold: int, xp_bonus: int, gathering_bonus: int}
+@export var house_bonuses: Dictionary = {}
+# Registered companion tracking - companion survives death and returns to house
+@export var using_registered_companion: bool = false
+@export var registered_companion_slot: int = -1  # Which house slot the companion is from
 
 func _init():
 	# Constructor
@@ -1257,7 +1266,10 @@ func to_dict() -> Dictionary:
 		"crafting_xp": crafting_xp,
 		"equipped_fishing_rod": equipped_fishing_rod,
 		"equipped_pickaxe": equipped_pickaxe,
-		"equipped_axe": equipped_axe
+		"equipped_axe": equipped_axe,
+		"house_bonuses": house_bonuses,
+		"using_registered_companion": using_registered_companion,
+		"registered_companion_slot": registered_companion_slot
 	}
 
 func from_dict(data: Dictionary):
@@ -1431,6 +1443,11 @@ func from_dict(data: Dictionary):
 	equipped_fishing_rod = data.get("equipped_fishing_rod", {})
 	equipped_pickaxe = data.get("equipped_pickaxe", {})
 	equipped_axe = data.get("equipped_axe", {})
+
+	# House (Sanctuary) system
+	house_bonuses = data.get("house_bonuses", {})
+	using_registered_companion = data.get("using_registered_companion", false)
+	registered_companion_slot = data.get("registered_companion_slot", -1)
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
@@ -1843,7 +1860,7 @@ func tick_blind() -> bool:
 	return true
 
 func try_last_stand() -> bool:
-	"""Dwarf racial: 25% chance to survive lethal damage with 1 HP.
+	"""Dwarf racial: 34% chance to survive lethal damage with 1 HP.
 	Returns true if Last Stand triggered, false otherwise.
 	Can only trigger once per combat."""
 	if race != "Dwarf":
@@ -1851,9 +1868,9 @@ func try_last_stand() -> bool:
 	if last_stand_used:
 		return false
 
-	# 25% chance to trigger
+	# 34% chance to trigger
 	var roll = randi() % 100
-	if roll < 25:
+	if roll < 34:
 		last_stand_used = true
 		current_hp = 1
 		return true
@@ -2384,11 +2401,17 @@ func add_egg(egg_data: Dictionary) -> Dictionary:
 	return {"success": true, "message": "Now incubating: %s" % egg.companion_name}
 
 func process_egg_steps(steps: int = 1) -> Array:
-	"""Process movement steps for all incubating eggs. Returns array of hatched companions."""
+	"""Process movement steps for all incubating eggs. Returns array of hatched companions.
+	Frozen eggs are skipped (used for trading/house storage)."""
 	var hatched = []
 	var remaining_eggs = []
 
 	for egg in incubating_eggs:
+		# Skip frozen eggs - they don't progress
+		if egg.get("frozen", false):
+			remaining_eggs.append(egg)
+			continue
+
 		egg.steps_remaining -= steps
 		if egg.steps_remaining <= 0:
 			# Egg hatched!

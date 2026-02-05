@@ -9,15 +9,27 @@ const LEADERBOARD_FILE = "user://data/leaderboard.json"
 const REALM_STATE_FILE = "user://data/realm_state.json"
 const CHARACTERS_DIR = "user://data/characters/"
 const CORPSES_FILE = "user://data/corpses.json"
+const HOUSES_FILE = "user://data/houses.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
+
+# House upgrade definitions - cost in Baddie Points per level
+const HOUSE_UPGRADES = {
+	"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
+	"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
+	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
+	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
+	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]}
+}
 
 # Cached data
 var accounts_data: Dictionary = {}
 var leaderboard_data: Dictionary = {}
 var realm_state_data: Dictionary = {}
 var corpses_data: Dictionary = {}  # {"corpses": [...]}
+var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 
 func _ready():
 	ensure_data_directories()
@@ -26,6 +38,7 @@ func _ready():
 	load_monster_kills()
 	load_realm_state()
 	load_corpses()
+	load_houses()
 
 # ===== DIRECTORY SETUP =====
 
@@ -843,3 +856,313 @@ func get_visible_corpses(center_x: int, center_y: int, radius: int) -> Array:
 			visible.append(corpse)
 
 	return visible
+
+# ===== HOUSE (SANCTUARY) PERSISTENCE =====
+
+func load_houses():
+	"""Load houses data from file"""
+	if not FileAccess.file_exists(HOUSES_FILE):
+		houses_data = {"houses": {}}
+		save_houses()
+		return
+
+	var file = FileAccess.open(HOUSES_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+
+		if error == OK:
+			houses_data = json.data
+		else:
+			print("Error parsing houses file: ", json.get_error_message())
+			houses_data = {"houses": {}}
+
+func save_houses():
+	"""Save houses data to file"""
+	var file = FileAccess.open(HOUSES_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(houses_data, "\t"))
+		file.close()
+
+func get_house(account_id: String) -> Dictionary:
+	"""Get a house by account ID, creating it if it doesn't exist"""
+	if not houses_data.has("houses"):
+		houses_data["houses"] = {}
+
+	if not houses_data.houses.has(account_id):
+		# Auto-create house for account
+		return create_house(account_id)
+
+	return houses_data.houses[account_id]
+
+func create_house(account_id: String) -> Dictionary:
+	"""Create a new house for an account"""
+	if not houses_data.has("houses"):
+		houses_data["houses"] = {}
+
+	# Get username from account
+	var username = "Unknown"
+	if accounts_data.accounts.has(account_id):
+		username = accounts_data.accounts[account_id].get("username", "Unknown")
+
+	var house = {
+		"owner_account_id": account_id,
+		"owner_username": username,
+		"created_at": int(Time.get_unix_time_from_system()),
+
+		"storage": {
+			"slots": 20,
+			"items": []
+		},
+
+		"registered_companions": {
+			"slots": 2,
+			"companions": []
+		},
+
+		"baddie_points": 0,
+		"total_baddie_points_earned": 0,
+
+		"upgrades": {
+			"storage_slots": 0,
+			"companion_slots": 0,
+			"flee_chance": 0,
+			"starting_gold": 0,
+			"xp_bonus": 0,
+			"gathering_bonus": 0
+		},
+
+		"stats": {
+			"characters_lost": 0,
+			"highest_level_reached": 0,
+			"total_gold_earned": 0,
+			"total_xp_earned": 0,
+			"total_monsters_killed": 0
+		}
+	}
+
+	houses_data.houses[account_id] = house
+	save_houses()
+
+	print("House created for account: %s" % account_id)
+	return house
+
+func save_house(account_id: String, house: Dictionary):
+	"""Save a specific house"""
+	if not houses_data.has("houses"):
+		houses_data["houses"] = {}
+
+	houses_data.houses[account_id] = house
+	save_houses()
+
+func get_house_storage_capacity(account_id: String) -> int:
+	"""Get total storage slots for a house (base + upgrades)"""
+	var house = get_house(account_id)
+	var base_slots = house.storage.slots
+	var upgrade_level = house.upgrades.get("storage_slots", 0)
+	return base_slots + (upgrade_level * HOUSE_UPGRADES.storage_slots.effect)
+
+func get_house_companion_capacity(account_id: String) -> int:
+	"""Get total registered companion slots for a house"""
+	var house = get_house(account_id)
+	var base_slots = house.registered_companions.slots
+	var upgrade_level = house.upgrades.get("companion_slots", 0)
+	return base_slots + (upgrade_level * HOUSE_UPGRADES.companion_slots.effect)
+
+func add_item_to_house_storage(account_id: String, item: Dictionary) -> bool:
+	"""Add an item to house storage. Returns true if successful."""
+	var house = get_house(account_id)
+	var capacity = get_house_storage_capacity(account_id)
+
+	if house.storage.items.size() >= capacity:
+		return false
+
+	house.storage.items.append(item)
+	save_house(account_id, house)
+	return true
+
+func remove_item_from_house_storage(account_id: String, index: int) -> Dictionary:
+	"""Remove an item from house storage by index. Returns the item."""
+	var house = get_house(account_id)
+
+	if index < 0 or index >= house.storage.items.size():
+		return {}
+
+	var item = house.storage.items[index]
+	house.storage.items.remove_at(index)
+	save_house(account_id, house)
+	return item
+
+func register_companion_to_house(account_id: String, companion: Dictionary) -> int:
+	"""Register a companion to the house. Returns slot index or -1 if full."""
+	var house = get_house(account_id)
+	var capacity = get_house_companion_capacity(account_id)
+
+	if house.registered_companions.companions.size() >= capacity:
+		return -1
+
+	# Add registration metadata
+	companion["registered_at"] = int(Time.get_unix_time_from_system())
+	companion["checked_out_by"] = null
+	companion["checkout_time"] = null
+
+	house.registered_companions.companions.append(companion)
+	save_house(account_id, house)
+	return house.registered_companions.companions.size() - 1
+
+func checkout_companion_from_house(account_id: String, slot: int, character_name: String) -> Dictionary:
+	"""Check out a companion from house. Returns the companion or empty dict."""
+	var house = get_house(account_id)
+
+	if slot < 0 or slot >= house.registered_companions.companions.size():
+		return {}
+
+	var companion = house.registered_companions.companions[slot]
+	if companion.get("checked_out_by") != null:
+		return {}  # Already checked out
+
+	companion["checked_out_by"] = character_name
+	companion["checkout_time"] = int(Time.get_unix_time_from_system())
+	save_house(account_id, house)
+	return companion
+
+func return_companion_to_house(account_id: String, slot: int, updated_companion: Dictionary) -> bool:
+	"""Return a companion to house storage with updated stats."""
+	var house = get_house(account_id)
+
+	if slot < 0 or slot >= house.registered_companions.companions.size():
+		return false
+
+	# Update companion data but keep registration info
+	var registered_at = house.registered_companions.companions[slot].get("registered_at", 0)
+	updated_companion["registered_at"] = registered_at
+	updated_companion["checked_out_by"] = null
+	updated_companion["checkout_time"] = null
+
+	house.registered_companions.companions[slot] = updated_companion
+	save_house(account_id, house)
+	return true
+
+func unregister_companion_from_house(account_id: String, slot: int) -> Dictionary:
+	"""Remove a companion from house registration. Returns the companion."""
+	var house = get_house(account_id)
+
+	if slot < 0 or slot >= house.registered_companions.companions.size():
+		return {}
+
+	var companion = house.registered_companions.companions[slot]
+	if companion.get("checked_out_by") != null:
+		return {}  # Can't unregister while checked out
+
+	house.registered_companions.companions.remove_at(slot)
+	save_house(account_id, house)
+	return companion
+
+func add_baddie_points(account_id: String, points: int):
+	"""Add baddie points to a house"""
+	var house = get_house(account_id)
+	house["baddie_points"] = house.get("baddie_points", 0) + points
+	house["total_baddie_points_earned"] = house.get("total_baddie_points_earned", 0) + points
+	save_house(account_id, house)
+
+func spend_baddie_points(account_id: String, amount: int) -> bool:
+	"""Spend baddie points. Returns true if successful."""
+	var house = get_house(account_id)
+	if house.get("baddie_points", 0) < amount:
+		return false
+
+	house["baddie_points"] = house.get("baddie_points", 0) - amount
+	save_house(account_id, house)
+	return true
+
+func purchase_house_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
+	"""Purchase a house upgrade. Returns {success: bool, message: String}"""
+	var house = get_house(account_id)
+
+	if not HOUSE_UPGRADES.has(upgrade_id):
+		return {"success": false, "message": "Unknown upgrade: %s" % upgrade_id}
+
+	var upgrade_def = HOUSE_UPGRADES[upgrade_id]
+	var current_level = house.upgrades.get(upgrade_id, 0)
+
+	if current_level >= upgrade_def.max:
+		return {"success": false, "message": "Upgrade already at maximum level."}
+
+	var cost = upgrade_def.costs[current_level]
+	if house.get("baddie_points", 0) < cost:
+		return {"success": false, "message": "Not enough Baddie Points. Need %d, have %d." % [cost, house.get("baddie_points", 0)]}
+
+	# Purchase successful
+	house["baddie_points"] = house.get("baddie_points", 0) - cost
+	house.upgrades[upgrade_id] = current_level + 1
+	save_house(account_id, house)
+
+	return {"success": true, "message": "Upgrade purchased! %s is now level %d." % [upgrade_id, current_level + 1]}
+
+func update_house_stats(account_id: String, stat_updates: Dictionary):
+	"""Update house lifetime stats"""
+	var house = get_house(account_id)
+
+	for stat_name in stat_updates.keys():
+		var current = house.stats.get(stat_name, 0)
+		var update_type = "add"  # Default: add to existing
+		var value = stat_updates[stat_name]
+
+		if stat_name == "highest_level_reached":
+			# Take maximum
+			house.stats[stat_name] = maxi(current, value)
+		else:
+			# Add to total
+			house.stats[stat_name] = current + value
+
+	save_house(account_id, house)
+
+func get_house_bonuses(account_id: String) -> Dictionary:
+	"""Calculate all bonuses from house upgrades"""
+	var house = get_house(account_id)
+	var bonuses = {
+		"flee_chance": 0,
+		"starting_gold": 0,
+		"xp_bonus": 0,
+		"gathering_bonus": 0
+	}
+
+	var upgrades = house.get("upgrades", {})
+	for upgrade_id in ["flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]:
+		var level = upgrades.get(upgrade_id, 0)
+		if level > 0 and HOUSE_UPGRADES.has(upgrade_id):
+			bonuses[upgrade_id] = level * HOUSE_UPGRADES[upgrade_id].effect
+
+	return bonuses
+
+func calculate_baddie_points(character: Character) -> int:
+	"""Calculate baddie points earned from a character on death"""
+	var points = 0
+
+	# XP contribution: 1 BP per 100 XP
+	points += int(character.experience / 100)
+
+	# Gold contribution: 1 BP per 500 gold
+	points += int(character.gold / 500)
+
+	# Gem contribution: 5 BP per gem
+	points += character.gems * 5
+
+	# Kill contribution: 1 BP per 10 kills
+	points += int(character.monsters_killed / 10)
+
+	# Quest contribution: 10 BP per completed quest
+	points += character.completed_quests.size() * 10
+
+	# Level milestones
+	if character.level >= 10:
+		points += 50
+	if character.level >= 25:
+		points += 150
+	if character.level >= 50:
+		points += 400
+	if character.level >= 100:
+		points += 1000
+
+	return points

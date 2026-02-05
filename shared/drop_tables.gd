@@ -209,7 +209,10 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_vampirism", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_slow", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"},
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"}
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"},
+		# Home Stones - send items to house storage
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 1, "item_type": "home_stone_supplies", "rarity": "uncommon"}
 	],
 	"tier6": [
 		{"weight": 8, "item_type": "potion_master", "rarity": "rare"},
@@ -233,7 +236,11 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "tome_intelligence", "rarity": "epic"},
 		# Mystery items
 		{"weight": 3, "item_type": "mysterious_box", "rarity": "epic"},
-		{"weight": 2, "item_type": "cursed_coin", "rarity": "epic"}
+		{"weight": 2, "item_type": "cursed_coin", "rarity": "epic"},
+		# Home Stones
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 1, "item_type": "home_stone_equipment", "rarity": "rare"}
 	],
 	"tier7": [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "epic"},
@@ -256,7 +263,12 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "tome_brutal_strike", "rarity": "legendary"},
 		{"weight": 2, "item_type": "tome_swift_analyze", "rarity": "legendary"},
 		# Mystery items
-		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"}
+		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"},
+		# Home Stones
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier8": [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "epic"},
@@ -426,6 +438,12 @@ const POTION_EFFECTS = {
 	"tome_greater_ambush": {"skill_enhance": "ambush", "effect": "damage_bonus", "value": 20},
 	"tome_perfect_exploit": {"skill_enhance": "exploit", "effect": "damage_bonus", "value": 25},
 	"tome_efficient_vanish": {"skill_enhance": "vanish", "effect": "cost_reduction", "value": 15},
+	# === HOME STONES (Tier 5+) ===
+	# Send items to house storage for safekeeping (survives permadeath)
+	"home_stone_egg": {"home_stone": "egg"},  # Send one incubating egg to house
+	"home_stone_supplies": {"home_stone": "supplies"},  # Send up to 10 consumables to house
+	"home_stone_equipment": {"home_stone": "equipment"},  # Send one equipped item to house
+	"home_stone_companion": {"home_stone": "companion"},  # Register active companion to house
 }
 
 # Trophy definitions - rare drops from specific powerful monsters
@@ -2110,7 +2128,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin"
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type == "mysterious_box" or item_type == "cursed_coin"
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -2749,6 +2767,20 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 		match rarity:
 			"epic": return "Ancient " + base_name
 			"legendary": return "Divine " + base_name
+			_: return base_name
+
+	# Special handling for Home Stones
+	if item_type.begins_with("home_stone_"):
+		var stone_names = {
+			"home_stone_egg": "Home Stone (Egg)",
+			"home_stone_supplies": "Home Stone (Supplies)",
+			"home_stone_equipment": "Home Stone (Equipment)",
+			"home_stone_companion": "Home Stone (Companion)"
+		}
+		var base_name = stone_names.get(item_type, "Home Stone")
+		match rarity:
+			"rare": return "Shimmering " + base_name
+			"epic": return "Radiant " + base_name
 			_: return base_name
 
 	# Special handling for resource potions (unified - mana/stamina/energy all restore primary resource)

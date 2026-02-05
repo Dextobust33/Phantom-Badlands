@@ -750,6 +750,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_release_companion(peer_id, message)
 		"release_all_companions":
 			handle_release_all_companions(peer_id)
+		"toggle_egg_freeze":
+			handle_toggle_egg_freeze(peer_id, message)
 		"debug_hatch":
 			handle_debug_hatch(peer_id)
 		# Fishing system handlers
@@ -806,6 +808,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_trade_offer(peer_id, message)
 		"trade_remove":
 			handle_trade_remove(peer_id, message)
+		"trade_add_companion":
+			handle_trade_add_companion(peer_id, message)
+		"trade_remove_companion":
+			handle_trade_remove_companion(peer_id, message)
+		"trade_add_egg":
+			handle_trade_add_egg(peer_id, message)
+		"trade_remove_egg":
+			handle_trade_remove_egg(peer_id, message)
 		"trade_ready":
 			handle_trade_ready(peer_id)
 		"trade_cancel":
@@ -825,6 +835,19 @@ func handle_message(peer_id: int, message: Dictionary):
 		# Bug report handler
 		"bug_report":
 			handle_bug_report(peer_id, message)
+		# House (Sanctuary) system handlers
+		"house_request":
+			handle_house_request(peer_id)
+		"house_upgrade":
+			handle_house_upgrade(peer_id, message)
+		"house_discard_item":
+			handle_house_discard_item(peer_id, message)
+		"house_unregister_companion":
+			handle_house_unregister_companion(peer_id, message)
+		"house_register_from_storage":
+			handle_house_register_companion_from_storage(peer_id, message)
+		"request_character_list":
+			handle_list_characters(peer_id)
 		_:
 			pass
 
@@ -2791,6 +2814,9 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 				"rank": rank
 			})
 
+	# Award baddie points to house before deleting character (need value for permadeath message)
+	var baddie_points_earned = _award_baddie_points_on_death(peer_id, character, account_id, cause_of_death)
+
 	# Send permadeath message to the player who died
 	send_to_peer(peer_id, {
 		"type": "permadeath",
@@ -2799,6 +2825,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		"experience": character.experience,
 		"cause_of_death": cause_of_death,
 		"leaderboard_rank": rank,
+		"baddie_points_earned": baddie_points_earned,
 		"message": "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death]
 	})
 
@@ -3903,10 +3930,11 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	if analyze_bonus > 0:
 		combat_mgr.set_analyze_bonus(peer_id, analyze_bonus)
 
-	# Preserve dungeon combat flags for tile clearing after final flock monster
-	if is_dungeon_combat:
-		var internal_state = combat_mgr.get_active_combat(peer_id)
-		if internal_state:
+	# Preserve flock count and dungeon combat flags for tile clearing after final flock monster
+	var internal_state = combat_mgr.get_active_combat(peer_id)
+	if internal_state:
+		internal_state["flock_count"] = flock_count  # Store flock count for flee bonus calculation
+		if is_dungeon_combat:
 			internal_state["is_dungeon_combat"] = true
 			internal_state["is_boss_fight"] = is_boss_fight
 
@@ -4367,6 +4395,155 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FF00FF]You master the secrets of the %s![/color]\n[color=#00FF00][b]SKILL ENHANCED![/b] %s: %s![/color]\n[color=#00FFFF](Total %s %s: +%d%%)[/color]" % [item_name, ability_display, effect_display, ability_display, enhance_effect.replace("_", " "), int(new_total)]
 		})
+	elif effect.has("home_stone"):
+		# Home Stone items - send items/companions/eggs to house storage
+		var account_id = peers[peer_id].account_id
+		var stone_type = effect.home_stone
+
+		# Validate: can't use in combat or dungeons
+		if character.in_combat:
+			send_to_peer(peer_id, {"type": "error", "message": "Cannot use Home Stones in combat!"})
+			return
+		if character.in_dungeon:
+			send_to_peer(peer_id, {"type": "error", "message": "Cannot use Home Stones in dungeons!"})
+			return
+
+		match stone_type:
+			"egg":
+				# Hatch egg and send companion to house storage
+				if character.incubating_eggs.is_empty():
+					send_to_peer(peer_id, {"type": "error", "message": "You have no eggs to send home!"})
+					return
+				# Use the first egg (could add selection UI later)
+				var egg = character.incubating_eggs[0]
+				var house = persistence.get_house(account_id)
+				if house == null:
+					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+					return
+				# Check if storage has room
+				var storage_capacity = persistence.get_house_storage_capacity(account_id)
+				if house.storage.items.size() >= storage_capacity:
+					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+					return
+				# Remove egg from character
+				character.incubating_eggs.remove_at(0)
+				# Hatch the egg into a companion (same logic as character._hatch_egg)
+				var companion = {
+					"type": "stored_companion",
+					"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
+					"monster_type": egg.monster_type,
+					"name": egg.companion_name,
+					"tier": egg.tier,
+					"bonuses": egg.bonuses.duplicate() if egg.has("bonuses") else {},
+					"obtained_at": int(Time.get_unix_time_from_system()),
+					"battles_fought": 0,
+					"variant": egg.get("variant", "Normal"),
+					"variant_color": egg.get("variant_color", "#FFFFFF"),
+					"variant_color2": egg.get("variant_color2", ""),
+					"variant_pattern": egg.get("variant_pattern", "solid"),
+					"level": 1,
+					"xp": 0
+				}
+				persistence.add_item_to_house_storage(account_id, companion)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#00FF00]A newborn %s companion has been sent to your Sanctuary![/color]" % [item_name, egg.monster_type, egg.companion_name]
+				})
+
+			"supplies":
+				# Send up to 10 consumable items to house storage
+				var consumables = []
+				for i in range(character.inventory.size()):
+					var inv_item = character.inventory[i]
+					if drop_tables.is_consumable(inv_item):
+						consumables.append({"index": i, "item": inv_item})
+				if consumables.is_empty():
+					send_to_peer(peer_id, {"type": "error", "message": "You have no consumable items to send home!"})
+					return
+				var house = persistence.get_house(account_id)
+				if house == null:
+					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+					return
+				var storage_capacity = persistence.get_house_storage_capacity(account_id)
+				var available_space = storage_capacity - house.storage.items.size()
+				if available_space <= 0:
+					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+					return
+				# Send up to 10 consumables (or available space, whichever is less)
+				var to_send = min(10, min(consumables.size(), available_space))
+				var items_to_remove = []
+				var sent_count = 0
+				for i in range(to_send):
+					var entry = consumables[i]
+					persistence.add_item_to_house_storage(account_id, entry.item)
+					items_to_remove.append(entry.index)
+					sent_count += 1
+				# Remove items in reverse order to maintain indices
+				items_to_remove.sort()
+				items_to_remove.reverse()
+				for idx in items_to_remove:
+					character.inventory.remove_at(idx)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]The %s glows and %d supplies vanish in a flash of light![/color]\n[color=#00FF00]Items safely stored at your house![/color]" % [item_name, sent_count]
+				})
+
+			"equipment":
+				# Send one equipped item to house storage
+				var equipped_items = []
+				for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
+					if character.equipment.has(slot) and character.equipment[slot] != null:
+						equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+				if equipped_items.is_empty():
+					send_to_peer(peer_id, {"type": "error", "message": "You have no equipment to send home!"})
+					return
+				var house = persistence.get_house(account_id)
+				if house == null:
+					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+					return
+				var storage_capacity = persistence.get_house_storage_capacity(account_id)
+				if house.storage.items.size() >= storage_capacity:
+					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+					return
+				# Send the first equipped item (highest value slot - weapon first)
+				var to_send = equipped_items[0]
+				persistence.add_item_to_house_storage(account_id, to_send.item)
+				character.equipment[to_send.slot] = null
+				character.recalculate_stats()
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]The %s glows and your %s vanishes in a flash of light![/color]\n[color=#00FF00]Equipment safely stored at your house![/color]" % [item_name, to_send.item.get("name", "equipment")]
+				})
+
+			"companion":
+				# Register active companion to house (survives death)
+				if character.active_companion == null:
+					send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
+					return
+				if character.using_registered_companion:
+					send_to_peer(peer_id, {"type": "error", "message": "This companion is already registered to your house!"})
+					return
+				var house = persistence.get_house(account_id)
+				if house == null:
+					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+					return
+				var companion_capacity = persistence.get_house_companion_capacity(account_id)
+				if house.registered_companions.companions.size() >= companion_capacity:
+					send_to_peer(peer_id, {"type": "error", "message": "House companion kennel is full! Upgrade to register more."})
+					return
+				# Register the companion
+				var companion = character.active_companion.duplicate(true)
+				var slot = persistence.register_companion_to_house(account_id, companion, character.name)
+				if slot == -1:
+					send_to_peer(peer_id, {"type": "error", "message": "Failed to register companion!"})
+					return
+				# Update character to track this is a registered companion
+				character.using_registered_companion = true
+				character.registered_companion_slot = slot
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]The %s glows and forms a bond between your %s and your house![/color]\n[color=#00FF00]%s is now registered and will return home if you fall![/color]" % [item_name, companion.get("name", "companion"), companion.get("name", "Companion")]
+				})
 
 	# Update character data
 	send_character_update(peer_id)
@@ -5010,7 +5187,7 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
-			item_type == "soul_gem")
+			item_type == "soul_gem" or item_type.begins_with("home_stone_"))
 
 func handle_merchant_sell_all(peer_id: int):
 	"""Handle selling all EQUIPMENT items to a merchant (skips consumables and title items)"""
@@ -5864,6 +6041,234 @@ func handle_change_password(peer_id: int, message: Dictionary):
 			"type": "password_change_failed",
 			"reason": result.reason
 		})
+
+# ===== HOUSE (SANCTUARY) HANDLERS =====
+
+func handle_house_request(peer_id: int):
+	"""Send house data to authenticated user"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+
+	# Include upgrade definitions so client knows costs
+	send_to_peer(peer_id, {
+		"type": "house_data",
+		"house": house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func handle_house_upgrade(peer_id: int, message: Dictionary):
+	"""Handle house upgrade purchase"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var upgrade_id = message.get("upgrade_id", "")
+
+	var result = persistence.purchase_house_upgrade(account_id, upgrade_id)
+
+	if result.success:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]%s[/color]" % result.message
+		})
+		# Send updated house data
+		var house = persistence.get_house(account_id)
+		send_to_peer(peer_id, {
+			"type": "house_update",
+			"house": house,
+			"upgrade_costs": persistence.HOUSE_UPGRADES
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF0000]%s[/color]" % result.message
+		})
+
+func handle_house_discard_item(peer_id: int, message: Dictionary):
+	"""Handle discarding an item from house storage"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var item_index = message.get("index", -1)
+
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found."})
+		return
+
+	if item_index < 0 or item_index >= house.storage.items.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index."})
+		return
+
+	var item = house.storage.items[item_index]
+	var item_name = item.get("name", item.get("monster_type", "Unknown Item"))
+
+	# Remove the item
+	persistence.remove_item_from_house_storage(account_id, item_index)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF6666]%s has been discarded from your Sanctuary storage.[/color]" % item_name
+	})
+
+	# Send updated house data
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func handle_house_unregister_companion(peer_id: int, message: Dictionary):
+	"""Handle unregistering a companion from the kennel (move to storage)"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var companion_slot = message.get("slot", -1)
+
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found."})
+		return
+
+	if companion_slot < 0 or companion_slot >= house.registered_companions.companions.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid companion slot."})
+		return
+
+	var companion = house.registered_companions.companions[companion_slot]
+
+	# Check if companion is currently checked out
+	if companion.get("checked_out_by", null) != null:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot unregister - companion is currently checked out by %s!" % companion.checked_out_by})
+		return
+
+	# Check if storage has room
+	var storage_capacity = persistence.get_house_storage_capacity(account_id)
+	if house.storage.items.size() >= storage_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "House storage is full! Cannot move companion to storage."})
+		return
+
+	var companion_name = companion.get("name", "Unknown")
+
+	# Remove from kennel
+	var unregistered = persistence.unregister_companion_from_house(account_id, companion_slot)
+	if unregistered == null:
+		send_to_peer(peer_id, {"type": "error", "message": "Failed to unregister companion."})
+		return
+
+	# Add to storage as stored_companion
+	unregistered["type"] = "stored_companion"
+	persistence.add_item_to_house_storage(account_id, unregistered)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFA500]%s has been unregistered and moved to your Sanctuary storage.[/color]" % companion_name
+	})
+
+	# Send updated house data
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func handle_house_register_companion_from_storage(peer_id: int, message: Dictionary):
+	"""Handle registering a companion from storage to the kennel"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+
+	var account_id = peers[peer_id].account_id
+	var item_index = message.get("index", -1)
+
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found."})
+		return
+
+	if item_index < 0 or item_index >= house.storage.items.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index."})
+		return
+
+	var item = house.storage.items[item_index]
+
+	# Check if it's a stored companion
+	if item.get("type") != "stored_companion":
+		send_to_peer(peer_id, {"type": "error", "message": "This item is not a companion."})
+		return
+
+	# Check if kennel has room
+	var companion_capacity = persistence.get_house_companion_capacity(account_id)
+	if house.registered_companions.companions.size() >= companion_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "Companion kennel is full! Upgrade to register more companions."})
+		return
+
+	var companion_name = item.get("name", "Unknown")
+
+	# Remove from storage
+	persistence.remove_item_from_house_storage(account_id, item_index)
+
+	# Register to kennel (remove the "type" field as it's not needed in kennel)
+	var companion_data = item.duplicate()
+	companion_data.erase("type")
+	var slot = persistence.register_companion_to_house(account_id, companion_data, null)
+
+	if slot == -1:
+		# Failed - put it back in storage
+		persistence.add_item_to_house_storage(account_id, item)
+		send_to_peer(peer_id, {"type": "error", "message": "Failed to register companion."})
+		return
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00]%s has been registered to your Sanctuary kennel![/color]" % companion_name
+	})
+
+	# Send updated house data
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func _award_baddie_points_on_death(peer_id: int, character: Character, account_id: String, cause_of_death: String) -> int:
+	"""Calculate and award baddie points to house on character death"""
+	var bp = persistence.calculate_baddie_points(character)
+
+	if bp > 0:
+		persistence.add_baddie_points(account_id, bp)
+
+		# Update house stats
+		persistence.update_house_stats(account_id, {
+			"characters_lost": 1,
+			"highest_level_reached": character.level,
+			"total_xp_earned": character.experience,
+			"total_monsters_killed": character.monsters_killed,
+			"total_gold_earned": character.gold
+		})
+
+		print("Awarded %d Baddie Points to account %s from character %s" % [bp, account_id, character.name])
+
+	# Return registered companion to house if using one
+	if character.using_registered_companion and character.registered_companion_slot >= 0:
+		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
+
+	return bp
+
+func _get_house_bonuses_for_character(account_id: String) -> Dictionary:
+	"""Get house upgrade bonuses to apply to a new character"""
+	return persistence.get_house_bonuses(account_id)
 
 # ===== TRADING POST HANDLERS =====
 
@@ -7172,6 +7577,40 @@ func handle_release_all_companions(peer_id: int):
 	character.collected_companions.clear()
 
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Released all %d companions. They have been set free.[/color]" % count})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_toggle_egg_freeze(peer_id: int, message: Dictionary):
+	"""Handle toggling the frozen state of an egg"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var egg_index = message.get("index", -1)
+
+	if egg_index < 0 or egg_index >= character.incubating_eggs.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid egg index."})
+		return
+
+	var egg = character.incubating_eggs[egg_index]
+	var is_frozen = egg.get("frozen", false)
+
+	# Toggle frozen state
+	egg["frozen"] = not is_frozen
+	var new_state = egg["frozen"]
+
+	var monster_type = egg.get("monster_type", "Unknown")
+	if new_state:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00BFFF]You freeze your %s egg. It will no longer hatch until unfrozen.[/color]" % monster_type
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFA500]You unfreeze your %s egg. It will resume hatching when you walk.[/color]" % monster_type
+		})
+
 	send_character_update(peer_id)
 	save_character(peer_id)
 
@@ -10802,19 +11241,41 @@ func _send_trade_update(peer_id: int):
 	var partner_name = ""
 	var partner_class = ""
 	var partner_items_data = []
+	var partner_companions_data = []
+	var partner_eggs_data = []
 	if characters.has(partner_id):
-		partner_name = characters[partner_id].name
-		partner_class = characters[partner_id].class_type
+		var partner_char = characters[partner_id]
+		partner_name = partner_char.name
+		partner_class = partner_char.class_type
 		# Convert partner's item indices to actual item data
-		var partner_inventory = characters[partner_id].inventory
+		var partner_inventory = partner_char.inventory
 		for idx in partner_trade.get("my_items", []):
 			if idx >= 0 and idx < partner_inventory.size():
 				partner_items_data.append(partner_inventory[idx])
+		# Convert partner's companion indices to actual companion data
+		for idx in partner_trade.get("my_companions", []):
+			if idx >= 0 and idx < partner_char.companions.size():
+				partner_companions_data.append(partner_char.companions[idx])
+		# Convert partner's egg indices to actual egg data
+		for idx in partner_trade.get("my_eggs", []):
+			if idx >= 0 and idx < partner_char.incubating_eggs.size():
+				partner_eggs_data.append(partner_char.incubating_eggs[idx])
 
-	# Get my character info
+	# Get my character info and data
 	var my_class = ""
+	var my_companions_data = []
+	var my_eggs_data = []
 	if characters.has(peer_id):
-		my_class = characters[peer_id].class_type
+		var my_char = characters[peer_id]
+		my_class = my_char.class_type
+		# Convert my companion indices to actual companion data
+		for idx in trade.get("my_companions", []):
+			if idx >= 0 and idx < my_char.companions.size():
+				my_companions_data.append(my_char.companions[idx])
+		# Convert my egg indices to actual egg data
+		for idx in trade.get("my_eggs", []):
+			if idx >= 0 and idx < my_char.incubating_eggs.size():
+				my_eggs_data.append(my_char.incubating_eggs[idx])
 
 	send_to_peer(peer_id, {
 		"type": "trade_update",
@@ -10823,6 +11284,12 @@ func _send_trade_update(peer_id: int):
 		"my_class": my_class,
 		"my_items": trade.my_items,
 		"partner_items": partner_items_data,  # Send actual item data, not indices
+		"my_companions": trade.get("my_companions", []),
+		"my_companions_data": my_companions_data,
+		"partner_companions": partner_companions_data,
+		"my_eggs": trade.get("my_eggs", []),
+		"my_eggs_data": my_eggs_data,
+		"partner_eggs": partner_eggs_data,
 		"my_ready": trade.my_ready,
 		"partner_ready": partner_trade.get("my_ready", false)
 	})
@@ -10936,11 +11403,15 @@ func handle_trade_response(peer_id: int, message: Dictionary):
 	active_trades[peer_id] = {
 		"partner_id": requester_id,
 		"my_items": [],  # Array of inventory indices
+		"my_companions": [],  # Array of companion indices
+		"my_eggs": [],  # Array of egg indices
 		"my_ready": false
 	}
 	active_trades[requester_id] = {
 		"partner_id": peer_id,
 		"my_items": [],
+		"my_companions": [],
+		"my_eggs": [],
 		"my_ready": false
 	}
 
@@ -11017,6 +11488,123 @@ func handle_trade_remove(peer_id: int, message: Dictionary):
 	_send_trade_update(peer_id)
 	_send_trade_update(trade.partner_id)
 
+func handle_trade_add_companion(peer_id: int, message: Dictionary):
+	"""Handle adding a companion to trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Validate index
+	if index < 0 or index >= character.companions.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid companion index."})
+		return
+
+	# Check if already in offer
+	if index in trade.my_companions:
+		send_to_peer(peer_id, {"type": "error", "message": "Companion already in trade offer."})
+		return
+
+	# Check if this is the active companion
+	var companion = character.companions[index]
+	if character.active_companion != null and character.active_companion.get("id") == companion.get("id"):
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
+		return
+
+	# Check if this is a registered house companion
+	if character.using_registered_companion and character.active_companion != null and character.active_companion.get("id") == companion.get("id"):
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade a registered house companion."})
+		return
+
+	# Add to offer
+	trade.my_companions.append(index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
+func handle_trade_remove_companion(peer_id: int, message: Dictionary):
+	"""Handle removing a companion from trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Remove from offer
+	var offer_index = trade.my_companions.find(index)
+	if offer_index != -1:
+		trade.my_companions.remove_at(offer_index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
+func handle_trade_add_egg(peer_id: int, message: Dictionary):
+	"""Handle adding an egg to trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Validate index
+	if index < 0 or index >= character.incubating_eggs.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid egg index."})
+		return
+
+	# Check if already in offer
+	if index in trade.my_eggs:
+		send_to_peer(peer_id, {"type": "error", "message": "Egg already in trade offer."})
+		return
+
+	# Add to offer
+	trade.my_eggs.append(index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
+func handle_trade_remove_egg(peer_id: int, message: Dictionary):
+	"""Handle removing an egg from trade offer."""
+	if not characters.has(peer_id) or not active_trades.has(peer_id):
+		return
+
+	var trade = active_trades[peer_id]
+	var index = message.get("index", -1)
+
+	# Reset ready status when offer changes
+	trade.my_ready = false
+	if active_trades.has(trade.partner_id):
+		active_trades[trade.partner_id].my_ready = false
+
+	# Remove from offer
+	var offer_index = trade.my_eggs.find(index)
+	if offer_index != -1:
+		trade.my_eggs.remove_at(offer_index)
+
+	# Update both players
+	_send_trade_update(peer_id)
+	_send_trade_update(trade.partner_id)
+
 func handle_trade_ready(peer_id: int):
 	"""Handle a player marking themselves as ready to complete trade."""
 	if not characters.has(peer_id) or not active_trades.has(peer_id):
@@ -11052,6 +11640,10 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 	# Collect items to trade (make copies before modifying inventories)
 	var items_from_a = []
 	var items_from_b = []
+	var companions_from_a = []
+	var companions_from_b = []
+	var eggs_from_a = []
+	var eggs_from_b = []
 
 	# Sort indices in descending order so we can remove without index shifting issues
 	var indices_a = trade_a.my_items.duplicate()
@@ -11060,6 +11652,20 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 	indices_a.reverse()
 	indices_b.sort()
 	indices_b.reverse()
+
+	var companion_indices_a = trade_a.get("my_companions", []).duplicate()
+	var companion_indices_b = trade_b.get("my_companions", []).duplicate()
+	companion_indices_a.sort()
+	companion_indices_a.reverse()
+	companion_indices_b.sort()
+	companion_indices_b.reverse()
+
+	var egg_indices_a = trade_a.get("my_eggs", []).duplicate()
+	var egg_indices_b = trade_b.get("my_eggs", []).duplicate()
+	egg_indices_a.sort()
+	egg_indices_a.reverse()
+	egg_indices_b.sort()
+	egg_indices_b.reverse()
 
 	# Validate both players have space for incoming items
 	var space_needed_a = indices_b.size()
@@ -11074,6 +11680,26 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 		_cancel_trade(peer_id_a, "%s doesn't have enough inventory space." % char_b.name)
 		return
 
+	# Validate companion space (max 5 companions per character)
+	var companion_space_a = 5 - char_a.companions.size() + companion_indices_a.size()
+	var companion_space_b = 5 - char_b.companions.size() + companion_indices_b.size()
+	if companion_space_a < companion_indices_b.size():
+		_cancel_trade(peer_id_a, "%s doesn't have enough companion space." % char_a.name)
+		return
+	if companion_space_b < companion_indices_a.size():
+		_cancel_trade(peer_id_a, "%s doesn't have enough companion space." % char_b.name)
+		return
+
+	# Validate egg space (max 3 eggs per character)
+	var egg_space_a = 3 - char_a.incubating_eggs.size() + egg_indices_a.size()
+	var egg_space_b = 3 - char_b.incubating_eggs.size() + egg_indices_b.size()
+	if egg_space_a < egg_indices_b.size():
+		_cancel_trade(peer_id_a, "%s doesn't have enough egg space." % char_a.name)
+		return
+	if egg_space_b < egg_indices_a.size():
+		_cancel_trade(peer_id_a, "%s doesn't have enough egg space." % char_b.name)
+		return
+
 	# Extract items from A
 	for idx in indices_a:
 		if idx >= 0 and idx < char_a.inventory.size():
@@ -11086,11 +11712,47 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 			items_from_b.append(char_b.inventory[idx].duplicate(true))
 			char_b.inventory.remove_at(idx)
 
+	# Extract companions from A
+	for idx in companion_indices_a:
+		if idx >= 0 and idx < char_a.companions.size():
+			companions_from_a.append(char_a.companions[idx].duplicate(true))
+			char_a.companions.remove_at(idx)
+
+	# Extract companions from B
+	for idx in companion_indices_b:
+		if idx >= 0 and idx < char_b.companions.size():
+			companions_from_b.append(char_b.companions[idx].duplicate(true))
+			char_b.companions.remove_at(idx)
+
+	# Extract eggs from A
+	for idx in egg_indices_a:
+		if idx >= 0 and idx < char_a.incubating_eggs.size():
+			eggs_from_a.append(char_a.incubating_eggs[idx].duplicate(true))
+			char_a.incubating_eggs.remove_at(idx)
+
+	# Extract eggs from B
+	for idx in egg_indices_b:
+		if idx >= 0 and idx < char_b.incubating_eggs.size():
+			eggs_from_b.append(char_b.incubating_eggs[idx].duplicate(true))
+			char_b.incubating_eggs.remove_at(idx)
+
 	# Give items to each player
 	for item in items_from_b:
 		char_a.add_item(item)
 	for item in items_from_a:
 		char_b.add_item(item)
+
+	# Give companions to each player
+	for companion in companions_from_b:
+		char_a.companions.append(companion)
+	for companion in companions_from_a:
+		char_b.companions.append(companion)
+
+	# Give eggs to each player
+	for egg in eggs_from_b:
+		char_a.incubating_eggs.append(egg)
+	for egg in eggs_from_a:
+		char_b.incubating_eggs.append(egg)
 
 	# Clear trade state
 	active_trades.erase(peer_id_a)
@@ -11100,16 +11762,28 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 	save_character(peer_id_a)
 	save_character(peer_id_b)
 
+	# Calculate total counts for display
+	var total_received_a = items_from_b.size() + companions_from_b.size() + eggs_from_b.size()
+	var total_gave_a = items_from_a.size() + companions_from_a.size() + eggs_from_a.size()
+	var total_received_b = items_from_a.size() + companions_from_a.size() + eggs_from_a.size()
+	var total_gave_b = items_from_b.size() + companions_from_b.size() + eggs_from_b.size()
+
 	# Notify both players
 	send_to_peer(peer_id_a, {
 		"type": "trade_complete",
-		"received_count": items_from_b.size(),
-		"gave_count": items_from_a.size()
+		"received_count": total_received_a,
+		"gave_count": total_gave_a,
+		"received_items": items_from_b.size(),
+		"received_companions": companions_from_b.size(),
+		"received_eggs": eggs_from_b.size()
 	})
 	send_to_peer(peer_id_b, {
 		"type": "trade_complete",
-		"received_count": items_from_a.size(),
-		"gave_count": items_from_b.size()
+		"received_count": total_received_b,
+		"gave_count": total_gave_b,
+		"received_items": items_from_a.size(),
+		"received_companions": companions_from_a.size(),
+		"received_eggs": eggs_from_a.size()
 	})
 
 	# Send character updates

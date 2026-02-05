@@ -309,6 +309,7 @@ var ui_scale_map: float = 1.0          # World map display
 var ui_scale_game_output: float = 1.0  # Main game text output
 var ui_scale_buttons: float = 1.0      # Action bar buttons
 var ui_scale_chat: float = 1.0         # Chat and online players
+var ui_scale_right_panel: float = 1.0  # Right panel stats, map controls, send/bug buttons
 
 # Keybind configuration
 var default_keybinds = {
@@ -385,6 +386,7 @@ enum GameState {
 	DISCONNECTED,
 	CONNECTED,
 	LOGIN_SCREEN,
+	HOUSE_SCREEN,      # Roguelite home screen between login and character select
 	CHARACTER_SELECT,
 	PLAYING,
 	DEAD
@@ -513,6 +515,18 @@ var account_id = ""
 var character_list = []
 var can_create_character = true
 var last_whisper_from = ""  # For /reply command
+
+# House (Sanctuary) data - roguelite meta-progression
+var house_data: Dictionary = {}
+var house_mode: String = ""  # "", "main", "storage", "companions", "upgrades"
+var pending_house_action: String = ""  # For sub-menus like withdraw_select, checkout_select, etc.
+var house_storage_page: int = 0
+var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
+var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
+var house_storage_discard_index: int = -1  # Item index selected for discard
+var house_storage_register_index: int = -1  # Stored companion index selected to register to kennel
+var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to storage)
+var house_position: String = "center"  # Player position in house: "center", "kennel", "chest", "forge"
 
 # Character data
 var character_data = {}
@@ -643,6 +657,8 @@ var pending_companion_action: String = ""  # "", "release_select", "release_conf
 var release_target_companion: Dictionary = {}  # Companion being released
 var inspecting_companion: Dictionary = {}  # Companion being inspected
 const COMPANIONS_PAGE_SIZE = 5
+var companion_sort_option: String = "level"  # Sort options: "level", "tier", "variant", "damage", "name", "type"
+var companion_sort_ascending: bool = false  # false = descending (highest first)
 
 # Eggs mode (separate page from companions)
 var eggs_mode: bool = false
@@ -681,10 +697,19 @@ var trade_partner_name: String = ""
 var trade_partner_class: String = ""
 var trade_my_items: Array = []  # Inventory indices of items I'm offering
 var trade_partner_items: Array = []  # Items partner is offering (full item data)
+var trade_my_companions: Array = []  # Companion indices I'm offering
+var trade_my_companions_data: Array = []  # Full companion data for display
+var trade_partner_companions: Array = []  # Companions partner is offering (full data)
+var trade_my_eggs: Array = []  # Egg indices I'm offering
+var trade_my_eggs_data: Array = []  # Full egg data for display
+var trade_partner_eggs: Array = []  # Eggs partner is offering (full data)
 var trade_my_ready: bool = false
 var trade_partner_ready: bool = false
 var pending_trade_request: String = ""  # Name of player requesting to trade with us
 var trade_pending_add: bool = false  # Waiting for player to select item to add
+var trade_tab: String = "items"  # Current trade tab: "items", "companions", "eggs"
+var trade_pending_add_companion: bool = false  # Waiting for companion selection
+var trade_pending_add_egg: bool = false  # Waiting for egg selection
 
 # Summon consent system
 var pending_summon_from: String = ""  # Name of Jarl requesting to summon us
@@ -2174,14 +2199,17 @@ func _on_window_resized():
 
 	# Scale online players list
 	if online_players_list:
-		var online_size = int(ONLINE_PLAYERS_BASE_FONT_SIZE * base_scale * ui_scale_chat)
+		var online_size = int(ONLINE_PLAYERS_BASE_FONT_SIZE * base_scale * ui_scale_right_panel)
 		online_size = clampi(online_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		online_players_list.add_theme_font_size_override("normal_font_size", online_size)
 
 	if online_players_label:
-		var label_size = int(12 * base_scale * ui_scale_chat)
+		var label_size = int(12 * base_scale * ui_scale_right_panel)
 		label_size = clampi(label_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		online_players_label.add_theme_font_size_override("font_size", label_size)
+
+	# Scale right panel elements (stats, map controls, send button)
+	_scale_right_panel_fonts(base_scale)
 
 	# Scale action bar buttons
 	_scale_action_bar_fonts(base_scale)
@@ -2330,6 +2358,30 @@ func _process(delta):
 					select_trade_item(i)
 			else:
 				set_meta("tradekey_%d_pressed" % i, false)
+
+	# Trade companion selection with keybinds (1-5)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and in_trade and trade_pending_add_companion:
+		for i in range(5):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("tradecompkey_%d_pressed" % i, false):
+					set_meta("tradecompkey_%d_pressed" % i, true)
+					select_trade_companion(i)
+			else:
+				set_meta("tradecompkey_%d_pressed" % i, false)
+
+	# Trade egg selection with keybinds (1-3)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and in_trade and trade_pending_add_egg:
+		for i in range(3):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("tradeeggkey_%d_pressed" % i, false):
+					set_meta("tradeeggkey_%d_pressed" % i, true)
+					select_trade_egg(i)
+			else:
+				set_meta("tradeeggkey_%d_pressed" % i, false)
 
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
@@ -2509,6 +2561,63 @@ func _process(delta):
 	# NOTE: Inventory page navigation removed from here - now handled via action bar buttons
 	# to avoid conflicts with Sort (key 2) and Salvage (key 3) action bar buttons
 
+	# House screen item selection with number keys (1-6 for upgrades, 1-5 for storage/companions)
+	if game_state == GameState.HOUSE_SCREEN and not input_field.has_focus():
+		if house_mode == "upgrades":
+			# Keys 1-6 to purchase upgrades
+			for i in range(6):
+				if is_item_select_key_pressed(i):
+					if not get_meta("houseupgrade_%d_pressed" % i, false):
+						set_meta("houseupgrade_%d_pressed" % i, true)
+						_purchase_house_upgrade(i)
+				else:
+					set_meta("houseupgrade_%d_pressed" % i, false)
+		elif house_mode == "storage" and pending_house_action == "withdraw_select":
+			# Keys 1-5 to toggle withdraw selection
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housestorage_%d_pressed" % i, false):
+						set_meta("housestorage_%d_pressed" % i, true)
+						_toggle_storage_withdraw_item(i)
+				else:
+					set_meta("housestorage_%d_pressed" % i, false)
+		elif house_mode == "companions" and pending_house_action == "checkout_select":
+			# Keys 1-5 to select companion for checkout
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housecompanion_%d_pressed" % i, false):
+						set_meta("housecompanion_%d_pressed" % i, true)
+						_toggle_companion_checkout(i)
+				else:
+					set_meta("housecompanion_%d_pressed" % i, false)
+		elif house_mode == "storage" and pending_house_action == "discard_select":
+			# Keys 1-5 to select item for discard
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housediscard_%d_pressed" % i, false):
+						set_meta("housediscard_%d_pressed" % i, true)
+						_select_storage_discard_item(i)
+				else:
+					set_meta("housediscard_%d_pressed" % i, false)
+		elif house_mode == "storage" and pending_house_action == "register_select":
+			# Keys 1-5 to select stored companion to register
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("houseregister_%d_pressed" % i, false):
+						set_meta("houseregister_%d_pressed" % i, true)
+						_select_storage_register_companion(i)
+				else:
+					set_meta("houseregister_%d_pressed" % i, false)
+		elif house_mode == "companions" and pending_house_action == "unregister_select":
+			# Keys 1-5 to select companion for unregister
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("houseunregister_%d_pressed" % i, false):
+						set_meta("houseunregister_%d_pressed" % i, true)
+						_select_companion_unregister(i)
+				else:
+					set_meta("houseunregister_%d_pressed" % i, false)
+
 	# Watch request approval (action_1 = approve, action_2 = deny) - skip other hotkeys this frame
 	var watch_request_handled = false
 	if game_state == GameState.PLAYING and not input_field.has_focus() and watch_request_pending != "":
@@ -2546,7 +2655,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = game_state == GameState.PLAYING and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
@@ -2962,6 +3071,10 @@ func _input(event):
 				adjust_ui_scale("chat", 0.1)
 			elif keycode == KEY_W:
 				adjust_ui_scale("chat", -0.1)
+			elif keycode == KEY_E:
+				adjust_ui_scale("right_panel", 0.1)
+			elif keycode == KEY_R:
+				adjust_ui_scale("right_panel", -0.1)
 			elif keycode == KEY_9:
 				reset_ui_scales()
 			elif keycode == back_key:
@@ -3118,6 +3231,13 @@ func show_character_select_panel():
 		char_select_panel.visible = true
 	update_character_list_display()
 
+func show_house_panel():
+	"""Show the house/sanctuary screen - roguelite meta-progression hub"""
+	hide_all_panels()
+	# House uses the main game UI with game_output for display
+	# Note: Don't call show_game_ui() as it sets game_state to PLAYING
+	game_state = GameState.HOUSE_SCREEN
+
 func show_character_create_panel():
 	hide_all_panels()
 	if char_create_panel:
@@ -3128,14 +3248,19 @@ func show_character_create_panel():
 		if char_create_status:
 			char_create_status.text = ""
 
-func show_death_panel(char_name: String, level: int, experience: int, cause: String, rank: int):
+func show_death_panel(char_name: String, level: int, experience: int, cause: String, rank: int, baddie_points: int = 0):
 	hide_all_panels()
 	if death_panel:
 		death_panel.visible = true
 	if death_message:
 		death_message.text = "[center][color=#FF0000][b]%s HAS FALLEN[/b][/color]\n\nSlain by %s[/center]" % [char_name.to_upper(), cause]
 	if death_stats:
-		death_stats.text = "[center]Level: %d\nExperience: %d\nLeaderboard Rank: #%d[/center]" % [level, experience, rank]
+		var stats_text = "[center]Level: %d\nExperience: %d\nLeaderboard Rank: #%d" % [level, experience, rank]
+		if baddie_points > 0:
+			stats_text += "\n\n[color=#FF6600]Baddie Points Earned: %d[/color]" % baddie_points
+			stats_text += "\n[color=#808080]Return to your Sanctuary to spend them![/color]"
+		stats_text += "[/center]"
+		death_stats.text = stats_text
 
 func show_leaderboard_panel():
 	if leaderboard_panel:
@@ -3746,6 +3871,37 @@ func setup_action_bar():
 				action_container.add_child(cost_label)
 			action_cost_labels.append(cost_label)
 
+func _scale_right_panel_fonts(base_scale: float):
+	"""Scale right panel fonts (stats, map controls, send button) based on window size and user preference"""
+	var stats_size = int(14 * base_scale * ui_scale_right_panel)
+	stats_size = clampi(stats_size, 8, 36)
+
+	var small_stats_size = int(12 * base_scale * ui_scale_right_panel)
+	small_stats_size = clampi(small_stats_size, 7, 32)
+
+	var movement_size = int(12 * base_scale * ui_scale_right_panel)
+	movement_size = clampi(movement_size, 8, 28)
+
+	# Scale level label
+	if player_level_label:
+		player_level_label.add_theme_font_size_override("font_size", stats_size)
+
+	# Scale gold and gem labels
+	if gold_label:
+		gold_label.add_theme_font_size_override("font_size", small_stats_size)
+	if gem_label:
+		gem_label.add_theme_font_size_override("font_size", small_stats_size)
+
+	# Scale movement pad buttons
+	if movement_pad:
+		for child in movement_pad.get_children():
+			if child is Button:
+				child.add_theme_font_size_override("font_size", movement_size)
+
+	# Scale send button
+	if send_button:
+		send_button.add_theme_font_size_override("font_size", movement_size)
+
 func _scale_action_bar_fonts(base_scale: float):
 	"""Scale action bar button and label fonts based on window size and user preference"""
 	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons)
@@ -3856,6 +4012,142 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
 				{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif game_state == GameState.HOUSE_SCREEN:
+		# House/Sanctuary screen - roguelite hub
+		if house_mode == "storage":
+			var storage_items = house_data.get("storage", {}).get("items", [])
+			var has_stored_companions = false
+			for item in storage_items:
+				if item.get("type") == "stored_companion":
+					has_stored_companions = true
+					break
+			var kennel_has_space = house_data.get("registered_companions", {}).get("companions", []).size() < _get_house_companion_capacity()
+
+			if pending_house_action == "withdraw_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_storage_back", "enabled": true},
+					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
+					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Clear", "action_type": "local", "action_data": "house_withdraw_clear", "enabled": house_storage_withdraw_items.size() > 0},
+					{"label": "1-5=Mark", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif pending_house_action == "discard_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_storage_back", "enabled": true},
+					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
+					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_discard_confirm", "enabled": house_storage_discard_index >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5=Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif pending_house_action == "register_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_storage_back", "enabled": true},
+					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
+					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_register_confirm", "enabled": house_storage_register_index >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5=Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
+					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Withdraw", "action_type": "local", "action_data": "house_withdraw_start", "enabled": storage_items.size() > 0},
+					{"label": "Discard", "action_type": "local", "action_data": "house_discard_start", "enabled": storage_items.size() > 0},
+					{"label": "Register", "action_type": "local", "action_data": "house_register_start", "enabled": has_stored_companions and kennel_has_space},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+		elif house_mode == "companions":
+			var companions = house_data.get("registered_companions", {}).get("companions", [])
+			var has_available = false
+			for comp in companions:
+				if comp.get("checked_out_by") == null:
+					has_available = true
+					break
+
+			if pending_house_action == "checkout_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_companions_back", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Clear", "action_type": "local", "action_data": "house_checkout_clear", "enabled": house_checkout_companion_slot >= 0},
+					{"label": "1-5=Mark", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif pending_house_action == "unregister_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_companions_back", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_unregister_confirm", "enabled": house_unregister_companion_slot >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5=Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Checkout", "action_type": "local", "action_data": "house_checkout_start", "enabled": has_available},
+					{"label": "Unregist", "action_type": "local", "action_data": "house_unregister_start", "enabled": has_available},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+		elif house_mode == "upgrades":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-6=Buy", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:  # house_mode == "main" or ""
+			current_actions = [
+				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
+				{"label": "Storage", "action_type": "local", "action_data": "house_storage", "enabled": true},
+				{"label": "Companion", "action_type": "local", "action_data": "house_companions", "enabled": true},
+				{"label": "Upgrades", "action_type": "local", "action_data": "house_upgrades", "enabled": true},
+				{"label": "Play", "action_type": "local", "action_data": "house_play", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif pending_summon_from != "":
@@ -4082,18 +4374,58 @@ func update_action_bar():
 				{"label": "Prev", "action_type": "local", "action_data": "trade_page_prev", "enabled": inventory_page > 0},
 				{"label": "Next", "action_type": "local", "action_data": "trade_page_next", "enabled": true},
 			]
+		elif trade_pending_add_companion:
+			# Selecting companion to add
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "trade_cancel_add", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif trade_pending_add_egg:
+			# Selecting egg to add
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "trade_cancel_add", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:
-			# Main trade window
+			# Main trade window - buttons depend on current tab
 			var ready_label = "Unready" if trade_my_ready else "Ready"
+			var add_label = "Add"
+			var has_items_to_remove = false
+			match trade_tab:
+				"items":
+					add_label = "Add Item"
+					has_items_to_remove = trade_my_items.size() > 0
+				"companions":
+					add_label = "Add Comp"
+					has_items_to_remove = trade_my_companions.size() > 0
+				"eggs":
+					add_label = "Add Egg"
+					has_items_to_remove = trade_my_eggs.size() > 0
 			current_actions = [
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Add Item", "action_type": "local", "action_data": "trade_add_item", "enabled": true},
-				{"label": "Remove", "action_type": "local", "action_data": "trade_remove_item", "enabled": trade_my_items.size() > 0},
+				{"label": add_label, "action_type": "local", "action_data": "trade_add", "enabled": true},
+				{"label": "Remove", "action_type": "local", "action_data": "trade_remove", "enabled": has_items_to_remove},
 				{"label": ready_label, "action_type": "local", "action_data": "trade_toggle_ready", "enabled": true},
 				{"label": "Cancel", "action_type": "local", "action_data": "trade_cancel", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Items", "action_type": "local", "action_data": "trade_tab_items", "enabled": trade_tab != "items"},
+				{"label": "Comps", "action_type": "local", "action_data": "trade_tab_companions", "enabled": trade_tab != "companions"},
+				{"label": "Eggs", "action_type": "local", "action_data": "trade_tab_eggs", "enabled": trade_tab != "eggs"},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -4487,8 +4819,8 @@ func update_action_bar():
 				{"label": "Release", "action_type": "local", "action_data": "companions_release", "enabled": collected.size() > 0},
 				{"label": "1-%d Select" % page_count, "action_type": "none", "action_data": "", "enabled": false} if page_count > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Dismiss", "action_type": "local", "action_data": "companions_dismiss", "enabled": not character_data.get("active_companion", {}).is_empty()},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Sort", "action_type": "local", "action_data": "companions_sort", "enabled": collected.size() > 1},
+				{"label": "Asc/Desc", "action_type": "local", "action_data": "companions_sort_dir", "enabled": collected.size() > 1},
 				{"label": "Rel. All", "action_type": "local", "action_data": "companions_release_all", "enabled": collected.size() > 1},
 			]
 	elif eggs_mode:
@@ -4497,15 +4829,27 @@ func update_action_bar():
 		var total_pages = int(ceil(float(eggs.size()) / float(EGGS_PAGE_SIZE))) if eggs.size() > 0 else 1
 		var has_prev = eggs_page > 0
 		var has_next = eggs_page < total_pages - 1
+		# Build freeze toggle buttons for visible eggs (1-3 based on current page)
+		var start_idx = eggs_page * EGGS_PAGE_SIZE
+		var freeze_buttons = []
+		for i in range(EGGS_PAGE_SIZE):
+			var egg_idx = start_idx + i
+			if egg_idx < eggs.size():
+				var egg = eggs[egg_idx]
+				var is_frozen = egg.get("frozen", false)
+				var label = "Unfrz %d" % (i + 1) if is_frozen else "Freeze %d" % (i + 1)
+				freeze_buttons.append({"label": label, "action_type": "local", "action_data": "egg_toggle_freeze_%d" % egg_idx, "enabled": true})
+			else:
+				freeze_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "eggs_close", "enabled": true},
 			{"label": "< Prev", "action_type": "local", "action_data": "eggs_prev", "enabled": has_prev},
 			{"label": "Next >", "action_type": "local", "action_data": "eggs_next", "enabled": has_next},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			freeze_buttons[0],
+			freeze_buttons[1],
+			freeze_buttons[2],
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
@@ -6621,6 +6965,12 @@ func continue_flock_encounter():
 	send_to_server({"type": "continue_flock"})
 
 func execute_local_action(action: String):
+	# Handle dynamic egg freeze toggle actions before match
+	if action.begins_with("egg_toggle_freeze_"):
+		var egg_index = int(action.replace("egg_toggle_freeze_", ""))
+		send_to_server({"type": "toggle_egg_freeze", "index": egg_index})
+		return
+
 	match action:
 		"status":
 			display_character_status()
@@ -6728,6 +7078,20 @@ func execute_local_action(action: String):
 		"inspect_back":
 			pending_companion_action = ""
 			inspecting_companion = {}
+			display_companions()
+			update_action_bar()
+		"companions_sort":
+			# Cycle through sort options
+			var sort_options = ["level", "tier", "variant", "damage", "name", "type"]
+			var current_idx = sort_options.find(companion_sort_option)
+			companion_sort_option = sort_options[(current_idx + 1) % sort_options.size()]
+			companions_page = 0  # Reset to first page when changing sort
+			display_companions()
+			update_action_bar()
+		"companions_sort_dir":
+			# Toggle ascending/descending
+			companion_sort_ascending = not companion_sort_ascending
+			companions_page = 0  # Reset to first page when changing direction
 			display_companions()
 			update_action_bar()
 		"eggs_menu":
@@ -7191,8 +7555,22 @@ func execute_local_action(action: String):
 			inventory_page = 0
 			display_trade_window()
 			update_action_bar()
+		"trade_add":
+			# Add based on current tab
+			match trade_tab:
+				"items":
+					trade_pending_add = true
+					inventory_page = 0
+				"companions":
+					trade_pending_add_companion = true
+				"eggs":
+					trade_pending_add_egg = true
+			display_trade_window()
+			update_action_bar()
 		"trade_cancel_add":
 			trade_pending_add = false
+			trade_pending_add_companion = false
+			trade_pending_add_egg = false
 			display_trade_window()
 			update_action_bar()
 		"trade_page_prev":
@@ -7209,11 +7587,38 @@ func execute_local_action(action: String):
 			if trade_my_items.size() > 0:
 				var last_idx = trade_my_items[-1]
 				send_to_server({"type": "trade_remove", "index": last_idx})
+		"trade_remove":
+			# Remove last added item/companion/egg based on current tab
+			match trade_tab:
+				"items":
+					if trade_my_items.size() > 0:
+						var last_idx = trade_my_items[-1]
+						send_to_server({"type": "trade_remove", "index": last_idx})
+				"companions":
+					if trade_my_companions.size() > 0:
+						var last_idx = trade_my_companions[-1]
+						send_to_server({"type": "trade_remove_companion", "index": last_idx})
+				"eggs":
+					if trade_my_eggs.size() > 0:
+						var last_idx = trade_my_eggs[-1]
+						send_to_server({"type": "trade_remove_egg", "index": last_idx})
 		"trade_toggle_ready":
 			send_to_server({"type": "trade_ready"})
 		"trade_cancel":
 			send_to_server({"type": "trade_cancel"})
 			_exit_trade_mode()
+			update_action_bar()
+		"trade_tab_items":
+			trade_tab = "items"
+			display_trade_window()
+			update_action_bar()
+		"trade_tab_companions":
+			trade_tab = "companions"
+			display_trade_window()
+			update_action_bar()
+		"trade_tab_eggs":
+			trade_tab = "eggs"
+			display_trade_window()
 			update_action_bar()
 		# Summon response actions
 		"summon_accept":
@@ -7337,6 +7742,108 @@ func execute_local_action(action: String):
 		# Crucible action
 		"start_crucible":
 			send_to_server({"type": "start_crucible"})
+		# House/Sanctuary actions
+		"house_logout":
+			send_to_server({"type": "logout_account"})
+		"house_storage":
+			house_mode = "storage"
+			pending_house_action = ""
+			house_storage_page = 0
+			display_house_storage()
+			update_action_bar()
+		"house_companions":
+			house_mode = "companions"
+			pending_house_action = ""
+			display_house_companions()
+			update_action_bar()
+		"house_upgrades":
+			house_mode = "upgrades"
+			pending_house_action = ""
+			display_house_upgrades()
+			update_action_bar()
+		"house_main":
+			house_mode = "main"
+			pending_house_action = ""
+			display_house_main()
+			update_action_bar()
+		"house_play":
+			# Go to character select to pick or create a character
+			send_to_server({"type": "request_character_list"})
+		"house_storage_prev":
+			house_storage_page = max(0, house_storage_page - 1)
+			display_house_storage()
+			update_action_bar()
+		"house_storage_next":
+			var items = house_data.get("storage", {}).get("items", [])
+			var total_pages = max(1, int(ceil(float(items.size()) / 5.0)))
+			house_storage_page = min(total_pages - 1, house_storage_page + 1)
+			display_house_storage()
+			update_action_bar()
+		"house_storage_back":
+			pending_house_action = ""
+			house_storage_discard_index = -1
+			house_storage_register_index = -1
+			display_house_storage()
+			update_action_bar()
+		"house_withdraw_start":
+			pending_house_action = "withdraw_select"
+			house_storage_withdraw_items = []
+			display_house_storage()
+			update_action_bar()
+		"house_withdraw_clear":
+			house_storage_withdraw_items = []
+			display_house_storage()
+			update_action_bar()
+		"house_companions_back":
+			pending_house_action = ""
+			house_unregister_companion_slot = -1
+			display_house_companions()
+			update_action_bar()
+		"house_checkout_start":
+			pending_house_action = "checkout_select"
+			house_checkout_companion_slot = -1
+			display_house_companions()
+			update_action_bar()
+		"house_checkout_clear":
+			house_checkout_companion_slot = -1
+			display_house_companions()
+			update_action_bar()
+		# Discard item from house storage
+		"house_discard_start":
+			pending_house_action = "discard_select"
+			house_storage_discard_index = -1
+			display_house_storage()
+			update_action_bar()
+		"house_discard_confirm":
+			if house_storage_discard_index >= 0:
+				send_to_server({"type": "house_discard_item", "index": house_storage_discard_index})
+			pending_house_action = ""
+			house_storage_discard_index = -1
+			# Server will send updated house_data
+		# Register stored companion to kennel
+		"house_register_start":
+			pending_house_action = "register_select"
+			house_storage_register_index = -1
+			display_house_storage()
+			update_action_bar()
+		"house_register_confirm":
+			if house_storage_register_index >= 0:
+				send_to_server({"type": "house_register_from_storage", "index": house_storage_register_index})
+			pending_house_action = ""
+			house_storage_register_index = -1
+			# Server will send updated house_data
+		# Unregister companion from kennel (move to storage)
+		"house_unregister_start":
+			pending_house_action = "unregister_select"
+			house_unregister_companion_slot = -1
+			display_house_companions()
+			update_action_bar()
+		"house_unregister_confirm":
+			if house_unregister_companion_slot >= 0:
+				send_to_server({"type": "house_unregister_companion", "slot": house_unregister_companion_slot})
+			pending_house_action = ""
+			house_unregister_companion_slot = -1
+			# Server will send updated house_data
 
 func _send_bless_with_stat(stat: String):
 	"""Send bless ability with chosen stat"""
@@ -8653,10 +9160,19 @@ func _exit_trade_mode():
 	trade_partner_class = ""
 	trade_my_items = []
 	trade_partner_items = []
+	trade_my_companions = []
+	trade_my_companions_data = []
+	trade_partner_companions = []
+	trade_my_eggs = []
+	trade_my_eggs_data = []
+	trade_partner_eggs = []
 	trade_my_ready = false
 	trade_partner_ready = false
 	pending_trade_request = ""
 	trade_pending_add = false
+	trade_pending_add_companion = false
+	trade_pending_add_egg = false
+	trade_tab = "items"
 
 func display_trade_window():
 	"""Display the trade window showing both offers."""
@@ -8664,12 +9180,48 @@ func display_trade_window():
 
 	var my_class = character_data.get("class", "")
 	var inventory = character_data.get("inventory", [])
+	var companions = character_data.get("companions", [])
+	var eggs = character_data.get("incubating_eggs", [])
 
 	display_game("[color=#FFD700]═══════════════════════════════════════════════════[/color]")
 	display_game("[color=#FFD700]           TRADING WITH %s[/color]" % trade_partner_name.to_upper())
 	display_game("[color=#FFD700]═══════════════════════════════════════════════════[/color]")
 	display_game("")
 
+	# Tab bar
+	var items_tab = "[color=#00FF00]> ITEMS <[/color]" if trade_tab == "items" else "[color=#808080]ITEMS[/color]"
+	var companions_tab = "[color=#00FF00]> COMPANIONS <[/color]" if trade_tab == "companions" else "[color=#808080]COMPANIONS[/color]"
+	var eggs_tab = "[color=#00FF00]> EGGS <[/color]" if trade_tab == "eggs" else "[color=#808080]EGGS[/color]"
+	display_game("  [1] %s    [2] %s    [3] %s" % [items_tab, companions_tab, eggs_tab])
+	display_game("")
+
+	if trade_tab == "items":
+		_display_trade_items_tab(inventory, my_class)
+	elif trade_tab == "companions":
+		_display_trade_companions_tab(companions)
+	elif trade_tab == "eggs":
+		_display_trade_eggs_tab(eggs)
+
+	display_game("")
+
+	# Status
+	var my_status = "[color=#00FF00]READY[/color]" if trade_my_ready else "[color=#808080]Not Ready[/color]"
+	var their_status = "[color=#00FF00]READY[/color]" if trade_partner_ready else "[color=#808080]Not Ready[/color]"
+	display_game("Your Status: %s    |    %s's Status: %s" % [my_status, trade_partner_name, their_status])
+	display_game("")
+
+	# Instructions based on current state
+	if trade_pending_add:
+		_display_trade_item_selection(inventory, my_class)
+	elif trade_pending_add_companion:
+		_display_trade_companion_selection(companions)
+	elif trade_pending_add_egg:
+		_display_trade_egg_selection(eggs)
+	else:
+		display_game("[color=#808080][Q] Add  |  [W] Remove  |  [E] Ready/Unready  |  [R] Cancel  |  [1-3] Switch Tab[/color]")
+
+func _display_trade_items_tab(inventory: Array, my_class: String):
+	"""Display the items tab in trade window."""
 	# Your Offer section
 	display_game("[color=#00FF00]── YOUR OFFER ──[/color]")
 	if trade_my_items.is_empty():
@@ -8692,34 +9244,114 @@ func display_trade_window():
 		for i in range(trade_partner_items.size()):
 			var item = trade_partner_items[i]
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			# Use partner's class for their items (owner's perspective)
 			var themed_name = _get_themed_item_name(item, trade_partner_class)
 			display_game("  %d. [color=%s]%s[/color]" % [i + 1, rarity_color, themed_name])
-	display_game("")
-	display_game("")
 
-	# Status
-	var my_status = "[color=#00FF00]READY[/color]" if trade_my_ready else "[color=#808080]Not Ready[/color]"
-	var their_status = "[color=#00FF00]READY[/color]" if trade_partner_ready else "[color=#808080]Not Ready[/color]"
-	display_game("Your Status: %s    |    %s's Status: %s" % [my_status, trade_partner_name, their_status])
-	display_game("")
-
-	# Instructions
-	if trade_pending_add:
-		display_game("[color=#FFFF00]Select an item from your inventory to add (1-9):[/color]")
-		# Show inventory items for selection
-		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
-		for i in range(start_idx, end_idx):
-			var item = inventory[i]
-			var display_num = (i - start_idx) + 1
-			var in_offer = i in trade_my_items
-			var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
-			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			var themed_name = _get_themed_item_name(item, my_class)
-			display_game("%s%d. [color=%s]%s[/color]" % [prefix, display_num, rarity_color, themed_name])
+func _display_trade_companions_tab(companions: Array):
+	"""Display the companions tab in trade window."""
+	# Your Offer section
+	display_game("[color=#00FF00]── YOUR OFFER ──[/color]")
+	if trade_my_companions_data.is_empty():
+		display_game("  [color=#555555](no companions offered)[/color]")
 	else:
-		display_game("[color=#808080][Q] Add Item  |  [W] Remove Item  |  [E] Ready/Unready  |  [R] Cancel[/color]")
+		for i in range(trade_my_companions_data.size()):
+			var comp = trade_my_companions_data[i]
+			var variant = comp.get("variant", "")
+			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var name_str = comp.get("name", "Unknown")
+			if not variant.is_empty():
+				name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
+			display_game("  %d. %s (Lv.%d)" % [i + 1, name_str, comp.get("level", 1)])
+	display_game("")
+
+	# Their Offer section
+	display_game("[color=#00FFFF]── %s'S OFFER ──[/color]" % trade_partner_name.to_upper())
+	if trade_partner_companions.is_empty():
+		display_game("  [color=#555555](no companions offered)[/color]")
+	else:
+		for i in range(trade_partner_companions.size()):
+			var comp = trade_partner_companions[i]
+			var variant = comp.get("variant", "")
+			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var name_str = comp.get("name", "Unknown")
+			if not variant.is_empty():
+				name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
+			display_game("  %d. %s (Lv.%d)" % [i + 1, name_str, comp.get("level", 1)])
+
+func _display_trade_eggs_tab(eggs: Array):
+	"""Display the eggs tab in trade window."""
+	# Your Offer section
+	display_game("[color=#00FF00]── YOUR OFFER ──[/color]")
+	if trade_my_eggs_data.is_empty():
+		display_game("  [color=#555555](no eggs offered)[/color]")
+	else:
+		for i in range(trade_my_eggs_data.size()):
+			var egg = trade_my_eggs_data[i]
+			var monster_type = egg.get("monster_type", "Unknown")
+			var steps = egg.get("steps_remaining", 0)
+			var frozen = egg.get("frozen", false)
+			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
+			display_game("  %d. %s Egg (%d steps)%s" % [i + 1, monster_type, steps, frozen_str])
+	display_game("")
+
+	# Their Offer section
+	display_game("[color=#00FFFF]── %s'S OFFER ──[/color]" % trade_partner_name.to_upper())
+	if trade_partner_eggs.is_empty():
+		display_game("  [color=#555555](no eggs offered)[/color]")
+	else:
+		for i in range(trade_partner_eggs.size()):
+			var egg = trade_partner_eggs[i]
+			var monster_type = egg.get("monster_type", "Unknown")
+			var steps = egg.get("steps_remaining", 0)
+			var frozen = egg.get("frozen", false)
+			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
+			display_game("  %d. %s Egg (%d steps)%s" % [i + 1, monster_type, steps, frozen_str])
+
+func _display_trade_item_selection(inventory: Array, my_class: String):
+	"""Display inventory items for selection during trade."""
+	display_game("[color=#FFFF00]Select an item from your inventory to add (1-9):[/color]")
+	var start_idx = inventory_page * INVENTORY_PAGE_SIZE
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+	for i in range(start_idx, end_idx):
+		var item = inventory[i]
+		var display_num = (i - start_idx) + 1
+		var in_offer = i in trade_my_items
+		var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
+		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+		var themed_name = _get_themed_item_name(item, my_class)
+		display_game("%s%d. [color=%s]%s[/color]" % [prefix, display_num, rarity_color, themed_name])
+
+func _display_trade_companion_selection(companions: Array):
+	"""Display companions for selection during trade."""
+	display_game("[color=#FFFF00]Select a companion to add (1-5):[/color]")
+	var active_companion = character_data.get("active_companion", null)
+	for i in range(companions.size()):
+		var comp = companions[i]
+		var display_num = i + 1
+		var in_offer = i in trade_my_companions
+		var is_active = active_companion != null and active_companion.get("id") == comp.get("id")
+		var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
+		var active_str = " [color=#FFFF00](ACTIVE)[/color]" if is_active else ""
+		var variant = comp.get("variant", "")
+		var variant_color = comp.get("variant_color", "#FFFFFF")
+		var name_str = comp.get("name", "Unknown")
+		if not variant.is_empty():
+			name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
+		display_game("%s%d. %s (Lv.%d)%s" % [prefix, display_num, name_str, comp.get("level", 1), active_str])
+
+func _display_trade_egg_selection(eggs: Array):
+	"""Display eggs for selection during trade."""
+	display_game("[color=#FFFF00]Select an egg to add (1-3):[/color]")
+	for i in range(eggs.size()):
+		var egg = eggs[i]
+		var display_num = i + 1
+		var in_offer = i in trade_my_eggs
+		var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
+		var monster_type = egg.get("monster_type", "Unknown")
+		var steps = egg.get("steps_remaining", 0)
+		var frozen = egg.get("frozen", false)
+		var frozen_str = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
+		display_game("%s%d. %s Egg (%d steps)%s" % [prefix, display_num, monster_type, steps, frozen_str])
 
 func handle_trade_command(target_name: String):
 	"""Send a trade request to another player."""
@@ -8754,6 +9386,48 @@ func select_trade_item(display_index: int):
 
 	# Go back to main trade view
 	trade_pending_add = false
+	display_trade_window()
+	update_action_bar()
+
+func select_trade_companion(display_index: int):
+	"""Add a companion to the trade offer by its display index (0-4)."""
+	var companions = character_data.get("companions", [])
+
+	if display_index < 0 or display_index >= companions.size():
+		display_game("[color=#FF0000]Invalid companion.[/color]")
+		return
+
+	# Check if already in offer
+	if display_index in trade_my_companions:
+		# Remove it instead
+		send_to_server({"type": "trade_remove_companion", "index": display_index})
+	else:
+		# Add it
+		send_to_server({"type": "trade_add_companion", "index": display_index})
+
+	# Go back to main trade view
+	trade_pending_add_companion = false
+	display_trade_window()
+	update_action_bar()
+
+func select_trade_egg(display_index: int):
+	"""Add an egg to the trade offer by its display index (0-2)."""
+	var eggs = character_data.get("incubating_eggs", [])
+
+	if display_index < 0 or display_index >= eggs.size():
+		display_game("[color=#FF0000]Invalid egg.[/color]")
+		return
+
+	# Check if already in offer
+	if display_index in trade_my_eggs:
+		# Remove it instead
+		send_to_server({"type": "trade_remove_egg", "index": display_index})
+	else:
+		# Add it
+		send_to_server({"type": "trade_add_egg", "index": display_index})
+
+	# Go back to main trade view
+	trade_pending_add_egg = false
 	display_trade_window()
 	update_action_bar()
 
@@ -10703,14 +11377,46 @@ func handle_server_message(message: Dictionary):
 
 		"login_success":
 			username = message.get("username", "")
+			account_id = message.get("account_id", "")
 			last_username = username
 			_save_connection_settings()
 			display_game("[color=#00FF00]Logged in as %s[/color]" % username)
-			game_state = GameState.CHARACTER_SELECT
+			# Request house data before going to house screen
+			send_to_server({"type": "house_request"})
+			game_state = GameState.HOUSE_SCREEN
 
 		"login_failed":
 			if login_status:
 				login_status.text = "[color=#FF0000]%s[/color]" % message.get("reason", "Login failed")
+
+		"house_data":
+			house_data = message.get("house", {})
+			house_mode = "main"
+			pending_house_action = ""
+			house_storage_page = 0
+			house_storage_withdraw_items = []
+			house_checkout_companion_slot = -1
+			house_storage_discard_index = -1
+			house_storage_register_index = -1
+			house_unregister_companion_slot = -1
+			house_position = "center"
+			show_house_panel()
+			display_house_main()
+			update_action_bar()
+
+		"house_update":
+			# Update house data without changing UI state
+			house_data = message.get("house", {})
+			if game_state == GameState.HOUSE_SCREEN:
+				if house_mode == "storage":
+					display_house_storage()
+				elif house_mode == "companions":
+					display_house_companions()
+				elif house_mode == "upgrades":
+					display_house_upgrades()
+				else:
+					display_house_main()
+				update_action_bar()
 
 		"character_list":
 			character_list = message.get("characters", [])
@@ -10771,7 +11477,9 @@ func handle_server_message(message: Dictionary):
 			dungeon_floor_grid = []
 			dungeon_available = []
 			dungeon_list_mode = false
-			game_state = GameState.CHARACTER_SELECT
+			# Go back to house screen instead of character select
+			send_to_server({"type": "house_request"})
+			game_state = GameState.HOUSE_SCREEN
 			update_action_bar()
 			show_enemy_hp_bar(false)
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Logged out of character"))
@@ -10782,6 +11490,9 @@ func handle_server_message(message: Dictionary):
 			character_data = {}
 			character_list = []
 			username = ""
+			account_id = ""
+			house_data = {}
+			house_mode = ""
 			# Reset dungeon state
 			dungeon_mode = false
 			dungeon_data = {}
@@ -10804,7 +11515,8 @@ func handle_server_message(message: Dictionary):
 				message.get("level", 1),
 				message.get("experience", 0),
 				message.get("cause_of_death", "Unknown"),
-				message.get("leaderboard_rank", 0)
+				message.get("leaderboard_rank", 0),
+				message.get("baddie_points_earned", 0)
 			)
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -11340,12 +12052,10 @@ func handle_server_message(message: Dictionary):
 					if drop_value > 0:
 						play_rare_drop_sound(drop_value)
 
-					# Pause to let player read rewards
-					pending_continue = true
-					# If in dungeon, request fresh state when continuing
+					# In dungeon, immediately show the floor
 					if dungeon_mode:
-						pending_dungeon_continue = true
-					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						display_game("")
+						display_dungeon_floor()
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -11363,10 +12073,12 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
 				else:
 					display_game("[color=#FFD700]The enemy fled! No loot earned.[/color]")
-					pending_continue = true
 					if dungeon_mode:
-						pending_dungeon_continue = true
-					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						display_game("")
+						display_dungeon_floor()
+					else:
+						pending_continue = true
+						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("fled", false):
 				# Player fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
@@ -11377,10 +12089,12 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FFD700]You fled to (%d, %d)![/color]" % [message.new_x, message.new_y])
 				else:
 					display_game("[color=#FFD700]You escaped from combat![/color]")
-				pending_continue = true
 				if dungeon_mode:
-					pending_dungeon_continue = true
-				display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+					display_game("")
+					display_dungeon_floor()
+				else:
+					pending_continue = true
+					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			else:
 				# Defeat handled by permadeath message
 				pass
@@ -11652,6 +12366,12 @@ func handle_server_message(message: Dictionary):
 			trade_partner_class = message.get("partner_class", trade_partner_class)
 			trade_my_items = message.get("my_items", [])
 			trade_partner_items = message.get("partner_items", [])
+			trade_my_companions = message.get("my_companions", [])
+			trade_my_companions_data = message.get("my_companions_data", [])
+			trade_partner_companions = message.get("partner_companions", [])
+			trade_my_eggs = message.get("my_eggs", [])
+			trade_my_eggs_data = message.get("my_eggs_data", [])
+			trade_partner_eggs = message.get("partner_eggs", [])
 			trade_my_ready = message.get("my_ready", false)
 			trade_partner_ready = message.get("partner_ready", false)
 			if in_trade:
@@ -11667,10 +12387,23 @@ func handle_server_message(message: Dictionary):
 		"trade_complete":
 			var received = message.get("received_count", 0)
 			var gave = message.get("gave_count", 0)
+			var received_items = message.get("received_items", received)
+			var received_companions = message.get("received_companions", 0)
+			var received_eggs = message.get("received_eggs", 0)
 			display_game("")
 			display_game("[color=#00FF00]═══════════════════════════════════════[/color]")
 			display_game("[color=#FFD700]TRADE COMPLETE![/color]")
-			display_game("[color=#00FF00]You gave %d item(s) and received %d item(s).[/color]" % [gave, received])
+			var breakdown = []
+			if received_items > 0:
+				breakdown.append("%d item(s)" % received_items)
+			if received_companions > 0:
+				breakdown.append("%d companion(s)" % received_companions)
+			if received_eggs > 0:
+				breakdown.append("%d egg(s)" % received_eggs)
+			if breakdown.is_empty():
+				display_game("[color=#00FF00]You gave %d thing(s) and received nothing.[/color]" % gave)
+			else:
+				display_game("[color=#00FF00]You gave %d thing(s) and received %s.[/color]" % [gave, ", ".join(breakdown)])
 			display_game("[color=#00FF00]═══════════════════════════════════════[/color]")
 			_exit_trade_mode()
 			update_action_bar()
@@ -12586,6 +13319,8 @@ func _load_keybinds():
 					ui_scale_buttons = clampf(float(data["ui_scale_buttons"]), 0.5, 3.0)
 				if data.has("ui_scale_chat"):
 					ui_scale_chat = clampf(float(data["ui_scale_chat"]), 0.5, 3.0)
+				if data.has("ui_scale_right_panel"):
+					ui_scale_right_panel = clampf(float(data["ui_scale_right_panel"]), 0.5, 3.0)
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -12599,6 +13334,7 @@ func _save_keybinds():
 	save_data["ui_scale_game_output"] = ui_scale_game_output
 	save_data["ui_scale_buttons"] = ui_scale_buttons
 	save_data["ui_scale_chat"] = ui_scale_chat
+	save_data["ui_scale_right_panel"] = ui_scale_right_panel
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -12842,8 +13578,11 @@ func display_ui_scale_settings():
 	display_game("[color=#E6CC80]Action Buttons[/color] (Hotbar buttons and labels)")
 	display_game("[7] Increase  [8] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_buttons * 100))
 	display_game("")
-	display_game("[color=#E6CC80]Chat & Players[/color] (Chat output, online players list)")
+	display_game("[color=#E6CC80]Chat Output[/color] (Chat text)")
 	display_game("[Q] Increase  [W] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_chat * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Right Panel[/color] (Level, Gold, Gems, Map Controls, Online Players, Send)")
+	display_game("[E] Increase  [R] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_right_panel * 100))
 	display_game("")
 	display_game("[9] Reset All to 100%")
 	display_game("[%s] Back to Settings" % get_action_key_name(0))
@@ -12861,6 +13600,8 @@ func adjust_ui_scale(element: String, delta: float):
 			ui_scale_buttons = clampf(ui_scale_buttons + delta, 0.5, 3.0)
 		"chat":
 			ui_scale_chat = clampf(ui_scale_chat + delta, 0.5, 3.0)
+		"right_panel":
+			ui_scale_right_panel = clampf(ui_scale_right_panel + delta, 0.5, 3.0)
 
 	# Save settings and apply
 	_save_keybinds()
@@ -12877,6 +13618,7 @@ func reset_ui_scales():
 	ui_scale_game_output = 1.0
 	ui_scale_buttons = 1.0
 	ui_scale_chat = 1.0
+	ui_scale_right_panel = 1.0
 
 	# Save and apply
 	_save_keybinds()
@@ -13628,8 +14370,29 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.64 changes
+	display_game("[color=#00FF00]v0.9.64[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ SANCTUARY SYSTEM[/color]")
+	display_game("  • New account-level house that persists between characters")
+	display_game("  • Store items in your Sanctuary - withdraw for new characters")
+	display_game("  • Register companions to survive permadeath (kennel system)")
+	display_game("  • Earn Baddie Points when characters die - spend on upgrades")
+	display_game("  • Upgrades: Storage slots, companion slots, flee chance, starting gold, XP bonus")
+	display_game("  [color=#FFD700]★ EGG FREEZING[/color]")
+	display_game("  • Freeze eggs to pause hatching progress (More > Eggs)")
+	display_game("  • Perfect for saving eggs until you find Home Stones")
+	display_game("  [color=#FFD700]★ HOME STONES[/color]")
+	display_game("  • Find Home Stone items in tier 5-7 loot")
+	display_game("  • Send items, eggs, or companions to your Sanctuary")
+	display_game("  [color=#FFD700]★ COMPANION TRADING[/color]")
+	display_game("  • Trade companions and eggs with other players")
+	display_game("  • New tabs in trade window: Items, Companions, Eggs")
+	display_game("  [color=#FFD700]★ COMPANION SORTING[/color]")
+	display_game("  • Sort companions by Level, Tier, Variant, Damage, Name, or Type")
+	display_game("")
+
 	# v0.9.63 changes
-	display_game("[color=#00FF00]v0.9.63[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.63[/color]")
 	display_game("  • Replaced Shield ability with Forcefield (now unlocks at level 15)")
 	display_game("  • Fixed Shield ability not appearing on combat bar (now maps to Forcefield)")
 	display_game("")
@@ -13655,12 +14418,6 @@ func display_changelog():
 	display_game("  • Companions now properly award XP, gold, and items when they defeat enemies")
 	display_game("")
 
-	# v0.9.59 changes
-	display_game("[color=#00FFFF]v0.9.59[/color]")
-	display_game("  • Fixed eggs not receiving color variants (bug: variant data wasn't sent to client)")
-	display_game("  • Consolidated variant definitions into single source of truth (drop_tables.gd)")
-	display_game("")
-
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
 func show_companion_info():
@@ -13670,6 +14427,90 @@ func show_companion_info():
 	companions_page = 0
 	display_companions()
 	update_action_bar()
+
+func _sort_companions(companions: Array) -> Array:
+	"""Sort companions based on current sort option."""
+	var sorted_comps = companions.duplicate()
+
+	sorted_comps.sort_custom(func(a, b):
+		var val_a
+		var val_b
+
+		match companion_sort_option:
+			"level":
+				val_a = a.get("level", 0)
+				val_b = b.get("level", 0)
+			"tier":
+				val_a = a.get("tier", 0)
+				val_b = b.get("tier", 0)
+			"variant":
+				# Sort by variant rarity (Mythic > Legendary > Epic > Rare > Uncommon > Common)
+				val_a = _get_variant_sort_value(a.get("variant", "Normal"))
+				val_b = _get_variant_sort_value(b.get("variant", "Normal"))
+			"damage":
+				# Estimated damage based on tier and level
+				val_a = _get_companion_sort_damage_value(a)
+				val_b = _get_companion_sort_damage_value(b)
+			"name":
+				val_a = a.get("name", "").to_lower()
+				val_b = b.get("name", "").to_lower()
+				# For name, ascending = A-Z
+				if companion_sort_ascending:
+					return val_a < val_b
+				else:
+					return val_a > val_b
+			"type":
+				val_a = a.get("monster_type", a.get("name", "")).to_lower()
+				val_b = b.get("monster_type", b.get("name", "")).to_lower()
+				if companion_sort_ascending:
+					return val_a < val_b
+				else:
+					return val_a > val_b
+			_:
+				val_a = a.get("level", 0)
+				val_b = b.get("level", 0)
+
+		# For numeric sorts
+		if companion_sort_ascending:
+			return val_a < val_b
+		else:
+			return val_a > val_b
+	)
+
+	return sorted_comps
+
+func _get_variant_sort_value(variant: String) -> int:
+	"""Get a numeric value for variant rarity for sorting."""
+	# Mythic variants = 5
+	if variant in ["Prismatic", "Void", "Cosmic", "Divine"]:
+		return 5
+	# Legendary variants = 4
+	if variant in ["Spectral", "Ethereal", "Celestial", "Bifrost"]:
+		return 4
+	# Epic variants = 3
+	if variant in ["Shiny", "Radiant", "Starfall", "Blessed"]:
+		return 3
+	# Rare variants = 2
+	if variant in ["Volcanic", "Twilight", "Rising", "Dusk", "Storm", "Royal", "Magenta", "Coral", "Mint"]:
+		return 2
+	# Uncommon variants = 1
+	if variant not in ["Normal", ""]:
+		return 1
+	# Common/Normal = 0
+	return 0
+
+func _get_companion_sort_damage_value(companion: Dictionary) -> int:
+	"""Get a numeric damage value for sorting companions."""
+	var tier = companion.get("tier", 1)
+	var level = companion.get("level", 1)
+	var variant = companion.get("variant", "Normal")
+
+	# Base damage formula: tier * 5 + level * 2
+	var base_damage = tier * 5 + level * 2
+
+	# Apply variant multiplier
+	var variant_mult = _get_variant_multiplier(variant)
+	return int(base_damage * variant_mult)
 
 func display_companions():
 	"""Display the companions list with level, XP, abilities, and variant info"""
@@ -13768,15 +14609,21 @@ func display_companions():
 
 	# Hatched companions section - enhanced with level and variant (PAGINATED)
 	if collected_companions.size() > 0:
-		var total_pages = int(ceil(float(collected_companions.size()) / float(COMPANIONS_PAGE_SIZE)))
+		# Sort the companions before display
+		var sorted_companions = _sort_companions(collected_companions)
+
+		var total_pages = int(ceil(float(sorted_companions.size()) / float(COMPANIONS_PAGE_SIZE)))
 		companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
 		var start_idx = companions_page * COMPANIONS_PAGE_SIZE
-		var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected_companions.size())
+		var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, sorted_companions.size())
 
-		display_game("[color=#00FF00]Hatched Companions (%d)[/color] [color=#808080]Page %d/%d[/color]" % [collected_companions.size(), companions_page + 1, total_pages])
+		# Sort indicator
+		var sort_direction = "▲" if companion_sort_ascending else "▼"
+		var sort_label = companion_sort_option.capitalize()
+		display_game("[color=#00FF00]Hatched Companions (%d)[/color] [color=#808080]Page %d/%d | Sort: %s %s[/color]" % [sorted_companions.size(), companions_page + 1, total_pages, sort_label, sort_direction])
 
 		for i in range(start_idx, end_idx):
-			var companion = collected_companions[i]
+			var companion = sorted_companions[i]
 			var comp_name = companion.get("name", "Unknown")
 			var comp_id = companion.get("id", "")
 			var comp_level = companion.get("level", 1)
@@ -14645,6 +15492,7 @@ func display_eggs():
 		var variant_color2 = egg.get("variant_color2", "")
 		var variant_pattern = egg.get("variant_pattern", "solid")
 		var tier = egg.get("tier", 1)
+		var is_frozen = egg.get("frozen", false)
 		var rarity_info = _get_variant_rarity_info(variant)
 
 		# Support both raw format (steps_remaining, hatch_steps) and client format (steps_taken, steps_required)
@@ -14658,17 +15506,22 @@ func display_eggs():
 		var egg_art = MonsterArt.get_egg_art(variant, variant_color, variant_color2, variant_pattern, ui_scale_monster_art)
 		display_game(egg_art)
 
-		# Display egg info below the art with rarity tag
-		display_game("  [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]" % [rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier])
+		# Display egg info below the art with rarity tag and frozen status
+		var frozen_str = " [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
+		var display_num = (i - start_idx) + 1
+		display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, frozen_str])
 
 		# Progress bar
 		var bar_length = 16
 		var filled = int(bar_length * progress / 100)
 		var progress_bar = "[" + "█".repeat(filled) + "░".repeat(bar_length - filled) + "]"
-		display_game("  [color=#AAAAAA]%s %d%% (%d/%d steps)[/color]" % [progress_bar, progress, steps, required])
+		if is_frozen:
+			display_game("  [color=#00BFFF]%s %d%% (%d/%d steps) - PAUSED[/color]" % [progress_bar, progress, steps, required])
+		else:
+			display_game("  [color=#AAAAAA]%s %d%% (%d/%d steps)[/color]" % [progress_bar, progress, steps, required])
 		display_game("")
 
-	display_game("[color=#808080]Walk around to incubate eggs![/color]")
+	display_game("[color=#808080]Walk around to incubate eggs! Frozen eggs won't progress.[/color]")
 	display_game("")
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
 
@@ -15049,6 +15902,27 @@ func show_help():
 [color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
   [%s] Quick (25%% HP) = level×22g | [%s] Full (100%% HP) = level×90g | [%s] Cure All (full+debuffs) = level×180g
 [color=#DAA520]Tax Collector[/color] (5%% chance when 100+g): 8%% tax (min 10g). Bumbling=5%%, Veteran=10%%. Jarls/High Kings immune.
+
+[b][color=#FFD700]══ SANCTUARY (HOUSE) ══[/color][/b]
+[color=#00FFFF]Account-Level Home:[/color] Your Sanctuary persists across all characters on your account!
+[color=#00FFFF]Access:[/color] After login, you'll see your Sanctuary before character select. Store items for future characters!
+[color=#FFA500]Storage:[/color] Base 20 slots. Store items from current character. Withdraw items when creating new characters.
+[color=#A335EE]Companion Kennel:[/color] Register companions to your Sanctuary - they survive permadeath!
+  • Use [color=#00FFFF]Home Stone (Companion)[/color] to register your active companion
+  • Registered companions return home when your character dies
+  • Checkout registered companions on new characters
+[color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
+  • Storage Expansion (+10 slots/level) | Companion Kennel (+1 slot/level)
+  • Escape Training (+2%% flee/level) | Family Inheritance (+50g start/level)
+  • Ancestral Wisdom (+1%% XP/level) | Homesteading (+5%% gathering/level)
+[color=#FFD700]Home Stones:[/color] Found in tier 5-7 loot. Use outside combat/dungeons to send things home:
+  • Home Stone (Egg) - Send one incubating egg to storage
+  • Home Stone (Supplies) - Send up to 10 consumables to storage
+  • Home Stone (Equipment) - Send one equipped item to storage
+  • Home Stone (Companion) - Register your active companion to Sanctuary
+[color=#00BFFF]Egg Freezing:[/color] [color=#FFAA00]More[/color]→[color=#FFAA00]Eggs[/color]: Press Freeze/Unfreeze buttons to pause egg hatching!
+  • Frozen eggs don't progress when you walk - perfect for saving until you find a Home Stone
+  • Frozen eggs can still be traded with other players
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
@@ -16618,10 +17492,8 @@ func handle_dungeon_floor_change(message: Dictionary):
 		display_game("Floors remaining: %d" % (total_floors - new_floor))
 
 	display_game("")
-	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-
-	# Set pending continue so player must acknowledge before dungeon state updates display
-	pending_continue = true
+	# Immediately show the dungeon floor grid
+	display_dungeon_floor()
 	update_action_bar()
 
 func handle_dungeon_complete(message: Dictionary):
@@ -18271,3 +19143,463 @@ func _display_corpse_loot_confirmation():
 
 	display_game("")
 	display_game("[color=#808080]Press [%s] to confirm, [%s] to cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+
+# ===== HOUSE (SANCTUARY) DISPLAY FUNCTIONS =====
+
+const HOUSE_UPGRADE_DISPLAY = {
+	"storage_slots": {"name": "Storage Expansion", "desc": "+10 storage slots", "icon": "📦"},
+	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "🐾"},
+	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
+	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting gold", "icon": "💰"},
+	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
+	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"}
+}
+
+func _render_house_map() -> String:
+	"""Render the house ASCII map showing kennel, storage, and forge areas"""
+	var companions = house_data.get("registered_companions", {}).get("companions", [])
+	var companion_capacity = _get_house_companion_capacity()
+	var storage_count = house_data.get("storage", {}).get("items", []).size()
+	var storage_capacity = _get_house_storage_capacity()
+
+	# Build kennel display - show up to 5 slots
+	var kennel_slots = []
+	for i in range(min(5, companion_capacity)):
+		if i < companions.size():
+			var comp = companions[i]
+			var variant_color = comp.get("variant_color", "#A335EE")
+			var initial = comp.get("name", "?")[0].to_upper()
+			if comp.get("checked_out_by") != null:
+				kennel_slots.append("[color=#666666](%s)[/color]" % initial)  # Greyed out if checked out
+			else:
+				kennel_slots.append("[color=%s][%s][/color]" % [variant_color, initial])
+		else:
+			kennel_slots.append("[color=#404040][ ][/color]")
+
+	# Pad to 5 slots for consistent display
+	while kennel_slots.size() < 5:
+		kennel_slots.append("   ")
+
+	# Position markers
+	var pos_center = "[color=#00FF00]@[/color]" if house_position == "center" else "[color=#404040].[/color]"
+	var pos_kennel = "[color=#00FF00]@[/color]" if house_position == "kennel" else "[color=#404040].[/color]"
+	var pos_chest = "[color=#00FF00]@[/color]" if house_position == "chest" else "[color=#404040].[/color]"
+	var pos_forge = "[color=#00FF00]@[/color]" if house_position == "forge" else "[color=#404040].[/color]"
+
+	# Chest color based on contents
+	var chest_color = "#FFD700" if storage_count > 0 else "#8B4513"
+
+	var map_lines = [
+		"[color=#FFD700]    SANCTUARY[/color]",
+		"[color=#8B4513]╔═══════════════════╗[/color]",
+		"[color=#8B4513]║[/color]   [color=#A335EE]COMPANION KENNEL[/color] [color=#8B4513]║[/color]",
+		"[color=#8B4513]║[/color]  %s %s %s  [color=#8B4513]║[/color]" % [kennel_slots[0], kennel_slots[1], kennel_slots[2]],
+		"[color=#8B4513]║[/color]    %s %s   %s  [color=#8B4513]║[/color]" % [kennel_slots[3], kennel_slots[4], pos_kennel],
+		"[color=#8B4513]║[/color]                   [color=#8B4513]║[/color]",
+		"[color=#8B4513]║[/color]        %s          [color=#8B4513]║[/color]" % pos_center,
+		"[color=#8B4513]║[/color]                   [color=#8B4513]║[/color]",
+		"[color=#8B4513]║[/color] [color=%s]▄▄▄[/color]           [color=#FF6600]▲▲▲[/color] [color=#8B4513]║[/color]" % chest_color,
+		"[color=#8B4513]║[/color] [color=%s]█C█[/color] %s       [color=#FF6600]█F█[/color] %s [color=#8B4513]║[/color]" % [chest_color, pos_chest, pos_forge],
+		"[color=#8B4513]╚═══════════════════╝[/color]",
+		"",
+		"[color=#808080]@ You  C Chest  F Forge[/color]",
+		"[color=#808080][X] Companion (out)[/color]",
+	]
+
+	return "\n".join(map_lines)
+
+func _update_house_map():
+	"""Update the map display with the house layout"""
+	if map_display:
+		map_display.clear()
+		map_display.append_text(_render_house_map())
+
+func display_house_main():
+	"""Display the main house/sanctuary view"""
+	game_output.clear()
+	house_position = "center"
+	_update_house_map()
+
+	display_game("[color=#FFD700]═══════ SANCTUARY ═══════[/color]")
+	display_game("")
+
+	# Owner and Baddie Points
+	var bp = house_data.get("baddie_points", 0)
+	var total_bp = house_data.get("total_baddie_points_earned", 0)
+	display_game("[color=#FFFFFF]Owner: %s[/color]" % username)
+	display_game("[color=#FF6600]Baddie Points: %d[/color] [color=#808080](Total: %d)[/color]" % [bp, total_bp])
+	display_game("")
+
+	# Quick Stats
+	var stats = house_data.get("stats", {})
+	display_game("[color=#00FFFF]Legacy Stats:[/color]")
+	display_game("  Characters Lost: %d" % stats.get("characters_lost", 0))
+	display_game("  Highest Level: %d" % stats.get("highest_level_reached", 0))
+	display_game("  Total XP Earned: %d" % stats.get("total_xp_earned", 0))
+	display_game("  Total Kills: %d" % stats.get("total_monsters_killed", 0))
+	display_game("")
+
+	# Storage Summary
+	var storage = house_data.get("storage", {})
+	var storage_used = storage.get("items", []).size()
+	var storage_capacity = _get_house_storage_capacity()
+	display_game("[color=#00FF00]Storage:[/color] %d/%d items" % [storage_used, storage_capacity])
+
+	# Registered Companions Summary
+	var reg_companions = house_data.get("registered_companions", {})
+	var companions_used = reg_companions.get("companions", []).size()
+	var companions_capacity = _get_house_companion_capacity()
+	display_game("[color=#A335EE]Registered Companions:[/color] %d/%d" % [companions_used, companions_capacity])
+	display_game("")
+
+	# Active Bonuses from Upgrades
+	var upgrades = house_data.get("upgrades", {})
+	var has_bonuses = false
+	var bonus_text = "[color=#FFD700]Active Bonuses:[/color] "
+	var bonus_parts = []
+	if upgrades.get("flee_chance", 0) > 0:
+		bonus_parts.append("+%d%% Flee" % (upgrades.flee_chance * 2))
+	if upgrades.get("starting_gold", 0) > 0:
+		bonus_parts.append("+%d Gold" % (upgrades.starting_gold * 50))
+	if upgrades.get("xp_bonus", 0) > 0:
+		bonus_parts.append("+%d%% XP" % upgrades.xp_bonus)
+	if upgrades.get("gathering_bonus", 0) > 0:
+		bonus_parts.append("+%d%% Gather" % (upgrades.gathering_bonus * 5))
+
+	if bonus_parts.size() > 0:
+		display_game(bonus_text + ", ".join(bonus_parts))
+	else:
+		display_game("[color=#808080]No upgrades purchased yet.[/color]")
+
+	display_game("")
+	display_game("[color=#FFD700]═══════════════════════════════════════[/color]")
+
+func display_house_storage():
+	"""Display house storage with items and withdraw options"""
+	game_output.clear()
+	house_position = "chest"
+	_update_house_map()
+
+	display_game("[color=#FFD700]═══════ STORAGE CHEST ═══════[/color]")
+	display_game("")
+
+	var storage = house_data.get("storage", {})
+	var items = storage.get("items", [])
+	var capacity = _get_house_storage_capacity()
+
+	display_game("[color=#AAAAAA]Capacity: %d/%d[/color]" % [items.size(), capacity])
+	display_game("")
+
+	if items.size() == 0:
+		display_game("[color=#808080]Storage is empty.[/color]")
+		display_game("[color=#808080]Use Home Stones to send items here![/color]")
+	else:
+		# Paginate items (5 per page)
+		var page_size = 5
+		var total_pages = int(ceil(float(items.size()) / float(page_size)))
+		house_storage_page = clamp(house_storage_page, 0, max(0, total_pages - 1))
+		var start_idx = house_storage_page * page_size
+		var end_idx = min(start_idx + page_size, items.size())
+
+		display_game("[color=#00FF00]Stored Items[/color] [color=#808080]Page %d/%d[/color]" % [house_storage_page + 1, total_pages])
+		display_game("")
+
+		for i in range(start_idx, end_idx):
+			var item = items[i]
+			var item_name = item.get("name", "Unknown")
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			var level = item.get("level", 1)
+			var display_num = (i - start_idx) + 1
+			var is_stored_companion = item.get("type") == "stored_companion"
+
+			# Show item type indicator for stored companions
+			var type_indicator = ""
+			if is_stored_companion:
+				var variant = item.get("variant", "Normal")
+				var variant_color = item.get("variant_color", "#A335EE")
+				type_indicator = " [color=%s](%s)[/color]" % [variant_color, variant]
+
+			# Check if marked for withdrawal, discard, or register
+			var action_marker = ""
+			if i in house_storage_withdraw_items:
+				action_marker = " [color=#00FFFF][WITHDRAW][/color]"
+			elif i == house_storage_discard_index:
+				action_marker = " [color=#FF4444][DISCARD][/color]"
+			elif i == house_storage_register_index:
+				action_marker = " [color=#A335EE][REGISTER][/color]"
+
+			display_game("  [%d] [color=%s]%s[/color]%s [color=#808080]Lv.%d[/color]%s" % [display_num, rarity_color, item_name, type_indicator, level, action_marker])
+
+		display_game("")
+		if total_pages > 1:
+			display_game("[color=#808080]Q/E to change page[/color]")
+
+	display_game("")
+	display_game("[color=#FFD700]════════════════════════════[/color]")
+
+func display_house_companions():
+	"""Display registered companions in the house"""
+	game_output.clear()
+	house_position = "kennel"
+	_update_house_map()
+
+	display_game("[color=#A335EE]═══════ COMPANION KENNEL ═══════[/color]")
+	display_game("")
+
+	var reg_companions = house_data.get("registered_companions", {})
+	var companions = reg_companions.get("companions", [])
+	var capacity = _get_house_companion_capacity()
+
+	display_game("[color=#AAAAAA]Slots: %d/%d[/color]" % [companions.size(), capacity])
+	display_game("")
+
+	if companions.size() == 0:
+		display_game("[color=#808080]No registered companions.[/color]")
+		display_game("[color=#808080]Use Home Stone (Companion) to register companions here![/color]")
+		display_game("[color=#808080]Registered companions survive death and can be checked out by new characters.[/color]")
+	else:
+		for i in range(companions.size()):
+			var companion = companions[i]
+			var comp_name = companion.get("name", "Unknown")
+			var monster_type = companion.get("monster_type", "")
+			var variant = companion.get("variant", "Normal")
+			var variant_color = companion.get("variant_color", "#FFFFFF")
+			var comp_level = companion.get("level", 1)
+			var comp_tier = companion.get("tier", 1)
+			var checked_out_by = companion.get("checked_out_by")
+
+			var status_text = ""
+			if checked_out_by != null:
+				status_text = " [color=#FF8800](In use by %s)[/color]" % checked_out_by
+			else:
+				status_text = " [color=#00FF00](Available)[/color]"
+
+			# Show if selected for checkout or unregister
+			var action_marker = ""
+			if i == house_checkout_companion_slot:
+				action_marker = " [color=#00FFFF][CHECKOUT][/color]"
+			elif i == house_unregister_companion_slot:
+				action_marker = " [color=#FF8800][UNREGISTER][/color]"
+
+			var rarity_info = _get_variant_rarity_info(variant)
+			display_game("[%d] [color=%s][%s][/color] [color=%s]%s %s[/color] Lv.%d%s%s" % [
+				i + 1, rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, comp_level, status_text, action_marker
+			])
+
+			# Show battles fought
+			var battles = companion.get("battles_fought", 0)
+			display_game("    [color=#808080]Tier %d | %d battles fought[/color]" % [comp_tier, battles])
+
+	display_game("")
+	display_game("[color=#808080]Registered companions survive permadeath![/color]")
+	display_game("[color=#808080]Check out a companion when creating a new character.[/color]")
+	display_game("")
+	display_game("[color=#A335EE]════════════════════════════════════[/color]")
+
+func display_house_upgrades():
+	"""Display available house upgrades"""
+	game_output.clear()
+	house_position = "forge"
+	_update_house_map()
+
+	display_game("[color=#FF6600]═══════ UPGRADE FORGE ═══════[/color]")
+	display_game("")
+
+	var bp = house_data.get("baddie_points", 0)
+	display_game("[color=#FF6600]Baddie Points: %d[/color]" % bp)
+	display_game("")
+
+	var upgrades = house_data.get("upgrades", {})
+
+	# Get upgrade costs from server (will be sent with house_data)
+	var upgrade_costs = house_data.get("upgrade_costs", {
+		"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
+		"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
+		"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
+		"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
+		"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]}
+	})
+
+	var idx = 1
+	for upgrade_id in ["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]:
+		var upgrade_def = upgrade_costs.get(upgrade_id, {})
+		var display_info = HOUSE_UPGRADE_DISPLAY.get(upgrade_id, {"name": upgrade_id, "desc": "", "icon": ""})
+		var current_level = upgrades.get(upgrade_id, 0)
+		var max_level = upgrade_def.get("max", 1)
+		var costs = upgrade_def.get("costs", [])
+
+		var cost_text = ""
+		var can_afford = false
+		if current_level >= max_level:
+			cost_text = "[color=#00FF00]MAXED[/color]"
+		elif current_level < costs.size():
+			var next_cost = costs[current_level]
+			can_afford = bp >= next_cost
+			if can_afford:
+				cost_text = "[color=#00FF00]%d BP[/color]" % next_cost
+			else:
+				cost_text = "[color=#FF0000]%d BP[/color]" % next_cost
+		else:
+			cost_text = "[color=#808080]N/A[/color]"
+
+		var effect_value = upgrade_def.get("effect", 0) * current_level
+		var effect_text = ""
+		if upgrade_id == "storage_slots":
+			effect_text = "+%d slots" % effect_value
+		elif upgrade_id == "companion_slots":
+			effect_text = "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
+		elif upgrade_id == "flee_chance":
+			effect_text = "+%d%%" % effect_value
+		elif upgrade_id == "starting_gold":
+			effect_text = "+%d gold" % effect_value
+		elif upgrade_id == "xp_bonus":
+			effect_text = "+%d%%" % effect_value
+		elif upgrade_id == "gathering_bonus":
+			effect_text = "+%d%%" % effect_value
+
+		display_game("[%d] [color=#FFD700]%s[/color] Lv.%d/%d" % [idx, display_info.name, current_level, max_level])
+		display_game("    %s [color=#AAAAAA](%s)[/color]" % [display_info.desc, effect_text])
+		display_game("    Cost: %s" % cost_text)
+		display_game("")
+		idx += 1
+
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
+
+func _get_house_storage_capacity() -> int:
+	"""Calculate total house storage capacity"""
+	var base_slots = house_data.get("storage", {}).get("slots", 20)
+	var upgrade_level = house_data.get("upgrades", {}).get("storage_slots", 0)
+	return base_slots + (upgrade_level * 10)
+
+func _get_house_companion_capacity() -> int:
+	"""Calculate total registered companion capacity"""
+	var base_slots = house_data.get("registered_companions", {}).get("slots", 2)
+	var upgrade_level = house_data.get("upgrades", {}).get("companion_slots", 0)
+	return base_slots + upgrade_level
+
+func _purchase_house_upgrade(index: int):
+	"""Send request to purchase a house upgrade"""
+	var upgrade_ids = ["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]
+	if index < 0 or index >= upgrade_ids.size():
+		return
+	send_to_server({"type": "house_upgrade", "upgrade_id": upgrade_ids[index]})
+
+func _toggle_storage_withdraw_item(display_index: int):
+	"""Toggle an item for withdrawal from house storage"""
+	var items = house_data.get("storage", {}).get("items", [])
+	var page_size = 5
+	var actual_index = house_storage_page * page_size + display_index
+
+	if actual_index < 0 or actual_index >= items.size():
+		return
+
+	# Toggle selection
+	if actual_index in house_storage_withdraw_items:
+		house_storage_withdraw_items.erase(actual_index)
+	else:
+		house_storage_withdraw_items.append(actual_index)
+
+	display_house_storage()
+	update_action_bar()
+
+func _toggle_companion_checkout(display_index: int):
+	"""Toggle a companion for checkout from house"""
+	var companions = house_data.get("registered_companions", {}).get("companions", [])
+
+	if display_index < 0 or display_index >= companions.size():
+		return
+
+	var companion = companions[display_index]
+
+	# Can't checkout already checked out companions
+	if companion.get("checked_out_by") != null:
+		display_game("[color=#FF0000]That companion is already in use by %s.[/color]" % companion.checked_out_by)
+		return
+
+	# Toggle selection (only one at a time)
+	if house_checkout_companion_slot == display_index:
+		house_checkout_companion_slot = -1
+	else:
+		house_checkout_companion_slot = display_index
+
+	display_house_companions()
+	update_action_bar()
+
+func _select_storage_discard_item(display_index: int):
+	"""Select an item from storage to discard"""
+	var items = house_data.get("storage", {}).get("items", [])
+	var page_size = 5
+	var actual_index = house_storage_page * page_size + display_index
+
+	if actual_index < 0 or actual_index >= items.size():
+		return
+
+	# Select this item for discard (only one at a time)
+	if house_storage_discard_index == actual_index:
+		house_storage_discard_index = -1
+	else:
+		house_storage_discard_index = actual_index
+
+	display_house_storage()
+	update_action_bar()
+
+func _select_storage_register_companion(display_index: int):
+	"""Select a stored companion from storage to register to kennel"""
+	var items = house_data.get("storage", {}).get("items", [])
+	var page_size = 5
+	var actual_index = house_storage_page * page_size + display_index
+
+	if actual_index < 0 or actual_index >= items.size():
+		return
+
+	var item = items[actual_index]
+
+	# Can only register stored_companion items
+	if item.get("type") != "stored_companion":
+		display_game("[color=#FF0000]Only stored companions can be registered to the kennel.[/color]")
+		return
+
+	# Check if kennel has space
+	if house_data.get("registered_companions", {}).get("companions", []).size() >= _get_house_companion_capacity():
+		display_game("[color=#FF0000]Your companion kennel is full. Upgrade it or unregister a companion first.[/color]")
+		return
+
+	# Select this companion for registration (only one at a time)
+	if house_storage_register_index == actual_index:
+		house_storage_register_index = -1
+	else:
+		house_storage_register_index = actual_index
+
+	display_house_storage()
+	update_action_bar()
+
+func _select_companion_unregister(display_index: int):
+	"""Select a companion from kennel to unregister (move to storage)"""
+	var companions = house_data.get("registered_companions", {}).get("companions", [])
+
+	if display_index < 0 or display_index >= companions.size():
+		return
+
+	var companion = companions[display_index]
+
+	# Can't unregister if checked out
+	if companion.get("checked_out_by") != null:
+		display_game("[color=#FF0000]Cannot unregister a companion that is currently in use by %s.[/color]" % companion.checked_out_by)
+		return
+
+	# Check if storage has space
+	var storage_items = house_data.get("storage", {}).get("items", [])
+	if storage_items.size() >= _get_house_storage_capacity():
+		display_game("[color=#FF0000]Your house storage is full. Discard or withdraw items first.[/color]")
+		return
+
+	# Select this companion for unregister (only one at a time)
+	if house_unregister_companion_slot == display_index:
+		house_unregister_companion_slot = -1
+	else:
+		house_unregister_companion_slot = display_index
+
+	display_house_companions()
+	update_action_bar()

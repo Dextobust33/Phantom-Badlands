@@ -775,11 +775,11 @@ const TOTAL_WANDERING_MERCHANTS = 260
 # Each type has a specialty that affects inventory and map color
 const MERCHANT_TYPES = [
 	# Weapons (Red on map)
-	{"prefix": "Traveling", "suffix": "Weaponsmith", "specialty": "weapons", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Grizzled", "suffix": "Blademaster", "specialty": "weapons", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Traveling", "suffix": "Weaponsmith", "specialty": "weapons", "services": ["buy", "sell"]},
+	{"prefix": "Grizzled", "suffix": "Blademaster", "specialty": "weapons", "services": ["buy", "sell"]},
 	# Armor (Blue on map)
-	{"prefix": "Wandering", "suffix": "Armorer", "specialty": "armor", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Dwarven", "suffix": "Smithy", "specialty": "armor", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Wandering", "suffix": "Armorer", "specialty": "armor", "services": ["buy", "sell"]},
+	{"prefix": "Dwarven", "suffix": "Smithy", "specialty": "armor", "services": ["buy", "sell"]},
 	# Jewelry (Purple on map)
 	{"prefix": "Mysterious", "suffix": "Jeweler", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
 	{"prefix": "Exotic", "suffix": "Dealer", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
@@ -791,27 +791,27 @@ const MERCHANT_TYPES = [
 	{"prefix": "Mystical", "suffix": "Sage", "specialty": "scrolls", "services": ["buy", "sell", "gamble"]},
 	# General (Gold on map)
 	{"prefix": "Lucky", "suffix": "Gambler", "specialty": "all", "services": ["buy", "sell", "gamble"]},
-	{"prefix": "Old", "suffix": "Trader", "specialty": "all", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Old", "suffix": "Trader", "specialty": "all", "services": ["buy", "sell"]},
 	{"prefix": "Swift", "suffix": "Peddler", "specialty": "all", "services": ["buy", "sell"]},
-	{"prefix": "Master", "suffix": "Merchant", "specialty": "all", "services": ["buy", "sell", "upgrade", "gamble"]},
+	{"prefix": "Master", "suffix": "Merchant", "specialty": "all", "services": ["buy", "sell", "gamble"]},
 	# Elite (White on map) - Rare, sells everything with better odds
-	{"prefix": "Legendary", "suffix": "Collector", "specialty": "elite", "services": ["buy", "sell", "upgrade", "gamble"]},
+	{"prefix": "Legendary", "suffix": "Collector", "specialty": "elite", "services": ["buy", "sell", "gamble"]},
 	# === AFFIX-FOCUSED MERCHANTS (sell equipment with guaranteed stat affixes) ===
 	# Warrior gear (Orange on map) - STR, CON, Stamina, Attack affixes
-	{"prefix": "Veteran", "suffix": "Outfitter", "specialty": "warrior_affixes", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Battle-worn", "suffix": "Supplier", "specialty": "warrior_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Veteran", "suffix": "Outfitter", "specialty": "warrior_affixes", "services": ["buy", "sell"]},
+	{"prefix": "Battle-worn", "suffix": "Supplier", "specialty": "warrior_affixes", "services": ["buy", "sell"]},
 	# Mage gear (Light Blue on map) - INT, WIS, Mana affixes
-	{"prefix": "Enchanted", "suffix": "Emporium", "specialty": "mage_affixes", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Arcane", "suffix": "Outfitter", "specialty": "mage_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Enchanted", "suffix": "Emporium", "specialty": "mage_affixes", "services": ["buy", "sell"]},
+	{"prefix": "Arcane", "suffix": "Outfitter", "specialty": "mage_affixes", "services": ["buy", "sell"]},
 	# Trickster gear (Lime on map) - DEX, WITS, Energy, Speed affixes
-	{"prefix": "Shadowy", "suffix": "Fence", "specialty": "trickster_affixes", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Cunning", "suffix": "Dealer", "specialty": "trickster_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Shadowy", "suffix": "Fence", "specialty": "trickster_affixes", "services": ["buy", "sell"]},
+	{"prefix": "Cunning", "suffix": "Dealer", "specialty": "trickster_affixes", "services": ["buy", "sell"]},
 	# Tank gear (Gray on map) - HP, Defense, CON affixes
-	{"prefix": "Ironclad", "suffix": "Supplier", "specialty": "tank_affixes", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Stalwart", "suffix": "Armorer", "specialty": "tank_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Ironclad", "suffix": "Supplier", "specialty": "tank_affixes", "services": ["buy", "sell"]},
+	{"prefix": "Stalwart", "suffix": "Armorer", "specialty": "tank_affixes", "services": ["buy", "sell"]},
 	# DPS gear (Yellow on map) - Attack, Speed, STR affixes
-	{"prefix": "Keen", "suffix": "Bladedealer", "specialty": "dps_affixes", "services": ["buy", "sell", "upgrade"]},
-	{"prefix": "Swift", "suffix": "Striker", "specialty": "dps_affixes", "services": ["buy", "sell", "upgrade"]},
+	{"prefix": "Keen", "suffix": "Bladedealer", "specialty": "dps_affixes", "services": ["buy", "sell"]},
+	{"prefix": "Swift", "suffix": "Striker", "specialty": "dps_affixes", "services": ["buy", "sell"]},
 ]
 
 # Name parts for generating unique merchant names
