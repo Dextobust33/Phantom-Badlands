@@ -13627,8 +13627,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.61 changes
+	display_game("[color=#00FF00]v0.9.61[/color] [color=#808080](Current)[/color]")
+	display_game("  • Corpses now drop 2 equipment, active companion, another companion, and egg")
+	display_game("  • Corpses spawn at half the death distance from origin")
+	display_game("  • Fixed stacked consumables being fully consumed instead of just one")
+	display_game("  • Resource potions of same tier now stack together")
+	display_game("  • Dungeon inventory auto-enters Use mode for quick item access")
+	display_game("")
+
 	# v0.9.60 changes
-	display_game("[color=#00FF00]v0.9.60[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.60[/color]")
 	display_game("  • Fixed companion kills not giving rewards when using abilities")
 	display_game("  • Companions now properly award XP, gold, and items when they defeat enemies")
 	display_game("")
@@ -13651,63 +13660,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.57[/color]")
 	display_game("  • Fixed death saves (Eternal, Guardian, High King) not working in combat")
 	display_game("  • Death saves now properly end combat - you can move/rest after being saved")
-	display_game("")
-
-	# v0.9.56 changes
-	display_game("[color=#00FFFF]v0.9.56[/color]")
-	display_game("  • Fixed players loading with 0 HP after disconnecting during combat")
-	display_game("")
-
-	# v0.9.55 changes
-	display_game("[color=#00FFFF]v0.9.55[/color]")
-	display_game("  • Combat now persists through disconnects - rejoin to continue fighting")
-	display_game("  • Fixed corpse dialog not showing after combat on corpse tile")
-	display_game("  • Fixed ability keys going to chat if pressed before combat loaded")
-	display_game("")
-
-	# v0.9.54 changes
-	display_game("[color=#00FFFF]v0.9.54[/color]")
-	display_game("  • Fixed key 5 not working for Next Page in crafting menus")
-	display_game("  • Fixed permadeath getting stuck (unable to create new character)")
-	display_game("  • Fixed dungeon complete message not appearing with flock bosses")
-	display_game("  • Fixed egg hatch during combat causing movement desync")
-	display_game("  • Fixed player being able to move while in Eggs menu")
-	display_game("")
-
-	# v0.9.53 changes
-	display_game("[color=#00FFFF]v0.9.53[/color]")
-	display_game("  • Added What's Changed menu (More → Changes)")
-	display_game("  • Fixed help screen font scaling for high-resolution displays")
-	display_game("")
-
-	# v0.9.52 changes
-	display_game("[color=#00FFFF]v0.9.52[/color]")
-	display_game("  • Added UI scaling system - adjust individual element sizes in Settings")
-	display_game("  • Per-element scale controls: Map, Monster Art, Buttons, Chat")
-	display_game("  • Increased font size caps for 4K display support")
-	display_game("  • Action bar buttons now scale with window size")
-	display_game("")
-
-	# v0.9.51 changes
-	display_game("[color=#00FFFF]v0.9.51[/color]")
-	display_game("  • Added corpse persistence system - find fallen adventurers' remains")
-	display_game("  • Corpses appear as red 'X' on the map")
-	display_game("  • Loot corpses to recover items, companions, eggs, and gems")
-	display_game("  • Corpses persist between server restarts")
-	display_game("")
-
-	# v0.9.50 changes
-	display_game("[color=#00FFFF]v0.9.50[/color]")
-	display_game("  • Added companion rarity tags showing spawn chance")
-	display_game("  • Fixed Stun ability not working correctly")
-	display_game("  • Expanded companion variants to 110 total")
-	display_game("")
-
-	# v0.9.49 changes
-	display_game("[color=#00FFFF]v0.9.49[/color]")
-	display_game("  • Implemented all missing companion ability effects")
-	display_game("  • Added 10 new trader art variants")
-	display_game("  • Fixed GameOutput shake drift issue")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
