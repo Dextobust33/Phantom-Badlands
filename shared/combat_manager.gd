@@ -3131,8 +3131,11 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 			character.add_buff(buff_type, buff_value, duration)
 			messages.append("[color=#00FFFF]You drink %s! +%d %s for %d rounds![/color]" % [item_name, buff_value, buff_type, duration])
 
-	# Remove item from inventory
-	character.remove_item(item_index)
+	# Remove item from inventory (use stack method for consumables)
+	if item.get("is_consumable", false) and item.get("quantity", 1) > 0:
+		character.use_consumable_stack(item_index)
+	else:
+		character.remove_item(item_index)
 
 	# Item use is a FREE ACTION - player can still act this turn
 	# No monster turn, no round increment, no buff tick

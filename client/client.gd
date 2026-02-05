@@ -8764,6 +8764,25 @@ func open_inventory():
 	inventory_page = 0  # Reset to first page when opening
 	last_item_use_result = ""  # Clear any previous item use result
 	set_inventory_background("base")
+
+	# In dungeon (out of combat), auto-enter use mode for quick item access
+	if dungeon_mode and not in_combat:
+		var inventory = character_data.get("inventory", [])
+		var usable_items = []
+		for i in range(inventory.size()):
+			var item = inventory[i]
+			var item_type = item.get("type", "")
+			if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+				usable_items.append({"index": i, "item": item})
+		if not usable_items.is_empty():
+			pending_inventory_action = "use_item"
+			set_inventory_background("use")
+			use_page = 0
+			set_meta("usable_items", usable_items)
+			_display_usable_items_page()
+			update_action_bar()
+			return
+
 	update_action_bar()
 	display_inventory()
 

@@ -156,9 +156,7 @@ const DROP_TABLES = {
 	],
 	"tier3": [
 		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
-		{"weight": 6, "item_type": "mana_standard", "rarity": "common"},
-		{"weight": 6, "item_type": "stamina_standard", "rarity": "common"},
-		{"weight": 6, "item_type": "energy_standard", "rarity": "common"},
+		{"weight": 18, "item_type": "mana_standard", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_steel", "rarity": "uncommon"},
 		{"weight": 12, "item_type": "armor_plate", "rarity": "uncommon"},
 		{"weight": 9, "item_type": "helm_chain", "rarity": "uncommon"},
@@ -172,9 +170,7 @@ const DROP_TABLES = {
 	],
 	"tier4": [
 		{"weight": 14, "item_type": "potion_greater", "rarity": "uncommon"},
-		{"weight": 5, "item_type": "mana_greater", "rarity": "uncommon"},
-		{"weight": 5, "item_type": "stamina_greater", "rarity": "uncommon"},
-		{"weight": 5, "item_type": "energy_greater", "rarity": "uncommon"},
+		{"weight": 15, "item_type": "mana_greater", "rarity": "uncommon"},
 		{"weight": 15, "item_type": "weapon_enchanted", "rarity": "rare"},
 		{"weight": 12, "item_type": "armor_enchanted", "rarity": "rare"},
 		{"weight": 9, "item_type": "helm_plate", "rarity": "rare"},

@@ -11144,33 +11144,43 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 		death_x = dungeon.get("world_x", character.x)
 		death_y = dungeon.get("world_y", character.y)
 
-	# Calculate distance from origin and generate spawn location
+	# Calculate distance from origin - corpse spawns at HALF distance
 	var distance = sqrt(float(death_x * death_x + death_y * death_y))
-	var spawn_location = _generate_random_location_at_distance(distance)
+	var spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
 	# Build corpse contents
 	var contents = {
-		"item": null,
-		"companion": null,
+		"items": [],  # Now holds up to 2 equipment pieces
+		"active_companion": null,
+		"other_companion": null,
 		"egg": null,
 		"gems": 0
 	}
 
-	# Select one random equipped item
+	# Select TWO random equipped items
 	var equipped_slots = []
 	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		if character.equipped.get(slot) != null:
 			equipped_slots.append(slot)
 
-	if not equipped_slots.is_empty():
-		var random_slot = equipped_slots[randi() % equipped_slots.size()]
-		contents["item"] = character.equipped[random_slot].duplicate(true)
+	equipped_slots.shuffle()
+	for i in range(mini(2, equipped_slots.size())):
+		contents["items"].append(character.equipped[equipped_slots[i]].duplicate(true))
 
 	# Copy active companion (full persistence)
 	if not character.active_companion.is_empty():
-		contents["companion"] = character.active_companion.duplicate(true)
+		contents["active_companion"] = character.active_companion.duplicate(true)
 
-	# Select one random incubating egg
+	# Select one random OTHER owned companion (not the active one)
+	var other_companions = []
+	for comp in character.companions:
+		if comp.get("name", "") != character.active_companion.get("name", ""):
+			other_companions.append(comp)
+	if not other_companions.is_empty():
+		var random_idx = randi() % other_companions.size()
+		contents["other_companion"] = other_companions[random_idx].duplicate(true)
+
+	# Include an egg if player has one
 	if not character.incubating_eggs.is_empty():
 		var random_idx = randi() % character.incubating_eggs.size()
 		contents["egg"] = character.incubating_eggs[random_idx].duplicate(true)
@@ -11181,7 +11191,7 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 		contents["gems"] = int(character.gems * gem_percent)
 
 	# Don't create empty corpses
-	if contents["item"] == null and contents["companion"] == null and contents["egg"] == null and contents["gems"] == 0:
+	if contents["items"].is_empty() and contents["active_companion"] == null and contents["other_companion"] == null and contents["egg"] == null and contents["gems"] == 0:
 		return {}
 
 	# Generate unique corpse ID
@@ -11263,25 +11273,42 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 	var loot_summary = []
 	var warnings = []
 
-	# Transfer item
-	var item = contents.get("item")
-	if item != null and item is Dictionary and not item.is_empty():
-		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
-			character.inventory.append(item)
-			var item_name = item.get("name", "Unknown Item")
-			var rarity = item.get("rarity", "common")
-			var rarity_color = _get_rarity_color(rarity)
-			loot_summary.append("[color=%s]%s[/color]" % [rarity_color, item_name])
-		else:
-			warnings.append("[color=#FF8800]Inventory full - item lost![/color]")
+	# Transfer items (up to 2 equipment pieces)
+	var items = contents.get("items", [])
+	# Support legacy single-item format
+	var legacy_item = contents.get("item")
+	if legacy_item != null and legacy_item is Dictionary and not legacy_item.is_empty():
+		items.append(legacy_item)
+	for item in items:
+		if item != null and item is Dictionary and not item.is_empty():
+			if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+				character.inventory.append(item)
+				var item_name = item.get("name", "Unknown Item")
+				var rarity = item.get("rarity", "common")
+				var rarity_color = _get_rarity_color(rarity)
+				loot_summary.append("[color=%s]%s[/color]" % [rarity_color, item_name])
+			else:
+				warnings.append("[color=#FF8800]Inventory full - item lost![/color]")
 
-	# Transfer companion
-	var companion = contents.get("companion")
-	if companion != null and companion is Dictionary and not companion.is_empty():
-		character.collected_companions.append(companion)
-		var comp_name = companion.get("name", "Unknown")
-		var comp_variant = companion.get("variant", "")
-		var comp_level = companion.get("level", 1)
+	# Transfer active companion
+	var active_companion = contents.get("active_companion")
+	# Support legacy format
+	if active_companion == null:
+		active_companion = contents.get("companion")
+	if active_companion != null and active_companion is Dictionary and not active_companion.is_empty():
+		character.collected_companions.append(active_companion)
+		var comp_name = active_companion.get("name", "Unknown")
+		var comp_variant = active_companion.get("variant", "")
+		var comp_level = active_companion.get("level", 1)
+		loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+
+	# Transfer other companion
+	var other_companion = contents.get("other_companion")
+	if other_companion != null and other_companion is Dictionary and not other_companion.is_empty():
+		character.collected_companions.append(other_companion)
+		var comp_name = other_companion.get("name", "Unknown")
+		var comp_variant = other_companion.get("variant", "")
+		var comp_level = other_companion.get("level", 1)
 		loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
 
 	# Transfer egg
