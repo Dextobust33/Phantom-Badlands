@@ -14878,6 +14878,10 @@ func _calculate_equipment_bonuses(equipped: Dictionary) -> Dictionary:
 			bonuses.intelligence += int(affixes.int_bonus * wear_penalty)
 		if affixes.has("wis_bonus"):
 			bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
+		if affixes.has("wits_bonus"):
+			bonuses.wits += int(affixes.wits_bonus * wear_penalty)
+		if affixes.has("speed_bonus"):
+			bonuses.speed += int(affixes.speed_bonus * wear_penalty)
 
 	return bonuses
 
