@@ -13627,8 +13627,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.62 changes
+	display_game("[color=#00FF00]v0.9.62[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed Speed and Wits bonuses from gear not showing on status page")
+	display_game("  • Magic Bolt now shows actual mana cost (with Gnome/Sage reductions)")
+	display_game("")
+
 	# v0.9.61 changes
-	display_game("[color=#00FF00]v0.9.61[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.61[/color]")
 	display_game("  • Corpses now drop 2 equipment, active companion, another companion, and egg")
 	display_game("  • Corpses spawn at half the death distance from origin")
 	display_game("  • Fixed stacked consumables being fully consumed instead of just one")
@@ -13646,7 +13652,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.59[/color]")
 	display_game("  • Fixed eggs not receiving color variants (bug: variant data wasn't sent to client)")
 	display_game("  • Consolidated variant definitions into single source of truth (drop_tables.gd)")
-	display_game("  • Added error detection: 'MISSING_VARIANT' fallback with hot pink color")
 	display_game("")
 
 	# v0.9.58 changes
@@ -13654,12 +13659,6 @@ func display_changelog():
 	display_game("  • Removed 'Normal' companion variant - all companions now have unique colors")
 	display_game("  • Added 5 new common colors: Silver, Amber, Obsidian, Scarlet, Cobalt")
 	display_game("  • Fixed companion selection keys (1-5) not working in Companions menu")
-	display_game("")
-
-	# v0.9.57 changes
-	display_game("[color=#00FFFF]v0.9.57[/color]")
-	display_game("  • Fixed death saves (Eternal, Guardian, High King) not working in combat")
-	display_game("  • Death saves now properly end combat - you can move/rest after being saved")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
