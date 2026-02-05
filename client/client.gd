@@ -1028,7 +1028,7 @@ const CLASS_DESCRIPTIONS = {
 # resource_type: "mana", "stamina", "energy"
 const MAGE_ABILITY_SLOTS = [
 	["magic_bolt", "Bolt", 1, 0, "mana"],
-	["forcefield", "Field", 10, 20, "mana"],  # Buffed: was L60, replaces Shield
+	["forcefield", "Field", 15, 20, "mana"],  # Replaces Shield, unlocks at L15
 	["cloak", "Cloak", 25, 30, "mana"],
 	["blast", "Blast", 40, 50, "mana"],
 	["teleport", "Teleport", 60, 1000, "mana"],  # Moved from L80
@@ -6453,6 +6453,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		# Mage abilities - use percentage-based scaling
 		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "resource_type": "mana"},
+		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Alias for forcefield
 		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Buffed, replaces Shield
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 12, "resource_type": "mana"},
@@ -13627,8 +13628,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.63 changes
+	display_game("[color=#00FF00]v0.9.63[/color] [color=#808080](Current)[/color]")
+	display_game("  • Replaced Shield ability with Forcefield (now unlocks at level 15)")
+	display_game("  • Fixed Shield ability not appearing on combat bar (now maps to Forcefield)")
+	display_game("")
+
 	# v0.9.62 changes
-	display_game("[color=#00FF00]v0.9.62[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.62[/color]")
 	display_game("  • Fixed Speed and Wits bonuses from gear not showing on status page")
 	display_game("  • Magic Bolt now shows actual mana cost (with Gnome/Sage reductions)")
 	display_game("")
@@ -13652,13 +13659,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.59[/color]")
 	display_game("  • Fixed eggs not receiving color variants (bug: variant data wasn't sent to client)")
 	display_game("  • Consolidated variant definitions into single source of truth (drop_tables.gd)")
-	display_game("")
-
-	# v0.9.58 changes
-	display_game("[color=#00FFFF]v0.9.58[/color]")
-	display_game("  • Removed 'Normal' companion variant - all companions now have unique colors")
-	display_game("  • Added 5 new common colors: Silver, Amber, Obsidian, Scarlet, Cobalt")
-	display_game("  • Fixed companion selection keys (1-5) not working in Companions menu")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

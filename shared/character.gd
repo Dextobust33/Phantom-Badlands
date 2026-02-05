@@ -2079,9 +2079,8 @@ func get_all_available_abilities() -> Array:
 	match path:
 		"mage":
 			abilities.append({"name": "magic_bolt", "level": 1, "display": "Magic Bolt"})
-			abilities.append({"name": "shield", "level": 10, "display": "Shield"})
+			abilities.append({"name": "forcefield", "level": 15, "display": "Forcefield"})
 			abilities.append({"name": "blast", "level": 40, "display": "Blast"})
-			abilities.append({"name": "forcefield", "level": 60, "display": "Forcefield"})
 			abilities.append({"name": "meteor", "level": 100, "display": "Meteor"})
 			abilities.append({"name": "haste", "level": 30, "display": "Haste"})
 			abilities.append({"name": "paralyze", "level": 50, "display": "Paralyze"})

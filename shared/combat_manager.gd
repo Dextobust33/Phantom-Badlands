@@ -1984,6 +1984,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		"bash": ability_name = "shield_bash"
 		"ironskin": ability_name = "iron_skin"
 		"heist": ability_name = "perfect_heist"
+		"shield": ability_name = "forcefield"  # Shield is now an alias for Forcefield
 
 	# Universal abilities (available to all classes, use class resource)
 	if ability_name == "cloak" or ability_name == "all_or_nothing":
