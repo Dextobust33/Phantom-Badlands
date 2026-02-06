@@ -4877,7 +4877,7 @@ func update_action_bar():
 			{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
 			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 			{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7140,6 +7140,8 @@ func execute_local_action(action: String):
 			show_leaderboard_panel()
 		"changelog":
 			display_changelog()
+		"bestiary":
+			display_bestiary()
 		"more_menu":
 			open_more_menu()
 		"more_close":
@@ -14527,6 +14529,7 @@ func display_more_menu():
 	display_game("[%s] [color=#FFAA00]Eggs[/color] - View incubating eggs" % get_action_key_name(2))
 	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(3))
 	display_game("[%s] [color=#00FF00]Changes[/color] - What's new in recent updates" % get_action_key_name(4))
+	display_game("[%s] [color=#FF6666]Bestiary[/color] - Monster tiers and Home Stone drops" % get_action_key_name(5))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
 
@@ -14575,6 +14578,63 @@ func display_changelog():
 	display_game("  • Dungeon inventory auto-enters Use mode for quick item access")
 	display_game("")
 
+	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
+
+func display_bestiary():
+	"""Display monster tiers and Home Stone drop information"""
+	game_output.clear()
+	display_game("[color=#FFD700]═══════ BESTIARY ═══════[/color]")
+	display_game("")
+
+	# Tier 1
+	display_game("[color=#AAAAAA]Tier 1[/color] [color=#808080](Levels 1-5)[/color]")
+	display_game("  Goblin, Giant Rat, Kobold, Skeleton, Wolf")
+	display_game("")
+
+	# Tier 2
+	display_game("[color=#FFFFFF]Tier 2[/color] [color=#808080](Levels 6-15)[/color]")
+	display_game("  Orc, Hobgoblin, Gnoll, Zombie, Giant Spider, Wight, Siren, Kelpie, Mimic")
+	display_game("")
+
+	# Tier 3
+	display_game("[color=#00FF00]Tier 3[/color] [color=#808080](Levels 16-30)[/color]")
+	display_game("  Ogre, Troll, Wraith, Wyvern, Minotaur, Gargoyle, Harpy, Shrieker")
+	display_game("")
+
+	# Tier 4
+	display_game("[color=#0070DD]Tier 4[/color] [color=#808080](Levels 31-50)[/color]")
+	display_game("  Giant, Dragon Wyrmling, Demon, Vampire, Gryphon, Chimaera, Succubus")
+	display_game("")
+
+	# Tier 5 - Home Stones start dropping
+	display_game("[color=#A335EE]Tier 5[/color] [color=#808080](Levels 51-100)[/color]")
+	display_game("  Ancient Dragon, Demon Lord, Lich, Titan, Balrog, Cerberus, Jabberwock")
+	display_game("  [color=#00FFFF]→ Home Stone (Egg), Home Stone (Supplies) start dropping[/color]")
+	display_game("")
+
+	# Tier 6
+	display_game("[color=#FF8000]Tier 6[/color] [color=#808080](Levels 101-500)[/color]")
+	display_game("  Elemental, Iron Golem, Sphinx, Hydra, Phoenix, Nazgul")
+	display_game("  [color=#00FFFF]→ Home Stone (Equipment) starts dropping[/color]")
+	display_game("")
+
+	# Tier 7
+	display_game("[color=#FF4444]Tier 7[/color] [color=#808080](Levels 501-2000)[/color]")
+	display_game("  Void Walker, World Serpent, Elder Lich, Primordial Dragon")
+	display_game("  [color=#00FFFF]→ Home Stone (Companion) starts dropping[/color]")
+	display_game("")
+
+	# Tier 8
+	display_game("[color=#FF00FF]Tier 8[/color] [color=#808080](Levels 2001-5000)[/color]")
+	display_game("  Cosmic Horror, Time Weaver, Death Incarnate")
+	display_game("")
+
+	# Tier 9
+	display_game("[color=#FFD700]Tier 9[/color] [color=#808080](Levels 5001+)[/color]")
+	display_game("  Avatar of Chaos, The Nameless One, God Slayer, Entropy")
+	display_game("")
+
+	display_game("[color=#808080]Tiers determine loot quality. Higher tier monsters may appear early due to tier bleed.[/color]")
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
 func show_companion_info():
