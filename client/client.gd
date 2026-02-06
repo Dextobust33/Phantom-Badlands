@@ -5792,6 +5792,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 func _hide_ability_popup():
 	"""Hide the ability input popup."""
 	ability_popup_active = false  # Clear flag for input handling
+	# Mark enter as pressed to prevent _process from grabbing chat focus on the same frame
+	set_meta("enter_pressed", true)
 	if ability_popup:
 		ability_popup.visible = false
 		ability_popup_input.release_focus()
@@ -19160,7 +19162,6 @@ func _render_house_map() -> String:
 	var companions = house_data.get("registered_companions", {}).get("companions", [])
 	var companion_capacity = _get_house_companion_capacity()
 	var storage_count = house_data.get("storage", {}).get("items", []).size()
-	var storage_capacity = _get_house_storage_capacity()
 
 	# Build kennel display - show up to 5 slots
 	var kennel_slots = []
@@ -19170,7 +19171,7 @@ func _render_house_map() -> String:
 			var variant_color = comp.get("variant_color", "#A335EE")
 			var initial = comp.get("name", "?")[0].to_upper()
 			if comp.get("checked_out_by") != null:
-				kennel_slots.append("[color=#666666](%s)[/color]" % initial)  # Greyed out if checked out
+				kennel_slots.append("[color=#666666](%s)[/color]" % initial)
 			else:
 				kennel_slots.append("[color=%s][%s][/color]" % [variant_color, initial])
 		else:
@@ -19181,26 +19182,27 @@ func _render_house_map() -> String:
 		kennel_slots.append("   ")
 
 	# Position markers
-	var pos_center = "[color=#00FF00]@[/color]" if house_position == "center" else "[color=#404040].[/color]"
-	var pos_kennel = "[color=#00FF00]@[/color]" if house_position == "kennel" else "[color=#404040].[/color]"
-	var pos_chest = "[color=#00FF00]@[/color]" if house_position == "chest" else "[color=#404040].[/color]"
-	var pos_forge = "[color=#00FF00]@[/color]" if house_position == "forge" else "[color=#404040].[/color]"
+	var pos_center = "[color=#00FF00]@[/color]" if house_position == "center" else " "
+	var pos_kennel = "[color=#00FF00]@[/color]" if house_position == "kennel" else " "
+	var pos_chest = "[color=#00FF00]@[/color]" if house_position == "chest" else " "
+	var pos_forge = "[color=#00FF00]@[/color]" if house_position == "forge" else " "
 
 	# Chest color based on contents
 	var chest_color = "#FFD700" if storage_count > 0 else "#8B4513"
 
+	# Use simple ASCII characters for reliable rendering
 	var map_lines = [
-		"[color=#FFD700]    SANCTUARY[/color]",
-		"[color=#8B4513]╔═══════════════════╗[/color]",
-		"[color=#8B4513]║[/color]   [color=#A335EE]COMPANION KENNEL[/color] [color=#8B4513]║[/color]",
-		"[color=#8B4513]║[/color]  %s %s %s  [color=#8B4513]║[/color]" % [kennel_slots[0], kennel_slots[1], kennel_slots[2]],
-		"[color=#8B4513]║[/color]    %s %s   %s  [color=#8B4513]║[/color]" % [kennel_slots[3], kennel_slots[4], pos_kennel],
-		"[color=#8B4513]║[/color]                   [color=#8B4513]║[/color]",
-		"[color=#8B4513]║[/color]        %s          [color=#8B4513]║[/color]" % pos_center,
-		"[color=#8B4513]║[/color]                   [color=#8B4513]║[/color]",
-		"[color=#8B4513]║[/color] [color=%s]▄▄▄[/color]           [color=#FF6600]▲▲▲[/color] [color=#8B4513]║[/color]" % chest_color,
-		"[color=#8B4513]║[/color] [color=%s]█C█[/color] %s       [color=#FF6600]█F█[/color] %s [color=#8B4513]║[/color]" % [chest_color, pos_chest, pos_forge],
-		"[color=#8B4513]╚═══════════════════╝[/color]",
+		"[color=#FFD700]   SANCTUARY[/color]",
+		"[color=#8B4513]+------------------+[/color]",
+		"[color=#8B4513]|[/color] [color=#A335EE]COMPANION KENNEL[/color] [color=#8B4513]|[/color]",
+		"[color=#8B4513]|[/color] %s %s %s       [color=#8B4513]|[/color]" % [kennel_slots[0], kennel_slots[1], kennel_slots[2]],
+		"[color=#8B4513]|[/color]   %s %s     %s   [color=#8B4513]|[/color]" % [kennel_slots[3], kennel_slots[4], pos_kennel],
+		"[color=#8B4513]|[/color]                  [color=#8B4513]|[/color]",
+		"[color=#8B4513]|[/color]       %s          [color=#8B4513]|[/color]" % pos_center,
+		"[color=#8B4513]|[/color]                  [color=#8B4513]|[/color]",
+		"[color=#8B4513]|[/color][color=%s][===][/color]        [color=#FF6600]/^\\[/color] [color=#8B4513]|[/color]" % chest_color,
+		"[color=#8B4513]|[/color][color=%s]| C |[/color]%s      [color=#FF6600]|F|[/color]%s [color=#8B4513]|[/color]" % [chest_color, pos_chest, pos_forge],
+		"[color=#8B4513]+------------------+[/color]",
 		"",
 		"[color=#808080]@ You  C Chest  F Forge[/color]",
 		"[color=#808080][X] Companion (out)[/color]",
