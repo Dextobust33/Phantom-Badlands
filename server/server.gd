@@ -2792,6 +2792,9 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		character.title = ""
 		character.title_data = {}
 
+	# Create corpse BEFORE clearing dungeon state (need in_dungeon flag for location)
+	var corpse = _create_corpse_from_character(character, cause_of_death)
+
 	# Clear dungeon state if player was in a dungeon
 	if character.in_dungeon:
 		character.exit_dungeon()
@@ -2838,8 +2841,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 			"message": death_message
 		})
 
-	# Create corpse from character's possessions BEFORE deleting character
-	var corpse = _create_corpse_from_character(character, cause_of_death)
+	# Save corpse (created earlier before dungeon state was cleared)
 	if not corpse.is_empty():
 		persistence.add_corpse(corpse)
 		_broadcast_corpse_spawn(corpse)
