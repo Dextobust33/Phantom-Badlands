@@ -14539,8 +14539,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.66 changes
+	display_game("[color=#00FF00]v0.9.66[/color] [color=#808080](Current)[/color]")
+	display_game("  • Added Bestiary to More menu - shows monster tiers and Home Stone drops")
+	display_game("")
+
 	# v0.9.65 changes
-	display_game("[color=#00FF00]v0.9.65[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.65[/color]")
 	display_game("  [color=#FFD700]★ SANCTUARY ASCII MAP[/color]")
 	display_game("  • Walk around your Sanctuary with arrow keys or numpad")
 	display_game("  • Interactive ASCII house with Storage (S), Companions (C), Upgrades (U), Door (D)")
@@ -14567,15 +14572,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.62[/color]")
 	display_game("  • Fixed Speed and Wits bonuses from gear not showing on status page")
 	display_game("  • Magic Bolt now shows actual mana cost (with Gnome/Sage reductions)")
-	display_game("")
-
-	# v0.9.61 changes
-	display_game("[color=#00FFFF]v0.9.61[/color]")
-	display_game("  • Corpses now drop 2 equipment, active companion, another companion, and egg")
-	display_game("  • Corpses spawn at half the death distance from origin")
-	display_game("  • Fixed stacked consumables being fully consumed instead of just one")
-	display_game("  • Resource potions of same tier now stack together")
-	display_game("  • Dungeon inventory auto-enters Use mode for quick item access")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
