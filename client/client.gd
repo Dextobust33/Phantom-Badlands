@@ -14543,6 +14543,7 @@ func display_changelog():
 	display_game("  • Interactive ASCII house with Storage (S), Companions (C), Upgrades (U), Door (D)")
 	display_game("  • Stand on a tile and press Space to interact")
 	display_game("  • New upgrade: Expand Sanctuary - makes your house larger!")
+	display_game("  • Fixed corpses from dungeon deaths spawning at wrong location")
 	display_game("")
 
 	# v0.9.64 changes
