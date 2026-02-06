@@ -526,7 +526,67 @@ var house_checkout_companion_slot: int = -1  # Companion slot to checkout on cha
 var house_storage_discard_index: int = -1  # Item index selected for discard
 var house_storage_register_index: int = -1  # Stored companion index selected to register to kennel
 var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to storage)
-var house_position: String = "center"  # Player position in house: "center", "kennel", "chest", "forge"
+
+# House grid system - player moves in ASCII house
+var house_player_x: int = 4  # Player X position in house grid
+var house_player_y: int = 3  # Player Y position in house grid
+var house_interactable_at: String = ""  # What interactable the player is standing on
+
+# House tile characters (simple ASCII for uniform spacing)
+const HOUSE_TILE_FLOOR = " "
+const HOUSE_TILE_WALL_H = "-"
+const HOUSE_TILE_WALL_V = "|"
+const HOUSE_TILE_CORNER = "+"
+const HOUSE_TILE_COMPANION = "C"  # Companion slot
+const HOUSE_TILE_STORAGE = "S"    # Storage chest
+const HOUSE_TILE_UPGRADE = "U"    # Upgrades altar
+const HOUSE_TILE_EXIT = "D"       # Door/Exit to play
+const HOUSE_TILE_PLAYER = "@"     # Player marker
+
+# House layouts by upgrade level (array of strings, each string is a row)
+# Legend: # = wall, . = floor, C = companion slot, S = storage, U = upgrades, D = door
+# Player spawn is always in center of floor area
+# C tiles match base capacity (2) + companion_slots upgrades can add more
+const HOUSE_LAYOUTS = {
+	0: [  # Starter cottage (9 wide x 6 tall) - 2 companion slots
+		"#########",
+		"#  C C  #",
+		"#       #",
+		"#       #",
+		"# S   U #",
+		"####D####"
+	],
+	1: [  # Small house (11 wide x 7 tall) - 3 companion slots
+		"###########",
+		"#  C C C  #",
+		"#         #",
+		"#         #",
+		"#         #",
+		"# S     U #",
+		"#####D#####"
+	],
+	2: [  # Medium house (13 wide x 8 tall) - 4 companion slots
+		"#############",
+		"#  C C C C  #",
+		"#           #",
+		"#           #",
+		"#           #",
+		"#           #",
+		"# S       U #",
+		"######D######"
+	],
+	3: [  # Large house (15 wide x 9 tall) - 5 companion slots
+		"###############",
+		"#  C C C C C  #",
+		"#             #",
+		"#             #",
+		"#             #",
+		"#             #",
+		"#             #",
+		"# S         U #",
+		"#######D#######"
+	]
+}
 
 # Character data
 var character_data = {}
@@ -2748,6 +2808,50 @@ func _process(delta):
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
 
+	# House movement with numpad/arrow keys (only when in house screen)
+	if game_state == GameState.HOUSE_SCREEN and not input_field.has_focus() and house_mode == "main":
+		var current_time = Time.get_ticks_msec() / 1000.0
+		if current_time - last_move_time >= MOVE_COOLDOWN * 0.5:  # Faster movement in house
+			var house_dx = 0
+			var house_dy = 0
+
+			# Check numpad keys for 4-direction movement
+			var north_key = keybinds.get("move_8", default_keybinds.get("move_8", KEY_KP_8))
+			var south_key = keybinds.get("move_2", default_keybinds.get("move_2", KEY_KP_2))
+			var west_key = keybinds.get("move_4", default_keybinds.get("move_4", KEY_KP_4))
+			var east_key = keybinds.get("move_6", default_keybinds.get("move_6", KEY_KP_6))
+
+			if Input.is_physical_key_pressed(north_key):
+				house_dy = -1
+			elif Input.is_physical_key_pressed(south_key):
+				house_dy = 1
+			elif Input.is_physical_key_pressed(west_key):
+				house_dx = -1
+			elif Input.is_physical_key_pressed(east_key):
+				house_dx = 1
+
+			# Check arrow keys as alternative
+			if house_dx == 0 and house_dy == 0:
+				var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
+				var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
+				var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
+				var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
+
+				if Input.is_physical_key_pressed(up_key):
+					house_dy = -1
+				elif Input.is_physical_key_pressed(down_key):
+					house_dy = 1
+				elif Input.is_physical_key_pressed(left_key):
+					house_dx = -1
+				elif Input.is_physical_key_pressed(right_key):
+					house_dx = 1
+
+			if house_dx != 0 or house_dy != 0:
+				if _move_house_player(house_dx, house_dy):
+					_update_house_map()
+					update_action_bar()  # Update to show what we're standing on
+				last_move_time = current_time
+
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, or popups)
 	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open:
 		if game_state == GameState.PLAYING:
@@ -4138,12 +4242,35 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:  # house_mode == "main" or ""
+			# Context-sensitive action bar based on what player is standing on
+			var interact_label = "---"
+			var interact_action = ""
+			var interact_enabled = false
+
+			match house_interactable_at:
+				"C":
+					interact_label = "Companion"
+					interact_action = "house_companions"
+					interact_enabled = true
+				"S":
+					interact_label = "Storage"
+					interact_action = "house_storage"
+					interact_enabled = true
+				"U":
+					interact_label = "Upgrades"
+					interact_action = "house_upgrades"
+					interact_enabled = true
+				"D":
+					interact_label = "Play"
+					interact_action = "house_play"
+					interact_enabled = true
+
 			current_actions = [
+				{"label": interact_label, "action_type": "local", "action_data": interact_action, "enabled": interact_enabled},
 				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
-				{"label": "Storage", "action_type": "local", "action_data": "house_storage", "enabled": true},
-				{"label": "Companion", "action_type": "local", "action_data": "house_companions", "enabled": true},
-				{"label": "Upgrades", "action_type": "local", "action_data": "house_upgrades", "enabled": true},
-				{"label": "Play", "action_type": "local", "action_data": "house_play", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11401,7 +11528,8 @@ func handle_server_message(message: Dictionary):
 			house_storage_discard_index = -1
 			house_storage_register_index = -1
 			house_unregister_companion_slot = -1
-			house_position = "center"
+			house_interactable_at = ""
+			_init_house_player_position()
 			show_house_panel()
 			display_house_main()
 			update_action_bar()
@@ -14372,25 +14500,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.65 changes
+	display_game("[color=#00FF00]v0.9.65[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ SANCTUARY ASCII MAP[/color]")
+	display_game("  • Walk around your Sanctuary with arrow keys or numpad")
+	display_game("  • Interactive ASCII house with Storage (S), Companions (C), Upgrades (U), Door (D)")
+	display_game("  • Stand on a tile and press Space to interact")
+	display_game("  • New upgrade: Expand Sanctuary - makes your house larger!")
+	display_game("")
+
 	# v0.9.64 changes
-	display_game("[color=#00FF00]v0.9.64[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ SANCTUARY SYSTEM[/color]")
-	display_game("  • New account-level house that persists between characters")
-	display_game("  • Store items in your Sanctuary - withdraw for new characters")
-	display_game("  • Register companions to survive permadeath (kennel system)")
-	display_game("  • Earn Baddie Points when characters die - spend on upgrades")
-	display_game("  • Upgrades: Storage slots, companion slots, flee chance, starting gold, XP bonus")
-	display_game("  [color=#FFD700]★ EGG FREEZING[/color]")
-	display_game("  • Freeze eggs to pause hatching progress (More > Eggs)")
-	display_game("  • Perfect for saving eggs until you find Home Stones")
-	display_game("  [color=#FFD700]★ HOME STONES[/color]")
-	display_game("  • Find Home Stone items in tier 5-7 loot")
-	display_game("  • Send items, eggs, or companions to your Sanctuary")
-	display_game("  [color=#FFD700]★ COMPANION TRADING[/color]")
-	display_game("  • Trade companions and eggs with other players")
-	display_game("  • New tabs in trade window: Items, Companions, Eggs")
-	display_game("  [color=#FFD700]★ COMPANION SORTING[/color]")
-	display_game("  • Sort companions by Level, Tier, Variant, Damage, Name, or Type")
+	display_game("[color=#00FFFF]v0.9.64[/color]")
+	display_game("  • Sanctuary system: Account-level house with storage and companion kennel")
+	display_game("  • Baddie Points earned on death - spend on permanent upgrades")
+	display_game("  • Home Stones: Send items/eggs/companions to Sanctuary")
+	display_game("  • Egg freezing, companion trading, companion sorting")
 	display_game("")
 
 	# v0.9.63 changes
@@ -14412,12 +14536,6 @@ func display_changelog():
 	display_game("  • Fixed stacked consumables being fully consumed instead of just one")
 	display_game("  • Resource potions of same tier now stack together")
 	display_game("  • Dungeon inventory auto-enters Use mode for quick item access")
-	display_game("")
-
-	# v0.9.60 changes
-	display_game("[color=#00FFFF]v0.9.60[/color]")
-	display_game("  • Fixed companion kills not giving rewards when using abilities")
-	display_game("  • Companions now properly award XP, gold, and items when they defeat enemies")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -19149,6 +19267,7 @@ func _display_corpse_loot_confirmation():
 # ===== HOUSE (SANCTUARY) DISPLAY FUNCTIONS =====
 
 const HOUSE_UPGRADE_DISPLAY = {
+	"house_size": {"name": "Expand Sanctuary", "desc": "Larger house with more room", "icon": "🏠"},
 	"storage_slots": {"name": "Storage Expansion", "desc": "+10 storage slots", "icon": "📦"},
 	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "🐾"},
 	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
@@ -19157,69 +19276,153 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"}
 }
 
+func _get_house_layout_level() -> int:
+	"""Get current house size level from upgrades"""
+	var upgrades = house_data.get("upgrades", {})
+	return mini(upgrades.get("house_size", 0), HOUSE_LAYOUTS.size() - 1)
+
+func _get_current_house_layout() -> Array:
+	"""Get the current house layout array based on upgrade level"""
+	var level = _get_house_layout_level()
+	return HOUSE_LAYOUTS.get(level, HOUSE_LAYOUTS[0])
+
+func _init_house_player_position():
+	"""Initialize player position to center of house"""
+	var layout = _get_current_house_layout()
+	if layout.size() == 0:
+		return
+	# Find center floor position
+	var height = layout.size()
+	var width = layout[0].length()
+	house_player_y = height / 2
+	house_player_x = width / 2
+	# Make sure we're on a walkable tile
+	_clamp_house_player_position()
+
+func _is_house_tile_walkable(tile: String) -> bool:
+	"""Check if a tile can be walked on"""
+	return tile == " " or tile == "." or tile == "C" or tile == "S" or tile == "U" or tile == "D"
+
+func _clamp_house_player_position():
+	"""Ensure player is within bounds and on walkable tile"""
+	var layout = _get_current_house_layout()
+	if layout.size() == 0:
+		return
+	var height = layout.size()
+	var width = layout[0].length()
+	house_player_x = clampi(house_player_x, 0, width - 1)
+	house_player_y = clampi(house_player_y, 0, height - 1)
+
+func _get_house_tile_at(x: int, y: int) -> String:
+	"""Get the tile character at a position"""
+	var layout = _get_current_house_layout()
+	if y < 0 or y >= layout.size():
+		return "#"
+	var row = layout[y]
+	if x < 0 or x >= row.length():
+		return "#"
+	return row[x]
+
+func _move_house_player(dx: int, dy: int) -> bool:
+	"""Try to move the player in the house. Returns true if moved."""
+	var new_x = house_player_x + dx
+	var new_y = house_player_y + dy
+	var tile = _get_house_tile_at(new_x, new_y)
+	if _is_house_tile_walkable(tile):
+		house_player_x = new_x
+		house_player_y = new_y
+		house_interactable_at = tile if tile in ["C", "S", "U", "D"] else ""
+		return true
+	return false
+
 func _render_house_map() -> String:
-	"""Render the house ASCII map showing kennel, storage, and forge areas"""
-	var companions = house_data.get("registered_companions", {}).get("companions", [])
-	var companion_capacity = _get_house_companion_capacity()
-	var storage_count = house_data.get("storage", {}).get("items", []).size()
+	"""Render the ASCII house map with player position"""
+	var layout = _get_current_house_layout()
+	if layout.size() == 0:
+		return "[color=#FF0000]Error: No house layout[/color]"
 
-	# Build kennel display - show up to 5 slots
-	var kennel_slots = []
-	for i in range(min(5, companion_capacity)):
-		if i < companions.size():
-			var comp = companions[i]
-			var variant_color = comp.get("variant_color", "#A335EE")
-			var initial = comp.get("name", "?")[0].to_upper()
-			if comp.get("checked_out_by") != null:
-				kennel_slots.append("[color=#666666](%s)[/color]" % initial)
+	var lines = PackedStringArray()
+
+	# Title
+	lines.append("[color=#FFD700]    SANCTUARY[/color]")
+	lines.append("")
+
+	# Render each row of the house
+	for y in range(layout.size()):
+		var row = layout[y]
+		var rendered_row = ""
+		for x in range(row.length()):
+			var tile = row[x]
+			var char_to_render = tile
+
+			# If player is at this position, show @ instead
+			if x == house_player_x and y == house_player_y:
+				rendered_row += "[color=#00FF00]@[/color]"
+			elif tile == "#":
+				rendered_row += "[color=#8B4513]#[/color]"
+			elif tile == "C":
+				rendered_row += "[color=#A335EE]C[/color]"
+			elif tile == "S":
+				rendered_row += "[color=#FFD700]S[/color]"
+			elif tile == "U":
+				rendered_row += "[color=#00FFFF]U[/color]"
+			elif tile == "D":
+				rendered_row += "[color=#FF6600]D[/color]"
 			else:
-				kennel_slots.append("[color=%s][%s][/color]" % [variant_color, initial])
-		else:
-			kennel_slots.append("[color=#404040][ ][/color]")
+				rendered_row += tile
+		lines.append("  " + rendered_row)
 
-	# Pad to 5 slots for consistent display
-	while kennel_slots.size() < 5:
-		kennel_slots.append("   ")
+	lines.append("")
 
-	# Position markers
-	var pos_center = "[color=#00FF00]@[/color]" if house_position == "center" else " "
-	var pos_kennel = "[color=#00FF00]@[/color]" if house_position == "kennel" else " "
-	var pos_chest = "[color=#00FF00]@[/color]" if house_position == "chest" else " "
-	var pos_forge = "[color=#00FF00]@[/color]" if house_position == "forge" else " "
+	# Legend
+	lines.append("[color=#808080]Legend:[/color]")
+	lines.append("[color=#00FF00]@[/color]=You [color=#A335EE]C[/color]=Companion")
+	lines.append("[color=#FFD700]S[/color]=Storage [color=#00FFFF]U[/color]=Upgrade")
+	lines.append("[color=#FF6600]D[/color]=Door (Play)")
+	lines.append("")
 
-	# Chest color based on contents
-	var chest_color = "#FFD700" if storage_count > 0 else "#8B4513"
+	# Show what player is standing on
+	if house_interactable_at != "":
+		var standing_on = ""
+		match house_interactable_at:
+			"C": standing_on = "[color=#A335EE]Companion Slot[/color] - Press Space"
+			"S": standing_on = "[color=#FFD700]Storage Chest[/color] - Press Space"
+			"U": standing_on = "[color=#00FFFF]Upgrades[/color] - Press Space"
+			"D": standing_on = "[color=#FF6600]Door[/color] - Press Space to Play"
+		lines.append("[color=#FFFFFF]Standing on: " + standing_on + "[/color]")
+	else:
+		lines.append("[color=#808080]Move with WASD or arrows[/color]")
 
-	# Use simple ASCII characters for reliable rendering
-	var map_lines = [
-		"[color=#FFD700]   SANCTUARY[/color]",
-		"[color=#8B4513]+------------------+[/color]",
-		"[color=#8B4513]|[/color] [color=#A335EE]COMPANION KENNEL[/color] [color=#8B4513]|[/color]",
-		"[color=#8B4513]|[/color] %s %s %s       [color=#8B4513]|[/color]" % [kennel_slots[0], kennel_slots[1], kennel_slots[2]],
-		"[color=#8B4513]|[/color]   %s %s     %s   [color=#8B4513]|[/color]" % [kennel_slots[3], kennel_slots[4], pos_kennel],
-		"[color=#8B4513]|[/color]                  [color=#8B4513]|[/color]",
-		"[color=#8B4513]|[/color]       %s          [color=#8B4513]|[/color]" % pos_center,
-		"[color=#8B4513]|[/color]                  [color=#8B4513]|[/color]",
-		"[color=#8B4513]|[/color][color=%s][===][/color]        [color=#FF6600]/^\\[/color] [color=#8B4513]|[/color]" % chest_color,
-		"[color=#8B4513]|[/color][color=%s]| C |[/color]%s      [color=#FF6600]|F|[/color]%s [color=#8B4513]|[/color]" % [chest_color, pos_chest, pos_forge],
-		"[color=#8B4513]+------------------+[/color]",
-		"",
-		"[color=#808080]@ You  C Chest  F Forge[/color]",
-		"[color=#808080][X] Companion (out)[/color]",
-	]
-
-	return "\n".join(map_lines)
+	return "\n".join(lines)
 
 func _update_house_map():
 	"""Update the map display with the house layout"""
 	if map_display:
 		map_display.clear()
-		map_display.append_text(_render_house_map())
+		if house_mode == "main":
+			map_display.append_text(_render_house_map())
+		else:
+			# Show simplified info when in submodes
+			var lines = PackedStringArray()
+			lines.append("[color=#FFD700]SANCTUARY[/color]")
+			lines.append("")
+			match house_mode:
+				"storage":
+					lines.append("[color=#FFD700]Storage Chest[/color]")
+				"companions":
+					lines.append("[color=#A335EE]Companion Kennel[/color]")
+				"upgrades":
+					lines.append("[color=#00FFFF]Upgrade Forge[/color]")
+			lines.append("")
+			lines.append("[color=#808080]Press Space to return[/color]")
+			map_display.append_text("\n".join(lines))
 
 func display_house_main():
 	"""Display the main house/sanctuary view"""
 	game_output.clear()
-	house_position = "center"
+	house_mode = "main"
+	pending_house_action = ""
+	_init_house_player_position()
 	_update_house_map()
 
 	display_game("[color=#FFD700]═══════ SANCTUARY ═══════[/color]")
@@ -19279,7 +19482,7 @@ func display_house_main():
 func display_house_storage():
 	"""Display house storage with items and withdraw options"""
 	game_output.clear()
-	house_position = "chest"
+	house_mode = "storage"
 	_update_house_map()
 
 	display_game("[color=#FFD700]═══════ STORAGE CHEST ═══════[/color]")
@@ -19343,7 +19546,7 @@ func display_house_storage():
 func display_house_companions():
 	"""Display registered companions in the house"""
 	game_output.clear()
-	house_position = "kennel"
+	house_mode = "companions"
 	_update_house_map()
 
 	display_game("[color=#A335EE]═══════ COMPANION KENNEL ═══════[/color]")
@@ -19402,7 +19605,7 @@ func display_house_companions():
 func display_house_upgrades():
 	"""Display available house upgrades"""
 	game_output.clear()
-	house_position = "forge"
+	house_mode = "upgrades"
 	_update_house_map()
 
 	display_game("[color=#FF6600]═══════ UPGRADE FORGE ═══════[/color]")
@@ -19416,6 +19619,7 @@ func display_house_upgrades():
 
 	# Get upgrade costs from server (will be sent with house_data)
 	var upgrade_costs = house_data.get("upgrade_costs", {
+		"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},
 		"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
 		"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
 		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},

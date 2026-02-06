@@ -16,6 +16,7 @@ const DEFAULT_MAX_CHARACTERS = 6
 
 # House upgrade definitions - cost in Baddie Points per level
 const HOUSE_UPGRADES = {
+	"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},  # Expands the house layout
 	"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
 	"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
 	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
@@ -925,6 +926,7 @@ func create_house(account_id: String) -> Dictionary:
 		"total_baddie_points_earned": 0,
 
 		"upgrades": {
+			"house_size": 0,
 			"storage_slots": 0,
 			"companion_slots": 0,
 			"flee_chance": 0,
