@@ -3785,8 +3785,36 @@ func _on_cancel_create_pressed():
 # ===== DEATH PANEL HANDLERS =====
 
 func _on_continue_pressed():
-	game_state = GameState.CHARACTER_SELECT
-	show_character_select_panel()
+	# Reset all game state from the dead character
+	_reset_character_state()
+	# Return to house (Sanctuary) instead of character select
+	send_to_server({"type": "house_request"})
+	game_state = GameState.HOUSE_SCREEN
+
+func _reset_character_state():
+	"""Reset all character-related state when dying or logging out"""
+	has_character = false
+	in_combat = false
+	character_data = {}
+	# Reset dungeon state
+	dungeon_mode = false
+	dungeon_data = {}
+	dungeon_floor_grid = []
+	dungeon_available = []
+	dungeon_list_mode = false
+	# Reset other modes
+	inventory_mode = false
+	at_merchant = false
+	at_trading_post = false
+	companions_mode = false
+	eggs_mode = false
+	more_mode = false
+	settings_mode = false
+	ability_mode = false
+	flock_pending = false
+	pending_continue = false
+	combat_item_mode = false
+	monster_select_mode = false
 
 # ===== LEADERBOARD HANDLERS =====
 
@@ -11558,6 +11586,11 @@ func handle_server_message(message: Dictionary):
 			show_character_select_panel()
 
 		"character_loaded":
+			# Reset any stale state from previous character
+			dungeon_mode = false
+			dungeon_data = {}
+			dungeon_floor_grid = []
+			in_combat = false
 			has_character = true
 			character_data = message.get("character", {})
 			# Reset XP tracking for loaded character
@@ -11577,6 +11610,11 @@ func handle_server_message(message: Dictionary):
 			request_player_list()
 
 		"character_created":
+			# Reset any stale state from previous character
+			dungeon_mode = false
+			dungeon_data = {}
+			dungeon_floor_grid = []
+			in_combat = false
 			has_character = true
 			character_data = message.get("character", {})
 			# Reset XP tracking for new character
@@ -12182,10 +12220,12 @@ func handle_server_message(message: Dictionary):
 					if drop_value > 0:
 						play_rare_drop_sound(drop_value)
 
-					# In dungeon, immediately show the floor
+					# Require continue press before showing dungeon floor (so player can read loot)
 					if dungeon_mode:
 						display_game("")
-						display_dungeon_floor()
+						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						pending_continue = true
+						pending_dungeon_continue = true
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -12203,12 +12243,10 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
 				else:
 					display_game("[color=#FFD700]The enemy fled! No loot earned.[/color]")
+					pending_continue = true
 					if dungeon_mode:
-						display_game("")
-						display_dungeon_floor()
-					else:
-						pending_continue = true
-						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						pending_dungeon_continue = true
+					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			elif message.get("fled", false):
 				# Player fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
@@ -12219,12 +12257,10 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FFD700]You fled to (%d, %d)![/color]" % [message.new_x, message.new_y])
 				else:
 					display_game("[color=#FFD700]You escaped from combat![/color]")
+				pending_continue = true
 				if dungeon_mode:
-					display_game("")
-					display_dungeon_floor()
-				else:
-					pending_continue = true
-					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+					pending_dungeon_continue = true
+				display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			else:
 				# Defeat handled by permadeath message
 				pass
