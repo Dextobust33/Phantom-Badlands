@@ -1314,9 +1314,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		gems_earned += bearer_gems
 		messages.append("[color=#00FFFF]✧ The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ✧[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
 
-	# Weapon Master ability: 35% chance to drop a weapon
+	# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
-		if randf() < 0.35:  # 35% chance
+		if randf() < 0.50:  # 50% chance
 			var weapon = drop_tables.generate_weapon(monster.level)
 			if not weapon.is_empty():
 				messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
@@ -1331,9 +1331,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
 
-	# Shield Bearer ability: 35% chance to drop a shield
+	# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
-		if randf() < 0.35:  # 35% chance
+		if randf() < 0.50:  # 50% chance
 			var shield = drop_tables.generate_shield(monster.level)
 			if not shield.is_empty():
 				messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
@@ -1793,9 +1793,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			)
 			dropped_items = drops_result
 
-				# Weapon Master ability: 35% chance to drop a weapon
+				# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 			if ABILITY_WEAPON_MASTER in abilities:
-				if randf() < 0.35:  # 35% chance
+				if randf() < 0.50:  # 50% chance
 					var weapon = drop_tables.generate_weapon(monster.level)
 					if not weapon.is_empty():
 						messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
@@ -1808,9 +1808,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				else:
 					messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
 
-			# Shield Bearer ability: 35% chance to drop a shield
+			# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 			if ABILITY_SHIELD_BEARER in abilities:
-				if randf() < 0.35:  # 35% chance
+				if randf() < 0.50:  # 50% chance
 					var shield = drop_tables.generate_shield(monster.level)
 					if not shield.is_empty():
 						messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")

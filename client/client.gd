@@ -667,6 +667,11 @@ var queued_dungeon_complete: Dictionary = {}  # Dungeon completion that arrived 
 var pending_blacksmith: bool = false
 var blacksmith_items: Array = []  # Items available to repair
 var blacksmith_repair_all_cost: int = 0
+var blacksmith_can_upgrade: bool = false
+var blacksmith_upgrade_mode: String = ""  # "", "select_item", "select_affix"
+var blacksmith_upgrade_items: Array = []  # Items available for upgrade
+var blacksmith_upgrade_affixes: Array = []  # Affixes available on selected item
+var blacksmith_upgrade_item_name: String = ""  # Name of selected item
 var pending_healer: bool = false
 var healer_costs: Dictionary = {}  # quick_heal_cost, full_heal_cost, cure_all_cost
 
@@ -2605,18 +2610,46 @@ func _process(delta):
 
 	# Blacksmith item selection with number keys (1-9)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_blacksmith:
-		for i in range(min(9, blacksmith_items.size())):  # Up to 9 items
-			var regular_key_pressed = is_item_select_key_pressed(i)
-			var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
-			if regular_key_pressed or numpad_key_pressed:
-				if not get_meta("blacksmithkey_%d_pressed" % i, false):
-					set_meta("blacksmithkey_%d_pressed" % i, true)
-					# Get the slot name from the item at this index
-					if i < blacksmith_items.size():
-						var slot = blacksmith_items[i].get("slot", "")
-						send_blacksmith_choice("repair_single", slot)
-			else:
-				set_meta("blacksmithkey_%d_pressed" % i, false)
+		if blacksmith_upgrade_mode == "select_item":
+			# Selecting item for upgrade
+			for i in range(min(9, blacksmith_upgrade_items.size())):
+				var regular_key_pressed = is_item_select_key_pressed(i)
+				var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+				if regular_key_pressed or numpad_key_pressed:
+					if not get_meta("blacksmithkey_%d_pressed" % i, false):
+						set_meta("blacksmithkey_%d_pressed" % i, true)
+						if i < blacksmith_upgrade_items.size():
+							var slot = blacksmith_upgrade_items[i].get("slot", "")
+							send_blacksmith_choice("select_upgrade_item", slot)
+				else:
+					set_meta("blacksmithkey_%d_pressed" % i, false)
+		elif blacksmith_upgrade_mode == "select_affix":
+			# Selecting affix to upgrade
+			for i in range(min(9, blacksmith_upgrade_affixes.size())):
+				var regular_key_pressed = is_item_select_key_pressed(i)
+				var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+				if regular_key_pressed or numpad_key_pressed:
+					if not get_meta("blacksmithkey_%d_pressed" % i, false):
+						set_meta("blacksmithkey_%d_pressed" % i, true)
+						if i < blacksmith_upgrade_affixes.size():
+							var affix_key = blacksmith_upgrade_affixes[i].get("affix_key", "")
+							send_blacksmith_choice("confirm_upgrade", "", affix_key)
+				else:
+					set_meta("blacksmithkey_%d_pressed" % i, false)
+		else:
+			# Normal repair mode
+			for i in range(min(9, blacksmith_items.size())):  # Up to 9 items
+				var regular_key_pressed = is_item_select_key_pressed(i)
+				var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+				if regular_key_pressed or numpad_key_pressed:
+					if not get_meta("blacksmithkey_%d_pressed" % i, false):
+						set_meta("blacksmithkey_%d_pressed" % i, true)
+						# Get the slot name from the item at this index
+						if i < blacksmith_items.size():
+							var slot = blacksmith_items[i].get("slot", "")
+							send_blacksmith_choice("repair_single", slot)
+				else:
+					set_meta("blacksmithkey_%d_pressed" % i, false)
 
 	# NOTE: Inventory page navigation removed from here - now handled via action bar buttons
 	# to avoid conflicts with Sort (key 2) and Salvage (key 3) action bar buttons
@@ -4348,19 +4381,49 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif pending_blacksmith:
-		# Wandering blacksmith encounter - Repair options
-		current_actions = [
-			{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
-			{"label": "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		# Wandering blacksmith encounter - different modes
+		if blacksmith_upgrade_mode == "select_item":
+			# Selecting item for upgrade
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "blacksmith_cancel_upgrade", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif blacksmith_upgrade_mode == "select_affix":
+			# Selecting affix to upgrade
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "blacksmith_cancel_upgrade", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9=Affix", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Main repair/upgrade menu
+			current_actions = [
+				{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
+				{"label": "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
+				{"label": "Enhance", "action_type": "local", "action_data": "blacksmith_upgrade", "enabled": blacksmith_can_upgrade},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif pending_healer:
 		# Wandering healer encounter - Heal options
 		current_actions = [
@@ -7793,6 +7856,10 @@ func execute_local_action(action: String):
 			send_blacksmith_choice("decline")
 		"blacksmith_repair_all":
 			send_blacksmith_choice("repair_all")
+		"blacksmith_upgrade":
+			send_blacksmith_choice("upgrade")
+		"blacksmith_cancel_upgrade":
+			send_blacksmith_choice("cancel_upgrade")
 		# Healer encounter actions
 		"healer_decline":
 			send_healer_choice("decline")
@@ -12583,7 +12650,16 @@ func handle_server_message(message: Dictionary):
 		"blacksmith_done":
 			pending_blacksmith = false
 			blacksmith_items = []
+			blacksmith_upgrade_mode = ""
+			blacksmith_upgrade_items = []
+			blacksmith_upgrade_affixes = []
 			update_action_bar()
+
+		"blacksmith_upgrade_select_item":
+			handle_blacksmith_upgrade_select_item(message)
+
+		"blacksmith_upgrade_select_affix":
+			handle_blacksmith_upgrade_select_affix(message)
 
 		"healer_encounter":
 			handle_healer_encounter(message)
@@ -14539,13 +14615,24 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.66 changes
-	display_game("[color=#00FF00]v0.9.66[/color] [color=#808080](Current)[/color]")
-	display_game("  • Added Bestiary to More menu - shows monster tiers and Home Stone drops")
+	# v0.9.68 changes
+	display_game("[color=#00FF00]v0.9.68[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ BALANCE & PROGRESSION[/color]")
+	display_game("  • Early game regen doubled (levels 1-24, scales down to normal by 25)")
+	display_game("  • Home Stones now drop 1 tier earlier (Tier 4-6 instead of 5-7)")
+	display_game("  • Weapon Master variants: 50% drop chance, gear biased toward attack stats")
+	display_game("  • Shield Guardian variants: 50% drop chance, gear biased toward HP/defense")
+	display_game("  [color=#FFD700]★ BLACKSMITH UPGRADES[/color]")
+	display_game("  • Blacksmiths can now upgrade existing affixes on your gear!")
+	display_game("  • Costs gold, gems, and salvage essence - scales with item level")
+	display_game("  [color=#FFD700]★ GAMBLING IMPROVEMENTS[/color]")
+	display_game("  • Reduced house edge from +2 to +1")
+	display_game("  • Rolling any pair gives you +1 bonus")
+	display_game("  • 10% chance to win a bonus item on any winning roll")
 	display_game("")
 
-	# v0.9.65 changes
-	display_game("[color=#00FFFF]v0.9.65[/color]")
+	# v0.9.66 changes
+	display_game("[color=#00FFFF]v0.9.66[/color]")
 	display_game("  [color=#FFD700]★ SANCTUARY ASCII MAP[/color]")
 	display_game("  • Walk around your Sanctuary with arrow keys or numpad")
 	display_game("  • Interactive ASCII house with Storage (S), Companions (C), Upgrades (U), Door (D)")
@@ -14566,12 +14653,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.63[/color]")
 	display_game("  • Replaced Shield ability with Forcefield (now unlocks at level 15)")
 	display_game("  • Fixed Shield ability not appearing on combat bar (now maps to Forcefield)")
-	display_game("")
-
-	# v0.9.62 changes
-	display_game("[color=#00FFFF]v0.9.62[/color]")
-	display_game("  • Fixed Speed and Wits bonuses from gear not showing on status page")
-	display_game("  • Magic Bolt now shows actual mana cost (with Gnome/Sage reductions)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -14597,27 +14678,27 @@ func display_bestiary():
 	display_game("  Ogre, Troll, Wraith, Wyvern, Minotaur, Gargoyle, Harpy, Shrieker")
 	display_game("")
 
-	# Tier 4
+	# Tier 4 - Home Stones start dropping
 	display_game("[color=#0070DD]Tier 4[/color] [color=#808080](Levels 31-50)[/color]")
 	display_game("  Giant, Dragon Wyrmling, Demon, Vampire, Gryphon, Chimaera, Succubus")
+	display_game("  [color=#00FFFF]→ Home Stone (Egg), Home Stone (Supplies) start dropping[/color]")
 	display_game("")
 
-	# Tier 5 - Home Stones start dropping
+	# Tier 5
 	display_game("[color=#A335EE]Tier 5[/color] [color=#808080](Levels 51-100)[/color]")
 	display_game("  Ancient Dragon, Demon Lord, Lich, Titan, Balrog, Cerberus, Jabberwock")
-	display_game("  [color=#00FFFF]→ Home Stone (Egg), Home Stone (Supplies) start dropping[/color]")
+	display_game("  [color=#00FFFF]→ Home Stone (Equipment) starts dropping[/color]")
 	display_game("")
 
 	# Tier 6
 	display_game("[color=#FF8000]Tier 6[/color] [color=#808080](Levels 101-500)[/color]")
 	display_game("  Elemental, Iron Golem, Sphinx, Hydra, Phoenix, Nazgul")
-	display_game("  [color=#00FFFF]→ Home Stone (Equipment) starts dropping[/color]")
+	display_game("  [color=#00FFFF]→ Home Stone (Companion) starts dropping[/color]")
 	display_game("")
 
 	# Tier 7
 	display_game("[color=#FF4444]Tier 7[/color] [color=#808080](Levels 501-2000)[/color]")
 	display_game("  Void Walker, World Serpent, Elder Lich, Primordial Dragon")
-	display_game("  [color=#00FFFF]→ Home Stone (Companion) starts dropping[/color]")
 	display_game("")
 
 	# Tier 8
@@ -14628,6 +14709,31 @@ func display_bestiary():
 	# Tier 9
 	display_game("[color=#FFD700]Tier 9[/color] [color=#808080](Levels 5001+)[/color]")
 	display_game("  Avatar of Chaos, The Nameless One, God Slayer, Entropy")
+	display_game("")
+
+	display_game("[color=#FFD700]═══ SPECIAL DROPS ═══[/color]")
+	display_game("")
+
+	# Class-specific gear drops
+	display_game("[color=#66CCCC]Arcane Hoarder[/color] [color=#808080](35% Mage gear)[/color]")
+	display_game("  Wraith, Lich, Sphinx, Elder Lich, Time Weaver")
+	display_game("  [color=#808080]Drops: Arcane Ring, Mystic Amulet[/color]")
+	display_game("")
+
+	display_game("[color=#66FF66]Cunning Prey[/color] [color=#808080](35% Trickster gear)[/color]")
+	display_game("  Wolf, Shrieker, Giant Spider, Void Walker")
+	display_game("  [color=#808080]Drops: Swift Boots, Stealth Cloak[/color]")
+	display_game("")
+
+	display_game("[color=#FF6600]Warrior Hoarder[/color] [color=#808080](35% Warrior gear)[/color]")
+	display_game("  Ogre, Iron Golem, Death Incarnate")
+	display_game("  [color=#808080]Drops: Battle Ring, War Helm[/color]")
+	display_game("")
+
+	# Variant drops
+	display_game("[color=#FF8000]★ Weapon Master[/color] [color=#808080](Rare variant - 35% weapon)[/color]")
+	display_game("[color=#00FFFF]★ Shield Guardian[/color] [color=#808080](Rare variant - 35% shield)[/color]")
+	display_game("  [color=#808080]Any monster can spawn as these variants[/color]")
 	display_game("")
 
 	display_game("[color=#808080]Tiers determine loot quality. Higher tier monsters may appear early due to tier bleed.[/color]")
@@ -16128,7 +16234,7 @@ func show_help():
   • Storage Expansion (+10 slots/level) | Companion Kennel (+1 slot/level)
   • Escape Training (+2%% flee/level) | Family Inheritance (+50g start/level)
   • Ancestral Wisdom (+1%% XP/level) | Homesteading (+5%% gathering/level)
-[color=#FFD700]Home Stones:[/color] Found in tier 5-7 loot. Use outside combat/dungeons to send things home:
+[color=#FFD700]Home Stones:[/color] Found in tier 4-6 loot. Use outside combat/dungeons to send things home:
   • Home Stone (Egg) - Send one incubating egg to storage
   • Home Stone (Supplies) - Send up to 10 consumables to storage
   • Home Stone (Equipment) - Send one equipped item to storage
@@ -16714,9 +16820,13 @@ func update_map(map_text: String):
 func handle_blacksmith_encounter(message: Dictionary):
 	"""Handle blacksmith encounter display"""
 	pending_blacksmith = true
+	blacksmith_upgrade_mode = ""
 	blacksmith_items = message.get("items", [])
 	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
+	blacksmith_can_upgrade = message.get("can_upgrade", false)
 	var player_gold = message.get("player_gold", 0)
+	var player_gems = message.get("player_gems", 0)
+	var player_essence = message.get("player_essence", 0)
 
 	# Reset all hotkey pressed states to prevent accidental immediate triggers
 	for i in range(10):
@@ -16732,33 +16842,105 @@ func handle_blacksmith_encounter(message: Dictionary):
 
 	display_game(message.get("message", ""))
 	display_game("")
-	display_game("[color=#FFD700]=== Repair Options ===[/color]")
 
-	# Show individual items
-	for i in range(blacksmith_items.size()):
-		var item = blacksmith_items[i]
-		var wear_pct = item.get("wear", 0)
-		var cost = item.get("cost", 0)
-		var can_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < cost else ""
-		var key_name = str(i + 1)  # Keys 1-9 for items
-		display_game("[%s] %s (%d%% worn) - %d gold%s" % [key_name, item.get("name", "Item"), wear_pct, cost, can_afford])
+	# Show repair options if there are damaged items
+	if blacksmith_items.size() > 0:
+		display_game("[color=#FFD700]=== Repair Options ===[/color]")
+		for i in range(blacksmith_items.size()):
+			var item = blacksmith_items[i]
+			var wear_pct = item.get("wear", 0)
+			var cost = item.get("cost", 0)
+			var can_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < cost else ""
+			var key_name = str(i + 1)  # Keys 1-9 for items
+			display_game("[%s] %s (%d%% worn) - %d gold%s" % [key_name, item.get("name", "Item"), wear_pct, cost, can_afford])
+		display_game("")
+		var all_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < blacksmith_repair_all_cost else ""
+		display_game("[%s] Repair All - %d gold (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
+
+	# Show upgrade option if available
+	if blacksmith_can_upgrade:
+		display_game("")
+		display_game("[color=#FFD700]=== Enhancement ===[/color]")
+		display_game("[%s] [color=#FFD700]Enhance Equipment[/color] - Upgrade item affixes" % get_action_key_name(2))
 
 	display_game("")
-	# Show repair all option
-	var all_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < blacksmith_repair_all_cost else ""
-	display_game("[%s] Repair All - %d gold (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
 	display_game("[%s] Decline" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Your gold: %d[/color]" % player_gold)
+	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
 
 	update_action_bar()
 
-func send_blacksmith_choice(choice: String, slot: String = ""):
+func send_blacksmith_choice(choice: String, slot: String = "", affix_key: String = ""):
 	"""Send blacksmith choice to server"""
 	var msg = {"type": "blacksmith_choice", "choice": choice}
 	if slot != "":
 		msg["slot"] = slot
+	if affix_key != "":
+		msg["affix_key"] = affix_key
 	send_to_server(msg)
+
+func handle_blacksmith_upgrade_select_item(message: Dictionary):
+	"""Handle item selection for upgrade"""
+	blacksmith_upgrade_mode = "select_item"
+	blacksmith_upgrade_items = message.get("items", [])
+	var player_gold = message.get("player_gold", 0)
+	var player_gems = message.get("player_gems", 0)
+	var player_essence = message.get("player_essence", 0)
+
+	game_output.clear()
+	display_game(message.get("message", ""))
+	display_game("")
+	display_game("[color=#FFD700]=== Select Item to Enhance ===[/color]")
+	display_game("")
+
+	for i in range(blacksmith_upgrade_items.size()):
+		var item = blacksmith_upgrade_items[i]
+		display_game("[%s] %s (Level %d)" % [str(i + 1), item.get("name", "Item"), item.get("level", 1)])
+
+	display_game("")
+	display_game("[%s] Back" % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
+	update_action_bar()
+
+func handle_blacksmith_upgrade_select_affix(message: Dictionary):
+	"""Handle affix selection for upgrade"""
+	blacksmith_upgrade_mode = "select_affix"
+	blacksmith_upgrade_affixes = message.get("affixes", [])
+	blacksmith_upgrade_item_name = message.get("item_name", "Item")
+	var player_gold = message.get("player_gold", 0)
+	var player_gems = message.get("player_gems", 0)
+	var player_essence = message.get("player_essence", 0)
+
+	game_output.clear()
+	display_game(message.get("message", ""))
+	display_game("")
+	display_game("[color=#FFD700]=== Select Affix to Enhance ===[/color]")
+	display_game("")
+
+	for i in range(blacksmith_upgrade_affixes.size()):
+		var affix = blacksmith_upgrade_affixes[i]
+		var name = affix.get("affix_name", "Unknown")
+		var current = affix.get("current_value", 0)
+		var upgrade = affix.get("upgrade_amount", 0)
+		var gold = affix.get("gold_cost", 0)
+		var gems = affix.get("gem_cost", 0)
+		var essence = affix.get("essence_cost", 0)
+
+		var afford_gold = player_gold >= gold
+		var afford_gems = player_gems >= gems
+		var afford_essence = player_essence >= essence
+		var can_afford = afford_gold and afford_gems and afford_essence
+		var afford_color = "[color=#00FF00]" if can_afford else "[color=#FF0000]"
+
+		display_game("[%s] %s: %d → %d (+%d)" % [str(i + 1), name, current, current + upgrade, upgrade])
+		display_game("    %sCost: %d gold, %d gems, %d essence[/color]" % [afford_color, gold, gems, essence])
+
+	display_game("")
+	display_game("[%s] Back" % get_action_key_name(0))
+	display_game("")
+	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
+	update_action_bar()
 
 func handle_healer_encounter(message: Dictionary):
 	"""Handle healer encounter display"""

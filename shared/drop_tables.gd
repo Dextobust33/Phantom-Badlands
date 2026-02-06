@@ -186,7 +186,10 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"},
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "rare"},
 		{"weight": 2, "item_type": "scroll_weakness", "rarity": "rare"},
-		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "rare"}
+		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "rare"},
+		# Home Stones - send items to house storage (Tier 4 start)
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 1, "item_type": "home_stone_supplies", "rarity": "uncommon"}
 	],
 	"tier5": [
 		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
@@ -212,7 +215,8 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"},
 		# Home Stones - send items to house storage
 		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
-		{"weight": 1, "item_type": "home_stone_supplies", "rarity": "uncommon"}
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 1, "item_type": "home_stone_equipment", "rarity": "rare"}
 	],
 	"tier6": [
 		{"weight": 8, "item_type": "potion_master", "rarity": "rare"},
@@ -240,7 +244,8 @@ const DROP_TABLES = {
 		# Home Stones
 		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
-		{"weight": 1, "item_type": "home_stone_equipment", "rarity": "rare"}
+		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier7": [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "epic"},
@@ -2403,6 +2408,16 @@ const SPECIALTY_AFFIX_STATS = {
 	"dps_affixes": {
 		"prefix_stats": ["attack_bonus", "speed_bonus"],
 		"suffix_stats": ["attack_bonus", "str_bonus", "speed_bonus"]
+	},
+	# Weapon Master - Attack focused (weapons from Weapon Master monsters)
+	"weapon_master": {
+		"prefix_stats": ["attack_bonus"],
+		"suffix_stats": ["attack_bonus", "str_bonus"]
+	},
+	# Shield Guardian - HP focused (shields from Shield Guardian monsters)
+	"shield_guardian": {
+		"prefix_stats": ["hp_bonus", "defense_bonus"],
+		"suffix_stats": ["hp_bonus", "con_bonus", "defense_bonus"]
 	}
 }
 
@@ -2866,7 +2881,8 @@ func to_dict() -> Dictionary:
 
 func generate_weapon(monster_level: int) -> Dictionary:
 	"""Generate a guaranteed weapon drop from a Weapon Master monster.
-	These are special high-quality weapons scaled to the monster's level."""
+	These are special high-quality weapons scaled to the monster's level.
+	Weapons are biased toward attack bonuses."""
 	# Determine rarity based on level - higher level = better chance of good rarity
 	var rarity = _get_rare_drop_rarity(monster_level)
 
@@ -2887,10 +2903,11 @@ func generate_weapon(monster_level: int) -> Dictionary:
 	elif monster_level >= 5:
 		weapon_type = "weapon_iron"
 
-	# Generate with boosted level for the rare drop
-	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+	# Generate with boosted level for the rare drop (1.15x monster level)
+	var boosted_level = int(monster_level * 1.15)
 
-	var affixes = _roll_affixes(rarity, boosted_level)
+	# Use attack-biased affixes for Weapon Master drops
+	var affixes = roll_affixes_for_specialty("weapon_master", rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
 
@@ -2907,7 +2924,8 @@ func generate_weapon(monster_level: int) -> Dictionary:
 
 func generate_shield(monster_level: int) -> Dictionary:
 	"""Generate a guaranteed shield drop from a Shield Guardian monster.
-	These are special high-quality shields scaled to the monster's level."""
+	These are special high-quality shields scaled to the monster's level.
+	Shields are biased toward HP bonuses."""
 	# Determine rarity based on level - higher level = better chance of good rarity
 	var rarity = _get_rare_drop_rarity(monster_level)
 
@@ -2928,10 +2946,11 @@ func generate_shield(monster_level: int) -> Dictionary:
 	elif monster_level >= 5:
 		shield_type = "shield_iron"
 
-	# Generate with boosted level for the rare drop
-	var boosted_level = int(monster_level * 1.15)  # 15% level boost
+	# Generate with boosted level for the rare drop (1.15x monster level)
+	var boosted_level = int(monster_level * 1.15)
 
-	var affixes = _roll_affixes(rarity, boosted_level)
+	# Use HP-biased affixes for Shield Guardian drops
+	var affixes = roll_affixes_for_specialty("shield_guardian", rarity, boosted_level)
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
 

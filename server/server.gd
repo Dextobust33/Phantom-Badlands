@@ -1547,8 +1547,10 @@ func handle_move(peer_id: int, message: Dictionary):
 
 	# Regenerate health and resources on movement (small amount per step)
 	# Resource regen is DISABLED while cloaked - cloak drains resources
-	var regen_percent = 0.02  # 2% per move for resources
-	var hp_regen_percent = 0.01  # 1% per move for health
+	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var regen_percent = 0.02 * early_game_mult  # 2% per move for resources (doubled early game)
+	var hp_regen_percent = 0.01 * early_game_mult  # 1% per move for health (doubled early game)
 	var total_max_mana = character.get_total_max_mana()
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
@@ -1837,7 +1839,9 @@ func handle_rest(peer_id: int):
 		return
 
 	# Regenerate primary resource on rest (same as movement - 2%, min 1)
-	var regen_percent = 0.02
+	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var regen_percent = 0.02 * early_game_mult
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
@@ -1894,6 +1898,15 @@ func handle_rest(peer_id: int):
 		})
 		trigger_encounter(peer_id)
 
+func _get_early_game_regen_multiplier(level: int) -> float:
+	"""Returns a multiplier for resource regen that's higher at low levels.
+	Level 1: 2.0x, Level 25+: 1.0x, linear interpolation between."""
+	if level >= 25:
+		return 1.0
+	# Linear interpolation: 2.0 at level 1, 1.0 at level 25
+	var t = float(level - 1) / 24.0  # 0.0 at level 1, 1.0 at level 25
+	return 2.0 - t  # 2.0 at level 1, 1.0 at level 25
+
 func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false):
 	"""Handle Meditate action for mages - restores HP and mana, always works"""
 	var at_full_hp = character.current_hp >= character.get_total_max_hp()
@@ -1911,8 +1924,11 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		sage_meditate_bonus = passive_effects.get("meditate_bonus", 0)
 		bonus_mult += sage_meditate_bonus
 
+	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+
 	# Mana regeneration: 4% of max mana (2x movement), double if at full HP
-	var base_mana_percent = 0.04  # 2x the 2% movement regen
+	var base_mana_percent = 0.04 * early_game_mult  # 2x the 2% movement regen, with early game bonus
 	var mana_percent = base_mana_percent
 	if at_full_hp:
 		mana_percent *= 2.0  # 8% when HP is full
@@ -3626,6 +3642,7 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 
 # Track pending blacksmith/healer encounters (peer_id -> repair costs/heal costs)
 var pending_blacksmith_encounters: Dictionary = {}
+var pending_blacksmith_upgrades: Dictionary = {}  # Track upgrade state
 var pending_healer_encounters: Dictionary = {}
 
 func check_blacksmith_encounter(peer_id: int) -> bool:
@@ -3658,25 +3675,57 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 				})
 				total_repair_cost += repair_cost
 
-	# No damaged gear - no encounter
-	if damaged_items.size() == 0:
+	# Check for items with upgradeable affixes
+	var upgradeable_items = []
+	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipped.get(slot_name)
+		if item and item.has("affixes"):
+			var affixes = item.get("affixes", {})
+			# Only items with actual stat affixes (not just prefix_name/suffix_name)
+			var stat_affixes = []
+			for key in affixes.keys():
+				if key not in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
+					stat_affixes.append(key)
+			if stat_affixes.size() > 0:
+				upgradeable_items.append({
+					"slot": slot_name,
+					"name": item.get("name", slot_name.capitalize()),
+					"level": item.get("level", 1),
+					"affixes": affixes
+				})
+
+	# No damaged gear and no upgradeable items - no encounter
+	if damaged_items.size() == 0 and upgradeable_items.size() == 0:
 		return false
 
 	# Store encounter data for when player responds
-	var repair_all_cost = int(total_repair_cost * 0.9)  # 10% discount for full repair
+	var repair_all_cost = int(total_repair_cost * 0.9) if total_repair_cost > 0 else 0
 	pending_blacksmith_encounters[peer_id] = {
 		"items": damaged_items,
 		"total_cost": total_repair_cost,
-		"repair_all_cost": repair_all_cost
+		"repair_all_cost": repair_all_cost,
+		"upgradeable_items": upgradeable_items
 	}
+
+	# Build encounter message
+	var msg = "[color=#DAA520]A wandering Blacksmith stops you on the road.[/color]\n"
+	if damaged_items.size() > 0:
+		msg += "'I can fix up that gear for you, traveler.'"
+	if upgradeable_items.size() > 0:
+		if damaged_items.size() > 0:
+			msg += "\n"
+		msg += "[color=#FFD700]'I can also enhance your equipment... for a price.'[/color]"
 
 	# Send encounter message
 	send_to_peer(peer_id, {
 		"type": "blacksmith_encounter",
-		"message": "[color=#DAA520]A wandering Blacksmith stops you on the road.[/color]\n'I can fix up that gear for you, traveler. Fair prices.'",
+		"message": msg,
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
-		"player_gold": character.gold
+		"can_upgrade": upgradeable_items.size() > 0,
+		"player_gold": character.gold,
+		"player_gems": character.gems,
+		"player_essence": character.salvage_essence
 	})
 
 	return true
@@ -3771,6 +3820,213 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 
 		save_character(peer_id)
 		send_character_update(peer_id)
+		return
+
+	# === UPGRADE FLOW ===
+	if choice == "upgrade":
+		# Show items available for upgrade
+		var upgradeable = encounter.get("upgradeable_items", [])
+		if upgradeable.size() == 0:
+			send_to_peer(peer_id, {"type": "error", "message": "No upgradeable items!"})
+			return
+
+		send_to_peer(peer_id, {
+			"type": "blacksmith_upgrade_select_item",
+			"message": "[color=#FFD700]'Which piece needs enhancing?'[/color]",
+			"items": upgradeable,
+			"player_gold": character.gold,
+			"player_gems": character.gems,
+			"player_essence": character.salvage_essence
+		})
+		return
+
+	if choice == "select_upgrade_item":
+		var slot = message.get("slot", "")
+		var upgradeable = encounter.get("upgradeable_items", [])
+		var selected_item = null
+
+		for item in upgradeable:
+			if item.slot == slot:
+				selected_item = item
+				break
+
+		if not selected_item:
+			send_to_peer(peer_id, {"type": "error", "message": "Invalid item slot."})
+			return
+
+		# Get the actual item from equipped
+		var equipped_item = character.equipped.get(slot)
+		if not equipped_item:
+			send_to_peer(peer_id, {"type": "error", "message": "Item not equipped."})
+			return
+
+		# Build list of upgradeable affixes with costs
+		var affix_options = []
+		var item_level = equipped_item.get("level", 1)
+		var affixes = equipped_item.get("affixes", {})
+
+		for affix_key in affixes.keys():
+			if affix_key in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
+				continue
+
+			var current_value = affixes[affix_key]
+			var upgrade_amount = _calculate_affix_upgrade_amount(affix_key, item_level)
+			var costs = _calculate_affix_upgrade_cost(affix_key, current_value, item_level)
+
+			affix_options.append({
+				"affix_key": affix_key,
+				"affix_name": _get_affix_display_name(affix_key),
+				"current_value": current_value,
+				"upgrade_amount": upgrade_amount,
+				"gold_cost": costs.gold,
+				"gem_cost": costs.gems,
+				"essence_cost": costs.essence
+			})
+
+		# Store pending upgrade state
+		pending_blacksmith_upgrades[peer_id] = {
+			"slot": slot,
+			"item_name": selected_item.name,
+			"affixes": affix_options
+		}
+
+		send_to_peer(peer_id, {
+			"type": "blacksmith_upgrade_select_affix",
+			"message": "[color=#FFD700]'Which enchantment shall I strengthen on your %s?'[/color]" % selected_item.name,
+			"item_name": selected_item.name,
+			"affixes": affix_options,
+			"player_gold": character.gold,
+			"player_gems": character.gems,
+			"player_essence": character.salvage_essence
+		})
+		return
+
+	if choice == "confirm_upgrade":
+		if not pending_blacksmith_upgrades.has(peer_id):
+			send_to_peer(peer_id, {"type": "error", "message": "No upgrade pending."})
+			return
+
+		var upgrade_state = pending_blacksmith_upgrades[peer_id]
+		var affix_key = message.get("affix_key", "")
+		var slot = upgrade_state.slot
+
+		# Find the affix in the options
+		var selected_affix = null
+		for affix in upgrade_state.affixes:
+			if affix.affix_key == affix_key:
+				selected_affix = affix
+				break
+
+		if not selected_affix:
+			send_to_peer(peer_id, {"type": "error", "message": "Invalid affix selected."})
+			return
+
+		# Check costs
+		var gold_cost = selected_affix.gold_cost
+		var gem_cost = selected_affix.gem_cost
+		var essence_cost = selected_affix.essence_cost
+
+		if character.gold < gold_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % gold_cost})
+			return
+		if character.gems < gem_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems! (Need %d)" % gem_cost})
+			return
+		if character.salvage_essence < essence_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough salvage essence! (Need %d)" % essence_cost})
+			return
+
+		# Apply upgrade
+		character.gold -= gold_cost
+		character.gems -= gem_cost
+		character.salvage_essence -= essence_cost
+
+		var equipped_item = character.equipped.get(slot)
+		if equipped_item and equipped_item.has("affixes"):
+			var old_value = equipped_item["affixes"].get(affix_key, 0)
+			equipped_item["affixes"][affix_key] = old_value + selected_affix.upgrade_amount
+
+		pending_blacksmith_upgrades.erase(peer_id)
+		pending_blacksmith_encounters.erase(peer_id)
+
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]The Blacksmith enhances your %s![/color]\n[color=#00FF00]%s: %d → %d[/color]\n[color=#808080](Cost: %d gold, %d gems, %d essence)[/color]" % [
+				upgrade_state.item_name,
+				selected_affix.affix_name,
+				selected_affix.current_value,
+				selected_affix.current_value + selected_affix.upgrade_amount,
+				gold_cost, gem_cost, essence_cost
+			]
+		})
+		send_to_peer(peer_id, {"type": "blacksmith_done"})
+		save_character(peer_id)
+		send_character_update(peer_id)
+		return
+
+	if choice == "cancel_upgrade":
+		pending_blacksmith_upgrades.erase(peer_id)
+		# Return to main blacksmith menu
+		send_to_peer(peer_id, {
+			"type": "blacksmith_encounter",
+			"message": "[color=#DAA520]'Changed your mind? Anything else?'[/color]",
+			"items": encounter.get("items", []),
+			"repair_all_cost": encounter.get("repair_all_cost", 0),
+			"can_upgrade": encounter.get("upgradeable_items", []).size() > 0,
+			"player_gold": character.gold,
+			"player_gems": character.gems,
+			"player_essence": character.salvage_essence
+		})
+		return
+
+func _calculate_affix_upgrade_amount(affix_key: String, item_level: int) -> int:
+	"""Calculate how much an affix increases when upgraded."""
+	# Base upgrade amounts by affix type
+	var base_amounts = {
+		"str_bonus": 1, "con_bonus": 1, "dex_bonus": 1, "int_bonus": 1, "wis_bonus": 1, "wits_bonus": 1,
+		"attack_bonus": 2, "defense_bonus": 2, "speed_bonus": 1,
+		"hp_bonus": 10, "mana_bonus": 5, "stamina_bonus": 3, "energy_bonus": 3
+	}
+	var base = base_amounts.get(affix_key, 1)
+	# Scale with item level: +1 per 50 levels
+	var level_bonus = int(item_level / 50)
+	return base + level_bonus
+
+func _calculate_affix_upgrade_cost(affix_key: String, current_value: int, item_level: int) -> Dictionary:
+	"""Calculate the cost to upgrade an affix. High costs as gold sink."""
+	# Base costs scale with item level and current affix value
+	var level_mult = 1.0 + (item_level / 10.0)  # Higher level = more expensive
+	var value_mult = 1.0 + (current_value / 10.0)  # Higher current value = more expensive
+
+	# Base costs (intentionally high as gold sink)
+	var gold_base = 5000
+	var gem_base = 5
+	var essence_base = 100
+
+	return {
+		"gold": int(gold_base * level_mult * value_mult),
+		"gems": int(gem_base * level_mult * value_mult),
+		"essence": int(essence_base * level_mult * value_mult)
+	}
+
+func _get_affix_display_name(affix_key: String) -> String:
+	"""Get a human-readable name for an affix key."""
+	var names = {
+		"str_bonus": "Strength",
+		"con_bonus": "Constitution",
+		"dex_bonus": "Dexterity",
+		"int_bonus": "Intelligence",
+		"wis_bonus": "Wisdom",
+		"wits_bonus": "Wits",
+		"attack_bonus": "Attack",
+		"defense_bonus": "Defense",
+		"speed_bonus": "Speed",
+		"hp_bonus": "Max HP",
+		"mana_bonus": "Max Mana",
+		"stamina_bonus": "Max Stamina",
+		"energy_bonus": "Max Energy"
+	}
+	return names.get(affix_key, affix_key.capitalize())
 
 func check_healer_encounter(peer_id: int) -> bool:
 	"""Check for a wandering healer encounter. Returns true if encounter occurred."""
@@ -5325,14 +5581,19 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		return
 
 	# Simulate dice rolls for both merchant and player
-	# House edge: merchant gets a hidden +2 bonus, making player wins harder
+	# House edge: merchant gets a hidden +1 bonus (reduced from +2 for better player odds)
 	var merchant_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
 	var player_dice = [randi() % 6 + 1, randi() % 6 + 1, randi() % 6 + 1]
 	var merchant_total = merchant_dice[0] + merchant_dice[1] + merchant_dice[2]
 	var player_total = player_dice[0] + player_dice[1] + player_dice[2]
 
-	# House edge - merchant effectively rolls 2 higher (hidden from player)
-	var adjusted_merchant_total = merchant_total + 2
+	# House edge - merchant effectively rolls 1 higher (hidden from player)
+	var adjusted_merchant_total = merchant_total + 1
+
+	# Player gets +1 bonus if they roll any pair (encourages gambling, ~42% chance)
+	var has_pair = (player_dice[0] == player_dice[1] or player_dice[1] == player_dice[2] or player_dice[0] == player_dice[2])
+	if has_pair:
+		player_total += 1
 
 	# Build dice display (shows raw dice, not the house edge)
 	var dice_msg = "[color=#FF4444]Merchant:[/color] [%d][%d][%d] = %d\n" % [merchant_dice[0], merchant_dice[1], merchant_dice[2], merchant_total]
@@ -5406,6 +5667,17 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 			character.gold += winnings - bet_amount
 			result_msg = "[color=#FFD700]DOMINATING! You win %d gold![/color]" % winnings
 			won = true
+
+	# Bonus: Any winning roll has a 10% chance to also win a random item
+	if won and item_won == null and randf() < 0.10 and character.can_add_item():
+		var item_level = max(1, character.level + randi() % 15)
+		var tier = _level_to_tier(item_level)
+		var bonus_items = drop_tables.roll_drops(tier, 50, item_level)  # Lower quality than jackpot
+		if bonus_items.size() > 0:
+			character.add_item(bonus_items[0])
+			item_won = bonus_items[0]
+			var rarity_color = _get_rarity_color(bonus_items[0].get("rarity", "common"))
+			result_msg += "\n[color=#FFD700]BONUS![/color] [color=%s]You also found: %s![/color]" % [rarity_color, bonus_items[0].get("name", "Unknown")]
 
 	# Send gamble result with prompt to continue
 	send_to_peer(peer_id, {
