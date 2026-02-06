@@ -521,6 +521,7 @@ var house_data: Dictionary = {}
 var house_mode: String = ""  # "", "main", "storage", "companions", "upgrades"
 var pending_house_action: String = ""  # For sub-menus like withdraw_select, checkout_select, etc.
 var house_storage_page: int = 0
+var house_upgrades_page: int = 0  # 0=Base, 1=Combat, 2=Stats
 var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
 var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
 var house_storage_discard_index: int = -1  # Item index selected for discard
@@ -4290,13 +4291,15 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 		elif house_mode == "upgrades":
+			var page_labels = ["Base", "Combat", "Stats"]
+			var page_buy_labels = ["1-6=Buy", "1-3=Buy", "1-6=Buy"]
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "upgrades_prev", "enabled": house_upgrades_page > 0},
+				{"label": "Next >", "action_type": "local", "action_data": "upgrades_next", "enabled": house_upgrades_page < 2},
+				{"label": page_labels[house_upgrades_page], "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "1-6=Buy", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": page_buy_labels[house_upgrades_page], "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7985,6 +7988,14 @@ func execute_local_action(action: String):
 		"house_upgrades":
 			house_mode = "upgrades"
 			pending_house_action = ""
+			display_house_upgrades()
+			update_action_bar()
+		"upgrades_prev":
+			house_upgrades_page = max(0, house_upgrades_page - 1)
+			display_house_upgrades()
+			update_action_bar()
+		"upgrades_next":
+			house_upgrades_page = min(2, house_upgrades_page + 1)
 			display_house_upgrades()
 			update_action_bar()
 		"house_main":
@@ -14615,8 +14626,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.69 changes
+	display_game("[color=#00FF00]v0.9.69[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ NEW SANCTUARY UPGRADES[/color]")
+	display_game("  • Combat bonuses: Vitality (+5% HP), Reservoir (+5% resources), Flow (+5% regen)")
+	display_game("  • Stat training: +1 STR/CON/DEX/INT/WIS/WITS per level")
+	display_game("  • 3-page upgrade system with navigation")
+	display_game("  • All bonuses apply to ALL characters on your account")
+	display_game("")
+
 	# v0.9.68 changes
-	display_game("[color=#00FF00]v0.9.68[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.68[/color]")
 	display_game("  [color=#FFD700]★ BALANCE & PROGRESSION[/color]")
 	display_game("  • Early game regen doubled (levels 1-24, scales down to normal by 25)")
 	display_game("  • Home Stones now drop 1 tier earlier (Tier 4-6 instead of 5-7)")
@@ -14647,12 +14667,6 @@ func display_changelog():
 	display_game("  • Baddie Points earned on death - spend on permanent upgrades")
 	display_game("  • Home Stones: Send items/eggs/companions to Sanctuary")
 	display_game("  • Egg freezing, companion trading, companion sorting")
-	display_game("")
-
-	# v0.9.63 changes
-	display_game("[color=#00FFFF]v0.9.63[/color]")
-	display_game("  • Replaced Shield ability with Forcefield (now unlocks at level 15)")
-	display_game("  • Fixed Shield ability not appearing on combat bar (now maps to Forcefield)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -19547,7 +19561,18 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
 	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting gold", "icon": "💰"},
 	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
-	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"}
+	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
+	# Combat bonuses
+	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
+	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
+	"resource_regen": {"name": "Flow", "desc": "+5% resource regen", "icon": "✨"},
+	# Stat training
+	"str_bonus": {"name": "Strength Training", "desc": "+1 STR", "icon": "💪"},
+	"con_bonus": {"name": "Constitution Training", "desc": "+1 CON", "icon": "🛡️"},
+	"dex_bonus": {"name": "Dexterity Training", "desc": "+1 DEX", "icon": "🎯"},
+	"int_bonus": {"name": "Intelligence Training", "desc": "+1 INT", "icon": "🧠"},
+	"wis_bonus": {"name": "Wisdom Training", "desc": "+1 WIS", "icon": "👁️"},
+	"wits_bonus": {"name": "Wits Training", "desc": "+1 WITS", "icon": "⚡"}
 }
 
 func _get_house_layout_level() -> int:
@@ -19733,9 +19758,8 @@ func display_house_main():
 
 	# Active Bonuses from Upgrades
 	var upgrades = house_data.get("upgrades", {})
-	var has_bonuses = false
-	var bonus_text = "[color=#FFD700]Active Bonuses:[/color] "
 	var bonus_parts = []
+	# Base bonuses
 	if upgrades.get("flee_chance", 0) > 0:
 		bonus_parts.append("+%d%% Flee" % (upgrades.flee_chance * 2))
 	if upgrades.get("starting_gold", 0) > 0:
@@ -19744,9 +19768,22 @@ func display_house_main():
 		bonus_parts.append("+%d%% XP" % upgrades.xp_bonus)
 	if upgrades.get("gathering_bonus", 0) > 0:
 		bonus_parts.append("+%d%% Gather" % (upgrades.gathering_bonus * 5))
+	# Combat bonuses
+	if upgrades.get("hp_bonus", 0) > 0:
+		bonus_parts.append("+%d%% HP" % (upgrades.hp_bonus * 5))
+	if upgrades.get("resource_max", 0) > 0:
+		bonus_parts.append("+%d%% Resources" % (upgrades.resource_max * 5))
+	if upgrades.get("resource_regen", 0) > 0:
+		bonus_parts.append("+%d%% Regen" % (upgrades.resource_regen * 5))
+	# Stat bonuses
+	var stat_bonus_total = 0
+	for stat in ["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]:
+		stat_bonus_total += upgrades.get(stat, 0)
+	if stat_bonus_total > 0:
+		bonus_parts.append("+%d Stats" % stat_bonus_total)
 
 	if bonus_parts.size() > 0:
-		display_game(bonus_text + ", ".join(bonus_parts))
+		display_game("[color=#FFD700]Active Bonuses:[/color] " + ", ".join(bonus_parts))
 	else:
 		display_game("[color=#808080]No upgrades purchased yet.[/color]")
 
@@ -19877,12 +19914,23 @@ func display_house_companions():
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
 
 func display_house_upgrades():
-	"""Display available house upgrades"""
+	"""Display available house upgrades with pagination"""
 	game_output.clear()
 	house_mode = "upgrades"
 	_update_house_map()
 
+	# Define upgrade pages
+	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
+	var page_upgrades = [
+		["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["hp_bonus", "resource_max", "resource_regen"],
+		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
+	]
+
+	house_upgrades_page = clamp(house_upgrades_page, 0, page_names.size() - 1)
+
 	display_game("[color=#FF6600]═══════ UPGRADE FORGE ═══════[/color]")
+	display_game("[color=#AAAAAA]Page %d/3: %s[/color]" % [house_upgrades_page + 1, page_names[house_upgrades_page]])
 	display_game("")
 
 	var bp = house_data.get("baddie_points", 0)
@@ -19899,11 +19947,21 @@ func display_house_upgrades():
 		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 		"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 		"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
-		"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]}
+		"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
+		"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},
+		"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},
+		"resource_regen": {"effect": 5, "max": 5, "costs": [3000, 8000, 20000, 50000, 120000]},
+		"str_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"con_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"dex_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
 	})
 
+	var current_page_upgrades = page_upgrades[house_upgrades_page]
 	var idx = 1
-	for upgrade_id in ["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]:
+	for upgrade_id in current_page_upgrades:
 		var upgrade_def = upgrade_costs.get(upgrade_id, {})
 		var display_info = HOUSE_UPGRADE_DISPLAY.get(upgrade_id, {"name": upgrade_id, "desc": "", "icon": ""})
 		var current_level = upgrades.get(upgrade_id, 0)
@@ -19925,19 +19983,7 @@ func display_house_upgrades():
 			cost_text = "[color=#808080]N/A[/color]"
 
 		var effect_value = upgrade_def.get("effect", 0) * current_level
-		var effect_text = ""
-		if upgrade_id == "storage_slots":
-			effect_text = "+%d slots" % effect_value
-		elif upgrade_id == "companion_slots":
-			effect_text = "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
-		elif upgrade_id == "flee_chance":
-			effect_text = "+%d%%" % effect_value
-		elif upgrade_id == "starting_gold":
-			effect_text = "+%d gold" % effect_value
-		elif upgrade_id == "xp_bonus":
-			effect_text = "+%d%%" % effect_value
-		elif upgrade_id == "gathering_bonus":
-			effect_text = "+%d%%" % effect_value
+		var effect_text = _get_upgrade_effect_text(upgrade_id, effect_value)
 
 		display_game("[%d] [color=#FFD700]%s[/color] Lv.%d/%d" % [idx, display_info.name, current_level, max_level])
 		display_game("    %s [color=#AAAAAA](%s)[/color]" % [display_info.desc, effect_text])
@@ -19946,6 +19992,18 @@ func display_house_upgrades():
 		idx += 1
 
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
+
+func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
+	"""Get display text for current upgrade effect"""
+	match upgrade_id:
+		"storage_slots": return "+%d slots" % effect_value
+		"companion_slots": return "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
+		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
+			return "+%d%%" % effect_value
+		"starting_gold": return "+%d gold" % effect_value
+		"str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus":
+			return "+%d" % effect_value
+		_: return "+%d" % effect_value
 
 func _get_house_storage_capacity() -> int:
 	"""Calculate total house storage capacity"""
@@ -19960,11 +20018,16 @@ func _get_house_companion_capacity() -> int:
 	return base_slots + upgrade_level
 
 func _purchase_house_upgrade(index: int):
-	"""Send request to purchase a house upgrade"""
-	var upgrade_ids = ["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]
-	if index < 0 or index >= upgrade_ids.size():
+	"""Send request to purchase a house upgrade based on current page"""
+	var page_upgrades = [
+		["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["hp_bonus", "resource_max", "resource_regen"],
+		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
+	]
+	var current_page_upgrades = page_upgrades[house_upgrades_page]
+	if index < 0 or index >= current_page_upgrades.size():
 		return
-	send_to_server({"type": "house_upgrade", "upgrade_id": upgrade_ids[index]})
+	send_to_server({"type": "house_upgrade", "upgrade_id": current_page_upgrades[index]})
 
 func _toggle_storage_withdraw_item(display_index: int):
 	"""Toggle an item for withdrawal from house storage"""

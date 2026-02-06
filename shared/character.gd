@@ -919,38 +919,50 @@ func get_equipment_defense() -> int:
 	return bonuses.defense
 
 func get_total_max_hp() -> int:
-	"""Get total max HP including equipment bonuses.
-	Formula: base max_hp + equipment HP + (equipment CON * 5)"""
+	"""Get total max HP including equipment bonuses and house bonuses.
+	Formula: (base max_hp + equipment HP + (equipment CON * 5)) * (1 + house hp_bonus%)"""
 	var bonuses = get_equipment_bonuses()
 	# Equipment CON also contributes to HP via the CON*5 formula
 	var con_hp_bonus = bonuses.constitution * 5
-	return max_hp + bonuses.max_hp + con_hp_bonus
+	var base_total = max_hp + bonuses.max_hp + con_hp_bonus
+	# Apply house hp_bonus percentage
+	var house_hp_percent = house_bonuses.get("hp_bonus", 0)
+	return int(base_total * (1.0 + house_hp_percent / 100.0))
 
 func get_total_max_mana() -> int:
-	"""Get total max mana including equipment bonuses.
-	Formula: base max_mana + equipment mana + (equipment INT * 3) + (equipment WIS * 1.5)"""
+	"""Get total max mana including equipment bonuses and house bonuses.
+	Formula: (base max_mana + equipment mana + (equipment INT * 3) + (equipment WIS * 1.5)) * (1 + house resource_max%)"""
 	var bonuses = get_equipment_bonuses()
 	# Equipment INT/WIS contribute to mana via the reduced formula
 	var int_mana_bonus = int(bonuses.intelligence * 3)
 	var wis_mana_bonus = int(bonuses.wisdom * 1.5)
-	return max_mana + bonuses.max_mana + int_mana_bonus + wis_mana_bonus
+	var base_total = max_mana + bonuses.max_mana + int_mana_bonus + wis_mana_bonus
+	# Apply house resource_max percentage
+	var house_resource_percent = house_bonuses.get("resource_max", 0)
+	return int(base_total * (1.0 + house_resource_percent / 100.0))
 
 func get_total_max_stamina() -> int:
-	"""Get total max stamina including equipment bonuses.
-	Formula: base max_stamina + equipment stamina + equipment STR + equipment CON"""
+	"""Get total max stamina including equipment bonuses and house bonuses.
+	Formula: (base max_stamina + equipment stamina + equipment STR + equipment CON) * (1 + house resource_max%)"""
 	var bonuses = get_equipment_bonuses()
 	# Equipment STR/CON contribute to stamina via the reduced formula
 	var str_stamina_bonus = bonuses.strength
 	var con_stamina_bonus = bonuses.constitution
-	return max_stamina + bonuses.max_stamina + str_stamina_bonus + con_stamina_bonus
+	var base_total = max_stamina + bonuses.max_stamina + str_stamina_bonus + con_stamina_bonus
+	# Apply house resource_max percentage
+	var house_resource_percent = house_bonuses.get("resource_max", 0)
+	return int(base_total * (1.0 + house_resource_percent / 100.0))
 
 func get_total_max_energy() -> int:
-	"""Get total max energy including equipment bonuses.
-	Formula: base max_energy + equipment energy + (equipment WIT + DEX) * 0.75"""
+	"""Get total max energy including equipment bonuses and house bonuses.
+	Formula: (base max_energy + equipment energy + (equipment WIT + DEX) * 0.75) * (1 + house resource_max%)"""
 	var bonuses = get_equipment_bonuses()
 	# Equipment WIT/DEX contribute to energy via the reduced formula
 	var equip_energy_bonus = int((bonuses.wits + bonuses.dexterity) * 0.75)
-	return max_energy + bonuses.max_energy + equip_energy_bonus
+	var base_total = max_energy + bonuses.max_energy + equip_energy_bonus
+	# Apply house resource_max percentage
+	var house_resource_percent = house_bonuses.get("resource_max", 0)
+	return int(base_total * (1.0 + house_resource_percent / 100.0))
 
 func get_equipment_procs() -> Dictionary:
 	"""Get all proc effects from equipped items.
@@ -992,28 +1004,38 @@ func get_equipment_procs() -> Dictionary:
 	return procs
 
 func get_effective_stat(stat_name: String) -> int:
-	"""Get stat value including equipment bonuses and permanent bonuses from tomes"""
+	"""Get stat value including equipment bonuses, permanent bonuses from tomes, and house bonuses"""
 	var base_stat = get_stat(stat_name)
 	var bonuses = get_equipment_bonuses()
 
-	# Get permanent bonus from stat tomes
-	var perm_bonus = permanent_stat_bonuses.get(stat_name.to_lower(), 0)
-
 	match stat_name.to_lower():
 		"strength", "str":
-			return base_stat + bonuses.strength + perm_bonus + permanent_stat_bonuses.get("strength", 0)
+			var perm = permanent_stat_bonuses.get("strength", 0)
+			var house = house_bonuses.get("str_bonus", 0)
+			return base_stat + bonuses.strength + perm + house
 		"constitution", "con":
-			return base_stat + bonuses.constitution + perm_bonus + permanent_stat_bonuses.get("constitution", 0)
+			var perm = permanent_stat_bonuses.get("constitution", 0)
+			var house = house_bonuses.get("con_bonus", 0)
+			return base_stat + bonuses.constitution + perm + house
 		"dexterity", "dex":
-			return base_stat + bonuses.dexterity + perm_bonus + permanent_stat_bonuses.get("dexterity", 0)
+			var perm = permanent_stat_bonuses.get("dexterity", 0)
+			var house = house_bonuses.get("dex_bonus", 0)
+			return base_stat + bonuses.dexterity + perm + house
 		"intelligence", "int":
-			return base_stat + bonuses.intelligence + perm_bonus + permanent_stat_bonuses.get("intelligence", 0)
+			var perm = permanent_stat_bonuses.get("intelligence", 0)
+			var house = house_bonuses.get("int_bonus", 0)
+			return base_stat + bonuses.intelligence + perm + house
 		"wisdom", "wis":
-			return base_stat + bonuses.wisdom + perm_bonus + permanent_stat_bonuses.get("wisdom", 0)
+			var perm = permanent_stat_bonuses.get("wisdom", 0)
+			var house = house_bonuses.get("wis_bonus", 0)
+			return base_stat + bonuses.wisdom + perm + house
 		"wits", "wit":
-			return base_stat + bonuses.wits + perm_bonus + permanent_stat_bonuses.get("wits", 0)
+			var perm = permanent_stat_bonuses.get("wits", 0)
+			var house = house_bonuses.get("wits_bonus", 0)
+			return base_stat + bonuses.wits + perm + house
 		_:
-			return base_stat + perm_bonus
+			var perm = permanent_stat_bonuses.get(stat_name.to_lower(), 0)
+			return base_stat + perm
 
 func get_attack_damage() -> Dictionary:
 	"""Calculate attack damage range including equipment"""

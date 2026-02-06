@@ -22,7 +22,18 @@ const HOUSE_UPGRADES = {
 	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
-	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]}
+	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
+	# Combat bonuses (percentages)
+	"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max HP per level
+	"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max resource per level
+	"resource_regen": {"effect": 5, "max": 5, "costs": [3000, 8000, 20000, 50000, 120000]},  # +5% resource regen per level
+	# Stat bonuses (+1 per level, exponential costs)
+	"str_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"con_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"dex_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
 }
 
 # Cached data
@@ -932,7 +943,16 @@ func create_house(account_id: String) -> Dictionary:
 			"flee_chance": 0,
 			"starting_gold": 0,
 			"xp_bonus": 0,
-			"gathering_bonus": 0
+			"gathering_bonus": 0,
+			"hp_bonus": 0,
+			"resource_max": 0,
+			"resource_regen": 0,
+			"str_bonus": 0,
+			"con_bonus": 0,
+			"dex_bonus": 0,
+			"int_bonus": 0,
+			"wis_bonus": 0,
+			"wits_bonus": 0
 		},
 
 		"stats": {
@@ -1127,11 +1147,23 @@ func get_house_bonuses(account_id: String) -> Dictionary:
 		"flee_chance": 0,
 		"starting_gold": 0,
 		"xp_bonus": 0,
-		"gathering_bonus": 0
+		"gathering_bonus": 0,
+		"hp_bonus": 0,
+		"resource_max": 0,
+		"resource_regen": 0,
+		"str_bonus": 0,
+		"con_bonus": 0,
+		"dex_bonus": 0,
+		"int_bonus": 0,
+		"wis_bonus": 0,
+		"wits_bonus": 0
 	}
 
 	var upgrades = house.get("upgrades", {})
-	for upgrade_id in ["flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]:
+	var bonus_ids = ["flee_chance", "starting_gold", "xp_bonus", "gathering_bonus",
+					 "hp_bonus", "resource_max", "resource_regen",
+					 "str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
+	for upgrade_id in bonus_ids:
 		var level = upgrades.get(upgrade_id, 0)
 		if level > 0 and HOUSE_UPGRADES.has(upgrade_id):
 			bonuses[upgrade_id] = level * HOUSE_UPGRADES[upgrade_id].effect

@@ -974,6 +974,12 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	if _migrate_title_items(character):
 		persistence.save_character(account_id, character)
 
+	# Refresh house bonuses from current Sanctuary upgrades (in case they upgraded since last login)
+	var house_bonuses = _get_house_bonuses_for_character(account_id)
+	if character.house_bonuses != house_bonuses:
+		character.house_bonuses = house_bonuses
+		persistence.save_character(account_id, character)
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -1117,6 +1123,13 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	var character = Character.new()
 	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
+
+	# Apply house bonuses from Sanctuary upgrades
+	var house_bonuses = _get_house_bonuses_for_character(account_id)
+	character.house_bonuses = house_bonuses
+	# Apply starting gold bonus
+	if house_bonuses.get("starting_gold", 0) > 0:
+		character.gold += house_bonuses.starting_gold
 
 	# Save character to persistence
 	persistence.save_character(account_id, character)
@@ -1548,9 +1561,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Regenerate health and resources on movement (small amount per step)
 	# Resource regen is DISABLED while cloaked - cloak drains resources
 	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	# House bonus: +5% regen per level of resource_regen upgrade
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
-	var regen_percent = 0.02 * early_game_mult  # 2% per move for resources (doubled early game)
-	var hp_regen_percent = 0.01 * early_game_mult  # 1% per move for health (doubled early game)
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
+	var regen_percent = 0.02 * early_game_mult * house_regen_mult  # 2% per move for resources
+	var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult  # 1% per move for health
 	var total_max_mana = character.get_total_max_mana()
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
@@ -1840,8 +1855,10 @@ func handle_rest(peer_id: int):
 
 	# Regenerate primary resource on rest (same as movement - 2%, min 1)
 	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	# House bonus: +5% regen per level of resource_regen upgrade
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
-	var regen_percent = 0.02 * early_game_mult
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
+	var regen_percent = 0.02 * early_game_mult * house_regen_mult
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
@@ -1925,10 +1942,12 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		bonus_mult += sage_meditate_bonus
 
 	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
+	# House bonus: +5% regen per level of resource_regen upgrade
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
 
 	# Mana regeneration: 4% of max mana (2x movement), double if at full HP
-	var base_mana_percent = 0.04 * early_game_mult  # 2x the 2% movement regen, with early game bonus
+	var base_mana_percent = 0.04 * early_game_mult * house_regen_mult  # 2x the 2% movement regen, with early game + house bonus
 	var mana_percent = base_mana_percent
 	if at_full_hp:
 		mana_percent *= 2.0  # 8% when HP is full
