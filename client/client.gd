@@ -17623,11 +17623,10 @@ func handle_dungeon_treasure(message: Dictionary):
 		display_game("[color=#A335EE]★ Found a %s Egg! ★[/color]" % egg_monster)
 
 	display_game("")
-	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	display_game("[color=#808080]Move to continue exploring...[/color]")
 
-	# Set pending continue - dungeon state will be requested when player acknowledges
-	pending_continue = true
-	pending_dungeon_continue = true
+	# Don't set pending_continue - player can move immediately
+	# Movement will naturally request fresh dungeon state
 	update_action_bar()
 
 func handle_dungeon_floor_change(message: Dictionary):
