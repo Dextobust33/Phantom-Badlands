@@ -14882,8 +14882,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.77 changes
+	display_game("[color=#00FF00]v0.9.77[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ BUG FIXES[/color]")
+	display_game("  • Death screen now shows correct damage dealt/taken (abilities were uncounted)")
+	display_game("  • Death screen now displays the correct monster art")
+	display_game("  • Stats HUD (level, HP, XP, gold) now clears properly after death")
+	display_game("  • Logging out and back in no longer hangs the client")
+	display_game("  • Kill quest descriptions no longer show raw formatting codes")
+	display_game("  • Fixed Play button from Sanctuary not opening character select")
+	display_game("")
+
 	# v0.9.74 changes
-	display_game("[color=#00FF00]v0.9.74[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.74[/color]")
 	display_game("  [color=#FFD700]★ QUEST IMPROVEMENTS[/color]")
 	display_game("  • Kill quest targets now randomized (3-8 instead of fixed 10-15)")
 	display_game("  • Exploration quests send you farther from origin instead of back toward it")
@@ -14926,22 +14937,6 @@ func display_changelog():
 	display_game("  • Stat training: +1 STR/CON/DEX/INT/WIS/WITS per level")
 	display_game("  • 3-page upgrade system with navigation")
 	display_game("  • All bonuses apply to ALL characters on your account")
-	display_game("")
-
-	# v0.9.68 changes
-	display_game("[color=#00FFFF]v0.9.68[/color]")
-	display_game("  [color=#FFD700]★ BALANCE & PROGRESSION[/color]")
-	display_game("  • Early game regen doubled (levels 1-24, scales down to normal by 25)")
-	display_game("  • Home Stones now drop 1 tier earlier (Tier 4-6 instead of 5-7)")
-	display_game("  • Weapon Master variants: 50% drop chance, gear biased toward attack stats")
-	display_game("  • Shield Guardian variants: 50% drop chance, gear biased toward HP/defense")
-	display_game("  [color=#FFD700]★ BLACKSMITH UPGRADES[/color]")
-	display_game("  • Blacksmiths can now upgrade existing affixes on your gear!")
-	display_game("  • Costs gold, gems, and salvage essence - scales with item level")
-	display_game("  [color=#FFD700]★ GAMBLING IMPROVEMENTS[/color]")
-	display_game("  • Reduced house edge from +2 to +1")
-	display_game("  • Rolling any pair gives you +1 bonus")
-	display_game("  • 10% chance to win a bonus item on any winning roll")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
