@@ -431,6 +431,7 @@ var game_state = GameState.DISCONNECTED
 @onready var create_char_button = $CharacterSelectPanel/VBox/ButtonContainer/CreateButton
 @onready var char_select_status = $CharacterSelectPanel/VBox/StatusLabel
 @onready var leaderboard_button = $CharacterSelectPanel/VBox/ButtonContainer/LeaderboardButton
+@onready var char_select_sanctuary_button = $CharacterSelectPanel/VBox/AccountContainer/SanctuaryButton
 @onready var change_password_button = $CharacterSelectPanel/VBox/AccountContainer/ChangePasswordButton
 @onready var char_select_logout_button = $CharacterSelectPanel/VBox/AccountContainer/LogoutButton
 
@@ -920,6 +921,8 @@ const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 
 # Player name click tracking
 var pending_player_info_request: String = ""  # Track pending popup request
+var player_info_equipped: Dictionary = {}  # Cached equipment for clicked player info
+var last_death_message: Dictionary = {}  # Cached permadeath data for save-to-file
 var online_players_names: Array = []  # Cache player names for click detection
 var last_online_click_time: float = 0.0  # Track double-click timing
 const DOUBLE_CLICK_TIME: float = 0.4  # 400ms for double-click
@@ -1236,6 +1239,8 @@ func _ready():
 		change_password_button.pressed.connect(_on_change_password_button_pressed)
 	if char_select_logout_button:
 		char_select_logout_button.pressed.connect(_on_char_select_logout_pressed)
+	if char_select_sanctuary_button:
+		char_select_sanctuary_button.pressed.connect(_on_char_select_sanctuary_pressed)
 
 	# Connect character creation signals
 	if confirm_create_button:
@@ -1267,6 +1272,11 @@ func _ready():
 	if online_players_list:
 		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
 			online_players_list.meta_clicked.connect(_on_player_name_clicked)
+
+	# Connect player info popup for clickable equipment
+	if player_info_content:
+		if not player_info_content.meta_clicked.is_connected(_on_player_info_meta_clicked):
+			player_info_content.meta_clicked.connect(_on_player_info_meta_clicked)
 
 	# Setup race options
 	if race_option:
@@ -2254,7 +2264,7 @@ func _process(delta):
 				last_move_time = current_time
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open:
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -2308,12 +2318,18 @@ func _process(delta):
 	if status == StreamPeerTCP.STATUS_CONNECTED:
 		if not connected:
 			connected = true
-			game_state = GameState.CONNECTED
 			display_game("[color=#00FF00]Connected to server![/color]")
-			# Hide connection panel and show login panel
+			# Hide connection panel and show login panel (only if not already showing)
 			if connection_panel:
 				connection_panel.visible = false
-			show_login_panel()
+			if game_state != GameState.LOGIN_SCREEN:
+				game_state = GameState.CONNECTED
+				show_login_panel()
+			else:
+				# Already on login screen (e.g., after account logout + reconnect)
+				# Just make sure login panel is visible without clearing fields
+				if login_panel and not login_panel.visible:
+					login_panel.visible = true
 
 		var available = connection.get_available_bytes()
 		if available > 0:
@@ -2912,6 +2928,11 @@ func display_death_screen(message: Dictionary):
 				display_game("[center]" + local_art + "[/center]")
 				display_game("")
 
+		var player_max_hp = int(message.get("player_max_hp", 0))
+		var player_hp_start = int(message.get("player_hp_at_start", player_max_hp))
+		if player_hp_start > 0:
+			display_game("[color=#FF6666]Your HP: %s/%s → Killed[/color]" % [format_number(player_hp_start), format_number(player_max_hp)])
+
 		if total_damage_dealt > 0 or total_damage_taken > 0:
 			display_game("[color=#00FF00]Damage Dealt: %s[/color]  |  [color=#FF6666]Damage Taken: %s[/color]" % [format_number(total_damage_dealt), format_number(total_damage_taken)])
 			if monster_max_hp > 0:
@@ -2933,7 +2954,93 @@ func display_death_screen(message: Dictionary):
 		display_game("[center][color=#808080]Return to your Sanctuary to spend them![/color][/center]")
 	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
 	display_game("")
-	display_game("[center][color=#FFD700]Press %s to continue...[/color][/center]" % get_action_key_name(0))
+	display_game("[center][color=#FFD700]Press %s to continue  |  %s to save log[/color][/center]" % [get_action_key_name(0), get_action_key_name(1)])
+
+func _save_death_log():
+	"""Save the death screen content to a text file."""
+	if last_death_message.is_empty():
+		display_game("[color=#FF6666]No death data to save.[/color]")
+		return
+
+	var msg = last_death_message
+	var char_name = msg.get("character_name", "Unknown")
+	var time_str = Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var filename = "%s_%s.txt" % [char_name, time_str]
+	var dir_path = "user://death_logs"
+
+	var dir = DirAccess.open("user://")
+	if dir and not dir.dir_exists("death_logs"):
+		dir.make_dir("death_logs")
+
+	var path = "%s/%s" % [dir_path, filename]
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	if not file:
+		display_game("[color=#FF6666]Failed to save death log.[/color]")
+		return
+
+	# Build plain text death log
+	var bbcode_regex = RegEx.new()
+	bbcode_regex.compile("\\[/?[^\\]]+\\]")
+
+	file.store_line("═══════════════════════════════════════════════")
+	file.store_line("  %s HAS FALLEN" % char_name.to_upper())
+	file.store_line("  Slain by %s" % msg.get("cause_of_death", "Unknown"))
+	file.store_line("═══════════════════════════════════════════════")
+	file.store_line("")
+	file.store_line("── Character ──")
+	file.store_line("%s %s  |  Level %d  |  XP: %s" % [msg.get("race", ""), msg.get("class_type", ""), int(msg.get("level", 1)), format_number(int(msg.get("experience", 0)))])
+	file.store_line("Gold: %s  |  Gems: %d  |  Kills: %s" % [format_number(int(msg.get("gold", 0))), int(msg.get("gems", 0)), format_number(int(msg.get("monsters_killed", 0)))])
+	file.store_line("")
+
+	var stats = msg.get("stats", {})
+	if not stats.is_empty():
+		file.store_line("── Stats ──")
+		file.store_line("STR: %d  |  CON: %d  |  DEX: %d  |  INT: %d  |  WIS: %d  |  WIT: %d" % [
+			stats.get("strength", 0), stats.get("constitution", 0), stats.get("dexterity", 0),
+			stats.get("intelligence", 0), stats.get("wisdom", 0), stats.get("wits", 0)
+		])
+		file.store_line("")
+
+	var equipped = msg.get("equipped", {})
+	var has_equipment = false
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary and not item.is_empty():
+			if not has_equipment:
+				file.store_line("── Equipment ──")
+				has_equipment = true
+			file.store_line("  %s: %s (Lv %d, %s)" % [slot.capitalize(), item.get("name", "Unknown"), item.get("level", 1), item.get("rarity", "common")])
+	if has_equipment:
+		file.store_line("")
+
+	var combat_log = msg.get("combat_log", [])
+	var rounds_fought = int(msg.get("rounds_fought", 0))
+	if rounds_fought > 0 or combat_log.size() > 0:
+		file.store_line("═══════════════════════════════════════════════")
+		file.store_line("  FINAL BATTLE - %d Round%s" % [rounds_fought, "s" if rounds_fought != 1 else ""])
+		file.store_line("═══════════════════════════════════════════════")
+		var player_max_hp = int(msg.get("player_max_hp", 0))
+		var player_hp_start = int(msg.get("player_hp_at_start", player_max_hp))
+		if player_hp_start > 0:
+			file.store_line("Your HP: %s/%s -> Killed" % [format_number(player_hp_start), format_number(player_max_hp)])
+		var total_dmg_dealt = int(msg.get("total_damage_dealt", 0))
+		var total_dmg_taken = int(msg.get("total_damage_taken", 0))
+		if total_dmg_dealt > 0 or total_dmg_taken > 0:
+			file.store_line("Damage Dealt: %s  |  Damage Taken: %s" % [format_number(total_dmg_dealt), format_number(total_dmg_taken)])
+		file.store_line("")
+		for entry in combat_log:
+			if entry is String:
+				file.store_line(bbcode_regex.sub(entry, "", true))
+		file.store_line("")
+
+	var baddie_points = int(msg.get("baddie_points_earned", 0))
+	if baddie_points > 0:
+		file.store_line("Baddie Points Earned: %d" % baddie_points)
+
+	file.close()
+
+	var global_path = ProjectSettings.globalize_path(path)
+	display_game("[color=#00FF00]Death log saved to: %s[/color]" % global_path)
 
 func show_leaderboard_panel():
 	if leaderboard_panel:
@@ -3304,6 +3411,12 @@ func _on_change_password_button_pressed():
 	char_select_panel.visible = false
 	start_password_change()
 
+func _on_char_select_sanctuary_pressed():
+	"""Return to Sanctuary from character select screen"""
+	hide_all_panels()
+	send_to_server({"type": "house_request"})
+	game_state = GameState.HOUSE_SCREEN
+
 func _on_char_select_logout_pressed():
 	logout_account()
 
@@ -3384,6 +3497,8 @@ func _reset_character_state():
 	pending_continue = false
 	combat_item_mode = false
 	monster_select_mode = false
+	# Clear monster HP knowledge (per-character, not shared across characters)
+	known_enemy_hp = {}
 	# Clear the character stats HUD so old values don't linger
 	_clear_character_hud()
 
@@ -3442,6 +3557,75 @@ func _on_close_player_info_pressed():
 	if player_info_panel:
 		player_info_panel.visible = false
 
+func _on_player_info_meta_clicked(meta):
+	"""Handle click on equipment in player info popup"""
+	var meta_str = str(meta)
+	if meta_str.begins_with("equip_"):
+		var slot = meta_str.substr(6)
+		if player_info_equipped.has(slot):
+			_show_equipment_detail_in_popup(player_info_equipped[slot], slot)
+
+func _show_equipment_detail_in_popup(item: Dictionary, slot: String):
+	"""Append item stats to the player info popup"""
+	if not player_info_content:
+		return
+	var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+	player_info_content.append_text("\n[color=#FF4444]─── Item Details ───[/color]\n")
+	player_info_content.append_text("[color=%s][b]%s[/b][/color] (Lv%d %s)\n" % [
+		rarity_color, item.get("name", "Unknown"), item.get("level", 1), item.get("rarity", "common").capitalize()
+	])
+	player_info_content.append_text("[color=#808080]Slot: %s[/color]\n" % slot.capitalize())
+
+	# Show item bonuses
+	var bonuses = _compute_item_bonuses(item)
+	if bonuses.get("attack", 0) > 0:
+		player_info_content.append_text("[color=#FFFF00]+%d Attack[/color]\n" % bonuses.attack)
+	if bonuses.get("defense", 0) > 0:
+		player_info_content.append_text("[color=#00FF00]+%d Defense[/color]\n" % bonuses.defense)
+	if bonuses.get("max_hp", 0) > 0:
+		player_info_content.append_text("[color=#FF6666]+%d Max HP[/color]\n" % bonuses.max_hp)
+	if bonuses.get("strength", 0) > 0:
+		player_info_content.append_text("[color=#FF6666]+%d Strength[/color]\n" % bonuses.strength)
+	if bonuses.get("constitution", 0) > 0:
+		player_info_content.append_text("[color=#00FF00]+%d Constitution[/color]\n" % bonuses.constitution)
+	if bonuses.get("dexterity", 0) > 0:
+		player_info_content.append_text("[color=#FFFF00]+%d Dexterity[/color]\n" % bonuses.dexterity)
+	if bonuses.get("intelligence", 0) > 0:
+		player_info_content.append_text("[color=#9999FF]+%d Intelligence[/color]\n" % bonuses.intelligence)
+	if bonuses.get("wisdom", 0) > 0:
+		player_info_content.append_text("[color=#66CCFF]+%d Wisdom[/color]\n" % bonuses.wisdom)
+	if bonuses.get("wits", 0) > 0:
+		player_info_content.append_text("[color=#FF00FF]+%d Wits[/color]\n" % bonuses.wits)
+	if bonuses.get("speed", 0) > 0:
+		player_info_content.append_text("[color=#FFA500]+%d Speed[/color]\n" % bonuses.speed)
+	var mana_bonus = bonuses.get("max_mana", 0)
+	var stam_bonus = bonuses.get("max_stamina", 0)
+	var energy_bonus = bonuses.get("max_energy", 0)
+	if mana_bonus > 0:
+		player_info_content.append_text("[color=#9999FF]+%d Max Mana[/color]\n" % mana_bonus)
+	if stam_bonus > 0:
+		player_info_content.append_text("[color=#FFCC00]+%d Max Stamina[/color]\n" % stam_bonus)
+	if energy_bonus > 0:
+		player_info_content.append_text("[color=#66FF66]+%d Max Energy[/color]\n" % energy_bonus)
+
+	# Show proc effects
+	var procs = item.get("proc_effects", [])
+	for proc in procs:
+		var proc_name = proc.get("type", "")
+		var proc_chance = proc.get("chance", 0)
+		var proc_value = proc.get("value", 0)
+		if proc_name == "lifesteal":
+			player_info_content.append_text("[color=#00FF00]%d%% chance: Lifesteal %d%%[/color]\n" % [proc_chance, proc_value])
+		elif proc_name == "execute":
+			player_info_content.append_text("[color=#FF4444]%d%% chance: Execute +%d%% damage[/color]\n" % [proc_chance, proc_value])
+		elif proc_name == "shocking":
+			player_info_content.append_text("[color=#FFFF00]%d%% chance: Shocking (stun)[/color]\n" % proc_chance)
+
+	# Show wear if any
+	var wear = item.get("wear", 0)
+	if wear > 0:
+		player_info_content.append_text("[color=#FF6666]Wear: %d%%[/color]\n" % wear)
+
 func show_player_info_popup(data: Dictionary):
 	"""Display player stats in a popup panel"""
 	if not player_info_panel or not player_info_content:
@@ -3465,6 +3649,7 @@ func show_player_info_popup(data: Dictionary):
 
 	var bonuses = data.get("equipment_bonuses", {})
 	var equipped = data.get("equipped", {})
+	player_info_equipped = equipped.duplicate(true)
 	var total_attack = data.get("total_attack", str_stat)
 	var total_defense = data.get("total_defense", con_stat / 2)
 
@@ -3542,18 +3727,20 @@ func show_player_info_popup(data: Dictionary):
 	# Combat stats
 	player_info_content.append_text("[color=#FFFF00]Attack:[/color] %d  [color=#00FF00]Defense:[/color] %d\n\n" % [total_attack, total_defense])
 
-	# Equipment
+	# Equipment (clickable for details)
 	var has_equipment = false
 	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		var item = equipped.get(slot)
 		if item != null and item is Dictionary:
 			if not has_equipment:
-				player_info_content.append_text("[color=#FFA500]Equipment:[/color]\n")
+				player_info_content.append_text("[color=#FFA500]Equipment:[/color] [color=#808080](click for details)[/color]\n")
 				has_equipment = true
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			player_info_content.append_text("  %s: [color=%s]%s[/color] (Lv%d)\n" % [
-				slot.capitalize(), rarity_color, item.get("name", "Unknown"), item.get("level", 1)
-			])
+			player_info_content.append_text("  %s: " % slot.capitalize())
+			player_info_content.push_meta("equip_%s" % slot)
+			player_info_content.append_text("[color=%s]%s[/color] (Lv%d)" % [rarity_color, item.get("name", "Unknown"), item.get("level", 1)])
+			player_info_content.pop()
+			player_info_content.append_text("\n")
 
 	if has_equipment:
 		player_info_content.append_text("\n")
@@ -3803,7 +3990,7 @@ func update_action_bar():
 	elif game_state == GameState.DEAD:
 		current_actions = [
 			{"label": "Continue", "action_type": "local", "action_data": "death_continue", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Save Log", "action_type": "local", "action_data": "save_death_log", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6974,6 +7161,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"death_continue":
 			_on_continue_pressed()
+		"save_death_log":
+			_save_death_log()
 		"logout_character":
 			logout_character()
 		"logout_account":
@@ -11431,6 +11620,7 @@ func handle_server_message(message: Dictionary):
 			buffer = ""
 			connection = StreamPeerTCP.new()
 			game_state = GameState.LOGIN_SCREEN
+			show_login_panel()
 			update_action_bar()
 			show_enemy_hp_bar(false)
 			_clear_character_hud()
@@ -11440,6 +11630,7 @@ func handle_server_message(message: Dictionary):
 		"permadeath":
 			game_state = GameState.DEAD
 			in_combat = false
+			last_death_message = message.duplicate(true)
 			play_death_sound()
 			# Show final HP (can be negative) on the bar - visual fill clamped at 0%
 			var final_hp = message.get("player_hp", 0)
@@ -11450,6 +11641,7 @@ func handle_server_message(message: Dictionary):
 			has_character = false
 			character_data = {}
 			hide_all_panels()
+			hide_companion_art_overlay()
 			display_death_screen(message)
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -14381,8 +14573,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.82 changes
+	display_game("[color=#00FF00]v0.9.82[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ MONSTER INTELLIGENCE REWORK[/color]")
+	display_game("  • Monsters now have individual intelligence based on their nature")
+	display_game("  • Brutes & beasts (Ogre, Zombie, Giant, Iron Golem) are much easier to Outsmart")
+	display_game("  • Cunning & magical foes (Lich, Sphinx, Siren, Vampire) are harder to Outsmart")
+	display_game("  [color=#FFD700]★ NAZGUL BUFF[/color]")
+	display_game("  • Nazgul is now a more fearsome Tier 6 threat: higher HP, STR, DEF")
+	display_game("  • New abilities: Life Steal (soul drain) and Disarm (fear)")
+	display_game("")
+
 	# v0.9.81 changes
-	display_game("[color=#00FF00]v0.9.81[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.81[/color]")
 	display_game("  [color=#FFD700]★ FIXES & BALANCE[/color]")
 	display_game("  • Paladin Divine Favor no longer triggers healing sound every round")
 	display_game("  • Quest dungeons are now personal — other players cannot enter yours")
@@ -14418,24 +14621,6 @@ func display_changelog():
 	display_game("  • Logging out and back in no longer hangs the client")
 	display_game("  • Kill quest descriptions no longer show raw formatting codes")
 	display_game("  • Fixed Play button from Sanctuary not opening character select")
-	display_game("")
-
-	# v0.9.74 changes
-	display_game("[color=#00FFFF]v0.9.74[/color]")
-	display_game("  [color=#FFD700]★ QUEST IMPROVEMENTS[/color]")
-	display_game("  • Kill quest targets now randomized (3-8 instead of fixed 10-15)")
-	display_game("  • Exploration quests send you farther from origin instead of back toward it")
-	display_game("  • Exploration quests now show distance and direction in quest log")
-	display_game("  • Exploration quests can be turned in at the destination trading post")
-	display_game("  [color=#FFD700]★ CHAT FIX[/color]")
-	display_game("  • Chat commands now require / prefix — typing 'i' or 'help' goes to chat, not commands")
-	display_game("  • Combat keywords still work without / when in combat")
-	display_game("  [color=#FFD700]★ UI & MERCHANTS[/color]")
-	display_game("  • HP bar, XP bar, and enemy HP bar labels now scale with UI settings")
-	display_game("  • Wandering merchants now have unique voice lines")
-	display_game("  • New trader art added")
-	display_game("  • Fixed Meteor showing 12% mana cost instead of correct 8%")
-	display_game("  • Tax collector no longer overlaps with merchant/blacksmith/healer encounters")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -15925,7 +16110,7 @@ func show_help():
   L1 Analyze(5) stats | L10 Distract(15) -50%%acc | L25 Pickpocket(20) WIT×10g | L40 Ambush(30) 3x+crit
   L60 Vanish(40) invis+crit | L80 Exploit(35) 10%%HP | L100 Perfect Heist(50) win+2x
 
-[color=#AAAAAA]Outsmart:[/color] 5%%+15×log₂(WIT/10). INT-based cap. Best vs beasts/undead. Fail=free enemy attack.
+[color=#AAAAAA]Outsmart:[/color] 5%%+15×log₂(WIT/10). INT-based cap. Easy vs brutes/beasts, hard vs mages/ancients. Fail=free enemy attack.
 [color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
 [color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 25%%)
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Shield,Haste,War Cry,etc) = 75%% dodge enemy turn!
@@ -16034,7 +16219,7 @@ func show_help():
 [color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
-[color=#00FFFF]v0.9.78:[/color] 8-bit sound effects, volume controls (Settings→Sound), combat log indicators.
+[color=#00FFFF]v0.9.82:[/color] Monster intelligence rework (thematic outsmart difficulty), Nazgul buff.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 

@@ -734,7 +734,8 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"disguise_revealed": false,
 		# Damage tracking for death screen
 		"total_damage_dealt": 0,
-		"total_damage_taken": 0
+		"total_damage_taken": 0,
+		"player_hp_at_start": character.current_hp
 	}
 
 	active_combats[peer_id] = combat_state
@@ -4283,6 +4284,7 @@ func get_combat_summary(peer_id: int) -> Dictionary:
 		"monster_max_hp": combat.monster.max_hp,
 		"total_damage_dealt": combat.get("total_damage_dealt", 0),
 		"total_damage_taken": combat.get("total_damage_taken", 0),
+		"player_hp_at_start": combat.get("player_hp_at_start", 0),
 	}
 
 func end_combat(peer_id: int, victory: bool):

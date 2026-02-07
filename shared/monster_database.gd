@@ -1130,18 +1130,18 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 			return {
 				"name": "Nazgul",
 				"base_level": 300,
-				"base_hp": 850,
-				"base_strength": 95,
-				"base_defense": 85,
+				"base_hp": 1100,
+				"base_strength": 115,
+				"base_defense": 95,
 				"base_speed": 22,
-				"base_experience": 55000,
-				"base_gold": 30000,
+				"base_experience": 70000,
+				"base_gold": 40000,
 				"flock_chance": 5,
 				"drop_table_id": "tier6",
 				"drop_chance": 15,
 				"description": "A wraith king bound to a ring of power",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL, ABILITY_WEAKNESS],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL, ABILITY_WEAKNESS, ABILITY_LIFE_STEAL, ABILITY_DISARM],
 				"death_message": "The Nazgul screams as its ring shatters, freeing what remains of its soul."
 			}
 
@@ -1405,7 +1405,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var gold_reward = _calculate_gold_reward(base_stats, stat_scale, target_level)
 
 	# Calculate monster intelligence based on level tier (for Outsmart mechanic)
-	var intelligence = _calculate_monster_intelligence(target_level)
+	var intelligence = _calculate_monster_intelligence(target_level, base_stats.name)
 
 	# Apply glass cannon ability (3x damage but 50% HP)
 	var abilities = base_stats.get("abilities", [])
@@ -1605,7 +1605,36 @@ func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: in
 
 	return max(1, int(gold_reward))
 
-func _calculate_monster_intelligence(level: int) -> int:
+func _get_intelligence_modifier(monster_name: String) -> int:
+	"""Per-monster intelligence adjustment for thematic accuracy.
+	Positive = smarter (harder to outsmart), Negative = dumber (easier to outsmart)."""
+	match monster_name:
+		# --- DUMBER (brutes, beasts, mindless) ---
+		"Giant Rat": return -3
+		"Wolf": return -2
+		"Skeleton": return -3
+		"Zombie": return -5
+		"Ogre": return -8
+		"Troll": return -6
+		"Gargoyle": return -5
+		"Giant": return -10
+		"Cerberus": return -8
+		"Iron Golem": return -12
+		"Hydra": return -5
+		# --- SMARTER (magical, ancient, cunning) ---
+		"Siren": return 8
+		"Hobgoblin": return 5
+		"Wraith": return 5
+		"Succubus": return 5
+		"Vampire": return 5
+		"Demon": return 3
+		"Lich": return 8
+		"Sphinx": return 8
+		"Nazgul": return 6
+		"Elder Lich": return 5
+	return 0
+
+func _calculate_monster_intelligence(level: int, monster_name: String = "") -> int:
 	"""Calculate monster intelligence based on level tier.
 	Used for the Outsmart mechanic - higher intelligence = harder to outsmart.
 	Tier 1-2 (1-15): 5-15 - easy to outsmart
@@ -1655,6 +1684,7 @@ func _calculate_monster_intelligence(level: int) -> int:
 
 	# Add some randomness to the intelligence within the tier
 	var final_intelligence = base_intelligence + (randi() % (variance + 1)) - (variance / 2)
+	final_intelligence += _get_intelligence_modifier(monster_name)
 	return max(5, final_intelligence)
 
 func to_dict() -> Dictionary:

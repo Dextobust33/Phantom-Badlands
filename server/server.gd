@@ -2035,6 +2035,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	for msg in result.messages:
 		send_combat_message(peer_id, msg)
 
+	# Accumulate messages in combat log for death screen
+	if combat_mgr.active_combats.has(peer_id):
+		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
+
 	# If Analyze revealed enemy HP, send that to update the health bar
 	if result.has("revealed_enemy_hp"):
 		send_to_peer(peer_id, {
@@ -2487,6 +2491,10 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 	for msg in result.messages:
 		send_combat_message(peer_id, msg)
 
+	# Accumulate messages in combat log for death screen
+	if combat_mgr.active_combats.has(peer_id):
+		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
+
 	# Check if combat ended (player died)
 	if result.has("combat_ended") and result.combat_ended:
 		if not result.get("victory", false):
@@ -2911,6 +2919,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"total_damage_taken": combat_data.get("total_damage_taken", 0),
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),
+		"player_hp_at_start": combat_data.get("player_hp_at_start", 0),
 	})
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
@@ -3731,7 +3740,7 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 			var wear = item.get("wear", 0)
 			if wear > 0:
 				var item_level = item.get("level", 1)
-				var repair_cost = int(wear * item_level * 5)
+				var repair_cost = int(wear * item_level * 25)
 				damaged_items.append({
 					"slot": slot_name,
 					"name": item.get("name", slot_name.capitalize()),
