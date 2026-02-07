@@ -5862,23 +5862,20 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	var using_estimated_hp = false
 	var target_hp = 0
 
-	# Priority: server actual HP > client known HP > client estimated HP
+	# Check client's HP knowledge based on previous kills (damage dealt)
+	# Use base name so variant knowledge is shared with base type
 	if current_enemy_name != "" and current_enemy_level > 0:
-		# If server sent actual max HP (player knows this monster), use it
-		if current_enemy_max_hp > 0:
-			target_hp = current_enemy_max_hp
+		var base_name = _get_base_monster_name(current_enemy_name)
+		# First try exact match (known HP for this monster at this level)
+		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		if known_enemy_hp.has(enemy_key):
+			target_hp = known_enemy_hp[enemy_key]
 		else:
-			# Fall back to client's HP knowledge based on previous kills
-			var base_name = _get_base_monster_name(current_enemy_name)
-			var enemy_key = "%s_%d" % [base_name, current_enemy_level]
-			if known_enemy_hp.has(enemy_key):
-				target_hp = known_enemy_hp[enemy_key]
-			else:
-				# Try to estimate from kills at other levels
-				var estimated = estimate_enemy_hp(base_name, current_enemy_level)
-				if estimated > 0:
-					target_hp = estimated
-					using_estimated_hp = true
+			# Try to estimate from kills at other levels
+			var estimated = estimate_enemy_hp(base_name, current_enemy_level)
+			if estimated > 0:
+				target_hp = estimated
+				using_estimated_hp = true
 
 	if ability == "magic_bolt" and target_hp > 0:
 		# Simulate Magic Bolt damage formula to suggest accurate mana amount
@@ -11321,11 +11318,9 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	var fill = bar_container.get_node("Fill")
 	var hp_label = bar_container.get_node("HPLabel")
 
-	# Priority order for HP display:
-	# 1. Analyze revealed actual HP this combat (most accurate)
-	# 2. Server-sent actual HP (player knows this monster type, server sends real values)
-	# 3. Discovery system: player's knowledge from previous kills (damage dealt)
-	# 4. Unknown: show "???"
+	# DISCOVERY SYSTEM: Player discovers HP by defeating monsters, not from server.
+	# Server actual HP is intentionally ignored - players only know what they've observed.
+	# Only exception: Analyze ability reveals actual HP for the current combat.
 
 	# Check if Analyze revealed actual HP this combat
 	if analyze_revealed_max_hp > 0:
@@ -11340,16 +11335,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 			hp_label.text = "%d/%d" % [current_hp, analyze_revealed_max_hp]
 		return
 
-	# Server sends actual HP when player knows this monster type (not -1)
-	if actual_hp >= 0 and actual_max_hp > 0:
-		var percent = (float(actual_hp) / float(actual_max_hp)) * 100.0
-		if fill:
-			animate_hp_bar_change(fill, percent, false)
-		if hp_label:
-			hp_label.text = "%d/%d" % [actual_hp, actual_max_hp]
-		return
-
-	# Fall back to player's discovered knowledge (from previous kills)
+	# Use player's discovered knowledge (from previous kills - damage dealt)
 	var suspected_max = 0
 	var is_estimate = false
 	if known_enemy_hp.has(enemy_key):
@@ -11396,17 +11382,13 @@ func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: i
 	var enemy_key = "%s_%d" % [base_name, enemy_level]
 	var hp_to_store: int
 
-	# Priority: Analyze > Server actual HP > damage dealt (discovery)
+	# If Analyze revealed actual max HP, use that (player learned the true HP)
 	if analyze_revealed_max_hp > 0:
-		# Analyze revealed true HP - most accurate
 		hp_to_store = analyze_revealed_max_hp
-		known_enemy_hp[enemy_key] = hp_to_store
-	elif current_enemy_max_hp > 0:
-		# Server sent actual max HP (player knows this monster type)
-		hp_to_store = current_enemy_max_hp
+		# Analyze gives exact HP, so always store it (replaces any previous knowledge)
 		known_enemy_hp[enemy_key] = hp_to_store
 	else:
-		# Normal discovery: known HP = damage dealt
+		# Normal discovery: known HP = damage dealt (includes overkill)
 		# Known HP can only go DOWN - if player defeats with less damage, we learn actual HP is lower
 		hp_to_store = total_damage
 		if known_enemy_hp.has(enemy_key):
@@ -11421,8 +11403,8 @@ func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: i
 		known_enemy_hp[monster_key] = {}
 
 	# Same logic for the level-based tracking
-	if analyze_revealed_max_hp > 0 or current_enemy_max_hp > 0:
-		# Exact HP known (Analyze or server-sent)
+	if analyze_revealed_max_hp > 0:
+		# Analyze gives exact HP
 		known_enemy_hp[monster_key][enemy_level] = hp_to_store
 	elif known_enemy_hp[monster_key].has(enemy_level):
 		var old_known = known_enemy_hp[monster_key][enemy_level]
