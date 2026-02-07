@@ -1744,7 +1744,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "lock_item"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key

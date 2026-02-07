@@ -1151,7 +1151,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
 				monster.current_hp -= lightning_damage
 				monster.current_hp = max(0, monster.current_hp)
-				messages.append("[color=#00FFFF]âš¡ Shocking strikes for %d bonus damage![/color]" % lightning_damage)
+				messages.append("[color=#00FFFF]>> Shocking strikes for %d bonus damage![/color]" % lightning_damage)
 
 		# Execute proc (bonus damage when enemy below 30% HP)
 		if procs.execute.chance > 0 and procs.execute.value > 0:
@@ -1242,7 +1242,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var xp_tier_bonus = 1.0
 	if xp_tier_diff > 0:
 		xp_tier_bonus = pow(2.0, xp_tier_diff)  # 2x per tier: T+1=2x, T+2=4x, T+3=8x
-		messages.append("[color=#FF00FF]â˜… TIER CHALLENGE: +%dx XP bonus! â˜…[/color]" % int(xp_tier_bonus))
+		messages.append("[color=#FF00FF]* TIER CHALLENGE: +%dx XP bonus! *[/color]" % int(xp_tier_bonus))
 
 	# Small level difference bonus (within same tier)
 	# +2% per level difference, capped at 50% (same-tier fights shouldn't give huge bonuses)
@@ -1302,25 +1302,25 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		character.increment_companion_battles()
 		if companion_result.leveled_up:
 			var companion = character.get_active_companion()
-			messages.append("[color=#00FFFF]âœ§ %s leveled up to %d! âœ§[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
+			messages.append("[color=#00FFFF]* %s leveled up to %d! *[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
 			# Notify of unlocked abilities
 			for ability_level in companion_result.abilities_unlocked:
 				if drop_tables:
 					var tier = companion.get("tier", 1)
 					var ability = drop_tables.get_companion_ability(tier, ability_level)
 					if not ability.is_empty():
-						messages.append("[color=#FFD700]â˜… New ability unlocked: %s! â˜…[/color]" % ability.get("name", "Unknown"))
+						messages.append("[color=#FFD700]* New ability unlocked: %s! *[/color]" % ability.get("name", "Unknown"))
 
 	# Normal gem drops (from high-level monsters)
 	var gems_earned = roll_gem_drops(monster, character)
 	if gems_earned > 0:
 		character.gems += gems_earned
-		messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] â—† âœ¦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+		messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 	# Gambit kill bonus: +1 gem
 	if gambit_kill:
 		character.gems += 1
-		messages.append("[color=#FFD700]âœ¦ Gambit bonus: +1 gem! âœ¦[/color]")
+		messages.append("[color=#FFD700]+ Gambit bonus: +1 gem! +[/color]")
 
 	# Gem Bearer bonus (separate from normal drops, scales with monster level)
 	if ABILITY_GEM_BEARER in abilities:
@@ -1348,7 +1348,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		var bearer_gems = randi_range(2, 5) + tier_bonus
 		character.gems += bearer_gems
 		gems_earned += bearer_gems
-		messages.append("[color=#00FFFF]âœ§ The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] âœ§[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
+		messages.append("[color=#00FFFF]* The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] *[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
 
 	# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
@@ -1365,7 +1365,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(weapon)
 		else:
-			messages.append("[color=#AA6666]âœ— The Weapon Master's weapon shatters on death...[/color]")
+			messages.append("[color=#AA6666]- The Weapon Master's weapon shatters on death...[/color]")
 
 	# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
@@ -1382,7 +1382,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(shield)
 		else:
-			messages.append("[color=#AA6666]âœ— The Shield Guardian's shield crumbles to dust...[/color]")
+			messages.append("[color=#AA6666]- The Shield Guardian's shield crumbles to dust...[/color]")
 
 	# Arcane Hoarder ability: 35% chance to drop mage gear
 	if ABILITY_ARCANE_HOARDER in abilities and drop_tables != null:
@@ -1399,7 +1399,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(mage_item)
 		else:
-			messages.append("[color=#AA66AA]âœ— The Arcane Hoarder's magic dissipates...[/color]")
+			messages.append("[color=#AA66AA]- The Arcane Hoarder's magic dissipates...[/color]")
 
 	# Cunning Prey ability: 35% chance to drop trickster gear
 	if ABILITY_CUNNING_PREY in abilities and drop_tables != null:
@@ -1416,7 +1416,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(trick_item)
 		else:
-			messages.append("[color=#66AA66]âœ— The Cunning Prey's gear vanishes into shadow...[/color]")
+			messages.append("[color=#66AA66]- The Cunning Prey's gear vanishes into shadow...[/color]")
 
 	# Warrior Hoarder ability: 35% chance to drop warrior gear
 	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
@@ -1433,7 +1433,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(war_item)
 		else:
-			messages.append("[color=#AA8866]âœ— The Warrior Hoarder's armor crumbles...[/color]")
+			messages.append("[color=#AA8866]- The Warrior Hoarder's armor crumbles...[/color]")
 
 	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
@@ -1442,7 +1442,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var wish_options = generate_wish_options(character, monster.level, monster_lethality)
 			combat["wish_pending"] = true
 			combat["wish_options"] = wish_options
-			messages.append("[color=#FFD700]â˜… The %s offers you a WISH! â˜…[/color]" % monster.name)
+			messages.append("[color=#FFD700]* The %s offers you a WISH! *[/color]" % monster.name)
 			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 		else:
 			messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
@@ -1456,18 +1456,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var trophy_desc = trophy.get("description", "")
 			var is_first = not character.has_trophy(trophy_id)
 			var trophy_count = character.add_trophy(trophy_id, monster.name, monster.level)
-			messages.append("[color=#A335EE]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+			messages.append("[color=#A335EE]===========================================================================[/color]")
 			if is_first:
-				messages.append("[color=#A335EE]â˜…â˜…â˜… NEW TROPHY COLLECTED! â˜…â˜…â˜…[/color]")
+				messages.append("[color=#A335EE]*** NEW TROPHY COLLECTED! ***[/color]")
 			else:
-				messages.append("[color=#A335EE]â˜… TROPHY DROP! â˜…[/color]")
+				messages.append("[color=#A335EE]* TROPHY DROP! *[/color]")
 			messages.append("[color=#FFD700]%s[/color]" % trophy_name)
 			messages.append("[color=#808080]%s[/color]" % trophy_desc)
 			if trophy_count > 1:
 				messages.append("[color=#00FF00]Trophy added! (x%d of this type, %d total)[/color]" % [trophy_count, character.get_trophy_count()])
 			else:
 				messages.append("[color=#00FF00]Trophy added to your collection! (%d total)[/color]" % character.get_trophy_count())
-			messages.append("[color=#A335EE]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+			messages.append("[color=#A335EE]===========================================================================[/color]")
 
 	# Soul Gem drops - companions (Tier 7+)
 	if drop_tables != null:
@@ -1480,15 +1480,15 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 				var gem_desc = soul_gem.get("description", "")
 				var gem_bonuses = soul_gem.get("bonuses", {})
 				if character.has_soul_gem(gem_id):
-					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
-					messages.append("[color=#00FFFF]âœ§ SOUL GEM DROP: %s âœ§[/color]" % gem_name)
+					messages.append("[color=#00FFFF]===========================================================================[/color]")
+					messages.append("[color=#00FFFF]* SOUL GEM DROP: %s *[/color]" % gem_name)
 					messages.append("[color=#808080]%s[/color]" % gem_desc)
 					messages.append("[color=#FFFF00](You already have this soul gem!)[/color]")
-					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+					messages.append("[color=#00FFFF]===========================================================================[/color]")
 				else:
 					character.add_soul_gem(gem_id, gem_name, gem_bonuses)
-					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
-					messages.append("[color=#00FFFF]âœ§âœ§âœ§ NEW SOUL GEM ACQUIRED! âœ§âœ§âœ§[/color]")
+					messages.append("[color=#00FFFF]===========================================================================[/color]")
+					messages.append("[color=#00FFFF]*** NEW SOUL GEM ACQUIRED! ***[/color]")
 					messages.append("[color=#FFD700]%s[/color]" % gem_name)
 					messages.append("[color=#808080]%s[/color]" % gem_desc)
 					# Show bonuses
@@ -1505,16 +1505,16 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 							"lifesteal": bonus_text.append("+%d%% lifesteal" % val)
 					messages.append("[color=#00FF00]Bonuses: %s[/color]" % ", ".join(bonus_text))
 					messages.append("[color=#808080]Use /companion to activate this companion![/color]")
-					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+					messages.append("[color=#00FFFF]===========================================================================[/color]")
 
 	# Title item drops (Jarl's Ring, Unforged Crown)
 	var title_item = roll_title_item_drop(monster.level)
 	if not title_item.is_empty():
-		messages.append("[color=#FFD700]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
-		messages.append("[color=#FFD700]â˜…â˜…â˜… A LEGENDARY TITLE ITEM DROPS! â˜…â˜…â˜…[/color]")
+		messages.append("[color=#FFD700]===========================================================================[/color]")
+		messages.append("[color=#FFD700]*** A LEGENDARY TITLE ITEM DROPS! ***[/color]")
 		messages.append("[color=#C0C0C0]%s[/color]" % title_item.name)
 		messages.append("[color=#808080]%s[/color]" % title_item.description)
-		messages.append("[color=#FFD700]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+		messages.append("[color=#FFD700]===========================================================================[/color]")
 		if not combat.has("extra_drops"):
 			combat.extra_drops = []
 		combat.extra_drops.append(title_item)
@@ -1800,7 +1800,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		var xp_tier_bonus = 1.0
 		if tier_diff > 0:
 			xp_tier_bonus = pow(2.0, tier_diff)  # 2x per tier
-			messages.append("[color=#FF00FF]â˜… TIER CHALLENGE: +%dx XP bonus! â˜…[/color]" % int(xp_tier_bonus))
+			messages.append("[color=#FF00FF]* TIER CHALLENGE: +%dx XP bonus! *[/color]" % int(xp_tier_bonus))
 
 		# Small level difference bonus (within same tier)
 		if xp_level_diff > 0 and tier_diff == 0:
@@ -1823,13 +1823,13 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			var new_abilities = character.get_newly_unlocked_abilities(old_level, level_result.new_level)
 			if new_abilities.size() > 0:
 				messages.append("")
-				messages.append("[color=#00FFFF]â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—[/color]")
-				messages.append("[color=#00FFFF]â•‘[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+				messages.append("[color=#00FFFF]+======================================+[/color]")
+				messages.append("[color=#00FFFF]|[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
 				for ability in new_abilities:
 					var ability_type = "Universal" if ability.get("universal", false) else "Class"
-					messages.append("[color=#00FFFF]â•‘[/color]  [color=#00FF00]â˜…[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
-				messages.append("[color=#00FFFF]â•‘[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-				messages.append("[color=#00FFFF]â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+					messages.append("[color=#00FFFF]|[/color]  [color=#00FF00]*[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+				messages.append("[color=#00FFFF]|[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+				messages.append("[color=#00FFFF]+======================================+[/color]")
 
 		# Roll for item drops
 		var dropped_items = []
@@ -1860,7 +1860,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(weapon)
 				else:
-					messages.append("[color=#AA6666]âœ— The Weapon Master's weapon shatters on death...[/color]")
+					messages.append("[color=#AA6666]- The Weapon Master's weapon shatters on death...[/color]")
 
 			# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 			if ABILITY_SHIELD_BEARER in abilities:
@@ -1875,7 +1875,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(shield)
 				else:
-					messages.append("[color=#AA6666]âœ— The Shield Guardian's shield crumbles to dust...[/color]")
+					messages.append("[color=#AA6666]- The Shield Guardian's shield crumbles to dust...[/color]")
 
 			# Arcane Hoarder ability: 35% chance to drop mage gear
 			if ABILITY_ARCANE_HOARDER in abilities:
@@ -1890,7 +1890,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(mage_item)
 				else:
-					messages.append("[color=#AA66AA]âœ— The Arcane Hoarder's magic dissipates...[/color]")
+					messages.append("[color=#AA66AA]- The Arcane Hoarder's magic dissipates...[/color]")
 
 			# Cunning Prey ability: 35% chance to drop trickster gear
 			if ABILITY_CUNNING_PREY in abilities:
@@ -1905,7 +1905,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(trick_item)
 				else:
-					messages.append("[color=#66AA66]âœ— The Cunning Prey's gear vanishes into shadow...[/color]")
+					messages.append("[color=#66AA66]- The Cunning Prey's gear vanishes into shadow...[/color]")
 
 			# Warrior Hoarder ability: 35% chance to drop warrior gear
 			if ABILITY_WARRIOR_HOARDER in abilities:
@@ -1920,13 +1920,13 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(war_item)
 				else:
-					messages.append("[color=#AA8866]âœ— The Warrior Hoarder's armor crumbles...[/color]")
+					messages.append("[color=#AA8866]- The Warrior Hoarder's armor crumbles...[/color]")
 
 			# Roll for gem drops
 			gems_earned = roll_gem_drops(monster, character)
 			if gems_earned > 0:
 				character.gems += gems_earned
-				messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] â—† âœ¦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+				messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 		# Wish granter ability: 10% chance to offer a wish
 		if ABILITY_WISH_GRANTER in abilities:
@@ -1934,7 +1934,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				var monster_lethality = monster.get("lethality", 100)
 				wish_options = generate_wish_options(character, monster.level, monster_lethality)
 				wish_pending = true
-				messages.append("[color=#FFD700]â˜… The %s offers you a WISH! â˜…[/color]" % monster.name)
+				messages.append("[color=#FFD700]* The %s offers you a WISH! *[/color]" % monster.name)
 				messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 			else:
 				messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
@@ -2935,13 +2935,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					var new_abilities = character.get_newly_unlocked_abilities(heist_old_level, level_result.new_level)
 					if new_abilities.size() > 0:
 						messages.append("")
-						messages.append("[color=#00FFFF]â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—[/color]")
-						messages.append("[color=#00FFFF]â•‘[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+						messages.append("[color=#00FFFF]+======================================+[/color]")
+						messages.append("[color=#00FFFF]|[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
 						for ability in new_abilities:
 							var ability_type = "Universal" if ability.get("universal", false) else "Class"
-							messages.append("[color=#00FFFF]â•‘[/color]  [color=#00FF00]â˜…[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
-						messages.append("[color=#00FFFF]â•‘[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-						messages.append("[color=#00FFFF]â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+							messages.append("[color=#00FFFF]|[/color]  [color=#00FF00]*[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+						messages.append("[color=#00FFFF]|[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+						messages.append("[color=#00FFFF]+======================================+[/color]")
 
 				# Roll for item drops (normal chance, was doubled)
 				var dropped_items = []
@@ -2956,7 +2956,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					gems_earned = roll_gem_drops(monster, character)
 					if gems_earned > 0:
 						character.gems += gems_earned
-						messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] â—† âœ¦[/color]" % gems_earned)
+						messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] + +[/color]" % gems_earned)
 
 				return {
 					"success": true,
@@ -4493,25 +4493,25 @@ func generate_encounter_text(monster: Dictionary) -> String:
 	if ABILITY_WISH_GRANTER in abilities:
 		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
 	if ABILITY_WEAPON_MASTER in abilities:
-		notable_abilities.append("[color=#FF8000]â˜… WEAPON MASTER â˜…[/color]")
+		notable_abilities.append("[color=#FF8000]* WEAPON MASTER *[/color]")
 	if ABILITY_SHIELD_BEARER in abilities:
-		notable_abilities.append("[color=#00FFFF]â˜… SHIELD GUARDIAN â˜…[/color]")
+		notable_abilities.append("[color=#00FFFF]* SHIELD GUARDIAN *[/color]")
 	if ABILITY_CORROSIVE in abilities:
-		notable_abilities.append("[color=#FFFF00]âš  CORROSIVE âš [/color]")
+		notable_abilities.append("[color=#FFFF00]! CORROSIVE ![/color]")
 	if ABILITY_SUNDER in abilities:
-		notable_abilities.append("[color=#FF4444]âš  SUNDERING âš [/color]")
+		notable_abilities.append("[color=#FF4444]! SUNDERING ![/color]")
 	if ABILITY_CHARM in abilities:
 		notable_abilities.append("[color=#FF00FF]Enchanting[/color]")
 	if ABILITY_GOLD_STEAL in abilities:
-		notable_abilities.append("[color=#FFD700]âš  THIEF âš [/color]")
+		notable_abilities.append("[color=#FFD700]! THIEF ![/color]")
 	if ABILITY_BUFF_DESTROY in abilities:
 		notable_abilities.append("[color=#808080]Dispeller[/color]")
 	if ABILITY_SHIELD_SHATTER in abilities:
 		notable_abilities.append("[color=#FF4444]Shield Breaker[/color]")
 	if ABILITY_XP_STEAL in abilities:
-		notable_abilities.append("[color=#FF00FF]âš  XP DRAINER âš [/color]")
+		notable_abilities.append("[color=#FF00FF]! XP DRAINER ![/color]")
 	if ABILITY_ITEM_STEAL in abilities:
-		notable_abilities.append("[color=#FF0000]âš  PICKPOCKET âš [/color]")
+		notable_abilities.append("[color=#FF0000]! PICKPOCKET ![/color]")
 	if ABILITY_DISGUISE in abilities:
 		notable_abilities.append("[color=#808080]Deceptive[/color]")
 	if ABILITY_FLEE_ATTACK in abilities:
@@ -4785,7 +4785,7 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 	match wish.type:
 		"gems":
 			character.gems += wish.amount
-			return "[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] â—† âœ¦[/color]" % wish.amount
+			return "[color=#00FFFF]+ + [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] + +[/color]" % wish.amount
 		"gold":
 			character.gold += wish.amount
 			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount
