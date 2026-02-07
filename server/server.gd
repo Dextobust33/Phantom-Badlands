@@ -2988,7 +2988,7 @@ func send_location_update(peer_id: int):
 				current_wood_tier = gathering_node.tier
 
 	# Check if player is at a dungeon entrance
-	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y)
+	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y, peer_id)
 	var at_dungeon = not dungeon_entrance.is_empty()
 
 	# Check if player is at a corpse
@@ -4117,13 +4117,12 @@ func check_healer_encounter(peer_id: int) -> bool:
 
 	var character = characters[peer_id]
 
-	# 4% encounter rate
-	if randf() >= 0.04:
+	# 12% encounter rate (tripled from 4%)
+	if randf() >= 0.12:
 		return false
 
-	# Only trigger if HP < 80%
-	var hp_percent = float(character.current_hp) / float(character.max_hp)
-	if hp_percent >= 0.80:
+	# Only trigger if player has a debuff the healer can cure
+	if character.persistent_buffs.size() == 0:
 		return false
 
 	# Calculate heal costs based on player level (reduced 10% for economy balance)
@@ -9259,6 +9258,10 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	# First check if provided instance_id is valid
 	if provided_instance_id != "" and active_dungeons.has(provided_instance_id):
+		var inst = active_dungeons[provided_instance_id]
+		if inst.has("owner_peer_id") and inst.owner_peer_id != peer_id:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]This dungeon belongs to another player. You cannot enter it.[/color]"})
+			return
 		instance_id = provided_instance_id
 	else:
 		# Check if player has a personal dungeon instance for an active quest
@@ -9789,13 +9792,16 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 
 	return instance_id
 
-func _get_dungeon_at_location(x: int, y: int) -> Dictionary:
+func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 	"""Check if there's a dungeon entrance at the given coordinates.
-	Excludes completed dungeons (waiting to despawn)."""
+	Excludes completed dungeons and other players' personal quest dungeons."""
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
 		# Skip completed dungeons - they're waiting to despawn
 		if instance.get("completed_at", 0) > 0:
+			continue
+		# Skip other players' personal quest dungeons
+		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
 			continue
 		if instance.world_x == x and instance.world_y == y:
 			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)

@@ -14381,11 +14381,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.80 changes
-	display_game("[color=#00FF00]v0.9.80[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ QUALITY OF LIFE[/color]")
-	display_game("  • Settings now accessible from Sanctuary screen (UI scale, sound, keybinds)")
-	display_game("  • Corpses no longer spawn on trading post tiles (were unreachable)")
+	# v0.9.81 changes
+	display_game("[color=#00FF00]v0.9.81[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ FIXES & BALANCE[/color]")
+	display_game("  • Paladin Divine Favor no longer triggers healing sound every round")
+	display_game("  • Quest dungeons are now personal — other players cannot enter yours")
+	display_game("  • Wandering Healer: 3× more common, now only appears when you have a debuff")
+	display_game("  • Settings now accessible from Sanctuary screen")
+	display_game("  • Corpses no longer spawn on trading post tiles")
 	display_game("")
 
 	# v0.9.78 changes
@@ -16581,11 +16584,10 @@ func _trigger_combat_sounds(msg: String):
 		play_fire2_sound()
 		return
 
-	# Healing detection
-	if ("HEAL" in upper_msg or "RESTORE" in upper_msg) and "+" in msg:
-		play_player_healed_sound()
-		return
-	if "DIVINE FAVOR" in upper_msg and ("HEAL" in upper_msg or "+" in msg):
+	# Healing detection (skip Paladin passive - too frequent/noisy)
+	if "DIVINE FAVOR" in upper_msg:
+		pass  # No sound for passive class regen
+	elif ("HEAL" in upper_msg or "RESTORE" in upper_msg) and "+" in msg:
 		play_player_healed_sound()
 		return
 
