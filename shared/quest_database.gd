@@ -38,11 +38,11 @@ const QUESTS = {
 	"haven_goblin_slayer": {
 		"id": "haven_goblin_slayer",
 		"name": "Goblin Slayer",
-		"description": "The goblins near Haven have become a nuisance. Kill 10 Goblins.",
+		"description": "The goblins near Haven have become a nuisance. Kill %d Goblins.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "haven",
 		"monster_type": "Goblin",
-		"target": 10,
+		"target": 5, "target_min": 3, "target_max": 6,
 		"rewards": {"xp": 100, "gold": 50, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -50,11 +50,11 @@ const QUESTS = {
 	"haven_rat_catcher": {
 		"id": "haven_rat_catcher",
 		"name": "Rat Catcher",
-		"description": "Giant Rats have infested the cellars. Exterminate 8 Giant Rats.",
+		"description": "Giant Rats have infested the cellars. Exterminate %d Giant Rats.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "haven",
 		"monster_type": "Giant Rat",
-		"target": 8,
+		"target": 4, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 60, "gold": 30, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -62,11 +62,11 @@ const QUESTS = {
 	"haven_wolf_hunt": {
 		"id": "haven_wolf_hunt",
 		"name": "Wolf Hunt",
-		"description": "Wolves are threatening travelers. Hunt down 12 Wolves.",
+		"description": "Wolves are threatening travelers. Hunt down %d Wolves.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "haven",
 		"monster_type": "Wolf",
-		"target": 12,
+		"target": 5, "target_min": 4, "target_max": 7,
 		"rewards": {"xp": 120, "gold": 60, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -74,11 +74,11 @@ const QUESTS = {
 	"haven_skeleton_purge": {
 		"id": "haven_skeleton_purge",
 		"name": "Skeleton Purge",
-		"description": "Undead have risen from the old cemetery. Destroy 15 Skeletons.",
+		"description": "Undead have risen from the old cemetery. Destroy %d Skeletons.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "haven",
 		"monster_type": "Skeleton",
-		"target": 15,
+		"target": 6, "target_min": 5, "target_max": 8,
 		"rewards": {"xp": 150, "gold": 75, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -179,11 +179,11 @@ const QUESTS = {
 	"crossroads_orc_bounty": {
 		"id": "crossroads_orc_bounty",
 		"name": "Orc Bounty",
-		"description": "Orcs are raiding caravans. Slay 10 Orcs for the bounty.",
+		"description": "Orcs are raiding caravans. Slay %d Orcs for the bounty.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "crossroads",
 		"monster_type": "Orc",
-		"target": 10,
+		"target": 5, "target_min": 3, "target_max": 6,
 		"rewards": {"xp": 200, "gold": 100, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -191,11 +191,11 @@ const QUESTS = {
 	"crossroads_spider_nest": {
 		"id": "crossroads_spider_nest",
 		"name": "Spider Nest",
-		"description": "Giant Spiders have nested near the roads. Kill 12 Giant Spiders.",
+		"description": "Giant Spiders have nested near the roads. Kill %d Giant Spiders.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "crossroads",
 		"monster_type": "Giant Spider",
-		"target": 12,
+		"target": 5, "target_min": 4, "target_max": 7,
 		"rewards": {"xp": 180, "gold": 90, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -203,11 +203,11 @@ const QUESTS = {
 	"crossroads_zombie_outbreak": {
 		"id": "crossroads_zombie_outbreak",
 		"name": "Zombie Outbreak",
-		"description": "The dead are walking! Put down 15 Zombies.",
+		"description": "The dead are walking! Put down %d Zombies.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "crossroads",
 		"monster_type": "Zombie",
-		"target": 15,
+		"target": 6, "target_min": 5, "target_max": 8,
 		"rewards": {"xp": 220, "gold": 110, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -329,12 +329,12 @@ const QUESTS = {
 	},
 	"east_market_crossroads": {
 		"id": "east_market_crossroads",
-		"name": "Road to Crossroads",
-		"description": "Visit Crossroads to establish a trade route.",
+		"name": "Eastern Frontier",
+		"description": "Venture to Northeast Farm at (40, 40) to open new trade routes.",
 		"type": QuestType.EXPLORATION,
 		"trading_post": "east_market",
 		"target": 1,
-		"destinations": ["crossroads"],
+		"destinations": ["northeast_farm"],
 		"rewards": {"xp": 75, "gold": 40, "gems": 0},
 		"is_daily": false,
 		"prerequisite": "east_market_supply"
@@ -365,12 +365,12 @@ const QUESTS = {
 	},
 	"west_shrine_pilgrimage": {
 		"id": "west_shrine_pilgrimage",
-		"name": "Pilgrimage",
-		"description": "Visit Haven to complete your pilgrimage.",
+		"name": "Western Pilgrimage",
+		"description": "Complete your pilgrimage by visiting Northwest Mill at (-40, 40).",
 		"type": QuestType.EXPLORATION,
 		"trading_post": "west_shrine",
 		"target": 1,
-		"destinations": ["haven"],
+		"destinations": ["northwest_mill"],
 		"rewards": {"xp": 50, "gold": 25, "gems": 0},
 		"is_daily": false,
 		"prerequisite": "west_shrine_cleanse"
@@ -392,11 +392,11 @@ const QUESTS = {
 	"frostgate_troll_slayer": {
 		"id": "frostgate_troll_slayer",
 		"name": "Troll Slayer",
-		"description": "Trolls have been attacking travelers. Eliminate 8 Trolls.",
+		"description": "Trolls have been attacking travelers. Eliminate %d Trolls.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "frostgate",
 		"monster_type": "Troll",
-		"target": 8,
+		"target": 4, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 400, "gold": 200, "gems": 1},
 		"is_daily": false,
 		"prerequisite": ""
@@ -404,11 +404,11 @@ const QUESTS = {
 	"frostgate_wyvern_hunt": {
 		"id": "frostgate_wyvern_hunt",
 		"name": "Wyvern Hunt",
-		"description": "Wyverns threaten the skies. Bring down 6 Wyverns.",
+		"description": "Wyverns threaten the skies. Bring down %d Wyverns.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "frostgate",
 		"monster_type": "Wyvern",
-		"target": 6,
+		"target": 4, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 500, "gold": 250, "gems": 1},
 		"is_daily": false,
 		"prerequisite": ""
@@ -416,11 +416,11 @@ const QUESTS = {
 	"frostgate_minotaur_maze": {
 		"id": "frostgate_minotaur_maze",
 		"name": "Minotaur Maze",
-		"description": "Minotaurs guard ancient ruins. Defeat 5 Minotaurs.",
+		"description": "Minotaurs guard ancient ruins. Defeat %d Minotaurs.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "frostgate",
 		"monster_type": "Minotaur",
-		"target": 5,
+		"target": 3, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 450, "gold": 225, "gems": 1},
 		"is_daily": false,
 		"prerequisite": ""
@@ -428,11 +428,11 @@ const QUESTS = {
 	"frostgate_know_world": {
 		"id": "frostgate_know_world",
 		"name": "Know Your World",
-		"description": "Visit both Haven and Crossroads Trading Posts to learn the lay of the land.",
+		"description": "Explore the frontier by visiting Southport at (0, -150) and Southeast Outpost at (120, -120).",
 		"type": QuestType.EXPLORATION,
 		"trading_post": "frostgate",
 		"target": 2,  # Visit 2 locations
-		"destinations": ["haven", "crossroads"],  # Trading post IDs to visit
+		"destinations": ["southport", "southeast_outpost"],  # Trading post IDs to visit
 		"rewards": {"xp": 200, "gold": 100, "gems": 0},
 		"is_daily": false,
 		"prerequisite": ""
@@ -477,11 +477,11 @@ const QUESTS = {
 	"eastwatch_dragon_wyrmling": {
 		"id": "eastwatch_dragon_wyrmling",
 		"name": "Dragon Wyrmling Hunt",
-		"description": "Young dragons threaten the east. Slay 5 Dragon Wyrmlings.",
+		"description": "Young dragons threaten the east. Slay %d Dragon Wyrmlings.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "eastwatch",
 		"monster_type": "Dragon Wyrmling",
-		"target": 5,
+		"target": 3, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 800, "gold": 400, "gems": 2},
 		"is_daily": false,
 		"prerequisite": ""
@@ -489,11 +489,11 @@ const QUESTS = {
 	"eastwatch_demon_purge": {
 		"id": "eastwatch_demon_purge",
 		"name": "Demon Purge",
-		"description": "Demons have breached into our world. Banish 8 Demons.",
+		"description": "Demons have breached into our world. Banish %d Demons.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "eastwatch",
 		"monster_type": "Demon",
-		"target": 8,
+		"target": 5, "target_min": 4, "target_max": 6,
 		"rewards": {"xp": 900, "gold": 450, "gems": 2},
 		"is_daily": false,
 		"prerequisite": ""
@@ -501,11 +501,11 @@ const QUESTS = {
 	"eastwatch_vampire_hunt": {
 		"id": "eastwatch_vampire_hunt",
 		"name": "Vampire Hunt",
-		"description": "Vampires stalk the night. Destroy 6 Vampires before dawn.",
+		"description": "Vampires stalk the night. Destroy %d Vampires before dawn.",
 		"type": QuestType.KILL_TYPE,
 		"trading_post": "eastwatch",
 		"monster_type": "Vampire",
-		"target": 6,
+		"target": 4, "target_min": 3, "target_max": 5,
 		"rewards": {"xp": 850, "gold": 425, "gems": 2},
 		"is_daily": false,
 		"prerequisite": ""
@@ -821,6 +821,14 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 	For static quests with player_level provided, also applies requirement scaling to match display."""
 	if QUESTS.has(quest_id):
 		var quest = QUESTS[quest_id].duplicate(true)
+		# Randomize target if quest has a range
+		if quest.has("target_min") and quest.has("target_max"):
+			var rng = RandomNumberGenerator.new()
+			rng.seed = hash(quest_id + str(player_level))
+			quest["target"] = rng.randi_range(quest.target_min, quest.target_max)
+		# Format description with target count if it has %d placeholder
+		if quest.has("description") and "%d" in quest.description:
+			quest.description = quest.description % quest.target
 		# Scale rewards based on trading post area level
 		var area_level = _get_area_level_for_post(quest.trading_post)
 		quest = _scale_quest_rewards(quest, area_level)

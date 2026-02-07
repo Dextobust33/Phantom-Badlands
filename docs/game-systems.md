@@ -636,7 +636,7 @@ The final pilgrimage stage is a gauntlet of 10 consecutive Tier 9 boss fights.
 
 Roaming tax collectors take gold from players.
 
-**Trigger:** 5% chance per movement when carrying 100+ gold
+**Trigger:** 5% chance per movement when carrying 100+ gold. Tax collector encounter prevents other encounters (merchant/blacksmith/healer) on the same step.
 
 **Tax Rate:** 8% of current gold (minimum 10g)
 

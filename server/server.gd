@@ -1666,6 +1666,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check for tax collector encounter (before trading post - can happen anywhere)
 	if check_tax_collector_encounter(peer_id):
 		send_character_update(peer_id)  # Update gold display
+		return  # Don't stack encounters with tax collector
 
 	# Check for wandering blacksmith encounter (3% when player has damaged gear)
 	if check_blacksmith_encounter(peer_id):
@@ -2429,6 +2430,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var character = characters[peer_id]
 			var was_saved = _check_death_saves_in_combat(peer_id, character)
 
+			# Extract combat data BEFORE end_combat erases it
+			var combat_data = combat_mgr.get_combat_summary(peer_id)
+
 			# End combat either way - player escapes or dies
 			combat_mgr.end_combat(peer_id, false)
 			if pending_flock_drops.has(peer_id):
@@ -2449,7 +2453,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				send_location_update(peer_id)
 			else:
 				# Actually dead - handle permadeath
-				handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
+				handle_permadeath(peer_id, result.get("monster_name", "Unknown"), combat_data)
 	else:
 		# Combat continues - send updated state
 		send_to_peer(peer_id, {
@@ -2482,6 +2486,9 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 			var character = characters[peer_id]
 			var was_saved = _check_death_saves_in_combat(peer_id, character)
 
+			# Extract combat data BEFORE end_combat erases it
+			var combat_data = combat_mgr.get_combat_summary(peer_id)
+
 			# End combat either way
 			combat_mgr.end_combat(peer_id, false)
 			if pending_flock_drops.has(peer_id):
@@ -2502,7 +2509,7 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 				send_location_update(peer_id)
 			else:
 				# Actually dead - handle permadeath
-				handle_permadeath(peer_id, result.get("monster_name", "Unknown"))
+				handle_permadeath(peer_id, result.get("monster_name", "Unknown"), combat_data)
 	else:
 		# Combat continues - send updated state
 		send_to_peer(peer_id, {
@@ -2755,7 +2762,7 @@ func _check_death_saves_in_combat(peer_id: int, character: Character) -> bool:
 
 # ===== PERMADEATH =====
 
-func handle_permadeath(peer_id: int, cause_of_death: String):
+func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictionary = {}):
 	"""Handle character death - add to leaderboard and delete"""
 	if not characters.has(peer_id):
 		return
@@ -2859,7 +2866,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 	# Award baddie points to house before deleting character (need value for permadeath message)
 	var baddie_points_earned = _award_baddie_points_on_death(peer_id, character, account_id, cause_of_death)
 
-	# Send permadeath message to the player who died
+	# Send enriched permadeath message with full character snapshot
 	send_to_peer(peer_id, {
 		"type": "permadeath",
 		"character_name": character.name,
@@ -2868,7 +2875,31 @@ func handle_permadeath(peer_id: int, cause_of_death: String):
 		"cause_of_death": cause_of_death,
 		"leaderboard_rank": rank,
 		"baddie_points_earned": baddie_points_earned,
-		"message": "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death]
+		"message": "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death],
+		# Character snapshot
+		"race": character.race,
+		"class_type": character.class_type,
+		"stats": {
+			"strength": character.strength,
+			"constitution": character.constitution,
+			"dexterity": character.dexterity,
+			"intelligence": character.intelligence,
+			"wisdom": character.wisdom,
+			"wits": character.wits
+		},
+		"equipped": character.equipped.duplicate(true),
+		"gold": character.gold,
+		"gems": character.gems,
+		"monsters_killed": character.monsters_killed,
+		"active_companion": character.get_active_companion(),
+		"collected_companions": character.get_collected_companions(),
+		"incubating_eggs": character.incubating_eggs.duplicate(true),
+		# Combat data from final fight
+		"combat_log": combat_data.get("combat_log", []),
+		"rounds_fought": combat_data.get("rounds", 0),
+		"monster_max_hp": combat_data.get("monster_max_hp", 0),
+		"total_damage_dealt": combat_data.get("total_damage_dealt", 0),
+		"total_damage_taken": combat_data.get("total_damage_taken", 0),
 	})
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
@@ -5424,18 +5455,39 @@ func trigger_merchant_encounter(peer_id: int):
 		services_text.append("[E] Gamble")
 	services_text.append("[Space] Leave")
 
-	# Build greeting with destination info
+	# Build greeting with destination info and voice text
 	var greeting = "[color=#FFD700]A %s approaches you![/color]\n" % merchant.name
+	var merchant_hash = merchant.get("hash", 0)
+	var voice_text = _get_merchant_voice(merchant_hash)
 	if merchant.has("destination") and merchant.destination != "":
 		greeting += "[color=#808080]\"I'm headed to %s, then on to %s. Care to trade?\"[/color]\n\n" % [merchant.destination, merchant.get("next_destination", "parts unknown")]
 	else:
-		greeting += "\"Greetings, traveler! Care to do business?\"\n\n"
+		greeting += voice_text + "\n\n"
 
 	send_to_peer(peer_id, {
 		"type": "merchant_start",
 		"merchant": merchant,
 		"message": greeting + "\n".join(services_text)
 	})
+
+func _get_merchant_voice(merchant_hash: int) -> String:
+	"""Get a voice line for a merchant based on their hash. Trader 21 (art index 20) gets a unique line."""
+	# 21 traders total, art_index = abs(hash) % 21
+	var art_index = abs(merchant_hash) % 21
+	if art_index == 20:
+		return "[color=#808080]*coughs and chokes on his own spit* \"Ah-- *hack* --excuse me! I swear I'm a professional. Now, what'll it be?\"[/color]"
+	var voices = [
+		"\"Greetings, traveler! Care to do business?\"",
+		"\"Fine wares for a fine adventurer!\"",
+		"\"You look like someone who appreciates quality goods.\"",
+		"\"Step right up! Best prices this side of the realm.\"",
+		"\"Ah, a customer! Let me show you what I've got.\"",
+		"\"Looking to buy or sell? Either way, you've come to the right place.\"",
+		"\"I've traveled far and wide to bring you these goods.\"",
+		"\"Don't be shy! Everything's for sale... for the right price.\"",
+	]
+	var voice_index = abs(merchant_hash / 3) % voices.size()
+	return "[color=#808080]%s[/color]" % voices[voice_index]
 
 func handle_merchant_sell(peer_id: int, message: Dictionary):
 	"""Handle selling an item to a merchant"""
@@ -7124,6 +7176,11 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			var dest_post_id = quest_id.replace("progression_to_", "")
 			if tp.id == dest_post_id:
 				can_turn_in = true
+		elif quest.get("type") == quest_db.QuestType.EXPLORATION:
+			# Exploration quests can be turned in at their destination too
+			var destinations = quest.get("destinations", [])
+			if tp.id in destinations:
+				can_turn_in = true
 
 		if not can_turn_in:
 			var required_tp = trading_post_db.TRADING_POSTS.get(quest.trading_post, {})
@@ -7136,6 +7193,19 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					"message": "Turn in this quest at %s (origin) or %s (destination)." % [
 						required_tp.get("name", "the quest giver"),
 						dest_tp.get("name", "the destination")
+					]
+				})
+			elif quest.get("type") == quest_db.QuestType.EXPLORATION:
+				var destinations = quest.get("destinations", [])
+				var dest_names = []
+				for d in destinations:
+					var dtp = trading_post_db.TRADING_POSTS.get(d, {})
+					dest_names.append(dtp.get("name", d.replace("_", " ").capitalize()))
+				send_to_peer(peer_id, {
+					"type": "error",
+					"message": "Turn in at %s or %s." % [
+						required_tp.get("name", "the quest giver"),
+						" / ".join(dest_names)
 					]
 				})
 			else:
@@ -7239,6 +7309,31 @@ func handle_get_quest_log(peer_id: int):
 			if not direction_text.is_empty():
 				extra_info[qid] = direction_text
 				description += "\n\n" + direction_text
+
+		# Add direction hints for exploration quests
+		if quest_type == quest_db.QuestType.EXPLORATION:
+			var destinations = quest.get("destinations", [])
+			if destinations.is_empty():
+				# Try to get from quest data
+				var player_level_e = quest.get("player_level_at_accept", 1)
+				var completed_at_post_e = quest.get("completed_at_post", 0)
+				var quest_data_e = quest_db.get_quest(qid, player_level_e, completed_at_post_e)
+				if quest_data_e:
+					destinations = quest_data_e.get("destinations", [])
+			if not destinations.is_empty():
+				var direction_parts = []
+				for dest_id in destinations:
+					# Check if already visited (progress tracking)
+					var visited_list = quest.get("visited", [])
+					var already_visited = dest_id in visited_list
+					if already_visited:
+						continue
+					var dest_coords = quest_db.TRADING_POST_COORDS.get(dest_id, Vector2i.ZERO)
+					var dest_name = dest_id.replace("_", " ").capitalize()
+					var dir_text = _get_direction_text(character.x, character.y, dest_coords.x, dest_coords.y)
+					direction_parts.append("[color=#00FFFF]%s[/color] at (%d, %d) — %s" % [dest_name, dest_coords.x, dest_coords.y, dir_text])
+				if not direction_parts.is_empty():
+					description += "\n\n" + "\n".join(direction_parts)
 
 		active_quests_info.append({
 			"id": qid,
@@ -11611,8 +11706,8 @@ func _send_trade_update(peer_id: int):
 				partner_items_data.append(partner_inventory[idx])
 		# Convert partner's companion indices to actual companion data
 		for idx in partner_trade.get("my_companions", []):
-			if idx >= 0 and idx < partner_char.companions.size():
-				partner_companions_data.append(partner_char.companions[idx])
+			if idx >= 0 and idx < partner_char.collected_companions.size():
+				partner_companions_data.append(partner_char.collected_companions[idx])
 		# Convert partner's egg indices to actual egg data
 		for idx in partner_trade.get("my_eggs", []):
 			if idx >= 0 and idx < partner_char.incubating_eggs.size():
@@ -11627,8 +11722,8 @@ func _send_trade_update(peer_id: int):
 		my_class = my_char.class_type
 		# Convert my companion indices to actual companion data
 		for idx in trade.get("my_companions", []):
-			if idx >= 0 and idx < my_char.companions.size():
-				my_companions_data.append(my_char.companions[idx])
+			if idx >= 0 and idx < my_char.collected_companions.size():
+				my_companions_data.append(my_char.collected_companions[idx])
 		# Convert my egg indices to actual egg data
 		for idx in trade.get("my_eggs", []):
 			if idx >= 0 and idx < my_char.incubating_eggs.size():
@@ -11860,7 +11955,7 @@ func handle_trade_add_companion(peer_id: int, message: Dictionary):
 		active_trades[trade.partner_id].my_ready = false
 
 	# Validate index
-	if index < 0 or index >= character.companions.size():
+	if index < 0 or index >= character.collected_companions.size():
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid companion index."})
 		return
 
@@ -11870,7 +11965,7 @@ func handle_trade_add_companion(peer_id: int, message: Dictionary):
 		return
 
 	# Check if this is the active companion
-	var companion = character.companions[index]
+	var companion = character.collected_companions[index]
 	if character.active_companion != null and character.active_companion.get("id") == companion.get("id"):
 		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
 		return
@@ -12038,8 +12133,8 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 		return
 
 	# Validate companion space (max 5 companions per character)
-	var companion_space_a = 5 - char_a.companions.size() + companion_indices_a.size()
-	var companion_space_b = 5 - char_b.companions.size() + companion_indices_b.size()
+	var companion_space_a = 5 - char_a.collected_companions.size() + companion_indices_a.size()
+	var companion_space_b = 5 - char_b.collected_companions.size() + companion_indices_b.size()
 	if companion_space_a < companion_indices_b.size():
 		_cancel_trade(peer_id_a, "%s doesn't have enough companion space." % char_a.name)
 		return
@@ -12071,15 +12166,15 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 
 	# Extract companions from A
 	for idx in companion_indices_a:
-		if idx >= 0 and idx < char_a.companions.size():
-			companions_from_a.append(char_a.companions[idx].duplicate(true))
-			char_a.companions.remove_at(idx)
+		if idx >= 0 and idx < char_a.collected_companions.size():
+			companions_from_a.append(char_a.collected_companions[idx].duplicate(true))
+			char_a.collected_companions.remove_at(idx)
 
 	# Extract companions from B
 	for idx in companion_indices_b:
-		if idx >= 0 and idx < char_b.companions.size():
-			companions_from_b.append(char_b.companions[idx].duplicate(true))
-			char_b.companions.remove_at(idx)
+		if idx >= 0 and idx < char_b.collected_companions.size():
+			companions_from_b.append(char_b.collected_companions[idx].duplicate(true))
+			char_b.collected_companions.remove_at(idx)
 
 	# Extract eggs from A
 	for idx in egg_indices_a:
@@ -12101,9 +12196,9 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 
 	# Give companions to each player
 	for companion in companions_from_b:
-		char_a.companions.append(companion)
+		char_a.collected_companions.append(companion)
 	for companion in companions_from_a:
-		char_b.companions.append(companion)
+		char_b.collected_companions.append(companion)
 
 	# Give eggs to each player
 	for egg in eggs_from_b:
@@ -12204,7 +12299,7 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 
 	# Select one random OTHER owned companion (not the active one)
 	var other_companions = []
-	for comp in character.companions:
+	for comp in character.collected_companions:
 		if comp.get("name", "") != character.active_companion.get("name", ""):
 			other_companions.append(comp)
 	if not other_companions.is_empty():

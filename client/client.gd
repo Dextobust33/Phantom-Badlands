@@ -2750,7 +2750,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
@@ -3400,6 +3400,137 @@ func show_death_panel(char_name: String, level: int, experience: int, cause: Str
 			stats_text += "\n[color=#808080]Return to your Sanctuary to spend them![/color]"
 		stats_text += "[/center]"
 		death_stats.text = stats_text
+
+func display_death_screen(message: Dictionary):
+	"""Render the enhanced death screen into game_output with full character eulogy."""
+	if not game_output:
+		return
+	game_output.clear()
+
+	var char_name = message.get("character_name", "Unknown")
+	var level = int(message.get("level", 1))
+	var experience = int(message.get("experience", 0))
+	var cause = message.get("cause_of_death", "Unknown")
+	var rank = int(message.get("leaderboard_rank", 0))
+	var baddie_points = int(message.get("baddie_points_earned", 0))
+	var race = message.get("race", "Unknown")
+	var class_type = message.get("class_type", "Unknown")
+	var stats = message.get("stats", {})
+	var equipped = message.get("equipped", {})
+	var gold = int(message.get("gold", 0))
+	var gems = int(message.get("gems", 0))
+	var kills = int(message.get("monsters_killed", 0))
+	var active_companion = message.get("active_companion", {})
+	var collected_companions = message.get("collected_companions", [])
+	var incubating_eggs = message.get("incubating_eggs", [])
+	var combat_log = message.get("combat_log", [])
+	var rounds_fought = int(message.get("rounds_fought", 0))
+	var monster_max_hp = int(message.get("monster_max_hp", 0))
+	var total_damage_dealt = int(message.get("total_damage_dealt", 0))
+	var total_damage_taken = int(message.get("total_damage_taken", 0))
+
+	# === HEADER ===
+	display_game("[color=#FF0000]═══════════════════════════════════════════════[/color]")
+	display_game("[center][color=#FF0000][b]%s HAS FALLEN[/b][/color][/center]" % char_name.to_upper())
+	display_game("[center][color=#FF6666]Slain by %s[/color][/center]" % cause)
+	display_game("[color=#FF0000]═══════════════════════════════════════════════[/color]")
+	display_game("")
+
+	# === CHARACTER INFO ===
+	display_game("[color=#FFD700]── Character ──[/color]")
+	display_game("%s %s  |  Level %d  |  XP: %s" % [race, class_type, level, format_number(experience)])
+	display_game("Gold: %s  |  Gems: %d  |  Kills: %s" % [format_number(gold), gems, format_number(kills)])
+	display_game("")
+
+	# === STATS ===
+	if not stats.is_empty():
+		display_game("[color=#FFD700]── Stats ──[/color]")
+		display_game("STR: %d  |  CON: %d  |  DEX: %d  |  INT: %d  |  WIS: %d  |  WIT: %d" % [
+			stats.get("strength", 0), stats.get("constitution", 0), stats.get("dexterity", 0),
+			stats.get("intelligence", 0), stats.get("wisdom", 0), stats.get("wits", 0)
+		])
+		display_game("")
+
+	# === EQUIPMENT ===
+	var has_equipment = false
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary and not item.is_empty():
+			has_equipment = true
+			break
+
+	if has_equipment:
+		display_game("[color=#FFD700]── Equipment ──[/color]")
+		for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+			var item = equipped.get(slot)
+			if item != null and item is Dictionary and not item.is_empty():
+				var item_name = item.get("name", "Unknown")
+				var rarity = item.get("rarity", "common")
+				var item_level = item.get("level", 1)
+				var color = _get_rarity_color(rarity)
+				display_game("  %s: [color=%s]%s[/color] (Lv %d)" % [slot.capitalize(), color, item_name, item_level])
+		display_game("")
+
+	# === COMPANIONS ===
+	var has_companions = not active_companion.is_empty() or collected_companions.size() > 0
+	if has_companions:
+		display_game("[color=#FFD700]── Companions ──[/color]")
+		if not active_companion.is_empty():
+			var comp_name = active_companion.get("name", "Unknown")
+			var comp_level = active_companion.get("level", 1)
+			var comp_variant = active_companion.get("variant", "")
+			var variant_text = " %s" % comp_variant if comp_variant != "" and comp_variant != "Normal" else ""
+			display_game("  [color=#00FF00][ACTIVE][/color] %s%s (Lv %d)" % [comp_name, variant_text, comp_level])
+		for comp in collected_companions:
+			if comp.get("name", "") == active_companion.get("name", "__none__") and comp.get("level", 0) == active_companion.get("level", -1):
+				continue  # Skip active companion (already shown)
+			var comp_name = comp.get("name", "Unknown")
+			var comp_level = comp.get("level", 1)
+			var comp_variant = comp.get("variant", "")
+			var variant_text = " %s" % comp_variant if comp_variant != "" and comp_variant != "Normal" else ""
+			display_game("  %s%s (Lv %d)" % [comp_name, variant_text, comp_level])
+		display_game("")
+
+	# === EGGS ===
+	if incubating_eggs.size() > 0:
+		display_game("[color=#FFD700]── Eggs ──[/color]")
+		for egg in incubating_eggs:
+			var egg_name = egg.get("name", "Unknown Egg")
+			var steps = egg.get("steps", 0)
+			var hatch_at = egg.get("hatch_steps", 500)
+			var frozen = egg.get("frozen", false)
+			var frozen_text = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
+			display_game("  %s (%d/%d steps)%s" % [egg_name, steps, hatch_at, frozen_text])
+		display_game("")
+
+	# === COMBAT SUMMARY ===
+	if rounds_fought > 0 or combat_log.size() > 0:
+		display_game("[color=#FF4444]═══════════════════════════════════════════════[/color]")
+		var round_text = "%d Round%s" % [rounds_fought, "s" if rounds_fought != 1 else ""]
+		display_game("[center][color=#FF4444][b]FINAL BATTLE - %s[/b][/color][/center]" % round_text)
+		display_game("[color=#FF4444]═══════════════════════════════════════════════[/color]")
+		if total_damage_dealt > 0 or total_damage_taken > 0:
+			display_game("[color=#00FF00]Damage Dealt: %s[/color]  |  [color=#FF6666]Damage Taken: %s[/color]" % [format_number(total_damage_dealt), format_number(total_damage_taken)])
+			if monster_max_hp > 0:
+				display_game("[color=#808080]Monster HP: %s[/color]" % format_number(monster_max_hp))
+			display_game("")
+
+		# Full combat log
+		for entry in combat_log:
+			if entry is String:
+				display_game(entry)
+		display_game("")
+
+	# === BADDIE POINTS ===
+	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
+	if rank > 0:
+		display_game("[center][color=#FFFFFF]Leaderboard Rank: #%d[/color][/center]" % rank)
+	if baddie_points > 0:
+		display_game("[center][color=#FF6600][b]Baddie Points Earned: %d[/b][/color][/center]" % baddie_points)
+		display_game("[center][color=#808080]Return to your Sanctuary to spend them![/color][/center]")
+	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
+	display_game("")
+	display_game("[center][color=#FFD700]Press %s to continue...[/color][/center]" % get_action_key_name(0))
 
 func show_leaderboard_panel():
 	if leaderboard_panel:
@@ -4069,6 +4200,24 @@ func _scale_right_panel_fonts(base_scale: float):
 	if send_button:
 		send_button.add_theme_font_size_override("font_size", movement_size)
 
+	# Scale health bar label
+	if player_health_bar:
+		var hp_label = player_health_bar.get_node_or_null("HPLabel")
+		if hp_label:
+			hp_label.add_theme_font_size_override("font_size", stats_size)
+
+	# Scale XP bar label
+	if player_xp_bar:
+		var xp_label = player_xp_bar.get_node_or_null("XPLabel")
+		if xp_label:
+			xp_label.add_theme_font_size_override("font_size", stats_size)
+
+	# Scale enemy HP bar label
+	if enemy_health_bar:
+		var hp_label = enemy_health_bar.get_node_or_null("BarContainer/HPLabel")
+		if hp_label:
+			hp_label.add_theme_font_size_override("font_size", stats_size)
+
 func _scale_action_bar_fonts(base_scale: float):
 	"""Scale action bar button and label fonts based on window size and user preference"""
 	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons)
@@ -4181,6 +4330,19 @@ func update_action_bar():
 				{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+	elif game_state == GameState.DEAD:
+		current_actions = [
+			{"label": "Continue", "action_type": "local", "action_data": "death_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif game_state == GameState.HOUSE_SCREEN:
 		# House/Sanctuary screen - roguelite hub
 		if house_mode == "storage":
@@ -7022,7 +7184,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Alias for forcefield
 		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Buffed, replaces Shield
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
-		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 12, "resource_type": "mana"},
+		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "resource_type": "mana"},
 		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "resource_type": "mana"},
@@ -7340,6 +7502,8 @@ func execute_local_action(action: String):
 			eggs_page = min(total_pages - 1, eggs_page + 1)
 			display_eggs()
 			update_action_bar()
+		"death_continue":
+			_on_continue_pressed()
 		"logout_character":
 			logout_character()
 		"logout_account":
@@ -9416,7 +9580,7 @@ func display_trade_window():
 
 	var my_class = character_data.get("class", "")
 	var inventory = character_data.get("inventory", [])
-	var companions = character_data.get("companions", [])
+	var companions = character_data.get("collected_companions", [])
 	var eggs = character_data.get("incubating_eggs", [])
 
 	display_game("[color=#FFD700]═══════════════════════════════════════════════════[/color]")
@@ -9627,7 +9791,7 @@ func select_trade_item(display_index: int):
 
 func select_trade_companion(display_index: int):
 	"""Add a companion to the trade offer by its display index (0-4)."""
-	var companions = character_data.get("companions", [])
+	var companions = character_data.get("collected_companions", [])
 
 	if display_index < 0 or display_index >= companions.size():
 		display_game("[color=#FF0000]Invalid companion.[/color]")
@@ -10428,7 +10592,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 			cost_percent = 0  # Distance-based
 		"meteor":
 			base_cost = 100
-			cost_percent = 12
+			cost_percent = 8
 		"haste":
 			base_cost = 35
 			cost_percent = 3
@@ -11692,6 +11856,9 @@ func handle_server_message(message: Dictionary):
 		"character_list":
 			character_list = message.get("characters", [])
 			can_create_character = message.get("can_create", true)
+			# Don't switch to character select if we're on death screen or house screen
+			if game_state == GameState.DEAD or game_state == GameState.HOUSE_SCREEN:
+				return
 			# Clear any stale state from death or previous session
 			has_character = false
 			in_combat = false
@@ -11791,14 +11958,8 @@ func handle_server_message(message: Dictionary):
 			has_character = false
 			in_combat = false
 			character_data = {}
-			show_death_panel(
-				message.get("character_name", "Unknown"),
-				message.get("level", 1),
-				message.get("experience", 0),
-				message.get("cause_of_death", "Unknown"),
-				message.get("leaderboard_rank", 0),
-				message.get("baddie_points_earned", 0)
-			)
+			hide_all_panels()
+			display_death_screen(message)
 			update_action_bar()
 			show_enemy_hp_bar(false)
 
@@ -12931,22 +13092,26 @@ func send_input():
 		# Trickster abilities
 		"analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "outsmart", "gambit", "sabotage", "perfect_heist", "heist"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
-	# Strip leading "/" for command matching
-	if first_word.begins_with("/"):
+	var has_slash = first_word.begins_with("/")
+	if has_slash:
 		first_word = first_word.substr(1)
-	var is_command = first_word in command_keywords
+	# Commands require "/" prefix; combat keywords work without "/" when in combat
+	var is_command = has_slash and first_word in command_keywords
 	var is_combat_command = first_word in combat_keywords
 
+	# In combat, bare combat keywords work (no chat in combat)
 	if in_combat and is_combat_command:
 		display_game("[color=#00FFFF]> %s[/color]" % text)
 		process_command(text)
 		return
 
-	if connected and has_character and not is_command and not is_combat_command:
+	# Not a slash command → send to chat
+	if connected and has_character and not is_command:
 		display_chat("[color=#FFD700]%s:[/color] %s" % [username, text])
 		send_to_server({"type": "chat", "message": text})
 		return
 
+	# Slash command → process it
 	display_game("[color=#00FFFF]> %s[/color]" % text)
 	process_command(text)
 
@@ -14660,8 +14825,26 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.74 changes
+	display_game("[color=#00FF00]v0.9.74[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ QUEST IMPROVEMENTS[/color]")
+	display_game("  • Kill quest targets now randomized (3-8 instead of fixed 10-15)")
+	display_game("  • Exploration quests send you farther from origin instead of back toward it")
+	display_game("  • Exploration quests now show distance and direction in quest log")
+	display_game("  • Exploration quests can be turned in at the destination trading post")
+	display_game("  [color=#FFD700]★ CHAT FIX[/color]")
+	display_game("  • Chat commands now require / prefix — typing 'i' or 'help' goes to chat, not commands")
+	display_game("  • Combat keywords still work without / when in combat")
+	display_game("  [color=#FFD700]★ UI & MERCHANTS[/color]")
+	display_game("  • HP bar, XP bar, and enemy HP bar labels now scale with UI settings")
+	display_game("  • Wandering merchants now have unique voice lines")
+	display_game("  • New trader art added")
+	display_game("  • Fixed Meteor showing 12% mana cost instead of correct 8%")
+	display_game("  • Tax collector no longer overlaps with merchant/blacksmith/healer encounters")
+	display_game("")
+
 	# v0.9.70 changes
-	display_game("[color=#00FF00]v0.9.70[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.70[/color]")
 	display_game("  [color=#FFD700]★ COMBAT BALANCE OVERHAUL[/color]")
 	display_game("  • All 9 classes balanced and viable at every level (89-96% win rates)")
 	display_game("  [color=#66FFFF]Mage Changes:[/color]")
@@ -14702,16 +14885,6 @@ func display_changelog():
 	display_game("  • Reduced house edge from +2 to +1")
 	display_game("  • Rolling any pair gives you +1 bonus")
 	display_game("  • 10% chance to win a bonus item on any winning roll")
-	display_game("")
-
-	# v0.9.66 changes
-	display_game("[color=#00FFFF]v0.9.66[/color]")
-	display_game("  [color=#FFD700]★ SANCTUARY ASCII MAP[/color]")
-	display_game("  • Walk around your Sanctuary with arrow keys or numpad")
-	display_game("  • Interactive ASCII house with Storage (S), Companions (C), Upgrades (U), Door (D)")
-	display_game("  • Stand on a tile and press Space to interact")
-	display_game("  • New upgrade: Expand Sanctuary - makes your house larger!")
-	display_game("  • Fixed corpses from dungeon deaths spawning at wrong location")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16160,7 +16333,7 @@ func show_help():
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
 [color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2%% attack damage per point[/color] | Contributes to Stamina pool
 [color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
-[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1%% hit chance, +2%% flee chance[/color] | +0.5%% crit per point | Contributes to Energy pool
+[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1%% hit, +2%% flee, -1%% enemy hit per 5 DEX (max 30%% dodge)[/color] | +0.5%% crit | Energy pool
 [color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3%% spell damage per point[/color] | Contributes to Mana pool
 [color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
 [color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Outsmart: 15×log₂(WIT/10) bonus[/color] | Contributes to Energy pool
@@ -16171,7 +16344,7 @@ func show_help():
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
-[color=#00FFFF]Cmds:[/color] inventory ([%s]) | abilities ([%s]) | status | who | examine <name> | help | clear
+[color=#00FFFF]Cmds:[/color] /inventory ([%s]) | /abilities ([%s]) | /who | /examine <name> | /help | /clear
 [color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
@@ -16304,11 +16477,13 @@ func show_help():
   • Frozen eggs can still be traded with other players
 
 [b][color=#FFD700]══ MISC ══[/color][/b]
+[color=#AAAAAA]Whisper:[/color] /w <name> <msg> to send private message. /reply or /r to respond. Also: /msg, /tell
 [color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
-[color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
+[color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.9.70:[/color] Major combat balance pass - all 9 classes viable. Trickster dodge, outsmart, mage regen, backfire cap.
+[color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
+[color=#00FFFF]v0.9.74:[/color] Quest improvements, chat fix, UI scaling, merchant voice lines.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 

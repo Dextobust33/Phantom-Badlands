@@ -16,10 +16,12 @@ graph TB
 | Type | Target Field | Description |
 |------|--------------|-------------|
 | `KILL_ANY` | `target` = count | Kill any monsters |
+| `KILL_TYPE` | `target` = count, `target_min`/`target_max` = range, `monster_type` | Kill specific monster type (randomized count) |
 | `KILL_LEVEL` | `target` = min level, `kill_count` = count | Kill monsters above level |
 | `HOTZONE_KILL` | `target` = count, `max_distance` = range | Kill in nearby hotzones |
-| `EXPLORATION` | `destination_post` = trading post ID | Visit a location |
+| `EXPLORATION` | `destinations` = array of trading post IDs | Visit location(s). Turn in at origin OR destination. |
 | `BOSS_HUNT` | `target` = min level | Single powerful kill |
+| `DUNGEON_CLEAR` | `dungeon_type` = dungeon ID | Clear a specific dungeon type |
 
 ## Quest Flow
 
@@ -50,7 +52,7 @@ sequenceDiagram
 
     Note over P,Q: Quest objectives complete
 
-    P->>TP: Return to origin post
+    P->>TP: Return to origin post (or destination for Exploration)
     TP->>S: Turn in quest
     S->>Q: Complete quest
     Q->>S: Calculate rewards
@@ -222,9 +224,22 @@ func check_kill_progress(character, monster_level, location):
 func check_exploration_progress(character, current_location, trading_post_id):
     for quest in character.active_quests:
         if quest.type == EXPLORATION:
-            if quest.destination_post == trading_post_id:
-                quest.progress = quest.target  # Complete
+            if trading_post_id in quest.destinations:
+                quest.progress += 1  # Each destination counts as 1 progress
 ```
+
+### Exploration Quest Turn-in
+Exploration quests can be turned in at:
+- The **origin** trading post (where the quest was accepted)
+- Any **destination** trading post listed in the quest's `destinations` array
+
+### Quest Log Direction Hints
+For active exploration quests, the quest log shows:
+- Destination name, coordinates, distance, and cardinal direction from player
+- Updates dynamically as the player moves
+
+### Kill Quest Target Randomization
+KILL_TYPE quests use `target_min` and `target_max` fields. When a quest is retrieved via `get_quest()`, the target is randomized using a seeded RNG (`hash(quest_id + str(player_level))`) for consistent but varied results. The quest description uses `%d` placeholder filled with the randomized target.
 
 ## UI Integration
 
