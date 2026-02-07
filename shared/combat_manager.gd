@@ -4288,8 +4288,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	var name_color = _get_affinity_color(affinity)
 
 	# Check if player knows this monster (has killed it at or above this level)
+	# Use base_name so killing any variant teaches you about the base monster type
 	# If unknown OR player is blinded, send -1 for HP values so client shows "???"
-	var knows_monster = character.knows_monster(monster.name, monster.level)
+	var monster_base = monster.get("base_name", monster.name)
+	var knows_monster = character.knows_monster(monster_base, monster.level)
 	var can_see_hp = knows_monster and not character.blind_active
 	var display_hp = monster.current_hp if can_see_hp else -1
 	var display_max_hp = monster.max_hp if can_see_hp else -1

@@ -2095,12 +2095,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					handle_crucible_victory(peer_id)
 
 			# Record monster knowledge (player now knows this monster type's HP at this level)
+			# Use base_name so variants (Weapon Master, Corrosive, etc.) share knowledge with base type
 			var killed_monster_name = result.get("monster_name", "")
+			var killed_monster_base_name = result.get("monster_base_name", killed_monster_name)
 			var killed_monster_level = result.get("monster_level", 1)
-			if killed_monster_name != "":
-				characters[peer_id].record_monster_kill(killed_monster_name, killed_monster_level)
+			if killed_monster_base_name != "":
+				characters[peer_id].record_monster_kill(killed_monster_base_name, killed_monster_level)
 
-			# Check quest progress for kill-based quests
+			# Check quest progress for kill-based quests (uses full name for variant-specific quests)
 			var monster_level_for_quest = result.get("monster_level", 1)
 			check_kill_quest_progress(peer_id, monster_level_for_quest, killed_monster_name)
 
