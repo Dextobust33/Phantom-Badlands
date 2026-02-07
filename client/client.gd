@@ -5885,7 +5885,7 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var equipped = character_data.get("equipped", {})
 		var equip_bonuses = _calculate_equipment_bonuses(equipped)
 		var int_stat = base_int + equip_bonuses.get("intelligence", 0)
-		var int_multiplier = 1.0 + (sqrt(float(int_stat)) / 5.0)  # INT 25=2x, INT 100=3x, INT 225=4x
+		var int_multiplier = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)  # Hybrid: max of sqrt and linear scaling
 
 		# Damage buff (War Cry, potions, etc.)
 		var damage_buff = _get_buff_value("damage")
@@ -5979,8 +5979,8 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		# Account for damage already dealt in this fight
 		var remaining_hp = max(1, target_hp - damage_dealt_to_current_enemy)
 
-		# Calculate mana needed with small 5% buffer (suggestion stays between exact and 10% over)
-		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.05)
+		# Calculate mana needed with 18% buffer to cover ±15% damage variance
+		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.18)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
@@ -11528,7 +11528,7 @@ func parse_monster_healing(msg: String) -> int:
 	return 0
 
 func parse_damage_dealt(msg: String) -> int:
-	"""Parse damage dealt by PLAYER to enemy from combat messages.
+	"""Parse damage dealt by PLAYER (and allies) to enemy from combat messages.
 	Handles various formats with color codes. Excludes monster damage to player."""
 	# First strip all BBCode tags to get clean text
 	var clean_msg = msg
@@ -11538,7 +11538,6 @@ func parse_damage_dealt(msg: String) -> int:
 
 	# EXCLUDE damage messages that are NOT damage to the enemy
 	# Monster attacks: "The X attacks and deals", "X hits N times for", "to you"
-	# Poison/thorns/reflect: "Poison deals", "Thorns deal", "death curse deals", "reflects X damage"
 	# Self-damage: "backfires", "burns you", "yourself", "Bleeding deals"
 	if "attacks and deals" in clean_msg:
 		return 0
@@ -11546,11 +11545,15 @@ func parse_damage_dealt(msg: String) -> int:
 		return 0
 	if "to you" in clean_msg:
 		return 0
-	if "Poison deals" in clean_msg:
+	# Player poison: "Poison deals X damage! (Y turns)" - no "to the"
+	# Monster poison: "Poison deals X damage to the Wolf!" - HAS "to the" (DO track)
+	if "Poison deals" in clean_msg and "to the" not in clean_msg:
 		return 0
 	if "death curse deals" in clean_msg:
 		return 0
-	if "reflects" in clean_msg and "damage" in clean_msg:
+	# Monster reflect ability: "The Wolf reflects X damage!" (damage to player)
+	# Player gear reflect: "Retribution gear reflects X damage!" (damage to monster - DO track)
+	if "reflects" in clean_msg and "damage" in clean_msg and not "gear reflects" in clean_msg:
 		return 0
 	if "backfires" in clean_msg:
 		return 0
@@ -11559,6 +11562,9 @@ func parse_damage_dealt(msg: String) -> int:
 	if "yourself" in clean_msg:
 		return 0
 	if "Bleeding deals" in clean_msg:
+		return 0
+	# Thorns deal damage to player, not monster
+	if "Thorns deal" in clean_msg:
 		return 0
 
 	# Now look for player damage patterns
@@ -11572,13 +11578,34 @@ func parse_damage_dealt(msg: String) -> int:
 
 	# Ability damage patterns: "deals X damage" (after ability name)
 	# e.g., "The explosion deals 50 damage", "Your swing deals 100 damage"
+	# Also matches monster poison: "Poison deals X damage to the Wolf!"
 	regex.compile("deals (\\d+) damage")
 	result = regex.search(clean_msg)
 	if result:
 		return int(result.get_string(1))
 
-	# Alternative pattern: "for X damage" (e.g., Exploit: "exploit a weakness for X damage")
+	# Bonus damage: companion crits, shocking proc, execute proc
+	# e.g., "Shocking strikes for 50 bonus damage!", "Execute strikes for 30 bonus damage!"
+	regex.compile("for (\\d+) bonus damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# Total damage: companion multi-hit abilities
+	# e.g., "Wolf uses Fury Swipes! 3 hits for 90 total damage!"
+	regex.compile("for (\\d+) total damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# Standard "for X damage" pattern (basic companion attack, exploit, etc.)
 	regex.compile("for (\\d+) damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# Equipment reflect: "Retribution gear reflects X damage!"
+	regex.compile("reflects (\\d+) damage")
 	result = regex.search(clean_msg)
 	if result:
 		return int(result.get_string(1))
