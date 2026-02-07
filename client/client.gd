@@ -8168,6 +8168,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"house_play":
 			# Go to character select to pick or create a character
+			# Transition out of HOUSE_SCREEN so character_list handler shows select panel
+			game_state = GameState.CHARACTER_SELECT
 			send_to_server({"type": "request_character_list"})
 		"house_storage_prev":
 			house_storage_page = max(0, house_storage_page - 1)
