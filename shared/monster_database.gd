@@ -1381,9 +1381,10 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var base_scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
 	var base_scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
 
-	# Adjust HP - base 2x multiplier plus bonus for expected player attack
-	# This ensures combat takes multiple rounds even with good gear
-	var hp_multiplier = 2.0 + (expected_player_attack_bonus / 30.0)
+	# Adjust HP - base 2x multiplier with diminishing returns for player attack
+	# Uses hyperbolic saturation: approaches 7.0x asymptotically
+	# This ensures multi-round fights without making high-level monsters unkillable
+	var hp_multiplier = 2.0 + 5.0 * expected_player_attack_bonus / (150.0 + expected_player_attack_bonus)
 	var scaled_hp = max(10, int(base_scaled_hp * hp_multiplier))
 
 	# Minimum HP floor based on level to prevent trivial one-shot kills
@@ -1492,26 +1493,35 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 func _estimate_player_equipment_attack(player_level: int) -> int:
 	"""Estimate player attack bonus for monster scaling.
-	Assumes players have good gear (rare/blue quality at 95% level)."""
-	# Assume player has weapon at ~95% of level with rare (blue) rarity
-	var effective_item_level = int(player_level * 0.95)
-	var rarity_mult = 2.0  # Rare (blue) baseline
-
-	# Only weapon assumed (some players may not have ring)
-	var weapon_attack = int(effective_item_level * rarity_mult * 2)
-
+	Conservative estimate: uncommon-rare gear at 95% of level.
+	Uses logarithmic diminishing returns matching real equipment scaling."""
+	var item_level = int(player_level * 0.95)
+	# Apply diminishing returns (character.gd lines 1028-1043)
+	# Never let effective_level exceed actual item_level (log formula boosts below ~200)
+	var effective_level = float(item_level)
+	if item_level > 50:
+		var log_level = 50.0 + 15.0 * log(float(item_level - 49)) / log(2.0)
+		effective_level = min(float(item_level), log_level)
+	# Rarity 1.3 = average of uncommon (1.2) and rare (1.4)
+	# Weapon slot multiplier = 1.5 (from character.gd SLOT_BONUSES)
+	var rarity_mult = 1.3
+	var weapon_slot_mult = 1.5
+	var weapon_attack = int(effective_level * rarity_mult * weapon_slot_mult)
 	return weapon_attack
 
 func _estimate_player_equipment_defense(player_level: int) -> int:
 	"""Estimate player defense bonus for monster scaling.
-	Assumes players have good gear (rare/blue quality at 95% level)."""
-	# Assume player has armor at ~95% of level with rare (blue) rarity
-	var effective_item_level = int(player_level * 0.95)
-	var rarity_mult = 2.0  # Rare (blue) baseline
-
-	# Only armor assumed (some players may not have full set)
-	var armor_defense = int(effective_item_level * rarity_mult * 2)
-
+	Conservative estimate: uncommon-rare gear at 95% of level.
+	Uses logarithmic diminishing returns matching real equipment scaling."""
+	var item_level = int(player_level * 0.95)
+	var effective_level = float(item_level)
+	if item_level > 50:
+		var log_level = 50.0 + 15.0 * log(float(item_level - 49)) / log(2.0)
+		effective_level = min(float(item_level), log_level)
+	# Rarity 1.3, armor slot multiplier = 1.0 (from character.gd SLOT_BONUSES)
+	var rarity_mult = 1.3
+	var armor_slot_mult = 1.0
+	var armor_defense = int(effective_level * rarity_mult * armor_slot_mult)
 	return armor_defense
 
 func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
@@ -1600,8 +1610,8 @@ func _calculate_monster_intelligence(level: int) -> int:
 	Used for the Outsmart mechanic - higher intelligence = harder to outsmart.
 	Tier 1-2 (1-15): 5-15 - easy to outsmart
 	Tier 3-4 (16-50): 15-30 - moderate
-	Tier 5-6 (51-500): 30-50 - challenging
-	Tier 7-9 (500+): 50-80 - nearly impossible to outsmart"""
+	Tier 5-6 (51-500): 30-45 - challenging but outsmart viable for tricksters
+	Tier 7-9 (500+): 45-65 - very challenging to outsmart"""
 
 	var base_intelligence: int
 	var variance: int
@@ -1624,23 +1634,23 @@ func _calculate_monster_intelligence(level: int) -> int:
 		variance = 5
 	elif level <= 100:
 		# Tier 5: Intelligent
-		base_intelligence = 35
-		variance = 10
+		base_intelligence = 32
+		variance = 8
 	elif level <= 500:
 		# Tier 6: Highly intelligent
-		base_intelligence = 45
+		base_intelligence = 38
 		variance = 5
 	elif level <= 2000:
 		# Tier 7: Genius-level
-		base_intelligence = 55
-		variance = 10
+		base_intelligence = 48
+		variance = 8
 	elif level <= 5000:
 		# Tier 8: Near-omniscient
-		base_intelligence = 65
-		variance = 10
+		base_intelligence = 55
+		variance = 8
 	else:
 		# Tier 9: Godlike intelligence
-		base_intelligence = 75
+		base_intelligence = 65
 		variance = 5
 
 	# Add some randomness to the intelligence within the tier

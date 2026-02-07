@@ -52,7 +52,9 @@ func _build_json_output(results: Dictionary, config: Dictionary, timestamp: Stri
 		"results": results.get("class_results", {}),
 		"monster_analysis": results.get("monster_analysis", {}),
 		"lethality_comparison": results.get("lethality_comparison", {}),
-		"summary_stats": results.get("summary_stats", {})
+		"summary_stats": results.get("summary_stats", {}),
+		"gauntlet_results": results.get("gauntlet_results", {}),
+		"flock_results": results.get("flock_results", {})
 	}
 	return JSON.stringify(output, "  ")
 
@@ -91,6 +93,24 @@ func _build_markdown_output(results: Dictionary, config: Dictionary, date_str: S
 	md.append("## Ability Impact Analysis")
 	md.append("")
 	md.append(_build_ability_analysis(results))
+	md.append("")
+
+	# Class Balance Report
+	md.append("## Class Balance Report")
+	md.append("")
+	md.append(_build_class_balance_report(results))
+	md.append("")
+
+	# Gauntlet Results
+	md.append("## Gauntlet Simulation Results")
+	md.append("")
+	md.append(_build_gauntlet_results(results))
+	md.append("")
+
+	# Flock Results
+	md.append("## Flock Simulation Results")
+	md.append("")
+	md.append(_build_flock_results(results))
 	md.append("")
 
 	# Detailed Results by Class
@@ -252,6 +272,141 @@ func _build_detailed_class_results(results: Dictionary) -> String:
 					lines.append("- %s gear: %.1f%% win rate, %.0f avg damage taken" % [gear_quality.capitalize(), win_rate, avg_damage])
 
 			lines.append("")
+
+	return "\n".join(lines)
+
+func _build_class_balance_report(results: Dictionary) -> String:
+	"""Build class balance comparison showing push-limit metrics and outsmart rates"""
+	var lines = []
+	var class_results = results.get("class_results", {})
+	var summary = results.get("summary_stats", {})
+	var class_stats = summary.get("class_stats", {})
+
+	# Push-limit table: win rates at different monster level offsets
+	lines.append("### Push-Limit Comparison (Average Gear, Same-Level+ Monsters)")
+	lines.append("")
+	lines.append("| Class | vs Same Lv | vs +5 | vs +10 | vs +20 | Outsmart Rate |")
+	lines.append("|-------|-----------|-------|--------|--------|---------------|")
+
+	var all_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+	for char_class in all_classes:
+		var level_data = class_results.get(char_class, {})
+		# Aggregate win rates per offset across levels for "average" gear
+		var offset_wins = {0: 0, 5: 0, 10: 0, 20: 0}
+		var offset_total = {0: 0, 5: 0, 10: 0, 20: 0}
+		var outsmart_attempts = 0
+		var outsmart_successes = 0
+
+		for level_key in level_data:
+			var gear_data = level_data[level_key].get("average", {})
+			for matchup_key in gear_data:
+				var matchup = gear_data[matchup_key]
+				var m_level = matchup.get("monster_level", 0)
+				var level_str_num = int(level_key.replace("level_", ""))
+				var offset = m_level - level_str_num
+
+				if offset_wins.has(offset):
+					offset_wins[offset] += matchup.get("wins", 0)
+					offset_total[offset] += matchup.get("total", 0)
+
+				outsmart_attempts += matchup.get("outsmart_attempts", 0)
+				outsmart_successes += matchup.get("outsmart_successes", 0)
+
+		var rates = []
+		for off in [0, 5, 10, 20]:
+			if offset_total[off] > 0:
+				rates.append("%.0f%%" % (float(offset_wins[off]) / offset_total[off] * 100))
+			else:
+				rates.append("N/A")
+
+		var outsmart_str = "N/A"
+		if outsmart_attempts > 0:
+			outsmart_str = "%.0f%%" % (float(outsmart_successes) / outsmart_attempts * 100)
+
+		lines.append("| %s | %s | %s | %s | %s | %s |" % [char_class, rates[0], rates[1], rates[2], rates[3], outsmart_str])
+
+	# Balance score: flag outliers
+	lines.append("")
+	lines.append("### Balance Score")
+	lines.append("")
+	var win_rates = []
+	for char_class in all_classes:
+		var stats = class_stats.get(char_class, {})
+		win_rates.append(stats.get("avg_win_rate", 0))
+
+	if not win_rates.is_empty():
+		var avg_wr = 0.0
+		for wr in win_rates:
+			avg_wr += wr
+		avg_wr /= win_rates.size()
+		var max_wr = win_rates.max()
+		var min_wr = win_rates.min()
+		var spread = (max_wr - min_wr) * 100
+		lines.append("- Average win rate: %.1f%%" % (avg_wr * 100))
+		lines.append("- Win rate spread: %.1f%% (max %.1f%% - min %.1f%%)" % [spread, max_wr * 100, min_wr * 100])
+		if spread > 15:
+			lines.append("- **WARNING: Spread exceeds 15% - significant class imbalance detected**")
+		elif spread > 10:
+			lines.append("- **NOTICE: Spread exceeds 10% - minor imbalance present**")
+		else:
+			lines.append("- Balance is within acceptable range (<10% spread)")
+
+	return "\n".join(lines)
+
+func _build_gauntlet_results(results: Dictionary) -> String:
+	"""Build gauntlet simulation results table"""
+	var lines = []
+	var gauntlet = results.get("gauntlet_results", {})
+
+	if gauntlet.is_empty():
+		lines.append("No gauntlet data collected.")
+		return "\n".join(lines)
+
+	lines.append("10-fight gauntlet with 15 steps between fights (average gear)")
+	lines.append("")
+	lines.append("| Class | Lv25 Avg Survived | Lv25 Full Clear | Lv50 Avg | Lv50 Clear | Lv100 Avg | Lv100 Clear |")
+	lines.append("|-------|-------------------|-----------------|----------|------------|-----------|-------------|")
+
+	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+		var class_data = gauntlet.get(char_class, {})
+		var cells = [char_class]
+		for level_key in ["level_25", "level_50", "level_100"]:
+			var data = class_data.get(level_key, {}).get("average", {})
+			if data.is_empty():
+				cells.append("N/A")
+				cells.append("N/A")
+			else:
+				cells.append("%.1f" % data.get("avg_fights_survived", 0))
+				cells.append("%.0f%%" % (data.get("full_clear_rate", 0) * 100))
+		lines.append("| %s | %s | %s | %s | %s | %s | %s |" % cells)
+
+	return "\n".join(lines)
+
+func _build_flock_results(results: Dictionary) -> String:
+	"""Build flock simulation results table"""
+	var lines = []
+	var flock = results.get("flock_results", {})
+
+	if flock.is_empty():
+		lines.append("No flock data collected.")
+		return "\n".join(lines)
+
+	lines.append("Flock survival (no regen between fights, average gear)")
+	lines.append("")
+	lines.append("| Class | Lv25 x2 | Lv25 x3 | Lv25 x4 | Lv50 x2 | Lv50 x3 | Lv50 x4 | Lv100 x2 | Lv100 x3 | Lv100 x4 |")
+	lines.append("|-------|---------|---------|---------|---------|---------|---------|----------|----------|----------|")
+
+	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+		var class_data = flock.get(char_class, {})
+		var cells = [char_class]
+		for level_key in ["level_25", "level_50", "level_100"]:
+			for flock_key in ["flock_2", "flock_3", "flock_4"]:
+				var data = class_data.get(level_key, {}).get(flock_key, {})
+				if data.is_empty():
+					cells.append("N/A")
+				else:
+					cells.append("%.0f%%" % (data.get("survival_rate", 0) * 100))
+		lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % cells)
 
 	return "\n".join(lines)
 

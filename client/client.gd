@@ -673,6 +673,7 @@ var blacksmith_upgrade_mode: String = ""  # "", "select_item", "select_affix"
 var blacksmith_upgrade_items: Array = []  # Items available for upgrade
 var blacksmith_upgrade_affixes: Array = []  # Affixes available on selected item
 var blacksmith_upgrade_item_name: String = ""  # Name of selected item
+var blacksmith_trader_art: String = ""  # Persisted ASCII art for the encounter
 var pending_healer: bool = false
 var healer_costs: Dictionary = {}  # quick_heal_cost, full_heal_cost, cure_all_cost
 
@@ -5875,23 +5876,21 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 				using_estimated_hp = true
 
 	if ability == "magic_bolt" and target_hp > 0:
-		# Magic Bolt damage = mana * (1 + sqrt(INT)/5) * damage_buff, reduced by monster WIS, defense, and level penalty
-		# Formula uses sqrt scaling for diminishing returns at high INT
+		# Simulate Magic Bolt damage formula to suggest accurate mana amount
+		# Server formula: damage = bolt_amount * (1 + sqrt(INT)/5) * buffs * passives * reductions
 		var stats = character_data.get("stats", {})
 		var base_int = stats.get("intelligence", 10)
-		# Add equipment INT bonus for accurate damage prediction
 		var equipped = character_data.get("equipped", {})
 		var equip_bonuses = _calculate_equipment_bonuses(equipped)
 		var int_stat = base_int + equip_bonuses.get("intelligence", 0)
 		var int_multiplier = 1.0 + (sqrt(float(int_stat)) / 5.0)  # INT 25=2x, INT 100=3x, INT 225=4x
 
-		# Apply damage buff (War Cry, potions, etc.) - from active_buffs and persistent_buffs
+		# Damage buff (War Cry, potions, etc.)
 		var damage_buff = _get_buff_value("damage")
 		var buff_multiplier = 1.0 + (float(damage_buff) / 100.0)
 
-		# Estimate monster WIS reduction based on level (formula: min(0.30, monster_int / 300))
-		# Monster INT by level tier: 1-5=5, 6-15=10, 16-30=18, 31-50=25, 51-100=35, 101-500=45, 500+=55+
-		var estimated_monster_int = 10  # Default for low level
+		# Estimate monster WIS reduction (formula: min(0.30, monster_int / 300))
+		var estimated_monster_int = 10
 		if current_enemy_level <= 5:
 			estimated_monster_int = 5
 		elif current_enemy_level <= 15:
@@ -5909,37 +5908,41 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		var wis_reduction = minf(0.30, float(estimated_monster_int) / 300.0)
 		var effective_multiplier = int_multiplier * buff_multiplier * (1.0 - wis_reduction)
 
-		# Apply class passive bonuses
+		# Skill enhancement damage bonus (from character_data)
+		var skill_enhancements = character_data.get("skill_enhancements", {})
+		var bolt_enhancements = skill_enhancements.get("magic_bolt", {})
+		var skill_damage_bonus = bolt_enhancements.get("damage_bonus", 0.0)
+		if skill_damage_bonus > 0:
+			effective_multiplier *= (1.0 + skill_damage_bonus / 100.0)
+
+		# Class passive bonuses
 		var class_type = character_data.get("class", "")
 		var bonus_parts = []
 		match class_type:
 			"Wizard":
-				# Arcane Precision: +15% spell damage, +10% crit chance
-				# Use base 15% only - don't assume crit for safety
+				# Arcane Precision: +15% spell damage (deterministic, always applied)
 				effective_multiplier *= 1.15
 				bonus_parts.append("[color=#4169E1]+15% Arcane[/color]")
 			"Sorcerer":
-				# Chaos Magic: 25% double, 5% backfire - DON'T assume bonus, could backfire
-				# Use no bonus for safety (worst case is 50% damage on backfire)
+				# Chaos Magic: 25% double, 5% backfire - random, don't assume either
 				bonus_parts.append("[color=#9400D3]Chaos (variable)[/color]")
 
-		# Apply class affinity bonus (blue monsters = weak to mages = +25% damage)
+		# Class affinity bonus
 		var is_mage_path = class_type in ["Wizard", "Sage", "Sorcerer"]
-		if is_mage_path and current_enemy_color == "#00BFFF":  # Blue = Magical affinity = weak to mages
+		if is_mage_path and current_enemy_color == "#00BFFF":
 			effective_multiplier *= 1.25
 			bonus_parts.append("[color=#00BFFF]+25% vs Magic[/color]")
 		elif is_mage_path and (current_enemy_color == "#FFFF00" or current_enemy_color == "#00FF00"):
-			# Yellow (Physical) or Green (Cunning) = resistant to mages = -15% damage
 			effective_multiplier *= 0.85
 			bonus_parts.append("[color=#FF6666]-15% resist[/color]")
 
 		if damage_buff > 0:
 			bonus_parts.append("[color=#FFD700]+%d%% buff[/color]" % damage_buff)
+		if skill_damage_bonus > 0:
+			bonus_parts.append("[color=#00FFFF]+%d%% skill[/color]" % int(skill_damage_bonus))
 
-		# === NEW: Estimate monster defense reduction ===
-		# Defense formula: partial_red = (def / (def + 100)) * 0.6 * 0.5
-		# Estimate base defense by level tier (conservative/high estimates)
-		var estimated_defense = 5  # Default
+		# Estimate monster defense reduction (matches apply_ability_damage_modifiers)
+		var estimated_defense = 5
 		if current_enemy_level <= 5:
 			estimated_defense = 8
 		elif current_enemy_level <= 15:
@@ -5954,44 +5957,38 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 			estimated_defense = 100
 		else:
 			estimated_defense = 150
-		# Add level-based defense bonus (level / 10)
 		estimated_defense += int(current_enemy_level / 10)
-		# Check for armored ability (+50% defense)
 		if "armored" in current_enemy_abilities:
 			estimated_defense = int(estimated_defense * 1.5)
 			bonus_parts.append("[color=#6666FF]Armored[/color]")
-		# Apply defense reduction formula (50% of normal defense formula for abilities)
 		var def_ratio = float(estimated_defense) / (float(estimated_defense) + 100.0)
 		var defense_reduction = def_ratio * 0.6 * 0.5
 		effective_multiplier *= (1.0 - defense_reduction)
 
-		# === Apply level penalty if monster level > player level ===
-		# Must match combat_manager.gd player damage penalty (1.5% per level, max 25%)
+		# Level penalty (matches server: 1.5% per level, max 40%)
 		var player_level = character_data.get("level", 1)
 		var level_diff = current_enemy_level - player_level
 		if level_diff > 0:
-			var level_penalty = minf(0.25, level_diff * 0.015)  # 1.5% per level, max 25%
+			var level_penalty = minf(0.40, level_diff * 0.015)
 			effective_multiplier *= (1.0 - level_penalty)
 			if level_penalty >= 0.05:
 				bonus_parts.append("[color=#FF6666]-%d%% lvl[/color]" % int(level_penalty * 100))
 
-		# === NEW: Apply worst-case damage variance (0.85x) instead of average ===
-		# This ensures the suggested amount accounts for bad RNG rolls
-		effective_multiplier *= 0.85
+		# Account for damage already dealt in this fight
+		var remaining_hp = max(1, target_hp - damage_dealt_to_current_enemy)
 
-		# Calculate mana needed (small buffer for any remaining variance)
-		var mana_needed = ceili(float(target_hp) / effective_multiplier * 1.05)
+		# Calculate mana needed with small 5% buffer (suggestion stays between exact and 10% over)
+		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.05)
 		suggested_amount = mini(mana_needed, current_resource)
 
-		# Display shows the conservative damage per mana (after all reductions)
-		# Note: We don't show damage_per_mana anymore as it's misleading - actual damage
-		# varies based on many factors the player can't easily predict
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
 		if bonus_text != "":
 			bonus_text = bonus_text + "\n"
 		var hp_label = "~HP" if using_estimated_hp else "HP"
-		var estimate_note = "[color=#808080](conservative estimate)[/color]" if target_hp > 0 else ""
-		ability_popup_description.text = "[center]%s%s: %d %s[/center]" % [bonus_text, hp_label, target_hp, estimate_note]
+		var remaining_note = ""
+		if damage_dealt_to_current_enemy > 0:
+			remaining_note = " [color=#808080](~%d remaining)[/color]" % remaining_hp
+		ability_popup_description.text = "[center]%s%s: %d%s[/center]" % [bonus_text, hp_label, target_hp, remaining_note]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -12664,6 +12661,7 @@ func handle_server_message(message: Dictionary):
 			blacksmith_upgrade_mode = ""
 			blacksmith_upgrade_items = []
 			blacksmith_upgrade_affixes = []
+			blacksmith_trader_art = ""
 			update_action_bar()
 
 		"blacksmith_upgrade_select_item":
@@ -14626,8 +14624,27 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.70 changes
+	display_game("[color=#00FF00]v0.9.70[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ COMBAT BALANCE OVERHAUL[/color]")
+	display_game("  • All 9 classes balanced and viable at every level (89-96% win rates)")
+	display_game("  [color=#66FFFF]Mage Changes:[/color]")
+	display_game("  • Mages now regenerate 2% max mana per round (Sage: 3%)")
+	display_game("  • Forcefield strength increased (INT×8 shield value)")
+	display_game("  • Meteor mana cost reduced (12% → 8%), Blast/Meteor INT scaling improved")
+	display_game("  • Sorcerer backfire now capped at 15% max HP (no more instant deaths!)")
+	display_game("  [color=#66FF66]Trickster Changes:[/color]")
+	display_game("  • Outsmart cap improved - smarter monsters are less punishing")
+	display_game("  • DEX dodge cap raised from 20% to 30%")
+	display_game("  • Tricksters gain bonus dodge from WITS (up to 15%)")
+	display_game("  [color=#FF6666]General:[/color]")
+	display_game("  • Monster enrage now caps at 10 stacks")
+	display_game("  • Monster HP scaling rebalanced for better gear progression")
+	display_game("  • High-tier monster intelligence adjusted for fairer outsmart chances")
+	display_game("")
+
 	# v0.9.69 changes
-	display_game("[color=#00FF00]v0.9.69[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.69[/color]")
 	display_game("  [color=#FFD700]★ NEW SANCTUARY UPGRADES[/color]")
 	display_game("  • Combat bonuses: Vitality (+5% HP), Reservoir (+5% resources), Flow (+5% regen)")
 	display_game("  • Stat training: +1 STR/CON/DEX/INT/WIS/WITS per level")
@@ -14659,14 +14676,6 @@ func display_changelog():
 	display_game("  • Stand on a tile and press Space to interact")
 	display_game("  • New upgrade: Expand Sanctuary - makes your house larger!")
 	display_game("  • Fixed corpses from dungeon deaths spawning at wrong location")
-	display_game("")
-
-	# v0.9.64 changes
-	display_game("[color=#00FFFF]v0.9.64[/color]")
-	display_game("  • Sanctuary system: Account-level house with storage and companion kennel")
-	display_game("  • Baddie Points earned on death - spend on permanent upgrades")
-	display_game("  • Home Stones: Send items/eggs/companions to Sanctuary")
-	display_game("  • Egg freezing, companion trading, companion sorting")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16106,7 +16115,7 @@ func show_help():
 
 [color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
   Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
-  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
+  Mages regen 2%% mana/round (Sage 3%%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
 
 [color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
   Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.
@@ -16132,7 +16141,7 @@ func show_help():
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
 [color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
   [color=#C0C0C0]Fighter[/color] - 20%% less cost, +15%% DEF               [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% crit
-  [color=#8B0000]Barbarian[/color] - +3%%dmg/10%%HP lost, +25%% cost        [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 5%% backfire
+  [color=#8B0000]Barbarian[/color] - +3%%dmg/10%%HP lost, +25%% cost        [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 5%% backfire(max 15%%HP)
   [color=#FFD700]Paladin[/color] - 3%%HP/rnd heal, +25%% vs undead          [color=#20B2AA]Sage[/color] - 25%% less cost, +50%% meditate
 
 [color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
@@ -16142,7 +16151,8 @@ func show_help():
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
 [color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
 [color=#00FFFF]Lvl Penalty:[/color] -1.5%%/lvl (max-25%%) for attacks vs higher monsters. [color=#FF4444]Monster +4%%/lvl exponential![/color]
-[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 50%%+DEX×2+spd-lvldiff×3 | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5-spd/2 [40-95%%]
+[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 50%%+DEX×2+spd-lvldiff×3 | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5(max30%%)-spd/2 [40-95%%]
+[color=#66FF66]Trickster Dodge:[/color] +WIT/50%% dodge (max 15%%). Combined with DEX dodge, tricksters are harder to hit!
 [color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
@@ -16162,7 +16172,7 @@ func show_help():
 
 [b][color=#FFD700]══ MONSTERS ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
-[color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+dmg/rnd) | Life Steal | Glass Cannon(3x,½HP)
+[color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+10%%/rnd,max 10) | Life Steal | Glass Cannon(3x,½HP)
 [color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(stacks×3,DoT) | Slow(-flee) | Drain(mana/stam/energy)
   [color=#FF00FF]Poison[/color]=50 rounds, persists outside combat | [color=#808080]Blind[/color]=15rnd,-30%%hit | [color=#FFA500]Weakness[/color]=20rnd,-25%%atk
 [color=#6666FF]Defense:[/color] Armored(+50%%def) | Ethereal(50%%dodge) | Regen | Reflect(25%%) | Thorns
@@ -16262,7 +16272,7 @@ func show_help():
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#00FFFF]v0.9.15:[/color] Early dungeons, gathering minigame fix, dungeon intro quest, map shows dungeons as D.
+[color=#00FFFF]v0.9.70:[/color] Major combat balance pass - all 9 classes viable. Trickster dodge, outsmart, mage regen, backfire cap.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
@@ -16849,9 +16859,10 @@ func handle_blacksmith_encounter(message: Dictionary):
 
 	game_output.clear()
 
-	# Display random trader ASCII art
-	var trader_art = _get_trader_art().get_random_trader_art()
-	display_game(trader_art)
+	# Display random trader ASCII art (persist for upgrade screens)
+	if blacksmith_trader_art == "":
+		blacksmith_trader_art = _get_trader_art().get_random_trader_art()
+	display_game(blacksmith_trader_art)
 	display_game("")
 
 	display_game(message.get("message", ""))
@@ -16902,6 +16913,9 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	var player_essence = message.get("player_essence", 0)
 
 	game_output.clear()
+	if blacksmith_trader_art != "":
+		display_game(blacksmith_trader_art)
+		display_game("")
 	display_game(message.get("message", ""))
 	display_game("")
 	display_game("[color=#FFD700]=== Select Item to Enhance ===[/color]")
@@ -16927,6 +16941,9 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 	var player_essence = message.get("player_essence", 0)
 
 	game_output.clear()
+	if blacksmith_trader_art != "":
+		display_game(blacksmith_trader_art)
+		display_game("")
 	display_game(message.get("message", ""))
 	display_game("")
 	display_game("[color=#FFD700]=== Select Affix to Enhance ===[/color]")

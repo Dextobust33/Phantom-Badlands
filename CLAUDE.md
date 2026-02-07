@@ -233,18 +233,22 @@ The combat simulator tests monster lethality against all 9 character classes to 
 
 **Configuration:**
 - Classes: All 9 (Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja)
-- Levels: [5, 10, 25, 50, 75, 100]
-- Gear qualities: poor, average, good
+- Levels: [5, 10, 25, 50, 75, 100, 500, 1000, 5000]
+- Gear qualities: poor, average, good (high levels: average + good only)
 - Monster level offsets: [-5, 0, +5, +10, +20]
-- Iterations per matchup: 1000
+- Iterations: 1000 (Lv≤100), 500 (Lv500), 200 (Lv1000), 100 (Lv5000)
 
 **Class abilities implemented:**
-- **Warriors:** Power Strike, War Cry
-- **Mages:** Magic Bolt, Forcefield, Blast, Meteor
+- **Warriors:** Power Strike, War Cry, Shield Bash, Cleave, Fortify, Rally, Berserk, Iron Skin, Devastate
+- **Mages:** Magic Bolt, Forcefield, Haste, Blast, Paralyze, Meteor (damage-first AI)
 - **Tricksters:** Outsmart, Analyze, Ambush, Gambit, Sabotage
 
+**Multi-fight simulations:**
+- **Gauntlet:** 10 same-level fights with regen between (Meditate for mages, flat 2% for others)
+- **Flock:** 2-4 consecutive fights with NO regen (tests pack monsters like Wolves, Gnolls)
+
 **Expanding the simulator:**
-1. Add new abilities in `combat_engine.gd` - see `MAGE_ABILITIES` and `TRICKSTER_ABILITIES` constants
+1. Add new abilities in `combat_engine.gd` - see `WARRIOR_ABILITIES`, `MAGE_ABILITIES`, `TRICKSTER_ABILITIES` constants
 2. Update `simulate_single_combat()` AI to use new abilities strategically
 3. Adjust lethality weights in `server/balance_config.json` based on simulation results
 4. The empirical lethality formula: `(1 / win_rate) × (1 + damage_ratio) × 100`
@@ -258,7 +262,26 @@ lethality *= (1 + sum of ability_modifiers)
 **Important notes:**
 - Rare variants (2% spawn rate) may have unreliable data due to small sample sizes
 - Corrosive/Sunder effects are not simulated (players can repair at blacksmiths)
-- Run time: ~8 minutes for full simulation
+- Run time: ~35 minutes for full simulation (extended levels add significant time)
+- Racial passives included (Dwarf Last Stand, Orc low-HP damage, Halfling dodge/crit, etc.)
+
+**Latest Simulation Results:** `docs/simulation_results/2026-02-06_summary.md`
+
+**Balance Changes Applied (v0.9.70, 2026-02-06):**
+- Monster HP scaling: logarithmic equipment estimation (was linear, caused HP inflation)
+- HP multiplier rarity: 2.0 → 1.3, slot multipliers corrected
+- Enrage: capped at 10 stacks (combat_manager.gd + combat_engine.gd)
+- Mage base mana regen: 2%/round (Sage 3%) in combat_manager.gd line ~958
+- Forcefield: `100 + INT×8` shield value (combat_manager.gd line ~2373)
+- Meteor cost: 12% → 8% mana (combat_manager.gd line ~2987)
+- Blast/Meteor INT scaling: 0.03 → 0.04 (combat_manager.gd lines ~2329, ~2405)
+- Sorcerer backfire: capped at 15% max HP (combat_manager.gd lines ~2269, ~2342, ~2419, ~4027)
+- Outsmart cap: monster INT/2 → INT/3 (combat_manager.gd lines ~1728, ~2727)
+- DEX dodge cap: 20% → 30% (combat_manager.gd line ~3280)
+- Trickster WITS dodge: min(15, WITS/50) bonus (combat_manager.gd line ~3287)
+- Monster intelligence reduced at tiers 5-9 (monster_database.gd `_calculate_monster_intelligence`)
+
+**Simulation Results (Run 10):** All classes 89-96% average win rate, 6.9% spread. Mages 95-96%, Warriors 94%, Tricksters 89-90%. Balance is good at all levels (Lv5 through Lv5000).
 
 ## Adding ASCII Art
 

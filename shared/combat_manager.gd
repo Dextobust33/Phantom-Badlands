@@ -951,6 +951,20 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
 	_apply_gear_resource_regen(character, messages)
 
+	# === BASE MANA REGENERATION FOR MAGES ===
+	# Mages regenerate 2% max mana per round (Sage gets 3%)
+	var is_mage_class = character.class_type in ["Wizard", "Sorcerer", "Sage"]
+	if is_mage_class and character.current_mana < character.get_total_max_mana():
+		var base_mana_regen_pct = 0.02
+		if character.class_type == "Sage":
+			base_mana_regen_pct = 0.03
+		var base_regen = max(1, int(character.get_total_max_mana() * base_mana_regen_pct))
+		var old_mana = character.current_mana
+		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + base_regen)
+		var actual_regen = character.current_mana - old_mana
+		if actual_regen > 0:
+			messages.append("[color=#9999FF]Arcane focus restores %d mana.[/color]" % actual_regen)
+
 	# === COMPANION RESOURCE REGENERATION ===
 	_apply_companion_resource_regen(combat, character, messages)
 
@@ -1668,15 +1682,15 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	var base_chance = 5
 
 	# WIT bonus: logarithmic scaling for diminishing returns
-	# Formula: 15 * log2(WITS/10) = ~15% at WITS 20, ~30% at WITS 40, ~45% at WITS 80
+	# Formula: 18 * log2(WITS/10) = ~18% at WITS 20, ~36% at WITS 40, ~54% at WITS 80
 	var wits_bonus = 0
 	if player_wits > 10:
-		wits_bonus = int(15.0 * log(float(player_wits) / 10.0) / log(2.0))
+		wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
 
-	# Trickster class bonus (+15%)
+	# Trickster class bonus (+20%)
 	var class_type = character.class_type
 	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
-	var trickster_bonus = 15 if is_trickster else 0
+	var trickster_bonus = 20 if is_trickster else 0
 
 	# Dumb monster bonus: +3% per INT below 10
 	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
@@ -1709,9 +1723,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
 
 	# INT-based cap: High monster INT reduces maximum success chance
-	# Base max: 85% for tricksters, 70% for others. Reduced by monster INT/2
+	# Base max: 85% for tricksters, 70% for others. Reduced by monster INT/3
 	var base_max_chance = 85 if is_trickster else 70
-	var max_chance = max(30, base_max_chance - int(monster_intelligence / 2))  # Min 30% cap
+	var max_chance = max(30, base_max_chance - int(monster_intelligence / 3))  # Min 30% cap
 	outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
@@ -2222,9 +2236,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			character.current_mana -= actual_mana_cost
 
 			# Calculate INT-based damage (based on intended bolt_amount, not reduced cost)
-			# Formula changed from 1+INT/50 to 1+sqrt(INT)/5 for diminishing returns
+			# Hybrid scaling: max of sqrt and linear for better high-level scaling
+			# sqrt(INT)/5: INT 25=2x, INT 100=3x, INT 225=4x (diminishing returns)
+			# INT/75: INT 75=2x, INT 150=3x, INT 225=4x (linear, better at high INT)
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + (sqrt(float(int_stat)) / 5.0)  # INT 25=2x, INT 100=3x, INT 225=4x
+			var int_multiplier = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)
 			var base_damage = int(bolt_amount * int_multiplier)
 
 			# Apply damage buff (from War Cry, potions, etc.)
@@ -2249,8 +2265,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if passive_effects.has("double_damage_chance"):
 				var chaos_roll = randf()
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
-					# Backfire: damage yourself
-					var backfire_dmg = int(base_damage * 0.5)
+					# Backfire: damage yourself (capped at 15% max HP)
+					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -2308,9 +2324,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % blast_cost], "combat_ended": false, "skip_monster_turn": true}
 			if blast_cost < mana_cost:
 				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % blast_cost)
-			# Base damage 50, scaled by INT (+3% per point) and multiplied by 2
+			# Base damage 50, scaled by INT (+4% per point) and multiplied by 2
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
+			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
 			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic × 2
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
@@ -2323,7 +2339,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if passive_effects.has("double_damage_chance"):
 				var chaos_roll = randf()
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
-					var backfire_dmg = int(base_damage * 0.5)
+					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -2352,9 +2368,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"forcefield":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			# Forcefield provides flat damage absorption = 100 + INT × 2 (buffed, replaces Shield)
+			# Forcefield provides flat damage absorption = 100 + INT × 8 (high scaling)
 			var int_stat = character.get_effective_stat("intelligence")
-			var shield_value = 100 + (int_stat * 2)
+			var shield_value = 100 + (int_stat * 8)
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 			is_buff_ability = true
@@ -2384,9 +2400,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % meteor_cost], "combat_ended": false, "skip_monster_turn": true}
 			if meteor_cost < mana_cost:
 				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % meteor_cost)
-			# Base damage 100, scaled by INT (+3% per point), multiplied by 3-4x (random)
+			# Base damage 100, scaled by INT (+4% per point), multiplied by 3-4x (random)
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + (int_stat * 0.03)  # +3% per INT point
+			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
 			var base_damage = int(100 * int_multiplier * meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
@@ -2400,7 +2416,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if passive_effects.has("double_damage_chance"):
 				var chaos_roll = randf()
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
-					var backfire_dmg = int(base_damage * 0.5)
+					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -2687,8 +2703,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Logarithmic WITS scaling
 			var wits_bonus = 0
 			if player_wits > 10:
-				wits_bonus = int(15.0 * log(float(player_wits) / 10.0) / log(2.0))
-			var trickster_bonus = 15 if is_trickster else 0
+				wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
+			var trickster_bonus = 20 if is_trickster else 0
 			var dumb_bonus = max(0, (10 - monster_int) * 3)
 			var smart_penalty = max(0, monster_int - 10)  # -1% per INT above 10
 			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 2)
@@ -2708,7 +2724,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
 			# INT-based cap
 			var base_max_chance = 85 if is_trickster else 70
-			var max_chance = max(30, base_max_chance - int(monster_int / 2))
+			var max_chance = max(30, base_max_chance - int(monster_int / 3))
 			outsmart_chance = clampi(outsmart_chance, 2, max_chance)
 			var level_warning = ""
 			if level_diff > 10:
@@ -2968,7 +2984,7 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Forcefield"}
 				"banish": return {"level": 70, "cost": 80, "cost_percent": 10, "name": "Banish"}
 				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0, "name": "Teleport"}  # Uses distance-based cost
-				"meteor": return {"level": 100, "cost": 100, "cost_percent": 12, "name": "Meteor"}
+				"meteor": return {"level": 100, "cost": 100, "cost_percent": 8, "name": "Meteor"}
 		"warrior":
 			match ability_name:
 				"power_strike": return {"level": 1, "cost": 10, "name": "Power Strike"}
@@ -3244,11 +3260,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		monster.current_hp = min(monster.max_hp, monster.current_hp + heal_amount)
 		messages.append("[color=#00FF00]The %s regenerates %d HP![/color]" % [monster.name, heal_amount])
 
-	# Enrage ability: +10% damage per round
+	# Enrage ability: +10% damage per round, capped at 10 stacks (100%)
 	if ABILITY_ENRAGE in abilities:
-		combat["enrage_stacks"] = combat.get("enrage_stacks", 0) + 1
-		if combat.enrage_stacks > 1:
-			messages.append("[color=#FF4444]The %s grows more furious! (+%d%% damage)[/color]" % [monster.name, combat.enrage_stacks * 10])
+		if combat.get("enrage_stacks", 0) < 10:
+			combat["enrage_stacks"] = combat.get("enrage_stacks", 0) + 1
+			if combat.enrage_stacks > 1:
+				messages.append("[color=#FF4444]The %s grows more furious! (+%d%% damage)[/color]" % [monster.name, combat.enrage_stacks * 10])
 
 	# === ATTACK CALCULATION ===
 
@@ -3258,10 +3275,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var level_diff = monster_level - player_level
 	var hit_chance = 85 + level_diff
 
-	# DEX provides dodge chance: -1% hit chance per 5 DEX (max -20% at 100 DEX)
+	# DEX provides dodge chance: -1% hit chance per 5 DEX (max -30%)
 	var player_dex = character.get_effective_stat("dexterity")
-	var dex_dodge = min(20, int(player_dex / 5))
+	var dex_dodge = min(30, int(player_dex / 5))
 	hit_chance -= dex_dodge
+
+	# WITS provides additional dodge for tricksters: -1% per 50 WITS (max -15%)
+	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	if is_trickster:
+		var player_wits = character.get_effective_stat("wits")
+		var wits_dodge = min(15, int(player_wits / 50))
+		hit_chance -= wits_dodge
 
 	# Speed buff (from Haste, equipment, etc.) reduces monster hit chance
 	var speed_buff = character.get_buff_value("speed")
@@ -3894,6 +3918,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# Use total attack which includes equipment
 	var base_damage = character.get_total_attack()
 
+	# Mage INT-based attack: use INT/5 as minimum base damage when STR is low
+	var is_mage_class = character.class_type in ["Wizard", "Sorcerer", "Sage"]
+	if is_mage_class:
+		var int_attack = int(character.get_effective_stat("intelligence") / 5.0)
+		base_damage = max(base_damage, int_attack)
+
 	# Add strength buff bonus
 	var strength_buff = character.get_buff_value("strength")
 	base_damage += strength_buff
@@ -3993,8 +4023,8 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if effects.has("double_damage_chance"):
 		var chaos_roll = randf()
 		if chaos_roll < effects.get("backfire_chance", 0.10):
-			# Backfire: deal damage to self instead
-			backfire_damage = int(raw_damage * 0.5)
+			# Backfire: deal damage to self (capped at 15% max HP)
+			backfire_damage = mini(int(raw_damage * 0.5), int(character.get_total_max_hp() * 0.15))
 			raw_damage = int(raw_damage * 0.5)  # Halve the attack damage
 			passive_messages.append("[color=#9400D3]Chaos Magic backfires![/color]")
 		elif chaos_roll < effects.get("backfire_chance", 0.10) + effects.get("double_damage_chance", 0.25):

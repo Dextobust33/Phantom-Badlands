@@ -19,6 +19,7 @@ extends Resource
 @export var intelligence: int = 10
 @export var wisdom: int = 10
 @export var wits: int = 10  # Renamed from charisma - used for outsmarting enemies
+@export var wits_training_bonus: int = 0  # Permanent WITS bonus from trading post training (cap: 10)
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -765,8 +766,8 @@ func get_equipment_bonuses() -> Dictionary:
 		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
 		if "ring_arcane" in item_type:
 			# Arcane ring (Mage): extra INT + mana_regen
-			bonuses.intelligence += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.mana_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+			bonuses.intelligence += max(1, int(base_bonus * 0.7)) if base_bonus > 0 else 0
+			bonuses.mana_regen += max(1, int(base_bonus * 0.35)) if base_bonus > 0 else 0
 		elif "ring_shadow" in item_type:
 			# Shadow ring (Trickster): extra WITS + energy_regen
 			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
@@ -1032,7 +1033,7 @@ func get_effective_stat(stat_name: String) -> int:
 		"wits", "wit":
 			var perm = permanent_stat_bonuses.get("wits", 0)
 			var house = house_bonuses.get("wits_bonus", 0)
-			return base_stat + bonuses.wits + perm + house
+			return base_stat + bonuses.wits + perm + house + wits_training_bonus
 		_:
 			var perm = permanent_stat_bonuses.get(stat_name.to_lower(), 0)
 			return base_stat + perm
@@ -1181,13 +1182,13 @@ func get_stat_gains_for_class() -> Dictionary:
 		"Barbarian": {"strength": 1.5, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.0},
 		"Paladin": {"strength": 0.75, "constitution": 1.0, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.25, "wits": 0.25},
 		# Mage Path (primary: INT, secondary: WIS) - Total: 2.5
-		"Wizard": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.25, "intelligence": 1.25, "wisdom": 0.75, "wits": 0.0},
+		"Wizard": {"strength": 0.0, "constitution": 0.40, "dexterity": 0.25, "intelligence": 1.10, "wisdom": 0.75, "wits": 0.0},
 		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 0.75, "wisdom": 1.0, "wits": 0.0},
-		"Sorcerer": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.25, "intelligence": 1.5, "wisdom": 0.5, "wits": 0.0},
+		"Sorcerer": {"strength": 0.0, "constitution": 0.35, "dexterity": 0.25, "intelligence": 1.40, "wisdom": 0.50, "wits": 0.0},
 		# Trickster Path (primary: WITS/DEX, secondary: varies) - Total: 2.5
 		"Thief": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
-		"Ranger": {"strength": 0.5, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.75},
-		"Ninja": {"strength": 0.25, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.75}
+		"Ranger": {"strength": 0.25, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0},
+		"Ninja": {"strength": 0.0, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0}
 	}
 
 	return gains.get(class_type, gains["Fighter"])
@@ -1266,6 +1267,7 @@ func to_dict() -> Dictionary:
 		"title_cooldowns": title_cooldowns,
 		"balance_migrated_v085": balance_migrated_v085,
 		"permanent_stat_bonuses": permanent_stat_bonuses,
+		"wits_training_bonus": wits_training_bonus,
 		"skill_enhancements": skill_enhancements,
 		"trophies": trophies,
 		"active_companion": active_companion,
@@ -1411,6 +1413,7 @@ func from_dict(data: Dictionary):
 
 	# Permanent stat bonuses from tomes
 	permanent_stat_bonuses = data.get("permanent_stat_bonuses", {})
+	wits_training_bonus = int(data.get("wits_training_bonus", 0))
 
 	# Skill enhancements from skill tomes
 	skill_enhancements = data.get("skill_enhancements", {})

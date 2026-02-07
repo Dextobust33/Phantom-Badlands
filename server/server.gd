@@ -707,6 +707,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_trading_post_quests(peer_id)
 		"trading_post_recharge":
 			handle_trading_post_recharge(peer_id)
+		"trading_post_wits_training":
+			handle_trading_post_wits_training(peer_id)
 		"trading_post_leave":
 			handle_trading_post_leave(peer_id)
 		# Quest handlers
@@ -3713,8 +3715,25 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 					"affixes": affixes
 				})
 
-	# No damaged gear and no upgradeable items - no encounter
-	if damaged_items.size() == 0 and upgradeable_items.size() == 0:
+	# Filter upgradeable items to only those the player can afford at least one affix on
+	var affordable_upgradeable_items = []
+	for item_data in upgradeable_items:
+		var item_level = item_data.get("level", 1)
+		var affixes = item_data.get("affixes", {})
+		var has_affordable_affix = false
+		for affix_key in affixes.keys():
+			if affix_key in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
+				continue
+			var current_value = affixes[affix_key]
+			var costs = _calculate_affix_upgrade_cost(affix_key, current_value, item_level)
+			if character.gold >= costs.gold and character.gems >= costs.gems and character.salvage_essence >= costs.essence:
+				has_affordable_affix = true
+				break
+		if has_affordable_affix:
+			affordable_upgradeable_items.append(item_data)
+
+	# No damaged gear and no affordable upgrades - no encounter
+	if damaged_items.size() == 0 and affordable_upgradeable_items.size() == 0:
 		return false
 
 	# Store encounter data for when player responds
@@ -3723,14 +3742,14 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 		"items": damaged_items,
 		"total_cost": total_repair_cost,
 		"repair_all_cost": repair_all_cost,
-		"upgradeable_items": upgradeable_items
+		"upgradeable_items": affordable_upgradeable_items
 	}
 
 	# Build encounter message
 	var msg = "[color=#DAA520]A wandering Blacksmith stops you on the road.[/color]\n"
 	if damaged_items.size() > 0:
 		msg += "'I can fix up that gear for you, traveler.'"
-	if upgradeable_items.size() > 0:
+	if affordable_upgradeable_items.size() > 0:
 		if damaged_items.size() > 0:
 			msg += "\n"
 		msg += "[color=#FFD700]'I can also enhance your equipment... for a price.'[/color]"
@@ -3741,7 +3760,7 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 		"message": msg,
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
-		"can_upgrade": upgradeable_items.size() > 0,
+		"can_upgrade": affordable_upgradeable_items.size() > 0,
 		"player_gold": character.gold,
 		"player_gems": character.gems,
 		"player_essence": character.salvage_essence
@@ -6919,6 +6938,49 @@ func handle_trading_post_recharge(peer_id: int):
 	send_to_peer(peer_id, {
 		"type": "trading_post_message",
 		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d gold)[/color]" % [tp.name, ", ".join(restored).capitalize(), cost]
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_trading_post_wits_training(peer_id: int):
+	"""Sharpen Wits - Trickster-only WITS training at Trading Posts.
+	Costs gold scaling with current bonus. +1 permanent WITS per purchase, cap +10."""
+	if not at_trading_post.has(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You must be at a Trading Post![/color]"})
+		return
+
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Trickster-only
+	if character.class_type not in ["Thief", "Ranger", "Ninja"]:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only Tricksters can train their wits here.[/color]"})
+		return
+
+	# Check cap
+	if character.wits_training_bonus >= 10:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Your wits are already honed to their peak! (10/10)[/color]"})
+		return
+
+	# Cost scales: 500 * (1 + current_bonus * 0.5)
+	var base_cost = 500
+	var cost = int(base_cost * (1.0 + character.wits_training_bonus * 0.5))
+
+	if character.gold < cost:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Not enough gold! Training costs %d gold. (You have %d)[/color]" % [cost, character.gold]})
+		return
+
+	# Apply training
+	character.gold -= cost
+	character.wits_training_bonus += 1
+	var effective_wits = character.get_effective_stat("wits")
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]The masters sharpen your mind![/color]\n[color=#00FF00]+1 permanent WITS! (%d/10 training) Effective WITS: %d (-%d gold)[/color]" % [character.wits_training_bonus, effective_wits, cost]
 	})
 
 	send_character_update(peer_id)
