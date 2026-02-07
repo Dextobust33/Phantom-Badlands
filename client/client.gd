@@ -1366,90 +1366,13 @@ func _create_sfx_player(wav_path: String, volume_key: String) -> AudioStreamPlay
 		player.volume_db = -80.0
 	else:
 		player.volume_db = base_vol + (20.0 * log(sfx_volume) / log(10.0))
-	var stream = _load_wav_runtime(wav_path)
+	var stream = load(wav_path)
 	if stream:
 		player.stream = stream
+	else:
+		push_error("Failed to load sound: %s" % wav_path)
 	add_child(player)
 	return player
-
-func _load_wav_runtime(path: String) -> AudioStreamWAV:
-	"""Load a WAV file at runtime using FileAccess (bypasses import system)"""
-	var file = FileAccess.open(path, FileAccess.READ)
-	if not file:
-		push_error("Failed to open WAV file: %s" % path)
-		return null
-
-	# Read RIFF header
-	var riff = file.get_buffer(4)  # "RIFF"
-	if riff.get_string_from_ascii() != "RIFF":
-		push_error("Not a valid WAV file (no RIFF header): %s" % path)
-		file.close()
-		return null
-	var _file_size = file.get_32()  # File size - 8
-	var wave = file.get_buffer(4)  # "WAVE"
-	if wave.get_string_from_ascii() != "WAVE":
-		push_error("Not a valid WAV file (no WAVE): %s" % path)
-		file.close()
-		return null
-
-	var format_type = 1  # PCM
-	var channels = 1
-	var sample_rate = 44100
-	var bits_per_sample = 16
-	var audio_data = PackedByteArray()
-
-	# Read chunks
-	while file.get_position() < file.get_length():
-		var chunk_id = file.get_buffer(4).get_string_from_ascii()
-		var chunk_size = file.get_32()
-
-		if chunk_id == "fmt ":
-			format_type = file.get_16()  # Audio format (1 = PCM)
-			channels = file.get_16()
-			sample_rate = file.get_32()
-			var _byte_rate = file.get_32()
-			var _block_align = file.get_16()
-			bits_per_sample = file.get_16()
-			# Skip any extra fmt data
-			if chunk_size > 16:
-				file.get_buffer(chunk_size - 16)
-		elif chunk_id == "data":
-			audio_data = file.get_buffer(chunk_size)
-		else:
-			# Skip unknown chunks
-			file.get_buffer(chunk_size)
-
-	file.close()
-
-	if audio_data.size() == 0:
-		push_error("No audio data found in WAV: %s" % path)
-		return null
-
-	# Convert IEEE 32-bit float (fmt=3) to 16-bit PCM
-	if format_type == 3 and bits_per_sample == 32:
-		var num_samples = audio_data.size() / 4
-		var pcm_data = PackedByteArray()
-		pcm_data.resize(num_samples * 2)
-		for i in range(num_samples):
-			var float_val = audio_data.decode_float(i * 4)
-			float_val = clampf(float_val, -1.0, 1.0)
-			pcm_data.encode_s16(i * 2, int(float_val * 32767.0))
-		audio_data = pcm_data
-		bits_per_sample = 16
-
-	var stream = AudioStreamWAV.new()
-	stream.mix_rate = sample_rate
-	stream.stereo = (channels == 2)
-
-	if bits_per_sample == 16:
-		stream.format = AudioStreamWAV.FORMAT_16_BITS
-	elif bits_per_sample == 8:
-		stream.format = AudioStreamWAV.FORMAT_8_BITS
-	else:
-		stream.format = AudioStreamWAV.FORMAT_16_BITS
-
-	stream.data = audio_data
-	return stream
 
 func play_rare_drop_sound(drop_value: int):
 	"""Play sound for rare drops if cooldown allows and value is high enough"""
@@ -1627,7 +1550,7 @@ func _apply_volume_settings():
 
 func _start_background_music():
 	"""Deferred music startup - load WAV file"""
-	var stream = _load_wav_runtime("res://audio/Out of my dreams NES.wav")
+	var stream = load("res://audio/Out of my dreams NES.wav")
 	if stream:
 		music_player.stream = stream
 	# Apply music volume
