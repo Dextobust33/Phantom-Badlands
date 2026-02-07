@@ -1095,6 +1095,14 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 	# Scale kill requirements based on quest type
 	var quest_type = quest.get("type", -1)
 
+	# Randomize target for KILL_TYPE quests with ranges, and format %d in description
+	if quest.has("target_min") and quest.has("target_max"):
+		var rng = RandomNumberGenerator.new()
+		rng.seed = hash(quest.get("id", "") + str(player_level))
+		quest["target"] = rng.randi_range(quest.target_min, quest.target_max)
+	if quest.has("description") and "%d" in quest.description:
+		quest.description = quest.description % quest.target
+
 	match quest_type:
 		QuestType.KILL_ANY:
 			# Scale kill count: base + (player_level / 10) + progression bonus
