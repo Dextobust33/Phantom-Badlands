@@ -967,6 +967,45 @@ const COMBAT_SOUND_COOLDOWN: float = 0.15  # Minimum time between combat sounds
 # Egg hatch celebration sound
 var egg_hatch_player: AudioStreamPlayer = null
 
+# New WAV-based sound effects
+var death_player: AudioStreamPlayer = null
+var egg_found_player: AudioStreamPlayer = null
+var fire1_player: AudioStreamPlayer = null  # Meteor
+var fire2_player: AudioStreamPlayer = null  # Blast
+var gem_gain_player: AudioStreamPlayer = null
+var loot_vanish_player: AudioStreamPlayer = null
+var player_buffed_player: AudioStreamPlayer = null
+var player_healed_player: AudioStreamPlayer = null
+
+# Volume control
+var sfx_volume: float = 1.0   # 0.0 to 1.0 multiplier for all SFX
+var music_volume: float = 1.0  # 0.0 to 1.0 multiplier for music
+var sfx_muted: bool = false
+
+# Base volume levels for each sound (used with volume multiplier)
+const SFX_BASE_VOLUMES: Dictionary = {
+	"rare_drop": -23.0,
+	"levelup": -25.0,
+	"top5": -25.0,
+	"quest_complete": -21.0,
+	"whisper": -22.0,
+	"server_announcement": -19.5,
+	"danger": -24.0,
+	"combat_hit": -23.0,
+	"combat_crit": -20.0,
+	"combat_victory": -22.0,
+	"combat_ability": -26.0,
+	"egg_hatch": -20.0,
+	"death": -21.0,
+	"egg_found": -21.0,
+	"fire1": -23.0,
+	"fire2": -23.0,
+	"gem_gain": -22.0,
+	"loot_vanish": -22.0,
+	"player_buffed": -22.0,
+	"player_healed": -22.0,
+}
+
 # ===== COMPANION ABILITIES (mirrored from drop_tables.gd) =====
 const COMPANION_ABILITIES = {
 	1: {  # Tier 1 (Weakest companions)
@@ -1245,74 +1284,8 @@ func _ready():
 		class_option.item_selected.connect(_on_class_selected)
 		_update_class_description()  # Set initial description
 
-	# Initialize rare drop sound player
-	rare_drop_player = AudioStreamPlayer.new()
-	rare_drop_player.volume_db = -17.0  # Quiet but audible
-	add_child(rare_drop_player)
-	_generate_rare_drop_sound()
-
-	# Initialize level up sound player
-	levelup_player = AudioStreamPlayer.new()
-	levelup_player.volume_db = -19.0  # 20% quieter than before
-	add_child(levelup_player)
-	_generate_levelup_sound()
-
-	# Initialize top 5 leaderboard sound player
-	top5_player = AudioStreamPlayer.new()
-	top5_player.volume_db = -19.0  # Match level up volume
-	add_child(top5_player)
-	_generate_top5_sound()
-
-	# Initialize quest complete sound player
-	quest_complete_player = AudioStreamPlayer.new()
-	quest_complete_player.volume_db = -15.0  # Quiet but noticeable
-	add_child(quest_complete_player)
-	_generate_quest_complete_sound()
-
-	# Initialize whisper notification sound player
-	whisper_player = AudioStreamPlayer.new()
-	whisper_player.volume_db = -16.0  # Quiet but audible notification
-	add_child(whisper_player)
-	_generate_whisper_sound()
-
-	# Initialize server announcement sound player
-	server_announcement_player = AudioStreamPlayer.new()
-	server_announcement_player.volume_db = -13.5  # Noticeable but not intrusive
-	add_child(server_announcement_player)
-	_generate_server_announcement_sound()
-
-	# Initialize danger warning sound player
-	danger_player = AudioStreamPlayer.new()
-	danger_player.volume_db = -18.0  # Quiet but noticeable
-	add_child(danger_player)
-	_generate_danger_sound()
-
-	# Initialize combat sound players (subtle, not overwhelming)
-	combat_hit_player = AudioStreamPlayer.new()
-	combat_hit_player.volume_db = -17.0  # Audible hit sound
-	add_child(combat_hit_player)
-	_generate_combat_hit_sound()
-
-	combat_crit_player = AudioStreamPlayer.new()
-	combat_crit_player.volume_db = -14.0  # Louder for critical impact
-	add_child(combat_crit_player)
-	_generate_combat_crit_sound()
-
-	combat_victory_player = AudioStreamPlayer.new()
-	combat_victory_player.volume_db = -16.0  # Clear victory chime
-	add_child(combat_victory_player)
-	_generate_combat_victory_sound()
-
-	combat_ability_player = AudioStreamPlayer.new()
-	combat_ability_player.volume_db = -20.0  # Audible magical sound
-	add_child(combat_ability_player)
-	_generate_combat_ability_sound()
-
-	# Initialize egg hatch celebration sound
-	egg_hatch_player = AudioStreamPlayer.new()
-	egg_hatch_player.volume_db = -14.0  # Clear celebratory sound
-	add_child(egg_hatch_player)
-	_generate_egg_hatch_sound()
+	# Initialize all sound players with WAV files
+	_init_sound_players()
 
 	# Initialize background music player
 	music_player = AudioStreamPlayer.new()
@@ -1360,42 +1333,123 @@ func _ready():
 	# Show connection panel instead of auto-connect
 	call_deferred("show_connection_panel")
 
-func _generate_rare_drop_sound():
-	"""Generate a pleasant chime sound for rare drops"""
+func _init_sound_players():
+	"""Initialize all sound effect players with WAV files"""
+	# Helper: create player, load WAV, set volume, add as child
+	rare_drop_player = _create_sfx_player("res://audio/GemGain.wav", "rare_drop")
+	levelup_player = _create_sfx_player("res://audio/PowerUp01.wav", "levelup")
+	top5_player = _create_sfx_player("res://audio/PowerUp01.wav", "top5")
+	quest_complete_player = _create_sfx_player("res://audio/UI03.wav", "quest_complete")
+	whisper_player = _create_sfx_player("res://audio/SciFi02.wav", "whisper")
+	server_announcement_player = _create_sfx_player("res://audio/SciFi01.wav", "server_announcement")
+	danger_player = _create_sfx_player("res://audio/Damage01.wav", "danger")
+	combat_hit_player = _create_sfx_player("res://audio/Hit.wav", "combat_hit")
+	combat_crit_player = _create_sfx_player("res://audio/Slash01.wav", "combat_crit")
+	combat_victory_player = _create_sfx_player("res://audio/UI06.wav", "combat_victory")
+	combat_ability_player = _create_sfx_player("res://audio/SciFi01.wav", "combat_ability")
+	egg_hatch_player = _create_sfx_player("res://audio/PowerUp01.wav", "egg_hatch")
+	# New sound effects
+	death_player = _create_sfx_player("res://audio/Death.wav", "death")
+	egg_found_player = _create_sfx_player("res://audio/EggFound.wav", "egg_found")
+	fire1_player = _create_sfx_player("res://audio/Fire01.wav", "fire1")
+	fire2_player = _create_sfx_player("res://audio/Fire02.wav", "fire2")
+	gem_gain_player = _create_sfx_player("res://audio/GemGain.wav", "gem_gain")
+	loot_vanish_player = _create_sfx_player("res://audio/LootVanish.wav", "loot_vanish")
+	player_buffed_player = _create_sfx_player("res://audio/PlayerBuffed.wav", "player_buffed")
+	player_healed_player = _create_sfx_player("res://audio/PlayerHealed.wav", "player_healed")
+
+func _create_sfx_player(wav_path: String, volume_key: String) -> AudioStreamPlayer:
+	"""Create an AudioStreamPlayer with a WAV file and base volume"""
+	var player = AudioStreamPlayer.new()
+	var base_vol = SFX_BASE_VOLUMES.get(volume_key, -16.0)
+	if sfx_volume <= 0.0 or sfx_muted:
+		player.volume_db = -80.0
+	else:
+		player.volume_db = base_vol + (20.0 * log(sfx_volume) / log(10.0))
+	var stream = _load_wav_runtime(wav_path)
+	if stream:
+		player.stream = stream
+	add_child(player)
+	return player
+
+func _load_wav_runtime(path: String) -> AudioStreamWAV:
+	"""Load a WAV file at runtime using FileAccess (bypasses import system)"""
+	var file = FileAccess.open(path, FileAccess.READ)
+	if not file:
+		push_error("Failed to open WAV file: %s" % path)
+		return null
+
+	# Read RIFF header
+	var riff = file.get_buffer(4)  # "RIFF"
+	if riff.get_string_from_ascii() != "RIFF":
+		push_error("Not a valid WAV file (no RIFF header): %s" % path)
+		file.close()
+		return null
+	var _file_size = file.get_32()  # File size - 8
+	var wave = file.get_buffer(4)  # "WAVE"
+	if wave.get_string_from_ascii() != "WAVE":
+		push_error("Not a valid WAV file (no WAVE): %s" % path)
+		file.close()
+		return null
+
+	var format_type = 1  # PCM
+	var channels = 1
 	var sample_rate = 44100
-	var duration = 0.4
-	var samples = int(sample_rate * duration)
+	var bits_per_sample = 16
+	var audio_data = PackedByteArray()
 
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
+	# Read chunks
+	while file.get_position() < file.get_length():
+		var chunk_id = file.get_buffer(4).get_string_from_ascii()
+		var chunk_size = file.get_32()
 
-	var data = PackedByteArray()
-	data.resize(samples * 2)
+		if chunk_id == "fmt ":
+			format_type = file.get_16()  # Audio format (1 = PCM)
+			channels = file.get_16()
+			sample_rate = file.get_32()
+			var _byte_rate = file.get_32()
+			var _block_align = file.get_16()
+			bits_per_sample = file.get_16()
+			# Skip any extra fmt data
+			if chunk_size > 16:
+				file.get_buffer(chunk_size - 16)
+		elif chunk_id == "data":
+			audio_data = file.get_buffer(chunk_size)
+		else:
+			# Skip unknown chunks
+			file.get_buffer(chunk_size)
 
-	# Create a pleasant rising chime (C5 -> E5 -> G5)
-	var frequencies = [523.25, 659.25, 783.99]  # C5, E5, G5
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var envelope = 1.0 - (t / duration)  # Fade out
-		envelope = envelope * envelope  # Exponential fade
+	file.close()
 
-		var sample_val = 0.0
-		for j in range(frequencies.size()):
-			var freq = frequencies[j]
-			var note_start = j * 0.08  # Stagger notes
-			if t >= note_start:
-				var note_t = t - note_start
-				var note_env = max(0.0, 1.0 - (note_t / (duration - note_start)))
-				sample_val += sin(TAU * freq * t) * note_env * 0.3
+	if audio_data.size() == 0:
+		push_error("No audio data found in WAV: %s" % path)
+		return null
 
-		var int_val = int(clamp(sample_val * envelope * 32767, -32768, 32767))
-		data[i * 2] = int_val & 0xFF
-		data[i * 2 + 1] = (int_val >> 8) & 0xFF
+	# Convert IEEE 32-bit float (fmt=3) to 16-bit PCM
+	if format_type == 3 and bits_per_sample == 32:
+		var num_samples = audio_data.size() / 4
+		var pcm_data = PackedByteArray()
+		pcm_data.resize(num_samples * 2)
+		for i in range(num_samples):
+			var float_val = audio_data.decode_float(i * 4)
+			float_val = clampf(float_val, -1.0, 1.0)
+			pcm_data.encode_s16(i * 2, int(float_val * 32767.0))
+		audio_data = pcm_data
+		bits_per_sample = 16
 
-	audio.data = data
-	rare_drop_player.stream = audio
+	var stream = AudioStreamWAV.new()
+	stream.mix_rate = sample_rate
+	stream.stereo = (channels == 2)
+
+	if bits_per_sample == 16:
+		stream.format = AudioStreamWAV.FORMAT_16_BITS
+	elif bits_per_sample == 8:
+		stream.format = AudioStreamWAV.FORMAT_8_BITS
+	else:
+		stream.format = AudioStreamWAV.FORMAT_16_BITS
+
+	stream.data = audio_data
+	return stream
 
 func play_rare_drop_sound(drop_value: int):
 	"""Play sound for rare drops if cooldown allows and value is high enough"""
@@ -1416,432 +1470,30 @@ func play_rare_drop_sound(drop_value: int):
 		last_rare_sound_time = current_time
 		rare_sound_threshold += 1
 
-func _generate_levelup_sound():
-	"""Generate Diablo 2 style level up sound - triumphant fanfare"""
-	var sample_rate = 44100
-	var duration = 1.2
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# Diablo 2 level up has a rising triumphant tone with choir-like quality
-	# Notes: Rising arpeggio C-E-G-C (octave up)
-	var notes = [
-		{"freq": 262, "start": 0.0, "dur": 0.4},    # C4
-		{"freq": 330, "start": 0.1, "dur": 0.4},    # E4
-		{"freq": 392, "start": 0.2, "dur": 0.5},    # G4
-		{"freq": 523, "start": 0.3, "dur": 0.7},    # C5
-		{"freq": 659, "start": 0.5, "dur": 0.6},    # E5 (high shimmer)
-	]
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var sample_l = 0.0
-		var sample_r = 0.0
-
-		# Layer each note
-		for note in notes:
-			var freq = note.freq
-			var start = note.start
-			var dur = note.dur
-
-			if t >= start and t < start + dur:
-				var note_t = t - start
-				# Envelope: quick attack, long sustain, fade out
-				var env = 0.0
-				var attack = 0.05
-				var release_start = dur - 0.3
-
-				if note_t < attack:
-					env = note_t / attack
-				elif note_t < release_start:
-					env = 1.0
-				else:
-					env = 1.0 - ((note_t - release_start) / 0.3)
-
-				env = max(0.0, env)
-
-				# Rich harmonic content (choir-like)
-				var wave = sin(TAU * freq * t) * 0.4
-				wave += sin(TAU * freq * 2.0 * t) * 0.2
-				wave += sin(TAU * freq * 3.0 * t) * 0.1
-				wave += sin(TAU * freq * 4.0 * t) * 0.05
-
-				# Slight stereo spread
-				sample_l += wave * env * 0.25
-				sample_r += wave * env * 0.25 * (1.0 + sin(TAU * 2.0 * t) * 0.1)
-
-		# Add shimmer/sparkle overlay
-		if t > 0.4 and t < 1.1:
-			var shimmer_env = 0.0
-			if t < 0.6:
-				shimmer_env = (t - 0.4) / 0.2
-			elif t < 0.9:
-				shimmer_env = 1.0
-			else:
-				shimmer_env = (1.1 - t) / 0.2
-
-			var shimmer = sin(TAU * 1047 * t) * 0.08  # C6
-			shimmer += sin(TAU * 1319 * t) * 0.05     # E6
-			sample_l += shimmer * shimmer_env
-			sample_r += shimmer * shimmer_env
-
-		# Soft limit
-		sample_l = clamp(sample_l, -0.9, 0.9)
-		sample_r = clamp(sample_r, -0.9, 0.9)
-
-		var int_l = int(sample_l * 32767)
-		var int_r = int(sample_r * 32767)
-
-		data[i * 4] = int_l & 0xFF
-		data[i * 4 + 1] = (int_l >> 8) & 0xFF
-		data[i * 4 + 2] = int_r & 0xFF
-		data[i * 4 + 3] = (int_r >> 8) & 0xFF
-
-	audio.data = data
-	levelup_player.stream = audio
-
 func play_levelup_sound():
 	"""Play the level up sound effect"""
 	if levelup_player and levelup_player.stream:
 		levelup_player.play()
-
-func _generate_top5_sound():
-	"""Generate heroic fanfare for top 5 leaderboard entry (D major: D-F#-A-D-F#5)"""
-	var sample_rate = 44100
-	var duration = 1.5
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# Heroic D major fanfare: D4, F#4, A4, D5, F#5
-	var notes = [
-		{"freq": 293.66, "start": 0.0, "dur": 0.5},   # D4
-		{"freq": 369.99, "start": 0.15, "dur": 0.5},  # F#4
-		{"freq": 440.00, "start": 0.30, "dur": 0.6},  # A4
-		{"freq": 587.33, "start": 0.45, "dur": 0.7},  # D5
-		{"freq": 739.99, "start": 0.65, "dur": 0.8},  # F#5 (high triumphant note)
-	]
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var sample_l = 0.0
-		var sample_r = 0.0
-
-		# Layer each note
-		for note in notes:
-			var freq = note.freq
-			var start = note.start
-			var dur = note.dur
-
-			if t >= start and t < start + dur:
-				var note_t = t - start
-				# Envelope: quick attack, sustain, fade out
-				var env = 0.0
-				var attack = 0.04
-				var release_start = dur - 0.25
-
-				if note_t < attack:
-					env = note_t / attack
-				elif note_t < release_start:
-					env = 1.0
-				else:
-					env = 1.0 - ((note_t - release_start) / 0.25)
-
-				env = max(0.0, env)
-
-				# Brass-like harmonic content
-				var wave = sin(TAU * freq * t) * 0.35
-				wave += sin(TAU * freq * 2.0 * t) * 0.25
-				wave += sin(TAU * freq * 3.0 * t) * 0.15
-				wave += sin(TAU * freq * 4.0 * t) * 0.08
-
-				# Stereo spread (slightly wider for heroic feel)
-				sample_l += wave * env * 0.3
-				sample_r += wave * env * 0.3 * (1.0 + sin(TAU * 3.0 * t) * 0.12)
-
-		# Add shimmer/sparkle at the peak
-		if t > 0.6 and t < 1.4:
-			var shimmer_env = 0.0
-			if t < 0.8:
-				shimmer_env = (t - 0.6) / 0.2
-			elif t < 1.2:
-				shimmer_env = 1.0
-			else:
-				shimmer_env = (1.4 - t) / 0.2
-
-			var shimmer = sin(TAU * 1175 * t) * 0.06  # D6
-			shimmer += sin(TAU * 1480 * t) * 0.04     # F#6
-			sample_l += shimmer * shimmer_env
-			sample_r += shimmer * shimmer_env
-
-		# Soft limit
-		sample_l = clamp(sample_l, -0.9, 0.9)
-		sample_r = clamp(sample_r, -0.9, 0.9)
-
-		var int_l = int(sample_l * 32767)
-		var int_r = int(sample_r * 32767)
-
-		data[i * 4] = int_l & 0xFF
-		data[i * 4 + 1] = (int_l >> 8) & 0xFF
-		data[i * 4 + 2] = int_r & 0xFF
-		data[i * 4 + 3] = (int_r >> 8) & 0xFF
-
-	audio.data = data
-	top5_player.stream = audio
 
 func play_top5_sound():
 	"""Play the top 5 leaderboard fanfare"""
 	if top5_player and top5_player.stream:
 		top5_player.play()
 
-func _generate_quest_complete_sound():
-	"""Generate a quick, pleasant chime for quest completion"""
-	var sample_rate = 44100
-	var duration = 0.4  # Short and quick
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# Two quick ascending notes (G5 -> C6) - bright and cheerful
-	var notes = [
-		{"freq": 784.0, "start": 0.0, "dur": 0.2},    # G5
-		{"freq": 1046.5, "start": 0.1, "dur": 0.3},   # C6
-	]
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var sample_l = 0.0
-		var sample_r = 0.0
-
-		for note in notes:
-			var freq = note.freq
-			var start = note.start
-			var dur = note.dur
-
-			if t >= start and t < start + dur:
-				var note_t = t - start
-				# Quick attack, gentle decay
-				var env = 0.0
-				var attack = 0.01
-				var decay_start = 0.05
-
-				if note_t < attack:
-					env = note_t / attack
-				elif note_t < decay_start:
-					env = 1.0
-				else:
-					env = pow(1.0 - ((note_t - decay_start) / (dur - decay_start)), 1.5)
-
-				env = max(0.0, env)
-
-				# Bell-like tone
-				var wave = sin(TAU * freq * t) * 0.4
-				wave += sin(TAU * freq * 2.0 * t) * 0.2
-				wave += sin(TAU * freq * 3.0 * t) * 0.1
-
-				sample_l += wave * env * 0.25
-				sample_r += wave * env * 0.25
-
-		# Soft limit
-		sample_l = clamp(sample_l, -0.9, 0.9)
-		sample_r = clamp(sample_r, -0.9, 0.9)
-
-		var int_l = int(sample_l * 32767)
-		var int_r = int(sample_r * 32767)
-
-		data[i * 4] = int_l & 0xFF
-		data[i * 4 + 1] = (int_l >> 8) & 0xFF
-		data[i * 4 + 2] = int_r & 0xFF
-		data[i * 4 + 3] = (int_r >> 8) & 0xFF
-
-	audio.data = data
-	quest_complete_player.stream = audio
-
 func play_quest_complete_sound():
 	"""Play the quest complete chime"""
 	if quest_complete_player and quest_complete_player.stream:
 		quest_complete_player.play()
-
-func _generate_whisper_sound():
-	"""Generate a soft, gentle notification chime for private messages"""
-	var sample_rate = 44100
-	var duration = 0.35  # Short but pleasant
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	# Soft two-tone chime (G5 and E6 - gentle interval)
-	var freq1 = 784.0  # G5
-	var freq2 = 1318.5  # E6
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var progress = float(i) / samples
-
-		# First note (G5) then second note (E6)
-		var note_progress = progress * 2.0
-		var value = 0.0
-
-		if note_progress < 1.0:
-			# First note with quick fade
-			var note_t = note_progress
-			var env = sin(note_t * PI) * (1.0 - note_t * 0.3)
-			value = sin(t * TAU * freq1) * env * 0.4
-		else:
-			# Second note (higher)
-			var note_t = note_progress - 1.0
-			var env = sin(note_t * PI) * (1.0 - note_t * 0.5)
-			value = sin(t * TAU * freq2) * env * 0.35
-
-		var sample = int(clamp(value * 32767, -32767, 32767))
-		data[i * 2] = sample & 0xFF
-		data[i * 2 + 1] = (sample >> 8) & 0xFF
-
-	audio.data = data
-	whisper_player.stream = audio
 
 func play_whisper_notification():
 	"""Play the whisper notification sound"""
 	if whisper_player and whisper_player.stream:
 		whisper_player.play()
 
-func _generate_server_announcement_sound():
-	"""Generate an attention-getting announcement sound (three ascending tones)"""
-	var sample_rate = 44100
-	var duration = 0.6  # Longer for more impact
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	# Three ascending tones (C5, E5, G5) - attention-grabbing arpeggio
-	var freq1 = 523.25  # C5
-	var freq2 = 659.25  # E5
-	var freq3 = 783.99  # G5
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var progress = float(i) / samples
-		var value = 0.0
-
-		# Three notes in sequence
-		var note_phase = progress * 3.0
-		if note_phase < 1.0:
-			var note_t = note_phase
-			var env = sin(note_t * PI) * 0.8
-			value = sin(t * TAU * freq1) * env * 0.5
-		elif note_phase < 2.0:
-			var note_t = note_phase - 1.0
-			var env = sin(note_t * PI) * 0.85
-			value = sin(t * TAU * freq2) * env * 0.5
-		else:
-			var note_t = note_phase - 2.0
-			var env = sin(note_t * PI) * 0.9
-			value = sin(t * TAU * freq3) * env * 0.5
-
-		var sample = int(clamp(value * 32767, -32767, 32767))
-		data[i * 2] = sample & 0xFF
-		data[i * 2 + 1] = (sample >> 8) & 0xFF
-
-	audio.data = data
-	server_announcement_player.stream = audio
-
 func play_server_announcement():
 	"""Play the server announcement sound"""
 	if server_announcement_player and server_announcement_player.stream:
 		server_announcement_player.play()
-
-func _generate_danger_sound():
-	"""Generate a low warning tone for heavy damage taken"""
-	var sample_rate = 44100
-	var duration = 0.35  # Short warning
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# Low warning tones descending (D3 → B2)
-	var frequencies = [146.83, 123.47]  # D3, B2 - ominous low tones
-	var durations = [0.2, 0.15]
-	var time_offset = 0.0
-
-	for n in range(frequencies.size()):
-		var freq = frequencies[n]
-		var note_duration = durations[n]
-		var note_samples = int(sample_rate * note_duration)
-		var start_sample = int(time_offset * sample_rate)
-
-		for i in range(note_samples):
-			var sample_idx = start_sample + i
-			if sample_idx >= samples:
-				break
-
-			var t = float(i) / sample_rate
-			var envelope = 1.0
-			var attack = 0.01
-			var release = 0.05
-
-			if t < attack:
-				envelope = t / attack
-			elif t > note_duration - release:
-				envelope = (note_duration - t) / release
-
-			envelope = clamp(envelope, 0.0, 1.0)
-
-			# Low rumbling tone with slight dissonance
-			var sample = sin(t * freq * TAU) * 0.5
-			sample += sin(t * freq * TAU * 1.01) * 0.3  # Slight detune for tension
-			sample += sin(t * freq * TAU * 0.5) * 0.2  # Sub-bass
-			sample *= envelope * 0.5
-
-			var int_sample = int(clamp(sample, -1.0, 1.0) * 32767)
-			var int_l = int_sample
-			var int_r = int_sample
-
-			data[sample_idx * 4] = int_l & 0xFF
-			data[sample_idx * 4 + 1] = (int_l >> 8) & 0xFF
-			data[sample_idx * 4 + 2] = int_r & 0xFF
-			data[sample_idx * 4 + 3] = (int_r >> 8) & 0xFF
-
-		time_offset += note_duration
-
-	audio.data = data
-	danger_player.stream = audio
 
 func play_danger_sound():
 	"""Play the danger warning sound"""
@@ -1849,222 +1501,6 @@ func play_danger_sound():
 		danger_player.play()
 
 # ===== COMBAT SOUND EFFECTS =====
-
-func _generate_combat_hit_sound():
-	"""Generate an ultra-subtle click for landing an attack - barely audible"""
-	var sample_rate = 44100
-	var duration = 0.05  # Ultra short
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var envelope = exp(-t * 80)  # Very fast decay
-
-		# Soft low click
-		var sample = sin(t * 150 * TAU) * 0.3
-		sample += sin(t * 280 * TAU) * 0.2
-		sample *= envelope * 0.08  # Ultra conservative - barely audible
-
-		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
-		data[i * 2] = int_val & 0xFF
-		data[i * 2 + 1] = (int_val >> 8) & 0xFF
-
-	audio.data = data
-	combat_hit_player.stream = audio
-
-func _generate_combat_crit_sound():
-	"""Generate a subtle critical hit sound - short soft impact"""
-	var sample_rate = 44100
-	var duration = 0.1  # Short
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var envelope = exp(-t * 35)  # Fast decay
-
-		# Soft impact with slight brightness
-		var sample = sin(t * 120 * TAU) * 0.4
-		sample += sin(t * 350 * TAU) * 0.25
-		sample += sin(t * 500 * TAU) * 0.15
-		sample *= envelope * 0.12  # Ultra conservative - barely louder than hit
-
-		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
-		data[i * 2] = int_val & 0xFF
-		data[i * 2 + 1] = (int_val >> 8) & 0xFF
-
-	audio.data = data
-	combat_crit_player.stream = audio
-
-func _generate_combat_victory_sound():
-	"""Generate an ultra-subtle victory chime"""
-	var sample_rate = 44100
-	var duration = 0.15  # Very short
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	# Quick soft ascending notes (G4 -> C5)
-	var notes = [392.0, 523.25]  # G4, C5
-	var note_starts = [0.0, 0.05]
-	var note_durs = [0.08, 0.10]
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var sample = 0.0
-
-		for n in range(notes.size()):
-			var freq = notes[n]
-			var start = note_starts[n]
-			var dur = note_durs[n]
-			if t >= start and t < start + dur:
-				var note_t = t - start
-				var envelope = 1.0 - (note_t / dur)
-				envelope = envelope * envelope
-				sample += sin(note_t * freq * TAU) * envelope * 0.08  # Ultra conservative
-
-		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
-		data[i * 2] = int_val & 0xFF
-		data[i * 2 + 1] = (int_val >> 8) & 0xFF
-
-	audio.data = data
-	combat_victory_player.stream = audio
-
-func _generate_combat_ability_sound():
-	"""Generate a magical whoosh for ability use"""
-	var sample_rate = 44100
-	var duration = 0.15  # Slightly longer for clarity
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = false
-
-	var data = PackedByteArray()
-	data.resize(samples * 2)
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		# Gentle sweep
-		var freq = 800 - (t / duration) * 400  # 800Hz -> 400Hz sweep
-		var envelope = sin(t / duration * PI)  # Bell curve
-
-		var sample = sin(t * freq * TAU) * 0.25
-		sample += sin(t * freq * 1.5 * TAU) * 0.12  # Soft harmonic
-		sample += sin(t * freq * 2.0 * TAU) * 0.06  # Extra shimmer
-		sample *= envelope * 0.35  # Audible but not loud
-
-		var int_val = int(clamp(sample, -1.0, 1.0) * 32767)
-		data[i * 2] = int_val & 0xFF
-		data[i * 2 + 1] = (int_val >> 8) & 0xFF
-
-	audio.data = data
-	combat_ability_player.stream = audio
-
-func _generate_egg_hatch_sound():
-	"""Generate a magical hatching celebration sound (rising crystalline chime)"""
-	var sample_rate = 44100
-	var duration = 1.2
-	var samples = int(sample_rate * duration)
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# Magical ascending notes with sparkle (C major: C5, E5, G5, C6)
-	var notes = [
-		{"freq": 523.25, "start": 0.0, "dur": 0.4},   # C5
-		{"freq": 659.25, "start": 0.12, "dur": 0.4},  # E5
-		{"freq": 783.99, "start": 0.24, "dur": 0.45}, # G5
-		{"freq": 1046.50, "start": 0.40, "dur": 0.7}, # C6 (triumphant high note)
-	]
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var sample_l = 0.0
-		var sample_r = 0.0
-
-		# Layer each note with bell-like quality
-		for note in notes:
-			var freq = note.freq
-			var start = note.start
-			var dur = note.dur
-
-			if t >= start and t < start + dur:
-				var note_t = t - start
-				# Bell-like envelope: quick attack, long decay
-				var attack = 0.02
-				var env = 0.0
-				if note_t < attack:
-					env = note_t / attack
-				else:
-					env = exp(-(note_t - attack) * 3.5)
-
-				# Crystalline bell harmonics
-				var wave = sin(TAU * freq * t) * 0.30
-				wave += sin(TAU * freq * 2.0 * t) * 0.18
-				wave += sin(TAU * freq * 3.0 * t) * 0.08
-				wave += sin(TAU * freq * 4.0 * t) * 0.04
-
-				sample_l += wave * env * 0.4
-				sample_r += wave * env * 0.4
-
-		# Add magical sparkle overlay
-		if t > 0.3 and t < 1.1:
-			var sparkle_env = 0.0
-			if t < 0.5:
-				sparkle_env = (t - 0.3) / 0.2
-			elif t < 0.9:
-				sparkle_env = 1.0
-			else:
-				sparkle_env = (1.1 - t) / 0.2
-
-			# High frequency shimmer
-			var sparkle = sin(TAU * 2093 * t + sin(TAU * 7 * t) * 0.5) * 0.04  # C7 with wobble
-			sparkle += sin(TAU * 2637 * t) * 0.03  # E7
-			sample_l += sparkle * sparkle_env
-			sample_r += sparkle * sparkle_env * 0.9  # Slight stereo difference
-
-		# Soft limit
-		sample_l = clamp(sample_l, -0.9, 0.9)
-		sample_r = clamp(sample_r, -0.9, 0.9)
-
-		var int_l = int(sample_l * 32767)
-		var int_r = int(sample_r * 32767)
-
-		data[i * 4] = int_l & 0xFF
-		data[i * 4 + 1] = (int_l >> 8) & 0xFF
-		data[i * 4 + 2] = int_r & 0xFF
-		data[i * 4 + 3] = (int_r >> 8) & 0xFF
-
-	audio.data = data
-	egg_hatch_player.stream = audio
 
 func play_egg_hatch_sound():
 	"""Play the egg hatch celebration sound"""
@@ -2105,112 +1541,102 @@ func play_combat_ability_sound():
 		combat_ability_player.play()
 		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
 
+# ===== NEW WAV-BASED SOUND PLAY FUNCTIONS =====
+
+func play_death_sound():
+	"""Play the death/permadeath sound"""
+	if death_player and death_player.stream:
+		death_player.play()
+
+func play_egg_found_sound():
+	"""Play the egg found sound"""
+	if egg_found_player and egg_found_player.stream:
+		egg_found_player.play()
+
+func play_fire1_sound():
+	"""Play Meteor fire sound"""
+	if fire1_player and fire1_player.stream:
+		fire1_player.play()
+
+func play_fire2_sound():
+	"""Play Blast fire sound"""
+	if fire2_player and fire2_player.stream:
+		fire2_player.play()
+
+func play_gem_gain_sound():
+	"""Play gem gain sound"""
+	if gem_gain_player and gem_gain_player.stream:
+		gem_gain_player.play()
+
+func play_loot_vanish_sound():
+	"""Play loot vanish sound (failed special drop)"""
+	if loot_vanish_player and loot_vanish_player.stream:
+		loot_vanish_player.play()
+
+func play_player_buffed_sound():
+	"""Play buff activation sound"""
+	if player_buffed_player and player_buffed_player.stream:
+		player_buffed_player.play()
+
+func play_player_healed_sound():
+	"""Play healing sound"""
+	if player_healed_player and player_healed_player.stream:
+		player_healed_player.play()
+
+# ===== VOLUME CONTROL =====
+
+func _apply_volume_settings():
+	"""Apply current volume settings to all audio players"""
+	# SFX players
+	var sfx_players = {
+		"rare_drop": rare_drop_player,
+		"levelup": levelup_player,
+		"top5": top5_player,
+		"quest_complete": quest_complete_player,
+		"whisper": whisper_player,
+		"server_announcement": server_announcement_player,
+		"danger": danger_player,
+		"combat_hit": combat_hit_player,
+		"combat_crit": combat_crit_player,
+		"combat_victory": combat_victory_player,
+		"combat_ability": combat_ability_player,
+		"egg_hatch": egg_hatch_player,
+		"death": death_player,
+		"egg_found": egg_found_player,
+		"fire1": fire1_player,
+		"fire2": fire2_player,
+		"gem_gain": gem_gain_player,
+		"loot_vanish": loot_vanish_player,
+		"player_buffed": player_buffed_player,
+		"player_healed": player_healed_player,
+	}
+	for key in sfx_players:
+		var player = sfx_players[key]
+		if player:
+			var base_vol = SFX_BASE_VOLUMES.get(key, -16.0)
+			if sfx_volume <= 0.0 or sfx_muted:
+				player.volume_db = -80.0
+			else:
+				player.volume_db = base_vol + (20.0 * log(sfx_volume) / log(10.0))
+	# Music player
+	if music_player:
+		if music_volume <= 0.0:
+			music_player.volume_db = -80.0
+		else:
+			music_player.volume_db = MUSIC_VOLUME_DB + (20.0 * log(music_volume) / log(10.0))
+
 func _start_background_music():
-	"""Deferred music startup"""
-	_generate_ambient_music()
+	"""Deferred music startup - load WAV file"""
+	var stream = _load_wav_runtime("res://audio/Out of my dreams NES.wav")
+	if stream:
+		music_player.stream = stream
+	# Apply music volume
+	if music_volume <= 0.0:
+		music_player.volume_db = -80.0
+	else:
+		music_player.volume_db = MUSIC_VOLUME_DB + (20.0 * log(music_volume) / log(10.0))
 	if not music_muted:
 		music_player.play()
-
-func _generate_ambient_music():
-	"""Generate Terraria-style chiptune adventure music"""
-	var sample_rate = 22050
-	var duration = 24.0  # 24 second loop
-	var samples = int(sample_rate * duration)
-	var bpm = 70.0  # Slow, ambient tempo
-	var beat_duration = 60.0 / bpm
-
-	var audio = AudioStreamWAV.new()
-	audio.format = AudioStreamWAV.FORMAT_16_BITS
-	audio.mix_rate = sample_rate
-	audio.stereo = true
-	audio.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	audio.loop_end = samples
-
-	var data = PackedByteArray()
-	data.resize(samples * 4)
-
-	# C major / A minor for mellow adventure feel
-	# Melody notes (C major pentatonic - lower octave, no high notes)
-	var melody = [
-		196, 220, 247, 294, 330,  # G3, A3, B3, D4, E4
-		294, 247, 220, 196, 220,  # D4, B3, A3, G3, A3
-		247, 294, 330, 392, 330,  # B3, D4, E4, G4, E4
-		294, 247, 220, 247, 196   # D4, B3, A3, B3, G3
-	]
-
-	# Bass pattern (root notes)
-	var bass_notes = [131, 131, 175, 175, 196, 196, 165, 165]  # C3, C3, F3, F3, G3, G3, E3, E3
-
-	for i in range(samples):
-		var t = float(i) / sample_rate
-		var beat = t / beat_duration
-		var beat_16th = beat * 4.0
-
-		var sample_l = 0.0
-		var sample_r = 0.0
-
-		# Layer 1: Triangle wave bass (Terraria-style)
-		var bass_idx = int(beat / 2.0) % bass_notes.size()
-		var bass_freq = float(bass_notes[bass_idx])
-		var bass_phase = fmod(t * bass_freq, 1.0)
-		var bass_wave = abs(bass_phase - 0.5) * 4.0 - 1.0  # Triangle
-		sample_l += bass_wave * 0.15
-		sample_r += bass_wave * 0.15
-
-		# Layer 2: Square wave melody (main chiptune sound)
-		var melody_idx = int(beat_16th / 2.0) % melody.size()
-		var melody_freq = float(melody[melody_idx])
-
-		# Melody envelope (slight attack/decay per note)
-		var note_phase = fmod(beat_16th / 2.0, 1.0)
-		var melody_env = 1.0 - note_phase * 0.3
-
-		# Square wave (sign of sine)
-		var melody_wave = sign(sin(TAU * melody_freq * t))
-		# Soften the square wave slightly
-		melody_wave = melody_wave * 0.7 + sin(TAU * melody_freq * t) * 0.3
-		sample_l += melody_wave * 0.08 * melody_env
-		sample_r += melody_wave * 0.08 * melody_env
-
-		# Layer 3: Arpeggio accompaniment (mellow arps - lower octave)
-		var arp_notes = [131, 165, 196, 262]  # C3, E3, G3, C4
-		var arp_idx = int(beat_16th) % arp_notes.size()
-		var arp_freq = float(arp_notes[arp_idx])
-
-		var arp_env = exp(-fmod(beat_16th, 1.0) * 6.0)
-		var arp_wave = sin(TAU * arp_freq * t) * 0.6  # Pure sine, no high harmonics
-		sample_l += arp_wave * 0.03 * arp_env
-		sample_r += arp_wave * 0.035 * arp_env
-
-		# Layer 4: Noise percussion (simple hi-hat style on 8ths)
-		var perc_phase = fmod(beat * 2.0, 1.0)
-		if perc_phase < 0.1:
-			var noise = (randf() - 0.5) * 0.06 * (1.0 - perc_phase * 10.0)
-			sample_l += noise
-			sample_r += noise
-
-		# Layer 5: Kick drum on beats
-		var kick_phase = fmod(beat, 1.0)
-		if kick_phase < 0.15:
-			var kick_freq = 80.0 * (1.0 - kick_phase * 4.0)
-			var kick = sin(TAU * kick_freq * t) * (1.0 - kick_phase * 6.0) * 0.12
-			sample_l += kick
-			sample_r += kick
-
-		# Soft limiting
-		sample_l = clamp(sample_l, -0.9, 0.9)
-		sample_r = clamp(sample_r, -0.9, 0.9)
-
-		var int_l = int(sample_l * 32767)
-		var int_r = int(sample_r * 32767)
-
-		data[i * 4] = int_l & 0xFF
-		data[i * 4 + 1] = (int_l >> 8) & 0xFF
-		data[i * 4 + 2] = int_r & 0xFF
-		data[i * 4 + 3] = (int_r >> 8) & 0xFF
-
-	audio.data = data
-	music_player.stream = audio
 
 func _on_music_finished():
 	"""Restart music when it finishes (backup for loop)"""
@@ -3118,6 +2544,11 @@ func _input(event):
 				game_output.clear()
 				display_ui_scale_settings()
 				update_action_bar()
+			elif keycode == keybinds.get("action_9", default_keybinds.get("action_9", KEY_5)):
+				settings_submenu = "sound"
+				game_output.clear()
+				display_sound_settings()
+				update_action_bar()
 			elif keycode == key_action_0:
 				# Mark action_0 hotkey as pressed to prevent double-trigger
 				set_meta("hotkey_0_pressed", true)
@@ -3216,6 +2647,29 @@ func _input(event):
 				adjust_ui_scale("right_panel", -0.1)
 			elif keycode == KEY_9:
 				reset_ui_scales()
+			elif keycode == back_key:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "sound":
+			# Sound settings submenu
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if keycode == KEY_1:
+				adjust_sound_volume("sfx", 0.1)
+			elif keycode == KEY_2:
+				adjust_sound_volume("sfx", -0.1)
+			elif keycode == KEY_3:
+				adjust_sound_volume("music", 0.1)
+			elif keycode == KEY_4:
+				adjust_sound_volume("music", -0.1)
+			elif keycode == KEY_5:
+				sfx_muted = not sfx_muted
+				_apply_volume_settings()
+				_save_keybinds()
+				game_output.clear()
+				display_sound_settings()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -4104,7 +3558,22 @@ func show_player_info_popup(data: Dictionary):
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
-	player_info_content.append_text("[color=#FF6666]HP:[/color] %d / %d\n\n" % [hp, max_hp])
+	player_info_content.append_text("[color=#FF6666]HP:[/color] %d / %d\n" % [hp, max_hp])
+
+	# Resource based on class path
+	if cls in ["Wizard", "Sorcerer", "Sage"]:
+		var cur = data.get("current_mana", 0)
+		var total = data.get("total_max_mana", 1)
+		player_info_content.append_text("[color=#9999FF]Mana:[/color] %d / %d\n" % [cur, total])
+	elif cls in ["Thief", "Ranger", "Ninja"]:
+		var cur = data.get("current_energy", 0)
+		var total = data.get("total_max_energy", 1)
+		player_info_content.append_text("[color=#66FF66]Energy:[/color] %d / %d\n" % [cur, total])
+	elif cls in ["Fighter", "Barbarian", "Paladin"]:
+		var cur = data.get("current_stamina", 0)
+		var total = data.get("total_max_stamina", 1)
+		player_info_content.append_text("[color=#FFCC00]Stamina:[/color] %d / %d\n" % [cur, total])
+	player_info_content.append_text("\n")
 
 	# Stats with equipment bonuses (color-coded)
 	player_info_content.append_text("[color=#FF00FF]Stats:[/color]\n")
@@ -4365,6 +3834,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif settings_submenu == "sound":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "settings_back_to_main", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Press 1-5", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "to adjust", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
@@ -4376,7 +3858,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
 				{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Sound", "action_type": "local", "action_data": "settings_sound", "enabled": true},
 			]
 	elif game_state == GameState.DEAD:
 		current_actions = [
@@ -7955,6 +7437,11 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_ui_scale_settings()
 			update_action_bar()
+		"settings_sound":
+			settings_submenu = "sound"
+			game_output.clear()
+			display_sound_settings()
+			update_action_bar()
 		"settings_reset":
 			reset_keybinds_to_defaults()
 		"settings_back_to_main":
@@ -11199,8 +10686,8 @@ func update_player_hp_bar():
 	var label = player_health_bar.get_node("HPLabel")
 
 	if fill:
-		# Animate the HP bar change instead of instant update
-		animate_hp_bar_change(fill, percent, true)
+		# Animate the HP bar change - clamp visual fill at 0% (no negative bar width)
+		animate_hp_bar_change(fill, max(0.0, percent), true)
 		var style = fill.get_theme_stylebox("panel").duplicate()
 		style.bg_color = get_hp_color(percent)
 		fill.add_theme_stylebox_override("panel", style)
@@ -12012,8 +11499,15 @@ func handle_server_message(message: Dictionary):
 
 		"permadeath":
 			game_state = GameState.DEAD
-			has_character = false
 			in_combat = false
+			play_death_sound()
+			# Show final HP (can be negative) on the bar - visual fill clamped at 0%
+			var final_hp = message.get("player_hp", 0)
+			var final_max_hp = message.get("player_max_hp", character_data.get("total_max_hp", character_data.get("max_hp", 1)))
+			character_data["current_hp"] = final_hp
+			character_data["total_max_hp"] = final_max_hp
+			update_player_hp_bar()
+			has_character = false
 			character_data = {}
 			hide_all_panels()
 			display_death_screen(message)
@@ -12148,6 +11642,14 @@ func handle_server_message(message: Dictionary):
 				awaiting_item_use_result = false
 			else:
 				display_game(text_msg)
+			# Sound triggers for text messages
+			var text_lower = text_msg.to_lower()
+			if "hp restored" in text_lower or "healed" in text_lower or "recovered" in text_lower:
+				play_player_healed_sound()
+			elif "gem" in text_lower and ("+" in text_msg or "gained" in text_lower or "found" in text_lower):
+				play_gem_gain_sound()
+			elif "egg" in text_lower and ("found" in text_lower or "dropped" in text_lower):
+				play_egg_found_sound()
 
 		"lucky_find":
 			# Lucky find requires acknowledgment before moving again
@@ -12420,6 +11922,11 @@ func handle_server_message(message: Dictionary):
 			# Trigger combat sounds based on message content
 			_trigger_combat_sounds(combat_msg)
 
+			# Loot vanish detection (failed special monster drops)
+			var lower_msg = combat_msg.to_lower()
+			if "shatters on death" in lower_msg or "crumbles to dust" in lower_msg or "fades away" in lower_msg:
+				play_loot_vanish_sound()
+
 			# Trigger shake animations for combat actions
 			# Companion attack: "Your X attacks for" (cyan #00FFFF)
 			if "Your " in combat_msg and " attacks" in combat_msg:
@@ -12550,6 +12057,18 @@ func handle_server_message(message: Dictionary):
 					var drop_value = _calculate_drop_value(message)
 					if drop_value > 0:
 						play_rare_drop_sound(drop_value)
+
+					# Check for egg drops
+					var all_drops = message.get("flock_drops", [])
+					for drop_msg in all_drops:
+						if "egg" in drop_msg.to_lower():
+							play_egg_found_sound()
+							break
+
+					# Check for gem gains
+					var total_gems = message.get("total_gems", 0)
+					if total_gems > 0:
+						play_gem_gain_sound()
 
 					# Require continue press before showing dungeon floor (so player can read loot)
 					if dungeon_mode:
@@ -13832,6 +13351,13 @@ func _load_keybinds():
 					ui_scale_chat = clampf(float(data["ui_scale_chat"]), 0.5, 3.0)
 				if data.has("ui_scale_right_panel"):
 					ui_scale_right_panel = clampf(float(data["ui_scale_right_panel"]), 0.5, 3.0)
+				# Load sound volume settings
+				if data.has("sfx_volume"):
+					sfx_volume = clampf(float(data["sfx_volume"]), 0.0, 1.0)
+				if data.has("music_volume"):
+					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
+				if data.has("sfx_muted"):
+					sfx_muted = data["sfx_muted"]
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -13846,6 +13372,10 @@ func _save_keybinds():
 	save_data["ui_scale_buttons"] = ui_scale_buttons
 	save_data["ui_scale_chat"] = ui_scale_chat
 	save_data["ui_scale_right_panel"] = ui_scale_right_panel
+	# Include sound volume settings
+	save_data["sfx_volume"] = sfx_volume
+	save_data["music_volume"] = music_volume
+	save_data["sfx_muted"] = sfx_muted
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -14017,6 +13547,7 @@ func display_settings_menu():
 	display_game("[%s] Swap Attack with Outsmart: %s" % [get_action_key_name(6), swap_outsmart_status])
 	display_game("[%s] Manage Abilities" % get_action_key_name(7))
 	display_game("[%s] UI Scale Settings" % get_action_key_name(8))
+	display_game("[%s] Sound Settings" % get_action_key_name(9))
 	display_game("[%s] Back to Game" % get_action_key_name(0))
 	display_game("")
 	display_game("[color=#808080]Current Keybinds Summary:[/color]")
@@ -14138,6 +13669,32 @@ func reset_ui_scales():
 	# Redisplay the menu
 	game_output.clear()
 	display_ui_scale_settings()
+
+func display_sound_settings():
+	"""Display sound volume settings"""
+	display_game("[color=#FFD700]===== SOUND SETTINGS =====[/color]")
+	display_game("")
+	display_game("[color=#E6CC80]SFX Volume[/color]")
+	display_game("[1] Increase  [2] Decrease  Current: [color=#00FFFF]%d%%[/color]" % int(sfx_volume * 100))
+	display_game("")
+	display_game("[color=#E6CC80]Music Volume[/color]")
+	display_game("[3] Increase  [4] Decrease  Current: [color=#00FFFF]%d%%[/color]" % int(music_volume * 100))
+	display_game("")
+	var mute_status = "[color=#FF6666]MUTED[/color]" if sfx_muted else "[color=#00FF00]ON[/color]"
+	display_game("[5] Mute All SFX: %s" % mute_status)
+	display_game("")
+	display_game("[%s] Back to Settings" % get_action_key_name(0))
+
+func adjust_sound_volume(target: String, delta: float):
+	"""Adjust SFX or music volume"""
+	if target == "sfx":
+		sfx_volume = clampf(sfx_volume + delta, 0.0, 1.0)
+	elif target == "music":
+		music_volume = clampf(music_volume + delta, 0.0, 1.0)
+	_apply_volume_settings()
+	_save_keybinds()
+	game_output.clear()
+	display_sound_settings()
 
 func start_rebinding(action: String):
 	"""Start the rebinding process for an action"""
@@ -14882,8 +14439,26 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.78 changes
+	display_game("[color=#00FF00]v0.9.78[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ SOUND EFFECTS[/color]")
+	display_game("  • Real 8-bit WAV sound effects replace all procedural sounds")
+	display_game("  • New sounds: Death, Egg Found, Meteor (Fire), Blast, Gem Gain, Loot Vanish, Buff, Heal")
+	display_game("  • Combat hit, level up, quest complete, victory, and more all upgraded")
+	display_game("  • Background music replaced with 8-bit NES track")
+	display_game("  [color=#FFD700]★ VOLUME CONTROLS[/color]")
+	display_game("  • Settings → Sound Settings: adjust SFX and Music volume independently")
+	display_game("  • Mute All SFX toggle available")
+	display_game("  • Volume preferences saved between sessions")
+	display_game("  [color=#FFD700]★ COMBAT LOG[/color]")
+	display_game("  • Player attacks now show green [color=#00FF00]>>[/color] prefix for easy identification")
+	display_game("  • Monster attacks show red [color=#FF4444]<<[/color] prefix")
+	display_game("  • Player abilities show purple [color=#9932CC]>>[/color], monster abilities show orange [color=#FF6600]<<[/color]")
+	display_game("  • Healing messages show green [color=#00FF00]++[/color] prefix")
+	display_game("")
+
 	# v0.9.77 changes
-	display_game("[color=#00FF00]v0.9.77[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.77[/color]")
 	display_game("  [color=#FFD700]★ BUG FIXES[/color]")
 	display_game("  • Death screen now shows correct damage dealt/taken (abilities were uncounted)")
 	display_game("  • Death screen now displays the correct monster art")
@@ -14928,15 +14503,6 @@ func display_changelog():
 	display_game("  • Monster enrage now caps at 10 stacks")
 	display_game("  • Monster HP scaling rebalanced for better gear progression")
 	display_game("  • High-tier monster intelligence adjusted for fairer outsmart chances")
-	display_game("")
-
-	# v0.9.69 changes
-	display_game("[color=#00FFFF]v0.9.69[/color]")
-	display_game("  [color=#FFD700]★ NEW SANCTUARY UPGRADES[/color]")
-	display_game("  • Combat bonuses: Vitality (+5% HP), Reservoir (+5% resources), Flow (+5% regen)")
-	display_game("  • Stat training: +1 STR/CON/DEX/INT/WIS/WITS per level")
-	display_game("  • 3-page upgrade system with navigation")
-	display_game("  • All bonuses apply to ALL characters on your account")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16535,7 +16101,7 @@ func show_help():
 [color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
-[color=#00FFFF]v0.9.74:[/color] Quest improvements, chat fix, UI scaling, merchant voice lines.
+[color=#00FFFF]v0.9.78:[/color] 8-bit sound effects, volume controls (Settings→Sound), combat log indicators.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
@@ -16872,6 +16438,20 @@ func _enhance_combat_message(msg: String) -> String:
 	var enhanced = msg
 	var upper_msg = msg.to_upper()
 
+	# Combat direction indicators - add colored prefix for player vs monster actions
+	if msg.begins_with("You ") or msg.begins_with("you "):
+		if "cast" in msg.to_lower() or "invoke" in msg.to_lower() or "unleash" in msg.to_lower() or "channel" in msg.to_lower():
+			enhanced = "[color=#9932CC]>> [/color]" + enhanced
+		elif "deal" in msg.to_lower() or "strike" in msg.to_lower() or "hit" in msg.to_lower() or "attack" in msg.to_lower():
+			enhanced = "[color=#00FF00]>> [/color]" + enhanced
+		elif "heal" in msg.to_lower() or "restore" in msg.to_lower() or "recover" in msg.to_lower():
+			enhanced = "[color=#00FF00]++ [/color]" + enhanced
+	elif msg.begins_with("The ") or msg.begins_with("the "):
+		if "attacks" in msg.to_lower() or "strikes" in msg.to_lower() or "deals" in msg.to_lower() or "hits" in msg.to_lower():
+			enhanced = "[color=#FF4444]<< [/color]" + enhanced
+		elif "cast" in msg.to_lower() or "uses" in msg.to_lower() or "summon" in msg.to_lower() or "invoke" in msg.to_lower():
+			enhanced = "[color=#FF6600]<< [/color]" + enhanced
+
 	# Critical hit gets ASCII explosion burst + shaking text
 	if "CRITICAL" in upper_msg:
 		var crit_burst = "[color=#FF4500]     *  .  *\n   . _\\|/_ .\n  -==  *  ==-\n   ' /|\\ '\n     *  '  *[/color]\n"
@@ -17061,6 +16641,27 @@ func _trigger_combat_sounds(msg: String):
 	# Critical hit gets priority - special impactful sound
 	if "CRITICAL" in upper_msg:
 		play_combat_crit_sound()
+		return
+
+	# Specific ability sounds (before generic ability check)
+	if "METEOR" in upper_msg:
+		play_fire1_sound()
+		return
+	if "BLAST" in upper_msg and ("CAST" in upper_msg or "UNLEASH" in upper_msg or "DAMAGE" in upper_msg):
+		play_fire2_sound()
+		return
+
+	# Healing detection
+	if ("HEAL" in upper_msg or "RESTORE" in upper_msg) and "+" in msg:
+		play_player_healed_sound()
+		return
+	if "DIVINE FAVOR" in upper_msg and ("HEAL" in upper_msg or "+" in msg):
+		play_player_healed_sound()
+		return
+
+	# Buff detection
+	if "WAR CRY" in upper_msg or "RALLY" in upper_msg or "FORTIFY" in upper_msg or "HASTE" in upper_msg or "BERSERK" in upper_msg:
+		play_player_buffed_sound()
 		return
 
 	# Player deals damage - check for "deal" or player attacking

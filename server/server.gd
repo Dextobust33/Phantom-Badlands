@@ -1288,6 +1288,12 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"class": char.class_type,
 				"hp": char.current_hp,
 				"max_hp": char.get_total_max_hp(),
+				"current_mana": char.current_mana,
+				"total_max_mana": char.get_total_max_mana(),
+				"current_stamina": char.current_stamina,
+				"total_max_stamina": char.get_total_max_stamina(),
+				"current_energy": char.current_energy,
+				"total_max_energy": char.get_total_max_energy(),
 				"strength": char.get_stat("strength"),
 				"constitution": char.get_stat("constitution"),
 				"dexterity": char.get_stat("dexterity"),
@@ -2903,6 +2909,8 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"monster_max_hp": combat_data.get("monster_max_hp", 0),
 		"total_damage_dealt": combat_data.get("total_damage_dealt", 0),
 		"total_damage_taken": combat_data.get("total_damage_taken", 0),
+		"player_hp": character.current_hp,
+		"player_max_hp": character.get_total_max_hp(),
 	})
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
