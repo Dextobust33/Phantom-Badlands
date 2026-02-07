@@ -5093,7 +5093,7 @@ func update_action_bar():
 				{"label": "All Equipment", "action_type": "local", "action_data": "salvage_all", "enabled": true},
 				{"label": "Consumables", "action_type": "local", "action_data": "salvage_consumables_prompt", "enabled": true},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5201,7 +5201,7 @@ func update_action_bar():
 				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
 				{"label": "Sort", "action_type": "local", "action_data": "inventory_sort", "enabled": true},
 				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
-				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
+				{"label": "Lock", "action_type": "local", "action_data": "inventory_lock", "enabled": true},
 				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
 				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 			]
@@ -7188,6 +7188,8 @@ func execute_local_action(action: String):
 			prompt_inventory_action("inspect_equipped")
 		"inventory_discard":
 			prompt_inventory_action("discard")
+		"inventory_lock":
+			prompt_inventory_action("lock")
 		"inventory_sort":
 			open_sort_menu()
 		"inventory_salvage":
@@ -8320,6 +8322,11 @@ func select_merchant_sell_item(page_index: int):
 		display_game("[color=#FF0000]Invalid item number.[/color]")
 		return
 
+	var sell_item = inventory[absolute_index]
+	if sell_item.get("locked", false):
+		display_game("[color=#FF4444]That item is locked! Unlock it first.[/color]")
+		return
+
 	# Keep in sell mode for quick multiple sales
 	# pending_merchant_action stays as "sell"
 	send_to_server({"type": "merchant_sell", "index": absolute_index})
@@ -9024,8 +9031,9 @@ func display_merchant_sell_list():
 			var sell_price = item.get("value", 10) / 2
 			var key_index = i - start_idx  # 0-8 for key lookup
 			var key_name = get_item_select_key_name(key_index)
-			display_game("[%s] [color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
-				key_name, rarity_color, item.get("name", "Unknown"), sell_price
+			var sell_lock_text = "[color=#FF4444][L][/color] " if item.get("locked", false) else ""
+			display_game("[%s] %s[color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
+				key_name, sell_lock_text, rarity_color, item.get("name", "Unknown"), sell_price
 			])
 		if total_pages > 1:
 			display_game("")
@@ -9707,13 +9715,16 @@ func display_inventory():
 			# Display number is 1-9 for current page
 			var display_num = (i - start_idx) + 1
 
+			# Lock indicator
+			var lock_text = "[color=#FF4444][L][/color] " if item.get("locked", false) else ""
+
 			# Check if consumable (show quantity) vs equipment (show level + stats)
 			var is_consumable = item.get("is_consumable", false)
 			if is_consumable:
 				var quantity = item.get("quantity", 1)
 				var qty_text = " x%d" % quantity if quantity > 1 else ""
-				display_game("  %d. [color=%s]%s[/color]%s" % [
-					display_num, rarity_color, item.get("name", "Unknown"), qty_text
+				display_game("  %d. %s[color=%s]%s[/color]%s" % [
+					display_num, lock_text, rarity_color, item.get("name", "Unknown"), qty_text
 				])
 			else:
 				# Show equipment with arrow on left, stats on right (using themed names)
@@ -9726,15 +9737,15 @@ func display_inventory():
 				if wear > 0:
 					var condition_color = _get_condition_color(wear)
 					wear_text = " [color=%s]%d%%[/color]" % [condition_color, wear]
-				display_game("  %d. %s[color=%s]%s[/color] Lv%d %s %s%s%s" % [
-					display_num, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, wear_text, compare_text
+				display_game("  %d. %s%s[color=%s]%s[/color] Lv%d %s %s%s%s" % [
+					display_num, lock_text, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, wear_text, compare_text
 				])
 
 	display_game("")
 	display_game("[color=#808080]%s=Back  %s=Inspect  %s=Use  %s=Equip  %s=Unequip[/color]" % [
 		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
 		get_action_key_name(3), get_action_key_name(4)])
-	display_game("[color=#808080]%s=Sort  %s=Salvage  %s=Discard[/color]" % [
+	display_game("[color=#808080]%s=Sort  %s=Salvage  %s=Lock[/color]" % [
 		get_action_key_name(5), get_action_key_name(6), get_action_key_name(7)])
 	display_game("[color=#808080]↑↓ arrows compare: %s (change in Sort menu)[/color]" % _get_compare_stat_label(inventory_compare_stat))
 	if total_pages > 1:
@@ -10102,6 +10113,15 @@ func prompt_inventory_action(action_type: String):
 			display_game("[color=#FFD700]%s to discard an item:[/color]" % get_selection_keys_text(inventory.size()))
 			update_action_bar()
 
+		"lock":
+			if inventory.is_empty():
+				display_game("[color=#FF0000]No items to lock/unlock.[/color]")
+				return
+			pending_inventory_action = "lock_item"
+			display_inventory()  # Show inventory for selection
+			display_game("[color=#FFD700]%s to lock/unlock an item:[/color]" % get_selection_keys_text(inventory.size()))
+			update_action_bar()
+
 func _show_unequip_slots():
 	"""Display equipped items for unequipping (used after unequip to show remaining)"""
 	var equipped = character_data.get("equipped", {})
@@ -10393,6 +10413,8 @@ func handle_ability_choice(choice_num: int):
 	send_to_server({"type": "equip_ability", "slot": selected_ability_slot, "ability": ability.name})
 	pending_ability_action = ""
 	selected_ability_slot = -1
+	display_ability_menu()
+	update_action_bar()
 
 func handle_keybind_press(key: String):
 	"""Handle a keybind press when setting keybind"""
@@ -10403,6 +10425,8 @@ func handle_keybind_press(key: String):
 	send_to_server({"type": "set_ability_keybind", "slot": selected_ability_slot, "key": key})
 	pending_ability_action = ""
 	selected_ability_slot = -1
+	display_ability_menu()
+	update_action_bar()
 
 func select_inventory_item(index: int):
 	"""Process inventory action with selected item index (0-based)"""
@@ -10487,12 +10511,20 @@ func select_inventory_item(index: int):
 			update_action_bar()
 			return
 		"discard_item":
+			var discard_item = inventory[index]
+			if discard_item.get("locked", false):
+				display_game("[color=#FF4444]That item is locked! Unlock it first.[/color]")
+				return
 			pending_inventory_action = ""
-			var item = inventory[index]
 			send_to_server({"type": "inventory_discard", "index": index})
 			# Exit inventory mode after discard
 			inventory_mode = false
 			update_action_bar()
+			return
+		"lock_item":
+			# Send lock toggle to server, stay in lock mode
+			send_to_server({"type": "inventory_lock", "index": index})
+			# Stay in lock_item mode for quick multiple locks
 			return
 
 	# Fallback - exit inventory mode
@@ -11925,6 +11957,12 @@ func handle_server_message(message: Dictionary):
 						display_game("")
 						display_game("[color=#808080]Press [%s] for Backpack or [%s] to exit.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 						update_action_bar()
+					elif pending_inventory_action == "lock_item":
+						# Lock mode - refresh inventory to show updated lock indicators
+						var inv = character_data.get("inventory", [])
+						display_inventory()
+						display_game("[color=#FFD700]%s to lock/unlock another item, or [%s] to go back:[/color]" % [get_selection_keys_text(max(1, inv.size())), get_action_key_name(0)])
+						update_action_bar()
 					elif pending_inventory_action == "viewing_materials":
 						# Materials view - don't redisplay inventory, keep showing materials
 						pass
@@ -12009,8 +12047,9 @@ func handle_server_message(message: Dictionary):
 			# Also update character_data
 			character_data["equipped_abilities"] = ability_data.equipped_abilities
 			character_data["ability_keybinds"] = ability_data.ability_keybinds
-			# Display ability management screen
+			# Display ability management screen and refresh action bar
 			display_ability_menu()
+			update_action_bar()
 
 		"ability_equipped":
 			var equip_msg = message.get("message", "")
@@ -14573,8 +14612,31 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.83 changes
+	display_game("[color=#00FF00]v0.9.83[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ ITEM LOCKING[/color]")
+	display_game("  • Lock valuable items to prevent accidental sell, salvage, or discard")
+	display_game("  • Inventory → Lock (key 3) to toggle lock on items")
+	display_game("  • Locked items show [color=#FF4444][L][/color] indicator and are protected from Sell All / Salvage All")
+	display_game("  [color=#FFD700]★ 53 DUNGEONS — EVERY MONSTER TYPE[/color]")
+	display_game("  • Every monster in the game now has its own dungeon (35 new dungeons added!)")
+	display_game("  • New dungeons include: Mimic Treasury, Succubus Parlor, Titan's Colosseum,")
+	display_game("    Jabberwock's Thicket, Golem Foundry, God Slayer's Arena, Entropy's End, and more")
+	display_game("  [color=#FFD700]★ BLACKSMITH BUFF[/color]")
+	display_game("  • Blacksmith affix upgrade amounts increased 5× (e.g., +1 STR → +5 STR per upgrade)")
+	display_game("  [color=#FFD700]★ QUEST IMPROVEMENTS[/color]")
+	display_game("  • Quests at trading posts now scale harder with better rewards as you progress")
+	display_game("  • Each character gets different randomized quests at the same post")
+	display_game("  • Dynamic quests unlock earlier (after completing half the static quests)")
+	display_game("  [color=#FFD700]★ BUG FIXES[/color]")
+	display_game("  • Pickpocketing now limited to 1-3 times per enemy (no more infinite gold)")
+	display_game("  • Map now updates when fleeing combat")
+	display_game("  • Death curse now triggers when killing enemies with Outsmart")
+	display_game("  • Ability loadout screen properly refreshes after changes")
+	display_game("")
+
 	# v0.9.82 changes
-	display_game("[color=#00FF00]v0.9.82[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.82[/color]")
 	display_game("  [color=#FFD700]★ MONSTER INTELLIGENCE REWORK[/color]")
 	display_game("  • Monsters now have individual intelligence based on their nature")
 	display_game("  • Brutes & beasts (Ogre, Zombie, Giant, Iron Golem) are much easier to Outsmart")
@@ -14605,22 +14667,6 @@ func display_changelog():
 	display_game("  • Settings → Sound Settings: adjust SFX and Music volume independently")
 	display_game("  • Mute All SFX toggle available")
 	display_game("  • Volume preferences saved between sessions")
-	display_game("  [color=#FFD700]★ COMBAT LOG[/color]")
-	display_game("  • Player attacks now show green [color=#00FF00]>>[/color] prefix for easy identification")
-	display_game("  • Monster attacks show red [color=#FF4444]<<[/color] prefix")
-	display_game("  • Player abilities show purple [color=#9932CC]>>[/color], monster abilities show orange [color=#FF6600]<<[/color]")
-	display_game("  • Healing messages show green [color=#00FF00]++[/color] prefix")
-	display_game("")
-
-	# v0.9.77 changes
-	display_game("[color=#00FFFF]v0.9.77[/color]")
-	display_game("  [color=#FFD700]★ BUG FIXES[/color]")
-	display_game("  • Death screen now shows correct damage dealt/taken (abilities were uncounted)")
-	display_game("  • Death screen now displays the correct monster art")
-	display_game("  • Stats HUD (level, HP, XP, gold) now clears properly after death")
-	display_game("  • Logging out and back in no longer hangs the client")
-	display_game("  • Kill quest descriptions no longer show raw formatting codes")
-	display_game("  • Fixed Play button from Sanctuary not opening character select")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16132,6 +16178,7 @@ func show_help():
 [color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
 [color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x gold or lose half)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
+[color=#FF4444]Lock:[/color] Inventory→Lock (key 3) protects items from Sell All, Salvage All, and accidental discard.
 [color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% = BROKEN (no stats). Repair via wandering blacksmiths only!
 
 [b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
@@ -16159,7 +16206,7 @@ func show_help():
 [color=#FFD700]Merchants(110):[/color] [color=#FF4444]$[/color]=Weapon [color=#4488FF]$[/color]=Armor [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General. Buy/sell/gamble!
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
-[color=#9932CC]Dungeons([%s]):[/color] Multi-floor instances! Clear floors, fight boss. [color=#FFD700]GUARANTEED[/color] companion egg on completion!
+[color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Low level? Get warning, can still enter!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
@@ -16219,7 +16266,7 @@ func show_help():
 [color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
-[color=#00FFFF]v0.9.82:[/color] Monster intelligence rework (thematic outsmart difficulty), Nazgul buff.
+[color=#00FFFF]v0.9.83:[/color] Item locking, 53 dungeons (all monsters), 5x blacksmith upgrades, quest scaling, bug fixes.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k4, k4, k4, k4, k1, k4, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 

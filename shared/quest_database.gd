@@ -815,26 +815,27 @@ const QUESTS = {
 	}
 }
 
-func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
+func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0, character_name: String = "") -> Dictionary:
 	"""Get quest data by ID. Returns empty dict if not found.
 	For dynamic quests, pass player_level and quests_completed_at_post to get accurate scaling.
 	For static quests with player_level provided, also applies requirement scaling to match display."""
 	if QUESTS.has(quest_id):
 		var quest = QUESTS[quest_id].duplicate(true)
-		# Randomize target if quest has a range
+		# Randomize target if quest has a range, using character-specific seed
 		if quest.has("target_min") and quest.has("target_max"):
 			var rng = RandomNumberGenerator.new()
-			rng.seed = hash(quest_id + str(player_level))
+			rng.seed = hash(quest_id + character_name)
 			quest["target"] = rng.randi_range(quest.target_min, quest.target_max)
 		# Format description with target count if it has %d placeholder
 		if quest.has("description") and "%d" in quest.description:
 			quest.description = quest.description % quest.target
 		# Scale rewards based on trading post area level
 		var area_level = _get_area_level_for_post(quest.trading_post)
-		quest = _scale_quest_rewards(quest, area_level)
 		# If player_level provided, also scale requirements to match what was displayed
 		if player_level > 0:
-			quest = _scale_quest_for_player(quest, player_level, area_level, quests_completed_at_post)
+			quest = _scale_quest_for_player(quest, player_level, quests_completed_at_post, area_level, character_name)
+		else:
+			quest = _scale_quest_rewards(quest, area_level)
 		return quest
 
 	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
@@ -980,7 +981,7 @@ func get_quests_for_trading_post(trading_post_id: String) -> Array:
 			quests.append(scaled_quest)
 	return quests
 
-func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary, player_level: int = 1) -> Array:
+func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary, player_level: int = 1, character_name: String = "") -> Array:
 	"""Get quests available for a player at a Trading Post, considering prerequisites, cooldowns, and player level.
 	Quests are scaled to player level with progressive difficulty."""
 	var available = []
@@ -1020,23 +1021,21 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 			continue
 
 		# Scale quest rewards AND requirements based on player level and progression
-		var scaled_quest = _scale_quest_for_player(quest.duplicate(true), player_level, completed_at_post, area_level)
+		var scaled_quest = _scale_quest_for_player(quest.duplicate(true), player_level, completed_at_post, area_level, character_name)
 		available.append(scaled_quest)
 
-	# Only generate dynamic quests if ALL static quests at this post are completed
-	# (not just accepted or locked by prerequisites)
-	if available.is_empty():
-		# Count total non-daily static quests at this trading post
-		var total_static_quests = 0
-		for quest_id in QUESTS:
-			var quest = QUESTS[quest_id]
-			if quest.trading_post == trading_post_id and not quest.is_daily:
-				total_static_quests += 1
+	# Count total non-daily static quests at this trading post
+	var total_static_quests = 0
+	for quest_id in QUESTS:
+		var quest = QUESTS[quest_id]
+		if quest.trading_post == trading_post_id and not quest.is_daily:
+			total_static_quests += 1
 
-		# Only show dynamic quests if player has completed all static quests here
-		if completed_at_post >= total_static_quests:
-			var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
-			available.append_array(dynamic_quests)
+	# Generate dynamic quests after completing half the static quests (or all if few)
+	var static_threshold = max(3, total_static_quests / 2)
+	if completed_at_post >= static_threshold:
+		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
+		available.append_array(dynamic_quests)
 
 	return available
 
@@ -1077,16 +1076,26 @@ func get_locked_quests_for_player(trading_post_id: String, completed_quests: Arr
 
 	return locked
 
-func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_completed_at_post: int, area_level: int) -> Dictionary:
+func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_completed_at_post: int, area_level: int, character_name: String = "") -> Dictionary:
 	"""Scale quest requirements and rewards based on player level and progression.
 	Quests get progressively harder as player completes more at the same post."""
-
-	# First scale rewards
-	quest = _scale_quest_rewards(quest, area_level)
 
 	# Calculate difficulty modifier based on progression (0.0 to 0.5 bonus)
 	# More completed quests = harder requirements, pushing toward next post
 	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
+
+	# Effective difficulty level: use the higher of area level and half the player's level
+	# This ensures quests at low-level posts still give reasonable rewards for higher-level players
+	var effective_area_level = max(area_level, int(player_level * 0.4))
+
+	# Scale rewards based on effective difficulty, not just static area level
+	quest = _scale_quest_rewards(quest, effective_area_level)
+
+	# Additional reward scaling for progression - harder quests give more
+	if progression_modifier > 0:
+		var bonus_mult = 1.0 + progression_modifier * 0.5  # Up to 25% bonus
+		quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * bonus_mult)
+		quest.rewards["gold"] = int(quest.rewards.get("gold", 0) * bonus_mult)
 
 	# Base target level on player level with progression
 	var base_level = player_level
@@ -1095,10 +1104,10 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 	# Scale kill requirements based on quest type
 	var quest_type = quest.get("type", -1)
 
-	# Randomize target for KILL_TYPE quests with ranges, and format %d in description
+	# Randomize target for KILL_TYPE quests with ranges using character-specific seed
 	if quest.has("target_min") and quest.has("target_max"):
 		var rng = RandomNumberGenerator.new()
-		rng.seed = hash(quest.get("id", "") + str(player_level))
+		rng.seed = hash(quest.get("id", "") + character_name)
 		quest["target"] = rng.randi_range(quest.target_min, quest.target_max)
 	if quest.has("description") and "%d" in quest.description:
 		quest.description = quest.description % quest.target
@@ -1110,6 +1119,15 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 			var scaled_target = base_target + int(player_level / 10) + quests_completed_at_post
 			quest["target"] = max(base_target, min(scaled_target, base_target * 3))  # Cap at 3x original
 			quest["description"] = "Defeat %d monsters." % quest["target"]
+
+		QuestType.KILL_TYPE:
+			# Scale monster level requirement based on player progression
+			# Early quests: no level req. After a few completions: require higher-level monsters
+			if quests_completed_at_post >= 2:
+				var min_monster_level = max(1, int(player_level * (0.5 + progression_modifier)))
+				quest["min_monster_level"] = min_monster_level
+				quest["description"] = quest.get("description", "").rstrip(".")
+				quest["description"] += " (Lv%d+)." % min_monster_level
 
 		QuestType.KILL_LEVEL:
 			# Monster level requirement scales with player level + progression

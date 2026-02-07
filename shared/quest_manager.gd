@@ -48,7 +48,7 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	if not check.can_accept:
 		return {"success": false, "message": check.reason}
 
-	var quest = quest_db.get_quest(quest_id, player_level, completed_at_post)
+	var quest = quest_db.get_quest(quest_id, player_level, completed_at_post, character.name)
 	var quest_type = quest.get("type", -1)
 	var target = quest.get("target", 1)
 
@@ -67,12 +67,23 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		"quest_name": quest.get("name", "Unknown Quest"),
 		"quest_type": quest_type
 	}
+	# Store rewards at accept time so they don't change on turn-in
+	var base_rewards = quest.get("rewards", {"xp": 0, "gold": 0, "gems": 0})
+	var area_level = quest.get("area_level", 1)
+	var scaled_gems = _scale_gem_reward(base_rewards.get("gems", 0), character.level, area_level)
+	extra_data["stored_rewards"] = {
+		"xp": base_rewards.get("xp", 0),
+		"gold": base_rewards.get("gold", 0),
+		"gems": scaled_gems
+	}
 	# For dungeon quests, store the specific dungeon type
 	if quest_type == QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
 		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
-	# For monster type quests, store the specific monster type
+	# For monster type quests, store the specific monster type and level requirement
 	if quest_type == QuestDatabaseScript.QuestType.KILL_TYPE:
 		extra_data["monster_type"] = quest.get("monster_type", "")
+		if quest.has("min_monster_level"):
+			extra_data["min_monster_level"] = quest.get("min_monster_level", 0)
 	# For exploration quests, store destinations for turn-in at destination
 	if quest_type == QuestDatabaseScript.QuestType.EXPLORATION:
 		extra_data["destinations"] = quest.get("destinations", [])
@@ -107,10 +118,16 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 				should_update = true
 
 			QuestDatabaseScript.QuestType.KILL_TYPE:
-				# Must kill specific monster type
+				# Must kill specific monster type, and optionally meet level requirement
 				var required_type = quest.get("monster_type", "")
+				var min_type_level = quest.get("min_monster_level", 0)
 				if required_type != "" and killed_monster_name == required_type:
-					should_update = true
+					# Check stored min_monster_level (from quest accept extra_data)
+					var stored_min_level = quest_data.get("min_monster_level", min_type_level)
+					if stored_min_level > 0 and monster_level < stored_min_level:
+						pass  # Monster too low level
+					else:
+						should_update = true
 
 			QuestDatabaseScript.QuestType.KILL_LEVEL, QuestDatabaseScript.QuestType.BOSS_HUNT:
 				var min_level = quest.get("target", 1)
@@ -252,27 +269,42 @@ func is_quest_complete(character: Character, quest_id: String) -> bool:
 
 func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 	"""Calculate quest rewards including hotzone multiplier. Returns {xp, gold, gems, multiplier}"""
-	var quest = quest_db.get_quest(quest_id)
-	if quest.is_empty():
-		return {"xp": 0, "gold": 0, "gems": 0, "multiplier": 1.0}
+	# Use stored rewards if available (stored at accept time to prevent regeneration mismatch)
+	var quest_data = character.get_quest_progress(quest_id)
+	var stored_rewards = quest_data.get("stored_rewards", {})
 
-	var base_rewards = quest.get("rewards", {"xp": 0, "gold": 0, "gems": 0})
+	var base_rewards: Dictionary
+	var quest_type: int = -1
+
+	if not stored_rewards.is_empty():
+		# Use rewards locked in at accept time
+		base_rewards = stored_rewards
+		quest_type = quest_data.get("quest_type", -1)
+	else:
+		# Fallback for quests accepted before this fix: regenerate with stored params
+		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
+		var completed_at_post = quest_data.get("completed_at_post", 0)
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+		if quest.is_empty():
+			return {"xp": 0, "gold": 0, "gems": 0, "multiplier": 1.0}
+		base_rewards = quest.get("rewards", {"xp": 0, "gold": 0, "gems": 0})
+		quest_type = quest.get("type", -1)
+		# Scale gems for legacy quests
+		var base_gems = base_rewards.get("gems", 0)
+		base_rewards["gems"] = _scale_gem_reward(base_gems, character.level, quest.get("area_level", 1))
+
 	var multiplier = 1.0
 
 	# Apply hotzone intensity multiplier for hotzone quests
-	if quest.get("type", -1) == QuestDatabaseScript.QuestType.HOTZONE_KILL:
+	if quest_type == QuestDatabaseScript.QuestType.HOTZONE_KILL:
 		var avg_intensity = character.get_average_hotzone_intensity(quest_id)
 		# Multiplier: 1.5x at edge (intensity 0), up to 2.5x at center (intensity 1.0)
 		multiplier = 1.5 + avg_intensity
 
-	# Scale gem rewards based on player level - gems are rare at low levels
-	var base_gems = base_rewards.get("gems", 0)
-	var scaled_gems = _scale_gem_reward(base_gems, character.level, quest.get("area_level", 1))
-
 	return {
 		"xp": int(base_rewards.get("xp", 0) * multiplier),
 		"gold": int(base_rewards.get("gold", 0) * multiplier),
-		"gems": int(scaled_gems * multiplier),
+		"gems": int(base_rewards.get("gems", 0) * multiplier),
 		"multiplier": multiplier
 	}
 
@@ -313,11 +345,22 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	if not is_quest_complete(character, quest_id):
 		return {"success": false, "message": "Quest objectives not yet complete", "rewards": {}}
 
-	var quest = quest_db.get_quest(quest_id)
-	if quest.is_empty():
-		return {"success": false, "message": "Quest not found", "rewards": {}}
+	# Get stored quest data for name and is_daily
+	var quest_data = character.get_quest_progress(quest_id)
+	var quest_name = quest_data.get("quest_name", "")
+	var is_daily = false
 
-	# Calculate and grant rewards
+	# Regenerate quest with stored params for metadata (is_daily, etc.)
+	var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
+	var completed_at_post = quest_data.get("completed_at_post", 0)
+	var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+	if quest.is_empty() and quest_name.is_empty():
+		return {"success": false, "message": "Quest not found", "rewards": {}}
+	if quest_name.is_empty():
+		quest_name = quest.get("name", "Unknown Quest")
+	is_daily = quest.get("is_daily", false)
+
+	# Calculate and grant rewards (uses stored rewards if available)
 	var rewards = calculate_rewards(character, quest_id)
 
 	# Apply rewards
@@ -326,9 +369,9 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	var level_result = character.add_experience(rewards.xp)
 
 	# Complete the quest
-	character.complete_quest(quest_id, quest.get("is_daily", false))
+	character.complete_quest(quest_id, is_daily)
 
-	var message = "Quest '%s' complete!" % quest.name
+	var message = "Quest '%s' complete!" % quest_name
 	if rewards.multiplier > 1.0:
 		message += " (%.1fx hotzone bonus!)" % rewards.multiplier
 
@@ -390,8 +433,9 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		var status_color = "#00FF00" if is_complete else "#FFFFFF"
 		output += "    Progress: [color=%s]%d/%d[/color] [%s]\n" % [status_color, progress, target, bar]
 
-		# Rewards
-		var rewards = quest.get("rewards", {})
+		# Rewards - use stored rewards if available, fall back to regenerated quest
+		var stored_rewards = quest_data.get("stored_rewards", {})
+		var rewards = stored_rewards if not stored_rewards.is_empty() else quest.get("rewards", {})
 		var reward_parts = []
 		if rewards.get("xp", 0) > 0:
 			reward_parts.append("[color=#FF00FF]%d XP[/color]" % rewards.xp)

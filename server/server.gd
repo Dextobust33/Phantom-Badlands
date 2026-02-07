@@ -678,6 +678,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_discard(peer_id, message)
 		"inventory_sort":
 			handle_inventory_sort(peer_id, message)
+		"inventory_lock":
+			handle_inventory_lock(peer_id, message)
 		"inventory_salvage":
 			handle_inventory_salvage(peer_id, message)
 		"monster_select_confirm":
@@ -2392,6 +2394,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				})
 				# Send location update to refresh map with player's position outside dungeon
 				send_location_update(peer_id)
+			else:
+				# Non-dungeon flee: send location update to refresh map at new position
+				send_location_update(peer_id)
 		elif result.get("monster_fled", false):
 			# Monster fled - check if it summoned a replacement (Shrieker behavior)
 			var summon_next = result.get("summon_next_fight", "")
@@ -4074,13 +4079,13 @@ func _calculate_affix_upgrade_amount(affix_key: String, item_level: int) -> int:
 	"""Calculate how much an affix increases when upgraded."""
 	# Base upgrade amounts by affix type
 	var base_amounts = {
-		"str_bonus": 1, "con_bonus": 1, "dex_bonus": 1, "int_bonus": 1, "wis_bonus": 1, "wits_bonus": 1,
-		"attack_bonus": 2, "defense_bonus": 2, "speed_bonus": 1,
-		"hp_bonus": 10, "mana_bonus": 5, "stamina_bonus": 3, "energy_bonus": 3
+		"str_bonus": 5, "con_bonus": 5, "dex_bonus": 5, "int_bonus": 5, "wis_bonus": 5, "wits_bonus": 5,
+		"attack_bonus": 10, "defense_bonus": 10, "speed_bonus": 5,
+		"hp_bonus": 50, "mana_bonus": 25, "stamina_bonus": 15, "energy_bonus": 15
 	}
-	var base = base_amounts.get(affix_key, 1)
-	# Scale with item level: +1 per 50 levels
-	var level_bonus = int(item_level / 50)
+	var base = base_amounts.get(affix_key, 5)
+	# Scale with item level: +5 per 50 levels
+	var level_bonus = int(item_level / 50) * 5
 	return base + level_bonus
 
 func _calculate_affix_upgrade_cost(affix_key: String, current_value: int, item_level: int) -> Dictionary:
@@ -5097,11 +5102,48 @@ func handle_inventory_discard(peer_id: int, message: Dictionary):
 		})
 		return
 
-	var item = character.remove_item(index)
+	var item = inventory[index]
+	if item.get("locked", false):
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]That item is locked! Unlock it first.[/color]"
+		})
+		return
+
+	character.remove_item(index)
 
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#FF4444]You discard %s.[/color]" % item.get("name", "Unknown")
+	})
+
+	send_character_update(peer_id)
+
+func handle_inventory_lock(peer_id: int, message: Dictionary):
+	"""Handle toggling item lock status"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var index = message.get("index", -1)
+	var inventory = character.inventory
+
+	if index < 0 or index >= inventory.size():
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Invalid item index"
+		})
+		return
+
+	var item = inventory[index]
+	var was_locked = item.get("locked", false)
+	item["locked"] = not was_locked
+
+	var status = "locked" if item["locked"] else "unlocked"
+	var color = "#FF4444" if item["locked"] else "#00FF00"
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=%s]%s has been %s.[/color]" % [color, item.get("name", "Unknown"), status]
 	})
 
 	send_character_update(peer_id)
@@ -5525,6 +5567,14 @@ func handle_merchant_sell(peer_id: int, message: Dictionary):
 		return
 
 	var item = character.inventory[index]
+
+	if item.get("locked", false):
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]That item is locked! Unlock it first.[/color]"
+		})
+		return
+
 	var item_type = item.get("type", "")
 	var item_level = item.get("level", 1)
 	var sell_price = item.get("value", 10) / 2  # Default: Sell for half value
@@ -6682,7 +6732,7 @@ func trigger_trading_post_encounter(peer_id: int):
 		active_quest_ids.append(q.quest_id)
 
 	var available_quests = quest_db.get_available_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level)
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
 	# Check for quests ready to turn in
 	var quests_to_turn_in = []
@@ -6795,7 +6845,7 @@ func handle_trading_post_quests(peer_id: int):
 
 	# Get available quests scaled to player level
 	var available_quests = quest_db.get_available_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level)
+		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
 	# Get locked quests (unmet prerequisites)
 	var locked_quests = quest_db.get_locked_quests_for_player(
@@ -7106,13 +7156,13 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 				completed_at_post += 1
 		# Get quest with player-level scaling (for dynamic quests, this uses the same
 		# generation function as when the quest was displayed to the player)
-		var scaled_quest = quest_db.get_quest(quest_id, character.level, completed_at_post)
+		var scaled_quest = quest_db.get_quest(quest_id, character.level, completed_at_post, character.name)
 		description = scaled_quest.get("description", "")
 
 	var result = quest_mgr.accept_quest(character, quest_id, origin_x, origin_y, description, character.level, completed_at_post)
 
 	if result.success:
-		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post)
+		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post, character.name)
 
 		# For DUNGEON_CLEAR quests, create a personal dungeon instance for this player
 		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:

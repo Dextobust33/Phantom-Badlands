@@ -735,7 +735,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		# Damage tracking for death screen
 		"total_damage_dealt": 0,
 		"total_damage_taken": 0,
-		"player_hp_at_start": character.current_hp
+		"player_hp_at_start": character.current_hp,
+		"pickpocket_count": 0,
+		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of gold
 	}
 
 	active_combats[peer_id] = combat_state
@@ -1765,6 +1767,24 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# SUCCESS! Instant victory
 		messages.append("[color=#00FF00][b]SUCCESS![/b] You outwit the %s![/color]" % monster.name)
 		messages.append("[color=#FFD700]The enemy falls for your trick and you claim victory![/color]")
+
+		# Process death curse (monster curses you as it falls)
+		var monster_abilities = monster.get("abilities", [])
+		if ABILITY_DEATH_CURSE in monster_abilities:
+			if character.is_immune_to_death_curse():
+				messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
+			else:
+				var base_curse_damage = int(monster.max_hp * 0.10)
+				var player_wis_stat = character.get_effective_stat("wisdom")
+				var wis_reduction = minf(0.50, float(player_wis_stat) / 200.0)
+				var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
+				curse_damage = max(1, curse_damage)
+				character.current_hp -= curse_damage
+				character.current_hp = max(1, character.current_hp)
+				if wis_reduction > 0:
+					messages.append("[color=#FF00FF]The %s's death curse deals %d damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+				else:
+					messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
 
 		# Give full rewards as if monster was killed
 		var base_xp = monster.experience_reward
@@ -2797,11 +2817,18 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			is_buff_ability = true
 
 		"pickpocket":
+			# Check if monster has any gold left to steal
+			var pp_count = combat.get("pickpocket_count", 0)
+			var pp_max = combat.get("pickpocket_max", 2)
+			if pp_count >= pp_max:
+				messages.append("[color=#808080]The enemy has no more gold to steal![/color]")
+				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": false}
 			var wits = character.get_effective_stat("wits")
 			var success_chance = 50 + wits - monster.get("intelligence", 15)
 			success_chance = clampi(success_chance, 10, 90)
 			var roll = randi() % 100
 			if roll < success_chance:
+				combat["pickpocket_count"] = pp_count + 1
 				# More gold: base * wits multiplier + monster level bonus
 				var base_gold = 50 + (monster.level * 2)
 				var stolen_gold = int(base_gold * (1.0 + wits * 0.05))  # +5% per wits
