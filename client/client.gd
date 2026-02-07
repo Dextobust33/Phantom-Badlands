@@ -1713,6 +1713,23 @@ func _process(delta):
 			else:
 				input_field.grab_focus()
 
+	# House screen escape handling (settings only)
+	if game_state == GameState.HOUSE_SCREEN:
+		if Input.is_action_just_pressed("ui_cancel"):
+			if rebinding_action != "":
+				rebinding_action = ""
+				game_output.clear()
+				if settings_submenu == "action_keys":
+					display_action_keybinds()
+				elif settings_submenu == "movement_keys":
+					display_movement_keybinds()
+				elif settings_submenu == "item_keys":
+					display_item_keybinds()
+				else:
+					display_settings_menu()
+			elif settings_mode:
+				close_settings()
+
 	# Inventory item selection with keybinds (items 1-9) when action is pending
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
@@ -3952,7 +3969,7 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13453,6 +13470,8 @@ func close_settings():
 	settings_submenu = ""
 	rebinding_action = ""
 	game_output.clear()
+	if game_state == GameState.HOUSE_SCREEN:
+		display_house_main()
 	update_action_bar()
 
 func display_settings_menu():
@@ -14362,8 +14381,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.80 changes
+	display_game("[color=#00FF00]v0.9.80[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ QUALITY OF LIFE[/color]")
+	display_game("  • Settings now accessible from Sanctuary screen (UI scale, sound, keybinds)")
+	display_game("  • Corpses no longer spawn on trading post tiles (were unreachable)")
+	display_game("")
+
 	# v0.9.78 changes
-	display_game("[color=#00FF00]v0.9.78[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.78[/color]")
 	display_game("  [color=#FFD700]★ SOUND EFFECTS[/color]")
 	display_game("  • Real 8-bit WAV sound effects replace all procedural sounds")
 	display_game("  • New sounds: Death, Egg Found, Meteor (Fire), Blast, Gem Gain, Loot Vanish, Buff, Heal")
@@ -14407,25 +14433,6 @@ func display_changelog():
 	display_game("  • New trader art added")
 	display_game("  • Fixed Meteor showing 12% mana cost instead of correct 8%")
 	display_game("  • Tax collector no longer overlaps with merchant/blacksmith/healer encounters")
-	display_game("")
-
-	# v0.9.70 changes
-	display_game("[color=#00FFFF]v0.9.70[/color]")
-	display_game("  [color=#FFD700]★ COMBAT BALANCE OVERHAUL[/color]")
-	display_game("  • All 9 classes balanced and viable at every level (89-96% win rates)")
-	display_game("  [color=#66FFFF]Mage Changes:[/color]")
-	display_game("  • Mages now regenerate 2% max mana per round (Sage: 3%)")
-	display_game("  • Forcefield strength increased (INT×8 shield value)")
-	display_game("  • Meteor mana cost reduced (12% → 8%), Blast/Meteor INT scaling improved")
-	display_game("  • Sorcerer backfire now capped at 15% max HP (no more instant deaths!)")
-	display_game("  [color=#66FF66]Trickster Changes:[/color]")
-	display_game("  • Outsmart cap improved - smarter monsters are less punishing")
-	display_game("  • DEX dodge cap raised from 20% to 30%")
-	display_game("  • Tricksters gain bonus dodge from WITS (up to 15%)")
-	display_game("  [color=#FF6666]General:[/color]")
-	display_game("  • Monster enrage now caps at 10 stacks")
-	display_game("  • Monster HP scaling rebalanced for better gear progression")
-	display_game("  • High-tier monster intelligence adjusted for fairer outsmart chances")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

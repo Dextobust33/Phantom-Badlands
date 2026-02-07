@@ -12285,6 +12285,12 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	var distance = sqrt(float(death_x * death_x + death_y * death_y))
 	var spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
+	# Avoid spawning corpse on trading post tiles (post interaction overrides looting)
+	for _attempt in range(10):
+		if not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y):
+			break
+		spawn_location = _generate_random_location_at_distance(distance * 0.5)
+
 	# Build corpse contents
 	var contents = {
 		"items": [],  # Now holds up to 2 equipment pieces
