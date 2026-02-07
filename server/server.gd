@@ -1419,6 +1419,8 @@ func handle_logout_account(peer_id: int):
 	peers[peer_id].account_id = ""
 	peers[peer_id].username = ""
 	peers[peer_id].character_name = ""
+	# Reset connect_time so stale connection check gives a fresh auth window
+	peers[peer_id].connect_time = Time.get_unix_time_from_system()
 
 	# Send acknowledgment
 	send_to_peer(peer_id, {
@@ -2897,6 +2899,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		# Combat data from final fight
 		"combat_log": combat_data.get("combat_log", []),
 		"rounds_fought": combat_data.get("rounds", 0),
+		"monster_base_name": combat_data.get("monster_base_name", ""),
 		"monster_max_hp": combat_data.get("monster_max_hp", 0),
 		"total_damage_dealt": combat_data.get("total_damage_dealt", 0),
 		"total_damage_taken": combat_data.get("total_damage_taken", 0),

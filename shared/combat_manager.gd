@@ -1,4 +1,4 @@
-# combat_manager.gd
+﻿# combat_manager.gd
 # Handles turn-based combat in Phantasia 4 style
 class_name CombatManager
 extends Node
@@ -90,9 +90,6 @@ const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no l
 const ABILITY_DISGUISE = "disguise"              # Appears as weaker monster, reveals after 2 rounds
 const ABILITY_XP_STEAL = "xp_steal"              # Steals 1-3% of player XP on hit (rare, punishing)
 const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equipped item
-
-# ASCII art display settings
-const ASCII_ART_FONT_SIZE = 10  # Default is 14, smaller = less space
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -259,8 +256,8 @@ func _extract_art_color(art_array: Array) -> String:
 	return "#FFFFFF"  # Default white
 
 func apply_damage_variance(base_damage: int) -> int:
-	"""Apply ±15% variance to damage to make combat less predictable"""
-	# Variance range: 0.85 to 1.15 (±15%)
+	"""Apply Â±15% variance to damage to make combat less predictable"""
+	# Variance range: 0.85 to 1.15 (Â±15%)
 	var variance = 0.85 + (randf() * 0.30)
 	return max(1, int(base_damage * variance))
 
@@ -734,7 +731,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		# Disguise ability tracking
 		"disguise_active": disguise_active,
 		"disguise_true_stats": true_stats,
-		"disguise_revealed": false
+		"disguise_revealed": false,
+		# Damage tracking for death screen
+		"total_damage_dealt": 0,
+		"total_damage_taken": 0
 	}
 
 	active_combats[peer_id] = combat_state
@@ -871,7 +871,11 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		return {"success": false, "message": "Wait for your turn!"}
 	
 	var result = {}
-	
+
+	# Track monster HP before player action for damage tracking
+	var monster_hp_before = combat.monster.current_hp
+	var player_hp_before = combat.character.current_hp
+
 	match action:
 		CombatAction.ATTACK:
 			result = process_attack(combat)
@@ -881,16 +885,31 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result = process_special(combat)
 		CombatAction.OUTSMART:
 			result = process_outsmart(combat)
-	
+
+	# Track damage dealt to monster this turn
+	var damage_dealt_this_turn = max(0, monster_hp_before - combat.monster.current_hp)
+	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + damage_dealt_this_turn
+	# Track any self-damage from player action (backfire, thorns reflection)
+	var self_damage = max(0, player_hp_before - combat.character.current_hp)
+	combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + self_damage
+
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
 		end_combat(peer_id, result.get("victory", false))
 		return result
-	
+
 	# Monster's turn (if still alive)
 	if combat.monster.current_hp > 0:
+		var player_hp_before_monster = combat.character.current_hp
+		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
 		result.messages.append(monster_result.message)
+		# Track damage taken from monster
+		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
+		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
+		# Track any damage dealt by reflect/thorns during monster turn
+		var reflect_damage = max(0, monster_hp_before_turn - combat.monster.current_hp)
+		combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + reflect_damage
 
 		# Check if monster fled (Coward, Flee Attack, or Shrieker summon)
 		if monster_result.get("monster_fled", false):
@@ -1129,7 +1148,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
 				monster.current_hp -= lightning_damage
 				monster.current_hp = max(0, monster.current_hp)
-				messages.append("[color=#00FFFF]⚡ Shocking strikes for %d bonus damage![/color]" % lightning_damage)
+				messages.append("[color=#00FFFF]âš¡ Shocking strikes for %d bonus damage![/color]" % lightning_damage)
 
 		# Execute proc (bonus damage when enemy below 30% HP)
 		if procs.execute.chance > 0 and procs.execute.value > 0:
@@ -1138,7 +1157,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var execute_damage = max(1, int(damage * procs.execute.value / 100.0))
 				monster.current_hp -= execute_damage
 				monster.current_hp = max(0, monster.current_hp)
-				messages.append("[color=#FF4444]💀 Execute strikes for %d bonus damage![/color]" % execute_damage)
+				messages.append("[color=#FF4444]ðŸ’€ Execute strikes for %d bonus damage![/color]" % execute_damage)
 
 		# === COMPANION ATTACK ===
 		_process_companion_attack(combat, messages)
@@ -1220,7 +1239,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var xp_tier_bonus = 1.0
 	if xp_tier_diff > 0:
 		xp_tier_bonus = pow(2.0, xp_tier_diff)  # 2x per tier: T+1=2x, T+2=4x, T+3=8x
-		messages.append("[color=#FF00FF]★ TIER CHALLENGE: +%dx XP bonus! ★[/color]" % int(xp_tier_bonus))
+		messages.append("[color=#FF00FF]â˜… TIER CHALLENGE: +%dx XP bonus! â˜…[/color]" % int(xp_tier_bonus))
 
 	# Small level difference bonus (within same tier)
 	# +2% per level difference, capped at 50% (same-tier fights shouldn't give huge bonuses)
@@ -1280,25 +1299,25 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		character.increment_companion_battles()
 		if companion_result.leveled_up:
 			var companion = character.get_active_companion()
-			messages.append("[color=#00FFFF]✧ %s leveled up to %d! ✧[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
+			messages.append("[color=#00FFFF]âœ§ %s leveled up to %d! âœ§[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
 			# Notify of unlocked abilities
 			for ability_level in companion_result.abilities_unlocked:
 				if drop_tables:
 					var tier = companion.get("tier", 1)
 					var ability = drop_tables.get_companion_ability(tier, ability_level)
 					if not ability.is_empty():
-						messages.append("[color=#FFD700]★ New ability unlocked: %s! ★[/color]" % ability.get("name", "Unknown"))
+						messages.append("[color=#FFD700]â˜… New ability unlocked: %s! â˜…[/color]" % ability.get("name", "Unknown"))
 
 	# Normal gem drops (from high-level monsters)
 	var gems_earned = roll_gem_drops(monster, character)
 	if gems_earned > 0:
 		character.gems += gems_earned
-		messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+		messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] â—† âœ¦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 	# Gambit kill bonus: +1 gem
 	if gambit_kill:
 		character.gems += 1
-		messages.append("[color=#FFD700]✦ Gambit bonus: +1 gem! ✦[/color]")
+		messages.append("[color=#FFD700]âœ¦ Gambit bonus: +1 gem! âœ¦[/color]")
 
 	# Gem Bearer bonus (separate from normal drops, scales with monster level)
 	if ABILITY_GEM_BEARER in abilities:
@@ -1326,7 +1345,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		var bearer_gems = randi_range(2, 5) + tier_bonus
 		character.gems += bearer_gems
 		gems_earned += bearer_gems
-		messages.append("[color=#00FFFF]✧ The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ✧[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
+		messages.append("[color=#00FFFF]âœ§ The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] âœ§[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
 
 	# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
@@ -1343,7 +1362,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(weapon)
 		else:
-			messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
+			messages.append("[color=#AA6666]âœ— The Weapon Master's weapon shatters on death...[/color]")
 
 	# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 	if ABILITY_SHIELD_BEARER in abilities and drop_tables != null:
@@ -1360,7 +1379,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(shield)
 		else:
-			messages.append("[color=#AA6666]✗ The Shield Guardian's shield crumbles to dust...[/color]")
+			messages.append("[color=#AA6666]âœ— The Shield Guardian's shield crumbles to dust...[/color]")
 
 	# Arcane Hoarder ability: 35% chance to drop mage gear
 	if ABILITY_ARCANE_HOARDER in abilities and drop_tables != null:
@@ -1377,7 +1396,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(mage_item)
 		else:
-			messages.append("[color=#AA66AA]✗ The Arcane Hoarder's magic dissipates...[/color]")
+			messages.append("[color=#AA66AA]âœ— The Arcane Hoarder's magic dissipates...[/color]")
 
 	# Cunning Prey ability: 35% chance to drop trickster gear
 	if ABILITY_CUNNING_PREY in abilities and drop_tables != null:
@@ -1394,7 +1413,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(trick_item)
 		else:
-			messages.append("[color=#66AA66]✗ The Cunning Prey's gear vanishes into shadow...[/color]")
+			messages.append("[color=#66AA66]âœ— The Cunning Prey's gear vanishes into shadow...[/color]")
 
 	# Warrior Hoarder ability: 35% chance to drop warrior gear
 	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
@@ -1411,7 +1430,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					combat.extra_drops = []
 				combat.extra_drops.append(war_item)
 		else:
-			messages.append("[color=#AA8866]✗ The Warrior Hoarder's armor crumbles...[/color]")
+			messages.append("[color=#AA8866]âœ— The Warrior Hoarder's armor crumbles...[/color]")
 
 	# Wish granter ability: 10% chance to offer a wish
 	if ABILITY_WISH_GRANTER in abilities:
@@ -1420,7 +1439,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var wish_options = generate_wish_options(character, monster.level, monster_lethality)
 			combat["wish_pending"] = true
 			combat["wish_options"] = wish_options
-			messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+			messages.append("[color=#FFD700]â˜… The %s offers you a WISH! â˜…[/color]" % monster.name)
 			messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 		else:
 			messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
@@ -1434,18 +1453,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var trophy_desc = trophy.get("description", "")
 			var is_first = not character.has_trophy(trophy_id)
 			var trophy_count = character.add_trophy(trophy_id, monster.name, monster.level)
-			messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			messages.append("[color=#A335EE]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 			if is_first:
-				messages.append("[color=#A335EE]★★★ NEW TROPHY COLLECTED! ★★★[/color]")
+				messages.append("[color=#A335EE]â˜…â˜…â˜… NEW TROPHY COLLECTED! â˜…â˜…â˜…[/color]")
 			else:
-				messages.append("[color=#A335EE]★ TROPHY DROP! ★[/color]")
+				messages.append("[color=#A335EE]â˜… TROPHY DROP! â˜…[/color]")
 			messages.append("[color=#FFD700]%s[/color]" % trophy_name)
 			messages.append("[color=#808080]%s[/color]" % trophy_desc)
 			if trophy_count > 1:
 				messages.append("[color=#00FF00]Trophy added! (x%d of this type, %d total)[/color]" % [trophy_count, character.get_trophy_count()])
 			else:
 				messages.append("[color=#00FF00]Trophy added to your collection! (%d total)[/color]" % character.get_trophy_count())
-			messages.append("[color=#A335EE]═══════════════════════════════════════════════════════════════════════════[/color]")
+			messages.append("[color=#A335EE]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 
 	# Soul Gem drops - companions (Tier 7+)
 	if drop_tables != null:
@@ -1458,15 +1477,15 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 				var gem_desc = soul_gem.get("description", "")
 				var gem_bonuses = soul_gem.get("bonuses", {})
 				if character.has_soul_gem(gem_id):
-					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
-					messages.append("[color=#00FFFF]✧ SOUL GEM DROP: %s ✧[/color]" % gem_name)
+					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+					messages.append("[color=#00FFFF]âœ§ SOUL GEM DROP: %s âœ§[/color]" % gem_name)
 					messages.append("[color=#808080]%s[/color]" % gem_desc)
 					messages.append("[color=#FFFF00](You already have this soul gem!)[/color]")
-					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 				else:
 					character.add_soul_gem(gem_id, gem_name, gem_bonuses)
-					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
-					messages.append("[color=#00FFFF]✧✧✧ NEW SOUL GEM ACQUIRED! ✧✧✧[/color]")
+					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+					messages.append("[color=#00FFFF]âœ§âœ§âœ§ NEW SOUL GEM ACQUIRED! âœ§âœ§âœ§[/color]")
 					messages.append("[color=#FFD700]%s[/color]" % gem_name)
 					messages.append("[color=#808080]%s[/color]" % gem_desc)
 					# Show bonuses
@@ -1483,16 +1502,16 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 							"lifesteal": bonus_text.append("+%d%% lifesteal" % val)
 					messages.append("[color=#00FF00]Bonuses: %s[/color]" % ", ".join(bonus_text))
 					messages.append("[color=#808080]Use /companion to activate this companion![/color]")
-					messages.append("[color=#00FFFF]═══════════════════════════════════════════════════════════════════════════[/color]")
+					messages.append("[color=#00FFFF]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 
 	# Title item drops (Jarl's Ring, Unforged Crown)
 	var title_item = roll_title_item_drop(monster.level)
 	if not title_item.is_empty():
-		messages.append("[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]")
-		messages.append("[color=#FFD700]★★★ A LEGENDARY TITLE ITEM DROPS! ★★★[/color]")
+		messages.append("[color=#FFD700]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
+		messages.append("[color=#FFD700]â˜…â˜…â˜… A LEGENDARY TITLE ITEM DROPS! â˜…â˜…â˜…[/color]")
 		messages.append("[color=#C0C0C0]%s[/color]" % title_item.name)
 		messages.append("[color=#808080]%s[/color]" % title_item.description)
-		messages.append("[color=#FFD700]═══════════════════════════════════════════════════════════════════════════[/color]")
+		messages.append("[color=#FFD700]â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 		if not combat.has("extra_drops"):
 			combat.extra_drops = []
 		combat.extra_drops.append(title_item)
@@ -1549,7 +1568,7 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var passive_effects = passive.get("effects", {})
 
 	# Flee chance based on level difference, DEX, and equipment speed
-	# Base 40% + DEX + equipment_speed + speed_buff + flee_bonus - (level_diff × 3)
+	# Base 40% + DEX + equipment_speed + speed_buff + flee_bonus - (level_diff Ã— 3)
 	var equipment_bonuses = character.get_equipment_bonuses()
 	var player_dex = character.get_effective_stat("dexterity")
 	var speed_buff = character.get_buff_value("speed")
@@ -1760,7 +1779,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		var xp_tier_bonus = 1.0
 		if tier_diff > 0:
 			xp_tier_bonus = pow(2.0, tier_diff)  # 2x per tier
-			messages.append("[color=#FF00FF]★ TIER CHALLENGE: +%dx XP bonus! ★[/color]" % int(xp_tier_bonus))
+			messages.append("[color=#FF00FF]â˜… TIER CHALLENGE: +%dx XP bonus! â˜…[/color]" % int(xp_tier_bonus))
 
 		# Small level difference bonus (within same tier)
 		if xp_level_diff > 0 and tier_diff == 0:
@@ -1783,13 +1802,13 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			var new_abilities = character.get_newly_unlocked_abilities(old_level, level_result.new_level)
 			if new_abilities.size() > 0:
 				messages.append("")
-				messages.append("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
-				messages.append("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+				messages.append("[color=#00FFFF]â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—[/color]")
+				messages.append("[color=#00FFFF]â•‘[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
 				for ability in new_abilities:
 					var ability_type = "Universal" if ability.get("universal", false) else "Class"
-					messages.append("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
-				messages.append("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-				messages.append("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
+					messages.append("[color=#00FFFF]â•‘[/color]  [color=#00FF00]â˜…[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+				messages.append("[color=#00FFFF]â•‘[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+				messages.append("[color=#00FFFF]â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 
 		# Roll for item drops
 		var dropped_items = []
@@ -1820,7 +1839,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(weapon)
 				else:
-					messages.append("[color=#AA6666]✗ The Weapon Master's weapon shatters on death...[/color]")
+					messages.append("[color=#AA6666]âœ— The Weapon Master's weapon shatters on death...[/color]")
 
 			# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
 			if ABILITY_SHIELD_BEARER in abilities:
@@ -1835,7 +1854,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(shield)
 				else:
-					messages.append("[color=#AA6666]✗ The Shield Guardian's shield crumbles to dust...[/color]")
+					messages.append("[color=#AA6666]âœ— The Shield Guardian's shield crumbles to dust...[/color]")
 
 			# Arcane Hoarder ability: 35% chance to drop mage gear
 			if ABILITY_ARCANE_HOARDER in abilities:
@@ -1850,7 +1869,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(mage_item)
 				else:
-					messages.append("[color=#AA66AA]✗ The Arcane Hoarder's magic dissipates...[/color]")
+					messages.append("[color=#AA66AA]âœ— The Arcane Hoarder's magic dissipates...[/color]")
 
 			# Cunning Prey ability: 35% chance to drop trickster gear
 			if ABILITY_CUNNING_PREY in abilities:
@@ -1865,7 +1884,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(trick_item)
 				else:
-					messages.append("[color=#66AA66]✗ The Cunning Prey's gear vanishes into shadow...[/color]")
+					messages.append("[color=#66AA66]âœ— The Cunning Prey's gear vanishes into shadow...[/color]")
 
 			# Warrior Hoarder ability: 35% chance to drop warrior gear
 			if ABILITY_WARRIOR_HOARDER in abilities:
@@ -1880,13 +1899,13 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 						])
 						extra_drops.append(war_item)
 				else:
-					messages.append("[color=#AA8866]✗ The Warrior Hoarder's armor crumbles...[/color]")
+					messages.append("[color=#AA8866]âœ— The Warrior Hoarder's armor crumbles...[/color]")
 
 			# Roll for gem drops
 			gems_earned = roll_gem_drops(monster, character)
 			if gems_earned > 0:
 				character.gems += gems_earned
-				messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] ◆ ✦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+				messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] â—† âœ¦[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 		# Wish granter ability: 10% chance to offer a wish
 		if ABILITY_WISH_GRANTER in abilities:
@@ -1894,7 +1913,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				var monster_lethality = monster.get("lethality", 100)
 				wish_options = generate_wish_options(character, monster.level, monster_lethality)
 				wish_pending = true
-				messages.append("[color=#FFD700]★ The %s offers you a WISH! ★[/color]" % monster.name)
+				messages.append("[color=#FFD700]â˜… The %s offers you a WISH! â˜…[/color]" % monster.name)
 				messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
 			else:
 				messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
@@ -1998,6 +2017,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	var character = combat.character
 	var result: Dictionary
 
+	# Track HP/monster HP before ability for damage tracking
+	var monster_hp_before = combat.monster.current_hp
+	var player_hp_before = combat.character.current_hp
+
 	# Normalize ability names
 	match ability_name:
 		"bolt": ability_name = "magic_bolt"
@@ -2023,6 +2046,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	else:
 		return {"success": false, "message": "Unknown ability!"}
 
+	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
+	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
+	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
+	var ability_self_damage = max(0, player_hp_before - combat.character.current_hp)
+	combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + ability_self_damage
+
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
 		end_combat(peer_id, result.get("victory", false))
@@ -2035,6 +2064,11 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Don't attack on free actions like Analyze, Pickpocket success, etc.
 	if not result.get("skip_monster_turn", false):
 		_process_companion_attack(combat, result.messages)
+
+	# Track companion damage to monster
+	var companion_damage = max(0, monster_hp_before - combat.monster.current_hp) - ability_damage_dealt
+	if companion_damage > 0:
+		combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + companion_damage
 
 	# Check if companion killed the monster
 	if combat.monster.current_hp <= 0:
@@ -2053,8 +2087,16 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			result.messages.append("[color=#00FF00]You act quickly, avoiding the %s's attack![/color]" % combat.monster.name)
 
 	if not result.get("skip_monster_turn", false) and monster_attacks and combat.monster.current_hp > 0:
+		var player_hp_before_monster = combat.character.current_hp
+		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
 		result.messages.append(monster_result.message)
+		# Track damage taken from monster
+		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
+		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
+		# Track any damage dealt by reflect/thorns during monster turn
+		var reflect_damage = max(0, monster_hp_before_turn - combat.monster.current_hp)
+		combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + reflect_damage
 
 		# Check if player died
 		# Note: Don't call end_combat here - let server check eternal status first
@@ -2217,7 +2259,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Formula: damage = mana * (1 + INT/50), reduced by monster WIS
 			var bolt_amount = arg.to_int() if arg.is_valid_int() else 0
 			if bolt_amount <= 0:
-				return {"success": false, "messages": ["[color=#808080]Usage: bolt <amount> - deals mana × INT damage[/color]"], "combat_ended": false, "skip_monster_turn": true}
+				return {"success": false, "messages": ["[color=#808080]Usage: bolt <amount> - deals mana Ã— INT damage[/color]"], "combat_ended": false, "skip_monster_turn": true}
 			bolt_amount = mini(bolt_amount, character.current_mana)
 			if bolt_amount <= 0:
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana![/color]"], "combat_ended": false, "skip_monster_turn": true}
@@ -2327,7 +2369,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Base damage 50, scaled by INT (+4% per point) and multiplied by 2
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
-			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic × 2
+			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic Ã— 2
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -2368,7 +2410,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		"forcefield":
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			# Forcefield provides flat damage absorption = 100 + INT × 8 (high scaling)
+			# Forcefield provides flat damage absorption = 100 + INT Ã— 8 (high scaling)
 			var int_stat = character.get_effective_stat("intelligence")
 			var shield_value = 100 + (int_stat * 8)
 			combat["forcefield_shield"] = shield_value
@@ -2549,10 +2591,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	match ability_name:
 		"power_strike":
-			# Buffed: 2× damage multiplier (was 1.5×), sqrt STR scaling
+			# Buffed: 2Ã— damage multiplier (was 1.5Ã—), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)  # Sqrt scaling
-			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult)  # 2× (was 1.5×)
+			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult)  # 2Ã— (was 1.5Ã—)
 			# Apply skill enhancement damage bonus
 			var enhanced_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
 			if enhanced_dmg > base_dmg:
@@ -2573,10 +2615,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"shield_bash":
-			# Buffed: 1.5× damage multiplier (was 1×), sqrt STR scaling
+			# Buffed: 1.5Ã— damage multiplier (was 1Ã—), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)  # 1.5× (was 1×)
+			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)  # 1.5Ã— (was 1Ã—)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2586,10 +2628,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 
 		"cleave":
-			# Buffed: 2.5× damage multiplier (was 2×), sqrt STR scaling
+			# Buffed: 2.5Ã— damage multiplier (was 2Ã—), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult)  # 2.5× (was 2×)
+			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult)  # 2.5Ã— (was 2Ã—)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2619,10 +2661,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"devastate":
-			# Buffed: 5× damage (was 4×), sqrt STR scaling
+			# Buffed: 5Ã— damage (was 4Ã—), sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult)  # 5× (was 4×)
+			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult)  # 5Ã— (was 4Ã—)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2633,7 +2675,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 		"fortify":
 			# Buffed: Higher base defense, sqrt STR scaling
 			var str_stat = character.get_effective_stat("strength")
-			var defense_bonus = 30 + int(sqrt(float(str_stat)) * 3)  # 30% base + sqrt(STR)×3
+			var defense_bonus = 30 + int(sqrt(float(str_stat)) * 3)  # 30% base + sqrt(STR)Ã—3
 			character.add_buff("defense", defense_bonus, 5)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
 			is_buff_ability = true
@@ -2641,7 +2683,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 		"rally":
 			# Buffed: Better heal scaling with sqrt CON
 			var con_stat = character.get_effective_stat("constitution")
-			var heal_amount = 30 + int(sqrt(float(con_stat)) * 10)  # 30 base + sqrt(CON)×10
+			var heal_amount = 30 + int(sqrt(float(con_stat)) * 10)  # 30 base + sqrt(CON)Ã—10
 			var actual_heal = character.heal(heal_amount)
 			var str_bonus = 10 + int(character.get_effective_stat("strength") / 5)
 			character.add_buff("strength", str_bonus, 3)
@@ -2783,13 +2825,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			# Ambush: 3× multiplier, 50% crit chance, sqrt WITS scaling
+			# Ambush: 3Ã— multiplier, 50% crit chance, sqrt WITS scaling
 			var wits_stat = character.get_effective_stat("wits")
 			var wits_mult = 1.0 + (sqrt(float(wits_stat)) / 10.0)  # Sqrt scaling for WITS
 			var base_damage = character.get_total_attack()
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3× multiplier
+			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3Ã— multiplier
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
@@ -2865,13 +2907,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					var new_abilities = character.get_newly_unlocked_abilities(heist_old_level, level_result.new_level)
 					if new_abilities.size() > 0:
 						messages.append("")
-						messages.append("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
-						messages.append("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+						messages.append("[color=#00FFFF]â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—[/color]")
+						messages.append("[color=#00FFFF]â•‘[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
 						for ability in new_abilities:
 							var ability_type = "Universal" if ability.get("universal", false) else "Class"
-							messages.append("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
-						messages.append("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-						messages.append("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
+							messages.append("[color=#00FFFF]â•‘[/color]  [color=#00FF00]â˜…[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
+						messages.append("[color=#00FFFF]â•‘[/color]  [color=#808080]Check Abilities menu to equip![/color]")
+						messages.append("[color=#00FFFF]â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[/color]")
 
 				# Roll for item drops (normal chance, was doubled)
 				var dropped_items = []
@@ -2886,7 +2928,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					gems_earned = roll_gem_drops(monster, character)
 					if gems_earned > 0:
 						character.gems += gems_earned
-						messages.append("[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] ◆ ✦[/color]" % gems_earned)
+						messages.append("[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] â—† âœ¦[/color]" % gems_earned)
 
 				return {
 					"success": true,
@@ -2936,7 +2978,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			success_chance = min(80, success_chance)  # Cap at 80%
 
 			if randf() * 100 < success_chance:
-				# Success - deal big damage with WITS scaling (4.5× multiplier)
+				# Success - deal big damage with WITS scaling (4.5Ã— multiplier)
 				var wits_mult = 1.0 + (sqrt(float(wits)) / 10.0)  # Same scaling as Ambush
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
@@ -4227,6 +4269,22 @@ func calculate_monster_damage(monster: Dictionary, character: Character) -> int:
 	var min_damage = max(1, monster.level / 5)
 	return max(min_damage, total)
 
+func get_combat_summary(peer_id: int) -> Dictionary:
+	"""Extract combat summary data before end_combat erases it."""
+	if not active_combats.has(peer_id):
+		return {}
+	var combat = active_combats[peer_id]
+	return {
+		"rounds": combat.round,
+		"combat_log": combat.combat_log.duplicate(),
+		"monster_name": combat.monster.name,
+		"monster_base_name": combat.monster.get("base_name", combat.monster.name),
+		"monster_level": combat.monster.level,
+		"monster_max_hp": combat.monster.max_hp,
+		"total_damage_dealt": combat.get("total_damage_dealt", 0),
+		"total_damage_taken": combat.get("total_damage_taken", 0),
+	}
+
 func end_combat(peer_id: int, victory: bool):
 	"""End combat and clean up"""
 	if active_combats.has(peer_id):
@@ -4332,1179 +4390,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:
-	"""Return ASCII art for the monster, properly formatted for centering"""
-	# Map monster names to ASCII art - each line will be centered individually
-	var art_map = {
-		# Tier 1 - Small creatures
-		"Goblin": ["[color=#00FF00]",
-"                                   xxXx                                    ",
-"                             +xxXXXXX$$$XXxxx+                             ",
-"                          ++xXXX$$$$$$$&&$$XXXxx+                          ",
-"                       ;;+xXXX$$$&&&&&&&&&&$$XXxxx+                        ",
-"                      ;+xxxxXX$$&&&&&&&&&&&&&$$XXXXx                       ",
-"                    .:;++xxXX$$$&&&&&&&&&&&&&&&$XXXXx+                     ",
-"                    :;+;x+xX$$$$&&&&&&&&&&&&&$X$$$XXx+;                    ",
-"  ++               .:;;;x+xX$$&&&&&&&&&&&&&&&$$$$XXxx+;                 x  ",
-"  .:+xxxxx         :::;;;xxxX$XX$&&&&$&&&&&&$$$$XXx++++           xXXx+:.  ",
-"   ....:+XXXXXx    ::::;;+XXXX$xX$&&&&&&&&&$X$$$$X++x+;;    xxXX$$X:..;:   ",
-"    .;::...+X$$XX+::;::;xXX$$&$X&$$&$$&$$$&&&$$&&X+;++;:+xX$$$$x:...:+;    ",
-"      :;::::.;xxXXX;:::+X$$X$&&&&&&$&$$&&&&$$&&&&$$x++;x$$$&X+:::+:+;.     ",
-"      :++;:;;:.:+x+x;;;;:+x$&$&X&&&$&&X&&&$$&XXx;+;++++$&$x:.;XX;+;x;      ",
-"       :x+;;;....:;;;;::....:+xX$X+xxXx+XX+x;......:;X+xX: .++X+;XX;       ",
-"         ;;;;;::..;:;xx::.;;......+$&&&+.  .;::x;:+x$Xx+;..:.++;++:        ",
-"          .:+;+;::+::+$Xx+;;;::;;+X&&&&$xx+;:;++;X&&$X+:x::x+x;x;          ",
-"           .;++;+x;:.:;X$XXx$$x+++$&&&&$XXxx&XxX&$$X+;:;.+$++;+:           ",
-"             ..;x;;;::.:;+X$$:;X$x$$&&&$$$$;;X&$$x;;:.:xXXXxx:             ",
-"                :;;;.:;::++x;X;.;+xX&&$$x;.xX;x$x+::;;:+Xx;.               ",
-"                  . .::;:+;;+$x;..;xxXx+.;+&$XX+xx;+x+:....                ",
-"                    .;;;;+;;xxXx+:.;;++:X$&$$Xxx;Xx+++:                    ",
-"                    .;;;;:+;:X&::;;:.:xxx;:.&$:+xxx+;x:                    ",
-"                    ..;;;:...+XxX++...;++$;xXx:;:++;;:.                    ",
-"                      .;;x++;+;+xxxxxxX$$$$X+xXXxx++..                     ",
-"                       ..:;:;+++++++;;;+xxX$XX++x+:.                       ",
-"                         ..;;;:;;;xxXX$$Xxx+++x+:.                         ",
-"                           .:++x+XX$$$&&$&$XX+:..                          ",
-"                            ..;+;xXXx+$x$X+x;..                            ",
-"                              ..::;+;;+;;:;..                              ",
-"                                 ..... ...                                 ","[/color]"],
-
-		"Giant Rat": ["[color=#8B4513]",
-"                                    ...........                            ",
-"                               ......:X&X:.........                        ",
-"          ..;             ;:..;.:xx;.+&&&$:......;...                      ",
-"          .::x.   .......+;.:+$+.:..:x&&&&&&$$;........                    ",
-"          :X.$&.......:x&&::&&$$.....:x&&&&$+..:........                   ",
-"          ;x.+.:x:.+x:..:x...X&.;;:...;$&&&&&&X+..........                 ",
-"      ..   .:.;:..X;+$;+.:;x&x..;&&x:.::&&&&;...:.........                 ",
-"         . ..X..::X&&...;+.:x:.;$&&$:..X&&.$:;:;:$;........                ",
-"           .+.:+X&x...Xx&++Xx:.;+$x;xX..x;.....;&xX$;x;.....               ",
-"   :...   ..:..+XX&+.x&+:...;...:&&$X:;:$:..;&&&&&XXx..:.....              ",
-"      ......X+&&&&&$;:;;...:...x&&&X;...+..;&&&&&$;+........               ",
-"  .   ......X$&$+&&&+:::+x;:..&&&&;x:;:+;:&&&&&&+............              ",
-"        . ...:.;&&$+;::.:;:.:&&&xx;..+...:$&&$++;............              ",
-"      .  .   ..xx;...:..::x.$&&&x:.::;....:xXx;+;.............             ",
-"               .........+:&&&&+:...xXX:X:....x++............+:..           ",
-"                ...x+....Xxxx..x&&&X:....++...............:;;;$x+..        ",
-"                 ............X&&&xX......+::....::..;:.........:;$&&;..    ",
-"                 .++:........&&;.:...+..:..::.;;...:.:.............:&X+.   ",
-"             ..&:&.$:.  :xxX&x&.......+;&x&x&;;:.......          ..:&$X..  ",
-"              . .. .   ..;.;.;..     ..:.:.:....             .:;;X&xx....  ",
-"                                         ..:;;;+;;+xX++++++;+x+.:......    ",
-"                                    ...............................        ",
-"                                 ....                                      ","[/color]"],
-
-		"Kobold": ["[color=#CD853F]",
-"                                     :+:                                   ",
-"            ;x              ;:    :x$+.                                    ",
-"            xX;           ;x.   :+&X+.     :++:                            ",
-"            ;$x;     :   :x;:.::X&X::...:$&+.                       ;x$+.  ",
-"             ;xXx+; $;  ..:;+++;;;..:x+++;&X;::               ++x$x. ...   ",
-"             +xxXXx:X+.;;+xXXxxX$x++xX;&&x::x++::...   ++xxX&X. ...;::     ",
-"             .xx.x..;+++X$&&x$$X$$$&:$&xx:..;;;;;:.:+x$&$;.  ..:++xx+      ",
-"             .::++++;x$X$&X&&&$x&X;.:x$xXx;XX+::xx&&&&+  ..;;++xxX++:      ",
-"            :;+;+Xx+xxx&&&&&x$:+X$$X&&XX$$++;&X&&X&X. .:;++;$$&XXXx:.      ",
-"          :;x+X$X+X&xXXXxx&&&&&&&&&x&XX;;;;X$&$&$X...:;..:x&&&$$+:         ",
-"          .;XX&XxxXx$xX+&&&&&$&$+:;:;:.:;X+&$X;++;. :xX+;;X$&&&$;:         ",
-"           ..:;:;x+X&;&X&&$&x;..:...::;+++X$:;+.   ...+X$&X&X:;.           ",
-"           ::.;X$$&&$X:;:;:..+;:&;;.;x$x+$&$$XxxX;:..xX&$XX$X.             ",
-"         ::+xXXX&&&&x+XX;;.:::x$$&x+x&&&&&&&&+x:xX:.:$&&x&&.               ",
-"      ;xxXX&&&&$$$&$$&x+$$X&Xx+++X&&&&&&&$XX;x+xx;+&$XX::+.::              ",
-"      .xx&X$&&X.+x+&&$&&$$$$&&&&&&&&$$+++;+++:+;&&&&&&&: ..:               ",
-"      .;xxxX&;:xx$&&&&&&&&&$&$XXxx+x;.:+++;x+x;:.&+:+. .+;:xX+:            ",
-"      ::;xXX&&&&&&&&&&&X&$X+xXx::;+:XxXX+&$$&&x$+....:;+x+;::.:;           ",
-"      .:;++&&&&&&&$x&xx;x;:.:+;....:+:$X&X&$&&x::;;:+X+X&;;:;+             ",
-"      ..;;:+;Xx;:::..;x:;:::....;+&X$x$$&X&&+:;+:;xx:+;;+xx                ",
-"       :x..:..::x& ..:X ..x&:$+&&&&&$$$x&$;:x&.:;&X&$+++                   ",
-"        .;: ;....;.&:.;X;&;x&&&&+&XxX;+X.. ..:;+x&xxx+$                    ",
-"          :+....;:;&&.;X&&&&&$+;;;+;:;:....:;;+XX&+;+                      ",
-"         .::;:.++X$&&&&X$XXx+;+:. ..::++:;$:+x$xx+                         ",
-"          ..::++xXxx+xX++;...... .+++xxx:Xxx;+&x                           ",
-"           .:;+XxXXX+:........::+;:$X+;:XX;+$$                             ",
-"           ...:x+;.;.   .:;:.:::::+XX+x:$&                                 ",
-"              ..:.        ...::;;+++xX++&                                  ",
-"                :          :;;;+;+X$&X                                     ",
-"                                X X                                        ","[/color]"],
-
-		"Skeleton": ["[color=#FFFFFF]",
-"                                   ++xxx                                   ",
-"                            :;+xxXXX$$&$$$$XXxx                            ",
-"                         :;++xX$$$&&&&&&&&&&&&$$Xx+                        ",
-"                      .:;++xX$$$&&&&&&&&&&&&&&&&&$$X+                      ",
-"                    .:;++xxX&&&&&&&&&&&&&&&&&&&&&&&$$Xx                    ",
-"                  .::;xxxX$&&&&&&&&&&&&&&&&&&&&&&&&&&$$X;                  ",
-"                 .:;;+xxXX&&&&&&&&&&&&&&&&&&&&&&&&&&&&&XX+                 ",
-"                .::++;xx$&$&&&&&&&&&&&&&&&&&&&&&&&&&&&&&$x+                ",
-"                ::;;++++X$$&&&&&&&&&&&&&&&&&&&&&&&&&&&$$&$+                ",
-"               ..;;+;:;+xxX$&&&&&&&&&&&&&&&&&&&&&&&$&&X$$$x;               ",
-"               .:;;;:xx+xXXX$$&&&&&&&&&&&&&&&&&&&&&&&$XxXxX;               ",
-"               .:;:..:+X+xX&&&&&&&&&&&&&&&&&&&&&&&&&&;x+;xX;               ",
-"               .:;+;...&&&$&&&&&&&&&&&$$&&&&&&&&&&&&+;;;$XX:               ",
-"               ..::::.x&&&&&$&&&&&&&&&&&&&&&&&&&&&&&&;:++x+:               ",
-"               .:...:$xXX;Xx$X+X&&&&$&X&&&$&$X&&$+X&&&x:xx;.               ",
-"                ::;..::      ...xxx;:+;:XXx;..      .++:x;:.               ",
-"                ....:;:..        ..;&&&+:.        ...XX:.::                ",
-"                 .: ;x;..:....   .;;&&&$$; .  .......&$....                ",
-"                ;. ;;$$;;:::. ..+x+X...&&&X.....:;x:;&$X.:X:               ",
-"                ;xx++x&&x;:;Xx&&$X+. :  $&&&&&X+xxX&&&$$&$x:               ",
-"                .:;+;$$$$+xx$X$$+X;. ;  :&&&X$$XXxX$&&&$+:.                ",
-"                  ..;;:+$X+;:.+x+$...+...$&&$;;+x&&X&$x:.                  ",
-"                   ..:+:..;;x:;X$xX.:&x::$&&Xx&X:...;:.:.                  ",
-"                   ....::  .:+x$x&$$&X&&&&&&&&+:. :;.:..                   ",
-"                     ..:;  .:+$&x&$&&&&&&&&&&&x;  ;+::.                    ",
-"                     .::+...::;X+Xx$&X$&$$x&+;:.  xx;;.                    ",
-"                     .::+;..:;+$+&$&&$&&&&x&x$;:.:$;;+.                    ",
-"                     :++;X; :::;;++xX+XX++x+:+;:x&X;x+:                    ",
-"                     :xx;+X+;:;+&+&;&X&$$X&X+xx$X&x$Xx;                    ",
-"                     .:++XX;+++x$X$$$$X&&&&$$$X+&Xxx;:                     ",
-"                        .;+x;++x+xX$Xx$xX$XX$$&&$;:.                       ",
-"                          .;$$&&+&X$&&&&$$$$&&&X;.                         ",
-"                           .:;+$&$&&&&&&&&&&$x;.                           ",
-"                             .:;Xx$&$xX&&&XX:.                             ",
-"                                ...........                                ","[/color]"],
-
-		"Wolf": ["[color=#808080]",
-"              .=           %@@@@@@@@@@@@@@ @               =               ",
-"                +#+    %%%@#%#@%#@@@@@@@@@@@@@@ @@       += ..             ",
-"              .:-.++*%#@#*+=----+*-+@+-=*+%@@@@@@@@@#+=--.:::-.            ",
-"             :=.:=:.+:--**-.:**=-*==:=*%%@@@#+-+++-.. :.:#+.==-            ",
-"             .+- :##. ==--:%#**#%%@#*:-:+*%@@@*..::::..#@*.:*++            ",
-"             -+=::%@@*: .:*%#@%--##*--=+##+##%**%=.  *@@@%.-%*#            ",
-"             =*#+::@@#-  :+++--*#%#=:-++**##=.:=#:. :%@@@-.#@##            ",
-"             -=*=+. =-  :-=.:*#%#=+=. -=-=*%@%*++%%*-=%+..==+*#            ",
-"             =.+@@#-::--:.-+#-+#%#*=-.==*#=#%@@@%**@@+.--@@@++@            ",
-"             =  ==..==: :=#@@@#*#==-.:-:**##%%@@@%*-+@@#.=*@=#@            ",
-"            *+:  :#%+---==*@@#**=--=. :==**#@@@@@%@#=%%@@#-. *@@           ",
-"          **+:  =+=:-=+=. .-#%@#-+=+.  -+==#@@**+-=#%%*=#@@+:+@@@@         ",
-"          =-.-#%#:.:-::   .:=#@@#:-++.:=-.=@@%*-:. .+*@#--#@@##@@@         ",
-"         =-=##===-.::   :*##*@@@@+-=-..-.=@@@@*@@@+..:-++-#@@@@@@@@        ",
-"        *#=+*=:.. .:.       .=@@@@.-- :#=#@@@%..     ::==-+%@@@@@@@@       ",
-"       *--*=:::.      -:*@:+@* :+:-+* -#.+#- *@@-@@+*:     =.  +@@@@@      ",
-"     %*--+%@=.::   :-:+*=@@@%+:.+*==- -+--%::*#@@@*#@**%#+.-++=+*@@@@      ",
-"    **=+%#*+%+-.  -#@=:=-.=%#--*#@@*%:==%*%@%+@@@-+@=:%@@@*%%*@@@@@@@@@    ",
-"    =-..*@%*==@@@%*@@@-.=+*=*@@@@@@##:%@@@@@@@#**%=::%@@@@@@+*@@@@@@@@     ",
-"    =-=+==@*=*@@@@#@@@%+@@@@@@@@@@#@#=%@#@@@@@@@@@@*@@@@@@@@@%@@@@@@@@@    ",
-"    =:. +%+:+@@#@@#*%@%#*%%%%@@@@@+-=++#@@@@@@@@@@%%@@@@@@@@=--:*@@@@@@    ",
-"    =-::. =-%%*#*+:=*+*=+#=-%@@@%: .-+=-:=@@@@@%#@@*%#*@@@@@@+@@%=@@@@     ",
-"    -:.  . .@- .-++=--===+. +@@@#.        @@@@*.:%%#*+%%+-- =- .%#=%%@     ",
-"    ===-.   - .@@@%@@*+*%#- .=*%#=      .%@@@+  +@@@@@@@@#:      =###      ",
-"    *+--.     : .***@@#=#%*   .-....   :-..*-   @@@@@@@@@@%-*-::-#@@@      ",
-"    =+--=:...     :*=.=++*%=  .@+++-:::=#**@*  =@@%%*%@=*-.:-=:-%@@@@      ",
-"      -==+.:-=:    . =-*+=**=: %-   :-:   =@ .+@@@@@@-+=   ::-*##@@@@@     ",
-"       ++-...-:-=      -**-+*. :       :: .-:.%@:.-@@#.  . .==:%@@@@@      ",
-"       =---. ... ...  .     :#  @::--:=#+-@: %+ :-*#:=.:.=+:--.*+*@@       ",
-"         =::..   :+.-=:=:.   -+ +@@:##*.#@@.*@ :**#@-  =**%#.:++%@@        ",
-"          =-:=:  .  :*--+=-   *:  ++@%%#*::-@+:-*%@:. :+#%+-+-=%@@@        ",
-"            =++=. .   :.*:+-  -@=   .++--.=@@:.+*.= .::*@%+- .:@@@         ",
-"               +:::.     -+#-  -%#=:..:=#@@#. :*+: +*##-:*  ::=+@@         ",
-"                =+--=:-- -+::.  ..##@@@@@-:   .===:%##@#:.  :++#*          ",
-"                    =-+=:.  -:-    . :..: .=-:-=#*%*@*:#+.:-:-+            ",
-"                       *--.:=-+-=-.      ..:.+@:##=+%-.:-:-+=*             ",
-"                          -=+=--+.-:.  :-:+-==++=+-:=*===++ *              ",
-"                              =*+====-:=-=++*+**** =+    =                 ",
-"                                   =  -=                                   ","[/color]"],
-
-		# Tier 2 - Medium creatures
-		"Orc": ["[color=#228B22]",
-"                                 $$$$&&&&                                  ",
-"                            &&$$$$$$$$$$$$&&&&                             ",
-"                         &&&$XX$$&&&&&&&&&&&$&&&&                          ",
-"                       &&&XxXX$&&&&&&&&&&&&&&$$$$&&                        ",
-"                      &&XXxXX$&&&&&&&&&&&&&&&&&&$&&&                       ",
-"                     &&Xx+xXX$&&&&&&&&&&&&&&&&&&&&&&&&                     ",
-"                    &&$x+xxx$$&&&&&&&&&&&&&&&&&X$&$$&&                     ",
-"                    $Xx++XxxX$&&&&&&&&&&&&&&&&&&&&$$$&&                    ",
-"                   $XxX++XxXX$$&&&&&&&&&&&&&&&&&&&$XX$$                    ",
-"           X       Xx+;;+X$X$$&$&&&&&&&&&&&&&&&&&$$$XXX        &           ",
-"           ::xXXX  Xx+x+$x$&&&&&&&&&&$&&&&&&&&&&&&$$$Xxx  &&&$+;           ",
-"            ;::x$X++xx$&X&&&&&&&&&&&&&&&&&&&&&&&&&&$$Xxx$&&&;;+            ",
-"            +++:;XX;+x++;xx+$&&$&&&&&&&&&&&&&&&XxXXX$$X&&&x+;+X            ",
-"             +;xx.+;Xx;:.:...:+&&$$X&&$&&&$X:.:;+++x$$X$X:x&xX             ",
-"             x++;..+&x;:...;... ..:+&&X;...:::x::;xx$$$x.:;xx+             ",
-"             :;x+;x;xxXXx+;;;;;;;+x&&&&&&$+;+xxx&&&&&$x$;++$x+             ",
-"              ;:;x;;;;+x&&$XX$$XXX$&&&&&&&$&&&&&&&&&&x+x+&;;+              ",
-"               +X+;++;;;xxXX&&+;;++X&&&&XXx$&&&&XXXX+++xxXX+:;             ",
-"                XX+$X+::;;+x$xX;::.:;+;:xX&&&&&&$++++XX+$$X.:              ",
-"                ;;:$X++;;;&x+xXxXx++;:X&&&&&&$$&$XXxX$X+:;;                ",
-"                  &&X;;+;+&&+XxX$X$&&&&&&&&&&$&&&&&X$$$x;;                 ",
-"                  &$x;;X+x&&&;;::.:;$x;;:::++x&&&&&$$$Xx++                 ",
-"                  &x+;++;;x&&&x&:..:.:;: .&&:X$$Xx&$XXX+xx                 ",
-"                 &&x+;+;:.:+Xx;XXxXXxX$&&+Xx:;X+;+&$XXx;xx$                ",
-"                &&&X;;;;+x;;+xxxX&$$$&&&&&&&&$XX$&$XXx;xX+X$&&             ",
-"              &$$+X++:;;+;;::;;:;;;;;;;+xXxXX$XXX$X+x;+$XX$$&&&&           ",
-"             &$Xx;++;;.:;;:::;::+X&&&&&&&&&XXx++Xx+;;+$$x$&&&&&            ",
-"              $&Xxx++;;:.:::;++xxX&&&&&&&&&&&$Xx;;:x$$$X$&&&&&             ",
-"                &$Xx;+;+;..:;;;xxxX$XxXX$$$Xx++..;+$&&$&&&                 ",
-"                  $$xx+;x;:...::::::+;:;+++;;..;xx$$&$&&                   ",
-"                     Xxx+++;.:.  ...::::::..:;+x+X$$&&&                    ",
-"                      X$&$xxx;;:.......::;+++XXxx$$&                       ",
-"                          &xX$x++;:;;+;+xxxX$$XX                           ",
-"                             $  XXxxxxXX$$X&                               ",
-"                                  $  X$&                                   ","[/color]"],
-
-		"Hobgoblin": ["[color=#228B22]",
-"                              ;;++++xxxx++++                               ",
-"                          ::;+++++xxXXXxxxxxx+++                           ",
-"                        ::;;++xxxxXXXXXX$$XXXxxx++                         ",
-"                      .::;;++xxXxxXXX$$$$$XXXXXXxx++                       ",
-"                     :::;++xxXXXXXX$$$$$$$$$$$XXxxx+;                      ",
-"                    .:;;+;++xXXxXX$$$$$$$$$$$XXXxxxx+;                     ",
-"                   ..:;;;;;+xxxxxX$$$$$$&&$&$XXXxXXx++;                    ",
-"                   ..::;+;;+;xXXXX$$$&&&&&$$$XXXxXXxx+;                    ",
-"                   ..::;;;;+x+xXX$$$&&&&&&$$$XxXXXxx++;:                   ",
-"      ;+;          ..:::;:++xxXxXX$X$$$$$$XXXx+xXxxx+;;:          +++::    ",
-"       .:;++;;     ..::;;;;;+++XXX$$$$$$$XX$XxxXx++++;;:     ;++xx;..      ",
-"       ....:xx++;: .:;:;;xx;+xxXx+x$XXXX$$XXX$$Xx+++;;;: ;+xxXX+..::.      ",
-"         ::...+X+;..::;+xxx+xXX$XxXXxX$&&&$$$$$$Xx+++;:;xXX$x.:;:++:       ",
-"         .;:.:..+:...::+XXX$x$x$&$$x$&$$$$&$&Xx;+++x+;xXXXX:;+x;x+:        ",
-"          ;;.::. .........;xxXX$XX&;XX$X$$X;.:+;:;++x;++x. .xX++;.         ",
-"           ::::....::.. .:...::;::+;:++;:..:;...:;xxx;;:..::+x++;          ",
-"            ::;:.:::;;:.:;;:. ..+x$X+....:+x+;:+X$$Xx;+X.::+x+;:           ",
-"             :::;..:;x++++;:;:;;+X$$xxx+x;+xxx$&$Xx+;:+.;Xx;++;            ",
-"              :;::..:;++xx+xx:;;xX&Xx$XX$&$XXXXXXx;:::+xx+;+x;             ",
-"                ;;:...:;;+xx:+++xX&$XX$x;x$$Xx+;;:::+:xx:++.;;             ",
-"                ........;;+;.:;;X$&$XX;;xxxXXx+:.;;++:;;:x+.::             ",
-"                   .::::;;;+;..:+xx+::+X$$X+xx+;x++++. . ::                ",
-"                   .:::::;;;+;:.....xX$$$xXXx+x;++xx+:.....                ",
-"                    :::;:;X:;+x::::+$x$XX+&Xxxx+x;+++:..                   ",
-"                    :::;::Xx.;..:++;::;;:xX;:xx++++;:;:.                   ",
-"                     ..::::::;+xxxxx$$XX+;;:+;;;x+:.;;::;:                 ",
-"                      ..:;:;:::.....:++xxx++Xx;;;..;x+:+;;                 ",
-"                      ..:...:.:+++++x+;;;;;;++:..;++x+;++                  ",
-"                       ...::;+;+XXX$&$XxXx;+:...:x+++++                    ",
-"                       .....::;+x++x$Xxx+;:...:x+++++;                     ",
-"                        ......:;;;+x+;;;....:;xxx+;                        ",
-"                         ::..  .......  .::;x++xx+                         ",
-"                           ::.. .......;;::xxx+                            ",
-"                            ::::.:..:+++;:;+                               ",
-"                               ::..::;++                                   ",
-"                                 ::::                                      ","[/color]"],
-
-		"Gnoll": ["[color=#DAA520]",
-"                               ::   ;                                      ",
-"                                :.::.; ::.                        .        ",
-"        .::                  : :::...::.:...:  .               .;;.        ",
-"        ..;::                :..:.;:.:::..:.::...  .         :xx....       ",
-"       ....;xx:            ...:..:;+:;::::...;..... .    ::+X; ....        ",
-"      ...:...+Xxx:        ... ..;;X;+.:+x:+;x;;..  .::.+x$&&...:::;:       ",
-"       :;+;...&X&&+:.   .....::.+;+;;;&+:x;;;.;.+..:;X&&&&.  ..:;+x+.      ",
-"      .+xx+:...XXXx;+:: .:::;.;:;+::X$$x+:.;+X.;.:X&&$x&::...:+;++++       ",
-"      .:+xXx:..x&+x;:.;;:;:;+:..;:;;+X$Xx&$X$+$x+&&&&+XX.  .;+x++;+;.      ",
-"      .+xx++;. ;Xx;;..:;:+;;++.;::x:;Xx$$X+X&&&x&$$$XX$:. .:::;+$X+..      ",
-"      .;XXx+;;.  :..;:;+x;+x+;;x.;++X$xx&&&$$&$X$+;;xx: ...:;xx$$$$$;      ",
-"       ..::x;;:. :;.:;+::;x$X$x.;X&&&&&$X&XXXx+X&&x+X;. ....;X$$+:+;.      ",
-"        ::xX++;...+;;;+&$&&&&&+;&&&&&&&&&XxX&+x$$XX+. :+x.:+xX$$$X.        ",
-"        .+++:.::..:;X$&&Xx&&&$X&&&$&&&&&&&&$&&X&&&$&X;.x..:$Xx:.;x.        ",
-"          .....;.:x&&&&&&&&&&+xXX&x+&&&&&&&&&&X$XX+x$&&x::xx$+:..          ",
-"             .:.:;X&&x&&&&&&&X+X&&&&&&&&&&&&&&X:;x;$x$X$xx$$:              ",
-"              ..+;X$&X&&&&&&&X+&X&&&&X$&&;;;+XX++&&&&&xX:    ...:          ",
-"             :.:.. .:$X&&:&x;:X&&&&$&X+.::. ::&&&&&$&$x$X: .:...:          ",
-"             .:+++.:&X.::;+$Xxxx+:;:. +X&+;;+&&&&$x+;&&&&X..:.::.;;        ",
-"            :.:;x$x:..:+x+$x&$$&&&X;;;.;:;$$&$&Xx+:x&&&&&&&x;;::.          ",
-"            .:.;.+$+;x$+Xx:;x$$x&$&&$+&X$&&&&X::.xX&&&&&x$+.:::::          ",
-"            ::.:;..Xx;:::;;+xX+&&&&&&&&&&Xxx::.;x&&&$&&&&X:x:+::::         ",
-"             ...;.&++.x$;X&&+:;:+&&&&X+$$Xx:.:+$&$&&+&$xx;:+..;.:          ",
-"            . ...:X.:  :...  . .x&&&x+x::+xX:$+X+$$&&&&.:;..:::;.          ",
-"             : ..:::.::..:.;X;:X+$Xx;.... .;x&$$&X$&$&$$..:;...            ",
-"                ....:.:.. ...+++:;;::$;. ..+x&&&$x&;$::+::;;;:             ",
-"                :..:......;:::::.+&x:x... ..+X$x+XX;..::.:; ;              ",
-"                 ..xx+xXX&X&+&+&.$&&.:.&x..:;xx$X;;:.:.::::;               ",
-"                   .+X. .. :.. ..+&&;x&...;XxxXXX. .;;;:. ;                ",
-"                    .;&..:;:.;::&x:;xx;;:;;;:.. ....:;;                    ",
-"                     :X&X.x+x:+:&&;X.::xx+:;:  .::.: ;;.                   ",
-"                     ..x:;&XX&X;&&:.:.Xxx:  ..:+..:.                       ",
-"                     .:.:......:.;..:.:.. .:.;;+: ;                        ",
-"                     ..;:..:.:.:++x:;:  ..::;;;                            ",
-"                      :.. :.:+.;:..   .::..;;                              ",
-"                       ... ...  ......:. :                                 ",
-"                          .....    :::;                                    ",
-"                                    :                                      ","[/color]"],
-
-		"Zombie": ["[color=#556B2F]",
-"                                :::;++xxX$&$                               ",
-"                          :::..::;x$$&&&&&&&&&&&&                          ",
-"                       ::....:::;:+x&&&&&&&&&&&&&&$$                       ",
-"                    :::...:.:+xx$XX&&&&&&&&&&&&&&&&$$X$                    ",
-"                 ::::...::;;::+x$&$&&&&&&&&&&&&&&&&&$$$$                   ",
-"                 ::..:.:x+X::+:;X&&&&&&&&&&&&&&&&&&$XX$$XX                 ",
-"                ;:..:.:x+XXx..;:&&&&&&&&&&&&&&&&&&X$$+&$XXX                ",
-"              :+;...:.;+;::.;;+;xxX&&&&&&&&&&&&&&$&$&xx$xxx                ",
-"            ;.:..::.:.::+::;+x;:+$X&&&&&&&&&&&&&&&$&X$x+xx+x               ",
-"              :.::;;::+;.;Xxx+:;;$XX&&&&&&&&&&&&&&X&&$;+;++++              ",
-"             :..::;;.;+;:.+;+XX+X+&&&&&&&&&&&&&&&Xxx$$X+++;++              ",
-"             :..::.;:::xxx.+;+XX$x&&&&&&&&&$&&&&&&X$x$$+++;;x              ",
-"            ..  .;;:...x:+x::;xXX$X$$&XXXxx$$X&&$+&&&&xx;;;+X              ",
-"             ..:..:....xx$;$$XxX&&&&&&$$X$$&$&&&X&&&&&Xx.:;+x              ",
-"              : :;;..:.++XX+$&$$&&&&&&&&&&&&&&&$&&&&&&&+.:;:+              ",
-"            ;x+:.::+:.xx$Xx&$&&$&&&$$x&+$&&&&&$&&&&$X&&$+:::.x$X           ",
-"            :.;+:..;;;;;....;;Xx$$$&+$X;+XX&&$&x+:::;;+xx;::x$x::          ",
-"            ;..:;::.;;:.  .:+;...;;;.x$++;+x::.;xx:. ..;X;xx$+;;;          ",
-"           :;:;+::::;;.  .;X&&x.  ..;&&&x+. .:x&&&+. ..;$xXx.x$++          ",
-"            ;;;. :Xxxx::.:..::...:;+x&&&&xx:...::;::::++&&XX..:Xx          ",
-"            :;:  ;:+$$++x;+:;X;;xXXx:...&&&$XX;+++xx+x&$&++x;.:+           ",
-"             .;+:.;:+x$$+xX+++$$XxX...;..&&&;$X&$X&&&&X$x+;;:++:           ",
-"              .::+:.;xXx$+Xx:xx+$;;...:: :xX$+$X$&$&$+:X;.:;xx;            ",
-"               ;++::..;x.+.;:+;X$+x.:.$:::$XX&X&x.X;+:::.:xXx+;            ",
-"               .:;...;:::.:.:+;;++;$++$x$xx&&X&;::: +.:::.:;:+             ",
-"                :.:::::..:.+:;:x:x$&xXX&xX&x$+$+x...+;+;+.                 ",
-"                 ::.::;;...: .;+.:.;;;;;X+&:;.;X;:;.:x+;+:                 ",
-"                 .:.;x;;;:;:.:.::x;Xx$X&&$&;Xx;:+.+:;xx+x;                 ",
-"                 .: ++;++:;:.... +.  ...  .:x.. ;.+;:XX;+:                 ",
-"                  :.;;;++x;+. :.. .:...... :..:++++xX$x:.:;                ",
-"                     ;.;+;;;...+X;+:.:+x+xx$+X:++:xX&;x..+                 ",
-"                    .:.:x:;+x:;;:;x;xx$$$xxx;;xXX+XXX:.. ::                ",
-"                   ::.:..;;+;+;+::+xX$XxX$X$:;:+x$X+...;+:                 ",
-"                  ++:.::: .+x:x;.+::+x;:x+++:$:$x;; ..: ;                  ",
-"                +;:;:::;:; .:;+x:++X&$&&&&&&$$&+; .::.;;                   ",
-"                  :+:;:;+;:: :+x;xX&&$&X&$&XXx+..::;;: ;                   ",
-"                   .;;;:+x;x:.::.+x+;+xX;;+&+..:;:+;:.;                    ",
-"                    :;:.:;:+;:::..;:...... ..:.+:;x;x;                     ",
-"                      ;;:x::x;;+......::.:+;:.;+::x;++                     ",
-"                         .;.;::  ;...;;+xx+:.+x::.+                        ",
-"                          +:;;:.:;+;::..::;.+x+: ;;                        ",
-"                              +;;;;;+;::.::;+x+  ;                         ",
-"                                ; ;; ;+; :;: +                             ","[/color]"],
-
-		"Giant Spider": ["[color=#2F4F4F]",
-"                              x    :    +                                  ",
-"                  :x+         ;;;++;+++;;X++::x       xX:                  ",
-"                   .x++  ::;;;;;;;;+;:&xx++xXxx:;;; .+;.                   ",
-"          ++X   ::   +;:.:;;:;;+;+xx;;&&Xx$X$X$X++;+..   ;    x+           ",
-"            .x$;:     .:;:;;:;++X$X$Xx&&$&&&&$&$Xx;;+..:..;+$x.            ",
-"        +  :.  $x+:..::::x:::+Xx$&$&&+&&&&&&&&$$&xX$x+;:xx&+  .            ",
-"        +;:.       :x;;x.:;+;+xX$&&&&x&&&&&&&&&$+++x$X$& ; . .:;:          ",
-"       ::::.        :xX$;;X::;X&x&&&&&&&&&&&&&&&&&&&X&: :;+:.. ::;+;.      ",
-"   +   ;:      :+x; :; +&X&&xx$x&&&&&$&&&&&&&&&&&&&&xX$&X&&&+:::...:       ",
-"x   ...::        :&$&&&&&&&&&XxX$X&&&X&&&&&&&&&&&&&&&&&&&+::   .:;:;+:.    ",
-":x+:..      .   :&+:;&X&&&&&&&&$X$$&&x+&&&&&&+&&&&&&&&+ +&+.. ;+::+  :::+xx",
-"...:::.   ...    ;  ;   +&+X&&&XX&&&&xX&&&&&&&X&:+&x:.x :;    +X$x . .;;x++",
-"      .       .         ;+  X$x+x&&&&&$&&&&X$&&. ;+.   .      +x+;   ;:    ",
-":       :; : .:    . .     .+  ;&&:&&&&Xx +&&; ;      .      :;X.::...    ;",
-"x++        :;X:.Xx:++  .        .   &;x&           :  XxxX&&.X+&+  :   +$$&",
-"&&++;      .    + xX$+:XX.  ;:     + ;: +     .::.;&$xx&&: :   ..    :;x$x&",
-"+Xxx:+             .   X+++&;.   .X$&&&&XX    +&&$$$X    .  : .::   .+X&$$$",
-"+;;:: :;            :xx+.X;&&Xx&$&$&$&&:&&&&$&&&&+&:&&&;.    ::    :.::;+$+",
-". ..  :;x;.  .    x;:        . &;X;x&;:&&$xx&      .  .+xX;      ;;.:.+;.$+",
-" .   .::;X+:          ;x;x. .    +; ;: . ;+.   . .+xX+:  +;     ;::.  ;.++&",
-" ..  . .x$X++;.     ;$&&&&X.  ;x&&&&.   x&&&&$: :;X&&&$X:   .;$xX;..;   :+.",
-". .    .;;X++:;;:  :+$&&&&:; .++&&&XX  &;&&&&&+ ;;&&&&&$$+ :Xx:X;;:      +$",
-": :    :.:+; +::  +:;X&&&x+: :. +x+;.  ::XX&&$; .x$&&&&&;X  + ;;::+     ; +",
-" . .     .. +::; . ++;x&&;x:x ::+  ;x  Xx+:xX++ ;;$&&&&&X;x ;+++.;      ::;",
-"       .:.:. .    :X;X$&Xx:. . ;+.X     +.::+.  ::x&&&&;X;; x::        . ; ",
-" ..         ;     ;.:Xx&$++   X x. +    + :&:X  ;X+X&&x;Xx  ...  .        .",
-". +  .       ..   ::  ;&&& x    ::. .  . +&;:   x ;&&x.++.  .       :  ;. +",
-".:   +::.   ..    . . ;;&x.      xx;     x+.      ;&; . ; :+     ;:+ &  :;.",
-" ;     + ;::::.:    .;  .& .      .     .:    :   ;;.       :..;+  $     .:",
-"::;        Xx; ;:.. .:    :      :.. .    ..:     &    ..:+;;;+         ...",
-":  ;            :; ;::;   +   :..:.   :  ....    X:  .:;; X  X          ; .",
-"::              ;+   X ;.  ; .   &&     x;xXX  ..   .+        $           ;",
-";                 $     x.   x:           &&  x:  ::+                    X ",
-":                         ..+ xx             .  . ;                        ",
-":;                         &;+. ::         ;:  +x X                        ",
-"  ;                         &&           .    &&                           ",
-"                             &$               &&                           ",
-"                                              &                            ","[/color]"],
-
-		"Wight": ["[color=#708090]",
-"                              *    *#####*                                 ",
-"                           ******#*******#####                             ",
-"                         ###***++++++*********##*                          ",
-"                        ##*+++++==+**######*#******                        ",
-"                      ##*+++=====+**#######*********                       ",
-"                     #*+=======+++**#########****+++**                     ",
-"                  *#**+===--====+***#####%#####*+*++=**                    ",
-"                 *##*+=-=---====+***##%%#%%#####*+++=+**                   ",
-"                 ##**=-==--==+=+*#***+##%%%#*##**+====+**                  ",
-"                 #**+-=---=++++*#*=--:--+##*#***++=====+##                 ",
-"                 #*+=-=--+++++=-*=-::::--=***#+*+++==-=+**#                ",
-"                 **+--=--*+**=---:::---:---=*-**+**+=-==+**                ",
-"                 *+==---=***--:::------------=-+*+*+===-=*##               ",
-"               ##*+=----=**+--------==-===------=***====-=###              ",
-"              ##*++=-=-==--::-====+=+==+++===+=--=*#*+===-+###             ",
-"             ##*++=--===+:-:--=+****+++**##**+=--:++***++==+##             ",
-"         # ###**+==+=====:--=+=--+*++==++**==+++-:--=**=++==*##            ",
-"         #####*+====++==-:::=#%%*-:--+*=-:-*%%%+-::--+#+=+==*##            ",
-"       # ##*#**=====+*------:----:--=*#+=-:--=--:-----**=+==+*##           ",
-"      ## ##**+==++==*+:----==--===+=+-*##***==+=+===---*==+=+**##          ",
-"       ####*++==*+=+-=:--:-=***+*+++-:--#**##%%#*+---=-=*++=**###          ",
-"       ##*#*+==+=*+-:-:----===+++++-::::+*+****+==--==--#**++*####         ",
-"        ##*+=+=-++-:-----::---======-:--==**+==-----+----*#****##%##       ",
-"        #*++*=-===-::--==:--::--===-----==++=-------*-----+#***####%##     ",
-"      ####*++==-------=+=---::-==-=:::::--+-==-----=+------++**++#%####    ",
-"     ###+++===------=--++=-----=---:::::::=:--==--=-=--=----=-+***#####    ",
-"    #***++===-==---==-==*+=----=-:::::::::-:--+=-==-=--==----===+*%###     ",
-"   #*####++====+=======-**==---==-:::::::::-==+-=---===++-----++**#%%#     ",
-"   ######*+==++=-+*====--=*==-====--::::::--*++----=+*+++===--++*#####     ",
-"    ######***+++--+++=-=-=-++---+==----:--+=*=-----+##+**+====+*##%##      ",
-"      ########++=+==+*+=-=--==---===+=--++*=+---===+##*=#==+++**#%##       ",
-"        ###*****+++==++*+===--+--=-**++*#*+==--=+==*##==+==+++**###        ",
-"         ####******+==++*+==+=-+=---===+++----==+==#*=-==+=+*#**###        ",
-"           #####%#*++===+*++++=-++--=--==----===++**+==+*++*##*####        ",
-"            ####%%##+*===*+=++*+=+===--=----===****+==+****#######         ",
-"               ######*+++#++===**+=-==--==-===*++#+==++***##### #          ",
-"                 #%%##*+**+=+*==***=-====-=+=+*#*#===+***#####             ","[/color]"],
-
-		# Tier 3 - Large creatures
-		"Ogre": ["[color=#556B2F]",
-"                                *+*#****++                                 ",
-"                           +****##%@%%%%#**==-                             ",
-"                         +***#%@@@@@@@@@%#**++==:                          ",
-"                       =+**#%@@@@@@@@@@@@@###*+++=:                        ",
-"                      -+*+*#%%@@@@@@@@@@@@@%%#*+**+:                       ",
-"                     -+++*#*%@@@@@@@@@@@@@%@%***#**+                       ",
-"                    .:-=++*%%@@@@@@@@@@@@@%%#**+++*+--   =**.              ",
-"           *+       +=-:=###**#@@@@@@@@@@%%#*%%**-=+-:-*%*                 ",
-"             :=*%%#:=#+=-##@@%#@@@@@@@@@@@@@@%%%##*===#%-  :               ",
-"            .:  :*@@*+=*+@@@@@@@@@@@@@@@@@@%#@@***#%*-= ::--               ",
-"             +* :  +-*#==-:-@@@%@@@@@@@@@%#@#-.. .+@@%   +.                ",
-"              :-=   -*@#:     :-==.-%%=::        =+%@*-:#:= =+             ",
-"                .=*:-#@#=-   -:  .=#@@#=-...::=#@%%+- -#-**+=-=+=          ",
-"                -+=..=#%%@@@%+##*##@@@@*#%=%@@#%*+=. :-#%. +*+:==+*=       ",
-"         .     .:-=+: :-##**@@*.  -+%#*:   +#@@#=  :-*%#+#+:=%==*#*#*+     ",
-"       :.--..::- :=**=-=:*@@@+#@*:.     .=#%%%**#*=#=%#*###%=+%+*#=+#@#*=  ",
-"     .:===--*=-:--****%@##@+%@**%@@*---**#***@%+#@**+*#**#**::#+=#++++#**#%",
-"  ..:==-==:+++-.:*=**#%%@@*+%@@:@-. .     @-@@+--#@@@#*+++-==*+:=*#*++-=++%",
-"=-:---===::*+-- =+*=#%#%%***.+*-*-:-+-+%%#*-::   =%#%+-=*::-==+-+%%%%*++=+#",
-"++=+*==**-:++-. =**:+*+**@-   .##@%#+=---==*%**=+.=*----*=-+-:++-@######*%%",
-" *##****+-:=+.-.-+*+-=+====#*=++=:.-+*#**=::.:=+=--:. :#*+== :=:+@@%%%%%#% ",
-"  ***++*+=.-= :..=:++=.. +#-=:-.:+#@@@@@@@%++--:==:  =%+++=. -:=@@%*%#%### ",
-"  ##=*+##*-.= ..*#+-%%+=#+=+=.-#%%%@@#*@@@%*++=#==..*%#++-: : :#@@%######% ",
-"   #%%=**@%:-: .--*-=#%+:=+::=*#*+*#*.=*#*+-:--.  :##=+*:  .::%%%#+##+*#%  ",
-"   ***%##%@#:=  =-==-*%%%+.-:  .:::-.:+::. .    :#%@*==:   ::#**==***#%%   ",
-"   #*++*%##++-: . ---=*%%%@#--:      ::.      :*%%+**:     -*%*::#*=*%%    ",
-"     *%*##**#*=  . :--=+##@@%@*+:         :=+%%**#+- .    .**-.+*####@     ",
-"     *****+#%#*-.  . :---=**#%@%**===+*#***%%#*++-:..     =-:***##%@       ",
-"     ###+###*#+*=-   :: .::-+*##**#%@@@@#*+*++=:.:.     --==+++**###       ",
-"        *####*##*+-:      :::=-==**=+*++++===:        -+*=+-+=***#%        ",
-"         %*#%##@@%*#+.      ..:-::-=-:-...         -=*%%%*=+=*%%%*         ",
-"          ###%@@@%+%%**-          --::-         -==+#%%++*##*##            ",
-"           @@@%@@@@@@%%#*+:.                ...:=+##%%@%#*+                ",
-"             %@@@%@@%@@@*#*=---.         ::--=++*%***@@@%@%%               ",
-"                @%@@@%%@@@%#%*=-=::.. .-:::--++%%@##**%%%%                 ",
-"                   %@%%@%#%@%#**=---. .---=+=*#%*%*++*#%                   ",
-"                       @##+##*+++===..::==:++**#**#+                       ",
-"                          #+**++*#=+:::-:=+*+#  +                          ",
-"                                 =+*+::=--=                                ",
-"                                     -=                                    ","[/color]"],
-
-		"Troll": ["[color=#556B2F]",
-"                             Xx      xX    XX+   ;                         ",
-"                        x;   x+++xxX+x x+x ;+x xx    x                     ",
-"                   ; +   Xxx +;.;x++xxx+;++;;;;xx xXxXx                    ",
-"                  :+  ;;:;;;++: .::.:;++:.:::+x++++x+;+x  +                ",
-"                x  ++;+;::..:;...::;++:.;;x++++;x;;;;++x++                 ",
-"          +   :;:;;.::+;:...:.::;;;:;+;+x;+::+;+;..:++++;+ X               ",
-"          x+;   ;;;::..:.::;+;++x;:;+$&Xx+;:::::.:...:+:;Xxxx  ;           ",
-"           ;;++++;:;.. ...;.;+:+x ;:;$&$+x+:::::+;+;x;;++++x+;xX           ",
-"          ;  :.:;:;... .:;;;: :+x+XxxX&&&&&&&XX++:;+;+x+:::++x             ",
-"        X++;::...  .;;:...;;;;X&&&&&&&&&&&&&&&&&X;::..: .::++ x      x     ",
-"            +;:.  ....:. :;++xX&&&&&&&&&&&&&&&&&$$+;;:...::+xxx  X   x     ",
-"    xx  + ++;;: .......  .::;XX$&$&&&&&&&&&&&&&&&$x;:;x:;;+;;::;++xXx      ",
-"      ;;::.:::.  .:. ..  .:++xXXX&&&&&&&&&&&$x&&$xX+:..;:::.::;+;;x        ",
-"   +Xx+  ;: ..   .  .  :.:X$$$&&&&&&$&&&&&&&&&&&&xX+;.;:   ..::;+x$&&&&x:  ",
-"       :+xx:..    .;.   +X$&$X$$&&&&&&&&&&&$&&&&X&X+x:++.  ;X$&&&&$:  :    ",
-"      :    ;;;;xx;:    ;+..;+&X&&x+x$X;&&&$&&;;:+$x+x:.;;;+&&$&:  .;+.     ",
-"     ;:;:;;: .xx+;: . :. .    ..: +&&&&&;:..     ;+xX+;::x&Xx  :++:+:      ",
-"     ; :.;;;+;  ;:  :+++:  .;.  ;xX&&&&&&x: ;Xx;;x$&&&;:;x+ :X$&x+X+       ",
-"        ::::;  .  . :;Xx$+Xx;+;+:;$$&&&&&&&$&&$&&&&&&X;..+   :+;X&;+X      ",
-"        :::.::   ;.  ;:xX$X&$+&:xXX$&&&&&&x&&&&&$&&X+: .;x::+&xX+:  x      ",
-"         ;:..:.:x.     .;;x;X$$x:xX&&&&&&&&&&&:&&$;:.: .:+&&;;+;:;+        ",
-"       +x;:..:+:;:..  ; :x; : :++;X&&&&&&&&$;xx:$$:;+.::;:+X$$  :+         ",
-"     ;;+ ;:::. ::;+.   :+: .   .:;+x$&&&$$+  :&&;$&XxX+::+&&+ :.:;++       ",
-"         +;;...     ;::;+ X&+.  ;.:+xx&$X;.x$x&&&+&$X&$+:::.  :;;+x        ",
-"          ;.:.     .;:+::+x&+:+.  . .::+.+&&&&$&$&$&xXX+       .++         ",
-"         +::::     .;;::;.:$&.      .  .+:+xX;$&&&&X$&xx;.  :.::.;+        ",
-"        ;;;:::  . ....:;: :;x$.&..:;::$$X+:& X&&X;x$$+x+:: .:. ;;:X        ",
-"         + ;:   .     .:.  ::+..;;:;. .x&:$x:$+x: ;XxXx:    .::::          ",
-"           ;: ...    . ;.;++++++xxxX$&&&&&X&$x:x&$x:x+:.    :; :;+         ",
-"           ;.....    ..:;..:.;;:. :;.+:X$$&&$++x;$+X::    .:.:::  x        ",
-"          ;;. ::   ...;..::..  :$$&&&&&&&xx:+;:+&$;:.:.:  ; ::;:           ",
-"            .  :....    :+;x:+x+x$&&&&&&&$&$$$xXX+. ;:;:..: ::.:;          ",
-"            +;:;..:..:    .;+X:;$X&&xXx&&&&$x$x:   :+;:.:: :   ;:          ",
-"              ;:;;:  :.     .:++:;xx$$x;++x;x+  .+;+x+ ;       :           ",
-"              ;+      ;:..    .;:..:;:::;..    .;;:;                       ",
-"                       .::::.               . ::: +                        ",
-"                           ::...        ...::.:                            ",
-"                              .:.;.... ::                                  ",
-"                                  .: :.                                    ","[/color]"],
-
-		"Wraith": ["[color=#4B0082]",
-"                                     +                                     ",
-"                                     +                                     ",
-"                                    .;:                                    ",
-"                                 +  .x;  x                                 ",
-"                           x    :++;.X+;;+;                                ",
-"                           ;::;;;::::$X+;;++;;xx                           ",
-"                    ;     :.:;++x+:;:$$$+$$$$$+:      x                    ",
-"                    ;&  +::::;xx+x;.:$&:x&&&&&&x;xx  +$                    ",
-"                    :+$+...:;xxx$&$::&&x&&&&&&$Xx;:; $+                    ",
-"                    ::x...:::+X&&&Xx;&&&&&&&&&Xx+;::x+;                    ",
-"                    :..;.:...+x$&&+++&&&&&&&&&&+:x.X$::                    ",
-"                     . .+;;:..+x$$&;+&&&&&&&&&++++&x.:+                    ",
-"                   ::.  .:;+::;x+++x+&&&&&&&$&X$&x+::xX:                   ",
-"                     . ..;::;:;++;+x;&&&&&&&&xXx::::.:.                    ",
-"                     :....:.:..++;:;:X&$&&&&$XX;+::;:.:                    ",
-"                    ::  ::.::;.::+++:xXX&&&&XXxxxXx  :X                    ",
-"                     :.      :;;;;x+:xxX$&&&x;. . ...:.                    ",
-"                    :.   .:      :x+;x&&&$.     +;.: :.                    ",
-"                    .....;;+       :+x&+      .$&X;:..:                    ",
-"           +     .  :.   ..::+;:. . .x; . .+$&&$+   ..:  +     X           ",
-"          .;+    :.:....     ;+++;+  ;  &&&&&x... ;.::::.:.   :+;          ",
-"          .:+   . ........ ..   ::+.    &&&; .:. ;;::::.:..   :+;          ",
-"         ..:;.:..  ::.: .    .:  ::;    &&.:;;... +;::;:....:.:x:;         ",
-"      ;x:...;: ..  .::.::  . .:...;+   xX;X;+;::. ;;++: ..::.:.x::XX:      ",
-"    $x:.:..::.  :    . :; ....;.; ;+   xX;+;+;.;; xx::..  ;...:+::x:;X&    ",
-"  &&X;:..::.X::.:. ..  :+  :..:.;.::.  Xx;++x+;+. X+  :. :;.::Xx+;;;;x&&&  ",
-"  &&x:::.:;:++;.:; ...  :    .;.;:...  ;;;x+X..   ; .:.. +; ;+$x++:;+X&&&  ",
-"   &&x;;;+;xxxx$;:x .. ..     .:;:::. .:+xXx.     .;;.. $+:&+&&Xx&$XXX$&&  ",
-"   &&Xx+X&&&X&&&x;;+..:..:.      :.:: .x+;  ....::;;:..Xxx$&&&&&&&&&&&&&&  ",
-"    &&xX$&&&$&&X$$+x. .:: .        ;: .;.  .:X; :.;;+.:$x&&&&&&&&&&&$&&&   ",
-"    &&&&$XXxxx&X++ :  . ;.    .     ; :  .:...: :;X:;. ; +&&&&&&&&&&&&&&   ",
-"      &&XX+;.::;x:.+ . ....:...  .       ....:x$++x::.:;.;Xx+::&&&&$&&     ",
-"       &X++:+X:;Xx:::......::.:+;:     ..+$&+;+x++::::+;;X$X$&X;xxX&&      ",
-"        &&x;;;;+;&.:::;:......::;:..:.++;x&&xx+;;:;++;;..&XXXxx+$&&&       ",
-"         &Xx+;+;x::  .x;:$;;:.:+:..::x$xxX+;+X+x&&x;X:  ;+XX$$xx&&&        ",
-"         &&x:  :;  :.;:::x..;+:;:x+;;xXX$&&&&&Xxx$+;+.:;  +x..:X&&         ",
-"           &x+. ...::;:.;;.::;Xx+;+++&&&&&&&&$&$X&&x+++x..; :;$&&          ",
-"            &&x+::::x..;:xx+++xxXXx:;&&&&&&&&&&&&&&Xx;$x+;:;x$&            ","[/color]"],
-
-		"Wyvern": ["[color=#8FBC8F]",
-"    /\\     /\\",
-"   /  \\___/  \\",
-"  <==(o   o)==>",
-"     /) ^ (\\",
-"    //     \\\\",
-"   //   |   \\\\",
-"  ~~   / \\   ~~","[/color]"],
-
-		"Minotaur": ["[color=#8B4513]",
-"           ;+                                                 :+           ",
-"         .+:                                                   .X+         ",
-"       .:x:                                                      +X+       ",
-"      .:X::                                                     ..x$;      ",
-"    ..;X::                    xx;;:;+   x                        ..$$;;    ",
-"   ..:x:.;                   +++;;;::;;;:: XX                    :..Xx;:   ",
-"  .:.:;;:+                ;+;::...:.::..;;+;;;+    X             :..:X;;:  ",
-"  ;. :+++x            $$X++:;+;:..+x;;:+X$xx+;;++X+;             ;:.:;x;;  ",
-"  +: .;;X&X        $Xx;.;;:;;;;..;;+;.x&$x$x+x$x+;.:+$X         +++::.;.;  ",
-"  x: .::X&&&&&&&&$x;+;++::+;+:::;;x;xX$++XxXX$X+;xx&:$+X&&&&&&&&&&+;....;  ",
-"  $+. .;.x$&&&&&&&&&&&X&&$;.;+:::xx++:x+x;x;+::;;&&&&X&&&&&&&&&&&$;;:;..;  ",
-"  XXx.:::xx&&&&&&&&&$$&;&;::.;x:++++x:;;+X$x$X+++X$+&x$&&&&&&&&x;;;;...;+  ",
-"   +x;;..:;xxx$$&&&&+x+:. :.;x++xXx;;:;&&&&&&&$X:.::;;x+$XxxXXX$+;+:..;;   ",
-"     ;+:;;::.:;::::.:..  .;+xxX$$+X&X$&&&&&&&&&Xx;+..:.::::::::.::::;;     ",
-"       :+:.::.  .    . ..+:$+;&&&&&x&$&&&&&&&&&&X+:.   .   ..::;;:+        ",
-"           ::..:;;:.    .   .;x&&&x+&X&&&&&&&+; .;.;.;.+xx++::;::          ",
-"     XXx+;;   ..:::;:  .. .:&X ..:X&;$&X+..:;&X:.&$;+;:&&X&X. :+xxX$$      ",
-"       x;;:;:;....   .::&&+:;+.;X&&&&&&&&&$+xX+X&&&+.:..:..:::;+;+xx       ",
-"        $+;;+++::;++:::.:xX++xxx$&&&&&&&&&&&&&&&&$++:+::xx++x$X+x+         ",
-"            X :+::. :;;:...:.:+;$&&&&&&$&&$&&x&+..xxx+;:.; ::+XX           ",
-"             +;;::.:;:..::...;;: :x&&$&&: .x&&;.;$xxXxx: . .+xX$$          ",
-"         &&&X++;..:.:;+++..::xx:x;:;;:+.;&+&&&:x$X$$x+..;;;:x+x            ",
-"          x+x+;;.:.:...x;;::x;;;&;:.:;;x;&+&&$;X&&$X;;::::+;;+X            ",
-"           $x+++:.:;.:;:.+::+ . +&;    ;&x;..$&+xxx:X;:X+:::;xx$&          ",
-"             x;:.:::.. ;..:+: :$ ;:;&&&;& Xx :$+x;.: ;+;+.:++XX            ",
-"            &x++:;;: .:; ....  ; ..    ...&  .X$X+.:;;x :.:;+X&&           ",
-"          &$$$+;X:..:.+.. .:: .$.: ...;+.:+X+;xx;++:++;.:.xXxX&            ",
-"            X ++x::.::::...;...x&;Xx;xx:&x&X;:&;x.:x;;;.;:+ +$             ",
-"             X$Xx++;;.::..+....:::;;++Xx+;:.x:;;.+;+;.::;+x$X              ",
-"              $X X+++;:..:.  .x;;;:....:x$&&X  :.:x:;:+x X &               ",
-"                  x;:;;:... ..::.:;;;xx&&x:$;:...:.:;xx $&                 ",
-"                   $+;;;:;:;. x:;X:&$&&&&XX+x .;.+:+x;X                    ",
-"                     &X x+;;::.:.;:X:;&X+x;:;::.;;+X +                     ",
-"                        xx;;:+;..;. :.+x+.:.+;+;;X&&$&                     ",
-"                         X$;;Xx;;x:  :;;...;$XX+&                          ",
-"                           xX XX+X::.:::.;+X &$$                           ",
-"                             $  xX;;.::+X&X  &&                            ",
-"                                   x+++ $&                                 ",
-"                                     Xx                                    ","[/color]"],
-
-		# Tier 4 - Powerful creatures
-		"Giant": ["[color=#8B4513]",
-"                         ;;:..  .  . .......:::;+++                        ",
-"                    ++;:.......    .   ..   .....:::;;+                    ",
-"                +;+:....    ...::..  .  ..:...:. :.::::;++                 ",
-"               x;.... .  ........ .  :;;;;.+XXXx;.:. .: :;++               ",
-"             +;:....      ....  :...;:+$$+;$&&$$$X++...::.:;++             ",
-"            ;;.  ..   ..:.. ....::::$Xx&&&x&&&&&&&Xx::. .;:.:;x            ",
-"           ;.  ..    . .. ..:..+..;x&&+&&&&&&&&&&&XX;x;:...:..;+           ",
-"          :.    ..   ..  ...:;++:.;&&&&&&&&&&&&&&&&&$&X;:......:;+         ",
-"        ++:           . ....:;X+;+x&&&$&&&&&&&&&&&&&$&X+;.: .. ..x;        ",
-"       ; :             ... ;;X$;$$$&&&&&&&&&&&&&&&&&&&&X;... . : .:;       ",
-"       ++: .           .:;.+X;;&&$&&&&&&&&&&&&&&&&&&&&&$$;:....  .:;+      ",
-"       x;.        .   .+;:++X;+&&$&&&&&&&&&&&$$xx;::;;xX&x;.::...x$&&$X    ",
-"        .. .      ;. .:++++x$$&&&$&&x$&&&$xx+....:+xxxx+x$X:::  +&;  :$X   ",
-"       ;.. .     ... :+$xXX$$$&&&xx&X:+x;.   .:;+++xxXX+xxX+:. .:+.+..:X   ",
-"     xx+..      .;+:.:++x$$$&&XX&$::::         . .   .:+&$&x+:.:.X&&$X+xx  ",
-"     X;;:.      ;+x+;+x;;$$x$xx;:+X+..     .;xX+;$+:.:X&&&&&$+::  :$&&$$X  ",
-"     x;..      :+;;;:+;+.:+:+:;$&&&&&&$:;;.::;xXx+:+X&&&&&&&$x:x  ..+&X$x  ",
-"    x:::        :;;...: .:   .+$&&&&&&&&&&&x;++++x+x&&&&&&&X++:X$:$+x&x&;  ",
-"   ;+;..      . .     :.     .;x$&&&&&&&$&&&&&+;;+x&&&&&&&$+:;:xxXxx$X$++  ",
-"  + ;:.      ..    ...   ....;$&&&&&&&&&&&x&&&&&&&&&&&&$$X+::;:+;;&&x+$.;x ",
-" xX  ;.       .       .;:::..;$$&&&&&&&$&&&:+&&&&&&&Xxxxx+::xx:;$&$XX$::.  ",
-"    x;: .  .   .     .::+x;:;.;xX$XXXX;  :+&$+x&&&&&$X++;;;XXx+;X$X&X..:++ ",
-"    x ;::  : :. ..::: .+x+.    ..::;;::+;;&&&&x;xX$&$x;;+:xXXx+:x&$X: :;+  ",
-"       +.:..  . :.:+:.;++...        .x&&&&&&&&&&&xXX$x+X$;X$Xxx: ::   :++  ",
-"         ;..  .:  ::..:;: ........;x;+&&&&&&&&&&&&$X&&xX&+X$XXx;      .:x  ",
-"          ::...;.   :::. ..:.:::;+&&;X&$Xxx$&&&$&$$x$&$xX$xX$x+;.      ;+  ",
-"            :.:.;:: .;; ...::::..:::::.x$:;.:;+X$$$&$$$xX$$X$xx;:;:.:  :x  ",
-"             :...;;..::..:. :.   :+:   ;: .     .;:X&$&$xxx$X+;:;x;+x..:   ",
-"                ..;:..:..;.    ; :.     .:;+x. +$&$$x&&$+xxx++: +X++x.;+   ",
-"                 ::;.::..:.        .:xx$xX&;$+$$X$&&XxX+;XX+;:..xX+;;.;    ",
-"                 ::;..;::;:. .;;xx$$$&&&&&&&&&$X$$$&XxxX;++::. ;+x;:;:;    ",
-"                  :::.:;.::.;:.;+xxX&&&&$$$$Xx$&$$XX++xx;;;:  +x+x:::;:    ",
-"                   .:.;:.:.:.::: :.....:;+;xx+xXxxxxx+++:.   :++;x+::      ",
-"                    :..:: ..:.. :.::X$$&&&&$&&&&&&&x++;..   :;+;+x;:       ",
-"                     ;:.:.   ...:;++X$$$$&&&&&&&&$X+;.    .;+++;++         ",
-"                        ... ...;+::+X$$XX&&&&&$$X+;:     .;++++x+          ",
-"                          ....;:;.;+x$x++x;+Xx+x+:.    .::+++x+            ",
-"                            . .:;..;;+;+:::::::.      .:;+++               ",
-"                              .. .....:.    .    ..  :;;;++                ",
-"                                :.              ::.  ;+++                  ",
-"                                            . .::::.;;                     ","[/color]"],
-
-		"Dragon Wyrmling": ["[color=#FF4500]",
-"     /\\_/\\",
-"    / o o \\",
-"   <   ^   >",
-"    \\ ~~~ /",
-"   //)   (\\\\",
-"  // |   | \\\\",
-" ~~  |   |  ~~","[/color]"],
-
-		"Demon": ["[color=#DC143C]",
-"   \\\\     //",
-"    \\\\   //",
-"    ( o^o )",
-"     \\~~~/",
-"   __|===|__",
-"  <  |   |  >",
-"    /|   |\\","[/color]"],
-
-		"Vampire": ["[color=#8B0000]",
-"                              .:;;;+xxxxxx++;                              ",
-"                           .:;++xxX$&&&&&&$$$Xx+                           ",
-"                        .::;;+xX$&&&&&&&&&&&&&&$x+;                        ",
-"                      ..:;++xX$$&&&&&&&&&&&&&&&&&$Xx;                      ",
-"                     ..:;++xX$$&&&&&&&&&&&&&&&&&&&&$x+;                    ",
-"                    ..:::;xXX$$&&&&&&&&&&&&&&&&&&&&&&$x;                   ",
-"                    .:;++xX&$&&&&&&&&&&&&&&&&&&&&&&&&&X+;                  ",
-"                   .::+xxxx$&&&&&&&&&&&&&&&&&&&&&&&&&&&X;                  ",
-"       :.         ..:;;xx&$$&&&&&&&&&&&&&&&&&&&&&&&&&&&$x:         +       ",
-"        ;;       ...::;x$X$&&&&&&&&&&&&&&&&&&&&&&&&&&&&$x:       :++       ",
-"         :+.    . ....;$X$X&&&&&&&&&&&&&&&&&&&&&&&&&&&$$x;.+    +x:.       ",
-"          .X;:  . . . ;X++$&X&&&&&&&&&&&&&&&&&&&&&&&&&XXx:.+ :+x$.;        ",
-"         .  x++     .:::$xX&&&&&&&&&&&&&&&&&&&&&&&&&&&$X+::.xX&x.+;        ",
-"             ;Xx;   ..:;XX&&&&&&&&&&&&&&&&&&&&&&&&&&&&$$x::&&&:.+X         ",
-"          ::   +;;   ..X&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&$X;x&&&;x+xx         ",
-"          ::..  ++. .: :x&&&&&&&&&&&&&&&&&&&&&&&&&&&$$&xxX&&:X$+Xx         ",
-"          .:.:.  :. .;:  .x&&$&&&&&&&&&&&&&&&&&&$;:+X$&$X&X .xxX:          ",
-"           :.::   .::..     :XX&&&&&&&&&&&&&&&;    .:+X&x: x;Xxx           ",
-"            ..;. . ;..    x++. :x$$;&&&x$&X+ .$$&:.:+$&&Xx::&xX;           ",
-"             :..; .X;x+.  .:.     .x&&&$x.  .;++x;+x&&&&+++&Xx             ",
-"              ::. :+;:x&&X++++$xXx;&&&&&&&&&&&&&&&&&&&&x:&&+X+             ",
-"               ;::.::::;x$&$&&&$::x&&&&&&&X&&&&&&&&&&x;:&&$Xxx             ",
-"                 : ;;    ;xX&$;;+$$X&&&&&&&$+&&&&&X;:;x+x&X                ",
-"                  :;;   . :x+;+x.  ;&&&&X.+&&$&&&X;:x$x:::                 ",
-"                   ;+::   :; +xx+;  .;+;X&&&&&+&&$;x&$x;;                  ",
-"                   ;.+:;..;:::::.++;: +&&&$x$&&X&x$$&X++:                  ",
-"                  ::.::;; :;:  ++.   ...;$&&:.$&&x&$$++.;;                 ",
-"                   :. : :..+   ;&;+$$$&&&&&&  X$X&&++. .:                  ",
-"                    .  . . ;.  .&         &.  +&X$&+:.:..                  ",
-"                   .:   .:.:;.        .... . ;;X$&x..++:                   ",
-"                    ..   :..+:. .  ::.:x+.;:+&+X&x:.$xx:                   ",
-"                  .  ...  .:.;:..x  ::;; x&;X&x$+ .x&$;.;.                 ",
-"                 .   :     ..;;. $&&.::x&&X$&&$+  +&&$;;++:.               ",
-"              . ..   ...:   ;:;.;;.:.;:;+x&$&&x .xX&$x;+X;;:.              ",
-"                . ..   :;:.  ;;:. :x++xX$+;x&$.:;x&&X+x+x++:               ",
-"                   ...  .;    :+;::;+xx&$&&&X::+X&&xx+X&XX+                ",
-"                   .::   ::.   :++X&&&&&&&&$:.+;&&Xxx+$$$;                 ",
-"                    ...  .:;.   ..;;x+x&XX+  ;+&&&+;$$+.+                  ",
-"                      ....;;:;.            .:;$&$+x;x$x                    ",
-"                       . .:;::: .      .;+X+;x$$:++x.+                     ",
-"                        .  .::+:  .   .:+Xx+xX$X++::                       ",
-"                              :;+    :.:;+x;X&x:.:                         ",
-"                              :;x+;..  ..x;x+.:.;                          ",
-"                                 ... ...;+;.. .                            ",
-"                                    .  .                                   ","[/color]"],
-
-		# Tier 5 - Epic creatures
-		"Ancient Dragon": ["[color=#FF6600]",
-"   <\\_______/>",
-"   /  O   O  \\",
-"  <     ^     >",
-"   \\  ~~~~  /",
-"  //)^^^^^^(\\\\",
-" // |      | \\\\",
-"<~~ |      | ~~>","[/color]"],
-
-		"Demon Lord": ["[color=#FF0000]",
-"                   ::.                               .::                   ",
-"                .:;                                    .+:.                ",
-"              .:x:.                                    ...+..              ",
-"            ..;+..                                       :.+;..            ",
-"          .:.+;..:                                       ;::+;::           ",
-"          :::x+.:                                         :;;X...          ",
-"         ;:.:$+::                                         ;++X..::         ",
-"        ..:.:$xx;.                                       .;:x$:.::.        ",
-"         .:::x$+X:                   +                   ;+X&X.;.          ",
-"        .:;...$$xx;;                :X.                ;;xx$$. ..:..       ",
-"         ..:..:&$$&+:.            +;:&.;+            :;x$$$&....::.        ",
-"           ..::.X$$XX::;  .;+ ;+;;x;;&..:;::: +:   ;+XX$$&x..:..           ",
-"         .::;;.;::&x&&xx::: .;:;+$++;$ . ::..;. :;+xx&&&&:.. .:::.         ",
-"              ;::.:+&$&&X;;+X++xxX; :$  ::+::+X;x$&&&&&;. .::   .          ",
-"           ..   +:....&&&&xx.&XX&$:;X&.. +xxX&.;x&&&&.  ..+  ...           ",
-"             .. . x:.;  :$x&; &X&&&X+$.;;&&X& +&X&;. .  ;   ..             ",
-"              ... . .;.  : +&+xX&&&.:;  $&&x;;X+ :. .:.   ...              ",
-"            .:::. .    ;; :::++&&&&&.: X&&$$;;..: ;;      .:::             ",
-"              : .;+:    .X:;X&&&&&&&&;XX&&&&&XX:.X. .  :++:.:              ",
-"               ;:..;x;.  .:X$&&&&&&&&&&&&&&&&&X;.   .:;:::;:               ",
-"                ;:+;.;+. :...;x&&&&&&&&&&&&&;..... .:. ;;:;                ",
-"                 :;:. .:.;:      ::.;X;:;.     .;: .   :+:                 ",
-"                  ::x: :;xX$;;.. ..;&&$.. .::;X&+; : ;+::                  ",
-"                    ::Xx. ;X&&&X&&$$&&$+x&&X&&$x. .+&+:.                   ",
-"                     .X$ :  :;X&&&X$&&&xX&&&$+.  :.&$.                     ",
-"                  ...    :::.++&$&x$&&&x;&$$...:.:    .:.                  ",
-"                       . +++;;x$&&&..;..X&&x:.:;;;    .                    ",
-"                  .:;..: ++++:x$X&&&X.x$&XX;+.;;;; : .:::                  ",
-"                .:.. .::  :;::X::;xXx+x+;:..::::.  :. ...:.                ",
-"                    :: .:   :;:++X+....:;;;;.:.  : :;..                    ",
-"                   ;:...; :. :;:x:x&&+&++.:::  .;;:. :::                   ",
-"                      :.;+.;. ..X$&&x+;&&+.    :;...                       ",
-"                        :+.;x:.  :&;$x;:&:;   :+..                         ",
-"                          ;:x;.  .+ +x. ;   : ;;.                          ",
-"                            :+::;.  .+   . ;:..                            ",
-"                              :::::..   .:. :                              ",
-"                                  ;+;...:.                                 ",
-"                                    ;:.                                    ",
-"                                     .                                     ","[/color]"],
-
-		"Lich": ["[color=#9400D3]",
-"                                     $                                     ",
-"                                     X                                     ",
-"                         +          +$:          x                         ",
-"                         ;$         X&;;        &x                         ",
-"                    +x   :&    ;;;;X&&+;::..    &+   ++                    ",
-"                    ;X  ..$ :.;++xx&&&xx++++;.. $x.  X;                    ",
-"                    :x+  :$;.:;+Xx&&X&;XXxxx;::;&+.  &.                    ",
-"                    .:X .:X:..+&;+X$&&.X+;.+X:..$+: :X.                    ",
-"                    ..: ..::xxx&&&$+$&;;X$&&+xx::;  .::                    ",
-"                     .....:;+$&&&&&.:X .+x&Xx+;::; : .                     ",
-"                    ....:.;+xxX&&&X&X&+X;&&&&&+x+::;..:                    ",
-"                     :.. :.:; ..:.+&X&X$+...::+;.x..:.:                    ",
-"                    ..  :;xx ;x$$&&;&xX:X&&X$x.:+::  .:                    ",
-"                     . .;$+:+X&&&&&&Xx+&&&&&&X&x:x+:.                      ",
-"                     . :+&.+$&&&&&&&&&&&&&&&&&&x;+x+: .                    ",
-"                    ...++x.   ..$&&&X&x$&&$..   . :X:.                     ",
-"                    ..;X: ;  .&&+  .&&&;  .&&:  ; .$+;.:                   ",
-"                   ..:X+ ;X$:;:::.X&&X&XX;::::;x&x.:x+::                   ",
-"                  :.;;X;:$&&&&&&&&&&. .&$&&&&&&&&$+ ;x;::                  ",
-"                 ..:+$+. +$&X$:x&&&: ; .x$&;:+Xx++   .+;::                 ",
-"                 .:+xXX.      :+X&&&;&;&&&;x.       :  +:;:                ",
-"                .:.+X:;.  ..+  +$&&&&&&&&&+;  ::.  .:.. +x;:               ",
-"              :;;.:x$;     +:: ;X&$&&&&X&&&: :;;.  .x+;. xx+;              ",
-"             :;+:.:xx+ .: .xxX.:.X;&&&&&.X . xXx:  +$x++::X +:             ",
-"           ::::;::.x:.;.: ;XxX$;x+:     :.x:+&+xx  x&&x$;;.: :             ",
-"             ..:;: ;. +X:.  .X$+&X&X&&&&$X:+X$:  .:+&&$x  :. .;.           ",
-"                .;:+ ..xX:.. .x$+&&&&&&&Xx;$x:  .+::&:$..:::::             ",
-"                :.:::++::XX+.  :$&&&&&&&&&&:  :+$+;;$.:: ;:                ",
-"                  ::..;:;;X&X    x&&&&&&&x.  :$+xX+ x  . ;                 ",
-"                   ::  .x$$&&&X . ;&.::&; .+x+x$+.: :.:.                   ",
-"                    .:..::X;&X&XX;      ::.X$XXx+.  .::;;                  ",
-"                        :..+$x.;xX&&x    :xx;::   . ::                     ",
-"                          :. :&xxx$x;+Xx;.:.  ;; :. ;:                     ",
-"                          .::  .x$&X++;:..:.::+:.                          ",
-"                             ::.::;+xx:.;;.::.                             ",
-"                               . :;:;;::..                                 ",
-"                                  :; x;::                                  ",
-"                                     ;;                                    ","[/color]"],
-
-		"Titan": ["[color=#FFD700]",
-"                             $$$$$&&&&&&&&&&&&                             ",
-"                        XXXX$$$$&&&&&&&&&&&&&&&&&&&                        ",
-"                     +xxXxXX$X$$$&&&&&&&&&&&&&&&&&&&&&                     ",
-"                   x++xxXXXX$X$&&&&&&&&&&&&&&&&&&&&&&&&&                   ",
-"                 ++++++xxXXXXX$&&&&&&&&&&&&&&&&&&&&&&&&&&&                 ",
-"                ++++++++xxXX$$$$&&&&&&&&&&&&&&&&&&&&&$&&&&$                ",
-"               ;++++++xxx+XXX$$&&&&&&&&&&&&&&&&&&&&&&&&&&&$X               ",
-"             +;;++;x++xxXx;X$$$&&&&&&&&&&&&&&&&&&&&&&&&&&&$$X+             ",
-"            +;;;+;+xxxXxXXxXxx&&&&&&&&&&&&&&&&&&&&&&&$&$&$$$xx             ",
-"             ;;++;;xxxx+xxXX$&$&&&&&&&&&&&&&&&&&&&&$&&&$&&$Xxxx            ",
-"            ;;;;++++xxx++xxXx$&$&&&&&&&&&&&&&&&&&&$$&&$X&$XXXxx            ",
-"            ;;:;+:;;+xx++XXXX$$XX$&&&&&&&&&&&&&&$$&&&&x$$XX$Xxxx           ",
-"           ;;::;;;;:+xxxxXxXx$X&&&&&&&&$&&&&&&&$$&$&$+x$XxXXxx++x          ",
-"          ;;::;::::;:xxXXxX+x$&$&x$&&&$$&&$&&$&&&XX&&;X$+XX$+x++x          ",
-"          +::;;+;.;;;x+XX&$$$&&&$&&$&&&&&&&&&&&&&&&&$&&++xxx+++++x         ",
-"         +;;:::;;;:;+XXXX$$X$&&&&&&$&&&$$&&&&&&&&&&&&&&+;+xx;+;+x          ",
-"        +xxx;::;;::+$X+$&X$$X$&&$&&$&X&&&&&&&&&&&&&&&&&&x+xX++;$&&X        ",
-"        ;::xx;:::::++Xx;xX+x&$$$&&&$&&$&&&&&&&$$$X$XXx$&X+xX+xX$+:;        ",
-"         :::;;:::.;;;:.....:+xx$$xX$x&&x&$&&X$X;:....:;x$+xXx+X;x:X        ",
-"        ;.:+::;:::;;:.  +$&&X:...:;:X&Xx::::.:X&&&X. .:X$&xxxx+$XXX        ",
-"        ;:::..;+xx;+....:x&&$+....;+&&&$x:. .:X&$x;:::XX&&$&x+.+Xxx        ",
-"       +;:::..;+xxXX+:;::::::::.;;+x$$x&&X$;.:::;;+;xX&&&&&X+x:;X+         ",
-"       ++;:::;;:+xXXx$Xxx;;;+x+++x++.: X&&&&$$+xX$Xx&&&&&$X:;;x+;+         ",
-"        +;::::;::+xX$$$X$X$&XXXxxx+ .;. +&$$&&&&&&&&&$&&XX+:+Xx++xx        ",
-"         +:::;;;..++xxXxxx++++;X+;...+...x&$&XX$&$X&$Xxx+;::++++++X        ",
-"         +;:.;+;:.:::;;::;::x;+x;x...Xx.:+x$&xxX$:;$+::::;:+++;;x X        ",
-"        ++;:.:..:.;.: :+;.::xxxxX++x++$xXX$&$$$:::x;.:.++;;x;+;;XXX        ",
-"        +x+;;...:.;::...:+:;+++XxXxxXX$&&$&&&$XX:x+.;;+XX:..;;;;XX         ",
-"         +++:.:.:.+;;+..; ;;;$+x;X+x$+x$xx$;$;&x++.:x;++X::;;;+xX          ",
-"         x+;:::.:.++;;;:;.:;::++x;x;x+$xxx$;X:+;+;:;$xxXX.:;;;;xX          ",
-"          +;;::::::+++;+;.;:..x+X;xX$x$XX;$+$;.;;:+XXxX$$:;;+;++X          ",
-"          +;;::;.:.++;++;:;: .:.;     ...  :;..;+X+$X$X$X:;;+;+xxX         ",
-"         x++;;:;...++xx;+x:;..:::;..;.:.;+;;:+:+x$+xx$XX;:;;+ ;x X         ",
-"           + ;+:...:;+x+;.+++;:+;X+$+x+xXXXx;;;x$$X$$$X;::;;+ ++  X        ",
-"           x ;;:::.:::+++;++x;+;x+++x+XX+X++X+xxX&X$X;:;:::;;xx   X        ",
-"            +++::;.:;:::;xx;x+;;xX;X$xx&xX+$$&x$&X$;:.+x:::;+xx            ",
-"            +++;;;::;;;:.xx+X:;+XX$$&&&&&$Xx$&&&$;::x;XX:;++xxx            ",
-"            x ;;;;;;++x;::;;++;+XX&$&&&&&&$X&XXX:.:+xxxx;;+x+xx            ",
-"             x++;+x ;;x::::..+;XxX$&XXX&$&&X$x.::;+$X++x;;+Xx              ",
-"              x++    :;+;;;:...+x+XXxx+xX&$++:.:++xX+x x ;+xx              ",
-"              + ++     x;:;;.:..:.......::..::;Xx;x+x  x  X                ",
-"               ++x      ;:;;;.;...:;...:;;.:xxx+;++      xx                ",
-"                x       xx ;;;;:;..;;:::;;:+x;+++x      xxx                ",
-"                            ;;; :;;;;;;x;+xx;++                            ",
-"                              ;; :;;+++  +xx++                             ",
-"                                  ;;++   +                                 ",
-"                                    xX                                     ","[/color]"],
-
-		# Tier 6 - Legendary
-		# Elemental has variants - randomly selected in get_monster_ascii_art()
-		"Elemental_Fire": ["[color=#FF4500]",
-"                                  @@                                       ",
-"                                  @                                        ",
-"                                @@@                                        ",
-"                                @@@@                                       ",
-"                               @@@.@@@                                     ",
-"                                @@..+@@ @@@                                ",
-"                             @   @@...@@@@@@                               ",
-"                             @@  @@@..-:%=-=@ @                            ",
-"                            @@@@ @@@...+::.:@@@@                           ",
-"                          @ @@*@@@@=..:+#:..%@@@                           ",
-"                   @      @@@=+@@*@-..:@@-:.@@@*@@                         ",
-"                 @@       @@@%=*@++=::#@@#=.*@#*@@@                        ",
-"                @@@@@   @@+@@@%..+@=*+%@@@==-%+*@@@@@    @                 ",
-"                @#@@@   @#:#@@#:..:+@@@@@@@*:-+@@@@@@@   @@                ",
-"                @@+@@@ @@=..=+%...:+@@@@@@+#-:@@@@@#*@@ @@@@@@             ",
-"              @@@:.*@@@@@@=....#=.:*@@@@@@@@*-@@@@:-=@@ @@@:@@             ",
-"           @@  @@+.=@@@@@##....*=+-*%@@@@@@@@*@@@=..@@@ @@-.@@@ @          ",
-"             @ @@@:-..=@@=...=--+@**@@@@@@@@@@@@+..*@*@@@+..@@@@           ",
-"            @@ @@@:*...:-@+..:@@@%@%@@@@@@@@@@@--.+@@:%@@+=..#@@           ",
-"           @@@ @@@=+:.:+*..-:.+@++@@@@@@@@@@@@@:==*@=.:+%*.:.*@ @@         ",
-"          @@@@@@@@@%-..:.#+%-+*%@%*@@@@@@@@@@@#-@-@=:.:+%:.:*@@ @@         ",
-"          @@@##@@@=:#+...=@@+%@@@%@@@@@@@@@@-#@@#*@=.:+-@.=@@@@@@@         ",
-"          @@**-#@@@#%:+..*@@@@@@@@@@@@@@@@%*%@@@@=+:.-:.::#@@@@+@@         ",
-"          @@@-..*%::-......#@+=@@@@@%@@@%@@@@@@@*==-...:#@@@@@::@@         ",
-"          @@@*...:#+::....-+-:=@@@@#*#@@%##@@@@%+-..-.:#@@=--:.-@@         ",
-"          @@@#-+...-@@--...+%=-@@@-=-%%@=-.*%@*+......@#=+=.:.-%@@         ",
-"          @@@@@%-:..=:=-....-*:.*%+:--+*=:-.::@.......-@+:.-@:*@@          ",
-"          @@@@@@@:.......::..................+...:...::...-*@@@@@          ",
-"          @@@*@@@@=.....:#@@@@*.............-=*@@@@#....--@@@@@@@          ",
-"           @@@@@@@@#.....+@@@@@@*-.........-@@@@@@@:...*@@=+@%%@           ",
-"          @ @@@@@-:.:...:-%@@@@@@@........:@@@@@@@=::..::.:*@@@@           ",
-"             @@@@%=-...:..--@@@@@#:.......=#@@@*-....-:@-+%@@@@            ",
-"              @@@%#+-@@:=+..........................@+%@@@@@ @@            ",
-"              @@@@@@@@%:*@@#.....................--@@@@@#@@@@@             ",
-"               @@@@@@%.:**=...................:.:**@#+=-#=@@@              ",
-"               @@@@@@#*+:.#@*.:-............=..=+:+:.:-%@@@@               ",
-"                @@@@@@#@#=--.-:*..:.-:......:@*+.+=:.#@@@@@                ",
-"                @@@@@@@@@--.-.-+:..:%:-:.=@%@#.+-..--@@@@@@                ",
-"                 @@@@@@@#+--=....=-:+*-=%#@@@-=*::@%@@@@@@@                ",
-"                   @@@@@@@++*-.:..-%@@=#@@@@@#+--@@@@@@@@@                 ",
-"                    @@@@@#**--.:-.=#*@@@@@@*:.=@*-+@@@@@@                  ",
-"                   @@@@@@%+++@@-%=.=@@@@@@@%==#@#+@@@@@@                   ",
-"                    @@@@@@@*-+=#%@=-+@@@@@@@=@@@@@@@@@@                    ",
-"                     @@@@@@@@#===*@@@@@@@@@@@@@@@@@@@@@                    ",
-"                       @@@@@@@##+:-@%@@@@@@@@@@@@@@@@                      ",
-"                        @@@@@@@%@@#+#@@@@@@@@@@@@@@                        ",
-"                           @@@@@@@@@@@@@@@@@@@@@@@@                        ",
-"                              @@@@@@@@@@@@@@@@@@@                          ",
-"                               @@@@@@@@@@@@@@@                             ",
-"                                @@@@@@@@@@@                                ",
-"                                    @@@@@                                  ",
-"                                     @@                                    ",
-"                                      @                                    ","[/color]"],
-
-		"Elemental_Water": ["[color=#00BFFF]",
-"                                                         %#                ",
-"                              %%                        +##                ",
-"                         .*%@**                    #@@@%#*                 ",
-"                       +*#=-+                 *  -#@@@@:%+                 ",
-"                    .*@#.+- #               -  *%@@*  .  *                 ",
-"                    =*@.-+-           %+   :**%@@@@..                      ",
-"               += =:+#*  @-:-+---+=++#%+==#**@@@@@  =       *+             ",
-"               =.-.**+      :: --*:::@%**-@@@%     :=@-#=#==::             ",
-"            -  -+.=@      .  -*.::--*@@@@@@- % .  : --+=@@@#:              ",
-"            =  +:**@ +   .  -:==+#*@%#@@#....  #@@   :+@@=                 ",
-"           --=== +@@# +   =.:=*@@@@@@@ @@  .*#@@   +%@@% :.%#              ",
-"            :. .. %%#+  -%=-#%@#@@@@@-*--:#@@@@@@@@@@:   :. =*@*           ",
-"             +*   =+@@..:+@@@@@@@@@@@@@@@%@@@@@*@@@ + . *@%@               ",
-"             =-=    #+@=.-=%@@@@@@@@@@@@@@@@% . .@+..-==.  . +             ",
-"             - .::   @+++#*%%@@@@@@@%@@@@= .  .  *@@@*@  ::                ",
-"             #- -+.=.-%*:=@#@@@@@@@%@@@#==:--:*#@@-    +*%@#               ",
-"                : + :: *##%@@@@@@@@@@@@%*#@#*#:.  -:.@#-:  =:              ",
-"                .  +*=+#:*@%%@@@@@@@@@@@@@@.:=-  .+#@:                     ",
-"                .- +:-:*@+@@@@@@@@@@@@@@@**=.  -%.#-   .+= ==              ",
-"                 :       .++@@@@@@@@@@+     :==.@=    :  %%                ",
-"                  .=+:      :%@@@@#:       .*@@%      :@-                  ",
-"                  .*%*:      @@@@@=       #@@-   - . .:==#+                ",
-"                  =::+*===: *%@@@@@@#%@@@@#:   ++  .%..+@:                 ",
-"                   :: --:=#@@@@@@@@@@@@@#    =+*@-  -@=:                   ",
-"                        .-+*@@@@@@@@@@*@: - *@-      -@==                  ",
-"                    = =: +:*+%@@@@@@@*#*:*:@@*@  -   :--@@-                ",
-"                   --  +=-=:*%%@@@@@@@%-++@*=@  .     :.-+:                ",
-"                   -.:  .@.-:-%@@@@@@%**@@%=   :#..%. .*--                 ",
-"                     -   -= **+%@@@%@=*@# *  #-#%+. .%-:+@+=               ",
-"                   = :   +=:.#*#%@@%%@ ::    +#*@+-#%@-.-*: :              ",
-"                    -:    =-.@:@%#@@++    :: @@*@: +% =+*%:+*-             ",
-"                  :=.:  .   =% =+ +     -.@@@@%@.=-:.*%=%@@@@@             ",
-"               .+.  :. .=    =: % =    *.*#@@@#. *#@=*@%  %                ",
-"              :-.  =:.+ #.         :=+  %@@@#%@@*@##*#+                    ",
-"                 *+-- +.@*= .     .+@.=@%=@@@#*@%@%-                       ",
-"                %@ @**:.*@=:::     ==@@@@@@#@%**=                          ",
-"                   ==+-:#@--*    .#@#*@@@##@#*%+                           ",
-"                     *+##@%-.@. @*#*@%+@@-=+ #                             ",
-"                     +#-+@@*=+.@@#=%%#@   -                                ",
-"                       **+@*@%%@%=:=@=                                     ",
-"                         =*@%@#@**-                                        ",
-"                           @%@%%                                           ",
-"                            %%                                             ",
-"                             @                                             ","[/color]"],
-
-		"Elemental_Earth": ["[color=#8B4513]",
-"                                      ;:                                   ",
-"                    &&&&&           .&&+.                                  ",
-"                    &&&           $$&&&::.          &&                     ",
-"                 & &&&&&& &     &&&&&&++:::     &&&&&     x;               ",
-"                    x&$&&&&&  X&&&&&&&&+;+ :.   &&&&&  X&&x.               ",
-"             +x    ;+X&&x&XX+X$&&&&&&&&&;. .;x&X:.&&$$&&&+:.               ",
-"             :&$&$ :;;$x+;xx;xX&&&&&&&&&;X.+X&;;.:X$&&&&;::.               ",
-"             .;&&&&&x.+$X:X&&&x&$&&&&&&&&+;.x;+;&&:X&xx::x..               ",
-"             ;+;&&&$&X++;+X&&&&X&&&&&&&&XX+.x&&&&;.;$&+:;::  X$:           ",
-"              ++++&&&&&&:;x$X&&&$&&&&&&&$+x&&&&&++.+$;:...;$&x.            ",
-"              .:x$x&&&&&X&&&X+&&&&&&&&&&X&&&&&&Xx;: +..+&xX&;:.            ",
-"          :X$x: ;$$xxxx$$&&&&&xX$&&&&&&&&&&&&X;x+;X&$+;X+;x:::.            ",
-"           :;&$+.;; .:$&&&&&&&XX&&&&&&&&X&&&&x$&&&&&$X+&+::+;.             ",
-"            :;+Xx..+$x&&&&&&&&&&&&&&&&&&&&&&&&&&&&Xx+:;.; . .              ",
-"             ..x&+;$$&&$&&&&&&&&&&&&&&&&&&&&&&&&&$XX:: :;::.x+:            ",
-"           :XX; :+..::++$xx&&&&&&&&&&&&&&&&X&&&&++..;..:...X&:.            ",
-"             :x+  +.:    ::;:+X&&$&&&&&&&$&xx::;;:    .;.:x;:.             ",
-"             .;::::$X;:;:&&  x..;x$&&&$x+; .:   $X..+;+$$..                ",
-"               :;:+:X&&$Xx$&$x+;+&&&&&&$x;;.:xXXx+XXX;;;: ;:               ",
-"               .+x;+;$&$X&&&&&&&X&&&&&&$&&&&++&&&X$&:   :: +:              ",
-"                .:+:..++;X$&&&&&&&&&&&&&&&&$+&&&X;;:. .;...                ",
-"                     .x+x;xxx$$&&&&&&&&&&Xx:+&X;:X;..  .::                 ",
-"                  .:.: x+x:X&&&$&&&&&&&$xX;$x::.;;:.:. ;.                  ",
-"                 xx++:+. Xx++$&&&$&&&&&$Xxxx;+&+.. .                       ",
-"                 :+&X.+xx+;+:X&&&&&&&&&X$++;x&+;: ..;;xx                   ",
-"                  .:x$x:;.&&XX+&&&&$&&&&XX&++xX:  .xX+;X;                  ",
-"                  . .;&X:;++&$++$&$&$&&x&&+;:;: :x&:xX. .                  ",
-"                 +X;   :$x&X:x&&$x+xx&&$X+:+: :+x&X++  :;:                 ",
-"                ;XX+::  .x;$&&$&&&X&&&&xxXX$++;X;+    :x++                 ",
-"                X$;::;+.   ;x&&x&X&&&&&X+x$x+X;:.   ..::x;.                ",
-"                ;:;xx+XX; . .++&$$&&&&+X+&$.x    ;:+x++::.                 ",
-"                   x;x&&x ;;:. .&$X&X;xX++;    :x.:+$::                    ",
-"                     ;x+$:;$&+; .;.x$;X;:.  .;xx+ X;..                     ",
-"                        x +x$X.+.  .;. :  .:.:$;;+;                        ",
-"                           XXx;;$+;    ..:+xx::.                           ",
-"                            ;:;+&&xx.  :+.:x++                             ",
-"                               x$$+:::x..:;+                               ",
-"                                 :x;:;;:                                   ",
-"                                     .                                     ","[/color]"],
-
-		"Elemental": "VARIANT:Elemental_Fire,Elemental_Water,Elemental_Earth",
-
-		"Iron Golem": ["[color=#708090]",
-"    [=====]",
-"    [O   O]",
-"    [  =  ]",
-"   _[=====]_",
-"  | |     | |",
-"  | |     | |",
-"  |_|     |_|","[/color]"],
-
-		"Sphinx": ["[color=#DAA520]",
-"       /\\",
-"      /  \\",
-"     ( oo )___",
-"     /      __\\",
-"    /   /\\/\\   \\",
-"   /___/    \\___\\",
-"      ||    ||","[/color]"],
-
-		"Hydra": ["[color=#006400]",
-"   \\|/  \\|/",
-"   (o)  (o)",
-"    \\\\  //",
-"     \\\\//",
-"      ||",
-"     /||\\",
-"    / || \\","[/color]"],
-
-		"Phoenix": ["[color=#FF8C00]",
-"    ,/|\\,",
-"   / /|\\ \\",
-"  ( ( o o ) )",
-"   \\ \\|// /",
-"    \\ ~~ /",
-"     \\||/",
-"    ~~||~~","[/color]"],
-
-		# Tier 7 - Mythical
-		"Void Walker": ["[color=#483D8B]",
-"    .:::::.   ",
-"   ::     ::  ",
-"  :: o   o :: ",
-"   ::  ~  ::  ",
-"    :: | ::   ",
-"     ::|::    ",
-"     ~~~~~    ","[/color]"],
-
-		"World Serpent": ["[color=#2E8B57]",
-"     _______",
-"    /  o o  \\~~~~",
-"   (    =    )",
-"    \\       /",
-"     )     (",
-"    /       \\",
-"   ~~~~~~~~~~~","[/color]"],
-
-		"Elder Lich": ["[color=#800080]",
-"     .=====.",
-"    / X ^ X \\",
-"    \\  ~~~  /",
-"   __|#####|__",
-"  /  |     |  \\",
-"  \\~~|     |~~/",
-"     ~~~~~~~","[/color]"],
-
-		"Primordial Dragon": ["[color=#FF0000]",
-"  <\\________/>",
-"  /   O  O   \\",
-" <      ^     >",
-"  \\  ~~~~~~  /",
-" //)^^^^^^^^(\\\\",
-"// |        | \\\\",
-"<~~|        |~~>","[/color]"],
-
-		# Tier 8 - Cosmic
-		"Cosmic Horror": ["[color=#4B0082]",
-"   @\\ | | /@",
-"    \\\\|^|//",
-"    (o ? o)",
-"   /|\\~~~/|\\",
-"    \\|   |/",
-"     |~~~|",
-"    ~~~~~~","[/color]"],
-
-		"Time Weaver": ["[color=#00FFFF]",
-"    *--@--*",
-"   /   @   \\",
-"  (  @   @  )",
-"   \\   @   /",
-"    *--@--*",
-"      |||",
-"     ~~~~~","[/color]"],
-
-		"Death Incarnate": ["[color=#AAAAAA]",
-"     .===.",
-"    / X X \\",
-"    \\ ___ /",
-"   __|---|__",
-"  /  |   |  \\",
-"  \\__|   |__/",
-"     ~~~~~","[/color]"],
-
-		# Tier 9 - Godlike
-		"Avatar of Chaos": ["[color=#FF00FF]",
-"   * \\|/ *",
-"  * =(!)= *",
-"   * /|\\ *",
-"    *|||*",
-"   */|||\\*",
-"    ~~~~~",
-"   *******","[/color]"],
-
-		"The Nameless One": ["[color=#696969]",
-"    ???????",
-"   ?       ?",
-"  ?  ?   ?  ?",
-"   ?   ?   ?",
-"    ???????",
-"      ???",
-"     ?????","[/color]"],
-
-		"God Slayer": ["[color=#FFD700]",
-"   \\\\\\|///",
-"    \\\\|//",
-"    (O=O)",
-"   <|###|>",
-"    |   |",
-"   /|   |\\",
-"    ~~~~~","[/color]"],
-
-		"Entropy": ["[color=#555555]",
-"    .......",
-"   .       .",
-"  .         .",
-"   .       .",
-"    .......",
-"      ...",
-"     .....","[/color]"]
-	}
-
-	# Return matching art - extract color and center properly
-	if art_map.has(monster_name):
-		var entry = art_map[monster_name]
-
-		# Handle variant monsters (randomly select from available variants)
-		if entry is String and entry.begins_with("VARIANT:"):
-			var variants = entry.substr(8).split(",")
-			var selected_variant = variants[randi() % variants.size()]
-			if art_map.has(selected_variant):
-				entry = art_map[selected_variant]
-			else:
-				entry = ["[color=#555555]", "????", "[/color]"]
-
-		var lines = entry
-		var color_tag = "[color=#555555]"
-		var art_lines = []
-
-		# Extract color tag and art content
-		for line in lines:
-			if line.begins_with("[color="):
-				color_tag = line
-			elif line == "[/color]":
-				continue
-			else:
-				art_lines.append(line)
-
-		# Find max width for centering
-		var max_width = 0
-		for line in art_lines:
-			max_width = max(max_width, line.length())
-
-		# Wide art (>50 chars) is pre-formatted - return as-is with newlines
-		if max_width > 50:
-			var result = color_tag + "\n"
-			for line in art_lines:
-				result += line + "\n"
-			result += "[/color]"
-			return result
-
-		# Small art - center with padding
-		var result = color_tag
-		var target_width = 20  # Fixed art width for consistency
-		for line in art_lines:
-			# Center the line within target width, then add padding
-			var stripped = line.strip_edges(true, true)
-			var padding_needed = max(0, (target_width - stripped.length()) / 2)
-			var centered_line = " ".repeat(padding_needed) + stripped
-			result += "                         " + centered_line + "\n"  # 25 space base padding
-		result += "[/color]"
-		return result
-	else:
-		# Generic monster fallback
-		var padding = "                         "
-		return "[color=#555555]" + padding + "    ?????\n" + padding + "   ( o.o )\n" + padding + "    \\ = /\n" + padding + "   /|   |\\\n" + padding + "     ~~~\n[/color]"
+	# Server-side ASCII art removed - all art is now rendered client-side via monster_art.gd
+	return ""
 
 func _get_raw_monster_ascii_art(monster_name: String) -> Array:
 	"""Return the raw ASCII art array for color extraction"""
@@ -5548,74 +4435,9 @@ func _get_raw_monster_ascii_art(monster_name: String) -> Array:
 	}
 	return color_map.get(monster_name, ["[color=#555555]"])
 
-func add_border_to_ascii_art(ascii_art: String, monster_name: String) -> String:
-	"""Add a simple border around ASCII art"""
-	var border_width = 50  # Total width including border chars
-
-	# Parse out the color tag and content lines
-	var lines = ascii_art.split("\n")
-	var content_lines = []
-	var color_tag = "[color=#555555]"
-
-	for line in lines:
-		var stripped = line.strip_edges()
-		if stripped == "" or stripped == "[/color]":
-			continue
-		if stripped.begins_with("[color="):
-			var end_bracket = stripped.find("]")
-			if end_bracket > 0:
-				color_tag = stripped.substr(0, end_bracket + 1)
-				var after_tag = stripped.substr(end_bracket + 1).strip_edges()
-				if after_tag != "" and after_tag != "[/color]":
-					content_lines.append(after_tag)
-			continue
-		# Remove [/color] from end if present
-		var clean_line = stripped.replace("[/color]", "").rstrip(" ")
-		if clean_line != "":
-			content_lines.append(clean_line)
-
-	if content_lines.is_empty():
-		return ascii_art
-
-	# Find max width to check if art is too wide for border
-	var max_art_width = 0
-	for line in content_lines:
-		max_art_width = max(max_art_width, line.length())
-
-	# If art is wider than border, return it without border (pre-formatted art like goblin)
-	if max_art_width > border_width:
-		return ascii_art
-
-	# Build bordered art
-	var result = ""
-	var color_end = "[/color]"
-
-	# Top border
-	result += "[color=#AAAAAA]╔" + "═".repeat(border_width) + "╗[/color]\n"
-
-	# Content lines centered within the border
-	for line in content_lines:
-		var left_pad = (border_width - line.length()) / 2
-		var right_pad = border_width - line.length() - left_pad
-		result += "[color=#AAAAAA]║[/color]" + " ".repeat(left_pad) + color_tag + line + color_end + " ".repeat(right_pad) + "[color=#AAAAAA]║[/color]\n"
-
-	# Bottom border
-	result += "[color=#AAAAAA]╚" + "═".repeat(border_width) + "╝[/color]"
-
-	return result
-
 func generate_combat_start_message(character: Character, monster: Dictionary) -> String:
-	"""Generate the initial combat message with ASCII art and color-coded name"""
-	var ascii_art = get_monster_ascii_art(monster.name)
-	var bordered_art = add_border_to_ascii_art(ascii_art, monster.name)
-
-	# Wrap ASCII art with smaller font size
-	bordered_art = "[font_size=%d]%s[/font_size]" % [ASCII_ART_FONT_SIZE, bordered_art]
-
-	# Get encounter text without art
-	var encounter_text = generate_encounter_text(monster)
-
-	return bordered_art + "\n" + encounter_text
+	"""Generate the initial combat message (text only - art is rendered client-side)"""
+	return generate_encounter_text(monster)
 
 func generate_encounter_text(monster: Dictionary) -> String:
 	"""Generate encounter text WITHOUT ASCII art (for client-side art rendering)"""
@@ -5642,25 +4464,25 @@ func generate_encounter_text(monster: Dictionary) -> String:
 	if ABILITY_WISH_GRANTER in abilities:
 		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
 	if ABILITY_WEAPON_MASTER in abilities:
-		notable_abilities.append("[color=#FF8000]★ WEAPON MASTER ★[/color]")
+		notable_abilities.append("[color=#FF8000]â˜… WEAPON MASTER â˜…[/color]")
 	if ABILITY_SHIELD_BEARER in abilities:
-		notable_abilities.append("[color=#00FFFF]★ SHIELD GUARDIAN ★[/color]")
+		notable_abilities.append("[color=#00FFFF]â˜… SHIELD GUARDIAN â˜…[/color]")
 	if ABILITY_CORROSIVE in abilities:
-		notable_abilities.append("[color=#FFFF00]⚠ CORROSIVE ⚠[/color]")
+		notable_abilities.append("[color=#FFFF00]âš  CORROSIVE âš [/color]")
 	if ABILITY_SUNDER in abilities:
-		notable_abilities.append("[color=#FF4444]⚠ SUNDERING ⚠[/color]")
+		notable_abilities.append("[color=#FF4444]âš  SUNDERING âš [/color]")
 	if ABILITY_CHARM in abilities:
 		notable_abilities.append("[color=#FF00FF]Enchanting[/color]")
 	if ABILITY_GOLD_STEAL in abilities:
-		notable_abilities.append("[color=#FFD700]⚠ THIEF ⚠[/color]")
+		notable_abilities.append("[color=#FFD700]âš  THIEF âš [/color]")
 	if ABILITY_BUFF_DESTROY in abilities:
 		notable_abilities.append("[color=#808080]Dispeller[/color]")
 	if ABILITY_SHIELD_SHATTER in abilities:
 		notable_abilities.append("[color=#FF4444]Shield Breaker[/color]")
 	if ABILITY_XP_STEAL in abilities:
-		notable_abilities.append("[color=#FF00FF]⚠ XP DRAINER ⚠[/color]")
+		notable_abilities.append("[color=#FF00FF]âš  XP DRAINER âš [/color]")
 	if ABILITY_ITEM_STEAL in abilities:
-		notable_abilities.append("[color=#FF0000]⚠ PICKPOCKET ⚠[/color]")
+		notable_abilities.append("[color=#FF0000]âš  PICKPOCKET âš [/color]")
 	if ABILITY_DISGUISE in abilities:
 		notable_abilities.append("[color=#808080]Deceptive[/color]")
 	if ABILITY_FLEE_ATTACK in abilities:
@@ -5934,7 +4756,7 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 	match wish.type:
 		"gems":
 			character.gems += wish.amount
-			return "[color=#00FFFF]✦ ◆ [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] ◆ ✦[/color]" % wish.amount
+			return "[color=#00FFFF]âœ¦ â—† [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] â—† âœ¦[/color]" % wish.amount
 		"gold":
 			character.gold += wish.amount
 			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount

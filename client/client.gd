@@ -3509,6 +3509,15 @@ func display_death_screen(message: Dictionary):
 		var round_text = "%d Round%s" % [rounds_fought, "s" if rounds_fought != 1 else ""]
 		display_game("[center][color=#FF4444][b]FINAL BATTLE - %s[/b][/color][/center]" % round_text)
 		display_game("[color=#FF4444]═══════════════════════════════════════════════[/color]")
+
+		# Render monster art client-side (uses base name for correct art lookup)
+		var monster_base_name = message.get("monster_base_name", "")
+		if monster_base_name != "":
+			var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name, ui_scale_monster_art)
+			if local_art != "":
+				display_game("[center]" + local_art + "[/center]")
+				display_game("")
+
 		if total_damage_dealt > 0 or total_damage_taken > 0:
 			display_game("[color=#00FF00]Damage Dealt: %s[/color]  |  [color=#FF6666]Damage Taken: %s[/color]" % [format_number(total_damage_dealt), format_number(total_damage_taken)])
 			if monster_max_hp > 0:
@@ -3981,6 +3990,45 @@ func _reset_character_state():
 	pending_continue = false
 	combat_item_mode = false
 	monster_select_mode = false
+	# Clear the character stats HUD so old values don't linger
+	_clear_character_hud()
+
+func _clear_character_hud():
+	"""Clear all character-related HUD elements (level, HP, XP, currency, resource bar)"""
+	if player_level_label:
+		player_level_label.text = ""
+	if player_health_bar:
+		var fill = player_health_bar.get_node_or_null("Fill")
+		if fill:
+			fill.anchor_right = 0.0
+		var label = player_health_bar.get_node_or_null("HPLabel")
+		if label:
+			label.text = ""
+		var shield_fill = player_health_bar.get_node_or_null("ShieldFill")
+		if shield_fill:
+			shield_fill.anchor_right = 0.0
+	if player_xp_bar:
+		var fill = player_xp_bar.get_node_or_null("Fill")
+		if fill:
+			fill.anchor_right = 0.0
+		var label = player_xp_bar.get_node_or_null("XPLabel")
+		if label:
+			label.text = ""
+		var recent_fill = player_xp_bar.get_node_or_null("RecentFill")
+		if recent_fill:
+			recent_fill.anchor_right = 0.0
+	if resource_bar:
+		var fill = resource_bar.get_node_or_null("Fill")
+		if fill:
+			fill.anchor_right = 0.0
+		var label = resource_bar.get_node_or_null("ResourceLabel")
+		if label:
+			label.text = ""
+	if gold_label:
+		gold_label.text = ""
+	if gem_label:
+		gem_label.text = ""
+	stop_low_hp_pulse()
 
 # ===== LEADERBOARD HANDLERS =====
 
@@ -11949,11 +11997,18 @@ func handle_server_message(message: Dictionary):
 			dungeon_floor_grid = []
 			dungeon_available = []
 			dungeon_list_mode = false
+			# Disconnect and reconnect for clean state
+			# (server's stale connection check would kill the unauthenticated peer)
+			connection.disconnect_from_host()
+			connected = false
+			buffer = ""
+			connection = StreamPeerTCP.new()
 			game_state = GameState.LOGIN_SCREEN
 			update_action_bar()
 			show_enemy_hp_bar(false)
-			show_login_panel()
+			_clear_character_hud()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Logged out"))
+			connect_to_server()
 
 		"permadeath":
 			game_state = GameState.DEAD
