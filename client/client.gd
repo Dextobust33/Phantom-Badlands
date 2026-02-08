@@ -1906,8 +1906,8 @@ func _process(delta):
 	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
 	# number keys should ALWAYS select companions, not trigger action bar slots 5-9
 	if game_state == GameState.PLAYING and not input_field.has_focus() and companions_mode:
-		var collected = character_data.get("collected_companions", [])
-		for i in range(min(collected.size(), 5)):
+		var sorted_list = get_meta("sorted_companions", character_data.get("collected_companions", []))
+		for i in range(min(sorted_list.size(), 5)):
 			if is_item_select_key_pressed(i):
 				if not get_meta("companionkey_%d_pressed" % i, false):
 					set_meta("companionkey_%d_pressed" % i, true)
@@ -7044,13 +7044,13 @@ func execute_local_action(action: String):
 			display_companions()
 		"companions_prev":
 			companions_page = max(0, companions_page - 1)
-			display_companions()
+			_refresh_companions_display()
 			update_action_bar()
 		"companions_next":
 			var collected = character_data.get("collected_companions", [])
 			var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
 			companions_page = min(total_pages - 1, companions_page + 1)
-			display_companions()
+			_refresh_companions_display()
 			update_action_bar()
 		"companions_release":
 			# Enter release selection mode
@@ -10149,6 +10149,10 @@ func prompt_inventory_action(action_type: String):
 				display_game("[color=#FF0000]No items to lock/unlock.[/color]")
 				return
 			pending_inventory_action = "lock_item"
+			# Mark all item keys as pressed to prevent the held key from
+			# also triggering item selection on the same keypress
+			for k in range(9):
+				set_meta("itemkey_%d_pressed" % k, true)
 			display_inventory()  # Show inventory for selection
 			display_game("[color=#FFD700]%s to lock/unlock an item:[/color]" % get_selection_keys_text(inventory.size()))
 			update_action_bar()
@@ -14966,6 +14970,8 @@ func display_companions():
 	if collected_companions.size() > 0:
 		# Sort the companions before display
 		var sorted_companions = _sort_companions(collected_companions)
+		# Store sorted order so activate_companion_by_index uses same order as display
+		set_meta("sorted_companions", sorted_companions)
 
 		var total_pages = int(ceil(float(sorted_companions.size()) / float(COMPANIONS_PAGE_SIZE)))
 		companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
@@ -15438,6 +15444,25 @@ func _get_egg_display_name(egg_type: String) -> String:
 		_:
 			return egg_type.capitalize().replace("_", " ")
 
+func _refresh_companions_display():
+	"""Refresh companion display based on current pending_companion_action state."""
+	if pending_companion_action == "release_select":
+		game_output.clear()
+		display_game("[color=#FF6666]═══════ RELEASE COMPANION ═══════[/color]")
+		display_game("")
+		display_game("[color=#FFAA00]Select a companion to release (PERMANENTLY DELETE):[/color]")
+		display_game("")
+		_display_companions_for_release()
+	elif pending_companion_action == "inspect_select":
+		game_output.clear()
+		display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
+		display_game("")
+		display_game("[color=#AAAAAA]Select a companion to inspect (1-%d):[/color]" % min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size()))
+		display_game("")
+		_display_companions_for_selection()
+	else:
+		display_companions()
+
 func close_companions():
 	"""Close companions menu and return to More menu"""
 	companions_mode = false
@@ -15447,14 +15472,17 @@ func close_companions():
 	update_action_bar()
 
 func activate_companion_by_index(index: int):
-	"""Activate a companion from collected_companions by index (or select for release)"""
-	var collected = character_data.get("collected_companions", [])
+	"""Activate a companion from sorted companion list by index (or select for release)"""
+	# Use sorted list (same order as displayed) instead of raw unsorted array
+	var sorted_list = get_meta("sorted_companions", [])
+	if sorted_list.is_empty():
+		sorted_list = character_data.get("collected_companions", [])
 	# Adjust index for pagination
 	var actual_index = companions_page * COMPANIONS_PAGE_SIZE + index
-	if actual_index < 0 or actual_index >= collected.size():
+	if actual_index < 0 or actual_index >= sorted_list.size():
 		return
 
-	var companion = collected[actual_index]
+	var companion = sorted_list[actual_index]
 
 	# Handle release selection mode
 	if pending_companion_action == "release_select":
@@ -15506,16 +15534,20 @@ func _display_companions_for_release():
 		display_game("[color=#808080]No companions to release.[/color]")
 		return
 
-	var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
+	# Use sorted order consistent with main companion display
+	var sorted_list = _sort_companions(collected)
+	set_meta("sorted_companions", sorted_list)
+
+	var total_pages = int(ceil(float(sorted_list.size()) / float(COMPANIONS_PAGE_SIZE)))
 	companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
 	var start_idx = companions_page * COMPANIONS_PAGE_SIZE
-	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected.size())
+	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, sorted_list.size())
 
 	display_game("[color=#808080]Page %d/%d[/color]" % [companions_page + 1, total_pages])
 	display_game("")
 
 	for i in range(start_idx, end_idx):
-		var companion = collected[i]
+		var companion = sorted_list[i]
 		var comp_name = companion.get("name", "Unknown")
 		var comp_id = companion.get("id", "")
 		var comp_level = companion.get("level", 1)
@@ -15539,16 +15571,20 @@ func _display_companions_for_selection():
 		display_game("[color=#808080]No companions to inspect.[/color]")
 		return
 
-	var total_pages = int(ceil(float(collected.size()) / float(COMPANIONS_PAGE_SIZE)))
+	# Use sorted order consistent with main companion display
+	var sorted_list = _sort_companions(collected)
+	set_meta("sorted_companions", sorted_list)
+
+	var total_pages = int(ceil(float(sorted_list.size()) / float(COMPANIONS_PAGE_SIZE)))
 	companions_page = clamp(companions_page, 0, max(0, total_pages - 1))
 	var start_idx = companions_page * COMPANIONS_PAGE_SIZE
-	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, collected.size())
+	var end_idx = min(start_idx + COMPANIONS_PAGE_SIZE, sorted_list.size())
 
 	display_game("[color=#808080]Page %d/%d[/color]" % [companions_page + 1, total_pages])
 	display_game("")
 
 	for i in range(start_idx, end_idx):
-		var companion = collected[i]
+		var companion = sorted_list[i]
 		var comp_name = companion.get("name", "Unknown")
 		var comp_id = companion.get("id", "")
 		var comp_level = companion.get("level", 1)
