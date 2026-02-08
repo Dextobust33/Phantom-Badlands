@@ -6884,7 +6884,14 @@ func _checkout_companion_for_character(account_id: String, character: Character,
 	companion.erase("checkout_time")
 
 	character.active_companion = companion
-	character.collected_companions.append(companion)
+	# Only add to collected_companions if not already there (prevent duplicates)
+	var already_has = false
+	for comp in character.collected_companions:
+		if comp.get("id", "") == companion.get("id", ""):
+			already_has = true
+			break
+	if not already_has:
+		character.collected_companions.append(companion)
 	character.using_registered_companion = true
 	character.registered_companion_slot = slot
 	log_message("Companion '%s' checked out from kennel slot %d for %s" % [companion.get("name", "Unknown"), slot, char_name])

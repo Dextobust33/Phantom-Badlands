@@ -1438,6 +1438,24 @@ func from_dict(data: Dictionary):
 		if not companion.has("variant_pattern"):
 			companion["variant_pattern"] = "solid"
 
+	# Deduplicate collected_companions by ID (keep highest level copy)
+	var seen_ids = {}
+	var deduped_companions = []
+	for companion in collected_companions:
+		var cid = companion.get("id", "")
+		if cid == "":
+			deduped_companions.append(companion)
+			continue
+		if seen_ids.has(cid):
+			# Keep the one with higher level
+			var existing_idx = seen_ids[cid]
+			if companion.get("level", 0) > deduped_companions[existing_idx].get("level", 0):
+				deduped_companions[existing_idx] = companion
+		else:
+			seen_ids[cid] = deduped_companions.size()
+			deduped_companions.append(companion)
+	collected_companions = deduped_companions
+
 	# Migrate active_companion if needed
 	if not active_companion.is_empty():
 		if not active_companion.has("variant_color2"):

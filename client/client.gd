@@ -14868,11 +14868,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.93 changes
+	display_game("[color=#00FF00]v0.9.93[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fix: Duplicate companions auto-removed on character load (keeps highest level)")
+	display_game("  • Fix: Kennel checkout no longer creates duplicate companion entries")
+	display_game("")
+
 	# v0.9.92 changes
-	display_game("[color=#00FF00]v0.9.92[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.92[/color]")
 	display_game("  • Fix: Quest gem rewards now actually awarded (were silently zeroed)")
 	display_game("  • Fix: Dungeon completion now shows 'eggs full' warning when applicable")
-	display_game("  • Existing quests with missing gems will be corrected on turn-in")
 	display_game("")
 
 	# v0.9.91 changes
