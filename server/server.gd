@@ -12576,14 +12576,14 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	for i in range(mini(2, equipped_slots.size())):
 		contents["items"].append(character.equipped[equipped_slots[i]].duplicate(true))
 
-	# Copy active companion (full persistence)
-	if not character.active_companion.is_empty():
+	# Copy active companion (full persistence) - skip registered companions (they return to kennel)
+	if not character.active_companion.is_empty() and not character.using_registered_companion:
 		contents["active_companion"] = character.active_companion.duplicate(true)
 
-	# Select one random OTHER owned companion (not the active one)
+	# Select one random OTHER owned companion (not the active one, not registered)
 	var other_companions = []
 	for comp in character.collected_companions:
-		if comp.get("name", "") != character.active_companion.get("name", ""):
+		if comp.get("id", "") != character.active_companion.get("id", ""):
 			other_companions.append(comp)
 	if not other_companions.is_empty():
 		var random_idx = randi() % other_companions.size()
@@ -12699,26 +12699,33 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 			else:
 				warnings.append("[color=#FF8800]Inventory full - item lost![/color]")
 
+	# Build set of companion IDs the player already owns (prevent duplicates)
+	var owned_companion_ids = {}
+	for comp in character.collected_companions:
+		owned_companion_ids[comp.get("id", "")] = true
+
 	# Transfer active companion
 	var active_companion = contents.get("active_companion")
 	# Support legacy format
 	if active_companion == null:
 		active_companion = contents.get("companion")
 	if active_companion != null and active_companion is Dictionary and not active_companion.is_empty():
-		character.collected_companions.append(active_companion)
-		var comp_name = active_companion.get("name", "Unknown")
-		var comp_variant = active_companion.get("variant", "")
-		var comp_level = active_companion.get("level", 1)
-		loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+		if not owned_companion_ids.has(active_companion.get("id", "")):
+			character.collected_companions.append(active_companion)
+			var comp_name = active_companion.get("name", "Unknown")
+			var comp_variant = active_companion.get("variant", "")
+			var comp_level = active_companion.get("level", 1)
+			loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
 
 	# Transfer other companion
 	var other_companion = contents.get("other_companion")
 	if other_companion != null and other_companion is Dictionary and not other_companion.is_empty():
-		character.collected_companions.append(other_companion)
-		var comp_name = other_companion.get("name", "Unknown")
-		var comp_variant = other_companion.get("variant", "")
-		var comp_level = other_companion.get("level", 1)
-		loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
+		if not owned_companion_ids.has(other_companion.get("id", "")):
+			character.collected_companions.append(other_companion)
+			var comp_name = other_companion.get("name", "Unknown")
+			var comp_variant = other_companion.get("variant", "")
+			var comp_level = other_companion.get("level", 1)
+			loot_summary.append("[color=#00FF00]%s %s (Lv.%d)[/color]" % [comp_variant, comp_name, comp_level])
 
 	# Transfer egg
 	var egg = contents.get("egg")

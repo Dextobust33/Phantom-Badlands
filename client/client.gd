@@ -14868,11 +14868,12 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.90 changes
-	display_game("[color=#00FF00]v0.9.90[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ COMPANION FIX[/color]")
-	display_game("  • Kennel companions now gain XP, track battles, and show abilities correctly")
-	display_game("  • Fix: Companions page no longer says 'No companions yet' for kennel companions")
+	# v0.9.91 changes
+	display_game("[color=#00FF00]v0.9.91[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ COMPANION FIXES[/color]")
+	display_game("  • Fix: Registered kennel companions no longer duplicate via corpse looting")
+	display_game("  • Fix: Corpse looting won't add companions you already own")
+	display_game("  • Kennel companions now gain XP, track battles, and show abilities")
 	display_game("")
 
 	# v0.9.89 changes
@@ -14909,14 +14910,6 @@ func display_changelog():
 	display_game("  • Combat item menu page navigation (Next Pg) now works")
 	display_game("  • Consumables no longer show level — tier only")
 	display_game("  • Many consumables no longer say 'Unknown effect' when inspected")
-	display_game("")
-
-	# v0.9.85 changes
-	display_game("[color=#00FFFF]v0.9.85[/color]")
-	display_game("  [color=#FFD700]★ COMPANION ABILITIES NOW WORK IN COMBAT[/color]")
-	display_game("  • All 53 companion types now use their unique abilities in combat!")
-	display_game("  [color=#FFD700]★ INVENTORY SORTING & EXPANDED HELP[/color]")
-	display_game("  • Equipment before consumables, full ability listings in Help page")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
