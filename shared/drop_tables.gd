@@ -1090,6 +1090,26 @@ func _scale_companion_ability(ability_template: Dictionary, companion_level: int
 		var base_pct = scaled.base_percent * variant_mult
 		scaled["percent"] = int(base_pct + (scaled.percent_scaling * companion_level * variant_mult))
 
+	# Scale custom-named secondary bases used in threshold effect2 entries
+	if scaled.has("attack_base") and scaled.has("attack_scaling"):
+		var base_val = scaled.attack_base * variant_mult
+		scaled["value2"] = int(base_val + (scaled.attack_scaling * companion_level * variant_mult))
+	if scaled.has("crit_base") and scaled.has("crit_scaling"):
+		var base_val = scaled.crit_base * variant_mult
+		scaled["value2"] = int(base_val + (scaled.crit_scaling * companion_level * variant_mult))
+	if scaled.has("buff_base") and scaled.has("buff_scaling"):
+		var base_val = scaled.buff_base * variant_mult
+		scaled["value2"] = int(base_val + (scaled.buff_scaling * companion_level * variant_mult))
+	if scaled.has("base_reduction") and scaled.has("reduction_scaling"):
+		var base_val = scaled.base_reduction * variant_mult
+		scaled["value"] = int(base_val + (scaled.reduction_scaling * companion_level * variant_mult))
+	if scaled.has("weakness_base"):
+		var base_val = scaled.weakness_base * variant_mult
+		if scaled.has("weakness_scaling"):
+			scaled["weakness_value"] = int(base_val + (scaled.weakness_scaling * companion_level * variant_mult))
+		else:
+			scaled["weakness_value"] = int(base_val)
+
 	return scaled
 
 func get_companion_passive_bonuses(monster_type: String, companion_level: int, variant_multiplier: float = 1.0) -> Dictionary:

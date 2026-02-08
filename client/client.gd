@@ -1744,7 +1744,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "lock_item"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -1760,8 +1760,13 @@ func _process(delta):
 						# Use item uses its own page for filtered list
 						selection_index = use_page * INVENTORY_PAGE_SIZE + i
 					else:
-						# Regular inventory uses inventory_page
-						selection_index = inventory_page * INVENTORY_PAGE_SIZE + i
+						# Regular inventory uses display_order mapping (equipment first, consumables last)
+						var inv_display_order = get_meta("inventory_display_order", [])
+						var display_idx = inventory_page * INVENTORY_PAGE_SIZE + i
+						if display_idx < inv_display_order.size():
+							selection_index = inv_display_order[display_idx].index
+						else:
+							selection_index = inventory_page * INVENTORY_PAGE_SIZE + i
 					select_inventory_item(selection_index)
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
@@ -9683,8 +9688,20 @@ func display_inventory():
 		display_game(bonus_text)
 
 	# Show inventory items with comparison hints (paginated)
+	# Partition items: equipment first, consumables last
 	display_game("")
-	var total_pages = max(1, int(ceil(float(inventory.size()) / INVENTORY_PAGE_SIZE)))
+	var equipment_items: Array = []
+	var consumable_items: Array = []
+	for idx in range(inventory.size()):
+		var itm = inventory[idx]
+		if itm.get("is_consumable", false):
+			consumable_items.append({"index": idx, "item": itm})
+		else:
+			equipment_items.append({"index": idx, "item": itm})
+	var display_order: Array = equipment_items + consumable_items
+	set_meta("inventory_display_order", display_order)
+
+	var total_pages = max(1, int(ceil(float(display_order.size()) / INVENTORY_PAGE_SIZE)))
 	# Clamp page to valid range
 	inventory_page = clamp(inventory_page, 0, total_pages - 1)
 
@@ -9693,10 +9710,24 @@ func display_inventory():
 		display_game("  [color=#555555](empty)[/color]")
 	else:
 		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, display_order.size())
+		var showed_separator = false
 
-		for i in range(start_idx, end_idx):
-			var item = inventory[i]
+		for di in range(start_idx, end_idx):
+			var entry = display_order[di]
+			var abs_idx = entry.index
+			var item = entry.item
+
+			# Show separator when transitioning from equipment to consumables on this page
+			if not showed_separator and item.get("is_consumable", false):
+				# Only show separator if there were equipment items before this point
+				if equipment_items.size() > 0 and di > 0 and not display_order[di - 1].item.get("is_consumable", false):
+					display_game("  [color=#808080]--- Consumables ---[/color]")
+				elif di == start_idx and equipment_items.size() > 0:
+					# First item on page is consumable but equipment exists on prior pages
+					display_game("  [color=#808080]--- Consumables ---[/color]")
+				showed_separator = true
+
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var item_level = item.get("level", 1)
 			var item_type = item.get("type", "")
@@ -9713,7 +9744,7 @@ func display_inventory():
 					compare_text = " [%s]" % ", ".join(diff_parts)
 
 			# Display number is 1-9 for current page
-			var display_num = (i - start_idx) + 1
+			var display_num = (di - start_idx) + 1
 
 			# Lock indicator
 			var lock_text = "[color=#FF4444][L][/color] " if item.get("locked", false) else ""
@@ -10503,9 +10534,11 @@ func select_inventory_item(index: int):
 			# Stay in inspect mode for inspecting more items
 			pending_inventory_action = "inspect_item"
 			display_game("")
-			# Show page-relative item count
+			# Show page-relative item count (using display_order for correct page size)
+			var inv_display_order = get_meta("inventory_display_order", [])
+			var display_total = inv_display_order.size() if inv_display_order.size() > 0 else inventory.size()
 			var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-			var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inventory.size())
+			var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, display_total)
 			var items_on_page = end_idx - start_idx
 			display_game("[color=#FFD700]%s to inspect another item, or [%s] to go back:[/color]" % [get_selection_keys_text(max(1, items_on_page)), get_action_key_name(0)])
 			update_action_bar()
@@ -10650,9 +10683,10 @@ func cancel_equip_confirmation():
 
 func _reprompt_inventory_action():
 	"""Re-display the prompt for current pending inventory action after page change"""
-	var inv = character_data.get("inventory", [])
+	var inv_display_order = get_meta("inventory_display_order", [])
+	var display_total = inv_display_order.size() if inv_display_order.size() > 0 else character_data.get("inventory", []).size()
 	var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, inv.size())
+	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, display_total)
 	var items_on_page = end_idx - start_idx
 
 	match pending_inventory_action:
@@ -12241,11 +12275,11 @@ func handle_server_message(message: Dictionary):
 					if total_gems > 0:
 						play_gem_gain_sound()
 
-					# Require continue press before showing dungeon floor (so player can read loot)
+					# Require continue press so player can read loot before display refreshes
+					display_game("")
+					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+					pending_continue = true
 					if dungeon_mode:
-						display_game("")
-						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-						pending_continue = true
 						pending_dungeon_continue = true
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -14612,61 +14646,49 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.85 changes
+	display_game("[color=#00FF00]v0.9.85[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ COMPANION ABILITIES NOW WORK IN COMBAT[/color]")
+	display_game("  • All 53 companion types now use their unique abilities in combat!")
+	display_game("  • What you see in Inspect is now what actually happens in fights")
+	display_game("  • Abilities scale with companion level — higher level = stronger effects")
+	display_game("  • Active abilities unlock at companion level 5, threshold at level 15")
+	display_game("  [color=#FFD700]★ INVENTORY SORTING[/color]")
+	display_game("  • Equipment now always displays before consumables in inventory")
+	display_game("  • Clear separator line between equipment and consumables")
+	display_game("  [color=#FFD700]★ EXPANDED HELP PAGE[/color]")
+	display_game("  • Full ability listings for all 3 class archetypes with costs and effects")
+	display_game("  • Detailed monster ability reference (offense, debuffs, defense, loot)")
+	display_game("")
+
+	# v0.9.84 changes
+	display_game("[color=#00FFFF]v0.9.84[/color]")
+	display_game("  [color=#FFD700]★ FIXES[/color]")
+	display_game("  • Fixed mojibake characters in some text displays")
+	display_game("  • Lock menu now auto-selects correctly")
+	display_game("")
+
 	# v0.9.83 changes
-	display_game("[color=#00FF00]v0.9.83[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.83[/color]")
 	display_game("  [color=#FFD700]★ ITEM LOCKING[/color]")
 	display_game("  • Lock valuable items to prevent accidental sell, salvage, or discard")
-	display_game("  • Inventory → Lock (key 3) to toggle lock on items")
 	display_game("  • Locked items show [color=#FF4444][L][/color] indicator and are protected from Sell All / Salvage All")
 	display_game("  [color=#FFD700]★ 53 DUNGEONS — EVERY MONSTER TYPE[/color]")
 	display_game("  • Every monster in the game now has its own dungeon (35 new dungeons added!)")
-	display_game("  • New dungeons include: Mimic Treasury, Succubus Parlor, Titan's Colosseum,")
-	display_game("    Jabberwock's Thicket, Golem Foundry, God Slayer's Arena, Entropy's End, and more")
-	display_game("  [color=#FFD700]★ BLACKSMITH BUFF[/color]")
-	display_game("  • Blacksmith affix upgrade amounts increased 5× (e.g., +1 STR → +5 STR per upgrade)")
-	display_game("  [color=#FFD700]★ QUEST IMPROVEMENTS[/color]")
-	display_game("  • Quests at trading posts now scale harder with better rewards as you progress")
-	display_game("  • Each character gets different randomized quests at the same post")
-	display_game("  • Dynamic quests unlock earlier (after completing half the static quests)")
-	display_game("  [color=#FFD700]★ BUG FIXES[/color]")
-	display_game("  • Pickpocketing now limited to 1-3 times per enemy (no more infinite gold)")
-	display_game("  • Map now updates when fleeing combat")
-	display_game("  • Death curse now triggers when killing enemies with Outsmart")
-	display_game("  • Ability loadout screen properly refreshes after changes")
+	display_game("  [color=#FFD700]★ BLACKSMITH BUFF & QUESTS[/color]")
+	display_game("  • Blacksmith affix upgrades 5× stronger, quests scale harder with better rewards")
 	display_game("")
 
 	# v0.9.82 changes
 	display_game("[color=#00FFFF]v0.9.82[/color]")
 	display_game("  [color=#FFD700]★ MONSTER INTELLIGENCE REWORK[/color]")
-	display_game("  • Monsters now have individual intelligence based on their nature")
-	display_game("  • Brutes & beasts (Ogre, Zombie, Giant, Iron Golem) are much easier to Outsmart")
-	display_game("  • Cunning & magical foes (Lich, Sphinx, Siren, Vampire) are harder to Outsmart")
-	display_game("  [color=#FFD700]★ NAZGUL BUFF[/color]")
-	display_game("  • Nazgul is now a more fearsome Tier 6 threat: higher HP, STR, DEF")
-	display_game("  • New abilities: Life Steal (soul drain) and Disarm (fear)")
+	display_game("  • Monsters now have individual intelligence — brutes easier, mages harder to Outsmart")
 	display_game("")
 
 	# v0.9.81 changes
 	display_game("[color=#00FFFF]v0.9.81[/color]")
 	display_game("  [color=#FFD700]★ FIXES & BALANCE[/color]")
-	display_game("  • Paladin Divine Favor no longer triggers healing sound every round")
-	display_game("  • Quest dungeons are now personal — other players cannot enter yours")
-	display_game("  • Wandering Healer: 3× more common, now only appears when you have a debuff")
-	display_game("  • Settings now accessible from Sanctuary screen")
-	display_game("  • Corpses no longer spawn on trading post tiles")
-	display_game("")
-
-	# v0.9.78 changes
-	display_game("[color=#00FFFF]v0.9.78[/color]")
-	display_game("  [color=#FFD700]★ SOUND EFFECTS[/color]")
-	display_game("  • Real 8-bit WAV sound effects replace all procedural sounds")
-	display_game("  • New sounds: Death, Egg Found, Meteor (Fire), Blast, Gem Gain, Loot Vanish, Buff, Heal")
-	display_game("  • Combat hit, level up, quest complete, victory, and more all upgraded")
-	display_game("  • Background music replaced with 8-bit NES track")
-	display_game("  [color=#FFD700]★ VOLUME CONTROLS[/color]")
-	display_game("  • Settings → Sound Settings: adjust SFX and Music volume independently")
-	display_game("  • Mute All SFX toggle available")
-	display_game("  • Volume preferences saved between sessions")
+	display_game("  • Paladin sound fix, personal quest dungeons, healer rebalance")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16147,28 +16169,74 @@ func show_help():
 [color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
-[color=#FF6666]WARRIOR (Stam=STR+CON)[/color]                              [color=#66FFFF]MAGE (Mana=INT×3+WIS×1.5)[/color]
-  L1 Power Strike(10) 2x | L10 War Cry(15) +35%%        L1 Bolt(var) mana×(1+√INT/5) | L10 Field(20) absorb
-  L25 Shield Bash(20) 1.5x+stun | L40 Cleave(30) 2.5x   L25 Cloak(30) | L40 Blast(50) 2x | L60 Teleport(1000)
-  L60 Berserk(40) +75-200%%/-40%% | L80 Iron(35) 60%%     [color=#66FFFF]Meditate[/color] - Restore HP + 4%% mana (8%% if full)
-  L100 Devastate(50) 5x
-[color=#FFA500]TRICKSTER (Energy=(WIT+DEX)×0.75)[/color]
-  L1 Analyze(5) stats | L10 Distract(15) -50%%acc | L25 Pickpocket(20) WIT×10g | L40 Ambush(30) 3x+crit
-  L60 Vanish(40) invis+crit | L80 Exploit(35) 10%%HP | L100 Perfect Heist(50) win+2x
-
-[color=#AAAAAA]Outsmart:[/color] 5%%+15×log₂(WIT/10). INT-based cap. Easy vs brutes/beasts, hard vs mages/ancients. Fail=free enemy attack.
+[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75%% dodge[/color] on enemy turn!
 [color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
 [color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 25%%)
-[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Shield,Haste,War Cry,etc) = 75%% dodge enemy turn!
 
-[b][color=#FFD700]══ MONSTERS ══[/color][/b]
+[color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
+  [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
+  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +35%% damage buff for 4 rounds
+  [color=#FFFFFF]L25 Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
+  [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30%% defense + √STR×3 for 5 rounds
+  [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20%% STR/rnd, 4 rounds)
+  [color=#FFFFFF]L40 Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
+  [color=#FFFFFF]L60 Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200%% damage (more when hurt), -40%% defense, 4 rounds
+  [color=#FFFFFF]L80 Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60%% for 4 rounds
+  [color=#FFFFFF]L100 Devastate[/color]   [color=#808080](50 stam)[/color] - 5× attack damage, scales with √STR
+
+[color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%%/round, Sage 3%%)[/color]
+  [color=#FFFFFF]L1  Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
+  [color=#FFFFFF]L10 Forcefield[/color]   [color=#808080](20+2%%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
+  [color=#FFFFFF]L25 Cloak[/color]        [color=#808080](30+3%%)[/color]  - 50%% enemy miss chance for 1 attack
+  [color=#FFFFFF]L40 Blast[/color]        [color=#808080](50+5%%)[/color]  - 2× INT-scaled damage + burn (20%% INT/rnd for 3 rounds)
+  [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
+  [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%%)[/color]  - 50%%+INT/2 chance (max 85%%) to stun 1-2 turns
+  [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
+  [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
+  [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4%% mana (8%% if already full HP)
+
+[color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
+  [color=#FFFFFF]L1  Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10%% damage bonus for this fight
+  [color=#FFFFFF]L10 Distract[/color]     [color=#808080](15 en)[/color]  - -50%% enemy accuracy for 1 attack
+  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal gold (50+lvl×2)×(1+WIT×5%%). 1-3 attempts per fight
+  [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%%+WIT/3 (stacks, max 50%%)
+  [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50%% crit chance, scales with √WIT
+  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%%+WIT/4 chance (max 80%%): 4× damage + bonus gold/gems. Fail = 15%% self-damage
+  [color=#FFFFFF]L60 Vanish[/color]       [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next attack auto-crits at 1.5×
+  [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35%% of monster's max HP as damage (scales with WIT)
+  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%%+WIT/2 chance: instant win + 25%% bonus gold. Fail = 20%% self-damage
+  [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
+
+[b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
-[color=#FF4444]Offense:[/color] Multi-Strike(2-3x) | Berserker(+dmg hurt) | Enrage(+10%%/rnd,max 10) | Life Steal | Glass Cannon(3x,½HP)
-[color=#808080]Debuffs:[/color] Curse(-def) | Disarm(-atk) | Bleed(stacks×3,DoT) | Slow(-flee) | Drain(mana/stam/energy)
-  [color=#FF00FF]Poison[/color]=50 rounds, persists outside combat | [color=#808080]Blind[/color]=15rnd,-30%%hit | [color=#FFA500]Weakness[/color]=20rnd,-25%%atk
-[color=#6666FF]Defense:[/color] Armored(+50%%def) | Ethereal(50%%dodge) | Regen | Reflect(25%%) | Thorns
-[color=#FFD700]Special:[/color] Death Curse | Summoner | Corrosive/Sunder(gear dmg)
-[color=#00FF00]Rewards:[/color] Wish Granter(10%%) | Weapon/Shield Master(35%%) | Arcane/Cunning(35%%) | Gem Bearer | Gold×3
+[color=#FF4444]Offense:[/color]
+  [color=#FFFFFF]Multi-Strike[/color] - Hits 2-3 times per turn (each hit reduced damage)
+  [color=#FFFFFF]Enrage[/color] - +10%% damage per round, stacks up to 10 (max +100%%)
+  [color=#FFFFFF]Berserker[/color] - +3%% damage per 10%% HP lost. Deadlier when wounded!
+  [color=#FFFFFF]Life Steal[/color] - Heals for portion of damage dealt
+  [color=#FFFFFF]Glass Cannon[/color] - 3× damage but only 50%% HP. Kill fast!
+  [color=#FFFFFF]Ambusher[/color] - First hit auto-crits, +15%% initiative
+  [color=#FF00FF]Poison[/color] - 30%% STR damage/round for 35 rounds. [color=#FF4444]PERSISTS outside combat![/color]
+[color=#808080]Debuffs:[/color]
+  [color=#FFFFFF]Curse[/color] - -25%% attack for 20 rounds | [color=#FFFFFF]Weakness[/color] - -25%% attack for 20 rounds
+  [color=#FFFFFF]Disarm[/color] - Removes weapon damage bonus | [color=#FFFFFF]Blind[/color] - -30%% hit chance, hides HP bar, 15 rounds
+  [color=#FFFFFF]Bleed[/color] - Stacking DoT (stack×3 damage/round) | [color=#FFFFFF]Slow[/color] - Reduces flee chance
+  [color=#FFFFFF]Charm[/color] - Forces you to hit yourself | [color=#FFFFFF]Drain[/color] - Steals mana/stamina/energy
+  [color=#FFFFFF]Buff Destroy[/color] - Removes one active buff | [color=#FFFFFF]Shield Shatter[/color] - Destroys forcefield
+[color=#6666FF]Defense:[/color]
+  [color=#FFFFFF]Armored[/color] - +50%% defense | [color=#FFFFFF]Ethereal[/color] - 50%% chance to dodge attacks
+  [color=#FFFFFF]Regen[/color] - Heals 10%% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25%% of damage dealt
+  [color=#FFFFFF]Thorns[/color] - Melee attacks hurt you back | [color=#FFFFFF]Disguise[/color] - Hidden stats for first 2 rounds
+[color=#FFD700]Special:[/color]
+  [color=#FFFFFF]Death Curse[/color] - Deals 10%% max HP damage when killed (can't kill you)
+  [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
+  [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at wandering blacksmiths!)
+  [color=#FFFFFF]XP Steal[/color] - Steals 1-3%% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5%% chance to steal equipped item
+[color=#00FF00]Loot Abilities:[/color]
+  [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× gold | [color=#FFFFFF]Gem Bearer[/color] - Always drops gems
+  [color=#FFFFFF]Weapon/Shield Master[/color] - 35%% guaranteed equipment drop
+  [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35%% class-specific gear drop
+  [color=#FFFFFF]Wish Granter[/color] - 10%% chance for a wish (gems, gear, buff, stats, or equip upgrade!)
 [color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
 [color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
 
@@ -16229,7 +16297,7 @@ func show_help():
 [color=#00FFFF]Companions:[/color] Companion eggs drop from [color=#9932CC]dungeons only[/color] - bosses guarantee their egg, treasure may have extras!
   Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) | Frost(+10%%def) | Storm(+5%%crit) + more
   [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color]: View/activate companions, [color=#00FF00]Inspect[/color] for stats & abilities. [color=#FFAA00]Eggs[/color]: View incubating eggs with art!
-  Each monster type has unique abilities (Wolf=Ambush, Spider=Poison, etc). Hatch eggs by walking!
+  Each monster type has unique abilities in combat! Lv5=active, Lv15=threshold. Scales with level. Hatch eggs by walking!
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
 [color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
