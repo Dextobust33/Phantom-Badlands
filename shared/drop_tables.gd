@@ -1235,6 +1235,36 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"variant_rarity": variant_rarity
 	}
 
+func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_variant: Dictionary = {}) -> Dictionary:
+	"""Create a companion directly from fusion (not an egg).
+	Uses the egg variant system for proper variant rolling.
+	inherited_variant: If all inputs share a variant, pass it to inherit."""
+	var companion_data = COMPANION_DATA.get(monster_name, {})
+	if companion_data.is_empty():
+		return {}
+
+	# Roll or inherit variant
+	var variant = inherited_variant
+	if variant.is_empty():
+		variant = _roll_egg_variant()
+
+	return {
+		"id": "fused_" + monster_name.to_lower().replace(" ", "_") + "_" + str(randi()) + "_" + str(int(Time.get_unix_time_from_system())),
+		"monster_type": monster_name,
+		"name": companion_data.get("companion_name", monster_name + " Companion"),
+		"tier": companion_data.get("tier", 1),
+		"sub_tier": new_sub_tier,
+		"bonuses": companion_data.get("bonuses", {}).duplicate(),
+		"level": 1,
+		"xp": 0,
+		"battles_fought": 0,
+		"variant": variant.get("name", "MISSING_VARIANT"),
+		"variant_color": variant.get("color", "#FF00FF"),
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"obtained_at": int(Time.get_unix_time_from_system()),
+	}
+
 # Egg variant rolling - this is the SINGLE SOURCE OF TRUTH for all companion variants
 # Special variants give stat bonuses: Shiny/Radiant/etc +10%, Spectral/etc +25%, Prismatic/etc +50%
 const EGG_VARIANTS = [

@@ -24,6 +24,7 @@ const HOUSE_UPGRADES = {
 	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
 	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
+	"kennel_capacity": {"effect": 0, "max": 6, "costs": [1000, 2500, 5000, 10000, 20000, 40000]},
 	# Combat bonuses (percentages)
 	"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max HP per level
 	"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max resource per level
@@ -36,6 +37,9 @@ const HOUSE_UPGRADES = {
 	"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
 }
+
+# Kennel capacity by upgrade level: 0=2, 1=4, 2=6, 3=8, 4=11, 5=15, 6=20
+const KENNEL_CAPACITY_TABLE = [2, 4, 6, 8, 11, 15, 20]
 
 # Cached data
 var accounts_data: Dictionary = {}
@@ -910,7 +914,34 @@ func get_house(account_id: String) -> Dictionary:
 		# Auto-create house for account
 		return create_house(account_id)
 
-	return houses_data.houses[account_id]
+	var house = houses_data.houses[account_id]
+
+	# Migration: add companion_kennel if missing
+	if not house.has("companion_kennel"):
+		house["companion_kennel"] = {"slots": 2, "companions": []}
+		# Migrate stored_companions from storage to kennel
+		var storage_items = house.get("storage", {}).get("items", [])
+		var to_remove = []
+		for i in range(storage_items.size()):
+			if storage_items[i] is Dictionary and storage_items[i].get("type") == "stored_companion":
+				var comp = storage_items[i].duplicate()
+				comp.erase("type")
+				house.companion_kennel.companions.append(comp)
+				to_remove.append(i)
+		if to_remove.size() > 0:
+			to_remove.reverse()
+			for idx in to_remove:
+				storage_items.remove_at(idx)
+		save_house(account_id, house)
+
+	# Migration: add kennel_capacity upgrade if missing
+	if not house.get("upgrades", {}).has("kennel_capacity"):
+		if not house.has("upgrades"):
+			house["upgrades"] = {}
+		house.upgrades["kennel_capacity"] = 0
+		save_house(account_id, house)
+
+	return house
 
 func create_house(account_id: String) -> Dictionary:
 	"""Create a new house for an account"""
@@ -937,6 +968,11 @@ func create_house(account_id: String) -> Dictionary:
 			"companions": []
 		},
 
+		"companion_kennel": {
+			"slots": 2,
+			"companions": []
+		},
+
 		"baddie_points": 0,
 		"total_baddie_points_earned": 0,
 
@@ -948,6 +984,7 @@ func create_house(account_id: String) -> Dictionary:
 			"starting_gold": 0,
 			"xp_bonus": 0,
 			"gathering_bonus": 0,
+			"kennel_capacity": 0,
 			"hp_bonus": 0,
 			"resource_max": 0,
 			"resource_regen": 0,
@@ -1091,6 +1128,51 @@ func unregister_companion_from_house(account_id: String, slot: int) -> Dictionar
 	save_house(account_id, house)
 	return companion
 
+func get_kennel_capacity(account_id: String) -> int:
+	"""Get total kennel slots for a house based on upgrade level."""
+	var house = get_house(account_id)
+	var level = house.get("upgrades", {}).get("kennel_capacity", 0)
+	return KENNEL_CAPACITY_TABLE[clampi(level, 0, KENNEL_CAPACITY_TABLE.size() - 1)]
+
+func add_companion_to_kennel(account_id: String, companion: Dictionary) -> int:
+	"""Add companion to kennel. Returns index or -1 if full."""
+	var house = get_house(account_id)
+	var capacity = get_kennel_capacity(account_id)
+	if house.companion_kennel.companions.size() >= capacity:
+		return -1
+	companion["stored_at"] = int(Time.get_unix_time_from_system())
+	house.companion_kennel.companions.append(companion)
+	save_house(account_id, house)
+	return house.companion_kennel.companions.size() - 1
+
+func remove_companion_from_kennel(account_id: String, index: int) -> Dictionary:
+	"""Remove companion from kennel. Returns companion or empty dict."""
+	var house = get_house(account_id)
+	if index < 0 or index >= house.companion_kennel.companions.size():
+		return {}
+	var companion = house.companion_kennel.companions[index]
+	house.companion_kennel.companions.remove_at(index)
+	save_house(account_id, house)
+	return companion
+
+func fuse_companions(account_id: String, indices: Array, output_companion: Dictionary) -> bool:
+	"""Remove companions at indices from kennel and add output_companion."""
+	var house = get_house(account_id)
+	var kennel = house.companion_kennel.companions
+	for idx in indices:
+		if idx < 0 or idx >= kennel.size():
+			return false
+	# Remove in reverse order to preserve indices
+	var sorted_indices = indices.duplicate()
+	sorted_indices.sort()
+	sorted_indices.reverse()
+	for idx in sorted_indices:
+		kennel.remove_at(idx)
+	output_companion["stored_at"] = int(Time.get_unix_time_from_system())
+	kennel.append(output_companion)
+	save_house(account_id, house)
+	return true
+
 func add_baddie_points(account_id: String, points: int):
 	"""Add baddie points to a house"""
 	var house = get_house(account_id)
@@ -1128,6 +1210,12 @@ func purchase_house_upgrade(account_id: String, upgrade_id: String) -> Dictionar
 	# Purchase successful
 	house["baddie_points"] = house.get("baddie_points", 0) - cost
 	house.upgrades[upgrade_id] = current_level + 1
+
+	# Special handling: update kennel capacity
+	if upgrade_id == "kennel_capacity":
+		var new_level = current_level + 1
+		house.companion_kennel.slots = KENNEL_CAPACITY_TABLE[clampi(new_level, 0, KENNEL_CAPACITY_TABLE.size() - 1)]
+
 	save_house(account_id, house)
 
 	return {"success": true, "message": "Upgrade purchased! %s is now level %d." % [upgrade_id, current_level + 1]}

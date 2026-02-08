@@ -96,6 +96,9 @@ var quest_mgr: Node
 var trading_post_db: Node
 var balance_config: Dictionary = {}
 
+# Pending home stone companion choice (peer_id -> item data for returning on cancel)
+var pending_home_stone_companion: Dictionary = {}  # peer_id -> {"item_type": str, "item_name": str}
+
 # Auto-save timer
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
 var auto_save_timer = 0.0
@@ -867,6 +870,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_house_unregister_companion(peer_id, message)
 		"house_register_from_storage":
 			handle_house_register_companion_from_storage(peer_id, message)
+		"home_stone_companion_response":
+			handle_home_stone_companion_response(peer_id, message)
+		"house_kennel_release":
+			handle_house_kennel_release(peer_id, message)
+		"house_kennel_register":
+			handle_house_kennel_register(peer_id, message)
+		"house_fusion":
+			handle_house_fusion(peer_id, message)
 		"request_character_list":
 			handle_list_characters(peer_id)
 		_:
@@ -1838,6 +1849,24 @@ func handle_hunt(peer_id: int):
 			})
 			send_character_update(peer_id)
 
+	# Tick blind on hunt
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind",
+				"message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left,
+				"turns_remaining": turns_left
+			})
+		else:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind_cured",
+				"message": "[color=#00FF00]Your vision clears![/color]"
+			})
+
 	# Tick active buffs on hunt (for any non-combat buffs)
 	if not character.active_buffs.is_empty():
 		var expired = character.tick_buffs()
@@ -1973,6 +2002,44 @@ func handle_rest(peer_id: int):
 		"character": character.to_dict()
 	})
 
+	# Tick poison on rest
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg != 0:
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = ""
+			if poison_dmg < 0:
+				var heal_amount2 = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount2)
+				poison_msg = "[color=#708090]Your undead form absorbs the poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount2
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "poison", "message": poison_msg, "damage": poison_dmg, "turns_remaining": turns_left})
+
+	# Tick blind on rest
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind", "message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left, "turns_remaining": turns_left})
+		else:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind_cured", "message": "[color=#00FF00]Your vision clears![/color]"})
+
+	# Tick active buffs on rest
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "buff_expired", "message": "[color=#808080]%s buff has worn off.[/color]" % buff.type})
+
+	# Re-send character update after ticking effects
+	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
+
 	# Chance to be ambushed while resting (15%)
 	var ambush_roll = randi() % 100
 	if ambush_roll < 15:
@@ -2061,6 +2128,44 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		"type": "character_update",
 		"character": character.to_dict()
 	})
+
+	# Tick poison on meditate
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg != 0:
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = ""
+			if poison_dmg < 0:
+				var heal_amount2 = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount2)
+				poison_msg = "[color=#708090]Your undead form absorbs the poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount2
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "poison", "message": poison_msg, "damage": poison_dmg, "turns_remaining": turns_left})
+
+	# Tick blind on meditate
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind", "message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left, "turns_remaining": turns_left})
+		else:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind_cured", "message": "[color=#00FF00]Your vision clears![/color]"})
+
+	# Tick active buffs on meditate
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "buff_expired", "message": "[color=#808080]%s buff has worn off.[/color]" % buff.type})
+
+	# Re-send character update after ticking effects
+	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
 	# Chance to be ambushed while meditating (15%)
 	var ambush_roll = randi() % 100
@@ -2207,7 +2312,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"monster_level": monster_level,
 					"flock_count": flock_counts[peer_id],  # For visual variety
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
-					"is_boss_fight": result.get("is_boss_fight", false)
+					"is_boss_fight": result.get("is_boss_fight", false),
+					"dungeon_monster_id": result.get("dungeon_monster_id", -1)
 				}
 
 				send_to_peer(peer_id, {
@@ -2261,7 +2367,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id),
 					"flock_count": flock_counts[peer_id],  # For visual variety
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
-					"is_boss_fight": result.get("is_boss_fight", false)
+					"is_boss_fight": result.get("is_boss_fight", false),
+					"dungeon_monster_id": result.get("dungeon_monster_id", -1)
 				}
 
 				send_to_peer(peer_id, {
@@ -4978,7 +5085,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				_process_home_stone_equipment(peer_id, character, equipped_items[0].slot, item_name)
 
 			"companion":
-				# Register active companion to house (survives death)
+				# Send choice to player: Register or Store in Kennel
 				if character.active_companion == null:
 					send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
 					return
@@ -4990,21 +5097,19 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
 					return
 				var companion_capacity = persistence.get_house_companion_capacity(account_id)
-				if house.registered_companions.companions.size() >= companion_capacity:
-					send_to_peer(peer_id, {"type": "error", "message": "House companion kennel is full! Upgrade to register more."})
+				var kennel_capacity = persistence.get_kennel_capacity(account_id)
+				var can_register = house.registered_companions.companions.size() < companion_capacity
+				var can_kennel = house.companion_kennel.companions.size() < kennel_capacity
+				if not can_register and not can_kennel:
+					send_to_peer(peer_id, {"type": "error", "message": "Both registered slots and kennel are full! Upgrade for more space."})
 					return
-				# Register the companion
-				var companion = character.active_companion.duplicate(true)
-				var slot = persistence.register_companion_to_house(account_id, companion, character.name)
-				if slot == -1:
-					send_to_peer(peer_id, {"type": "error", "message": "Failed to register companion!"})
-					return
-				# Update character to track this is a registered companion
-				character.using_registered_companion = true
-				character.registered_companion_slot = slot
+				# Store pending state (item already consumed at this point)
+				pending_home_stone_companion[peer_id] = {"item_type": item_type, "item_name": item_name, "item_tier": item_tier}
 				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]The %s glows and forms a bond between your %s and your house![/color]\n[color=#00FF00]%s is now registered and will return home if you fall![/color]" % [item_name, companion.get("name", "companion"), companion.get("name", "Companion")]
+					"type": "home_stone_companion_choice",
+					"companion_name": character.active_companion.get("name", "Companion"),
+					"can_register": can_register,
+					"can_kennel": can_kennel,
 				})
 
 	# Update character data
@@ -6950,7 +7055,7 @@ func handle_house_discard_item(peer_id: int, message: Dictionary):
 	})
 
 func handle_house_unregister_companion(peer_id: int, message: Dictionary):
-	"""Handle unregistering a companion from the kennel (move to storage)"""
+	"""Handle unregistering a companion (move to kennel instead of storage)"""
 	if not peers.has(peer_id) or not peers[peer_id].authenticated:
 		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
 		return
@@ -6974,27 +7079,31 @@ func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Cannot unregister - companion is currently checked out by %s!" % companion.checked_out_by})
 		return
 
-	# Check if storage has room
-	var storage_capacity = persistence.get_house_storage_capacity(account_id)
-	if house.storage.items.size() >= storage_capacity:
-		send_to_peer(peer_id, {"type": "error", "message": "House storage is full! Cannot move companion to storage."})
+	# Check if kennel has room
+	var kennel_capacity = persistence.get_kennel_capacity(account_id)
+	if house.companion_kennel.companions.size() >= kennel_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "Kennel is full! Upgrade for more space."})
 		return
 
 	var companion_name = companion.get("name", "Unknown")
 
-	# Remove from kennel
+	# Remove from registered companions
 	var unregistered = persistence.unregister_companion_from_house(account_id, companion_slot)
-	if unregistered == null:
+	if unregistered.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to unregister companion."})
 		return
 
-	# Add to storage as stored_companion
-	unregistered["type"] = "stored_companion"
-	persistence.add_item_to_house_storage(account_id, unregistered)
+	# Clean up registration metadata before adding to kennel
+	unregistered.erase("registered_at")
+	unregistered.erase("checked_out_by")
+	unregistered.erase("checkout_time")
+
+	# Add to kennel
+	persistence.add_companion_to_kennel(account_id, unregistered)
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FFA500]%s has been unregistered and moved to your Sanctuary storage.[/color]" % companion_name
+		"message": "[color=#FF8800]%s unregistered and moved to kennel.[/color]" % companion_name
 	})
 
 	# Send updated house data
@@ -7064,6 +7173,215 @@ func handle_house_register_companion_from_storage(peer_id: int, message: Diction
 		"house": updated_house,
 		"upgrade_costs": persistence.HOUSE_UPGRADES
 	})
+
+func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
+	"""Handle player's choice for Home Stone (Companion) - Register or Kennel"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.active_companion.is_empty():
+		return
+	var choice = message.get("choice", "")
+	var account_id = peers[peer_id].account_id
+	var companion = character.active_companion.duplicate(true)
+
+	if choice == "register":
+		var house = persistence.get_house(account_id)
+		var companion_capacity = persistence.get_house_companion_capacity(account_id)
+		if house.registered_companions.companions.size() >= companion_capacity:
+			send_to_peer(peer_id, {"type": "error", "message": "Registered companion slots full!"})
+			return
+		var slot = persistence.register_companion_to_house(account_id, companion, character.name)
+		if slot == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "Failed to register companion!"})
+			return
+		character.using_registered_companion = true
+		character.registered_companion_slot = slot
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FF00]%s registered to your Sanctuary! Returns home if you fall.[/color]" % companion.get("name", "Companion")
+		})
+	elif choice == "kennel":
+		var result = persistence.add_companion_to_kennel(account_id, companion)
+		if result == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "Kennel is full! Upgrade for more slots."})
+			return
+		character.dismiss_companion()
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#A335EE]%s stored in kennel for fusion![/color]" % companion.get("name", "Companion")
+		})
+	else:
+		# Cancel — return the Home Stone to inventory
+		if pending_home_stone_companion.has(peer_id):
+			var pending = pending_home_stone_companion[peer_id]
+			var restored_item = {
+				"id": randi(),
+				"type": pending.get("item_type", "home_stone_companion"),
+				"name": pending.get("item_name", "Home Stone (Companion)"),
+				"is_consumable": true,
+				"quantity": 1,
+				"tier": int(pending.get("item_tier", 0)),
+				"rarity": "common",
+				"level": 1,
+				"value": 0,
+				"affixes": {}
+			}
+			character.add_item(restored_item)
+		pending_home_stone_companion.erase(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Cancelled.[/color]"})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	pending_home_stone_companion.erase(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_house_kennel_release(peer_id: int, message: Dictionary):
+	"""Release a companion from the kennel (permanently removes it)"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id = peers[peer_id].account_id
+	var index = int(message.get("index", -1))
+	var companion = persistence.remove_companion_from_kennel(account_id, index)
+	if companion.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid kennel index!"})
+		return
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF8800]Released %s from kennel.[/color]" % companion.get("name", "companion")
+	})
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func handle_house_kennel_register(peer_id: int, message: Dictionary):
+	"""Move a companion from kennel to registered_companions"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id = peers[peer_id].account_id
+	var index = int(message.get("index", -1))
+	var house = persistence.get_house(account_id)
+	var kennel = house.companion_kennel.companions
+	if index < 0 or index >= kennel.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid kennel index!"})
+		return
+	var capacity = persistence.get_house_companion_capacity(account_id)
+	if house.registered_companions.companions.size() >= capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "Registered companion slots full!"})
+		return
+	var companion = persistence.remove_companion_from_kennel(account_id, index)
+	if companion.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Failed to remove from kennel."})
+		return
+	persistence.register_companion_to_house(account_id, companion, null)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00]%s registered! Will survive death.[/color]" % companion.get("name", "companion")
+	})
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+
+func handle_house_fusion(peer_id: int, message: Dictionary):
+	"""Handle companion fusion request"""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id = peers[peer_id].account_id
+	var fusion_type = message.get("fusion_type", "same")
+	var indices = message.get("indices", [])
+	var house = persistence.get_house(account_id)
+	var kennel = house.companion_kennel.companions
+
+	# Validate all indices
+	for idx in indices:
+		if int(idx) < 0 or int(idx) >= kennel.size():
+			send_to_peer(peer_id, {"type": "error", "message": "Invalid companion selection!"})
+			return
+
+	if fusion_type == "same":
+		if indices.size() != 3:
+			send_to_peer(peer_id, {"type": "error", "message": "Same-type fusion requires exactly 3 companions!"})
+			return
+		var first = kennel[int(indices[0])]
+		for idx in indices:
+			var comp = kennel[int(idx)]
+			if comp.get("monster_type") != first.get("monster_type") or int(comp.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and sub-tier!"})
+				return
+		var current_sub_tier = int(first.get("sub_tier", 1))
+		var new_sub_tier = mini(current_sub_tier + 1, 9)
+		var inherited = _check_variant_inheritance(kennel, indices)
+		var output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited)
+		if output.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed — unknown monster type!"})
+			return
+		var int_indices = []
+		for idx in indices:
+			int_indices.append(int(idx))
+		if persistence.fuse_companions(account_id, int_indices, output):
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]Fusion complete! Created %s (T%d-%d)![/color]" % [output.name, output.tier, new_sub_tier]
+			})
+			var updated_house = persistence.get_house(account_id)
+			send_to_peer(peer_id, {
+				"type": "house_update",
+				"house": updated_house,
+				"upgrade_costs": persistence.HOUSE_UPGRADES
+			})
+
+	elif fusion_type == "mixed":
+		if indices.size() != 8:
+			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
+			return
+		for idx in indices:
+			if int(kennel[int(idx)].get("sub_tier", 1)) != 8:
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be sub-tier 8!"})
+				return
+		var random_type = kennel[int(indices[randi() % indices.size()])].get("monster_type")
+		var inherited = _check_variant_inheritance(kennel, indices)
+		var output = drop_tables.create_fusion_companion(random_type, 9, inherited)
+		if output.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed!"})
+			return
+		var int_indices = []
+		for idx in indices:
+			int_indices.append(int(idx))
+		if persistence.fuse_companions(account_id, int_indices, output):
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF00FF]T9 Fusion! Created %s (T%d-9)![/color]" % [output.name, output.tier]
+			})
+			var updated_house = persistence.get_house(account_id)
+			send_to_peer(peer_id, {
+				"type": "house_update",
+				"house": updated_house,
+				"upgrade_costs": persistence.HOUSE_UPGRADES
+			})
+
+func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
+	"""Check if all companions in the fusion share the same variant for inheritance."""
+	var first_variant = kennel[int(indices[0])].get("variant", "")
+	for idx in indices:
+		if kennel[int(idx)].get("variant", "") != first_variant:
+			return {}
+	return {
+		"name": first_variant,
+		"color": kennel[int(indices[0])].get("variant_color", ""),
+		"color2": kennel[int(indices[0])].get("variant_color2", ""),
+		"pattern": kennel[int(indices[0])].get("variant_pattern", "solid"),
+	}
 
 func _award_baddie_points_on_death(peer_id: int, character: Character, account_id: String, cause_of_death: String) -> int:
 	"""Calculate and award baddie points to house on character death"""
@@ -9904,6 +10222,60 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
 
+	# Tick poison on dungeon movement
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg != 0:
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = ""
+			if poison_dmg < 0:
+				var heal_amount = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+				poison_msg = "[color=#708090]Your undead form absorbs the poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "poison",
+				"message": poison_msg,
+				"damage": poison_dmg,
+				"turns_remaining": turns_left
+			})
+
+	# Tick blind on dungeon movement
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind",
+				"message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left,
+				"turns_remaining": turns_left
+			})
+		else:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "blind_cured",
+				"message": "[color=#00FF00]Your vision clears![/color]"
+			})
+
+	# Tick active buffs on dungeon movement
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {
+				"type": "status_effect",
+				"effect": "buff_expired",
+				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
+			})
+
 	# Check tile interaction FIRST (treasure, exit)
 	var tile_int = int(tile)
 	if tile_int == int(DungeonDatabaseScript.TileType.TREASURE):
@@ -11404,6 +11776,41 @@ func handle_dungeon_rest(peer_id: int):
 		var hp_restore = int(character.max_hp * randf_range(0.05, 0.125))
 		character.current_hp = min(character.max_hp, character.current_hp + hp_restore)
 		heal_messages.append("[color=#00FF00]+%d HP[/color]" % hp_restore)
+
+	# Tick poison on dungeon rest
+	if character.poison_active:
+		var poison_dmg = character.tick_poison()
+		if poison_dmg != 0:
+			var turns_left = character.poison_turns_remaining
+			var poison_msg = ""
+			if poison_dmg < 0:
+				var heal_amount2 = -poison_dmg
+				character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount2)
+				poison_msg = "[color=#708090]Undead absorbs poison, healing [color=#00FF00]%d HP[/color][/color]" % heal_amount2
+			else:
+				character.current_hp -= poison_dmg
+				character.current_hp = max(1, character.current_hp)
+				poison_msg = "[color=#00FF00]Poison[/color] deals [color=#FF4444]%d damage[/color]" % poison_dmg
+			if turns_left > 0:
+				poison_msg += " (%d rounds remaining)" % turns_left
+			else:
+				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "poison", "message": poison_msg, "damage": poison_dmg, "turns_remaining": turns_left})
+
+	# Tick blind on dungeon rest
+	if character.blind_active:
+		var still_blind = character.tick_blind()
+		var turns_left = character.blind_turns_remaining
+		if still_blind:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind", "message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left, "turns_remaining": turns_left})
+		else:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind_cured", "message": "[color=#00FF00]Your vision clears![/color]"})
+
+	# Tick active buffs on dungeon rest
+	if not character.active_buffs.is_empty():
+		var expired = character.tick_buffs()
+		for buff in expired:
+			send_to_peer(peer_id, {"type": "status_effect", "effect": "buff_expired", "message": "[color=#808080]%s buff has worn off.[/color]" % buff.type})
 
 	# Move all monsters (rest is not free!)
 	var monster_combat = _move_dungeon_monsters(peer_id)

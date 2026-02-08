@@ -527,7 +527,16 @@ var house_storage_withdraw_items: Array = []  # Items to withdraw on character c
 var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
 var house_storage_discard_index: int = -1  # Item index selected for discard
 var house_storage_register_index: int = -1  # Stored companion index selected to register to kennel
-var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to storage)
+var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to kennel)
+
+# Kennel and Fusion state
+var house_kennel_page: int = 0
+var house_kennel_release_index: int = -1
+var house_kennel_register_index: int = -1
+var house_fusion_type: String = ""  # "", "same", "mixed"
+var house_fusion_selected: Array = []
+var house_fusion_page: int = 0
+var pending_home_stone_choice: bool = false
 
 # House grid system - player moves in ASCII house
 var house_player_x: int = 4  # Player X position in house grid
@@ -554,7 +563,7 @@ const HOUSE_LAYOUTS = {
 		"#########",
 		"#  C C  #",
 		"#       #",
-		"#       #",
+		"#  K F  #",
 		"# S   U #",
 		"####D####"
 	],
@@ -562,7 +571,7 @@ const HOUSE_LAYOUTS = {
 		"###########",
 		"#  C C C  #",
 		"#         #",
-		"#         #",
+		"#  K   F  #",
 		"#         #",
 		"# S     U #",
 		"#####D#####"
@@ -571,7 +580,7 @@ const HOUSE_LAYOUTS = {
 		"#############",
 		"#  C C C C  #",
 		"#           #",
-		"#           #",
+		"#  K     F  #",
 		"#           #",
 		"#           #",
 		"# S       U #",
@@ -581,7 +590,7 @@ const HOUSE_LAYOUTS = {
 		"###############",
 		"#  C C C C C  #",
 		"#             #",
-		"#             #",
+		"#  K       F  #",
 		"#             #",
 		"#             #",
 		"#             #",
@@ -2138,6 +2147,33 @@ func _process(delta):
 						_select_companion_unregister(i)
 				else:
 					set_meta("houseunregister_%d_pressed" % i, false)
+		elif house_mode == "kennel" and pending_house_action in ["release_select", "register_select"]:
+			# Keys 1-5 to pick kennel companion
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housekennel_%d_pressed" % i, false):
+						set_meta("housekennel_%d_pressed" % i, true)
+						_select_kennel_companion(i)
+				else:
+					set_meta("housekennel_%d_pressed" % i, false)
+		elif house_mode == "fusion" and house_fusion_type == "same" and pending_house_action != "same_confirm":
+			# Keys 1-5 to pick fusion group
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housefusion_%d_pressed" % i, false):
+						set_meta("housefusion_%d_pressed" % i, true)
+						_select_fusion_group(i)
+				else:
+					set_meta("housefusion_%d_pressed" % i, false)
+		elif house_mode == "fusion" and house_fusion_type == "mixed" and pending_house_action != "mixed_confirm":
+			# Keys 1-5 to toggle T8 companion selection
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housefusionmix_%d_pressed" % i, false):
+						set_meta("housefusionmix_%d_pressed" % i, true)
+						_toggle_mixed_fusion_companion(i)
+				else:
+					set_meta("housefusionmix_%d_pressed" % i, false)
 
 	# Watch request approval (action_1 = approve, action_2 = deny) - skip other hotkeys this frame
 	var watch_request_handled = false
@@ -4190,6 +4226,138 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "kennel":
+			var kennel = house_data.get("companion_kennel", {})
+			var kennel_companions = kennel.get("companions", [])
+			var kennel_max_page = maxi(0, (kennel_companions.size() - 1) / 5)
+			if pending_house_action == "release_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_kennel_release_cancel", "enabled": true},
+					{"label": "< Prev", "action_type": "local", "action_data": "house_kennel_prev", "enabled": house_kennel_page > 0},
+					{"label": "Next >", "action_type": "local", "action_data": "house_kennel_next", "enabled": house_kennel_page < kennel_max_page},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_kennel_release_confirm", "enabled": house_kennel_release_index >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5 Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif pending_house_action == "register_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_kennel_register_cancel", "enabled": true},
+					{"label": "< Prev", "action_type": "local", "action_data": "house_kennel_prev", "enabled": house_kennel_page > 0},
+					{"label": "Next >", "action_type": "local", "action_data": "house_kennel_next", "enabled": house_kennel_page < kennel_max_page},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_kennel_register_confirm", "enabled": house_kennel_register_index >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5 Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_kennel_back", "enabled": true},
+					{"label": "< Prev", "action_type": "local", "action_data": "house_kennel_prev", "enabled": house_kennel_page > 0},
+					{"label": "Next >", "action_type": "local", "action_data": "house_kennel_next", "enabled": house_kennel_page < kennel_max_page},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Release", "action_type": "local", "action_data": "house_kennel_release_start", "enabled": kennel_companions.size() > 0},
+					{"label": "Register", "action_type": "local", "action_data": "house_kennel_register_start", "enabled": kennel_companions.size() > 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+		elif house_mode == "fusion":
+			var kennel = house_data.get("companion_kennel", {})
+			var kennel_companions = kennel.get("companions", [])
+			if house_fusion_type == "":
+				# Main fusion menu - choose type
+				var has_same_fuseable = _get_fuseable_groups(kennel_companions).size() > 0
+				var has_mixed_fuseable = _count_t8_companions(kennel_companions) >= 8
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_fusion_back", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Same Type", "action_type": "local", "action_data": "fusion_same_start", "enabled": has_same_fuseable},
+					{"label": "Mixed T9", "action_type": "local", "action_data": "fusion_mixed_start", "enabled": has_mixed_fuseable},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif house_fusion_type == "same":
+				var groups = _get_fuseable_groups(kennel_companions)
+				if pending_house_action == "same_confirm":
+					current_actions = [
+						{"label": "Back", "action_type": "local", "action_data": "fusion_same_cancel", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "Fuse!", "action_type": "local", "action_data": "fusion_confirm", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
+				else:
+					current_actions = [
+						{"label": "Back", "action_type": "local", "action_data": "fusion_type_back", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "1-5 Pick", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
+			elif house_fusion_type == "mixed":
+				var t8_count = house_fusion_selected.size()
+				if pending_house_action == "mixed_confirm":
+					current_actions = [
+						{"label": "Back", "action_type": "local", "action_data": "fusion_mixed_cancel", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "Fuse!", "action_type": "local", "action_data": "fusion_confirm", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
+				else:
+					var kennel_max_page = maxi(0, (_get_t8_companions(kennel_companions).size() - 1) / 5)
+					current_actions = [
+						{"label": "Back", "action_type": "local", "action_data": "fusion_type_back", "enabled": true},
+						{"label": "< Prev", "action_type": "local", "action_data": "house_fusion_prev", "enabled": house_fusion_page > 0},
+						{"label": "Next >", "action_type": "local", "action_data": "house_fusion_next", "enabled": house_fusion_page < kennel_max_page},
+						{"label": "%d/8 Sel" % t8_count, "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "1-5 Mark", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
+		elif pending_home_stone_choice:
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
+				{"label": "Register", "action_type": "local", "action_data": "home_stone_register", "enabled": true},
+				{"label": "Kennel", "action_type": "local", "action_data": "home_stone_kennel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		else:  # house_mode == "main" or ""
 			# Context-sensitive action bar based on what player is standing on
 			var interact_label = "---"
@@ -4212,6 +4380,14 @@ func update_action_bar():
 				"D":
 					interact_label = "Play"
 					interact_action = "house_play"
+					interact_enabled = true
+				"K":
+					interact_label = "Kennel"
+					interact_action = "house_kennel"
+					interact_enabled = true
+				"F":
+					interact_label = "Fusion"
+					interact_action = "house_fusion"
 					interact_enabled = true
 
 			current_actions = [
@@ -8076,6 +8252,134 @@ func execute_local_action(action: String):
 			pending_house_action = ""
 			house_unregister_companion_slot = -1
 			# Server will send updated house_data
+		# Kennel actions
+		"house_kennel":
+			house_mode = "kennel"
+			pending_house_action = ""
+			house_kennel_page = 0
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_back":
+			house_mode = "main"
+			pending_house_action = ""
+			display_house_main()
+			update_action_bar()
+		"house_kennel_prev":
+			house_kennel_page = max(0, house_kennel_page - 1)
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_next":
+			var kc = house_data.get("companion_kennel", {}).get("companions", [])
+			var max_p = maxi(0, (kc.size() - 1) / 5)
+			house_kennel_page = min(max_p, house_kennel_page + 1)
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_release_start":
+			pending_house_action = "release_select"
+			house_kennel_release_index = -1
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_release_cancel":
+			pending_house_action = ""
+			house_kennel_release_index = -1
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_release_confirm":
+			if house_kennel_release_index >= 0:
+				send_to_server({"type": "house_kennel_release", "index": house_kennel_release_index})
+			pending_house_action = ""
+			house_kennel_release_index = -1
+		"house_kennel_register_start":
+			pending_house_action = "register_select"
+			house_kennel_register_index = -1
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_register_cancel":
+			pending_house_action = ""
+			house_kennel_register_index = -1
+			display_house_kennel()
+			update_action_bar()
+		"house_kennel_register_confirm":
+			if house_kennel_register_index >= 0:
+				send_to_server({"type": "house_kennel_register", "index": house_kennel_register_index})
+			pending_house_action = ""
+			house_kennel_register_index = -1
+		# Fusion actions
+		"house_fusion":
+			house_mode = "fusion"
+			house_fusion_type = ""
+			house_fusion_selected = []
+			house_fusion_page = 0
+			pending_house_action = ""
+			display_house_fusion()
+			update_action_bar()
+		"house_fusion_back":
+			house_mode = "main"
+			house_fusion_type = ""
+			pending_house_action = ""
+			display_house_main()
+			update_action_bar()
+		"fusion_type_back":
+			house_fusion_type = ""
+			house_fusion_selected = []
+			pending_house_action = ""
+			display_house_fusion()
+			update_action_bar()
+		"fusion_same_start":
+			house_fusion_type = "same"
+			house_fusion_selected = []
+			pending_house_action = ""
+			display_house_fusion()
+			update_action_bar()
+		"fusion_same_cancel":
+			pending_house_action = ""
+			house_fusion_selected = []
+			display_house_fusion()
+			update_action_bar()
+		"fusion_mixed_start":
+			house_fusion_type = "mixed"
+			house_fusion_selected = []
+			house_fusion_page = 0
+			pending_house_action = ""
+			display_house_fusion()
+			update_action_bar()
+		"fusion_mixed_cancel":
+			pending_house_action = ""
+			house_fusion_selected = []
+			display_house_fusion()
+			update_action_bar()
+		"house_fusion_prev":
+			house_fusion_page = max(0, house_fusion_page - 1)
+			display_house_fusion()
+			update_action_bar()
+		"house_fusion_next":
+			var t8s = _get_t8_companions(house_data.get("companion_kennel", {}).get("companions", []))
+			var max_fp = maxi(0, (t8s.size() - 1) / 5)
+			house_fusion_page = min(max_fp, house_fusion_page + 1)
+			display_house_fusion()
+			update_action_bar()
+		"fusion_confirm":
+			if house_fusion_type == "same" and house_fusion_selected.size() == 3:
+				send_to_server({"type": "house_fusion", "fusion_type": "same", "indices": house_fusion_selected})
+				house_fusion_selected = []
+				pending_house_action = ""
+			elif house_fusion_type == "mixed" and house_fusion_selected.size() == 8:
+				send_to_server({"type": "house_fusion", "fusion_type": "mixed", "indices": house_fusion_selected})
+				house_fusion_selected = []
+				pending_house_action = ""
+		# Home Stone companion choice
+		"home_stone_register":
+			pending_home_stone_choice = false
+			send_to_server({"type": "home_stone_companion_response", "choice": "register"})
+			update_action_bar()
+		"home_stone_kennel":
+			pending_home_stone_choice = false
+			send_to_server({"type": "home_stone_companion_response", "choice": "kennel"})
+			update_action_bar()
+		"home_stone_cancel":
+			pending_home_stone_choice = false
+			send_to_server({"type": "home_stone_companion_response", "choice": "cancel"})
+			update_action_bar()
 
 func _send_bless_with_stat(stat: String):
 	"""Send bless ability with chosen stat"""
@@ -11779,9 +12083,29 @@ func handle_server_message(message: Dictionary):
 					display_house_companions()
 				elif house_mode == "upgrades":
 					display_house_upgrades()
+				elif house_mode == "kennel":
+					display_house_kennel()
+				elif house_mode == "fusion":
+					display_house_fusion()
 				else:
 					display_house_main()
 				update_action_bar()
+
+		"home_stone_companion_choice":
+			pending_home_stone_choice = true
+			var hs_comp_name = message.get("companion_name", "Companion")
+			var hs_can_register = message.get("can_register", false)
+			var hs_can_kennel = message.get("can_kennel", false)
+			display_game("[color=#FFD700]Send %s home with Home Stone:[/color]" % hs_comp_name)
+			if hs_can_register:
+				display_game("[color=#00FF00]Register[/color] - Survives death, checkout on new character")
+			else:
+				display_game("[color=#808080]Register - FULL (no slots)[/color]")
+			if hs_can_kennel:
+				display_game("[color=#A335EE]Kennel[/color] - Store for fusion (dismisses companion)")
+			else:
+				display_game("[color=#808080]Kennel - FULL (no slots)[/color]")
+			update_action_bar()
 
 		"character_list":
 			character_list = message.get("characters", [])
@@ -15022,26 +15346,32 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.97 changes
-	display_game("[color=#00FF00]v0.9.97[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Dungeon Improvements[/color]")
-	display_game("  • Must return to entrance (E) to exit a dungeon")
-	display_game("  • Back button lets you revisit previous floors from the entrance")
-	display_game("  • Breather after combat: monsters don't move on your first step after a fight")
-	display_game("  • No more random overworld encounters while inside a dungeon")
-	display_game("  [color=#FFD700]Auto-Salvage[/color]")
-	display_game("  • Toggle in Inventory → Salvage: auto-salvage Common/Uncommon/Rare loot")
-	display_game("  • When inventory is full, lowest rarity items are auto-salvaged for essence")
-	display_game("  [color=#FFD700]Quality of Life[/color]")
-	display_game("  • Egg page now shows slot capacity (e.g. 2 / 5)")
-	display_game("  • Egg trades show variant name and rarity color")
-	display_game("  • Version number shown on window title and login screen")
-	display_game("  • Bug reports can be cancelled with ESC or empty submit")
-	display_game("  • Healer only appears for debuffs; declining adds cooldown")
+	# v0.9.98 changes
+	display_game("[color=#00FF00]v0.9.98[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion Kennel & Fusion[/color]")
+	display_game("  • New Kennel tile (K) in your Sanctuary — store companions for fusion")
+	display_game("  • Fusion Station (F) — fuse 3 same-type companions into 1 higher sub-tier")
+	display_game("  • Mixed T9 fusion — fuse 8 sub-tier 8 companions into a random T9")
+	display_game("  • Kennel upgrades: expand from 2 to 20 slots (6 upgrade levels)")
+	display_game("  • Home Stone (Companion) now offers Register or Kennel choice")
+	display_game("  • Unregistering a companion sends it to kennel instead of storage")
+	display_game("  [color=#FFD700]Companion Bonus Fixes[/color]")
+	display_game("  • Fix: HP bonus now actually boosts max HP during combat")
+	display_game("  • Fix: Mana bonus now actually boosts max mana during combat")
+	display_game("  • Fix: Crit damage base bonus now applied (was only from abilities)")
+	display_game("  • Fix: Wisdom bonus now reduces poison/curse/drain resist checks")
+	display_game("  • Companion bonuses now display effective values (variant × sub-tier)")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Hotzone level estimates now match actual monster levels")
-	display_game("  • Fix: Title revocation broadcast no longer shows empty message")
-	display_game("  • Fix: Hotkey presses no longer double-trigger across menus")
+	display_game("  • Fix: Dungeon pack monsters now properly cleared after flock kills")
+	display_game("  • Fix: Poison/blind/buffs now tick during rest, meditate, and dungeon movement")
+	display_game("")
+
+	# v0.9.97 changes
+	display_game("[color=#00FFFF]v0.9.97[/color]")
+	display_game("  • Must return to entrance (E) to exit a dungeon")
+	display_game("  • Breather after combat: monsters skip one movement turn")
+	display_game("  • Auto-salvage toggle for Common/Uncommon/Rare loot")
+	display_game("  • Healer only appears for debuffs; hotkey safety fixes")
 	display_game("")
 
 	# v0.9.96 changes
@@ -15065,18 +15395,6 @@ func display_changelog():
 	display_game("  • Action bar buttons show gold costs (healer, blacksmith, merchant)")
 	display_game("  • Fix: Healer encounter costs and buttons now work properly")
 	display_game("  • Fix: Inventory sub-views no longer wiped by server updates")
-	display_game("")
-
-	# v0.9.93 changes
-	display_game("[color=#00FFFF]v0.9.93[/color]")
-	display_game("  • Fix: Duplicate companions auto-removed on character load (keeps highest level)")
-	display_game("  • Fix: Kennel checkout no longer creates duplicate companion entries")
-	display_game("")
-
-	# v0.9.92 changes
-	display_game("[color=#00FFFF]v0.9.92[/color]")
-	display_game("  • Fix: Quest gem rewards now actually awarded (were silently zeroed)")
-	display_game("  • Fix: Dungeon completion now shows 'eggs full' warning when applicable")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -15310,8 +15628,9 @@ func display_companions():
 		else:
 			display_game("  [color=#FFD700]MAX LEVEL[/color]")
 
-		# Show bonuses with variant multiplier
-		var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
+		# Show bonuses with variant × sub-tier multiplier (effective values)
+		var effective_mult = variant_mult * _get_sub_tier_multiplier(comp_sub_tier)
+		var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, effective_mult)
 		if bonus_parts.size() > 0:
 			display_game("  %s" % ", ".join(bonus_parts))
 
@@ -16053,9 +16372,10 @@ func display_companion_inspection(companion: Dictionary):
 	info_lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [damage_est.min, damage_est.max])
 	info_lines.append("")
 
-	# Combat Bonuses
+	# Combat Bonuses (variant × sub-tier = effective values)
 	info_lines.append("[color=#808080]── Combat Bonuses ──[/color]")
-	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, variant_mult)
+	var effective_mult = variant_mult * sub_tier_mult
+	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, effective_mult)
 	if bonus_parts.size() > 0:
 		info_lines.append("  %s" % ", ".join(bonus_parts))
 	else:
@@ -20340,6 +20660,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting gold", "icon": "💰"},
 	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
 	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
+	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -20378,7 +20699,7 @@ func _init_house_player_position():
 
 func _is_house_tile_walkable(tile: String) -> bool:
 	"""Check if a tile can be walked on"""
-	return tile == " " or tile == "." or tile == "C" or tile == "S" or tile == "U" or tile == "D"
+	return tile in [" ", ".", "C", "S", "U", "D", "K", "F"]
 
 func _clamp_house_player_position():
 	"""Ensure player is within bounds and on walkable tile"""
@@ -20408,7 +20729,7 @@ func _move_house_player(dx: int, dy: int) -> bool:
 	if _is_house_tile_walkable(tile):
 		house_player_x = new_x
 		house_player_y = new_y
-		house_interactable_at = tile if tile in ["C", "S", "U", "D"] else ""
+		house_interactable_at = tile if tile in ["C", "S", "U", "D", "K", "F"] else ""
 		return true
 	return false
 
@@ -20467,6 +20788,8 @@ func _render_house_map() -> String:
 			"S": standing_on = "[color=#FFD700]Storage Chest[/color] - Press %s" % _interact_key
 			"U": standing_on = "[color=#00FFFF]Upgrades[/color] - Press %s" % _interact_key
 			"D": standing_on = "[color=#FF6600]Door[/color] - Press %s to Play" % _interact_key
+			"K": standing_on = "[color=#FF8800]Companion Kennel[/color] - Press %s" % _interact_key
+			"F": standing_on = "[color=#FFD700]Fusion Station[/color] - Press %s" % _interact_key
 		lines.append("[color=#FFFFFF]Standing on: " + standing_on + "[/color]")
 	else:
 		lines.append("[color=#808080]Move with WASD or arrows[/color]")
@@ -20533,6 +20856,12 @@ func display_house_main():
 	var companions_used = reg_companions.get("companions", []).size()
 	var companions_capacity = _get_house_companion_capacity()
 	display_game("[color=#A335EE]Registered Companions:[/color] %d/%d" % [companions_used, companions_capacity])
+
+	# Kennel Summary
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_used = kennel.get("companions", []).size()
+	var kennel_capacity = _get_house_kennel_capacity()
+	display_game("[color=#FF8800]Kennel:[/color] %d/%d companions" % [kennel_used, kennel_capacity])
 	display_game("")
 
 	# Active Bonuses from Upgrades
@@ -20693,6 +21022,239 @@ func display_house_companions():
 	display_game("")
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
 
+func display_house_kennel():
+	"""Display the companion kennel (bulk storage for fusion)"""
+	game_output.clear()
+	house_mode = "kennel"
+	_update_house_map()
+
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+	var capacity = _get_house_kennel_capacity()
+
+	display_game("[color=#FF8800]═══════ COMPANION KENNEL ═══════[/color]")
+	display_game("[color=#FF8800]Companions:[/color] %d/%d" % [kennel_companions.size(), capacity])
+	display_game("")
+
+	if kennel_companions.is_empty():
+		display_game("[color=#808080]No companions stored. Use Home Stones or unregister companions to add them.[/color]")
+	else:
+		# Paginated display (5 per page)
+		var start = house_kennel_page * 5
+		var end = mini(start + 5, kennel_companions.size())
+		for i in range(start, end):
+			var comp = kennel_companions[i]
+			var display_idx = i - start + 1
+			var variant = comp.get("variant", "")
+			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var name = comp.get("name", "Unknown")
+			var tier = comp.get("tier", 1)
+			var sub_tier = int(comp.get("sub_tier", 1))
+			var level = comp.get("level", 1)
+
+			var variant_tag = ""
+			if variant != "" and variant != "Normal":
+				variant_tag = "[color=%s][%s][/color] " % [variant_color, variant]
+
+			var sub_tier_tag = ""
+			if sub_tier > 1:
+				sub_tier_tag = "-" + str(sub_tier)
+
+			var marker = ""
+			if pending_house_action == "release_select" and house_kennel_release_index == i:
+				marker = " [color=#FF0000]<< RELEASE[/color]"
+			elif pending_house_action == "register_select" and house_kennel_register_index == i:
+				marker = " [color=#00FF00]<< REGISTER[/color]"
+
+			display_game("[%d] %s%s Lv.%d T%d%s%s" % [display_idx, variant_tag, name, level, tier, sub_tier_tag, marker])
+
+		display_game("")
+		display_game("[color=#808080]Page %d/%d[/color]" % [house_kennel_page + 1, maxi(1, int(ceil(float(kennel_companions.size()) / 5.0)))])
+
+	display_game("")
+	display_game("[color=#808080]Store companions here for fusion![/color]")
+	display_game("[color=#FF8800]════════════════════════════════[/color]")
+
+func display_house_fusion():
+	"""Display the fusion station"""
+	game_output.clear()
+	house_mode = "fusion"
+	_update_house_map()
+
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+
+	display_game("[color=#FFD700]═══════ FUSION STATION ═══════[/color]")
+
+	if house_fusion_type == "":
+		# Main fusion menu
+		display_game("[color=#FFD700]Combine companions to create stronger ones![/color]")
+		display_game("")
+		display_game("[color=#00FF00]Same-Type Fusion:[/color] 3 same monster + sub-tier -> 1 higher sub-tier")
+		display_game("[color=#FF00FF]Mixed T9 Fusion:[/color] 8 sub-tier 8 companions -> 1 random T9")
+		display_game("")
+
+		# Show fuseable groups
+		var groups = _get_fuseable_groups(kennel_companions)
+		if groups.size() > 0:
+			display_game("[color=#00FF00]Fuseable Groups:[/color]")
+			for group in groups:
+				display_game("  %s T%d-%d: %d companions [FUSEABLE]" % [group.monster_type, group.tier, group.sub_tier, group.count])
+		else:
+			display_game("[color=#808080]No fuseable groups yet. Need 3+ of same type and sub-tier.[/color]")
+
+		display_game("")
+		var t8_count = _count_t8_companions(kennel_companions)
+		if t8_count > 0:
+			display_game("[color=#FF00FF]T8 companions: %d/8 for mixed fusion[/color]" % t8_count)
+		else:
+			display_game("[color=#808080]No T8 companions for mixed fusion.[/color]")
+
+	elif house_fusion_type == "same":
+		var groups = _get_fuseable_groups(kennel_companions)
+		if pending_house_action == "same_confirm":
+			# Show confirmation
+			if house_fusion_selected.size() == 3:
+				var first = kennel_companions[house_fusion_selected[0]]
+				var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
+				display_game("[color=#FFD700]Fuse 3x %s T%d-%d -> 1x %s T%d-%d?[/color]" % [
+					first.get("name", "?"), first.get("tier", 1), int(first.get("sub_tier", 1)),
+					first.get("name", "?"), first.get("tier", 1), new_st
+				])
+				display_game("")
+				display_game("[color=#FF4444]This will DESTROY the 3 input companions![/color]")
+				display_game("[color=#00FF00]Press Fuse! to confirm or Back to cancel.[/color]")
+		else:
+			display_game("[color=#00FF00]Select a group to fuse (3 same type + sub-tier):[/color]")
+			display_game("")
+			for gi in range(mini(5, groups.size())):
+				var group = groups[gi]
+				display_game("[%d] %s T%d-%d (%d available) -> T%d-%d" % [
+					gi + 1, group.monster_type, group.tier, group.sub_tier, group.count,
+					group.tier, mini(int(group.sub_tier) + 1, 9)
+				])
+
+	elif house_fusion_type == "mixed":
+		if pending_house_action == "mixed_confirm":
+			display_game("[color=#FF00FF]Fuse 8 T8 companions into 1 random T9?[/color]")
+			display_game("")
+			display_game("[color=#FF4444]This will DESTROY all 8 selected companions![/color]")
+			display_game("[color=#00FF00]Press Fuse! to confirm or Back to cancel.[/color]")
+		else:
+			display_game("[color=#FF00FF]Select 8 sub-tier 8 companions for T9 fusion:[/color]")
+			display_game("[color=#808080]Selected: %d/8[/color]" % house_fusion_selected.size())
+			display_game("")
+			var t8_companions = _get_t8_companions(kennel_companions)
+			var start = house_fusion_page * 5
+			var end = mini(start + 5, t8_companions.size())
+			for i in range(start, end):
+				var entry = t8_companions[i]
+				var comp = entry.companion
+				var display_idx = i - start + 1
+				var selected = entry.index in house_fusion_selected
+				var marker = " [color=#00FF00][SELECTED][/color]" if selected else ""
+				var variant = comp.get("variant", "")
+				var variant_color = comp.get("variant_color", "#FFFFFF")
+				var variant_tag = ""
+				if variant != "" and variant != "Normal":
+					variant_tag = "[color=%s][%s][/color] " % [variant_color, variant]
+				display_game("[%d] %s%s Lv.%d T%d-8%s" % [display_idx, variant_tag, comp.get("name", "?"), comp.get("level", 1), comp.get("tier", 1), marker])
+
+	display_game("")
+	display_game("[color=#FFD700]═════════════════════════════════[/color]")
+
+func _get_fuseable_groups(kennel_companions: Array) -> Array:
+	"""Get groups of companions that can be fused (3+ of same monster_type + sub_tier)"""
+	var counts = {}  # key: "monster_type|sub_tier" -> {monster_type, tier, sub_tier, count, indices}
+	for i in range(kennel_companions.size()):
+		var comp = kennel_companions[i]
+		var mt = comp.get("monster_type", "")
+		var st = int(comp.get("sub_tier", 1))
+		if st >= 9:
+			continue  # Already max sub-tier
+		var key = mt + "|" + str(st)
+		if not counts.has(key):
+			counts[key] = {"monster_type": mt, "tier": comp.get("tier", 1), "sub_tier": st, "count": 0, "indices": []}
+		counts[key].count += 1
+		counts[key].indices.append(i)
+	var result = []
+	for key in counts:
+		if counts[key].count >= 3:
+			result.append(counts[key])
+	return result
+
+func _count_t8_companions(kennel_companions: Array) -> int:
+	"""Count companions with sub_tier == 8"""
+	var count = 0
+	for comp in kennel_companions:
+		if int(comp.get("sub_tier", 1)) == 8:
+			count += 1
+	return count
+
+func _get_t8_companions(kennel_companions: Array) -> Array:
+	"""Get all sub-tier 8 companions with their indices"""
+	var result = []
+	for i in range(kennel_companions.size()):
+		if int(kennel_companions[i].get("sub_tier", 1)) == 8:
+			result.append({"index": i, "companion": kennel_companions[i]})
+	return result
+
+func _get_house_kennel_capacity() -> int:
+	"""Calculate total kennel capacity based on upgrade level"""
+	var level = house_data.get("upgrades", {}).get("kennel_capacity", 0)
+	var table = [2, 4, 6, 8, 11, 15, 20]
+	return table[clampi(level, 0, table.size() - 1)]
+
+func _select_kennel_companion(page_index: int):
+	"""Select a kennel companion by page-relative index"""
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+	var actual_index = house_kennel_page * 5 + page_index
+	if actual_index >= kennel_companions.size():
+		return
+	if pending_house_action == "release_select":
+		house_kennel_release_index = actual_index
+	elif pending_house_action == "register_select":
+		house_kennel_register_index = actual_index
+	display_house_kennel()
+	update_action_bar()
+
+func _select_fusion_group(page_index: int):
+	"""Select a fusion group for same-type fusion"""
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+	var groups = _get_fuseable_groups(kennel_companions)
+	if page_index >= groups.size():
+		return
+	var group = groups[page_index]
+	# Auto-select first 3 from the group
+	house_fusion_selected = group.indices.slice(0, 3)
+	pending_house_action = "same_confirm"
+	display_house_fusion()
+	update_action_bar()
+
+func _toggle_mixed_fusion_companion(page_index: int):
+	"""Toggle a T8 companion for mixed fusion selection"""
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+	var t8_companions = _get_t8_companions(kennel_companions)
+	var actual_idx = house_fusion_page * 5 + page_index
+	if actual_idx >= t8_companions.size():
+		return
+	var kennel_index = t8_companions[actual_idx].index
+	if kennel_index in house_fusion_selected:
+		house_fusion_selected.erase(kennel_index)
+	else:
+		if house_fusion_selected.size() < 8:
+			house_fusion_selected.append(kennel_index)
+	# Auto-confirm when 8 selected
+	if house_fusion_selected.size() == 8:
+		pending_house_action = "mixed_confirm"
+	else:
+		pending_house_action = ""
+	display_house_fusion()
+	update_action_bar()
+
 func display_house_upgrades():
 	"""Display available house upgrades with pagination"""
 	game_output.clear()
@@ -20702,7 +21264,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -20728,6 +21290,7 @@ func display_house_upgrades():
 		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 		"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 		"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
+		"kennel_capacity": {"effect": 0, "max": 6, "costs": [1000, 2500, 5000, 10000, 20000, 40000]},
 		"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
 		"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},
 		"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},
@@ -20779,6 +21342,7 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 	match upgrade_id:
 		"storage_slots": return "+%d slots" % effect_value
 		"companion_slots": return "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
+		"kennel_capacity": return "%d slots" % _get_house_kennel_capacity()
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
 			return "+%d%%" % effect_value
@@ -20802,7 +21366,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]

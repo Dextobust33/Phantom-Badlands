@@ -800,6 +800,28 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		# Track that threshold ability hasn't triggered yet
 		combat_state["companion_threshold_triggered"] = false
 
+	# === APPLY COMPANION HP/MANA BONUSES ===
+	# Base companion bonuses + passive ability bonuses, applied as temporary max HP/mana boost
+	if character.has_active_companion():
+		var comp_hp_bonus = int(character.get_companion_bonus("hp_bonus")) + combat_state.get("companion_hp_bonus", 0)
+		if comp_hp_bonus > 0:
+			var hp_boost = max(1, int(character.get_total_max_hp() * comp_hp_bonus / 100.0))
+			character.max_hp += hp_boost
+			character.current_hp += hp_boost
+			combat_state["companion_hp_boost_applied"] = hp_boost
+
+		var comp_mana_bonus = int(character.get_companion_bonus("mana_bonus")) + combat_state.get("companion_mana_bonus", 0)
+		if comp_mana_bonus > 0:
+			var mana_boost = max(1, int(character.get_total_max_mana() * comp_mana_bonus / 100.0))
+			character.max_mana += mana_boost
+			character.current_mana = mini(character.current_mana + mana_boost, character.max_mana)
+			combat_state["companion_mana_boost_applied"] = mana_boost
+
+		# Store base wisdom bonus for use in resist checks
+		var comp_wisdom_bonus = int(character.get_companion_bonus("wisdom_bonus")) + combat_state.get("companion_wisdom_bonus", 0)
+		if comp_wisdom_bonus > 0:
+			combat_state["companion_wisdom_bonus"] = comp_wisdom_bonus
+
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
 	combat_state.combat_log.append(msg)
@@ -1223,7 +1245,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			var base_curse_damage = int(monster.max_hp * 0.10)  # Reduced from 25% to 10%
 			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
-			var player_wis = character.get_effective_stat("wisdom")
+			var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
 			var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
 			curse_damage = max(1, curse_damage)
@@ -1795,7 +1817,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
 			else:
 				var base_curse_damage = int(monster.max_hp * 0.10)
-				var player_wis_stat = character.get_effective_stat("wisdom")
+				var player_wis_stat = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 				var wis_reduction = minf(0.50, float(player_wis_stat) / 200.0)
 				var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
 				curse_damage = max(1, curse_damage)
@@ -3802,7 +3824,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	# Poison ability: apply poison if not already active (lasts 50 turns, persists outside combat)
 	# WIS reduces poison chance and damage
 	if ABILITY_POISON in abilities and not character.poison_active:
-		var player_wis = character.get_effective_stat("wisdom")
+		var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance at WIS 100+
 		var poison_chance = int(40 * (1.0 - wis_resist))  # Base 40%, reduced by WIS
 		if randi() % 100 < poison_chance:
@@ -3817,7 +3839,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	# Mana drain ability - drains the character's primary resource based on class path
 	# WIS reduces drain amount
 	if ABILITY_MANA_DRAIN in abilities and hits > 0:
-		var player_wis = character.get_effective_stat("wisdom")
+		var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance
 		var base_drain = randi_range(5, 20) + int(monster_level / 10)
 		var drain = max(1, int(base_drain * (1.0 - wis_resist)))
@@ -3856,7 +3878,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	# Curse ability: reduce defense for rest of combat (once)
 	# WIS reduces curse chance and effect
 	if ABILITY_CURSE in abilities and not combat.get("curse_applied", false):
-		var player_wis = character.get_effective_stat("wisdom")
+		var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance
 		var curse_chance = int(30 * (1.0 - wis_resist))  # Base 30%, reduced by WIS
 		if randi() % 100 < curse_chance:
@@ -4129,8 +4151,8 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var final_crit_damage = crit_damage
 	if is_crit and effects.has("crit_damage_bonus"):
 		final_crit_damage += effects.get("crit_damage_bonus", 0)
-	# Companion crit damage bonus (from passive abilities like Godslayer)
-	var companion_crit_damage = combat.get("companion_crit_damage", 0)
+	# Companion crit damage bonus (base bonus + passive abilities like Godslayer)
+	var companion_crit_damage = int(character.get_companion_bonus("crit_damage")) + combat.get("companion_crit_damage", 0)
 	if is_crit and companion_crit_damage > 0:
 		final_crit_damage += companion_crit_damage / 100.0
 
@@ -4375,6 +4397,17 @@ func end_combat(peer_id: int, victory: bool):
 	if active_combats.has(peer_id):
 		var combat = active_combats[peer_id]
 		var character = combat.character
+
+		# Restore temporary companion HP/mana boosts
+		var hp_boost = combat.get("companion_hp_boost_applied", 0)
+		if hp_boost > 0:
+			character.max_hp = max(1, character.max_hp - hp_boost)
+			character.current_hp = mini(character.current_hp, character.max_hp)
+
+		var mana_boost = combat.get("companion_mana_boost_applied", 0)
+		if mana_boost > 0:
+			character.max_mana = max(1, character.max_mana - mana_boost)
+			character.current_mana = mini(character.current_mana, character.max_mana)
 
 		# Mark character as not in combat
 		character.in_combat = false
