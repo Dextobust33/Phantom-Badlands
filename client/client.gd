@@ -748,6 +748,7 @@ var wood_tier: int = 1  # Tier of the wood (1-6)
 var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
 var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
 var pending_dungeon_warning: Dictionary = {}  # Pending dungeon entry warning awaiting confirmation
+var pending_hotzone_warning: Dictionary = {}  # Pending hotzone entry warning awaiting confirmation
 
 # Corpse location
 var at_corpse: bool = false  # Whether player is at a corpse
@@ -4827,6 +4828,20 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif not pending_hotzone_warning.is_empty():
+		# Hotzone entry warning - awaiting confirmation
+		current_actions = [
+			{"label": "Enter", "action_type": "local", "action_data": "hotzone_enter", "enabled": true},
+			{"label": "Back", "action_type": "local", "action_data": "hotzone_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif not pending_corpse_loot.is_empty():
 		# Corpse loot confirmation - awaiting confirmation
 		current_actions = [
@@ -7610,6 +7625,19 @@ func execute_local_action(action: String):
 			pending_dungeon_warning = {}
 			game_output.clear()
 			display_game("[color=#808080]Dungeon entry cancelled.[/color]")
+			update_action_bar()
+		"hotzone_enter":
+			# Confirm entering hotzone
+			if not pending_hotzone_warning.is_empty():
+				var warning = pending_hotzone_warning
+				pending_hotzone_warning = {}
+				send_to_server({"type": "hotzone_confirm", "x": warning.x, "y": warning.y})
+			update_action_bar()
+		"hotzone_cancel":
+			# Cancel entering hotzone
+			pending_hotzone_warning = {}
+			game_output.clear()
+			display_game("[color=#808080]You stay back from the danger zone.[/color]")
 			update_action_bar()
 		"corpse_loot":
 			# Start corpse looting - show confirmation
@@ -12849,6 +12877,9 @@ func handle_server_message(message: Dictionary):
 
 		"dungeon_level_warning":
 			handle_dungeon_level_warning(message)
+
+		"hotzone_warning":
+			handle_hotzone_warning(message)
 
 		"dungeon_state":
 			handle_dungeon_state(message)
@@ -18401,6 +18432,30 @@ func handle_dungeon_level_warning(message: Dictionary):
 
 	update_action_bar()
 
+func handle_hotzone_warning(message: Dictionary):
+	"""Handle warning about entering a hotzone area"""
+	pending_hotzone_warning = {
+		"x": int(message.get("x", 0)),
+		"y": int(message.get("y", 0)),
+		"intensity": message.get("intensity", 0.5),
+		"estimated_level": int(message.get("estimated_level", 1))
+	}
+
+	game_output.clear()
+	display_game("[color=#FF4444]═══════ DANGER ZONE ═══════[/color]")
+	display_game("")
+	display_game("[color=#FF6666]You're approaching a Hotzone![/color]")
+	display_game("[color=#FFAA00]Estimated monster level: ~%d[/color]" % pending_hotzone_warning.estimated_level)
+	var intensity = pending_hotzone_warning.intensity
+	var intensity_label = "Low" if intensity < 0.3 else ("Medium" if intensity < 0.6 else "High")
+	display_game("[color=#FF8800]Intensity: %s[/color]" % intensity_label)
+	display_game("")
+	display_game("[color=#808080]Monsters here are significantly stronger.[/color]")
+	display_game("[color=#808080]Press [%s] to enter, [%s] to stay back.[/color]" % [
+		get_action_key_name(0), get_action_key_name(1)])
+
+	update_action_bar()
+
 func handle_dungeon_exit(message: Dictionary):
 	"""Handle exiting a dungeon (voluntary or death)"""
 	dungeon_mode = false
@@ -18812,14 +18867,17 @@ func handle_quest_list(message: Dictionary):
 	# SECTION 3: Available quests to accept
 	if available_quests.size() > 0:
 		display_game("[color=#00FF00]=== Available Quests ===[/color]")
+		# Sort featured quests to the top
+		available_quests.sort_custom(func(a, b): return a.get("is_featured", false) and not b.get("is_featured", false))
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
 			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
+			var featured_tag = " [color=#FFD700]★ TODAY'S BOUNTY ★[/color]" if quest.get("is_featured", false) else ""
 			var tier_tag = _get_quest_tier_tag(quest)
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
 			var key_name = get_item_select_key_name(key_index)
-			display_game("[%s] [color=#FFD700]%s[/color]%s%s" % [key_name, quest.get("name", "Quest"), daily_tag, tier_tag])
+			display_game("[%s] [color=#FFD700]%s[/color]%s%s%s" % [key_name, quest.get("name", "Quest"), featured_tag, daily_tag, tier_tag])
 			display_game("    %s" % quest.get("description", ""))
 			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")

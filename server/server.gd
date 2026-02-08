@@ -40,6 +40,7 @@ var flock_counts = {}  # peer_id -> int (how many monsters in current flock chai
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
+var player_in_hotzone = {}  # peer_id -> true when player has confirmed hotzone entry
 
 # Persistent merchant inventory storage
 # merchant_id -> {items: Array, generated_at: float, player_level: int}
@@ -785,6 +786,8 @@ func handle_message(peer_id: int, message: Dictionary):
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
+		"hotzone_confirm":
+			handle_hotzone_confirm(peer_id, message)
 		"dungeon_enter":
 			handle_dungeon_enter(peer_id, message)
 		"dungeon_move":
@@ -1733,6 +1736,27 @@ func handle_move(peer_id: int, message: Dictionary):
 		if character.title == "elder":
 			_grant_eternal_title(peer_id)
 			return  # Don't trigger encounters after finding the flame
+
+	# Check if entering a hotzone for the first time (warn before proceeding)
+	var hotspot_check = world_system.get_hotspot_at(new_pos.x, new_pos.y)
+	if hotspot_check.in_hotspot and not player_in_hotzone.has(peer_id):
+		# Estimate the danger level from distance + intensity
+		var dist_from_origin = sqrt(float(new_pos.x * new_pos.x + new_pos.y * new_pos.y))
+		var estimated_level = int(dist_from_origin * (1.0 + hotspot_check.intensity))
+		send_to_peer(peer_id, {
+			"type": "hotzone_warning",
+			"intensity": hotspot_check.intensity,
+			"estimated_level": estimated_level,
+			"x": new_pos.x, "y": new_pos.y
+		})
+		# Move player back to previous position
+		character.x = old_x
+		character.y = old_y
+		send_location_update(peer_id)
+		return
+	# Clear hotzone tracking if player has left the hotzone
+	if not hotspot_check.in_hotspot and player_in_hotzone.has(peer_id):
+		player_in_hotzone.erase(peer_id)
 
 	# Check for merchant first (merchants can still be encountered while cloaked)
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
@@ -2729,6 +2753,22 @@ func _find_flee_destination(peer_id: int):
 		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)
 	]
 	directions.shuffle()  # Randomize flee direction
+
+	# If in hotzone, prefer directions that leave the hotzone
+	var in_hotzone = world_system.get_hotspot_at(current_x, current_y).in_hotspot
+	if in_hotzone:
+		var safe_dirs = []
+		var zone_dirs = []
+		for dir in directions:
+			var test_pos = Vector2i(current_x + dir.x, current_y + dir.y)
+			if not world_system.get_hotspot_at(test_pos.x, test_pos.y).in_hotspot:
+				safe_dirs.append(dir)
+			else:
+				zone_dirs.append(dir)
+		directions = safe_dirs + zone_dirs  # Try safe first, then zone
+		# Clear hotzone tracking on flee
+		if player_in_hotzone.has(peer_id):
+			player_in_hotzone.erase(peer_id)
 
 	for dir in directions:
 		var new_pos = Vector2i(current_x + dir.x, current_y + dir.y)
@@ -7106,9 +7146,8 @@ func handle_trading_post_quests(peer_id: int):
 	var available_quests = quest_db.get_available_quests_for_player(
 		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
-	# Get locked quests (unmet prerequisites)
-	var locked_quests = quest_db.get_locked_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns)
+	# No locked quests with dynamic-only system (no static prerequisite chains)
+	var locked_quests = []
 
 	# Add progression quest if player is high enough level for next post
 	var progression_quest = _generate_progression_quest(tp.id, character.level, character.completed_quests, active_quest_ids)
@@ -9526,6 +9565,23 @@ func handle_dungeon_list(peer_id: int):
 		"player_level": character.level,
 		"in_dungeon": character.in_dungeon
 	})
+
+func handle_hotzone_confirm(peer_id: int, message: Dictionary):
+	"""Handle player confirming hotzone entry after warning."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	player_in_hotzone[peer_id] = true
+	# Move player to the hotzone tile they wanted to enter
+	var target_x = int(message.get("x", character.x))
+	var target_y = int(message.get("y", character.y))
+	character.x = target_x
+	character.y = target_y
+	send_location_update(peer_id)
+	send_character_update(peer_id)
+	# Now check for encounter at the new position
+	if not character.cloak_active and world_system.check_encounter(target_x, target_y):
+		trigger_encounter(peer_id)
 
 func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	"""Handle player entering a dungeon"""

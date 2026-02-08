@@ -82,6 +82,9 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		extra_data["monster_type"] = quest.get("monster_type", "")
 		if quest.has("min_monster_level"):
 			extra_data["min_monster_level"] = quest.get("min_monster_level", 0)
+	# For KILL_TIER quests, store the required tier
+	if quest_type == QuestDatabaseScript.QuestType.KILL_TIER:
+		extra_data["required_tier"] = quest.get("required_tier", 1)
 	# For exploration quests, store destinations for turn-in at destination
 	if quest_type == QuestDatabaseScript.QuestType.EXPLORATION:
 		extra_data["destinations"] = quest.get("destinations", [])
@@ -130,6 +133,13 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 			QuestDatabaseScript.QuestType.KILL_LEVEL, QuestDatabaseScript.QuestType.BOSS_HUNT:
 				var min_level = quest.get("target", 1)
 				if monster_level >= min_level:
+					should_update = true
+
+			QuestDatabaseScript.QuestType.KILL_TIER:
+				# Must kill a monster whose tier is >= required_tier
+				var required_tier = quest_data.get("required_tier", quest.get("required_tier", 1))
+				var killed_tier = _get_tier_from_level(monster_level)
+				if killed_tier >= required_tier:
 					should_update = true
 
 			QuestDatabaseScript.QuestType.HOTZONE_KILL:
@@ -487,3 +497,13 @@ func format_available_quests(quests: Array, character: Character) -> String:
 		index += 1
 
 	return output
+
+# ===== HELPERS =====
+
+func _get_tier_from_level(level: int) -> int:
+	"""Map a monster level to its tier using TIER_LEVEL_RANGES from quest_database."""
+	for tier in range(9, 0, -1):
+		var range_data = QuestDatabaseScript.TIER_LEVEL_RANGES.get(tier, {})
+		if level >= range_data.get("min", 99999):
+			return tier
+	return 1

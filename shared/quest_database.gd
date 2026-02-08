@@ -5,13 +5,14 @@ extends Node
 
 # Quest type constants
 enum QuestType {
-	KILL_ANY,           # Kill X monsters of any type
-	KILL_TYPE,          # Kill X monsters of specific type
-	KILL_LEVEL,         # Kill a monster of level X or higher
-	HOTZONE_KILL,       # Kill X monsters in a hotzone within Y distance
-	EXPLORATION,        # Visit specific coordinates/locations
-	BOSS_HUNT,          # Defeat a monster of level X or higher (same as KILL_LEVEL but labeled differently)
-	DUNGEON_CLEAR       # Clear a specific dungeon type (defeat boss)
+	KILL_ANY,           # 0 - Kill X monsters of any type
+	KILL_TYPE,          # 1 - LEGACY: kept for saved quest data compatibility
+	KILL_LEVEL,         # 2 - LEGACY: kept for saved quest data compatibility
+	HOTZONE_KILL,       # 3 - Kill X monsters in a hotzone within Y distance
+	EXPLORATION,        # 4 - Visit specific coordinates/locations
+	BOSS_HUNT,          # 5 - Defeat a high-level monster
+	DUNGEON_CLEAR,      # 6 - Clear a specific dungeon type (defeat boss)
+	KILL_TIER           # 7 - Kill X monsters of tier N or higher
 }
 
 # Quest data structure:
@@ -31,789 +32,12 @@ enum QuestType {
 #   "prerequisite": String (quest_id that must be completed first, or empty)
 # }
 
-# All quests in the game
-const QUESTS = {
-	# ===== HAVEN (0, 10) - Guard Captain - Beginner Quests =====
-	# --- KILL_TYPE Quests (specific monster hunting) ---
-	"haven_goblin_slayer": {
-		"id": "haven_goblin_slayer",
-		"name": "Goblin Slayer",
-		"description": "The goblins near Haven have become a nuisance. Kill %d Goblins.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "haven",
-		"monster_type": "Goblin",
-		"target": 5, "target_min": 3, "target_max": 6,
-		"rewards": {"xp": 100, "gold": 50, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_rat_catcher": {
-		"id": "haven_rat_catcher",
-		"name": "Rat Catcher",
-		"description": "Giant Rats have infested the cellars. Exterminate %d Giant Rats.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "haven",
-		"monster_type": "Giant Rat",
-		"target": 4, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 60, "gold": 30, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_wolf_hunt": {
-		"id": "haven_wolf_hunt",
-		"name": "Wolf Hunt",
-		"description": "Wolves are threatening travelers. Hunt down %d Wolves.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "haven",
-		"monster_type": "Wolf",
-		"target": 5, "target_min": 4, "target_max": 7,
-		"rewards": {"xp": 120, "gold": 60, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_skeleton_purge": {
-		"id": "haven_skeleton_purge",
-		"name": "Skeleton Purge",
-		"description": "Undead have risen from the old cemetery. Destroy %d Skeletons.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "haven",
-		"monster_type": "Skeleton",
-		"target": 6, "target_min": 5, "target_max": 8,
-		"rewards": {"xp": 150, "gold": 75, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_first_steps": {
-		"id": "haven_first_steps",
-		"name": "First Steps",
-		"description": "Defeat your first monster to begin your adventure.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 1,
-		"rewards": {"xp": 25, "gold": 15, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_first_blood": {
-		"id": "haven_first_blood",
-		"name": "First Blood",
-		"description": "Kill 3 monsters to prove your worth as an adventurer.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 3,
-		"rewards": {"xp": 50, "gold": 30, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_getting_started": {
-		"id": "haven_getting_started",
-		"name": "Getting Started",
-		"description": "Explore the area by defeating 5 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 5,
-		"rewards": {"xp": 75, "gold": 40, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_pest_control": {
-		"id": "haven_pest_control",
-		"name": "Pest Control",
-		"description": "Help keep the area safe by eliminating 10 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 10,
-		"rewards": {"xp": 150, "gold": 75, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_stronger_foes": {
-		"id": "haven_stronger_foes",
-		"name": "Stronger Foes",
-		"description": "Prove your courage by defeating 2 monsters of level 5 or higher.",
-		"type": QuestType.KILL_LEVEL,
-		"trading_post": "haven",
-		"target": 5,
-		"kill_count": 2,
-		"rewards": {"xp": 200, "gold": 100, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_local_hero": {
-		"id": "haven_local_hero",
-		"name": "Local Hero",
-		"description": "Become a hero of Haven by slaying 25 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 25,
-		"rewards": {"xp": 500, "gold": 250, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"haven_daily_patrol": {
-		"id": "haven_daily_patrol",
-		"name": "Daily Patrol",
-		"description": "Defeat 5 monsters to protect Haven. Can be completed daily.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "haven",
-		"target": 5,
-		"rewards": {"xp": 50, "gold": 25, "gems": 0},
-		"is_daily": true,
-		"prerequisite": ""
-	},
-	"haven_first_dungeon": {
-		"id": "haven_first_dungeon",
-		"name": "Into the Depths",
-		"description": "Scouts report dangerous lairs beyond the safety of Haven. Travel at least 30 tiles from Crossroads and search for dungeon entrances - they appear as [color=#A335EE]D[/color] on your map. Dungeons spawn in the wilderness in all directions. Clear one to prove your worth!",
-		"type": QuestType.DUNGEON_CLEAR,
-		"trading_post": "haven",
-		"dungeon_type": "",  # Any dungeon counts
-		"target": 1,
-		"rewards": {"xp": 300, "gold": 150, "gems": 2},
-		"is_daily": false,
-		"prerequisite": "haven_first_blood"
-	},
+# Legacy static quests removed — all quests are now dynamically generated per-post per-day
+const QUESTS = {}
 
-	# ===== CROSSROADS (0, 0) - Royal Herald - Mixed Quests =====
-	# --- KILL_TYPE Quests ---
-	"crossroads_orc_bounty": {
-		"id": "crossroads_orc_bounty",
-		"name": "Orc Bounty",
-		"description": "Orcs are raiding caravans. Slay %d Orcs for the bounty.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "crossroads",
-		"monster_type": "Orc",
-		"target": 5, "target_min": 3, "target_max": 6,
-		"rewards": {"xp": 200, "gold": 100, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"crossroads_spider_nest": {
-		"id": "crossroads_spider_nest",
-		"name": "Spider Nest",
-		"description": "Giant Spiders have nested near the roads. Kill %d Giant Spiders.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "crossroads",
-		"monster_type": "Giant Spider",
-		"target": 5, "target_min": 4, "target_max": 7,
-		"rewards": {"xp": 180, "gold": 90, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"crossroads_zombie_outbreak": {
-		"id": "crossroads_zombie_outbreak",
-		"name": "Zombie Outbreak",
-		"description": "The dead are walking! Put down %d Zombies.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "crossroads",
-		"monster_type": "Zombie",
-		"target": 6, "target_min": 5, "target_max": 8,
-		"rewards": {"xp": 220, "gold": 110, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"crossroads_patrol": {
-		"id": "crossroads_patrol",
-		"name": "Crossroads Patrol",
-		"description": "Help patrol the area by defeating 8 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "crossroads",
-		"target": 8,
-		"rewards": {"xp": 100, "gold": 50, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"crossroads_danger_zone": {
-		"id": "crossroads_danger_zone",
-		"name": "Into the Danger Zone",
-		"description": "Kill 3 monsters (level 3+) in a hotzone within 50 tiles. The Royal Herald offers this bounty daily.",
-		"type": QuestType.HOTZONE_KILL,
-		"trading_post": "crossroads",
-		"target": 3,
-		"max_distance": 50.0,
-		"min_intensity": 0.0,
-		"min_monster_level": 3,
-		"rewards": {"xp": 150, "gold": 75, "gems": 0},
-		"is_daily": true,
-		"prerequisite": ""
-	},
-	"crossroads_danger_seeker": {
-		"id": "crossroads_danger_seeker",
-		"name": "Danger Seeker",
-		"description": "Kill 5 monsters (level 8+) in hotzones within 75 tiles of Crossroads.",
-		"type": QuestType.HOTZONE_KILL,
-		"trading_post": "crossroads",
-		"target": 5,
-		"max_distance": 75.0,
-		"min_intensity": 0.0,
-		"min_monster_level": 8,
-		"rewards": {"xp": 300, "gold": 150, "gems": 1},
-		"is_daily": false,
-		"prerequisite": "crossroads_patrol"
-	},
-	"crossroads_risk_reward": {
-		"id": "crossroads_risk_reward",
-		"name": "Risk and Reward",
-		"description": "Kill 10 monsters (level 20+) in hotzones within 150 tiles. Greater risk, greater reward.",
-		"type": QuestType.HOTZONE_KILL,
-		"trading_post": "crossroads",
-		"target": 10,
-		"max_distance": 150.0,
-		"min_intensity": 0.0,
-		"min_monster_level": 20,
-		"rewards": {"xp": 600, "gold": 300, "gems": 2},
-		"is_daily": false,
-		"prerequisite": "crossroads_danger_seeker"
-	},
-	"crossroads_extreme": {
-		"id": "crossroads_extreme",
-		"name": "Extreme Challenge",
-		"description": "Kill 5 monsters (level 50+) in high-intensity hotzones (0.5+) within 250 tiles. Only for the brave.",
-		"type": QuestType.HOTZONE_KILL,
-		"trading_post": "crossroads",
-		"target": 5,
-		"max_distance": 250.0,
-		"min_intensity": 0.5,
-		"min_monster_level": 50,
-		"rewards": {"xp": 1200, "gold": 600, "gems": 4},
-		"is_daily": false,
-		"prerequisite": "crossroads_risk_reward"
-	},
-
-	# ===== SOUTH GATE (0, -25) - Gate Warden - Beginner Quests =====
-	"south_gate_watch": {
-		"id": "south_gate_watch",
-		"name": "South Watch",
-		"description": "Help the Gate Warden by defeating 4 monsters near the southern gate.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "south_gate",
-		"target": 4,
-		"rewards": {"xp": 40, "gold": 20, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"south_gate_guardian": {
-		"id": "south_gate_guardian",
-		"name": "Gate Guardian",
-		"description": "Protect the gate by slaying 10 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "south_gate",
-		"target": 10,
-		"rewards": {"xp": 125, "gold": 60, "gems": 0},
-		"is_daily": false,
-		"prerequisite": "south_gate_watch"
-	},
-	"south_gate_daily": {
-		"id": "south_gate_daily",
-		"name": "Gate Duty",
-		"description": "Complete your daily gate duty by defeating 4 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "south_gate",
-		"target": 4,
-		"rewards": {"xp": 35, "gold": 20, "gems": 0},
-		"is_daily": true,
-		"prerequisite": ""
-	},
-
-	# ===== EAST MARKET (25, 10) - Market Master - Collection Quests =====
-	"east_market_supply": {
-		"id": "east_market_supply",
-		"name": "Supply Run",
-		"description": "Clear the roads by defeating 6 monsters so merchants can travel safely.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "east_market",
-		"target": 6,
-		"rewards": {"xp": 60, "gold": 35, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"east_market_crossroads": {
-		"id": "east_market_crossroads",
-		"name": "Eastern Frontier",
-		"description": "Venture to Northeast Farm at (40, 40) to open new trade routes.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "east_market",
-		"target": 1,
-		"destinations": ["northeast_farm"],
-		"rewards": {"xp": 75, "gold": 40, "gems": 0},
-		"is_daily": false,
-		"prerequisite": "east_market_supply"
-	},
-	"east_market_daily": {
-		"id": "east_market_daily",
-		"name": "Merchant Guard",
-		"description": "Escort duty - defeat 5 monsters along trade routes.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "east_market",
-		"target": 5,
-		"rewards": {"xp": 45, "gold": 30, "gems": 0},
-		"is_daily": true,
-		"prerequisite": ""
-	},
-
-	# ===== WEST SHRINE (-25, 10) - Shrine Keeper - Beginner Quests =====
-	"west_shrine_cleanse": {
-		"id": "west_shrine_cleanse",
-		"name": "Shrine Cleansing",
-		"description": "Clear 5 monsters that threaten the sacred shrine.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "west_shrine",
-		"target": 5,
-		"rewards": {"xp": 50, "gold": 25, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"west_shrine_pilgrimage": {
-		"id": "west_shrine_pilgrimage",
-		"name": "Western Pilgrimage",
-		"description": "Complete your pilgrimage by visiting Northwest Mill at (-40, 40).",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "west_shrine",
-		"target": 1,
-		"destinations": ["northwest_mill"],
-		"rewards": {"xp": 50, "gold": 25, "gems": 0},
-		"is_daily": false,
-		"prerequisite": "west_shrine_cleanse"
-	},
-	"west_shrine_daily": {
-		"id": "west_shrine_daily",
-		"name": "Sacred Duty",
-		"description": "Protect the shrine by defeating 4 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "west_shrine",
-		"target": 4,
-		"rewards": {"xp": 35, "gold": 20, "gems": 0},
-		"is_daily": true,
-		"prerequisite": ""
-	},
-
-	# ===== FROSTGATE (0, -100) - Guild Master - Exploration/Boss =====
-	# --- KILL_TYPE Quests ---
-	"frostgate_troll_slayer": {
-		"id": "frostgate_troll_slayer",
-		"name": "Troll Slayer",
-		"description": "Trolls have been attacking travelers. Eliminate %d Trolls.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "frostgate",
-		"monster_type": "Troll",
-		"target": 4, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 400, "gold": 200, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"frostgate_wyvern_hunt": {
-		"id": "frostgate_wyvern_hunt",
-		"name": "Wyvern Hunt",
-		"description": "Wyverns threaten the skies. Bring down %d Wyverns.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "frostgate",
-		"monster_type": "Wyvern",
-		"target": 4, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 500, "gold": 250, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"frostgate_minotaur_maze": {
-		"id": "frostgate_minotaur_maze",
-		"name": "Minotaur Maze",
-		"description": "Minotaurs guard ancient ruins. Defeat %d Minotaurs.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "frostgate",
-		"monster_type": "Minotaur",
-		"target": 3, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 450, "gold": 225, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"frostgate_know_world": {
-		"id": "frostgate_know_world",
-		"name": "Know Your World",
-		"description": "Explore the frontier by visiting Southport at (0, -150) and Southeast Outpost at (120, -120).",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "frostgate",
-		"target": 2,  # Visit 2 locations
-		"destinations": ["southport", "southeast_outpost"],  # Trading post IDs to visit
-		"rewards": {"xp": 200, "gold": 100, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"frostgate_eastern_expedition": {
-		"id": "frostgate_eastern_expedition",
-		"name": "Eastern Expedition",
-		"description": "Journey to Eastwatch Trading Post at (150, 0). A long but rewarding trip.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "frostgate",
-		"target": 1,
-		"destinations": ["eastwatch"],
-		"rewards": {"xp": 500, "gold": 250, "gems": 1},
-		"is_daily": false,
-		"prerequisite": "frostgate_know_world"
-	},
-	"frostgate_champions_trial": {
-		"id": "frostgate_champions_trial",
-		"name": "Champion's Trial",
-		"description": "Defeat a monster of level 50 or higher to prove your might.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "frostgate",
-		"target": 50,
-		"rewards": {"xp": 1000, "gold": 500, "gems": 2},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"frostgate_legendary_hunt": {
-		"id": "frostgate_legendary_hunt",
-		"name": "Legendary Hunt",
-		"description": "Defeat a monster of level 200 or higher. Only legends attempt this feat.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "frostgate",
-		"target": 200,
-		"rewards": {"xp": 5000, "gold": 2500, "gems": 10},
-		"is_daily": false,
-		"prerequisite": "frostgate_champions_trial"
-	},
-
-	# ===== EASTWATCH (150, 0) - Bounty Hunter - Mid-level Kill Quests =====
-	# --- KILL_TYPE Quests ---
-	"eastwatch_dragon_wyrmling": {
-		"id": "eastwatch_dragon_wyrmling",
-		"name": "Dragon Wyrmling Hunt",
-		"description": "Young dragons threaten the east. Slay %d Dragon Wyrmlings.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "eastwatch",
-		"monster_type": "Dragon Wyrmling",
-		"target": 3, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 800, "gold": 400, "gems": 2},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastwatch_demon_purge": {
-		"id": "eastwatch_demon_purge",
-		"name": "Demon Purge",
-		"description": "Demons have breached into our world. Banish %d Demons.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "eastwatch",
-		"monster_type": "Demon",
-		"target": 5, "target_min": 4, "target_max": 6,
-		"rewards": {"xp": 900, "gold": 450, "gems": 2},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastwatch_vampire_hunt": {
-		"id": "eastwatch_vampire_hunt",
-		"name": "Vampire Hunt",
-		"description": "Vampires stalk the night. Destroy %d Vampires before dawn.",
-		"type": QuestType.KILL_TYPE,
-		"trading_post": "eastwatch",
-		"monster_type": "Vampire",
-		"target": 4, "target_min": 3, "target_max": 5,
-		"rewards": {"xp": 850, "gold": 425, "gems": 2},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastwatch_wilderness_threat": {
-		"id": "eastwatch_wilderness_threat",
-		"name": "Bounty: Wilderness Threat",
-		"description": "Eliminate 15 monsters of level 30 or higher in the eastern wilds.",
-		"type": QuestType.KILL_LEVEL,
-		"trading_post": "eastwatch",
-		"target": 30,
-		"kill_count": 15,  # Special: need to kill 15 monsters at this level
-		"rewards": {"xp": 800, "gold": 400, "gems": 2},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastwatch_elite_target": {
-		"id": "eastwatch_elite_target",
-		"name": "Bounty: Elite Target",
-		"description": "Track down and eliminate a single monster of level 100 or higher.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "eastwatch",
-		"target": 100,
-		"rewards": {"xp": 2000, "gold": 1000, "gems": 5},
-		"is_daily": false,
-		"prerequisite": "eastwatch_wilderness_threat"
-	},
-	"eastwatch_mass_culling": {
-		"id": "eastwatch_mass_culling",
-		"name": "Bounty: Mass Culling",
-		"description": "Thin the monster population by eliminating 50 creatures.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "eastwatch",
-		"target": 50,
-		"rewards": {"xp": 1500, "gold": 750, "gems": 3},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastwatch_long_road": {
-		"id": "eastwatch_long_road",
-		"name": "The Long Road",
-		"description": "Make the dangerous journey to Shadowmere Trading Post at (300, 300).",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "eastwatch",
-		"target": 1,
-		"destinations": ["shadowmere"],
-		"rewards": {"xp": 3000, "gold": 1500, "gems": 5},
-		"is_daily": false,
-		"prerequisite": "eastwatch_elite_target"
-	},
-
-	# ===== WESTHOLD (-150, 0) - Veteran Warrior - Survival Quests =====
-	"westhold_endurance": {
-		"id": "westhold_endurance",
-		"name": "Test of Endurance",
-		"description": "Prove your stamina by defeating 20 monsters without returning to town.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "westhold",
-		"target": 20,
-		"rewards": {"xp": 400, "gold": 200, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"westhold_western_wilds": {
-		"id": "westhold_western_wilds",
-		"name": "Western Wilds",
-		"description": "Venture to Far West Haven and report back.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "westhold",
-		"target": 1,
-		"destinations": ["far_west_haven"],
-		"rewards": {"xp": 800, "gold": 400, "gems": 2},
-		"is_daily": false,
-		"prerequisite": "westhold_endurance"
-	},
-
-	# ===== SOUTHPORT (0, -150) - Sea Captain - Collection/Exploration =====
-	"southport_southern_seas": {
-		"id": "southport_southern_seas",
-		"name": "Southern Expedition",
-		"description": "Chart a course to the Deep South Port.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "southport",
-		"target": 1,
-		"destinations": ["deep_south_port"],
-		"rewards": {"xp": 600, "gold": 300, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"southport_sea_monsters": {
-		"id": "southport_sea_monsters",
-		"name": "Sea Monster Bounty",
-		"description": "Defeat 15 monsters level 40+ in the southern regions.",
-		"type": QuestType.KILL_LEVEL,
-		"trading_post": "southport",
-		"target": 40,
-		"kill_count": 15,
-		"rewards": {"xp": 1000, "gold": 500, "gems": 2},
-		"is_daily": false,
-		"prerequisite": "southport_southern_seas"
-	},
-
-	# ===== NORTHWATCH (0, 75) - Scout Leader - Scouting =====
-	"northwatch_scout_training": {
-		"id": "northwatch_scout_training",
-		"name": "Scout Training",
-		"description": "Complete basic scout training by defeating 8 monsters.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "northwatch",
-		"target": 8,
-		"rewards": {"xp": 100, "gold": 50, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"northwatch_highland_recon": {
-		"id": "northwatch_highland_recon",
-		"name": "Highland Reconnaissance",
-		"description": "Scout the Highland Post to the north.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "northwatch",
-		"target": 1,
-		"destinations": ["highland_post"],
-		"rewards": {"xp": 300, "gold": 150, "gems": 1},
-		"is_daily": false,
-		"prerequisite": "northwatch_scout_training"
-	},
-
-	# ===== EASTERN_CAMP (75, 0) - Camp Commander - Combat =====
-	"eastern_camp_drill": {
-		"id": "eastern_camp_drill",
-		"name": "Combat Drill",
-		"description": "Defeat 12 monsters to complete your combat drill.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "eastern_camp",
-		"target": 12,
-		"rewards": {"xp": 150, "gold": 75, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"eastern_camp_eastwatch_run": {
-		"id": "eastern_camp_eastwatch_run",
-		"name": "Eastwatch Run",
-		"description": "Deliver supplies to Eastwatch fortress.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "eastern_camp",
-		"target": 1,
-		"destinations": ["eastwatch"],
-		"rewards": {"xp": 350, "gold": 175, "gems": 1},
-		"is_daily": false,
-		"prerequisite": "eastern_camp_drill"
-	},
-
-	# ===== WESTERN_REFUGE (-75, 0) - Hermit Sage - Wisdom =====
-	"western_refuge_meditation": {
-		"id": "western_refuge_meditation",
-		"name": "Meditation Journey",
-		"description": "Seek wisdom by visiting Westhold.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "western_refuge",
-		"target": 1,
-		"destinations": ["westhold"],
-		"rewards": {"xp": 250, "gold": 125, "gems": 0},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-
-	# ===== HIGHLAND_POST (0, 150) - Mountain Guide - Climbing =====
-	"highland_climbing": {
-		"id": "highland_climbing",
-		"name": "Mountain Trials",
-		"description": "Defeat 25 monsters in the highland regions.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "highland_post",
-		"target": 25,
-		"rewards": {"xp": 500, "gold": 250, "gems": 1},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"highland_peak_journey": {
-		"id": "highland_peak_journey",
-		"name": "Journey to High North Peak",
-		"description": "Climb to the High North Peak trading post.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "highland_post",
-		"target": 1,
-		"destinations": ["high_north_peak"],
-		"rewards": {"xp": 1200, "gold": 600, "gems": 3},
-		"is_daily": false,
-		"prerequisite": "highland_climbing"
-	},
-
-	# ===== FAR_EAST_STATION (250, 0) - Station Master - Expeditions =====
-	"far_east_expedition": {
-		"id": "far_east_expedition",
-		"name": "Eastern Frontier",
-		"description": "Push to Void's Edge at the edge of the world.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "far_east_station",
-		"target": 1,
-		"destinations": ["voids_edge"],
-		"rewards": {"xp": 2000, "gold": 1000, "gems": 5},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"far_east_elite_hunt": {
-		"id": "far_east_elite_hunt",
-		"name": "Elite Eastern Hunt",
-		"description": "Defeat a monster of level 150 or higher.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "far_east_station",
-		"target": 150,
-		"rewards": {"xp": 3000, "gold": 1500, "gems": 7},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-
-	# ===== FAR_WEST_HAVEN (-250, 0) - Haven Watcher - Vigilance =====
-	"far_west_vigilance": {
-		"id": "far_west_vigilance",
-		"name": "Vigilant Watch",
-		"description": "Eliminate 30 monsters threatening the western frontier.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "far_west_haven",
-		"target": 30,
-		"rewards": {"xp": 1500, "gold": 750, "gems": 3},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"far_west_inferno_path": {
-		"id": "far_west_inferno_path",
-		"name": "Path to the Inferno",
-		"description": "Journey to the Inferno Outpost near Fire Mountain.",
-		"type": QuestType.EXPLORATION,
-		"trading_post": "far_west_haven",
-		"target": 1,
-		"destinations": ["inferno_outpost"],
-		"rewards": {"xp": 2500, "gold": 1250, "gems": 6},
-		"is_daily": false,
-		"prerequisite": "far_west_vigilance"
-	},
-
-	# ===== SHADOWMERE (300, 300) - Dark Warden - Challenge =====
-	"shadowmere_worthy": {
-		"id": "shadowmere_worthy",
-		"name": "Prove Your Worth",
-		"description": "Defeat a monster of level 250 or higher.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "shadowmere",
-		"target": 250,
-		"rewards": {"xp": 5000, "gold": 2500, "gems": 10},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-	"shadowmere_ultimate": {
-		"id": "shadowmere_ultimate",
-		"name": "Ultimate Challenge",
-		"description": "Defeat a monster of level 500 or higher. Only legends attempt this.",
-		"type": QuestType.BOSS_HUNT,
-		"trading_post": "shadowmere",
-		"target": 500,
-		"rewards": {"xp": 15000, "gold": 7500, "gems": 25},
-		"is_daily": false,
-		"prerequisite": "shadowmere_worthy"
-	},
-
-	# ===== DRAGONS_REST (300, -300) - Dragon Sage - Legendary =====
-	"dragons_rest_legacy": {
-		"id": "dragons_rest_legacy",
-		"name": "Dragon's Legacy",
-		"description": "Defeat 50 monsters level 200+ to honor the dragon's memory.",
-		"type": QuestType.KILL_LEVEL,
-		"trading_post": "dragons_rest",
-		"target": 200,
-		"kill_count": 50,
-		"rewards": {"xp": 10000, "gold": 5000, "gems": 15},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-
-	# ===== STORM_PEAK (0, 350) - Storm Caller - Elemental =====
-	"storm_peak_ascent": {
-		"id": "storm_peak_ascent",
-		"name": "Storm Ascent",
-		"description": "Prove yourself by defeating 40 monsters in the storm regions.",
-		"type": QuestType.KILL_ANY,
-		"trading_post": "storm_peak",
-		"target": 40,
-		"rewards": {"xp": 3500, "gold": 1750, "gems": 8},
-		"is_daily": false,
-		"prerequisite": ""
-	},
-
-	# ===== FROZEN_REACH (0, -400) - Frost Hermit - Extreme =====
-	"frozen_extreme": {
-		"id": "frozen_extreme",
-		"name": "Frozen Extremity",
-		"description": "Survive 10 encounters with monsters (level 150+) in high-intensity hotzones within 100 tiles.",
-		"type": QuestType.HOTZONE_KILL,
-		"trading_post": "frozen_reach",
-		"target": 10,
-		"max_distance": 100.0,
-		"min_intensity": 0.5,
-		"min_monster_level": 150,
-		"rewards": {"xp": 8000, "gold": 4000, "gems": 15},
-		"is_daily": false,
-		"prerequisite": ""
-	}
-}
+# NOTE: ~780 lines of static quest definitions were removed. All quests now dynamically
+# generated per-post per-day. Old enum values KILL_TYPE=1, KILL_LEVEL=2 preserved for
+# saved quest backward compatibility. Old dynamic quest IDs (_dynamic_) still regenerated.
 
 func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0, character_name: String = "") -> Dictionary:
 	"""Get quest data by ID. Returns empty dict if not found.
@@ -838,7 +62,11 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 			quest = _scale_quest_rewards(quest, area_level)
 		return quest
 
-	# Handle dynamic quest IDs (format: postid_dynamic_tier_index)
+	# Handle daily quest IDs (format: postid_daily_YYYYMMDD_index)
+	if "_daily_" in quest_id:
+		return _regenerate_daily_quest(quest_id, player_level, quests_completed_at_post)
+
+	# Handle legacy dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:
 		return _regenerate_dynamic_quest(quest_id, player_level, quests_completed_at_post)
 
@@ -982,60 +210,24 @@ func get_quests_for_trading_post(trading_post_id: String) -> Array:
 	return quests
 
 func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary, player_level: int = 1, character_name: String = "") -> Array:
-	"""Get quests available for a player at a Trading Post, considering prerequisites, cooldowns, and player level.
-	Quests are scaled to player level with progressive difficulty."""
+	"""Get quests available for a player at a Trading Post.
+	All quests are now dynamically generated per-post per-day."""
 	var available = []
-	var current_time = Time.get_unix_time_from_system()
-	var area_level = _get_area_level_for_post(trading_post_id)
 
-	# Count completed quests at this post to determine difficulty progression
+	# Count completed daily quests at this post for progression scaling
 	var completed_at_post = 0
-	for quest_id in QUESTS:
-		if QUESTS[quest_id].trading_post == trading_post_id and quest_id in completed_quests:
+	for quest_id in completed_quests:
+		if quest_id.begins_with(trading_post_id + "_daily_") or quest_id.begins_with(trading_post_id + "_dynamic_"):
 			completed_at_post += 1
 
-	# Get static quests for this trading post
-	for quest_id in QUESTS:
-		var quest = QUESTS[quest_id]
+	# Also count cooldown quests for progression
+	for quest_id in daily_cooldowns:
+		if quest_id.begins_with(trading_post_id + "_daily_") or quest_id.begins_with(trading_post_id + "_dynamic_"):
+			completed_at_post += 1
 
-		# Must be at this Trading Post
-		if quest.trading_post != trading_post_id:
-			continue
-
-		# Can't be already active
-		if quest_id in active_quest_ids:
-			continue
-
-		# Check if non-daily quest is already completed
-		if not quest.is_daily and quest_id in completed_quests:
-			continue
-
-		# Check daily cooldown
-		if quest.is_daily:
-			if daily_cooldowns.has(quest_id):
-				if current_time < daily_cooldowns[quest_id]:
-					continue
-
-		# Check prerequisite
-		if quest.prerequisite != "" and quest.prerequisite not in completed_quests:
-			continue
-
-		# Scale quest rewards AND requirements based on player level and progression
-		var scaled_quest = _scale_quest_for_player(quest.duplicate(true), player_level, completed_at_post, area_level, character_name)
-		available.append(scaled_quest)
-
-	# Count total non-daily static quests at this trading post
-	var total_static_quests = 0
-	for quest_id in QUESTS:
-		var quest = QUESTS[quest_id]
-		if quest.trading_post == trading_post_id and not quest.is_daily:
-			total_static_quests += 1
-
-	# Generate dynamic quests after completing half the static quests (or all if few)
-	var static_threshold = max(3, total_static_quests / 2)
-	if completed_at_post >= static_threshold:
-		var dynamic_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post)
-		available.append_array(dynamic_quests)
+	# Generate the daily quest board (date-seeded, same for all players at this post today)
+	var daily_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post, daily_cooldowns)
+	available.append_array(daily_quests)
 
 	return available
 
@@ -1159,6 +351,62 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 	return quest
 
 # ===== DYNAMIC QUEST GENERATION =====
+
+# ===== DATE + DIRECTION HELPERS =====
+
+static func _get_date_string() -> String:
+	"""Returns YYYYMMDD string from system time for daily quest seeding."""
+	var dt = Time.get_datetime_dict_from_system()
+	return "%04d%02d%02d" % [dt.year, dt.month, dt.day]
+
+static func _get_direction_text(from: Vector2i, to: Vector2i) -> String:
+	"""Get compass direction from one point to another (e.g. 'north', 'southeast')."""
+	var dx = to.x - from.x
+	var dy = to.y - from.y
+	if abs(dx) < 3 and abs(dy) < 3:
+		return "nearby"
+	var ns = ""
+	var ew = ""
+	if dy > abs(dx) * 0.4:
+		ns = "north"
+	elif dy < -abs(dx) * 0.4:
+		ns = "south"
+	if dx > abs(dy) * 0.4:
+		ew = "east"
+	elif dx < -abs(dy) * 0.4:
+		ew = "west"
+	if ns == "" and ew == "":
+		return "nearby"
+	return ns + ew  # e.g. "north", "southeast", "west"
+
+static func _get_distance_text(from: Vector2i, to: Vector2i) -> String:
+	"""Get a distance + direction description like 'far to the south (~95 tiles)'."""
+	var dx = to.x - from.x
+	var dy = to.y - from.y
+	var dist = sqrt(dx * dx + dy * dy)
+	var direction = _get_direction_text(from, to)
+	if dist < 15:
+		return "nearby (~%d tiles)" % int(dist)
+	elif dist < 50:
+		return "to the %s (~%d tiles)" % [direction, int(dist)]
+	elif dist < 150:
+		return "far to the %s (~%d tiles)" % [direction, int(dist)]
+	else:
+		return "very far to the %s (~%d tiles)" % [direction, int(dist)]
+
+static func _get_tier_name(tier: int) -> String:
+	"""Human-readable tier name for quest descriptions."""
+	match tier:
+		1: return "Tier 1 (Goblin/Rat)"
+		2: return "Tier 2 (Orc/Spider)"
+		3: return "Tier 3 (Troll/Wyvern)"
+		4: return "Tier 4 (Giant/Demon)"
+		5: return "Tier 5 (Dragon/Lich)"
+		6: return "Tier 6 (Golem/Hydra)"
+		7: return "Tier 7 (Void Walker)"
+		8: return "Tier 8 (Cosmic Horror)"
+		9: return "Tier 9 (Avatar)"
+	return "Tier %d" % tier
 
 # Trading post locations for distance calculations
 const TRADING_POST_COORDS = {
@@ -1328,40 +576,274 @@ func _get_dungeon_for_area(area_level: int) -> Dictionary:
 			return dungeons[randi() % dungeons.size()]
 	return {}
 
-func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0) -> Array:
-	"""Generate procedural quests scaled to player level when all static quests are completed."""
+func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0, daily_cooldowns: Dictionary = {}) -> Array:
+	"""Generate daily quest board for a trading post. Seeded by date + post ID so all
+	players see the same quests at the same post on the same day."""
 	var quests = []
+	var date_str = _get_date_string()
 
-	# Count completed dynamic quests from this post
-	var dynamic_completed = 0
-	for quest_id in completed_quests:
-		if quest_id.begins_with(trading_post_id + "_dynamic_"):
-			dynamic_completed += 1
+	# Get this trading post's coordinates and area level
+	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
+	var area_level = max(1, int(post_distance * 0.5))
+	var monster_tier = _get_tier_for_area_level(area_level)
 
-	# Calculate tier based on completions
-	var tier = dynamic_completed + 1
+	# Quest count scales with area level: starter 3-4, mid 5-6, endgame 6-8
+	var daily_seed = hash(trading_post_id + date_str)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = daily_seed
+	var quest_count: int
+	if area_level < 10:
+		quest_count = rng.randi_range(3, 4)
+	elif area_level < 100:
+		quest_count = rng.randi_range(5, 6)
+	else:
+		quest_count = rng.randi_range(6, 8)
 
-	# Get this trading post's coordinates
+	# Calculate difficulty modifier from progression
+	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
+
+	# Available quest types for cycling (weighted by what makes sense for the area)
+	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR]
+
+	# Featured quest is index 0 (seeded by date across all posts)
+	var featured_index = hash(date_str) % quest_count
+
+	for i in range(quest_count):
+		var quest_id = "%s_daily_%s_%d" % [trading_post_id, date_str, i]
+
+		# Skip if already active, completed, or on cooldown
+		if quest_id in active_quest_ids or quest_id in completed_quests:
+			continue
+		if daily_cooldowns.has(quest_id):
+			var current_time = Time.get_unix_time_from_system()
+			if current_time < daily_cooldowns[quest_id]:
+				continue
+
+		var quest = _generate_daily_quest(trading_post_id, quest_id, i, post_distance,
+			player_level, progression_modifier, quest_types, rng, post_coords)
+		if quest.is_empty():
+			continue
+
+		# Mark featured quest with bonus rewards
+		if i == featured_index:
+			quest["is_featured"] = true
+			quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * 1.5)
+			quest.rewards["gold"] = int(quest.rewards.get("gold", 0) * 1.5)
+			quest.rewards["gems"] = max(quest.rewards.get("gems", 0), int(quest.rewards.get("gems", 0) * 1.5))
+
+		quests.append(quest)
+
+	# Restore randomness
+	randomize()
+	return quests
+
+func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int,
+	post_distance: float, player_level: int, progression_modifier: float,
+	quest_types: Array, rng: RandomNumberGenerator, post_coords: Vector2i) -> Dictionary:
+	"""Generate a single daily quest. Uses rng (already seeded by caller) for determinism."""
+
+	# Seed the global random for deterministic monster/dungeon picks using quest_id
+	seed(quest_id.hash())
+
+	var area_level = max(1, int(post_distance * 0.5))
+	var monster_tier = _get_tier_for_area_level(area_level)
+	var max_monster_level = _get_max_monster_level_for_area(area_level)
+	var capped_level = min(player_level, max_monster_level)
+	var effective_level = capped_level * (1.0 + progression_modifier * 0.5)
+
+	# Tier multiplier: index 0 is easiest, later indices are harder
+	var tier_mult: float = 0.9 + index * 0.15  # 0.9, 1.05, 1.2, 1.35, ...
+
+	# Scale requirements
+	var kill_count = max(3, int(5 + (index * 2) + (capped_level / 20)))
+	var min_monster_level = min(int(effective_level * 0.7 * tier_mult), max_monster_level)
+
+	# Rewards scale with area level using pow() to match monster XP
+	var level_factor = pow(area_level + 1, 2.2)
+	var tier_base_xp = 3 + index * 2
+	var tier_base_gold = 2 + index
+	var base_xp = int(tier_base_xp * level_factor * tier_mult)
+	var base_gold = int(tier_base_gold * level_factor * tier_mult * 0.1)
+	var gems = max(0, int((index - 1 + area_level / 50) * tier_mult))
+
+	# Pick quest type, cycling through available types
+	var type_index = rng.randi() % quest_types.size()
+	var picked_type = quest_types[type_index]
+
+	# Some types need features to exist - fall back to KILL_ANY/KILL_TIER if not
+	var dungeon_info = _get_dungeon_for_area(area_level)
+	if picked_type == QuestType.DUNGEON_CLEAR and dungeon_info.is_empty():
+		picked_type = QuestType.KILL_TIER
+	if picked_type == QuestType.EXPLORATION:
+		# Need a different post to explore to
+		var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
+		if nearby_posts.is_empty():
+			picked_type = QuestType.KILL_ANY
+
+	var quest_name: String
+	var quest_desc: String
+	var target: int
+	var extra_fields: Dictionary = {}
+
+	match picked_type:
+		QuestType.KILL_ANY:
+			quest_name = "Bounty: Monster Cull"
+			quest_desc = "Eliminate %d monsters in the area." % kill_count
+			target = kill_count
+
+		QuestType.KILL_TIER:
+			var req_tier = monster_tier
+			var tier_kill_count = max(3, int(kill_count * 0.7))
+			quest_name = "Bounty: %s Hunt" % _get_tier_name(req_tier).split("(")[0].strip_edges()
+			var tier_range = TIER_LEVEL_RANGES.get(req_tier, {"min": 1, "max": 5})
+			quest_desc = "Kill %d %s monsters (Lv%d-%d)." % [tier_kill_count, _get_tier_name(req_tier), tier_range.min, tier_range.max]
+			target = tier_kill_count
+			extra_fields["required_tier"] = req_tier
+			extra_fields["monster_tier"] = req_tier
+
+		QuestType.HOTZONE_KILL:
+			var hz_kills = max(3, int(3 + index + (capped_level / 30)))
+			var hz_min_level = min(int(effective_level * 0.6 * tier_mult), max_monster_level)
+			var hz_distance = 30.0 + (index * 20.0) + (capped_level / 5)
+			quest_name = "Danger Zone Bounty"
+			quest_desc = "Kill %d monsters (Lv%d+) in hotzones within %.0f tiles." % [hz_kills, hz_min_level, hz_distance]
+			target = hz_kills
+			extra_fields["max_distance"] = hz_distance
+			extra_fields["min_intensity"] = 0.0 if area_level < 50 else 0.3
+			extra_fields["min_monster_level"] = hz_min_level
+
+		QuestType.BOSS_HUNT:
+			var boss_level = min(int(effective_level * 1.1), max_monster_level)
+			boss_level = max(boss_level, area_level)
+			quest_name = "Elite Bounty"
+			quest_desc = "Track down and defeat a monster of level %d or higher." % boss_level
+			target = boss_level
+
+		QuestType.EXPLORATION:
+			var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
+			if nearby_posts.size() > 0:
+				var dest_idx = rng.randi() % nearby_posts.size()
+				var dest_id = nearby_posts[dest_idx]
+				var dest_coords = TRADING_POST_COORDS.get(dest_id, Vector2i(0, 0))
+				var dest_name = dest_id.replace("_", " ").capitalize()
+				var dist_text = _get_distance_text(post_coords, dest_coords)
+				quest_name = "Journey to %s" % dest_name
+				quest_desc = "Travel to %s. It lies %s." % [dest_name, dist_text]
+				target = 1
+				extra_fields["destinations"] = [dest_id]
+			else:
+				# Fallback
+				quest_name = "Bounty: Monster Cull"
+				quest_desc = "Eliminate %d monsters in the area." % kill_count
+				target = kill_count
+				picked_type = QuestType.KILL_ANY
+
+		QuestType.DUNGEON_CLEAR:
+			quest_name = "Conquer the %s" % dungeon_info.name
+			quest_desc = "Venture into a %s and defeat %s." % [dungeon_info.name, dungeon_info.boss]
+			target = 1
+			extra_fields["dungeon_type"] = dungeon_info.type
+			# Dungeon quests give bonus rewards
+			base_xp = int(base_xp * 2.0)
+			base_gold = int(base_gold * 1.5)
+			gems = max(gems + 2, int(gems * 1.5))
+
+	# Determine reward tier for display tag
+	var reward_tier: String
+	if area_level < 15:
+		reward_tier = "beginner"
+	elif area_level < 35:
+		reward_tier = "standard"
+	elif area_level < 60:
+		reward_tier = "veteran"
+	elif area_level < 100:
+		reward_tier = "elite"
+	else:
+		reward_tier = "legendary"
+
+	var quest = {
+		"id": quest_id,
+		"name": quest_name,
+		"description": quest_desc,
+		"type": picked_type,
+		"trading_post": trading_post_id,
+		"target": target,
+		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"is_daily": true,
+		"prerequisite": "",
+		"is_dynamic": true,
+		"area_level": area_level,
+		"reward_tier": reward_tier,
+		"player_level_scaled": player_level,
+		"difficulty_tier": index
+	}
+	quest.merge(extra_fields)
+
+	# Restore randomness
+	randomize()
+	return quest
+
+func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
+	"""Regenerate a daily quest from its ID for quest lookup/turn-in.
+	Daily IDs have format: postid_daily_YYYYMMDD_index"""
+	var parts = quest_id.split("_daily_")
+	if parts.size() != 2:
+		return {}
+	var trading_post_id = parts[0]
+	var date_parts = parts[1].split("_")
+	if date_parts.size() != 2:
+		return {}
+	var index = int(date_parts[1])
+
 	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 
-	# Calculate difficulty modifier based on progression
-	var progression_modifier = min(0.5, (quests_completed_at_post + dynamic_completed) * 0.05)
+	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
+	var effective_player_level = max(1, player_level)
 
-	# Generate 2-3 quests of increasing difficulty, scaled to player level
-	for i in range(3):
-		var quest_tier = tier + i
-		var quest_id = "%s_dynamic_%d_%d" % [trading_post_id, tier, i]
+	# Re-seed RNG the same way generate_dynamic_quests does
+	var date_str = date_parts[0]
+	var daily_seed = hash(trading_post_id + date_str)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = daily_seed
+	# Advance rng state to match the index (each quest consumes some rng calls)
+	# We need to regenerate all quests up to and including this index
+	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR]
 
-		# Skip if already active or completed
-		if quest_id in active_quest_ids or quest_id in completed_quests:
-			continue
+	# Determine quest count (same logic as generate_dynamic_quests)
+	var area_level = max(1, int(post_distance * 0.5))
+	if area_level < 10:
+		var _count = rng.randi_range(3, 4)
+	elif area_level < 100:
+		var _count = rng.randi_range(5, 6)
+	else:
+		var _count = rng.randi_range(6, 8)
 
-		var quest = _generate_quest_for_tier_scaled(trading_post_id, quest_id, quest_tier, post_distance, player_level, progression_modifier)
-		if not quest.is_empty():
-			quests.append(quest)
+	# Generate quests 0..index to advance RNG state correctly
+	var result = {}
+	for i in range(index + 1):
+		var qid = "%s_daily_%s_%d" % [trading_post_id, date_str, i]
+		var quest = _generate_daily_quest(trading_post_id, qid, i, post_distance,
+			effective_player_level, progression_modifier, quest_types, rng, post_coords)
+		if i == index:
+			result = quest
+	randomize()
+	return result
 
-	return quests
+func _find_nearby_posts(from_coords: Vector2i, min_dist: float, max_dist: float) -> Array:
+	"""Find trading post IDs within a distance range from given coordinates."""
+	var result = []
+	for post_id in TRADING_POST_COORDS:
+		var coords = TRADING_POST_COORDS[post_id]
+		var dx = coords.x - from_coords.x
+		var dy = coords.y - from_coords.y
+		var dist = sqrt(dx * dx + dy * dy)
+		if dist >= min_dist and dist <= max_dist:
+			result.append(post_id)
+	return result
 
 func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: int, post_distance: float) -> Dictionary:
 	"""Generate a single quest based on tier and trading post location."""
@@ -1606,7 +1088,7 @@ func get_all_quest_ids() -> Array:
 
 func is_quest_type_kill(quest_type: int) -> bool:
 	"""Check if quest type involves killing monsters."""
-	return quest_type in [QuestType.KILL_ANY, QuestType.KILL_TYPE, QuestType.KILL_LEVEL, QuestType.HOTZONE_KILL, QuestType.BOSS_HUNT]
+	return quest_type in [QuestType.KILL_ANY, QuestType.KILL_TYPE, QuestType.KILL_LEVEL, QuestType.HOTZONE_KILL, QuestType.BOSS_HUNT, QuestType.KILL_TIER]
 
 func is_quest_type_exploration(quest_type: int) -> bool:
 	"""Check if quest type involves exploration."""
