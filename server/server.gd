@@ -68,7 +68,10 @@ var pilgrimage_shrines: Dictionary = {}    # {peer_id: {blood: Vector2i, mind: V
 
 # Dungeon system state
 var active_dungeons: Dictionary = {}  # instance_id -> dungeon_instance data
-var dungeon_floors: Dictionary = {}   # instance_id -> {floor_num: grid_data}
+var dungeon_floors: Dictionary = {}   # instance_id -> [grid_floor_0, grid_floor_1, ...]
+var dungeon_floor_rooms: Dictionary = {}  # instance_id -> [[rooms_floor_0], [rooms_floor_1], ...]
+var dungeon_monsters: Dictionary = {}     # instance_id -> {floor_num: [monster_entity, ...]}
+var next_dungeon_monster_id: int = 0
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
@@ -794,6 +797,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_dungeon_move(peer_id, message)
 		"dungeon_exit":
 			handle_dungeon_exit(peer_id)
+		"dungeon_rest":
+			handle_dungeon_rest(peer_id)
 		"dungeon_state":
 			# Client requesting current dungeon state (after combat continue)
 			if characters.has(peer_id) and characters[peer_id].current_dungeon_id != "":
@@ -2380,13 +2385,20 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				save_character(peer_id)
 				send_buff_expiration_notifications(peer_id)
 
-				# Handle dungeon combat victory - clear tile and send updated state
+				# Handle dungeon combat victory - mark monster dead and send updated state
 				# Note: Combat state is erased by now, so we use result flags instead
 				if result.get("is_dungeon_combat", false):
 					var character = characters[peer_id]
 					if character.in_dungeon:
 						var is_boss = result.get("is_boss_fight", false)
-						_clear_dungeon_tile(peer_id)
+						# Kill the monster entity if it was entity-based combat
+						var dead_monster_id = result.get("dungeon_monster_id", -1)
+						if dead_monster_id >= 0:
+							_kill_dungeon_monster(character.current_dungeon_id, character.dungeon_floor, dead_monster_id)
+						else:
+							# Legacy tile-based encounter
+							_clear_dungeon_tile(peer_id)
+						character.dungeon_encounters_cleared += 1
 						if is_boss:
 							# Boss defeated - complete dungeon
 							_complete_dungeon(peer_id)
@@ -4350,6 +4362,9 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		if is_dungeon_combat:
 			internal_state["is_dungeon_combat"] = true
 			internal_state["is_boss_fight"] = is_boss_fight
+			# Propagate monster entity ID for cleanup after flock chain
+			if pending_flocks.has(peer_id) and pending_flocks[peer_id].has("dungeon_monster_id"):
+				internal_state["dungeon_monster_id"] = pending_flocks[peer_id].dungeon_monster_id
 
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s" % [monster.name, flock_count + 1, result.message]
@@ -9776,20 +9791,36 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
 
-	# Always send updated dungeon state first so client sees new position
-	_send_dungeon_state(peer_id)
-
-	# Handle tile interaction after sending state update
-	# Using integer comparison for enum values to ensure matching works
+	# Check tile interaction FIRST (treasure, exit)
 	var tile_int = int(tile)
-	if tile_int == int(DungeonDatabaseScript.TileType.ENCOUNTER):
-		_start_dungeon_encounter(peer_id, false)
-	elif tile_int == int(DungeonDatabaseScript.TileType.BOSS):
-		_start_dungeon_encounter(peer_id, true)
-	elif tile_int == int(DungeonDatabaseScript.TileType.TREASURE):
+	if tile_int == int(DungeonDatabaseScript.TileType.TREASURE):
 		_open_dungeon_treasure(peer_id)
+		return
 	elif tile_int == int(DungeonDatabaseScript.TileType.EXIT):
 		_advance_dungeon_floor(peer_id)
+		return
+
+	# Check if player walked onto a monster entity
+	var stepped_monster = _get_monster_at_position(instance_id, character.dungeon_floor, new_x, new_y)
+	if stepped_monster != null:
+		_start_dungeon_monster_combat(peer_id, stepped_monster)
+		return
+
+	# Move all monsters (they react to player movement)
+	var monster_combat = _move_dungeon_monsters(peer_id)
+	if monster_combat:
+		return  # Combat was triggered by a monster reaching the player
+
+	# Legacy tile-based encounters (backward compat for old dungeon instances)
+	if tile_int == int(DungeonDatabaseScript.TileType.ENCOUNTER):
+		_start_dungeon_encounter(peer_id, false)
+		return
+	elif tile_int == int(DungeonDatabaseScript.TileType.BOSS):
+		_start_dungeon_encounter(peer_id, true)
+		return
+
+	# Send updated dungeon state
+	_send_dungeon_state(peer_id)
 
 func handle_dungeon_exit(peer_id: int):
 	"""Handle player exiting dungeon"""
@@ -9834,6 +9865,10 @@ func handle_dungeon_exit(peer_id: int):
 				active_dungeons.erase(instance_id)
 			if dungeon_floors.has(instance_id):
 				dungeon_floors.erase(instance_id)
+			if dungeon_floor_rooms.has(instance_id):
+				dungeon_floor_rooms.erase(instance_id)
+			if dungeon_monsters.has(instance_id):
+				dungeon_monsters.erase(instance_id)
 
 	# Exit dungeon
 	character.exit_dungeon()
@@ -9882,14 +9917,21 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
 	}
 
-	# Generate all floor grids
+	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
+	var floor_rooms = []
 	for floor_num in range(dungeon_data.floors):
 		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(grid)
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(floor_data.grid)
+		floor_rooms.append(floor_data.rooms)
 
 	dungeon_floors[instance_id] = floor_grids
+	dungeon_floor_rooms[instance_id] = floor_rooms
+
+	# Spawn monsters on all floors
+	var dungeon_level = active_dungeons[instance_id].dungeon_level
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
 	log_message("Created dungeon instance: %s (%s)" % [instance_id, dungeon_data.name])
 	return instance_id
@@ -9956,14 +9998,20 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"quest_id": quest_id  # Track which quest this is for
 	}
 
-	# Generate all floor grids
+	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
+	var floor_rooms = []
 	for floor_num in range(dungeon_data.floors):
 		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(grid)
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(floor_data.grid)
+		floor_rooms.append(floor_data.rooms)
 
 	dungeon_floors[instance_id] = floor_grids
+	dungeon_floor_rooms[instance_id] = floor_rooms
+
+	# Spawn monsters on all floors
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
 	log_message("Created player dungeon instance: %s (%s) for peer %d at (%d, %d)" % [instance_id, dungeon_data.name, peer_id, spawn_x, spawn_y])
 	return instance_id
@@ -9983,6 +10031,10 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 		active_dungeons.erase(instance_id)
 	if dungeon_floors.has(instance_id):
 		dungeon_floors.erase(instance_id)
+	if dungeon_floor_rooms.has(instance_id):
+		dungeon_floor_rooms.erase(instance_id)
+	if dungeon_monsters.has(instance_id):
+		dungeon_monsters.erase(instance_id)
 
 	# Remove from player's tracking
 	player_dungeon_instances[peer_id].erase(quest_id)
@@ -10037,14 +10089,21 @@ func _ensure_starter_dungeon_exists():
 		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
 	}
 
-	# Generate all floor grids
+	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
+	var floor_rooms = []
 	for floor_num in range(dungeon_data.floors):
 		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(grid)
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(floor_data.grid)
+		floor_rooms.append(floor_data.rooms)
 
 	dungeon_floors[instance_id] = floor_grids
+	dungeon_floor_rooms[instance_id] = floor_rooms
+
+	# Spawn monsters on all floors
+	var dungeon_level = active_dungeons[instance_id].dungeon_level
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
 	log_message("Spawned starter dungeon: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_x, spawn_y])
 
@@ -10079,6 +10138,8 @@ func _check_dungeon_spawns():
 	for instance_id in dungeons_to_remove:
 		active_dungeons.erase(instance_id)
 		dungeon_floors.erase(instance_id)
+		dungeon_floor_rooms.erase(instance_id)
+		dungeon_monsters.erase(instance_id)
 		world_dungeon_count -= 1
 
 	# Spawn new world dungeons if below minimum
@@ -10157,14 +10218,21 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		"completed_at": 0  # 0 means not completed yet
 	}
 
-	# Generate all floor grids
+	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
+	var floor_rooms = []
 	for floor_num in range(dungeon_data.floors):
 		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var grid = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(grid)
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(floor_data.grid)
+		floor_rooms.append(floor_data.rooms)
 
 	dungeon_floors[instance_id] = floor_grids
+	dungeon_floor_rooms[instance_id] = floor_rooms
+
+	# Spawn monsters on all floors
+	var dungeon_level = active_dungeons[instance_id].dungeon_level
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
 	return instance_id
 
@@ -10332,6 +10400,19 @@ func _send_dungeon_state(peer_id: int):
 	# Get current tile
 	var current_tile = grid[character.dungeon_y][character.dungeon_x]
 
+	# Get alive monsters on current floor
+	var monster_list = []
+	if dungeon_monsters.has(instance_id):
+		var floor_monsters = dungeon_monsters[instance_id].get(character.dungeon_floor, [])
+		for m in floor_monsters:
+			if m.alive:
+				monster_list.append({
+					"id": m.id, "x": m.x, "y": m.y,
+					"char": m.display_char, "color": m.display_color,
+					"alert": m.alert, "is_boss": m.is_boss,
+					"type": m.monster_type
+				})
+
 	send_to_peer(peer_id, {
 		"type": "dungeon_state",
 		"dungeon_type": character.current_dungeon_type,
@@ -10343,7 +10424,8 @@ func _send_dungeon_state(peer_id: int):
 		"player_y": character.dungeon_y,
 		"current_tile": current_tile,
 		"encounters_cleared": character.dungeon_encounters_cleared,
-		"color": dungeon_data.color
+		"color": dungeon_data.color,
+		"monsters": monster_list
 	})
 
 func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
@@ -10468,10 +10550,13 @@ func _open_dungeon_treasure(peer_id: int):
 		"message": "[color=#FFD700]You open the treasure chest![/color]",
 		"gold": treasure.gold,
 		"materials": treasure.get("materials", []),
-		"egg": egg_info
+		"egg": egg_info,
+		"player_x": character.dungeon_x,
+		"player_y": character.dungeon_y
 	})
 
-	# Don't send dungeon_state here - let client request it after player acknowledges
+	# Don't send dungeon_state here - it would wipe the treasure text from game_output
+	# Client updates map panel from player position in treasure message
 	send_character_update(peer_id)
 	save_character(peer_id)
 
@@ -10601,6 +10686,10 @@ func _complete_dungeon(peer_id: int):
 				active_dungeons.erase(instance_id)
 			if dungeon_floors.has(instance_id):
 				dungeon_floors.erase(instance_id)
+			if dungeon_floor_rooms.has(instance_id):
+				dungeon_floor_rooms.erase(instance_id)
+			if dungeon_monsters.has(instance_id):
+				dungeon_monsters.erase(instance_id)
 
 	character.exit_dungeon()
 
@@ -10660,7 +10749,473 @@ func _clear_dungeon_tile(peer_id: int):
 	# Only clear encounter/treasure tiles
 	if current_tile in [DungeonDatabaseScript.TileType.ENCOUNTER, DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.BOSS]:
 		grid[character.dungeon_y][character.dungeon_x] = DungeonDatabaseScript.TileType.CLEARED
-		character.dungeon_encounters_cleared += 1
+
+# ===== DUNGEON MONSTER ENTITY SYSTEM =====
+
+# Rest material costs by dungeon tier
+const DUNGEON_REST_COSTS = {
+	1: {"copper_ore": 1},
+	2: {"copper_ore": 2},
+	3: {"iron_ore": 1},
+	4: {"iron_ore": 2},
+	5: {"steel_ore": 1},
+	6: {"steel_ore": 2},
+	7: {"mithril_ore": 1},
+	8: {"adamantine_ore": 1},
+	9: {"orichalcum_ore": 1}
+}
+
+func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dungeon_level: int):
+	"""Spawn monsters on all floors of a dungeon instance"""
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return
+
+	if not dungeon_floors.has(instance_id) or not dungeon_floor_rooms.has(instance_id):
+		return
+
+	dungeon_monsters[instance_id] = {}
+	var floor_grids = dungeon_floors[instance_id]
+	var all_rooms = dungeon_floor_rooms[instance_id]
+
+	for floor_num in range(floor_grids.size()):
+		var is_boss_floor = floor_num == floor_grids.size() - 1
+		var grid = floor_grids[floor_num]
+		var rooms = all_rooms[floor_num] if floor_num < all_rooms.size() else []
+		_spawn_dungeon_floor_monsters(instance_id, floor_num, dungeon_type, dungeon_level, rooms, grid, is_boss_floor)
+
+func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_type: String, dungeon_level: int, rooms: Array, grid: Array, is_boss_floor: bool):
+	"""Spawn monster entities on a single dungeon floor"""
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return
+
+	var monsters_count = dungeon_data.get("monsters_per_floor", 3)
+	var tier = dungeon_data.tier
+	var boss_data = dungeon_data.get("boss", {})
+	var monster_type = boss_data.get("monster_type", "Goblin")
+	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
+	var level_mult = 1.0 + (floor_num * 0.1)
+	var monster_level = int(dungeon_level * level_mult)
+
+	# Find entrance and exit positions for distance checks
+	var entrance_pos = Vector2i(-1, -1)
+	var exit_pos = Vector2i(-1, -1)
+	for y in range(grid.size()):
+		for x in range(grid[y].size()):
+			if grid[y][x] == DungeonDatabaseScript.TileType.ENTRANCE:
+				entrance_pos = Vector2i(x, y)
+			elif grid[y][x] == DungeonDatabaseScript.TileType.EXIT:
+				exit_pos = Vector2i(x, y)
+
+	if not dungeon_monsters[instance_id].has(floor_num):
+		dungeon_monsters[instance_id][floor_num] = []
+
+	var floor_monsters = dungeon_monsters[instance_id][floor_num]
+	var occupied_positions = []
+
+	# Spawn regular monsters
+	for _i in range(monsters_count):
+		var pos = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied_positions)
+		if pos.x < 0:
+			continue  # Couldn't find valid position
+
+		occupied_positions.append(pos)
+		var display_char = monster_type[0].to_upper() if monster_type.length() > 0 else "M"
+
+		var monster_entity = {
+			"id": next_dungeon_monster_id,
+			"x": pos.x, "y": pos.y,
+			"monster_type": monster_type,
+			"level": monster_level,
+			"display_char": display_char,
+			"display_color": display_color,
+			"alive": true,
+			"alert": false,
+			"is_boss": false,
+			"boss_data": {}
+		}
+		floor_monsters.append(monster_entity)
+		next_dungeon_monster_id += 1
+
+	# Spawn boss on boss floor
+	if is_boss_floor and not boss_data.is_empty():
+		# Place boss in room farthest from entrance
+		var boss_pos = Vector2i(-1, -1)
+		if rooms.size() > 0:
+			var farthest_idx = DungeonDatabaseScript._find_farthest_room(rooms, entrance_pos)
+			boss_pos = DungeonDatabaseScript._get_room_center(rooms[farthest_idx])
+			# Make sure boss position is walkable
+			if boss_pos.x < 0 or boss_pos.y < 0 or boss_pos.x >= grid[0].size() or boss_pos.y >= grid.size():
+				boss_pos = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied_positions)
+			elif grid[boss_pos.y][boss_pos.x] != DungeonDatabaseScript.TileType.EMPTY:
+				boss_pos = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied_positions)
+		else:
+			boss_pos = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied_positions)
+
+		if boss_pos.x >= 0:
+			var boss_entity = {
+				"id": next_dungeon_monster_id,
+				"x": boss_pos.x, "y": boss_pos.y,
+				"monster_type": monster_type,
+				"level": int(dungeon_level * boss_data.get("level_mult", 1.5)),
+				"display_char": "B",
+				"display_color": "#FF0000",
+				"alive": true,
+				"alert": false,
+				"is_boss": true,
+				"boss_data": boss_data.duplicate()
+			}
+			floor_monsters.append(boss_entity)
+			next_dungeon_monster_id += 1
+
+func _find_monster_spawn_position(grid: Array, entrance_pos: Vector2i, exit_pos: Vector2i, occupied: Array) -> Vector2i:
+	"""Find a valid position to spawn a monster entity"""
+	var attempts = 0
+	while attempts < 100:
+		var x = 1 + randi() % (grid[0].size() - 2)
+		var y = 1 + randi() % (grid.size() - 2)
+
+		# Must be walkable
+		if grid[y][x] != DungeonDatabaseScript.TileType.EMPTY:
+			attempts += 1
+			continue
+
+		# Must be >= 4 tiles from entrance and exit (Manhattan distance)
+		if entrance_pos.x >= 0:
+			var dist_entrance = abs(x - entrance_pos.x) + abs(y - entrance_pos.y)
+			if dist_entrance < 4:
+				attempts += 1
+				continue
+		if exit_pos.x >= 0:
+			var dist_exit = abs(x - exit_pos.x) + abs(y - exit_pos.y)
+			if dist_exit < 4:
+				attempts += 1
+				continue
+
+		# No overlap with other monsters
+		var overlap = false
+		for pos in occupied:
+			if pos.x == x and pos.y == y:
+				overlap = true
+				break
+		if overlap:
+			attempts += 1
+			continue
+
+		return Vector2i(x, y)
+
+	return Vector2i(-1, -1)  # Failed to find position
+
+func _get_monster_at_position(instance_id: String, floor_num: int, x: int, y: int):
+	"""Get alive monster entity at position, or null"""
+	if not dungeon_monsters.has(instance_id):
+		return null
+	var floor_monsters = dungeon_monsters[instance_id].get(floor_num, [])
+	for m in floor_monsters:
+		if m.alive and m.x == x and m.y == y:
+			return m
+	return null
+
+func _kill_dungeon_monster(instance_id: String, floor_num: int, monster_id: int):
+	"""Mark a monster entity as dead"""
+	if not dungeon_monsters.has(instance_id):
+		return
+	var floor_monsters = dungeon_monsters[instance_id].get(floor_num, [])
+	for m in floor_monsters:
+		if m.id == monster_id:
+			m.alive = false
+			return
+
+func _move_dungeon_monsters(peer_id: int) -> bool:
+	"""Move all monsters on the player's current floor. Returns true if combat triggered."""
+	if not characters.has(peer_id):
+		return false
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+	if not dungeon_monsters.has(instance_id) or not dungeon_floors.has(instance_id):
+		return false
+
+	var floor_num = character.dungeon_floor
+	var floor_monsters = dungeon_monsters[instance_id].get(floor_num, [])
+	if floor_monsters.is_empty():
+		return false
+
+	var floor_grids = dungeon_floors[instance_id]
+	if floor_num >= floor_grids.size():
+		return false
+	var grid = floor_grids[floor_num]
+	var player_pos = Vector2i(character.dungeon_x, character.dungeon_y)
+
+	for m in floor_monsters:
+		if not m.alive:
+			continue
+
+		var monster_pos = Vector2i(m.x, m.y)
+		var dist = abs(monster_pos.x - player_pos.x) + abs(monster_pos.y - player_pos.y)
+
+		# Detection: within 3 tiles AND has line of sight
+		if dist <= 3 and _has_line_of_sight(grid, monster_pos, player_pos):
+			m.alert = true
+			# Chase toward player
+			_move_monster_toward(m, player_pos, grid, floor_monsters)
+		else:
+			m.alert = false
+			# Wander randomly (25% stay still)
+			_move_monster_random(m, grid, floor_monsters)
+
+		# Check if monster landed on player
+		if m.alive and m.x == player_pos.x and m.y == player_pos.y:
+			_start_dungeon_monster_combat(peer_id, m)
+			return true
+
+	return false
+
+func _has_line_of_sight(grid: Array, from: Vector2i, to: Vector2i) -> bool:
+	"""Check line of sight using Bresenham's line algorithm"""
+	var x0 = from.x
+	var y0 = from.y
+	var x1 = to.x
+	var y1 = to.y
+
+	var dx = abs(x1 - x0)
+	var dy = abs(y1 - y0)
+	var sx = 1 if x0 < x1 else -1
+	var sy = 1 if y0 < y1 else -1
+	var err = dx - dy
+
+	while true:
+		# Don't check start and end positions
+		if not (x0 == from.x and y0 == from.y) and not (x0 == to.x and y0 == to.y):
+			if y0 >= 0 and y0 < grid.size() and x0 >= 0 and x0 < grid[0].size():
+				if grid[y0][x0] == DungeonDatabaseScript.TileType.WALL:
+					return false
+
+		if x0 == x1 and y0 == y1:
+			break
+
+		var e2 = 2 * err
+		if e2 > -dy:
+			err -= dy
+			x0 += sx
+		if e2 < dx:
+			err += dx
+			y0 += sy
+
+	return true
+
+func _move_monster_toward(monster: Dictionary, target: Vector2i, grid: Array, all_monsters: Array):
+	"""Move monster one step toward target"""
+	var dx = target.x - monster.x
+	var dy = target.y - monster.y
+
+	# Try primary axis first (greater distance), then secondary
+	var moves_to_try = []
+	if abs(dx) >= abs(dy):
+		if dx != 0:
+			moves_to_try.append(Vector2i(sign(dx), 0))
+		if dy != 0:
+			moves_to_try.append(Vector2i(0, sign(dy)))
+	else:
+		if dy != 0:
+			moves_to_try.append(Vector2i(0, sign(dy)))
+		if dx != 0:
+			moves_to_try.append(Vector2i(sign(dx), 0))
+
+	for move in moves_to_try:
+		var nx = monster.x + move.x
+		var ny = monster.y + move.y
+		if _is_valid_monster_move(nx, ny, grid, all_monsters, monster.id):
+			monster.x = nx
+			monster.y = ny
+			return
+
+func _move_monster_random(monster: Dictionary, grid: Array, all_monsters: Array):
+	"""Move monster in a random direction (25% stay still)"""
+	if randi() % 4 == 0:
+		return  # 25% stay still
+
+	var directions = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	directions.shuffle()
+
+	for dir in directions:
+		var nx = monster.x + dir.x
+		var ny = monster.y + dir.y
+		if _is_valid_monster_move(nx, ny, grid, all_monsters, monster.id):
+			monster.x = nx
+			monster.y = ny
+			return
+
+func _is_valid_monster_move(x: int, y: int, grid: Array, all_monsters: Array, self_id: int) -> bool:
+	"""Check if a monster can move to position"""
+	# Bounds check
+	if y < 0 or y >= grid.size() or x < 0 or x >= grid[0].size():
+		return false
+
+	# Can't walk through walls
+	var tile = grid[y][x]
+	if tile == DungeonDatabaseScript.TileType.WALL:
+		return false
+
+	# Don't step on entrance/exit/treasure tiles
+	if tile == DungeonDatabaseScript.TileType.ENTRANCE or tile == DungeonDatabaseScript.TileType.EXIT or tile == DungeonDatabaseScript.TileType.TREASURE:
+		return false
+
+	# No overlap with other alive monsters
+	for m in all_monsters:
+		if m.alive and m.id != self_id and m.x == x and m.y == y:
+			return false
+
+	return true
+
+func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
+	"""Start combat with a dungeon monster entity"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+	if not active_dungeons.has(instance_id):
+		return
+
+	# Send dungeon state first so client map shows current positions before combat
+	_send_dungeon_state(peer_id)
+
+	var instance = active_dungeons[instance_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+
+	# Generate the combat monster from entity data
+	var monster_lookup = monster_entity.monster_type
+	var monster = monster_db.generate_monster_by_name(monster_lookup, monster_entity.level)
+	if monster.is_empty():
+		monster = monster_db.generate_monster(monster_entity.level, monster_entity.level)
+	monster.is_dungeon_monster = true
+
+	# Apply boss multipliers if boss
+	var is_boss = monster_entity.is_boss
+	if is_boss and not monster_entity.boss_data.is_empty():
+		var boss_info = monster_entity.boss_data
+		monster.max_hp = int(monster.max_hp * boss_info.get("hp_mult", 2.0))
+		monster.current_hp = monster.max_hp
+		monster.strength = int(monster.strength * boss_info.get("attack_mult", 1.5))
+		monster.is_boss = true
+		monster.name = boss_info.get("name", monster.name)
+
+	# Start combat
+	combat_mgr.start_combat(peer_id, character, monster)
+
+	# Mark internal combat state for dungeon-specific handling
+	var internal_state = combat_mgr.get_active_combat(peer_id)
+	internal_state["is_dungeon_combat"] = true
+	internal_state["is_boss_fight"] = is_boss
+	internal_state["dungeon_monster_id"] = monster_entity.id
+
+	# Get display-ready combat state
+	var display_state = combat_mgr.get_combat_display(peer_id)
+	display_state["is_dungeon_combat"] = true
+	display_state["is_boss_fight"] = is_boss
+
+	var boss_text = " [BOSS]" if is_boss else ""
+	var encounter_msg = "[color=#FF4444]A %s%s appears![/color]" % [monster.name, boss_text]
+
+	send_to_peer(peer_id, {
+		"type": "combat_start",
+		"message": encounter_msg,
+		"combat_state": display_state,
+		"is_dungeon_combat": true,
+		"is_boss": is_boss,
+		"use_client_art": true
+	})
+
+func handle_dungeon_rest(peer_id: int):
+	"""Handle player resting in a dungeon to recover HP/mana"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
+		return
+
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot rest while in combat!"})
+		return
+
+	var instance_id = character.current_dungeon_id
+	if not active_dungeons.has(instance_id):
+		return
+
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var tier = dungeon_data.get("tier", 1)
+
+	# Check material cost
+	var cost = DUNGEON_REST_COSTS.get(tier, {"common_wood": 1})
+	var missing_materials = []
+	for mat_id in cost:
+		var needed = cost[mat_id]
+		var have = character.crafting_materials.get(mat_id, 0)
+		if have < needed:
+			var mat_name = mat_id.capitalize().replace("_", " ")
+			missing_materials.append("%d %s (have %d)" % [needed, mat_name, have])
+
+	if not missing_materials.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF6666]Not enough materials to rest! Need: %s[/color]" % ", ".join(missing_materials)
+		})
+		return
+
+	# Consume materials
+	for mat_id in cost:
+		character.crafting_materials[mat_id] -= cost[mat_id]
+		if character.crafting_materials[mat_id] <= 0:
+			character.crafting_materials.erase(mat_id)
+
+	# Heal based on class
+	var heal_messages = []
+	var is_mage = character.character_class in ["Wizard", "Sorcerer", "Sage"]
+
+	if is_mage:
+		# Mages recover mana (5-12.5%) and some HP (3-5%)
+		var mana_restore = int(character.max_mana * randf_range(0.05, 0.125))
+		character.current_mana = min(character.max_mana, character.current_mana + mana_restore)
+		var hp_restore = int(character.max_hp * randf_range(0.03, 0.05))
+		character.current_hp = min(character.max_hp, character.current_hp + hp_restore)
+		heal_messages.append("[color=#00BFFF]+%d Mana[/color]" % mana_restore)
+		heal_messages.append("[color=#00FF00]+%d HP[/color]" % hp_restore)
+	else:
+		# Non-mages recover HP (5-12.5%)
+		var hp_restore = int(character.max_hp * randf_range(0.05, 0.125))
+		character.current_hp = min(character.max_hp, character.current_hp + hp_restore)
+		heal_messages.append("[color=#00FF00]+%d HP[/color]" % hp_restore)
+
+	# Move all monsters (rest is not free!)
+	var monster_combat = _move_dungeon_monsters(peer_id)
+	if monster_combat:
+		# A monster found the player during rest!
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Your rest is interrupted![/color] " + " ".join(heal_messages)
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	# Send rest result
+	var cost_text = []
+	for mat_id in cost:
+		cost_text.append("%d %s" % [cost[mat_id], mat_id.capitalize().replace("_", " ")])
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#87CEEB]You rest briefly...[/color] %s [color=#808080](-%s)[/color]" % [" ".join(heal_messages), ", ".join(cost_text)]
+	})
+
+	_send_dungeon_state(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _randomize_eternal_flame_location():
 	"""Set the Eternal Flame to a random location within 500 distance from origin"""

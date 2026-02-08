@@ -1567,7 +1567,8 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"wish_pending": combat.get("wish_pending", false),
 		"wish_options": combat.get("wish_options", []),
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
-		"is_boss_fight": combat.get("is_boss_fight", false)
+		"is_boss_fight": combat.get("is_boss_fight", false),
+		"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 	}
 
 func process_flee(combat: Dictionary) -> Dictionary:
@@ -4878,6 +4879,7 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 	return {
 		"monster": {
 			"name": monster.get("name", ""),
+			"base_name": monster.get("base_name", monster.get("name", "")),
 			"level": monster.get("level", 1),
 			"current_hp": monster.get("current_hp", 1),
 			"max_hp": monster.get("max_hp", 1),
@@ -4889,7 +4891,9 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 			"variant_name": monster.get("variant_name", ""),
 			"xp_reward": monster.get("xp_reward", 10),
 			"gold_reward": monster.get("gold_reward", 0),
-			"class_affinity": monster.get("class_affinity", 0)
+			"class_affinity": monster.get("class_affinity", 0),
+			"is_dungeon_monster": monster.get("is_dungeon_monster", false),
+			"is_boss": monster.get("is_boss", false)
 		},
 		"round": combat.get("round", 1),
 		"player_can_act": combat.get("player_can_act", true),
@@ -4898,6 +4902,7 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 		"ambusher_active": combat.get("ambusher_active", false),
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
 		"is_boss_fight": combat.get("is_boss_fight", false),
+		"dungeon_monster_id": combat.get("dungeon_monster_id", -1),
 		"flock_remaining": combat.get("flock_remaining", 0)
 	}
 
@@ -4912,12 +4917,14 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		return {"success": false, "message": "Invalid monster data"}
 
 	# Build combat state from saved data
+	# Always set player_can_act = true on restore so the player can act immediately
+	# (they may have disconnected during the monster's turn phase)
 	var combat_state = {
 		"peer_id": peer_id,
 		"character": character,
 		"monster": monster,
 		"round": saved_state.get("round", 1),
-		"player_can_act": saved_state.get("player_can_act", true),
+		"player_can_act": true,
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
 		"outsmart_failed": saved_state.get("outsmart_failed", false),
@@ -4925,6 +4932,7 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		"analyze_bonus": saved_state.get("analyze_bonus", 0),
 		"is_dungeon_combat": saved_state.get("is_dungeon_combat", false),
 		"is_boss_fight": saved_state.get("is_boss_fight", false),
+		"dungeon_monster_id": saved_state.get("dungeon_monster_id", -1),
 		"flock_remaining": saved_state.get("flock_remaining", 0)
 	}
 

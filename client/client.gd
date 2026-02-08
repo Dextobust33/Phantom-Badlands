@@ -884,6 +884,7 @@ var gathering_pattern_tier: int = 1  # Tier being gathered (affects pattern leng
 var dungeon_mode: bool = false
 var dungeon_data: Dictionary = {}  # Current dungeon state from server
 var dungeon_floor_grid: Array = []  # 2D array of tile types
+var dungeon_monsters_data: Array = []  # Monster entities on current floor
 var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
 
@@ -4441,7 +4442,9 @@ func update_action_bar():
 		]
 	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
-		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2) for item use
+		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2), Rest on slot 7 (key 3)
+		var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
+		var rest_label = "Meditate" if is_mage else "Rest"
 		current_actions = [
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
@@ -4450,7 +4453,7 @@ func update_action_bar():
 			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
 			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
 			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": rest_label, "action_type": "local", "action_data": "dungeon_rest", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
@@ -7887,6 +7890,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"dungeon_exit":
 			send_to_server({"type": "dungeon_exit"})
+		"dungeon_rest":
+			send_to_server({"type": "dungeon_rest"})
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
@@ -18290,6 +18295,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_list_mode = false
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
+	dungeon_monsters_data = message.get("monsters", [])
 
 	# Always update the map display (right panel) so player position is current
 	update_dungeon_map()
@@ -18331,6 +18337,13 @@ func handle_dungeon_treasure(message: Dictionary):
 	display_game("")
 	display_game("[color=#808080]Move to continue exploring...[/color]")
 
+	# Update map panel to show player on the treasure tile (without clearing game_output)
+	var px = message.get("player_x", dungeon_data.get("player_x", 0))
+	var py = message.get("player_y", dungeon_data.get("player_y", 0))
+	dungeon_data["player_x"] = px
+	dungeon_data["player_y"] = py
+	update_dungeon_map()
+
 	# Don't set pending_continue - player can move immediately
 	# Movement will naturally request fresh dungeon state
 	update_action_bar()
@@ -18362,6 +18375,7 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_mode = false
 	dungeon_data = {}
 	dungeon_floor_grid = []
+	dungeon_monsters_data = []
 
 	# If player is still viewing combat results or in flock mode, queue this for after they acknowledge
 	# This handles bosses with flock abilities - the dungeon completes when boss dies, but
@@ -18461,6 +18475,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_mode = false
 	dungeon_data = {}
 	dungeon_floor_grid = []
+	dungeon_monsters_data = []
 
 	var reason = message.get("reason", "exit")
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
@@ -18552,22 +18567,35 @@ func display_dungeon_floor():
 	# Render the dungeon grid
 	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
 
+	# Count alive and alert monsters
+	var alive_count = 0
+	var alert_count = 0
+	for m in dungeon_monsters_data:
+		alive_count += 1
+		if m.get("alert", false):
+			alert_count += 1
+
 	# Update map_display panel with dungeon map (right side panel)
 	if map_display:
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You  ? Fight\n$ Loot  > Exit\nB Boss[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 
 	# GameOutput shows dungeon status (not the map)
 	game_output.clear()
 	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
-	display_game("Floor %d/%d | Encounters cleared: %d" % [floor_num, total_floors, encounters_cleared])
+	display_game("Floor %d/%d | Defeated: %d" % [floor_num, total_floors, encounters_cleared])
+	if alive_count > 0:
+		var alert_text = " ([color=#FF0000]%d alert![/color])" % alert_count if alert_count > 0 else ""
+		display_game("Monsters remaining: [color=#FF4444]%d[/color]%s" % [alive_count, alert_text])
+	else:
+		display_game("[color=#00FF00]Floor cleared![/color]")
 	display_game("")
-	display_game("Use [color=#FFFF00]N/S/W/E[/color] to move through the dungeon.")
-	display_game("Press [color=#FFFF00][%s][/color] to exit." % get_action_key_name(0))
+	display_game("Use [color=#FFFF00]N/S/W/E[/color] to move. [color=#FFFF00][%s][/color] to rest." % get_action_key_name(7))
+	display_game("Press [color=#FFFF00][%s][/color] to exit." % get_action_key_name(5))
 	display_game("")
 	display_game("[color=#808080]The dungeon map is displayed on the right.[/color]")
 
@@ -18589,36 +18617,71 @@ func update_dungeon_map():
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You  ? Fight\n$ Loot  > Exit\nB Boss[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
-	"""Render dungeon grid to BBCode string"""
+	"""Render dungeon grid viewport centered on player with monster overlay"""
 	if grid.is_empty():
 		return "[color=#808080]No floor data[/color]"
 
+	var grid_height = grid.size()
+	var grid_width = grid[0].size() if grid_height > 0 else 0
+
+	# Viewport size (visible area around player) - keep small for non-fullscreen
+	var view_w = 11
+	var view_h = 11
+
+	# Calculate viewport bounds centered on player
+	var view_x1 = player_x - view_w / 2
+	var view_y1 = player_y - view_h / 2
+	# Clamp to grid bounds
+	view_x1 = clampi(view_x1, 0, maxi(0, grid_width - view_w))
+	view_y1 = clampi(view_y1, 0, maxi(0, grid_height - view_h))
+	var view_x2 = mini(view_x1 + view_w, grid_width)
+	var view_y2 = mini(view_y1 + view_h, grid_height)
+
 	var lines = []
-	var width = grid[0].size() if grid.size() > 0 else 0
+	var render_width = view_x2 - view_x1
+
+	# Build monster position lookup from dungeon_monsters_data
+	var monster_map = {}
+	for m in dungeon_monsters_data:
+		var key = "%d,%d" % [m.get("x", -1), m.get("y", -1)]
+		monster_map[key] = m
 
 	# Top border
-	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
+	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
-	# Grid rows
-	for y in range(grid.size()):
+	# Grid rows (viewport only)
+	for y in range(view_y1, view_y2):
 		var line = "[color=#FFD700]|[/color]"
-		for x in range(grid[y].size()):
+		for x in range(view_x1, view_x2):
 			if x == player_x and y == player_y:
 				line += "[color=#00FF00]@[/color]"
 			else:
-				var tile = grid[y][x]
-				var tile_info = _get_dungeon_tile_display(tile)
-				line += "[color=%s]%s[/color]" % [tile_info.color, tile_info.char]
+				var mkey = "%d,%d" % [x, y]
+				if monster_map.has(mkey):
+					# Render monster entity
+					var mon = monster_map[mkey]
+					var mchar = mon.get("char", "M")
+					var mcolor = mon.get("color", "#FF4444")
+					if mon.get("alert", false):
+						mcolor = "#FF0000"
+					if mon.get("is_boss", false):
+						mchar = "B"
+						mcolor = "#FF0000"
+					line += "[color=%s]%s[/color]" % [mcolor, mchar]
+				else:
+					var tile = grid[y][x]
+					var tile_info = _get_dungeon_tile_display(tile)
+					line += "[color=%s]%s[/color]" % [tile_info.color, tile_info.char]
 		line += "[color=#FFD700]|[/color]"
 		lines.append(line)
 
 	# Bottom border
-	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
+	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
 	return "\n".join(lines)
 

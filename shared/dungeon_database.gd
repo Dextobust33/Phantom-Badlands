@@ -1,4 +1,4 @@
-# dungeon_database.gd
+﻿# dungeon_database.gd
 # Defines dungeon types, layouts, encounters, and rewards
 extends Node
 class_name DungeonDatabase
@@ -61,9 +61,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Rally Minions", "Dirty Fighting"]
 		},
 		"boss_egg": "Goblin",
-		"floors": 2,
+		"floors": 3,
 		"grid_size": 4,
 		"encounters_per_floor": 2,
+		"monsters_per_floor": 3,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Goblin", "Kobold"],
 		"material_drops": ["pine_log", "copper_ore"],
@@ -87,9 +88,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Pack Howl", "Savage Bite"]
 		},
 		"boss_egg": "Wolf",
-		"floors": 2,
+		"floors": 3,
 		"grid_size": 4,
 		"encounters_per_floor": 2,
+		"monsters_per_floor": 3,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Wolf"],
 		"material_drops": ["ragged_leather", "pine_log"],
@@ -114,9 +116,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Plague Bite", "Swarm Call"]
 		},
 		"boss_egg": "Giant Rat",
-		"floors": 2,
+		"floors": 3,
 		"grid_size": 4,
 		"encounters_per_floor": 2,
+		"monsters_per_floor": 3,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Giant Rat"],
 		"material_drops": ["ragged_leather", "pine_log"],
@@ -140,9 +143,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Trap Master", "Rallying Screech"]
 		},
 		"boss_egg": "Kobold",
-		"floors": 2,
+		"floors": 3,
 		"grid_size": 4,
 		"encounters_per_floor": 2,
+		"monsters_per_floor": 3,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Kobold", "Giant Rat"],
 		"material_drops": ["copper_ore", "pine_log"],
@@ -166,9 +170,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Bone Shield", "Rattling Strike"]
 		},
 		"boss_egg": "Skeleton",
-		"floors": 2,
+		"floors": 3,
 		"grid_size": 4,
 		"encounters_per_floor": 2,
+		"monsters_per_floor": 3,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Skeleton"],
 		"material_drops": ["copper_ore", "ragged_leather"],
@@ -194,9 +199,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["War Cry", "Brutal Slam"]
 		},
 		"boss_egg": "Orc",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Orc", "Hobgoblin"],
 		"material_drops": ["iron_ore", "copper_ore", "ragged_leather"],
@@ -220,9 +226,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Web Trap", "Venomous Bite"]
 		},
 		"boss_egg": "Giant Spider",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Giant Spider"],
 		"material_drops": ["silk_thread", "venom_sac", "ragged_leather"],
@@ -247,9 +254,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Shield Wall", "Tactical Strike"]
 		},
 		"boss_egg": "Hobgoblin",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Hobgoblin", "Goblin"],
 		"material_drops": ["iron_ore", "ragged_leather"],
@@ -273,9 +281,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Pack Tactics", "Frenzied Bite"]
 		},
 		"boss_egg": "Gnoll",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Gnoll", "Wolf"],
 		"material_drops": ["ragged_leather", "iron_ore"],
@@ -299,9 +308,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Plague Touch", "Shambling Charge"]
 		},
 		"boss_egg": "Zombie",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Zombie", "Skeleton"],
 		"material_drops": ["copper_ore", "ragged_leather"],
@@ -325,9 +335,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Life Drain", "Grave Chill"]
 		},
 		"boss_egg": "Wight",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Wight", "Skeleton"],
 		"material_drops": ["iron_ore", "copper_ore"],
@@ -351,9 +362,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Enchanting Song", "Tidal Surge"]
 		},
 		"boss_egg": "Siren",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Siren", "Kelpie"],
 		"material_drops": ["copper_ore", "silk_thread"],
@@ -377,9 +389,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Drowning Grasp", "Murky Veil"]
 		},
 		"boss_egg": "Kelpie",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Kelpie", "Siren"],
 		"material_drops": ["silk_thread", "ragged_leather"],
@@ -403,9 +416,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Shapeshifter Strike", "Adhesive Trap"]
 		},
 		"boss_egg": "Mimic",
-		"floors": 2,
+		"floors": 4,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Mimic"],
 		"material_drops": ["iron_ore", "copper_ore", "silk_thread"],
@@ -431,9 +445,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Regeneration", "Boulder Throw"]
 		},
 		"boss_egg": "Troll",  # GUARANTEED egg on completion
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Goblin", "Ogre"],  # Additional possible eggs from treasure
 		"material_drops": ["copper_ore", "iron_ore", "ragged_leather"],
@@ -457,9 +472,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Diving Strike", "Poison Tail", "Screech"]
 		},
 		"boss_egg": "Wyvern",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Harpy", "Gargoyle"],
 		"material_drops": ["iron_ore", "steel_ore", "wyvern_scale"],
@@ -483,9 +499,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Crushing Blow", "Thick Hide"]
 		},
 		"boss_egg": "Ogre",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Ogre", "Gnoll"],
 		"material_drops": ["iron_ore", "ragged_leather", "copper_ore"],
@@ -509,9 +526,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Soul Drain", "Ethereal Phase", "Chilling Touch"]
 		},
 		"boss_egg": "Wraith",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Wraith", "Wight"],
 		"material_drops": ["iron_ore", "steel_ore", "copper_ore"],
@@ -535,9 +553,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Gore Charge", "Labyrinth Fury", "Mighty Stomp"]
 		},
 		"boss_egg": "Minotaur",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Minotaur", "Ogre"],
 		"material_drops": ["iron_ore", "steel_ore", "ragged_leather"],
@@ -561,9 +580,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Stone Skin", "Swooping Strike", "Petrifying Gaze"]
 		},
 		"boss_egg": "Gargoyle",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Gargoyle", "Skeleton"],
 		"material_drops": ["iron_ore", "steel_ore"],
@@ -587,9 +607,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Shrieking Blast", "Talon Dive", "Wind Gust"]
 		},
 		"boss_egg": "Harpy",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Harpy"],
 		"material_drops": ["iron_ore", "ragged_leather", "silk_thread"],
@@ -613,9 +634,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Deafening Shriek", "Spore Cloud", "Root Grasp"]
 		},
 		"boss_egg": "Shrieker",
-		"floors": 3,
+		"floors": 5,
 		"grid_size": 5,
 		"encounters_per_floor": 3,
+		"monsters_per_floor": 4,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Shrieker", "Giant Spider"],
 		"material_drops": ["copper_ore", "iron_ore", "silk_thread"],
@@ -641,9 +663,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Ground Slam", "Mighty Throw", "Intimidate"]
 		},
 		"boss_egg": "Giant",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Ogre", "Minotaur"],
 		"material_drops": ["iron_ore", "steel_ore", "giant_bone"],
@@ -667,9 +690,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Life Drain", "Charm", "Bat Swarm"]
 		},
 		"boss_egg": "Vampire",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Wight", "Wraith"],
 		"material_drops": ["steel_ore", "mithril_ore", "vampire_fang"],
@@ -693,9 +717,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Fire Breath", "Wing Slash", "Hatchling Fury"]
 		},
 		"boss_egg": "Dragon Wyrmling",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Dragon Wyrmling", "Wyvern"],
 		"material_drops": ["steel_ore", "iron_ore", "wyvern_scale"],
@@ -719,9 +744,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Hellfire", "Demonic Roar", "Shadow Strike"]
 		},
 		"boss_egg": "Demon",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Demon"],
 		"material_drops": ["steel_ore", "mithril_ore", "iron_ore"],
@@ -745,9 +771,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Diving Talon", "Majestic Roar", "Wind Shear"]
 		},
 		"boss_egg": "Gryphon",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 1,
 		"egg_drops": ["Gryphon", "Harpy"],
 		"material_drops": ["steel_ore", "iron_ore", "ragged_leather"],
@@ -771,9 +798,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Triple Maw", "Venomous Tail", "Fire Breath"]
 		},
 		"boss_egg": "Chimaera",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Chimaera", "Wyvern"],
 		"material_drops": ["steel_ore", "mithril_ore", "wyvern_scale"],
@@ -797,9 +825,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Seduction", "Life Drain", "Dark Charm"]
 		},
 		"boss_egg": "Succubus",
-		"floors": 4,
+		"floors": 5,
 		"grid_size": 6,
 		"encounters_per_floor": 4,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Succubus", "Siren"],
 		"material_drops": ["mithril_ore", "steel_ore", "silk_thread"],
@@ -825,9 +854,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Life Drain", "Bone Storm", "Raise Dead", "Soul Freeze"]
 		},
 		"boss_egg": "Lich",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 6,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Wraith", "Wight"],
 		"material_drops": ["mithril_ore", "soul_shard", "phylactery_fragment"],
@@ -851,9 +881,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Triple Bite", "Hellfire Breath", "Ferocious Howl"]
 		},
 		"boss_egg": "Cerberus",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 6,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Demon"],
 		"material_drops": ["mithril_ore", "adamantine_ore", "hellhound_fang"],
@@ -877,9 +908,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Flame Whip", "Shadow Wings", "Demonic Roar"]
 		},
 		"boss_egg": "Balrog",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 7,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Demon", "Succubus"],
 		"material_drops": ["adamantine_ore", "demon_heart", "balrog_essence"],
@@ -903,9 +935,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Infernal Command", "Hellfire Storm", "Soul Rend", "Dark Pact"]
 		},
 		"boss_egg": "Demon Lord",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 6,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Demon", "Succubus"],
 		"material_drops": ["mithril_ore", "adamantine_ore", "demon_heart"],
@@ -929,9 +962,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Earthquake", "Titan's Grip", "Colossal Swing", "Unyielding"]
 		},
 		"boss_egg": "Titan",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 7,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Giant", "Minotaur"],
 		"material_drops": ["adamantine_ore", "mithril_ore", "giant_bone"],
@@ -955,9 +989,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Vorpal Jaws", "Whiffling Wings", "Burbling Cry", "Eyes of Flame"]
 		},
 		"boss_egg": "Jabberwock",
-		"floors": 5,
+		"floors": 6,
 		"grid_size": 6,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 5,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Troll", "Wyvern"],
 		"material_drops": ["adamantine_ore", "mithril_ore", "wyvern_scale"],
@@ -983,9 +1018,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Fire Breath", "Wing Buffet", "Terrifying Roar", "Ancient Fury"]
 		},
 		"boss_egg": "Ancient Dragon",
-		"floors": 5,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Dragon Wyrmling"],
 		"material_drops": ["adamantine_ore", "dragonhide", "dragon_blood", "ancient_scale"],
@@ -1009,9 +1045,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Multi-Head Strike", "Regeneration", "Poison Spray", "Head Regrowth"]
 		},
 		"boss_egg": "Hydra",
-		"floors": 6,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Giant Spider", "Siren"],
 		"material_drops": ["orichalcum_ore", "hydra_blood", "regenerating_tissue"],
@@ -1035,9 +1072,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Rebirth", "Solar Flare", "Ash Storm", "Purifying Flame"]
 		},
 		"boss_egg": "Phoenix",
-		"floors": 6,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Gryphon", "Elemental"],
 		"material_drops": ["orichalcum_ore", "phoenix_feather", "eternal_ember"],
@@ -1061,9 +1099,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Elemental Storm", "Planar Shift", "Absorb Element", "Unstable Core"]
 		},
 		"boss_egg": "Elemental",
-		"floors": 5,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Elemental"],
 		"material_drops": ["orichalcum_ore", "adamantine_ore", "eternal_ember"],
@@ -1087,9 +1126,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Iron Fist", "Forge Heat", "Magnetic Pull", "Impervious Shell"]
 		},
 		"boss_egg": "Iron Golem",
-		"floors": 6,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Iron Golem", "Elemental"],
 		"material_drops": ["orichalcum_ore", "adamantine_ore", "steel_ore"],
@@ -1113,9 +1153,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Riddle of Death", "Sphinx's Pounce", "Mind Shatter", "Desert Wind"]
 		},
 		"boss_egg": "Sphinx",
-		"floors": 6,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 5,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Sphinx", "Gargoyle"],
 		"material_drops": ["orichalcum_ore", "adamantine_ore", "ancient_scale"],
@@ -1139,9 +1180,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Black Breath", "Shadow Blade", "Morgul Strike", "Dread Aura"]
 		},
 		"boss_egg": "Nazgul",
-		"floors": 6,
+		"floors": 7,
 		"grid_size": 7,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 6,
 		"treasures_per_floor": 2,
 		"egg_drops": ["Nazgul", "Wraith"],
 		"material_drops": ["orichalcum_ore", "void_essence", "soul_shard"],
@@ -1167,9 +1209,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Phase Shift", "Void Bolt", "Reality Tear", "Dimensional Prison"]
 		},
 		"boss_egg": "Void Walker",
-		"floors": 6,
+		"floors": 8,
 		"grid_size": 8,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Nazgul"],
 		"material_drops": ["orichalcum_ore", "void_essence", "reality_shard"],
@@ -1193,9 +1236,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Primordial Breath", "Time Warp", "Cataclysm", "World Shaker"]
 		},
 		"boss_egg": "Primordial Dragon",
-		"floors": 7,
+		"floors": 8,
 		"grid_size": 8,
 		"encounters_per_floor": 7,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Ancient Dragon"],
 		"material_drops": ["void_ore", "primordial_scale", "time_crystal"],
@@ -1219,9 +1263,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Coil Crush", "Tidal Wave", "Venom Surge", "World Ender"]
 		},
 		"boss_egg": "World Serpent",
-		"floors": 7,
+		"floors": 8,
 		"grid_size": 8,
 		"encounters_per_floor": 7,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Hydra"],
 		"material_drops": ["void_ore", "orichalcum_ore", "primordial_scale"],
@@ -1245,9 +1290,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Phylactery Pulse", "Death Storm", "Soul Prison", "Undying Will"]
 		},
 		"boss_egg": "Elder Lich",
-		"floors": 7,
+		"floors": 8,
 		"grid_size": 8,
 		"encounters_per_floor": 6,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Lich", "Wraith"],
 		"material_drops": ["void_ore", "soul_shard", "phylactery_fragment"],
@@ -1273,9 +1319,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Madness Gaze", "Tentacle Storm", "Reality Warp", "Void Consumption"]
 		},
 		"boss_egg": "Cosmic Horror",
-		"floors": 7,
+		"floors": 9,
 		"grid_size": 8,
 		"encounters_per_floor": 7,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Void Walker", "Elder Lich"],
 		"material_drops": ["void_ore", "celestial_ore", "cosmic_fragment", "sanity_shard"],
@@ -1299,9 +1346,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Temporal Shift", "Chrono Beam", "Time Loop", "Age of Ruin"]
 		},
 		"boss_egg": "Time Weaver",
-		"floors": 7,
+		"floors": 9,
 		"grid_size": 8,
 		"encounters_per_floor": 7,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Void Walker", "Primordial Dragon"],
 		"material_drops": ["celestial_ore", "void_ore", "time_crystal"],
@@ -1325,9 +1373,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Reaper's Scythe", "Death's Embrace", "Soul Harvest", "Final Judgment"]
 		},
 		"boss_egg": "Death Incarnate",
-		"floors": 7,
+		"floors": 9,
 		"grid_size": 8,
 		"encounters_per_floor": 7,
+		"monsters_per_floor": 7,
 		"treasures_per_floor": 3,
 		"egg_drops": ["Elder Lich", "Cosmic Horror"],
 		"material_drops": ["celestial_ore", "void_ore", "cosmic_fragment", "soul_shard"],
@@ -1353,9 +1402,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Chaos Storm", "Reality Shatter", "Entropy Wave", "Ultimate Destruction"]
 		},
 		"boss_egg": "Avatar of Chaos",
-		"floors": 8,
+		"floors": 10,
 		"grid_size": 9,
 		"encounters_per_floor": 8,
+		"monsters_per_floor": 8,
 		"treasures_per_floor": 4,
 		"egg_drops": ["Cosmic Horror", "Death Incarnate"],
 		"material_drops": ["celestial_ore", "chaos_essence", "primordial_spark", "god_fragment"],
@@ -1379,9 +1429,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Nameless Dread", "Void Erasure", "Existential Horror", "Unmaking"]
 		},
 		"boss_egg": "The Nameless One",
-		"floors": 8,
+		"floors": 10,
 		"grid_size": 9,
 		"encounters_per_floor": 8,
+		"monsters_per_floor": 8,
 		"treasures_per_floor": 4,
 		"egg_drops": ["Cosmic Horror", "Time Weaver"],
 		"material_drops": ["celestial_ore", "chaos_essence", "god_fragment", "primordial_spark"],
@@ -1405,9 +1456,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Divine Smite", "God Killer", "Ascendant Fury", "Immortal's End"]
 		},
 		"boss_egg": "God Slayer",
-		"floors": 8,
+		"floors": 10,
 		"grid_size": 9,
 		"encounters_per_floor": 8,
+		"monsters_per_floor": 8,
 		"treasures_per_floor": 4,
 		"egg_drops": ["Avatar of Chaos", "Death Incarnate"],
 		"material_drops": ["celestial_ore", "chaos_essence", "god_fragment", "primordial_spark"],
@@ -1431,9 +1483,10 @@ const DUNGEON_TYPES = {
 			"abilities": ["Heat Death", "Entropic Decay", "Universe Collapse", "Final Entropy"]
 		},
 		"boss_egg": "Entropy",
-		"floors": 8,
+		"floors": 10,
 		"grid_size": 9,
 		"encounters_per_floor": 8,
+		"monsters_per_floor": 8,
 		"treasures_per_floor": 4,
 		"egg_drops": ["The Nameless One", "God Slayer"],
 		"material_drops": ["celestial_ore", "chaos_essence", "god_fragment", "primordial_spark"],
@@ -1452,6 +1505,18 @@ const DUNGEON_TYPES = {
 # - floors: Array of floor grids
 # - active_players: Array of peer_ids currently inside
 
+# BSP dungeon grid size (all dungeons use 20x20 now)
+const DUNGEON_GRID_SIZE = 20
+
+# Monster display colors by dungeon tier
+const MONSTER_DISPLAY_COLORS = {
+	1: "#22BB22", 2: "#22BB22",
+	3: "#BBBB22", 4: "#BBBB22",
+	5: "#DD8822", 6: "#DD8822",
+	7: "#DD4444", 8: "#DD4444",
+	9: "#AA44DD"
+}
+
 # ===== HELPER FUNCTIONS =====
 
 static func get_dungeon(dungeon_id: String) -> Dictionary:
@@ -1467,82 +1532,230 @@ static func get_dungeons_for_level(player_level: int) -> Array:
 			result.append(dungeon_id)
 	return result
 
-static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floor: bool) -> Array:
-	"""Generate a floor grid for a dungeon. Returns 2D array of TileType."""
+# ===== BSP DUNGEON GENERATION =====
+
+static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floor: bool) -> Dictionary:
+	"""Generate a BSP floor grid for a dungeon. Returns Dictionary with grid, rooms, entrance_pos, exit_pos."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
-		return []
+		return {"grid": [], "rooms": [], "entrance_pos": Vector2i(1, 18), "exit_pos": Vector2i(18, 1)}
 
-	var size = dungeon.grid_size
+	var size = DUNGEON_GRID_SIZE
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(dungeon_id + str(floor_num))
+
+	# Initialize grid with all walls
 	var grid = []
-
-	# Initialize with empty tiles
 	for y in range(size):
 		var row = []
 		for x in range(size):
-			row.append(TileType.EMPTY)
+			row.append(TileType.WALL)
 		grid.append(row)
 
-	# Add walls around the edges
-	for x in range(size):
-		grid[0][x] = TileType.WALL
-		grid[size - 1][x] = TileType.WALL
-	for y in range(size):
-		grid[y][0] = TileType.WALL
-		grid[y][size - 1] = TileType.WALL
+	# BSP split the area (leave 1-tile border)
+	var partitions = []
+	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
+	_bsp_split(initial_rect, 0, 4, rng, partitions)
 
-	# Add some random interior walls (25% of interior tiles)
-	var interior_size = size - 2
-	var wall_count = int(interior_size * interior_size * 0.15)
-	for _i in range(wall_count):
-		var wx = 1 + randi() % interior_size
-		var wy = 1 + randi() % interior_size
-		# Don't block entrance or exit positions
-		if not (wx == 1 and wy == 1) and not (wx == size - 2 and wy == size - 2):
-			grid[wy][wx] = TileType.WALL
+	# Carve rooms in each leaf partition
+	var rooms: Array = []
+	for partition in partitions:
+		var room = _carve_room(grid, partition, rng)
+		if room.size.x > 0 and room.size.y > 0:
+			rooms.append(room)
 
-	# Place entrance (always bottom-left interior)
-	grid[size - 2][1] = TileType.ENTRANCE
+	# Connect rooms with corridors (connect each pair of siblings)
+	if rooms.size() >= 2:
+		# Sort rooms by position for more logical connections
+		rooms.sort_custom(func(a, b): return (a.position.y * size + a.position.x) < (b.position.y * size + b.position.x))
+		# Connect each room to the next (chain)
+		for i in range(rooms.size() - 1):
+			_connect_rooms(grid, rooms[i], rooms[i + 1], rng)
+		# Extra connection from last to a middle room for loops
+		if rooms.size() > 3:
+			var mid = rooms.size() / 2
+			_connect_rooms(grid, rooms[rooms.size() - 1], rooms[mid], rng)
 
-	# Place exit or boss
+	# Place entrance in room closest to bottom-left
+	var entrance_room_idx = _find_closest_room(rooms, Vector2i(1, size - 2))
+	var entrance_pos = _get_room_center(rooms[entrance_room_idx])
+	grid[entrance_pos.y][entrance_pos.x] = TileType.ENTRANCE
+
+	# Place exit/boss in room farthest from entrance
+	var exit_room_idx = _find_farthest_room(rooms, entrance_pos)
+	var exit_pos = _get_room_center(rooms[exit_room_idx])
 	if is_boss_floor:
-		# Boss in center
-		var center = size / 2
-		grid[center][center] = TileType.BOSS
+		# Boss floor has no exit tile, boss entity will be placed by server
+		pass
 	else:
-		# Exit in top-right interior
-		grid[1][size - 2] = TileType.EXIT
+		grid[exit_pos.y][exit_pos.x] = TileType.EXIT
 
-	# Place encounters
-	var encounters_to_place = dungeon.encounters_per_floor
-	var placed_encounters = 0
-	var attempts = 0
-	while placed_encounters < encounters_to_place and attempts < 100:
-		var ex = 1 + randi() % interior_size
-		var ey = 1 + randi() % interior_size
-		if grid[ey][ex] == TileType.EMPTY:
-			grid[ey][ex] = TileType.ENCOUNTER
-			placed_encounters += 1
-		attempts += 1
+	# Place treasures in small/dead-end rooms (1-3 per floor)
+	var treasure_count = 1 + rng.randi_range(0, 2)
+	var used_rooms = [entrance_room_idx, exit_room_idx]
+	for _i in range(treasure_count):
+		var best_room = -1
+		var smallest_area = 999
+		for ri in range(rooms.size()):
+			if ri in used_rooms:
+				continue
+			var area = rooms[ri].size.x * rooms[ri].size.y
+			if area < smallest_area:
+				smallest_area = area
+				best_room = ri
+		if best_room >= 0:
+			used_rooms.append(best_room)
+			var tpos = _get_room_center(rooms[best_room])
+			if grid[tpos.y][tpos.x] == TileType.EMPTY:
+				grid[tpos.y][tpos.x] = TileType.TREASURE
 
-	# Place treasures
-	var treasures_to_place = dungeon.treasures_per_floor
-	var placed_treasures = 0
-	attempts = 0
-	while placed_treasures < treasures_to_place and attempts < 100:
-		var tx = 1 + randi() % interior_size
-		var ty = 1 + randi() % interior_size
-		if grid[ty][tx] == TileType.EMPTY:
-			grid[ty][tx] = TileType.TREASURE
-			placed_treasures += 1
-		attempts += 1
+	return {"grid": grid, "rooms": rooms, "entrance_pos": entrance_pos, "exit_pos": exit_pos}
 
-	return grid
+static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
+	"""Recursively split area into BSP partitions"""
+	# Stop if too small or max depth reached
+	if rect.size.x < 7 or rect.size.y < 7 or depth >= max_depth:
+		out_partitions.append(rect)
+		return
 
-static func grid_to_string(grid: Array, player_x: int, player_y: int) -> String:
-	"""Convert floor grid to display string with player position"""
+	# Also stop randomly at deeper levels for variety
+	if depth >= 2 and rng.randf() < 0.15:
+		out_partitions.append(rect)
+		return
+
+	# Decide split direction: alternate, but prefer splitting the longer axis
+	var split_horizontal: bool
+	if rect.size.x > rect.size.y * 1.3:
+		split_horizontal = false  # Split vertically (left/right)
+	elif rect.size.y > rect.size.x * 1.3:
+		split_horizontal = true  # Split horizontally (top/bottom)
+	else:
+		split_horizontal = (depth % 2 == 0)  # Alternate
+
+	if split_horizontal:
+		# Split horizontally - 40-60% ratio
+		var split_y = rect.position.y + int(rect.size.y * rng.randf_range(0.4, 0.6))
+		var top = Rect2i(rect.position.x, rect.position.y, rect.size.x, split_y - rect.position.y)
+		var bottom = Rect2i(rect.position.x, split_y, rect.size.x, rect.end.y - split_y)
+		if top.size.y >= 5 and bottom.size.y >= 5:
+			_bsp_split(top, depth + 1, max_depth, rng, out_partitions)
+			_bsp_split(bottom, depth + 1, max_depth, rng, out_partitions)
+		else:
+			out_partitions.append(rect)
+	else:
+		# Split vertically - 40-60% ratio
+		var split_x = rect.position.x + int(rect.size.x * rng.randf_range(0.4, 0.6))
+		var left = Rect2i(rect.position.x, rect.position.y, split_x - rect.position.x, rect.size.y)
+		var right = Rect2i(split_x, rect.position.y, rect.end.x - split_x, rect.size.y)
+		if left.size.x >= 5 and right.size.x >= 5:
+			_bsp_split(left, depth + 1, max_depth, rng, out_partitions)
+			_bsp_split(right, depth + 1, max_depth, rng, out_partitions)
+		else:
+			out_partitions.append(rect)
+
+static func _carve_room(grid: Array, partition: Rect2i, rng: RandomNumberGenerator) -> Rect2i:
+	"""Carve a random room within a BSP partition (min 3x3, max ~80% of partition)"""
+	var max_w = max(3, int(partition.size.x * 0.8))
+	var max_h = max(3, int(partition.size.y * 0.8))
+	var room_w = rng.randi_range(3, max_w)
+	var room_h = rng.randi_range(3, max_h)
+
+	# Random position within partition
+	var room_x = partition.position.x + rng.randi_range(1, max(1, partition.size.x - room_w - 1))
+	var room_y = partition.position.y + rng.randi_range(1, max(1, partition.size.y - room_h - 1))
+
+	# Clamp to grid bounds (leave outer border as wall)
+	room_x = clampi(room_x, 1, DUNGEON_GRID_SIZE - 2)
+	room_y = clampi(room_y, 1, DUNGEON_GRID_SIZE - 2)
+	room_w = mini(room_w, DUNGEON_GRID_SIZE - 1 - room_x)
+	room_h = mini(room_h, DUNGEON_GRID_SIZE - 1 - room_y)
+
+	var room = Rect2i(room_x, room_y, room_w, room_h)
+
+	# Carve the room
+	for y in range(room.position.y, room.end.y):
+		for x in range(room.position.x, room.end.x):
+			if x > 0 and x < DUNGEON_GRID_SIZE - 1 and y > 0 and y < DUNGEON_GRID_SIZE - 1:
+				grid[y][x] = TileType.EMPTY
+
+	return room
+
+static func _connect_rooms(grid: Array, room_a: Rect2i, room_b: Rect2i, rng: RandomNumberGenerator):
+	"""Connect two rooms with an L-shaped corridor"""
+	var center_a = _get_room_center(room_a)
+	var center_b = _get_room_center(room_b)
+
+	# Randomly choose to go horizontal-first or vertical-first
+	if rng.randi() % 2 == 0:
+		# Horizontal then vertical
+		_carve_h_corridor(grid, center_a.x, center_b.x, center_a.y)
+		_carve_v_corridor(grid, center_a.y, center_b.y, center_b.x)
+	else:
+		# Vertical then horizontal
+		_carve_v_corridor(grid, center_a.y, center_b.y, center_a.x)
+		_carve_h_corridor(grid, center_a.x, center_b.x, center_b.y)
+
+static func _carve_h_corridor(grid: Array, x1: int, x2: int, y: int):
+	"""Carve a horizontal corridor"""
+	var start_x = mini(x1, x2)
+	var end_x = maxi(x1, x2)
+	y = clampi(y, 1, DUNGEON_GRID_SIZE - 2)
+	for x in range(start_x, end_x + 1):
+		x = clampi(x, 1, DUNGEON_GRID_SIZE - 2)
+		if grid[y][x] == TileType.WALL:
+			grid[y][x] = TileType.EMPTY
+
+static func _carve_v_corridor(grid: Array, y1: int, y2: int, x: int):
+	"""Carve a vertical corridor"""
+	var start_y = mini(y1, y2)
+	var end_y = maxi(y1, y2)
+	x = clampi(x, 1, DUNGEON_GRID_SIZE - 2)
+	for y in range(start_y, end_y + 1):
+		y = clampi(y, 1, DUNGEON_GRID_SIZE - 2)
+		if grid[y][x] == TileType.WALL:
+			grid[y][x] = TileType.EMPTY
+
+static func _get_room_center(room: Rect2i) -> Vector2i:
+	"""Get the center tile of a room"""
+	return Vector2i(room.position.x + room.size.x / 2, room.position.y + room.size.y / 2)
+
+static func _find_closest_room(rooms: Array, target: Vector2i) -> int:
+	"""Find room index closest to target position"""
+	var best_idx = 0
+	var best_dist = 99999
+	for i in range(rooms.size()):
+		var center = _get_room_center(rooms[i])
+		var dist = abs(center.x - target.x) + abs(center.y - target.y)
+		if dist < best_dist:
+			best_dist = dist
+			best_idx = i
+	return best_idx
+
+static func _find_farthest_room(rooms: Array, target: Vector2i) -> int:
+	"""Find room index farthest from target position"""
+	var best_idx = 0
+	var best_dist = -1
+	for i in range(rooms.size()):
+		var center = _get_room_center(rooms[i])
+		var dist = abs(center.x - target.x) + abs(center.y - target.y)
+		if dist > best_dist:
+			best_dist = dist
+			best_idx = i
+	return best_idx
+
+static func grid_to_string(grid: Array, player_x: int, player_y: int, monsters: Array = []) -> String:
+	"""Convert floor grid to display string with player position and monsters"""
+	if grid.is_empty():
+		return ""
 	var lines = []
-	lines.append("[color=#FFD700]+" + "-".repeat(grid[0].size()) + "+[/color]")
+	var width = grid[0].size() if grid.size() > 0 else 0
+	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
+
+	# Build monster position lookup
+	var monster_map = {}
+	for m in monsters:
+		var key = "%d,%d" % [m.get("x", -1), m.get("y", -1)]
+		monster_map[key] = m
 
 	for y in range(grid.size()):
 		var line = "[color=#FFD700]|[/color]"
@@ -1550,14 +1763,26 @@ static func grid_to_string(grid: Array, player_x: int, player_y: int) -> String:
 			if x == player_x and y == player_y:
 				line += "[color=#00FF00]@[/color]"
 			else:
-				var tile = grid[y][x]
-				var char = TILE_CHARS.get(tile, "?")
-				var color = TILE_COLORS.get(tile, "#FFFFFF")
-				line += "[color=%s]%s[/color]" % [color, char]
+				var mkey = "%d,%d" % [x, y]
+				if monster_map.has(mkey):
+					var mon = monster_map[mkey]
+					var mchar = mon.get("char", "M")
+					var mcolor = mon.get("color", "#FF4444")
+					if mon.get("alert", false):
+						mcolor = "#FF0000"
+					if mon.get("is_boss", false):
+						mchar = "B"
+						mcolor = "#FF0000"
+					line += "[color=%s]%s[/color]" % [mcolor, mchar]
+				else:
+					var tile = grid[y][x]
+					var tchar = TILE_CHARS.get(tile, "?")
+					var color = TILE_COLORS.get(tile, "#FFFFFF")
+					line += "[color=%s]%s[/color]" % [color, tchar]
 		line += "[color=#FFD700]|[/color]"
 		lines.append(line)
 
-	lines.append("[color=#FFD700]+" + "-".repeat(grid[0].size()) + "+[/color]")
+	lines.append("[color=#FFD700]+" + "-".repeat(width) + "+[/color]")
 	return "\n".join(lines)
 
 static func get_monster_for_encounter(dungeon_id: String, floor_num: int, dungeon_level: int) -> Dictionary:
