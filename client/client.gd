@@ -14936,8 +14936,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.95 changes
+	display_game("[color=#00FF00]v0.9.95[/color] [color=#808080](Current)[/color]")
+	display_game("  • All in-game instructions now respect custom keybinds")
+	display_game("  • Action bar buttons show gold costs (healer, blacksmith, merchant)")
+	display_game("  • Fix: Healer encounter costs and buttons now work properly")
+	display_game("  • Fix: Inventory sub-views no longer wiped by server updates")
+	display_game("")
+
 	# v0.9.93 changes
-	display_game("[color=#00FF00]v0.9.93[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.93[/color]")
 	display_game("  • Fix: Duplicate companions auto-removed on character load (keeps highest level)")
 	display_game("  • Fix: Kennel checkout no longer creates duplicate companion entries")
 	display_game("")
@@ -14957,11 +14965,6 @@ func display_changelog():
 	# v0.9.89 changes
 	display_game("[color=#00FFFF]v0.9.89[/color]")
 	display_game("  • Kennel checkout, All or Nothing rebalance (34% cap), admin variant rolling")
-	display_game("")
-
-	# v0.9.88 changes
-	display_game("[color=#00FFFF]v0.9.88[/color]")
-	display_game("  • Data safety: backup saves, auto-recovery, admin tools")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
