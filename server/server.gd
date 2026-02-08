@@ -990,7 +990,7 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	# Checkout companion from house kennel if requested (and character doesn't already have one)
 	var checkout_slot = message.get("checkout_companion_slot", -1)
-	if checkout_slot >= 0 and not character.using_registered_companion and character.active_companion == null:
+	if checkout_slot >= 0 and not character.using_registered_companion and character.active_companion.is_empty():
 		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
 		persistence.save_character(account_id, character)
 
@@ -6884,6 +6884,7 @@ func _checkout_companion_for_character(account_id: String, character: Character,
 	companion.erase("checkout_time")
 
 	character.active_companion = companion
+	character.collected_companions.append(companion)
 	character.using_registered_companion = true
 	character.registered_companion_slot = slot
 	log_message("Companion '%s' checked out from kennel slot %d for %s" % [companion.get("name", "Unknown"), slot, char_name])

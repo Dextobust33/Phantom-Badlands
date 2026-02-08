@@ -14868,16 +14868,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.90 changes
+	display_game("[color=#00FF00]v0.9.90[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ COMPANION FIX[/color]")
+	display_game("  • Kennel companions now gain XP, track battles, and show abilities correctly")
+	display_game("  • Fix: Companions page no longer says 'No companions yet' for kennel companions")
+	display_game("")
+
 	# v0.9.89 changes
-	display_game("[color=#00FF00]v0.9.89[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ COMPANION CHECKOUT[/color]")
-	display_game("  • Kennel companions now properly join when creating or selecting a character")
-	display_game("  [color=#FFD700]★ ALL OR NOTHING[/color]")
-	display_game("  • Max success rate increased from 25% to 34%")
-	display_game("  • Training cap raised: +0.1%/use up to +25% (was +10%)")
-	display_game("  • Action bar button now shows your trained base rate (e.g. A/N 7%)")
-	display_game("  [color=#FFD700]★ ADMIN TOOLS[/color]")
-	display_game("  • Admin-created companions now get random variants")
+	display_game("[color=#00FFFF]v0.9.89[/color]")
+	display_game("  • Kennel checkout, All or Nothing rebalance (34% cap), admin variant rolling")
 	display_game("")
 
 	# v0.9.88 changes
@@ -14917,11 +14917,6 @@ func display_changelog():
 	display_game("  • All 53 companion types now use their unique abilities in combat!")
 	display_game("  [color=#FFD700]★ INVENTORY SORTING & EXPANDED HELP[/color]")
 	display_game("  • Equipment before consumables, full ability listings in Help page")
-	display_game("")
-
-	# v0.9.84 changes
-	display_game("[color=#00FFFF]v0.9.84[/color]")
-	display_game("  • Fixed mojibake characters, lock menu auto-select")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
