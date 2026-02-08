@@ -1431,7 +1431,7 @@ func from_dict(data: Dictionary):
 	incubating_eggs = data.get("incubating_eggs", [])
 	collected_companions = data.get("collected_companions", [])
 
-	# Migrate companions: add level/xp/pattern fields if missing (for existing saves)
+	# Migrate companions: add level/xp/pattern/sub_tier fields if missing (for existing saves)
 	for companion in collected_companions:
 		if not companion.has("level"):
 			companion["level"] = 1
@@ -1441,6 +1441,8 @@ func from_dict(data: Dictionary):
 			companion["variant_color2"] = ""
 		if not companion.has("variant_pattern"):
 			companion["variant_pattern"] = "solid"
+		if not companion.has("sub_tier"):
+			companion["sub_tier"] = 1
 
 	# Deduplicate collected_companions by ID (keep highest level copy)
 	var seen_ids = {}
@@ -1460,6 +1462,11 @@ func from_dict(data: Dictionary):
 			deduped_companions.append(companion)
 	collected_companions = deduped_companions
 
+	# Migrate incubating eggs: add sub_tier if missing
+	for egg in incubating_eggs:
+		if not egg.has("sub_tier"):
+			egg["sub_tier"] = 1
+
 	# Migrate active_companion if needed
 	if not active_companion.is_empty():
 		if not active_companion.has("variant_color2"):
@@ -1470,6 +1477,8 @@ func from_dict(data: Dictionary):
 			active_companion["level"] = 1
 		if not active_companion.has("xp"):
 			active_companion["xp"] = 0
+		if not active_companion.has("sub_tier"):
+			active_companion["sub_tier"] = 1
 
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})
@@ -2401,7 +2410,7 @@ func dismiss_companion() -> void:
 
 func get_companion_bonus(bonus_type: String) -> float:
 	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus').
-	Applies variant stat multiplier automatically."""
+	Applies variant stat multiplier and sub-tier multiplier automatically."""
 	if active_companion.is_empty():
 		return 0.0
 	var bonuses = active_companion.get("bonuses", {})
@@ -2409,7 +2418,10 @@ func get_companion_bonus(bonus_type: String) -> float:
 	# Apply variant multiplier
 	var variant = active_companion.get("variant", "Normal")
 	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
-	return base_value * multiplier
+	# Apply sub-tier multiplier
+	var sub_tier = active_companion.get("sub_tier", 1)
+	var sub_tier_mult = {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
+	return base_value * multiplier * sub_tier_mult
 
 func has_active_companion() -> bool:
 	"""Check if a companion is active."""
@@ -2435,6 +2447,7 @@ func add_egg(egg_data: Dictionary, max_eggs: int = MAX_INCUBATING_EGGS) -> Dicti
 		"monster_type": egg_data.get("monster_type", ""),
 		"companion_name": egg_data.get("companion_name", ""),
 		"tier": egg_data.get("tier", 1),
+		"sub_tier": egg_data.get("sub_tier", 1),
 		"steps_remaining": egg_data.get("hatch_steps", 100),
 		"hatch_steps": egg_data.get("hatch_steps", 100),
 		"bonuses": egg_data.get("bonuses", {}).duplicate(),
@@ -2487,6 +2500,7 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		"monster_type": egg.monster_type,
 		"name": egg.companion_name,
 		"tier": egg.tier,
+		"sub_tier": egg.get("sub_tier", 1),
 		"bonuses": egg.bonuses.duplicate(),
 		"obtained_at": int(Time.get_unix_time_from_system()),
 		"battles_fought": 0,
@@ -2509,6 +2523,7 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				"name": companion.name,
 				"monster_type": companion.get("monster_type", ""),
 				"tier": companion.get("tier", 1),
+				"sub_tier": companion.get("sub_tier", 1),
 				"bonuses": companion.bonuses.duplicate(),
 				"variant": companion.get("variant", "Normal"),
 				"variant_color": companion.get("variant_color", "#FFFFFF"),
@@ -2645,17 +2660,21 @@ func increment_companion_battles() -> void:
 			break
 
 func get_companion_effective_bonuses() -> Dictionary:
-	"""Get active companion bonuses with variant multiplier applied."""
+	"""Get active companion bonuses with variant and sub-tier multipliers applied."""
 	if active_companion.is_empty():
 		return {}
 
 	var base_bonuses = active_companion.get("bonuses", {}).duplicate()
 	var variant = active_companion.get("variant", "Normal")
 	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
+	# Apply sub-tier multiplier
+	var sub_tier = active_companion.get("sub_tier", 1)
+	var sub_tier_mult = {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
+	var combined = multiplier * sub_tier_mult
 
-	if multiplier != 1.0:
+	if combined != 1.0:
 		for key in base_bonuses.keys():
-			base_bonuses[key] = base_bonuses[key] * multiplier
+			base_bonuses[key] = base_bonuses[key] * combined
 
 	return base_bonuses
 
@@ -2682,7 +2701,7 @@ func get_companion_unlocked_abilities() -> Array:
 	return unlocked
 
 func get_companion_scaled_abilities() -> Dictionary:
-	"""Get all abilities for the active companion, scaled by level and variant.
+	"""Get all abilities for the active companion, scaled by level, variant, and sub-tier.
 	Returns dict with 'passive', 'active', 'threshold' keys."""
 	if active_companion.is_empty():
 		return {"passive": {}, "active": {}, "threshold": {}}
@@ -2690,10 +2709,11 @@ func get_companion_scaled_abilities() -> Dictionary:
 	var monster_type = active_companion.get("monster_type", "")
 	var companion_level = active_companion.get("level", 1)
 	var variant_mult = get_variant_stat_multiplier()
+	var sub_tier = active_companion.get("sub_tier", 1)
 
 	# Get scaled abilities from drop_tables
 	var drop_tables = preload("res://shared/drop_tables.gd").new()
-	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult)
+	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, sub_tier)
 
 func get_companion_level() -> int:
 	"""Get active companion's level."""

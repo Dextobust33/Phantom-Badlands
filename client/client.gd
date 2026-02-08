@@ -15184,8 +15184,8 @@ func _sort_companions(companions: Array) -> Array:
 				val_a = a.get("level", 0)
 				val_b = b.get("level", 0)
 			"tier":
-				val_a = a.get("tier", 0)
-				val_b = b.get("tier", 0)
+				val_a = a.get("tier", 0) * 10 + a.get("sub_tier", 1)
+				val_b = b.get("tier", 0) * 10 + b.get("sub_tier", 1)
 			"variant":
 				# Sort by variant rarity (Mythic > Legendary > Epic > Rare > Uncommon > Common)
 				val_a = _get_variant_sort_value(a.get("variant", "Normal"))
@@ -15247,13 +15247,15 @@ func _get_companion_sort_damage_value(companion: Dictionary) -> int:
 	var tier = companion.get("tier", 1)
 	var level = companion.get("level", 1)
 	var variant = companion.get("variant", "Normal")
+	var sub_tier = companion.get("sub_tier", 1)
 
 	# Base damage formula: tier * 5 + level * 2
 	var base_damage = tier * 5 + level * 2
 
-	# Apply variant multiplier
+	# Apply variant and sub-tier multipliers
 	var variant_mult = _get_variant_multiplier(variant)
-	return int(base_damage * variant_mult)
+	var st_mult = _get_sub_tier_multiplier(sub_tier)
+	return int(base_damage * variant_mult * st_mult)
 
 func display_companions():
 	"""Display the companions list with level, XP, abilities, and variant info"""
@@ -15290,8 +15292,13 @@ func display_companions():
 		var rarity_info = _get_variant_rarity_info(variant)
 
 		display_game("[color=#00FFFF]Active Companion:[/color]")
+		var comp_sub_tier = active_companion.get("sub_tier", 1)
+		var sub_tier_text = ""
+		if comp_sub_tier > 1:
+			var st_mult = _get_sub_tier_multiplier(comp_sub_tier)
+			sub_tier_text = " [color=#00BFFF](x%.1f)[/color]" % st_mult
 		display_game("  [color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
-		display_game("  [color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
+		display_game("  [color=#AAAAAA]Level %d | Tier %d-%d[/color]%s" % [comp_level, comp_tier, comp_sub_tier, sub_tier_text])
 
 		# XP bar
 		if comp_level < 50:
@@ -15484,7 +15491,7 @@ func _get_variant_multiplier(variant: String) -> float:
 		return 1.50
 	return 1.0
 
-func _estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0) -> Dictionary:
+func _estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
 	Mirrors the formula in drop_tables.get_companion_attack_damage().
 	Returns {min, max, avg} damage values."""
@@ -15496,6 +15503,8 @@ func _estimate_companion_damage(companion_tier: int, player_level: int, companio
 	# Apply attack bonus from companion bonuses
 	var attack_bonus = companion_bonuses.get("attack", 0)
 	var base = int(base_total * (1.0 + float(attack_bonus) / 100.0))
+	# Apply sub-tier multiplier
+	base = int(base * _get_sub_tier_multiplier(sub_tier))
 	# Apply variant multiplier
 	base = int(base * variant_mult)
 	# Combat applies 80-120% variance
@@ -15503,6 +15512,10 @@ func _estimate_companion_damage(companion_tier: int, player_level: int, companio
 	var max_dmg = max(1, int(base * 1.2))
 	var avg_dmg = int((min_dmg + max_dmg) / 2)
 	return {"min": min_dmg, "max": max_dmg, "avg": avg_dmg}
+
+func _get_sub_tier_multiplier(sub_tier: int) -> float:
+	"""Get the stat multiplier for a companion's sub-tier (1-8 from dungeons, 9 fusion)."""
+	return {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
 
 func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: float) -> Array:
 	"""Get formatted bonus text parts for a companion with variant multiplier applied."""
@@ -16010,9 +16023,15 @@ func display_companion_inspection(companion: Dictionary):
 	display_game("")
 
 	# Build left side content (info)
+	var comp_sub_tier = companion.get("sub_tier", 1)
+	var sub_tier_mult = _get_sub_tier_multiplier(comp_sub_tier)
+	var sub_tier_text = ""
+	if comp_sub_tier > 1:
+		sub_tier_text = " [color=#00BFFF](x%.1f stats)[/color]" % sub_tier_mult
+
 	var info_lines = []
 	info_lines.append("[color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
-	info_lines.append("[color=#AAAAAA]Level %d | Tier %d[/color]" % [comp_level, comp_tier])
+	info_lines.append("[color=#AAAAAA]Level %d | Tier %d-%d[/color]%s" % [comp_level, comp_tier, comp_sub_tier, sub_tier_text])
 	info_lines.append("")
 
 	# XP Progress
@@ -16027,10 +16046,10 @@ func display_companion_inspection(companion: Dictionary):
 		info_lines.append("[color=#FFD700]MAX LEVEL[/color]")
 	info_lines.append("")
 
-	# Combat Damage Estimation
+	# Combat Damage Estimation (includes sub-tier multiplier)
 	info_lines.append("[color=#FF6666]── Combat Damage ──[/color]")
 	var player_level = character_data.get("level", 1)
-	var damage_est = _estimate_companion_damage(comp_tier, player_level, bonuses, comp_level, variant_mult)
+	var damage_est = _estimate_companion_damage(comp_tier, player_level, bonuses, comp_level, variant_mult, comp_sub_tier)
 	info_lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [damage_est.min, damage_est.max])
 	info_lines.append("")
 
@@ -16284,9 +16303,10 @@ func display_eggs():
 		display_game(egg_art)
 
 		# Display egg info below the art with rarity tag and frozen status
+		var egg_sub_tier = egg.get("sub_tier", 1)
 		var frozen_str = " [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
 		var display_num = (i - start_idx) + 1
-		display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](Tier %d)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, frozen_str])
+		display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](T%d-%d)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, egg_sub_tier, frozen_str])
 
 		# Progress bar
 		var bar_length = 16
@@ -18356,8 +18376,9 @@ func handle_dungeon_list(message: Dictionary):
 
 	var idx = 1
 	for dungeon in dungeon_available:
-		var name = dungeon.get("name", "Unknown Dungeon")
+		var dname = dungeon.get("name", "Unknown Dungeon")
 		var tier = dungeon.get("tier", 1)
+		var sub_tier = dungeon.get("sub_tier", 1)
 		var min_level = dungeon.get("min_level", 1)
 		var max_level = dungeon.get("max_level", 100)
 		var distance = dungeon.get("distance", 0)
@@ -18368,8 +18389,8 @@ func handle_dungeon_list(message: Dictionary):
 		if completions > 0:
 			status = "[color=#00FF00](%d clears)[/color]" % completions
 
-		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, name, status])
-		display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
+		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, dname, status])
+		display_game("    Tier %d-%d | Levels %d-%d | Distance: %d tiles" % [tier, sub_tier, min_level, max_level, distance])
 		display_game("")
 		idx += 1
 
@@ -18803,13 +18824,14 @@ func _display_dungeon_entrance_info():
 	var dungeon_name = dungeon_entrance_info.get("name", "Dungeon")
 	var color = dungeon_entrance_info.get("color", "#FFFFFF")
 	var tier = dungeon_entrance_info.get("tier", 1)
+	var sub_tier = dungeon_entrance_info.get("sub_tier", 1)
 	var min_level = dungeon_entrance_info.get("min_level", 1)
 	var max_level = dungeon_entrance_info.get("max_level", 100)
 	var player_level = character_data.get("level", 1)
 
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
-	display_game("Tier %d Dungeon | Levels %d-%d" % [tier, min_level, max_level])
+	display_game("Tier %d-%d Dungeon | Levels %d-%d" % [tier, sub_tier, min_level, max_level])
 
 	# Show level requirement warning if player is too low
 	if player_level < min_level:

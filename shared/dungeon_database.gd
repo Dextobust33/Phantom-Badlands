@@ -39,6 +39,20 @@ const TILE_COLORS = {
 	TileType.CLEARED: "#303030"
 }
 
+# Sub-tier level ranges per overarching tier (1-9)
+# Each tier spans a level range; sub-tiers (1-8) subdivide that range
+const TIER_LEVEL_RANGES = {
+	1: {"min": 1, "max": 12},
+	2: {"min": 6, "max": 22},
+	3: {"min": 16, "max": 40},
+	4: {"min": 31, "max": 60},
+	5: {"min": 51, "max": 120},
+	6: {"min": 101, "max": 500},
+	7: {"min": 501, "max": 2000},
+	8: {"min": 2001, "max": 5000},
+	9: {"min": 5001, "max": 10000}
+}
+
 # ===== DUNGEON DEFINITIONS =====
 # Dungeons are now named after their boss monster. Defeating the boss GUARANTEES
 # that monster's companion egg. Additional eggs can drop from treasure chests
@@ -1850,17 +1864,20 @@ const TREASURE_EGG_CHANCE_BY_TIER = {
 	9: 1     # 1% for tier 9 (extremely rare!)
 }
 
-static func roll_treasure(dungeon_id: String, floor_num: int) -> Dictionary:
-	"""Roll for treasure chest contents. Eggs use tier-based rarity."""
+static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1) -> Dictionary:
+	"""Roll for treasure chest contents. Eggs use tier-based rarity. Sub-tier scales gold."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {"gold": 100}
 
 	var tier = dungeon.tier
 	var base_gold = tier * 50 * (1 + floor_num)
+	# Sub-tier scales gold: +10% per sub-tier above 1
+	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
+	base_gold = int(base_gold * sub_tier_mult)
 
 	# Roll gold
-	var gold = base_gold + randi() % (base_gold / 2)
+	var gold = base_gold + randi() % max(1, base_gold / 2)
 
 	# Roll for materials
 	var materials = []
@@ -1879,7 +1896,7 @@ static func roll_treasure(dungeon_id: String, floor_num: int) -> Dictionary:
 		var egg_chance = TREASURE_EGG_CHANCE_BY_TIER.get(tier, 10)
 		if randi() % 100 < egg_chance:
 			var egg_monster = egg_drops[randi() % egg_drops.size()]
-			egg = {"monster": egg_monster}
+			egg = {"monster": egg_monster, "sub_tier": sub_tier}
 
 	return {
 		"gold": gold,
@@ -1887,8 +1904,9 @@ static func roll_treasure(dungeon_id: String, floor_num: int) -> Dictionary:
 		"egg": egg
 	}
 
-static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int) -> Dictionary:
-	"""Calculate rewards for completing a dungeon. Includes GUARANTEED boss egg!"""
+static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1) -> Dictionary:
+	"""Calculate rewards for completing a dungeon. Includes GUARANTEED boss egg!
+	Sub-tier scales XP and gold by +10% per sub-tier above 1."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {}
@@ -1905,6 +1923,11 @@ static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int
 	if floors_cleared >= total_floors:
 		base_xp *= 1.5
 		base_gold *= 1.5
+
+	# Sub-tier scales rewards: +10% per sub-tier above 1
+	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
+	base_xp *= sub_tier_mult
+	base_gold *= sub_tier_mult
 
 	# Get guaranteed boss egg (dungeon completion ALWAYS gives the boss's egg)
 	var boss_egg = dungeon.get("boss_egg", "")
@@ -1931,3 +1954,38 @@ static func get_spawn_location_for_tier(tier: int) -> Vector2i:
 		int(cos(angle) * distance),
 		int(sin(angle) * distance)
 	)
+
+static func get_sub_tier_level_range(tier: int, sub_tier: int) -> Dictionary:
+	"""Get level range for a specific tier + sub-tier combo.
+	Sub-tiers 1-8 subdivide the tier's level range into 8 segments."""
+	var tr = TIER_LEVEL_RANGES.get(tier, {"min": 1, "max": 12})
+	var range_size = tr.max - tr.min
+	var segment = float(range_size) / 8.0
+	var sub_min = tr.min + int(segment * (sub_tier - 1))
+	var sub_max = tr.min + int(segment * sub_tier)
+	sub_min = clampi(sub_min, tr.min, tr.max)
+	sub_max = clampi(sub_max, sub_min + 1, tr.max)
+	if sub_min >= sub_max:
+		sub_max = sub_min + 1
+	return {"min_level": sub_min, "max_level": maxi(sub_min, sub_max)}
+
+static func get_sub_tier_for_distance(tier: int, distance: float) -> int:
+	"""Calculate sub-tier (1-8) based on distance within tier's spawn band.
+	Further from origin within the tier band = higher sub-tier.
+	Includes random variance of +/-1 (25% chance of +/-2)."""
+	var min_dist = tier * 30
+	var max_dist = tier * 60
+	var progress = clampf((distance - min_dist) / float(maxi(1, max_dist - min_dist)), 0.0, 1.0)
+	var base = 1 + int(progress * 7.0)
+	# Random variance: usually +/-1, 25% chance of +/-2
+	var variance = (randi() % 3) - 1
+	if randi() % 4 == 0:
+		variance = (randi() % 5) - 2
+	return clampi(base + variance, 1, 8)
+
+static func get_dungeon_display_name(dungeon_id: String, tier: int, sub_tier: int) -> String:
+	"""Get display name with tier notation, e.g. 'Goblin Caves [T1-5]'."""
+	var dungeon = get_dungeon(dungeon_id)
+	if dungeon.is_empty():
+		return "Unknown Dungeon [T%d-%d]" % [tier, sub_tier]
+	return "%s [T%d-%d]" % [dungeon.name, tier, sub_tier]

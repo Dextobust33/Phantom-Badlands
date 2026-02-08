@@ -1030,12 +1030,16 @@ func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
 
 # ===== NEW MONSTER-SPECIFIC COMPANION ABILITY SYSTEM =====
 
-func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0) -> Dictionary:
+func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0, sub_tier: int = 1) -> Dictionary:
 	"""Get all abilities for a companion based on monster type and level.
 	Returns dict with 'passive', 'active', 'threshold' keys, each containing scaled ability data.
-	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS)."""
+	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS).
+	sub_tier: Dungeon sub-tier multiplier applied on top of variant mult."""
 
 	var result = {"passive": {}, "active": {}, "threshold": {}}
+
+	# Combine variant and sub-tier multipliers
+	var effective_mult = variant_multiplier * COMPANION_SUB_TIER_ABILITY_MULT.get(sub_tier, 1.0)
 
 	# Check for monster-specific abilities
 	if COMPANION_MONSTER_ABILITIES.has(monster_type):
@@ -1043,15 +1047,15 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 
 		# Scale passive ability
 		if monster_abilities.has("passive"):
-			result.passive = _scale_companion_ability(monster_abilities.passive, companion_level, variant_multiplier)
+			result.passive = _scale_companion_ability(monster_abilities.passive, companion_level, effective_mult)
 
 		# Scale active ability (unlocks at level 5)
 		if monster_abilities.has("active") and companion_level >= 5:
-			result.active = _scale_companion_ability(monster_abilities.active, companion_level, variant_multiplier)
+			result.active = _scale_companion_ability(monster_abilities.active, companion_level, effective_mult)
 
 		# Scale threshold ability (unlocks at level 15)
 		if monster_abilities.has("threshold") and companion_level >= 15:
-			result.threshold = _scale_companion_ability(monster_abilities.threshold, companion_level, variant_multiplier)
+			result.threshold = _scale_companion_ability(monster_abilities.threshold, companion_level, effective_mult)
 	else:
 		# Fallback to tier-based abilities for unknown monster types
 		var companion_data = COMPANION_DATA.get(monster_type, {})
@@ -1156,6 +1160,21 @@ const EGG_HATCH_STEPS_BY_TIER = {
 	9: 750    # Tier 9: 750 steps
 }
 
+# Sub-tier stat multiplier for companion bonuses and combat damage
+# Sub-tiers 1-8 from dungeons, 9 reserved for future fusion system
+const COMPANION_SUB_TIER_MULTIPLIERS = {
+	1: 1.0, 2: 1.1, 3: 1.2, 4: 1.3,
+	5: 1.4, 6: 1.5, 7: 1.6, 8: 1.7,
+	9: 2.0  # Fusion-only (Phase 4)
+}
+
+# Sub-tier ability enhancement multiplier (applied on top of variant mult)
+const COMPANION_SUB_TIER_ABILITY_MULT = {
+	1: 1.0, 2: 1.05, 3: 1.10, 4: 1.15,
+	5: 1.20, 6: 1.30, 7: 1.40, 8: 1.50,
+	9: 1.75  # Fusion-only
+}
+
 # Companion eggs are now DUNGEON-EXCLUSIVE
 # All tiers set to 0 - eggs only drop from dungeon treasure chests
 const EGG_DROP_CHANCE_BY_TIER = {
@@ -1174,10 +1193,11 @@ func get_companion_data(monster_name: String) -> Dictionary:
 	"""Get companion data for a monster. Returns empty dict if none."""
 	return COMPANION_DATA.get(monster_name, {})
 
-func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}) -> Dictionary:
+func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}, sub_tier: int = 1) -> Dictionary:
 	"""Generate an egg dictionary for a given monster type.
 	If pre_rolled_variant is provided, uses that variant. Otherwise rolls a new one.
-	Variant is determined at egg creation and affects egg display and hatch times."""
+	Variant is determined at egg creation and affects egg display and hatch times.
+	sub_tier: Dungeon sub-tier (1-8) that affects companion power when hatched."""
 	var companion = COMPANION_DATA.get(monster_name, {})
 	if companion.is_empty():
 		return {}
@@ -1204,6 +1224,7 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"companion_name": companion_name,
 		"name": companion_name + " Egg",
 		"tier": tier,
+		"sub_tier": sub_tier,
 		"hatch_steps": hatch_steps,
 		"bonuses": companion.get("bonuses", {}).duplicate(),
 		# Variant info for display and hatching
@@ -1403,9 +1424,9 @@ func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 
 	return {}
 
-func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1) -> int:
+func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1, sub_tier: int = 1) -> int:
 	"""Calculate damage dealt by companion in combat.
-	Damage scales with tier, player level, and companion level for meaningful progression
+	Damage scales with tier, player level, companion level, and sub-tier for meaningful progression
 	without trivializing combat."""
 	# Base damage scales with tier (T1=5, T2=10, ... T9=45)
 	var tier_damage = companion_tier * 5
@@ -1417,12 +1438,15 @@ func get_companion_attack_damage(companion_tier: int, player_level: int, compani
 	var total = tier_damage + player_bonus + companion_bonus
 	# Apply companion's attack bonus percentage
 	var attack_bonus = companion_bonuses.get("attack", 0)
-	return int(total * (1.0 + float(attack_bonus) / 100.0))
+	total = int(total * (1.0 + float(attack_bonus) / 100.0))
+	# Apply sub-tier multiplier (1.0x to 1.7x for sub-tiers 1-8)
+	total = int(total * COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	return total
 
-func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0) -> Dictionary:
+func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
 	Returns {min, max, avg} damage values."""
-	var base = get_companion_attack_damage(companion_tier, player_level, companion_bonuses, companion_level)
+	var base = get_companion_attack_damage(companion_tier, player_level, companion_bonuses, companion_level, sub_tier)
 	# Apply variant multiplier
 	base = int(base * variant_mult)
 	# Damage has 80-120% variance

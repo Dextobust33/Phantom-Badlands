@@ -472,11 +472,12 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	var companion_tier = companion.get("tier", 1)
 	var companion_level = companion.get("level", 1)
 	var companion_bonuses = companion.get("bonuses", {})
+	var companion_sub_tier = companion.get("sub_tier", 1)
 
-	# Calculate companion damage (now scales with companion level)
+	# Calculate companion damage (now scales with companion level and sub-tier)
 	var companion_damage = 0
 	if drop_tables:
-		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level)
+		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level, companion_sub_tier)
 	else:
 		# Fallback formula matching drop_tables
 		companion_damage = companion_tier * 5 + int(character.level * 0.3) + int(companion_level * 0.5)
@@ -781,11 +782,12 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		var companion_level = companion.get("level", 1)
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult)
+		var companion_sub_tier = companion.get("sub_tier", 1)
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier)
 		# Store for use by active/threshold handlers later
 		combat_state["companion_abilities"] = companion_abilities
 
-		# Apply passive abilities (values already scaled by level + variant)
+		# Apply passive abilities (values already scaled by level + variant + sub-tier)
 		if not companion_abilities.passive.is_empty():
 			var passive = companion_abilities.passive
 			if passive.has("effect") and passive.has("value"):
@@ -4947,7 +4949,8 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		var companion_level = companion.get("level", 1)
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult)
+		var companion_sub_tier = companion.get("sub_tier", 1)
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier)
 		combat_state["companion_abilities"] = companion_abilities
 
 		if not companion_abilities.passive.is_empty():

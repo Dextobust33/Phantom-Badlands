@@ -9653,20 +9653,33 @@ func handle_dungeon_list(peer_id: int):
 		# Find active instance of this type
 		var active_instance = ""
 		var instance_location = Vector2i(0, 0)
+		var inst_sub_tier = 1
 		for inst_id in active_dungeons:
 			var inst = active_dungeons[inst_id]
 			if inst.dungeon_type == dungeon_type:
 				active_instance = inst_id
 				instance_location = Vector2i(inst.world_x, inst.world_y)
+				inst_sub_tier = inst.get("sub_tier", 1)
 				break
+
+		# Use sub-tier level range if instance exists, otherwise use dungeon defaults
+		var display_min = dungeon_data.min_level
+		var display_max = dungeon_data.max_level
+		var display_name = dungeon_data.name
+		if active_instance != "":
+			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
+			display_min = sub_range.min_level
+			display_max = sub_range.max_level
+			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, dungeon_data.tier, inst_sub_tier)
 
 		dungeon_list.append({
 			"type": dungeon_type,
-			"name": dungeon_data.name,
+			"name": display_name,
 			"description": dungeon_data.description,
 			"tier": dungeon_data.tier,
-			"min_level": dungeon_data.min_level,
-			"max_level": dungeon_data.max_level,
+			"sub_tier": inst_sub_tier,
+			"min_level": display_min,
+			"max_level": display_max,
 			"floors": dungeon_data.floors,
 			"completions": completions,
 			"active_instance": active_instance,
@@ -10066,6 +10079,12 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
 			break
 
+	# Calculate sub-tier based on distance from origin
+	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
+
 	# Create instance
 	active_dungeons[instance_id] = {
 		"instance_id": instance_id,
@@ -10074,7 +10093,8 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		"world_y": spawn_y,
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
-		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
+		"dungeon_level": dungeon_level,
+		"sub_tier": sub_tier
 	}
 
 	# Generate all floor grids (BSP rooms + corridors)
@@ -10090,10 +10110,9 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	dungeon_floor_rooms[instance_id] = floor_rooms
 
 	# Spawn monsters on all floors
-	var dungeon_level = active_dungeons[instance_id].dungeon_level
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
-	log_message("Created dungeon instance: %s (%s)" % [instance_id, dungeon_data.name])
+	log_message("Created dungeon instance: %s (%s) [T%d-%d]" % [instance_id, dungeon_data.name, dungeon_data.tier, sub_tier])
 	return instance_id
 
 func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int) -> String:
@@ -10142,8 +10161,13 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
 			break
 
-	# Scale dungeon level to player
-	var dungeon_level = max(dungeon_data.min_level, min(player_level, dungeon_data.max_level))
+	# Calculate sub-tier based on distance from origin
+	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+
+	# Scale dungeon level to player, clamped to sub-tier range
+	var dungeon_level = clampi(player_level, sub_range.min_level, sub_range.max_level)
 
 	# Create instance
 	active_dungeons[instance_id] = {
@@ -10154,6 +10178,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
 		"dungeon_level": dungeon_level,
+		"sub_tier": sub_tier,
 		"owner_peer_id": peer_id,  # Track who owns this instance
 		"quest_id": quest_id  # Track which quest this is for
 	}
@@ -10238,6 +10263,10 @@ func _ensure_starter_dungeon_exists():
 	var spawn_x = int(cos(angle) * SPAWN_DISTANCE)
 	var spawn_y = int(sin(angle) * SPAWN_DISTANCE)
 
+	# Starter dungeons always get sub-tier 1 (easiest)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, 1)
+	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
+
 	# Create instance
 	active_dungeons[instance_id] = {
 		"instance_id": instance_id,
@@ -10246,7 +10275,8 @@ func _ensure_starter_dungeon_exists():
 		"world_y": spawn_y,
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
-		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1)
+		"dungeon_level": dungeon_level,
+		"sub_tier": 1
 	}
 
 	# Generate all floor grids (BSP rooms + corridors)
@@ -10262,10 +10292,9 @@ func _ensure_starter_dungeon_exists():
 	dungeon_floor_rooms[instance_id] = floor_rooms
 
 	# Spawn monsters on all floors
-	var dungeon_level = active_dungeons[instance_id].dungeon_level
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
-	log_message("Spawned starter dungeon: %s (%s) at (%d, %d)" % [instance_id, dungeon_data.name, spawn_x, spawn_y])
+	log_message("Spawned starter dungeon: %s (%s) [T%d-1] at (%d, %d)" % [instance_id, dungeon_data.name, dungeon_data.tier, spawn_x, spawn_y])
 
 func _check_dungeon_spawns():
 	"""Periodically check and spawn new world dungeons, despawn completed ones"""
@@ -10366,6 +10395,12 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		next_dungeon_id -= 1  # Reclaim the ID
 		return ""
 
+	# Calculate sub-tier based on distance from origin
+	var distance = sqrt(float(world_x * world_x + world_y * world_y))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
+
 	# Create instance
 	active_dungeons[instance_id] = {
 		"instance_id": instance_id,
@@ -10374,7 +10409,8 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		"world_y": world_y,
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
-		"dungeon_level": dungeon_data.min_level + randi() % (dungeon_data.max_level - dungeon_data.min_level + 1),
+		"dungeon_level": dungeon_level,
+		"sub_tier": sub_tier,
 		"completed_at": 0  # 0 means not completed yet
 	}
 
@@ -10391,7 +10427,6 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	dungeon_floor_rooms[instance_id] = floor_rooms
 
 	# Spawn monsters on all floors
-	var dungeon_level = active_dungeons[instance_id].dungeon_level
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
 	return instance_id
@@ -10409,13 +10444,16 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 			continue
 		if instance.world_x == x and instance.world_y == y:
 			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+			var inst_sub_tier = instance.get("sub_tier", 1)
+			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
 			return {
 				"instance_id": instance_id,
 				"dungeon_type": instance.dungeon_type,
-				"name": dungeon_data.name,
+				"name": DungeonDatabaseScript.get_dungeon_display_name(instance.dungeon_type, dungeon_data.tier, inst_sub_tier),
 				"tier": dungeon_data.tier,
-				"min_level": dungeon_data.min_level,
-				"max_level": dungeon_data.max_level,
+				"sub_tier": inst_sub_tier,
+				"min_level": sub_range.min_level,
+				"max_level": sub_range.max_level,
 				"color": dungeon_data.color
 			}
 	return {}
@@ -10576,10 +10614,14 @@ func _send_dungeon_state(peer_id: int):
 					"type": m.monster_type
 				})
 
+	var inst_sub_tier = instance.get("sub_tier", 1)
+	var display_name = DungeonDatabaseScript.get_dungeon_display_name(character.current_dungeon_type, dungeon_data.tier, inst_sub_tier)
+
 	send_to_peer(peer_id, {
 		"type": "dungeon_state",
 		"dungeon_type": character.current_dungeon_type,
-		"dungeon_name": dungeon_data.name,
+		"dungeon_name": display_name,
+		"sub_tier": inst_sub_tier,
 		"floor": character.dungeon_floor + 1,
 		"total_floors": dungeon_data.floors,
 		"grid": grid,
@@ -10676,9 +10718,12 @@ func _open_dungeon_treasure(peer_id: int):
 
 	var character = characters[peer_id]
 	var instance_id = character.current_dungeon_id
+	var inst_sub_tier = 1
+	if active_dungeons.has(instance_id):
+		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
 
-	# Get treasure
-	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor)
+	# Get treasure (sub-tier scales gold)
+	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor, inst_sub_tier)
 
 	# Give rewards
 	var reward_messages = []
@@ -10694,10 +10739,11 @@ func _open_dungeon_treasure(peer_id: int):
 		var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 		reward_messages.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.capitalize().replace("_", " "), qty_text])
 
-	# Egg
+	# Egg (inherits dungeon sub-tier)
 	var egg_info = treasure.get("egg", {})
 	if not egg_info.is_empty():
-		var egg_data = drop_tables.get_egg_for_monster(egg_info.monster)
+		var egg_sub_tier = egg_info.get("sub_tier", inst_sub_tier)
+		var egg_data = drop_tables.get_egg_for_monster(egg_info.monster, {}, egg_sub_tier)
 		if not egg_data.is_empty():
 			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
 			var egg_result = character.add_egg(egg_data, _egg_cap)
@@ -10774,21 +10820,24 @@ func _complete_dungeon(peer_id: int):
 	var dungeon_type = character.current_dungeon_type
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
 	var instance_id = character.current_dungeon_id
+	var inst_sub_tier = 1
+	if active_dungeons.has(instance_id):
+		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
 
-	# Calculate rewards
-	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1)
+	# Calculate rewards (sub-tier scales XP/gold)
+	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
 
 	# Give rewards
 	character.gold += rewards.gold
 	var xp_result = character.add_experience(rewards.xp)
 
-	# Give GUARANTEED boss egg!
+	# Give GUARANTEED boss egg (inherits dungeon sub-tier)!
 	var boss_egg_given = false
 	var boss_egg_name = ""
 	var boss_egg_lost_to_full = false
 	var boss_egg_monster = rewards.get("boss_egg", "")
 	if boss_egg_monster != "":
-		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster)
+		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, inst_sub_tier)
 		if not egg_data.is_empty():
 			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
 			var egg_result = character.add_egg(egg_data, _egg_cap)
