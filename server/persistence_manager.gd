@@ -19,6 +19,7 @@ const HOUSE_UPGRADES = {
 	"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},  # Expands the house layout
 	"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
 	"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+	"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
 	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
@@ -469,6 +470,29 @@ func get_leaderboard(limit: int = 10) -> Array:
 		result.append(leaderboard_data.entries[i])
 
 	return result
+
+func remove_from_leaderboard(character_name: String) -> bool:
+	"""Remove a specific entry from the leaderboard by character name. Returns true if found and removed."""
+	var entries = leaderboard_data.get("entries", [])
+	var found_index = -1
+	for i in range(entries.size()):
+		if entries[i].get("character_name", "") == character_name:
+			found_index = i
+			break
+
+	if found_index == -1:
+		print("Leaderboard: '%s' not found" % character_name)
+		return false
+
+	entries.remove_at(found_index)
+
+	# Recalculate ranks
+	for i in range(entries.size()):
+		entries[i]["rank"] = i + 1
+
+	save_leaderboard()
+	print("Leaderboard: Removed '%s', ranks renumbered (%d entries remain)" % [character_name, entries.size()])
+	return true
 
 func reset_leaderboard():
 	"""Reset the leaderboard - clears all entries"""
@@ -992,6 +1016,12 @@ func get_house_companion_capacity(account_id: String) -> int:
 	var upgrade_level = house.upgrades.get("companion_slots", 0)
 	return base_slots + (upgrade_level * HOUSE_UPGRADES.companion_slots.effect)
 
+func get_egg_capacity(account_id: String) -> int:
+	"""Get total egg incubation slots (base 3 + egg_slots upgrade)"""
+	var house = get_house(account_id)
+	var upgrade_level = house.upgrades.get("egg_slots", 0)
+	return 3 + (upgrade_level * HOUSE_UPGRADES.egg_slots.effect)
+
 func add_item_to_house_storage(account_id: String, item: Dictionary) -> bool:
 	"""Add an item to house storage. Returns true if successful."""
 	var house = get_house(account_id)
@@ -1016,7 +1046,7 @@ func remove_item_from_house_storage(account_id: String, index: int) -> Dictionar
 	save_house(account_id, house)
 	return item
 
-func register_companion_to_house(account_id: String, companion: Dictionary) -> int:
+func register_companion_to_house(account_id: String, companion: Dictionary, checked_out_by = null) -> int:
 	"""Register a companion to the house. Returns slot index or -1 if full."""
 	var house = get_house(account_id)
 	var capacity = get_house_companion_capacity(account_id)
@@ -1026,7 +1056,7 @@ func register_companion_to_house(account_id: String, companion: Dictionary) -> i
 
 	# Add registration metadata
 	companion["registered_at"] = int(Time.get_unix_time_from_system())
-	companion["checked_out_by"] = null
+	companion["checked_out_by"] = checked_out_by
 	companion["checkout_time"] = null
 
 	house.registered_companions.companions.append(companion)
@@ -1156,13 +1186,15 @@ func get_house_bonuses(account_id: String) -> Dictionary:
 		"dex_bonus": 0,
 		"int_bonus": 0,
 		"wis_bonus": 0,
-		"wits_bonus": 0
+		"wits_bonus": 0,
+		"egg_slots": 0
 	}
 
 	var upgrades = house.get("upgrades", {})
 	var bonus_ids = ["flee_chance", "starting_gold", "xp_bonus", "gathering_bonus",
 					 "hp_bonus", "resource_max", "resource_regen",
-					 "str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
+					 "str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus",
+					 "egg_slots"]
 	for upgrade_id in bonus_ids:
 		var level = upgrades.get(upgrade_id, 0)
 		if level > 0 and HOUSE_UPGRADES.has(upgrade_id):

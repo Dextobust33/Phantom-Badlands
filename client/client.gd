@@ -637,13 +637,13 @@ const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 # Consumable tier system for display purposes (matches server calculations)
 # resource = 60% of healing for all classes
 const CONSUMABLE_TIERS = {
-	1: {"name": "Minor", "healing": 50, "buff_value": 3, "resource": 30},
-	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "resource": 60},
-	3: {"name": "Standard", "healing": 200, "buff_value": 8, "resource": 120},
-	4: {"name": "Greater", "healing": 400, "buff_value": 12, "resource": 240},
-	5: {"name": "Superior", "healing": 800, "buff_value": 18, "resource": 480},
-	6: {"name": "Master", "healing": 1600, "buff_value": 25, "resource": 960},
-	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "resource": 1800}
+	1: {"name": "Minor", "healing": 50, "buff_value": 3, "resource": 30, "forcefield_value": 1500},
+	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "resource": 60, "forcefield_value": 2500},
+	3: {"name": "Standard", "healing": 200, "buff_value": 8, "resource": 120, "forcefield_value": 4000},
+	4: {"name": "Greater", "healing": 400, "buff_value": 12, "resource": 240, "forcefield_value": 6000},
+	5: {"name": "Superior", "healing": 800, "buff_value": 18, "resource": 480, "forcefield_value": 10000},
+	6: {"name": "Master", "healing": 1600, "buff_value": 25, "resource": 960, "forcefield_value": 15000},
+	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "resource": 1800, "forcefield_value": 25000}
 }
 
 var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)
@@ -818,6 +818,11 @@ var target_farm_mode: bool = false
 var target_farm_options: Array = []  # Array of ability IDs
 var target_farm_names: Dictionary = {}  # Ability ID -> display name
 var target_farm_encounters: int = 5
+
+# Home Stone selection mode
+var home_stone_mode: bool = false
+var home_stone_type: String = ""
+var home_stone_options: Array = []
 
 # Title system mode
 var title_mode: bool = false  # Whether in title menu
@@ -1895,12 +1900,33 @@ func _process(delta):
 		if Input.is_physical_key_pressed(cancel_key):
 			if not get_meta("combatitem_cancel_pressed", false):
 				set_meta("combatitem_cancel_pressed", true)
-				# Mark hotkey_0 as pressed to prevent attack on same frame
-				# (action bar checks hotkey_0_pressed, not combatitem_cancel_pressed)
 				set_meta("hotkey_0_pressed", true)
 				cancel_combat_item_mode()
 		else:
 			set_meta("combatitem_cancel_pressed", false)
+		# Q key (action_1) = Prev Pg, W key (action_2) = Next Pg
+		var prev_key = keybinds.get("action_1", default_keybinds.get("action_1", KEY_Q))
+		if Input.is_physical_key_pressed(prev_key):
+			if not get_meta("combatitem_prev_pressed", false):
+				set_meta("combatitem_prev_pressed", true)
+				if combat_use_page > 0:
+					combat_use_page -= 1
+					_display_combat_usable_items_page()
+					update_action_bar()
+		else:
+			set_meta("combatitem_prev_pressed", false)
+		var next_key = keybinds.get("action_2", default_keybinds.get("action_2", KEY_W))
+		if Input.is_physical_key_pressed(next_key):
+			if not get_meta("combatitem_next_pressed", false):
+				set_meta("combatitem_next_pressed", true)
+				var combat_usable_items = get_meta("combat_usable_items", [])
+				var total_pages = max(1, int(ceil(float(combat_usable_items.size()) / INVENTORY_PAGE_SIZE)))
+				if combat_use_page < total_pages - 1:
+					combat_use_page += 1
+					_display_combat_usable_items_page()
+					update_action_bar()
+		else:
+			set_meta("combatitem_next_pressed", false)
 
 	# Companion activation with keybinds (1-5)
 	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
@@ -1990,6 +2016,18 @@ func _process(delta):
 					select_target_farm_ability(i)  # 0-based index
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
+
+	# Home Stone selection with number keys
+	if game_state == GameState.PLAYING and not input_field.has_focus() and home_stone_mode:
+		for i in range(min(9, home_stone_options.size())):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("homestonekey_%d_pressed" % i, false):
+					set_meta("homestonekey_%d_pressed" % i, true)
+					_select_home_stone_option(i)
+			else:
+				set_meta("homestonekey_%d_pressed" % i, false)
 
 	# Blacksmith item selection with number keys (1-9)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_blacksmith:
@@ -2131,7 +2169,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not home_stone_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
@@ -4528,6 +4566,20 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif home_stone_mode:
+		# Home Stone selection - Space=Cancel, 1-N=Select
+		current_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "1-%d Select" % home_stone_options.size(), "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7461,6 +7513,8 @@ func execute_local_action(action: String):
 		# Target farm scroll actions
 		"target_farm_cancel":
 			cancel_target_farm()
+		"home_stone_cancel":
+			_cancel_home_stone()
 		# Ability management actions
 		"abilities":
 			enter_ability_mode()
@@ -8147,7 +8201,11 @@ func display_shop_inventory():
 					compare_text = ""
 
 			var themed_name = _get_themed_item_name(item, player_class)
-			display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
+			var is_consumable = item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "gold_pouch" in item_type or "tome" in item_type
+			if is_consumable:
+				display_game("[%d] %s [color=%s]%s[/color]%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, compare_text, price])
+			else:
+				display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
 
 	display_game("")
 	display_game("[color=#808080]%s to buy with gold[/color]" % get_selection_keys_text(shop_items.size()))
@@ -8404,14 +8462,23 @@ func display_shop_item_details(item: Dictionary):
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
-	display_game("[color=#00FFFF]Level:[/color] %d" % level)
+	var is_consumable_item = item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "tome" in item_type
+	if is_consumable_item:
+		var tier = item.get("tier", level)
+		display_game("[color=#00FFFF]Tier:[/color] %d" % tier)
+	else:
+		display_game("[color=#00FFFF]Level:[/color] %d" % level)
 	display_game("[color=#00FFFF]Price:[/color] %d gold (%d gems)" % [price, gem_price])
 	display_game("")
 
-	# Display all computed stats
-	var stats_shown = _display_computed_item_bonuses(item)
-	if not stats_shown:
-		display_game("[color=#808080](No stat bonuses)[/color]")
+	# Display computed stats for equipment, or effect description for consumables
+	if is_consumable_item:
+		var effect_desc = _get_item_effect_description(item_type, item.get("tier", level), rarity)
+		display_game("[color=#E6CC80]Effect:[/color] %s" % effect_desc)
+	else:
+		var stats_shown = _display_computed_item_bonuses(item)
+		if not stats_shown:
+			display_game("[color=#808080](No stat bonuses)[/color]")
 
 	display_game("")
 
@@ -12412,6 +12479,25 @@ func handle_server_message(message: Dictionary):
 				display_target_farm_options()
 				update_action_bar()
 
+		"home_stone_select":
+			# Home Stone used - show selection
+			home_stone_type = message.get("stone_type", "")
+			home_stone_options = message.get("options", [])
+			if home_stone_options.size() > 0:
+				# Exit inventory mode
+				inventory_mode = false
+				pending_inventory_action = ""
+				selected_item_index = -1
+				home_stone_mode = true
+				# Initialize key press state for any currently-held keys
+				for i in range(home_stone_options.size()):
+					if is_item_select_key_pressed(i):
+						set_meta("homestonekey_%d_pressed" % i, true)
+				game_output.clear()
+				display_game(message.get("message", "Choose a target:"))
+				_display_home_stone_options()
+				update_action_bar()
+
 		"merchant_start":
 			at_merchant = true
 			merchant_data = message.get("merchant", {})
@@ -13097,10 +13183,52 @@ func display_equip_comparison(item: Dictionary, inv_index: int):
 
 func _get_item_type_description(item_type: String) -> String:
 	"""Get a readable description of the item type"""
-	if "potion" in item_type:
+	# Home Stones
+	if item_type == "home_stone_egg":
+		return "Home Stone - Send an egg to your Sanctuary"
+	elif item_type == "home_stone_supplies":
+		return "Home Stone - Send supplies to your Sanctuary"
+	elif item_type == "home_stone_equipment":
+		return "Home Stone - Send equipment to your Sanctuary"
+	elif item_type == "home_stone_companion":
+		return "Home Stone - Register companion at your Sanctuary"
+	# Scrolls
+	elif "scroll" in item_type:
+		return "Consumable - Magical Scroll"
+	# Tomes
+	elif "tome" in item_type:
+		return "Consumable - Tome of Knowledge"
+	# Special items
+	elif item_type == "mysterious_box":
+		return "Consumable - Mysterious Box"
+	elif item_type == "cursed_coin":
+		return "Consumable - Cursed Coin"
+	elif item_type == "soul_gem":
+		return "Consumable - Soul Gem"
+	# Resource potions
+	elif "mana" in item_type:
+		return "Consumable - Mana Potion"
+	elif "stamina" in item_type:
+		return "Consumable - Stamina Potion"
+	elif "energy" in item_type:
+		return "Consumable - Energy Potion"
+	# Buff potions
+	elif "potion_strength" in item_type or "potion_power" in item_type:
+		return "Consumable - Strength Potion"
+	elif "potion_defense" in item_type or "potion_iron" in item_type:
+		return "Consumable - Defense Potion"
+	elif "potion_speed" in item_type or "potion_haste" in item_type:
+		return "Consumable - Speed Potion"
+	elif "potion_crit" in item_type:
+		return "Consumable - Critical Strike Potion"
+	elif "potion_lifesteal" in item_type:
+		return "Consumable - Lifesteal Potion"
+	# General potions/elixirs
+	elif "potion" in item_type:
 		return "Consumable - Healing Potion"
 	elif "elixir" in item_type:
 		return "Consumable - Powerful Elixir"
+	# Equipment
 	elif "weapon" in item_type:
 		return "Weapon - Increases attack damage"
 	elif "armor" in item_type:
@@ -13109,6 +13237,8 @@ func _get_item_type_description(item_type: String) -> String:
 		return "Helm - Head protection"
 	elif "shield" in item_type:
 		return "Shield - Improves defense"
+	elif "boots" in item_type:
+		return "Boots - Footwear"
 	elif "ring" in item_type:
 		return "Ring - Magical accessory"
 	elif "amulet" in item_type:
@@ -13128,14 +13258,13 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	# TIER-BASED CONSUMABLES (level parameter contains tier 1-7 when is_consumable)
 	# Check if this is a tier value (1-7) which means tier-based item
 	var is_tier_value = level >= 1 and level <= 7
+	var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1]) if is_tier_value else {}
 
 	# Health potions (potion_minor, potion_lesser, etc. or health_potion, elixir)
-	if is_tier_value and (item_type == "health_potion" or item_type == "elixir" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type) or item_type.begins_with("elixir_")):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
+	if is_tier_value and (item_type == "health_potion" or item_type == "elixir" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type and "crit" not in item_type and "lifesteal" not in item_type) or item_type.begins_with("elixir_")):
 		return "Restores %d HP when used" % tier_data.healing
 	# Resource potions (mana/stamina/energy - all restore player's PRIMARY resource)
 	elif is_tier_value and (item_type == "mana_potion" or item_type.begins_with("mana_") or item_type == "stamina_potion" or item_type.begins_with("stamina_") or item_type == "energy_potion" or item_type.begins_with("energy_")):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		# Show the player's primary resource type
 		var player_class = character_data.get("class", "")
 		var resource_name = "Resource"
@@ -13149,13 +13278,10 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Restores %d %s when used" % [tier_data.resource, resource_name]
 	# Buff potions (check tier versions)
 	elif is_tier_value and (item_type == "strength_potion" or "potion_strength" in item_type or "potion_power" in item_type or "elixir_might" in item_type):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		return "+%d Strength for 5 battles" % tier_data.buff_value
 	elif is_tier_value and (item_type == "defense_potion" or "potion_defense" in item_type or "potion_iron" in item_type or "elixir_fortress" in item_type):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		return "+%d Defense for 5 battles" % tier_data.buff_value
 	elif is_tier_value and (item_type == "speed_potion" or "potion_speed" in item_type or "potion_haste" in item_type or "elixir_swiftness" in item_type):
-		var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1])
 		return "+%d Speed for 5 battles" % tier_data.buff_value
 
 	# LEGACY: Check for specific buff potions first (before generic potion check)
@@ -13289,17 +13415,26 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Worth 1000 gold when sold"
 	# Scroll effects - buff scrolls
 	elif "scroll_forcefield" in item_type:
-		var shield_amount = 50 + level * 10
-		return "Creates a %d HP shield that absorbs damage (1 battle)" % shield_amount
+		if is_tier_value and tier_data.has("forcefield_value"):
+			return "Creates a %d HP shield that absorbs damage (1 battle)" % tier_data.forcefield_value
+		else:
+			var shield_amount = 50 + level * 10
+			return "Creates a %d HP shield that absorbs damage (1 battle)" % shield_amount
 	elif "scroll_rage" in item_type:
-		var buff_val = 20 + level * 4
-		return "+%d Strength for next combat" % buff_val
+		if is_tier_value and tier_data.has("buff_value"):
+			return "+%d Strength for next combat" % tier_data.buff_value
+		else:
+			return "+%d Strength for next combat" % (20 + level * 4)
 	elif "scroll_stone_skin" in item_type:
-		var buff_val = 20 + level * 4
-		return "+%d Defense for next combat" % buff_val
+		if is_tier_value and tier_data.has("buff_value"):
+			return "+%d Defense for next combat" % tier_data.buff_value
+		else:
+			return "+%d Defense for next combat" % (20 + level * 4)
 	elif "scroll_haste" in item_type:
-		var buff_val = 30 + level * 5
-		return "+%d Speed for next combat" % buff_val
+		if is_tier_value and tier_data.has("buff_value"):
+			return "+%d Speed for next combat" % tier_data.buff_value
+		else:
+			return "+%d Speed for next combat" % (30 + level * 5)
 	elif "scroll_vampirism" in item_type:
 		var lifesteal = 25 + level * 3
 		return "%d%% Lifesteal for next combat" % lifesteal
@@ -13325,8 +13460,85 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	# Scroll effects - special
 	elif "scroll_monster_select" in item_type:
 		return "Choose your next monster encounter"
+	elif "scroll_target_farm" in item_type:
+		return "Farm a specific monster type for 5 encounters"
+	elif "scroll_time_stop" in item_type:
+		return "Freeze time - take an extra action in combat"
+	elif "scroll_resurrect_greater" in item_type:
+		return "Revive with 50% HP on death (permanent until used)"
+	elif "scroll_resurrect_lesser" in item_type:
+		return "Revive with 25% HP on death (next battle only)"
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
+	# Buff potions - crit and lifesteal
+	elif "potion_crit" in item_type:
+		if is_tier_value and tier_data.has("buff_value"):
+			return "+%d%% Critical chance for 5 rounds" % tier_data.buff_value
+		else:
+			return "+%d%% Critical chance for 5 rounds" % (10 + level)
+	elif "potion_lifesteal" in item_type:
+		if is_tier_value and tier_data.has("buff_value"):
+			return "%d%% Lifesteal for 5 rounds" % tier_data.buff_value
+		else:
+			return "%d%% Lifesteal for 5 rounds" % (10 + level * 2)
+	# Home Stones
+	elif item_type == "home_stone_egg":
+		return "Send one incubating egg to your Sanctuary storage"
+	elif item_type == "home_stone_supplies":
+		return "Send up to 10 consumables to your Sanctuary storage"
+	elif item_type == "home_stone_equipment":
+		return "Send one equipped item to your Sanctuary storage"
+	elif item_type == "home_stone_companion":
+		return "Register your active companion at your Sanctuary"
+	# Tomes - stat tomes
+	elif item_type == "tome_strength":
+		return "Permanently increases Strength by 1"
+	elif item_type == "tome_constitution":
+		return "Permanently increases Constitution by 1"
+	elif item_type == "tome_dexterity":
+		return "Permanently increases Dexterity by 1"
+	elif item_type == "tome_intelligence":
+		return "Permanently increases Intelligence by 1"
+	elif item_type == "tome_wisdom":
+		return "Permanently increases Wisdom by 1"
+	elif item_type == "tome_wits":
+		return "Permanently increases Wits by 1"
+	# Tomes - skill enhancers
+	elif item_type == "tome_searing_bolt":
+		return "Magic Bolt deals +15% damage (permanent)"
+	elif item_type == "tome_efficient_bolt":
+		return "Magic Bolt costs 10% less mana (permanent)"
+	elif item_type == "tome_greater_forcefield":
+		return "Forcefield gives +20% shield strength (permanent)"
+	elif item_type == "tome_meteor_mastery":
+		return "Meteor deals +25% damage (permanent)"
+	elif item_type == "tome_brutal_strike":
+		return "Power Strike deals +15% damage (permanent)"
+	elif item_type == "tome_efficient_strike":
+		return "Power Strike costs 10% less stamina (permanent)"
+	elif item_type == "tome_greater_cleave":
+		return "Cleave deals +20% damage (permanent)"
+	elif item_type == "tome_devastating_berserk":
+		return "Berserk deals +25% damage (permanent)"
+	elif item_type == "tome_swift_analyze":
+		return "Analyze costs no energy (permanent)"
+	elif item_type == "tome_greater_ambush":
+		return "Ambush deals +20% damage (permanent)"
+	elif item_type == "tome_perfect_exploit":
+		return "Exploit deals +25% damage (permanent)"
+	elif item_type == "tome_efficient_vanish":
+		return "Vanish costs 15% less energy (permanent)"
+	elif "tome" in item_type:
+		return "Tome of knowledge - permanent enhancement"
+	# Special consumables
+	elif item_type == "mysterious_box":
+		return "Open to receive a random reward (could be anything!)"
+	elif item_type == "cursed_coin":
+		return "Flip the coin: 50% double gold, 50% lose half gold"
+	elif "boots" in item_type:
+		var spd_bonus = int(base_bonus * 0.5)
+		var dex_bonus = int(base_bonus * 0.3)
+		return "+%d Speed, +%d DEX" % [spd_bonus, dex_bonus]
 	else:
 		return "Unknown effect"
 
@@ -14650,49 +14862,53 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.87 changes
+	display_game("[color=#00FF00]v0.9.87[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ SANCTUARY UPGRADES[/color]")
+	display_game("  • New: Incubation Chamber upgrade — increase egg slots from 3 to 12")
+	display_game("  • Fix: Companion registration from Storage now works correctly")
+	display_game("  • Kennel now mentions registering companions from Storage")
+	display_game("  [color=#FFD700]★ HOME STONES[/color]")
+	display_game("  • Home Stones now drop in Tiers 8 and 9")
+	display_game("  • Increased Home Stone drop rates in Tiers 4-7")
+	display_game("  • Egg/Equipment Home Stones now let you choose which to send")
+	display_game("  • Warning message when egg is found but incubation is full")
+	display_game("  • Home Stones now show proper names and effects in inventory")
+	display_game("  [color=#FFD700]★ COMBAT & BALANCE[/color]")
+	display_game("  • Companions now earn XP from Outsmart victories")
+	display_game("  • Scroll of Forcefield now scales correctly by tier (was using old formula)")
+	display_game("  • Scrolls now say 'use' instead of 'drink' in combat")
+	display_game("  • All Jarl and King title abilities now increase Abuse")
+	display_game("  [color=#FFD700]★ FIXES[/color]")
+	display_game("  • Wandering Healer now appears when injured (was: only with debuffs)")
+	display_game("  • Danger areas now visible on map even when a Dungeon is present")
+	display_game("  • Salvage All no longer accidentally salvages potions")
+	display_game("  • Combat item menu page navigation (Next Pg) now works")
+	display_game("  • Consumables no longer show level — tier only")
+	display_game("  • Many consumables no longer say 'Unknown effect' when inspected")
+	display_game("")
+
 	# v0.9.85 changes
-	display_game("[color=#00FF00]v0.9.85[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.85[/color]")
 	display_game("  [color=#FFD700]★ COMPANION ABILITIES NOW WORK IN COMBAT[/color]")
 	display_game("  • All 53 companion types now use their unique abilities in combat!")
-	display_game("  • What you see in Inspect is now what actually happens in fights")
-	display_game("  • Abilities scale with companion level — higher level = stronger effects")
-	display_game("  • Active abilities unlock at companion level 5, threshold at level 15")
-	display_game("  [color=#FFD700]★ INVENTORY SORTING[/color]")
-	display_game("  • Equipment now always displays before consumables in inventory")
-	display_game("  • Clear separator line between equipment and consumables")
-	display_game("  [color=#FFD700]★ EXPANDED HELP PAGE[/color]")
-	display_game("  • Full ability listings for all 3 class archetypes with costs and effects")
-	display_game("  • Detailed monster ability reference (offense, debuffs, defense, loot)")
+	display_game("  [color=#FFD700]★ INVENTORY SORTING & EXPANDED HELP[/color]")
+	display_game("  • Equipment before consumables, full ability listings in Help page")
 	display_game("")
 
 	# v0.9.84 changes
 	display_game("[color=#00FFFF]v0.9.84[/color]")
-	display_game("  [color=#FFD700]★ FIXES[/color]")
-	display_game("  • Fixed mojibake characters in some text displays")
-	display_game("  • Lock menu now auto-selects correctly")
+	display_game("  • Fixed mojibake characters, lock menu auto-select")
 	display_game("")
 
 	# v0.9.83 changes
 	display_game("[color=#00FFFF]v0.9.83[/color]")
-	display_game("  [color=#FFD700]★ ITEM LOCKING[/color]")
-	display_game("  • Lock valuable items to prevent accidental sell, salvage, or discard")
-	display_game("  • Locked items show [color=#FF4444][L][/color] indicator and are protected from Sell All / Salvage All")
-	display_game("  [color=#FFD700]★ 53 DUNGEONS — EVERY MONSTER TYPE[/color]")
-	display_game("  • Every monster in the game now has its own dungeon (35 new dungeons added!)")
-	display_game("  [color=#FFD700]★ BLACKSMITH BUFF & QUESTS[/color]")
-	display_game("  • Blacksmith affix upgrades 5× stronger, quests scale harder with better rewards")
+	display_game("  • Item locking, 53 dungeons, blacksmith buff, quest scaling")
 	display_game("")
 
 	# v0.9.82 changes
 	display_game("[color=#00FFFF]v0.9.82[/color]")
-	display_game("  [color=#FFD700]★ MONSTER INTELLIGENCE REWORK[/color]")
-	display_game("  • Monsters now have individual intelligence — brutes easier, mages harder to Outsmart")
-	display_game("")
-
-	# v0.9.81 changes
-	display_game("[color=#00FFFF]v0.9.81[/color]")
-	display_game("  [color=#FFD700]★ FIXES & BALANCE[/color]")
-	display_game("  • Paladin sound fix, personal quest dungeons, healer rebalance")
+	display_game("  • Monster intelligence rework — brutes easier, mages harder to Outsmart")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -18746,6 +18962,46 @@ func cancel_target_farm():
 	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
 	update_action_bar()
 
+func _display_home_stone_options():
+	"""Display Home Stone selection options"""
+	display_game("")
+	var type_label = "egg" if home_stone_type == "egg" else "equipment"
+	display_game("[color=#00FFFF]===== HOME STONE (%s) =====[/color]" % type_label.to_upper())
+	display_game("[color=#808080]Select which %s to send to your Sanctuary:[/color]" % type_label)
+	display_game("")
+
+	for i in range(home_stone_options.size()):
+		var option = home_stone_options[i]
+		display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, option.get("label", "Unknown")])
+
+	display_game("")
+	display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
+
+func _select_home_stone_option(index: int):
+	"""Send selected Home Stone target to server"""
+	if index < 0 or index >= home_stone_options.size():
+		return
+	send_to_server({
+		"type": "home_stone_select",
+		"stone_type": home_stone_type,
+		"selection_index": index
+	})
+	home_stone_mode = false
+	home_stone_type = ""
+	home_stone_options = []
+	game_output.clear()
+	update_action_bar()
+
+func _cancel_home_stone():
+	"""Cancel Home Stone selection"""
+	send_to_server({"type": "home_stone_cancel"})
+	home_stone_mode = false
+	home_stone_type = ""
+	home_stone_options = []
+	game_output.clear()
+	display_game("[color=#808080]Home Stone use cancelled.[/color]")
+	update_action_bar()
+
 func handle_quest_turned_in(message: Dictionary):
 	"""Handle quest turn-in result"""
 	var quest_id = message.get("quest_id", "")
@@ -19707,6 +19963,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"house_size": {"name": "Expand Sanctuary", "desc": "Larger house with more room", "icon": "🏠"},
 	"storage_slots": {"name": "Storage Expansion", "desc": "+10 storage slots", "icon": "📦"},
 	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "🐾"},
+	"egg_slots": {"name": "Incubation Chamber", "desc": "+1 egg incubation slot", "icon": "🥚"},
 	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
 	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting gold", "icon": "💰"},
 	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
@@ -20059,6 +20316,7 @@ func display_house_companions():
 	display_game("")
 	display_game("[color=#808080]Registered companions survive permadeath![/color]")
 	display_game("[color=#808080]Check out a companion when creating a new character.[/color]")
+	display_game("[color=#808080]You can also register companions from Storage using the Register button.[/color]")
 	display_game("")
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
 
@@ -20071,7 +20329,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -20093,6 +20351,7 @@ func display_house_upgrades():
 		"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},
 		"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
 		"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+		"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
 		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 		"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 		"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
@@ -20147,6 +20406,7 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 	match upgrade_id:
 		"storage_slots": return "+%d slots" % effect_value
 		"companion_slots": return "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
+		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
 			return "+%d%%" % effect_value
 		"starting_gold": return "+%d gold" % effect_value
@@ -20169,7 +20429,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]

@@ -188,8 +188,8 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_weakness", "rarity": "rare"},
 		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "rare"},
 		# Home Stones - send items to house storage (Tier 4 start)
-		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
-		{"weight": 1, "item_type": "home_stone_supplies", "rarity": "uncommon"}
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"}
 	],
 	"tier5": [
 		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
@@ -214,9 +214,9 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"},
 		# Home Stones - send items to house storage
-		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
-		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
-		{"weight": 1, "item_type": "home_stone_equipment", "rarity": "rare"}
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"}
 	],
 	"tier6": [
 		{"weight": 8, "item_type": "potion_master", "rarity": "rare"},
@@ -242,10 +242,10 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "mysterious_box", "rarity": "epic"},
 		{"weight": 2, "item_type": "cursed_coin", "rarity": "epic"},
 		# Home Stones
-		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
-		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
-		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
-		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"}
+		{"weight": 4, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier7": [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "epic"},
@@ -270,10 +270,10 @@ const DROP_TABLES = {
 		# Mystery items
 		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"},
 		# Home Stones
-		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
-		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
-		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
-		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"}
+		{"weight": 4, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier8": [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "epic"},
@@ -293,7 +293,12 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "legendary"},
 		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "legendary"},
 		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"}
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"},
+		# Home Stones
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier9": [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "legendary"},
@@ -319,7 +324,12 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "artifact"},
 		{"weight": 3, "item_type": "tome_swift_analyze", "rarity": "artifact"},
 		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"}
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"},
+		# Home Stones
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"common": [
 		{"weight": 60, "item_type": "potion_minor", "rarity": "common"},
@@ -2193,6 +2203,8 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 		# Determine tier based on monster level
 		var tier = get_tier_for_level(final_level)
 		item["tier"] = tier
+		# Consumables use tier instead of level - set level to tier for display consistency
+		item["level"] = tier
 		# Update name to include tier name (no rarity prefix for consumables)
 		var tier_name = get_tier_name(tier)
 		item["name"] = _get_tiered_consumable_name(item_type, tier_name)
@@ -2252,6 +2264,34 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"scroll_time_stop": "Scroll of Time Stop",
 		"scroll_resurrect_lesser": "Lesser Scroll of Resurrection",
 		"scroll_resurrect_greater": "Greater Scroll of Resurrection",
+		# Tomes - stat
+		"tome_strength": "Tome of Strength",
+		"tome_constitution": "Tome of Constitution",
+		"tome_dexterity": "Tome of Dexterity",
+		"tome_intelligence": "Tome of Intelligence",
+		"tome_wisdom": "Tome of Wisdom",
+		"tome_wits": "Tome of Wits",
+		# Tomes - skill enhancers
+		"tome_searing_bolt": "Tome of Searing Bolt",
+		"tome_efficient_bolt": "Tome of Efficient Bolt",
+		"tome_greater_forcefield": "Tome of Greater Forcefield",
+		"tome_meteor_mastery": "Tome of Meteor Mastery",
+		"tome_brutal_strike": "Tome of Brutal Strike",
+		"tome_efficient_strike": "Tome of Efficient Strike",
+		"tome_greater_cleave": "Tome of Greater Cleave",
+		"tome_devastating_berserk": "Tome of Devastating Berserk",
+		"tome_swift_analyze": "Tome of Swift Analyze",
+		"tome_greater_ambush": "Tome of Greater Ambush",
+		"tome_perfect_exploit": "Tome of Perfect Exploit",
+		"tome_efficient_vanish": "Tome of Efficient Vanish",
+		# Special items
+		"mysterious_box": "Mysterious Box",
+		"cursed_coin": "Cursed Coin",
+		# Home Stones
+		"home_stone_egg": "Home Stone (Egg)",
+		"home_stone_supplies": "Home Stone (Supplies)",
+		"home_stone_equipment": "Home Stone (Equipment)",
+		"home_stone_companion": "Home Stone (Companion)",
 		# Gold/Gems (special - don't prefix with tier)
 		"gold_pouch": "Gold Pouch",
 		"gem_small": "Gem",
@@ -2259,8 +2299,8 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 
 	var base_name = base_names.get(item_type, "Consumable")
 
-	# Gold and gem items don't use tier prefix
-	if item_type == "gold_pouch" or item_type == "gem_small":
+	# Items that don't use tier prefix
+	if item_type == "gold_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater":
 		return base_name
 
 	return tier_name + " " + base_name

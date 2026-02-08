@@ -2401,10 +2401,10 @@ func get_all_soul_gems() -> Array:
 
 # ===== EGG-BASED COMPANION SYSTEM =====
 
-func add_egg(egg_data: Dictionary) -> Dictionary:
+func add_egg(egg_data: Dictionary, max_eggs: int = MAX_INCUBATING_EGGS) -> Dictionary:
 	"""Add an egg to incubating_eggs. Returns {success: bool, message: String}."""
-	if incubating_eggs.size() >= MAX_INCUBATING_EGGS:
-		return {"success": false, "message": "You can only incubate %d eggs at a time." % MAX_INCUBATING_EGGS}
+	if incubating_eggs.size() >= max_eggs:
+		return {"success": false, "message": "You can only incubate %d eggs at a time." % max_eggs}
 
 	var egg = {
 		"egg_id": egg_data.get("id", ""),

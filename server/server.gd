@@ -684,6 +684,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_salvage(peer_id, message)
 		"monster_select_confirm":
 			handle_monster_select_confirm(peer_id, message)
+		"home_stone_select":
+			handle_home_stone_select(peer_id, message)
+		"home_stone_cancel":
+			handle_home_stone_cancel(peer_id, message)
 		"target_farm_select":
 			handle_target_farm_select(peer_id, message)
 		"merchant_sell":
@@ -2267,13 +2271,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					# Special handling for companion eggs
 					if item.get("type", "") == "companion_egg":
 						var egg_data = item.get("egg_data", {})
-						var egg_result = characters[peer_id].add_egg(egg_data)
+						var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+						var egg_result = characters[peer_id].add_egg(egg_data, _egg_cap)
 						if egg_result.success:
 							drop_messages.append("[color=#A335EE]✦ COMPANION EGG: %s[/color]" % egg_data.get("name", "Mysterious Egg"))
 							drop_messages.append("[color=#808080]  Walk %d steps to hatch it![/color]" % egg_data.get("hatch_steps", 100))
 							drop_data.append({"rarity": "epic", "level": 1, "level_diff": 0, "is_egg": true})
 						else:
-							drop_messages.append("[color=#FF4444]Egg Lost: %s (%s)[/color]" % [egg_data.get("name", "Egg"), egg_result.message])
+							drop_messages.append("[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.get("name", "Egg"), characters[peer_id].incubating_eggs.size(), _egg_cap])
 					# Special handling for crafting materials
 					elif item.get("type", "") == "crafting_material":
 						var mat_id = item.get("material_id", "")
@@ -4135,8 +4140,9 @@ func check_healer_encounter(peer_id: int) -> bool:
 	if randf() >= 0.12:
 		return false
 
-	# Only trigger if player has a debuff the healer can cure
-	if character.persistent_buffs.size() == 0:
+	# Trigger if player is injured (HP < 80%) or has debuffs
+	var hp_ratio = float(character.hp) / max(1, character.max_hp)
+	if hp_ratio >= 0.80 and character.persistent_buffs.size() == 0:
 		return false
 
 	# Calculate heal costs based on player level (reduced 10% for economy balance)
@@ -4449,6 +4455,58 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"message": "[color=#808080]This item cannot be used directly. Try equipping it.[/color]"
 		})
 		return
+
+	# Home Stone selection: if egg/equipment needs player choice, send selection instead of auto-using
+	if effect.has("home_stone"):
+		var stone_type = effect.home_stone
+		if stone_type == "egg" and character.incubating_eggs.size() > 1:
+			# Multiple eggs - ask player to choose
+			if not _home_stone_pre_validate(peer_id, character, stone_type):
+				return
+			var options = []
+			for i in range(character.incubating_eggs.size()):
+				var egg = character.incubating_eggs[i]
+				var steps_done = egg.get("hatch_steps", 100) - egg.get("steps_remaining", 0)
+				var steps_total = egg.get("hatch_steps", 100)
+				var frozen_tag = " [FROZEN]" if egg.get("frozen", false) else ""
+				options.append({
+					"index": i,
+					"label": "%s (Tier %d) - %d/%d steps%s" % [egg.get("monster_type", "Unknown") + " Egg", egg.get("tier", 1), steps_done, steps_total, frozen_tag]
+				})
+			character.set_meta("pending_home_stone_index", index)
+			send_to_peer(peer_id, {
+				"type": "home_stone_select",
+				"stone_type": "egg",
+				"options": options,
+				"message": "[color=#00FFFF]Choose an egg to send to your Sanctuary:[/color]"
+			})
+			return
+		elif stone_type == "equipment":
+			var equipped_items = []
+			for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
+				if character.equipment.has(slot) and character.equipment[slot] != null:
+					equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+			if equipped_items.size() > 1:
+				# Multiple equipped - ask player to choose
+				if not _home_stone_pre_validate(peer_id, character, stone_type):
+					return
+				var options = []
+				for i in range(equipped_items.size()):
+					var entry = equipped_items[i]
+					var item_display = entry.item.get("name", entry.slot.capitalize())
+					options.append({
+						"index": i,
+						"slot": entry.slot,
+						"label": "%s (%s)" % [item_display, entry.slot.capitalize()]
+					})
+				character.set_meta("pending_home_stone_index", index)
+				send_to_peer(peer_id, {
+					"type": "home_stone_select",
+					"stone_type": "equipment",
+					"options": options,
+					"message": "[color=#00FFFF]Choose equipment to send to your Sanctuary:[/color]"
+				})
+				return
 
 	# For consumables with stacking, use the stack function
 	if is_consumable:
@@ -4763,45 +4821,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 		match stone_type:
 			"egg":
-				# Hatch egg and send companion to house storage
+				# Hatch egg and send companion to house storage (single egg auto-selects)
 				if character.incubating_eggs.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no eggs to send home!"})
 					return
-				# Use the first egg (could add selection UI later)
-				var egg = character.incubating_eggs[0]
-				var house = persistence.get_house(account_id)
-				if house == null:
-					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
-					return
-				# Check if storage has room
-				var storage_capacity = persistence.get_house_storage_capacity(account_id)
-				if house.storage.items.size() >= storage_capacity:
-					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
-					return
-				# Remove egg from character
-				character.incubating_eggs.remove_at(0)
-				# Hatch the egg into a companion (same logic as character._hatch_egg)
-				var companion = {
-					"type": "stored_companion",
-					"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
-					"monster_type": egg.monster_type,
-					"name": egg.companion_name,
-					"tier": egg.tier,
-					"bonuses": egg.bonuses.duplicate() if egg.has("bonuses") else {},
-					"obtained_at": int(Time.get_unix_time_from_system()),
-					"battles_fought": 0,
-					"variant": egg.get("variant", "Normal"),
-					"variant_color": egg.get("variant_color", "#FFFFFF"),
-					"variant_color2": egg.get("variant_color2", ""),
-					"variant_pattern": egg.get("variant_pattern", "solid"),
-					"level": 1,
-					"xp": 0
-				}
-				persistence.add_item_to_house_storage(account_id, companion)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#00FF00]A newborn %s companion has been sent to your Sanctuary![/color]" % [item_name, egg.monster_type, egg.companion_name]
-				})
+				_process_home_stone_egg(peer_id, character, 0, item_name)
 
 			"supplies":
 				# Send up to 10 consumable items to house storage
@@ -4842,7 +4866,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				})
 
 			"equipment":
-				# Send one equipped item to house storage
+				# Send one equipped item to house storage (single equipped auto-selects)
 				var equipped_items = []
 				for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
 					if character.equipment.has(slot) and character.equipment[slot] != null:
@@ -4850,23 +4874,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				if equipped_items.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no equipment to send home!"})
 					return
-				var house = persistence.get_house(account_id)
-				if house == null:
-					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
-					return
-				var storage_capacity = persistence.get_house_storage_capacity(account_id)
-				if house.storage.items.size() >= storage_capacity:
-					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
-					return
-				# Send the first equipped item (highest value slot - weapon first)
-				var to_send = equipped_items[0]
-				persistence.add_item_to_house_storage(account_id, to_send.item)
-				character.equipment[to_send.slot] = null
-				character.recalculate_stats()
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]The %s glows and your %s vanishes in a flash of light![/color]\n[color=#00FF00]Equipment safely stored at your house![/color]" % [item_name, to_send.item.get("name", "equipment")]
-				})
+				_process_home_stone_equipment(peer_id, character, equipped_items[0].slot, item_name)
 
 			"companion":
 				# Register active companion to house (survives death)
@@ -4899,6 +4907,151 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				})
 
 	# Update character data
+	send_character_update(peer_id)
+
+func _home_stone_pre_validate(peer_id: int, character, stone_type: String) -> bool:
+	"""Pre-validate home stone usage (combat/dungeon check + house storage check)"""
+	if character.in_combat:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot use Home Stones in combat!"})
+		return false
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot use Home Stones in dungeons!"})
+		return false
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+		return false
+	var storage_capacity = persistence.get_house_storage_capacity(account_id)
+	if house.storage.items.size() >= storage_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+		return false
+	return true
+
+func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
+	"""Process sending an egg to house storage via Home Stone"""
+	var account_id = peers[peer_id].account_id
+	if egg_index < 0 or egg_index >= character.incubating_eggs.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid egg selection!"})
+		return
+	var egg = character.incubating_eggs[egg_index]
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+		return
+	var storage_capacity = persistence.get_house_storage_capacity(account_id)
+	if house.storage.items.size() >= storage_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+		return
+	# Remove egg from character
+	character.incubating_eggs.remove_at(egg_index)
+	# Hatch the egg into a companion
+	var companion = {
+		"type": "stored_companion",
+		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
+		"monster_type": egg.monster_type,
+		"name": egg.companion_name,
+		"tier": egg.tier,
+		"bonuses": egg.bonuses.duplicate() if egg.has("bonuses") else {},
+		"obtained_at": int(Time.get_unix_time_from_system()),
+		"battles_fought": 0,
+		"variant": egg.get("variant", "Normal"),
+		"variant_color": egg.get("variant_color", "#FFFFFF"),
+		"variant_color2": egg.get("variant_color2", ""),
+		"variant_pattern": egg.get("variant_pattern", "solid"),
+		"level": 1,
+		"xp": 0
+	}
+	persistence.add_item_to_house_storage(account_id, companion)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#00FF00]A newborn %s companion has been sent to your Sanctuary![/color]" % [item_name, egg.monster_type, egg.companion_name]
+	})
+
+func _process_home_stone_equipment(peer_id: int, character, slot_name: String, item_name: String):
+	"""Process sending equipped item to house storage via Home Stone"""
+	var account_id = peers[peer_id].account_id
+	if not character.equipment.has(slot_name) or character.equipment[slot_name] == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No equipment in that slot!"})
+		return
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+		return
+	var storage_capacity = persistence.get_house_storage_capacity(account_id)
+	if house.storage.items.size() >= storage_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+		return
+	var equip_item = character.equipment[slot_name]
+	persistence.add_item_to_house_storage(account_id, equip_item)
+	character.equipment[slot_name] = null
+	character.recalculate_stats()
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]The %s glows and your %s vanishes in a flash of light![/color]\n[color=#00FF00]Equipment safely stored at your house![/color]" % [item_name, equip_item.get("name", "equipment")]
+	})
+
+func handle_home_stone_select(peer_id: int, message: Dictionary):
+	"""Handle player selecting a target for Home Stone"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var stone_type = message.get("stone_type", "")
+	var selection_index = message.get("selection_index", -1)
+
+	# Retrieve pending item index
+	if not character.has_meta("pending_home_stone_index"):
+		send_to_peer(peer_id, {"type": "error", "message": "No Home Stone in use."})
+		return
+	var item_index = character.get_meta("pending_home_stone_index")
+	character.remove_meta("pending_home_stone_index")
+
+	# Validate item still exists and is a home stone
+	if item_index < 0 or item_index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Home Stone no longer in inventory."})
+		return
+	var item = character.inventory[item_index]
+	var item_name = item.get("name", "Home Stone")
+	var item_type = item.get("type", "")
+	if not item_type.begins_with("home_stone_"):
+		send_to_peer(peer_id, {"type": "error", "message": "Item is not a Home Stone."})
+		return
+
+	# Process selection
+	match stone_type:
+		"egg":
+			_process_home_stone_egg(peer_id, character, selection_index, item_name)
+		"equipment":
+			# Resolve slot from selection index
+			var equipped_items = []
+			for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
+				if character.equipment.has(slot) and character.equipment[slot] != null:
+					equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+			if selection_index < 0 or selection_index >= equipped_items.size():
+				send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment selection."})
+				return
+			var slot_name = equipped_items[selection_index].slot
+			_process_home_stone_equipment(peer_id, character, slot_name, item_name)
+		_:
+			send_to_peer(peer_id, {"type": "error", "message": "Invalid Home Stone type."})
+			return
+
+	# Consume the Home Stone item
+	character.use_consumable_stack(item_index)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_home_stone_cancel(peer_id: int, _message: Dictionary):
+	"""Handle player cancelling Home Stone selection"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.has_meta("pending_home_stone_index"):
+		character.remove_meta("pending_home_stone_index")
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#808080]Home Stone use cancelled.[/color]"
+	})
 	send_character_update(peer_id)
 
 func handle_monster_select_confirm(peer_id: int, message: Dictionary):
@@ -5345,8 +5498,8 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		if item.get("locked", false):
 			continue
 
-		# Check if item is a consumable
-		var is_consumable = _is_consumable_type(item_type)
+		# Check if item is a consumable (use item flag first, then type check as fallback)
+		var is_consumable = item.get("is_consumable", false) or _is_consumable_type(item_type)
 
 		match mode:
 			"below_level":
@@ -5604,9 +5757,13 @@ func _is_consumable_type(item_type: String) -> bool:
 	return (item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
+			item_type.begins_with("elixir_") or
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
-			item_type == "soul_gem" or item_type.begins_with("home_stone_"))
+			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
+			item_type == "health_potion" or item_type == "mana_potion" or
+			item_type == "stamina_potion" or item_type == "energy_potion" or
+			item_type == "elixir")
 
 func handle_merchant_sell_all(peer_id: int):
 	"""Handle selling all EQUIPMENT items to a merchant (skips consumables and title items)"""
@@ -8238,14 +8395,14 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 			if monster_names.size() > 0:
 				var random_monster = monster_names[randi() % monster_names.size()]
 				var egg_data = drop_tables.get_egg_for_monster(random_monster)
-				var egg_result = character.add_egg(egg_data)
+				var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+				var egg_result = character.add_egg(egg_data, _egg_cap)
 				if egg_result.success:
 					catch_message = "[color=#A335EE]★ You found a %s! ★[/color]" % egg_data.name
 					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
 				else:
-					# Failed to add egg, give gold instead
-					character.gold += catch_result.value
-					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
+					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
 				character.gold += catch_result.value
 				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
@@ -8401,13 +8558,14 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 			if monster_names.size() > 0:
 				var random_monster = monster_names[randi() % monster_names.size()]
 				var egg_data = drop_tables.get_egg_for_monster(random_monster)
-				var egg_result = character.add_egg(egg_data)
+				var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+				var egg_result = character.add_egg(egg_data, _egg_cap)
 				if egg_result.success:
 					catch_message = "[color=#A335EE]★ You unearthed a %s! ★[/color]" % egg_data.name
 					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
 				else:
-					character.gold += catch_result.value
-					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
+					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
 				character.gold += catch_result.value
 				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
@@ -8562,13 +8720,14 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 			if monster_names.size() > 0:
 				var random_monster = monster_names[randi() % monster_names.size()]
 				var egg_data = drop_tables.get_egg_for_monster(random_monster)
-				var egg_result = character.add_egg(egg_data)
+				var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+				var egg_result = character.add_egg(egg_data, _egg_cap)
 				if egg_result.success:
 					catch_message = "[color=#A335EE]★ You found a %s in a nest! ★[/color]" % egg_data.name
 					extra_messages.append("[color=#808080]Walk %d steps to hatch it.[/color]" % egg_data.hatch_steps)
 				else:
-					character.gold += catch_result.value
-					catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
+					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
 				character.gold += catch_result.value
 				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
@@ -10135,9 +10294,12 @@ func _open_dungeon_treasure(peer_id: int):
 	if not egg_info.is_empty():
 		var egg_data = drop_tables.get_egg_for_monster(egg_info.monster)
 		if not egg_data.is_empty():
-			var egg_result = character.add_egg(egg_data)
+			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+			var egg_result = character.add_egg(egg_data, _egg_cap)
 			if egg_result.success:
 				reward_messages.append("[color=#A335EE]★ %s ★[/color]" % egg_data.name)
+			else:
+				reward_messages.append("[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap])
 
 	# Mark tile as cleared
 	_clear_dungeon_tile(peer_id)
@@ -10215,13 +10377,18 @@ func _complete_dungeon(peer_id: int):
 	# Give GUARANTEED boss egg!
 	var boss_egg_given = false
 	var boss_egg_name = ""
+	var boss_egg_lost_to_full = false
 	var boss_egg_monster = rewards.get("boss_egg", "")
 	if boss_egg_monster != "":
 		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster)
 		if not egg_data.is_empty():
-			var egg_result = character.add_egg(egg_data)
+			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+			var egg_result = character.add_egg(egg_data, _egg_cap)
 			if egg_result.success:
 				boss_egg_given = true
+				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
+			else:
+				boss_egg_lost_to_full = true
 				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
 
 	# Record completion (cooldowns removed)
@@ -10289,8 +10456,9 @@ func _complete_dungeon(peer_id: int):
 	# Show boss egg reward!
 	if boss_egg_given:
 		completion_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % boss_egg_name
-	elif boss_egg_monster != "":
-		completion_msg += "[color=#808080](Egg storage full - %s Egg not collected)[/color]" % boss_egg_monster
+	elif boss_egg_lost_to_full:
+		var _egg_cap2 = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+		completion_msg += "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [boss_egg_name, character.incubating_eggs.size(), _egg_cap2]
 
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
@@ -12218,9 +12386,11 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 		_cancel_trade(peer_id_a, "%s doesn't have enough companion space." % char_b.name)
 		return
 
-	# Validate egg space (max 3 eggs per character)
-	var egg_space_a = 3 - char_a.incubating_eggs.size() + egg_indices_a.size()
-	var egg_space_b = 3 - char_b.incubating_eggs.size() + egg_indices_b.size()
+	# Validate egg space (base 3 + egg_slots upgrade)
+	var _egg_cap_a = persistence.get_egg_capacity(peers[peer_id_a].account_id) if peers.has(peer_id_a) else Character.MAX_INCUBATING_EGGS
+	var _egg_cap_b = persistence.get_egg_capacity(peers[peer_id_b].account_id) if peers.has(peer_id_b) else Character.MAX_INCUBATING_EGGS
+	var egg_space_a = _egg_cap_a - char_a.incubating_eggs.size() + egg_indices_a.size()
+	var egg_space_b = _egg_cap_b - char_b.incubating_eggs.size() + egg_indices_b.size()
 	if egg_space_a < egg_indices_b.size():
 		_cancel_trade(peer_id_a, "%s doesn't have enough egg space." % char_a.name)
 		return
@@ -12522,12 +12692,14 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 	# Transfer egg
 	var egg = contents.get("egg")
 	if egg != null and egg is Dictionary and not egg.is_empty():
-		if character.incubating_eggs.size() < 3:
+		var _mbox_egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+		if character.incubating_eggs.size() < _mbox_egg_cap:
 			character.incubating_eggs.append(egg)
 			var egg_type = egg.get("monster_type", "Unknown")
 			loot_summary.append("[color=#FFD700]%s Egg[/color]" % egg_type)
 		else:
-			warnings.append("[color=#FF8800]Max eggs (3) - egg lost![/color]")
+			var egg_type = egg.get("monster_type", "Unknown")
+			warnings.append("[color=#FF6666]★ %s Egg found but eggs full! (%d/%d) ★[/color]" % [egg_type, character.incubating_eggs.size(), _mbox_egg_cap])
 
 	# Transfer gems
 	var gems = contents.get("gems", 0)

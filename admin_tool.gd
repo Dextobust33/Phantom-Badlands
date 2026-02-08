@@ -5,8 +5,10 @@ extends SceneTree
 
 const DATA_DIR = "user://data/"
 const ACCOUNTS_FILE = "user://data/accounts.json"
+const LEADERBOARD_FILE = "user://data/leaderboard.json"
 
 var accounts_data: Dictionary = {}
+var leaderboard_data: Dictionary = {}
 
 func _init():
 	var args = OS.get_cmdline_user_args()
@@ -33,6 +35,13 @@ func _init():
 				print("Usage: resetpassword <username> <new_password>")
 			else:
 				reset_password(args[1], args[2])
+		"removeleader", "removelb":
+			if args.size() < 2:
+				print("Usage: removeleader <character_name>")
+			else:
+				remove_leaderboard_entry(args[1])
+		"leaderboard", "lb":
+			show_leaderboard()
 		"help", "-h", "--help":
 			print_help()
 		_:
@@ -53,6 +62,8 @@ func print_help():
 	print("  list                         - List all accounts")
 	print("  info <username>              - Show account details")
 	print("  resetpassword <user> <pass>  - Reset account password")
+	print("  leaderboard                  - Show the leaderboard")
+	print("  removeleader <name>          - Remove entry from leaderboard")
 	print("  help                         - Show this help")
 	print("")
 	print("Examples:")
@@ -174,3 +185,72 @@ func hash_password(password: String, salt: String) -> String:
 	ctx.update((salt + password).to_utf8_buffer())
 	var hash_bytes = ctx.finish()
 	return hash_bytes.hex_encode()
+
+func load_leaderboard():
+	if not FileAccess.file_exists(LEADERBOARD_FILE):
+		print("ERROR: Leaderboard file not found at %s" % LEADERBOARD_FILE)
+		return
+	var file = FileAccess.open(LEADERBOARD_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+		if error == OK:
+			leaderboard_data = json.data
+		else:
+			print("ERROR: Failed to parse leaderboard file")
+
+func save_leaderboard():
+	var file = FileAccess.open(LEADERBOARD_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(leaderboard_data, "\t"))
+		file.close()
+
+func show_leaderboard():
+	load_leaderboard()
+	var entries = leaderboard_data.get("entries", [])
+	if entries.is_empty():
+		print("Leaderboard is empty.")
+		return
+	print("")
+	print("========================================")
+	print("Leaderboard (%d entries)" % entries.size())
+	print("========================================")
+	print("")
+	for entry in entries:
+		var rank = entry.get("rank", 0)
+		var name = entry.get("character_name", "???")
+		var level = entry.get("level", 0)
+		var cls = entry.get("class", "???")
+		var xp = entry.get("experience", 0)
+		var cod = entry.get("cause_of_death", "Unknown")
+		print("#%d  %s  Lv%d %s  XP:%d  CoD: %s" % [rank, name, level, cls, xp, cod])
+	print("")
+
+func remove_leaderboard_entry(character_name: String):
+	load_leaderboard()
+	var entries = leaderboard_data.get("entries", [])
+	var found_index = -1
+	for i in range(entries.size()):
+		if entries[i].get("character_name", "") == character_name:
+			found_index = i
+			break
+	if found_index == -1:
+		print("ERROR: '%s' not found on leaderboard." % character_name)
+		print("Use 'leaderboard' command to see all entries.")
+		return
+	var removed = entries[found_index]
+	entries.remove_at(found_index)
+	# Recalculate ranks
+	for i in range(entries.size()):
+		entries[i]["rank"] = i + 1
+	save_leaderboard()
+	print("")
+	print("SUCCESS: Removed '%s' (was rank #%d, Lv%d %s)" % [
+		character_name,
+		removed.get("rank", 0),
+		removed.get("level", 0),
+		removed.get("class", "???")
+	])
+	print("Ranks renumbered. %d entries remain." % entries.size())
+	print("")

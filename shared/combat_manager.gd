@@ -1848,6 +1848,23 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#00FFFF]|[/color]  [color=#808080]Check Abilities menu to equip![/color]")
 				messages.append("[color=#00FFFF]+======================================+[/color]")
 
+		# === COMPANION XP DISTRIBUTION ===
+		# Active companions gain 10% of monster XP (same as normal victory)
+		if character.has_active_companion():
+			var companion_xp = max(1, int(base_xp * 0.10))
+			var companion_result = character.add_companion_xp(companion_xp)
+			character.increment_companion_battles()
+			if companion_result.leveled_up:
+				var companion = character.get_active_companion()
+				messages.append("[color=#00FFFF]* %s leveled up to %d! *[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
+				# Notify of unlocked abilities
+				for ability_level in companion_result.abilities_unlocked:
+					if drop_tables:
+						var tier = companion.get("tier", 1)
+						var ability = drop_tables.get_companion_ability(tier, ability_level)
+						if not ability.is_empty():
+							messages.append("[color=#FFD700]* New ability unlocked: %s! *[/color]" % ability.get("name", "Unknown"))
+
 		# Roll for item drops
 		var dropped_items = []
 		var gems_earned = 0
@@ -3182,7 +3199,8 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		else:
 			heal_amount = effect.base + (effect.per_level * item_level)
 		var actual_heal = character.heal(heal_amount)
-		messages.append("[color=#00FF00]You drink %s and restore %d HP![/color]" % [item_name, actual_heal])
+		var heal_verb = "use" if "scroll" in item_type else "drink"
+		messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
@@ -3225,23 +3243,32 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 				color = "#00FFFF"
 				primary_resource = "mana"
 
-		messages.append("[color=%s]You drink %s and restore %d %s![/color]" % [color, item_name, actual_restore, primary_resource])
+		var resource_verb = "use" if "scroll" in item_type else "drink"
+		messages.append("[color=%s]You %s %s and restore %d %s![/color]" % [color, resource_verb, item_name, actual_restore, primary_resource])
 	elif effect.has("buff"):
-		# Buff potion - can be round-based or battle-based
+		# Buff potion/scroll - can be round-based or battle-based
 		var buff_type = effect.buff
-		var buff_value = effect.base + (effect.per_level * item_level)
+		var buff_value: int
+		# Use forcefield_value for forcefield buffs (shields need much higher values)
+		if buff_type == "forcefield" and tier_data.has("forcefield_value"):
+			buff_value = tier_data.forcefield_value
+		elif tier_data.has("buff_value"):
+			buff_value = tier_data.buff_value
+		else:
+			buff_value = effect.base + (effect.per_level * item_level)
 		var base_duration = effect.get("base_duration", 5)
 		var duration_per_10 = effect.get("duration_per_10_levels", 1)
 		var duration = base_duration + (item_level / 10) * duration_per_10
+		var buff_verb = "use" if "scroll" in item_type else "drink"
 
 		if effect.get("battles", false):
 			# Battle-based buff (persists across combats)
 			character.add_persistent_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You drink %s! +%d %s for %d battles![/color]" % [item_name, buff_value, buff_type, duration])
+			messages.append("[color=#00FFFF]You %s %s! +%d %s for %d battles![/color]" % [buff_verb, item_name, buff_value, buff_type, duration])
 		else:
 			# Round-based buff (single combat only)
 			character.add_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You drink %s! +%d %s for %d rounds![/color]" % [item_name, buff_value, buff_type, duration])
+			messages.append("[color=#00FFFF]You %s %s! +%d %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, buff_type, duration])
 
 	# Remove item from inventory (use stack method for consumables)
 	if item.get("is_consumable", false) and item.get("quantity", 1) > 0:

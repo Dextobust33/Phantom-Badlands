@@ -1255,10 +1255,14 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 					player_char = "*"
 				line_parts.append("[color=#00FFFF] %s[/color]" % player_char)
 			elif dungeon_positions.has(pos_key):
-				# Show dungeon entrance with dungeon's color
+				# Show dungeon entrance - use red if in danger area, otherwise dungeon's color
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")  # Default purple if no color
-				line_parts.append("[color=%s] D[/color]" % dungeon_color)
+				if _is_hotspot(x, y):
+					# Danger area + dungeon: show D with red background indicator
+					line_parts.append("[color=#FF4500] D[/color]")
+				else:
+					line_parts.append("[color=%s] D[/color]" % dungeon_color)
 			elif corpse_positions.has(pos_key):
 				# Show corpse as red X
 				line_parts.append("[color=#FF0000] X[/color]")

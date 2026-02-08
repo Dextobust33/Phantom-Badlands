@@ -257,7 +257,8 @@ const JARL_ABILITIES = {
 		"resource": "none",
 		"description": "Teleport a willing player to your location",
 		"target": "player",
-		"requires_consent": true
+		"requires_consent": true,
+		"is_negative": true
 	},
 	"tax_player": {
 		"name": "Tax",
@@ -273,7 +274,8 @@ const JARL_ABILITIES = {
 		"gold_gift_percent": 8,           # Target receives 8% of your gold
 		"resource": "none",
 		"description": "Gift 8% of your gold to a player (costs 5%)",
-		"target": "player"
+		"target": "player",
+		"is_negative": true
 	},
 	"collect_tribute": {
 		"name": "Collect Tribute",
@@ -282,7 +284,8 @@ const JARL_ABILITIES = {
 		"cooldown": 3600,                 # 1 hour cooldown
 		"treasury_percent": 15,           # Collect 15% of realm treasury
 		"description": "Collect 15% of realm treasury (1 hour cooldown)",
-		"target": "self"
+		"target": "self",
+		"is_negative": true
 	}
 }
 
@@ -293,14 +296,16 @@ const HIGH_KING_ABILITIES = {
 		"gem_cost": 5,
 		"resource": "none",
 		"description": "Grant permanent Knight status (+15% dmg, +10% gold)",
-		"target": "player"
+		"target": "player",
+		"is_negative": true
 	},
 	"cure": {
 		"name": "Cure",
 		"gold_cost": 5000,
 		"resource": "none",
 		"description": "Remove all debuffs from a player",
-		"target": "player"
+		"target": "player",
+		"is_negative": true
 	},
 	"exile": {
 		"name": "Exile",
@@ -317,7 +322,8 @@ const HIGH_KING_ABILITIES = {
 		"cooldown": 7200,                 # 2 hour cooldown
 		"treasury_percent": 30,           # Collect 30% of realm treasury
 		"description": "Collect 30% of realm treasury (2 hour cooldown)",
-		"target": "self"
+		"target": "self",
+		"is_negative": true
 	}
 }
 
