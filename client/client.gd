@@ -15022,8 +15022,30 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.97 changes
+	display_game("[color=#00FF00]v0.9.97[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Improvements[/color]")
+	display_game("  • Must return to entrance (E) to exit a dungeon")
+	display_game("  • Back button lets you revisit previous floors from the entrance")
+	display_game("  • Breather after combat: monsters don't move on your first step after a fight")
+	display_game("  • No more random overworld encounters while inside a dungeon")
+	display_game("  [color=#FFD700]Auto-Salvage[/color]")
+	display_game("  • Toggle in Inventory → Salvage: auto-salvage Common/Uncommon/Rare loot")
+	display_game("  • When inventory is full, lowest rarity items are auto-salvaged for essence")
+	display_game("  [color=#FFD700]Quality of Life[/color]")
+	display_game("  • Egg page now shows slot capacity (e.g. 2 / 5)")
+	display_game("  • Egg trades show variant name and rarity color")
+	display_game("  • Version number shown on window title and login screen")
+	display_game("  • Bug reports can be cancelled with ESC or empty submit")
+	display_game("  • Healer only appears for debuffs; declining adds cooldown")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Fix: Hotzone level estimates now match actual monster levels")
+	display_game("  • Fix: Title revocation broadcast no longer shows empty message")
+	display_game("  • Fix: Hotkey presses no longer double-trigger across menus")
+	display_game("")
+
 	# v0.9.96 changes
-	display_game("[color=#00FF00]v0.9.96[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.96[/color]")
 	display_game("  [color=#FFD700]Dungeon Overhaul[/color]")
 	display_game("  • Dungeons now use BSP-generated 20x20 floors with rooms and corridors")
 	display_game("  • Monsters are visible on the map and move each turn")
@@ -15055,12 +15077,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.92[/color]")
 	display_game("  • Fix: Quest gem rewards now actually awarded (were silently zeroed)")
 	display_game("  • Fix: Dungeon completion now shows 'eggs full' warning when applicable")
-	display_game("")
-
-	# v0.9.91 changes
-	display_game("[color=#00FFFF]v0.9.91[/color]")
-	display_game("  • Fix: Registered kennel companions no longer duplicate via corpse looting")
-	display_game("  • Kennel companions now gain XP, track battles, and show abilities")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
