@@ -4288,7 +4288,7 @@ func update_action_bar():
 			# Main repair/upgrade menu
 			current_actions = [
 				{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
-				{"label": "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
+				{"label": "All(%dg)" % blacksmith_repair_all_cost if blacksmith_repair_all_cost > 0 else "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
 				{"label": "Enhance", "action_type": "local", "action_data": "blacksmith_upgrade", "enabled": blacksmith_can_upgrade},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4300,11 +4300,14 @@ func update_action_bar():
 			]
 	elif pending_healer:
 		# Wandering healer encounter - Heal options
+		var _hq = healer_costs.get("quick", 0)
+		var _hf = healer_costs.get("full", 0)
+		var _hc = healer_costs.get("cure_all", 0)
 		current_actions = [
 			{"label": "Decline", "action_type": "local", "action_data": "healer_decline", "enabled": true},
-			{"label": "Quick", "action_type": "local", "action_data": "healer_quick", "enabled": true},
-			{"label": "Full", "action_type": "local", "action_data": "healer_full", "enabled": true},
-			{"label": "Cure", "action_type": "local", "action_data": "healer_cure_all", "enabled": true},
+			{"label": "Quick(%dg)" % _hq if _hq > 0 else "Quick", "action_type": "local", "action_data": "healer_quick", "enabled": true},
+			{"label": "Full(%dg)" % _hf if _hf > 0 else "Full", "action_type": "local", "action_data": "healer_full", "enabled": true},
+			{"label": "Cure(%dg)" % _hc if _hc > 0 else "Cure", "action_type": "local", "action_data": "healer_cure_all", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5017,12 +5020,13 @@ func update_action_bar():
 		elif pending_merchant_action == "buy_inspect":
 			# Inspecting a shop item before purchase
 			var can_afford = false
+			var _buy_price = 0
 			if selected_shop_item >= 0 and selected_shop_item < shop_items.size():
 				var item = shop_items[selected_shop_item]
-				var price = item.get("shop_price", 0)
-				can_afford = character_data.get("gold", 0) >= price
+				_buy_price = item.get("shop_price", 0)
+				can_afford = character_data.get("gold", 0) >= _buy_price
 			current_actions = [
-				{"label": "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
+				{"label": "Buy(%dg)" % _buy_price if _buy_price > 0 else "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
 				{"label": "Back", "action_type": "local", "action_data": "cancel_shop_inspect", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7197,7 +7201,8 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
 			display_game("")
-			display_game("[color=#AAAAAA]Select a companion to inspect (1-%d):[/color]" % min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size()))
+			var _inspect_count = min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size())
+			display_game("[color=#AAAAAA]Select a companion to inspect (%s):[/color]" % get_selection_keys_text(_inspect_count))
 			display_game("")
 			_display_companions_for_selection()
 			update_action_bar()
@@ -9408,7 +9413,7 @@ func display_trade_window():
 	elif trade_pending_add_egg:
 		_display_trade_egg_selection(eggs)
 	else:
-		display_game("[color=#808080][Q] Add  |  [W] Remove  |  [E] Ready/Unready  |  [R] Cancel  |  [1-3] Switch Tab[/color]")
+		display_game("[color=#808080][%s] Add  |  [%s] Remove  |  [%s] Ready/Unready  |  [%s] Cancel  |  [%s-%s] Switch Tab[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_item_select_key_name(0), get_item_select_key_name(2)])
 
 func _display_trade_items_tab(inventory: Array, my_class: String):
 	"""Display the items tab in trade window."""
@@ -9513,7 +9518,7 @@ func _display_trade_item_selection(inventory: Array, my_class: String):
 
 func _display_trade_companion_selection(companions: Array):
 	"""Display companions for selection during trade."""
-	display_game("[color=#FFFF00]Select a companion to add (1-5):[/color]")
+	display_game("[color=#FFFF00]Select a companion to add (%s):[/color]" % get_selection_keys_text(companions.size()))
 	var active_companion = character_data.get("active_companion", null)
 	for i in range(companions.size()):
 		var comp = companions[i]
@@ -12711,7 +12716,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
 			display_game("[color=#C0C0C0]SUMMON REQUEST[/color]")
 			display_game("[color=#FFD700]%s (Jarl) wants to summon you to (%d, %d)[/color]" % [pending_summon_from, pending_summon_location.x, pending_summon_location.y])
-			display_game("[color=#808080][Q] Accept  |  [W] Decline[/color]")
+			display_game("[color=#808080][%s] Accept  |  [%s] Decline[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
 
@@ -12722,7 +12727,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
 			display_game("[color=#FFD700]TRADE REQUEST[/color]")
 			display_game("[color=#00FFFF]%s wants to trade with you.[/color]" % pending_trade_request)
-			display_game("[color=#808080][Q] Accept  |  [W] Decline[/color]")
+			display_game("[color=#808080][%s] Accept  |  [%s] Decline[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
 
@@ -14264,10 +14269,10 @@ func toggle_swap_attack_setting():
 	var status = "[color=#00FF00]ENABLED[/color]" if new_value else "[color=#FF6666]DISABLED[/color]"
 	display_game("[color=#00FF00]Swap Attack with First Ability: %s[/color]" % status)
 	if new_value:
-		display_game("[color=#808080]Your first equipped ability will now appear on the primary action key (Space).[/color]")
-		display_game("[color=#808080]Attack will move to the first ability slot (R key).[/color]")
+		display_game("[color=#808080]Your first equipped ability will now appear on the primary action key (%s).[/color]" % get_action_key_name(0))
+		display_game("[color=#808080]Attack will move to the first ability slot (%s).[/color]" % get_action_key_name(4))
 	else:
-		display_game("[color=#808080]Attack is now on the primary action key (Space).[/color]")
+		display_game("[color=#808080]Attack is now on the primary action key (%s).[/color]" % get_action_key_name(0))
 	await get_tree().create_timer(1.5).timeout
 	display_settings_menu()
 	update_action_bar()
@@ -14281,10 +14286,10 @@ func toggle_swap_outsmart_setting():
 	var status = "[color=#00FF00]ENABLED[/color]" if swap_attack_outsmart else "[color=#FF6666]DISABLED[/color]"
 	display_game("[color=#00FF00]Swap Attack with Outsmart: %s[/color]" % status)
 	if swap_attack_outsmart:
-		display_game("[color=#808080]Outsmart will now appear on the primary action key (Space).[/color]")
-		display_game("[color=#808080]Attack will move to the Outsmart slot (E key).[/color]")
+		display_game("[color=#808080]Outsmart will now appear on the primary action key (%s).[/color]" % get_action_key_name(0))
+		display_game("[color=#808080]Attack will move to the Outsmart slot (%s).[/color]" % get_action_key_name(3))
 	else:
-		display_game("[color=#808080]Attack is now on the primary action key (Space).[/color]")
+		display_game("[color=#808080]Attack is now on the primary action key (%s).[/color]" % get_action_key_name(0))
 	await get_tree().create_timer(1.5).timeout
 	display_settings_menu()
 	update_action_bar()
@@ -15271,9 +15276,9 @@ func display_companions():
 
 		display_game("")
 		if total_pages > 1:
-			display_game("[color=#808080]Press 1-5 to activate | Q/E to change page[/color]")
+			display_game("[color=#808080]%s to activate | %s/%s to change page[/color]" % [get_selection_keys_text(end_idx - start_idx), get_action_key_name(1), get_action_key_name(3)])
 		else:
-			display_game("[color=#808080]Press 1-5 to activate a companion[/color]")
+			display_game("[color=#808080]%s to activate a companion[/color]" % get_selection_keys_text(end_idx - start_idx))
 
 	# Soul gems (legacy)
 	if soul_gems.size() > 0:
@@ -15721,7 +15726,8 @@ func _refresh_companions_display():
 		game_output.clear()
 		display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
 		display_game("")
-		display_game("[color=#AAAAAA]Select a companion to inspect (1-%d):[/color]" % min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size()))
+		var _inspect_count2 = min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size())
+		display_game("[color=#AAAAAA]Select a companion to inspect (%s):[/color]" % get_selection_keys_text(_inspect_count2))
 		display_game("")
 		_display_companions_for_selection()
 	else:
@@ -18797,7 +18803,7 @@ func handle_quest_list(message: Dictionary):
 			display_game("  [color=%s]%s[/color] - %d/%d%s" % [status_color, quest.get("name", "Quest"), progress, target, turn_in_hint])
 
 		display_game("")
-		display_game("[color=#808080]To abandon a quest, use [R] Quests from the world map[/color]")
+		display_game("[color=#808080]To abandon a quest, use [%s] Quests from the world map[/color]" % get_action_key_name(4))
 		display_game("")
 
 	# SECTION 3: Available quests to accept
@@ -20217,11 +20223,12 @@ func _render_house_map() -> String:
 	# Show what player is standing on
 	if house_interactable_at != "":
 		var standing_on = ""
+		var _interact_key = get_action_key_name(0)
 		match house_interactable_at:
-			"C": standing_on = "[color=#A335EE]Companion Slot[/color] - Press Space"
-			"S": standing_on = "[color=#FFD700]Storage Chest[/color] - Press Space"
-			"U": standing_on = "[color=#00FFFF]Upgrades[/color] - Press Space"
-			"D": standing_on = "[color=#FF6600]Door[/color] - Press Space to Play"
+			"C": standing_on = "[color=#A335EE]Companion Slot[/color] - Press %s" % _interact_key
+			"S": standing_on = "[color=#FFD700]Storage Chest[/color] - Press %s" % _interact_key
+			"U": standing_on = "[color=#00FFFF]Upgrades[/color] - Press %s" % _interact_key
+			"D": standing_on = "[color=#FF6600]Door[/color] - Press %s to Play" % _interact_key
 		lines.append("[color=#FFFFFF]Standing on: " + standing_on + "[/color]")
 	else:
 		lines.append("[color=#808080]Move with WASD or arrows[/color]")
@@ -20247,7 +20254,7 @@ func _update_house_map():
 				"upgrades":
 					lines.append("[color=#00FFFF]Upgrade Forge[/color]")
 			lines.append("")
-			lines.append("[color=#808080]Press Space to return[/color]")
+			lines.append("[color=#808080]Press %s to return[/color]" % get_action_key_name(0))
 			map_display.append_text("\n".join(lines))
 
 func display_house_main():
@@ -20383,7 +20390,7 @@ func display_house_storage():
 
 		display_game("")
 		if total_pages > 1:
-			display_game("[color=#808080]Q/E to change page[/color]")
+			display_game("[color=#808080]%s/%s to change page[/color]" % [get_action_key_name(1), get_action_key_name(3)])
 
 	display_game("")
 	display_game("[color=#FFD700]════════════════════════════[/color]")
