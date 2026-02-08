@@ -14972,8 +14972,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.96 changes
+	display_game("[color=#00FF00]v0.9.96[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Overhaul[/color]")
+	display_game("  • Dungeons now use BSP-generated 20x20 floors with rooms and corridors")
+	display_game("  • Monsters are visible on the map and move each turn")
+	display_game("  • Monsters chase you through corridors when they spot you (line of sight)")
+	display_game("  • Rest/Meditate button in dungeons (costs materials, monsters still move!)")
+	display_game("  • More floors per dungeon across all tiers")
+	display_game("  [color=#FFD700]Quest System[/color]")
+	display_game("  • Quests now generate dynamically each day instead of static lists")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Fix: Combat reconnect now preserves monster HP knowledge")
+	display_game("  • Fix: All combat commands work after reconnect (not just flee)")
+	display_game("")
+
 	# v0.9.95 changes
-	display_game("[color=#00FF00]v0.9.95[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.95[/color]")
 	display_game("  • All in-game instructions now respect custom keybinds")
 	display_game("  • Action bar buttons show gold costs (healer, blacksmith, merchant)")
 	display_game("  • Fix: Healer encounter costs and buttons now work properly")
@@ -14996,11 +15011,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.91[/color]")
 	display_game("  • Fix: Registered kennel companions no longer duplicate via corpse looting")
 	display_game("  • Kennel companions now gain XP, track battles, and show abilities")
-	display_game("")
-
-	# v0.9.89 changes
-	display_game("[color=#00FFFF]v0.9.89[/color]")
-	display_game("  • Kennel checkout, All or Nothing rebalance (34% cap), admin variant rolling")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
