@@ -6,9 +6,11 @@ extends SceneTree
 const DATA_DIR = "user://data/"
 const ACCOUNTS_FILE = "user://data/accounts.json"
 const LEADERBOARD_FILE = "user://data/leaderboard.json"
+const HOUSES_FILE = "user://data/houses.json"
 
 var accounts_data: Dictionary = {}
 var leaderboard_data: Dictionary = {}
+var houses_data: Dictionary = {}
 
 func _init():
 	var args = OS.get_cmdline_user_args()
@@ -42,6 +44,19 @@ func _init():
 				remove_leaderboard_entry(args[1])
 		"leaderboard", "lb":
 			show_leaderboard()
+		"addcompanion":
+			if args.size() < 3:
+				print("Usage: addcompanion <username> <monster_type> [tier] [name]")
+				print("Example: addcompanion Dextobust33 Chimaera 3 \"Chimaera Cub\"")
+			else:
+				var tier = int(args[3]) if args.size() > 3 else 3
+				var comp_name = args[4] if args.size() > 4 else args[2] + " Cub"
+				add_companion_to_storage(args[1], args[2], tier, comp_name)
+		"storage":
+			if args.size() < 2:
+				print("Usage: storage <username>")
+			else:
+				show_storage(args[1])
 		"help", "-h", "--help":
 			print_help()
 		_:
@@ -64,11 +79,15 @@ func print_help():
 	print("  resetpassword <user> <pass>  - Reset account password")
 	print("  leaderboard                  - Show the leaderboard")
 	print("  removeleader <name>          - Remove entry from leaderboard")
+	print("  storage <username>           - Show house storage contents")
+	print("  addcompanion <user> <type> [tier] [name]")
+	print("                               - Add companion to house storage")
 	print("  help                         - Show this help")
 	print("")
 	print("Examples:")
 	print("  godot --headless --script admin_tool.gd -- list")
 	print("  godot --headless --script admin_tool.gd -- resetpassword JohnDoe newpass123")
+	print("  godot --headless --script admin_tool.gd -- addcompanion Dextobust33 Chimaera 3 \"Chimaera Cub\"")
 	print("")
 
 func load_accounts():
@@ -253,4 +272,125 @@ func remove_leaderboard_entry(character_name: String):
 		removed.get("class", "???")
 	])
 	print("Ranks renumbered. %d entries remain." % entries.size())
+	print("")
+
+func load_houses():
+	if not FileAccess.file_exists(HOUSES_FILE):
+		print("ERROR: Houses file not found at %s" % HOUSES_FILE)
+		return
+	var file = FileAccess.open(HOUSES_FILE, FileAccess.READ)
+	if file:
+		var json = JSON.new()
+		var error = json.parse(file.get_as_text())
+		file.close()
+		if error == OK:
+			houses_data = json.data
+		else:
+			print("ERROR: Failed to parse houses file")
+
+func save_houses():
+	var file = FileAccess.open(HOUSES_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(houses_data, "\t"))
+		file.close()
+
+func _get_account_id_for_username(username: String) -> String:
+	"""Look up account_id from username"""
+	var username_lower = username.to_lower()
+	if not accounts_data.has("username_to_id") or not accounts_data.username_to_id.has(username_lower):
+		return ""
+	return accounts_data.username_to_id[username_lower]
+
+func show_storage(username: String):
+	var account_id = _get_account_id_for_username(username)
+	if account_id.is_empty():
+		print("ERROR: Account not found: %s" % username)
+		return
+
+	load_houses()
+	if not houses_data.has("houses") or not houses_data.houses.has(account_id):
+		print("No house found for %s" % username)
+		return
+
+	var house = houses_data.houses[account_id]
+	var items = house.get("storage", {}).get("items", [])
+	var companions = house.get("registered_companions", {}).get("companions", [])
+
+	print("")
+	print("========================================")
+	print("House Storage: %s" % username)
+	print("========================================")
+	print("")
+
+	if items.is_empty():
+		print("  Storage: (empty)")
+	else:
+		print("  Storage (%d items):" % items.size())
+		for i in range(items.size()):
+			var item = items[i]
+			var item_name = item.get("name", item.get("monster_type", "Unknown"))
+			var item_type = item.get("type", "???")
+			var tier = item.get("tier", 0)
+			print("    [%d] %s (type: %s, tier: %d)" % [i, item_name, item_type, tier])
+
+	print("")
+	if companions.is_empty():
+		print("  Kennel: (empty)")
+	else:
+		print("  Kennel (%d companions):" % companions.size())
+		for i in range(companions.size()):
+			var comp = companions[i]
+			var comp_name = comp.get("name", "Unknown")
+			var checked_out = comp.get("checked_out_by", null)
+			var status = " [checked out by %s]" % checked_out if checked_out != null else ""
+			print("    [%d] %s (Lv%d, Tier %d)%s" % [i, comp_name, comp.get("level", 1), comp.get("tier", 1), status])
+	print("")
+
+func add_companion_to_storage(username: String, monster_type: String, tier: int, companion_name: String):
+	var account_id = _get_account_id_for_username(username)
+	if account_id.is_empty():
+		print("ERROR: Account not found: %s" % username)
+		return
+
+	load_houses()
+	if not houses_data.has("houses") or not houses_data.houses.has(account_id):
+		print("ERROR: No house found for %s. Player must log in first." % username)
+		return
+
+	var house = houses_data.houses[account_id]
+
+	# Check storage capacity
+	var base_slots = house.get("storage", {}).get("slots", 20)
+	var upgrade_level = house.get("upgrades", {}).get("storage_slots", 0)
+	var capacity = int(base_slots) + (int(upgrade_level) * 10)
+	var items = house.get("storage", {}).get("items", [])
+	if items.size() >= capacity:
+		print("ERROR: House storage is full (%d/%d)" % [items.size(), capacity])
+		return
+
+	# Create stored companion
+	var companion = {
+		"type": "stored_companion",
+		"id": "companion_" + monster_type.to_lower().replace(" ", "_") + "_admin_" + str(randi()),
+		"monster_type": monster_type,
+		"name": companion_name,
+		"tier": tier,
+		"bonuses": {},
+		"obtained_at": int(Time.get_unix_time_from_system()),
+		"battles_fought": 0,
+		"variant": "Normal",
+		"variant_color": "#FFFFFF",
+		"variant_color2": "",
+		"variant_pattern": "solid",
+		"level": 1,
+		"xp": 0
+	}
+
+	items.append(companion)
+	house["storage"]["items"] = items
+	save_houses()
+
+	print("")
+	print("SUCCESS: Added %s (Tier %d, %s) to %s's house storage." % [companion_name, tier, monster_type, username])
+	print("Storage: %d/%d items" % [items.size(), capacity])
 	print("")

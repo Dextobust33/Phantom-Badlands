@@ -64,6 +64,80 @@ func ensure_data_directories():
 		if not dir.dir_exists("data/characters"):
 			dir.make_dir_recursive("data/characters")
 
+# ===== SAFE FILE SAVE =====
+
+func _safe_save(filepath: String, data: Dictionary):
+	"""Write data to file with backup protection.
+	Creates a .bak backup before writing. If the main file becomes corrupt,
+	_safe_load() will fall back to the backup."""
+	var json_string = JSON.stringify(data, "\t")
+	if json_string.is_empty():
+		print("ERROR: JSON stringify returned empty for %s" % filepath)
+		return
+
+	# Create backup of current file before overwriting
+	if FileAccess.file_exists(filepath):
+		var backup_path = filepath + ".bak"
+		var existing = FileAccess.open(filepath, FileAccess.READ)
+		if existing:
+			var existing_content = existing.get_as_text()
+			existing.close()
+			if existing_content.length() > 2:  # Only back up non-empty files
+				var backup = FileAccess.open(backup_path, FileAccess.WRITE)
+				if backup:
+					backup.store_string(existing_content)
+					backup.close()
+
+	# Write new data
+	var file = FileAccess.open(filepath, FileAccess.WRITE)
+	if not file:
+		print("ERROR: Failed to open file for save: %s" % filepath)
+		return
+	file.store_string(json_string)
+	file.close()
+
+func _safe_load(filepath: String) -> Dictionary:
+	"""Load JSON from file with backup fallback.
+	If main file is missing or corrupt, tries loading from .bak backup."""
+	var data = _try_load_json(filepath)
+	if not data.is_empty():
+		return data
+
+	# Main file failed - try backup
+	var backup_path = filepath + ".bak"
+	if FileAccess.file_exists(backup_path):
+		print("WARNING: Main file corrupt/missing, loading backup: %s" % backup_path)
+		data = _try_load_json(backup_path)
+		if not data.is_empty():
+			# Restore backup to main file
+			_safe_save(filepath, data)
+			print("Restored %s from backup" % filepath)
+			return data
+		else:
+			print("ERROR: Backup also corrupt: %s" % backup_path)
+
+	return {}
+
+func _try_load_json(filepath: String) -> Dictionary:
+	"""Try to load and parse a JSON file. Returns empty dict on failure."""
+	if not FileAccess.file_exists(filepath):
+		return {}
+	var file = FileAccess.open(filepath, FileAccess.READ)
+	if not file:
+		return {}
+	var content = file.get_as_text()
+	file.close()
+	if content.is_empty():
+		return {}
+	var json = JSON.new()
+	var error = json.parse(content)
+	if error != OK:
+		print("ERROR: JSON parse failed for %s: %s" % [filepath, json.get_error_message()])
+		return {}
+	if json.data is Dictionary:
+		return json.data
+	return {}
+
 # ===== PASSWORD HASHING =====
 
 func generate_salt() -> String:
@@ -89,37 +163,20 @@ func verify_password(password: String, password_hash: String, salt: String) -> b
 
 func load_accounts():
 	"""Load accounts data from file"""
-	if not FileAccess.file_exists(ACCOUNTS_FILE):
+	var data = _safe_load(ACCOUNTS_FILE)
+	if data.is_empty():
 		accounts_data = {
 			"accounts": {},
 			"username_to_id": {},
 			"next_account_id": 1
 		}
 		save_accounts()
-		return
-
-	var file = FileAccess.open(ACCOUNTS_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			accounts_data = json.data
-		else:
-			print("Error parsing accounts file: ", json.get_error_message())
-			accounts_data = {
-				"accounts": {},
-				"username_to_id": {},
-				"next_account_id": 1
-			}
+	else:
+		accounts_data = data
 
 func save_accounts():
 	"""Save accounts data to file"""
-	var file = FileAccess.open(ACCOUNTS_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(accounts_data, "\t"))
-		file.close()
+	_safe_save(ACCOUNTS_FILE, accounts_data)
 
 func create_account(username: String, password: String) -> Dictionary:
 	"""Create a new account with hashed password"""
@@ -256,35 +313,20 @@ func get_character_filepath(account_id: String, char_name: String) -> String:
 func save_character(account_id: String, character: Character):
 	"""Save a character to file"""
 	var filepath = get_character_filepath(account_id, character.name)
-	var file = FileAccess.open(filepath, FileAccess.WRITE)
-	if file:
-		var data = character.to_dict()
-		data["account_id"] = account_id
-		file.store_string(JSON.stringify(data, "\t"))
-		file.close()
-		#print("Character saved: %s" % character.name)
+	var data = character.to_dict()
+	data["account_id"] = account_id
+	_safe_save(filepath, data)
 
 func load_character(account_id: String, char_name: String) -> Dictionary:
 	"""Load character data from file"""
 	var filepath = get_character_filepath(account_id, char_name)
-
-	if not FileAccess.file_exists(filepath):
+	var data = _safe_load(filepath)
+	if data.is_empty():
 		return {}
-
-	var file = FileAccess.open(filepath, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			var data = json.data
-			# Migrate legacy items to new tiered format
-			if data.has("inventory"):
-				data["inventory"] = _migrate_legacy_items(data["inventory"])
-			return data
-
-	return {}
+	# Migrate legacy items to new tiered format
+	if data.has("inventory"):
+		data["inventory"] = _migrate_legacy_items(data["inventory"])
+	return data
 
 # ===== LEGACY ITEM MIGRATION =====
 
@@ -397,28 +439,16 @@ func character_name_exists(char_name: String) -> bool:
 
 func load_leaderboard():
 	"""Load leaderboard data from file"""
-	if not FileAccess.file_exists(LEADERBOARD_FILE):
+	var data = _safe_load(LEADERBOARD_FILE)
+	if data.is_empty():
 		leaderboard_data = {"entries": []}
 		save_leaderboard()
-		return
-
-	var file = FileAccess.open(LEADERBOARD_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			leaderboard_data = json.data
-		else:
-			leaderboard_data = {"entries": []}
+	else:
+		leaderboard_data = data
 
 func save_leaderboard():
 	"""Save leaderboard data to file"""
-	var file = FileAccess.open(LEADERBOARD_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(leaderboard_data, "\t"))
-		file.close()
+	_safe_save(LEADERBOARD_FILE, leaderboard_data)
 
 func add_to_leaderboard(character: Character, cause_of_death: String, account_username: String) -> int:
 	"""Add a deceased character to the leaderboard. Returns their rank."""
@@ -504,28 +534,16 @@ func reset_leaderboard():
 
 func load_realm_state():
 	"""Load realm state (treasury, etc.) from file"""
-	if not FileAccess.file_exists(REALM_STATE_FILE):
+	var data = _safe_load(REALM_STATE_FILE)
+	if data.is_empty():
 		realm_state_data = {"treasury": 0}
 		save_realm_state()
-		return
-
-	var file = FileAccess.open(REALM_STATE_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			realm_state_data = json.data
-		else:
-			realm_state_data = {"treasury": 0}
+	else:
+		realm_state_data = data
 
 func save_realm_state():
 	"""Save realm state to file"""
-	var file = FileAccess.open(REALM_STATE_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(realm_state_data, "\t"))
-		file.close()
+	_safe_save(REALM_STATE_FILE, realm_state_data)
 
 func get_realm_treasury() -> int:
 	"""Get the current realm treasury balance"""
@@ -650,22 +668,13 @@ var monster_kills_data: Dictionary = {}
 
 func load_monster_kills():
 	"""Load monster kills leaderboard from file"""
-	if not FileAccess.file_exists(MONSTER_KILLS_FILE):
+	var data = _safe_load(MONSTER_KILLS_FILE)
+	if data.is_empty():
 		monster_kills_data = {"monsters": {}}
 		save_monster_kills()
-		return
-
-	var file = FileAccess.open(MONSTER_KILLS_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			monster_kills_data = json.data
-			_migrate_monster_kills_data()
-		else:
-			monster_kills_data = {"monsters": {}}
+	else:
+		monster_kills_data = data
+		_migrate_monster_kills_data()
 
 func _migrate_monster_kills_data():
 	"""Migrate old monster kill entries that have level info to base names"""
@@ -698,10 +707,7 @@ func _migrate_monster_kills_data():
 
 func save_monster_kills():
 	"""Save monster kills leaderboard to file"""
-	var file = FileAccess.open(MONSTER_KILLS_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(monster_kills_data, "\t"))
-		file.close()
+	_safe_save(MONSTER_KILLS_FILE, monster_kills_data)
 
 func record_monster_kill(monster_name: String):
 	"""Record a player kill by a monster (strips level info to group by base name)"""
@@ -811,29 +817,16 @@ func get_trophy_leaderboard() -> Array:
 
 func load_corpses():
 	"""Load corpses data from file"""
-	if not FileAccess.file_exists(CORPSES_FILE):
+	var data = _safe_load(CORPSES_FILE)
+	if data.is_empty():
 		corpses_data = {"corpses": []}
 		save_corpses()
-		return
-
-	var file = FileAccess.open(CORPSES_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			corpses_data = json.data
-		else:
-			print("Error parsing corpses file: ", json.get_error_message())
-			corpses_data = {"corpses": []}
+	else:
+		corpses_data = data
 
 func save_corpses():
 	"""Save corpses data to file"""
-	var file = FileAccess.open(CORPSES_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(corpses_data, "\t"))
-		file.close()
+	_safe_save(CORPSES_FILE, corpses_data)
 
 func add_corpse(corpse: Dictionary):
 	"""Add a corpse to persistence and save"""
@@ -897,29 +890,16 @@ func get_visible_corpses(center_x: int, center_y: int, radius: int) -> Array:
 
 func load_houses():
 	"""Load houses data from file"""
-	if not FileAccess.file_exists(HOUSES_FILE):
+	var data = _safe_load(HOUSES_FILE)
+	if data.is_empty():
 		houses_data = {"houses": {}}
 		save_houses()
-		return
-
-	var file = FileAccess.open(HOUSES_FILE, FileAccess.READ)
-	if file:
-		var json = JSON.new()
-		var error = json.parse(file.get_as_text())
-		file.close()
-
-		if error == OK:
-			houses_data = json.data
-		else:
-			print("Error parsing houses file: ", json.get_error_message())
-			houses_data = {"houses": {}}
+	else:
+		houses_data = data
 
 func save_houses():
 	"""Save houses data to file"""
-	var file = FileAccess.open(HOUSES_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(houses_data, "\t"))
-		file.close()
+	_safe_save(HOUSES_FILE, houses_data)
 
 func get_house(account_id: String) -> Dictionary:
 	"""Get a house by account ID, creating it if it doesn't exist"""

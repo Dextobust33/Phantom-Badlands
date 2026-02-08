@@ -4908,6 +4908,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 	# Update character data
 	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _home_stone_pre_validate(peer_id: int, character, stone_type: String) -> bool:
 	"""Pre-validate home stone usage (combat/dungeon check + house storage check)"""

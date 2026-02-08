@@ -14862,8 +14862,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.88 changes
+	display_game("[color=#00FF00]v0.9.88[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ DATA SAFETY[/color]")
+	display_game("  • All save files now create backups before writing")
+	display_game("  • Corrupt files auto-recover from backup on load")
+	display_game("  • Home Stone usage now immediately saves character data")
+	display_game("  [color=#FFD700]★ ADMIN TOOLS[/color]")
+	display_game("  • New: addcompanion — inject companions into house storage")
+	display_game("  • New: storage — view house storage and kennel contents")
+	display_game("")
+
 	# v0.9.87 changes
-	display_game("[color=#00FF00]v0.9.87[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.87[/color]")
 	display_game("  [color=#FFD700]★ SANCTUARY UPGRADES[/color]")
 	display_game("  • New: Incubation Chamber upgrade — increase egg slots from 3 to 12")
 	display_game("  • Fix: Companion registration from Storage now works correctly")
@@ -14904,11 +14915,6 @@ func display_changelog():
 	# v0.9.83 changes
 	display_game("[color=#00FFFF]v0.9.83[/color]")
 	display_game("  • Item locking, 53 dungeons, blacksmith buff, quest scaling")
-	display_game("")
-
-	# v0.9.82 changes
-	display_game("[color=#00FFFF]v0.9.82[/color]")
-	display_game("  • Monster intelligence rework — brutes easier, mages harder to Outsmart")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
