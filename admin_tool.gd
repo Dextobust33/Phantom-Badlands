@@ -368,6 +368,13 @@ func add_companion_to_storage(username: String, monster_type: String, tier: int,
 		print("ERROR: House storage is full (%d/%d)" % [items.size(), capacity])
 		return
 
+	# Roll random variant
+	var variant = _roll_variant()
+	var variant_name = variant.get("name", "Normal")
+	var variant_color = variant.get("color", "#FFFFFF")
+	var variant_color2 = variant.get("color2", "")
+	var variant_pattern = variant.get("pattern", "solid")
+
 	# Create stored companion
 	var companion = {
 		"type": "stored_companion",
@@ -378,10 +385,10 @@ func add_companion_to_storage(username: String, monster_type: String, tier: int,
 		"bonuses": {},
 		"obtained_at": int(Time.get_unix_time_from_system()),
 		"battles_fought": 0,
-		"variant": "Normal",
-		"variant_color": "#FFFFFF",
-		"variant_color2": "",
-		"variant_pattern": "solid",
+		"variant": variant_name,
+		"variant_color": variant_color,
+		"variant_color2": variant_color2,
+		"variant_pattern": variant_pattern,
 		"level": 1,
 		"xp": 0
 	}
@@ -391,6 +398,19 @@ func add_companion_to_storage(username: String, monster_type: String, tier: int,
 	save_houses()
 
 	print("")
-	print("SUCCESS: Added %s (Tier %d, %s) to %s's house storage." % [companion_name, tier, monster_type, username])
+	print("SUCCESS: Added %s %s (Tier %d, %s) to %s's house storage." % [variant_name, companion_name, tier, monster_type, username])
+	print("Variant: %s (color: %s, pattern: %s)" % [variant_name, variant_color, variant_pattern])
 	print("Storage: %d/%d items" % [items.size(), capacity])
 	print("")
+
+func _roll_variant() -> Dictionary:
+	var total_weight = 0
+	for variant in DropTables.EGG_VARIANTS:
+		total_weight += variant.rarity
+	var roll = randi() % total_weight
+	var current = 0
+	for variant in DropTables.EGG_VARIANTS:
+		current += variant.rarity
+		if roll < current:
+			return variant.duplicate()
+	return {"name": "Normal", "color": "#FFFFFF", "pattern": "solid"}

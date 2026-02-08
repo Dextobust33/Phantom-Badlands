@@ -3438,10 +3438,13 @@ func _on_character_selected(char_name: String):
 	if char_select_status:
 		char_select_status.text = "Loading %s..." % char_name
 
-	send_to_server({
+	var select_msg = {
 		"type": "select_character",
 		"name": char_name
-	})
+	}
+	if house_checkout_companion_slot >= 0:
+		select_msg["checkout_companion_slot"] = house_checkout_companion_slot
+	send_to_server(select_msg)
 
 func _on_create_char_button_pressed():
 	show_character_create_panel()
@@ -3497,12 +3500,15 @@ func _on_confirm_create_pressed():
 	if char_create_status:
 		char_create_status.text = "Creating character..."
 
-	send_to_server({
+	var create_msg = {
 		"type": "create_character",
 		"name": char_name,
 		"race": char_race,
 		"class": char_class
-	})
+	}
+	if house_checkout_companion_slot >= 0:
+		create_msg["checkout_companion_slot"] = house_checkout_companion_slot
+	send_to_server(create_msg)
 
 func _on_cancel_create_pressed():
 	show_character_select_panel()
@@ -6924,7 +6930,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"gambit": {"display": "Gambit", "cost": 35, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
 		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
-		"all_or_nothing": {"display": "All/None", "cost": 1, "cost_percent": 0, "resource_type": resource_type},
+		"all_or_nothing": {"display": "A/N %d%%" % int(3.0 + min(25.0, character_data.get("all_or_nothing_uses", 0) * 0.1)), "cost": 1, "cost_percent": 0, "resource_type": resource_type},
 	}
 
 	var result = ability_defs.get(ability_name, {})
@@ -14862,15 +14868,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.88 changes
-	display_game("[color=#00FF00]v0.9.88[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ DATA SAFETY[/color]")
-	display_game("  • All save files now create backups before writing")
-	display_game("  • Corrupt files auto-recover from backup on load")
-	display_game("  • Home Stone usage now immediately saves character data")
+	# v0.9.89 changes
+	display_game("[color=#00FF00]v0.9.89[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]★ COMPANION CHECKOUT[/color]")
+	display_game("  • Kennel companions now properly join when creating or selecting a character")
+	display_game("  [color=#FFD700]★ ALL OR NOTHING[/color]")
+	display_game("  • Max success rate increased from 25% to 34%")
+	display_game("  • Training cap raised: +0.1%/use up to +25% (was +10%)")
+	display_game("  • Action bar button now shows your trained base rate (e.g. A/N 7%)")
 	display_game("  [color=#FFD700]★ ADMIN TOOLS[/color]")
-	display_game("  • New: addcompanion — inject companions into house storage")
-	display_game("  • New: storage — view house storage and kennel contents")
+	display_game("  • Admin-created companions now get random variants")
+	display_game("")
+
+	# v0.9.88 changes
+	display_game("[color=#00FFFF]v0.9.88[/color]")
+	display_game("  • Data safety: backup saves, auto-recovery, admin tools")
 	display_game("")
 
 	# v0.9.87 changes
@@ -14910,11 +14922,6 @@ func display_changelog():
 	# v0.9.84 changes
 	display_game("[color=#00FFFF]v0.9.84[/color]")
 	display_game("  • Fixed mojibake characters, lock menu auto-select")
-	display_game("")
-
-	# v0.9.83 changes
-	display_game("[color=#00FFFF]v0.9.83[/color]")
-	display_game("  • Item locking, 53 dungeons, blacksmith buff, quest scaling")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16429,7 +16436,7 @@ func show_help():
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75%% dodge[/color] on enemy turn!
 [color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
-[color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 25%%)
+[color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 34%%)
 
 [color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
   [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
@@ -16684,7 +16691,7 @@ func search_help(search_term: String):
 		{
 			"title": "UNIVERSAL ABILITIES",
 			"keywords": ["cloak", "stealth", "teleport", "travel", "all", "nothing", "gamble", "buff", "advantage"],
-			"content": "[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement, 8% resource per step, no encounters\n[color=#AA66FF]Teleport[/color] - Mage L30, Trickster L45, Warrior L60. Cost: 10 + distance\n[color=#FF00FF]All or Nothing[/color] - ~3% instant kill, fail = monster 2x STR/SPD, +0.1%/use permanent\n[color=#00FF00]Buff Advantage:[/color] Defensive abilities give 75% chance to avoid enemy turn"
+			"content": "[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement, 8% resource per step, no encounters\n[color=#AA66FF]Teleport[/color] - Mage L30, Trickster L45, Warrior L60. Cost: 10 + distance\n[color=#FF00FF]All or Nothing[/color] - ~3% instant kill, fail = monster 2x STR/SPD, +0.1%/use permanent (max 34%)\nButton shows your trained base rate. Actual chance varies by level difference.\n[color=#00FF00]Buff Advantage:[/color] Defensive abilities give 75% chance to avoid enemy turn"
 		},
 		{
 			"title": "MONSTER ABILITIES",

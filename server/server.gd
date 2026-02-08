@@ -988,6 +988,12 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		character.house_bonuses = house_bonuses
 		persistence.save_character(account_id, character)
 
+	# Checkout companion from house kennel if requested (and character doesn't already have one)
+	var checkout_slot = message.get("checkout_companion_slot", -1)
+	if checkout_slot >= 0 and not character.using_registered_companion and character.active_companion == null:
+		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
+		persistence.save_character(account_id, character)
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -1138,6 +1144,11 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# Apply starting gold bonus
 	if house_bonuses.get("starting_gold", 0) > 0:
 		character.gold += house_bonuses.starting_gold
+
+	# Checkout companion from house kennel if requested
+	var checkout_slot = message.get("checkout_companion_slot", -1)
+	if checkout_slot >= 0:
+		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
 
 	# Save character to persistence
 	persistence.save_character(account_id, character)
@@ -6858,6 +6869,24 @@ func _award_baddie_points_on_death(peer_id: int, character: Character, account_i
 		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
 
 	return bp
+
+func _checkout_companion_for_character(account_id: String, character: Character, slot: int, char_name: String):
+	"""Checkout a registered companion from house kennel and assign to character"""
+	var companion_data = persistence.checkout_companion_from_house(account_id, slot, char_name)
+	if companion_data.is_empty():
+		log_message("Failed to checkout companion slot %d for %s" % [slot, char_name])
+		return
+
+	# Build active companion dict (strip registration metadata)
+	var companion = companion_data.duplicate()
+	companion.erase("registered_at")
+	companion.erase("checked_out_by")
+	companion.erase("checkout_time")
+
+	character.active_companion = companion
+	character.using_registered_companion = true
+	character.registered_companion_slot = slot
+	log_message("Companion '%s' checked out from kennel slot %d for %s" % [companion.get("name", "Unknown"), slot, char_name])
 
 func _get_house_bonuses_for_character(account_id: String) -> Dictionary:
 	"""Get house upgrade bonuses to apply to a new character"""

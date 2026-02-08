@@ -2238,16 +2238,16 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 
 			# Calculate success chance:
 			# Base: 3%
-			# +0.1% per use (max +10% from uses, so caps at 100 uses)
+			# +0.1% per use (max +25% from uses, so caps at 250 uses)
 			# -0.5% per monster level above player (heavily penalized vs high level)
 			# +0.5% per monster level below player
 			var base_chance = 3.0
-			var use_bonus = min(10.0, character.all_or_nothing_uses * 0.1)
+			var use_bonus = min(25.0, character.all_or_nothing_uses * 0.1)
 			var level_diff = monster.level - character.level
 			var level_modifier = -level_diff * 0.5  # Negative if monster higher, positive if lower
 
 			var success_chance = base_chance + use_bonus + level_modifier
-			success_chance = clamp(success_chance, 1.0, 25.0)  # Min 1%, max 25%
+			success_chance = clamp(success_chance, 1.0, 34.0)  # Min 1%, max 34%
 
 			messages.append("[color=#FF00FF][b]ALL OR NOTHING![/b][/color]")
 			messages.append("[color=#808080](Success chance: %.1f%%)[/color]" % success_chance)
