@@ -72,6 +72,7 @@ var dungeon_floors: Dictionary = {}   # instance_id -> [grid_floor_0, grid_floor
 var dungeon_floor_rooms: Dictionary = {}  # instance_id -> [[rooms_floor_0], [rooms_floor_1], ...]
 var dungeon_monsters: Dictionary = {}     # instance_id -> {floor_num: [monster_entity, ...]}
 var next_dungeon_monster_id: int = 0
+var dungeon_combat_breather: Dictionary = {}  # peer_id -> true: skip monster movement on next move after combat
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
@@ -686,6 +687,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_lock(peer_id, message)
 		"inventory_salvage":
 			handle_inventory_salvage(peer_id, message)
+		"auto_salvage_settings":
+			handle_auto_salvage_settings(peer_id, message)
 		"monster_select_confirm":
 			handle_monster_select_confirm(peer_id, message)
 		"home_stone_select":
@@ -797,6 +800,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_dungeon_move(peer_id, message)
 		"dungeon_exit":
 			handle_dungeon_exit(peer_id)
+		"dungeon_go_back":
+			handle_dungeon_go_back(peer_id)
 		"dungeon_rest":
 			handle_dungeon_rest(peer_id)
 		"dungeon_state":
@@ -1568,6 +1573,11 @@ func handle_move(peer_id: int, message: Dictionary):
 		})
 		return
 
+	# Cannot use world movement while in a dungeon
+	var character_check = characters[peer_id]
+	if character_check.in_dungeon:
+		return
+
 	# Cancel any active trade (moving breaks trade)
 	if active_trades.has(peer_id):
 		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
@@ -1745,9 +1755,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check if entering a hotzone for the first time (warn before proceeding)
 	var hotspot_check = world_system.get_hotspot_at(new_pos.x, new_pos.y)
 	if hotspot_check.in_hotspot and not player_in_hotzone.has(peer_id):
-		# Estimate the danger level from distance + intensity
-		var dist_from_origin = sqrt(float(new_pos.x * new_pos.x + new_pos.y * new_pos.y))
-		var estimated_level = int(dist_from_origin * (1.0 + hotspot_check.intensity))
+		# Use the actual monster level calculation for accurate estimate
+		var level_range = world_system.get_monster_level_range(new_pos.x, new_pos.y)
+		var estimated_level = level_range.base_level
 		send_to_peer(peer_id, {
 			"type": "hotzone_warning",
 			"intensity": hotspot_check.intensity,
@@ -2329,7 +2339,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						var qty_text = " x%d" % quantity if quantity > 1 else ""
 						drop_messages.append("[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text])
 						drop_data.append({"rarity": "uncommon", "level": 1, "level_diff": 0, "is_material": true})
-					elif characters[peer_id].can_add_item():
+					elif characters[peer_id].can_add_item() or _try_auto_salvage(peer_id):
 						characters[peer_id].add_item(item)
 						# Format with rarity symbol for visual distinction
 						var rarity = item.get("rarity", "common")
@@ -2399,6 +2409,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							# Legacy tile-based encounter
 							_clear_dungeon_tile(peer_id)
 						character.dungeon_encounters_cleared += 1
+						# Give player a breather - skip monster movement on next move
+						dungeon_combat_breather[peer_id] = true
 						if is_boss:
 							# Boss defeated - complete dungeon
 							_complete_dungeon(peer_id)
@@ -3791,6 +3803,7 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 var pending_blacksmith_encounters: Dictionary = {}
 var pending_blacksmith_upgrades: Dictionary = {}  # Track upgrade state
 var pending_healer_encounters: Dictionary = {}
+var healer_decline_state: Dictionary = {}  # peer_id -> {hp_ratio, had_debuffs} - tracks state when declined
 
 func check_blacksmith_encounter(peer_id: int) -> bool:
 	"""Check for a wandering blacksmith encounter. Returns true if encounter occurred."""
@@ -4203,19 +4216,29 @@ func check_healer_encounter(peer_id: int) -> bool:
 	if randf() >= 0.12:
 		return false
 
-	# Trigger if player is injured (HP < 80%) or has debuffs (poison/blind)
+	# Trigger if player is injured (HP < 80%) or has actual debuffs (poison/blind/weakness)
+	# Note: persistent_buffs includes positive buffs too (gold_find, etc.) - only check for negative effects
 	var hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
-	if hp_ratio >= 0.80 and character.persistent_buffs.size() == 0 and not character.poison_active and not character.blind_active:
+	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
+	if hp_ratio >= 0.80 and not has_debuffs:
 		return false
+
+	# Check if player previously declined - only re-offer if situation changed
+	if healer_decline_state.has(peer_id):
+		var prev = healer_decline_state[peer_id]
+		var new_debuff = has_debuffs and not prev.had_debuffs
+		var very_low_hp = hp_ratio < 0.30
+		# Re-offer if: got a new debuff, or HP dropped very low (below 30%)
+		if not new_debuff and not very_low_hp:
+			return false
+		# Situation changed enough - clear decline state and re-offer
+		healer_decline_state.erase(peer_id)
 
 	# Calculate heal costs based on player level (reduced 10% for economy balance)
 	var level = character.level
 	var quick_heal_cost = level * 22
 	var full_heal_cost = level * 90
 	var cure_all_cost = level * 180
-
-	# Check for debuffs (including poison and blind which are separate flags)
-	var has_debuffs = character.persistent_buffs.size() > 0 or character.poison_active or character.blind_active
 
 	# Store encounter data
 	pending_healer_encounters[peer_id] = {
@@ -4255,6 +4278,10 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 	pending_healer_encounters.erase(peer_id)
 
 	if choice == "decline":
+		# Record state at decline so healer won't re-appear until situation changes
+		var decline_hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
+		var decline_has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
+		healer_decline_state[peer_id] = {"had_debuffs": decline_has_debuffs, "hp_ratio": decline_hp_ratio}
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#808080]The Healer bows and fades into the distance.[/color]"
@@ -5695,6 +5722,76 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	send_character_update(peer_id)
 
+func handle_auto_salvage_settings(peer_id: int, message: Dictionary):
+	"""Handle auto-salvage settings change"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var max_rarity = int(message.get("max_rarity", 0))
+	max_rarity = clampi(max_rarity, 0, 3)
+
+	if max_rarity == 0:
+		character.auto_salvage_enabled = false
+		character.auto_salvage_max_rarity = 0
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Auto-salvage disabled.[/color]"})
+	else:
+		character.auto_salvage_enabled = true
+		character.auto_salvage_max_rarity = max_rarity
+		var rarity_names = {1: "Common", 2: "Uncommon", 3: "Rare"}
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvage enabled: will salvage %s and below when inventory is full.[/color]" % rarity_names[max_rarity]})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func _try_auto_salvage(peer_id: int) -> bool:
+	"""Try to auto-salvage an item to make room. Returns true if space was made."""
+	if not characters.has(peer_id):
+		return false
+	var character = characters[peer_id]
+	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity == 0:
+		return false
+
+	var rarity_order = ["common", "uncommon", "rare"]
+	var max_idx = character.auto_salvage_max_rarity  # 1=common, 2=uncommon, 3=rare
+	var allowed_rarities = rarity_order.slice(0, max_idx)
+
+	# Find lowest rarity non-equipped, non-locked item to salvage
+	var best_idx = -1
+	var best_rarity_rank = 999
+	var best_level = 999999
+
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		if item.get("locked", false):
+			continue
+		if item.get("is_title_item", false):
+			continue
+		if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
+			continue
+		var rarity = item.get("rarity", "common")
+		if rarity not in allowed_rarities:
+			continue
+		var rarity_rank = allowed_rarities.find(rarity)
+		var item_level = item.get("level", 1)
+		# Prefer lowest rarity first, then lowest level
+		if rarity_rank < best_rarity_rank or (rarity_rank == best_rarity_rank and item_level < best_level):
+			best_idx = i
+			best_rarity_rank = rarity_rank
+			best_level = item_level
+
+	if best_idx < 0:
+		return false
+
+	# Salvage the item
+	var item = character.inventory[best_idx]
+	var salvage_result = drop_tables.get_salvage_value(item)
+	var essence = salvage_result.essence
+	character.remove_item(best_idx)
+	character.add_salvage_essence(essence)
+
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvaged %s for %d essence.[/color]" % [item.get("name", "item"), essence]})
+	return true
+
 func send_character_update(peer_id: int):
 	"""Send character data update to client"""
 	if not characters.has(peer_id):
@@ -5702,6 +5799,9 @@ func send_character_update(peer_id: int):
 
 	var character = characters[peer_id]
 	var char_dict = character.to_dict()
+	# Add egg capacity from house upgrades
+	var egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+	char_dict["egg_capacity"] = egg_cap
 	send_to_peer(peer_id, {
 		"type": "character_update",
 		"character": char_dict
@@ -9807,9 +9907,13 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		return
 
 	# Move all monsters (they react to player movement)
-	var monster_combat = _move_dungeon_monsters(peer_id)
-	if monster_combat:
-		return  # Combat was triggered by a monster reaching the player
+	# Skip monster movement if player just finished combat (breather turn)
+	if dungeon_combat_breather.has(peer_id):
+		dungeon_combat_breather.erase(peer_id)
+	else:
+		var monster_combat = _move_dungeon_monsters(peer_id)
+		if monster_combat:
+			return  # Combat was triggered by a monster reaching the player
 
 	# Legacy tile-based encounters (backward compat for old dungeon instances)
 	if tile_int == int(DungeonDatabaseScript.TileType.ENCOUNTER):
@@ -9837,6 +9941,15 @@ func handle_dungeon_exit(peer_id: int):
 	if combat_mgr.is_in_combat(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot exit while in combat!"})
 		return
+
+	# Must be on entrance tile to exit
+	var instance_id_check = character.current_dungeon_id
+	if dungeon_floors.has(instance_id_check):
+		var floor_grids = dungeon_floors[instance_id_check]
+		var grid = floor_grids[character.dungeon_floor]
+		if grid[character.dungeon_y][character.dungeon_x] != int(DungeonDatabaseScript.TileType.ENTRANCE):
+			send_to_peer(peer_id, {"type": "error", "message": "You must return to the dungeon entrance (E) to exit."})
+			return
 
 	# Clear any pending flock encounters
 	if pending_flocks.has(peer_id):
@@ -9881,6 +9994,53 @@ func handle_dungeon_exit(peer_id: int):
 	send_location_update(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func handle_dungeon_go_back(peer_id: int):
+	"""Handle player going back to previous dungeon floor"""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
+		return
+
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot go back while in combat!"})
+		return
+
+	if character.dungeon_floor <= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "You are already on the first floor!"})
+		return
+
+	# Must be on entrance tile to go back
+	var instance_id = character.current_dungeon_id
+	if dungeon_floors.has(instance_id):
+		var floor_grids = dungeon_floors[instance_id]
+		var grid = floor_grids[character.dungeon_floor]
+		if grid[character.dungeon_y][character.dungeon_x] != int(DungeonDatabaseScript.TileType.ENTRANCE):
+			send_to_peer(peer_id, {"type": "error", "message": "You must be at the entrance (E) to go back a floor."})
+			return
+
+		# Go back one floor and place player at the EXIT tile of the previous floor
+		var prev_floor = character.dungeon_floor - 1
+		var prev_grid = floor_grids[prev_floor]
+		var exit_pos = _find_tile_position(prev_grid, DungeonDatabaseScript.TileType.EXIT)
+
+		character.dungeon_floor = prev_floor
+		character.dungeon_x = exit_pos.x
+		character.dungeon_y = exit_pos.y
+
+		send_to_peer(peer_id, {
+			"type": "dungeon_floor_change",
+			"floor": character.dungeon_floor + 1,
+			"total_floors": DungeonDatabaseScript.get_dungeon(character.current_dungeon_type).floors,
+			"message": "[color=#FFFF00]You ascend back to floor %d...[/color]" % (character.dungeon_floor + 1)
+		})
+
+		_send_dungeon_state(peer_id)
+		save_character(peer_id)
 
 func _create_dungeon_instance(dungeon_type: String) -> String:
 	"""Create a new dungeon instance. Returns instance ID."""
@@ -10400,6 +10560,9 @@ func _send_dungeon_state(peer_id: int):
 	# Get current tile
 	var current_tile = grid[character.dungeon_y][character.dungeon_x]
 
+	# Find entrance position on current floor
+	var entrance_pos = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+
 	# Get alive monsters on current floor
 	var monster_list = []
 	if dungeon_monsters.has(instance_id):
@@ -10423,6 +10586,8 @@ func _send_dungeon_state(peer_id: int):
 		"player_x": character.dungeon_x,
 		"player_y": character.dungeon_y,
 		"current_tile": current_tile,
+		"entrance_x": entrance_pos.x,
+		"entrance_y": entrance_pos.y,
 		"encounters_cleared": character.dungeon_encounters_cleared,
 		"color": dungeon_data.color,
 		"monsters": monster_list
@@ -11405,6 +11570,8 @@ func broadcast_title_change(player_name: String, title_id: String, action: Strin
 			msg = "[color=%s]%s has achieved the rank of %s![/color]" % [color, player_name, title_name]
 		"usurped":
 			msg = "[color=%s]%s has usurped the throne and become %s![/color]" % [color, player_name, title_name]
+		"revoked for abuse":
+			msg = "[color=#FF4444]%s has had their title of %s revoked![/color]" % [player_name, title_name]
 
 	# Send to both game output and chat
 	for other_peer_id in characters.keys():

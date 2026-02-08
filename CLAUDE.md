@@ -353,6 +353,14 @@ Key rules:
 3. Action bar slots 5-9 share keys with item selection (1-5)
 4. When adding sub-menus using buttons, exclude from item selection at ~line 1451
 5. **CRITICAL: Mark hotkeys as pressed when exiting modes via key press** (see Pitfall #7)
+6. **GOLDEN RULE: A single hotkey press must NEVER trigger actions in two different menus.** When a hotkey opens a new menu/mode, any item selection keys that are currently held must be pre-marked as pressed in the new mode so they don't immediately trigger a selection. Pattern:
+```gdscript
+# When entering a mode that uses item selection keys (1-9):
+for i in range(9):
+    if is_item_select_key_pressed(i):
+        set_meta("itemkey_%d_pressed" % i, true)
+```
+This applies to ALL mode transitions triggered by shared keys (action bar slots 5-9 / keys 1-5). The key must be released and re-pressed to trigger an action in the new menu.
 
 ## Monster HP Knowledge System (IMPORTANT)
 

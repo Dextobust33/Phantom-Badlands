@@ -375,6 +375,8 @@ const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower
 
 # ===== SALVAGE SYSTEM =====
 @export var salvage_essence: int = 0  # Currency from salvaging items
+@export var auto_salvage_enabled: bool = false
+@export var auto_salvage_max_rarity: int = 0  # 0=off, 1=common, 2=uncommon, 3=rare
 
 # ===== CRAFTING SYSTEM =====
 @export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1}
@@ -1277,6 +1279,8 @@ func to_dict() -> Dictionary:
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,
 		"salvage_essence": salvage_essence,
+		"auto_salvage_enabled": auto_salvage_enabled,
+		"auto_salvage_max_rarity": auto_salvage_max_rarity,
 		"mining_skill": mining_skill,
 		"mining_xp": mining_xp,
 		"ore_gathered": ore_gathered,
@@ -1470,6 +1474,8 @@ func from_dict(data: Dictionary):
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})
 	salvage_essence = data.get("salvage_essence", 0)
+	auto_salvage_enabled = data.get("auto_salvage_enabled", false)
+	auto_salvage_max_rarity = data.get("auto_salvage_max_rarity", 0)
 	mining_skill = data.get("mining_skill", 1)
 	mining_xp = data.get("mining_xp", 0)
 	ore_gathered = data.get("ore_gathered", 0)

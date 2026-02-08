@@ -1196,6 +1196,9 @@ const TRICKSTER_ABILITY_SLOTS = [
 ]
 
 func _ready():
+	# Set window title with version
+	DisplayServer.window_set_title("Phantasia Revival v" + get_version())
+
 	# Load keybind configuration
 	_load_keybinds()
 
@@ -2454,6 +2457,15 @@ func _input(event):
 				get_viewport().set_input_as_handled()
 				return
 
+	# Handle ESC to cancel bug report mode
+	if bug_report_mode and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		bug_report_mode = false
+		input_field.placeholder_text = ""
+		display_game("[color=#808080]Bug report cancelled.[/color]")
+		update_action_bar()
+		get_viewport().set_input_as_handled()
+		return
+
 	# Handle key input for rebinding mode
 	if rebinding_action != "" and event is InputEventKey and event.pressed:
 		# Capture the key for rebinding
@@ -2807,9 +2819,9 @@ func show_login_panel():
 		# Clear confirm password field if exists
 		if confirm_password_field:
 			confirm_password_field.clear()
-		# Clear any previous status messages
+		# Clear any previous status messages and show version
 		if login_status:
-			login_status.text = ""
+			login_status.text = "v" + get_version()
 		if username_field:
 			# Populate with last used username if available
 			if last_username != "" and username_field.text == "":
@@ -4442,19 +4454,21 @@ func update_action_bar():
 		]
 	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
-		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2), Rest on slot 7 (key 3)
+		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2), Rest on slot 7 (key 3), Back on slot 8 (key 4)
 		var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 		var rest_label = "Meditate" if is_mage else "Rest"
+		var on_entrance = dungeon_data.get("current_tile", -1) == 2  # TileType.ENTRANCE = 2
+		var can_go_back = on_entrance and dungeon_data.get("floor", 1) > 1
 		current_actions = [
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
 			{"label": "S", "action_type": "local", "action_data": "dungeon_move_s", "enabled": true},
 			{"label": "W", "action_type": "local", "action_data": "dungeon_move_w", "enabled": true},
 			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
-			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": true},
+			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": on_entrance},
 			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "local", "action_data": "dungeon_rest", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Back", "action_type": "local", "action_data": "dungeon_go_back", "enabled": can_go_back},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_trade:
@@ -5192,6 +5206,8 @@ func update_action_bar():
 			# Salvage submenu - show salvage and discard options
 			var player_level = character_data.get("level", 1)
 			var threshold = max(1, player_level - 5)
+			var auto_rarity = character_data.get("auto_salvage_max_rarity", 0)
+			var auto_labels = {0: "Auto:OFF", 1: "Auto:Com", 2: "Auto:Unc", 3: "Auto:Rar"}
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
 				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
@@ -5199,7 +5215,7 @@ func update_action_bar():
 				{"label": "Consumables", "action_type": "local", "action_data": "salvage_consumables_prompt", "enabled": true},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": auto_labels[auto_rarity], "action_type": "local", "action_data": "cycle_auto_salvage", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7383,6 +7399,11 @@ func execute_local_action(action: String):
 			pending_inventory_action = ""
 			display_inventory()
 			update_action_bar()
+		"cycle_auto_salvage":
+			# Cycle: OFF(0) → Common(1) → Uncommon(2) → Rare(3) → OFF(0)
+			var current_auto = character_data.get("auto_salvage_max_rarity", 0)
+			var next_auto = (current_auto + 1) % 4
+			send_to_server({"type": "auto_salvage_settings", "max_rarity": next_auto})
 		"salvage_consumables_prompt":
 			# Mark the hotkey as pressed to prevent double-trigger
 			set_meta("hotkey_8_pressed", true)  # Slot 3 = key_action_8 in salvage mode
@@ -7890,6 +7911,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"dungeon_exit":
 			send_to_server({"type": "dungeon_exit"})
+		"dungeon_go_back":
+			send_to_server({"type": "dungeon_go_back"})
 		"dungeon_rest":
 			send_to_server({"type": "dungeon_rest"})
 		"dungeon_continue":
@@ -8160,6 +8183,12 @@ func prompt_merchant_action(action_type: String):
 	"""Prompt for merchant action selection"""
 	var inventory = character_data.get("inventory", [])
 	var equipped = character_data.get("equipped", {})
+
+	# Pre-mark held item keys to prevent double-trigger when entering item selection modes
+	for i in range(9):
+		if is_item_select_key_pressed(i):
+			set_meta("merchantkey_%d_pressed" % i, true)
+			set_meta("buykey_%d_pressed" % i, true)
 
 	match action_type:
 		"sell":
@@ -9519,7 +9548,12 @@ func _display_trade_eggs_tab(eggs: Array):
 			var steps = egg.get("steps_remaining", 0)
 			var frozen = egg.get("frozen", false)
 			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
-			display_game("  %d. %s Egg (%d steps)%s" % [i + 1, monster_type, steps, frozen_str])
+			var variant = egg.get("variant", "")
+			var variant_str = ""
+			if variant != "":
+				var rarity_info = _get_variant_rarity_info(variant)
+				variant_str = " - [color=%s]%s[/color]" % [rarity_info.color, variant]
+			display_game("  %d. %s Egg%s (%d steps)%s" % [i + 1, monster_type, variant_str, steps, frozen_str])
 	display_game("")
 
 	# Their Offer section
@@ -9533,7 +9567,12 @@ func _display_trade_eggs_tab(eggs: Array):
 			var steps = egg.get("steps_remaining", 0)
 			var frozen = egg.get("frozen", false)
 			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
-			display_game("  %d. %s Egg (%d steps)%s" % [i + 1, monster_type, steps, frozen_str])
+			var variant = egg.get("variant", "")
+			var variant_str = ""
+			if variant != "":
+				var rarity_info = _get_variant_rarity_info(variant)
+				variant_str = " - [color=%s]%s[/color]" % [rarity_info.color, variant]
+			display_game("  %d. %s Egg%s (%d steps)%s" % [i + 1, monster_type, variant_str, steps, frozen_str])
 
 func _display_trade_item_selection(inventory: Array, my_class: String):
 	"""Display inventory items for selection during trade."""
@@ -9667,6 +9706,12 @@ func open_inventory():
 	inventory_page = 0  # Reset to first page when opening
 	last_item_use_result = ""  # Clear any previous item use result
 	set_inventory_background("base")
+
+	# Mark all currently-held item keys as pressed to prevent double-trigger
+	# (e.g., pressing "2" to open Items in dungeon shouldn't also select item 2)
+	for i in range(9):
+		if is_item_select_key_pressed(i):
+			set_meta("itemkey_%d_pressed" % i, true)
 
 	# In dungeon (out of combat), auto-enter use mode for quick item access
 	if dungeon_mode and not in_combat:
@@ -12725,6 +12770,8 @@ func handle_server_message(message: Dictionary):
 			if message.has("character"):
 				character_data = message.character
 				update_player_level()
+			# Request updated player list to reflect title removal
+			send_to_server({"type": "get_player_list"})
 			update_action_bar()
 
 		"title_achieved":
@@ -13058,7 +13105,10 @@ func send_input():
 	if bug_report_mode:
 		bug_report_mode = false
 		input_field.placeholder_text = ""
-		generate_bug_report(text)
+		if text.strip_edges() == "":
+			display_game("[color=#808080]Bug report cancelled.[/color]")
+		else:
+			generate_bug_report(text)
 		return
 
 	# Commands
@@ -16174,12 +16224,13 @@ func display_eggs():
 	game_output.clear()
 
 	var eggs = character_data.get("incubating_eggs", [])
+	var egg_cap = character_data.get("egg_capacity", 3)
 
-	display_game("[color=#FFAA00]═══════ INCUBATING EGGS ═══════[/color]")
+	display_game("[color=#FFAA00]═══════ INCUBATING EGGS (%d / %d) ═══════[/color]" % [eggs.size(), egg_cap])
 	display_game("")
 
 	if eggs.size() == 0:
-		display_game("[color=#808080]No eggs incubating.[/color]")
+		display_game("[color=#808080]No eggs incubating. (0 / %d slots)[/color]" % egg_cap)
 		display_game("")
 		display_game("[color=#808080]Find companion eggs in dungeon treasure chests![/color]")
 		display_game("")
@@ -18031,6 +18082,11 @@ func open_crafting():
 		display_game("[color=#FF4444]You can only craft at Trading Posts![/color]")
 		return
 
+	# Pre-mark held item keys to prevent double-trigger into crafting selection
+	for i in range(9):
+		if is_item_select_key_pressed(i):
+			set_meta("craftkey_%d_pressed" % i, true)
+
 	crafting_mode = true
 	crafting_skill = ""
 	crafting_recipes = []
@@ -18271,6 +18327,11 @@ func handle_dungeon_list(message: Dictionary):
 		display_game("[color=#808080]No dungeons are currently available nearby.[/color]")
 		display_game("[color=#808080]Dungeons spawn at random locations - keep exploring![/color]")
 		return
+
+	# Pre-mark held item keys to prevent double-trigger into dungeon selection
+	for i in range(9):
+		if is_item_select_key_pressed(i):
+			set_meta("dungeonkey_%d_pressed" % i, true)
 
 	dungeon_list_mode = true
 	game_output.clear()
@@ -18879,6 +18940,11 @@ func handle_quest_list(message: Dictionary):
 	active_quests_display = message.get("active_quests", [])
 	var active_count = message.get("active_count", 0)
 	var max_quests = message.get("max_quests", 5)
+
+	# Pre-mark held item keys to prevent double-trigger into quest selection
+	for i in range(9):
+		if is_item_select_key_pressed(i):
+			set_meta("questkey_%d_pressed" % i, true)
 
 	quest_view_mode = true
 	update_action_bar()
