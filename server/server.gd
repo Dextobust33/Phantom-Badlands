@@ -4151,9 +4151,9 @@ func check_healer_encounter(peer_id: int) -> bool:
 	if randf() >= 0.12:
 		return false
 
-	# Trigger if player is injured (HP < 80%) or has debuffs
-	var hp_ratio = float(character.hp) / max(1, character.max_hp)
-	if hp_ratio >= 0.80 and character.persistent_buffs.size() == 0:
+	# Trigger if player is injured (HP < 80%) or has debuffs (poison/blind)
+	var hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
+	if hp_ratio >= 0.80 and character.persistent_buffs.size() == 0 and not character.poison_active and not character.blind_active:
 		return false
 
 	# Calculate heal costs based on player level (reduced 10% for economy balance)
@@ -4162,8 +4162,8 @@ func check_healer_encounter(peer_id: int) -> bool:
 	var full_heal_cost = level * 90
 	var cure_all_cost = level * 180
 
-	# Check for debuffs
-	var has_debuffs = character.persistent_buffs.size() > 0
+	# Check for debuffs (including poison and blind which are separate flags)
+	var has_debuffs = character.persistent_buffs.size() > 0 or character.poison_active or character.blind_active
 
 	# Store encounter data
 	pending_healer_encounters[peer_id] = {
@@ -4182,8 +4182,8 @@ func check_healer_encounter(peer_id: int) -> bool:
 		"cure_all_cost": cure_all_cost,
 		"has_debuffs": has_debuffs,
 		"player_gold": character.gold,
-		"current_hp": character.hp,
-		"max_hp": character.max_hp
+		"current_hp": character.current_hp,
+		"max_hp": character.get_total_max_hp()
 	})
 
 	return true
@@ -4233,13 +4233,16 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 		return
 
 	character.gold -= cost
-	heal_amount = int(character.max_hp * heal_percent / 100.0)
-	character.hp = mini(character.hp + heal_amount, character.max_hp)
+	var total_max_hp = character.get_total_max_hp()
+	heal_amount = int(total_max_hp * heal_percent / 100.0)
+	character.current_hp = mini(character.current_hp + heal_amount, total_max_hp)
 
 	var msg = "[color=#00FF00]The Healer channels their magic. You are healed for %d HP! (-%d gold)[/color]" % [heal_amount, cost]
 
 	if cure_debuffs:
 		character.persistent_buffs.clear()
+		character.cure_poison()
+		character.cure_blind()
 		msg += "\n[color=#00FFFF]All ailments have been purged![/color]"
 
 	send_to_peer(peer_id, {"type": "text", "message": msg})
@@ -4470,7 +4473,38 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	# Home Stone selection: if egg/equipment needs player choice, send selection instead of auto-using
 	if effect.has("home_stone"):
 		var stone_type = effect.home_stone
-		if stone_type == "egg" and character.incubating_eggs.size() > 1:
+		if stone_type == "supplies":
+			# Supplies may need selection UI - check consumable count
+			var consumables = []
+			for ci in range(character.inventory.size()):
+				var inv_item = character.inventory[ci]
+				if inv_item.get("is_consumable", false):
+					consumables.append({"index": ci, "item": inv_item})
+			if consumables.size() > 10:
+				# More than 10 consumables - need selection UI
+				if not _home_stone_pre_validate(peer_id, character, stone_type):
+					return
+				var options = []
+				for ci2 in range(consumables.size()):
+					var entry = consumables[ci2]
+					var itm = entry.item
+					var qty = itm.get("quantity", 1)
+					var qty_text = " x%d" % qty if qty > 1 else ""
+					options.append({
+						"index": ci2,
+						"inv_index": entry.index,
+						"label": "%s%s" % [itm.get("name", "Unknown"), qty_text]
+					})
+				character.set_meta("pending_home_stone_index", index)
+				send_to_peer(peer_id, {
+					"type": "home_stone_select",
+					"stone_type": "supplies",
+					"options": options,
+					"message": "[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]"
+				})
+				return
+			# 10 or fewer: fall through to normal processing
+		elif stone_type == "egg" and character.incubating_eggs.size() > 1:
 			# Multiple eggs - ask player to choose
 			if not _home_stone_pre_validate(peer_id, character, stone_type):
 				return
@@ -4494,9 +4528,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			return
 		elif stone_type == "equipment":
 			var equipped_items = []
-			for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
-				if character.equipment.has(slot) and character.equipment[slot] != null:
-					equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+				if character.equipped.has(slot) and character.equipped[slot] != null:
+					equipped_items.append({"slot": slot, "item": character.equipped[slot]})
 			if equipped_items.size() > 1:
 				# Multiple equipped - ask player to choose
 				if not _home_stone_pre_validate(peer_id, character, stone_type):
@@ -4839,49 +4873,23 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				_process_home_stone_egg(peer_id, character, 0, item_name)
 
 			"supplies":
-				# Send up to 10 consumable items to house storage
+				# Send consumable items to house storage (auto-send for <=10, >10 handled by initial interceptor)
 				var consumables = []
 				for i in range(character.inventory.size()):
 					var inv_item = character.inventory[i]
-					if drop_tables.is_consumable(inv_item):
+					if inv_item.get("is_consumable", false):
 						consumables.append({"index": i, "item": inv_item})
 				if consumables.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no consumable items to send home!"})
 					return
-				var house = persistence.get_house(account_id)
-				if house == null:
-					send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
-					return
-				var storage_capacity = persistence.get_house_storage_capacity(account_id)
-				var available_space = storage_capacity - house.storage.items.size()
-				if available_space <= 0:
-					send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
-					return
-				# Send up to 10 consumables (or available space, whichever is less)
-				var to_send = min(10, min(consumables.size(), available_space))
-				var items_to_remove = []
-				var sent_count = 0
-				for i in range(to_send):
-					var entry = consumables[i]
-					persistence.add_item_to_house_storage(account_id, entry.item)
-					items_to_remove.append(entry.index)
-					sent_count += 1
-				# Remove items in reverse order to maintain indices
-				items_to_remove.sort()
-				items_to_remove.reverse()
-				for idx in items_to_remove:
-					character.inventory.remove_at(idx)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]The %s glows and %d supplies vanish in a flash of light![/color]\n[color=#00FF00]Items safely stored at your house![/color]" % [item_name, sent_count]
-				})
+				_process_home_stone_supplies(peer_id, character, consumables, item_name)
 
 			"equipment":
 				# Send one equipped item to house storage (single equipped auto-selects)
 				var equipped_items = []
-				for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
-					if character.equipment.has(slot) and character.equipment[slot] != null:
-						equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+				for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						equipped_items.append({"slot": slot, "item": character.equipped[slot]})
 				if equipped_items.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no equipment to send home!"})
 					return
@@ -4980,10 +4988,41 @@ func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name:
 		"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#00FF00]A newborn %s companion has been sent to your Sanctuary![/color]" % [item_name, egg.monster_type, egg.companion_name]
 	})
 
+func _process_home_stone_supplies(peer_id: int, character, consumables: Array, item_name: String):
+	"""Process sending consumable items to house storage via Home Stone"""
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+		return
+	var storage_capacity = persistence.get_house_storage_capacity(account_id)
+	var available_space = storage_capacity - house.storage.items.size()
+	if available_space <= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+		return
+	# Send up to 10 consumables (or available space, whichever is less)
+	var to_send = min(10, min(consumables.size(), available_space))
+	var items_to_remove = []
+	var sent_count = 0
+	for i in range(to_send):
+		var entry = consumables[i]
+		persistence.add_item_to_house_storage(account_id, entry.item)
+		items_to_remove.append(entry.index)
+		sent_count += 1
+	# Remove items in reverse order to maintain indices
+	items_to_remove.sort()
+	items_to_remove.reverse()
+	for idx in items_to_remove:
+		character.inventory.remove_at(idx)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FFFF]The %s glows and %d supplies vanish in a flash of light![/color]\n[color=#00FF00]Items safely stored at your house![/color]" % [item_name, sent_count]
+	})
+
 func _process_home_stone_equipment(peer_id: int, character, slot_name: String, item_name: String):
 	"""Process sending equipped item to house storage via Home Stone"""
 	var account_id = peers[peer_id].account_id
-	if not character.equipment.has(slot_name) or character.equipment[slot_name] == null:
+	if not character.equipped.has(slot_name) or character.equipped[slot_name] == null:
 		send_to_peer(peer_id, {"type": "error", "message": "No equipment in that slot!"})
 		return
 	var house = persistence.get_house(account_id)
@@ -4994,9 +5033,9 @@ func _process_home_stone_equipment(peer_id: int, character, slot_name: String, i
 	if house.storage.items.size() >= storage_capacity:
 		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
 		return
-	var equip_item = character.equipment[slot_name]
+	var equip_item = character.equipped[slot_name]
 	persistence.add_item_to_house_storage(account_id, equip_item)
-	character.equipment[slot_name] = null
+	character.equipped[slot_name] = null
 	character.recalculate_stats()
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -5036,14 +5075,39 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 		"equipment":
 			# Resolve slot from selection index
 			var equipped_items = []
-			for slot in ["weapon", "armor", "shield", "helmet", "boots", "gloves", "ring", "amulet"]:
-				if character.equipment.has(slot) and character.equipment[slot] != null:
-					equipped_items.append({"slot": slot, "item": character.equipment[slot]})
+			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+				if character.equipped.has(slot) and character.equipped[slot] != null:
+					equipped_items.append({"slot": slot, "item": character.equipped[slot]})
 			if selection_index < 0 or selection_index >= equipped_items.size():
 				send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment selection."})
 				return
 			var slot_name = equipped_items[selection_index].slot
 			_process_home_stone_equipment(peer_id, character, slot_name, item_name)
+		"supplies":
+			# Multi-select: client sends selection_indices array
+			var selection_indices = message.get("selection_indices", [])
+			if selection_indices.is_empty():
+				send_to_peer(peer_id, {"type": "error", "message": "No items selected."})
+				return
+			# Rebuild consumables list to resolve option indices to inventory indices
+			var consumables = []
+			for i in range(character.inventory.size()):
+				var inv_item = character.inventory[i]
+				if inv_item.get("is_consumable", false):
+					consumables.append({"index": i, "item": inv_item})
+			# Resolve selected option indices to actual inventory indices
+			var selected_consumables = []
+			for opt_idx in selection_indices:
+				var idx = int(opt_idx)
+				if idx >= 0 and idx < consumables.size():
+					selected_consumables.append(consumables[idx])
+			if selected_consumables.is_empty():
+				send_to_peer(peer_id, {"type": "error", "message": "Invalid selection."})
+				return
+			# Limit to 10
+			if selected_consumables.size() > 10:
+				selected_consumables = selected_consumables.slice(0, 10)
+			_process_home_stone_supplies(peer_id, character, selected_consumables, item_name)
 		_:
 			send_to_peer(peer_id, {"type": "error", "message": "Invalid Home Stone type."})
 			return
@@ -11158,8 +11222,11 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 		character.set_ability_cooldown(ability_id, ability.cooldown)
 
 	# Track abuse for negative abilities
-	if ability.get("is_negative", false) and target:
-		_track_title_abuse(peer_id, character, target_peer_id, target)
+	if ability.get("is_negative", false):
+		if target:
+			_track_title_abuse(peer_id, character, target_peer_id, target)
+		else:
+			_track_title_abuse_self(peer_id, character)
 
 	# Execute ability
 	_execute_title_ability(peer_id, character, ability_id, target_peer_id, target, stat_choice)
@@ -11199,6 +11266,25 @@ func _track_title_abuse(peer_id: int, character: Character, target_peer_id: int,
 
 	# Record this target
 	character.record_ability_target(target.name)
+	character.record_ability_use()
+
+	# Check for spam
+	var recent_uses = character.count_recent_ability_uses()
+	if recent_uses >= TitlesScript.ABUSE_SETTINGS.spam_threshold:
+		character.add_abuse_points(TitlesScript.ABUSE_SETTINGS.spam_points)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]Warning: Spamming abilities (+%d abuse points)[/color]" % TitlesScript.ABUSE_SETTINGS.spam_points
+		})
+
+	# Check if over threshold - lose title
+	var threshold = TitlesScript.get_abuse_threshold(character.title)
+	if character.get_abuse_points() >= threshold:
+		_revoke_title_for_abuse(peer_id, character)
+
+func _track_title_abuse_self(peer_id: int, character: Character):
+	"""Track abuse points for self-targeted negative title abilities (e.g., Collect Tribute)"""
+	character.decay_abuse_points()
 	character.record_ability_use()
 
 	# Check for spam

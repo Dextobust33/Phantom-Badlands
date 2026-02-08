@@ -823,6 +823,8 @@ var target_farm_encounters: int = 5
 var home_stone_mode: bool = false
 var home_stone_type: String = ""
 var home_stone_options: Array = []
+var home_stone_selected: Array = []  # Multi-select indices for supplies
+var home_stone_page: int = 0  # Page for supplies selection
 
 # Title system mode
 var title_mode: bool = false  # Whether in title menu
@@ -2178,7 +2180,7 @@ func _process(delta):
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
 			# Same for companions_mode - number keys 1-5 are used for companion selection
-			if (quest_log_mode or companions_mode) and i >= 5:
+			if (quest_log_mode or companions_mode or pending_blacksmith or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -4578,19 +4580,37 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif home_stone_mode:
-		# Home Stone selection - Space=Cancel, 1-N=Select
-		current_actions = [
-			{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "1-%d Select" % home_stone_options.size(), "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		if home_stone_type == "supplies":
+			# Supplies multi-select mode
+			var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
+			var has_prev = home_stone_page > 0
+			var has_next = home_stone_page < total_pages - 1
+			current_actions = [
+				{"label": "Send (%d)" % home_stone_selected.size(), "action_type": "local", "action_data": "home_stone_send_supplies", "enabled": home_stone_selected.size() > 0},
+				{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
+				{"label": "Sel All", "action_type": "local", "action_data": "home_stone_select_all", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "home_stone_prev_page", "enabled": has_prev},
+				{"label": "Next >", "action_type": "local", "action_data": "home_stone_next_page", "enabled": has_next},
+				{"label": "1-9 Toggle", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Egg/Equipment single-select mode - Space=Cancel, 1-N=Select
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % home_stone_options.size(), "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif ability_mode:
 		# Ability management mode
 		if pending_ability_action == "choose_ability":
@@ -7521,6 +7541,24 @@ func execute_local_action(action: String):
 			cancel_target_farm()
 		"home_stone_cancel":
 			_cancel_home_stone()
+		"home_stone_send_supplies":
+			_confirm_home_stone_supplies()
+		"home_stone_select_all":
+			_select_all_home_stone_supplies()
+			update_action_bar()
+		"home_stone_prev_page":
+			if home_stone_page > 0:
+				home_stone_page -= 1
+				game_output.clear()
+				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
+				_display_home_stone_options()
+		"home_stone_next_page":
+			var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
+			if home_stone_page < total_pages - 1:
+				home_stone_page += 1
+				game_output.clear()
+				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
+				_display_home_stone_options()
 		# Ability management actions
 		"abilities":
 			enter_ability_mode()
@@ -9977,14 +10015,14 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 	return ""
 
 func _is_consumable_type(item_type: String) -> bool:
-	"""Check if an item type is a consumable (potion, scroll, crafted consumable, etc.)"""
+	"""Check if an item type is a consumable (potion, scroll, crafted consumable, home stone, etc.)"""
 	return (item_type == "consumable" or  # Crafted consumables (Enchanted Kindling, etc.)
 			item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
-			item_type == "soul_gem")
+			item_type == "soul_gem" or item_type.begins_with("home_stone_"))
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
@@ -12077,6 +12115,29 @@ func handle_server_message(message: Dictionary):
 					elif pending_inventory_action == "viewing_materials":
 						# Materials view - don't redisplay inventory, keep showing materials
 						pass
+					elif pending_inventory_action == "use_item":
+						# Stay in use_item mode - rebuild usable items from updated inventory
+						var inv = character_data.get("inventory", [])
+						var usable_items = []
+						for ii in range(inv.size()):
+							var itm = inv[ii]
+							var itm_type = itm.get("type", "")
+							if itm.get("is_consumable", false) or "potion" in itm_type or "elixir" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("scroll_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_"):
+								usable_items.append({"index": ii, "item": itm})
+						if usable_items.is_empty():
+							# No more usable items, return to inventory
+							pending_inventory_action = ""
+							display_inventory()
+						else:
+							set_meta("usable_items", usable_items)
+							# Clamp use_page to valid range after item removal
+							var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
+							use_page = clamp(use_page, 0, total_pages - 1)
+							_display_usable_items_page()
+						update_action_bar()
+					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm"]:
+						# Player is in a sub-view — don't refresh, keep current display
+						pass
 					else:
 						display_inventory()
 						update_action_bar()
@@ -12495,8 +12556,10 @@ func handle_server_message(message: Dictionary):
 				pending_inventory_action = ""
 				selected_item_index = -1
 				home_stone_mode = true
+				home_stone_selected = []
+				home_stone_page = 0
 				# Initialize key press state for any currently-held keys
-				for i in range(home_stone_options.size()):
+				for i in range(min(9, home_stone_options.size())):
 					if is_item_select_key_pressed(i):
 						set_meta("homestonekey_%d_pressed" % i, true)
 				game_output.clear()
@@ -18954,20 +19017,60 @@ func cancel_target_farm():
 func _display_home_stone_options():
 	"""Display Home Stone selection options"""
 	display_game("")
-	var type_label = "egg" if home_stone_type == "egg" else "equipment"
-	display_game("[color=#00FFFF]===== HOME STONE (%s) =====[/color]" % type_label.to_upper())
-	display_game("[color=#808080]Select which %s to send to your Sanctuary:[/color]" % type_label)
-	display_game("")
-
-	for i in range(home_stone_options.size()):
-		var option = home_stone_options[i]
-		display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, option.get("label", "Unknown")])
-
-	display_game("")
-	display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
+	if home_stone_type == "supplies":
+		# Multi-select mode for supplies
+		var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
+		var page_label = " (Page %d/%d)" % [home_stone_page + 1, total_pages] if total_pages > 1 else ""
+		display_game("[color=#00FFFF]===== HOME STONE (SUPPLIES)%s =====[/color]" % page_label)
+		display_game("[color=#808080]Toggle items to send (max 10). Selected: %d/10[/color]" % home_stone_selected.size())
+		display_game("")
+		var start_idx = home_stone_page * 9
+		var end_idx = min(start_idx + 9, home_stone_options.size())
+		for i in range(start_idx, end_idx):
+			var option = home_stone_options[i]
+			var selected = i in home_stone_selected
+			var check = "[color=#00FF00][X][/color]" if selected else "[ ]"
+			display_game("[color=#FFFF00][%d][/color] %s %s" % [(i - start_idx) + 1, check, option.get("label", "Unknown")])
+		display_game("")
+		display_game("[color=#808080][%s]=Send  [%s]=Cancel  [%s]=Select All  [%s/%s]=Prev/Next Page[/color]" % [
+			get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
+			get_action_key_name(3), get_action_key_name(4)])
+	else:
+		var type_label = "egg" if home_stone_type == "egg" else "equipment"
+		display_game("[color=#00FFFF]===== HOME STONE (%s) =====[/color]" % type_label.to_upper())
+		display_game("[color=#808080]Select which %s to send to your Sanctuary:[/color]" % type_label)
+		display_game("")
+		for i in range(home_stone_options.size()):
+			var option = home_stone_options[i]
+			display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, option.get("label", "Unknown")])
+		display_game("")
+		display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
 
 func _select_home_stone_option(index: int):
-	"""Send selected Home Stone target to server"""
+	"""Handle Home Stone option selection (single-select for egg/equipment, toggle for supplies)"""
+	# Mark the number key as pressed on the action bar to prevent double-trigger
+	var action_slot = index + 5  # Keys 1-5 map to action slots 5-9
+	set_meta("hotkey_%d_pressed" % action_slot, true)
+
+	if home_stone_type == "supplies":
+		# Multi-select: toggle item at page-relative index
+		var abs_index = home_stone_page * 9 + index
+		if abs_index < 0 or abs_index >= home_stone_options.size():
+			return
+		if abs_index in home_stone_selected:
+			home_stone_selected.erase(abs_index)
+		elif home_stone_selected.size() < 10:
+			home_stone_selected.append(abs_index)
+		else:
+			display_game("[color=#FF0000]Maximum 10 items selected![/color]")
+			return
+		# Refresh display
+		game_output.clear()
+		display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
+		_display_home_stone_options()
+		return
+
+	# Single-select for egg/equipment
 	if index < 0 or index >= home_stone_options.size():
 		return
 	send_to_server({
@@ -18978,6 +19081,7 @@ func _select_home_stone_option(index: int):
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
+	home_stone_selected = []
 	game_output.clear()
 	update_action_bar()
 
@@ -18987,9 +19091,44 @@ func _cancel_home_stone():
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
+	home_stone_selected = []
+	home_stone_page = 0
 	game_output.clear()
 	display_game("[color=#808080]Home Stone use cancelled.[/color]")
 	update_action_bar()
+
+func _confirm_home_stone_supplies():
+	"""Send selected supplies to server"""
+	if home_stone_selected.is_empty():
+		display_game("[color=#FF0000]No items selected! Toggle items with number keys first.[/color]")
+		return
+	# Send the selected option indices to the server
+	send_to_server({
+		"type": "home_stone_select",
+		"stone_type": "supplies",
+		"selection_indices": home_stone_selected
+	})
+	home_stone_mode = false
+	home_stone_type = ""
+	home_stone_options = []
+	home_stone_selected = []
+	home_stone_page = 0
+	game_output.clear()
+	update_action_bar()
+
+func _select_all_home_stone_supplies():
+	"""Select/deselect all supplies (up to 10)"""
+	if home_stone_selected.size() == min(10, home_stone_options.size()):
+		# All selected - deselect all
+		home_stone_selected = []
+	else:
+		# Select first 10
+		home_stone_selected = []
+		for i in range(min(10, home_stone_options.size())):
+			home_stone_selected.append(i)
+	game_output.clear()
+	display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
+	_display_home_stone_options()
 
 func handle_quest_turned_in(message: Dictionary):
 	"""Handle quest turn-in result"""
