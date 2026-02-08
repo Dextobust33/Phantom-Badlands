@@ -14868,11 +14868,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.92 changes
+	display_game("[color=#00FF00]v0.9.92[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fix: Quest gem rewards now actually awarded (were silently zeroed)")
+	display_game("  • Fix: Dungeon completion now shows 'eggs full' warning when applicable")
+	display_game("  • Existing quests with missing gems will be corrected on turn-in")
+	display_game("")
+
 	# v0.9.91 changes
-	display_game("[color=#00FF00]v0.9.91[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]★ COMPANION FIXES[/color]")
+	display_game("[color=#00FFFF]v0.9.91[/color]")
 	display_game("  • Fix: Registered kennel companions no longer duplicate via corpse looting")
-	display_game("  • Fix: Corpse looting won't add companions you already own")
 	display_game("  • Kennel companions now gain XP, track battles, and show abilities")
 	display_game("")
 
@@ -14884,32 +14889,6 @@ func display_changelog():
 	# v0.9.88 changes
 	display_game("[color=#00FFFF]v0.9.88[/color]")
 	display_game("  • Data safety: backup saves, auto-recovery, admin tools")
-	display_game("")
-
-	# v0.9.87 changes
-	display_game("[color=#00FFFF]v0.9.87[/color]")
-	display_game("  [color=#FFD700]★ SANCTUARY UPGRADES[/color]")
-	display_game("  • New: Incubation Chamber upgrade — increase egg slots from 3 to 12")
-	display_game("  • Fix: Companion registration from Storage now works correctly")
-	display_game("  • Kennel now mentions registering companions from Storage")
-	display_game("  [color=#FFD700]★ HOME STONES[/color]")
-	display_game("  • Home Stones now drop in Tiers 8 and 9")
-	display_game("  • Increased Home Stone drop rates in Tiers 4-7")
-	display_game("  • Egg/Equipment Home Stones now let you choose which to send")
-	display_game("  • Warning message when egg is found but incubation is full")
-	display_game("  • Home Stones now show proper names and effects in inventory")
-	display_game("  [color=#FFD700]★ COMBAT & BALANCE[/color]")
-	display_game("  • Companions now earn XP from Outsmart victories")
-	display_game("  • Scroll of Forcefield now scales correctly by tier (was using old formula)")
-	display_game("  • Scrolls now say 'use' instead of 'drink' in combat")
-	display_game("  • All Jarl and King title abilities now increase Abuse")
-	display_game("  [color=#FFD700]★ FIXES[/color]")
-	display_game("  • Wandering Healer now appears when injured (was: only with debuffs)")
-	display_game("  • Danger areas now visible on map even when a Dungeon is present")
-	display_game("  • Salvage All no longer accidentally salvages potions")
-	display_game("  • Combat item menu page navigation (Next Pg) now works")
-	display_game("  • Consumables no longer show level — tier only")
-	display_game("  • Many consumables no longer say 'Unknown effect' when inspected")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -18294,7 +18273,9 @@ func _display_dungeon_complete(message: Dictionary):
 	var xp_reward = rewards.get("xp", 0)
 	var gold_reward = rewards.get("gold", 0)
 	var full_clear = rewards.get("full_clear", false)
-	var boss_egg = rewards.get("boss_egg", "")
+	var boss_egg_obtained = message.get("boss_egg_obtained", false)
+	var boss_egg_name = message.get("boss_egg_name", "")
+	var boss_egg_lost = message.get("boss_egg_lost_to_full", false)
 
 	game_output.clear()
 
@@ -18312,8 +18293,10 @@ func _display_dungeon_complete(message: Dictionary):
 	display_game("[color=#FFD700]Rewards:[/color]")
 	display_game("  + %d XP" % xp_reward)
 	display_game("  + %d Gold" % gold_reward)
-	if boss_egg != "":
-		display_game("[color=#FF69B4]  + %s Egg[/color]" % boss_egg)
+	if boss_egg_obtained:
+		display_game("[color=#FF69B4]  ★ %s obtained! ★[/color]" % boss_egg_name)
+	elif boss_egg_lost:
+		display_game("[color=#FF6666]  ★ %s found but eggs full! ★[/color]" % boss_egg_name)
 	display_game("")
 	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 

@@ -10500,7 +10500,10 @@ func _complete_dungeon(peer_id: int):
 		"rewards": rewards,
 		"leveled_up": xp_result.leveled_up,
 		"new_level": character.level,
-		"message": completion_msg
+		"message": completion_msg,
+		"boss_egg_obtained": boss_egg_given,
+		"boss_egg_name": boss_egg_name,
+		"boss_egg_lost_to_full": boss_egg_lost_to_full
 	})
 
 	send_location_update(peer_id)
