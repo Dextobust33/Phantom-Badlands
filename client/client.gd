@@ -5465,7 +5465,7 @@ func update_action_bar():
 			# Salvage submenu - show salvage and discard options
 			var player_level = character_data.get("level", 1)
 			var threshold = max(1, player_level - 5)
-			var auto_rarity = character_data.get("auto_salvage_max_rarity", 0)
+			var auto_rarity = int(character_data.get("auto_salvage_max_rarity", 0))
 			var auto_labels = {0: "Auto:OFF", 1: "Auto:Com", 2: "Auto:Unc", 3: "Auto:Rar"}
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
@@ -5474,7 +5474,7 @@ func update_action_bar():
 				{"label": "Consumables", "action_type": "local", "action_data": "salvage_consumables_prompt", "enabled": true},
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
-				{"label": auto_labels[auto_rarity], "action_type": "local", "action_data": "cycle_auto_salvage", "enabled": true},
+				{"label": auto_labels.get(auto_rarity, "Auto:OFF"), "action_type": "local", "action_data": "cycle_auto_salvage", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7662,7 +7662,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"cycle_auto_salvage":
 			# Cycle: OFF(0) → Common(1) → Uncommon(2) → Rare(3) → OFF(0)
-			var current_auto = character_data.get("auto_salvage_max_rarity", 0)
+			var current_auto = int(character_data.get("auto_salvage_max_rarity", 0))
 			var next_auto = (current_auto + 1) % 4
 			send_to_server({"type": "auto_salvage_settings", "max_rarity": next_auto})
 		"salvage_consumables_prompt":
@@ -7857,6 +7857,7 @@ func execute_local_action(action: String):
 				game_output.clear()
 				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 				_display_home_stone_options()
+				update_action_bar()
 		"home_stone_next_page":
 			var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
 			if home_stone_page < total_pages - 1:
@@ -7864,6 +7865,7 @@ func execute_local_action(action: String):
 				game_output.clear()
 				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 				_display_home_stone_options()
+				update_action_bar()
 		# Ability management actions
 		"abilities":
 			enter_ability_mode()
@@ -13466,6 +13468,9 @@ func _process_combat_start(message: Dictionary):
 	current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
 
 	# Sync resources from combat state for ability availability
+	if combat_state.has("player_hp"):
+		character_data["current_hp"] = combat_state.get("player_hp", 0)
+		character_data["total_max_hp"] = combat_state.get("player_max_hp", 0)
 	if combat_state.has("player_mana"):
 		character_data["current_mana"] = combat_state.get("player_mana", 0)
 		character_data["max_mana"] = combat_state.get("player_max_mana", 0)
@@ -15461,8 +15466,28 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.101 changes
+	display_game("[color=#00FF00]v0.9.101[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Improvements[/color]")
+	display_game("  • Dungeon floor sizes now vary (12x12 to 20x20, boss floors always max)")
+	display_game("  • Entrance/exit placement randomized across all 4 corners")
+	display_game("  • HP and resources now regenerate on dungeon movement (reduced rate)")
+	display_game("  • Rest results no longer overwritten by dungeon map refresh")
+	display_game("  [color=#FFD700]Companion & Home Stone Fixes[/color]")
+	display_game("  • Companion registration is now per-companion (supports multiple registered)")
+	display_game("  • Dismiss/swap no longer blocks Home Stone registration on new companion")
+	display_game("  • All registered companions return to house on death")
+	display_game("  • Home Stone (Egg) now hatches egg and sends companion to Kennel (not Storage)")
+	display_game("  • HP bar now correctly shows companion HP boost during combat")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Fix: Salvage menu null option (auto-salvage label)")
+	display_game("  • Fix: Dungeon flock monsters now properly despawn after kill")
+	display_game("  • Fix: Boss Hunt quest progress no longer double-counts (2/1)")
+	display_game("  • Fix: Home Stone (Supplies) Send button and pagination now update properly")
+	display_game("")
+
 	# v0.9.99 changes
-	display_game("[color=#00FF00]v0.9.99[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.99[/color]")
 	display_game("  [color=#FFD700]Trading Post Visual Variety[/color]")
 	display_game("  • Trading posts now color-coded by category on the map")
 	display_game("  • 10 categories: haven, market, shrine, farm, mine, tower, camp, exotic, fortress")
@@ -15502,13 +15527,6 @@ func display_changelog():
 	display_game("  • Breather after combat: monsters skip one movement turn")
 	display_game("  • Auto-salvage toggle for Common/Uncommon/Rare loot")
 	display_game("  • Healer only appears for debuffs; hotkey safety fixes")
-	display_game("")
-
-	# v0.9.96 changes
-	display_game("[color=#00FFFF]v0.9.96[/color]")
-	display_game("  • Dungeon Overhaul: BSP-generated floors, visible moving monsters")
-	display_game("  • Quests now generate dynamically each day")
-	display_game("  • Fix: Combat reconnect preserves monster HP knowledge")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -19847,10 +19865,11 @@ func _select_home_stone_option(index: int):
 		else:
 			display_game("[color=#FF0000]Maximum 10 items selected![/color]")
 			return
-		# Refresh display
+		# Refresh display and action bar (so Send button count updates)
 		game_output.clear()
 		display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 		_display_home_stone_options()
+		update_action_bar()
 		return
 
 	# Single-select for egg/equipment

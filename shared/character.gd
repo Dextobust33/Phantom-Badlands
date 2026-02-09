@@ -1480,6 +1480,17 @@ func from_dict(data: Dictionary):
 		if not active_companion.has("sub_tier"):
 			active_companion["sub_tier"] = 1
 
+	# Migrate: add house_slot to active companion from legacy using_registered_companion flag
+	if using_registered_companion and registered_companion_slot >= 0 and not active_companion.is_empty():
+		if not active_companion.has("house_slot"):
+			active_companion["house_slot"] = registered_companion_slot
+			# Also set on the matching collected companion
+			var active_id = active_companion.get("id", "")
+			for comp in collected_companions:
+				if comp.get("id", "") == active_id:
+					comp["house_slot"] = registered_companion_slot
+					break
+
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})
 	salvage_essence = data.get("salvage_essence", 0)
@@ -2407,6 +2418,13 @@ func activate_companion(gem_id: String) -> bool:
 func dismiss_companion() -> void:
 	"""Dismiss the active companion."""
 	active_companion = {}
+
+func set_companion_field(companion_id: String, field: String, value) -> void:
+	"""Set a field on a companion in collected_companions by ID."""
+	for i in range(collected_companions.size()):
+		if collected_companions[i].get("id", "") == companion_id:
+			collected_companions[i][field] = value
+			return
 
 func get_companion_bonus(bonus_type: String) -> float:
 	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus').

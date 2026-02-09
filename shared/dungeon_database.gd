@@ -1519,8 +1519,9 @@ const DUNGEON_TYPES = {
 # - floors: Array of floor grids
 # - active_players: Array of peer_ids currently inside
 
-# BSP dungeon grid size (all dungeons use 20x20 now)
-const DUNGEON_GRID_SIZE = 20
+# BSP dungeon grid size range (floors vary between min and max)
+const DUNGEON_GRID_SIZE_MIN = 12
+const DUNGEON_GRID_SIZE_MAX = 20
 
 # Monster display colors by dungeon tier
 const MONSTER_DISPLAY_COLORS = {
@@ -1554,9 +1555,10 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 	if dungeon.is_empty():
 		return {"grid": [], "rooms": [], "entrance_pos": Vector2i(1, 18), "exit_pos": Vector2i(18, 1)}
 
-	var size = DUNGEON_GRID_SIZE
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash(dungeon_id + str(floor_num))
+	# Randomize floor size for variety (boss floors always max size)
+	var size = DUNGEON_GRID_SIZE_MAX if is_boss_floor else rng.randi_range(DUNGEON_GRID_SIZE_MIN, DUNGEON_GRID_SIZE_MAX)
 
 	# Initialize grid with all walls
 	var grid = []
@@ -1567,9 +1569,11 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 		grid.append(row)
 
 	# BSP split the area (leave 1-tile border)
+	# Scale split depth with grid size: smaller grids get fewer splits
+	var max_depth = 3 if size <= 14 else 4
 	var partitions = []
 	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
-	_bsp_split(initial_rect, 0, 4, rng, partitions)
+	_bsp_split(initial_rect, 0, max_depth, rng, partitions)
 
 	# Carve rooms in each leaf partition
 	var rooms: Array = []
@@ -1590,8 +1594,15 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			var mid = rooms.size() / 2
 			_connect_rooms(grid, rooms[rooms.size() - 1], rooms[mid], rng)
 
-	# Place entrance in room closest to bottom-left
-	var entrance_room_idx = _find_closest_room(rooms, Vector2i(1, size - 2))
+	# Pick a random corner for entrance placement (adds layout variety)
+	var corners = [
+		Vector2i(1, size - 2),       # bottom-left
+		Vector2i(size - 2, size - 2), # bottom-right
+		Vector2i(1, 1),              # top-left
+		Vector2i(size - 2, 1),       # top-right
+	]
+	var entrance_corner = corners[rng.randi_range(0, 3)]
+	var entrance_room_idx = _find_closest_room(rooms, entrance_corner)
 	var entrance_pos = _get_room_center(rooms[entrance_room_idx])
 	grid[entrance_pos.y][entrance_pos.x] = TileType.ENTRANCE
 
@@ -1679,17 +1690,17 @@ static func _carve_room(grid: Array, partition: Rect2i, rng: RandomNumberGenerat
 	var room_y = partition.position.y + rng.randi_range(1, max(1, partition.size.y - room_h - 1))
 
 	# Clamp to grid bounds (leave outer border as wall)
-	room_x = clampi(room_x, 1, DUNGEON_GRID_SIZE - 2)
-	room_y = clampi(room_y, 1, DUNGEON_GRID_SIZE - 2)
-	room_w = mini(room_w, DUNGEON_GRID_SIZE - 1 - room_x)
-	room_h = mini(room_h, DUNGEON_GRID_SIZE - 1 - room_y)
+	room_x = clampi(room_x, 1, grid.size() - 2)
+	room_y = clampi(room_y, 1, grid.size() - 2)
+	room_w = mini(room_w, grid.size() - 1 - room_x)
+	room_h = mini(room_h, grid.size() - 1 - room_y)
 
 	var room = Rect2i(room_x, room_y, room_w, room_h)
 
 	# Carve the room
 	for y in range(room.position.y, room.end.y):
 		for x in range(room.position.x, room.end.x):
-			if x > 0 and x < DUNGEON_GRID_SIZE - 1 and y > 0 and y < DUNGEON_GRID_SIZE - 1:
+			if x > 0 and x < grid.size() - 1 and y > 0 and y < grid.size() - 1:
 				grid[y][x] = TileType.EMPTY
 
 	return room
@@ -1713,9 +1724,9 @@ static func _carve_h_corridor(grid: Array, x1: int, x2: int, y: int):
 	"""Carve a horizontal corridor"""
 	var start_x = mini(x1, x2)
 	var end_x = maxi(x1, x2)
-	y = clampi(y, 1, DUNGEON_GRID_SIZE - 2)
+	y = clampi(y, 1, grid.size() - 2)
 	for x in range(start_x, end_x + 1):
-		x = clampi(x, 1, DUNGEON_GRID_SIZE - 2)
+		x = clampi(x, 1, grid.size() - 2)
 		if grid[y][x] == TileType.WALL:
 			grid[y][x] = TileType.EMPTY
 
@@ -1723,9 +1734,9 @@ static func _carve_v_corridor(grid: Array, y1: int, y2: int, x: int):
 	"""Carve a vertical corridor"""
 	var start_y = mini(y1, y2)
 	var end_y = maxi(y1, y2)
-	x = clampi(x, 1, DUNGEON_GRID_SIZE - 2)
+	x = clampi(x, 1, grid.size() - 2)
 	for y in range(start_y, end_y + 1):
-		y = clampi(y, 1, DUNGEON_GRID_SIZE - 2)
+		y = clampi(y, 1, grid.size() - 2)
 		if grid[y][x] == TileType.WALL:
 			grid[y][x] = TileType.EMPTY
 

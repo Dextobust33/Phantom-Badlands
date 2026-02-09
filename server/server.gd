@@ -4526,7 +4526,7 @@ func handle_bug_report(peer_id: int, message: Dictionary):
 		print("[Bug Report] ERROR: Failed to save report from %s" % player_name)
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false):
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
@@ -4551,8 +4551,8 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			internal_state["is_dungeon_combat"] = true
 			internal_state["is_boss_fight"] = is_boss_fight
 			# Propagate monster entity ID for cleanup after flock chain
-			if pending_flocks.has(peer_id) and pending_flocks[peer_id].has("dungeon_monster_id"):
-				internal_state["dungeon_monster_id"] = pending_flocks[peer_id].dungeon_monster_id
+			if dungeon_monster_id >= 0:
+				internal_state["dungeon_monster_id"] = dungeon_monster_id
 
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s" % [monster.name, flock_count + 1, result.message]
@@ -4587,7 +4587,8 @@ func handle_continue_flock(peer_id: int):
 	var flock_count = flock_data.get("flock_count", 1)
 	var is_dungeon_combat = flock_data.get("is_dungeon_combat", false)
 	var is_boss_fight = flock_data.get("is_boss_fight", false)
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight)
+	var dungeon_mid = flock_data.get("dungeon_monster_id", -1)
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight, dungeon_mid)
 
 # ===== INVENTORY HANDLERS =====
 
@@ -5143,7 +5144,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				if character.active_companion.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
 					return
-				if character.using_registered_companion:
+				if character.active_companion.get("house_slot", -1) >= 0:
 					send_to_peer(peer_id, {"type": "error", "message": "This companion is already registered to your house!"})
 					return
 				var house = persistence.get_house(account_id)
@@ -5190,7 +5191,7 @@ func _home_stone_pre_validate(peer_id: int, character, stone_type: String) -> bo
 	return true
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
-	"""Process sending an egg to house storage via Home Stone"""
+	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""
 	var account_id = peers[peer_id].account_id
 	if egg_index < 0 or egg_index >= character.incubating_eggs.size():
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid egg selection!"})
@@ -5200,19 +5201,19 @@ func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name:
 	if house == null:
 		send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
 		return
-	var storage_capacity = persistence.get_house_storage_capacity(account_id)
-	if house.storage.items.size() >= storage_capacity:
-		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
+	var kennel_capacity = persistence.get_kennel_capacity(account_id)
+	if house.companion_kennel.companions.size() >= kennel_capacity:
+		send_to_peer(peer_id, {"type": "error", "message": "Kennel is full! Upgrade for more slots."})
 		return
 	# Remove egg from character
 	character.incubating_eggs.remove_at(egg_index)
-	# Hatch the egg into a companion
+	# Hatch the egg into a companion (matching normal _hatch_egg format)
 	var companion = {
-		"type": "stored_companion",
 		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
 		"monster_type": egg.monster_type,
-		"name": egg.companion_name,
-		"tier": egg.tier,
+		"name": egg.get("companion_name", egg.get("name", "Unknown")),
+		"tier": egg.get("tier", 1),
+		"sub_tier": egg.get("sub_tier", 1),
 		"bonuses": egg.bonuses.duplicate() if egg.has("bonuses") else {},
 		"obtained_at": int(Time.get_unix_time_from_system()),
 		"battles_fought": 0,
@@ -5223,10 +5224,10 @@ func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name:
 		"level": 1,
 		"xp": 0
 	}
-	persistence.add_item_to_house_storage(account_id, companion)
+	persistence.add_companion_to_kennel(account_id, companion)
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#00FF00]A newborn %s companion has been sent to your Sanctuary![/color]" % [item_name, egg.monster_type, egg.companion_name]
+		"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#A335EE]%s has been sent to your Sanctuary's Kennel![/color]" % [item_name, egg.get("monster_type", "Unknown"), companion.name]
 	})
 
 func _process_home_stone_supplies(peer_id: int, character, consumables: Array, item_name: String):
@@ -7249,6 +7250,10 @@ func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
 		if slot == -1:
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to register companion!"})
 			return
+		# Store house_slot on the companion itself (per-companion registration)
+		character.active_companion["house_slot"] = slot
+		character.set_companion_field(companion.get("id", ""), "house_slot", slot)
+		# Keep legacy flags for backward compat
 		character.using_registered_companion = true
 		character.registered_companion_slot = slot
 		send_to_peer(peer_id, {
@@ -7461,8 +7466,19 @@ func _award_baddie_points_on_death(peer_id: int, character: Character, account_i
 
 		print("Awarded %d Baddie Points to account %s from character %s" % [bp, account_id, character.name])
 
-	# Return registered companion to house if using one
-	if character.using_registered_companion and character.registered_companion_slot >= 0:
+	# Return ALL registered companions to house (per-companion house_slot tracking)
+	var returned_slots = {}
+	for comp in character.collected_companions:
+		var house_slot = comp.get("house_slot", -1)
+		if house_slot >= 0 and not returned_slots.has(house_slot):
+			persistence.return_companion_to_house(account_id, house_slot, comp)
+			returned_slots[house_slot] = true
+	# Also check active companion (may have newer data than collected_companions entry)
+	var active_slot = character.active_companion.get("house_slot", -1)
+	if active_slot >= 0 and not returned_slots.has(active_slot):
+		persistence.return_companion_to_house(account_id, active_slot, character.active_companion)
+	# Legacy fallback: if old character has flag but no house_slot on companions
+	if returned_slots.is_empty() and character.using_registered_companion and character.registered_companion_slot >= 0:
 		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
 
 	return bp
@@ -7480,11 +7496,15 @@ func _checkout_companion_for_character(account_id: String, character: Character,
 	companion.erase("checked_out_by")
 	companion.erase("checkout_time")
 
+	# Store house_slot on companion dict for per-companion registration tracking
+	companion["house_slot"] = slot
 	character.active_companion = companion
 	# Only add to collected_companions if not already there (prevent duplicates)
 	var already_has = false
 	for comp in character.collected_companions:
 		if comp.get("id", "") == companion.get("id", ""):
+			# Update the existing entry with house_slot
+			comp["house_slot"] = slot
 			already_has = true
 			break
 	if not already_has:
@@ -8360,14 +8380,14 @@ func _on_bounty_kill(peer_id: int, quest_id: String):
 
 	var character = characters[peer_id]
 
-	# Get the bounty name for quest progress check
+	# Get the bounty name for cleanup logging
 	var bounty_name = ""
 	if active_bounties.has(quest_id):
 		bounty_name = active_bounties[quest_id].get("name", "")
 
-	# Update quest progress using the bounty name
-	if bounty_name != "":
-		check_kill_quest_progress(peer_id, 9999, bounty_name)  # Level 9999 ensures level check passes
+	# NOTE: Quest progress is already updated by check_kill_quest_progress() in the
+	# combat victory handler (line ~2311). Do NOT call it again here or progress
+	# will be double-counted (e.g. 2/1 instead of 1/1).
 
 	# Remove from active bounties
 	if active_bounties.has(quest_id):
@@ -9133,6 +9153,7 @@ func handle_dismiss_companion(peer_id: int):
 
 	var old_companion = character.get_active_companion()
 	var companion_name = old_companion.get("name", "Unknown")
+
 	character.dismiss_companion()
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s has been dismissed.[/color]" % companion_name})
 	send_character_update(peer_id)
@@ -10610,6 +10631,21 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Move player
 	character.dungeon_x = new_x
 	character.dungeon_y = new_y
+
+	# Regenerate health and resources on dungeon movement (reduced rate vs overworld)
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
+	var dungeon_regen_percent = 0.01 * early_game_mult * house_regen_mult  # 1% per move for resources (half of overworld)
+	var dungeon_hp_regen_percent = 0.005 * early_game_mult * house_regen_mult  # 0.5% per move for health (half of overworld)
+	var total_max_hp = character.get_total_max_hp()
+	var total_max_mana = character.get_total_max_mana()
+	var total_max_stamina = character.get_total_max_stamina()
+	var total_max_energy = character.get_total_max_energy()
+	character.current_hp = min(total_max_hp, character.current_hp + max(1, int(total_max_hp * dungeon_hp_regen_percent)))
+	if not character.cloak_active:
+		character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * dungeon_regen_percent)))
+		character.current_stamina = min(total_max_stamina, character.current_stamina + max(1, int(total_max_stamina * dungeon_regen_percent)))
+		character.current_energy = min(total_max_energy, character.current_energy + max(1, int(total_max_energy * dungeon_regen_percent)))
 
 	# Process egg incubation - dungeon steps also count toward hatching
 	if character.incubating_eggs.size() > 0:
@@ -12246,7 +12282,10 @@ func handle_dungeon_rest(peer_id: int):
 		save_character(peer_id)
 		return
 
-	# Send rest result
+	# Send dungeon state FIRST (this redraws game_output), then rest result text AFTER
+	# so the rest message appears below the dungeon floor status
+	_send_dungeon_state(peer_id)
+
 	var cost_text = []
 	for mat_id in cost:
 		cost_text.append("%d %s" % [cost[mat_id], mat_id.capitalize().replace("_", " ")])
@@ -12256,7 +12295,6 @@ func handle_dungeon_rest(peer_id: int):
 		"message": "[color=#87CEEB]You rest briefly...[/color] %s [color=#808080](-%s)[/color]" % [" ".join(heal_messages), ", ".join(cost_text)]
 	})
 
-	_send_dungeon_state(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
 
@@ -13994,13 +14032,13 @@ func handle_trade_add_companion(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Companion already in trade offer."})
 		return
 
-	# Check if this is the active companion
+	# Check if this is the active companion or a registered companion
 	var companion = character.collected_companions[index]
+	if companion.get("house_slot", -1) >= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade a registered house companion."})
+		return
 	if not character.active_companion.is_empty() and character.active_companion.get("id") == companion.get("id"):
-		if character.using_registered_companion:
-			send_to_peer(peer_id, {"type": "error", "message": "Cannot trade a registered house companion."})
-		else:
-			send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
 		return
 
 	# Add to offer
@@ -14329,14 +14367,14 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	for i in range(mini(2, equipped_slots.size())):
 		contents["items"].append(character.equipped[equipped_slots[i]].duplicate(true))
 
-	# Copy active companion (full persistence) - skip registered companions (they return to kennel)
-	if not character.active_companion.is_empty() and not character.using_registered_companion:
+	# Copy active companion (full persistence) - skip registered companions (they return to house)
+	if not character.active_companion.is_empty() and character.active_companion.get("house_slot", -1) < 0:
 		contents["active_companion"] = character.active_companion.duplicate(true)
 
-	# Select one random OTHER owned companion (not the active one, not registered)
+	# Select one random OTHER owned companion (not the active one, not registered to house)
 	var other_companions = []
 	for comp in character.collected_companions:
-		if comp.get("id", "") != character.active_companion.get("id", ""):
+		if comp.get("id", "") != character.active_companion.get("id", "") and comp.get("house_slot", -1) < 0:
 			other_companions.append(comp)
 	if not other_companions.is_empty():
 		var random_idx = randi() % other_companions.size()
