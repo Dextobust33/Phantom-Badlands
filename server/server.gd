@@ -4718,19 +4718,18 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	if effect.has("home_stone"):
 		var stone_type = effect.home_stone
 		if stone_type == "supplies":
-			# Supplies may need selection UI - check consumable count
-			var consumables = []
+			# Supplies may need selection UI - check inventory item count
+			var sendable_items = []
 			for ci in range(character.inventory.size()):
 				var inv_item = character.inventory[ci]
-				if inv_item.get("is_consumable", false):
-					consumables.append({"index": ci, "item": inv_item})
-			if consumables.size() > 10:
+				sendable_items.append({"index": ci, "item": inv_item})
+			if sendable_items.size() > 10:
 				# More than 10 consumables - need selection UI
 				if not _home_stone_pre_validate(peer_id, character, stone_type):
 					return
 				var options = []
-				for ci2 in range(consumables.size()):
-					var entry = consumables[ci2]
+				for ci2 in range(sendable_items.size()):
+					var entry = sendable_items[ci2]
 					var itm = entry.item
 					var qty = itm.get("quantity", 1)
 					var qty_text = " x%d" % qty if qty > 1 else ""
@@ -5117,16 +5116,14 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				_process_home_stone_egg(peer_id, character, 0, item_name)
 
 			"supplies":
-				# Send consumable items to house storage (auto-send for <=10, >10 handled by initial interceptor)
-				var consumables = []
+				# Send inventory items to house storage (auto-send for <=10, >10 handled by initial interceptor)
+				var sendable = []
 				for i in range(character.inventory.size()):
-					var inv_item = character.inventory[i]
-					if inv_item.get("is_consumable", false):
-						consumables.append({"index": i, "item": inv_item})
-				if consumables.is_empty():
-					send_to_peer(peer_id, {"type": "error", "message": "You have no consumable items to send home!"})
+					sendable.append({"index": i, "item": character.inventory[i]})
+				if sendable.is_empty():
+					send_to_peer(peer_id, {"type": "error", "message": "You have no items to send home!"})
 					return
-				_process_home_stone_supplies(peer_id, character, consumables, item_name)
+				_process_home_stone_supplies(peer_id, character, sendable, item_name)
 
 			"equipment":
 				# Send one equipped item to house storage (single equipped auto-selects)
@@ -5230,8 +5227,8 @@ func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name:
 		"message": "[color=#00FFFF]The %s glows and your %s egg hatches in a flash of light![/color]\n[color=#A335EE]%s has been sent to your Sanctuary's Kennel![/color]" % [item_name, egg.get("monster_type", "Unknown"), companion.name]
 	})
 
-func _process_home_stone_supplies(peer_id: int, character, consumables: Array, item_name: String):
-	"""Process sending consumable items to house storage via Home Stone"""
+func _process_home_stone_supplies(peer_id: int, character, items_to_send: Array, item_name: String):
+	"""Process sending inventory items to house storage via Home Stone"""
 	var account_id = peers[peer_id].account_id
 	var house = persistence.get_house(account_id)
 	if house == null:
@@ -5242,12 +5239,12 @@ func _process_home_stone_supplies(peer_id: int, character, consumables: Array, i
 	if available_space <= 0:
 		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
 		return
-	# Send up to 10 consumables (or available space, whichever is less)
-	var to_send = min(10, min(consumables.size(), available_space))
+	# Send up to 10 items (or available space, whichever is less)
+	var to_send = min(10, min(items_to_send.size(), available_space))
 	var items_to_remove = []
 	var sent_count = 0
 	for i in range(to_send):
-		var entry = consumables[i]
+		var entry = items_to_send[i]
 		persistence.add_item_to_house_storage(account_id, entry.item)
 		items_to_remove.append(entry.index)
 		sent_count += 1
@@ -5331,25 +5328,23 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 			if selection_indices.is_empty():
 				send_to_peer(peer_id, {"type": "error", "message": "No items selected."})
 				return
-			# Rebuild consumables list to resolve option indices to inventory indices
-			var consumables = []
+			# Rebuild inventory list to resolve option indices to inventory indices
+			var all_items = []
 			for i in range(character.inventory.size()):
-				var inv_item = character.inventory[i]
-				if inv_item.get("is_consumable", false):
-					consumables.append({"index": i, "item": inv_item})
+				all_items.append({"index": i, "item": character.inventory[i]})
 			# Resolve selected option indices to actual inventory indices
-			var selected_consumables = []
+			var selected_items = []
 			for opt_idx in selection_indices:
 				var idx = int(opt_idx)
-				if idx >= 0 and idx < consumables.size():
-					selected_consumables.append(consumables[idx])
-			if selected_consumables.is_empty():
+				if idx >= 0 and idx < all_items.size():
+					selected_items.append(all_items[idx])
+			if selected_items.is_empty():
 				send_to_peer(peer_id, {"type": "error", "message": "Invalid selection."})
 				return
 			# Limit to 10
-			if selected_consumables.size() > 10:
-				selected_consumables = selected_consumables.slice(0, 10)
-			_process_home_stone_supplies(peer_id, character, selected_consumables, item_name)
+			if selected_items.size() > 10:
+				selected_items = selected_items.slice(0, 10)
+			_process_home_stone_supplies(peer_id, character, selected_items, item_name)
 		_:
 			send_to_peer(peer_id, {"type": "error", "message": "Invalid Home Stone type."})
 			return
@@ -10540,6 +10535,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	var floor_grid = dungeon_floors[instance_id][0]
 	var start_pos = _find_tile_position(floor_grid, DungeonDatabaseScript.TileType.ENTRANCE)
 
+	# Safety: ensure start is on a walkable tile
+	if start_pos.y < floor_grid.size() and start_pos.x < floor_grid[0].size():
+		if floor_grid[start_pos.y][start_pos.x] == DungeonDatabaseScript.TileType.WALL:
+			start_pos = _find_any_walkable_tile(floor_grid)
+
 	# Enter dungeon
 	character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
 
@@ -11473,6 +11473,14 @@ func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
 				return Vector2i(x, y)
 	return Vector2i(1, grid.size() - 2)  # Default to bottom-left interior
 
+func _find_any_walkable_tile(grid: Array) -> Vector2i:
+	"""Find any non-wall tile in the grid (fallback for bad entrance placement)"""
+	for y in range(1, grid.size() - 1):
+		for x in range(1, grid[y].size() - 1):
+			if grid[y][x] != DungeonDatabaseScript.TileType.WALL:
+				return Vector2i(x, y)
+	return Vector2i(grid.size() / 2, grid.size() / 2)
+
 func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	"""Start a dungeon combat encounter"""
 	if not characters.has(peer_id):
@@ -11627,6 +11635,11 @@ func _advance_dungeon_floor(peer_id: int):
 	# Find entrance on next floor
 	var next_grid = floor_grids[next_floor]
 	var entrance_pos = _find_tile_position(next_grid, DungeonDatabaseScript.TileType.ENTRANCE)
+
+	# Safety: ensure entrance is on a walkable tile (not a wall)
+	if entrance_pos.y < next_grid.size() and entrance_pos.x < next_grid[0].size():
+		if next_grid[entrance_pos.y][entrance_pos.x] == DungeonDatabaseScript.TileType.WALL:
+			entrance_pos = _find_any_walkable_tile(next_grid)
 
 	# Advance floor
 	character.advance_dungeon_floor(entrance_pos.x, entrance_pos.y)

@@ -2236,7 +2236,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not home_stone_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
@@ -2245,7 +2245,7 @@ func _process(delta):
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
 			# Same for companions_mode - number keys 1-5 are used for companion selection
-			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
+			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or home_stone_mode or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -4697,22 +4697,21 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode:
-		# In dungeon (not fighting, not waiting for continue/flock) - movement and actions
-		# Exit is on slot 5 (key 1), Inventory on slot 6 (key 2), Rest on slot 7 (key 3), Back on slot 8 (key 4)
+		# In dungeon (not fighting, not waiting for continue/flock) - movement via numpad/arrows
 		var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 		var rest_label = "Meditate" if is_mage else "Rest"
 		var on_entrance = dungeon_data.get("current_tile", -1) == 2  # TileType.ENTRANCE = 2
 		var can_go_back = on_entrance and dungeon_data.get("floor", 1) > 1
 		current_actions = [
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "N", "action_type": "local", "action_data": "dungeon_move_n", "enabled": true},
-			{"label": "S", "action_type": "local", "action_data": "dungeon_move_s", "enabled": true},
-			{"label": "W", "action_type": "local", "action_data": "dungeon_move_w", "enabled": true},
-			{"label": "E", "action_type": "local", "action_data": "dungeon_move_e", "enabled": true},
-			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": on_entrance},
 			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "local", "action_data": "dungeon_rest", "enabled": true},
+			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": on_entrance},
 			{"label": "Back", "action_type": "local", "action_data": "dungeon_go_back", "enabled": can_go_back},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_trade:
@@ -11276,6 +11275,12 @@ func _display_usable_items_page():
 	else:
 		display_game("[color=#808080]%s to use an item:[/color]" % get_selection_keys_text(items_on_page))
 
+	# Show last item use result if any (e.g., Home Stone confirmation)
+	if last_item_use_result != "":
+		display_game("")
+		display_game(last_item_use_result)
+		last_item_use_result = ""
+
 func cancel_equip_confirmation():
 	"""Cancel equip confirmation and return to equip item selection"""
 	selected_item_index = -1
@@ -13076,6 +13081,7 @@ func handle_server_message(message: Dictionary):
 				inventory_mode = false
 				pending_inventory_action = ""
 				selected_item_index = -1
+				awaiting_item_use_result = false  # Clear so confirmation text displays normally
 				home_stone_mode = true
 				home_stone_selected = []
 				home_stone_page = 0
@@ -14089,7 +14095,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif item_type == "home_stone_egg":
 		return "Send one incubating egg to your Sanctuary storage"
 	elif item_type == "home_stone_supplies":
-		return "Send up to 10 consumables to your Sanctuary storage"
+		return "Send up to 10 items to your Sanctuary storage"
 	elif item_type == "home_stone_equipment":
 		return "Send one equipped item to your Sanctuary storage"
 	elif item_type == "home_stone_companion":
@@ -15085,6 +15091,18 @@ func _on_move_button(direction: int):
 
 	var current_time = Time.get_ticks_msec() / 1000.0
 	if current_time - last_move_time >= MOVE_COOLDOWN:
+		# In dungeon mode, convert numpad directions to 4-way dungeon movement
+		if dungeon_mode:
+			var dungeon_dir = ""
+			match direction:
+				8: dungeon_dir = "n"
+				2: dungeon_dir = "s"
+				4: dungeon_dir = "w"
+				6: dungeon_dir = "e"
+			if dungeon_dir != "":
+				send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
+				last_move_time = current_time
+			return
 		send_move(direction)
 		# Don't clear trading post UI - server will notify if we leave
 		if at_trading_post:
@@ -15466,24 +15484,26 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.101 changes
-	display_game("[color=#00FF00]v0.9.101[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Dungeon Improvements[/color]")
-	display_game("  • Dungeon floor sizes now vary (12x12 to 20x20, boss floors always max)")
-	display_game("  • Entrance/exit placement randomized across all 4 corners")
-	display_game("  • HP and resources now regenerate on dungeon movement (reduced rate)")
-	display_game("  • Rest results no longer overwritten by dungeon map refresh")
-	display_game("  [color=#FFD700]Companion & Home Stone Fixes[/color]")
-	display_game("  • Companion registration is now per-companion (supports multiple registered)")
-	display_game("  • Dismiss/swap no longer blocks Home Stone registration on new companion")
-	display_game("  • All registered companions return to house on death")
-	display_game("  • Home Stone (Egg) now hatches egg and sends companion to Kennel (not Storage)")
-	display_game("  • HP bar now correctly shows companion HP boost during combat")
+	# v0.9.102 changes
+	display_game("[color=#00FF00]v0.9.102[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Improvements[/color]")
+	display_game("  • Dungeon action bar cleaned up: removed direction buttons (use numpad/movement pad)")
+	display_game("  • Movement pad buttons now work for dungeon navigation (N/S/E/W)")
+	display_game("  • Home Stone (Supplies) now sends equipment AND consumables to storage")
+	display_game("  • Home Stone (Supplies) hotkeys now work (Send, Cancel, Prev/Next, Select All)")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Salvage menu null option (auto-salvage label)")
-	display_game("  • Fix: Dungeon flock monsters now properly despawn after kill")
-	display_game("  • Fix: Boss Hunt quest progress no longer double-counts (2/1)")
-	display_game("  • Fix: Home Stone (Supplies) Send button and pagination now update properly")
+	display_game("  • Fix: Home Stone confirmation message now visible after sending items")
+	display_game("  • Fix: Dungeon floors no longer generate unplayable layouts (min size 16x16)")
+	display_game("  • Fix: Safety fallback if entrance spawns on a wall tile")
+	display_game("")
+
+	# v0.9.101 changes
+	display_game("[color=#00FFFF]v0.9.101[/color]")
+	display_game("  • Dungeon floor sizes vary, entrance placement randomized")
+	display_game("  • HP/resources regenerate on dungeon movement")
+	display_game("  • Companion registration reworked (per-companion, multiple registrations)")
+	display_game("  • Home Stone (Egg) hatches to Kennel; HP bar shows companion boost")
+	display_game("  • Fixes: salvage null, flock despawn, Boss Hunt 2/1, supplies pagination")
 	display_game("")
 
 	# v0.9.99 changes
@@ -15519,14 +15539,6 @@ func display_changelog():
 	display_game("  • Home Stone (Companion) offers Register or Kennel choice")
 	display_game("  • Fix: Companion HP/mana/crit/wisdom bonuses now work in combat")
 	display_game("  • Fix: Dungeon pack monsters properly cleared; buffs tick during rest")
-	display_game("")
-
-	# v0.9.97 changes
-	display_game("[color=#00FFFF]v0.9.97[/color]")
-	display_game("  • Must return to entrance (E) to exit a dungeon")
-	display_game("  • Breather after combat: monsters skip one movement turn")
-	display_game("  • Auto-salvage toggle for Common/Uncommon/Rare loot")
-	display_game("  • Healer only appears for debuffs; hotkey safety fixes")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

@@ -1520,7 +1520,7 @@ const DUNGEON_TYPES = {
 # - active_players: Array of peer_ids currently inside
 
 # BSP dungeon grid size range (floors vary between min and max)
-const DUNGEON_GRID_SIZE_MIN = 12
+const DUNGEON_GRID_SIZE_MIN = 16
 const DUNGEON_GRID_SIZE_MAX = 20
 
 # Monster display colors by dungeon tier
