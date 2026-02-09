@@ -74,6 +74,12 @@ var dungeon_monsters: Dictionary = {}     # instance_id -> {floor_num: [monster_
 var next_dungeon_monster_id: int = 0
 var dungeon_combat_breather: Dictionary = {}  # peer_id -> true: skip monster movement on next move after combat
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
+
+# Bounty system tracking
+var active_bounties: Dictionary = {}  # quest_id -> {x, y, monster_type, level, name, peer_id}
+# Rescue system tracking
+var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
+var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
 const DUNGEON_SPAWN_CHECK_INTERVAL = 30.0  # Check every 30 seconds
@@ -856,6 +862,13 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_blacksmith_choice(peer_id, message)
 		"healer_choice":
 			handle_healer_choice(peer_id, message)
+		"rescue_npc_response":
+			handle_rescue_npc_response(peer_id, message)
+		"engage_bounty":
+			# Player clicks Engage button at bounty location
+			if characters.has(peer_id):
+				var character = characters[peer_id]
+				_check_bounty_at_location(peer_id, character.x, character.y)
 		# Bug report handler
 		"bug_report":
 			handle_bug_report(peer_id, message)
@@ -1010,6 +1023,19 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	var house_bonuses = _get_house_bonuses_for_character(account_id)
 	if character.house_bonuses != house_bonuses:
 		character.house_bonuses = house_bonuses
+		persistence.save_character(account_id, character)
+
+	# === HP/MANA REPAIR (v0.9.98) ===
+	# Fix characters whose current_hp/mana got crushed to base max by end_combat() bug
+	# The bug capped current_hp to character.max_hp (base) instead of get_total_max_hp()
+	character.calculate_derived_stats()
+	var total_hp = character.get_total_max_hp()
+	var total_mana = character.get_total_max_mana()
+	if character.current_hp > 0 and character.current_hp <= character.max_hp and total_hp > character.max_hp * 1.5:
+		# Current HP is suspiciously at or below base max while total is much higher — likely hit by the bug
+		character.current_hp = total_hp
+		character.current_mana = total_mana
+		log_message("HP/Mana repair: %s healed to full (%d HP, %d mana)" % [char_name, total_hp, total_mana])
 		persistence.save_character(account_id, character)
 
 	# Checkout companion from house kennel if requested (and character doesn't already have one)
@@ -1784,6 +1810,10 @@ func handle_move(peer_id: int, message: Dictionary):
 	if not hotspot_check.in_hotspot and player_in_hotzone.has(peer_id):
 		player_in_hotzone.erase(peer_id)
 
+	# Check for bounty target at this location
+	if _check_bounty_at_location(peer_id, new_pos.x, new_pos.y):
+		return  # Bounty combat started
+
 	# Check for merchant first (merchants can still be encountered while cloaked)
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
 		trigger_merchant_encounter(peer_id)
@@ -2280,9 +2310,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var monster_level_for_quest = result.get("monster_level", 1)
 			check_kill_quest_progress(peer_id, monster_level_for_quest, killed_monster_name)
 
+			# Check if this was a bounty kill
+			if characters[peer_id].has_meta("bounty_quest_id"):
+				var bounty_qid = characters[peer_id].get_meta("bounty_quest_id")
+				_on_bounty_kill(peer_id, bounty_qid)
+				characters[peer_id].remove_meta("bounty_quest_id")
+
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
-			print("[DEBUG] Victory drops received: ", current_drops.size(), " items: ", current_drops)
 
 			# Check for summoner ability - force a follow-up encounter
 			var summon_next = result.get("summon_next_fight", "")
@@ -3164,8 +3199,15 @@ func send_location_update(peer_id: int):
 	# Get visible corpses for map display
 	var visible_corpses = persistence.get_visible_corpses(character.x, character.y, vision_radius)
 
+	# Gather bounty locations for this player's active bounty quests
+	var bounty_locs = []
+	for quest_id in active_bounties:
+		var b = active_bounties[quest_id]
+		if b.peer_id == peer_id:
+			bounty_locs.append({"x": b.x, "y": b.y})
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs)
 
 	# Check for gathering node at this location
 	var gathering_node = get_gathering_node_at(character.x, character.y)
@@ -3195,6 +3237,16 @@ func send_location_update(peer_id: int):
 	# Check if player is at a corpse
 	var corpse_at_location = persistence.get_corpse_at(character.x, character.y)
 
+	# Check if at a bounty location
+	var at_bounty = false
+	var bounty_quest_id_at_loc = ""
+	for qid in active_bounties:
+		var b = active_bounties[qid]
+		if b.peer_id == peer_id and b.x == character.x and b.y == character.y:
+			at_bounty = true
+			bounty_quest_id_at_loc = qid
+			break
+
 	# Send map display as description
 	send_to_peer(peer_id, {
 		"type": "location",
@@ -3211,7 +3263,9 @@ func send_location_update(peer_id: int):
 		"dungeon_info": dungeon_entrance,
 		"gathering_node": gathering_node,  # Include full node info for client
 		"at_corpse": not corpse_at_location.is_empty(),
-		"corpse_info": corpse_at_location
+		"corpse_info": corpse_at_location,
+		"at_bounty": at_bounty,
+		"bounty_quest_id": bounty_quest_id_at_loc
 	})
 
 	# Forward location/map to watchers
@@ -5086,7 +5140,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 			"companion":
 				# Send choice to player: Register or Store in Kennel
-				if character.active_companion == null:
+				if character.active_companion.is_empty():
 					send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
 					return
 				if character.using_registered_companion:
@@ -7115,7 +7169,7 @@ func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 	})
 
 func handle_house_register_companion_from_storage(peer_id: int, message: Dictionary):
-	"""Handle registering a companion from storage to the kennel"""
+	"""Handle registering a companion from storage to registered companions"""
 	if not peers.has(peer_id) or not peers[peer_id].authenticated:
 		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
 		return
@@ -7142,7 +7196,7 @@ func handle_house_register_companion_from_storage(peer_id: int, message: Diction
 	# Check if kennel has room
 	var companion_capacity = persistence.get_house_companion_capacity(account_id)
 	if house.registered_companions.companions.size() >= companion_capacity:
-		send_to_peer(peer_id, {"type": "error", "message": "Companion kennel is full! Upgrade to register more companions."})
+		send_to_peer(peer_id, {"type": "error", "message": "Registered companion slots are full! Upgrade to register more companions."})
 		return
 
 	var companion_name = item.get("name", "Unknown")
@@ -7303,11 +7357,17 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 	var house = persistence.get_house(account_id)
 	var kennel = house.companion_kennel.companions
 
-	# Validate all indices
+	# Validate all indices (range + uniqueness)
+	var seen_indices = {}
 	for idx in indices:
-		if int(idx) < 0 or int(idx) >= kennel.size():
+		var int_idx = int(idx)
+		if int_idx < 0 or int_idx >= kennel.size():
 			send_to_peer(peer_id, {"type": "error", "message": "Invalid companion selection!"})
 			return
+		if seen_indices.has(int_idx):
+			send_to_peer(peer_id, {"type": "error", "message": "Duplicate companion selected!"})
+			return
+		seen_indices[int_idx] = true
 
 	if fusion_type == "same":
 		if indices.size() != 3:
@@ -7895,6 +7955,34 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 	if result.success:
 		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post, character.name)
 
+		# For BOSS_HUNT quests with named bounty, register the bounty
+		if quest.get("type") == quest_db.QuestType.BOSS_HUNT and quest.has("bounty_name"):
+			active_bounties[quest_id] = {
+				"x": int(quest.get("bounty_x", 0)),
+				"y": int(quest.get("bounty_y", 0)),
+				"monster_type": quest.get("bounty_monster_type", ""),
+				"level": int(quest.get("bounty_level", character.level)),
+				"name": quest.get("bounty_name", ""),
+				"peer_id": peer_id,
+			}
+			log_message("Registered bounty '%s' at (%d, %d) for player %s" % [
+				quest.get("bounty_name", ""), int(quest.get("bounty_x", 0)), int(quest.get("bounty_y", 0)), character.name])
+
+		# For RESCUE quests, create a personal dungeon with rescue NPC
+		if quest.get("type") == quest_db.QuestType.RESCUE:
+			var rescue_dungeon_type = quest.get("dungeon_type", "")
+			var rescue_instance_id = _create_player_dungeon_instance(peer_id, quest_id, rescue_dungeon_type, character.level)
+			if rescue_instance_id != "":
+				if not player_dungeon_instances.has(peer_id):
+					player_dungeon_instances[peer_id] = {}
+				player_dungeon_instances[peer_id][quest_id] = rescue_instance_id
+				# Spawn rescue NPC on the designated floor
+				var rescue_floor = int(quest.get("rescue_floor", 1))
+				var rescue_npc_type = quest.get("rescue_npc_type", "merchant")
+				_spawn_rescue_npc(rescue_instance_id, rescue_floor, rescue_npc_type, quest_id)
+				log_message("Created rescue dungeon %s with %s NPC on floor %d for player %s" % [
+					rescue_instance_id, rescue_npc_type, rescue_floor, character.name])
+
 		# For DUNGEON_CLEAR quests, create a personal dungeon instance for this player
 		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
 			var dungeon_type = quest.get("dungeon_type", "")
@@ -7933,7 +8021,15 @@ func handle_quest_abandon(peer_id: int, message: Dictionary):
 	var quest = quest_db.get_quest(quest_id)
 
 	if character.abandon_quest(quest_id):
-		# Clean up personal dungeon if this was a dungeon quest
+		# Clean up bounty if this was a bounty quest
+		if active_bounties.has(quest_id):
+			active_bounties.erase(quest_id)
+		# Clean up rescue NPC data
+		if player_dungeon_instances.has(peer_id) and player_dungeon_instances[peer_id].has(quest_id):
+			var inst_id = player_dungeon_instances[peer_id][quest_id]
+			if dungeon_npcs.has(inst_id):
+				dungeon_npcs.erase(inst_id)
+		# Clean up personal dungeon if this was a dungeon/rescue quest
 		_cleanup_player_dungeon(peer_id, quest_id)
 
 		send_to_peer(peer_id, {
@@ -8202,6 +8298,310 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 
 	if not updates.is_empty():
 		save_character(peer_id)
+
+# ===== BOUNTY & RESCUE SYSTEM =====
+
+func _check_bounty_at_location(peer_id: int, x: int, y: int) -> bool:
+	"""Check if player is at a bounty location. If so, start bounty combat. Returns true if combat started."""
+	for quest_id in active_bounties:
+		var bounty = active_bounties[quest_id]
+		if bounty.peer_id == peer_id and bounty.x == x and bounty.y == y:
+			_start_bounty_combat(peer_id, quest_id, bounty)
+			return true
+	return false
+
+func _start_bounty_combat(peer_id: int, quest_id: String, bounty: Dictionary):
+	"""Start combat with a named bounty target."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var monster_type = bounty.get("monster_type", "Goblin")
+	var bounty_level = int(bounty.get("level", character.level))
+	var bounty_name = bounty.get("name", "Unknown")
+
+	# Generate monster based on type and level
+	var monster = monster_db.generate_monster_by_name(monster_type, bounty_level)
+
+	# Apply elite variant bonuses: +25% HP, +15% ATK/DEF
+	monster.max_hp = int(monster.max_hp * 1.25)
+	monster.current_hp = monster.max_hp
+	monster.strength = int(monster.strength * 1.15)
+	monster.defense = int(monster.defense * 1.15)
+
+	# Set the named bounty name
+	monster["name"] = bounty_name
+	monster["is_bounty"] = true
+
+	# Track bounty quest ID in character for combat result processing
+	character.set_meta("bounty_quest_id", quest_id)
+
+	var result = combat_mgr.start_combat(peer_id, character, monster)
+
+	if result.success:
+		var monster_display_name = result.combat_state.get("monster_name", bounty_name)
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_type)
+
+		var intro_msg = "[color=#FF4500][b]You've found your bounty target![/b][/color]\n"
+		intro_msg += "[color=#FFD700]%s stands before you, ready to fight![/color]\n\n" % bounty_name
+
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"message": intro_msg + result.message,
+			"combat_state": result.combat_state,
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true
+		})
+
+func _on_bounty_kill(peer_id: int, quest_id: String):
+	"""Called when a bounty target is killed. Advances quest progress and cleans up."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+
+	# Get the bounty name for quest progress check
+	var bounty_name = ""
+	if active_bounties.has(quest_id):
+		bounty_name = active_bounties[quest_id].get("name", "")
+
+	# Update quest progress using the bounty name
+	if bounty_name != "":
+		check_kill_quest_progress(peer_id, 9999, bounty_name)  # Level 9999 ensures level check passes
+
+	# Remove from active bounties
+	if active_bounties.has(quest_id):
+		active_bounties.erase(quest_id)
+		log_message("Bounty '%s' killed by %s" % [bounty_name, character.name])
+
+func _spawn_rescue_npc(instance_id: String, floor_num: int, npc_type: String, quest_id: String):
+	"""Spawn a rescue NPC on a specific floor of a dungeon instance."""
+	if not dungeon_floors.has(instance_id) or not dungeon_floor_rooms.has(instance_id):
+		return
+
+	var floor_grids = dungeon_floors[instance_id]
+	if floor_num >= floor_grids.size():
+		floor_num = max(0, floor_grids.size() - 2)
+
+	var grid = floor_grids[floor_num]
+	var rooms = dungeon_floor_rooms[instance_id][floor_num]
+
+	# Find a room position far from the entrance for the NPC
+	var pos = _find_npc_spawn_position(grid, rooms)
+
+	if not dungeon_npcs.has(instance_id):
+		dungeon_npcs[instance_id] = {}
+
+	dungeon_npcs[instance_id][floor_num] = {
+		"x": pos.x, "y": pos.y,
+		"npc_type": npc_type,
+		"display_char": "?",
+		"display_color": "#00FF00",
+		"quest_id": quest_id,
+		"rescued": false,
+	}
+
+func _find_npc_spawn_position(grid: Array, rooms: Array) -> Vector2i:
+	"""Find a good spawn position for a rescue NPC (preferably in a room far from entrance)."""
+	# Find entrance position
+	var entrance_pos = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+
+	# Try to find a room center far from entrance
+	var best_pos = Vector2i(1, 1)
+	var best_dist = 0.0
+
+	for room in rooms:
+		var center_x = room.get("x", 0) + room.get("width", 2) / 2
+		var center_y = room.get("y", 0) + room.get("height", 2) / 2
+		# Ensure it's a walkable tile
+		if center_y >= 0 and center_y < grid.size() and center_x >= 0 and center_x < grid[0].size():
+			if grid[center_y][center_x] != DungeonDatabaseScript.TileType.WALL:
+				var dx = center_x - entrance_pos.x
+				var dy = center_y - entrance_pos.y
+				var dist = sqrt(float(dx * dx + dy * dy))
+				if dist > best_dist:
+					best_dist = dist
+					best_pos = Vector2i(center_x, center_y)
+
+	return best_pos
+
+func _get_dungeon_npc_at(instance_id: String, floor_num: int, x: int, y: int) -> Dictionary:
+	"""Get rescue NPC at a specific position in a dungeon, or empty dict if none."""
+	if not dungeon_npcs.has(instance_id):
+		return {}
+	var floor_npc = dungeon_npcs[instance_id].get(floor_num, {})
+	if floor_npc.is_empty():
+		return {}
+	if floor_npc.x == x and floor_npc.y == y:
+		return floor_npc
+	return {}
+
+func _trigger_rescue_encounter(peer_id: int, npc: Dictionary, instance_id: String):
+	"""Trigger a rescue NPC encounter in a dungeon."""
+	if not characters.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	npc["rescued"] = true  # Mark so it won't re-trigger
+
+	pending_rescue_encounters[peer_id] = npc
+	var npc_type = npc.get("npc_type", "merchant")
+	var quest_id = npc.get("quest_id", "")
+
+	match npc_type:
+		"merchant":
+			var items = _generate_rescue_merchant_gear(character)
+			npc["merchant_items"] = items  # Store for response handler
+			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "merchant",
+				"message": "[color=#FFD700]A grateful merchant emerges from the shadows![/color]\n[color=#FFFFFF]\"Thank you for finding me! Please, take one of my finest wares as thanks!\"[/color]",
+				"items": items, "player_gold": character.gold})
+		"healer":
+			character.current_hp = character.get_total_max_hp()
+			character.current_mana = character.get_total_max_mana()
+			character.poison_active = false
+			character.blind_active = false
+			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "healer",
+				"message": "[color=#00FF00]A healer steps forward and fully restores you![/color]\n[color=#FFFFFF]\"You saved me! Let me heal all your wounds in return.\"[/color]"})
+			send_character_update(peer_id)
+		"blacksmith":
+			_repair_all_equipment(peer_id)
+			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "blacksmith",
+				"message": "[color=#FFA500]A blacksmith offers free repairs![/color]\n[color=#FFFFFF]\"I owe you my life! Let me fix all your gear for free.\"[/color]"})
+			send_character_update(peer_id)
+		"scholar":
+			var bonus_xp = int(character.xp_to_next_level() * 0.5)
+			character.add_experience(bonus_xp)
+			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "scholar",
+				"message": "[color=#9966FF]A scholar shares ancient knowledge![/color]\n[color=#FFFFFF]\"For saving me, let me share what I've learned. +%d XP!\"[/color]" % bonus_xp})
+			send_character_update(peer_id)
+		"breeder":
+			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "breeder",
+				"message": "[color=#A335EE]A companion breeder offers a rare egg![/color]\n[color=#FFFFFF]\"I was studying creatures here when I got trapped. Take this egg as thanks!\"[/color]"})
+
+	# Mark quest progress
+	if quest_id != "":
+		var update = quest_mgr.check_rescue_progress(character, quest_id)
+		if update.get("updated", false):
+			send_to_peer(peer_id, {
+				"type": "quest_progress",
+				"quest_id": quest_id,
+				"progress": update.progress,
+				"target": update.target,
+				"completed": update.completed,
+				"message": update.message
+			})
+
+	save_character(peer_id)
+
+func _generate_rescue_merchant_gear(character) -> Array:
+	"""Generate 3 class-appropriate items for rescue merchant reward."""
+	var items = []
+	var level = character.level
+	var tier = _get_tier_from_player_level(level)
+	var tier_key = "tier%d" % tier
+	for _i in range(3):
+		var item_level = maxi(1, level + randi_range(-3, 3))
+		# Try rolling from the tier drop table first
+		var rolled = drop_tables.roll_drops(tier_key, 100, item_level)
+		var item: Dictionary = {}
+		if rolled.size() > 0:
+			item = rolled[0]
+		else:
+			# Fallback - generate based on class
+			var class_type = character.class_type if character.class_type else "Fighter"
+			if class_type in ["Fighter", "Barbarian", "Paladin"]:
+				item = drop_tables.generate_fallback_item("weapon", item_level)
+			elif class_type in ["Wizard", "Sorcerer", "Sage"]:
+				item = drop_tables.generate_fallback_item("ring", item_level)
+			else:
+				item = drop_tables.generate_fallback_item("armor", item_level)
+		if not item.is_empty():
+			# Boost quality - guaranteed rare or better
+			if item.get("rarity", "common") in ["common", "uncommon"]:
+				item["rarity"] = "rare"
+			items.append(item)
+	return items
+
+func _get_tier_from_player_level(level: int) -> int:
+	"""Get monster tier from player level."""
+	if level <= 5: return 1
+	elif level <= 15: return 2
+	elif level <= 30: return 3
+	elif level <= 50: return 4
+	elif level <= 100: return 5
+	elif level <= 500: return 6
+	elif level <= 2000: return 7
+	elif level <= 5000: return 8
+	else: return 9
+
+func _repair_all_equipment(peer_id: int):
+	"""Repair all equipped items for a player (free)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	for slot in ["weapon", "shield", "helm", "chest", "legs", "ring", "amulet"]:
+		var item = character.get_equipped(slot)
+		if item and item is Dictionary and item.has("durability"):
+			var max_dur = item.get("max_durability", item.get("durability", 100))
+			item["durability"] = max_dur
+
+func handle_rescue_npc_response(peer_id: int, message: Dictionary):
+	"""Handle player's response to rescue NPC encounter."""
+	if not characters.has(peer_id):
+		return
+	if not pending_rescue_encounters.has(peer_id):
+		return
+
+	var npc = pending_rescue_encounters[peer_id]
+	var npc_type = npc.get("npc_type", "")
+	var action = message.get("action", "accept")
+	var character = characters[peer_id]
+
+	match npc_type:
+		"merchant":
+			if action == "accept":
+				var item_index = int(message.get("item_index", 0))
+				# Use stored items from the encounter trigger
+				var merchant_items = npc.get("merchant_items", [])
+				if merchant_items.is_empty():
+					merchant_items = _generate_rescue_merchant_gear(character)
+				if item_index >= 0 and item_index < merchant_items.size():
+					var selected_item = merchant_items[item_index]
+					if character.add_item(selected_item):
+						send_to_peer(peer_id, {"type": "text",
+							"message": "[color=#00FF00]You received: %s[/color]" % selected_item.get("name", "item")})
+					else:
+						send_to_peer(peer_id, {"type": "text",
+							"message": "[color=#FF4444]Your inventory is full![/color]"})
+		"breeder":
+			if action == "accept":
+				# Pick a random monster from the player's tier and generate an egg
+				var tier = _get_tier_from_player_level(character.level)
+				var tier_monsters = []
+				for monster_name in drop_tables.COMPANION_DATA:
+					if drop_tables.COMPANION_DATA[monster_name].get("tier", 0) == tier:
+						tier_monsters.append(monster_name)
+				if tier_monsters.size() > 0:
+					var chosen = tier_monsters[randi() % tier_monsters.size()]
+					var egg = drop_tables.get_egg_for_monster(chosen)
+					if not egg.is_empty():
+						character.incubating_eggs.append(egg)
+						send_to_peer(peer_id, {"type": "text",
+							"message": "[color=#A335EE]You received a %s Egg![/color]" % egg.get("monster_type", "Mystery")})
+					else:
+						send_to_peer(peer_id, {"type": "text",
+							"message": "[color=#FF4444]The breeder had no eggs to offer.[/color]"})
+				else:
+					send_to_peer(peer_id, {"type": "text",
+						"message": "[color=#FF4444]The breeder had no eggs to offer.[/color]"})
+
+	pending_rescue_encounters.erase(peer_id)
+	save_character(peer_id)
+
+	# Send dungeon state to continue exploration
+	if character.in_dungeon:
+		_send_dungeon_state(peer_id)
+	send_character_update(peer_id)
 
 # ===== WATCH/INSPECT HANDLERS =====
 
@@ -8955,7 +9355,8 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 			catch_message = "[color=#00BFFF]You found %dx %s![/color]" % [quantity, catch_result.name]
 		"treasure":
 			# Give gold based on value
-			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			var gold_variance = max(1, catch_result.value / 2)
+			var gold_amount = catch_result.value + randi() % gold_variance
 			character.gold += gold_amount
 			catch_message = "[color=#FFD700]You found a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
 		"egg":
@@ -9119,7 +9520,8 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 			character.add_crafting_material(catch_result.item_id, quantity)
 			catch_message = "[color=#32CD32]You found %dx %s growing in the cave![/color]" % [quantity, catch_result.name]
 		"treasure":
-			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			var gold_variance_m = max(1, catch_result.value / 2)
+			var gold_amount = catch_result.value + randi() % gold_variance_m
 			character.gold += gold_amount
 			catch_message = "[color=#FFD700]You unearthed a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
 		"egg":
@@ -9281,7 +9683,8 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 			character.add_crafting_material(catch_result.item_id, quantity)
 			catch_message = "[color=#9400D3]You discovered %dx %s![/color]" % [quantity, catch_result.name]
 		"treasure":
-			var gold_amount = catch_result.value + randi() % (catch_result.value / 2)
+			var gold_variance_l = max(1, catch_result.value / 2)
+			var gold_amount = catch_result.value + randi() % gold_variance_l
 			character.gold += gold_amount
 			catch_message = "[color=#FFD700]You found a %s hidden in the trunk containing %d gold![/color]" % [catch_result.name, gold_amount]
 		"egg":
@@ -10285,6 +10688,12 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		_advance_dungeon_floor(peer_id)
 		return
 
+	# Check if player walked onto a rescue NPC
+	var rescue_npc = _get_dungeon_npc_at(instance_id, character.dungeon_floor, new_x, new_y)
+	if not rescue_npc.is_empty() and not rescue_npc.get("rescued", false):
+		_trigger_rescue_encounter(peer_id, rescue_npc, instance_id)
+		return
+
 	# Check if player walked onto a monster entity
 	var stepped_monster = _get_monster_at_position(instance_id, character.dungeon_floor, new_x, new_y)
 	if stepped_monster != null:
@@ -10986,6 +11395,18 @@ func _send_dungeon_state(peer_id: int):
 					"type": m.monster_type
 				})
 
+	# Get rescue NPCs on current floor
+	var npc_list = []
+	if dungeon_npcs.has(instance_id):
+		var floor_npc = dungeon_npcs[instance_id].get(character.dungeon_floor, {})
+		if not floor_npc.is_empty() and not floor_npc.get("rescued", false):
+			npc_list.append({
+				"x": floor_npc.x, "y": floor_npc.y,
+				"char": floor_npc.get("display_char", "?"),
+				"color": floor_npc.get("display_color", "#00FF00"),
+				"npc_type": floor_npc.get("npc_type", "merchant")
+			})
+
 	var inst_sub_tier = instance.get("sub_tier", 1)
 	var display_name = DungeonDatabaseScript.get_dungeon_display_name(character.current_dungeon_type, dungeon_data.tier, inst_sub_tier)
 
@@ -11004,7 +11425,8 @@ func _send_dungeon_state(peer_id: int):
 		"entrance_y": entrance_pos.y,
 		"encounters_cleared": character.dungeon_encounters_cleared,
 		"color": dungeon_data.color,
-		"monsters": monster_list
+		"monsters": monster_list,
+		"npcs": npc_list
 	})
 
 func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
@@ -12439,6 +12861,9 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "error", "message": "Player '%s' not found online." % target_name})
 			return
 		target = characters.get(target_peer_id)
+		if target == null:
+			send_to_peer(peer_id, {"type": "error", "message": "Player is no longer online."})
+			return
 
 		# Check max target level for Mentor
 		if ability.has("max_target_level") and target.level > ability.max_target_level:
@@ -13571,13 +13996,11 @@ func handle_trade_add_companion(peer_id: int, message: Dictionary):
 
 	# Check if this is the active companion
 	var companion = character.collected_companions[index]
-	if character.active_companion != null and character.active_companion.get("id") == companion.get("id"):
-		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
-		return
-
-	# Check if this is a registered house companion
-	if character.using_registered_companion and character.active_companion != null and character.active_companion.get("id") == companion.get("id"):
-		send_to_peer(peer_id, {"type": "error", "message": "Cannot trade a registered house companion."})
+	if not character.active_companion.is_empty() and character.active_companion.get("id") == companion.get("id"):
+		if character.using_registered_companion:
+			send_to_peer(peer_id, {"type": "error", "message": "Cannot trade a registered house companion."})
+		else:
+			send_to_peer(peer_id, {"type": "error", "message": "Cannot trade your active companion. Dismiss it first."})
 		return
 
 	# Add to offer

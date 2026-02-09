@@ -612,6 +612,71 @@ func get_trading_post_by_id(post_id: String) -> Dictionary:
 		return TRADING_POSTS[post_id].duplicate(true)
 	return {}
 
+# ============================================
+# CATEGORY & COLOR SYSTEM
+# Maps each post to a visual category for map colors and art
+# ============================================
+
+const POST_CATEGORIES = {
+	# Core Zone
+	"haven": "haven", "crossroads": "market", "south_gate": "fortress",
+	"east_market": "market", "west_shrine": "shrine",
+	# Inner Zone
+	"northeast_farm": "farm", "northwest_mill": "farm", "southeast_mine": "mine",
+	"southwest_grove": "farm", "northwatch": "tower", "eastern_camp": "camp",
+	"western_refuge": "camp", "southern_watch": "tower", "northeast_tower": "tower",
+	"northwest_inn": "camp", "southeast_bridge": "fortress", "southwest_temple": "shrine",
+	# Mid Zone
+	"frostgate": "fortress", "highland_post": "tower", "eastwatch": "tower",
+	"westhold": "fortress", "southport": "fortress", "northeast_bastion": "fortress",
+	"northwest_lodge": "camp", "southeast_outpost": "camp", "southwest_camp": "camp",
+	# Mid-Outer Zone
+	"far_east_station": "camp", "far_west_haven": "haven", "deep_south_port": "fortress",
+	"high_north_peak": "tower", "northeast_frontier": "camp", "northwest_citadel": "fortress",
+	"southeast_garrison": "fortress", "southwest_fortress": "fortress",
+	# Outer Zone
+	"shadowmere": "exotic", "inferno_outpost": "mine", "voids_edge": "exotic",
+	"frozen_reach": "exotic", "abyssal_depths": "exotic", "celestial_spire": "shrine",
+	"storm_peak": "exotic", "dragons_rest": "exotic",
+	# Extreme Zone
+	"primordial_sanctum": "shrine", "nether_gate": "exotic", "eastern_terminus": "tower",
+	"western_terminus": "tower", "chaos_refuge": "exotic", "entropy_station": "exotic",
+	"oblivion_watch": "tower", "genesis_point": "shrine",
+	# World's Edge
+	"world_spine_north": "fortress", "world_spine_south": "fortress",
+	"eternal_east": "exotic", "eternal_west": "exotic",
+	"apex_northeast": "exotic", "apex_southeast": "exotic",
+	"apex_northwest": "exotic", "apex_southwest": "exotic",
+}
+
+const POST_MAP_COLORS = {
+	"haven":    {"center": "#FFD700", "edge": "#B8860B", "interior": "#8B7500"},
+	"market":   {"center": "#FF8C00", "edge": "#DAA520", "interior": "#B8860B"},
+	"shrine":   {"center": "#E6E6FA", "edge": "#9370DB", "interior": "#7B68AE"},
+	"farm":     {"center": "#90EE90", "edge": "#8FBC8F", "interior": "#6B8E6B"},
+	"mine":     {"center": "#CD853F", "edge": "#A0522D", "interior": "#8B4513"},
+	"tower":    {"center": "#B0C4DE", "edge": "#6A8EAE", "interior": "#5A7A94"},
+	"camp":     {"center": "#DEB887", "edge": "#CD853F", "interior": "#A0704B"},
+	"exotic":   {"center": "#DA70D6", "edge": "#9932CC", "interior": "#7B28A0"},
+	"fortress": {"center": "#C0C0C0", "edge": "#808080", "interior": "#606060"},
+	"default":  {"center": "#FFD700", "edge": "#D2B48C", "interior": "#C4A84B"},
+}
+
+func get_post_category(post_id: String) -> String:
+	return POST_CATEGORIES.get(post_id, "default")
+
+func get_post_map_colors(post_id: String) -> Dictionary:
+	var category = get_post_category(post_id)
+	return POST_MAP_COLORS.get(category, POST_MAP_COLORS["default"])
+
+func get_post_id_at(x: int, y: int) -> String:
+	if not _initialized:
+		_build_tile_cache()
+	var tile = Vector2i(x, y)
+	if _tile_cache.has(tile):
+		return _tile_cache[tile]
+	return ""
+
 func is_trading_post_center(x: int, y: int) -> bool:
 	"""Check if the given coordinates are the center of a Trading Post"""
 	for post_id in TRADING_POSTS:
@@ -748,6 +813,80 @@ func get_tile_position_in_post(x: int, y: int) -> String:
 				return "]"
 			return "."
 
+		6:  # Ruins shape: gaps in walls, broken corners
+			if on_top and on_left:
+				return "."
+			if on_bottom and on_right:
+				return "."
+			if on_top and on_right:
+				return "'"
+			if on_bottom and on_left:
+				return "_"
+			if on_top:
+				return "-"
+			if on_bottom:
+				if rel_x == 0:
+					return "_"
+				return " "
+			if on_left:
+				if rel_y == 0:
+					return "|"
+				return " "
+			if on_right:
+				return "|"
+			return "."
+
+		7:  # Arch shape: curved edges
+			if on_top and (on_left or on_right):
+				return "~"
+			if on_bottom and on_left:
+				return "("
+			if on_bottom and on_right:
+				return ")"
+			if on_top:
+				return "~"
+			if on_bottom:
+				return "_"
+			if on_left:
+				return "("
+			if on_right:
+				return ")"
+			return " "
+
+		8:  # Dock shape: open south wall
+			if on_top and on_left:
+				return "["
+			if on_top and on_right:
+				return "]"
+			if on_top:
+				return "="
+			if on_bottom:
+				return " "
+			if on_left:
+				return "["
+			if on_right:
+				return "]"
+			return "."
+
+		9:  # Gateway shape: ornate entrance
+			if on_top and on_left:
+				return "/"
+			if on_top and on_right:
+				return "\\"
+			if on_bottom and on_left:
+				return "\\"
+			if on_bottom and on_right:
+				return "/"
+			if on_top:
+				return "^"
+			if on_bottom:
+				return "v"
+			if on_left:
+				return "{"
+			if on_right:
+				return "}"
+			return " "
+
 	# Default fallback
 	if (on_left or on_right) and (on_top or on_bottom):
 		return "+"
@@ -758,28 +897,58 @@ func get_tile_position_in_post(x: int, y: int) -> String:
 	return " "
 
 func _get_post_shape_type(post_id: String) -> int:
-	"""Get shape type for a trading post based on its ID and zone."""
-	# Special posts get specific shapes
+	"""Get shape type for a trading post based on its ID and zone.
+	Shapes: 0=Classic, 1=Fortress, 2=Tower, 3=Camp, 4=Temple, 5=Outpost,
+	        6=Ruins, 7=Arch, 8=Dock, 9=Gateway"""
+	# Explicit assignments for thematic consistency
 	match post_id:
-		"haven":
-			return 0  # Classic - welcoming starting area
-		"crossroads":
-			return 1  # Fortress - central hub
-		"shadowmere", "dragons_rest":
-			return 1  # Fortress - major outposts
-		"primordial_sanctum", "world_spine_north", "world_spine_south":
-			return 2  # Tower - ancient/mystical places
-		"celestial_spire", "storm_peak":
-			return 2  # Tower - elevated locations
-		"southwest_temple", "west_shrine":
-			return 4  # Temple - religious sites
+		# Shape 0 - Classic: welcoming/safe
+		"haven", "far_west_haven":
+			return 0
+		# Shape 1 - Fortress: fortified/military
+		"crossroads", "shadowmere", "dragons_rest", "northeast_bastion":
+			return 1
+		"world_spine_north", "world_spine_south", "northwest_citadel":
+			return 1
+		"southeast_garrison", "southwest_fortress", "westhold":
+			return 1
+		# Shape 2 - Tower: elevated/mystical
+		"primordial_sanctum", "celestial_spire", "storm_peak", "northeast_tower":
+			return 2
+		"northwatch", "southern_watch", "highland_post", "high_north_peak":
+			return 2
+		"eastern_terminus", "western_terminus", "oblivion_watch":
+			return 2
+		# Shape 3 - Camp: rustic/temporary
+		"eastern_camp", "southwest_camp", "northwest_lodge", "western_refuge":
+			return 3
+		"northeast_frontier", "southeast_outpost", "far_east_station":
+			return 3
+		# Shape 4 - Temple: religious/sacred
+		"southwest_temple", "west_shrine", "genesis_point":
+			return 4
+		# Shape 5 - Outpost: military outpost
+		"voids_edge", "eastwatch", "inferno_outpost":
+			return 5
+		# Shape 6 - Ruins: broken/chaotic
+		"chaos_refuge", "entropy_station", "abyssal_depths":
+			return 6
+		# Shape 7 - Arch: natural/curved
+		"frozen_reach", "southwest_grove", "northwest_inn", "northwest_mill":
+			return 7
+		# Shape 8 - Dock: port/water
+		"southport", "deep_south_port", "southeast_bridge":
+			return 8
+		# Shape 9 - Gateway: ornate entrance
+		"south_gate", "nether_gate", "frostgate":
+			return 9
 
-	# Use hash of ID for variety
+	# Fallback: hash-based for any unassigned posts
 	var hash_val = 0
 	for c in post_id:
 		hash_val = (hash_val * 31 + c.unicode_at(0)) % 1000000
 
-	return hash_val % 6
+	return hash_val % 10
 
 func get_trading_posts_within_distance(x: int, y: int, max_distance: float) -> Array:
 	"""Get all Trading Posts within the specified distance"""

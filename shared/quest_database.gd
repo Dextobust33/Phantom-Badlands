@@ -3,6 +3,8 @@
 class_name QuestDatabase
 extends Node
 
+const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
+
 # Quest type constants
 enum QuestType {
 	KILL_ANY,           # 0 - Kill X monsters of any type
@@ -12,7 +14,8 @@ enum QuestType {
 	EXPLORATION,        # 4 - Visit specific coordinates/locations
 	BOSS_HUNT,          # 5 - Defeat a high-level monster
 	DUNGEON_CLEAR,      # 6 - Clear a specific dungeon type (defeat boss)
-	KILL_TIER           # 7 - Kill X monsters of tier N or higher
+	KILL_TIER,          # 7 - Kill X monsters of tier N or higher
+	RESCUE              # 8 - Rescue NPC from dungeon
 }
 
 # Quest data structure:
@@ -339,10 +342,18 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 			quest["description"] = "Kill %d monsters (Lv%d+) in hotzones." % [quest["target"], min_monster_level]
 
 		QuestType.BOSS_HUNT:
-			# Boss level scales with player level + significant progression bonus
-			var boss_level = int(target_level * (1.0 + progression_modifier * 0.5))
-			quest["target"] = boss_level
-			quest["description"] = "Defeat a powerful monster of level %d or higher." % boss_level
+			if quest.has("bounty_name"):
+				# Named bounty - target is always 1, description already set
+				pass
+			else:
+				# Legacy boss hunt format
+				var boss_level = int(target_level * (1.0 + progression_modifier * 0.5))
+				quest["target"] = boss_level
+				quest["description"] = "Defeat a powerful monster of level %d or higher." % boss_level
+
+		QuestType.RESCUE:
+			# Rescue quests don't scale - target is always 1
+			pass
 
 	# Mark quest as scaled
 	quest["player_level_scaled"] = player_level
@@ -564,6 +575,75 @@ const TIER_DUNGEONS = {
 	]
 }
 
+# Named bounty prefixes per monster type for BOSS_HUNT quests
+const BOUNTY_PREFIXES = {
+	# Tier 1
+	"Goblin": ["Grimtooth", "Skullcrusher", "Vileblood", "Ironjaw"],
+	"Giant Rat": ["Plaguebearer", "Sewerfang", "Rotclaw", "Gnashteeth"],
+	"Kobold": ["Trapmaster", "Tunnelking", "Sharpfang", "Minelord"],
+	"Skeleton": ["Bonelord", "Deathgrip", "Hollowgaze", "Duskrattle"],
+	"Wolf": ["Bloodfang", "Shadowmane", "Ironpelt", "Howlstorm"],
+	# Tier 2
+	"Orc": ["Ironhide", "Skullsplitter", "Warchief", "Goreclaw"],
+	"Hobgoblin": ["Warmaster", "Ironfist", "Bloodhelm", "Shieldbreaker"],
+	"Gnoll": ["Packmaster", "Bonecruncher", "Ragehowl", "Deathfang"],
+	"Zombie": ["Plaguelord", "Rotking", "Gravecrawler", "Deathstench"],
+	"Giant Spider": ["Webmother", "Venomfang", "Shadowweaver", "Deathsilk"],
+	"Wight": ["Soulreaver", "Doomshade", "Gravewarden", "Nightterror"],
+	"Siren": ["Deathsinger", "Wailstorm", "Heartbreaker", "Doomcaller"],
+	"Kelpie": ["Deepdrown", "Tidecrusher", "Darkwater", "Riptide"],
+	"Mimic": ["Goldmaw", "Trapjaw", "Greedmaw", "Deceiver"],
+	# Tier 3
+	"Ogre": ["Boulderfist", "Skullcrusher", "Gutripper", "Mountainbane"],
+	"Troll": ["Ironhide", "Regenerator", "Stoneblood", "Bridgebreaker"],
+	"Wraith": ["Soulstealer", "Dreadshade", "Nightwail", "Voidtouch"],
+	"Wyvern": ["Skyscourge", "Stormwing", "Venomtail", "Cloudpiercer"],
+	"Minotaur": ["Labyrinthkeeper", "Hornbreaker", "Bloodrager", "Mazewarden"],
+	"Gargoyle": ["Stonewing", "Nightguard", "Dusksentry", "Greyterror"],
+	"Harpy": ["Stormscreech", "Talonclaw", "Windshrieker", "Featherbane"],
+	"Shrieker": ["Doomcry", "Echoblight", "Sporeshroud", "Rotscream"],
+	# Tier 4
+	"Giant": ["Earthshaker", "Mountaincrusher", "Thunderstrider", "Worldbreaker"],
+	"Dragon Wyrmling": ["Flamescale", "Emberfang", "Ashwing", "Sparkjaw"],
+	"Demon": ["Hellrend", "Soulburner", "Doomcaller", "Chaosborn"],
+	"Vampire": ["Bloodlord", "Nightthirst", "Crimsonbite", "Shadowfeast"],
+	"Gryphon": ["Stormtalon", "Skyterror", "Goldenwing", "Cloudrazor"],
+	"Chimaera": ["Threemaw", "Beastlord", "Nightcurse", "Primalfury"],
+	"Succubus": ["Dreamweaver", "Soulbinder", "Heartrender", "Darkcharm"],
+	# Tier 5
+	"Ancient Dragon": ["Worldburner", "Eternaflame", "Doomscale", "Ashbringer"],
+	"Demon Lord": ["Hellsovereign", "Doomlord", "Abyssking", "Chaosreign"],
+	"Lich": ["Deathlord", "Soulkeeper", "Doomweaver", "Eternaldread"],
+	"Titan": ["Worldshaper", "Mountainking", "Eternalmight", "Doomstrider"],
+	"Balrog": ["Flametyrant", "Shadowfire", "Doomwhip", "Hellforge"],
+	"Cerberus": ["Gateguard", "Tripledevour", "Hellhound", "Soulwarden"],
+	"Jabberwock": ["Madnessmaw", "Chaosjaw", "Dreamripper", "Vorpalfoe"],
+	# Tier 6
+	"Elemental": ["Primordial", "Stormcore", "Worldspark", "Eternaforce"],
+	"Iron Golem": ["Unbreakable", "Steelknight", "Forgeborn", "Ironeterna"],
+	"Sphinx": ["Riddlelord", "Enigmabane", "Truthseeker", "Doomriddle"],
+	"Hydra": ["Thousandmaw", "Regenscourge", "Deathsprout", "Venomtide"],
+	"Phoenix": ["Eternaflame", "Ashreborn", "Dawnfire", "Solarbane"],
+	"Nazgul": ["Doomrider", "Shadowking", "Wraithlord", "Nightsovereign"],
+	# Tier 7
+	"Void Walker": ["Realmsunder", "Nullbringer", "Voidlord", "Dimensionrend"],
+	"World Serpent": ["Worldcoil", "Eternajaw", "Cosmicscale", "Realmbinder"],
+	"Elder Lich": ["Eternadread", "Deathsovereign", "Soultyrant", "Doomlich"],
+	"Primordial Dragon": ["Genesisflame", "Worldforge", "Eternascale", "Cosmicfire"],
+	# Tier 8
+	"Cosmic Horror": ["Maddener", "Stargaze", "Voidmind", "Realmblight"],
+	"Time Weaver": ["Chronobane", "Eternashift", "Paradoxlord", "Timesunder"],
+	"Death Incarnate": ["Finality", "Endwalker", "Doomabsolute", "Eternaend"],
+	# Tier 9
+	"Avatar of Chaos": ["Entropylord", "Worldunmaker", "Chaossovereign", "Realmscar"],
+	"The Nameless One": ["Voidwhisper", "Forgottenbane", "Eternasilence", "Doomless"],
+	"God Slayer": ["Divinebane", "Celestialkiller", "Pantheonfall", "Heavenrend"],
+	"Entropy": ["Decayabsolute", "Worldrot", "Eternacrumble", "Realmdeath"]
+}
+
+# NPC types for RESCUE quests with area level thresholds
+const RESCUE_NPC_TYPES = ["merchant", "healer", "blacksmith", "scholar", "breeder"]
+
 func _get_dungeon_for_area(area_level: int) -> Dictionary:
 	"""Get an appropriate dungeon type for the area level. Returns empty dict if none suitable.
 	Randomly selects from available dungeons at the appropriate tier."""
@@ -605,7 +685,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 
 	# Available quest types for cycling (weighted by what makes sense for the area)
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR]
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
 
 	# Featured quest is index 0 (seeded by date across all posts)
 	var featured_index = hash(date_str) % quest_count
@@ -676,6 +756,8 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	var dungeon_info = _get_dungeon_for_area(area_level)
 	if picked_type == QuestType.DUNGEON_CLEAR and dungeon_info.is_empty():
 		picked_type = QuestType.KILL_TIER
+	if picked_type == QuestType.RESCUE and dungeon_info.is_empty():
+		picked_type = QuestType.BOSS_HUNT
 	if picked_type == QuestType.EXPLORATION:
 		# Need a different post to explore to
 		var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
@@ -717,9 +799,39 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		QuestType.BOSS_HUNT:
 			var boss_level = min(int(effective_level * 1.1), max_monster_level)
 			boss_level = max(boss_level, area_level)
-			quest_name = "Elite Bounty"
-			quest_desc = "Track down and defeat a monster of level %d or higher." % boss_level
-			target = boss_level
+			var bounty_monster = _pick_bounty_monster_type(area_level, rng)
+			var bounty_prefix = _pick_bounty_prefix(bounty_monster, rng)
+			var bounty_name = "%s the %s" % [bounty_prefix, bounty_monster]
+			var bounty_loc = _pick_bounty_location(post_coords, rng)
+			quest_name = "Bounty: %s" % bounty_name
+			quest_desc = "Hunt %s — last spotted near (%d, %d)." % [bounty_name, bounty_loc.x, bounty_loc.y]
+			target = 1
+			extra_fields["bounty_name"] = bounty_name
+			extra_fields["bounty_monster_type"] = bounty_monster
+			extra_fields["bounty_level"] = boss_level
+			extra_fields["bounty_x"] = bounty_loc.x
+			extra_fields["bounty_y"] = bounty_loc.y
+			# Named bounties give better rewards
+			base_xp = int(base_xp * 1.5)
+			base_gold = int(base_gold * 1.5)
+			gems = max(gems + 1, int(gems * 1.5))
+
+		QuestType.RESCUE:
+			var rescue_npc = RESCUE_NPC_TYPES[rng.randi() % RESCUE_NPC_TYPES.size()]
+			var rescue_dungeon = _get_dungeon_for_area(area_level)
+			var rescue_dungeon_data = DungeonDatabaseScript.get_dungeon(rescue_dungeon.get("type", "goblin_caves")) if not rescue_dungeon.is_empty() else {}
+			var total_floors = rescue_dungeon_data.get("floors", 3) if not rescue_dungeon_data.is_empty() else 3
+			var rescue_floor = rng.randi_range(1, max(1, total_floors - 2))
+			quest_name = "Rescue the %s" % rescue_npc.capitalize()
+			quest_desc = "A %s is trapped in %s! Find them on floor %d." % [rescue_npc, rescue_dungeon.get("name", "a dungeon"), rescue_floor + 1]
+			target = 1
+			extra_fields["rescue_npc_type"] = rescue_npc
+			extra_fields["dungeon_type"] = rescue_dungeon.get("type", "")
+			extra_fields["rescue_floor"] = rescue_floor
+			# Rescue quests give enhanced rewards
+			base_xp = int(base_xp * 2.5)
+			base_gold = int(base_gold * 2.0)
+			gems = max(gems + 2, int(gems * 2.0))
 
 		QuestType.EXPLORATION:
 			var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
@@ -811,7 +923,7 @@ func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_co
 	# Advance rng state to match the index (each quest consumes some rng calls)
 	# We need to regenerate all quests up to and including this index
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR]
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
 
 	# Determine quest count (same logic as generate_dynamic_quests)
 	var area_level = max(1, int(post_distance * 0.5))
@@ -988,6 +1100,9 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	var target: int
 	var monster_type: String = ""
 	var dungeon_type: String = ""
+	var bounty_name: String = ""
+	var bounty_level: int = 0
+	var bounty_loc: Vector2i = Vector2i.ZERO
 
 	# Early tiers prefer simpler KILL_ANY quests
 	var effective_tier_type = tier if tier > 2 else 0
@@ -1022,12 +1137,19 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 			quest_name = "Danger Zone Bounty %d" % tier
 			quest_desc = "Kill %d monsters (level %d+) in hotzones within %.0f tiles." % [hotzone_kills, hotzone_min_level, hotzone_distance]
 			target = hotzone_kills
-		4:  # Boss hunt - capped to area-appropriate level
-			var boss_level = min(int(effective_level * 1.1), max_monster_level)
+		4:  # Boss hunt - named bounty at specific location
+			bounty_level = min(int(effective_level * 1.1), max_monster_level)
 			quest_type = QuestType.BOSS_HUNT
-			quest_name = "Elite Hunt %d" % tier
-			quest_desc = "Track down and defeat a monster of level %d or higher." % boss_level
-			target = boss_level
+			var b_monster = _pick_bounty_monster_type_seeded(area_level)
+			var b_prefix = _pick_bounty_prefix_seeded(b_monster)
+			bounty_name = "%s the %s" % [b_prefix, b_monster]
+			var post_coords_for_bounty = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+			bounty_loc = _pick_bounty_location_seeded(post_coords_for_bounty)
+			quest_name = "Bounty: %s" % bounty_name
+			quest_desc = "Hunt %s — last spotted near (%d, %d)." % [bounty_name, bounty_loc.x, bounty_loc.y]
+			target = 1
+			monster_type = b_monster
+			dungeon_type = ""
 		5:  # Dungeon clear quest (only if dungeons available)
 			quest_type = QuestType.DUNGEON_CLEAR
 			dungeon_type = dungeon_info.type
@@ -1076,6 +1198,13 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 		quest["monster_type"] = monster_type
 	elif quest_type == QuestType.DUNGEON_CLEAR:
 		quest["dungeon_type"] = dungeon_type
+	elif quest_type == QuestType.BOSS_HUNT:
+		# Reuse values computed in the initial generation above
+		quest["bounty_name"] = bounty_name
+		quest["bounty_monster_type"] = monster_type
+		quest["bounty_level"] = bounty_level
+		quest["bounty_x"] = bounty_loc.x
+		quest["bounty_y"] = bounty_loc.y
 
 	# Restore randomness after using seeded generation
 	randomize()
@@ -1097,3 +1226,49 @@ func is_quest_type_exploration(quest_type: int) -> bool:
 func is_quest_type_dungeon(quest_type: int) -> bool:
 	"""Check if quest type involves dungeon completion."""
 	return quest_type == QuestType.DUNGEON_CLEAR
+
+func is_quest_type_rescue(quest_type: int) -> bool:
+	"""Check if quest type involves rescuing an NPC."""
+	return quest_type == QuestType.RESCUE
+
+# ===== BOUNTY & RESCUE HELPER FUNCTIONS =====
+
+func _pick_bounty_monster_type(area_level: int, rng: RandomNumberGenerator) -> String:
+	"""Pick an area-appropriate monster type for a bounty quest using provided RNG."""
+	var tier = _get_tier_for_area_level(area_level)
+	var monsters = TIER_MONSTERS.get(tier, TIER_MONSTERS[1])
+	return monsters[rng.randi() % monsters.size()]
+
+func _pick_bounty_prefix(monster_type: String, rng: RandomNumberGenerator) -> String:
+	"""Pick a random prefix from BOUNTY_PREFIXES using provided RNG."""
+	var prefixes = BOUNTY_PREFIXES.get(monster_type, ["Dread", "Vile", "Dark", "Cursed"])
+	return prefixes[rng.randi() % prefixes.size()]
+
+func _pick_bounty_location(post_coords: Vector2i, rng: RandomNumberGenerator) -> Vector2i:
+	"""Pick a random location 15-40 tiles from the trading post using provided RNG."""
+	var distance = rng.randi_range(15, 40)
+	var angle_deg = rng.randi_range(0, 359)
+	var angle_rad = deg_to_rad(float(angle_deg))
+	var x = int(post_coords.x + cos(angle_rad) * distance)
+	var y = int(post_coords.y + sin(angle_rad) * distance)
+	return Vector2i(x, y)
+
+func _pick_bounty_monster_type_seeded(area_level: int) -> String:
+	"""Pick an area-appropriate monster type using the current global seed (for quest_id seeded generation)."""
+	var tier = _get_tier_for_area_level(area_level)
+	var monsters = TIER_MONSTERS.get(tier, TIER_MONSTERS[1])
+	return monsters[randi() % monsters.size()]
+
+func _pick_bounty_prefix_seeded(monster_type: String) -> String:
+	"""Pick a random prefix using the current global seed."""
+	var prefixes = BOUNTY_PREFIXES.get(monster_type, ["Dread", "Vile", "Dark", "Cursed"])
+	return prefixes[randi() % prefixes.size()]
+
+func _pick_bounty_location_seeded(post_coords: Vector2i) -> Vector2i:
+	"""Pick a random location 15-40 tiles from the trading post using the current global seed."""
+	var distance = 15 + randi() % 26  # 15-40
+	var angle_deg = randi() % 360
+	var angle_rad = deg_to_rad(float(angle_deg))
+	var x = int(post_coords.x + cos(angle_rad) * distance)
+	var y = int(post_coords.y + sin(angle_rad) * distance)
+	return Vector2i(x, y)

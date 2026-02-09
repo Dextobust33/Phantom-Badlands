@@ -1262,6 +1262,7 @@ func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_
 		"variant_color": variant.get("color", "#FF00FF"),
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
+		"variant_rarity": variant.get("rarity", 10),
 		"obtained_at": int(Time.get_unix_time_from_system()),
 	}
 

@@ -20,49 +20,9 @@ const POST_COLORS = {
 	"default": "#C4A484",    # Tan - generic
 }
 
-# Map trading post IDs to art categories
+# Map trading post IDs to art categories (delegates to shared POST_CATEGORIES)
 static func _get_post_category(post_id: String) -> String:
-	# Haven/Fortress type
-	if post_id in ["haven", "frostgate", "fortress_north", "fortress_south", "ironhold", "citadel", "bastion"]:
-		return "haven"
-
-	# Market/Crossroads type
-	if post_id in ["crossroads", "east_market", "trade_hub", "merchant_row", "bazaar"]:
-		return "market"
-
-	# Shrine/Temple type
-	if post_id in ["west_shrine", "shrine", "temple", "sanctuary", "primordial_sanctum", "chaos_refuge", "eternal_sanctuary"]:
-		return "shrine"
-
-	# Farm/Grove/Nature type
-	if post_id in ["northeast_farm", "southwest_grove", "grove", "farm", "forest_edge", "verdant"]:
-		return "farm"
-
-	# Mine/Forge type
-	if post_id in ["southeast_mine", "mine", "forge", "smelter", "inferno_outpost", "volcanic"]:
-		return "mine"
-
-	# Tower/Watch type
-	if post_id in ["northwatch", "southern_watch", "northeast_tower", "tower", "watchtower", "eastwatch", "westhold", "peak"]:
-		return "tower"
-
-	# Camp/Outpost type
-	if post_id in ["eastern_camp", "western_refuge", "camp", "outpost", "rest_stop", "waystation"]:
-		return "camp"
-
-	# Exotic/Mysterious type
-	if post_id in ["shadowmere", "voids_edge", "nether_gate", "void", "shadow", "chaos", "apex", "terminus"]:
-		return "exotic"
-
-	# Gate type
-	if post_id in ["south_gate", "gate", "highland_post", "southport"]:
-		return "fortress"
-
-	# Mill type
-	if post_id in ["northwest_mill", "mill"]:
-		return "farm"
-
-	return "default"
+	return TradingPostDatabase.POST_CATEGORIES.get(post_id, "default")
 
 static func get_trading_post_art(post_id: String) -> String:
 	"""Get ASCII art for a specific trading post"""

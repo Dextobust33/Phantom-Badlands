@@ -687,6 +687,17 @@ var blacksmith_trader_art: String = ""  # Persisted ASCII art for the encounter
 var pending_healer: bool = false
 var healer_costs: Dictionary = {}  # quick_heal_cost, full_heal_cost, cure_all_cost
 
+# Rescue NPC encounter states (dungeon rescue quest)
+var pending_rescue_npc: bool = false
+var rescue_npc_type: String = ""  # merchant, healer, blacksmith, scholar, breeder
+var rescue_npc_items: Array = []  # Items offered by rescue merchant
+var rescue_npc_message: String = ""  # Display message from the NPC
+var dungeon_npcs_data: Array = []  # NPC entities on current dungeon floor
+
+# Bounty tracking
+var at_bounty: bool = false
+var bounty_quest_id: String = ""
+
 # Track which action bar indices triggered actions this frame (to block item selection for same key)
 var action_triggered_this_frame: Array = []
 
@@ -2088,6 +2099,19 @@ func _process(delta):
 				else:
 					set_meta("blacksmithkey_%d_pressed" % i, false)
 
+	# Rescue merchant item selection with number keys (1-3)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and pending_rescue_npc and rescue_npc_type == "merchant":
+		for i in range(min(3, rescue_npc_items.size())):
+			var regular_key_pressed = is_item_select_key_pressed(i)
+			var numpad_key_pressed = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+			if regular_key_pressed or numpad_key_pressed:
+				if not get_meta("rescuekey_%d_pressed" % i, false):
+					set_meta("rescuekey_%d_pressed" % i, true)
+					send_to_server({"type": "rescue_npc_response", "action": "accept", "item_index": i})
+					_finish_rescue_npc_encounter()
+			else:
+				set_meta("rescuekey_%d_pressed" % i, false)
+
 	# NOTE: Inventory page navigation removed from here - now handled via action bar buttons
 	# to avoid conflicts with Sort (key 2) and Salvage (key 3) action bar buttons
 
@@ -2221,7 +2245,7 @@ func _process(delta):
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
 			# Same for companions_mode - number keys 1-5 are used for companion selection
-			if (quest_log_mode or companions_mode or pending_blacksmith or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
+			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -2350,7 +2374,7 @@ func _process(delta):
 				last_move_time = current_time
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer:
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -4263,7 +4287,7 @@ func update_action_bar():
 					{"label": "Next >", "action_type": "local", "action_data": "house_kennel_next", "enabled": house_kennel_page < kennel_max_page},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "Release", "action_type": "local", "action_data": "house_kennel_release_start", "enabled": kennel_companions.size() > 0},
-					{"label": "Register", "action_type": "local", "action_data": "house_kennel_register_start", "enabled": kennel_companions.size() > 0},
+					{"label": "Register", "action_type": "local", "action_data": "house_kennel_register_start", "enabled": kennel_companions.size() > 0 and house_data.get("registered_companions", {}).get("companions", []).size() < _get_house_companion_capacity()},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4505,6 +4529,50 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif pending_rescue_npc:
+		# Rescue NPC encounter in dungeon
+		if rescue_npc_type == "merchant" and rescue_npc_items.size() > 0:
+			# Merchant - select an item (1-3)
+			current_actions = [
+				{"label": "Decline", "action_type": "local", "action_data": "rescue_npc_decline", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-3=Item", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif rescue_npc_type == "breeder":
+			# Breeder - accept egg or decline
+			current_actions = [
+				{"label": "Decline", "action_type": "local", "action_data": "rescue_npc_decline", "enabled": true},
+				{"label": "Accept", "action_type": "local", "action_data": "rescue_npc_accept", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Healer/blacksmith/scholar - auto-applied, just acknowledge
+			current_actions = [
+				{"label": "Continue", "action_type": "local", "action_data": "rescue_npc_continue", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif fishing_mode:
 		# Fishing minigame
 		if fishing_phase == "waiting":
@@ -5129,6 +5197,21 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_companion_action == "inspect_select":
+			# Selecting which companion to inspect
+			var page_count_inspect = min(COMPANIONS_PAGE_SIZE, collected.size() - companions_page * COMPANIONS_PAGE_SIZE) if collected.size() > 0 else 0
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "inspect_back", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "companions_prev", "enabled": has_prev},
+				{"label": "Next >", "action_type": "local", "action_data": "companions_next", "enabled": has_next},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-%d Select" % page_count_inspect, "action_type": "none", "action_data": "", "enabled": false} if page_count_inspect > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_companion_action == "inspect":
 			# Inspecting a companion's details
 			current_actions = [
@@ -5650,6 +5733,8 @@ func update_action_bar():
 			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
 		elif at_fire_mountain:
 			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
+		elif at_bounty:
+			fifth_action = {"label": "Engage!", "action_type": "local", "action_data": "engage_bounty", "enabled": true}
 		elif at_dungeon_entrance:
 			fifth_action = {"label": "Dungeon", "action_type": "local", "action_data": "enter_dungeon", "enabled": true}
 		elif at_corpse:
@@ -7810,6 +7895,10 @@ func execute_local_action(action: String):
 		"start_logging":
 			# Start the logging minigame
 			start_logging()
+		"engage_bounty":
+			# Engage bounty target at this location
+			if at_bounty and bounty_quest_id != "":
+				send_to_server({"type": "engage_bounty", "quest_id": bounty_quest_id})
 		"enter_dungeon":
 			# Enter a dungeon at this location
 			enter_dungeon_at_location()
@@ -8037,6 +8126,16 @@ func execute_local_action(action: String):
 			send_healer_choice("full")
 		"healer_cure_all":
 			send_healer_choice("cure_all")
+		# Rescue NPC encounter actions
+		"rescue_npc_decline":
+			_finish_rescue_npc_encounter()
+		"rescue_npc_accept":
+			# Breeder egg accept
+			send_to_server({"type": "rescue_npc_response", "action": "accept"})
+			_finish_rescue_npc_encounter()
+		"rescue_npc_continue":
+			# Healer/blacksmith/scholar - already applied, just dismiss
+			_finish_rescue_npc_encounter()
 		# Fishing actions (pattern input is handled in _input, only cancel uses action bar)
 		"fishing_cancel":
 			end_fishing(false, "You stopped fishing.")
@@ -12059,6 +12158,9 @@ func handle_server_message(message: Dictionary):
 
 		"house_data":
 			house_data = message.get("house", {})
+			var server_upgrade_costs = message.get("upgrade_costs", {})
+			if not server_upgrade_costs.is_empty():
+				house_data["upgrade_costs"] = server_upgrade_costs
 			house_mode = "main"
 			pending_house_action = ""
 			house_storage_page = 0
@@ -12076,6 +12178,9 @@ func handle_server_message(message: Dictionary):
 		"house_update":
 			# Update house data without changing UI state
 			house_data = message.get("house", {})
+			var update_upgrade_costs = message.get("upgrade_costs", {})
+			if not update_upgrade_costs.is_empty():
+				house_data["upgrade_costs"] = update_upgrade_costs
 			if game_state == GameState.HOUSE_SCREEN:
 				if house_mode == "storage":
 					display_house_storage()
@@ -12316,8 +12421,12 @@ func handle_server_message(message: Dictionary):
 			# Display corpse info when arriving at a corpse
 			if at_corpse and not was_at_corpse and not corpse_info.is_empty():
 				_display_corpse_info()
+			# Update bounty status
+			var was_at_bounty = at_bounty
+			at_bounty = message.get("at_bounty", false)
+			bounty_quest_id = message.get("bounty_quest_id", "")
 			# Update action bar if any location status changed
-			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_corpse != at_corpse:
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_corpse != at_corpse or was_at_bounty != at_bounty:
 				update_action_bar()
 
 		"chat":
@@ -12565,8 +12674,11 @@ func handle_server_message(message: Dictionary):
 					update_action_bar()
 				# Refresh companions display if in companions mode (after activation/dismissal)
 				if companions_mode:
-					display_companions()
-					update_action_bar()
+					if pending_companion_action in ["inspect", "inspect_select"]:
+						pass  # Don't redisplay - keep showing inspection view
+					else:
+						display_companions()
+						update_action_bar()
 
 		"server_broadcast":
 			# Server admin broadcast message
@@ -13223,6 +13335,9 @@ func handle_server_message(message: Dictionary):
 			pending_healer = false
 			healer_costs = {}
 			update_action_bar()
+
+		"rescue_npc_encounter":
+			handle_rescue_npc_encounter(message)
 
 		"fish_start":
 			handle_fish_start(message)
@@ -15346,24 +15461,39 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.98 changes
-	display_game("[color=#00FF00]v0.9.98[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Companion Kennel & Fusion[/color]")
-	display_game("  • New Kennel tile (K) in your Sanctuary — store companions for fusion")
-	display_game("  • Fusion Station (F) — fuse 3 same-type companions into 1 higher sub-tier")
-	display_game("  • Mixed T9 fusion — fuse 8 sub-tier 8 companions into a random T9")
-	display_game("  • Kennel upgrades: expand from 2 to 20 slots (6 upgrade levels)")
-	display_game("  • Home Stone (Companion) now offers Register or Kennel choice")
-	display_game("  • Unregistering a companion sends it to kennel instead of storage")
-	display_game("  [color=#FFD700]Companion Bonus Fixes[/color]")
-	display_game("  • Fix: HP bonus now actually boosts max HP during combat")
-	display_game("  • Fix: Mana bonus now actually boosts max mana during combat")
-	display_game("  • Fix: Crit damage base bonus now applied (was only from abilities)")
-	display_game("  • Fix: Wisdom bonus now reduces poison/curse/drain resist checks")
-	display_game("  • Companion bonuses now display effective values (variant × sub-tier)")
+	# v0.9.99 changes
+	display_game("[color=#00FF00]v0.9.99[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Trading Post Visual Variety[/color]")
+	display_game("  • Trading posts now color-coded by category on the map")
+	display_game("  • 10 categories: haven, market, shrine, farm, mine, tower, camp, exotic, fortress")
+	display_game("  • 4 new border shapes: ruins, arch, dock, gateway (10 total)")
+	display_game("  • Each post shows its unique border shape on the overworld map")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Dungeon pack monsters now properly cleared after flock kills")
-	display_game("  • Fix: Poison/blind/buffs now tick during rest, meditate, and dungeon movement")
+	display_game("  • Fix: Sanctuary upgrade costs now properly saved from server")
+	display_game("  • Fix: Kennel capacity corrected (30-500 slots across 9 upgrade levels)")
+	display_game("  • Fix: Companion slots max increased from 3 to 8")
+	display_game("  • Fix: Boss Hunt quests no longer generate duplicate bounties")
+	display_game("  • Fix: Fusion no longer exploitable with duplicate companion indices")
+	display_game("  • Fix: Companion XP formula corrected, max level now 10000")
+	display_game("  • Fix: Companion inspection no longer wiped by server updates")
+	display_game("  • Fix: Fused companions now have proper variant_rarity field")
+	display_game("  • Fix: Division by zero in treasure catch calculations")
+	display_game("  • Fix: Null checks for companion and ability targets")
+	display_game("  [color=#FFD700]QOL Improvements[/color]")
+	display_game("  • Companion bonuses shown in list and kennel views")
+	display_game("  • Quest rewards now color-coded (XP=blue, Gold=gold, Gems=cyan)")
+	display_game("  • Kennel Register button disabled when registered slots are full")
+	display_game("  • Dungeon entry dialog now shows sub-tier (Tier X-Y)")
+	display_game("  • Help page updated with kennel, fusion, and sub-tier docs")
+	display_game("")
+
+	# v0.9.98 changes
+	display_game("[color=#00FFFF]v0.9.98[/color]")
+	display_game("  • Companion Kennel & Fusion Station in Sanctuary")
+	display_game("  • Fuse 3 same-type companions for higher sub-tier")
+	display_game("  • Home Stone (Companion) offers Register or Kennel choice")
+	display_game("  • Fix: Companion HP/mana/crit/wisdom bonuses now work in combat")
+	display_game("  • Fix: Dungeon pack monsters properly cleared; buffs tick during rest")
 	display_game("")
 
 	# v0.9.97 changes
@@ -15376,25 +15506,9 @@ func display_changelog():
 
 	# v0.9.96 changes
 	display_game("[color=#00FFFF]v0.9.96[/color]")
-	display_game("  [color=#FFD700]Dungeon Overhaul[/color]")
-	display_game("  • Dungeons now use BSP-generated 20x20 floors with rooms and corridors")
-	display_game("  • Monsters are visible on the map and move each turn")
-	display_game("  • Monsters chase you through corridors when they spot you (line of sight)")
-	display_game("  • Rest/Meditate button in dungeons (costs materials, monsters still move!)")
-	display_game("  • More floors per dungeon across all tiers")
-	display_game("  [color=#FFD700]Quest System[/color]")
-	display_game("  • Quests now generate dynamically each day instead of static lists")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Combat reconnect now preserves monster HP knowledge")
-	display_game("  • Fix: All combat commands work after reconnect (not just flee)")
-	display_game("")
-
-	# v0.9.95 changes
-	display_game("[color=#00FFFF]v0.9.95[/color]")
-	display_game("  • All in-game instructions now respect custom keybinds")
-	display_game("  • Action bar buttons show gold costs (healer, blacksmith, merchant)")
-	display_game("  • Fix: Healer encounter costs and buttons now work properly")
-	display_game("  • Fix: Inventory sub-views no longer wiped by server updates")
+	display_game("  • Dungeon Overhaul: BSP-generated floors, visible moving monsters")
+	display_game("  • Quests now generate dynamically each day")
+	display_game("  • Fix: Combat reconnect preserves monster HP knowledge")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -15597,10 +15711,10 @@ func display_companions():
 		var variant_color = active_companion.get("variant_color", "#FFFFFF")
 		var bonuses = active_companion.get("bonuses", {})
 
-		# Calculate XP needed (formula: (level+1)^1.8 * 20)
+		# Calculate XP needed (formula: (level+1)^2.0 * 15) - matches server
 		var xp_to_next = 0
-		if comp_level < 50:
-			xp_to_next = int(pow(comp_level + 1, 1.8) * 20)
+		if comp_level < 10000:
+			xp_to_next = int(pow(comp_level + 1, 2.0) * 15)
 
 		# Get variant stat multiplier and rarity info
 		var variant_mult = _get_variant_multiplier(variant)
@@ -15619,7 +15733,7 @@ func display_companions():
 		display_game("  [color=#AAAAAA]Level %d | Tier %d-%d[/color]%s" % [comp_level, comp_tier, comp_sub_tier, sub_tier_text])
 
 		# XP bar
-		if comp_level < 50:
+		if comp_level < 10000:
 			var xp_percent = int((float(comp_xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
 			var bar_length = 20
 			var filled = int(bar_length * xp_percent / 100)
@@ -15710,10 +15824,19 @@ func display_companions():
 			var rarity_info = _get_variant_rarity_info(variant)
 
 			var display_num = (i - start_idx) + 1  # 1-5 for current page
+			var comp_tier = companion.get("tier", 1)
+			var comp_sub_tier = int(companion.get("sub_tier", 1))
+			var st_tag = " T%d-%d" % [comp_tier, comp_sub_tier]
 			if is_active:
-				display_game("  [%d] [color=%s][%s][/color] [color=#00FFFF]★ %s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, variant_color, variant, variant_indicator])
+				display_game("  [%d] [color=%s][%s][/color] [color=#00FFFF]★ %s Lv.%d%s[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, st_tag, variant_color, variant, variant_indicator])
 			else:
-				display_game("  [%d] [color=%s][%s][/color] [color=#00FF00]%s Lv.%d[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, variant_color, variant, variant_indicator])
+				display_game("  [%d] [color=%s][%s][/color] [color=#00FF00]%s Lv.%d%s[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, st_tag, variant_color, variant, variant_indicator])
+			# Show compact bonus summary
+			var comp_bonuses = companion.get("bonuses", {})
+			var effective_mult_list = variant_mult * _get_sub_tier_multiplier(comp_sub_tier)
+			var bonus_parts_list = _get_companion_bonus_parts_with_variant(comp_bonuses, effective_mult_list)
+			if bonus_parts_list.size() > 0:
+				display_game("      [color=#808080]%s[/color]" % ", ".join(bonus_parts_list))
 
 		display_game("")
 		if total_pages > 1:
@@ -16911,7 +17034,7 @@ func show_help():
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
 [color=#00FFFF]Cmds:[/color] /inventory ([%s]) | /abilities ([%s]) | /who | /examine <name> | /help | /clear
-[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger [color=#FFFF00]P[/color]=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
+[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post(color-coded) [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
 [color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
@@ -17037,7 +17160,7 @@ func show_help():
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
-  All monsters match dungeon theme (Orc Stronghold = Orcs). Low level? Get warning, can still enter!
+  All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
 [b][color=#FFD700]══ PROGRESSION ══[/color][/b]
@@ -17072,15 +17195,23 @@ func show_help():
 [color=#00FFFF]Account-Level Home:[/color] Your Sanctuary persists across all characters on your account!
 [color=#00FFFF]Access:[/color] After login, you'll see your Sanctuary before character select. Store items for future characters!
 [color=#FFA500]Storage:[/color] Base 20 slots. Store items from current character. Withdraw items when creating new characters.
-[color=#A335EE]Companion Kennel:[/color] Register companions to your Sanctuary - they survive permadeath!
-  • Use [color=#00FFFF]Home Stone (Companion)[/color] to register your active companion
+[color=#A335EE]Registered Companions:[/color] Register companions to your Sanctuary - they survive permadeath!
+  • Use [color=#00FFFF]Home Stone (Companion)[/color] to register or kennel your active companion
   • Registered companions return home when your character dies
   • Checkout registered companions on new characters
+[color=#FF8800]Companion Kennel (K tile):[/color] Bulk companion storage for fusion!
+  • Store companions for later fusion at the Fusion Station
+  • Base capacity: 30 slots, upgradeable up to 500
+[color=#DA70D6]Fusion Station (F tile):[/color] Combine companions into stronger versions!
+  • [color=#00FF00]Same-Type:[/color] 3 same monster + sub-tier → 1 with sub-tier+1 (max sub-tier 9)
+  • [color=#FF00FF]Mixed T9:[/color] 8 sub-tier 8 companions → 1 random Tier 9 companion
+  • Fused companions start at Lv1 with a new random variant
 [color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
-  • Storage Expansion (+10 slots/level) | Companion Kennel (+1 slot/level)
-  • Escape Training (+2%% flee/level) | Family Inheritance (+50g start/level)
-  • Ancestral Wisdom (+1%% XP/level) | Homesteading (+5%% gathering/level)
-[color=#FFD700]Home Stones:[/color] Found in tier 4-6 loot. Use outside combat/dungeons to send things home:
+  • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
+  • Escape Training (+2%% flee/lv) | Family Inheritance (+50g start/lv)
+  • Ancestral Wisdom (+1%% XP/lv) | Homesteading (+5%% gathering/lv)
+  • Combat: HP/Resource Max/Regen (+5%%/lv) | Stats: STR/CON/DEX/INT/WIS/WITS (+1/lv)
+[color=#FFD700]Home Stones:[/color] Found in tier 4-9 loot. Use outside combat/dungeons to send things home:
   • Home Stone (Egg) - Send one incubating egg to storage
   • Home Stone (Supplies) - Send up to 10 consumables to storage
   • Home Stone (Equipment) - Send one equipped item to storage
@@ -17884,6 +18015,78 @@ func handle_healer_encounter(message: Dictionary):
 func send_healer_choice(choice: String):
 	"""Send healer choice to server"""
 	send_to_server({"type": "healer_choice", "choice": choice})
+
+# ===== RESCUE NPC ENCOUNTER FUNCTIONS =====
+
+func handle_rescue_npc_encounter(message: Dictionary):
+	"""Handle rescue NPC encounter in a dungeon."""
+	pending_rescue_npc = true
+	rescue_npc_type = message.get("npc_type", "")
+	rescue_npc_items = message.get("items", [])
+	rescue_npc_message = message.get("message", "")
+
+	# Reset all hotkey pressed states to prevent accidental immediate triggers
+	for i in range(10):
+		set_meta("hotkey_%d_pressed" % i, true)
+
+	game_output.clear()
+
+	# Display random trader ASCII art
+	var trader_art = _get_trader_art().get_random_trader_art()
+	display_game(trader_art)
+	display_game("")
+
+	# Display NPC message
+	display_game(rescue_npc_message)
+	display_game("")
+
+	match rescue_npc_type:
+		"merchant":
+			display_game("[color=#FFD700]=== Rescued Merchant's Wares ===[/color]")
+			display_game("[color=#808080]Choose one item as your reward:[/color]")
+			display_game("")
+			for i in range(rescue_npc_items.size()):
+				var item = rescue_npc_items[i]
+				var item_name = item.get("name", "Unknown")
+				var rarity = item.get("rarity", "common")
+				var level = item.get("level", 1)
+				var color = _get_rarity_color(rarity)
+				var bonus_text = _get_item_bonus_summary(item)
+				var slot_abbr = _get_slot_abbreviation(item.get("type", ""))
+				display_game("  [%d] [color=%s]%s[/color] Lv%d %s %s" % [i + 1, color, item_name, level, bonus_text, slot_abbr])
+			display_game("")
+			display_game("[color=#808080]Press 1-%d to select an item, or [%s] to decline.[/color]" % [rescue_npc_items.size(), get_action_key_name(0)])
+		"healer":
+			display_game("[color=#00FF00]Your HP and Mana have been fully restored![/color]")
+			display_game("[color=#00FF00]All status effects have been cured.[/color]")
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue.[/color]" % get_action_key_name(0))
+		"blacksmith":
+			display_game("[color=#FFA500]All your equipment has been repaired for free![/color]")
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue.[/color]" % get_action_key_name(0))
+		"scholar":
+			display_game("[color=#9966FF]Ancient knowledge surges through you![/color]")
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue.[/color]" % get_action_key_name(0))
+		"breeder":
+			display_game("[color=#A335EE]=== Companion Breeder ===[/color]")
+			display_game("[color=#808080]The breeder offers you a rare egg matching this dungeon's tier.[/color]")
+			display_game("")
+			display_game("[%s] Accept Egg   [%s] Decline" % [get_action_key_name(1), get_action_key_name(0)])
+
+	update_action_bar()
+
+func _finish_rescue_npc_encounter():
+	"""Clean up rescue NPC encounter state and return to dungeon."""
+	pending_rescue_npc = false
+	rescue_npc_type = ""
+	rescue_npc_items = []
+	rescue_npc_message = ""
+	# Request fresh dungeon state to resume exploration
+	if dungeon_mode:
+		send_to_server({"type": "dungeon_state"})
+	update_action_bar()
 
 # ===== FISHING FUNCTIONS =====
 
@@ -18724,6 +18927,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
 	dungeon_monsters_data = message.get("monsters", [])
+	dungeon_npcs_data = message.get("npcs", [])
 
 	# Always update the map display (right panel) so player position is current
 	update_dungeon_map()
@@ -18804,6 +19008,7 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
+	dungeon_npcs_data = []
 
 	# If player is still viewing combat results or in flock mode, queue this for after they acknowledge
 	# This handles bosses with flock abilities - the dungeon completes when boss dies, but
@@ -18904,6 +19109,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
+	dungeon_npcs_data = []
 
 	var reason = message.get("reason", "exit")
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
@@ -19079,6 +19285,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		var key = "%d,%d" % [m.get("x", -1), m.get("y", -1)]
 		monster_map[key] = m
 
+	# Build NPC position lookup from dungeon_npcs_data
+	var npc_map = {}
+	for npc in dungeon_npcs_data:
+		var key = "%d,%d" % [npc.get("x", -1), npc.get("y", -1)]
+		npc_map[key] = npc
+
 	# Top border
 	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
@@ -19090,7 +19302,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 				line += "[color=#00FF00]@[/color]"
 			else:
 				var mkey = "%d,%d" % [x, y]
-				if monster_map.has(mkey):
+				if npc_map.has(mkey):
+					# Render rescue NPC entity (green ? marker)
+					var npc = npc_map[mkey]
+					var nchar = npc.get("display_char", "?")
+					var ncolor = npc.get("display_color", "#00FF00")
+					line += "[color=%s]%s[/color]" % [ncolor, nchar]
+				elif monster_map.has(mkey):
 					# Render monster entity
 					var mon = monster_map[mkey]
 					var mchar = mon.get("char", "M")
@@ -19179,7 +19397,8 @@ func enter_dungeon_at_location():
 	var color = dungeon_entrance_info.get("color", "#FFFFFF")
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
 	display_game("")
-	display_game("Tier %d Dungeon" % dungeon_entrance_info.get("tier", 1))
+	var entry_sub_tier = dungeon_entrance_info.get("sub_tier", 1)
+	display_game("Tier %d-%d Dungeon" % [dungeon_entrance_info.get("tier", 1), entry_sub_tier])
 	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])
 	display_game("")
 	display_game("[color=#FFFF00]Entering dungeon...[/color]")
@@ -19398,14 +19617,14 @@ func handle_quest_list(message: Dictionary):
 	display_game("[%s] Back" % get_action_key_name(0))
 
 func _format_rewards(rewards: Dictionary) -> String:
-	"""Format rewards dictionary for display"""
+	"""Format rewards dictionary for display with color coding"""
 	var parts = []
 	if rewards.get("xp", 0) > 0:
-		parts.append("%d XP" % rewards.xp)
+		parts.append("[color=#AADDFF]%d XP[/color]" % rewards.xp)
 	if rewards.get("gold", 0) > 0:
-		parts.append("%d Gold" % rewards.gold)
+		parts.append("[color=#FFD700]%d Gold[/color]" % rewards.gold)
 	if rewards.get("gems", 0) > 0:
-		parts.append("%d Gems" % rewards.gems)
+		parts.append("[color=#00FFFF]%d Gems[/color]" % rewards.gems)
 	return ", ".join(parts) if parts.size() > 0 else "None"
 
 func _get_quest_tier_tag(quest: Dictionary) -> String:
@@ -21067,6 +21286,13 @@ func display_house_kennel():
 				marker = " [color=#00FF00]<< REGISTER[/color]"
 
 			display_game("[%d] %s%s Lv.%d T%d%s%s" % [display_idx, variant_tag, name, level, tier, sub_tier_tag, marker])
+			# Show compact bonuses for fusion decision-making
+			var k_bonuses = comp.get("bonuses", {})
+			var k_variant_mult = _get_variant_multiplier(variant)
+			var k_effective = k_variant_mult * _get_sub_tier_multiplier(sub_tier)
+			var k_bonus_parts = _get_companion_bonus_parts_with_variant(k_bonuses, k_effective)
+			if k_bonus_parts.size() > 0:
+				display_game("    [color=#808080]%s[/color]" % ", ".join(k_bonus_parts))
 
 		display_game("")
 		display_game("[color=#808080]Page %d/%d[/color]" % [house_kennel_page + 1, maxi(1, int(ceil(float(kennel_companions.size()) / 5.0)))])
@@ -21202,7 +21428,7 @@ func _get_t8_companions(kennel_companions: Array) -> Array:
 func _get_house_kennel_capacity() -> int:
 	"""Calculate total kennel capacity based on upgrade level"""
 	var level = house_data.get("upgrades", {}).get("kennel_capacity", 0)
-	var table = [2, 4, 6, 8, 11, 15, 20]
+	var table = [30, 50, 80, 120, 175, 250, 325, 400, 450, 500]
 	return table[clampi(level, 0, table.size() - 1)]
 
 func _select_kennel_companion(page_index: int):
@@ -21285,12 +21511,12 @@ func display_house_upgrades():
 	var upgrade_costs = house_data.get("upgrade_costs", {
 		"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},
 		"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
-		"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+		"companion_slots": {"effect": 1, "max": 8, "costs": [2000, 5000, 10000, 15000, 25000, 40000, 60000, 80000]},
 		"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
 		"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 		"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 		"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
-		"kennel_capacity": {"effect": 0, "max": 6, "costs": [1000, 2500, 5000, 10000, 20000, 40000]},
+		"kennel_capacity": {"effect": 0, "max": 9, "costs": [1000, 3000, 6000, 12000, 20000, 35000, 50000, 70000, 100000]},
 		"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
 		"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},
 		"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},

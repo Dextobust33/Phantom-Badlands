@@ -814,7 +814,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		if comp_mana_bonus > 0:
 			var mana_boost = max(1, int(character.get_total_max_mana() * comp_mana_bonus / 100.0))
 			character.max_mana += mana_boost
-			character.current_mana = mini(character.current_mana + mana_boost, character.max_mana)
+			character.current_mana = mini(character.current_mana + mana_boost, character.get_total_max_mana())
 			combat_state["companion_mana_boost_applied"] = mana_boost
 
 		# Store base wisdom bonus for use in resist checks
@@ -1078,7 +1078,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var passive = character.get_class_passive()
 	var effects = passive.get("effects", {})
 	if effects.has("combat_regen_percent"):
-		var regen_amount = max(1, int(character.max_hp * effects.get("combat_regen_percent", 0)))
+		var regen_amount = max(1, int(character.get_total_max_hp() * effects.get("combat_regen_percent", 0)))
 		var actual_heal = character.heal(regen_amount)
 		if actual_heal > 0:
 			messages.append("[color=#FFD700]Divine Favor heals %d HP.[/color]" % actual_heal)
@@ -1086,7 +1086,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	# === COMPANION BONUS: HP regeneration ===
 	var companion_regen = character.get_companion_bonus("hp_regen")
 	if companion_regen > 0:
-		var regen_amount = max(1, int(character.max_hp * companion_regen / 100.0))
+		var regen_amount = max(1, int(character.get_total_max_hp() * companion_regen / 100.0))
 		var actual_heal = character.heal(regen_amount)
 		if actual_heal > 0:
 			messages.append("[color=#00FFFF]Companion heals %d HP.[/color]" % actual_heal)
@@ -2725,7 +2725,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 		"berserk":
 			# Buffed: +75% to +200% damage (was +50% to +150%)
-			var hp_percent = float(character.current_hp) / float(character.max_hp)
+			var hp_percent = float(character.current_hp) / float(character.get_total_max_hp())
 			var missing_hp_percent = 1.0 - hp_percent
 			var damage_bonus = int(75 + (missing_hp_percent * 125))  # 75-200% (was 50-150%)
 			character.add_buff("damage", damage_bonus, 4)  # 4 rounds (was 3)
@@ -3742,8 +3742,8 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 						messages.append("[color=#00FF00]%s uses %s and drains %d HP![/color]" % [companion.name, ability_name, heal_amount])
 					elif effect == "mana_restore":
 						var mana_percent = ability.get("value", 20)
-						var mana_amount = max(1, int(character.max_mana * mana_percent / 100.0))
-						character.current_mana = min(character.max_mana, character.current_mana + mana_amount)
+						var mana_amount = max(1, int(character.get_total_max_mana() * mana_percent / 100.0))
+						character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
 						messages.append("[color=#6699FF]%s uses %s and restores %d mana![/color]" % [companion.name, ability_name, mana_amount])
 					elif effect == "poison":
 						var poison_damage = ability.get("damage", ability.get("base_damage", 10))
@@ -4093,7 +4093,7 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# === CLASS PASSIVE: Barbarian Blood Rage ===
 	# +3% damage per 10% HP missing, max +30%
 	if effects.has("damage_per_missing_hp"):
-		var hp_percent = float(character.current_hp) / float(character.max_hp)
+		var hp_percent = float(character.current_hp) / float(character.get_total_max_hp())
 		var missing_hp_percent = 1.0 - hp_percent
 		var rage_bonus = min(effects.get("max_rage_bonus", 0.30), missing_hp_percent * effects.get("damage_per_missing_hp", 0.03) * 10.0)
 		if rage_bonus > 0.01:
@@ -4402,12 +4402,14 @@ func end_combat(peer_id: int, victory: bool):
 		var hp_boost = combat.get("companion_hp_boost_applied", 0)
 		if hp_boost > 0:
 			character.max_hp = max(1, character.max_hp - hp_boost)
-			character.current_hp = mini(character.current_hp, character.max_hp)
+			# Cap to total max HP (including equipment), not just base max_hp
+			character.current_hp = mini(character.current_hp, character.get_total_max_hp())
 
 		var mana_boost = combat.get("companion_mana_boost_applied", 0)
 		if mana_boost > 0:
 			character.max_mana = max(1, character.max_mana - mana_boost)
-			character.current_mana = mini(character.current_mana, character.max_mana)
+			# Cap to total max mana (including equipment), not just base max_mana
+			character.current_mana = mini(character.current_mana, character.get_total_max_mana())
 
 		# Mark character as not in combat
 		character.in_combat = false

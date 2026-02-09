@@ -18,13 +18,13 @@ const DEFAULT_MAX_CHARACTERS = 6
 const HOUSE_UPGRADES = {
 	"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},  # Expands the house layout
 	"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
-	"companion_slots": {"effect": 1, "max": 3, "costs": [2000, 5000, 15000]},
+	"companion_slots": {"effect": 1, "max": 8, "costs": [2000, 5000, 10000, 15000, 25000, 40000, 60000, 80000]},
 	"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
 	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
 	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
 	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
-	"kennel_capacity": {"effect": 0, "max": 6, "costs": [1000, 2500, 5000, 10000, 20000, 40000]},
+	"kennel_capacity": {"effect": 0, "max": 9, "costs": [1000, 3000, 6000, 12000, 20000, 35000, 50000, 70000, 100000]},
 	# Combat bonuses (percentages)
 	"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max HP per level
 	"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max resource per level
@@ -38,8 +38,8 @@ const HOUSE_UPGRADES = {
 	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
 }
 
-# Kennel capacity by upgrade level: 0=2, 1=4, 2=6, 3=8, 4=11, 5=15, 6=20
-const KENNEL_CAPACITY_TABLE = [2, 4, 6, 8, 11, 15, 20]
+# Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
+const KENNEL_CAPACITY_TABLE = [30, 50, 80, 120, 175, 250, 325, 400, 450, 500]
 
 # Cached data
 var accounts_data: Dictionary = {}
@@ -918,7 +918,7 @@ func get_house(account_id: String) -> Dictionary:
 
 	# Migration: add companion_kennel if missing
 	if not house.has("companion_kennel"):
-		house["companion_kennel"] = {"slots": 2, "companions": []}
+		house["companion_kennel"] = {"slots": 30, "companions": []}
 		# Migrate stored_companions from storage to kennel
 		var storage_items = house.get("storage", {}).get("items", [])
 		var to_remove = []
@@ -939,6 +939,13 @@ func get_house(account_id: String) -> Dictionary:
 		if not house.has("upgrades"):
 			house["upgrades"] = {}
 		house.upgrades["kennel_capacity"] = 0
+		save_house(account_id, house)
+
+	# Migration: fix kennel slots to match new capacity table
+	var kennel_level = int(house.get("upgrades", {}).get("kennel_capacity", 0))
+	var expected_slots = KENNEL_CAPACITY_TABLE[clampi(kennel_level, 0, KENNEL_CAPACITY_TABLE.size() - 1)]
+	if house.companion_kennel.slots < expected_slots:
+		house.companion_kennel.slots = expected_slots
 		save_house(account_id, house)
 
 	return house
@@ -969,7 +976,7 @@ func create_house(account_id: String) -> Dictionary:
 		},
 
 		"companion_kennel": {
-			"slots": 2,
+			"slots": 30,
 			"companions": []
 		},
 

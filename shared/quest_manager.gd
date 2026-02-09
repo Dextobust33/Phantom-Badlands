@@ -88,6 +88,19 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	# For exploration quests, store destinations for turn-in at destination
 	if quest_type == QuestDatabaseScript.QuestType.EXPLORATION:
 		extra_data["destinations"] = quest.get("destinations", [])
+	# For BOSS_HUNT quests with named bounty, store bounty fields
+	if quest_type == QuestDatabaseScript.QuestType.BOSS_HUNT:
+		if quest.has("bounty_name"):
+			extra_data["bounty_name"] = quest.get("bounty_name", "")
+			extra_data["bounty_monster_type"] = quest.get("bounty_monster_type", "")
+			extra_data["bounty_level"] = quest.get("bounty_level", 1)
+			extra_data["bounty_x"] = quest.get("bounty_x", 0)
+			extra_data["bounty_y"] = quest.get("bounty_y", 0)
+	# For RESCUE quests, store NPC type, dungeon type, and rescue floor
+	if quest_type == QuestDatabaseScript.QuestType.RESCUE:
+		extra_data["rescue_npc_type"] = quest.get("rescue_npc_type", "merchant")
+		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
+		extra_data["rescue_floor"] = quest.get("rescue_floor", 1)
 
 	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post, extra_data):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
@@ -130,10 +143,22 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 					else:
 						should_update = true
 
-			QuestDatabaseScript.QuestType.KILL_LEVEL, QuestDatabaseScript.QuestType.BOSS_HUNT:
+			QuestDatabaseScript.QuestType.KILL_LEVEL:
 				var min_level = quest.get("target", 1)
 				if monster_level >= min_level:
 					should_update = true
+
+			QuestDatabaseScript.QuestType.BOSS_HUNT:
+				# Named bounty: check monster name matches bounty_name
+				var bounty_name = quest_data.get("bounty_name", quest.get("bounty_name", ""))
+				if bounty_name != "":
+					if killed_monster_name == bounty_name:
+						should_update = true
+				else:
+					# Legacy boss hunt: check level threshold
+					var min_level_bh = quest.get("target", 1)
+					if monster_level >= min_level_bh:
+						should_update = true
 
 			QuestDatabaseScript.QuestType.KILL_TIER:
 				# Must kill a monster whose tier is >= required_tier
@@ -439,6 +464,20 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
 			output += "    [color=#FF6600](1.5x-2.5x hotzone intensity bonus)[/color]\n"
 
+		# Bounty location info
+		var bounty_name = quest_data.get("bounty_name", quest.get("bounty_name", ""))
+		if bounty_name != "":
+			var bx = quest_data.get("bounty_x", quest.get("bounty_x", 0))
+			var by = quest_data.get("bounty_y", quest.get("bounty_y", 0))
+			output += "    [color=#FF4500]Target: %s — near (%d, %d)[/color]\n" % [bounty_name, bx, by]
+
+		# Rescue quest info
+		if quest.get("type", -1) == QuestDatabaseScript.QuestType.RESCUE:
+			var rescue_npc = quest_data.get("rescue_npc_type", quest.get("rescue_npc_type", ""))
+			var rescue_floor = quest_data.get("rescue_floor", quest.get("rescue_floor", 0))
+			if rescue_npc != "":
+				output += "    [color=#00FF00]Rescue: %s on floor %d[/color]\n" % [rescue_npc.capitalize(), rescue_floor + 1]
+
 		if is_complete:
 			output += "    [color=#00FF00][Ready to turn in!][/color]\n"
 
@@ -499,6 +538,30 @@ func format_available_quests(quests: Array, character: Character) -> String:
 	return output
 
 # ===== HELPERS =====
+
+func check_rescue_progress(character: Character, quest_id: String) -> Dictionary:
+	"""Mark a rescue quest as complete when NPC is found. Returns {updated, progress, target, completed, message}."""
+	var quest_data = character.get_quest_progress(quest_id)
+	if quest_data.is_empty():
+		return {"updated": false}
+
+	var quest_type = quest_data.get("quest_type", -1)
+	if quest_type != QuestDatabaseScript.QuestType.RESCUE:
+		return {"updated": false}
+
+	var result = character.update_quest_progress(quest_id, 1)
+	if result.updated:
+		var quest_name = quest_data.get("quest_name", "Rescue Quest")
+		var message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest_name
+		return {
+			"updated": true,
+			"quest_id": quest_id,
+			"progress": result.progress,
+			"target": result.target,
+			"completed": result.completed,
+			"message": message
+		}
+	return {"updated": false}
 
 func _get_tier_from_level(level: int) -> int:
 	"""Map a monster level to its tier using TIER_LEVEL_RANGES from quest_database."""
