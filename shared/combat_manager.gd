@@ -4926,7 +4926,7 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 			"abilities": monster.get("abilities", []),
 			"is_rare_variant": monster.get("is_rare_variant", false),
 			"variant_name": monster.get("variant_name", ""),
-			"xp_reward": monster.get("xp_reward", 10),
+			"experience_reward": monster.get("experience_reward", 10),
 			"gold_reward": monster.get("gold_reward", 0),
 			"class_affinity": monster.get("class_affinity", 0),
 			"is_dungeon_monster": monster.get("is_dungeon_monster", false),
@@ -4952,6 +4952,12 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 	var monster = saved_state.get("monster", {})
 	if monster.is_empty():
 		return {"success": false, "message": "Invalid monster data"}
+
+	# Migrate old xp_reward key to experience_reward
+	if not monster.has("experience_reward") and monster.has("xp_reward"):
+		monster["experience_reward"] = monster["xp_reward"]
+	elif not monster.has("experience_reward"):
+		monster["experience_reward"] = 10
 
 	# Build combat state from saved data
 	# Always set player_can_act = true on restore so the player can act immediately

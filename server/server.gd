@@ -2216,14 +2216,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	# Process combat action
 	var result = combat_mgr.process_combat_command(peer_id, command)
 
-	if not result.success:
+	if not result.get("success", false):
 		# Send all error messages
 		for msg in result.get("messages", []):
 			send_combat_message(peer_id, msg)
 		return
 
 	# Send all combat messages
-	for msg in result.messages:
+	for msg in result.get("messages", []):
 		send_combat_message(peer_id, msg)
 
 	# Accumulate messages in combat log for death screen
