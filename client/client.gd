@@ -7430,6 +7430,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"companions_release":
 			# Enter release selection mode
+			_pre_mark_held_selection_keys("companionkey_")
 			pending_companion_action = "release_select"
 			game_output.clear()
 			display_game("[color=#FF6666]═══════ RELEASE COMPANION ═══════[/color]")
@@ -7491,6 +7492,7 @@ func execute_local_action(action: String):
 			pending_companion_action = ""
 		"companions_inspect":
 			# Enter inspect selection mode - use number keys to select companion
+			_pre_mark_held_selection_keys("companionkey_")
 			pending_companion_action = "inspect_select"
 			game_output.clear()
 			display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
@@ -8255,6 +8257,7 @@ func execute_local_action(action: String):
 			display_house_companions()
 			update_action_bar()
 		"house_upgrades":
+			_pre_mark_held_selection_keys("houseupgrade_")
 			house_mode = "upgrades"
 			pending_house_action = ""
 			display_house_upgrades()
@@ -8294,6 +8297,7 @@ func execute_local_action(action: String):
 			display_house_storage()
 			update_action_bar()
 		"house_withdraw_start":
+			_pre_mark_held_selection_keys("housestorage_")
 			pending_house_action = "withdraw_select"
 			house_storage_withdraw_items = []
 			display_house_storage()
@@ -8308,6 +8312,7 @@ func execute_local_action(action: String):
 			display_house_companions()
 			update_action_bar()
 		"house_checkout_start":
+			_pre_mark_held_selection_keys("housecompanion_")
 			pending_house_action = "checkout_select"
 			house_checkout_companion_slot = -1
 			display_house_companions()
@@ -8318,6 +8323,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		# Discard item from house storage
 		"house_discard_start":
+			_pre_mark_held_selection_keys("housediscard_")
 			pending_house_action = "discard_select"
 			house_storage_discard_index = -1
 			display_house_storage()
@@ -8330,6 +8336,7 @@ func execute_local_action(action: String):
 			# Server will send updated house_data
 		# Register stored companion to kennel
 		"house_register_start":
+			_pre_mark_held_selection_keys("houseregister_")
 			pending_house_action = "register_select"
 			house_storage_register_index = -1
 			display_house_storage()
@@ -8342,6 +8349,7 @@ func execute_local_action(action: String):
 			# Server will send updated house_data
 		# Unregister companion from kennel (move to storage)
 		"house_unregister_start":
+			_pre_mark_held_selection_keys("houseunregister_")
 			pending_house_action = "unregister_select"
 			house_unregister_companion_slot = -1
 			display_house_companions()
@@ -8375,6 +8383,7 @@ func execute_local_action(action: String):
 			display_house_kennel()
 			update_action_bar()
 		"house_kennel_release_start":
+			_pre_mark_held_selection_keys("housekennel_")
 			pending_house_action = "release_select"
 			house_kennel_release_index = -1
 			display_house_kennel()
@@ -8390,6 +8399,7 @@ func execute_local_action(action: String):
 			pending_house_action = ""
 			house_kennel_release_index = -1
 		"house_kennel_register_start":
+			_pre_mark_held_selection_keys("housekennel_")
 			pending_house_action = "register_select"
 			house_kennel_register_index = -1
 			display_house_kennel()
@@ -8426,6 +8436,7 @@ func execute_local_action(action: String):
 			display_house_fusion()
 			update_action_bar()
 		"fusion_same_start":
+			_pre_mark_held_selection_keys("housefusion_")
 			house_fusion_type = "same"
 			house_fusion_selected = []
 			pending_house_action = ""
@@ -8437,6 +8448,7 @@ func execute_local_action(action: String):
 			display_house_fusion()
 			update_action_bar()
 		"fusion_mixed_start":
+			_pre_mark_held_selection_keys("housefusionmix_")
 			house_fusion_type = "mixed"
 			house_fusion_selected = []
 			house_fusion_page = 0
@@ -10625,6 +10637,7 @@ func _get_themed_slot_name(slot: String, class_type: String = "") -> String:
 
 func prompt_inventory_action(action_type: String):
 	"""Prompt user for item selection for inventory action"""
+	_pre_mark_held_selection_keys("itemkey_")
 	var inventory = character_data.get("inventory", [])
 	var equipped = character_data.get("equipped", {})
 
@@ -14471,6 +14484,18 @@ func get_item_select_key_name(index: int) -> String:
 	"""Get the display name for item selection key (index 0-8 for items 1-9)"""
 	return get_key_name(get_item_select_keycode(index))
 
+func _pre_mark_held_selection_keys(prefix: String, count: int = 9):
+	"""Pre-mark currently held item selection keys to prevent cascade into new selection mode.
+	Also marks action bar hotkeys to prevent action bar from triggering in the new state."""
+	for i in range(count):
+		if is_item_select_key_pressed(i):
+			set_meta("%s%d_pressed" % [prefix, i], true)
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
+			set_meta("hotkey_%d_pressed" % i, true)
+
 func is_item_key_blocked_by_action_bar(index: int) -> bool:
 	"""Check if item selection key conflicts with a currently-held action bar key that has an enabled action"""
 	var item_keycode = get_item_select_keycode(index)
@@ -18058,6 +18083,7 @@ func handle_rescue_npc_encounter(message: Dictionary):
 	# Reset all hotkey pressed states to prevent accidental immediate triggers
 	for i in range(10):
 		set_meta("hotkey_%d_pressed" % i, true)
+		set_meta("rescuekey_%d_pressed" % i, true)
 
 	game_output.clear()
 
