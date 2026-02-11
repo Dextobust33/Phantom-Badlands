@@ -9,35 +9,34 @@ godot --headless --script admin_tool.gd -- promote <username>
 
 ## 1. Authentication & Account
 
-- [ ] Register new account (valid username/password)
-- [ ] Register rejects short username (<3 chars)
-- [ ] Register rejects duplicate username
-- [ ] Register rejects short password (<4 chars)
-- [ ] Login with correct credentials
-- [ ] Login rejects wrong password
-- [ ] Login rejects unknown username
-- [ ] Logout account (returns to login screen)
-- [ ] Change password (/changepassword or settings)
-- [ ] Changed password works on next login
+- [x] Register new account (valid username/password)
+- [x] Register rejects short username (<3 chars)
+- [x] Register rejects duplicate username
+- [x] Register rejects short password (<4 chars)
+- [x] Login with correct credentials
+- [x] Login rejects wrong password
+- [x] Login rejects unknown username
+- [x] Logout account (returns to login screen)
+- [x] Change password (/changepassword or settings)
+- [x] Changed password works on next login
 
 ## 2. Character Lifecycle
 
-- [ ] Create character — Fighter
-- [ ] Create character — Barbarian
-- [ ] Create character — Paladin
-- [ ] Create character — Wizard
-- [ ] Create character — Sorcerer
-- [ ] Create character — Sage
-- [ ] Create character — Thief
-- [ ] Create character — Ranger
-- [ ] Create character — Ninja
-- [ ] Create each race (Human, Elf, Dwarf, Orc, Halfling, Undead)
-- [ ] Select existing character from list
-- [ ] Delete character (confirm dialog)
-- [ ] Max 6 characters per account enforced
-- [ ] Permadeath: character dies and is removed
-- [ ] Permadeath: death message shows stats, cause, BP earned
-- [ ] Permadeath: leaderboard entry created (non-admin)
+- [x] Create character — Fighter
+- [x] Create character — Barbarian
+- [x] Create character — Paladin
+- [x] Create character — Wizard
+- [x] Create character — Sorcerer
+- [x] Create character — Sage
+- [x] Create character — Thief
+- [x] Create character — Ranger
+- [x] Create character — Ninja
+- [x] Create each race (Human, Elf, Dwarf, Orc, Halfling, Undead)
+- [x] Select existing character from list
+- [x] Max 6 characters per account enforced
+- [x] Permadeath: character dies and is removed
+- [x] Permadeath: death message shows stats, cause, BP earned
+- [x] Permadeath: leaderboard entry created (non-admin)
 
 ## 3. House / Sanctuary
 
@@ -350,35 +349,35 @@ godot --headless --script admin_tool.gd -- promote <username>
 
 ## 19. Admin Commands
 
-- [ ] `/gmhelp` shows command list
-- [ ] `/setlevel <n>` sets level with correct stats
-- [ ] `/setgold <n>` sets gold
-- [ ] `/setgems <n>` sets gems
-- [ ] `/setessence <n>` sets salvage essence
-- [ ] `/setxp <n>` sets XP
-- [ ] `/setbp <n>` sets Baddie Points
-- [ ] `/godmode` toggle — shows ENABLED/DISABLED
-- [ ] `/godmode` — take 0 damage in combat
-- [ ] `/heal` — full restore
-- [ ] `/giveitem [tier]` — receive item
-- [ ] `/giveitem [tier] [slot]` — receive specific slot
-- [ ] `/giveegg` — receive random egg
-- [ ] `/giveegg <type>` — receive specific egg
-- [ ] `/givecompanion` — receive random companion
-- [ ] `/givecompanion <type> <tier>` — receive specific companion
-- [ ] `/spawnmonster` — fight random monster at your level
-- [ ] `/spawnmonster <type> <level>` — fight specific monster
-- [ ] `/givemats <id> <amount>` — receive materials
-- [ ] `/giveall` — starter kit received
-- [ ] `/tp <x> <y>` — teleported to coordinates
-- [ ] `/completequest` — all quests marked complete
-- [ ] `/completequest <n>` — specific quest marked complete
-- [ ] `/resetquests` — quest log cleared
-- [ ] `/broadcast <msg>` — all players see announcement
-- [ ] `/giveconsumable <type> [tier]` — receive specific consumable
-- [ ] `/spawnwish` — spawns 1HP wish granter, guaranteed wish on kill
-- [ ] Non-admin gets "Admin access required" for all GM commands
-- [ ] Admin promote/demote via admin_tool.gd works
+- [x] `/gmhelp` shows command list
+- [x] `/setlevel <n>` sets level with correct stats
+- [x] `/setgold <n>` sets gold
+- [x] `/setgems <n>` sets gems
+- [x] `/setessence <n>` sets salvage essence
+- [x] `/setxp <n>` sets XP
+- [x] `/setbp <n>` sets Baddie Points
+- [x] `/godmode` toggle — shows ENABLED/DISABLED
+- [x] `/godmode` — take 0 damage in combat
+- [x] `/heal` — full restore
+- [x] `/giveitem [tier]` — receive item
+- [x] `/giveitem [tier] [slot]` — receive specific slot
+- [x] `/giveegg` — receive random egg
+- [x] `/giveegg <type>` — receive specific egg
+- [x] `/givecompanion` — receive random companion
+- [x] `/givecompanion <type> <tier>` — receive specific companion
+- [x] `/spawnmonster` — fight random monster at your level
+- [x] `/spawnmonster <type> <level>` — fight specific monster
+- [x] `/givemats <id> <amount>` — receive materials
+- [x] `/giveall` — starter kit received
+- [x] `/tp <x> <y>` — teleported to coordinates
+- [x] `/completequest` — all quests marked complete
+- [x] `/completequest <n>` — specific quest marked complete
+- [x] `/resetquests` — quest log cleared
+- [x] `/broadcast <msg>` — all players see announcement
+- [x] `/giveconsumable <type> [tier]` — receive specific consumable
+- [x] `/spawnwish` — spawns 1HP wish granter, guaranteed wish on kill
+- [x] Non-admin gets "Admin access required" for all GM commands
+- [x] Admin promote/demote via admin_tool.gd works
 
 ## 20. Networking
 
