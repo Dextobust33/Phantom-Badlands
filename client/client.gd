@@ -12265,7 +12265,12 @@ func handle_server_message(message: Dictionary):
 			update_companion_art_overlay()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			display_title_holders(message.get("title_holders", []))
-			display_character_status()
+			# Check for dungeon restoration — server will send dungeon_state if so
+			if message.get("dungeon_restore", false):
+				dungeon_mode = true
+				display_game("[color=#00FFFF]Reconnecting to dungeon...[/color]")
+			else:
+				display_character_status()
 			request_player_list()
 
 		"character_created":
@@ -13576,7 +13581,10 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch"]
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch",
+		"setlevel", "setgold", "setgems", "setessence", "setxp", "godmode", "setbp",
+		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
+		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -14307,6 +14315,104 @@ func process_command(text: String):
 				send_to_server({"type": "debug_hatch"})
 			else:
 				display_game("You don't have a character yet")
+		# ===== GM COMMANDS =====
+		"gmhelp":
+			display_gm_help()
+		"setlevel":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setlevel <level>[/color]")
+			else:
+				send_to_server({"type": "gm_setlevel", "level": int(parts[1])})
+		"setgold":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setgold <amount>[/color]")
+			else:
+				send_to_server({"type": "gm_setgold", "amount": int(parts[1])})
+		"setgems":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setgems <amount>[/color]")
+			else:
+				send_to_server({"type": "gm_setgems", "amount": int(parts[1])})
+		"setessence":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setessence <amount>[/color]")
+			else:
+				send_to_server({"type": "gm_setessence", "amount": int(parts[1])})
+		"setxp":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setxp <amount>[/color]")
+			else:
+				send_to_server({"type": "gm_setxp", "amount": int(parts[1])})
+		"godmode":
+			send_to_server({"type": "gm_godmode"})
+		"setbp":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /setbp <amount>[/color]")
+			else:
+				send_to_server({"type": "gm_setbp", "amount": int(parts[1])})
+		"giveitem":
+			var tier = int(parts[1]) if parts.size() > 1 else 5
+			var slot = parts[2] if parts.size() > 2 else ""
+			send_to_server({"type": "gm_giveitem", "tier": tier, "slot": slot})
+		"giveegg":
+			var monster_type = " ".join(parts.slice(1)) if parts.size() > 1 else ""
+			send_to_server({"type": "gm_giveegg", "monster_type": monster_type})
+		"givecompanion":
+			var monster_type = ""
+			var comp_tier = 0
+			if parts.size() > 1:
+				# Check if last arg is a number (tier)
+				var last_arg = parts[parts.size() - 1]
+				if last_arg.is_valid_int() and parts.size() > 2:
+					comp_tier = int(last_arg)
+					monster_type = " ".join(parts.slice(1, parts.size() - 1))
+				else:
+					monster_type = " ".join(parts.slice(1))
+			var msg = {"type": "gm_givecompanion", "monster_type": monster_type}
+			if comp_tier > 0:
+				msg["tier"] = comp_tier
+			send_to_server(msg)
+		"spawnmonster":
+			var monster_name = ""
+			var monster_level = 0
+			if parts.size() > 1:
+				# Check if last arg is a number (level)
+				var last_arg = parts[parts.size() - 1]
+				if last_arg.is_valid_int() and parts.size() > 2:
+					monster_level = int(last_arg)
+					monster_name = " ".join(parts.slice(1, parts.size() - 1))
+				else:
+					monster_name = " ".join(parts.slice(1))
+			var msg = {"type": "gm_spawnmonster", "monster_name": monster_name}
+			if monster_level > 0:
+				msg["level"] = monster_level
+			send_to_server(msg)
+		"givemats":
+			if parts.size() < 3:
+				display_game("[color=#FF0000]Usage: /givemats <material_id> <amount>[/color]")
+				display_game("[color=#808080]Examples: copper_ore, iron_ore, small_fish, healing_herb, common_wood[/color]")
+			else:
+				send_to_server({"type": "gm_givemats", "material_id": parts[1], "amount": int(parts[2])})
+		"giveall":
+			send_to_server({"type": "gm_giveall"})
+		"tp":
+			if parts.size() < 3:
+				display_game("[color=#FF0000]Usage: /tp <x> <y>[/color]")
+			else:
+				send_to_server({"type": "gm_teleport", "x": int(parts[1]), "y": int(parts[2])})
+		"completequest":
+			var quest_index = int(parts[1]) if parts.size() > 1 else -1
+			send_to_server({"type": "gm_completequest", "index": quest_index})
+		"resetquests":
+			send_to_server({"type": "gm_resetquests"})
+		"heal":
+			send_to_server({"type": "gm_heal"})
+		"broadcast":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /broadcast <message>[/color]")
+			else:
+				var broadcast_msg = " ".join(parts.slice(1))
+				send_to_server({"type": "gm_broadcast", "message": broadcast_msg})
 		_:
 			# Check if this is a combat command while in combat
 			if in_combat:
@@ -15337,46 +15443,47 @@ func display_character_status():
 		var comp_variant = active_companion.get("variant", "Normal")
 		var comp_variant_color = active_companion.get("variant_color", "#FFFFFF")
 		var comp_bonuses = active_companion.get("bonuses", {})
+		var comp_sub_tier = active_companion.get("sub_tier", 1)
+		var comp_monster_type = active_companion.get("monster_type", comp_name)
 
 		# Apply variant multiplier to display accurate values
-		var variant_mult = 1.0
-		match comp_variant:
-			"Shiny": variant_mult = 1.25
-			"Glittering": variant_mult = 1.5
-			"Radiant": variant_mult = 2.0
-			"Prismatic": variant_mult = 3.0
+		var variant_mult = _get_variant_multiplier(comp_variant)
+		var sub_tier_mult = _get_sub_tier_multiplier(comp_sub_tier)
+		var effective_mult = variant_mult * sub_tier_mult
 
 		text += "[color=%s]%s %s[/color] [color=#AAAAAA]Lv.%d[/color]\n" % [comp_variant_color, comp_variant, comp_name, comp_level]
 
-		# Show combat bonuses that are actually applied
-		var comp_bonus_parts = []
-		if comp_bonuses.get("attack", 0) > 0:
-			var attack_val = int(comp_bonuses.get("attack", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#FF6666]+%d%% Damage[/color]" % attack_val)
-		if comp_bonuses.get("crit_chance", 0) > 0:
-			var crit_val = int(comp_bonuses.get("crit_chance", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#FFFF00]+%d%% Crit[/color]" % crit_val)
-		if comp_bonuses.get("hp_regen", 0) > 0:
-			var regen_val = int(comp_bonuses.get("hp_regen", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#00FF00]+%d%% HP/rnd[/color]" % regen_val)
-		if comp_bonuses.get("flee_bonus", 0) > 0:
-			var flee_val = int(comp_bonuses.get("flee_bonus", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#00BFFF]+%d%% Flee[/color]" % flee_val)
-		if comp_bonuses.get("defense", 0) > 0:
-			var def_val = int(comp_bonuses.get("defense", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#00BFFF]+%d Defense[/color]" % def_val)
-		if comp_bonuses.get("lifesteal", 0) > 0:
-			var steal_val = int(comp_bonuses.get("lifesteal", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#FF00FF]+%d%% Lifesteal[/color]" % steal_val)
-		if comp_bonuses.get("gold_find", 0) > 0:
-			var gold_val = int(comp_bonuses.get("gold_find", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#FFD700]+%d%% Gold[/color]" % gold_val)
-		if comp_bonuses.get("speed", 0) > 0:
-			var speed_val = int(comp_bonuses.get("speed", 0) * variant_mult)
-			comp_bonus_parts.append("[color=#FFFF00]+%d Speed[/color]" % speed_val)
+		# Calculate TOTAL combat bonuses: base companion bonuses + passive ability effects
+		# This matches what actually happens in combat (combat_manager.gd start_combat)
+		var total_bonuses = {}
+		# 1) Base companion bonuses (scaled by variant × sub-tier)
+		for key in comp_bonuses:
+			total_bonuses[key] = int(float(comp_bonuses[key]) * effective_mult)
 
+		# 2) Add passive ability bonuses (these stack with base bonuses in combat)
+		if COMPANION_MONSTER_ABILITIES.has(comp_monster_type):
+			var monster_abilities = COMPANION_MONSTER_ABILITIES[comp_monster_type]
+			if monster_abilities.has("passive"):
+				var passive = monster_abilities.passive
+				# Scale passive values the same way the server does
+				for suffix in ["", "2", "3"]:
+					var base_key = "base" + suffix
+					var scaling_key = "scaling" + suffix
+					var effect_key = "effect" + suffix
+					if passive.has(base_key) and passive.has(scaling_key) and passive.has(effect_key):
+						var base_val = passive[base_key] * effective_mult
+						var scaled_val = int(base_val + (passive[scaling_key] * comp_level * effective_mult))
+						var effect_name = passive[effect_key]
+						# Map passive effect names to bonus keys
+						var bonus_key = effect_name
+						if bonus_key == "regen":
+							bonus_key = "hp_regen"
+						total_bonuses[bonus_key] = total_bonuses.get(bonus_key, 0) + scaled_val
+
+		# Show total combat bonuses
+		var comp_bonus_parts = _get_companion_bonus_parts_with_variant(total_bonuses, 1.0)  # Already scaled
 		if comp_bonus_parts.size() > 0:
-			text += "[color=#00FFFF]Combat Bonuses:[/color] %s\n" % "  ".join(comp_bonus_parts)
+			text += "[color=#00FFFF]In-Combat Bonuses:[/color] %s\n" % "  ".join(comp_bonus_parts)
 		text += "\n"
 
 	# === ACTIVE EFFECTS ===
@@ -15509,61 +15616,54 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.104 changes
+	display_game("[color=#00FF00]v0.9.104[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Reconnect[/color]")
+	display_game("  • Disconnect in a dungeon? Reconnect to resume where you left off")
+	display_game("  • Dungeon state (floor, position) now saved through disconnects")
+	display_game("  • If the dungeon expired (server restart), you return to the overworld safely")
+	display_game("  [color=#FFD700]CC Diminishing Returns[/color]")
+	display_game("  • Shield Bash stun chance decreases with repeated use (100/75/50/25/20% floor)")
+	display_game("  • Paralyze success reduced by 20% per prior CC (10% floor)")
+	display_game("  • Gear resource regen skipped on CC ability turns (no more spend/regen loops)")
+	display_game("  • CC resistance shown in combat messages")
+	display_game("  [color=#FFD700]XP Scaling[/color]")
+	display_game("  • Fighting stronger same-tier monsters now gives up to +100% XP (was +50%)")
+	display_game("  • Bonus scales with sqrt — sweet spot grows with your level")
+	display_game("  • Fighting much weaker monsters gradually reduces XP (40% floor)")
+	display_game("  • 'Worthy challenge' hint shown when fighting ideal-level monsters")
+	display_game("  [color=#FFD700]Companion Display Fix[/color]")
+	display_game("  • Status page and companion inspection now show TOTAL in-combat bonuses")
+	display_game("  • Passive ability bonuses (e.g., Ironclad HP%) included in displayed values")
+	display_game("  • Multi-effect abilities now show all effects in inspection")
+	display_game("")
+
 	# v0.9.102 changes
-	display_game("[color=#00FF00]v0.9.102[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]UI Improvements[/color]")
-	display_game("  • Dungeon action bar cleaned up: removed direction buttons (use numpad/movement pad)")
-	display_game("  • Movement pad buttons now work for dungeon navigation (N/S/E/W)")
-	display_game("  • Home Stone (Supplies) now sends equipment AND consumables to storage")
-	display_game("  • Home Stone (Supplies) hotkeys now work (Send, Cancel, Prev/Next, Select All)")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Home Stone confirmation message now visible after sending items")
-	display_game("  • Fix: Dungeon floors no longer generate unplayable layouts (min size 16x16)")
-	display_game("  • Fix: Safety fallback if entrance spawns on a wall tile")
+	display_game("[color=#00FFFF]v0.9.102[/color]")
+	display_game("  • Dungeon action bar cleanup, movement pad dungeon navigation")
+	display_game("  • Home Stone (Supplies) sends equipment + consumables, hotkeys work")
+	display_game("  • Fix: Dungeon floors min size 16x16, entrance wall fallback")
 	display_game("")
 
 	# v0.9.101 changes
 	display_game("[color=#00FFFF]v0.9.101[/color]")
 	display_game("  • Dungeon floor sizes vary, entrance placement randomized")
 	display_game("  • HP/resources regenerate on dungeon movement")
-	display_game("  • Companion registration reworked (per-companion, multiple registrations)")
-	display_game("  • Home Stone (Egg) hatches to Kennel; HP bar shows companion boost")
+	display_game("  • Companion registration reworked, Home Stone (Egg) hatches to Kennel")
 	display_game("  • Fixes: salvage null, flock despawn, Boss Hunt 2/1, supplies pagination")
 	display_game("")
 
 	# v0.9.99 changes
 	display_game("[color=#00FFFF]v0.9.99[/color]")
-	display_game("  [color=#FFD700]Trading Post Visual Variety[/color]")
-	display_game("  • Trading posts now color-coded by category on the map")
-	display_game("  • 10 categories: haven, market, shrine, farm, mine, tower, camp, exotic, fortress")
-	display_game("  • 4 new border shapes: ruins, arch, dock, gateway (10 total)")
-	display_game("  • Each post shows its unique border shape on the overworld map")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Fix: Sanctuary upgrade costs now properly saved from server")
-	display_game("  • Fix: Kennel capacity corrected (30-500 slots across 9 upgrade levels)")
-	display_game("  • Fix: Companion slots max increased from 3 to 8")
-	display_game("  • Fix: Boss Hunt quests no longer generate duplicate bounties")
-	display_game("  • Fix: Fusion no longer exploitable with duplicate companion indices")
-	display_game("  • Fix: Companion XP formula corrected, max level now 10000")
-	display_game("  • Fix: Companion inspection no longer wiped by server updates")
-	display_game("  • Fix: Fused companions now have proper variant_rarity field")
-	display_game("  • Fix: Division by zero in treasure catch calculations")
-	display_game("  • Fix: Null checks for companion and ability targets")
-	display_game("  [color=#FFD700]QOL Improvements[/color]")
-	display_game("  • Companion bonuses shown in list and kennel views")
-	display_game("  • Quest rewards now color-coded (XP=blue, Gold=gold, Gems=cyan)")
-	display_game("  • Kennel Register button disabled when registered slots are full")
-	display_game("  • Dungeon entry dialog now shows sub-tier (Tier X-Y)")
-	display_game("  • Help page updated with kennel, fusion, and sub-tier docs")
+	display_game("  • Trading post visual variety: 10 categories, color-coded map, 10 border shapes")
+	display_game("  • Major bug fix pass: kennel capacity, fusion exploits, companion XP formula")
+	display_game("  • QOL: bonus display in views, quest reward colors, sub-tier display")
 	display_game("")
 
 	# v0.9.98 changes
 	display_game("[color=#00FFFF]v0.9.98[/color]")
 	display_game("  • Companion Kennel & Fusion Station in Sanctuary")
-	display_game("  • Fuse 3 same-type companions for higher sub-tier")
-	display_game("  • Home Stone (Companion) offers Register or Kennel choice")
 	display_game("  • Fix: Companion HP/mana/crit/wisdom bonuses now work in combat")
-	display_game("  • Fix: Dungeon pack monsters properly cleared; buffs tick during rest")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -16550,10 +16650,31 @@ func display_companion_inspection(companion: Dictionary):
 	info_lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [damage_est.min, damage_est.max])
 	info_lines.append("")
 
-	# Combat Bonuses (variant × sub-tier = effective values)
-	info_lines.append("[color=#808080]── Combat Bonuses ──[/color]")
+	# Combat Bonuses: base companion bonuses + passive ability bonuses (= total in-combat effect)
+	info_lines.append("[color=#808080]── In-Combat Bonuses ──[/color]")
 	var effective_mult = variant_mult * sub_tier_mult
-	var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, effective_mult)
+	var total_bonuses = {}
+	# 1) Base companion bonuses
+	for key in bonuses:
+		total_bonuses[key] = int(float(bonuses[key]) * effective_mult)
+	# 2) Add passive ability bonuses
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var m_abilities = COMPANION_MONSTER_ABILITIES[monster_type]
+		if m_abilities.has("passive"):
+			var passive = m_abilities.passive
+			for suffix in ["", "2", "3"]:
+				var base_key = "base" + suffix
+				var scaling_key = "scaling" + suffix
+				var effect_key = "effect" + suffix
+				if passive.has(base_key) and passive.has(scaling_key) and passive.has(effect_key):
+					var base_val = passive[base_key] * effective_mult
+					var scaled_val = int(base_val + (passive[scaling_key] * comp_level * effective_mult))
+					var effect_name = passive[effect_key]
+					var bonus_key = effect_name
+					if bonus_key == "regen":
+						bonus_key = "hp_regen"
+					total_bonuses[bonus_key] = total_bonuses.get(bonus_key, 0) + scaled_val
+	var bonus_parts = _get_companion_bonus_parts_with_variant(total_bonuses, 1.0)  # Already scaled
 	if bonus_parts.size() > 0:
 		info_lines.append("  %s" % ", ".join(bonus_parts))
 	else:
@@ -16689,47 +16810,32 @@ func _scale_ability_for_display(ability_template: Dictionary, level: int, varian
 
 func _format_ability_for_inspection(ability: Dictionary, ability_type: String) -> String:
 	"""Format an ability dictionary for display in inspection.
-	Uses the 'effect' field from COMPANION_MONSTER_ABILITIES format."""
+	Uses the 'effect' field from COMPANION_MONSTER_ABILITIES format.
+	Handles multi-effect abilities (effect/value, effect2/value2, effect3/value3)."""
 
 	# First check if ability has a description field - use it directly
 	if ability.has("description"):
 		var desc = ability.description
-		var value = ability.get("value", 0)
 		var chance = ability.get("chance", 0)
 		var damage = ability.get("damage", ability.get("value", 0))
 		var hp_percent = ability.get("hp_percent", 30)
 
-		# Append scaled values to description
-		var effect = ability.get("effect", "")
-		match effect:
-			"attack", "defense", "speed", "gold_find", "regen":
-				return "%s (+%d)" % [desc, value]
-			"bonus_damage":
-				if chance > 0:
-					return "%s (%d%% chance, %d dmg)" % [desc, chance, damage]
-				return "%s (+%d dmg)" % [desc, damage]
-			"bleed", "poison":
-				return "%s (%d%% chance, %d dmg/turn)" % [desc, chance, damage]
-			"enemy_miss":
-				if chance > 0:
-					return "%s (%d%% chance)" % [desc, chance]
-				return desc
-			"stun":
-				return "%s (%d%% chance)" % [desc, chance]
-			"crit":
-				return "%s (%d%% chance)" % [desc, chance]
-			"attack_buff", "defense_buff", "speed_buff", "all_buff":
-				return "%s (+%d%% below %d%% HP)" % [desc, value, hp_percent]
-			"flee_bonus":
-				return "%s (+%d%% below %d%% HP)" % [desc, value, hp_percent]
-			"heal":
-				return "%s (%d HP below %d%% HP)" % [desc, value, hp_percent]
-			"absorb", "damage_reduction":
-				return "%s (%d%% below %d%% HP)" % [desc, value, hp_percent]
-			_:
-				if value > 0:
-					return "%s (+%d)" % [desc, value]
-				return desc
+		# Collect all effect parts for multi-effect abilities
+		var effect_parts = []
+		for suffix in ["", "2", "3"]:
+			var effect_key = "effect" + suffix
+			var value_key = "value" + suffix
+			if not ability.has(effect_key):
+				continue
+			var effect = ability.get(effect_key, "")
+			var value = ability.get(value_key, 0)
+			var part = _format_single_effect(effect, value, chance, damage, hp_percent)
+			if part != "":
+				effect_parts.append(part)
+
+		if effect_parts.size() > 0:
+			return "%s (%s)" % [desc, ", ".join(effect_parts)]
+		return desc
 
 	# Fallback for legacy format
 	var atype = ability.get("type", ability.get("effect", "unknown"))
@@ -16751,6 +16857,76 @@ func _format_ability_for_inspection(ability: Dictionary, ability_type: String) -
 			return "Heals %d HP" % value
 		_:
 			return "Special ability"
+
+func _format_single_effect(effect: String, value: int, chance: int, damage: int, hp_percent: int) -> String:
+	"""Format a single effect type with its value for ability display."""
+	match effect:
+		"attack":
+			return "+%d Attack" % value
+		"defense":
+			return "+%d Defense" % value
+		"speed":
+			return "+%d Speed" % value
+		"gold_find":
+			return "+%d%% Gold" % value
+		"hp_bonus":
+			return "+%d%% HP" % value
+		"mana_bonus":
+			return "+%d%% Mana" % value
+		"hp_regen":
+			return "+%d%% HP/rnd" % value
+		"mana_regen":
+			return "+%d%% Mana/rnd" % value
+		"energy_regen":
+			return "+%d%% Energy/rnd" % value
+		"flee_bonus":
+			if hp_percent < 100:
+				return "+%d%% Flee below %d%% HP" % [value, hp_percent]
+			return "+%d%% Flee" % value
+		"crit_chance":
+			return "+%d%% Crit" % value
+		"crit_damage":
+			return "+%d%% Crit Dmg" % value
+		"lifesteal":
+			return "+%d%% Lifesteal" % value
+		"wisdom_bonus":
+			return "+%d Wisdom" % value
+		"regen":
+			return "+%d Regen" % value
+		"bonus_damage":
+			if chance > 0:
+				return "%d%% chance, %d dmg" % [chance, damage]
+			return "+%d dmg" % damage
+		"bleed", "poison":
+			return "%d%% chance, %d dmg/turn" % [chance, damage]
+		"enemy_miss":
+			if chance > 0:
+				return "%d%% enemy miss" % chance
+			return "enemy miss"
+		"stun":
+			if chance > 0:
+				return "%d%% stun" % chance
+			return "stun"
+		"crit":
+			if chance > 0:
+				return "%d%% crit" % chance
+			return "crit"
+		"charm":
+			return "%d%% chance to confuse" % chance
+		"attack_buff", "defense_buff", "speed_buff", "all_buff":
+			return "+%d%% below %d%% HP" % [value, hp_percent]
+		"heal":
+			return "%d HP below %d%% HP" % [value, hp_percent]
+		"full_heal":
+			return "Full heal below %d%% HP" % hp_percent
+		"absorb", "damage_reduction":
+			return "%d%% below %d%% HP" % [value, hp_percent]
+		"mana_restore":
+			return "+%d Mana below %d%% HP" % [value, hp_percent]
+		_:
+			if value > 0:
+				return "+%d" % value
+			return ""
 
 func display_eggs():
 	"""Display the eggs page with ASCII art"""
@@ -17499,6 +17675,40 @@ func search_help(search_term: String):
 func display_game(text: String):
 	if game_output:
 		game_output.append_text(text + "\n")
+
+func display_gm_help():
+	"""Display all available GM/Admin commands"""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]         GM COMMAND REFERENCE[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("[color=#FFD700]Stats & Resources:[/color]")
+	display_game("  /setlevel <n>        Set character level")
+	display_game("  /setgold <n>         Set gold amount")
+	display_game("  /setgems <n>         Set gems amount")
+	display_game("  /setessence <n>      Set salvage essence")
+	display_game("  /setxp <n>           Set XP directly")
+	display_game("  /setbp <n>           Set Baddie Points on house")
+	display_game("  /godmode             Toggle invincibility")
+	display_game("  /heal                Full HP/mana/stamina restore")
+	display_game("")
+	display_game("[color=#FFD700]Items & Spawning:[/color]")
+	display_game("  /giveitem [tier] [slot]      Give random item (tier 1-9)")
+	display_game("  /giveegg [monster type]      Give incubating egg")
+	display_game("  /givecompanion [type] [tier] Give hatched companion")
+	display_game("  /spawnmonster [type] [level] Force combat encounter")
+	display_game("  /givemats <id> <amount>      Give crafting materials")
+	display_game("  /giveall                     Starter kit (gold/gems/items/mats)")
+	display_game("")
+	display_game("[color=#FFD700]World & Quests:[/color]")
+	display_game("  /tp <x> <y>          Teleport to coordinates")
+	display_game("  /completequest [n]   Complete quest (or all)")
+	display_game("  /resetquests         Clear all active quests")
+	display_game("  /broadcast <msg>     Server-wide announcement")
+	display_game("")
+	display_game("[color=#808080]All commands are server-gated. Non-admin accounts get 'Admin access required'.[/color]")
+	display_game("[color=#808080]Admin characters are excluded from all leaderboards.[/color]")
 
 var _status_background_active: bool = false
 

@@ -1297,7 +1297,15 @@ func to_dict() -> Dictionary:
 		"equipped_axe": equipped_axe,
 		"house_bonuses": house_bonuses,
 		"using_registered_companion": using_registered_companion,
-		"registered_companion_slot": registered_companion_slot
+		"registered_companion_slot": registered_companion_slot,
+		"saved_dungeon_state": {
+			"in_dungeon": in_dungeon,
+			"dungeon_id": current_dungeon_id,
+			"dungeon_type": current_dungeon_type,
+			"floor": dungeon_floor,
+			"x": dungeon_x,
+			"y": dungeon_y
+		} if in_dungeon else {}
 	}
 
 func from_dict(data: Dictionary):
@@ -1361,6 +1369,16 @@ func from_dict(data: Dictionary):
 
 	# Saved combat state for disconnect recovery
 	saved_combat_state = data.get("saved_combat_state", {})
+
+	# Saved dungeon state for disconnect recovery
+	var saved_dungeon = data.get("saved_dungeon_state", {})
+	if not saved_dungeon.is_empty():
+		in_dungeon = saved_dungeon.get("in_dungeon", false)
+		current_dungeon_id = saved_dungeon.get("dungeon_id", "")
+		current_dungeon_type = saved_dungeon.get("dungeon_type", "")
+		dungeon_floor = saved_dungeon.get("floor", 0)
+		dungeon_x = saved_dungeon.get("x", 0)
+		dungeon_y = saved_dungeon.get("y", 0)
 
 	# Inventory system
 	inventory = data.get("inventory", [])

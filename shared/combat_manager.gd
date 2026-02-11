@@ -685,20 +685,21 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var ambusher_active = ABILITY_AMBUSHER in monster_abilities
 
 	# === INITIATIVE CHECK ===
-	# Monster initiative based on their speed, reduced by player DEX
-	# Base chance = monster_speed / 2 (speed 20 = 10%, speed 40 = 20%)
-	# Player DEX reduces chance: -1% per 10 DEX
-	# Minimum 5%, maximum 40% (45% with ambusher)
+	# Ratio-based initiative with logarithmic DEX scaling
+	# Monster speed as 0-1 rating (speed 0→0.0, speed 50→1.0)
+	# Base initiative: 5% (speed 0) to 25% (speed 50)
+	# DEX penalty grows logarithmically — meaningful but doesn't dominate
 	var player_dex = character.get_effective_stat("dexterity")
 	var companion_speed = int(character.get_companion_bonus("speed")) if character.has_active_companion() else 0
 	var monster_speed = monster.get("speed", 10)
-	var monster_initiative_chance = int(monster_speed / 2.0)  # Base from monster speed
-	monster_initiative_chance -= int(player_dex / 10.0)  # DEX reduces it
-	monster_initiative_chance -= int(companion_speed / 5.0)  # Companion speed reduces it
-	monster_initiative_chance = max(5, monster_initiative_chance)  # Minimum 5%
+	var speed_rating = clampf(float(monster_speed) / 50.0, 0.0, 1.0)
+	var base_initiative = 5.0 + speed_rating * 20.0
+	var effective_dex = float(player_dex) + float(companion_speed) / 2.0
+	var dex_penalty = 2.0 * log(maxf(1.0, effective_dex / 10.0)) / log(2.0)
+	var monster_initiative_chance = int(base_initiative - dex_penalty)
 	if ambusher_active:
-		monster_initiative_chance += 15
-	monster_initiative_chance = min(45, monster_initiative_chance)  # Hard cap at 45%
+		monster_initiative_chance += 8
+	monster_initiative_chance = clampi(monster_initiative_chance, 5, 45)
 
 	var monster_goes_first = monster_initiative_chance > 0 and randi() % 100 < monster_initiative_chance
 
@@ -734,6 +735,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"ambusher_active": ambusher_active,  # Monster's first attack crits
 		"monster_went_first": monster_goes_first,  # Track for display
 		# Note: Poison is now tracked on character (poison_active, poison_damage, poison_turns_remaining)
+		"cc_resistance": 0,  # Increases each time CC (stun/paralyze) lands on monster
 		"enrage_stacks": 0,  # Damage bonus per round
 		"thorns_damage": 0,  # Damage reflected on hit
 		"curse_applied": false,  # Stat curse active
@@ -824,6 +826,17 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
+
+	# Add XP challenge hint for worthy opponents
+	var hint_level_diff = monster.get("level", 1) - character.level
+	var hint_player_tier = _get_tier_for_level(character.level)
+	var hint_monster_tier = _get_tier_for_level(monster.get("level", 1))
+	var hint_tier_diff = hint_monster_tier - hint_player_tier
+	if hint_tier_diff > 0:
+		msg += "\n[color=#FF00FF]This foe is far above your tier — a great risk with great reward.[/color]"
+	elif hint_level_diff >= 5 and hint_level_diff <= 20 and hint_tier_diff == 0:
+		msg += "\n[color=#FFD700]This foe is a worthy challenge for your level.[/color]"
+
 	combat_state.combat_log.append(msg)
 
 	# === MONSTER FIRST STRIKE ===
@@ -1046,11 +1059,12 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if is_vanished:
 		combat.erase("vanished")
 
-	# Hit chance: 75% base + (player DEX - monster speed) per point
+	# Hit chance: 75% base + (player DEX - monster speed/2) per point
+	# Monster speed halved so higher speeds don't tank early-game accuracy
 	# DEX makes it easier to hit enemies, Vanish guarantees hit
 	var player_dex = character.get_effective_stat("dexterity")
 	var monster_speed = monster.get("speed", 10)  # Use monster speed as DEX equivalent
-	var dex_diff = player_dex - monster_speed
+	var dex_diff = player_dex - int(monster_speed / 2.0)
 	var hit_chance = 75 + dex_diff
 	# Companion speed bonus improves hit chance
 	var comp_speed_hit = int(character.get_companion_bonus("speed")) if character.has_active_companion() else 0
@@ -1274,10 +1288,26 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		xp_tier_bonus = pow(2.0, xp_tier_diff)  # 2x per tier: T+1=2x, T+2=4x, T+3=8x
 		messages.append("[color=#FF00FF]* TIER CHALLENGE: +%dx XP bonus! *[/color]" % int(xp_tier_bonus))
 
-	# Small level difference bonus (within same tier)
-	# +2% per level difference, capped at 50% (same-tier fights shouldn't give huge bonuses)
+	# Same-tier level difference bonus (sqrt scaling — reward grows with player level)
 	if xp_level_diff > 0 and xp_tier_diff == 0:
-		xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
+		# reference_gap grows with player level: 10 at lv1, 15 at lv100, 35 at lv500
+		var reference_gap = 10.0 + float(character.level) * 0.05
+		var gap_ratio = float(xp_level_diff) / reference_gap
+		xp_multiplier = 1.0 + minf(1.0, sqrt(gap_ratio) * 0.7)  # Cap at +100% (2x)
+		var bonus_pct = int((xp_multiplier - 1.0) * 100)
+		if bonus_pct >= 10:
+			messages.append("[color=#FFD700]Challenge bonus: +%d%% XP[/color]" % bonus_pct)
+	elif xp_level_diff < 0 and xp_tier_diff == 0:
+		# Downlevel penalty — small grace zone, then gradual reduction
+		var under_gap = abs(xp_level_diff)
+		var penalty_threshold = 5.0 + float(character.level) * 0.03  # Grace zone grows with level
+		if under_gap > penalty_threshold:
+			var excess = under_gap - penalty_threshold
+			var penalty = minf(0.6, excess * 0.03)  # -3% per level beyond threshold
+			xp_multiplier = maxf(0.4, 1.0 - penalty)  # Floor at 40% XP
+			var penalty_pct = int((1.0 - xp_multiplier) * 100)
+			if penalty_pct >= 10:
+				messages.append("[color=#808080]Weak foe: -%d%% XP[/color]" % penalty_pct)
 
 	var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
 
@@ -2137,8 +2167,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		end_combat(peer_id, result.get("victory", false))
 		return result
 
-	# === GEAR RESOURCE REGEN (applies even when using abilities) ===
-	_apply_gear_resource_regen(combat.character, result.messages)
+	# === GEAR RESOURCE REGEN (skipped on CC ability turns to prevent spend/regen loops) ===
+	var cc_abilities = ["shield_bash", "paralyze"]
+	if ability_name not in cc_abilities:
+		_apply_gear_resource_regen(combat.character, result.messages)
 
 	# === COMPANION ATTACK (only if ability takes a combat turn) ===
 	# Don't attack on free actions like Analyze, Pickpocket success, etc.
@@ -2571,19 +2603,24 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			is_buff_ability = true
 
 		"paralyze":
-			# Attempt to stun monster for 1-2 turns
+			# Attempt to stun monster for 1-2 turns, with diminishing returns
 			if not character.use_mana(mana_cost):
 				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
 			var int_stat = character.get_effective_stat("intelligence")
-			var success_chance = 50 + int(int_stat / 2)  # 50% base + 0.5% per INT
-			success_chance = min(85, success_chance)  # Cap at 85%
+			var cc_resist = combat.get("cc_resistance", 0)
+			var resist_penalty = cc_resist * 20  # -20% per prior CC
+			var success_chance = mini(85, 50 + int(int_stat / 2)) - resist_penalty
+			success_chance = maxi(10, success_chance)  # 10% floor for Paralyze
 			if randf() * 100 < success_chance:
 				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
 				combat["monster_stunned"] = stun_duration
+				combat["cc_resistance"] = cc_resist + 1
 				messages.append("[color=#FFFF00]You paralyze the %s for %d turn(s)![/color]" % [monster.name, stun_duration])
 				is_buff_ability = true  # 75% chance to avoid monster's retaliation while casting
 			else:
 				messages.append("[color=#FF4444]The %s resists your paralysis![/color]" % monster.name)
+			if cc_resist > 0:
+				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 20))
 
 		"banish":
 			# Attempt to remove monster from combat with 50% loot chance
@@ -2695,17 +2732,26 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"shield_bash":
-			# Buffed: 1.5Ã— damage multiplier (was 1Ã—), sqrt STR scaling
+			# 1.5x damage multiplier, sqrt STR scaling, diminishing stun chance
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)  # 1.5Ã— (was 1Ã—)
+			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			combat["monster_stunned"] = true  # Enemy skips next turn
+			# Diminishing stun chance: 100% → 75% → 50% → 25% → 20% floor
+			var cc_resist = combat.get("cc_resistance", 0)
+			var stun_chance = maxi(20, 100 - cc_resist * 25)
 			messages.append("[color=#FF4444]SHIELD BASH![/color]")
-			messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
+			if randi() % 100 < stun_chance:
+				combat["monster_stunned"] = true  # Enemy skips next turn
+				combat["cc_resistance"] = cc_resist + 1
+				messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
+			else:
+				messages.append("[color=#FFFF00]You deal %d damage but the enemy resists the stun![/color]" % damage)
+			if cc_resist > 0:
+				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 25))
 
 		"cleave":
 			# Buffed: 2.5Ã— damage multiplier (was 2Ã—), sqrt STR scaling
@@ -3596,6 +3642,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				total_damage -= forcefield_shield
 				combat.erase("forcefield_shield")
 				messages.append("[color=#FF00FF]Your Forcefield absorbs %d damage before breaking![/color]" % forcefield_shield)
+
+		# GM godmode: negate all damage
+		if character.get_meta("gm_godmode", false):
+			messages.append("[color=#00FF00][GM] Godmode: %d damage negated[/color]" % total_damage)
+			total_damage = 0
 
 		character.current_hp -= total_damage
 
@@ -4940,7 +4991,8 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
 		"is_boss_fight": combat.get("is_boss_fight", false),
 		"dungeon_monster_id": combat.get("dungeon_monster_id", -1),
-		"flock_remaining": combat.get("flock_remaining", 0)
+		"flock_remaining": combat.get("flock_remaining", 0),
+		"cc_resistance": combat.get("cc_resistance", 0)
 	}
 
 func restore_combat(peer_id: int, character: Character, saved_state: Dictionary) -> Dictionary:
@@ -4976,7 +5028,8 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		"is_dungeon_combat": saved_state.get("is_dungeon_combat", false),
 		"is_boss_fight": saved_state.get("is_boss_fight", false),
 		"dungeon_monster_id": saved_state.get("dungeon_monster_id", -1),
-		"flock_remaining": saved_state.get("flock_remaining", 0)
+		"flock_remaining": saved_state.get("flock_remaining", 0),
+		"cc_resistance": saved_state.get("cc_resistance", 0)
 	}
 
 	active_combats[peer_id] = combat_state

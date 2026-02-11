@@ -109,6 +109,7 @@ class CombatState:
 	var player_charmed: bool = false
 	var monster_fled: bool = false
 	var monster_stun_turns: int = 0  # From Paralyze/Shield Bash
+	var cc_resistance: int = 0  # Diminishing returns on CC
 
 	func reset():
 		round = 0
@@ -122,6 +123,7 @@ class CombatState:
 		player_charmed = false
 		monster_fled = false
 		monster_stun_turns = 0
+		cc_resistance = 0
 
 func _init():
 	pass
@@ -934,13 +936,16 @@ func _apply_warrior_ability_damage(character, monster: Dictionary, attack_multip
 
 	return max(1, base_damage)
 
-func calculate_shield_bash_damage(character, monster: Dictionary) -> Dictionary:
-	"""Shield Bash: 1.5x attack + stun, costs 20 stamina (level 25)"""
+func calculate_shield_bash_damage(character, monster: Dictionary, cc_resistance: int = 0) -> Dictionary:
+	"""Shield Bash: 1.5x attack + diminishing stun chance, costs 20 stamina (level 25)"""
 	var stamina_cost = _get_warrior_stamina_cost(character, 20)
 	if character.current_stamina < stamina_cost:
 		return {"damage": 0, "stamina_cost": stamina_cost, "stun": false}
 	var damage = _apply_warrior_ability_damage(character, monster, 1.5)
-	return {"damage": damage, "stamina_cost": stamina_cost, "stun": true}
+	# Diminishing stun chance: 100% → 75% → 50% → 25% → 20% floor
+	var stun_chance = maxi(20, 100 - cc_resistance * 25)
+	var stunned = randi() % 100 < stun_chance
+	return {"damage": damage, "stamina_cost": stamina_cost, "stun": stunned}
 
 func calculate_cleave_damage(character, monster: Dictionary) -> Dictionary:
 	"""Cleave: 2.5x attack + bleed DoT, costs 30 stamina (level 40)"""
@@ -1100,14 +1105,16 @@ func apply_haste(character) -> bool:
 	character.add_buff("haste_speed", speed_bonus, 5)
 	return true
 
-func apply_paralyze(character, monster: Dictionary) -> Dictionary:
-	"""Paralyze: stun monster 1-2 turns, success = 50%+INT/2 capped at 85%, costs 60 mana (level 50)"""
+func apply_paralyze(character, monster: Dictionary, cc_resistance: int = 0) -> Dictionary:
+	"""Paralyze: stun monster 1-2 turns, success = 50%+INT/2 capped at 85% minus CC resistance, costs 60 mana (level 50)"""
 	var mana_cost = _get_mage_mana_cost(character, 60, 0.06)
 	if character.current_mana < mana_cost:
 		return {"success": false, "mana_cost": mana_cost, "stun_turns": 0}
 	character.current_mana -= mana_cost
 	var int_stat = character.get_effective_stat("intelligence")
-	var success_chance = mini(85, 50 + int(int_stat / 2))
+	var resist_penalty = cc_resistance * 20
+	var success_chance = mini(85, 50 + int(int_stat / 2)) - resist_penalty
+	success_chance = maxi(10, success_chance)  # 10% floor
 	if randi() % 100 < success_chance:
 		var stun_turns = randi_range(1, 2)
 		return {"success": true, "mana_cost": mana_cost, "stun_turns": stun_turns}
@@ -1330,6 +1337,21 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 	# Ability usage tracking
 	var abilities_used = {}  # {ability_name: {count: int, total_damage: int}}
 
+	# === INITIATIVE CHECK ===
+	# Ratio-based initiative with logarithmic DEX scaling (mirrors combat_manager.gd)
+	var monster_abilities = monster.get("abilities", [])
+	var init_ambusher = ABILITY_AMBUSHER in monster_abilities
+	var init_monster_speed = monster.get("speed", 10)
+	var init_player_dex = character.get_effective_stat("dexterity")
+	var init_speed_rating = clampf(float(init_monster_speed) / 50.0, 0.0, 1.0)
+	var init_base = 5.0 + init_speed_rating * 20.0
+	var init_dex_penalty = 2.0 * log(maxf(1.0, float(init_player_dex) / 10.0)) / log(2.0)
+	var init_chance = int(init_base - init_dex_penalty)
+	if init_ambusher:
+		init_chance += 8
+	init_chance = clampi(init_chance, 5, 45)
+	var monster_goes_first = init_chance > 0 and randi() % 100 < init_chance
+
 	while character.current_hp > 0 and monster.current_hp > 0 and combat_state.round < max_rounds:
 		var player_dealt_damage = false
 		var damage_to_monster = 0
@@ -1358,6 +1380,26 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 				"abilities_used": abilities_used,
 				"resource_remaining": {"mana": character.current_mana, "stamina": character.current_stamina, "energy": character.current_energy}
 			}
+
+		# === Monster initiative: monster attacks first on round 0 ===
+		if combat_state.round == 0 and monster_goes_first:
+			var init_result = process_monster_turn(monster, character, combat_state)
+			var init_damage = init_result.damage_dealt
+			if forcefield_active > 0 and init_damage > 0:
+				if init_damage <= forcefield_active:
+					forcefield_active -= init_damage
+					init_damage = 0
+				else:
+					init_damage -= forcefield_active
+					forcefield_active = 0
+				character.current_hp += init_result.damage_dealt
+				character.current_hp -= init_damage
+			total_damage_taken += init_damage
+			if character.current_hp <= 0:
+				if character.try_last_stand():
+					pass
+				else:
+					break
 
 		# =================================================================
 		# INTELLIGENT ABILITY SELECTION BY CLASS PATH
@@ -1396,9 +1438,10 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 				if not used_ability and character.level >= 50 and hp_percent < 0.30 and combat_state.monster_stun_turns == 0:
 					var actual_para_cost = _get_mage_mana_cost(character, 60, 0.06)
 					if character.current_mana >= actual_para_cost:
-						var para_result = apply_paralyze(character, monster)
+						var para_result = apply_paralyze(character, monster, combat_state.cc_resistance)
 						if para_result.success:
 							combat_state.monster_stun_turns = para_result.stun_turns
+							combat_state.cc_resistance += 1
 							skip_monster_turn = true
 						used_ability = true
 
@@ -1668,7 +1711,7 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 				if not used_ability and character.level >= 25 and combat_state.monster_stun_turns == 0:
 					var sb_cost = _get_warrior_stamina_cost(character, 20)
 					if character.current_stamina >= sb_cost:
-						var bash_result = calculate_shield_bash_damage(character, monster)
+						var bash_result = calculate_shield_bash_damage(character, monster, combat_state.cc_resistance)
 						if bash_result.damage > 0:
 							character.current_stamina -= bash_result.stamina_cost
 							monster.current_hp -= bash_result.damage
@@ -1676,6 +1719,7 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 							player_dealt_damage = true
 							if bash_result.stun:
 								combat_state.monster_stun_turns = 1
+								combat_state.cc_resistance += 1
 							used_ability = true
 
 				# Power Strike - basic ability

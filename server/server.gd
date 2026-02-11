@@ -893,6 +893,43 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_house_fusion(peer_id, message)
 		"request_character_list":
 			handle_list_characters(peer_id)
+		# GM/Admin command handlers
+		"gm_setlevel":
+			handle_gm_setlevel(peer_id, message)
+		"gm_setgold":
+			handle_gm_setgold(peer_id, message)
+		"gm_setgems":
+			handle_gm_setgems(peer_id, message)
+		"gm_setessence":
+			handle_gm_setessence(peer_id, message)
+		"gm_setxp":
+			handle_gm_setxp(peer_id, message)
+		"gm_godmode":
+			handle_gm_godmode(peer_id)
+		"gm_setbp":
+			handle_gm_setbp(peer_id, message)
+		"gm_giveitem":
+			handle_gm_giveitem(peer_id, message)
+		"gm_giveegg":
+			handle_gm_giveegg(peer_id, message)
+		"gm_givecompanion":
+			handle_gm_givecompanion(peer_id, message)
+		"gm_spawnmonster":
+			handle_gm_spawnmonster(peer_id, message)
+		"gm_givemats":
+			handle_gm_givemats(peer_id, message)
+		"gm_giveall":
+			handle_gm_giveall(peer_id)
+		"gm_teleport":
+			handle_gm_teleport(peer_id, message)
+		"gm_completequest":
+			handle_gm_completequest(peer_id, message)
+		"gm_resetquests":
+			handle_gm_resetquests(peer_id)
+		"gm_heal":
+			handle_gm_heal(peer_id)
+		"gm_broadcast":
+			handle_gm_broadcast(peer_id, message)
 		_:
 			pass
 
@@ -926,8 +963,9 @@ func handle_login(peer_id: int, message: Dictionary):
 		peers[peer_id].authenticated = true
 		peers[peer_id].account_id = result.account_id
 		peers[peer_id].username = result.username
+		peers[peer_id].is_admin = persistence.is_admin_account(result.account_id)
 
-		log_message("Account authenticated: %s (Peer %d)" % [username, peer_id])
+		log_message("Account authenticated: %s (Peer %d)%s" % [username, peer_id, " [ADMIN]" if peers[peer_id].is_admin else ""])
 
 		send_to_peer(peer_id, {
 			"type": "login_success",
@@ -1055,12 +1093,42 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])
 	update_player_list()
 
-	send_to_peer(peer_id, {
+	# Check for saved dungeon state (disconnect recovery) BEFORE sending character_loaded
+	var dungeon_restored = false
+	if character.in_dungeon:
+		var instance_id = character.current_dungeon_id
+		# Try to find the dungeon instance — check by instance_id first
+		if active_dungeons.has(instance_id) and dungeon_floors.has(instance_id):
+			# Instance still exists! Rebuild the mapping
+			var instance = active_dungeons[instance_id]
+			if not instance.active_players.has(peer_id):
+				instance.active_players.append(peer_id)
+			# Update owner_peer_id to new peer_id
+			if instance.has("owner_peer_id"):
+				instance["owner_peer_id"] = peer_id
+			# Rebuild player_dungeon_instances mapping
+			if not player_dungeon_instances.has(peer_id):
+				player_dungeon_instances[peer_id] = {}
+			var quest_id = instance.get("quest_id", "")
+			if quest_id == "":
+				quest_id = "_free_run_" + instance_id
+			player_dungeon_instances[peer_id][quest_id] = instance_id
+			dungeon_restored = true
+			log_message("DUNGEON RECONNECT: Restored %s to dungeon %s (floor %d)" % [char_name, instance_id, character.dungeon_floor])
+		else:
+			# Dungeon instance expired (server restarted or timed out)
+			character.exit_dungeon()
+			save_character(peer_id)
+			log_message("DUNGEON RECONNECT: Dungeon %s expired for %s, returning to overworld" % [instance_id, char_name])
+
+	var char_loaded_msg = {
 		"type": "character_loaded",
 		"character": character.to_dict(),
 		"message": "Welcome back, %s!" % char_name,
-		"title_holders": _get_current_title_holders()
-	})
+		"title_holders": _get_current_title_holders(),
+		"dungeon_restore": dungeon_restored
+	}
+	send_to_peer(peer_id, char_loaded_msg)
 
 	# Broadcast join message to other players (include title if present)
 	var display_name = char_name
@@ -1068,11 +1136,16 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		display_name = TitlesScript.format_titled_name(char_name, character.title)
 	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % display_name)
 
-	send_location_update(peer_id)
+	if dungeon_restored:
+		# Send dungeon state to client (replaces location update)
+		_send_dungeon_state(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]You have been returned to your dungeon.[/color]"})
+	else:
+		send_location_update(peer_id)
 
-	# Check if spawning at a Trading Post and trigger the encounter
-	if world_system.is_trading_post_tile(character.x, character.y):
-		trigger_trading_post_encounter(peer_id)
+		# Check if spawning at a Trading Post and trigger the encounter
+		if world_system.is_trading_post_tile(character.x, character.y):
+			trigger_trading_post_encounter(peer_id)
 
 	# Check for saved combat state (disconnect recovery)
 	if not character.saved_combat_state.is_empty():
@@ -3526,17 +3599,19 @@ func handle_disconnect(peer_id: int):
 	# Update title holder tracking before removing
 	_update_title_holders_on_logout(peer_id)
 
-	# Clean up dungeon state if player was in a dungeon
+	# Clean up dungeon active_players tracking (but preserve dungeon state for reconnect)
 	if characters.has(peer_id):
 		var character = characters[peer_id]
 		if character.in_dungeon:
 			var instance_id = character.current_dungeon_id
-			# Remove from dungeon's active players
+			# Remove from dungeon's active players list
 			if active_dungeons.has(instance_id):
 				var instance = active_dungeons[instance_id]
 				instance.active_players.erase(peer_id)
-			# Exit dungeon (resets character's dungeon state)
-			character.exit_dungeon()
+				# Store owner username for reconnect lookup
+				if not instance.has("owner_username"):
+					instance["owner_username"] = username
+			# DON'T call exit_dungeon() — dungeon state is saved to character for reconnect
 
 	if characters.has(peer_id):
 		characters.erase(peer_id)
@@ -10997,6 +11072,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
 		"owner_peer_id": peer_id,  # Track who owns this instance
+		"owner_username": peers.get(peer_id, {}).get("username", ""),  # For reconnect lookup
 		"quest_id": quest_id  # Track which quest this is for
 	}
 
@@ -14581,3 +14657,400 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 
 	# Notify nearby players that corpse is gone
 	_broadcast_corpse_despawn(corpse)
+
+# ===== GM / ADMIN COMMANDS =====
+
+func _is_admin(peer_id: int) -> bool:
+	"""Check if a peer has admin privileges"""
+	return peers.has(peer_id) and peers[peer_id].get("is_admin", false)
+
+func _gm_deny(peer_id: int):
+	"""Send admin access denied message"""
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]Admin access required.[/color]"})
+
+func handle_gm_setlevel(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var target_level = clampi(int(message.get("level", 1)), 1, 99999)
+	var ch = characters[peer_id]
+	# Reset to base stats and re-level
+	var base_stats = ch.get_starting_stats_for_class(ch.class_type)
+	ch.strength = base_stats.strength
+	ch.constitution = base_stats.constitution
+	ch.dexterity = base_stats.dexterity
+	ch.intelligence = base_stats.intelligence
+	ch.wisdom = base_stats.wisdom
+	ch.wits = base_stats.wits
+	ch.level = 1
+	# Level up to target
+	for i in range(target_level - 1):
+		ch.level_up()
+	ch.calculate_derived_stats()
+	ch.current_hp = ch.get_total_max_hp()
+	ch.current_mana = ch.get_total_max_mana()
+	ch.current_stamina = ch.get_total_max_stamina()
+	ch.current_energy = ch.get_total_max_energy()
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Level set to %d[/color]" % ch.level})
+
+func handle_gm_setgold(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
+	characters[peer_id].gold = amount
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gold set to %d[/color]" % amount})
+
+func handle_gm_setgems(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
+	characters[peer_id].gems = amount
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gems set to %d[/color]" % amount})
+
+func handle_gm_setessence(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
+	characters[peer_id].salvage_essence = amount
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Salvage Essence set to %d[/color]" % amount})
+
+func handle_gm_setxp(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var amount = clampi(int(message.get("amount", 0)), 0, 999999999)
+	characters[peer_id].experience = amount
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] XP set to %d[/color]" % amount})
+
+func handle_gm_godmode(peer_id: int):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	# Toggle godmode using meta (not a defined property on Character)
+	var current = ch.get_meta("gm_godmode", false)
+	ch.set_meta("gm_godmode", not current)
+	var enabled = ch.get_meta("gm_godmode", false)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] God Mode %s[/color]" % ("ENABLED" if enabled else "DISABLED")})
+
+func handle_gm_setbp(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not peers.has(peer_id):
+		return
+	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+	house["baddie_points"] = amount
+	persistence.save_house(account_id, house)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Baddie Points set to %d[/color]" % amount})
+
+func handle_gm_giveitem(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var tier = clampi(int(message.get("tier", 5)), 1, 9)
+	var slot = message.get("slot", "")
+	# Determine item level from tier
+	var tier_levels = {1: 3, 2: 10, 3: 25, 4: 40, 5: 60, 6: 100, 7: 300, 8: 1000, 9: 3000}
+	var item_level = tier_levels.get(tier, 50)
+	# Generate item based on slot preference
+	var item: Dictionary
+	var drop_table_id = "tier%d" % tier
+	if slot == "weapon":
+		item = drop_tables.generate_weapon(item_level)
+	elif slot == "shield":
+		item = drop_tables.generate_shield(item_level)
+	else:
+		# Roll from tier drop table with guaranteed drop
+		var table = drop_tables.get_drop_table(drop_table_id)
+		if table.is_empty():
+			item = drop_tables.generate_fallback_item("weapon", item_level)
+		else:
+			var drop_entry = drop_tables._roll_item_from_table(table)
+			if drop_entry.is_empty():
+				item = drop_tables.generate_fallback_item("weapon", item_level)
+			else:
+				item = drop_tables._generate_item(drop_entry, item_level)
+	if item.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to generate item.[/color]"})
+		return
+	ch.inventory.append(item)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	var item_name = item.get("name", "Unknown Item")
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received: %s (Tier %d)[/color]" % [item_name, tier]})
+
+func handle_gm_giveegg(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var monster_type = message.get("monster_type", "")
+	# If no type specified, pick a random one from COMPANION_DATA
+	if monster_type.is_empty():
+		var all_types = DropTables.COMPANION_DATA.keys()
+		monster_type = all_types[randi() % all_types.size()]
+	var egg = drop_tables.get_egg_for_monster(monster_type)
+	if egg.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown monster type: %s[/color]" % monster_type})
+		return
+	ch.incubating_eggs.append(egg)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received egg: %s (%s)[/color]" % [egg.get("name", "?"), egg.get("variant", "?")]})
+
+func handle_gm_givecompanion(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var monster_type = message.get("monster_type", "")
+	if monster_type.is_empty():
+		var all_types = DropTables.COMPANION_DATA.keys()
+		monster_type = all_types[randi() % all_types.size()]
+	var companion_data = DropTables.COMPANION_DATA.get(monster_type, {})
+	if companion_data.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown monster type: %s[/color]" % monster_type})
+		return
+	var tier = int(message.get("tier", companion_data.get("tier", 1)))
+	var variant = drop_tables._roll_egg_variant()
+	var companion = {
+		"id": "gm_" + monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),
+		"monster_type": monster_type,
+		"name": companion_data.get("companion_name", monster_type + " Companion"),
+		"tier": tier,
+		"sub_tier": 1,
+		"level": 1,
+		"xp": 0,
+		"bonuses": companion_data.get("bonuses", {}).duplicate(),
+		"battles_fought": 0,
+		"variant": variant.get("name", "Normal"),
+		"variant_color": variant.get("color", "#FFFFFF"),
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"variant_rarity": variant.get("rarity", 10),
+		"obtained_at": int(Time.get_unix_time_from_system())
+	}
+	ch.companions.append(companion)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received companion: %s (Tier %d, %s)[/color]" % [companion.name, tier, variant.get("name", "Normal")]})
+
+func handle_gm_spawnmonster(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	# Don't allow if already in combat
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Already in combat![/color]"})
+		return
+	var monster_name = message.get("monster_name", "")
+	var monster_level = int(message.get("level", ch.level))
+	if monster_name.is_empty():
+		# Spawn random monster at character level
+		var monster = monster_db.generate_monster(monster_level, monster_level)
+		_start_gm_combat(peer_id, monster)
+	else:
+		var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
+		_start_gm_combat(peer_id, monster)
+
+func _start_gm_combat(peer_id: int, monster: Dictionary):
+	"""Start combat with a GM-spawned monster"""
+	var character = characters[peer_id]
+	var result = combat_mgr.start_combat(peer_id, character, monster)
+	if result.success:
+		var monster_name = result.combat_state.get("monster_name", "")
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
+		var full_message = "[color=#00FF00][GM] Spawned encounter![/color]\n\n" + result.message
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"message": full_message,
+			"combat_state": result.combat_state,
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true
+		})
+		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to start combat.[/color]"})
+
+func handle_gm_givemats(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var material_id = message.get("material_id", "")
+	var amount = clampi(int(message.get("amount", 10)), 1, 9999)
+	if material_id.is_empty() or not CraftingDatabase.MATERIALS.has(material_id):
+		# List some valid material IDs
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown material: '%s'. Examples: copper_ore, iron_ore, small_fish, healing_herb, common_wood[/color]" % material_id})
+		return
+	var new_total = characters[peer_id].add_crafting_material(material_id, amount)
+	var mat_name = CraftingDatabase.MATERIALS[material_id].get("name", material_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received %d %s (total: %d)[/color]" % [amount, mat_name, new_total]})
+
+func handle_gm_giveall(peer_id: int):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	# Gold, gems, essence
+	ch.gold += 50000
+	ch.gems += 100
+	ch.salvage_essence += 5000
+	# Give a set of materials
+	var mats_to_give = {"copper_ore": 50, "iron_ore": 50, "steel_ore": 30, "mithril_ore": 20,
+		"small_fish": 30, "medium_fish": 20, "healing_herb": 30, "mana_blossom": 20,
+		"common_wood": 30, "oak_wood": 20, "ragged_leather": 30, "leather_scraps": 20,
+		"magic_dust": 20}
+	for mat_id in mats_to_give:
+		ch.add_crafting_material(mat_id, mats_to_give[mat_id])
+	# Give some items from various tiers
+	var tiers_to_give = [3, 4, 5, 6]
+	for tier in tiers_to_give:
+		var tier_levels = {3: 25, 4: 40, 5: 60, 6: 100}
+		var item_level = tier_levels.get(tier, 50)
+		var table = drop_tables.get_drop_table("tier%d" % tier)
+		if not table.is_empty():
+			var drop_entry = drop_tables._roll_item_from_table(table)
+			if not drop_entry.is_empty():
+				var item = drop_tables._generate_item(drop_entry, item_level)
+				if not item.is_empty():
+					ch.inventory.append(item)
+	# Give a random egg
+	var all_types = DropTables.COMPANION_DATA.keys()
+	var random_type = all_types[randi() % all_types.size()]
+	var egg = drop_tables.get_egg_for_monster(random_type)
+	if not egg.is_empty():
+		ch.incubating_eggs.append(egg)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Starter kit received: 50k gold, 100 gems, 5k ESS, materials, items, and an egg![/color]"})
+
+func handle_gm_teleport(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var target_x = int(message.get("x", 0))
+	var target_y = int(message.get("y", 0))
+	ch.x = target_x
+	ch.y = target_y
+	# Exit dungeon if in one
+	if ch.in_dungeon:
+		ch.exit_dungeon()
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Teleported to (%d, %d)[/color]" % [target_x, target_y]})
+
+func handle_gm_completequest(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var quest_index = int(message.get("index", -1))
+	if ch.active_quests.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No active quests.[/color]"})
+		return
+	if quest_index >= 0 and quest_index < ch.active_quests.size():
+		# Complete specific quest
+		var quest = ch.active_quests[quest_index]
+		quest["progress"] = quest.get("target", 1)
+		quest["completed"] = true
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Quest '%s' marked complete. Turn in at a Trading Post.[/color]" % quest.get("name", "?")})
+	else:
+		# Complete all active quests
+		for quest in ch.active_quests:
+			quest["progress"] = quest.get("target", 1)
+			quest["completed"] = true
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] All %d quests marked complete. Turn in at a Trading Post.[/color]" % ch.active_quests.size()})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_gm_resetquests(peer_id: int):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var count = ch.active_quests.size()
+	ch.active_quests.clear()
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Cleared %d active quests.[/color]" % count})
+
+func handle_gm_heal(peer_id: int):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	ch.current_hp = ch.get_total_max_hp()
+	ch.current_mana = ch.get_total_max_mana()
+	ch.current_stamina = ch.get_total_max_stamina()
+	ch.current_energy = ch.get_total_max_energy()
+	# Clear debuffs
+	ch.poison_active = false
+	ch.blind_active = false
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Fully healed! HP, mana, stamina, and energy restored.[/color]"})
+
+func handle_gm_broadcast(peer_id: int, message: Dictionary):
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	var text = message.get("message", "")
+	if text.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /broadcast <message>[/color]"})
+		return
+	_send_broadcast(text)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Broadcast sent.[/color]"})
