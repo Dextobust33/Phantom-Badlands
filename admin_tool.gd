@@ -57,6 +57,16 @@ func _init():
 				print("Usage: storage <username>")
 			else:
 				show_storage(args[1])
+		"promote":
+			if args.size() < 2:
+				print("Usage: promote <username>")
+			else:
+				set_admin(args[1], true)
+		"demote":
+			if args.size() < 2:
+				print("Usage: demote <username>")
+			else:
+				set_admin(args[1], false)
 		"help", "-h", "--help":
 			print_help()
 		_:
@@ -82,6 +92,8 @@ func print_help():
 	print("  storage <username>           - Show house storage contents")
 	print("  addcompanion <user> <type> [tier] [name]")
 	print("                               - Add companion to house storage")
+	print("  promote <username>           - Grant admin/GM privileges")
+	print("  demote <username>            - Remove admin/GM privileges")
 	print("  help                         - Show this help")
 	print("")
 	print("Examples:")
@@ -161,6 +173,7 @@ func show_account_info(username: String):
 	print("Account ID: %s" % account_id)
 	print("Created: %s" % created_str)
 	print("Max Characters: %d" % account.get("max_characters", 3))
+	print("Admin: %s" % ("YES" if account.get("is_admin", false) else "no"))
 	print("Characters: %s" % (", ".join(chars) if chars.size() > 0 else "(none)"))
 	print("")
 
@@ -414,3 +427,26 @@ func _roll_variant() -> Dictionary:
 		if roll < current:
 			return variant.duplicate()
 	return {"name": "Normal", "color": "#FFFFFF", "pattern": "solid"}
+
+func set_admin(username: String, is_admin: bool):
+	var username_lower = username.to_lower()
+
+	if not accounts_data.has("username_to_id") or not accounts_data.username_to_id.has(username_lower):
+		print("ERROR: Account not found: %s" % username)
+		return
+
+	var account_id = accounts_data.username_to_id[username_lower]
+	var account = accounts_data.accounts[account_id]
+
+	account["is_admin"] = is_admin
+	save_accounts()
+
+	var action = "PROMOTED to admin" if is_admin else "DEMOTED from admin"
+	print("")
+	print("SUCCESS: Account '%s' %s" % [account.username, action])
+	if is_admin:
+		print("This account can now use GM commands in-game.")
+		print("Admin characters are excluded from all leaderboards.")
+	else:
+		print("This account no longer has GM privileges.")
+	print("")

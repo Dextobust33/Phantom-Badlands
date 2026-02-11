@@ -2272,6 +2272,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	"""Generate display name for tiered consumables (no rarity, just tier)"""
 	# Map item types to base names
 	var base_names = {
+		# Pre-normalized names (original drop table types)
 		"potion_minor": "Health Potion",
 		"potion_lesser": "Health Potion",
 		"potion_standard": "Health Potion",
@@ -2295,6 +2296,12 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"elixir_minor": "Elixir",
 		"elixir_greater": "Elixir",
 		"elixir_divine": "Elixir",
+		# Normalized names (after _normalize_consumable_type)
+		"health_potion": "Health Potion",
+		"mana_potion": "Resource Potion",
+		"stamina_potion": "Resource Potion",
+		"energy_potion": "Resource Potion",
+		"elixir": "Elixir",
 		# Buff potions
 		"potion_strength": "Strength Potion",
 		"potion_defense": "Defense Potion",
@@ -2339,6 +2346,12 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"tome_greater_ambush": "Tome of Greater Ambush",
 		"tome_perfect_exploit": "Tome of Perfect Exploit",
 		"tome_efficient_vanish": "Tome of Efficient Vanish",
+		# Bane potions
+		"potion_dragon_bane": "Dragon Bane Potion",
+		"potion_undead_bane": "Undead Bane Potion",
+		"potion_beast_bane": "Beast Bane Potion",
+		"potion_demon_bane": "Demon Bane Potion",
+		"potion_elemental_bane": "Elemental Bane Potion",
 		# Special items
 		"mysterious_box": "Mysterious Box",
 		"cursed_coin": "Cursed Coin",

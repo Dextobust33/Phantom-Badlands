@@ -223,7 +223,8 @@ func create_account(username: String, password: String) -> Dictionary:
 		"password_salt": salt,
 		"created_at": int(Time.get_unix_time_from_system()),
 		"character_slots": [],
-		"max_characters": DEFAULT_MAX_CHARACTERS
+		"max_characters": DEFAULT_MAX_CHARACTERS,
+		"is_admin": false
 	}
 
 	accounts_data.username_to_id[username_lower] = account_id
@@ -456,6 +457,11 @@ func save_leaderboard():
 
 func add_to_leaderboard(character: Character, cause_of_death: String, account_username: String) -> int:
 	"""Add a deceased character to the leaderboard. Returns their rank."""
+	# Admin accounts are excluded from leaderboards
+	if is_admin_username(account_username):
+		print("Admin account '%s' excluded from leaderboard" % account_username)
+		return -1
+
 	var entry = {
 		"character_name": character.name,
 		"class": character.class_type,
@@ -496,12 +502,15 @@ func add_to_leaderboard(character: Character, cause_of_death: String, account_us
 	return rank
 
 func get_leaderboard(limit: int = 10) -> Array:
-	"""Get top entries from leaderboard"""
+	"""Get top entries from leaderboard (excludes admin accounts)"""
 	var result = []
-	var count = min(limit, leaderboard_data.entries.size())
 
-	for i in range(count):
-		result.append(leaderboard_data.entries[i])
+	for entry in leaderboard_data.entries:
+		if is_admin_username(entry.get("account_username", "")):
+			continue
+		result.append(entry)
+		if result.size() >= limit:
+			break
 
 	return result
 
@@ -661,8 +670,35 @@ func admin_get_account_info(username: String) -> Dictionary:
 		"username": account.username,
 		"created_at": account.get("created_at", 0),
 		"max_characters": account.max_characters,
-		"characters": account.character_slots
+		"characters": account.character_slots,
+		"is_admin": account.get("is_admin", false)
 	}
+
+# ===== ADMIN STATUS =====
+
+func is_admin_account(account_id: String) -> bool:
+	"""Check if an account has admin privileges"""
+	if not accounts_data.accounts.has(account_id):
+		return false
+	return accounts_data.accounts[account_id].get("is_admin", false)
+
+func is_admin_username(username: String) -> bool:
+	"""Check if a username belongs to an admin account"""
+	var username_lower = username.to_lower()
+	if not accounts_data.username_to_id.has(username_lower):
+		return false
+	var account_id = accounts_data.username_to_id[username_lower]
+	return is_admin_account(account_id)
+
+func set_admin_status(username: String, is_admin: bool) -> Dictionary:
+	"""Set admin status for an account by username"""
+	var username_lower = username.to_lower()
+	if not accounts_data.username_to_id.has(username_lower):
+		return {"success": false, "message": "Account not found: %s" % username}
+	var account_id = accounts_data.username_to_id[username_lower]
+	accounts_data.accounts[account_id]["is_admin"] = is_admin
+	save_accounts()
+	return {"success": true, "message": "Admin status set to %s for %s" % [str(is_admin), username]}
 
 # ===== MONSTER KILLS LEADERBOARD =====
 
@@ -758,28 +794,41 @@ func reset_monster_kills():
 	save_monster_kills()
 	print("Monster kills leaderboard has been reset!")
 
-func get_trophy_leaderboard() -> Array:
-	"""Get trophy hall of fame - first collector of each trophy type"""
+func get_trophy_leaderboard() -> Dictionary:
+	"""Get trophy hall of fame - first collector of each trophy type AND top collectors by count.
+	Returns {first_discoveries: Array, top_collectors: Array}"""
 	# Dictionary to track first collector of each trophy type
 	# Format: {trophy_id: {name, collector, collected_at, monster_name, total_collectors}}
 	var trophy_first_collectors: Dictionary = {}
 	var trophy_total_counts: Dictionary = {}
+	# Track per-character trophy counts for "most collected" ranking
+	var char_trophy_counts: Dictionary = {}  # char_name -> count
 
-	# Scan all accounts and their characters
+	# Scan all accounts and their characters (exclude admins)
 	for account_id in accounts_data.accounts.keys():
 		var account = accounts_data.accounts[account_id]
+		if account.get("is_admin", false):
+			continue
 		for char_name in account.character_slots:
 			var char_data = load_character(account_id, char_name)
 			if char_data.is_empty():
 				continue
 
 			var trophies = char_data.get("trophies", [])
+			var display_name = char_data.get("name", char_name)
+
+			# Track this character's total trophy count
+			if trophies.size() > 0:
+				if not char_trophy_counts.has(display_name):
+					char_trophy_counts[display_name] = 0
+				char_trophy_counts[display_name] += trophies.size()
+
 			for trophy in trophies:
 				var trophy_id = trophy.get("id", "")
 				if trophy_id.is_empty():
 					continue
 
-				var collected_at = trophy.get("collected_at", 0)
+				var collected_at = trophy.get("obtained_at", 0)
 
 				# Count total collectors
 				if not trophy_total_counts.has(trophy_id):
@@ -791,7 +840,7 @@ func get_trophy_leaderboard() -> Array:
 					trophy_first_collectors[trophy_id] = {
 						"trophy_id": trophy_id,
 						"trophy_name": trophy.get("name", trophy_id),
-						"collector": char_data.get("name", "Unknown"),
+						"collector": display_name,
 						"collected_at": collected_at,
 						"monster_name": trophy.get("monster_name", "Unknown")
 					}
@@ -800,22 +849,31 @@ func get_trophy_leaderboard() -> Array:
 					trophy_first_collectors[trophy_id] = {
 						"trophy_id": trophy_id,
 						"trophy_name": trophy.get("name", trophy_id),
-						"collector": char_data.get("name", "Unknown"),
+						"collector": display_name,
 						"collected_at": collected_at,
 						"monster_name": trophy.get("monster_name", "Unknown")
 					}
 
-	# Build result array with total counts
-	var result = []
+	# Build first discoveries array with total counts
+	var first_discoveries = []
 	for trophy_id in trophy_first_collectors.keys():
 		var entry = trophy_first_collectors[trophy_id]
 		entry["total_collectors"] = trophy_total_counts.get(trophy_id, 1)
-		result.append(entry)
+		first_discoveries.append(entry)
 
 	# Sort by collected_at (earliest first)
-	result.sort_custom(func(a, b): return a.get("collected_at", 0) < b.get("collected_at", 0))
+	first_discoveries.sort_custom(func(a, b): return a.get("collected_at", 0) < b.get("collected_at", 0))
 
-	return result
+	# Build top collectors array
+	var top_collectors = []
+	for char_name in char_trophy_counts.keys():
+		top_collectors.append({"name": char_name, "trophy_count": char_trophy_counts[char_name]})
+	top_collectors.sort_custom(func(a, b): return a.trophy_count > b.trophy_count)
+	# Limit to top 10
+	if top_collectors.size() > 10:
+		top_collectors.resize(10)
+
+	return {"first_discoveries": first_discoveries, "top_collectors": top_collectors}
 
 # ===== CORPSE PERSISTENCE =====
 
@@ -1047,9 +1105,17 @@ func get_egg_capacity(account_id: String) -> int:
 	return 3 + (upgrade_level * HOUSE_UPGRADES.egg_slots.effect)
 
 func add_item_to_house_storage(account_id: String, item: Dictionary) -> bool:
-	"""Add an item to house storage. Returns true if successful."""
+	"""Add an item to house storage. Stacks consumables with matching type/tier. Returns true if successful."""
 	var house = get_house(account_id)
 	var capacity = get_house_storage_capacity(account_id)
+
+	# Try to stack with existing consumable items
+	if item.get("is_consumable", false):
+		for existing in house.storage.items:
+			if existing.get("is_consumable", false) and existing.get("type", "") == item.get("type", "") and int(existing.get("tier", 0)) == int(item.get("tier", 0)):
+				existing["quantity"] = existing.get("quantity", 1) + item.get("quantity", 1)
+				save_house(account_id, house)
+				return true
 
 	if house.storage.items.size() >= capacity:
 		return false

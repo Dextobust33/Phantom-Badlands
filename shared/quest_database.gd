@@ -823,7 +823,8 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			var total_floors = rescue_dungeon_data.get("floors", 3) if not rescue_dungeon_data.is_empty() else 3
 			var rescue_floor = rng.randi_range(1, max(1, total_floors - 2))
 			quest_name = "Rescue the %s" % rescue_npc.capitalize()
-			quest_desc = "A %s is trapped in %s! Find them on floor %d." % [rescue_npc, rescue_dungeon.get("name", "a dungeon"), rescue_floor + 1]
+			var dungeon_name = rescue_dungeon.get("name", "a dungeon")
+			quest_desc = "A %s is trapped in %s on floor %d! Look for the dungeon entrance (D) near this trading post." % [rescue_npc, dungeon_name, rescue_floor + 1]
 			target = 1
 			extra_fields["rescue_npc_type"] = rescue_npc
 			extra_fields["dungeon_type"] = rescue_dungeon.get("type", "")

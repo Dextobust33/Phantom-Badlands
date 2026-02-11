@@ -346,14 +346,14 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 				messages.append("[color=#FF6600]Warlord gear restores %d stamina.[/color]" % actual_regen)
 
 func _apply_companion_resource_regen(combat: Dictionary, character: Character, messages: Array) -> void:
-	"""Apply companion passive resource regeneration each turn."""
+	"""Apply companion passive resource regeneration each turn.
+	All resource regen (mana/stamina/energy) is pooled and applied to the player's primary resource."""
 	var companion = character.get_active_companion() if character.has_active_companion() else null
 	if companion == null:
 		return
 
-	# HP Regen from companion
+	# HP Regen from companion (all classes have HP)
 	var hp_regen = combat.get("companion_hp_regen", 0)
-	# Also add from companion base bonus
 	hp_regen += int(character.get_companion_bonus("hp_regen"))
 	if hp_regen > 0 and character.current_hp < character.get_total_max_hp():
 		var heal_amount = max(1, int(character.get_total_max_hp() * hp_regen / 100.0))
@@ -363,40 +363,43 @@ func _apply_companion_resource_regen(combat: Dictionary, character: Character, m
 		if actual_heal > 0:
 			messages.append("[color=#00FFFF]%s's presence heals you for %d HP.[/color]" % [companion.name, actual_heal])
 
-	# Mana Regen from companion (ability passive + base bonus)
-	var mana_regen = combat.get("companion_mana_regen", 0)
-	mana_regen += int(character.get_companion_bonus("mana_regen"))
-	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
-		var regen_amount = max(1, mana_regen)
-		var old_mana = character.current_mana
-		character.current_mana = min(character.get_total_max_mana(), character.current_mana + regen_amount)
-		var actual_regen = character.current_mana - old_mana
-		if actual_regen > 0:
-			messages.append("[color=#00FFFF]%s restores %d mana.[/color]" % [companion.name, actual_regen])
+	# Resource Regen: Pool ALL types (mana/stamina/energy) and apply to player's primary resource
+	var resource_regen = 0
+	resource_regen += combat.get("companion_mana_regen", 0)
+	resource_regen += combat.get("companion_energy_regen", 0)
+	resource_regen += combat.get("companion_stamina_regen", 0)
+	resource_regen += int(character.get_companion_bonus("mana_regen"))
+	resource_regen += int(character.get_companion_bonus("energy_regen"))
+	resource_regen += int(character.get_companion_bonus("stamina_regen"))
 
-	# Energy Regen from companion (ability passive + base bonus)
-	var energy_regen = combat.get("companion_energy_regen", 0)
-	energy_regen += int(character.get_companion_bonus("energy_regen"))
-	if energy_regen > 0 and character.current_energy < character.get_total_max_energy():
-		var regen_amount = max(1, energy_regen)
-		var old_energy = character.current_energy
-		character.current_energy = min(character.get_total_max_energy(), character.current_energy + regen_amount)
-		var actual_regen = character.current_energy - old_energy
-		if actual_regen > 0:
-			messages.append("[color=#00FFFF]%s restores %d energy.[/color]" % [companion.name, actual_regen])
+	if resource_regen > 0:
+		var regen_amount = max(1, resource_regen)
+		var class_path = character.get_class_path()
+		match class_path:
+			"warrior":
+				if character.current_stamina < character.get_total_max_stamina():
+					var old_val = character.current_stamina
+					character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + regen_amount)
+					var actual_regen = character.current_stamina - old_val
+					if actual_regen > 0:
+						messages.append("[color=#00FFFF]%s restores %d stamina.[/color]" % [companion.name, actual_regen])
+			"mage":
+				if character.current_mana < character.get_total_max_mana():
+					var old_val = character.current_mana
+					character.current_mana = min(character.get_total_max_mana(), character.current_mana + regen_amount)
+					var actual_regen = character.current_mana - old_val
+					if actual_regen > 0:
+						messages.append("[color=#00FFFF]%s restores %d mana.[/color]" % [companion.name, actual_regen])
+			"trickster":
+				if character.current_energy < character.get_total_max_energy():
+					var old_val = character.current_energy
+					character.current_energy = min(character.get_total_max_energy(), character.current_energy + regen_amount)
+					var actual_regen = character.current_energy - old_val
+					if actual_regen > 0:
+						messages.append("[color=#00FFFF]%s restores %d energy.[/color]" % [companion.name, actual_regen])
 
 func _process_monster_dots(combat: Dictionary, monster: Dictionary, messages: Array) -> void:
-	"""Process DoT effects on the monster from companion abilities."""
-	# Bleed damage
-	var bleed_damage = combat.get("monster_bleed", 0)
-	var bleed_duration = combat.get("monster_bleed_duration", 0)
-	if bleed_damage > 0 and bleed_duration > 0:
-		monster.current_hp -= bleed_damage
-		monster.current_hp = max(0, monster.current_hp)
-		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, bleed_damage])
-		combat["monster_bleed_duration"] = bleed_duration - 1
-		if combat["monster_bleed_duration"] <= 0:
-			combat["monster_bleed"] = 0
+	"""Process companion DoT effects on the monster (poison only - bleed is handled in monster turn)."""
 
 	# Poison damage
 	var poison_damage = combat.get("monster_poison", 0)
@@ -447,6 +450,8 @@ func _apply_companion_passive_effect(combat_state: Dictionary, character: Charac
 			combat_state["companion_mana_regen"] = combat_state.get("companion_mana_regen", 0) + value
 		"energy_regen":
 			combat_state["companion_energy_regen"] = combat_state.get("companion_energy_regen", 0) + value
+		"stamina_regen":
+			combat_state["companion_stamina_regen"] = combat_state.get("companion_stamina_regen", 0) + value
 		"gold_find":
 			combat_state["companion_gold_find"] = combat_state.get("companion_gold_find", 0) + value
 		"flee_bonus":
@@ -513,7 +518,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				ability_damage_dealt = bonus_value
 				messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
 			elif effect == "stun":
-				combat["monster_stunned"] = true
+				combat["monster_stunned"] = 1
 				messages.append("[color=#FFAA00]%s's attack stuns the %s![/color]" % [companion.name, monster.name])
 			elif effect == "crit":
 				# Critical strike ability - crit_mult not level-scaled, variant already in companion_damage
@@ -599,7 +604,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 						if ability.has("stun_chance"):
 							stun_triggers = randi() % 100 < ability.get("stun_chance", 0)
 						if stun_triggers:
-							combat["monster_stunned"] = true
+							combat["monster_stunned"] = 1
 							messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
 					elif effect2 == "lifesteal":
 						# Use lifesteal_percent if available, otherwise value2
@@ -640,7 +645,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 						var debuffs = ["stun", "weakness", "slow"]
 						var chosen = debuffs[randi() % debuffs.size()]
 						if chosen == "stun":
-							combat["monster_stunned"] = true
+							combat["monster_stunned"] = 1
 							messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
 						elif chosen == "weakness":
 							combat["monster_weakness"] = 15
@@ -674,6 +679,23 @@ func _is_tier_based_consumable(item_type: String) -> bool:
 		return true
 	return false
 
+func _indent_new_messages(messages: Array, from_index: int, indent: String) -> void:
+	"""Add indentation prefix to all messages added since from_index."""
+	for i in range(from_index, messages.size()):
+		if messages[i].strip_edges() != "":
+			messages[i] = indent + messages[i]
+
+func _indent_multiline(text: String, indent: String) -> String:
+	"""Indent each non-empty line of a multi-line string."""
+	var lines = text.split("\n")
+	var result = []
+	for line in lines:
+		if line.strip_edges() != "":
+			result.append(indent + line)
+		else:
+			result.append(line)
+	return "\n".join(result)
+
 func _ready():
 	print("Combat Manager initialized")
 
@@ -685,23 +707,38 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var ambusher_active = ABILITY_AMBUSHER in monster_abilities
 
 	# === INITIATIVE CHECK ===
-	# Ratio-based initiative with logarithmic DEX scaling
-	# Monster speed as 0-1 rating (speed 0→0.0, speed 50→1.0)
-	# Base initiative: 5% (speed 0) to 25% (speed 50)
-	# DEX penalty grows logarithmically — meaningful but doesn't dominate
+	# Base: 5-25% from monster speed (static, doesn't scale with level)
+	# Beyond-optimal bonus: when player fights past their optimal XP zone, initiative rises
+	# Tier bonus: fighting above your tier is very dangerous (+10% per tier)
+	# DEX penalty: logarithmic reduction from player dexterity
 	var player_dex = character.get_effective_stat("dexterity")
 	var companion_speed = int(character.get_companion_bonus("speed")) if character.has_active_companion() else 0
 	var monster_speed = monster.get("speed", 10)
 	var speed_rating = clampf(float(monster_speed) / 50.0, 0.0, 1.0)
 	var base_initiative = 5.0 + speed_rating * 20.0
+	# Beyond-optimal zone bonus: initiative rises when player pushes past their XP sweet spot
+	var init_level_diff = monster.get("level", 1) - character.level
+	if init_level_diff > 0:
+		# Optimal ceiling matches the same-tier XP bonus cap formula
+		var reference_gap = 10.0 + float(character.level) * 0.05
+		var optimal_ceiling = reference_gap * 2.0
+		if init_level_diff > optimal_ceiling:
+			base_initiative += minf(15.0, (init_level_diff - optimal_ceiling) * 0.5)
+	# Cross-tier bonus: fighting above your tier is very dangerous
+	var init_player_tier = _get_tier_for_level(character.level)
+	var init_monster_tier = _get_tier_for_level(monster.get("level", 1))
+	var init_tier_diff = max(0, init_monster_tier - init_player_tier)
+	if init_tier_diff > 0:
+		base_initiative += init_tier_diff * 10.0
 	var effective_dex = float(player_dex) + float(companion_speed) / 2.0
 	var dex_penalty = 2.0 * log(maxf(1.0, effective_dex / 10.0)) / log(2.0)
 	var monster_initiative_chance = int(base_initiative - dex_penalty)
 	if ambusher_active:
 		monster_initiative_chance += 8
-	monster_initiative_chance = clampi(monster_initiative_chance, 5, 45)
+	monster_initiative_chance = clampi(monster_initiative_chance, 5, 55)
 
-	var monster_goes_first = monster_initiative_chance > 0 and randi() % 100 < monster_initiative_chance
+	var init_roll = randi() % 100
+	var monster_goes_first = monster_initiative_chance > 0 and init_roll < monster_initiative_chance
 
 	# Handle disguise ability - monster appears weaker initially
 	var disguise_active = ABILITY_DISGUISE in monster_abilities
@@ -812,12 +849,29 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 			character.current_hp += hp_boost
 			combat_state["companion_hp_boost_applied"] = hp_boost
 
-		var comp_mana_bonus = int(character.get_companion_bonus("mana_bonus")) + combat_state.get("companion_mana_bonus", 0)
-		if comp_mana_bonus > 0:
-			var mana_boost = max(1, int(character.get_total_max_mana() * comp_mana_bonus / 100.0))
-			character.max_mana += mana_boost
-			character.current_mana = mini(character.current_mana + mana_boost, character.get_total_max_mana())
-			combat_state["companion_mana_boost_applied"] = mana_boost
+		# Resource bonus: Apply mana_bonus to player's primary resource (not just mana)
+		var comp_resource_bonus = int(character.get_companion_bonus("mana_bonus")) + combat_state.get("companion_mana_bonus", 0)
+		if comp_resource_bonus > 0:
+			var class_path = character.get_class_path()
+			match class_path:
+				"warrior":
+					var boost = max(1, int(character.get_total_max_stamina() * comp_resource_bonus / 100.0))
+					character.max_stamina += boost
+					character.current_stamina = mini(character.current_stamina + boost, character.get_total_max_stamina())
+					combat_state["companion_resource_boost_applied"] = boost
+					combat_state["companion_resource_boost_type"] = "stamina"
+				"mage":
+					var boost = max(1, int(character.get_total_max_mana() * comp_resource_bonus / 100.0))
+					character.max_mana += boost
+					character.current_mana = mini(character.current_mana + boost, character.get_total_max_mana())
+					combat_state["companion_resource_boost_applied"] = boost
+					combat_state["companion_resource_boost_type"] = "mana"
+				"trickster":
+					var boost = max(1, int(character.get_total_max_energy() * comp_resource_bonus / 100.0))
+					character.max_energy += boost
+					character.current_energy = mini(character.current_energy + boost, character.get_total_max_energy())
+					combat_state["companion_resource_boost_applied"] = boost
+					combat_state["companion_resource_boost_type"] = "energy"
 
 		# Store base wisdom bonus for use in resist checks
 		var comp_wisdom_bonus = int(character.get_companion_bonus("wisdom_bonus")) + combat_state.get("companion_wisdom_bonus", 0)
@@ -827,15 +881,36 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
 
-	# Add XP challenge hint for worthy opponents
+	# Add XP zone hint - shows the player where they stand relative to optimal XP range
 	var hint_level_diff = monster.get("level", 1) - character.level
 	var hint_player_tier = _get_tier_for_level(character.level)
 	var hint_monster_tier = _get_tier_for_level(monster.get("level", 1))
 	var hint_tier_diff = hint_monster_tier - hint_player_tier
 	if hint_tier_diff > 0:
-		msg += "\n[color=#FF00FF]This foe is far above your tier — a great risk with great reward.[/color]"
-	elif hint_level_diff >= 5 and hint_level_diff <= 20 and hint_tier_diff == 0:
-		msg += "\n[color=#FFD700]This foe is a worthy challenge for your level.[/color]"
+		var tier_xp_mult = int(pow(2.0, hint_tier_diff))
+		msg += "\n[color=#FF00FF]⚠ TIER +%d — Extreme danger! (%dx XP if you survive)[/color]" % [hint_tier_diff, tier_xp_mult]
+	elif hint_level_diff > 0 and hint_tier_diff == 0:
+		# Calculate same-tier XP bonus to show the player
+		var hint_ref_gap = 10.0 + float(character.level) * 0.05
+		var hint_gap_ratio = float(hint_level_diff) / hint_ref_gap
+		var hint_xp_mult = 1.0 + minf(1.0, sqrt(hint_gap_ratio) * 0.7)
+		var hint_bonus_pct = int((hint_xp_mult - 1.0) * 100)
+		var hint_optimal_ceiling = hint_ref_gap * 2.0
+		if hint_level_diff > hint_optimal_ceiling:
+			# Past optimal zone - XP bonus is capped, danger increases
+			msg += "\n[color=#FF6600]⚠ Beyond optimal range (+%d%% XP cap) — beware![/color]" % hint_bonus_pct
+		elif hint_bonus_pct >= 10:
+			msg += "\n[color=#FFD700]Worthy challenge (+%d%% XP bonus)[/color]" % hint_bonus_pct
+	elif hint_level_diff < -5 and hint_tier_diff == 0:
+		# Fighting below level
+		var under_gap = abs(hint_level_diff)
+		var penalty_threshold = 5.0 + float(character.level) * 0.03
+		if under_gap > penalty_threshold:
+			var excess = under_gap - penalty_threshold
+			var penalty = minf(0.6, excess * 0.03)
+			var penalty_pct = int(penalty * 100)
+			if penalty_pct >= 10:
+				msg += "\n[color=#808080]Weak foe (-%d%% XP)[/color]" % penalty_pct
 
 	combat_state.combat_log.append(msg)
 
@@ -843,15 +918,23 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# If monster won initiative, they attack immediately
 	var first_strike_msg = ""
 	if monster_goes_first:
-		first_strike_msg = "\n[color=#FF4444][b]The %s is faster and strikes first![/b][/color]" % monster.name
+		first_strike_msg = "\n[color=#444444]─────────────────────────────[/color]"
+		first_strike_msg += "\n         [color=#FF4444][b]⚔ The %s strikes first! ⚔[/b][/color]" % monster.name
 		var monster_result = process_monster_turn(combat_state)
-		first_strike_msg += "\n" + monster_result.message
+		first_strike_msg += "\n" + _indent_multiline(monster_result.get("message", ""), "         ")
+		first_strike_msg += "\n[color=#444444]─────────────────────────────[/color]"
 
 		# Check if player died from first strike
 		if character.current_hp <= 0:
+			var death_extra = ""
+			var death_base_end = msg.find("![/color]")
+			if death_base_end != -1:
+				death_extra = msg.substr(death_base_end + 9)
+			death_extra += first_strike_msg + "\n[color=#FF0000]You have been defeated![/color]"
 			return {
 				"success": true,
 				"message": msg + first_strike_msg + "\n[color=#FF0000]You have been defeated![/color]",
+				"extra_combat_text": death_extra,
 				"combat_state": get_combat_display(peer_id),
 				"combat_ended": true,
 				"victory": false
@@ -860,9 +943,22 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		# Player can now act
 		combat_state.player_can_act = true
 
+	# Build extra text (XP hints + first strike) for client-side art rendering
+	# The client rebuilds the encounter text locally, so these get sent separately
+	var extra_combat_text = ""
+	# Extract XP hint from msg (everything after the base encounter line)
+	var base_encounter_end = msg.find("![/color]")
+	if base_encounter_end != -1:
+		var after_encounter = msg.substr(base_encounter_end + 9)  # Skip past "![/color]"
+		if after_encounter.strip_edges() != "":
+			extra_combat_text += after_encounter
+	if first_strike_msg != "":
+		extra_combat_text += first_strike_msg
+
 	return {
 		"success": true,
 		"message": msg + first_strike_msg,
+		"extra_combat_text": extra_combat_text,
 		"combat_state": get_combat_display(peer_id)
 	}
 
@@ -945,7 +1041,10 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		var player_hp_before_monster = combat.character.current_hp
 		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
-		result.messages.append(monster_result.message)
+		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		var monster_msg = monster_result.get("message", "")
+		result.messages.append(_indent_multiline(monster_msg, "         "))
+		result.messages.append("[color=#444444]─────────────────────────────[/color]")
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -1027,10 +1126,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			messages.append("[color=#9999FF]Arcane focus restores %d mana.[/color]" % actual_regen)
 
 	# === COMPANION RESOURCE REGENERATION ===
+	var _cr = messages.size()
 	_apply_companion_resource_regen(combat, character, messages)
+	_indent_new_messages(messages, _cr, "   ")
 
 	# === MONSTER DOT EFFECTS (bleed/poison from companion abilities) ===
+	var _cd = messages.size()
 	_process_monster_dots(combat, monster, messages)
+	_indent_new_messages(messages, _cd, "   ")
 
 	# === POISON & BLIND TICK (at start of player turn) ===
 	_process_status_ticks(character, messages)
@@ -1042,7 +1145,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		var total_bleed = bleed_stacks * bleed_dmg_per_stack
 		character.current_hp -= total_bleed
 		character.current_hp = max(1, character.current_hp)  # Bleed can't kill either
-		messages.append("[color=#FF4444]Bleeding deals %d damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
+		messages.append("[color=#FF4444]Bleeding deals [color=#FF8800]%d[/color] damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
 
 	# === CHARM EFFECT (player attacks themselves) ===
 	if combat.get("player_charmed", false):
@@ -1050,7 +1153,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		var self_damage = max(1, int(character.get_total_attack() * 0.5))  # 50% of player attack
 		character.current_hp -= self_damage
 		character.current_hp = max(1, character.current_hp)  # Can't kill yourself
-		messages.append("[color=#FF00FF]You are charmed and attack yourself for %d damage![/color]" % self_damage)
+		messages.append("[color=#FF00FF]You are charmed and attack yourself for [color=#FF8800]%d[/color] damage![/color]" % self_damage)
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}
 
@@ -1207,21 +1310,23 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]ðŸ’€ Execute strikes for %d bonus damage![/color]" % execute_damage)
 
 		# === COMPANION ATTACK ===
+		var _ca = messages.size()
 		_process_companion_attack(combat, messages)
+		_indent_new_messages(messages, _ca, "   ")
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
 			var thorn_damage = max(1, int(damage * 0.25))
 			character.current_hp -= thorn_damage
 			character.current_hp = max(1, character.current_hp)
-			messages.append("[color=#FF4444]Thorns deal %d damage to you![/color]" % thorn_damage)
+			messages.append("[color=#FF4444]Thorns deal [color=#FF8800]%d[/color] damage to you![/color]" % thorn_damage)
 
 		# Damage reflect ability: reflect 25% of damage
 		if ABILITY_DAMAGE_REFLECT in abilities:
 			var reflect_damage = max(1, int(damage * 0.25))
 			character.current_hp -= reflect_damage
 			character.current_hp = max(1, character.current_hp)
-			messages.append("[color=#FF00FF]The %s reflects %d damage![/color]" % [monster.name, reflect_damage])
+			messages.append("[color=#FF00FF]The %s reflects [color=#FF8800]%d[/color] damage![/color]" % [monster.name, reflect_damage])
 
 		if monster.current_hp <= 0:
 			# Monster defeated - process victory with ability bonuses
@@ -1240,6 +1345,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat with all ability effects (death message, bonuses, curses)"""
+	var victory_msg_start = messages.size()
 	var character = combat.character
 	var monster = combat.monster
 	var abilities = monster.get("abilities", [])
@@ -1266,38 +1372,34 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			character.current_hp -= curse_damage
 			character.current_hp = max(1, character.current_hp)
 			if wis_reduction > 0:
-				messages.append("[color=#FF00FF]The %s's death curse deals %d damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
 			else:
-				messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
+				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
 
-	# Calculate XP with tier bonus for fighting above your weight class
+	# Calculate XP with smooth level-based scaling (no tier cliffs)
 	var base_xp = monster.experience_reward
 	var xp_level_diff = monster.level - character.level
 	var xp_multiplier = 1.0
 
-	# Get tier difference - THIS is the main way to get big XP rewards
+	# Tier info for display flavor
 	var xp_player_tier = _get_tier_for_level(character.level)
 	var xp_monster_tier = _get_tier_for_level(monster.level)
 	var xp_tier_diff = xp_monster_tier - xp_player_tier
 
-	# TIER BONUS: Fighting higher tier monsters is very rewarding!
-	# Each tier above gives 2x XP multiplier (stacks multiplicatively)
-	# This rewards players for taking on scary fights via scrolls, shriekers, etc.
-	var xp_tier_bonus = 1.0
-	if xp_tier_diff > 0:
-		xp_tier_bonus = pow(2.0, xp_tier_diff)  # 2x per tier: T+1=2x, T+2=4x, T+3=8x
-		messages.append("[color=#FF00FF]* TIER CHALLENGE: +%dx XP bonus! *[/color]" % int(xp_tier_bonus))
-
-	# Same-tier level difference bonus (sqrt scaling — reward grows with player level)
-	if xp_level_diff > 0 and xp_tier_diff == 0:
-		# reference_gap grows with player level: 10 at lv1, 15 at lv100, 35 at lv500
+	# Unified XP scaling: smooth sqrt curve based on level difference
+	# No tier cliffs — bonus grows continuously with level gap
+	# reference_gap scales with player level: 10 at lv1, 15 at lv100, 35 at lv500
+	if xp_level_diff > 0:
 		var reference_gap = 10.0 + float(character.level) * 0.05
 		var gap_ratio = float(xp_level_diff) / reference_gap
-		xp_multiplier = 1.0 + minf(1.0, sqrt(gap_ratio) * 0.7)  # Cap at +100% (2x)
+		# sqrt provides diminishing returns: +70% at gap_ratio 1, +140% at 4, +210% at 9
+		xp_multiplier = 1.0 + sqrt(gap_ratio) * 0.7
 		var bonus_pct = int((xp_multiplier - 1.0) * 100)
-		if bonus_pct >= 10:
+		if xp_tier_diff > 0:
+			messages.append("[color=#FF00FF]* TIER CHALLENGE: +%d%% XP! *[/color]" % bonus_pct)
+		elif bonus_pct >= 5:
 			messages.append("[color=#FFD700]Challenge bonus: +%d%% XP[/color]" % bonus_pct)
-	elif xp_level_diff < 0 and xp_tier_diff == 0:
+	elif xp_level_diff < 0:
 		# Downlevel penalty — small grace zone, then gradual reduction
 		var under_gap = abs(xp_level_diff)
 		var penalty_threshold = 5.0 + float(character.level) * 0.03  # Grace zone grows with level
@@ -1309,7 +1411,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			if penalty_pct >= 10:
 				messages.append("[color=#808080]Weak foe: -%d%% XP[/color]" % penalty_pct)
 
-	var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
+	var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 
 	# Gold calculation with gold hoarder bonus
 	var gold = monster.gold_reward
@@ -1351,8 +1453,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		final_xp = int(final_xp * xp_mult)
 		messages.append("[color=#228B22]Hunter's Mark: +%d%% gold & XP![/color]" % int(passive_effects.get("gold_bonus", 0) * 100))
 
-	if xp_level_diff >= 10:
-		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus!)[/color][/color]" % [final_xp, int((xp_multiplier - 1.0) * 100)])
+	var effective_bonus_pct = int((xp_multiplier - 1.0) * 100)
+	if effective_bonus_pct > 0:
+		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus)[/color][/color]" % [final_xp, effective_bonus_pct])
 	else:
 		messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
 	messages.append("[color=#FFD700]You gain %d gold![/color]" % gold)
@@ -1502,9 +1605,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#AA8866]- The Warrior Hoarder's armor crumbles...[/color]")
 
-	# Wish granter ability: 10% chance to offer a wish
+	# Wish granter ability: 10% chance to offer a wish (100% if GM-guaranteed)
 	if ABILITY_WISH_GRANTER in abilities:
-		if randf() < 0.10:  # 10% chance
+		var wish_chance = 1.0 if combat.get("gm_wish_guaranteed", false) else 0.10
+		if randf() < wish_chance:
 			var monster_lethality = monster.get("lethality", 100)
 			var wish_options = generate_wish_options(character, monster.level, monster_lethality)
 			combat["wish_pending"] = true
@@ -1605,6 +1709,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if combat.has("extra_drops"):
 		all_drops.append_array(combat.extra_drops)
 
+	# Indent all victory/reward messages
+	var victory_indent = "          "  # 10 spaces
+	messages.insert(victory_msg_start, "[color=#444444]─────────────────────────────[/color]")
+	_indent_new_messages(messages, victory_msg_start + 1, victory_indent)
+
 	return {
 		"success": true,
 		"messages": messages,
@@ -1650,8 +1759,8 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
 
 	# Base 40%, +1% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
-	# -3% per level the monster is above you (fighting +20 level = -60%)
-	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus - (level_diff * 3)
+	# -1% per level the monster is above you (diminishing — high-level fights still escapable)
+	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus - level_diff
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
 	# +40% flee success chance
@@ -1698,7 +1807,7 @@ func process_flee(combat: Dictionary) -> Dictionary:
 		flee_chance += flock_flee_bonus
 		messages.append("[color=#FFD700]Flock fatigue: +%d%% flee chance![/color]" % flock_flee_bonus)
 
-	flee_chance = clamp(flee_chance, 5, 95)  # Hardcap 5-95%
+	flee_chance = clamp(flee_chance, 10, 95)  # Hardcap 10-95%
 
 	var roll = randi() % 100
 
@@ -1854,9 +1963,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				character.current_hp -= curse_damage
 				character.current_hp = max(1, character.current_hp)
 				if wis_reduction > 0:
-					messages.append("[color=#FF00FF]The %s's death curse deals %d damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+					messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
 				else:
-					messages.append("[color=#FF00FF]The %s's death curse deals %d damage![/color]" % [monster.name, curse_damage])
+					messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
 
 		# Give full rewards as if monster was killed
 		var base_xp = monster.experience_reward
@@ -2017,9 +2126,10 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				character.gems += gems_earned
 				messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
-		# Wish granter ability: 10% chance to offer a wish
+		# Wish granter ability: 10% chance to offer a wish (100% if GM-guaranteed)
 		if ABILITY_WISH_GRANTER in abilities:
-			if randf() < 0.10:  # 10% chance
+			var wish_chance_f = 1.0 if combat.get("gm_wish_guaranteed", false) else 0.10
+			if randf() < wish_chance_f:
 				var monster_lethality = monster.get("lethality", 100)
 				wish_options = generate_wish_options(character, monster.level, monster_lethality)
 				wish_pending = true
@@ -2055,7 +2165,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		messages.append("[color=#FF4444][b]FAILED![/b] The %s sees through your trick![/color]" % monster.name)
 
 		# Companion still attacks even when outsmart fails - they're loyal!
+		var _ca2 = messages.size()
 		_process_companion_attack(combat, messages)
+		_indent_new_messages(messages, _ca2, "   ")
 
 		# Check if companion killed the monster
 		if monster.current_hp <= 0:
@@ -2084,7 +2196,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 		# Monster gets a free attack
 		var monster_result = process_monster_turn(combat)
-		messages.append(monster_result.message)
+		messages.append("[color=#444444]─────────────────────────────[/color]")
+		messages.append(_indent_multiline(monster_result.message, "         "))
+		messages.append("[color=#444444]─────────────────────────────[/color]")
 
 		# Check if player died
 		if character.current_hp <= 0:
@@ -2175,7 +2289,9 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# === COMPANION ATTACK (only if ability takes a combat turn) ===
 	# Don't attack on free actions like Analyze, Pickpocket success, etc.
 	if not result.get("skip_monster_turn", false):
+		var _ca3 = result.messages.size()
 		_process_companion_attack(combat, result.messages)
+		_indent_new_messages(result.messages, _ca3, "   ")
 
 	# Track companion damage to monster
 	var companion_damage = max(0, monster_hp_before - combat.monster.current_hp) - ability_damage_dealt
@@ -2202,7 +2318,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		var player_hp_before_monster = combat.character.current_hp
 		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
-		result.messages.append(monster_result.message)
+		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		var monster_msg = monster_result.get("message", "")
+		result.messages.append(_indent_multiline(monster_msg, "         "))
+		result.messages.append("[color=#444444]─────────────────────────────[/color]")
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -2516,7 +2635,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
 			# Apply burn DoT (20% of INT per round for 3 rounds)
 			var burn_damage = max(1, int(int_stat * 0.2))
-			combat["monster_burn"] = {"damage": burn_damage, "rounds": 3}
+			combat["monster_burn"] = burn_damage
+			combat["monster_burn_duration"] = 3
 			messages.append("[color=#FF6600]The target is burning! (%d damage/round for 3 rounds)[/color]" % burn_damage)
 
 		"forcefield":
@@ -2745,7 +2865,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var stun_chance = maxi(20, 100 - cc_resist * 25)
 			messages.append("[color=#FF4444]SHIELD BASH![/color]")
 			if randi() % 100 < stun_chance:
-				combat["monster_stunned"] = true  # Enemy skips next turn
+				combat["monster_stunned"] = 1  # Enemy skips next turn
 				combat["cc_resistance"] = cc_resist + 1
 				messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 			else:
@@ -2766,7 +2886,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
 			# Apply bleed DoT (20% of STR per round for 4 rounds)
 			var bleed_damage = max(1, int(str_stat * 0.20))  # Buffed from 15%
-			combat["monster_bleed"] = {"damage": bleed_damage, "rounds": 4}
+			combat["monster_bleed"] = bleed_damage
+			combat["monster_bleed_duration"] = 4
 			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
 
 		"berserk":
@@ -2946,7 +3067,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#808080]The enemy catches you![/color]")
 				# Enemy gets free attack
 				var monster_result = process_monster_turn(combat)
-				messages.append(monster_result.message)
+				messages.append("[color=#444444]─────────────────────────────[/color]")
+				messages.append(_indent_multiline(monster_result.message, "         "))
+				messages.append("[color=#444444]─────────────────────────────[/color]")
 				if character.current_hp <= 0:
 					return {
 						"success": true,
@@ -3083,7 +3206,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#FF4444]You're caught mid-heist![/color]")
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
-				messages.append(monster_result.message)
+				messages.append("[color=#444444]─────────────────────────────[/color]")
+				messages.append(_indent_multiline(monster_result.message, "         "))
+				messages.append("[color=#444444]─────────────────────────────[/color]")
 				if character.current_hp <= 0:
 					return {
 						"success": true,
@@ -3364,19 +3489,16 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var abilities = monster.get("abilities", [])
 	var messages = []
 
-	# Check if monster is stunned (Shield Bash or Paralyze)
-	var stun_turns = combat.get("monster_stunned", 0)
-	if stun_turns is bool:
-		# Legacy boolean stun (Shield Bash)
-		if stun_turns:
-			combat.erase("monster_stunned")
-			return {"success": true, "message": "[color=#808080]The %s is stunned and cannot act![/color]" % monster.name}
-	elif stun_turns > 0:
-		# Multi-turn stun (Paralyze)
+	# Check if monster is stunned (Shield Bash, Paralyze, or companion)
+	var stun_turns = int(combat.get("monster_stunned", 0))
+	if stun_turns > 0:
 		combat["monster_stunned"] = stun_turns - 1
 		if stun_turns - 1 <= 0:
 			combat.erase("monster_stunned")
-		return {"success": true, "message": "[color=#808080]The %s is paralyzed and cannot act! (%d turn(s) remaining)[/color]" % [monster.name, max(0, stun_turns - 1)]}
+		if stun_turns == 1:
+			return {"success": true, "message": "[color=#808080]The %s is stunned and cannot act![/color]" % monster.name}
+		else:
+			return {"success": true, "message": "[color=#808080]The %s is paralyzed and cannot act! (%d turn(s) remaining)[/color]" % [monster.name, max(0, stun_turns - 1)]}
 
 	# Check for Time Stop scroll buff (monster skips turn)
 	if character.has_buff("time_stop"):
@@ -3408,34 +3530,44 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			}
 
 	# Process burn DoT on monster (from Blast)
-	var burn_data = combat.get("monster_burn", {})
-	if burn_data.get("rounds", 0) > 0:
-		var burn_dmg = burn_data.damage
-		monster.current_hp -= burn_dmg
+	var burn_raw = combat.get("monster_burn", 0)
+	if burn_raw is Dictionary:
+		# Legacy dict format: convert to unified format
+		combat["monster_burn"] = int(burn_raw.get("damage", 0))
+		combat["monster_burn_duration"] = int(burn_raw.get("rounds", 0))
+		burn_raw = combat["monster_burn"]
+	var m_burn_damage = int(burn_raw)
+	var m_burn_duration = int(combat.get("monster_burn_duration", 0))
+	if m_burn_damage > 0 and m_burn_duration > 0:
+		monster.current_hp -= m_burn_damage
 		monster.current_hp = max(0, monster.current_hp)
-		burn_data.rounds -= 1
-		combat["monster_burn"] = burn_data
-		messages.append("[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, burn_dmg])
-		if burn_data.rounds == 0:
-			combat.erase("monster_burn")
+		combat["monster_burn_duration"] = m_burn_duration - 1
+		messages.append("[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, m_burn_damage])
+		if combat["monster_burn_duration"] <= 0:
+			combat["monster_burn"] = 0
 			messages.append("[color=#808080]The flames die out.[/color]")
 		# Check if burn killed the monster
 		if monster.current_hp <= 0:
 			return _process_victory(combat, messages)
 
-	# Process bleed DoT on monster (from Cleave)
-	var bleed_data = combat.get("monster_bleed", {})
-	if bleed_data.get("rounds", 0) > 0:
-		var bleed_dmg = bleed_data.damage
-		monster.current_hp -= bleed_dmg
+	# Process bleed DoT on monster (from Cleave and companions)
+	# Unified int format: monster_bleed = damage per tick, monster_bleed_duration = rounds left
+	var bleed_raw = combat.get("monster_bleed", 0)
+	if bleed_raw is Dictionary:
+		# Legacy dict format: convert to unified format
+		combat["monster_bleed"] = int(bleed_raw.get("damage", 0))
+		combat["monster_bleed_duration"] = int(bleed_raw.get("rounds", 0))
+		bleed_raw = combat["monster_bleed"]
+	var m_bleed_damage = int(bleed_raw)
+	var m_bleed_duration = int(combat.get("monster_bleed_duration", 0))
+	if m_bleed_damage > 0 and m_bleed_duration > 0:
+		monster.current_hp -= m_bleed_damage
 		monster.current_hp = max(0, monster.current_hp)
-		bleed_data.rounds -= 1
-		combat["monster_bleed"] = bleed_data
-		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, bleed_dmg])
-		if bleed_data.rounds == 0:
-			combat.erase("monster_bleed")
+		combat["monster_bleed_duration"] = m_bleed_duration - 1
+		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, m_bleed_damage])
+		if combat["monster_bleed_duration"] <= 0:
+			combat["monster_bleed"] = 0
 			messages.append("[color=#808080]The bleeding stops.[/color]")
-		# Check if bleed killed the monster
 		if monster.current_hp <= 0:
 			return _process_victory(combat, messages)
 
@@ -3673,7 +3805,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if character.current_hp <= 0:
 			if character.try_last_stand():
 				character.current_hp = 1
-				messages.append("[color=#FF4444]The %s attacks and deals %d damage![/color]" % [monster.name, total_damage])
+				messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
 				messages.append("[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]")
 				return {"success": true, "message": "\n".join(messages), "last_stand": true}
 
@@ -3792,10 +3924,22 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 						character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 						messages.append("[color=#00FF00]%s uses %s and drains %d HP![/color]" % [companion.name, ability_name, heal_amount])
 					elif effect == "mana_restore":
-						var mana_percent = ability.get("value", 20)
-						var mana_amount = max(1, int(character.get_total_max_mana() * mana_percent / 100.0))
-						character.current_mana = min(character.get_total_max_mana(), character.current_mana + mana_amount)
-						messages.append("[color=#6699FF]%s uses %s and restores %d mana![/color]" % [companion.name, ability_name, mana_amount])
+						# Restore player's primary resource based on class
+						var restore_percent = ability.get("value", 20)
+						var class_path = character.get_class_path()
+						match class_path:
+							"warrior":
+								var amount = max(1, int(character.get_total_max_stamina() * restore_percent / 100.0))
+								character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + amount)
+								messages.append("[color=#6699FF]%s uses %s and restores %d stamina![/color]" % [companion.name, ability_name, amount])
+							"mage":
+								var amount = max(1, int(character.get_total_max_mana() * restore_percent / 100.0))
+								character.current_mana = min(character.get_total_max_mana(), character.current_mana + amount)
+								messages.append("[color=#6699FF]%s uses %s and restores %d mana![/color]" % [companion.name, ability_name, amount])
+							"trickster":
+								var amount = max(1, int(character.get_total_max_energy() * restore_percent / 100.0))
+								character.current_energy = min(character.get_total_max_energy(), character.current_energy + amount)
+								messages.append("[color=#6699FF]%s uses %s and restores %d energy![/color]" % [companion.name, ability_name, amount])
 					elif effect == "poison":
 						var poison_damage = ability.get("damage", ability.get("base_damage", 10))
 						var duration = ability.get("duration", 3)
@@ -3845,7 +3989,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 							combat["monster_poison"] = combat.get("monster_poison", 0) + poison_damage
 							combat["monster_poison_duration"] = max(combat.get("monster_poison_duration", 0), 3)
 						elif effect2 == "stun":
-							combat["monster_stunned"] = true
+							combat["monster_stunned"] = 1
 							messages.append("[color=#FFAA00]The %s is stunned![/color]" % monster.name)
 						elif effect2 == "crit_buff":
 							var crit_value = ability.get("value2", ability.get("crit_base", 20))
@@ -3864,9 +4008,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 							messages.append("[color=#FFD700]Cooldowns reset![/color]")
 
 		if num_attacks > 1:
-			messages.append("[color=#FF4444]The %s hits %d times for %d total damage![/color]" % [monster.name, hits, total_damage])
+			messages.append("[color=#FF4444]The %s hits %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, hits, total_damage])
 		else:
-			messages.append("[color=#FF4444]The %s attacks and deals %d damage![/color]" % [monster.name, total_damage])
+			messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
 	else:
 		messages.append("[color=#00FF00]The %s attacks but misses![/color]" % monster.name)
 
@@ -3883,9 +4027,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var poison_dmg = max(1, int(base_poison_dmg * (1.0 - wis_resist)))  # WIS also reduces damage
 			character.apply_poison(poison_dmg, 50)
 			if wis_resist > 0:
-				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 50 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
+				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] HP/round for 50 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
 			else:
-				messages.append("[color=#FF00FF]You have been poisoned! (-%d HP/round for 50 turns)[/color]" % poison_dmg)
+				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] HP/round for 50 turns)[/color]" % poison_dmg)
 
 	# Mana drain ability - drains the character's primary resource based on class path
 	# WIS reduces drain amount
@@ -3910,9 +4054,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				character.current_mana = max(0, character.current_mana - drain)
 				resource_name = "mana"
 		if wis_resist > 0:
-			messages.append("[color=#FF00FF]The %s drains %d %s! (WIS resists %d%%)[/color]" % [monster.name, drain, resource_name, int(wis_resist * 100)])
+			messages.append("[color=#FF00FF]The %s drains [color=#FF8800]%d[/color] %s! (WIS resists %d%%)[/color]" % [monster.name, drain, resource_name, int(wis_resist * 100)])
 		else:
-			messages.append("[color=#FF00FF]The %s drains %d %s![/color]" % [monster.name, drain, resource_name])
+			messages.append("[color=#FF00FF]The %s drains [color=#FF8800]%d[/color] %s![/color]" % [monster.name, drain, resource_name])
 
 	# Stamina drain ability
 	if ABILITY_STAMINA_DRAIN in abilities and hits > 0:
@@ -4042,7 +4186,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var steal_percent = randi_range(5, 15)
 			var gold_stolen = max(1, int(character.gold * steal_percent / 100.0))
 			character.gold = max(0, character.gold - gold_stolen)
-			messages.append("[color=#FFD700]The %s steals %d gold from you![/color]" % [monster.name, gold_stolen])
+			messages.append("[color=#FFD700]The %s steals [color=#FF8800]%d[/color] gold from you![/color]" % [monster.name, gold_stolen])
 
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
@@ -4068,7 +4212,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var steal_percent = randi_range(1, 3)
 			var xp_stolen = max(1, int(character.experience * steal_percent / 100.0))
 			character.experience = max(0, character.experience - xp_stolen)
-			messages.append("[color=#FF00FF]The %s drains %d experience from you![/color]" % [monster.name, xp_stolen])
+			messages.append("[color=#FF00FF]The %s drains [color=#FF8800]%d[/color] experience from you![/color]" % [monster.name, xp_stolen])
 
 	# Item steal ability: 5% chance to steal random equipped item
 	if ABILITY_ITEM_STEAL in abilities and hits > 0:
@@ -4456,10 +4600,23 @@ func end_combat(peer_id: int, victory: bool):
 			# Cap to total max HP (including equipment), not just base max_hp
 			character.current_hp = mini(character.current_hp, character.get_total_max_hp())
 
+		var resource_boost = combat.get("companion_resource_boost_applied", 0)
+		if resource_boost > 0:
+			var boost_type = combat.get("companion_resource_boost_type", "mana")
+			match boost_type:
+				"stamina":
+					character.max_stamina = max(1, character.max_stamina - resource_boost)
+					character.current_stamina = mini(character.current_stamina, character.get_total_max_stamina())
+				"mana":
+					character.max_mana = max(1, character.max_mana - resource_boost)
+					character.current_mana = mini(character.current_mana, character.get_total_max_mana())
+				"energy":
+					character.max_energy = max(1, character.max_energy - resource_boost)
+					character.current_energy = mini(character.current_energy, character.get_total_max_energy())
+		# Legacy fallback for old combat states
 		var mana_boost = combat.get("companion_mana_boost_applied", 0)
-		if mana_boost > 0:
+		if mana_boost > 0 and resource_boost == 0:
 			character.max_mana = max(1, character.max_mana - mana_boost)
-			# Cap to total max mana (including equipment), not just base max_mana
 			character.current_mana = mini(character.current_mana, character.get_total_max_mana())
 
 		# Mark character as not in combat
@@ -4821,17 +4978,17 @@ func generate_wish_options(character: Character, monster_level: int, monster_let
 	var player_level = character.level
 	var level_diff = max(0, monster_level - player_level)
 
-	# Option 1: Always a good option (gems or gear)
+	# Option 1: Always a good option (experience or gear)
 	if randf() < 0.5:
-		options.append(_generate_gem_wish(monster_level))
+		options.append(_generate_experience_wish(monster_level, player_level))
 	else:
 		options.append(_generate_gear_wish(player_level, monster_level))
 
 	# Option 2: Another good option (different from option 1)
-	if options[0].type == "gems":
+	if options[0].type == "experience":
 		options.append(_generate_gear_wish(player_level, monster_level))
 	else:
-		options.append(_generate_gem_wish(monster_level))
+		options.append(_generate_experience_wish(monster_level, player_level))
 
 	# Option 3: Special option - small chance for permanent stats, otherwise buff or equipment upgrade
 	if randf() < 0.10:  # 10% chance for permanent stat boost
@@ -4843,15 +5000,19 @@ func generate_wish_options(character: Character, monster_level: int, monster_let
 
 	return options
 
-func _generate_gem_wish(monster_level: int) -> Dictionary:
-	"""Generate a gem reward wish option"""
-	var gem_amount = max(5, int(monster_level / 10) + randi_range(3, 8))
+func _generate_experience_wish(monster_level: int, player_level: int) -> Dictionary:
+	"""Generate an experience windfall wish option.
+	Targets ~50% of a level (roughly 22 kills worth).
+	XP to next level = pow(L+1, 2.5) * 100, so 50% = pow(L+1, 2.5) * 50."""
+	var effective_level = max(monster_level, player_level)
+	var base_xp = int(pow(effective_level + 1, 2.5) * 50)
+	var xp_amount = max(1000, base_xp + randi_range(0, int(base_xp * 0.25)))
 	return {
-		"type": "gems",
-		"amount": gem_amount,
-		"label": "%d Gems" % gem_amount,
-		"description": "Receive %d precious gems" % gem_amount,
-		"color": "#00FFFF"
+		"type": "experience",
+		"amount": xp_amount,
+		"label": "Windfall of Experience",
+		"description": "Gain %d bonus XP" % xp_amount,
+		"color": "#00FF00"
 	}
 
 func _generate_gear_wish(player_level: int, monster_level: int) -> Dictionary:
@@ -4892,10 +5053,10 @@ func _generate_upgrade_wish(monster_lethality: int, level_diff: int) -> Dictiona
 	"""Generate an equipment upgrade wish option.
 	Number of upgrades scales with monster lethality and level difference.
 	Harder fights = more upgrades."""
-	# Base upgrades: 1-2
+	# Base upgrades: 3-5
 	# Lethality bonus: +1 per 500 lethality (max +5)
 	# Level diff bonus: +1 per 10 levels above player (max +5)
-	var base_upgrades = randi_range(1, 2)
+	var base_upgrades = randi_range(3, 5)
 	var lethality_bonus = mini(5, int(monster_lethality / 500))
 	var level_bonus = mini(5, int(level_diff / 10))
 	var total_upgrades = base_upgrades + lethality_bonus + level_bonus
@@ -4925,9 +5086,9 @@ func _generate_stat_wish() -> Dictionary:
 func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 	"""Apply the chosen wish reward to the character. Returns result message."""
 	match wish.type:
-		"gems":
-			character.gems += wish.amount
-			return "[color=#00FFFF]+ + [/color][color=#FF00FF]WISH GRANTED: +%d gems![/color][color=#00FFFF] + +[/color]" % wish.amount
+		"experience":
+			character.add_experience(wish.amount)
+			return "[color=#00FF00]+ + [/color][color=#FF00FF]WISH GRANTED: +%d XP![/color][color=#00FF00] + +[/color]" % wish.amount
 		"gold":
 			character.gold += wish.amount
 			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount

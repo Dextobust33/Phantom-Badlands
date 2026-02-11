@@ -92,6 +92,9 @@ var dungeon_spawn_timer: float = 0.0
 var tax_collector_cooldowns: Dictionary = {}  # peer_id -> steps remaining
 const TAX_COLLECTOR_COOLDOWN_STEPS = 50  # Minimum steps between tax encounters
 
+# Combat command rate limiting (peer_id -> last command time in msec)
+var combat_command_cooldown: Dictionary = {}
+
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
@@ -104,6 +107,9 @@ var balance_config: Dictionary = {}
 
 # Pending home stone companion choice (peer_id -> item data for returning on cancel)
 var pending_home_stone_companion: Dictionary = {}  # peer_id -> {"item_type": str, "item_name": str}
+
+# Pending scroll use (peer_id -> {item: consumed item data, time: msec}) for cancel restoration
+var pending_scroll_use: Dictionary = {}
 
 # Auto-save timer
 const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
@@ -698,6 +704,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_inventory_salvage(peer_id, message)
 		"auto_salvage_settings":
 			handle_auto_salvage_settings(peer_id, message)
+		"auto_salvage_affix_settings":
+			handle_auto_salvage_affix_settings(peer_id, message)
 		"monster_select_confirm":
 			handle_monster_select_confirm(peer_id, message)
 		"home_stone_select":
@@ -706,6 +714,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_home_stone_cancel(peer_id, message)
 		"target_farm_select":
 			handle_target_farm_select(peer_id, message)
+		"target_farm_cancel":
+			handle_scroll_cancel(peer_id)
+		"monster_select_cancel":
+			handle_scroll_cancel(peer_id)
 		"merchant_sell":
 			handle_merchant_sell(peer_id, message)
 		"merchant_sell_all":
@@ -930,6 +942,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_heal(peer_id)
 		"gm_broadcast":
 			handle_gm_broadcast(peer_id, message)
+		"gm_giveconsumable":
+			handle_gm_giveconsumable(peer_id, message)
+		"gm_spawnwish":
+			handle_gm_spawnwish(peer_id)
 		_:
 			pass
 
@@ -1169,7 +1185,8 @@ func handle_select_character(peer_id: int, message: Dictionary):
 				"monster_name": monster.get("name", "Unknown"),
 				"monster_level": monster.get("level", 1),
 				"use_client_art": true,
-				"combat_restored": true
+				"combat_restored": true,
+				"extra_combat_text": result.get("extra_combat_text", "")
 			})
 		else:
 			# Failed to restore - clear invalid state
@@ -1360,11 +1377,12 @@ func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
 	})
 
 func handle_get_trophy_leaderboard(peer_id: int):
-	var entries = persistence.get_trophy_leaderboard()
+	var result = persistence.get_trophy_leaderboard()
 
 	send_to_peer(peer_id, {
 		"type": "trophy_leaderboard",
-		"entries": entries
+		"entries": result.get("first_discoveries", []),
+		"top_collectors": result.get("top_collectors", [])
 	})
 
 func handle_get_players(peer_id: int):
@@ -2281,6 +2299,13 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 
 func handle_combat_command(peer_id: int, message: Dictionary):
 	"""Handle combat commands from player"""
+	# Rate limit: 150ms minimum between combat commands
+	var now = Time.get_ticks_msec()
+	var last = combat_command_cooldown.get(peer_id, 0)
+	if now - last < 150:
+		return
+	combat_command_cooldown[peer_id] = now
+
 	var command = message.get("command", "")
 
 	if command.is_empty():
@@ -2555,19 +2580,26 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						drop_messages.append("[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text])
 						drop_data.append({"rarity": "uncommon", "level": 1, "level_diff": 0, "is_material": true})
 					elif characters[peer_id].can_add_item() or _try_auto_salvage(peer_id):
-						characters[peer_id].add_item(item)
-						# Format with rarity symbol for visual distinction
-						var rarity = item.get("rarity", "common")
-						var color = _get_rarity_color(rarity)
-						var symbol = _get_rarity_symbol(rarity)
-						var name = item.get("name", "Unknown Item")
-						drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
-						# Track rarity and level for sound effects
-						drop_data.append({
-							"rarity": rarity,
-							"level": item.get("level", 1),
-							"level_diff": item.get("level", 1) - player_level
-						})
+						# Check if this item should be immediately auto-salvaged on obtain
+						if _should_auto_salvage_item(peer_id, item):
+							var salvage_result = drop_tables.get_salvage_value(item)
+							var essence = salvage_result.essence
+							characters[peer_id].add_salvage_essence(essence)
+							drop_messages.append("[color=#AA66FF]⚡ Auto-salvaged %s (+%d ESS)[/color]" % [item.get("name", "item"), essence])
+						else:
+							characters[peer_id].add_item(item)
+							# Format with rarity symbol for visual distinction
+							var rarity = item.get("rarity", "common")
+							var color = _get_rarity_color(rarity)
+							var symbol = _get_rarity_symbol(rarity)
+							var name = item.get("name", "Unknown Item")
+							drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
+							# Track rarity and level for sound effects
+							drop_data.append({
+								"rarity": rarity,
+								"level": item.get("level", 1),
+								"level_diff": item.get("level", 1) - player_level
+							})
 					else:
 						# Inventory full - item lost!
 						drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
@@ -3577,6 +3609,10 @@ func handle_disconnect(peer_id: int):
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
+	# Clear pending scroll use (item is lost on disconnect)
+	pending_scroll_use.erase(peer_id)
+	# Clear combat command cooldown
+	combat_command_cooldown.erase(peer_id)
 
 	# Clean up merchant position tracking
 	var player_key = "p_%d" % peer_id
@@ -3754,7 +3790,8 @@ func trigger_encounter(peer_id: int):
 			"message": full_message,
 			"combat_state": result.combat_state,
 			"combat_bg_color": combat_bg_color,
-			"use_client_art": true  # Client should render ASCII art locally
+			"use_client_art": true,  # Client should render ASCII art locally
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		# Forward combat start to watchers with monster info for proper art display
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
@@ -3780,7 +3817,8 @@ func _trigger_specific_encounter(peer_id: int, monster_name: String, monster_lev
 			"message": result.message,
 			"combat_state": result.combat_state,
 			"combat_bg_color": combat_bg_color,
-			"use_client_art": true
+			"use_client_art": true,
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		forward_combat_start_to_watchers(peer_id, result.message, combat_monster_name, combat_bg_color)
 
@@ -3826,11 +3864,19 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		msg += "[color=#FFD700]|[/color] [color=#FFD700]%s[/color] [color=#FFD700]|[/color]\n" % gold_text
 		msg += "[color=#FFD700]+====================================+[/color]"
 	else:
-		# Add items to inventory
+		# Add items to inventory (with auto-salvage check)
 		var item = items[0]
+		var was_auto_salvaged = false
+		var auto_salvage_essence = 0
 		if character.can_add_item():
-			character.add_item(item)
-			item_data = item
+			if _should_auto_salvage_item(peer_id, item):
+				var salvage_result = drop_tables.get_salvage_value(item)
+				auto_salvage_essence = salvage_result.essence
+				character.add_salvage_essence(auto_salvage_essence)
+				was_auto_salvaged = true
+			else:
+				character.add_item(item)
+				item_data = item
 		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
 		var item_name = item.get("name", "Unknown Item")
 		# Pad item name to fit in box (34 chars inner width, plus 2 spaces = 36 total)
@@ -3843,7 +3889,9 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		msg += "[color=#FFD700]|[/color] You discover something valuable!   [color=#FFD700]|[/color]\n"
 		msg += "[color=#FFD700]|[/color] [color=%s]%s[/color] [color=#FFD700]|[/color]\n" % [rarity_color, padded_name]
 		msg += "[color=#FFD700]+====================================+[/color]"
-		if not character.can_add_item() and items.size() > 0:
+		if was_auto_salvaged:
+			msg += "\n[color=#AA66FF]⚡ Auto-salvaged for %d essence![/color]" % auto_salvage_essence
+		elif not character.can_add_item() and items.size() > 0:
 			msg += "\n[color=#FF4444]INVENTORY FULL! Item was lost![/color]"
 
 	# Send lucky_find message that requires acknowledgment
@@ -4644,7 +4692,8 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			"combat_bg_color": varied_colors.bg_color,
 			"flock_art_color": varied_colors.art_color,  # Client uses this to recolor ASCII art
 			"use_client_art": true,  # Client should render ASCII art locally
-			"is_dungeon_combat": is_dungeon_combat  # Pass to client for UI state
+			"is_dungeon_combat": is_dungeon_combat,  # Pass to client for UI state
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
@@ -4872,8 +4921,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				return
 
 	# For consumables with stacking, use the stack function
+	var used_item: Dictionary = {}
 	if is_consumable:
-		var used_item = character.use_consumable_stack(index)
+		used_item = character.use_consumable_stack(index)
 		if used_item.is_empty():
 			send_to_peer(peer_id, {
 				"type": "error",
@@ -5014,6 +5064,10 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 	elif effect.has("monster_select"):
 		# Monster Selection Scroll - let player pick next encounter
+		# Save consumed item for cancel restoration (copy full item data so name is preserved)
+		var restore_item = used_item.duplicate() if is_consumable else item.duplicate()
+		restore_item["quantity"] = 1
+		pending_scroll_use[peer_id] = {"item": restore_item, "time": Time.get_ticks_msec()}
 		# Get list of all monster names from monster database
 		var monster_names = monster_db.get_all_monster_names()
 		send_to_peer(peer_id, {
@@ -5042,6 +5096,10 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 	elif effect.has("target_farm"):
 		# Target Farming Scroll (Scroll of Finding) - let player select ability to farm
+		# Save consumed item for cancel restoration (copy full item data so name is preserved)
+		var restore_item = used_item.duplicate() if is_consumable else item.duplicate()
+		restore_item["quantity"] = 1
+		pending_scroll_use[peer_id] = {"item": restore_item, "time": Time.get_ticks_msec()}
 		var encounters = effect.get("encounters", 5)
 		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey", "warrior_hoarder"]
 		var option_names = {
@@ -5469,6 +5527,9 @@ func handle_monster_select_confirm(peer_id: int, message: Dictionary):
 	# Set the forced next monster on character
 	character.forced_next_monster = monster_name
 
+	# Scroll successfully used - clear pending (item stays consumed)
+	pending_scroll_use.erase(peer_id)
+
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#FF00FF]The scroll crumbles to dust as the summoning circle forms...[/color]\n[color=#FFD700]Your next encounter will be with: %s[/color]" % monster_name
@@ -5486,7 +5547,7 @@ func handle_target_farm_select(peer_id: int, message: Dictionary):
 	var ability = message.get("ability", "")
 	var encounters = message.get("encounters", 5)
 
-	var valid_abilities = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey"]
+	var valid_abilities = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey", "warrior_hoarder"]
 	if ability not in valid_abilities:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -5497,6 +5558,9 @@ func handle_target_farm_select(peer_id: int, message: Dictionary):
 	# Set the target farming ability on character
 	character.target_farm_ability = ability
 	character.target_farm_remaining = encounters
+
+	# Scroll successfully used - clear pending (item stays consumed)
+	pending_scroll_use.erase(peer_id)
 
 	var ability_names = {
 		"weapon_master": "Weapon Masters",
@@ -5513,6 +5577,29 @@ func handle_target_farm_select(peer_id: int, message: Dictionary):
 	})
 
 	save_character(peer_id)
+	send_character_update(peer_id)
+
+func handle_scroll_cancel(peer_id: int):
+	"""Handle player cancelling a scroll selection (Monster Select or Target Farm).
+	Restores the consumed scroll back to inventory."""
+	if not characters.has(peer_id):
+		return
+
+	if not pending_scroll_use.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var pending = pending_scroll_use[peer_id]
+	var item = pending.get("item", {})
+
+	# Restore the scroll to inventory
+	if not item.is_empty():
+		character.add_item(item)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]The scroll's magic fades unused. It has been returned to your inventory.[/color]"
+		})
+	pending_scroll_use.erase(peer_id)
 	send_character_update(peer_id)
 
 func handle_inventory_equip(peer_id: int, message: Dictionary):
@@ -5651,12 +5738,20 @@ func handle_inventory_discard(peer_id: int, message: Dictionary):
 		})
 		return
 
-	character.remove_item(index)
-
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#FF4444]You discard %s.[/color]" % item.get("name", "Unknown")
-	})
+	var item_name = item.get("name", "Unknown")
+	# For consumable stacks, discard one at a time
+	if item.get("is_consumable", false) and item.get("quantity", 1) > 1:
+		item["quantity"] -= 1
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]You discard 1x %s. (%d remaining)[/color]" % [item_name, item.quantity]
+		})
+	else:
+		character.remove_item(index)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]You discard %s.[/color]" % item_name
+		})
 
 	send_character_update(peer_id)
 
@@ -5958,7 +6053,7 @@ func handle_auto_salvage_settings(peer_id: int, message: Dictionary):
 		return
 	var character = characters[peer_id]
 	var max_rarity = int(message.get("max_rarity", 0))
-	max_rarity = clampi(max_rarity, 0, 3)
+	max_rarity = clampi(max_rarity, 0, 5)
 
 	if max_rarity == 0:
 		character.auto_salvage_enabled = false
@@ -5967,25 +6062,65 @@ func handle_auto_salvage_settings(peer_id: int, message: Dictionary):
 	else:
 		character.auto_salvage_enabled = true
 		character.auto_salvage_max_rarity = max_rarity
-		var rarity_names = {1: "Common", 2: "Uncommon", 3: "Rare"}
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvage enabled: will salvage %s and below when inventory is full.[/color]" % rarity_names[max_rarity]})
+		var rarity_names = {1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legendary"}
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvage enabled: will salvage %s and below on pickup.[/color]" % rarity_names[max_rarity]})
 
 	save_character(peer_id)
 	send_character_update(peer_id)
 
-func _try_auto_salvage(peer_id: int) -> bool:
-	"""Try to auto-salvage an item to make room. Returns true if space was made."""
+func _should_auto_salvage_item(peer_id: int, item: Dictionary) -> bool:
+	"""Check if a newly obtained item should be immediately auto-salvaged.
+	Returns true if the item matches auto-salvage criteria."""
 	if not characters.has(peer_id):
 		return false
 	var character = characters[peer_id]
-	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity == 0:
+	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity <= 0:
+		return false
+	# Don't auto-salvage consumables, locked items, or title items
+	if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
+		return false
+	if item.get("locked", false) or item.get("is_title_item", false):
+		return false
+
+	var rarity = item.get("rarity", "common")
+	var rarity_order = ["common", "uncommon", "rare", "epic", "legendary"]
+	var max_idx = character.auto_salvage_max_rarity
+	var allowed_rarities = rarity_order.slice(0, max_idx)
+
+	# Item must be in the salvageable rarity range
+	if rarity not in allowed_rarities:
+		return false
+
+	# Check affix filter — selected affixes are KEPT (protected from salvage)
+	if character.auto_salvage_affixes.size() > 0:
+		var affixes = item.get("affixes", {})
+		var prefix = affixes.get("prefix_name", "")
+		var suffix = affixes.get("suffix_name", "")
+		for affix_name in character.auto_salvage_affixes:
+			if (prefix != "" and prefix == affix_name) or (suffix != "" and suffix == affix_name):
+				return false  # Has a kept affix — don't salvage
+
+	return true
+
+func _try_auto_salvage(peer_id: int) -> bool:
+	"""Try to auto-salvage an item to make room. Returns true if space was made.
+	Checks both rarity-based and affix-based filters."""
+	if not characters.has(peer_id):
+		return false
+	var character = characters[peer_id]
+
+	var has_rarity_filter = character.auto_salvage_enabled and character.auto_salvage_max_rarity > 0
+	var has_affix_filter = character.auto_salvage_affixes.size() > 0
+
+	if not has_rarity_filter and not has_affix_filter:
 		return false
 
 	var rarity_order = ["common", "uncommon", "rare"]
 	var max_idx = character.auto_salvage_max_rarity  # 1=common, 2=uncommon, 3=rare
-	var allowed_rarities = rarity_order.slice(0, max_idx)
+	var allowed_rarities = rarity_order.slice(0, max_idx) if has_rarity_filter else []
 
 	# Find lowest rarity non-equipped, non-locked item to salvage
+	# Items with a KEPT affix (in auto_salvage_affixes) are protected from salvage
 	var best_idx = -1
 	var best_rarity_rank = 999
 	var best_level = 999999
@@ -5998,10 +6133,27 @@ func _try_auto_salvage(peer_id: int) -> bool:
 			continue
 		if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
 			continue
+
 		var rarity = item.get("rarity", "common")
-		if rarity not in allowed_rarities:
+		var rarity_match = rarity in allowed_rarities
+
+		# Check affix filter — selected affixes are KEPT (protected from salvage)
+		if has_affix_filter:
+			var affixes = item.get("affixes", {})
+			var prefix = affixes.get("prefix_name", "")
+			var suffix = affixes.get("suffix_name", "")
+			var has_kept_affix = false
+			for affix_name in character.auto_salvage_affixes:
+				if (prefix != "" and prefix == affix_name) or (suffix != "" and suffix == affix_name):
+					has_kept_affix = true
+					break
+			if has_kept_affix:
+				continue  # Skip — this item is protected
+
+		if not rarity_match:
 			continue
-		var rarity_rank = allowed_rarities.find(rarity)
+
+		var rarity_rank = rarity_order.find(rarity) if rarity_order.has(rarity) else 999
 		var item_level = item.get("level", 1)
 		# Prefer lowest rarity first, then lowest level
 		if rarity_rank < best_rarity_rank or (rarity_rank == best_rarity_rank and item_level < best_level):
@@ -6021,6 +6173,45 @@ func _try_auto_salvage(peer_id: int) -> bool:
 
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvaged %s for %d essence.[/color]" % [item.get("name", "item"), essence]})
 	return true
+
+func handle_auto_salvage_affix_settings(peer_id: int, message: Dictionary):
+	"""Handle auto-salvage affix filter settings"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var affixes = message.get("affixes", [])
+
+	# Validate: max 5 affixes per stat category, must be valid affix names
+	var valid_affix_names = {}  # name -> stat
+	for prefix in drop_tables.PREFIX_POOL:
+		valid_affix_names[prefix.name] = prefix.get("stat", "")
+	for suffix in drop_tables.SUFFIX_POOL:
+		valid_affix_names[suffix.name] = suffix.get("stat", "")
+	for proc in drop_tables.PROC_SUFFIX_POOL:
+		valid_affix_names[proc.name] = "proc_" + proc.get("proc_type", "")
+
+	var validated = []
+	var per_category_count = {}  # stat -> count
+	for affix in affixes:
+		if affix in valid_affix_names and affix not in validated:
+			var stat = valid_affix_names[affix]
+			var count = per_category_count.get(stat, 0)
+			if count < 5:
+				validated.append(affix)
+				per_category_count[stat] = count + 1
+
+	character.auto_salvage_affixes = validated
+	# Auto-enable salvage if affix filter is set
+	if validated.size() > 0 and not character.auto_salvage_enabled:
+		character.auto_salvage_enabled = true
+
+	if validated.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Affix auto-salvage filter cleared.[/color]"})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Affix auto-salvage filter set: %s[/color]" % ", ".join(validated)})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
 
 func send_character_update(peer_id: int):
 	"""Send character data update to client"""
@@ -8440,7 +8631,8 @@ func _start_bounty_combat(peer_id: int, quest_id: String, bounty: Dictionary):
 			"message": intro_msg + result.message,
 			"combat_state": result.combat_state,
 			"combat_bg_color": combat_bg_color,
-			"use_client_art": true
+			"use_client_art": true,
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 
 func _on_bounty_kill(peer_id: int, quest_id: String):
@@ -9432,6 +9624,11 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 		quantity *= 2  # Double on crit
 		extra_messages.append("[color=#FFD700]★ Critical Catch! ★[/color]")
 
+	# Apply house gathering bonus
+	var gathering_bonus = character.house_bonuses.get("gathering_bonus", 0)
+	if gathering_bonus > 0:
+		quantity += int(quantity * gathering_bonus)
+
 	# Add XP
 	var xp_result = character.add_fishing_xp(catch_result.xp)
 	character.record_fish_caught()
@@ -9587,6 +9784,11 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 
 	# Add tool yield bonus
 	quantity += tool_yield_bonus
+
+	# Apply house gathering bonus
+	var gathering_bonus_m = character.house_bonuses.get("gathering_bonus", 0)
+	if gathering_bonus_m > 0:
+		quantity += int(quantity * gathering_bonus_m)
 
 	# Add XP (reduced on partial success)
 	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_mining_reactions_required(ore_tier))
@@ -9753,6 +9955,11 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 
 	# Add tool yield bonus
 	quantity += tool_yield_bonus
+
+	# Apply house gathering bonus
+	var gathering_bonus_l = character.house_bonuses.get("gathering_bonus", 0)
+	if gathering_bonus_l > 0:
+		quantity += int(quantity * gathering_bonus_l)
 
 	# Add XP (reduced on partial success)
 	var xp_multiplier = 1.0 if success else (float(partial_success) / drop_tables.get_logging_reactions_required(wood_tier))
@@ -11599,7 +11806,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		monster.name = monster_info.name
 
 	# Start combat
-	combat_mgr.start_combat(peer_id, character, monster)
+	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	# Mark internal combat state for dungeon-specific handling
 	var internal_state = combat_mgr.get_active_combat(peer_id)
@@ -11621,8 +11828,8 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		"combat_state": display_state,
 		"is_dungeon_combat": true,
 		"is_boss": is_boss,
-		"use_client_art": true  # Client renders ASCII art locally
-		# Note: No combat_bg_color - dungeon combat uses same black background as normal combat
+		"use_client_art": true,  # Client renders ASCII art locally
+		"extra_combat_text": result.get("extra_combat_text", "")
 	})
 
 func _open_dungeon_treasure(peer_id: int):
@@ -12236,7 +12443,7 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		monster.name = boss_info.get("name", monster.name)
 
 	# Start combat
-	combat_mgr.start_combat(peer_id, character, monster)
+	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	# Mark internal combat state for dungeon-specific handling
 	var internal_state = combat_mgr.get_active_combat(peer_id)
@@ -12258,7 +12465,8 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		"combat_state": display_state,
 		"is_dungeon_combat": true,
 		"is_boss": is_boss,
-		"use_client_art": true
+		"use_client_art": true,
+		"extra_combat_text": result.get("extra_combat_text", "")
 	})
 
 func handle_dungeon_rest(peer_id: int):
@@ -13675,7 +13883,8 @@ func _spawn_crucible_boss(peer_id: int):
 			"enemy_max_hp": monster.hp,
 			"player_hp": character.current_hp,
 			"player_max_hp": character.get_total_max_hp(),
-			"special_message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level]
+			"special_message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level],
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 
 func handle_crucible_victory(peer_id: int):
@@ -14904,7 +15113,8 @@ func _start_gm_combat(peer_id: int, monster: Dictionary):
 			"message": full_message,
 			"combat_state": result.combat_state,
 			"combat_bg_color": combat_bg_color,
-			"use_client_art": true
+			"use_client_art": true,
+			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 	else:
@@ -15054,3 +15264,72 @@ func handle_gm_broadcast(peer_id: int, message: Dictionary):
 		return
 	_send_broadcast(text)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Broadcast sent.[/color]"})
+
+func handle_gm_giveconsumable(peer_id: int, message: Dictionary):
+	"""Give a specific consumable item by type name"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var item_type = message.get("item_type", "")
+	var tier = clampi(int(message.get("tier", 5)), 1, 9)
+
+	if item_type.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /giveconsumable <type> [tier][/color]"})
+		return
+
+	# Generate the consumable using drop_tables
+	var tier_levels = {1: 3, 2: 10, 3: 25, 4: 40, 5: 60, 6: 100, 7: 300, 8: 1000, 9: 3000}
+	var item_level = tier_levels.get(tier, 60)
+	var drop_entry = {"item_type": item_type, "rarity": "common"}
+	var item = drop_tables._generate_item(drop_entry, item_level)
+
+	if item.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to generate consumable '%s'.[/color]" % item_type})
+		return
+
+	ch.add_item(item)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received: %s (Tier %d)[/color]" % [item.get("name", item_type), tier]})
+
+func handle_gm_spawnwish(peer_id: int):
+	"""Spawn a weak monster with guaranteed wish granter ability"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Already in combat![/color]"})
+		return
+
+	var ch = characters[peer_id]
+	# Generate a weak monster with wish_granter ability
+	var monster = monster_db.generate_monster(ch.level, ch.level)
+	monster["abilities"] = ["wish_granter"]
+	monster["current_hp"] = 1  # 1 HP so it dies in one hit
+	monster["max_hp"] = 1
+	monster["name"] = "Wish Granter (GM)"
+
+	var result = combat_mgr.start_combat(peer_id, ch, monster)
+	if result.success:
+		# Force the wish to be 100% guaranteed by setting a flag on the combat
+		if combat_mgr.active_combats.has(peer_id):
+			combat_mgr.active_combats[peer_id]["gm_wish_guaranteed"] = true
+		var monster_name = result.combat_state.get("monster_name", "")
+		var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
+		var full_message = "[color=#00FF00][GM] Spawned Wish Granter! Kill it for a guaranteed wish.[/color]\n\n" + result.message
+		send_to_peer(peer_id, {
+			"type": "combat_start",
+			"message": full_message,
+			"combat_state": result.combat_state,
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true,
+			"extra_combat_text": result.get("extra_combat_text", "")
+		})
+		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to start combat.[/color]"})

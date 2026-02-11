@@ -377,6 +377,7 @@ const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower
 @export var salvage_essence: int = 0  # Currency from salvaging items
 @export var auto_salvage_enabled: bool = false
 @export var auto_salvage_max_rarity: int = 0  # 0=off, 1=common, 2=uncommon, 3=rare
+@export var auto_salvage_affixes: Array = []  # Up to 2 affix names to auto-salvage regardless of rarity
 
 # ===== CRAFTING SYSTEM =====
 @export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1}
@@ -1281,6 +1282,7 @@ func to_dict() -> Dictionary:
 		"salvage_essence": salvage_essence,
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
+		"auto_salvage_affixes": auto_salvage_affixes,
 		"mining_skill": mining_skill,
 		"mining_xp": mining_xp,
 		"ore_gathered": ore_gathered,
@@ -1514,6 +1516,7 @@ func from_dict(data: Dictionary):
 	salvage_essence = data.get("salvage_essence", 0)
 	auto_salvage_enabled = data.get("auto_salvage_enabled", false)
 	auto_salvage_max_rarity = data.get("auto_salvage_max_rarity", 0)
+	auto_salvage_affixes = data.get("auto_salvage_affixes", [])
 	mining_skill = data.get("mining_skill", 1)
 	mining_xp = data.get("mining_xp", 0)
 	ore_gathered = data.get("ore_gathered", 0)
@@ -1570,9 +1573,10 @@ func discover_trading_post(post_name: String, post_x: int, post_y: int) -> bool:
 	return true
 
 func add_experience(amount: int) -> Dictionary:
-	"""Add experience and check for level up. Applies Human racial XP bonus."""
-	# Apply Human racial XP bonus (+10%)
-	var final_amount = int(amount * get_xp_multiplier())
+	"""Add experience and check for level up. Applies Human racial XP bonus and house XP bonus."""
+	# Apply Human racial XP bonus (+10%) and house XP bonus
+	var house_xp_mult = 1.0 + house_bonuses.get("xp_bonus", 0)
+	var final_amount = int(amount * get_xp_multiplier() * house_xp_mult)
 	experience += final_amount
 	var leveled_up = false
 	var levels_gained = 0
@@ -2510,8 +2514,8 @@ func process_egg_steps(steps: int = 1) -> Array:
 			remaining_eggs.append(egg)
 			continue
 
-		egg.steps_remaining -= steps
-		if egg.steps_remaining <= 0:
+		egg["steps_remaining"] = egg.get("steps_remaining", 0) - steps
+		if egg.get("steps_remaining", 0) <= 0:
 			# Egg hatched!
 			var companion = _hatch_egg(egg)
 			hatched.append(companion)

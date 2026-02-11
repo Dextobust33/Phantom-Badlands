@@ -660,6 +660,11 @@ var pending_inventory_action: String = ""  # Action waiting for item selection
 var last_item_use_result: String = ""  # Store last item use result to display after inventory refresh
 var awaiting_item_use_result: bool = false  # Flag to capture next text message as item use result
 
+# Auto-salvage affix filter
+var affix_filter_page: int = 0
+var affix_filter_list: Array = []  # All available affix names
+var affix_filter_selected: Array = []  # Currently selected affixes (up to 2)
+
 # Ability management mode
 var ability_mode: bool = false
 var ability_data: Dictionary = {}  # Cached ability data from server
@@ -1776,7 +1781,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "affix_filter_select"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -1802,6 +1807,16 @@ func _process(delta):
 					select_inventory_item(selection_index)
 			else:
 				set_meta("itemkey_%d_pressed" % i, false)
+
+	# Affix filter selection with keybinds
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "affix_filter_select":
+		for i in range(7):  # 7 items per page to avoid key conflicts with action bar
+			if is_item_select_key_pressed(i):
+				if not get_meta("affixkey_%d_pressed" % i, false):
+					set_meta("affixkey_%d_pressed" % i, true)
+					_toggle_affix_filter_item(affix_filter_page * 7 + i)
+			else:
+				set_meta("affixkey_%d_pressed" % i, false)
 
 	# Merchant item selection with keybinds when action is pending
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "sell":
@@ -2034,7 +2049,16 @@ func _process(delta):
 
 	# Target farm selection with keybinds (from Scroll of Finding)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode:
-		for i in range(5):  # Only 5 options (1-5)
+		# Handle Cancel (Space/action_0)
+		var tf_cancel_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+		if Input.is_physical_key_pressed(tf_cancel_key):
+			if not get_meta("targetfarm_cancel_pressed", false):
+				set_meta("targetfarm_cancel_pressed", true)
+				cancel_target_farm()
+		else:
+			set_meta("targetfarm_cancel_pressed", false)
+		# Handle number key selection (1-9, up to number of options)
+		for i in range(min(9, target_farm_options.size())):
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
 					continue
@@ -2239,7 +2263,7 @@ func _process(delta):
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
-		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select"]
+		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "affix_filter_select"]
 
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
@@ -3272,40 +3296,52 @@ func update_monster_kills_display(entries: Array):
 	# Reset scroll to top after layout updates
 	_reset_leaderboard_scroll.call_deferred()
 
-func update_trophy_leaderboard_display(entries: Array):
-	"""Display the trophy hall leaderboard - first collectors of each trophy type"""
+func update_trophy_leaderboard_display(entries: Array, top_collectors: Array = []):
+	"""Display the trophy hall leaderboard - first collectors of each trophy type + top collectors"""
 	if not leaderboard_list:
 		return
 
 	leaderboard_list.clear()
 	leaderboard_list.append_text("[center][b]TROPHY HALL OF FAME[/b][/center]\n\n")
 
-	if entries.is_empty():
+	if entries.is_empty() and top_collectors.is_empty():
 		leaderboard_list.append_text("[center][color=#555555]No trophies collected yet.[/color][/center]")
 		_reset_leaderboard_scroll.call_deferred()
 		return
 
-	for entry in entries:
-		var trophy_name = entry.get("trophy_name", "Unknown")
-		var monster_name = entry.get("monster_name", "Unknown")
-		var first_collector = entry.get("collector", "Unknown")
-		var total_collectors = entry.get("total_collectors", 0)
+	# Top Collectors section
+	if not top_collectors.is_empty():
+		leaderboard_list.append_text("[color=#FFD700]--- Most Trophies Collected ---[/color]\n")
+		for i in range(top_collectors.size()):
+			var collector = top_collectors[i]
+			var rank_color = "#FFD700" if i == 0 else ("#C0C0C0" if i == 1 else ("#CD7F32" if i == 2 else "#AAAAAA"))
+			leaderboard_list.append_text("[color=%s]#%d[/color] %s [color=#808080](%d trophies)[/color]\n" % [rank_color, i + 1, collector.get("name", "Unknown"), collector.get("trophy_count", 0)])
+		leaderboard_list.append_text("\n")
 
-		# Color based on trophy rarity (more collectors = more common)
-		var color = "#A335EE"  # Purple for rare
-		if total_collectors >= 10:
-			color = "#FFFFFF"  # White for common
-		elif total_collectors >= 5:
-			color = "#0070DD"  # Blue for uncommon
-		elif total_collectors >= 2:
-			color = "#A335EE"  # Purple for rare
-		else:
-			color = "#FF8000"  # Orange for unique (only 1 collector)
+	# First Discoveries section
+	if not entries.is_empty():
+		leaderboard_list.append_text("[color=#FF8000]--- First Discoveries ---[/color]\n")
+		for entry in entries:
+			var trophy_name = entry.get("trophy_name", "Unknown")
+			var monster_name = entry.get("monster_name", "Unknown")
+			var first_collector = entry.get("collector", "Unknown")
+			var total_collectors = entry.get("total_collectors", 0)
 
-		leaderboard_list.append_text("[color=%s]%s[/color]\n" % [color, trophy_name])
-		leaderboard_list.append_text("   [color=#555555]From: %s[/color]\n" % monster_name)
-		leaderboard_list.append_text("   [color=#FFD700]First: %s[/color]\n" % first_collector)
-		leaderboard_list.append_text("   [color=#555555]Total collectors: %d[/color]\n\n" % total_collectors)
+			# Color based on trophy rarity (more collectors = more common)
+			var color = "#A335EE"  # Purple for rare
+			if total_collectors >= 10:
+				color = "#FFFFFF"  # White for common
+			elif total_collectors >= 5:
+				color = "#0070DD"  # Blue for uncommon
+			elif total_collectors >= 2:
+				color = "#A335EE"  # Purple for rare
+			else:
+				color = "#FF8000"  # Orange for unique (only 1 collector)
+
+			leaderboard_list.append_text("[color=%s]%s[/color]\n" % [color, trophy_name])
+			leaderboard_list.append_text("   [color=#555555]From: %s[/color]\n" % monster_name)
+			leaderboard_list.append_text("   [color=#FFD700]First: %s[/color]\n" % first_collector)
+			leaderboard_list.append_text("   [color=#555555]Total collectors: %d[/color]\n\n" % total_collectors)
 
 	# Reset scroll to top after layout updates
 	_reset_leaderboard_scroll.call_deferred()
@@ -4696,7 +4732,7 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode:
+	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode and not wish_selection_mode:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement via numpad/arrows
 		var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 		var rest_label = "Meditate" if is_mage else "Rest"
@@ -5465,7 +5501,9 @@ func update_action_bar():
 			var player_level = character_data.get("level", 1)
 			var threshold = max(1, player_level - 5)
 			var auto_rarity = int(character_data.get("auto_salvage_max_rarity", 0))
-			var auto_labels = {0: "Auto:OFF", 1: "Auto:Com", 2: "Auto:Unc", 3: "Auto:Rar"}
+			var auto_labels = {0: "Auto:OFF", 1: "Auto:Com", 2: "Auto:Unc", 3: "Auto:Rar", 4: "Auto:Epic", 5: "Auto:Leg"}
+			var affix_count = character_data.get("auto_salvage_affixes", []).size()
+			var affix_label = "Affix(%d)" % affix_count if affix_count > 0 else "Affix"
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
 				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
@@ -5474,7 +5512,7 @@ func update_action_bar():
 				{"label": "Discard", "action_type": "local", "action_data": "inventory_discard", "enabled": true},
 				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
 				{"label": auto_labels.get(auto_rarity, "Auto:OFF"), "action_type": "local", "action_data": "cycle_auto_salvage", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": affix_label, "action_type": "local", "action_data": "affix_filter", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -5487,6 +5525,23 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "affix_filter_select":
+			# Affix filter selection - paginated list of affixes
+			# Use Q=Prev, W=Next, E=Save to avoid conflicting with number key selection
+			var af_page_size = 7
+			var total_pages = max(1, int(ceil(float(affix_filter_list.size()) / float(af_page_size))))
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "affix_filter_cancel", "enabled": true},
+				{"label": "Prev", "action_type": "local", "action_data": "affix_filter_prev", "enabled": affix_filter_page > 0},
+				{"label": "Next", "action_type": "local", "action_data": "affix_filter_next", "enabled": affix_filter_page < total_pages - 1},
+				{"label": "Save", "action_type": "local", "action_data": "affix_filter_save", "enabled": true},
+				{"label": "Clear", "action_type": "local", "action_data": "affix_filter_clear", "enabled": affix_filter_selected.size() > 0},
+				{"label": "1-7 Select", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7339,7 +7394,9 @@ func _display_combat_usable_items_page():
 		var rarity = item.get("rarity", "common")
 		var color = _get_rarity_color(rarity)
 		var display_num = (j - start_idx) + 1
-		display_game("[%d] [color=%s]%s[/color]" % [display_num, color, item_name])
+		var qty = item.get("quantity", 1)
+		var qty_text = " x%d" % qty if qty > 1 else ""
+		display_game("[%d] [color=%s]%s[/color]%s" % [display_num, color, item_name, qty_text])
 
 	var items_on_page = end_idx - start_idx
 	if total_pages > 1:
@@ -7662,10 +7719,13 @@ func execute_local_action(action: String):
 			display_inventory()
 			update_action_bar()
 		"cycle_auto_salvage":
-			# Cycle: OFF(0) → Common(1) → Uncommon(2) → Rare(3) → OFF(0)
+			# Cycle: OFF(0) → Common(1) → Uncommon(2) → Rare(3) → Epic(4) → Legendary(5) → OFF(0)
 			var current_auto = int(character_data.get("auto_salvage_max_rarity", 0))
-			var next_auto = (current_auto + 1) % 4
+			var next_auto = (current_auto + 1) % 6
+			character_data["auto_salvage_max_rarity"] = next_auto
 			send_to_server({"type": "auto_salvage_settings", "max_rarity": next_auto})
+			display_salvage_menu()
+			update_action_bar()
 		"salvage_consumables_prompt":
 			# Mark the hotkey as pressed to prevent double-trigger
 			set_meta("hotkey_8_pressed", true)  # Slot 3 = key_action_8 in salvage mode
@@ -7679,6 +7739,32 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_game("[color=#AA66FF]Salvaging consumables...[/color]")
 			update_action_bar()
+		"affix_filter":
+			_enter_affix_filter_mode()
+		"affix_filter_cancel":
+			pending_inventory_action = "salvage_select"
+			display_salvage_menu()
+			update_action_bar()
+		"affix_filter_clear":
+			affix_filter_selected.clear()
+			_display_affix_filter_page()
+			update_action_bar()
+		"affix_filter_save":
+			send_to_server({"type": "auto_salvage_affix_settings", "affixes": affix_filter_selected})
+			pending_inventory_action = "salvage_select"
+			display_salvage_menu()
+			update_action_bar()
+		"affix_filter_prev":
+			if affix_filter_page > 0:
+				affix_filter_page -= 1
+				_display_affix_filter_page()
+				update_action_bar()
+		"affix_filter_next":
+			var total_pages_af = max(1, int(ceil(float(affix_filter_list.size()) / 7.0)))
+			if affix_filter_page < total_pages_af - 1:
+				affix_filter_page += 1
+				_display_affix_filter_page()
+				update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
 		"confirm_equip":
@@ -10243,6 +10329,243 @@ func open_salvage_menu():
 	display_game("")
 	display_game("[color=#808080]Use Discard to destroy a single item without salvaging.[/color]")
 	display_game("")
+	# Auto-salvage explanation
+	var auto_rarity = int(character_data.get("auto_salvage_max_rarity", 0))
+	var auto_rarity_names = {0: "OFF", 1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legendary"}
+	var auto_affixes = character_data.get("auto_salvage_affixes", [])
+	display_game("[color=#FFD700]--- Auto-Salvage ---[/color]")
+	display_game("[color=#FFFFFF]Automatically salvages new loot drops on pickup.[/color]")
+	display_game("[color=#FFFFFF]Rarity Filter:[/color] [color=#AA66FF]%s[/color] [color=#808080](cycle with Auto button)[/color]" % auto_rarity_names.get(auto_rarity, "OFF"))
+	if auto_rarity > 0:
+		display_game("[color=#808080]Items up to %s rarity will be auto-salvaged.[/color]" % auto_rarity_names.get(auto_rarity, ""))
+	if auto_affixes.size() > 0:
+		display_game("[color=#FFFFFF]Keeping affixes:[/color] [color=#00FF00]%s[/color]" % ", ".join(auto_affixes))
+		display_game("[color=#808080]Items with these affixes are protected from auto-salvage.[/color]")
+	else:
+		display_game("[color=#808080]No affix filter set. Use Affix button to protect specific affixes.[/color]")
+	display_game("")
+	update_action_bar()
+
+func display_salvage_menu():
+	"""Redisplay the salvage menu (after returning from sub-modes)"""
+	open_salvage_menu()
+
+func _get_affix_category_name(stat: String) -> String:
+	"""Get a readable category name for an affix stat type"""
+	match stat:
+		"attack_bonus": return "Attack Power"
+		"defense_bonus": return "Defense"
+		"hp_bonus": return "Hit Points"
+		"speed_bonus": return "Speed"
+		"mana_bonus": return "Mana"
+		"stamina_bonus": return "Stamina"
+		"energy_bonus": return "Energy"
+		"str_bonus": return "Strength (STR)"
+		"con_bonus": return "Constitution (CON)"
+		"dex_bonus": return "Dexterity (DEX)"
+		"int_bonus": return "Intelligence (INT)"
+		"wis_bonus": return "Wisdom (WIS)"
+		"wits_bonus": return "Cunning (WITS)"
+		"proc_lifesteal": return "Lifesteal (Tier 6+)"
+		"proc_shocking": return "Lightning Damage (Tier 6+)"
+		"proc_damage_reflect": return "Damage Reflect (Tier 6+)"
+		"proc_execute": return "Execute (Tier 6+)"
+		_: return ""
+
+func _enter_affix_filter_mode():
+	"""Enter affix filter selection mode - grouped by stat, sorted by strength"""
+	# Group all affixes by stat type, tracking their power level
+	var stat_groups = {}  # stat -> [{name, per_level}]
+	var affix_stats = {}  # affix_name -> stat
+
+	# Collect prefixes
+	for prefix_data in DropTables.PREFIX_POOL:
+		var n = prefix_data.get("name", "")
+		var stat = prefix_data.get("stat", "")
+		if n == "":
+			continue
+		if not stat_groups.has(stat):
+			stat_groups[stat] = []
+		stat_groups[stat].append({"name": n, "per_level": prefix_data.get("per_level", 0.0)})
+		affix_stats[n] = stat
+
+	# Collect suffixes
+	for suffix_data in DropTables.SUFFIX_POOL:
+		var n = suffix_data.get("name", "")
+		var stat = suffix_data.get("stat", "")
+		if n == "":
+			continue
+		if not stat_groups.has(stat):
+			stat_groups[stat] = []
+		stat_groups[stat].append({"name": n, "per_level": suffix_data.get("per_level", 0.0)})
+		affix_stats[n] = stat
+
+	# Sort each group by per_level (weakest to strongest)
+	for stat in stat_groups:
+		stat_groups[stat].sort_custom(func(a, b): return a.per_level < b.per_level)
+
+	# Define display order for stat categories
+	var stat_order = [
+		"attack_bonus", "defense_bonus", "hp_bonus", "speed_bonus",
+		"str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus",
+		"mana_bonus", "stamina_bonus", "energy_bonus"
+	]
+
+	# Build flat ordered list and assign strength labels
+	affix_filter_list = []
+	var affix_strength = {}  # affix_name -> strength label
+	for stat in stat_order:
+		if not stat_groups.has(stat):
+			continue
+		var entries = stat_groups[stat]
+		var group_size = entries.size()
+		for idx in range(group_size):
+			var entry = entries[idx]
+			# Assign strength label based on position in group
+			var label = "Minor"
+			if group_size <= 2:
+				label = "Minor" if idx == 0 else "Major"
+			elif group_size <= 4:
+				var labels = ["Minor", "Moderate", "Major", "Superior"]
+				label = labels[min(idx, labels.size() - 1)]
+			else:
+				var pct = float(idx) / float(group_size - 1) if group_size > 1 else 0.0
+				if pct < 0.25:
+					label = "Minor"
+				elif pct < 0.5:
+					label = "Moderate"
+				elif pct < 0.75:
+					label = "Major"
+				else:
+					label = "Superior"
+			affix_filter_list.append(entry.name)
+			affix_strength[entry.name] = label
+
+	# Add proc suffixes as special categories (Tier 6+ effects)
+	var proc_groups = {}  # proc_type -> [{name, value}]
+	for proc_data in DropTables.PROC_SUFFIX_POOL:
+		var n = proc_data.get("name", "")
+		var proc_type = proc_data.get("proc_type", "")
+		if n == "":
+			continue
+		if not proc_groups.has(proc_type):
+			proc_groups[proc_type] = []
+		proc_groups[proc_type].append({"name": n, "value": proc_data.get("value", 0)})
+		affix_stats[n] = "proc_" + proc_type
+
+	# Sort proc groups by value (weakest to strongest)
+	for ptype in proc_groups:
+		proc_groups[ptype].sort_custom(func(a, b): return a.value < b.value)
+
+	var proc_order = ["lifesteal", "shocking", "damage_reflect", "execute"]
+	for ptype in proc_order:
+		if not proc_groups.has(ptype):
+			continue
+		var entries = proc_groups[ptype]
+		var group_size = entries.size()
+		for idx in range(group_size):
+			var entry = entries[idx]
+			var label = "Minor"
+			if group_size <= 2:
+				label = "Minor" if idx == 0 else "Major"
+			elif group_size <= 4:
+				var labels = ["Minor", "Moderate", "Major", "Superior"]
+				label = labels[min(idx, labels.size() - 1)]
+			else:
+				var pct = float(idx) / float(group_size - 1) if group_size > 1 else 0.0
+				if pct < 0.25: label = "Minor"
+				elif pct < 0.5: label = "Moderate"
+				elif pct < 0.75: label = "Major"
+				else: label = "Superior"
+			affix_filter_list.append(entry.name)
+			affix_strength[entry.name] = label
+
+	set_meta("affix_stats", affix_stats)
+	set_meta("affix_strength", affix_strength)
+
+	# Load current selections from character data
+	affix_filter_selected = character_data.get("auto_salvage_affixes", []).duplicate()
+	affix_filter_page = 0
+
+	pending_inventory_action = "affix_filter_select"
+	_display_affix_filter_page()
+	update_action_bar()
+
+func _display_affix_filter_page():
+	"""Display current page of affix filter selection with category headers"""
+	var affix_stats = get_meta("affix_stats", {})
+	var affix_strength = get_meta("affix_strength", {})
+	game_output.clear()
+	display_game("[color=#FFD700]===== KEEP AFFIX FILTER =====[/color]")
+	display_game("")
+	display_game("[color=#FFFFFF]Select affixes to KEEP. Equipment with these affixes[/color]")
+	display_game("[color=#FFFFFF]will be protected from auto-salvage.[/color]")
+	display_game("")
+
+	if affix_filter_selected.size() > 0:
+		display_game("[color=#00FF00]Keeping (%d selected): %s[/color]" % [affix_filter_selected.size(), ", ".join(affix_filter_selected)])
+	else:
+		display_game("[color=#808080]No affix filters set. All matching rarity items will be salvaged.[/color]")
+	display_game("")
+
+	var page_size = 7  # Reduced to avoid key conflicts with action bar
+	var start = affix_filter_page * page_size
+	var end = min(start + page_size, affix_filter_list.size())
+	var total_pages = max(1, int(ceil(float(affix_filter_list.size()) / float(page_size))))
+
+	display_game("[color=#808080]Page %d/%d[/color]" % [affix_filter_page + 1, total_pages])
+	display_game("")
+
+	# Track last stat to show category headers on change
+	var last_stat = ""
+	if start > 0:
+		last_stat = affix_stats.get(affix_filter_list[start - 1], "")
+
+	for i in range(start, end):
+		var affix_name = affix_filter_list[i]
+		var stat = affix_stats.get(affix_name, "")
+		# Show category header when stat type changes
+		if stat != last_stat:
+			var cat_name = _get_affix_category_name(stat)
+			if cat_name != "":
+				display_game("[color=#FFD700]-- %s --[/color]" % cat_name)
+			last_stat = stat
+
+		var selected = affix_name in affix_filter_selected
+		var check = "[color=#00FF00][X][/color]" if selected else "[ ]"
+		var strength = affix_strength.get(affix_name, "")
+		var strength_color = "#808080"
+		match strength:
+			"Minor": strength_color = "#808080"
+			"Moderate": strength_color = "#FFFFFF"
+			"Major": strength_color = "#1EFF00"
+			"Superior": strength_color = "#FF8000"
+		var strength_text = " [color=%s](%s)[/color]" % [strength_color, strength]
+		display_game("[color=#FFFF00][%d][/color] %s %s%s" % [(i - start) + 1, check, affix_name, strength_text])
+
+func _toggle_affix_filter_item(index: int):
+	"""Toggle an affix in the filter selection"""
+	if index < 0 or index >= affix_filter_list.size():
+		return
+
+	var affix_name = affix_filter_list[index]
+	if affix_name in affix_filter_selected:
+		affix_filter_selected.erase(affix_name)
+	else:
+		# Check per-category limit (5 per stat category)
+		var affix_stats_meta = get_meta("affix_stats", {})
+		var this_stat = affix_stats_meta.get(affix_name, "")
+		var count_in_category = 0
+		for selected in affix_filter_selected:
+			if affix_stats_meta.get(selected, "") == this_stat:
+				count_in_category += 1
+		if count_in_category >= 5:
+			var cat_name = _get_affix_category_name(this_stat)
+			display_game("[color=#FF4444]Maximum 5 affixes per category (%s). Remove one first.[/color]" % cat_name)
+			return
+		affix_filter_selected.append(affix_name)
+
+	_display_affix_filter_page()
 	update_action_bar()
 
 func display_inventory():
@@ -11280,7 +11603,9 @@ func _display_usable_items_page():
 		var rarity = item.get("rarity", "common")
 		var color = _get_rarity_color(rarity)
 		var display_num = (j - start_idx) + 1
-		display_game("[%d] [color=%s]%s[/color]" % [display_num, color, item_name])
+		var qty = item.get("quantity", 1)
+		var qty_text = " x%d" % qty if qty > 1 else ""
+		display_game("[%d] [color=%s]%s[/color]%s" % [display_num, color, item_name, qty_text])
 
 	var items_on_page = end_idx - start_idx
 	if total_pages > 1:
@@ -12371,7 +12696,7 @@ func handle_server_message(message: Dictionary):
 			update_monster_kills_display(message.get("entries", []))
 
 		"trophy_leaderboard":
-			update_trophy_leaderboard_display(message.get("entries", []))
+			update_trophy_leaderboard_display(message.get("entries", []), message.get("top_collectors", []))
 
 		"leaderboard_top5":
 			# A player entered the Hall of Heroes (top 5) - show in chat only
@@ -12676,7 +13001,7 @@ func handle_server_message(message: Dictionary):
 							use_page = clamp(use_page, 0, total_pages - 1)
 							_display_usable_items_page()
 						update_action_bar()
-					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm"]:
+					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "affix_filter_select"]:
 						# Player is in a sub-view — don't refresh, keep current display
 						pass
 					else:
@@ -13477,6 +13802,13 @@ func _process_combat_start(message: Dictionary):
 				display_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n[center]%s[/center]\n%s" % [monster_name, flock_count + 1, local_art, encounter_text]
 			else:
 				display_msg = "[center]" + local_art + "[/center]\n" + encounter_text
+			# Append extra combat text (XP hints, first strike) from server
+			var extra_text = message.get("extra_combat_text", "")
+			if extra_text != "":
+				display_msg += extra_text
+				# Play danger sound when monster strikes first
+				if "strikes first" in extra_text:
+					play_danger_sound()
 	display_game(display_msg)
 
 	# combat_state already fetched above for client-side art
@@ -13584,7 +13916,8 @@ func send_input():
 	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch",
 		"setlevel", "setgold", "setgems", "setessence", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
-		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp"]
+		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
+		"giveconsumable", "spawnwish"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -14413,6 +14746,17 @@ func process_command(text: String):
 			else:
 				var broadcast_msg = " ".join(parts.slice(1))
 				send_to_server({"type": "gm_broadcast", "message": broadcast_msg})
+		"giveconsumable":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /giveconsumable <type> [tier][/color]")
+				display_game("[color=#808080]Types: scroll_target_farm, scroll_monster_select, potion_health,[/color]")
+				display_game("[color=#808080]  mana_potion, stamina_potion, energy_potion, home_stone_egg,[/color]")
+				display_game("[color=#808080]  home_stone_supplies, home_stone_equipment, home_stone_companion[/color]")
+			else:
+				var cons_tier = int(parts[2]) if parts.size() > 2 else 5
+				send_to_server({"type": "gm_giveconsumable", "item_type": parts[1], "tier": cons_tier})
+		"spawnwish":
+			send_to_server({"type": "gm_spawnwish"})
 		_:
 			# Check if this is a combat command while in combat
 			if in_combat:
@@ -15616,26 +15960,33 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.105 changes
+	display_game("[color=#00FF00]v0.9.105[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Readability[/color]")
+	display_game("  • Player, companion, and monster turns visually distinct with indentation")
+	display_game("  • Monster damage numbers highlighted in orange")
+	display_game("  • Monster first strike now visible with danger sound")
+	display_game("  • Victory rewards indented for clarity")
+	display_game("  [color=#FFD700]XP Scaling Rework[/color]")
+	display_game("  • Smooth continuous curve — no more sudden jumps at tier boundaries")
+	display_game("  • Bonus scales naturally with level difference")
+	display_game("  • TIER CHALLENGE label still shows for cross-tier fights")
+	display_game("  [color=#FFD700]Bug Fixes & Features[/color]")
+	display_game("  • House XP bonus & gathering bonus upgrades now apply")
+	display_game("  • Scroll cancel restores item to inventory")
+	display_game("  • Wish Granter works in dungeons")
+	display_game("  • Rescue quest directional hints")
+	display_game("  • Auto-salvage affix filtering (protect items with specific affixes)")
+	display_game("  • Home stone consumable stacking")
+	display_game("  • Trophy leaderboard: timestamps + most-collected ranking")
+	display_game("  • Combat command rate limiting (anti-spam)")
+	display_game("")
+
 	# v0.9.104 changes
-	display_game("[color=#00FF00]v0.9.104[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Dungeon Reconnect[/color]")
-	display_game("  • Disconnect in a dungeon? Reconnect to resume where you left off")
-	display_game("  • Dungeon state (floor, position) now saved through disconnects")
-	display_game("  • If the dungeon expired (server restart), you return to the overworld safely")
-	display_game("  [color=#FFD700]CC Diminishing Returns[/color]")
-	display_game("  • Shield Bash stun chance decreases with repeated use (100/75/50/25/20% floor)")
-	display_game("  • Paralyze success reduced by 20% per prior CC (10% floor)")
-	display_game("  • Gear resource regen skipped on CC ability turns (no more spend/regen loops)")
-	display_game("  • CC resistance shown in combat messages")
-	display_game("  [color=#FFD700]XP Scaling[/color]")
-	display_game("  • Fighting stronger same-tier monsters now gives up to +100% XP (was +50%)")
-	display_game("  • Bonus scales with sqrt — sweet spot grows with your level")
-	display_game("  • Fighting much weaker monsters gradually reduces XP (40% floor)")
-	display_game("  • 'Worthy challenge' hint shown when fighting ideal-level monsters")
-	display_game("  [color=#FFD700]Companion Display Fix[/color]")
-	display_game("  • Status page and companion inspection now show TOTAL in-combat bonuses")
-	display_game("  • Passive ability bonuses (e.g., Ironclad HP%) included in displayed values")
-	display_game("  • Multi-effect abilities now show all effects in inspection")
+	display_game("[color=#00FFFF]v0.9.104[/color]")
+	display_game("  • Dungeon reconnect: resume where you left off after disconnect")
+	display_game("  • CC diminishing returns (Shield Bash, Paralyze)")
+	display_game("  • Companion inspection shows total in-combat bonuses")
 	display_game("")
 
 	# v0.9.102 changes
@@ -15658,12 +16009,6 @@ func display_changelog():
 	display_game("  • Trading post visual variety: 10 categories, color-coded map, 10 border shapes")
 	display_game("  • Major bug fix pass: kennel capacity, fusion exploits, companion XP formula")
 	display_game("  • QOL: bonus display in views, quest reward colors, sub-tier display")
-	display_game("")
-
-	# v0.9.98 changes
-	display_game("[color=#00FFFF]v0.9.98[/color]")
-	display_game("  • Companion Kennel & Fusion Station in Sanctuary")
-	display_game("  • Fix: Companion HP/mana/crit/wisdom bonuses now work in combat")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -17695,9 +18040,11 @@ func display_gm_help():
 	display_game("")
 	display_game("[color=#FFD700]Items & Spawning:[/color]")
 	display_game("  /giveitem [tier] [slot]      Give random item (tier 1-9)")
+	display_game("  /giveconsumable <type> [tier] Give specific consumable")
 	display_game("  /giveegg [monster type]      Give incubating egg")
 	display_game("  /givecompanion [type] [tier] Give hatched companion")
 	display_game("  /spawnmonster [type] [level] Force combat encounter")
+	display_game("  /spawnwish                   Spawn weak Wish Granter (100%)")
 	display_game("  /givemats <id> <amount>      Give crafting materials")
 	display_game("  /giveall                     Starter kit (gold/gems/items/mats)")
 	display_game("")
@@ -19920,27 +20267,30 @@ func _format_wish_description(wish: Dictionary) -> String:
 	"""Format a wish option for display"""
 	var wish_type = wish.get("type", "unknown")
 	match wish_type:
-		"gems":
+		"experience":
 			var amount = wish.get("amount", 0)
-			return "[color=#00FFFF]%d Gems[/color] - Precious magical currency" % amount
+			return "[color=#00FF00]%s[/color] - %s" % [wish.get("label", "+%d XP" % amount), wish.get("description", "Gain bonus experience")]
 		"gear":
-			var slot = wish.get("slot", "weapon").capitalize()
-			var rarity = wish.get("rarity", "common").capitalize()
+			var rarity = wish.get("rarity", "common")
 			var level = wish.get("level", 1)
-			var rarity_color = _get_rarity_color(rarity.to_lower())
-			return "[color=%s]%s %s[/color] (Lv.%d) - Powerful equipment" % [rarity_color, rarity, slot, level]
+			var rarity_color = wish.get("color", _get_rarity_color(rarity))
+			return "[color=%s]%s[/color] - %s" % [rarity_color, wish.get("label", "%s Lv%d Gear" % [rarity.capitalize(), level]), wish.get("description", "Receive powerful equipment")]
 		"buff":
-			var buff_name = wish.get("buff_name", "Unknown").capitalize().replace("_", " ")
-			var duration = wish.get("duration", 10)
-			return "[color=#FF00FF]%s[/color] (%d battles) - Magical enhancement" % [buff_name, duration]
+			return "[color=%s]%s[/color] - %s" % [wish.get("color", "#FFD700"), wish.get("label", "Combat Buff"), wish.get("description", "Powerful combat enhancement")]
 		"gold":
 			var amount = wish.get("amount", 0)
 			return "[color=#FFD700]%d Gold[/color] - A pile of treasure" % amount
-		"stat":
+		"stats":
 			var stat_name = wish.get("stat", "strength").capitalize()
 			var amount = wish.get("amount", 1)
-			return "[color=#00FF00]+%d %s[/color] - Permanent power increase!" % [amount, stat_name]
+			return "[color=%s]%s[/color] - %s" % [wish.get("color", "#FF00FF"), wish.get("label", "+%d %s" % [amount, stat_name]), wish.get("description", "Permanent power increase!")]
+		"upgrade":
+			var upgrades = wish.get("upgrades", 1)
+			return "[color=%s]%s[/color] - %s" % [wish.get("color", "#FF8000"), wish.get("label", "Equipment Upgrade (x%d)" % upgrades), wish.get("description", "Upgrade equipped items")]
 		_:
+			# Fallback: use label/description from server if available
+			if wish.has("label"):
+				return "[color=%s]%s[/color] - %s" % [wish.get("color", "#FFD700"), wish.label, wish.get("description", "")]
 			return "[color=#808080]Unknown Wish[/color]"
 
 func display_monster_select_page():
@@ -20024,7 +20374,8 @@ func cancel_monster_select():
 	monster_select_confirm_mode = false
 	monster_select_pending = ""
 	monster_select_list = []
-	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
+	send_to_server({"type": "monster_select_cancel"})
+	display_game("[color=#808080]Scroll cancelled. The scroll has been returned to your inventory.[/color]")
 	update_action_bar()
 
 func display_target_farm_options():
@@ -20056,11 +20407,12 @@ func select_target_farm_ability(index: int):
 	update_action_bar()
 
 func cancel_target_farm():
-	"""Cancel target farm selection"""
+	"""Cancel target farm selection - scroll is returned to inventory"""
 	target_farm_mode = false
 	target_farm_options = []
 	target_farm_names = {}
-	display_game("[color=#808080]The scroll's magic fades unused...[/color]")
+	send_to_server({"type": "target_farm_cancel"})
+	display_game("[color=#808080]Scroll cancelled. The scroll has been returned to your inventory.[/color]")
 	update_action_bar()
 
 func _display_home_stone_options():

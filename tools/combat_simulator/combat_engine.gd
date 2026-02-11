@@ -284,6 +284,27 @@ func _get_class_advantage_multiplier(affinity: int, character_class: String) -> 
 				return 0.85
 	return 1.0  # Neutral
 
+func _get_tier_for_level(level: int) -> int:
+	"""Get monster/player tier based on level (matches monster_database tier ranges)"""
+	if level <= 5:
+		return 1
+	elif level <= 15:
+		return 2
+	elif level <= 30:
+		return 3
+	elif level <= 50:
+		return 4
+	elif level <= 100:
+		return 5
+	elif level <= 500:
+		return 6
+	elif level <= 2000:
+		return 7
+	elif level <= 5000:
+		return 8
+	else:
+		return 9
+
 func _get_player_class_path(character_class: String) -> String:
 	"""Determine the combat path of a character class"""
 	match character_class.to_lower():
@@ -1345,11 +1366,24 @@ func simulate_single_combat(character, monster: Dictionary) -> Dictionary:
 	var init_player_dex = character.get_effective_stat("dexterity")
 	var init_speed_rating = clampf(float(init_monster_speed) / 50.0, 0.0, 1.0)
 	var init_base = 5.0 + init_speed_rating * 20.0
+	# Beyond-optimal zone bonus: initiative rises when player pushes past their XP sweet spot
+	var init_level_diff = monster.get("level", 1) - character.level
+	if init_level_diff > 0:
+		var init_ref_gap = 10.0 + float(character.level) * 0.05
+		var init_opt_ceiling = init_ref_gap * 2.0
+		if init_level_diff > init_opt_ceiling:
+			init_base += minf(15.0, (init_level_diff - init_opt_ceiling) * 0.5)
+	# Cross-tier bonus
+	var init_player_tier = _get_tier_for_level(character.level)
+	var init_monster_tier = _get_tier_for_level(monster.get("level", 1))
+	var init_tier_diff = max(0, init_monster_tier - init_player_tier)
+	if init_tier_diff > 0:
+		init_base += init_tier_diff * 10.0
 	var init_dex_penalty = 2.0 * log(maxf(1.0, float(init_player_dex) / 10.0)) / log(2.0)
 	var init_chance = int(init_base - init_dex_penalty)
 	if init_ambusher:
 		init_chance += 8
-	init_chance = clampi(init_chance, 5, 45)
+	init_chance = clampi(init_chance, 5, 55)
 	var monster_goes_first = init_chance > 0 and randi() % 100 < init_chance
 
 	while character.current_hp > 0 and monster.current_hp > 0 and combat_state.round < max_rounds:

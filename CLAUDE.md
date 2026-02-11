@@ -193,9 +193,9 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 
 | File | Purpose |
 |------|---------|
-| `client/client.gd` | Client UI, networking, action bar (~8000 lines) |
+| `client/client.gd` | Client UI, networking, action bar (~21000 lines) |
 | `client/monster_art.gd` | ASCII art rendering |
-| `server/server.gd` | Server logic, message routing (~4000 lines) |
+| `server/server.gd` | Server logic, message routing (~14000 lines) |
 | `shared/character.gd` | Player stats, inventory, equipment |
 | `shared/combat_manager.gd` | Turn-based combat engine |
 | `shared/world_system.gd` | Terrain, hotspots, coordinates |
@@ -204,6 +204,8 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 | `shared/dungeon_database.gd` | Dungeon types, floors, bosses |
 | `shared/drop_tables.gd` | Item generation, fishing/mining/logging catches, salvage |
 | `shared/crafting_database.gd` | Crafting recipes, materials |
+| `shared/trading_post_database.gd` | Trading post definitions, categories, colors, shapes |
+| `client/trading_post_art.gd` | Trading post ASCII art by category |
 | `server/balance_config.json` | Combat tuning, lethality weights, ability modifiers |
 | `tools/combat_simulator/` | Combat simulation tool for balance testing |
 
@@ -333,7 +335,7 @@ git push
 ## Maintenance Reminders
 
 - **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 5024)
-- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 13552) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
+- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 15458) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
 - **After significant changes:** Remind user to create a release for players
 
 ## Code Conventions
@@ -460,7 +462,8 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 - `client/client.gd` - `display_companions()`, `display_eggs()`, `display_companion_inspection()`, `_sort_companions()`
 - `client/monster_art.gd` - `get_egg_art()`, `EGG_ART_TEMPLATE`
 - `shared/drop_tables.gd` - `get_egg_for_monster()`, `EGG_VARIANTS`, `COMPANION_MONSTER_ABILITIES`
-- `shared/character.gd` - Companion level cap (10000), XP formula, `process_egg_steps()` (frozen egg logic)
+- `shared/character.gd` - Companion level cap (10000), XP formula `pow(level+1, 2.0)*15`, `process_egg_steps()` (frozen egg logic)
+- `server/persistence_manager.gd` - `KENNEL_CAPACITY_TABLE`, kennel/fusion house data
 
 ## Sanctuary (House) System
 
@@ -475,11 +478,13 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
     "created_at": int,
     "storage": {"slots": 20, "items": [...]},
     "registered_companions": {"slots": 2, "companions": [...]},
+    "companion_kennel": {"slots": 30, "companions": [...]},  # Kennel for fusion
     "baddie_points": int,
     "total_baddie_points_earned": int,
     "upgrades": {
-        "storage_slots": 0,      # +10 per level
-        "companion_slots": 0,    # +1 per level
+        "storage_slots": 0,      # +10 per level, max 8
+        "companion_slots": 0,    # +1 per level, max 8
+        "kennel_capacity": 0,    # 30-500 slots, max 9
         "flee_chance": 0,        # +2% per level
         "starting_gold": 0,      # +50 per level
         "xp_bonus": 0,           # +1% per level
@@ -488,6 +493,9 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
     "stats": {...}
 }
 ```
+
+**Companion Kennel:** Bulk companion storage (30-500 slots) for the Fusion Station. Walk onto K tile.
+**Fusion Station:** Walk onto F tile. 3 same-type companions → 1 higher sub-tier. 8 mixed sub-tier 8 → random T9.
 
 **Game State Flow:** Login → HOUSE_SCREEN → Character Select → Playing
 
@@ -588,6 +596,21 @@ if TIER_DATA.has(tier):  # Now works correctly
 
 **Common locations:** Item tier lookups in `server/server.gd` and `shared/combat_manager.gd`
 
+### 9. Serialization Key Mismatches
+**Symptom:** SCRIPT ERROR accessing Dictionary key that should exist
+**Cause:** `serialize_combat_state()` (or similar) saves data under a DIFFERENT key name than the code that reads it. Example: saved as `xp_reward` but read as `experience_reward`.
+
+**Fix:** Always grep for the key name in ALL consumer functions before choosing the serialization key name. Use `.get("key", default)` instead of dot access (`dict.key`) for any Dictionary that may have been deserialized.
+
+**Pattern:** When adding serialization/deserialization, verify key names match:
+```gdscript
+# SERIALIZATION - check what key consumers expect
+monster_data["experience_reward"] = monster.get("experience_reward", 10)  # NOT "xp_reward"!
+
+# DESERIALIZATION - use .get() with defaults for safety
+var base_xp = monster.get("experience_reward", 10)  # NOT monster.experience_reward
+```
+
 ## Dungeon Combat Issues (Fixed v0.9.31)
 
 **Symptoms reported:**
@@ -613,103 +636,20 @@ if TIER_DATA.has(tier):  # Now works correctly
 - `client/client.gd` ~line 3464: `update_action_bar()` dungeon_mode condition
 - `client/client.gd` ~line 10301: combat_start handler checks `use_client_art`
 
-## KNOWN BUG: Player Info Popup Not Working
+## Player Info Popup (WORKING)
 
-**Status:** BROKEN - Multiple fix attempts have failed. Need different approach.
+**Status:** WORKING (fixed v0.9.35)
 
-**Feature Goal:** Clicking a player name in the Online Players list should open a popup with their detailed info.
+Clicking a player name in the Online Players list opens a popup with their detailed info.
 
-**What's Implemented (Backend Works):**
-- `PlayerInfoPanel` exists in client.tscn with `PlayerInfoContent` RichTextLabel
-- `show_player_info_popup()` function in client.gd correctly builds and displays info
-- Server's `handle_examine_player()` correctly returns full player data
-- Client's `examine_result` handler routes to popup when `pending_player_info_request` matches
-- **The server/popup code is NOT the problem - click detection on RichTextLabel is the problem**
-
-**COMPLETE HISTORY OF ALL FAILED ATTEMPTS:**
-
-### Attempt 1: BBCode URL tags (early version)
-- **What:** Added `[url=name]name[/url]` tags to player names
-- **Result:** FAILED - meta_clicked signal never fired
-- **Reason:** Signal wasn't connected
-
-### Attempt 2: push_meta/pop_meta API
-- **What:** Used Godot's recommended push_meta/pop_meta instead of BBCode
-- **Result:** FAILED - meta_clicked signal never fired
-- **Reason:** Unknown - API should work but didn't
-
-### Attempt 3: gui_input with double-click detection (v0.9.30)
-- **What:** Connected gui_input signal, tracked click timing for double-click
-- **Code:**
-```gdscript
-online_players_list.gui_input.connect(_on_online_players_gui_input)
-func _on_online_players_gui_input(event):
-    if event is InputEventMouseButton and event.pressed:
-        # double-click timing check
-        _handle_online_player_double_click(event.position)
-```
-- **Result:** FAILED - Clicks just highlighted text, no debug output appeared
-- **Reason:** `selection_enabled = true` was consuming mouse events for text selection
-
-### Attempt 4: Set selection_enabled = false (v0.9.31)
-- **What:** Changed client.tscn line ~657 from `selection_enabled = true` to `selection_enabled = false`
-- **Result:** FAILED - User reported "clicking a player name just lets me highlight text"
-- **Reason:** Either build wasn't updated, or something else is wrong
-
-### Attempt 5: gui_input + position-based detection with debug output (v0.9.31)
-- **What:** Added extensive debug output to _handle_online_player_double_click:
-```gdscript
-display_chat("DEBUG: Click at position...")
-display_chat("DEBUG: char_idx = X, line = Y")
-```
-- **Result:** FAILED - No debug output appeared at all in chat
-- **Reason:** gui_input signal handler isn't being called - events never reach it
-
-### Attempt 6: [url] tags + meta_clicked signal connection (v0.9.34)
-- **What:**
-  - Wrapped player names in `[url=name][color=#22BB22]name[/color][/url]`
-  - Connected `meta_clicked` signal
-  - Set `meta_underlined = true` for hover feedback
-- **Result:** FAILED - `[url]` tags don't work, meta_clicked never fired
-
-### Attempt 7: Restore push_meta/pop() from working commit (v0.9.34)
-- **What:**
-  - Restored `push_meta(pname)` / `pop()` pattern from commit 6618212
-  - Only connected `meta_clicked` signal
-  - Discovered `pop_meta()` doesn't exist in Godot 4.6 - had to use `pop()`
-  - Discovered `get_meta_at_position()` doesn't exist in Godot 4.6
-- **Result:** PARTIAL SUCCESS - Click detection now works! Debug shows:
-  ```
-  DEBUG: meta_clicked signal connected to _on_player_name_clicked
-  DEBUG: _on_player_name_clicked called with meta: Dex_Dead
-  ```
-### Attempt 8: Fix server-side property mismatches (FINAL FIX - v0.9.35)
-- **Root cause discovered:** Server was crashing when building examine_result due to missing/misnamed properties:
-  1. `char.deaths` - Property didn't exist on Character class
-  2. `char.quests_completed` - Should be `char.completed_quests`
-  3. `char.play_time` - Should be `char.played_time_seconds`
-- **Fixes applied:**
-  1. Added `deaths` property to Character class (with to_dict/from_dict serialization)
-  2. Fixed property name mismatches in server's `handle_examine_player()`
-  3. Cast `play_time` to int in client before modulo operation
-  4. Added proximity-based location viewing (within 100 tiles or title holder)
-- **Result:** WORKING! Player info popup now displays when clicking player names.
-
-**WORKING SOLUTION:**
-- Use `push_meta(player_name)` / `pop()` to wrap clickable text
+**Working Solution:**
+- Use `push_meta(player_name)` / `pop()` to wrap clickable text (NOT `[url]` BBCode — that doesn't work in Godot 4.6)
 - Connect `meta_clicked` signal to handler
 - Set `selection_enabled = true` (required for meta_clicked to work)
 - Set `meta_underlined = true` for hover feedback
+- **Important Godot 4.6 notes:** `pop_meta()` doesn't exist — use `pop()`. `get_meta_at_position()` doesn't exist either.
 
 **Key Files:**
-- `client/client.gd`:
-  - Line ~720-726: Signal connections
-  - Line ~2748: `update_online_players()` - uses push_meta/pop
-  - Line ~3000: `_on_player_name_clicked()` handler
-  - Line ~3010: `show_player_info_popup()` display function
-- `client/client.tscn`:
-  - Line ~648: OnlinePlayersList with selection_enabled=true
-- `server/server.gd`:
-  - Line ~1158: handle_examine_player function
-- `shared/character.gd`:
-  - Line ~191: deaths property
+- `client/client.gd`: `update_online_players()` uses push_meta/pop, `_on_player_name_clicked()` handler, `show_player_info_popup()`
+- `server/server.gd`: `handle_examine_player()` returns player data
+- `shared/character.gd`: `deaths` property (added for examine)
