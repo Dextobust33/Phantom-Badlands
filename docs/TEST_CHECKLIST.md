@@ -104,6 +104,48 @@ godot --headless --script admin_tool.gd -- promote <username>
 - [ ] `/giveitem <tier>` gives item correctly (admin)
 - [ ] `/giveitem <tier> weapon` gives weapon specifically (admin)
 - [ ] `/giveconsumable <type> [tier]` gives specific consumable (admin)
+- [ ] `/giveconsumable potion` shorthand → creates health_potion (not equipment)
+- [ ] `/giveconsumable mana` shorthand → creates mana_potion
+- [ ] `/giveconsumable rage` shorthand → creates scroll_rage
+- [ ] `/giveconsumable elixir` shorthand → creates elixir_minor
+
+## 4b. Consumables
+
+### Health Potions (Hybrid Healing)
+- [ ] Health potion heals flat + % max HP (e.g., T3 = 75 + 20% max HP)
+- [ ] Healing scales meaningfully at high levels (% component)
+- [ ] Health potion tooltip shows "Restores X + Y% of max HP"
+- [ ] Health potions work in combat (combat_manager)
+- [ ] Health potions work out of combat (server)
+
+### Resource Potions (Hybrid Restore)
+- [ ] Mana potion restores flat + % max mana (Wizard/Sorcerer/Sage)
+- [ ] Stamina potion restores flat + % max stamina (Fighter/Barbarian/Paladin)
+- [ ] Energy potion restores flat + % max energy (Thief/Ranger/Ninja)
+- [ ] Resource potions work in combat
+- [ ] Resource potions work out of combat
+- [ ] Resource potion tooltip shows "Restores X + Y% of max [Resource]"
+
+### Elixirs (Pure % Heal)
+- [ ] Elixir Minor heals 50% of max HP
+- [ ] Elixir Greater heals 70% of max HP
+- [ ] Elixir Divine heals 100% of max HP (full heal)
+- [ ] Elixir tooltip shows "Restores X% of max HP"
+- [ ] Elixirs work in combat and out of combat
+
+### Buff Scrolls (Tier-Based)
+- [ ] Stat scrolls (Rage, Stone Skin, Haste) scale as % of character stat
+- [ ] Percentage scrolls (Vampirism, Thorns, Precision) use tier buff_value
+- [ ] Forcefield scroll uses tier forcefield_value
+- [ ] Scroll duration scales with tier (T1-2: 1 battle, T3-4: 2, T5-6: 3, T7: 4)
+- [ ] Scroll tooltip shows buff amount and duration
+- [ ] Debuff scrolls (Weakness, Vulnerability, Slow) use scroll_debuff_pct
+- [ ] Scroll of Doom still works (% max HP damage)
+
+### Buff Potions Removed
+- [ ] No buff potions drop from monsters (no potion_strength, potion_defense, etc.)
+- [ ] Buff potion category removed from consumable system
+- [ ] Scrolls appear in T3+ loot (replaced buff potions)
 
 ## 5. Abilities
 
@@ -345,6 +387,7 @@ godot --headless --script admin_tool.gd -- promote <username>
 - [ ] Contextual slot 4 (Fish at water, Mine at ore, Chop at forest, Dungeon at D)
 - [ ] No hotkey cascading between menu transitions
 - [ ] Number keys don't double-trigger in sub-menus
+- [ ] Item discard (press number) doesn't also trigger action bar (e.g., open settings)
 - [ ] Mode exit via hotkey doesn't trigger action bar
 
 ## 19. Admin Commands

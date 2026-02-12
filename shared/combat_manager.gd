@@ -3388,29 +3388,39 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 
 	# Apply effect
 	if effect.has("heal"):
-		# Healing potion - use tier healing value if available
+		# Healing potion - hybrid flat + % max HP
 		var heal_amount: int
-		if tier_data.has("healing"):
-			heal_amount = tier_data.healing
+		if effect.get("heal_pct_only", false):
+			# Elixir: pure % max HP heal
+			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
+			heal_amount = int(character.get_total_max_hp() * elixir_pct / 100.0)
+		elif tier_data.has("healing"):
+			# Tier-based: flat + % max HP
+			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
 		else:
-			heal_amount = effect.base + (effect.per_level * item_level)
+			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 		var actual_heal = character.heal(heal_amount)
 		var heal_verb = "use" if "scroll" in item_type else "drink"
 		messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
-		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
+		var primary_resource = character.get_primary_resource()
+		var max_resource: int
+		match primary_resource:
+			"mana": max_resource = character.get_total_max_mana()
+			"stamina": max_resource = character.get_total_max_stamina()
+			"energy": max_resource = character.get_total_max_energy()
+			_: max_resource = character.get_total_max_mana()
+
+		# Hybrid flat + % max resource
 		var resource_amount: int
 		if tier_data.has("resource"):
-			resource_amount = tier_data.resource
+			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
 		elif tier_data.has("healing"):
-			# Fallback to calculated value from healing
 			resource_amount = int(tier_data.healing * 0.6)
 		else:
-			resource_amount = effect.base + (effect.per_level * item_level)
+			resource_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 
-		# Restore the player's primary resource based on their class path
-		var primary_resource = character.get_primary_resource()
 		var old_value: int
 		var actual_restore: int
 		var color: String
@@ -3432,7 +3442,6 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 				actual_restore = character.current_energy - old_value
 				color = "#66FF66"
 			_:
-				# Fallback to mana
 				old_value = character.current_mana
 				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
 				actual_restore = character.current_mana - old_value
@@ -3442,29 +3451,52 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		var resource_verb = "use" if "scroll" in item_type else "drink"
 		messages.append("[color=%s]You %s %s and restore %d %s![/color]" % [color, resource_verb, item_name, actual_restore, primary_resource])
 	elif effect.has("buff"):
-		# Buff potion/scroll - can be round-based or battle-based
+		# Buff scroll - tier-based values
 		var buff_type = effect.buff
 		var buff_value: int
-		# Use forcefield_value for forcefield buffs (shields need much higher values)
-		if buff_type == "forcefield" and tier_data.has("forcefield_value"):
-			buff_value = tier_data.forcefield_value
+		var duration: int
+
+		if effect.get("tier_forcefield", false):
+			# Forcefield: use forcefield_value from tier, duration from scroll_duration
+			buff_value = tier_data.get("forcefield_value", 1500)
+			duration = tier_data.get("scroll_duration", 1)
+		elif effect.get("stat_pct", false):
+			# Stat scroll: % of character's base stat
+			var stat_pct = tier_data.get("scroll_stat_pct", 10)
+			match buff_type:
+				"strength": buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
+				"speed": buff_value = maxi(1, int(character.get_total_speed() * stat_pct / 100.0))
+				_: buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+			duration = tier_data.get("scroll_duration", 1)
+		elif effect.get("tier_value", false):
+			# Percentage scroll: use buff_value directly (lifesteal, thorns, crit %)
+			buff_value = tier_data.get("buff_value", 3)
+			duration = tier_data.get("scroll_duration", 1)
 		elif tier_data.has("buff_value"):
-			buff_value = tier_data.buff_value
+			# Legacy tier-based fallback
+			if buff_type == "forcefield" and tier_data.has("forcefield_value"):
+				buff_value = tier_data.forcefield_value
+			else:
+				buff_value = tier_data.buff_value
+			var base_duration = effect.get("base_duration", 5)
+			var duration_per_10 = effect.get("duration_per_10_levels", 1)
+			duration = base_duration + (item_level / 10) * duration_per_10
 		else:
-			buff_value = effect.base + (effect.per_level * item_level)
-		var base_duration = effect.get("base_duration", 5)
-		var duration_per_10 = effect.get("duration_per_10_levels", 1)
-		var duration = base_duration + (item_level / 10) * duration_per_10
+			buff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
+			var base_duration = effect.get("base_duration", 5)
+			var duration_per_10 = effect.get("duration_per_10_levels", 1)
+			duration = base_duration + (item_level / 10) * duration_per_10
+
 		var buff_verb = "use" if "scroll" in item_type else "drink"
+		var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
 
 		if effect.get("battles", false):
-			# Battle-based buff (persists across combats)
 			character.add_persistent_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You %s %s! +%d %s for %d battles![/color]" % [buff_verb, item_name, buff_value, buff_type, duration])
+			messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""])
 		else:
-			# Round-based buff (single combat only)
 			character.add_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You %s %s! +%d %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, buff_type, duration])
+			messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration])
 
 	# Remove item from inventory (use stack method for consumables)
 	if item.get("is_consumable", false) and item.get("quantity", 1) > 0:

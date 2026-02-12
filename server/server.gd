@@ -1098,6 +1098,12 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
 		persistence.save_character(account_id, character)
 
+	# Withdraw items from house storage if requested
+	var withdraw_indices = message.get("withdraw_indices", [])
+	if withdraw_indices.size() > 0:
+		_withdraw_house_storage_items(account_id, character, withdraw_indices, peer_id)
+		persistence.save_character(account_id, character)
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -4842,13 +4848,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	if effect.has("home_stone"):
 		var stone_type = effect.home_stone
 		if stone_type == "supplies":
-			# Supplies may need selection UI - check inventory item count
+			# Always show selection UI so player can choose which items to send
 			var sendable_items = []
 			for ci in range(character.inventory.size()):
 				var inv_item = character.inventory[ci]
 				sendable_items.append({"index": ci, "item": inv_item})
-			if sendable_items.size() > 10:
-				# More than 10 consumables - need selection UI
+			if sendable_items.size() > 0:
 				if not _home_stone_pre_validate(peer_id, character, stone_type):
 					return
 				var options = []
@@ -4860,6 +4865,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					options.append({
 						"index": ci2,
 						"inv_index": entry.index,
+						"quantity": qty,
 						"label": "%s%s" % [itm.get("name", "Unknown"), qty_text]
 					})
 				character.set_meta("pending_home_stone_index", index)
@@ -4870,8 +4876,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"message": "[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]"
 				})
 				return
-			# 10 or fewer: fall through to normal processing
-		elif stone_type == "egg" and character.incubating_eggs.size() > 1:
+		elif stone_type == "egg" and character.incubating_eggs.size() > 0:
 			# Multiple eggs - ask player to choose
 			if not _home_stone_pre_validate(peer_id, character, stone_type):
 				return
@@ -4894,12 +4899,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			})
 			return
 		elif stone_type == "equipment":
+			# Always show selection UI so player sees what they're sending
 			var equipped_items = []
 			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 				if character.equipped.has(slot) and character.equipped[slot] != null:
 					equipped_items.append({"slot": slot, "item": character.equipped[slot]})
-			if equipped_items.size() > 1:
-				# Multiple equipped - ask player to choose
+			if equipped_items.size() > 0:
 				if not _home_stone_pre_validate(peer_id, character, stone_type):
 					return
 				var options = []
@@ -4948,12 +4953,17 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 	# Apply effect
 	if effect.has("heal"):
-		# Healing potion - use tier healing value if available
+		# Healing potion - hybrid flat + % max HP
 		var heal_amount: int
-		if tier_data.has("healing"):
-			heal_amount = tier_data.healing
+		if effect.get("heal_pct_only", false):
+			# Elixir: pure % max HP heal
+			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
+			heal_amount = int(character.get_total_max_hp() * elixir_pct / 100.0)
+		elif tier_data.has("healing"):
+			# Tier-based: flat + % max HP
+			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
 		else:
-			heal_amount = effect.base + (effect.per_level * item_level)
+			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 		var actual_heal = character.heal(heal_amount)
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -4961,26 +4971,23 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
-		# Mana/Stamina/Energy potions are unified: they all restore your class's primary resource
+		var primary_resource = character.get_primary_resource()
+		var max_resource: int
+		match primary_resource:
+			"mana": max_resource = character.get_total_max_mana()
+			"stamina": max_resource = character.get_total_max_stamina()
+			"energy": max_resource = character.get_total_max_energy()
+			_: max_resource = character.get_total_max_mana()
+
+		# Hybrid flat + % max resource
 		var resource_amount: int
 		if tier_data.has("resource"):
-			resource_amount = tier_data.resource
+			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
 		elif tier_data.has("healing"):
-			# Fallback to calculated value from healing
 			resource_amount = int(tier_data.healing * 0.6)
 		else:
-			# Legacy calculation - use the effect that exists
-			if effect.has("mana"):
-				resource_amount = effect.base + (effect.per_level * item_level)
-			elif effect.has("stamina"):
-				resource_amount = effect.base + (effect.per_level * item_level)
-			elif effect.has("energy"):
-				resource_amount = effect.base + (effect.per_level * item_level)
-			else:
-				resource_amount = effect.base + (effect.per_level * item_level)
+			resource_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 
-		# Restore the player's primary resource based on their class path
-		var primary_resource = character.get_primary_resource()
 		var old_value: int
 		var actual_restore: int
 		var color: String
@@ -5002,7 +5009,6 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				actual_restore = character.current_energy - old_value
 				color = "#66FF66"
 			_:
-				# Fallback to mana
 				old_value = character.current_mana
 				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
 				actual_restore = character.current_mana - old_value
@@ -5014,33 +5020,52 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"message": "[color=%s]You use %s and restore %d %s![/color]" % [color, item_name, actual_restore, primary_resource]
 		})
 	elif effect.has("buff"):
-		# Buff potion
+		# Buff scroll - tier-based values
 		var buff_type = effect.buff
 		var buff_value: int
-		# Use forcefield_value for forcefield buffs (shields need much higher values)
-		if buff_type == "forcefield" and tier_data.has("forcefield_value"):
-			buff_value = tier_data.forcefield_value
+		var duration: int
+
+		if effect.get("tier_forcefield", false):
+			buff_value = tier_data.get("forcefield_value", 1500)
+			duration = tier_data.get("scroll_duration", 1)
+		elif effect.get("stat_pct", false):
+			var stat_pct = tier_data.get("scroll_stat_pct", 10)
+			match buff_type:
+				"strength": buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
+				"speed": buff_value = maxi(1, int(character.get_total_speed() * stat_pct / 100.0))
+				_: buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+			duration = tier_data.get("scroll_duration", 1)
+		elif effect.get("tier_value", false):
+			buff_value = tier_data.get("buff_value", 3)
+			duration = tier_data.get("scroll_duration", 1)
 		elif tier_data.has("buff_value"):
-			buff_value = tier_data.buff_value
+			if buff_type == "forcefield" and tier_data.has("forcefield_value"):
+				buff_value = tier_data.forcefield_value
+			else:
+				buff_value = tier_data.buff_value
+			var base_duration = effect.get("base_duration", 5)
+			var duration_per_10 = effect.get("duration_per_10_levels", 1)
+			duration = base_duration + (item_level / 10) * duration_per_10
 		else:
-			buff_value = effect.base + (effect.per_level * item_level)
-		var base_duration = effect.get("base_duration", 5)
-		var duration_per_10 = effect.get("duration_per_10_levels", 1)
-		var duration = base_duration + (item_level / 10) * duration_per_10
+			buff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
+			var base_duration = effect.get("base_duration", 5)
+			var duration_per_10 = effect.get("duration_per_10_levels", 1)
+			duration = base_duration + (item_level / 10) * duration_per_10
+
+		var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
 
 		if effect.get("battles", false):
-			# Battle-based buff
 			character.add_persistent_buff(buff_type, buff_value, duration)
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#00FFFF]You use %s! +%d %s for %d battles![/color]" % [item_name, buff_value, buff_type, duration]
+				"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""]
 			})
 		else:
-			# Round-based buff (only effective in combat)
 			character.add_buff(buff_type, buff_value, duration)
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#00FFFF]You use %s! +%d %s for %d rounds (in combat)![/color]" % [item_name, buff_value, buff_type, duration]
+				"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, value_suffix, buff_type, duration]
 			})
 	elif effect.has("gold"):
 		# Gold pouch - grants variable gold based on level
@@ -5080,7 +5105,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	elif effect.has("monster_debuff"):
 		# Debuff scroll - apply to next monster encountered
 		var debuff_type = effect.monster_debuff
-		var debuff_value = effect.base + (effect.per_level * item_level)
+		var debuff_value: int
+		if effect.get("debuff_pct", false) and tier_data.has("scroll_debuff_pct"):
+			debuff_value = tier_data.scroll_debuff_pct
+		else:
+			debuff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 		character.pending_monster_debuffs.append({"type": debuff_type, "value": debuff_value})
 
 		var debuff_messages = {
@@ -5374,17 +5403,32 @@ func _process_home_stone_supplies(peer_id: int, character, items_to_send: Array,
 		return
 	# Send up to 10 items (or available space, whichever is less)
 	var to_send = min(10, min(items_to_send.size(), available_space))
-	var items_to_remove = []
+	var indices_to_remove = []  # Indices where the entire item is removed
+	var indices_to_reduce = {}  # Index → qty to subtract (for partial stack sends)
 	var sent_count = 0
 	for i in range(to_send):
 		var entry = items_to_send[i]
-		persistence.add_item_to_house_storage(account_id, entry.item)
-		items_to_remove.append(entry.index)
+		var send_qty = int(entry.get("send_qty", entry.item.get("quantity", 1)))
+		var item_qty = int(entry.item.get("quantity", 1))
+		# Create a copy of the item with the send quantity
+		var item_to_store = entry.item.duplicate(true)
+		item_to_store["quantity"] = send_qty
+		persistence.add_item_to_house_storage(account_id, item_to_store)
+		if send_qty >= item_qty:
+			# Sending entire stack — remove from inventory
+			indices_to_remove.append(entry.index)
+		else:
+			# Partial stack — reduce quantity in inventory
+			indices_to_reduce[entry.index] = send_qty
 		sent_count += 1
-	# Remove items in reverse order to maintain indices
-	items_to_remove.sort()
-	items_to_remove.reverse()
-	for idx in items_to_remove:
+	# Reduce partial stacks first (doesn't affect indices)
+	for idx in indices_to_reduce:
+		var inv_item = character.inventory[idx]
+		inv_item["quantity"] = int(inv_item.get("quantity", 1)) - indices_to_reduce[idx]
+	# Remove full items in reverse order to maintain indices
+	indices_to_remove.sort()
+	indices_to_remove.reverse()
+	for idx in indices_to_remove:
 		character.inventory.remove_at(idx)
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -5456,8 +5500,9 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 			var slot_name = equipped_items[selection_index].slot
 			_process_home_stone_equipment(peer_id, character, slot_name, item_name)
 		"supplies":
-			# Multi-select: client sends selection_indices array
+			# Multi-select: client sends selection_indices array + optional quantities
 			var selection_indices = message.get("selection_indices", [])
+			var selection_quantities = message.get("selection_quantities", {})
 			if selection_indices.is_empty():
 				send_to_peer(peer_id, {"type": "error", "message": "No items selected."})
 				return
@@ -5465,12 +5510,17 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 			var all_items = []
 			for i in range(character.inventory.size()):
 				all_items.append({"index": i, "item": character.inventory[i]})
-			# Resolve selected option indices to actual inventory indices
+			# Resolve selected option indices to actual inventory entries with quantities
 			var selected_items = []
 			for opt_idx in selection_indices:
 				var idx = int(opt_idx)
 				if idx >= 0 and idx < all_items.size():
-					selected_items.append(all_items[idx])
+					var entry = all_items[idx].duplicate(true)
+					# Get requested quantity (default to full stack)
+					var send_qty = int(selection_quantities.get(str(idx), entry.item.get("quantity", 1)))
+					var max_qty = int(entry.item.get("quantity", 1))
+					entry["send_qty"] = clampi(send_qty, 1, max_qty)
+					selected_items.append(entry)
 			if selected_items.is_empty():
 				send_to_peer(peer_id, {"type": "error", "message": "Invalid selection."})
 				return
@@ -7369,6 +7419,45 @@ func handle_house_discard_item(peer_id: int, message: Dictionary):
 		"house": updated_house,
 		"upgrade_costs": persistence.HOUSE_UPGRADES
 	})
+
+func _withdraw_house_storage_items(account_id: String, character, indices: Array, peer_id: int):
+	"""Move items from house storage to character inventory during character select"""
+	var house = persistence.get_house(account_id)
+	if house == null:
+		return
+
+	var items = house.storage.items
+	# Validate, deduplicate, and sort indices in descending order (remove from end first to preserve indices)
+	var valid_indices = []
+	var seen = {}
+	for idx in indices:
+		var i = int(idx)
+		if i >= 0 and i < items.size() and not seen.has(i):
+			valid_indices.append(i)
+			seen[i] = true
+	valid_indices.sort()
+	valid_indices.reverse()
+
+	# Check inventory capacity
+	var available_space = Character.MAX_INVENTORY_SIZE - character.inventory.size()
+	if available_space <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Your inventory is full! Cannot withdraw items.[/color]"})
+		return
+
+	var withdrawn = []
+	for idx in valid_indices:
+		if withdrawn.size() >= available_space:
+			break
+		var item = items[idx]
+		character.inventory.append(item.duplicate(true))
+		withdrawn.append(item.get("name", "Unknown"))
+		persistence.remove_item_from_house_storage(account_id, idx)
+
+	if withdrawn.size() > 0:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]Withdrew %d item(s) from Sanctuary storage:[/color] %s" % [withdrawn.size(), ", ".join(withdrawn)]
+		})
 
 func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 	"""Handle unregistering a companion (move to kennel instead of storage)"""
@@ -15279,6 +15368,23 @@ func handle_gm_giveconsumable(peer_id: int, message: Dictionary):
 	if item_type.is_empty():
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /giveconsumable <type> [tier][/color]"})
 		return
+
+	# Shorthand name mapping for convenience
+	var shorthands = {
+		"potion": "health_potion", "health": "health_potion",
+		"mana": "mana_potion", "stamina": "stamina_potion", "energy": "energy_potion",
+		"elixir": "elixir_minor", "scroll": "scroll_forcefield",
+		"home": "home_stone_supplies", "tome": "tome_strength",
+		"rage": "scroll_rage", "haste": "scroll_haste",
+		"forcefield": "scroll_forcefield", "precision": "scroll_precision",
+		"vampirism": "scroll_vampirism", "thorns": "scroll_thorns",
+		"weakness": "scroll_weakness", "vulnerability": "scroll_vulnerability",
+		"slow": "scroll_slow", "doom": "scroll_doom",
+		"resurrect": "scroll_resurrect_lesser", "timestop": "scroll_time_stop",
+		"bane": "potion_dragon_bane",
+	}
+	if shorthands.has(item_type):
+		item_type = shorthands[item_type]
 
 	# Generate the consumable using drop_tables
 	var tier_levels = {1: 3, 2: 10, 3: 25, 4: 40, 5: 60, 6: 100, 7: 300, 8: 1000, 9: 3000}

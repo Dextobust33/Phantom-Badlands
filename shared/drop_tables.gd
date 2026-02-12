@@ -7,23 +7,25 @@ extends Node
 # Consumable tier definitions
 # Tiers replace level-based scaling with fixed power levels that stack
 const CONSUMABLE_TIERS = {
-	1: {"name": "Minor", "healing": 50, "resource": 30, "buff_value": 3, "forcefield_value": 1500, "level_min": 1, "level_max": 10},
-	2: {"name": "Lesser", "healing": 100, "resource": 60, "buff_value": 5, "forcefield_value": 2500, "level_min": 11, "level_max": 25},
-	3: {"name": "Standard", "healing": 200, "resource": 120, "buff_value": 8, "forcefield_value": 4000, "level_min": 26, "level_max": 50},
-	4: {"name": "Greater", "healing": 400, "resource": 240, "buff_value": 12, "forcefield_value": 6000, "level_min": 51, "level_max": 100},
-	5: {"name": "Superior", "healing": 800, "resource": 480, "buff_value": 18, "forcefield_value": 10000, "level_min": 101, "level_max": 250},
-	6: {"name": "Master", "healing": 1600, "resource": 960, "buff_value": 25, "forcefield_value": 15000, "level_min": 251, "level_max": 500},
-	7: {"name": "Divine", "healing": 3000, "resource": 1800, "buff_value": 35, "forcefield_value": 25000, "level_min": 501, "level_max": 99999}
+	1: {"name": "Minor", "healing": 25, "heal_pct": 10, "resource": 15, "resource_pct": 10, "buff_value": 3, "forcefield_value": 1500, "scroll_stat_pct": 10, "scroll_debuff_pct": 8, "scroll_duration": 1, "level_min": 1, "level_max": 10},
+	2: {"name": "Lesser", "healing": 50, "heal_pct": 15, "resource": 30, "resource_pct": 15, "buff_value": 5, "forcefield_value": 2500, "scroll_stat_pct": 12, "scroll_debuff_pct": 10, "scroll_duration": 1, "level_min": 11, "level_max": 25},
+	3: {"name": "Standard", "healing": 75, "heal_pct": 20, "resource": 50, "resource_pct": 20, "buff_value": 8, "forcefield_value": 4000, "scroll_stat_pct": 15, "scroll_debuff_pct": 12, "scroll_duration": 2, "level_min": 26, "level_max": 50},
+	4: {"name": "Greater", "healing": 100, "heal_pct": 25, "resource": 75, "resource_pct": 25, "buff_value": 12, "forcefield_value": 6000, "scroll_stat_pct": 18, "scroll_debuff_pct": 15, "scroll_duration": 2, "level_min": 51, "level_max": 100},
+	5: {"name": "Superior", "healing": 150, "heal_pct": 30, "resource": 125, "resource_pct": 30, "buff_value": 18, "forcefield_value": 10000, "scroll_stat_pct": 22, "scroll_debuff_pct": 18, "scroll_duration": 3, "level_min": 101, "level_max": 250},
+	6: {"name": "Master", "healing": 200, "heal_pct": 35, "resource": 175, "resource_pct": 35, "buff_value": 25, "forcefield_value": 15000, "scroll_stat_pct": 26, "scroll_debuff_pct": 22, "scroll_duration": 3, "level_min": 251, "level_max": 500},
+	7: {"name": "Divine", "healing": 300, "heal_pct": 40, "resource": 250, "resource_pct": 40, "buff_value": 35, "forcefield_value": 25000, "scroll_stat_pct": 30, "scroll_debuff_pct": 25, "scroll_duration": 4, "level_min": 501, "level_max": 99999}
 }
 
 # Consumable categories for combat quick-use
 const CONSUMABLE_CATEGORIES = {
 	"health": ["health_potion"],
-	"resource": ["mana_potion", "stamina_potion", "energy_potion"],  # All restore primary resource
-	"buff": ["strength_potion", "defense_potion", "speed_potion", "crit_potion", "lifesteal_potion", "thorns_potion"],
+	"resource": ["mana_potion", "stamina_potion", "energy_potion"],
 	"scroll": ["scroll_forcefield", "scroll_rage", "scroll_stone_skin", "scroll_haste", "scroll_vampirism", "scroll_thorns", "scroll_precision", "scroll_time_stop", "scroll_resurrect_lesser", "scroll_resurrect_greater"],
 	"bane": ["potion_dragon_bane", "potion_undead_bane", "potion_beast_bane", "potion_demon_bane", "potion_elemental_bane"]
 }
+
+# Elixir heal percentages by tier (elixir_minor=T7, elixir_greater=T8, elixir_divine=T9)
+const ELIXIR_HEAL_PCT = {7: 50, 8: 70, 9: 100}
 
 # ===== SALVAGE SYSTEM =====
 # Salvage values by rarity: {base: int, per_level: int}
@@ -163,10 +165,10 @@ const DROP_TABLES = {
 		{"weight": 8, "item_type": "shield_steel", "rarity": "uncommon"},
 		{"weight": 8, "item_type": "boots_chain", "rarity": "uncommon"},
 		{"weight": 7, "item_type": "amulet_bronze", "rarity": "rare"},
-		{"weight": 4, "item_type": "potion_strength", "rarity": "uncommon"},
-		{"weight": 4, "item_type": "potion_defense", "rarity": "uncommon"},
-		{"weight": 4, "item_type": "potion_speed", "rarity": "uncommon"},
-		{"weight": 3, "item_type": "potion_crit", "rarity": "uncommon"}
+		{"weight": 4, "item_type": "scroll_rage", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "scroll_stone_skin", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "scroll_haste", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "uncommon"}
 	],
 	"tier4": [
 		{"weight": 14, "item_type": "potion_greater", "rarity": "uncommon"},
@@ -178,11 +180,11 @@ const DROP_TABLES = {
 		{"weight": 8, "item_type": "boots_plate", "rarity": "rare"},
 		{"weight": 8, "item_type": "ring_gold", "rarity": "rare"},
 		{"weight": 6, "item_type": "amulet_silver", "rarity": "rare"},
-		{"weight": 4, "item_type": "potion_strength", "rarity": "rare"},
-		{"weight": 3, "item_type": "potion_defense", "rarity": "rare"},
-		{"weight": 3, "item_type": "potion_speed", "rarity": "rare"},
-		{"weight": 3, "item_type": "potion_crit", "rarity": "rare"},
-		{"weight": 3, "item_type": "potion_lifesteal", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_rage", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_haste", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_precision", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "rare"},
 		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"},
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "rare"},
 		{"weight": 2, "item_type": "scroll_weakness", "rarity": "rare"},
@@ -200,16 +202,15 @@ const DROP_TABLES = {
 		{"weight": 9, "item_type": "shield_magical", "rarity": "rare"},
 		{"weight": 9, "item_type": "boots_magical", "rarity": "rare"},
 		{"weight": 10, "item_type": "amulet_silver", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_strength", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_defense", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_speed", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_lifesteal", "rarity": "epic"},
-		{"weight": 3, "item_type": "potion_thorns", "rarity": "epic"},
 		{"weight": 3, "item_type": "ring_elemental", "rarity": "epic"},
 		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "epic"},
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "epic"},
 		{"weight": 3, "item_type": "scroll_rage", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_haste", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_precision", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_vampirism", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_thorns", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_slow", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"},
 		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"},
@@ -350,7 +351,7 @@ const POTION_EFFECTS = {
 	"mana_potion": {"mana": true, "base": 0, "per_level": 0},
 	"stamina_potion": {"stamina": true, "base": 0, "per_level": 0},
 	"energy_potion": {"energy": true, "base": 0, "per_level": 0},
-	"elixir": {"heal": true, "base": 0, "per_level": 0},
+	"elixir": {"heal": true, "heal_pct_only": true},  # Pure % heal from tier: minor=50%, greater=70%, divine=100%
 	# === LEGACY TYPES (for backwards compatibility with old items) ===
 	# Healing potions
 	"potion_minor": {"heal": true, "base": 10, "per_level": 10},
@@ -359,9 +360,9 @@ const POTION_EFFECTS = {
 	"potion_greater": {"heal": true, "base": 80, "per_level": 20},
 	"potion_superior": {"heal": true, "base": 150, "per_level": 25},
 	"potion_master": {"heal": true, "base": 300, "per_level": 30},
-	"elixir_minor": {"heal": true, "base": 500, "per_level": 40},
-	"elixir_greater": {"heal": true, "base": 1000, "per_level": 60},
-	"elixir_divine": {"heal": true, "base": 2000, "per_level": 100},
+	"elixir_minor": {"heal": true, "heal_pct_only": true, "elixir_pct": 50},
+	"elixir_greater": {"heal": true, "heal_pct_only": true, "elixir_pct": 70},
+	"elixir_divine": {"heal": true, "heal_pct_only": true, "elixir_pct": 100},
 	# Mana potions
 	"mana_minor": {"mana": true, "base": 15, "per_level": 8},
 	"mana_lesser": {"mana": true, "base": 30, "per_level": 10},
@@ -379,36 +380,21 @@ const POTION_EFFECTS = {
 	"energy_lesser": {"energy": true, "base": 30, "per_level": 10},
 	"energy_standard": {"energy": true, "base": 50, "per_level": 12},
 	"energy_greater": {"energy": true, "base": 100, "per_level": 15},
-	# Basic buff potions - last rounds (single combat), scale with level
-	"potion_strength": {"buff": "strength", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"potion_defense": {"buff": "defense", "base": 3, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"potion_speed": {"buff": "speed", "base": 5, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"potion_crit": {"buff": "crit_chance", "base": 10, "per_level": 1, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"potion_lifesteal": {"buff": "lifesteal", "base": 10, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"potion_thorns": {"buff": "thorns", "base": 15, "per_level": 2, "rounds": true, "base_duration": 5, "duration_per_10_levels": 2},
-	# Power potions - last multiple battles
-	"potion_power": {"buff": "strength", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
-	"potion_iron": {"buff": "defense", "base": 8, "per_level": 2, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
-	"potion_haste": {"buff": "speed", "base": 15, "per_level": 3, "battles": true, "base_duration": 2, "duration_per_10_levels": 1},
-	# Elixirs - powerful multi-battle buffs
-	"elixir_might": {"buff": "strength", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"elixir_fortress": {"buff": "defense", "base": 15, "per_level": 3, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
-	"elixir_swiftness": {"buff": "speed", "base": 25, "per_level": 5, "battles": true, "base_duration": 5, "duration_per_10_levels": 2},
 	# Scrolls - special consumable effects
 	"scroll_monster_select": {"monster_select": true},  # Lets player choose next monster encounter
-	# Buff scrolls - apply before next combat
-	"scroll_forcefield": {"buff": "forcefield", "base": 50, "per_level": 10, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Absorbs damage
-	"scroll_rage": {"buff": "strength", "base": 20, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +STR for 1 battle
-	"scroll_stone_skin": {"buff": "defense", "base": 20, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +DEF for 1 battle
-	"scroll_haste": {"buff": "speed", "base": 30, "per_level": 5, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # +SPD for 1 battle
-	"scroll_vampirism": {"buff": "lifesteal", "base": 25, "per_level": 3, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Lifesteal for 1 battle
-	"scroll_thorns": {"buff": "thorns", "base": 30, "per_level": 4, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Reflect damage
-	"scroll_precision": {"buff": "crit_chance", "base": 25, "per_level": 2, "battles": true, "base_duration": 1, "duration_per_10_levels": 0},  # Crit chance
-	# Debuff scrolls - apply debuff to next monster encountered
-	"scroll_weakness": {"monster_debuff": "weakness", "base": 25, "per_level": 2},  # -ATK on monster
-	"scroll_vulnerability": {"monster_debuff": "vulnerability", "base": 25, "per_level": 2},  # -DEF on monster
-	"scroll_slow": {"monster_debuff": "slow", "base": 30, "per_level": 3},  # -SPD on monster
-	"scroll_doom": {"monster_debuff": "doom", "base": 10, "per_level": 2},  # Monster loses % max HP at start
+	# Buff scrolls - tier-based, duration from scroll_duration in CONSUMABLE_TIERS
+	"scroll_forcefield": {"buff": "forcefield", "tier_forcefield": true, "battles": true},  # Uses forcefield_value + scroll_duration
+	"scroll_rage": {"buff": "strength", "stat_pct": true, "battles": true},  # % of character STR, scroll_duration battles
+	"scroll_stone_skin": {"buff": "defense", "stat_pct": true, "battles": true},  # % of character DEF, scroll_duration battles
+	"scroll_haste": {"buff": "speed", "stat_pct": true, "battles": true},  # % of character SPD, scroll_duration battles
+	"scroll_vampirism": {"buff": "lifesteal", "tier_value": true, "battles": true},  # Uses buff_value, scroll_duration battles
+	"scroll_thorns": {"buff": "thorns", "tier_value": true, "battles": true},  # Uses buff_value, scroll_duration battles
+	"scroll_precision": {"buff": "crit_chance", "tier_value": true, "battles": true},  # Uses buff_value, scroll_duration battles
+	# Debuff scrolls - % of monster stat, duration from scroll_duration
+	"scroll_weakness": {"monster_debuff": "weakness", "debuff_pct": true},  # -X% ATK on monster
+	"scroll_vulnerability": {"monster_debuff": "vulnerability", "debuff_pct": true},  # -X% DEF on monster
+	"scroll_slow": {"monster_debuff": "slow", "debuff_pct": true},  # -X% SPD on monster
+	"scroll_doom": {"monster_debuff": "doom", "base": 10, "per_level": 2},  # Monster loses % max HP at start (keep as-is)
 	# Target farming scroll - guarantees ability on next N encounters
 	"scroll_target_farm": {"target_farm": true, "encounters": 5},
 	# === HIGH-TIER CONSUMABLES (Tier 5+) ===
@@ -2197,9 +2183,9 @@ func _normalize_consumable_type(item_type: String) -> String:
 	# Elixirs
 	if item_type in ["elixir_minor", "elixir_greater", "elixir_divine"]:
 		return "elixir"
-	# Buff potions - already have good names
-	if item_type.begins_with("potion_"):
-		return item_type  # strength, defense, speed, crit, lifesteal, thorns
+	# Bane potions - keep as-is
+	if item_type.begins_with("potion_") and "_bane" in item_type:
+		return item_type
 	# Scrolls - already have good names
 	if item_type.begins_with("scroll_"):
 		return item_type
@@ -2218,7 +2204,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type == "mysterious_box" or item_type == "cursed_coin"
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -2302,13 +2288,6 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"stamina_potion": "Resource Potion",
 		"energy_potion": "Resource Potion",
 		"elixir": "Elixir",
-		# Buff potions
-		"potion_strength": "Strength Potion",
-		"potion_defense": "Defense Potion",
-		"potion_speed": "Speed Potion",
-		"potion_crit": "Critical Potion",
-		"potion_lifesteal": "Lifesteal Potion",
-		"potion_thorns": "Thorns Potion",
 		# Scrolls
 		"scroll_monster_select": "Scroll of Summoning",
 		"scroll_forcefield": "Scroll of Forcefield",
@@ -2391,10 +2370,10 @@ func _calculate_consumable_value(tier: int, item_type: String) -> int:
 	if item_type.begins_with("scroll_"):
 		base_value = int(base_value * 2.5)
 	# Elixirs are worth more
-	elif item_type.begins_with("elixir_"):
+	elif item_type.begins_with("elixir_") or item_type == "elixir":
 		base_value = int(base_value * 2.0)
-	# Buff potions worth slightly more than basic potions
-	elif item_type.begins_with("potion_") and not item_type in ["potion_minor", "potion_lesser", "potion_standard", "potion_greater", "potion_superior", "potion_master"]:
+	# Bane potions worth slightly more
+	elif "_bane" in item_type:
 		base_value = int(base_value * 1.5)
 
 	return base_value

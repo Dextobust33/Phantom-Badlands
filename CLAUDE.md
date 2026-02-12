@@ -611,6 +611,24 @@ monster_data["experience_reward"] = monster.get("experience_reward", 10)  # NOT 
 var base_xp = monster.get("experience_reward", 10)  # NOT monster.experience_reward
 ```
 
+### 10. Number Key Double-Trigger (Item Selection + Action Bar) — CRITICAL
+**Symptom:** Pressing a number key (1-5) to select an item ALSO triggers an action bar button (e.g., opens settings)
+**Cause:** Item selection runs BEFORE action bar in `_process()`. When item selection changes state (e.g., sets `inventory_mode = false` after discard), the action bar check no longer sees the mode as active and fires for the same key in the same frame.
+
+**Fix:** `item_selection_consumed_this_frame` array tracks which keycodes were used by ANY number-key selection handler. The action bar skips keys found in this array.
+
+**MANDATORY pattern for ALL number-key selection handlers:**
+```gdscript
+if not get_meta("mykey_%d_pressed" % i, false):
+    set_meta("mykey_%d_pressed" % i, true)
+    item_selection_consumed_this_frame.append(get_item_select_keycode(i))  # <-- ALWAYS ADD THIS
+    do_the_actual_action(i)
+```
+
+**When to apply:** EVERY place in `_process()` that calls `is_item_select_key_pressed(i)` and triggers an action. No exceptions.
+
+**Files:** `client/client.gd` — `item_selection_consumed_this_frame` var (~line 709), cleared in `_process()` (~line 1684), checked in action bar loop (~line 2298)
+
 ## Dungeon Combat Issues (Fixed v0.9.31)
 
 **Symptoms reported:**

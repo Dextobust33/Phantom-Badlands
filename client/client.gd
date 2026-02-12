@@ -525,6 +525,7 @@ var house_storage_page: int = 0
 var house_upgrades_page: int = 0  # 0=Base, 1=Combat, 2=Stats
 var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
 var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
+var house_pending_withdraw_indices: Array = []  # Storage item indices to withdraw on character select
 var house_storage_discard_index: int = -1  # Item index selected for discard
 var house_storage_register_index: int = -1  # Stored companion index selected to register to kennel
 var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to kennel)
@@ -646,13 +647,13 @@ const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 # Consumable tier system for display purposes (matches server calculations)
 # resource = 60% of healing for all classes
 const CONSUMABLE_TIERS = {
-	1: {"name": "Minor", "healing": 50, "buff_value": 3, "resource": 30, "forcefield_value": 1500},
-	2: {"name": "Lesser", "healing": 100, "buff_value": 5, "resource": 60, "forcefield_value": 2500},
-	3: {"name": "Standard", "healing": 200, "buff_value": 8, "resource": 120, "forcefield_value": 4000},
-	4: {"name": "Greater", "healing": 400, "buff_value": 12, "resource": 240, "forcefield_value": 6000},
-	5: {"name": "Superior", "healing": 800, "buff_value": 18, "resource": 480, "forcefield_value": 10000},
-	6: {"name": "Master", "healing": 1600, "buff_value": 25, "resource": 960, "forcefield_value": 15000},
-	7: {"name": "Divine", "healing": 3000, "buff_value": 35, "resource": 1800, "forcefield_value": 25000}
+	1: {"name": "Minor", "healing": 25, "heal_pct": 10, "resource": 15, "resource_pct": 10, "buff_value": 3, "forcefield_value": 1500, "scroll_stat_pct": 10, "scroll_debuff_pct": 8, "scroll_duration": 1},
+	2: {"name": "Lesser", "healing": 50, "heal_pct": 15, "resource": 30, "resource_pct": 15, "buff_value": 5, "forcefield_value": 2500, "scroll_stat_pct": 12, "scroll_debuff_pct": 10, "scroll_duration": 1},
+	3: {"name": "Standard", "healing": 75, "heal_pct": 20, "resource": 50, "resource_pct": 20, "buff_value": 8, "forcefield_value": 4000, "scroll_stat_pct": 15, "scroll_debuff_pct": 12, "scroll_duration": 2},
+	4: {"name": "Greater", "healing": 100, "heal_pct": 25, "resource": 75, "resource_pct": 25, "buff_value": 12, "forcefield_value": 6000, "scroll_stat_pct": 18, "scroll_debuff_pct": 15, "scroll_duration": 2},
+	5: {"name": "Superior", "healing": 150, "heal_pct": 30, "resource": 125, "resource_pct": 30, "buff_value": 18, "forcefield_value": 10000, "scroll_stat_pct": 22, "scroll_debuff_pct": 18, "scroll_duration": 3},
+	6: {"name": "Master", "healing": 200, "heal_pct": 35, "resource": 175, "resource_pct": 35, "buff_value": 25, "forcefield_value": 15000, "scroll_stat_pct": 26, "scroll_debuff_pct": 22, "scroll_duration": 3},
+	7: {"name": "Divine", "healing": 300, "heal_pct": 40, "resource": 250, "resource_pct": 40, "buff_value": 35, "forcefield_value": 25000, "scroll_stat_pct": 30, "scroll_debuff_pct": 25, "scroll_duration": 4}
 }
 
 var selected_item_index: int = -1  # Currently selected inventory item (0-based, -1 = none)
@@ -705,6 +706,8 @@ var bounty_quest_id: String = ""
 
 # Track which action bar indices triggered actions this frame (to block item selection for same key)
 var action_triggered_this_frame: Array = []
+# Track which item selection keycodes were consumed this frame (to block action bar for same key)
+var item_selection_consumed_this_frame: Array = []
 
 # Remember last used amounts for variable cost abilities (e.g., Bolt)
 var last_ability_amounts: Dictionary = {}  # ability_name -> last_amount
@@ -849,7 +852,7 @@ var target_farm_encounters: int = 5
 var home_stone_mode: bool = false
 var home_stone_type: String = ""
 var home_stone_options: Array = []
-var home_stone_selected: Array = []  # Multi-select indices for supplies
+var home_stone_selected: Dictionary = {}  # Multi-select: option_index → qty_to_send
 var home_stone_page: int = 0  # Page for supplies selection
 
 # Title system mode
@@ -1680,6 +1683,7 @@ func _on_window_resized():
 func _process(delta):
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
+	item_selection_consumed_this_frame.clear()
 
 	connection.poll()
 	var status = connection.get_status()
@@ -1789,6 +1793,8 @@ func _process(delta):
 					continue
 				if not get_meta("itemkey_%d_pressed" % i, false):
 					set_meta("itemkey_%d_pressed" % i, true)
+					# Mark this keycode as consumed so action bar won't also fire
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					var selection_index = i
 					if pending_inventory_action == "equip_item":
 						# Equip uses its own page for filtered list
@@ -1814,6 +1820,7 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("affixkey_%d_pressed" % i, false):
 					set_meta("affixkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					_toggle_affix_filter_item(affix_filter_page * 7 + i)
 			else:
 				set_meta("affixkey_%d_pressed" % i, false)
@@ -1826,6 +1833,7 @@ func _process(delta):
 					continue
 				if not get_meta("merchantkey_%d_pressed" % i, false):
 					set_meta("merchantkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_merchant_sell_item(i)  # 0-based index
 			else:
 				set_meta("merchantkey_%d_pressed" % i, false)
@@ -1838,6 +1846,7 @@ func _process(delta):
 					continue
 				if not get_meta("buykey_%d_pressed" % i, false):
 					set_meta("buykey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_merchant_buy_item(i)  # 0-based index
 			else:
 				set_meta("buykey_%d_pressed" % i, false)
@@ -1850,6 +1859,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradekey_%d_pressed" % i, false):
 					set_meta("tradekey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_trade_item(i)
 			else:
 				set_meta("tradekey_%d_pressed" % i, false)
@@ -1862,6 +1872,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradecompkey_%d_pressed" % i, false):
 					set_meta("tradecompkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_trade_companion(i)
 			else:
 				set_meta("tradecompkey_%d_pressed" % i, false)
@@ -1874,6 +1885,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradeeggkey_%d_pressed" % i, false):
 					set_meta("tradeeggkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_trade_egg(i)
 			else:
 				set_meta("tradeeggkey_%d_pressed" % i, false)
@@ -1886,6 +1898,7 @@ func _process(delta):
 					continue
 				if not get_meta("questkey_%d_pressed" % i, false):
 					set_meta("questkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_quest_option(i)  # 0-based index
 			else:
 				set_meta("questkey_%d_pressed" % i, false)
@@ -1898,6 +1911,7 @@ func _process(delta):
 					continue
 				if not get_meta("craftkey_%d_pressed" % i, false):
 					set_meta("craftkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_craft_recipe(i)  # 0-based index
 			else:
 				set_meta("craftkey_%d_pressed" % i, false)
@@ -1910,6 +1924,7 @@ func _process(delta):
 					continue
 				if not get_meta("dungeonkey_%d_pressed" % i, false):
 					set_meta("dungeonkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_dungeon(i)  # 0-based index
 			else:
 				set_meta("dungeonkey_%d_pressed" % i, false)
@@ -1922,6 +1937,7 @@ func _process(delta):
 					continue
 				if not get_meta("questlogkey_%d_pressed" % i, false):
 					set_meta("questlogkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					abandon_quest_by_index(i)  # 0-based index
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
@@ -1934,6 +1950,7 @@ func _process(delta):
 					continue
 				if not get_meta("combatitemkey_%d_pressed" % i, false):
 					set_meta("combatitemkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					use_combat_item_by_number(i + 1)  # 1-based for user
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
@@ -1979,6 +1996,7 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("companionkey_%d_pressed" % i, false):
 					set_meta("companionkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					activate_companion_by_index(i)
 			else:
 				set_meta("companionkey_%d_pressed" % i, false)
@@ -2043,6 +2061,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("monsterselectkey_%d_pressed" % i, false):
 						set_meta("monsterselectkey_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						select_monster_from_scroll(i)  # 0-based index on current page
 				else:
 					set_meta("monsterselectkey_%d_pressed" % i, false)
@@ -2064,6 +2083,7 @@ func _process(delta):
 					continue
 				if not get_meta("targetfarmkey_%d_pressed" % i, false):
 					set_meta("targetfarmkey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					select_target_farm_ability(i)  # 0-based index
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
@@ -2076,6 +2096,7 @@ func _process(delta):
 					continue
 				if not get_meta("homestonekey_%d_pressed" % i, false):
 					set_meta("homestonekey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					_select_home_stone_option(i)
 			else:
 				set_meta("homestonekey_%d_pressed" % i, false)
@@ -2090,6 +2111,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						if i < blacksmith_upgrade_items.size():
 							var slot = blacksmith_upgrade_items[i].get("slot", "")
 							send_blacksmith_choice("select_upgrade_item", slot)
@@ -2103,6 +2125,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						if i < blacksmith_upgrade_affixes.size():
 							var affix_key = blacksmith_upgrade_affixes[i].get("affix_key", "")
 							send_blacksmith_choice("confirm_upgrade", "", affix_key)
@@ -2116,6 +2139,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						# Get the slot name from the item at this index
 						if i < blacksmith_items.size():
 							var slot = blacksmith_items[i].get("slot", "")
@@ -2131,6 +2155,7 @@ func _process(delta):
 			if regular_key_pressed or numpad_key_pressed:
 				if not get_meta("rescuekey_%d_pressed" % i, false):
 					set_meta("rescuekey_%d_pressed" % i, true)
+					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 					send_to_server({"type": "rescue_npc_response", "action": "accept", "item_index": i})
 					_finish_rescue_npc_encounter()
 			else:
@@ -2142,8 +2167,8 @@ func _process(delta):
 	# House screen item selection with number keys (1-6 for upgrades, 1-5 for storage/companions)
 	if game_state == GameState.HOUSE_SCREEN and not input_field.has_focus():
 		if house_mode == "upgrades":
-			# Keys 1-6 to purchase upgrades
-			for i in range(6):
+			# Keys 1-9 to purchase upgrades (pages have up to 8 items)
+			for i in range(9):
 				if is_item_select_key_pressed(i):
 					if not get_meta("houseupgrade_%d_pressed" % i, false):
 						set_meta("houseupgrade_%d_pressed" % i, true)
@@ -2165,6 +2190,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housecompanion_%d_pressed" % i, false):
 						set_meta("housecompanion_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_toggle_companion_checkout(i)
 				else:
 					set_meta("housecompanion_%d_pressed" % i, false)
@@ -2174,6 +2200,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housediscard_%d_pressed" % i, false):
 						set_meta("housediscard_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_select_storage_discard_item(i)
 				else:
 					set_meta("housediscard_%d_pressed" % i, false)
@@ -2183,6 +2210,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("houseregister_%d_pressed" % i, false):
 						set_meta("houseregister_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_select_storage_register_companion(i)
 				else:
 					set_meta("houseregister_%d_pressed" % i, false)
@@ -2192,6 +2220,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("houseunregister_%d_pressed" % i, false):
 						set_meta("houseunregister_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_select_companion_unregister(i)
 				else:
 					set_meta("houseunregister_%d_pressed" % i, false)
@@ -2201,6 +2230,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housekennel_%d_pressed" % i, false):
 						set_meta("housekennel_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_select_kennel_companion(i)
 				else:
 					set_meta("housekennel_%d_pressed" % i, false)
@@ -2210,6 +2240,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housefusion_%d_pressed" % i, false):
 						set_meta("housefusion_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_select_fusion_group(i)
 				else:
 					set_meta("housefusion_%d_pressed" % i, false)
@@ -2219,6 +2250,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housefusionmix_%d_pressed" % i, false):
 						set_meta("housefusionmix_%d_pressed" % i, true)
+						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
 						_toggle_mixed_fusion_companion(i)
 				else:
 					set_meta("housefusionmix_%d_pressed" % i, false)
@@ -2287,6 +2319,10 @@ func _process(delta):
 					continue
 
 			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
+				# Skip if this key was already consumed by item selection this frame
+				# (prevents double-trigger when item selection changes state mid-frame)
+				if key in item_selection_consumed_this_frame:
+					continue
 				if not get_meta("hotkey_%d_pressed" % i, false):
 					set_meta("hotkey_%d_pressed" % i, true)
 					# Only trigger if this slot has an enabled action
@@ -3556,6 +3592,8 @@ func _on_character_selected(char_name: String):
 	}
 	if house_checkout_companion_slot >= 0:
 		select_msg["checkout_companion_slot"] = house_checkout_companion_slot
+	if house_pending_withdraw_indices.size() > 0:
+		select_msg["withdraw_indices"] = house_pending_withdraw_indices
 	send_to_server(select_msg)
 
 func _on_create_char_button_pressed():
@@ -4177,7 +4215,7 @@ func update_action_bar():
 					{"label": "Back", "action_type": "local", "action_data": "house_storage_back", "enabled": true},
 					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
 					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_withdraw_confirm", "enabled": house_storage_withdraw_items.size() > 0},
 					{"label": "Clear", "action_type": "local", "action_data": "house_withdraw_clear", "enabled": house_storage_withdraw_items.size() > 0},
 					{"label": "1-5=Mark", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -8392,6 +8430,16 @@ func execute_local_action(action: String):
 			house_storage_withdraw_items = []
 			display_house_storage()
 			update_action_bar()
+		"house_withdraw_confirm":
+			# Store confirmed items — they'll be sent with select_character
+			if house_storage_withdraw_items.size() > 0:
+				house_pending_withdraw_indices = house_storage_withdraw_items.duplicate()
+			pending_house_action = ""
+			house_storage_withdraw_items = []
+			display_house_storage()
+			if house_pending_withdraw_indices.size() > 0:
+				display_game("\n[color=#00FFFF]%d item(s) marked for withdrawal. Select a character to receive them.[/color]" % house_pending_withdraw_indices.size())
+			update_action_bar()
 		"house_companions_back":
 			pending_house_action = ""
 			house_unregister_companion_slot = -1
@@ -12510,6 +12558,7 @@ func handle_server_message(message: Dictionary):
 			pending_house_action = ""
 			house_storage_page = 0
 			house_storage_withdraw_items = []
+			house_pending_withdraw_indices = []
 			house_checkout_companion_slot = -1
 			house_storage_discard_index = -1
 			house_storage_register_index = -1
@@ -13426,7 +13475,7 @@ func handle_server_message(message: Dictionary):
 				selected_item_index = -1
 				awaiting_item_use_result = false  # Clear so confirmation text displays normally
 				home_stone_mode = true
-				home_stone_selected = []
+				home_stone_selected = {}
 				home_stone_page = 0
 				# Initialize key press state for any currently-held keys
 				for i in range(min(9, home_stone_options.size())):
@@ -14224,12 +14273,17 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	var is_tier_value = level >= 1 and level <= 7
 	var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1]) if is_tier_value else {}
 
-	# Health potions (potion_minor, potion_lesser, etc. or health_potion, elixir)
-	if is_tier_value and (item_type == "health_potion" or item_type == "elixir" or (item_type.begins_with("potion_") and "speed" not in item_type and "strength" not in item_type and "defense" not in item_type and "power" not in item_type and "iron" not in item_type and "haste" not in item_type and "crit" not in item_type and "lifesteal" not in item_type) or item_type.begins_with("elixir_")):
-		return "Restores %d HP when used" % tier_data.healing
+	# Elixirs - pure % max HP healing
+	if is_tier_value and (item_type == "elixir" or item_type.begins_with("elixir_")):
+		var elixir_pcts = {"elixir_minor": 50, "elixir_greater": 70, "elixir_divine": 100}
+		var elixir_tier_pcts = {7: 50, 8: 70, 9: 100}
+		var pct = elixir_pcts.get(item_type, elixir_tier_pcts.get(level, 50))
+		return "Restores %d%% of max HP" % pct
+	# Health potions - hybrid flat + % max HP
+	elif is_tier_value and (item_type == "health_potion" or (item_type.begins_with("potion_") and "_bane" not in item_type)):
+		return "Restores %d + %d%% of max HP" % [tier_data.healing, tier_data.get("heal_pct", 0)]
 	# Resource potions (mana/stamina/energy - all restore player's PRIMARY resource)
 	elif is_tier_value and (item_type == "mana_potion" or item_type.begins_with("mana_") or item_type == "stamina_potion" or item_type.begins_with("stamina_") or item_type == "energy_potion" or item_type.begins_with("energy_")):
-		# Show the player's primary resource type
 		var player_class = character_data.get("class", "")
 		var resource_name = "Resource"
 		match player_class:
@@ -14239,99 +14293,37 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 				resource_name = "Stamina"
 			"Thief", "Ranger", "Ninja":
 				resource_name = "Energy"
-		return "Restores %d %s when used" % [tier_data.resource, resource_name]
-	# Buff potions (check tier versions)
-	elif is_tier_value and (item_type == "strength_potion" or "potion_strength" in item_type or "potion_power" in item_type or "elixir_might" in item_type):
-		return "+%d Strength for 5 battles" % tier_data.buff_value
-	elif is_tier_value and (item_type == "defense_potion" or "potion_defense" in item_type or "potion_iron" in item_type or "elixir_fortress" in item_type):
-		return "+%d Defense for 5 battles" % tier_data.buff_value
-	elif is_tier_value and (item_type == "speed_potion" or "potion_speed" in item_type or "potion_haste" in item_type or "elixir_swiftness" in item_type):
-		return "+%d Speed for 5 battles" % tier_data.buff_value
+		return "Restores %d + %d%% of max %s" % [tier_data.resource, tier_data.get("resource_pct", 0), resource_name]
 
-	# LEGACY: Check for specific buff potions first (before generic potion check)
-	if "potion_speed" in item_type:
-		var buff_val = 5 + level * 2
-		var duration = 5 + (level / 10) * 2
-		return "+%d Speed for %d rounds" % [buff_val, duration]
-	elif "potion_strength" in item_type:
-		var buff_val = 3 + level
-		var duration = 5 + (level / 10) * 2
-		return "+%d Strength for %d rounds" % [buff_val, duration]
-	elif "potion_defense" in item_type:
-		var buff_val = 3 + level
-		var duration = 5 + (level / 10) * 2
-		return "+%d Defense for %d rounds" % [buff_val, duration]
-	elif "potion_power" in item_type:
-		var buff_val = 8 + level * 2
-		var duration = 2 + (level / 10)
-		return "+%d Strength for %d battles" % [buff_val, duration]
-	elif "potion_iron" in item_type:
-		var buff_val = 8 + level * 2
-		var duration = 2 + (level / 10)
-		return "+%d Defense for %d battles" % [buff_val, duration]
-	elif "potion_haste" in item_type:
-		var buff_val = 15 + level * 3
-		var duration = 2 + (level / 10)
-		return "+%d Speed for %d battles" % [buff_val, duration]
-	elif "elixir_might" in item_type:
-		var buff_val = 15 + level * 3
-		var duration = 5 + (level / 10) * 2
-		return "+%d Strength for %d battles" % [buff_val, duration]
-	elif "elixir_fortress" in item_type:
-		var buff_val = 15 + level * 3
-		var duration = 5 + (level / 10) * 2
-		return "+%d Defense for %d battles" % [buff_val, duration]
-	elif "elixir_swiftness" in item_type:
-		var buff_val = 25 + level * 5
-		var duration = 5 + (level / 10) * 2
-		return "+%d Speed for %d battles" % [buff_val, duration]
-	elif "mana" in item_type:
-		# Mana potions
+	# LEGACY: Non-tiered fallbacks for old items
+	if "mana" in item_type and not is_tier_value:
 		var mana_amounts = {
-			"mana_minor": 15 + level * 8,
-			"mana_lesser": 30 + level * 10,
-			"mana_standard": 50 + level * 12,
-			"mana_greater": 100 + level * 15,
-			"mana_superior": 200 + level * 20,
-			"mana_master": 400 + level * 25
+			"mana_minor": 15 + level * 8, "mana_lesser": 30 + level * 10,
+			"mana_standard": 50 + level * 12, "mana_greater": 100 + level * 15,
+			"mana_superior": 200 + level * 20, "mana_master": 400 + level * 25
 		}
-		var mana = mana_amounts.get(item_type, 50 + level * 10)
-		return "Restores %d Mana when used" % mana
-	elif "stamina" in item_type:
-		# Stamina potions (Warriors)
+		return "Restores %d Mana when used" % mana_amounts.get(item_type, 50 + level * 10)
+	elif "stamina" in item_type and not is_tier_value:
 		var stamina_amounts = {
-			"stamina_minor": 15 + level * 8,
-			"stamina_lesser": 30 + level * 10,
-			"stamina_standard": 50 + level * 12,
-			"stamina_greater": 100 + level * 15
+			"stamina_minor": 15 + level * 8, "stamina_lesser": 30 + level * 10,
+			"stamina_standard": 50 + level * 12, "stamina_greater": 100 + level * 15
 		}
-		var stamina = stamina_amounts.get(item_type, 50 + level * 10)
-		return "Restores %d Stamina when used" % stamina
-	elif "energy" in item_type:
-		# Energy potions (Tricksters)
+		return "Restores %d Stamina when used" % stamina_amounts.get(item_type, 50 + level * 10)
+	elif "energy" in item_type and not is_tier_value:
 		var energy_amounts = {
-			"energy_minor": 15 + level * 8,
-			"energy_lesser": 30 + level * 10,
-			"energy_standard": 50 + level * 12,
-			"energy_greater": 100 + level * 15
+			"energy_minor": 15 + level * 8, "energy_lesser": 30 + level * 10,
+			"energy_standard": 50 + level * 12, "energy_greater": 100 + level * 15
 		}
-		var energy = energy_amounts.get(item_type, 50 + level * 10)
-		return "Restores %d Energy when used" % energy
-	elif "potion" in item_type or "elixir" in item_type:
-		# Healing potions/elixirs (general case)
+		return "Restores %d Energy when used" % energy_amounts.get(item_type, 50 + level * 10)
+	elif ("potion" in item_type or "elixir" in item_type) and not is_tier_value and "_bane" not in item_type:
 		var heal_amounts = {
-			"potion_minor": 10 + level * 10,
-			"potion_lesser": 20 + level * 12,
-			"potion_standard": 40 + level * 15,
-			"potion_greater": 80 + level * 20,
-			"potion_superior": 150 + level * 25,
-			"potion_master": 300 + level * 30,
-			"elixir_minor": 500 + level * 40,
-			"elixir_greater": 1000 + level * 60,
+			"potion_minor": 10 + level * 10, "potion_lesser": 20 + level * 12,
+			"potion_standard": 40 + level * 15, "potion_greater": 80 + level * 20,
+			"potion_superior": 150 + level * 25, "potion_master": 300 + level * 30,
+			"elixir_minor": 500 + level * 40, "elixir_greater": 1000 + level * 60,
 			"elixir_divine": 2000 + level * 100
 		}
-		var heal = heal_amounts.get(item_type, level * 10)
-		return "Restores %d HP when used" % heal
+		return "Restores %d HP when used" % heal_amounts.get(item_type, level * 10)
 	elif "weapon" in item_type:
 		var atk = base_bonus * 3  # Weapons are THE attack item
 		var str_bonus = int(base_bonus * 0.5)
@@ -14377,47 +14369,48 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Contains %d-%d gold" % [level * 10, level * 50]
 	elif "gem" in item_type:
 		return "Worth 1000 gold when sold"
-	# Scroll effects - buff scrolls
+	# Scroll effects - buff scrolls (tier-based)
 	elif "scroll_forcefield" in item_type:
-		if is_tier_value and tier_data.has("forcefield_value"):
-			return "Creates a %d HP shield that absorbs damage (1 battle)" % tier_data.forcefield_value
-		else:
-			var shield_amount = 50 + level * 10
-			return "Creates a %d HP shield that absorbs damage (1 battle)" % shield_amount
+		if is_tier_value:
+			return "Creates a %d HP shield (%d battle%s)" % [tier_data.get("forcefield_value", 1500), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Creates a shield that absorbs damage"
 	elif "scroll_rage" in item_type:
-		if is_tier_value and tier_data.has("buff_value"):
-			return "+%d Strength for next combat" % tier_data.buff_value
-		else:
-			return "+%d Strength for next combat" % (20 + level * 4)
+		if is_tier_value:
+			return "+%d%% Strength for %d battle%s" % [tier_data.get("scroll_stat_pct", 10), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "+Strength for next combat"
 	elif "scroll_stone_skin" in item_type:
-		if is_tier_value and tier_data.has("buff_value"):
-			return "+%d Defense for next combat" % tier_data.buff_value
-		else:
-			return "+%d Defense for next combat" % (20 + level * 4)
+		if is_tier_value:
+			return "+%d%% Defense for %d battle%s" % [tier_data.get("scroll_stat_pct", 10), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "+Defense for next combat"
 	elif "scroll_haste" in item_type:
-		if is_tier_value and tier_data.has("buff_value"):
-			return "+%d Speed for next combat" % tier_data.buff_value
-		else:
-			return "+%d Speed for next combat" % (30 + level * 5)
+		if is_tier_value:
+			return "+%d%% Speed for %d battle%s" % [tier_data.get("scroll_stat_pct", 10), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "+Speed for next combat"
 	elif "scroll_vampirism" in item_type:
-		var lifesteal = 25 + level * 3
-		return "%d%% Lifesteal for next combat" % lifesteal
+		if is_tier_value:
+			return "%d%% Lifesteal for %d battle%s" % [tier_data.get("buff_value", 3), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Lifesteal for next combat"
 	elif "scroll_thorns" in item_type:
-		var reflect = 30 + level * 4
-		return "Reflect %d%% damage for next combat" % reflect
+		if is_tier_value:
+			return "Reflect %d%% damage for %d battle%s" % [tier_data.get("buff_value", 3), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Reflect damage for next combat"
 	elif "scroll_precision" in item_type:
-		var crit = 25 + level * 2
-		return "+%d%% Critical chance for next combat" % crit
-	# Scroll effects - debuff scrolls (affect next monster)
+		if is_tier_value:
+			return "+%d%% Crit chance for %d battle%s" % [tier_data.get("buff_value", 3), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "+Crit chance for next combat"
+	# Scroll effects - debuff scrolls (tier-based)
 	elif "scroll_weakness" in item_type:
-		var debuff = 25 + level * 2
-		return "Next monster has -%d%% Attack" % debuff
+		if is_tier_value:
+			return "Next monster has -%d%% Attack (%d battle%s)" % [tier_data.get("scroll_debuff_pct", 8), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Next monster has reduced Attack"
 	elif "scroll_vulnerability" in item_type:
-		var debuff = 25 + level * 2
-		return "Next monster has -%d%% Defense" % debuff
+		if is_tier_value:
+			return "Next monster has -%d%% Defense (%d battle%s)" % [tier_data.get("scroll_debuff_pct", 8), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Next monster has reduced Defense"
 	elif "scroll_slow" in item_type:
-		var debuff = 30 + level * 3
-		return "Next monster has -%d%% Speed" % debuff
+		if is_tier_value:
+			return "Next monster has -%d%% Speed (%d battle%s)" % [tier_data.get("scroll_debuff_pct", 8), tier_data.get("scroll_duration", 1), "s" if tier_data.get("scroll_duration", 1) != 1 else ""]
+		return "Next monster has reduced Speed"
 	elif "scroll_doom" in item_type:
 		var debuff = 10 + level * 2
 		return "Next monster loses %d%% Max HP at combat start" % debuff
@@ -14434,17 +14427,6 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Revive with 25% HP on death (next battle only)"
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
-	# Buff potions - crit and lifesteal
-	elif "potion_crit" in item_type:
-		if is_tier_value and tier_data.has("buff_value"):
-			return "+%d%% Critical chance for 5 rounds" % tier_data.buff_value
-		else:
-			return "+%d%% Critical chance for 5 rounds" % (10 + level)
-	elif "potion_lifesteal" in item_type:
-		if is_tier_value and tier_data.has("buff_value"):
-			return "%d%% Lifesteal for 5 rounds" % tier_data.buff_value
-		else:
-			return "%d%% Lifesteal for 5 rounds" % (10 + level * 2)
 	# Home Stones
 	elif item_type == "home_stone_egg":
 		return "Send one incubating egg to your Sanctuary storage"
@@ -14749,12 +14731,29 @@ func process_command(text: String):
 		"giveconsumable":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /giveconsumable <type> [tier][/color]")
-				display_game("[color=#808080]Types: scroll_target_farm, scroll_monster_select, potion_health,[/color]")
-				display_game("[color=#808080]  mana_potion, stamina_potion, energy_potion, home_stone_egg,[/color]")
-				display_game("[color=#808080]  home_stone_supplies, home_stone_equipment, home_stone_companion[/color]")
+				display_game("[color=#808080]Shorthands: potion, mana, stamina, energy, elixir, scroll, tome, home[/color]")
+				display_game("[color=#808080]Scrolls: rage, haste, forcefield, precision, vampirism, thorns[/color]")
+				display_game("[color=#808080]Full types: health_potion, scroll_rage, home_stone_egg, etc.[/color]")
 			else:
+				var cons_type = parts[1]
+				# Shorthand mapping (same as server)
+				var shorthands = {
+					"potion": "health_potion", "health": "health_potion",
+					"mana": "mana_potion", "stamina": "stamina_potion", "energy": "energy_potion",
+					"elixir": "elixir_minor", "scroll": "scroll_forcefield",
+					"home": "home_stone_supplies", "tome": "tome_strength",
+					"rage": "scroll_rage", "haste": "scroll_haste",
+					"forcefield": "scroll_forcefield", "precision": "scroll_precision",
+					"vampirism": "scroll_vampirism", "thorns": "scroll_thorns",
+					"weakness": "scroll_weakness", "vulnerability": "scroll_vulnerability",
+					"slow": "scroll_slow", "doom": "scroll_doom",
+					"resurrect": "scroll_resurrect_lesser", "timestop": "scroll_time_stop",
+					"bane": "potion_dragon_bane",
+				}
+				if shorthands.has(cons_type):
+					cons_type = shorthands[cons_type]
 				var cons_tier = int(parts[2]) if parts.size() > 2 else 5
-				send_to_server({"type": "gm_giveconsumable", "item_type": parts[1], "tier": cons_tier})
+				send_to_server({"type": "gm_giveconsumable", "item_type": cons_type, "tier": cons_tier})
 		"spawnwish":
 			send_to_server({"type": "gm_spawnwish"})
 		_:
@@ -15960,26 +15959,27 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.106 changes
+	display_game("[color=#00FF00]v0.9.106[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Consumable System Overhaul[/color]")
+	display_game("  • Potions now heal flat + % of max HP (scales with your level)")
+	display_game("  • Resource potions restore flat + % of max mana/stamina/energy")
+	display_game("  • Elixirs: 50%/70%/100% max HP pure percentage heals")
+	display_game("  • Buff potions removed — scrolls are now the buff system")
+	display_game("  • Scrolls scale with tier: stat scrolls give % of your stats")
+	display_game("  • Higher tier scrolls last more battles (T1-2: 1, T3-4: 2, T5-6: 3, T7: 4)")
+	display_game("  • Debuff scrolls use tier-based percentages")
+	display_game("  • Scrolls now drop starting at Tier 3 (replacing buff potions)")
+	display_game("  • /giveconsumable supports shorthand names (potion, mana, rage, etc.)")
+	display_game("  [color=#FFD700]Bug Fix[/color]")
+	display_game("  • Fixed: number keys double-triggering in item selection menus")
+	display_game("")
+
 	# v0.9.105 changes
-	display_game("[color=#00FF00]v0.9.105[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Combat Readability[/color]")
-	display_game("  • Player, companion, and monster turns visually distinct with indentation")
-	display_game("  • Monster damage numbers highlighted in orange")
-	display_game("  • Monster first strike now visible with danger sound")
-	display_game("  • Victory rewards indented for clarity")
-	display_game("  [color=#FFD700]XP Scaling Rework[/color]")
-	display_game("  • Smooth continuous curve — no more sudden jumps at tier boundaries")
-	display_game("  • Bonus scales naturally with level difference")
-	display_game("  • TIER CHALLENGE label still shows for cross-tier fights")
-	display_game("  [color=#FFD700]Bug Fixes & Features[/color]")
-	display_game("  • House XP bonus & gathering bonus upgrades now apply")
-	display_game("  • Scroll cancel restores item to inventory")
-	display_game("  • Wish Granter works in dungeons")
-	display_game("  • Rescue quest directional hints")
-	display_game("  • Auto-salvage affix filtering (protect items with specific affixes)")
-	display_game("  • Home stone consumable stacking")
-	display_game("  • Trophy leaderboard: timestamps + most-collected ranking")
-	display_game("  • Combat command rate limiting (anti-spam)")
+	display_game("[color=#00FFFF]v0.9.105[/color]")
+	display_game("  • Combat readability: distinct turns with indentation + orange monster damage")
+	display_game("  • Smooth XP scaling curve (no tier boundary jumps)")
+	display_game("  • Bug fixes: house bonuses, scroll cancel, wish in dungeons, and more")
 	display_game("")
 
 	# v0.9.104 changes
@@ -16002,13 +16002,6 @@ func display_changelog():
 	display_game("  • HP/resources regenerate on dungeon movement")
 	display_game("  • Companion registration reworked, Home Stone (Egg) hatches to Kennel")
 	display_game("  • Fixes: salvage null, flock despawn, Boss Hunt 2/1, supplies pagination")
-	display_game("")
-
-	# v0.9.99 changes
-	display_game("[color=#00FFFF]v0.9.99[/color]")
-	display_game("  • Trading post visual variety: 10 categories, color-coded map, 10 border shapes")
-	display_game("  • Major bug fix pass: kennel capacity, fusion exploits, companion XP formula")
-	display_game("  • QOL: bonus display in views, quest reward colors, sub-tier display")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20423,15 +20416,20 @@ func _display_home_stone_options():
 		var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
 		var page_label = " (Page %d/%d)" % [home_stone_page + 1, total_pages] if total_pages > 1 else ""
 		display_game("[color=#00FFFF]===== HOME STONE (SUPPLIES)%s =====[/color]" % page_label)
-		display_game("[color=#808080]Toggle items to send (max 10). Selected: %d/10[/color]" % home_stone_selected.size())
+		display_game("[color=#808080]Toggle items to send (max 10). Press again to increase qty. Selected: %d/10[/color]" % home_stone_selected.size())
 		display_game("")
 		var start_idx = home_stone_page * 9
 		var end_idx = min(start_idx + 9, home_stone_options.size())
 		for i in range(start_idx, end_idx):
 			var option = home_stone_options[i]
 			var selected = i in home_stone_selected
+			var max_qty = int(option.get("quantity", 1))
+			var qty_label = ""
+			if selected and max_qty > 1:
+				var send_qty = home_stone_selected[i]
+				qty_label = " [color=#00FF00](sending %d/%d)[/color]" % [send_qty, max_qty]
 			var check = "[color=#00FF00][X][/color]" if selected else "[ ]"
-			display_game("[color=#FFFF00][%d][/color] %s %s" % [(i - start_idx) + 1, check, option.get("label", "Unknown")])
+			display_game("[color=#FFFF00][%d][/color] %s %s%s" % [(i - start_idx) + 1, check, option.get("label", "Unknown"), qty_label])
 		display_game("")
 		display_game("[color=#808080][%s]=Send  [%s]=Cancel  [%s]=Select All  [%s/%s]=Prev/Next Page[/color]" % [
 			get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
@@ -20454,14 +20452,22 @@ func _select_home_stone_option(index: int):
 	set_meta("hotkey_%d_pressed" % action_slot, true)
 
 	if home_stone_type == "supplies":
-		# Multi-select: toggle item at page-relative index
+		# Multi-select with quantity: toggle/increment item at page-relative index
 		var abs_index = home_stone_page * 9 + index
 		if abs_index < 0 or abs_index >= home_stone_options.size():
 			return
+		var option = home_stone_options[abs_index]
+		var max_qty = int(option.get("quantity", 1))
 		if abs_index in home_stone_selected:
-			home_stone_selected.erase(abs_index)
+			var current_qty = home_stone_selected[abs_index]
+			if max_qty > 1 and current_qty < max_qty:
+				# Increment quantity for stackable items
+				home_stone_selected[abs_index] = current_qty + 1
+			else:
+				# At max (or non-stackable) — deselect
+				home_stone_selected.erase(abs_index)
 		elif home_stone_selected.size() < 10:
-			home_stone_selected.append(abs_index)
+			home_stone_selected[abs_index] = 1
 		else:
 			display_game("[color=#FF0000]Maximum 10 items selected![/color]")
 			return
@@ -20483,7 +20489,7 @@ func _select_home_stone_option(index: int):
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
-	home_stone_selected = []
+	home_stone_selected = {}
 	game_output.clear()
 	update_action_bar()
 
@@ -20493,7 +20499,7 @@ func _cancel_home_stone():
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
-	home_stone_selected = []
+	home_stone_selected = {}
 	home_stone_page = 0
 	game_output.clear()
 	display_game("[color=#808080]Home Stone use cancelled.[/color]")
@@ -20504,30 +20510,36 @@ func _confirm_home_stone_supplies():
 	if home_stone_selected.is_empty():
 		display_game("[color=#FF0000]No items selected! Toggle items with number keys first.[/color]")
 		return
-	# Send the selected option indices to the server
+	# Build indices and quantities arrays for server
+	var indices = home_stone_selected.keys()
+	var quantities = {}
+	for idx in indices:
+		quantities[str(idx)] = home_stone_selected[idx]
 	send_to_server({
 		"type": "home_stone_select",
 		"stone_type": "supplies",
-		"selection_indices": home_stone_selected
+		"selection_indices": indices,
+		"selection_quantities": quantities
 	})
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
-	home_stone_selected = []
+	home_stone_selected = {}
 	home_stone_page = 0
 	game_output.clear()
 	update_action_bar()
 
 func _select_all_home_stone_supplies():
-	"""Select/deselect all supplies (up to 10)"""
+	"""Select/deselect all supplies (up to 10) with full quantities"""
 	if home_stone_selected.size() == min(10, home_stone_options.size()):
 		# All selected - deselect all
-		home_stone_selected = []
+		home_stone_selected = {}
 	else:
-		# Select first 10
-		home_stone_selected = []
+		# Select first 10 with full quantities
+		home_stone_selected = {}
 		for i in range(min(10, home_stone_options.size())):
-			home_stone_selected.append(i)
+			var max_qty = int(home_stone_options[i].get("quantity", 1))
+			home_stone_selected[i] = max_qty
 	game_output.clear()
 	display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 	_display_home_stone_options()
@@ -21782,10 +21794,12 @@ func display_house_storage():
 				var variant_color = item.get("variant_color", "#A335EE")
 				type_indicator = " [color=%s](%s)[/color]" % [variant_color, variant]
 
-			# Check if marked for withdrawal, discard, or register
+			# Check if marked for withdrawal, discard, register, or pending
 			var action_marker = ""
 			if i in house_storage_withdraw_items:
 				action_marker = " [color=#00FFFF][WITHDRAW][/color]"
+			elif i in house_pending_withdraw_indices:
+				action_marker = " [color=#00FFFF][PENDING][/color]"
 			elif i == house_storage_discard_index:
 				action_marker = " [color=#FF4444][DISCARD][/color]"
 			elif i == house_storage_register_index:
