@@ -31,7 +31,7 @@ offset_bottom = -20.0
 [node name="TitleLabel" type="Label" parent="VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Phantasia Revival"
+text = "Phantom Badlands"
 horizontal_alignment = 1
 
 [node name="Spacer1" type="Control" parent="VBox"]
@@ -73,4 +73,4 @@ size_flags_vertical = 3
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Play Phantasia Revival"
+text = "Play Phantom Badlands"

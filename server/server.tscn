@@ -31,7 +31,7 @@ theme_override_constants/separation = 10
 layout_mode = 2
 theme_override_colors/font_color = Color(0.29, 0.56, 0.89, 1)
 theme_override_font_sizes/font_size = 24
-text = "Phantasia Revival Server"
+text = "Phantom Badlands Server"
 horizontal_alignment = 1
 
 [node name="StatusRow" type="HBoxContainer" parent="VBox" unique_id=1683786104]

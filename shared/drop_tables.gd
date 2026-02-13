@@ -1,5 +1,5 @@
 # drop_tables.gd
-# Item drop table system for Phantasia Revival
+# Item drop table system for Phantom Badlands
 # This file contains stub implementations for future item drops
 class_name DropTables
 extends Node
@@ -702,7 +702,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Survival Instinct", "hp_percent": 35, "effect": "speed_buff", "base": 15, "scaling": 0.2, "duration": 3, "description": "Speed boost when low HP"}
 	},
 	"Kobold": {
-		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "description": "Increases gold find"},
+		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "effect2": "gathering_hint", "base2": 3, "scaling2": 0.03, "description": "Increases gold find, +gathering hints"},
 		"active": {"name": "Trap Trigger", "type": "chance", "base_chance": 8, "chance_scaling": 0.08, "effect": "bonus_damage", "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for bonus damage"},
 		"threshold": {"name": "Hoard Guard", "hp_percent": 45, "effect": "defense_buff", "base": 8, "scaling": 0.15, "duration": 3, "description": "Defense boost when low HP"}
 	},
@@ -712,7 +712,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Undying Will", "hp_percent": 25, "effect": "absorb", "base": 5, "scaling": 0.15, "duration": 2, "description": "Absorbs some damage when critical"}
 	},
 	"Wolf": {
-		"passive": {"name": "Pack Instinct", "effect": "attack", "base": 2, "scaling": 0.04, "description": "Adds attack damage"},
+		"passive": {"name": "Pack Instinct", "effect": "attack", "base": 2, "scaling": 0.04, "effect2": "gathering_yield", "base2": 5, "scaling2": 0.05, "description": "Adds attack damage, +gathering yield"},
 		"active": {"name": "Ambush Strike", "type": "chance", "base_chance": 12, "chance_scaling": 0.12, "effect": "crit", "crit_mult": 1.5, "description": "Chance to critically strike"},
 		"threshold": {"name": "Alpha Howl", "hp_percent": 35, "effect": "attack_buff", "base": 12, "scaling": 0.2, "duration": 3, "description": "Attack boost when low HP"}
 	},
@@ -724,7 +724,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Berserker Fury", "hp_percent": 30, "effect": "attack_buff", "base": 20, "scaling": 0.3, "duration": 3, "description": "Major attack boost when low HP"}
 	},
 	"Hobgoblin": {
-		"passive": {"name": "Tactical Mind", "effect": "attack", "base": 2, "scaling": 0.04, "effect2": "speed", "base2": 1, "scaling2": 0.02, "description": "Adds attack and speed"},
+		"passive": {"name": "Tactical Mind", "effect": "attack", "base": 2, "scaling": 0.04, "effect2": "speed", "base2": 1, "scaling2": 0.02, "effect3": "gathering_yield", "base3": 6, "scaling3": 0.06, "description": "Adds attack, speed, +gathering yield"},
 		"active": {"name": "Coordinated Strike", "type": "chance", "base_chance": 15, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 6, "damage_scaling": 0.12, "description": "Chance for bonus damage"},
 		"threshold": {"name": "Rally Cry", "hp_percent": 40, "effect": "all_buff", "base": 8, "scaling": 0.15, "duration": 2, "description": "Buffs all stats when low HP"}
 	},
@@ -739,7 +739,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Risen Again", "hp_percent": 20, "effect": "heal", "base": 8, "scaling": 0.2, "description": "Heals when critically low HP"}
 	},
 	"Giant Spider": {
-		"passive": {"name": "Venomous Presence", "effect": "speed", "base": 3, "scaling": 0.05, "effect2": "attack", "base2": 1, "scaling2": 0.02, "description": "Adds speed and attack"},
+		"passive": {"name": "Venomous Presence", "effect": "speed", "base": 3, "scaling": 0.05, "effect2": "attack", "base2": 1, "scaling2": 0.02, "effect3": "gathering_hint", "base3": 5, "scaling3": 0.05, "description": "Adds speed, attack, +gathering hints"},
 		"active": {"name": "Poison Bite", "type": "chance", "base_chance": 18, "chance_scaling": 0.15, "effect": "poison", "base_damage": 5, "damage_scaling": 0.1, "duration": 3, "description": "Chance to poison enemy"},
 		"threshold": {"name": "Web Trap", "hp_percent": 40, "effect": "slow_enemy", "base": 20, "scaling": 0.2, "duration": 2, "description": "Slows enemy when low HP"}
 	},
@@ -771,7 +771,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Thick Skin", "hp_percent": 35, "effect": "absorb", "base": 10, "scaling": 0.2, "duration": 3, "description": "Absorbs damage when low HP"}
 	},
 	"Troll": {
-		"passive": {"name": "Regeneration", "effect": "hp_regen", "base": 2, "scaling": 0.04, "description": "Heals HP each turn"},
+		"passive": {"name": "Regeneration", "effect": "hp_regen", "base": 2, "scaling": 0.04, "effect2": "gathering_yield", "base2": 7, "scaling2": 0.07, "description": "Heals HP each turn, +gathering yield"},
 		"active": {"name": "Savage Swipe", "type": "chance", "base_chance": 14, "chance_scaling": 0.1, "effect": "bonus_damage", "base_damage": 10, "damage_scaling": 0.18, "description": "Chance for bonus damage"},
 		"threshold": {"name": "Rapid Recovery", "hp_percent": 30, "effect": "heal", "base": 12, "scaling": 0.25, "description": "Major heal when low HP"}
 	},
@@ -781,7 +781,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Incorporeal", "hp_percent": 30, "effect": "dodge_buff", "base": 25, "scaling": 0.3, "duration": 2, "description": "High dodge chance when low HP"}
 	},
 	"Wyvern": {
-		"passive": {"name": "Aerial Agility", "effect": "attack", "base": 5, "scaling": 0.08, "effect2": "speed", "base2": 2, "scaling2": 0.04, "description": "Adds attack and speed"},
+		"passive": {"name": "Aerial Agility", "effect": "attack", "base": 5, "scaling": 0.08, "effect2": "speed", "base2": 2, "scaling2": 0.04, "effect3": "gathering_hint", "base3": 8, "scaling3": 0.08, "description": "Adds attack, speed, +gathering hints"},
 		"active": {"name": "Diving Strike", "type": "chance", "base_chance": 16, "chance_scaling": 0.14, "effect": "crit", "crit_mult": 1.7, "description": "Chance to critically strike"},
 		"threshold": {"name": "Poison Tail", "hp_percent": 35, "effect": "poison", "base_damage": 8, "damage_scaling": 0.15, "duration": 3, "description": "Poisons enemy when low HP"}
 	},
@@ -1893,6 +1893,136 @@ func get_logging_reactions_required(wood_tier: int) -> int:
 	else:
 		return 3
 
+# ===== FORAGING SYSTEM =====
+# Foraging catches for herb/flower/mushroom/bush/reed nodes
+# Keyed by tier (1-6), same as mining/logging
+
+const FORAGING_CATCHES = {
+	1: [  # T1: 0-200 distance
+		{"weight": 30, "item": "clover", "name": "Clover", "type": "herb", "value": 5},
+		{"weight": 25, "item": "wild_berries", "name": "Wild Berries", "type": "plant", "value": 4},
+		{"weight": 20, "item": "common_mushroom", "name": "Common Mushroom", "type": "fungus", "value": 6},
+		{"weight": 15, "item": "reed_fiber", "name": "Reed Fiber", "type": "plant", "value": 3},
+		{"weight": 8, "item": "healing_herb", "name": "Healing Herb", "type": "herb", "value": 10},
+		{"weight": 2, "item": "four_leaf_clover", "name": "Four-Leaf Clover", "type": "herb", "value": 50}
+	],
+	2: [  # T2: 150-400 distance
+		{"weight": 30, "item": "sage", "name": "Sage", "type": "herb", "value": 12},
+		{"weight": 20, "item": "clover", "name": "Clover", "type": "herb", "value": 5},
+		{"weight": 18, "item": "thornberry", "name": "Thornberry", "type": "plant", "value": 15},
+		{"weight": 12, "item": "cave_mushroom", "name": "Cave Mushroom", "type": "fungus", "value": 18},
+		{"weight": 10, "item": "mana_blossom", "name": "Mana Blossom", "type": "herb", "value": 20},
+		{"weight": 7, "item": "vigor_root", "name": "Vigor Root", "type": "herb", "value": 25},
+		{"weight": 3, "item": "enchanted_pollen", "name": "Enchanted Pollen", "type": "enchant", "value": 40}
+	],
+	3: [  # T3: 300-700 distance
+		{"weight": 30, "item": "moonpetal", "name": "Moonpetal", "type": "herb", "value": 30},
+		{"weight": 20, "item": "sage", "name": "Sage", "type": "herb", "value": 12},
+		{"weight": 15, "item": "glowing_mushroom", "name": "Glowing Mushroom", "type": "fungus", "value": 35},
+		{"weight": 12, "item": "shadowleaf", "name": "Shadowleaf", "type": "herb", "value": 40},
+		{"weight": 10, "item": "crystal_flower", "name": "Crystal Flower", "type": "plant", "value": 45},
+		{"weight": 8, "item": "arcane_moss", "name": "Arcane Moss", "type": "enchant", "value": 50},
+		{"weight": 5, "item": "phoenix_petal", "name": "Phoenix Petal", "type": "essence", "value": 60}
+	],
+	4: [  # T4: 500-1000 distance
+		{"weight": 30, "item": "bloodroot", "name": "Bloodroot", "type": "herb", "value": 60},
+		{"weight": 20, "item": "moonpetal", "name": "Moonpetal", "type": "herb", "value": 30},
+		{"weight": 15, "item": "nightmare_cap", "name": "Nightmare Cap", "type": "fungus", "value": 70},
+		{"weight": 12, "item": "spirit_blossom", "name": "Spirit Blossom", "type": "herb", "value": 80},
+		{"weight": 10, "item": "soul_shard", "name": "Soul Shard", "type": "enchant", "value": 80},
+		{"weight": 8, "item": "dragon_blood", "name": "Dragon Blood", "type": "essence", "value": 100},
+		{"weight": 5, "item": "heartwood_seed", "name": "Heartwood Seed", "type": "plant", "value": 120}
+	],
+	5: [  # T5: 800-1400 distance
+		{"weight": 30, "item": "starbloom", "name": "Starbloom", "type": "herb", "value": 120},
+		{"weight": 20, "item": "bloodroot", "name": "Bloodroot", "type": "herb", "value": 60},
+		{"weight": 15, "item": "void_spore", "name": "Void Spore", "type": "fungus", "value": 150},
+		{"weight": 12, "item": "void_essence", "name": "Void Essence", "type": "enchant", "value": 150},
+		{"weight": 10, "item": "essence_of_life", "name": "Essence of Life", "type": "essence", "value": 200},
+		{"weight": 8, "item": "celestial_petal", "name": "Celestial Petal", "type": "herb", "value": 250},
+		{"weight": 5, "item": "worldtree_seed", "name": "Worldtree Seed", "type": "plant", "value": 300}
+	],
+	6: [  # T6: 1200-2000 distance
+		{"weight": 30, "item": "voidpetal", "name": "Voidpetal", "type": "herb", "value": 250},
+		{"weight": 20, "item": "starbloom", "name": "Starbloom", "type": "herb", "value": 120},
+		{"weight": 15, "item": "primordial_fungus", "name": "Primordial Fungus", "type": "fungus", "value": 300},
+		{"weight": 12, "item": "primordial_spark", "name": "Primordial Spark", "type": "enchant", "value": 400},
+		{"weight": 10, "item": "essence_of_life", "name": "Divine Essence", "type": "essence", "value": 500},
+		{"weight": 8, "item": "void_blossom", "name": "Void Blossom", "type": "herb", "value": 600},
+		{"weight": 5, "item": "creation_seed", "name": "Creation Seed", "type": "plant", "value": 800}
+	]
+}
+
+# New tier material name mappings (used by redesigned crafting system)
+const MATERIAL_NAMES = {
+	"stone": ["Rough Stone", "Cut Stone", "Granite", "Marble", "Obsidian", "Crystal"],
+	"ore_vein": ["Copper Ore", "Iron Ore", "Steel Ore", "Gold Ore", "Mithril Ore", "Orichalcum"],
+	"tree": ["Pine", "Oak", "Maple", "Ebony", "Ironwood", "Darkwood"],
+	"herb": ["Clover", "Sage", "Moonpetal", "Bloodroot", "Starbloom", "Voidpetal"],
+	"water": ["Minnow", "Trout", "Pike", "Swordfish", "Leviathan", "Abyssal Eel"],
+}
+
+static func roll_foraging_catch(forage_tier: int, foraging_skill: int) -> Dictionary:
+	"""Roll a random catch from the foraging table for the given tier."""
+	var tier = clampi(forage_tier, 1, 6)
+	if not FORAGING_CATCHES.has(tier):
+		tier = 1
+
+	var catches = FORAGING_CATCHES[tier]
+	var total_weight = 0
+	for c in catches:
+		total_weight += c.weight
+
+	# Skill bonus: +0.5% increased rare item weight per skill level
+	var skill_bonus = foraging_skill * 0.005
+	var roll = randf() * total_weight
+
+	# Walk through catches
+	var cumulative = 0.0
+	for i in range(catches.size()):
+		var c = catches[i]
+		var adjusted_weight = c.weight
+		# Boost rare items (last 30% of list)
+		if i >= catches.size() * 0.7:
+			adjusted_weight *= (1.0 + skill_bonus)
+		cumulative += adjusted_weight
+		if roll <= cumulative:
+			return {
+				"item_id": c.item,
+				"name": c.name,
+				"type": c.type,
+				"value": c.value,
+				"xp": 10 + forage_tier * 5
+			}
+
+	var fallback = catches[0]
+	return {
+		"item_id": fallback.item,
+		"name": fallback.name,
+		"type": fallback.type,
+		"value": fallback.value,
+		"xp": 10 + forage_tier * 5
+	}
+
+static func get_foraging_wait_time(foraging_skill: int) -> float:
+	"""Get the foraging wait time in seconds. Decreases with skill."""
+	var base_time = 4.0
+	var reduction = min(2.5, foraging_skill * 0.03)
+	return base_time - reduction
+
+static func get_foraging_reaction_window(foraging_skill: int) -> float:
+	"""Get the reaction window for foraging in seconds."""
+	return 2.0 + min(1.5, foraging_skill * 0.02)
+
+static func get_foraging_reactions_required(forage_tier: int) -> int:
+	"""Get number of successful reactions required for this tier."""
+	if forage_tier <= 2:
+		return 1
+	elif forage_tier <= 4:
+		return 2
+	else:
+		return 3
+
 # ===== CRAFTING MATERIAL DROPS =====
 # Materials drop from monsters based on their tier
 
@@ -2034,6 +2164,161 @@ const RARITY_COLORS = {
 	"legendary": "#FF8000",
 	"artifact": "#E6CC80"
 }
+
+# ===== GATHERING TOOLS SYSTEM =====
+# Tool subtypes mapped to gathering job types
+const TOOL_SUBTYPES = {
+	"pickaxe": {"job": "mining", "names": ["Crude Pickaxe", "Iron Pickaxe", "Steel Pickaxe", "Mithril Pickaxe", "Adamant Pickaxe"]},
+	"axe": {"job": "logging", "names": ["Worn Hatchet", "Iron Axe", "Steel Axe", "Mithril Axe", "Adamant Axe"]},
+	"sickle": {"job": "foraging", "names": ["Rusty Sickle", "Iron Sickle", "Steel Sickle", "Mithril Sickle", "Adamant Sickle"]},
+	"rod": {"job": "fishing", "names": ["Wooden Rod", "Bamboo Rod", "Carbon Rod", "Mithril Rod", "Adamant Rod"]},
+}
+
+const TOOL_DURABILITY_BY_TIER = {1: 10, 2: 25, 3: 50, 4: 75, 5: 100}
+
+static func generate_tool(subtype: String, tier: int) -> Dictionary:
+	"""Generate a gathering tool item."""
+	tier = clampi(tier, 1, 5)
+	var info = TOOL_SUBTYPES.get(subtype, {})
+	if info.is_empty():
+		return {}
+	var names = info.get("names", [])
+	var name = names[tier - 1] if tier - 1 < names.size() else "Tool"
+	var durability = TOOL_DURABILITY_BY_TIER.get(tier, 10)
+	return {
+		"id": randi(),
+		"name": name,
+		"type": "tool",
+		"subtype": subtype,
+		"tier": tier,
+		"durability": durability,
+		"max_durability": durability,
+		"rarity": "common",
+		"tool_bonuses": {"reveal": true, "save": true},
+		"value": tier * 25,
+	}
+
+static func generate_starter_tools() -> Array:
+	"""Generate a set of T1 starter tools for a new character."""
+	return [
+		generate_tool("pickaxe", 1),
+		generate_tool("axe", 1),
+		generate_tool("sickle", 1),
+		generate_tool("rod", 1),
+	]
+
+static func roll_tool_drop(monster_tier: int) -> Dictionary:
+	"""Roll a random tool drop from a monster. Returns empty if no drop."""
+	# 1.5% base chance for tool drop
+	if randf() > 0.015:
+		return {}
+	var subtypes = TOOL_SUBTYPES.keys()
+	var subtype = subtypes[randi() % subtypes.size()]
+	# Tool tier based on monster tier: T1-2=T1, T3-4=T2, T5-6=T3, T7-8=T4, T9=T5
+	var tool_tier = clampi(ceili(float(monster_tier) / 2.0), 1, 5)
+	return generate_tool(subtype, tool_tier)
+
+# ===== MONSTER PARTS SYSTEM =====
+# Template-based part generation: body_type → [common_suffix, uncommon_suffix, rare_suffix]
+const MONSTER_PART_TEMPLATES = {
+	"beast": ["Hide", "Fang", "Heart"],
+	"humanoid": ["Ear", "Tooth", "Charm"],
+	"undead": ["Bone", "Dust", "Soul Shard"],
+	"dragon": ["Scale", "Claw", "Heart"],
+	"demon": ["Horn", "Hide", "Ember"],
+	"elemental": ["Essence", "Core", "Spark"],
+	"construct": ["Plate", "Gear", "Core"],
+	"aberration": ["Tentacle", "Eye", "Ichor"],
+	"aquatic": ["Fin", "Scale", "Pearl"],
+	"insectoid": ["Chitin", "Mandible", "Venom Sac"],
+}
+
+# Map every monster to a body_type
+const MONSTER_BODY_TYPES = {
+	# Tier 1
+	"Goblin": "humanoid", "Giant Rat": "beast", "Kobold": "humanoid",
+	"Skeleton": "undead", "Wolf": "beast",
+	# Tier 2
+	"Orc": "humanoid", "Hobgoblin": "humanoid", "Gnoll": "humanoid",
+	"Zombie": "undead", "Giant Spider": "insectoid", "Wight": "undead",
+	"Siren": "aberration", "Kelpie": "aquatic", "Mimic": "construct",
+	# Tier 3
+	"Ogre": "humanoid", "Troll": "humanoid", "Wraith": "undead",
+	"Wyvern": "dragon", "Minotaur": "beast", "Gargoyle": "construct",
+	"Harpy": "beast", "Shrieker": "aberration",
+	# Tier 4
+	"Giant": "humanoid", "Dragon Wyrmling": "dragon", "Demon": "demon",
+	"Vampire": "undead", "Gryphon": "beast", "Chimaera": "beast",
+	"Succubus": "demon",
+	# Tier 5
+	"Ancient Dragon": "dragon", "Demon Lord": "demon", "Lich": "undead",
+	"Titan": "humanoid", "Balrog": "demon", "Cerberus": "beast",
+	"Jabberwock": "aberration",
+	# Tier 6
+	"Elemental": "elemental", "Iron Golem": "construct", "Sphinx": "beast",
+	"Hydra": "dragon", "Phoenix": "elemental", "Nazgul": "undead",
+	# Tier 7
+	"Void Walker": "aberration", "World Serpent": "dragon",
+	"Elder Lich": "undead", "Primordial Dragon": "dragon",
+	# Tier 8
+	"Cosmic Horror": "aberration", "Time Weaver": "elemental",
+	"Death Incarnate": "undead",
+	# Tier 9
+	"Avatar of Chaos": "demon", "The Nameless One": "aberration",
+	"God Slayer": "elemental", "Entropy": "elemental",
+}
+
+func get_monster_parts(monster_name: String) -> Array:
+	"""Get possible part drops for a monster. Returns [{id, name, weight, type, tier}]."""
+	var body = MONSTER_BODY_TYPES.get(monster_name, "beast")
+	var parts = MONSTER_PART_TEMPLATES.get(body, ["Fragment", "Shard", "Core"])
+	var tier = _get_monster_tier(monster_name)
+	var base_name = monster_name.to_lower().replace(" ", "_")
+	var result = []
+	var weights = [60, 30, 10]  # common, uncommon, rare
+	for i in range(parts.size()):
+		result.append({
+			"id": base_name + "_" + parts[i].to_lower().replace(" ", "_"),
+			"name": monster_name + " " + parts[i],
+			"weight": weights[i],
+			"type": "monster_part",
+			"tier": tier
+		})
+	return result
+
+func _get_monster_tier(monster_name: String) -> int:
+	"""Get tier for a monster based on COMPANION_DATA."""
+	if COMPANION_DATA.has(monster_name):
+		return COMPANION_DATA[monster_name].get("tier", 1)
+	return 1
+
+func roll_monster_part_drop(monster_name: String, monster_tier: int, soldier_level: int = 0) -> Dictionary:
+	"""Roll for a monster part drop after combat. Returns {} if no drop."""
+	var drop_chance = 40 + monster_tier * 5  # 45% T1 to 85% T9
+	if randi() % 100 >= drop_chance:
+		return {}
+	var parts = get_monster_parts(monster_name)
+	if parts.is_empty():
+		return {}
+	# Weighted roll
+	var total_weight = 0
+	for p in parts:
+		total_weight += p["weight"]
+	var roll = randi() % total_weight
+	var cumulative = 0
+	for p in parts:
+		cumulative += p["weight"]
+		if roll < cumulative:
+			var qty = 1
+			# Soldier bonus
+			if soldier_level >= 80:
+				qty += 3
+			elif soldier_level >= 50:
+				qty += 2
+			elif soldier_level >= 20:
+				qty += 1
+			return {"id": p["id"], "name": p["name"], "qty": qty, "type": "monster_part", "tier": p["tier"]}
+	return {}
 
 func _ready():
 	print("Drop Tables initialized")

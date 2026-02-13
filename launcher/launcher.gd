@@ -1,11 +1,11 @@
 # launcher.gd
-# Auto-updating launcher for Phantasia Revival
+# Auto-updating launcher for Phantom Badlands
 extends Control
 
 # CONFIGURE THESE FOR YOUR GITHUB REPO
 const GITHUB_OWNER = "Dextobust33"
-const GITHUB_REPO = "Phantasia-Revival"
-const GAME_EXECUTABLE = "PhantasiaClient.exe"
+const GITHUB_REPO = "Phantom-Badlands"
+const GAME_EXECUTABLE = "PhantomBadlandsClient.exe"
 
 @onready var status_label = $VBox/StatusLabel
 @onready var progress_bar = $VBox/ProgressBar
@@ -56,7 +56,7 @@ func _check_for_updates():
 	http_request.request_completed.connect(_on_version_check_completed)
 
 	var url = "https://api.github.com/repos/%s/%s/releases/latest" % [GITHUB_OWNER, GITHUB_REPO]
-	var headers = ["User-Agent: PhantasiaLauncher/1.0"]
+	var headers = ["User-Agent: PhantomBadlandsLauncher/1.0"]
 
 	var error = http_request.request(url, headers)
 	if error != OK:
@@ -113,7 +113,7 @@ func _start_download():
 	add_child(download_request)
 	download_request.request_completed.connect(_on_download_completed)
 
-	var headers = ["User-Agent: PhantasiaLauncher/1.0"]
+	var headers = ["User-Agent: PhantomBadlandsLauncher/1.0"]
 	var error = download_request.request(download_url, headers)
 	if error != OK:
 		status_label.text = "Failed to start download"
@@ -193,7 +193,7 @@ func _enable_play_if_installed():
 	if play_button.disabled:
 		play_button.text = "Game Not Found"
 	else:
-		play_button.text = "Play Phantasia Revival"
+		play_button.text = "Play Phantom Badlands"
 
 func _on_play_pressed():
 	var exe_path = game_path.path_join(GAME_EXECUTABLE)

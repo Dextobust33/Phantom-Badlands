@@ -753,7 +753,7 @@ theme_override_constants/separation = 12
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 0, 1)
 theme_override_font_sizes/font_size = 24
-text = "Phantasia Revival"
+text = "Phantom Badlands"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="LoginPanel/VBox" unique_id=2140432393]

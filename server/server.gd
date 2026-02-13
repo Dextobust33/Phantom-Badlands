@@ -28,6 +28,8 @@ const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd
 const TitlesScript = preload("res://shared/titles.gd")
 const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
+const NpcPostDatabaseScript = preload("res://shared/npc_post_database.gd")
+const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 
 var server = TCPServer.new()
 var peers = {}
@@ -77,6 +79,11 @@ var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_
 
 # Bounty system tracking
 var active_bounties: Dictionary = {}  # quest_id -> {x, y, monster_type, level, name, peer_id}
+# Gathering session tracking (3-choice until-fail)
+var active_gathering: Dictionary = {}  # peer_id -> {job_type, node_type, tier, chain_count, chain_materials, correct_id, options, risky_available}
+var gathering_cooldown: Dictionary = {}  # peer_id -> true — prevents encounter on first move after gathering
+# Soldier harvest session tracking (post-combat 3-choice)
+var active_harvests: Dictionary = {}  # peer_id -> {monster_name, monster_tier, round, max_rounds, parts_gained}
 # Rescue system tracking
 var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
 var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
@@ -98,6 +105,7 @@ var combat_command_cooldown: Dictionary = {}
 var monster_db: MonsterDatabase
 var combat_mgr: CombatManager
 var world_system: WorldSystem
+var chunk_manager: Node  # ChunkManager
 var persistence: Node
 var drop_tables: Node
 var quest_db: Node
@@ -152,16 +160,44 @@ func _ready():
 				print("Using custom port from command line: %d" % PORT)
 
 	print("========================================")
-	print("Phantasia Revival Server Starting...")
+	print("Phantom Badlands Server Starting...")
 	print("========================================")
 
 	# Initialize persistence system
 	persistence = PersistenceManagerScript.new()
 	add_child(persistence)
 
-	# Initialize world system
+	# Initialize chunk-based world system
+	chunk_manager = ChunkManagerScript.new()
+	add_child(chunk_manager)
+	chunk_manager.load_world_seed()
+
 	world_system = WorldSystem.new()
 	add_child(world_system)
+
+	# Connect chunk manager to world system (bidirectional)
+	world_system.chunk_manager = chunk_manager
+	chunk_manager.terrain_generator = world_system
+
+	# Load or generate NPC posts
+	var npc_posts = chunk_manager.load_npc_posts()
+	if npc_posts.is_empty():
+		log_message("Generating NPC posts from world seed...")
+		npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
+		chunk_manager.save_npc_posts(npc_posts)
+		log_message("Generated %d NPC posts" % npc_posts.size())
+	else:
+		log_message("Loaded %d NPC posts" % npc_posts.size())
+	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
+	for post in npc_posts:
+		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+	chunk_manager.save_dirty_chunks()
+
+	# Load persistent depleted nodes
+	chunk_manager.load_depleted_nodes()
+
+	# Initialize geological event timer
+	chunk_manager.initialize_geo_timer()
 
 	# Initialize combat systems
 	monster_db = MonsterDatabase.new()
@@ -263,6 +299,26 @@ func _send_broadcast(message: String):
 
 	for peer_id in peers.keys():
 		send_to_peer(peer_id, broadcast_msg)
+
+func _broadcast_geological_event(event: Dictionary):
+	"""Broadcast a geological event to nearby players."""
+	var msg = event.get("message", "")
+	var event_x = event.get("x", 0)
+	var event_y = event.get("y", 0)
+	var radius = event.get("radius", 64)
+	var announce_radius = radius * 3  # Announce to players within 3x the event radius
+
+	log_message("[GEO EVENT] %s" % msg)
+
+	for peer_id in characters:
+		var character = characters[peer_id]
+		var dx = character.x - event_x
+		var dy = character.y - event_y
+		var dist = sqrt(dx * dx + dy * dy)
+		if dist <= announce_radius:
+			send_to_peer(peer_id, {"type": "text", "message": msg})
+			# Refresh their map to show the regenerated nodes
+			send_location_update(peer_id)
 
 func _on_pending_update_pressed():
 	"""Start the 5-minute shutdown countdown."""
@@ -533,8 +589,20 @@ func _process(delta):
 		dungeon_spawn_timer = 0.0
 		_check_dungeon_spawns()
 
-	# Process gathering node respawns
-	process_node_respawns(delta)
+	# Process gathering node respawns and chunk manager ticks
+	if chunk_manager:
+		chunk_manager.process_node_respawns(delta)
+
+		# Geological events (resource respawning in depleted areas)
+		var geo_events = chunk_manager.process_geological_events(delta)
+		for event in geo_events:
+			_broadcast_geological_event(event)
+
+		# Periodic chunk save (piggyback on auto-save)
+		if auto_save_timer < 0.1:  # Just after auto-save reset
+			chunk_manager.save_dirty_chunks()
+	else:
+		process_node_respawns(delta)
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -581,7 +649,7 @@ func _process(delta):
 		# Send welcome message
 		send_to_peer(peer_id, {
 			"type": "welcome",
-			"message": "Welcome to Phantasia Revival!",
+			"message": "Welcome to Phantom Badlands!",
 			"server_version": "0.1.0"
 		})
 
@@ -790,21 +858,28 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_toggle_egg_freeze(peer_id, message)
 		"debug_hatch":
 			handle_debug_hatch(peer_id)
-		# Fishing system handlers
-		"fish_start":
-			handle_fish_start(peer_id)
-		"fish_catch":
-			handle_fish_catch(peer_id, message)
-		# Mining system handlers
-		"mine_start":
-			handle_mine_start(peer_id)
-		"mine_catch":
-			handle_mine_catch(peer_id, message)
-		# Logging system handlers
-		"log_start":
-			handle_log_start(peer_id)
-		"log_catch":
-			handle_log_catch(peer_id, message)
+		# Unified gathering system handlers
+		"gathering_start":
+			handle_gathering_start(peer_id, message)
+		"gathering_choice":
+			handle_gathering_choice(peer_id, message)
+		"gathering_end":
+			handle_gathering_end(peer_id, message)
+		# Soldier harvest handlers
+		"harvest_start":
+			handle_harvest_start(peer_id)
+		"harvest_choice":
+			handle_harvest_choice(peer_id, message)
+		# Tool equip/unequip
+		"equip_tool":
+			handle_equip_tool(peer_id, message)
+		"unequip_tool":
+			handle_unequip_tool(peer_id, message)
+		# Job system handlers
+		"job_info":
+			handle_job_info(peer_id)
+		"job_commit":
+			handle_job_commit(peer_id, message)
 		# Crafting system handlers
 		"craft_list":
 			handle_craft_list(peer_id, message)
@@ -946,6 +1021,14 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_giveconsumable(peer_id, message)
 		"gm_spawnwish":
 			handle_gm_spawnwish(peer_id)
+		"gm_fullwipe":
+			handle_gm_fullwipe(peer_id, message)
+		"gm_mapwipe":
+			handle_gm_mapwipe(peer_id, message)
+		"gm_setjob":
+			handle_gm_setjob(peer_id, message)
+		"gm_givetool":
+			handle_gm_givetool(peer_id, message)
 		_:
 			pass
 
@@ -1283,6 +1366,15 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	var character = Character.new()
 	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
+
+	# Give starter gathering tools — equip directly to tool slots
+	var starter_tools = DropTables.generate_starter_tools()
+	for tool in starter_tools:
+		var st = tool.get("subtype", "")
+		if character.equipped_tools.has(st) and character.equipped_tools[st].is_empty():
+			character.equipped_tools[st] = tool
+		else:
+			character.add_item(tool)
 
 	# Apply house bonuses from Sanctuary upgrades
 	var house_bonuses = _get_house_bonuses_for_character(account_id)
@@ -1726,6 +1818,18 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Calculate new position
 	var new_pos = world_system.move_player(old_x, old_y, direction)
 
+	# If blocked and not resting (direction 5), check if the blocked tile is a gathering node
+	if new_pos.x == old_x and new_pos.y == old_y and direction != 5:
+		var target_pos = world_system.get_direction_offset(old_x, old_y, direction)
+		if target_pos.x != old_x or target_pos.y != old_y:
+			var bump_node = get_gathering_node_at(target_pos.x, target_pos.y)
+			if not bump_node.is_empty():
+				# Bump-to-gather: start gathering at the adjacent node
+				bump_node["node_x"] = target_pos.x
+				bump_node["node_y"] = target_pos.y
+				_start_bump_gathering(peer_id, character, bump_node)
+				return
+
 	# Check for player collision (can't move onto another player's space)
 	if is_player_at(new_pos.x, new_pos.y, peer_id):
 		send_to_peer(peer_id, {
@@ -1911,6 +2015,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	if _check_bounty_at_location(peer_id, new_pos.x, new_pos.y):
 		return  # Bounty combat started
 
+	# Skip encounter check if just finished gathering (one-move cooldown)
+	if gathering_cooldown.has(peer_id):
+		gathering_cooldown.erase(peer_id)
+		return
+
 	# Check for merchant first (merchants can still be encountered while cloaked)
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
 		trigger_merchant_encounter(peer_id)
@@ -1921,6 +2030,11 @@ func handle_move(peer_id: int, message: Dictionary):
 func handle_hunt(peer_id: int):
 	"""Handle hunt action - actively search for monsters with increased encounter chance"""
 	if not characters.has(peer_id):
+		return
+
+	# Skip if just finished gathering (prevents post-gathering encounter)
+	if gathering_cooldown.has(peer_id):
+		gathering_cooldown.erase(peer_id)
 		return
 
 	var character = characters[peer_id]
@@ -2010,9 +2124,7 @@ func handle_hunt(peer_id: int):
 	# to prevent double-checking (was causing excessive encounters)
 
 	# Check if in safe zone (can't hunt there)
-	var terrain = world_system.get_terrain_at(character.x, character.y)
-	var terrain_info = world_system.get_terrain_info(terrain)
-	if terrain_info.safe:
+	if world_system.is_safe_zone(character.x, character.y):
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#808080]This is a safe area. No monsters can be found here.[/color]",
@@ -2045,6 +2157,12 @@ func handle_rest(peer_id: int):
 	if not characters.has(peer_id):
 		return
 
+	# Skip ambush if just finished gathering (prevents post-gathering encounter)
+	var _gathering_immune = false
+	if gathering_cooldown.has(peer_id):
+		gathering_cooldown.erase(peer_id)
+		_gathering_immune = true
+
 	# Can't rest in combat
 	if combat_mgr.is_in_combat(peer_id):
 		send_to_peer(peer_id, {
@@ -2073,7 +2191,7 @@ func handle_rest(peer_id: int):
 
 	# Mages use Meditate instead of Rest
 	if is_mage:
-		_handle_meditate(peer_id, character, cloak_was_dropped)
+		_handle_meditate(peer_id, character, cloak_was_dropped, _gathering_immune)
 		return
 
 	# Regenerate primary resource on rest (same as movement - 2%, min 1)
@@ -2167,14 +2285,15 @@ func handle_rest(peer_id: int):
 	# Re-send character update after ticking effects
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
-	# Chance to be ambushed while resting (15%)
-	var ambush_roll = randi() % 100
-	if ambush_roll < 15:
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]You are ambushed while resting![/color]"
-		})
-		trigger_encounter(peer_id)
+	# Chance to be ambushed while resting (15%) — not in safe zones
+	if not _gathering_immune and not world_system.is_safe_zone(character.x, character.y):
+		var ambush_roll = randi() % 100
+		if ambush_roll < 15:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF4444]You are ambushed while resting![/color]"
+			})
+			trigger_encounter(peer_id)
 
 func _get_early_game_regen_multiplier(level: int) -> float:
 	"""Returns a multiplier for resource regen that's higher at low levels.
@@ -2185,7 +2304,7 @@ func _get_early_game_regen_multiplier(level: int) -> float:
 	var t = float(level - 1) / 24.0  # 0.0 at level 1, 1.0 at level 25
 	return 2.0 - t  # 2.0 at level 1, 1.0 at level 25
 
-func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false):
+func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false, gathering_immune: bool = false):
 	"""Handle Meditate action for mages - restores HP and mana, always works"""
 	var at_full_hp = character.current_hp >= character.get_total_max_hp()
 
@@ -2294,14 +2413,15 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	# Re-send character update after ticking effects
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
-	# Chance to be ambushed while meditating (15%)
-	var ambush_roll = randi() % 100
-	if ambush_roll < 15:
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]Your meditation is interrupted by an ambush![/color]"
-		})
-		trigger_encounter(peer_id)
+	# Chance to be ambushed while meditating (15%) — not in safe zones
+	if not gathering_immune and not world_system.is_safe_zone(character.x, character.y):
+		var ambush_roll = randi() % 100
+		if ambush_roll < 15:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF4444]Your meditation is interrupted by an ambush![/color]"
+			})
+			trigger_encounter(peer_id)
 
 func handle_combat_command(peer_id: int, message: Dictionary):
 	"""Handle combat commands from player"""
@@ -2559,6 +2679,33 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"rarity": "uncommon"
 					})
 
+				# Roll for monster part drop
+				var soldier_level = characters[peer_id].job_levels.get("soldier", 0)
+				var part_drop = drop_tables.roll_monster_part_drop(killed_monster_name, _get_monster_tier(killed_monster_level), soldier_level)
+				if not part_drop.is_empty():
+					all_drops.append({
+						"type": "monster_part",
+						"material_id": part_drop["id"],
+						"material_name": part_drop["name"],
+						"quantity": part_drop["qty"],
+						"rarity": "common"
+					})
+
+				# Roll for tool drop
+				var tool_drop = drop_tables.roll_tool_drop(_get_monster_tier(killed_monster_level))
+				if not tool_drop.is_empty():
+					all_drops.append(tool_drop)
+
+				# Set pending harvest data — available to all players
+				# Base 20% chance, scales up with soldier level (max ~70% at Lv100)
+				var _soldier_lvl = characters[peer_id].job_levels.get("soldier", 1)
+				var _harvest_chance = 0.20 + (_soldier_lvl * 0.005)  # 20% base + 0.5% per level
+				if randf() < _harvest_chance:
+					characters[peer_id].set_meta("pending_harvest", {
+						"monster_name": killed_monster_name,
+						"monster_tier": _get_monster_tier(killed_monster_level)
+					})
+
 				# Give all drops to player now
 				var drop_messages = []
 				var drop_data = []  # For client sound effects
@@ -2585,6 +2732,15 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						var qty_text = " x%d" % quantity if quantity > 1 else ""
 						drop_messages.append("[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text])
 						drop_data.append({"rarity": "uncommon", "level": 1, "level_diff": 0, "is_material": true})
+					# Monster part drops go into Material Pouch
+					elif item.get("type", "") == "monster_part":
+						var mp_id = item.get("material_id", "")
+						var mp_name = item.get("material_name", mp_id)
+						var mp_qty = item.get("quantity", 1)
+						characters[peer_id].add_crafting_material(mp_id, mp_qty)
+						var mp_qty_text = " x%d" % mp_qty if mp_qty > 1 else ""
+						drop_messages.append("[color=#FF6600]◆ PART: %s%s[/color]" % [mp_name, mp_qty_text])
+						drop_data.append({"rarity": "common", "level": 1, "level_diff": 0, "is_material": true})
 					elif characters[peer_id].can_add_item() or _try_auto_salvage(peer_id):
 						# Check if this item should be immediately auto-salvaged on obtain
 						if _should_auto_salvage_item(peer_id, item):
@@ -2609,6 +2765,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					else:
 						# Inventory full - item lost!
 						drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
+
+				# Check if harvest is available for Soldier
+				var _harvest_avail = characters[peer_id].has_meta("pending_harvest") and not characters[peer_id].get_meta("pending_harvest", {}).is_empty()
 
 				# Check if wish granter gave pending wish choice (from result, not combat state)
 				var wish_pending = result.get("wish_pending", false)
@@ -2636,9 +2795,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"type": "combat_end",
 						"victory": true,
 						"character": characters[peer_id].to_dict(),
-						"flock_drops": drop_messages,  # Send all drop messages at once
-						"total_gems": total_gems,       # Total gems earned for sound
-						"drop_data": drop_data          # Item data for sound effects
+						"flock_drops": drop_messages,
+						"total_gems": total_gems,
+						"drop_data": drop_data,
+						"harvest_available": _harvest_avail
 					})
 
 				# Check for Elder auto-grant (level 1000)
@@ -3053,6 +3213,14 @@ func _find_flee_destination(peer_id: int):
 		if not occupied.has(new_pos):
 			# Check world bounds (-1000 to 1000)
 			if new_pos.x >= -1000 and new_pos.x <= 1000 and new_pos.y >= -1000 and new_pos.y <= 1000:
+				# Check if tile blocks movement (walls, deep water, etc.)
+				if chunk_manager:
+					var tile = chunk_manager.get_tile(new_pos.x, new_pos.y)
+					if tile.get("blocks_move", false):
+						# Allow fleeing through depleted gathering nodes
+						var tile_type = tile.get("type", "")
+						if not (tile_type in world_system.GATHERABLE_TYPES and chunk_manager.is_node_depleted(new_pos.x, new_pos.y)):
+							continue  # Tile is impassable, try next direction
 				return {"x": new_pos.x, "y": new_pos.y}
 
 	return null  # No valid flee destination (very rare)
@@ -3295,8 +3463,9 @@ func send_location_update(peer_id: int):
 
 	var character = characters[peer_id]
 
-	# Vision radius is reduced when blinded
-	var vision_radius = 2 if character.blind_active else 6
+	# Vision radius — expanded in new chunk system, reduced when blinded
+	var base_vision = WorldSystem.DEFAULT_VISION_RADIUS if chunk_manager else 6
+	var vision_radius = WorldSystem.BLIND_VISION_RADIUS if character.blind_active else base_vision
 
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
@@ -3305,7 +3474,7 @@ func send_location_update(peer_id: int):
 	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius)
 
 	# Get depleted node keys for map display (shows dim markers for depleted nodes)
-	var depleted_keys = depleted_nodes.keys()
+	var depleted_keys = chunk_manager.get_depleted_keys() if chunk_manager else depleted_nodes.keys()
 
 	# Get visible corpses for map display
 	var visible_corpses = persistence.get_visible_corpses(character.x, character.y, vision_radius)
@@ -3320,8 +3489,8 @@ func send_location_update(peer_id: int):
 	# Get complete map display (includes location info at top)
 	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs)
 
-	# Check for gathering node at this location
-	var gathering_node = get_gathering_node_at(character.x, character.y)
+	# Check for gathering node at this location OR adjacent tiles
+	var gathering_node = get_gathering_node_nearby(character.x, character.y)
 	var is_at_water = false
 	var water_type = ""
 	var is_at_ore = false
@@ -3330,16 +3499,21 @@ func send_location_update(peer_id: int):
 	var current_wood_tier = 1
 
 	if not gathering_node.is_empty():
-		match gathering_node.type:
-			"fishing":
+		var node_type = gathering_node.get("type", "")
+		var node_job = gathering_node.get("job", "")
+		match node_type:
+			"fishing", "water":
 				is_at_water = true
-				water_type = world_system.get_fishing_type(character.x, character.y)
-			"mining":
+				water_type = world_system.get_fishing_type(character.x, character.y) if world_system.has_method("get_fishing_type") else "shallow"
+			"mining", "stone", "ore_vein":
 				is_at_ore = true
-				current_ore_tier = gathering_node.tier
-			"logging":
+				current_ore_tier = gathering_node.get("tier", 1)
+			"logging", "tree", "dense_brush":
 				is_at_forest = true
-				current_wood_tier = gathering_node.tier
+				current_wood_tier = gathering_node.get("tier", 1)
+			_:
+				# New node types (herb, flower, mushroom, bush, reed) — handled by gathering_node dict
+				pass
 
 	# Check if player is at a dungeon entrance
 	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y, peer_id)
@@ -4006,6 +4180,10 @@ func check_tax_collector_encounter(peer_id: int) -> bool:
 
 	var character = characters[peer_id]
 
+	# No tax collector in safe zones (NPC posts, trading posts)
+	if world_system.is_safe_zone(character.x, character.y):
+		return false
+
 	# Check cooldown first - decrement and skip if still on cooldown
 	if tax_collector_cooldowns.has(peer_id):
 		tax_collector_cooldowns[peer_id] -= 1
@@ -4101,6 +4279,10 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 		return false
 
 	var character = characters[peer_id]
+
+	# No wandering merchants inside NPC posts
+	if world_system.is_safe_zone(character.x, character.y):
+		return false
 
 	# 3% encounter rate
 	if randf() >= 0.03:
@@ -4501,6 +4683,10 @@ func check_healer_encounter(peer_id: int) -> bool:
 		return false
 
 	var character = characters[peer_id]
+
+	# No wandering healers inside NPC posts
+	if world_system.is_safe_zone(character.x, character.y):
+		return false
 
 	# 12% encounter rate (tripled from 4%)
 	if randf() >= 0.12:
@@ -6103,10 +6289,12 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		var item_type = item.get("type", "")
 		var should_salvage = false
 
-		# Never salvage title items or locked items
+		# Never salvage title items, locked items, or tools
 		if item.get("is_title_item", false):
 			continue
 		if item.get("locked", false):
+			continue
+		if item_type == "tool":
 			continue
 
 		# Check if item is a consumable (use item flag first, then type check as fallback)
@@ -6204,10 +6392,12 @@ func _should_auto_salvage_item(peer_id: int, item: Dictionary) -> bool:
 	var character = characters[peer_id]
 	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity <= 0:
 		return false
-	# Don't auto-salvage consumables, locked items, or title items
+	# Don't auto-salvage consumables, locked items, title items, or tools
 	if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
 		return false
 	if item.get("locked", false) or item.get("is_title_item", false):
+		return false
+	if item.get("type", "") == "tool":
 		return false
 
 	var rarity = item.get("rarity", "common")
@@ -7958,8 +8148,15 @@ func trigger_trading_post_encounter(peer_id: int):
 	if tp.is_empty():
 		return
 
+	# Extract normalized fields
+	var tp_id = tp.get("id", "")
+	var tp_name = tp.get("name", "Trading Post")
+	var tp_center = tp.get("center", {"x": character.x, "y": character.y})
+	var tp_x = tp_center.get("x", character.x) if tp_center is Dictionary else character.x
+	var tp_y = tp_center.get("y", character.y) if tp_center is Dictionary else character.y
+
 	# Record discovery of this trading post
-	var newly_discovered = character.discover_trading_post(tp.name, tp.center.x, tp.center.y)
+	var newly_discovered = character.discover_trading_post(tp_name, tp_x, tp_y)
 	if newly_discovered:
 		save_character(peer_id)
 
@@ -7972,20 +8169,18 @@ func trigger_trading_post_encounter(peer_id: int):
 		active_quest_ids.append(q.quest_id)
 
 	var available_quests = quest_db.get_available_quests_for_player(
-		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
+		tp_id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
 	# Check for quests ready to turn in
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id)
-		if not quest.is_empty() and quest.trading_post == tp.id:
+		if not quest.is_empty() and quest.get("trading_post", "") == tp_id:
 			if quest_data.progress >= quest_data.target:
 				quests_to_turn_in.append(quest_data.quest_id)
 
 	# Calculate recharge cost to send to client
-	var is_starter_post = tp.id in STARTER_TRADING_POSTS
-	var tp_x = tp.center.x
-	var tp_y = tp.center.y
+	var is_starter_post = tp_id in STARTER_TRADING_POSTS
 	var recharge_cost: int
 	if is_starter_post:
 		recharge_cost = 20
@@ -7997,10 +8192,10 @@ func trigger_trading_post_encounter(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
-		"id": tp.id,
-		"name": tp.name,
-		"description": tp.description,
-		"quest_giver": tp.quest_giver,
+		"id": tp_id,
+		"name": tp_name,
+		"description": tp.get("description", ""),
+		"quest_giver": tp.get("quest_giver", ""),
 		"services": ["shop", "quests", "recharge"],
 		"available_quests": available_quests.size(),
 		"quests_to_turn_in": quests_to_turn_in.size(),
@@ -9718,7 +9913,774 @@ func handle_toggle_egg_freeze(peer_id: int, message: Dictionary):
 
 # ===== TITLE SYSTEM =====
 
-# ===== FISHING SYSTEM =====
+# ===== UNIFIED GATHERING SYSTEM (3-Choice Until-Fail) =====
+
+const GATHERING_NODE_TO_JOB = {
+	"water": "fishing", "fishing": "fishing",
+	"stone": "mining", "ore_vein": "mining", "mining": "mining",
+	"tree": "logging", "dense_brush": "logging", "logging": "logging",
+	"herb": "foraging", "flower": "foraging", "mushroom": "foraging",
+	"bush": "foraging", "reed": "foraging", "foraging": "foraging",
+}
+
+const GATHERING_OPTION_LABELS = {
+	"mining": [
+		["Strike the fault line", "Use the wedge tool", "Try the softer seam"],
+		["Chisel the vein", "Hammer the crack", "Pick the edge"],
+		["Drill deep", "Score the surface", "Pry the slab"],
+	],
+	"logging": [
+		["Cut from the north side", "Score the bark first", "Fell toward the clearing"],
+		["Use the crosscut", "Chop the knot", "Saw the base"],
+		["Split along the grain", "Notch the trunk", "Trim the branch"],
+	],
+	"foraging": [
+		["Pick from the base", "Trim the upper leaves", "Dig around the roots"],
+		["Check under the canopy", "Pull the stems", "Brush the soil"],
+		["Snip the bud", "Uproot gently", "Shake the stalk"],
+	],
+	"fishing": [
+		["Cast toward the ripple", "Try deeper water", "Switch to live bait"],
+		["Jig the line", "Float downstream", "Troll the shallows"],
+		["Set the hook fast", "Wait for the pull", "Use a different lure"],
+	],
+}
+
+func handle_gathering_start(peer_id: int, message: Dictionary):
+	"""Handle player starting a gathering session at a node."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You cannot gather while in combat![/color]"})
+		return
+
+	if active_gathering.has(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You are already gathering![/color]"})
+		return
+
+	var node_type = message.get("node_type", "")
+	var gathering_node = get_gathering_node_nearby(character.x, character.y)
+	if gathering_node.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No gathering node nearby![/color]"})
+		return
+
+	var job_type = GATHERING_NODE_TO_JOB.get(node_type, GATHERING_NODE_TO_JOB.get(gathering_node.get("type", ""), ""))
+	if job_type == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Unknown gathering type![/color]"})
+		return
+
+	var tier = gathering_node.get("tier", 1)
+	var job_level = character.job_levels.get(job_type, 1)
+	var hint_strength = minf(1.0, float(job_level) / 100.0)
+
+	# Apply companion gathering_hint bonus (additive percentage)
+	var companion_hint = character.get_companion_bonus("gathering_hint")
+	if companion_hint > 0:
+		hint_strength = minf(1.0, hint_strength + (companion_hint / 100.0))
+
+	# Check tool availability
+	var tool_subtype = _get_tool_subtype_for_job(job_type)
+	var tool = _find_tool_in_inventory(character, tool_subtype)
+	var has_tool = not tool.is_empty()
+
+	# Generate first round
+	var session = _generate_gathering_round(job_type, tier, hint_strength, 0)
+	session["job_type"] = job_type
+	session["node_type"] = gathering_node.get("type", node_type)
+	session["tier"] = tier
+	session["chain_count"] = 0
+	session["chain_materials"] = []
+	session["has_tool"] = has_tool
+	session["tool_reveal_used"] = false
+	session["tool_save_used"] = false
+	# Store actual node coordinates (may differ from player position for adjacent gathering)
+	session["node_x"] = gathering_node.get("node_x", character.x)
+	session["node_y"] = gathering_node.get("node_y", character.y)
+	active_gathering[peer_id] = session
+
+	send_to_peer(peer_id, {
+		"type": "gathering_round",
+		"options": session["client_options"],
+		"risky_available": session["risky_available"],
+		"hint_strength": hint_strength,
+		"chain_count": 0,
+		"job_type": job_type,
+		"node_type": session["node_type"],
+		"tier": tier,
+		"tool_available": has_tool,
+	})
+
+func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
+	"""Start gathering when player bumps into a blocking gathering node."""
+	if combat_mgr.is_in_combat(peer_id):
+		return
+	if active_gathering.has(peer_id):
+		return
+
+	var node_type = gathering_node.get("type", "")
+	var job_type = GATHERING_NODE_TO_JOB.get(node_type, gathering_node.get("job", ""))
+	if job_type == "":
+		return
+
+	var tier = gathering_node.get("tier", 1)
+	var job_level = character.job_levels.get(job_type, 1)
+	var hint_strength = minf(1.0, float(job_level) / 100.0)
+
+	var companion_hint = character.get_companion_bonus("gathering_hint")
+	if companion_hint > 0:
+		hint_strength = minf(1.0, hint_strength + (companion_hint / 100.0))
+
+	var tool_subtype = _get_tool_subtype_for_job(job_type)
+	var tool = _find_tool_in_inventory(character, tool_subtype)
+	var has_tool = not tool.is_empty()
+
+	var session = _generate_gathering_round(job_type, tier, hint_strength, 0)
+	session["job_type"] = job_type
+	session["node_type"] = node_type
+	session["tier"] = tier
+	session["chain_count"] = 0
+	session["chain_materials"] = []
+	session["has_tool"] = has_tool
+	session["tool_reveal_used"] = false
+	session["tool_save_used"] = false
+	session["node_x"] = gathering_node.get("node_x", character.x)
+	session["node_y"] = gathering_node.get("node_y", character.y)
+	active_gathering[peer_id] = session
+
+	send_to_peer(peer_id, {
+		"type": "gathering_round",
+		"options": session["client_options"],
+		"risky_available": session["risky_available"],
+		"hint_strength": hint_strength,
+		"chain_count": 0,
+		"job_type": job_type,
+		"node_type": node_type,
+		"tier": tier,
+		"tool_available": has_tool,
+	})
+
+func _generate_gathering_round(job_type: String, tier: int, hint_strength: float, chain: int) -> Dictionary:
+	"""Generate a gathering round with 3 options (1 correct, 2 wrong) + optional risky."""
+	var labels_pool = GATHERING_OPTION_LABELS.get(job_type, [["Option A", "Option B", "Option C"]])
+	var label_set = labels_pool[chain % labels_pool.size()]
+
+	# Shuffle label order
+	var shuffled = label_set.duplicate()
+	shuffled.shuffle()
+
+	var correct_idx = randi() % 3
+	var options = []
+	for i in range(3):
+		options.append({
+			"label": shuffled[i],
+			"id": i,
+			"correct": i == correct_idx,
+			"risky": false,
+			"hint": 1.0 if i == correct_idx else 0.0,
+		})
+
+	# 10% chance for risky 4th option
+	var risky_available = randf() < 0.10
+	if risky_available:
+		var risky_correct = randf() < 0.35  # 35% chance risky is correct
+		options.append({
+			"label": "Risky Gamble",
+			"id": 3,
+			"correct": risky_correct,
+			"risky": true,
+			"hint": 0.0,
+		})
+
+	# Build client-safe options (no correct/hint data)
+	var client_options = []
+	for opt in options:
+		var co = {"label": opt["label"], "id": opt["id"]}
+		if opt["risky"]:
+			co["risky"] = true
+		client_options.append(co)
+
+	return {
+		"options": options,
+		"client_options": client_options,
+		"correct_id": correct_idx,
+		"risky_available": risky_available,
+	}
+
+func handle_gathering_choice(peer_id: int, message: Dictionary):
+	"""Handle player picking an option during gathering."""
+	if not characters.has(peer_id):
+		return
+	if not active_gathering.has(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You are not gathering![/color]"})
+		return
+
+	var character = characters[peer_id]
+	var session = active_gathering[peer_id]
+	var choice_id = message.get("choice_id", -1)
+
+	# Handle string commands first (JSON may send numbers as float)
+	var choice_str = str(choice_id)  # Safe string conversion for comparison
+	if choice_str == "continue":
+		var job_type = session["job_type"]
+		var tier = session["tier"]
+		var job_level = character.job_levels.get(job_type, 1)
+		var hint_strength = minf(1.0, float(job_level) / 100.0)
+		var chain = session["chain_count"]
+
+		var new_round = _generate_gathering_round(job_type, tier, hint_strength, chain)
+		session["options"] = new_round["options"]
+		session["client_options"] = new_round["client_options"]
+		session["correct_id"] = new_round["correct_id"]
+		session["risky_available"] = new_round["risky_available"]
+
+		send_to_peer(peer_id, {
+			"type": "gathering_round",
+			"options": new_round["client_options"],
+			"risky_available": new_round["risky_available"],
+			"hint_strength": hint_strength,
+			"chain_count": chain,
+			"job_type": session["job_type"],
+			"node_type": session["node_type"],
+			"tier": tier,
+			"tool_available": session.get("has_tool", false) and not session.get("tool_reveal_used", false),
+		})
+		return
+
+	# Handle "reveal" (tool use)
+	if choice_str == "reveal":
+		if session.get("has_tool", false) and not session.get("tool_reveal_used", false):
+			session["tool_reveal_used"] = true
+			var correct_id = session["correct_id"]
+			send_to_peer(peer_id, {
+				"type": "gathering_round",
+				"options": session["client_options"],
+				"risky_available": session["risky_available"],
+				"hint_strength": 1.0,
+				"chain_count": session["chain_count"],
+				"job_type": session["job_type"],
+				"node_type": session["node_type"],
+				"tier": session["tier"],
+				"tool_available": false,
+				"revealed_correct": correct_id,
+			})
+		return
+
+	# Normal choice — always cast to int (JSON sends numbers as float)
+	choice_id = int(choice_id)
+
+	var options = session.get("options", [])
+	var chosen_option = null
+	for opt in options:
+		if int(opt["id"]) == choice_id:
+			chosen_option = opt
+			break
+
+	if chosen_option == null:
+		return
+
+	var correct = chosen_option.get("correct", false)
+	var is_risky = chosen_option.get("risky", false)
+	var job_type = session["job_type"]
+	var tier = session["tier"]
+
+	if correct:
+		# Roll reward
+		var job_level = character.job_levels.get(job_type, 1)
+		var reward = _roll_gathering_reward(job_type, tier, job_level, is_risky)
+		var qty = reward.get("qty", 1)
+
+		# Apply house gathering bonus
+		var gathering_bonus = character.house_bonuses.get("gathering_bonus", 0)
+		if gathering_bonus > 0:
+			qty += maxi(1, int(qty * gathering_bonus))
+
+		# Apply companion gathering_yield bonus (% chance for +1)
+		var companion_yield = character.get_companion_bonus("gathering_yield")
+		var companion_extra = false
+		if companion_yield > 0 and randf() * 100.0 < companion_yield:
+			qty += 1
+			companion_extra = true
+
+		# Add to material pouch
+		var actually_added = character.add_crafting_material(reward["id"], qty)
+		var pouch_overflow = actually_added < qty
+
+		session["chain_count"] += 1
+		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty})
+
+		var msg = "[color=#1EFF00]Correct![/color]"
+		if is_risky:
+			msg = "[color=#FFD700]★ Risky Gamble pays off! Double reward! ★[/color]"
+		if companion_extra:
+			var comp_name = character.get_active_companion().get("name", "Companion")
+			msg += "\n[color=#A335EE]%s found extra materials! +1[/color]" % comp_name
+		if pouch_overflow:
+			msg += "\n[color=#FF4444]Pouch full! Some materials lost (cap: 999)[/color]"
+
+		send_to_peer(peer_id, {
+			"type": "gathering_result",
+			"correct": true,
+			"material": {"id": reward["id"], "name": reward["name"], "qty": qty},
+			"chain_count": session["chain_count"],
+			"chain_materials": session["chain_materials"],
+			"continue": true,
+			"message": msg,
+			"tool_saved": false,
+		})
+	else:
+		# Wrong answer
+		var tool_saved = false
+
+		# Check tool save (only if not risky and tool not already used for save)
+		if not is_risky and session.get("has_tool", false) and not session.get("tool_save_used", false):
+			session["tool_save_used"] = true
+			tool_saved = true
+
+		if tool_saved:
+			send_to_peer(peer_id, {
+				"type": "gathering_result",
+				"correct": false,
+				"material": {},
+				"chain_count": session["chain_count"],
+				"chain_materials": session["chain_materials"],
+				"continue": true,
+				"message": "[color=#00FFFF]Your tool absorbed the mistake![/color]",
+				"tool_saved": true,
+			})
+		else:
+			# Check risky penalty
+			if is_risky and session["chain_materials"].size() > 0:
+				var lost_count = max(1, session["chain_materials"].size() / 2)
+				var lost_materials = []
+				for i in range(lost_count):
+					if session["chain_materials"].size() > 0:
+						var lost = session["chain_materials"].pop_back()
+						lost_materials.append(lost)
+						# Remove from character inventory
+						character.remove_crafting_material(lost["id"], lost["qty"])
+
+				var msg = "[color=#FF4444]Risky Gamble failed! Lost %d materials from your chain![/color]" % lost_count
+				# End session
+				_end_gathering_session(peer_id, msg)
+			else:
+				# Still give a base reward (1x material) on failure
+				var fail_reward = _roll_gathering_reward(job_type, tier, character.job_levels.get(job_type, 1), false)
+				var fail_qty = 1
+				character.add_crafting_material(fail_reward["id"], fail_qty)
+				session["chain_materials"].append({"id": fail_reward["id"], "name": fail_reward["name"], "qty": fail_qty})
+				_end_gathering_session(peer_id, "[color=#FF4444]Wrong choice! Your gathering chain ends.[/color]\n[color=#808080]You still managed to gather 1x %s.[/color]" % fail_reward["name"])
+
+func _end_gathering_session(peer_id: int, fail_message: String = ""):
+	"""End a gathering session and send complete summary."""
+	if not active_gathering.has(peer_id):
+		return
+	if not characters.has(peer_id):
+		active_gathering.erase(peer_id)
+		return
+
+	var character = characters[peer_id]
+	var session = active_gathering[peer_id]
+	var chain_materials = session.get("chain_materials", [])
+	var job_type = session.get("job_type", "")
+	var tier = session.get("tier", 1)
+	var chain_count = session.get("chain_count", 0)
+
+	# Calculate job XP: base per round * tier multiplier
+	var base_xp_per_round = 10 + (tier - 1) * 10  # T1=10, T2=20, ... T6=60
+	var total_job_xp = base_xp_per_round * chain_count
+	var job_result = character.add_job_xp(job_type, total_job_xp)
+	var char_xp = job_result.get("char_xp_gained", 0)
+	if char_xp > 0:
+		character.add_experience(char_xp)
+
+	# Consume tool durability if tool was used
+	if session.get("has_tool", false) and (session.get("tool_reveal_used", false) or session.get("tool_save_used", false)):
+		var tool_subtype = _get_tool_subtype_for_job(job_type)
+		_consume_tool_durability(character, tool_subtype)
+
+	# Deplete gathering node (use stored node coordinates for adjacent gathering)
+	deplete_gathering_node(session.get("node_x", character.x), session.get("node_y", character.y), session.get("node_type", ""))
+
+	# Aggregate materials for display
+	var mat_summary = {}
+	for mat in chain_materials:
+		var mid = mat["id"]
+		if not mat_summary.has(mid):
+			mat_summary[mid] = {"name": mat["name"], "qty": 0}
+		mat_summary[mid]["qty"] += mat["qty"]
+	var total_materials = []
+	for mid in mat_summary:
+		total_materials.append({"id": mid, "name": mat_summary[mid]["name"], "qty": mat_summary[mid]["qty"]})
+
+	if fail_message != "":
+		send_to_peer(peer_id, {
+			"type": "gathering_result",
+			"correct": false,
+			"material": {},
+			"chain_count": chain_count,
+			"chain_materials": chain_materials,
+			"continue": false,
+			"message": fail_message,
+			"tool_saved": false,
+		})
+
+	send_to_peer(peer_id, {
+		"type": "gathering_complete",
+		"total_materials": total_materials,
+		"job_xp_gained": total_job_xp,
+		"char_xp_gained": char_xp,
+		"job_leveled_up": job_result.get("leveled_up", false),
+		"new_job_level": job_result.get("new_level", 1),
+		"character": character.to_dict(),
+	})
+
+	active_gathering.erase(peer_id)
+	gathering_cooldown[peer_id] = true  # Prevent encounter on next move
+	send_location_update(peer_id)
+	save_character(peer_id)
+
+func handle_gathering_end(peer_id: int, message: Dictionary):
+	"""Handle player voluntarily ending gathering."""
+	if not active_gathering.has(peer_id):
+		return
+	_end_gathering_session(peer_id)
+
+func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risky: bool) -> Dictionary:
+	"""Roll a material reward for a successful gathering round."""
+	var reward = {}
+	match job_type:
+		"fishing":
+			reward = drop_tables.roll_fishing_catch("shallow", job_level)
+			if reward.has("item_id"):
+				reward["id"] = reward["item_id"]
+			reward["qty"] = (2 if is_risky else 1) + (1 if randi() % 100 < job_level else 0)
+		"mining":
+			reward = drop_tables.roll_mining_catch(tier, job_level)
+			if reward.has("item_id"):
+				reward["id"] = reward["item_id"]
+			reward["qty"] = (2 if is_risky else 1) + (1 if randi() % 100 < job_level else 0)
+		"logging":
+			reward = drop_tables.roll_logging_catch(tier, job_level)
+			if reward.has("item_id"):
+				reward["id"] = reward["item_id"]
+			reward["qty"] = (2 if is_risky else 1) + (1 if randi() % 100 < job_level else 0)
+		"foraging":
+			# Use foraging catches if available, otherwise mining as fallback
+			if drop_tables.has_method("roll_foraging_catch"):
+				reward = drop_tables.roll_foraging_catch(tier, job_level)
+			else:
+				reward = drop_tables.roll_mining_catch(tier, job_level)
+			if reward.has("item_id"):
+				reward["id"] = reward["item_id"]
+			reward["qty"] = (2 if is_risky else 1) + (1 if randi() % 100 < job_level else 0)
+
+	# Ensure reward has required fields
+	if not reward.has("id"):
+		reward["id"] = "unknown_material"
+	if not reward.has("name"):
+		reward["name"] = "Unknown Material"
+	if not reward.has("qty"):
+		reward["qty"] = 1
+
+	return reward
+
+func handle_equip_tool(peer_id: int, message: Dictionary):
+	"""Equip a tool from inventory to the tool slot."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var inv_index = int(message.get("index", -1))
+	if inv_index < 0 or inv_index >= character.inventory.size():
+		return
+	var item = character.inventory[inv_index]
+	if item.get("type", "") != "tool":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]That's not a tool![/color]"})
+		return
+	var subtype = item.get("subtype", "")
+	if not character.equipped_tools.has(subtype):
+		return
+	# Swap: if a tool is already equipped, put it back in inventory
+	var old_tool = character.equipped_tools[subtype]
+	character.equipped_tools[subtype] = item
+	character.inventory.remove_at(inv_index)
+	if not old_tool.is_empty():
+		character.inventory.append(old_tool)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]Equipped %s.[/color]" % item.get("name", "Tool")})
+
+func handle_unequip_tool(peer_id: int, message: Dictionary):
+	"""Unequip a tool from the tool slot back to inventory."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var subtype = message.get("subtype", "")
+	if not character.equipped_tools.has(subtype):
+		return
+	var tool = character.equipped_tools[subtype]
+	if tool.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No tool equipped in that slot![/color]"})
+		return
+	if character.inventory.size() >= character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Inventory full![/color]"})
+		return
+	character.inventory.append(tool)
+	character.equipped_tools[subtype] = {}
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]Unequipped %s.[/color]" % tool.get("name", "Tool")})
+
+func _get_tool_subtype_for_job(job_type: String) -> String:
+	match job_type:
+		"mining": return "pickaxe"
+		"logging": return "axe"
+		"foraging": return "sickle"
+		"fishing": return "rod"
+		_: return ""
+
+func _find_tool_in_inventory(character, tool_subtype: String) -> Dictionary:
+	"""Find a tool of the given subtype — checks equipped slot first, then inventory."""
+	if tool_subtype == "":
+		return {}
+	# Check equipped tool slot
+	var equipped = character.equipped_tools.get(tool_subtype, {})
+	if not equipped.is_empty() and equipped.get("durability", 0) > 0:
+		return equipped
+	# Fallback: check inventory (shouldn't normally have tools here anymore)
+	for item in character.inventory:
+		if item.get("type", "") == "tool" and item.get("subtype", "") == tool_subtype:
+			if item.get("durability", 0) > 0:
+				return item
+	return {}
+
+func _consume_tool_durability(character, tool_subtype: String):
+	"""Reduce durability of a tool by 1. Remove if broken."""
+	# Check equipped tool slot first
+	var equipped = character.equipped_tools.get(tool_subtype, {})
+	if not equipped.is_empty():
+		equipped["durability"] = equipped.get("durability", 1) - 1
+		if equipped["durability"] <= 0:
+			character.equipped_tools[tool_subtype] = {}
+		return
+	# Fallback: check inventory
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		if item.get("type", "") == "tool" and item.get("subtype", "") == tool_subtype:
+			item["durability"] = item.get("durability", 1) - 1
+			if item["durability"] <= 0:
+				character.inventory.remove_at(i)
+			break
+
+# ===== SOLDIER HARVEST SYSTEM =====
+
+func handle_harvest_start(peer_id: int):
+	"""Start a harvest session after combat victory (Soldier job)."""
+	if not characters.has(peer_id):
+		return
+	if active_harvests.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var soldier_level = character.job_levels.get("soldier", 1)
+
+	# Get last killed monster info from pending harvest data
+	var harvest_data = character.get_meta("pending_harvest", {}) if character.has_meta("pending_harvest") else {}
+	if harvest_data.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No monster to harvest![/color]"})
+		return
+
+	var monster_name = harvest_data.get("monster_name", "")
+	var monster_tier = harvest_data.get("monster_tier", 1)
+	var max_rounds = 1
+	if monster_tier >= 7:
+		max_rounds = 3
+	elif monster_tier >= 4:
+		max_rounds = 2
+
+	var session = _generate_harvest_round(monster_name, monster_tier)
+	session["monster_name"] = monster_name
+	session["monster_tier"] = monster_tier
+	session["round"] = 1
+	session["max_rounds"] = max_rounds
+	session["parts_gained"] = []
+	active_harvests[peer_id] = session
+
+	var _hint_str = minf(1.0, float(soldier_level) / 100.0)
+	var _harvest_msg = {
+		"type": "harvest_round",
+		"options": session["client_options"],
+		"hint_strength": _hint_str,
+		"round": 1,
+		"max_rounds": max_rounds,
+		"monster_name": monster_name,
+	}
+	# Reveal correct answer as hint if hint_strength > 0.5
+	if _hint_str > 0.5 and randf() < _hint_str:
+		_harvest_msg["hint_id"] = session["correct_id"]
+	send_to_peer(peer_id, _harvest_msg)
+
+func _generate_harvest_round(monster_name: String, monster_tier: int) -> Dictionary:
+	"""Generate a harvest round — reuses gathering 3-choice pattern."""
+	var labels = [
+		["Carve the hide", "Extract the organ", "Collect the bone"],
+		["Slice the tendon", "Drain the ichor", "Pry the scale"],
+		["Sever the limb", "Harvest the gland", "Chip the claw"],
+	]
+	var label_set = labels[randi() % labels.size()]
+	var shuffled = label_set.duplicate()
+	shuffled.shuffle()
+	var correct_idx = randi() % 3
+	var options = []
+	for i in range(3):
+		options.append({"label": shuffled[i], "id": i, "correct": i == correct_idx})
+	var client_options = []
+	for opt in options:
+		client_options.append({"label": opt["label"], "id": opt["id"]})
+	return {"options": options, "client_options": client_options, "correct_id": correct_idx}
+
+func handle_harvest_choice(peer_id: int, message: Dictionary):
+	"""Handle player making a harvest choice."""
+	if not characters.has(peer_id):
+		return
+	if not active_harvests.has(peer_id):
+		return
+
+	var character = characters[peer_id]
+	var session = active_harvests[peer_id]
+	var choice_id = message.get("choice_id", -1)
+	if typeof(choice_id) == TYPE_STRING:
+		choice_id = int(choice_id)
+
+	var options = session.get("options", [])
+	var chosen = null
+	for opt in options:
+		if opt["id"] == choice_id:
+			chosen = opt
+			break
+	if chosen == null:
+		return
+
+	var correct = chosen.get("correct", false)
+	var monster_name = session["monster_name"]
+	var monster_tier = session["monster_tier"]
+
+	if correct:
+		# Roll a part with higher rare weights
+		var parts = drop_tables.get_monster_parts(monster_name)
+		if not parts.is_empty():
+			# Bias toward rarer parts for harvest
+			var adjusted = parts.duplicate(true)
+			for p in adjusted:
+				p["weight"] = maxi(p["weight"], 20)  # Flatten weights
+			var total_w = 0
+			for p in adjusted:
+				total_w += p["weight"]
+			var roll = randi() % total_w
+			var cum = 0
+			for p in adjusted:
+				cum += p["weight"]
+				if roll < cum:
+					var qty = 5
+					character.add_crafting_material(p["id"], qty)
+					session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
+					break
+
+		if session["round"] < session["max_rounds"]:
+			# More rounds available
+			session["round"] += 1
+			var new_round = _generate_harvest_round(monster_name, monster_tier)
+			session["options"] = new_round["options"]
+			session["client_options"] = new_round["client_options"]
+			session["correct_id"] = new_round["correct_id"]
+			var soldier_level = character.job_levels.get("soldier", 0)
+			send_to_peer(peer_id, {
+				"type": "harvest_result",
+				"correct": true,
+				"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
+				"round": session["round"],
+				"continue": true,
+			})
+			var _h_hint = minf(1.0, float(soldier_level) / 100.0)
+			var _h_msg = {
+				"type": "harvest_round",
+				"options": new_round["client_options"],
+				"hint_strength": _h_hint,
+				"round": session["round"],
+				"max_rounds": session["max_rounds"],
+				"monster_name": monster_name,
+			}
+			if _h_hint > 0.5 and randf() < _h_hint:
+				_h_msg["hint_id"] = new_round["correct_id"]
+			send_to_peer(peer_id, _h_msg)
+		else:
+			# All rounds done - send final result then complete
+			send_to_peer(peer_id, {
+				"type": "harvest_result",
+				"correct": true,
+				"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
+				"round": session["round"],
+				"continue": false,
+			})
+			_end_harvest_session(peer_id, true)
+	else:
+		# Wrong — harvest ends but still give 1 base part (like gathering failure)
+		var fail_part = {}
+		var parts = drop_tables.get_monster_parts(monster_name)
+		if not parts.is_empty():
+			# Pick the most common part (highest weight = index 0)
+			var p = parts[0]
+			var qty = 1
+			character.add_crafting_material(p["id"], qty)
+			session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
+			fail_part = {"id": p["id"], "name": p["name"], "qty": qty}
+		send_to_peer(peer_id, {
+			"type": "harvest_result",
+			"correct": false,
+			"part_gained": fail_part,
+			"round": session["round"],
+			"continue": false,
+		})
+		_end_harvest_session(peer_id, false)
+
+func _end_harvest_session(peer_id: int, all_correct: bool = false):
+	"""End a harvest session and give job XP."""
+	if not active_harvests.has(peer_id):
+		return
+	if not characters.has(peer_id):
+		active_harvests.erase(peer_id)
+		return
+
+	var character = characters[peer_id]
+	var session = active_harvests[peer_id]
+	var parts = session.get("parts_gained", [])
+	var monster_tier = session.get("monster_tier", 1)
+
+	# Soldier job XP
+	var xp_per_round = 15 + (monster_tier - 1) * 10
+	var total_xp = xp_per_round * parts.size()
+	var job_result = character.add_job_xp("soldier", total_xp)
+	var char_xp = job_result.get("char_xp_gained", 0)
+	if char_xp > 0:
+		character.add_experience(char_xp)
+
+	send_to_peer(peer_id, {
+		"type": "harvest_complete",
+		"total_parts": parts,
+		"job_xp_gained": total_xp,
+		"job_leveled_up": job_result.get("leveled_up", false),
+		"new_job_level": job_result.get("new_level", 1),
+	})
+
+	# Clear pending harvest
+	if character.has_meta("pending_harvest"):
+		character.remove_meta("pending_harvest")
+	active_harvests.erase(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+# ===== OLD GATHERING HANDLERS (kept for reference, unreachable) =====
 
 func handle_fish_start(peer_id: int):
 	"""Handle player starting to fish"""
@@ -9841,8 +10803,8 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Fishing skill increased to %d! ★[/color]" % xp_result.new_level)
 
-	# Deplete the gathering node
-	deplete_gathering_node(character.x, character.y)
+	# Deplete the gathering node (fishing = water, respawns)
+	deplete_gathering_node(character.x, character.y, "water")
 
 	# Check if node is now depleted
 	var node = get_gathering_node_at(character.x, character.y)
@@ -10009,8 +10971,8 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Mining skill increased to %d! ★[/color]" % xp_result.new_level)
 
-	# Deplete the gathering node
-	deplete_gathering_node(character.x, character.y)
+	# Deplete the gathering node (mining = permanent)
+	deplete_gathering_node(character.x, character.y, "ore_vein")
 
 	# Check if node is now depleted
 	var node = get_gathering_node_at(character.x, character.y)
@@ -10177,8 +11139,8 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Logging skill increased to %d! ★[/color]" % xp_result.new_level)
 
-	# Deplete the gathering node
-	deplete_gathering_node(character.x, character.y)
+	# Deplete the gathering node (logging = permanent)
+	deplete_gathering_node(character.x, character.y, "tree")
 
 	# Check if node is now depleted
 	var node = get_gathering_node_at(character.x, character.y)
@@ -10209,77 +11171,142 @@ func get_coord_key(x: int, y: int) -> String:
 	return "%d,%d" % [x, y]
 
 func get_gathering_node_at(x: int, y: int) -> Dictionary:
-	"""Check if there's an active gathering node at the given coordinates.
-	Nodes are deterministic based on world_system functions - we only track depleted ones."""
-	var coord_key = get_coord_key(x, y)
+	"""Check if there's an active gathering node at the given coordinates."""
+	# New chunk-based system: use world_system's unified function
+	if chunk_manager:
+		return world_system.get_gathering_node_at(x, y)
 
-	# Check if this node is depleted (uses timestamp comparison)
+	# Legacy fallback
+	var coord_key = get_coord_key(x, y)
 	if depleted_nodes.has(coord_key):
 		var respawn_time = depleted_nodes[coord_key]
 		if Time.get_unix_time_from_system() < respawn_time:
-			return {}  # Still depleted
+			return {}
 		else:
-			# Node has respawned - remove from depleted list
 			depleted_nodes.erase(coord_key)
-
-	# Determine node type using world_system functions (deterministic)
 	return _determine_node_type_at(x, y)
 
-func _determine_node_type_at(x: int, y: int) -> Dictionary:
-	"""Determine if and what type of gathering node exists at coordinates.
-	Uses the same logic as world_system map display for consistency."""
-	var terrain = world_system.get_terrain_at(x, y)
-	var terrain_info = world_system.get_terrain_info(terrain)
-
-	# No nodes in safe zones
-	if terrain_info.safe:
-		return {}
-
-	# Check for fishing spot (uses world_system's is_fishing_spot)
-	if world_system.is_fishing_spot(x, y):
-		return {
-			"type": "fishing",
-			"tier": world_system.get_fishing_tier(x, y)
-		}
-
-	# Check for ore deposit (uses world_system's is_ore_deposit - matches map "O" markers)
-	if world_system.is_ore_deposit(x, y):
-		return {
-			"type": "mining",
-			"tier": world_system.get_ore_tier(x, y)
-		}
-
-	# Check for dense forest (uses world_system's is_dense_forest - matches map "T" markers)
-	if world_system.is_dense_forest(x, y):
-		return {
-			"type": "logging",
-			"tier": world_system.get_wood_tier(x, y)
-		}
-
+func get_gathering_node_nearby(x: int, y: int) -> Dictionary:
+	"""Check for gathering node at position first, then check adjacent tiles.
+	This allows gathering from blocking tiles (trees, ore, water) by standing next to them."""
+	# First check the tile the player is standing on
+	var node = get_gathering_node_at(x, y)
+	if not node.is_empty():
+		return node
+	# Check 4 cardinal adjacent tiles
+	for offset in [[0, -1], [0, 1], [-1, 0], [1, 0]]:
+		var nx = x + offset[0]
+		var ny = y + offset[1]
+		var adj_node = get_gathering_node_at(nx, ny)
+		if not adj_node.is_empty():
+			# Store the actual node coordinates for depletion
+			adj_node["node_x"] = nx
+			adj_node["node_y"] = ny
+			return adj_node
 	return {}
 
-func deplete_gathering_node(x: int, y: int):
-	"""Mark a gathering node as depleted - it will respawn after NODE_RESPAWN_TIME"""
-	var coord_key = get_coord_key(x, y)
-	# Store the timestamp when this node will respawn
-	depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+func _determine_node_type_at(x: int, y: int) -> Dictionary:
+	"""Legacy: Determine gathering node type using old world_system functions."""
+	var terrain = world_system.get_terrain_at(x, y)
+	var terrain_info = world_system.get_terrain_info(terrain)
+	if terrain_info.safe:
+		return {}
+	if world_system.is_fishing_spot(x, y):
+		return {"type": "fishing", "tier": world_system.get_fishing_tier(x, y)}
+	if world_system.is_ore_deposit(x, y):
+		return {"type": "mining", "tier": world_system.get_ore_tier(x, y)}
+	if world_system.is_dense_forest(x, y):
+		return {"type": "logging", "tier": world_system.get_wood_tier(x, y)}
+	return {}
+
+func deplete_gathering_node(x: int, y: int, tile_type: String = ""):
+	"""Mark a gathering node as depleted. Water nodes respawn, others are permanent."""
+	if chunk_manager:
+		chunk_manager.deplete_node(x, y, tile_type)
+	else:
+		var coord_key = get_coord_key(x, y)
+		if tile_type == "water":
+			depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+		else:
+			depleted_nodes[coord_key] = -1  # Permanent
 
 func process_node_respawns(delta: float):
-	"""Periodically clean up expired entries from depleted_nodes for memory management"""
+	"""Legacy: Periodically clean up expired depleted nodes."""
 	node_respawn_timer += delta
 	if node_respawn_timer < NODE_RESPAWN_CHECK_INTERVAL:
 		return
 	node_respawn_timer = 0.0
-
-	# Clean up respawned nodes (timestamp has passed)
 	var current_time = Time.get_unix_time_from_system()
 	var to_remove = []
 	for coord_key in depleted_nodes:
 		if depleted_nodes[coord_key] <= current_time:
 			to_remove.append(coord_key)
-
 	for coord_key in to_remove:
 		depleted_nodes.erase(coord_key)
+
+# ===== JOB SYSTEM =====
+
+func handle_job_info(peer_id: int):
+	"""Send all job data to the client."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	send_to_peer(peer_id, {
+		"type": "job_info_response",
+		"gathering_job": character.gathering_job,
+		"specialty_job": character.specialty_job,
+		"gathering_job_committed": character.gathering_job_committed,
+		"specialty_job_committed": character.specialty_job_committed,
+		"job_levels": character.job_levels,
+		"job_xp": character.job_xp
+	})
+
+func handle_job_commit(peer_id: int, message: Dictionary):
+	"""Handle player committing to a job."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var category = message.get("category", "")
+	var job_name = message.get("job_name", "")
+
+	if category == "gathering":
+		if character.gathering_job_committed:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You have already committed to %s![/color]" % character.gathering_job.capitalize()})
+			return
+		if job_name not in character.GATHERING_JOBS:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid gathering job.[/color]"})
+			return
+		if character.job_levels.get(job_name, 1) < character.JOB_TRIAL_CAP:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You must reach level %d in %s before committing.[/color]" % [character.JOB_TRIAL_CAP, job_name.capitalize()]})
+			return
+		character.commit_gathering_job(job_name)
+		save_character(peer_id)
+		send_to_peer(peer_id, {
+			"type": "job_committed",
+			"category": "gathering",
+			"job_name": job_name,
+			"message": "[color=#00FF00]You have committed to [color=#FFD700]%s[/color]! You can now level it beyond %d.[/color]" % [job_name.capitalize(), character.JOB_TRIAL_CAP]
+		})
+	elif category == "specialty":
+		if character.specialty_job_committed:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You have already committed to %s![/color]" % character.specialty_job.capitalize()})
+			return
+		if job_name not in character.SPECIALTY_JOBS:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid specialty job.[/color]"})
+			return
+		if character.job_levels.get(job_name, 1) < character.JOB_TRIAL_CAP:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You must reach level %d in %s before committing.[/color]" % [character.JOB_TRIAL_CAP, job_name.capitalize()]})
+			return
+		character.commit_specialty_job(job_name)
+		save_character(peer_id)
+		send_to_peer(peer_id, {
+			"type": "job_committed",
+			"category": "specialty",
+			"job_name": job_name,
+			"message": "[color=#00FF00]You have committed to [color=#FFD700]%s[/color]! You can now level it beyond %d.[/color]" % [job_name.capitalize(), character.JOB_TRIAL_CAP]
+		})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid job category.[/color]"})
 
 # ===== CRAFTING SYSTEM =====
 
@@ -11342,7 +12369,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
 		spawn_x = spawn_loc.x
 		spawn_y = spawn_loc.y
-		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
+		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) and not world_system.is_safe_zone(spawn_x, spawn_y):
 			break
 
 	# Calculate sub-tier based on distance from origin
@@ -11423,8 +12450,8 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 			spawn_x = spawn_loc.x
 			spawn_y = spawn_loc.y
 
-		# Check if location is valid (not on a trading post)
-		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y):
+		# Check if location is valid (not on a trading post or NPC post)
+		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) and not world_system.is_safe_zone(spawn_x, spawn_y):
 			break
 
 	# Calculate sub-tier based on distance from origin
@@ -11652,8 +12679,8 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		world_x = spawn_loc.x + offset_x
 		world_y = spawn_loc.y + offset_y
 
-		# Check if this location overlaps with a trading post
-		if not trading_post_db.is_trading_post_tile(world_x, world_y):
+		# Check if this location overlaps with a trading post or NPC post
+		if not trading_post_db.is_trading_post_tile(world_x, world_y) and not world_system.is_safe_zone(world_x, world_y):
 			found_valid = true
 			break
 
@@ -15241,7 +16268,7 @@ func handle_gm_givecompanion(peer_id: int, message: Dictionary):
 		"variant_rarity": variant.get("rarity", 10),
 		"obtained_at": int(Time.get_unix_time_from_system())
 	}
-	ch.companions.append(companion)
+	ch.collected_companions.append(companion)
 	send_character_update(peer_id)
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received companion: %s (Tier %d, %s)[/color]" % [companion.name, tier, variant.get("name", "Normal")]})
@@ -15299,11 +16326,15 @@ func handle_gm_givemats(peer_id: int, message: Dictionary):
 		# List some valid material IDs
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown material: '%s'. Examples: copper_ore, iron_ore, small_fish, healing_herb, common_wood[/color]" % material_id})
 		return
-	var new_total = characters[peer_id].add_crafting_material(material_id, amount)
+	var added = characters[peer_id].add_crafting_material(material_id, amount)
+	var new_total = characters[peer_id].crafting_materials.get(material_id, 0)
 	var mat_name = CraftingDatabase.MATERIALS[material_id].get("name", material_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received %d %s (total: %d)[/color]" % [amount, mat_name, new_total]})
+	var msg = "[color=#00FF00][GM] Received %d %s (total: %d)[/color]" % [added, mat_name, new_total]
+	if added < amount:
+		msg += "\n[color=#FFAA00]Pouch full! %d %s lost (cap: 999)[/color]" % [amount - added, mat_name]
+	send_to_peer(peer_id, {"type": "text", "message": msg})
 
 func handle_gm_giveall(peer_id: int):
 	if not _is_admin(peer_id):
@@ -15517,3 +16548,165 @@ func handle_gm_spawnwish(peer_id: int):
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to start combat.[/color]"})
+
+# ===== WIPE COMMANDS =====
+
+var pending_wipe_confirmations: Dictionary = {}  # peer_id -> {type, step}
+
+const FULLWIPE_PASSPHRASES = ["DESTROY", "EVERYTHING", "CONFIRM"]
+const MAPWIPE_PASSPHRASES = ["RESET", "WORLD"]
+
+func handle_gm_fullwipe(peer_id: int, message: Dictionary):
+	"""Full wipe: Delete everything. Requires 3 confirmation passphrases."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	var passphrase = message.get("passphrase", "")
+	if not pending_wipe_confirmations.has(peer_id) or pending_wipe_confirmations[peer_id].get("type", "") != "full":
+		pending_wipe_confirmations[peer_id] = {"type": "full", "step": 0}
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][WIPE] Full wipe will delete ALL data: characters, houses, world, market, leaderboards.[/color]\n[color=#FFD700]Type DESTROY to confirm step 1/3.[/color]"})
+		return
+	var state = pending_wipe_confirmations[peer_id]
+	var expected = FULLWIPE_PASSPHRASES[state.step]
+	if passphrase != expected:
+		pending_wipe_confirmations.erase(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][WIPE] Incorrect passphrase. Wipe cancelled.[/color]"})
+		return
+	state.step += 1
+	if state.step < FULLWIPE_PASSPHRASES.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][WIPE] Step %d/%d confirmed. Type %s to continue.[/color]" % [state.step, FULLWIPE_PASSPHRASES.size(), FULLWIPE_PASSPHRASES[state.step]]})
+		return
+	pending_wipe_confirmations.erase(peer_id)
+	log_message("[WIPE] Full wipe initiated by admin (peer %d)" % peer_id)
+	_execute_full_wipe(peer_id)
+
+func handle_gm_mapwipe(peer_id: int, message: Dictionary):
+	"""Map-only wipe: Delete world chunks, keep characters and houses."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	var passphrase = message.get("passphrase", "")
+	if not pending_wipe_confirmations.has(peer_id) or pending_wipe_confirmations[peer_id].get("type", "") != "map":
+		pending_wipe_confirmations[peer_id] = {"type": "map", "step": 0}
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][WIPE] Map wipe will delete: world chunks, guards, player posts, market.\n[color=#00FF00]Preserved:[/color] Characters, Sanctuary, inventories, companions.[/color]\n[color=#FFD700]Type RESET to confirm step 1/2.[/color]"})
+		return
+	var state = pending_wipe_confirmations[peer_id]
+	var expected = MAPWIPE_PASSPHRASES[state.step]
+	if passphrase != expected:
+		pending_wipe_confirmations.erase(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][WIPE] Incorrect passphrase. Wipe cancelled.[/color]"})
+		return
+	state.step += 1
+	if state.step < MAPWIPE_PASSPHRASES.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][WIPE] Step %d/%d confirmed. Type %s to continue.[/color]" % [state.step, MAPWIPE_PASSPHRASES.size(), MAPWIPE_PASSPHRASES[state.step]]})
+		return
+	pending_wipe_confirmations.erase(peer_id)
+	log_message("[WIPE] Map wipe initiated by admin (peer %d)" % peer_id)
+	_execute_map_wipe(peer_id)
+
+func handle_gm_setjob(peer_id: int, message: Dictionary):
+	"""Set a job's level and XP for testing."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var job_name = message.get("job_name", "")
+	var level = clampi(int(message.get("level", 1)), 1, character.JOB_LEVEL_CAP)
+
+	if not character.job_levels.has(job_name):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown job: %s. Valid: mining, logging, foraging, soldier, fishing, blacksmith, builder, alchemist, scribe, enchanter[/color]" % job_name})
+		return
+
+	character.job_levels[job_name] = level
+	character.job_xp[job_name] = 0
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Set %s job to level %d.[/color]" % [job_name, level]})
+
+func handle_gm_givetool(peer_id: int, message: Dictionary):
+	"""Give a gathering tool to the player."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var subtype = message.get("subtype", "")
+	var tier = clampi(int(message.get("tier", 1)), 1, 5)
+	var valid_subtypes = ["pickaxe", "axe", "sickle", "rod"]
+	if subtype not in valid_subtypes:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Invalid subtype: %s. Valid: pickaxe, axe, sickle, rod[/color]" % subtype})
+		return
+	var tool_item = DropTables.generate_tool(subtype, tier)
+	if tool_item.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to generate tool.[/color]"})
+		return
+	character.inventory.append(tool_item)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gave %s (T%d, %d durability).[/color]" % [tool_item.name, tier, tool_item.durability]})
+
+func _execute_full_wipe(admin_peer_id: int):
+	"""Execute full wipe — delete everything."""
+	for pid in peers.keys():
+		send_to_peer(pid, {"type": "text", "message": "[color=#FF0000][SERVER] Full wipe in progress. All data will be deleted.[/color]"})
+	if chunk_manager:
+		chunk_manager.wipe_all_chunks()
+		var npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
+		chunk_manager.save_npc_posts(npc_posts)
+		for post in npc_posts:
+			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+		chunk_manager.save_dirty_chunks()
+	var char_dir = DirAccess.open("user://data/characters/")
+	if char_dir:
+		char_dir.list_dir_begin()
+		var fname = char_dir.get_next()
+		while fname != "":
+			if fname.ends_with(".json"):
+				char_dir.remove(fname)
+			fname = char_dir.get_next()
+		char_dir.list_dir_end()
+	for filepath in ["user://data/accounts.json", "user://data/accounts.json.bak",
+		"user://data/leaderboard.json", "user://data/leaderboard.json.bak",
+		"user://data/monster_kills_leaderboard.json", "user://data/monster_kills_leaderboard.json.bak",
+		"user://data/realm_state.json", "user://data/realm_state.json.bak",
+		"user://data/corpses.json", "user://data/corpses.json.bak",
+		"user://data/houses.json", "user://data/houses.json.bak"]:
+		if FileAccess.file_exists(filepath):
+			DirAccess.remove_absolute(filepath)
+	characters.clear()
+	active_trades.clear()
+	pending_trade_requests.clear()
+	active_bounties.clear()
+	active_dungeons.clear()
+	log_message("[WIPE] Full wipe complete. Server restart recommended.")
+	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Full wipe complete. Restart the server.[/color]"})
+
+func _execute_map_wipe(admin_peer_id: int):
+	"""Execute map-only wipe — keep characters and houses."""
+	for pid in peers.keys():
+		send_to_peer(pid, {"type": "text", "message": "[color=#FF8800][SERVER] Map wipe in progress. The world is being reset.[/color]"})
+	if chunk_manager:
+		chunk_manager.wipe_all_chunks()
+		var npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
+		chunk_manager.save_npc_posts(npc_posts)
+		for post in npc_posts:
+			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+		chunk_manager.save_dirty_chunks()
+	else:
+		depleted_nodes.clear()
+	active_bounties.clear()
+	active_dungeons.clear()
+	dungeon_floors.clear()
+	dungeon_floor_rooms.clear()
+	dungeon_monsters.clear()
+	player_dungeon_instances.clear()
+	if FileAccess.file_exists("user://data/corpses.json"):
+		DirAccess.remove_absolute("user://data/corpses.json")
+	_check_dungeon_spawns()
+	for pid in characters:
+		send_location_update(pid)
+	log_message("[WIPE] Map wipe complete. World regenerated from seed.")
+	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})

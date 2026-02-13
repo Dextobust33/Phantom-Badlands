@@ -1,4 +1,4 @@
-# Phantasia Revival - Architecture Overview
+# Phantom Badlands - Architecture Overview
 
 ## System Architecture
 

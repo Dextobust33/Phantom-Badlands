@@ -7,7 +7,7 @@ set PROJECT="C:\Users\Dexto\Documents\phantasia-revival"
 if "%~1"=="" (
     echo.
     echo ========================================
-    echo Phantasia Revival Admin Tool
+    echo Phantom Badlands Admin Tool
     echo ========================================
     echo.
     echo Usage: admin ^<command^> [args]

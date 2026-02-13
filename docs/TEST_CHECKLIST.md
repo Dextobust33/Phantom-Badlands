@@ -1,4 +1,4 @@
-# Phantasia Revival — Comprehensive Test Checklist
+# Phantom Badlands — Comprehensive Test Checklist
 
 Use `/gmhelp` for admin commands. Promote your test account first:
 ```bash
@@ -40,17 +40,17 @@ godot --headless --script admin_tool.gd -- promote <username>
 
 ## 3. House / Sanctuary
 
-- [ ] House auto-created on first login
-- [ ] View house main screen
-- [ ] House storage: deposit item (Home Stone)
-- [ ] House storage: withdraw item
-- [ ] House storage: discard item
+- [x] House auto-created on first login
+- [x] View house main screen
+- [x] House storage: deposit item (Home Stone)
+- [x] House storage: withdraw item
+- [x] House storage: discard item
 - [ ] House storage: capacity enforced (base 20 + upgrades)
-- [ ] Registered companions: register via Home Stone
-- [ ] Registered companions: checkout to new character
-- [ ] Registered companions: return on death
-- [ ] Registered companions: unregister
-- [ ] Companion Kennel: walk onto K tile
+- [x] Registered companions: register via Home Stone
+- [x] Registered companions: checkout to new character
+- [x] Registered companions: return on death
+- [x] Registered companions: unregister
+- [x] Companion Kennel: walk onto K tile
 - [ ] Kennel: view companions with bonuses
 - [ ] Kennel: release companion
 - [ ] Kennel: register companion to house
@@ -60,16 +60,16 @@ godot --headless --script admin_tool.gd -- promote <username>
 - [ ] Fusion: 8 mixed sub-tier 8 → random T9
 - [ ] Fusion: rejects duplicate indices
 - [ ] Fusion: rejects insufficient companions
-- [ ] All 16 upgrade types purchasable with BP
-- [ ] Upgrade costs correct per level
+- [x] All 16 upgrade types purchasable with BP
+- [x] Upgrade costs correct per level
 - [ ] Upgrade effects applied (test flee_chance, xp_bonus, stat bonuses)
 - [ ] XP Bonus upgrade: kill monster → XP includes house bonus (`/setbp`, buy upgrade, compare XP)
 - [ ] Gathering Bonus upgrade: fish/mine/chop → increased material quantity
-- [ ] Baddie Points awarded on death (formula correct)
+- [x] Baddie Points awarded on death (formula correct)
 - [ ] House stats updated on death (characters_lost, highest_level, etc.)
 - [ ] Home Stone (Egg): sends egg to house storage
 - [ ] Home Stone (Supplies): sends consumables to storage — items stack with existing
-- [ ] Home Stone (Equipment): sends equipped item to storage
+- [x] Home Stone (Equipment): sends inventory equipment to storage
 - [ ] Home Stone (Companion): register OR kennel choice
 - [ ] Home Stone stacking: send 2 same-type potions → single stacked entry (not 2 slots)
 - [ ] `/setbp <n>` sets BP correctly (admin)

@@ -15,7 +15,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-Phantasia Revival is a text-based multiplayer RPG built with **Godot 4.6** and GDScript. Client-server architecture with turn-based combat, procedural world generation, and 9 class archetypes.
+Phantom Badlands is a text-based multiplayer RPG built with **Godot 4.6** and GDScript. Client-server architecture with turn-based combat, procedural world generation, and 9 class archetypes.
 
 **Godot Version:** 4.6.stable.steam (godot.windows.opt.tools.64.exe)
 **Important:** Some Godot 4.x API methods differ from 4.3/4.4 docs. Example: RichTextLabel uses `pop()` not `pop_meta()`.
@@ -312,7 +312,7 @@ lethality *= (1 + sum of ability_modifiers)
 
 ## Releases & Distribution
 
-**GitHub:** https://github.com/Dextobust33/Phantasia-Revival
+**GitHub:** https://github.com/Dextobust33/Phantom-Badlands
 
 **Creating a Release:**
 ```bash
@@ -320,13 +320,13 @@ lethality *= (1 + sum of ability_modifiers)
 echo "0.3" > VERSION.txt
 
 # 2. Export client
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantasia-Revival" "builds/PhantasiaClient.exe"
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantom-Badlands" "builds/PhantomBadlandsClient.exe"
 
 # 3. Create ZIP
-powershell -Command "Compress-Archive -Path 'builds/PhantasiaClient.exe', 'builds/PhantasiaClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantasia-client-v0.3.zip' -Force"
+powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantom-badlands-client-v0.3.zip' -Force"
 
 # 4. Upload to GitHub
-"/c/Program Files/GitHub CLI/gh.exe" release create v0.3 releases/phantasia-client-v0.3.zip --title "v0.3" --notes "Description"
+"/c/Program Files/GitHub CLI/gh.exe" release create v0.3 releases/phantom-badlands-client-v0.3.zip --title "v0.3" --notes "Description"
 
 # 5. Push code
 git push

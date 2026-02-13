@@ -1,5 +1,5 @@
 # titles.gd
-# Title system constants and definitions for Phantasia Revival
+# Title system constants and definitions for Phantom Badlands
 class_name Titles
 extends Node
 

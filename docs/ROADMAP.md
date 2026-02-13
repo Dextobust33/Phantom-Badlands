@@ -1,4 +1,4 @@
-# Phantasia Revival: Feature Roadmap
+# Phantom Badlands: Feature Roadmap
 
 ## Completed Features (v0.9.11+)
 

@@ -1,5 +1,5 @@
 # admin_tool.gd
-# Standalone admin tool for managing Phantasia Revival accounts
+# Standalone admin tool for managing Phantom Badlands accounts
 # Run with: godot --headless --script admin_tool.gd -- <command> [args]
 extends SceneTree
 
@@ -78,7 +78,7 @@ func _init():
 func print_help():
 	print("")
 	print("========================================")
-	print("Phantasia Revival Admin Tool")
+	print("Phantom Badlands Admin Tool")
 	print("========================================")
 	print("")
 	print("Usage: godot --headless --script admin_tool.gd -- <command> [args]")

@@ -1,85 +1,363 @@
 # world_system.gd
-# Phantasia 4-style coordinate-based world system
+# Procedural world with chunk-based persistence, LOS raycasting, 10+ resource types
 class_name WorldSystem
 extends Node
 
-# World boundaries (expanded for better level progression)
+# World boundaries
 const WORLD_MIN_X = -2000
 const WORLD_MAX_X = 2000
 const WORLD_MIN_Y = -2000
 const WORLD_MAX_Y = 2000
 
-# Terrain types (matching P4)
+# Vision radius (expanded for dense world with LOS blocking)
+const DEFAULT_VISION_RADIUS = 11
+const BLIND_VISION_RADIUS = 2
+
+# Terrain types — legacy enum kept for backward compatibility with systems
+# that haven't been migrated yet (combat encounter rates, etc.)
 enum Terrain {
-	THRONE,          # (0,0) - King's throne (now part of Crossroads Trading Post)
-	CITY,            # Safe zone, shops
-	TRADING_POST,    # Trading Post safe zones
-	PLAINS,          # Basic terrain, low danger
-	FOREST,          # Light encounters
-	DEEP_FOREST,     # Medium danger
-	MOUNTAINS,       # High danger
-	SWAMP,           # High danger
-	DESERT,          # Very high danger
-	VOLCANO,         # Extreme danger
-	DARK_CIRCLE,     # Special area
-	VOID,            # Beyond the edge
-	WATER,           # Shallow water - fishable
-	DEEP_WATER       # Deep water - rare catches, fishable
+	THRONE,
+	CITY,
+	TRADING_POST,
+	PLAINS,
+	FOREST,
+	DEEP_FOREST,
+	MOUNTAINS,
+	SWAMP,
+	DESERT,
+	VOLCANO,
+	DARK_CIRCLE,
+	VOID,
+	WATER,
+	DEEP_WATER
 }
 
-# Special locations - major landmarks only (Trading Posts handled separately)
+# ===== NEW TILE TYPE SYSTEM =====
+# Each tile has a type string, tier, and blocking properties.
+# Types: empty, stone, tree, ore_vein, herb, flower, mushroom, bush, reed,
+#        dense_brush, water, deep_water, wall, door, floor, path,
+#        forge, apothecary, workbench, enchant_table, market, inn,
+#        quest_board, tower, guard, post_marker, void
+
+# Node type weights for terrain generation (% of occupied tiles)
+const NODE_WEIGHTS = {
+	"stone": 25,
+	"tree": 25,
+	"ore_vein": 10,
+	"herb": 5,
+	"flower": 5,
+	"mushroom": 5,
+	"bush": 5,
+	"reed": 5,
+	"dense_brush": 10,
+	# water: 5% — handled separately via noise clustering
+}
+const TOTAL_NODE_WEIGHT = 95  # sum of above (water excluded, added via noise)
+
+# Tile rendering data: char, base color, blocks_move, blocks_los
+const TILE_RENDER = {
+	"empty":         {"char": ".", "color": "#555555", "blocks_move": false, "blocks_los": false},
+	"stone":         {"char": "o", "color": "#888888", "blocks_move": true, "blocks_los": true},
+	"tree":          {"char": "T", "color": "#228B22", "blocks_move": true, "blocks_los": true},
+	"ore_vein":      {"char": "*", "color": "#8B6914", "blocks_move": true, "blocks_los": true},
+	"herb":          {"char": "\"", "color": "#66CC66", "blocks_move": false, "blocks_los": false},
+	"flower":        {"char": "'", "color": "#FF69B4", "blocks_move": false, "blocks_los": false},
+	"mushroom":      {"char": ",", "color": "#9966CC", "blocks_move": false, "blocks_los": false},
+	"bush":          {"char": ";", "color": "#006600", "blocks_move": false, "blocks_los": false},
+	"reed":          {"char": "|", "color": "#66CCCC", "blocks_move": false, "blocks_los": false},
+	"dense_brush":   {"char": "%", "color": "#6B8E23", "blocks_move": true, "blocks_los": false},
+	"water":         {"char": "~", "color": "#4488FF", "blocks_move": true, "blocks_los": false},
+	"deep_water":    {"char": "~", "color": "#2244AA", "blocks_move": true, "blocks_los": false},
+	"wall":          {"char": "#", "color": "#CCCCCC", "blocks_move": true, "blocks_los": true},
+	"door":          {"char": "+", "color": "#CCAA00", "blocks_move": false, "blocks_los": false},
+	"floor":         {"char": ".", "color": "#D4C4A2", "blocks_move": false, "blocks_los": false},
+	"path":          {"char": ":", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
+	"forge":         {"char": "F", "color": "#FF8800", "blocks_move": false, "blocks_los": false},
+	"apothecary":    {"char": "A", "color": "#00CC66", "blocks_move": false, "blocks_los": false},
+	"workbench":     {"char": "W", "color": "#AA7744", "blocks_move": false, "blocks_los": false},
+	"enchant_table": {"char": "E", "color": "#AA44FF", "blocks_move": false, "blocks_los": false},
+	"market":        {"char": "$", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
+	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": false, "blocks_los": false},
+	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
+	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
+	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": false, "blocks_los": false},
+	"post_marker":   {"char": "P", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
+	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
+}
+
+# Tier color shifts for resources
+const TIER_COLORS = {
+	"stone": ["#888888", "#888888", "#AAAAAA", "#AAAAAA", "#CCCCDD", "#CCCCDD"],
+	"tree": ["#228B22", "#228B22", "#1A6B1A", "#1A6B1A", "#8B6914", "#8B6914"],
+	"ore_vein": ["#B87333", "#A0A0A0", "#A0A0A0", "#FFD700", "#4488FF", "#AA44FF"],
+}
+
+# Distance-based tier zones (overlapping for gradual transition)
+# Each entry: [min_distance, max_distance]
+const TIER_ZONES = [
+	[0, 200],       # T1
+	[150, 400],     # T2
+	[300, 700],     # T3
+	[500, 1000],    # T4
+	[800, 1400],    # T5
+	[1200, 2000],   # T6
+]
+
+# Gathering job mapping for node types
+const NODE_TO_JOB = {
+	"stone": "mining",
+	"ore_vein": "mining",
+	"tree": "logging",
+	"dense_brush": "logging",
+	"herb": "foraging",
+	"flower": "foraging",
+	"mushroom": "foraging",
+	"bush": "foraging",
+	"reed": "foraging",
+	"water": "fishing",
+}
+
+# Types that can be gathered
+const GATHERABLE_TYPES = ["stone", "ore_vein", "tree", "dense_brush", "herb", "flower", "mushroom", "bush", "reed", "water"]
+
+# Special locations - major landmarks only
 const SPECIAL_LOCATIONS = {
 	Vector2i(400, 0): {"terrain": Terrain.DARK_CIRCLE, "name": "Dark Circle", "description": "A place of great danger and power"},
 	Vector2i(-400, 0): {"terrain": Terrain.VOLCANO, "name": "Fire Mountain", "description": "An active volcano"},
 }
 
-# Preload Trading Post database
+# Preload Trading Post database (kept for backward compatibility during transition)
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
 
-# Trading Post database reference
+# Trading Post database reference (legacy, kept for transition)
 var trading_post_db: Node = null
 
+# ChunkManager reference — set by server after initialization
+var chunk_manager = null  # ChunkManager
+
 func _ready():
-	print("World System initialized - Phantasia 4 style")
-	# Initialize trading post database
+	print("World System initialized")
+	# Initialize legacy trading post database (kept for transition)
 	trading_post_db = TradingPostDatabaseScript.new()
 	add_child(trading_post_db)
 
-func get_terrain_at(x: int, y: int) -> Terrain:
-	"""Determine terrain based on coordinates (procedural like P4)"""
-	var pos = Vector2i(x, y)
+# ===== NEW PROCEDURAL TILE GENERATION =====
 
-	# Check Trading Posts first - they are safe zones
+func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
+	"""Generate a tile procedurally from world seed + coordinates.
+	Returns {type, tier, blocks_move, blocks_los}"""
+	var distance = sqrt(float(world_x * world_x + world_y * world_y))
+
+	# Safe zone at very center (radius 5) — always empty
+	if distance < 5:
+		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}
+
+	# NPC post interiors should not generate resources (stamped tiles override this,
+	# but this is a safety net for any tiles not explicitly stamped)
+	if chunk_manager and chunk_manager.is_npc_post_tile(world_x, world_y):
+		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}
+
+	# Check for water first using noise clustering
+	if _is_water_tile_generated(world_x, world_y, seed):
+		# Determine shallow vs deep
+		var deep_noise = _seeded_hash_float(world_x * 97 + world_y * 151, seed + 999)
+		if deep_noise > 0.75 and distance > 200:
+			return {"type": "deep_water", "tier": 0, "blocks_move": true, "blocks_los": false}
+		return {"type": "water", "tier": 0, "blocks_move": true, "blocks_los": false}
+
+	# Density check — ramps from 50% near origin to 70% at edges
+	var density = 0.50 + 0.20 * clampf(distance / 2000.0, 0.0, 1.0)
+	var density_roll = _seeded_hash_float(world_x * 7 + world_y * 13, seed)
+	if density_roll >= density:
+		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}
+
+	# This tile is occupied — determine node type
+	var type_roll = _seeded_hash_int(world_x * 31 + world_y * 53, seed + 1) % TOTAL_NODE_WEIGHT
+	var node_type = _roll_node_type(type_roll)
+
+	# Determine tier from distance
+	var tier = _get_tier_for_distance(distance, world_x, world_y, seed)
+
+	# Get blocking properties from TILE_RENDER
+	var render = TILE_RENDER.get(node_type, TILE_RENDER["empty"])
+
+	return {
+		"type": node_type,
+		"tier": tier,
+		"blocks_move": render.blocks_move,
+		"blocks_los": render.blocks_los,
+	}
+
+func _roll_node_type(roll: int) -> String:
+	"""Convert a weighted roll (0-94) into a node type string."""
+	var cumulative = 0
+	for node_type in NODE_WEIGHTS:
+		cumulative += NODE_WEIGHTS[node_type]
+		if roll < cumulative:
+			return node_type
+	return "stone"  # fallback
+
+func _get_tier_for_distance(distance: float, x: int, y: int, seed: int) -> int:
+	"""Get material tier based on distance from origin. Uses overlapping zones for gradual transition."""
+	# Find which tiers are possible at this distance
+	var possible_tiers = []
+	for i in range(TIER_ZONES.size()):
+		var zone = TIER_ZONES[i]
+		if distance >= zone[0] and distance <= zone[1]:
+			possible_tiers.append(i + 1)  # Tiers are 1-indexed
+
+	if possible_tiers.is_empty():
+		# Beyond all defined zones — max tier
+		return 6
+
+	if possible_tiers.size() == 1:
+		return possible_tiers[0]
+
+	# In overlap zone — randomly pick between the two tiers
+	# Weight toward higher tier as distance increases within the overlap
+	var lower_tier = possible_tiers[0]
+	var upper_tier = possible_tiers[possible_tiers.size() - 1]
+	var lower_zone = TIER_ZONES[lower_tier - 1]
+	var upper_zone = TIER_ZONES[upper_tier - 1]
+
+	# How far through the overlap are we?
+	var overlap_start = upper_zone[0]  # where upper tier begins
+	var overlap_end = lower_zone[1]    # where lower tier ends
+	var t = 0.5
+	if overlap_end > overlap_start:
+		t = clampf((distance - overlap_start) / (overlap_end - overlap_start), 0.0, 1.0)
+
+	var tier_roll = _seeded_hash_float(x * 41 + y * 83, seed + 2)
+	if tier_roll < t:
+		return upper_tier
+	return lower_tier
+
+func _is_water_tile_generated(x: int, y: int, seed: int) -> bool:
+	"""Check if a tile should be water using noise-based clustering for natural lakes/rivers."""
+	# Use two layers of noise for natural-looking water bodies
+	# Layer 1: Large-scale water regions (low frequency)
+	var water_noise = _water_noise(x, y, seed)
+	if water_noise > 0.62:
+		return true
+
+	# Layer 2: Small scattered ponds (very rare)
+	var pond_hash = _seeded_hash_float(x * 173 + y * 251, seed + 500)
+	return pond_hash > 0.997  # ~0.3% random scatter
+
+func _water_noise(x: int, y: int, seed: int) -> float:
+	"""Simple value noise for water clustering. Returns 0.0-1.0."""
+	# Use grid-based interpolated noise at low frequency
+	var freq = 0.03  # Low frequency = large water bodies
+	var fx = x * freq
+	var fy = y * freq
+
+	# Grid cell corners
+	var ix = floori(fx)
+	var iy = floori(fy)
+	var frac_x = fx - ix
+	var frac_y = fy - iy
+
+	# Hash values at corners
+	var v00 = _seeded_hash_float(ix * 127 + iy * 311, seed + 100)
+	var v10 = _seeded_hash_float((ix + 1) * 127 + iy * 311, seed + 100)
+	var v01 = _seeded_hash_float(ix * 127 + (iy + 1) * 311, seed + 100)
+	var v11 = _seeded_hash_float((ix + 1) * 127 + (iy + 1) * 311, seed + 100)
+
+	# Smoothstep interpolation
+	var sx = frac_x * frac_x * (3.0 - 2.0 * frac_x)
+	var sy = frac_y * frac_y * (3.0 - 2.0 * frac_y)
+
+	var top = v00 + (v10 - v00) * sx
+	var bottom = v01 + (v11 - v01) * sx
+	return top + (bottom - top) * sy
+
+func _seeded_hash_float(coord_hash: int, seed: int) -> float:
+	"""Deterministic hash returning 0.0-1.0 from coordinate hash + seed."""
+	var h = abs((coord_hash + seed) * 2654435761) % 1000000
+	return h / 1000000.0
+
+func _seeded_hash_int(coord_hash: int, seed: int) -> int:
+	"""Deterministic hash returning a positive integer from coordinate hash + seed."""
+	return abs((coord_hash + seed) * 2654435761) % 1000000
+
+func get_terrain_at(x: int, y: int) -> Terrain:
+	"""Determine terrain type at coordinates.
+	When chunk_manager is available, uses the new tile system.
+	Otherwise falls back to legacy procedural generation."""
+	# New system: derive legacy Terrain enum from tile type
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return _tile_to_terrain(tile, x, y)
+
+	# Legacy fallback
+	return _legacy_get_terrain_at(x, y)
+
+func _tile_to_terrain(tile: Dictionary, x: int, y: int) -> Terrain:
+	"""Convert new tile system type to legacy Terrain enum for backward compatibility."""
+	var tile_type = tile.get("type", "empty")
+
+	# NPC post tiles are safe zones
+	if chunk_manager and chunk_manager.is_npc_post_tile(x, y):
+		return Terrain.TRADING_POST
+
+	# Also check legacy trading posts during transition
 	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
 		return Terrain.TRADING_POST
 
-	# Check special locations
+	match tile_type:
+		"water": return Terrain.WATER
+		"deep_water": return Terrain.DEEP_WATER
+		"wall", "void": return Terrain.VOID
+		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "market", "inn", "quest_board", "post_marker":
+			return Terrain.TRADING_POST  # Inside a post = safe
+		"stone", "ore_vein":
+			return Terrain.MOUNTAINS
+		"tree", "dense_brush":
+			return Terrain.FOREST
+		"herb", "flower", "mushroom", "bush", "reed":
+			return Terrain.PLAINS
+		"empty", "path":
+			# Use distance to flavor the terrain enum
+			var distance = sqrt(float(x * x + y * y))
+			if distance < 100:
+				return Terrain.PLAINS
+			elif distance < 400:
+				return Terrain.FOREST
+			elif distance < 800:
+				return Terrain.DEEP_FOREST
+			else:
+				return Terrain.DESERT
+
+	return Terrain.PLAINS
+
+func _legacy_get_terrain_at(x: int, y: int) -> Terrain:
+	"""Legacy terrain generation (pre-chunk system)."""
+	var pos = Vector2i(x, y)
+
+	if trading_post_db and trading_post_db.is_trading_post_tile(x, y):
+		return Terrain.TRADING_POST
+
 	if SPECIAL_LOCATIONS.has(pos):
 		return SPECIAL_LOCATIONS[pos].terrain
 
-	# Check for water bodies (lakes and rivers)
 	if _is_water_at(x, y):
 		return Terrain.WATER
 	if _is_deep_water_at(x, y):
 		return Terrain.DEEP_WATER
 
-	# Distance-based terrain
 	var distance_from_center = sqrt(x * x + y * y)
 
 	if distance_from_center < 5:
-		return Terrain.PLAINS  # Near center is open plains
+		return Terrain.PLAINS
 	elif distance_from_center < 50:
-		# Starter area - add terrain variety for gathering
-		# Small forest groves, rocky outcrops, and mostly plains
 		var hash_val = abs(x * 11 + y * 17) % 100
 		if hash_val < 15:
-			return Terrain.FOREST  # 15% forest for logging
+			return Terrain.FOREST
 		elif hash_val < 25:
-			return Terrain.MOUNTAINS  # 10% mountains for mining
+			return Terrain.MOUNTAINS
 		else:
-			return Terrain.PLAINS  # 75% plains
+			return Terrain.PLAINS
 	elif distance_from_center < 100:
-		# Use coordinate hash for variety
 		var hash_val = abs(x * 7 + y * 13) % 100
 		if hash_val < 40:
 			return Terrain.FOREST
@@ -106,7 +384,6 @@ func get_terrain_at(x: int, y: int) -> Terrain:
 		else:
 			return Terrain.SWAMP
 	else:
-		# Far regions - very dangerous
 		return Terrain.VOID
 
 	return Terrain.PLAINS
@@ -193,70 +470,103 @@ const STARTER_GATHERING_RADIUS = 25
 const STARTER_NODE_DENSITY = 15  # 1.5% chance for starter nodes (reduced from 4%)
 
 func is_ore_deposit(x: int, y: int) -> bool:
-	"""Check if coordinates are a valid mining location (ore deposit in mountains or starter node)"""
-	var terrain = get_terrain_at(x, y)
+	"""Check if coordinates are a mining location (ore/stone node)."""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return tile.get("type", "") in ["stone", "ore_vein"]
+	# Legacy fallback
+	return _legacy_is_ore_deposit(x, y)
 
-	# Never show ore on water tiles
+func is_dense_forest(x: int, y: int) -> bool:
+	"""Check if coordinates are a logging location (tree/dense brush node)."""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return tile.get("type", "") in ["tree", "dense_brush"]
+	# Legacy fallback
+	return _legacy_is_dense_forest(x, y)
+
+func is_foraging_spot(x: int, y: int) -> bool:
+	"""Check if coordinates are a foraging location (herb/flower/mushroom/bush/reed)."""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return tile.get("type", "") in ["herb", "flower", "mushroom", "bush", "reed"]
+	return false
+
+func get_ore_tier(x: int, y: int) -> int:
+	"""Get the ore/stone tier at this location."""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return tile.get("tier", 1)
+	# Legacy fallback
+	var distance = sqrt(x * x + y * y)
+	return clampi(int(distance / 50) + 1, 1, 9)
+
+func get_wood_tier(x: int, y: int) -> int:
+	"""Get the wood tier at this location."""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		return tile.get("tier", 1)
+	# Legacy fallback
+	var distance = sqrt(x * x + y * y)
+	return clampi(int(distance / 60) + 1, 1, 6)
+
+func get_gathering_node_at(x: int, y: int) -> Dictionary:
+	"""Unified gathering node detection. Returns {type, tier, job} or empty dict."""
+	if chunk_manager:
+		if chunk_manager.is_node_depleted(x, y):
+			return {}
+		var tile = chunk_manager.get_tile(x, y)
+		var tile_type = tile.get("type", "")
+		if tile_type in GATHERABLE_TYPES:
+			return {
+				"type": tile_type,
+				"tier": tile.get("tier", 1),
+				"job": NODE_TO_JOB.get(tile_type, ""),
+			}
+		return {}
+
+	# Legacy fallback — check old gathering functions
+	if is_fishing_spot(x, y):
+		return {"type": "fishing", "tier": get_fishing_tier(x, y), "job": "fishing"}
+	if _legacy_is_ore_deposit(x, y):
+		return {"type": "mining", "tier": get_ore_tier(x, y), "job": "mining"}
+	if _legacy_is_dense_forest(x, y):
+		return {"type": "logging", "tier": get_wood_tier(x, y), "job": "logging"}
+	return {}
+
+func _legacy_is_ore_deposit(x: int, y: int) -> bool:
+	"""Legacy ore deposit detection."""
+	var terrain = _legacy_get_terrain_at(x, y)
 	if terrain == Terrain.WATER or terrain == Terrain.DEEP_WATER:
 		return false
-
 	var distance = sqrt(x * x + y * y)
-
-	# Starter ore nodes near origin (work on any non-safe, non-water terrain)
 	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
 		var info = get_terrain_info(terrain)
-		if not info.safe:  # Not in trading posts
+		if not info.safe:
 			var ore_hash = abs(x * 47 + y * 83) % 1000
 			if ore_hash < STARTER_NODE_DENSITY:
 				return true
-
-	# Regular ore deposits in mountains
 	if terrain != Terrain.MOUNTAINS:
 		return false
-	# Use hash-based ore deposits - 1% of mountain tiles have ore (reduced for rarity)
 	var ore_hash = abs(x * 47 + y * 83) % 1000
-	return ore_hash < 10  # 1% chance
+	return ore_hash < 10
 
-func is_dense_forest(x: int, y: int) -> bool:
-	"""Check if coordinates are a valid logging location (dense forest or starter node)"""
-	var terrain = get_terrain_at(x, y)
-
-	# Never show trees on water tiles
+func _legacy_is_dense_forest(x: int, y: int) -> bool:
+	"""Legacy dense forest detection."""
+	var terrain = _legacy_get_terrain_at(x, y)
 	if terrain == Terrain.WATER or terrain == Terrain.DEEP_WATER:
 		return false
-
 	var distance = sqrt(x * x + y * y)
-
-	# Starter wood nodes near origin (work on any non-safe, non-water terrain)
 	if distance > 5 and distance <= STARTER_GATHERING_RADIUS:
 		var info = get_terrain_info(terrain)
-		if not info.safe:  # Not in trading posts
+		if not info.safe:
 			var wood_hash = abs(x * 67 + y * 97) % 1000
 			if wood_hash < STARTER_NODE_DENSITY:
 				return true
-
-	# Regular dense forests
 	if terrain != Terrain.FOREST and terrain != Terrain.DEEP_FOREST:
 		return false
-	# Use hash-based tree nodes - 1.5% of forests have harvestable trees (reduced for rarity)
 	var wood_hash = abs(x * 67 + y * 97) % 1000
-	return wood_hash < 15  # 1.5% chance
-
-func get_ore_tier(x: int, y: int) -> int:
-	"""Get the ore tier based on distance from origin (center is T1, edges are higher)"""
-	var distance = sqrt(x * x + y * y)
-	# Tier scaling: T1 at 0-50, T2 at 50-100, T3 at 100-150, etc.
-	# Max tier 9 at 400+ distance
-	var tier = int(distance / 50) + 1
-	return clampi(tier, 1, 9)
-
-func get_wood_tier(x: int, y: int) -> int:
-	"""Get the wood tier based on distance from origin"""
-	var distance = sqrt(x * x + y * y)
-	# Tier scaling similar to ore
-	# Max tier 6 for wood
-	var tier = int(distance / 60) + 1
-	return clampi(tier, 1, 6)
+	return wood_hash < 15
 
 func get_terrain_info(terrain: Terrain) -> Dictionary:
 	"""Get information about a terrain type"""
@@ -508,71 +818,97 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
-	"""Generate complete map display with location info header.
-	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
-	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
-	depleted_nodes is an array of "x,y" strings for nodes that are currently depleted.
-	corpse_locations is an array of {x, y, ...} dictionaries for corpses to display.
-	bounty_locations is an array of {x, y} dictionaries for bounty targets to display."""
+func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
+	"""Generate complete map display with location info header."""
 	var output = ""
 
-	# Check if at Trading Post
+	# Check if at NPC post (new system)
+	if chunk_manager and chunk_manager.is_npc_post_tile(center_x, center_y):
+		var post = chunk_manager.get_npc_post_at(center_x, center_y)
+		if not post.is_empty():
+			output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
+			output += "[color=#00FF00]Safe[/color]\n"
+			# Compass to nearest OTHER post
+			output += _get_compass_line(center_x, center_y, post)
+			output += "[center]"
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+			output += "[/center]"
+			return output
+
+	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
 		var tp = trading_post_db.get_trading_post_at(center_x, center_y)
 		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+		if chunk_manager:
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+		else:
+			output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 		output += "[/center]"
 		return output
 
 	# Get location info
 	var terrain = get_terrain_at(center_x, center_y)
 	var info = get_terrain_info(terrain)
-
-	# Get distance-based level range
 	var level_range = get_monster_level_range(center_x, center_y)
 
-	# Location header - compact format
+	# Location header - compact format with compass
 	output += "[color=#5F9EA0](%d, %d)[/color] %s" % [center_x, center_y, info.name]
 
-	# Merchant at current location (not in Trading Posts)
+	# Merchant at current location
 	if is_merchant_at(center_x, center_y):
 		var merchant = get_merchant_at(center_x, center_y)
 		output += " [color=#FFD700]$%s[/color]" % merchant.name
 
 	output += "\n"
 
-	# Danger info based on distance - single line
+	# Danger info
 	if not info.safe and level_range.min > 0:
 		if level_range.is_hotspot:
 			output += "[color=#FF0000]!DANGER![/color] "
-		output += "[color=#FF4444]Lv%d-%d[/color]\n" % [level_range.min, level_range.max]
+		output += "[color=#FF4444]Lv%d-%d[/color]" % [level_range.min, level_range.max]
 	else:
-		output += "[color=#00FF00]Safe[/color]\n"
+		output += "[color=#00FF00]Safe[/color]"
+
+	# Compass to nearest NPC post
+	if chunk_manager:
+		output += _get_compass_line(center_x, center_y)
+
+	output += "\n"
 
 	# Add the map (centered)
 	output += "[center]"
-	output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+	if chunk_manager:
+		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+	else:
+		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	output += "[/center]"
 
 	return output
 
 func is_safe_zone(x: int, y: int) -> bool:
-	"""Check if location is a safe zone"""
+	"""Check if location is a safe zone (NPC post, trading post, structure interior)"""
+	# New system: check NPC posts
+	if chunk_manager and chunk_manager.is_npc_post_tile(x, y):
+		return true
+	# Check tile type for structure interiors
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		var tile_type = tile.get("type", "")
+		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "market", "inn", "quest_board", "post_marker"]:
+			return true
+	# Legacy: check trading posts
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
 	return info.safe
 
 func check_encounter(x: int, y: int) -> bool:
 	"""Check if player encounters a monster (roll)"""
+	if is_safe_zone(x, y):
+		return false
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
-	
-	if info.safe:
-		return false
-	
 	return randf() < info.encounter_rate
 
 func get_monster_level_range(x: int, y: int) -> Dictionary:
@@ -716,10 +1052,11 @@ func move_player(current_x: int, current_y: int, direction: int) -> Vector2i:
 	7=NW, 8=N, 9=NE
 	4=W,  5=stay, 6=E
 	1=SW, 2=S, 3=SE
+	Returns the new position. If blocked by terrain, returns current position.
 	"""
 	var new_x = current_x
 	var new_y = current_y
-	
+
 	match direction:
 		1:  # Southwest
 			new_x -= 1
@@ -743,12 +1080,38 @@ func move_player(current_x: int, current_y: int, direction: int) -> Vector2i:
 			new_y += 1
 		5:  # Stay (rest/search)
 			pass
-	
+
 	# Clamp to world bounds
 	new_x = clampi(new_x, WORLD_MIN_X, WORLD_MAX_X)
 	new_y = clampi(new_y, WORLD_MIN_Y, WORLD_MAX_Y)
-	
+
+	# Check if tile blocks movement (new chunk system)
+	if chunk_manager and direction != 5:
+		var tile = chunk_manager.get_tile(new_x, new_y)
+		if tile.get("blocks_move", false):
+			# Depleted gathering nodes become passable
+			var tile_type = tile.get("type", "")
+			if tile_type in GATHERABLE_TYPES and chunk_manager.is_node_depleted(new_x, new_y):
+				pass  # Allow movement through depleted node
+			else:
+				return Vector2i(current_x, current_y)  # Can't move there
+
 	return Vector2i(new_x, new_y)
+
+func get_direction_offset(x: int, y: int, direction: int) -> Vector2i:
+	"""Get the target position for a direction (ignoring blocking)."""
+	var dx = 0
+	var dy = 0
+	match direction:
+		1: dx = -1; dy = -1
+		2: dy = -1
+		3: dx = 1; dy = -1
+		4: dx = -1
+		6: dx = 1
+		7: dx = -1; dy = 1
+		8: dy = 1
+		9: dx = 1; dy = 1
+	return Vector2i(x + dx, y + dy)
 
 func get_direction_name(direction: int) -> String:
 	"""Get name of direction"""
@@ -763,6 +1126,245 @@ func get_direction_name(direction: int) -> String:
 		8: return "north"
 		9: return "northeast"
 	return "unknown"
+
+# ===== LINE OF SIGHT (BRESENHAM) =====
+
+func is_tile_visible(player_x: int, player_y: int, target_x: int, target_y: int) -> bool:
+	"""Check if target tile is visible from player using Bresenham LOS.
+	A tile is visible if no intermediate tile blocks LOS.
+	The target tile itself is visible even if it blocks LOS (you can see the wall)."""
+	if not chunk_manager:
+		return true  # No LOS without chunk system
+
+	var points = bresenham_line(player_x, player_y, target_x, target_y)
+
+	# Check intermediate points (skip player tile [0] and target tile [last])
+	for i in range(1, points.size() - 1):
+		var tile = chunk_manager.get_tile(points[i].x, points[i].y)
+		if tile.get("blocks_los", false):
+			# Depleted gathering nodes don't block LOS
+			var tile_type = tile.get("type", "")
+			if tile_type in GATHERABLE_TYPES and chunk_manager.is_node_depleted(points[i].x, points[i].y):
+				continue
+			return false
+
+	return true
+
+func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
+	"""Standard Bresenham line algorithm. Returns all points on the line."""
+	var points: Array[Vector2i] = []
+	var dx = abs(x1 - x0)
+	var dy = abs(y1 - y0)
+	var sx = 1 if x0 < x1 else -1
+	var sy = 1 if y0 < y1 else -1
+	var err = dx - dy
+
+	var cx = x0
+	var cy = y0
+	while true:
+		points.append(Vector2i(cx, cy))
+		if cx == x1 and cy == y1:
+			break
+		var e2 = 2 * err
+		if e2 > -dy:
+			err -= dy
+			cx += sx
+		if e2 < dx:
+			err += dx
+			cy += sy
+
+	return points
+
+# ===== NEW MAP RENDERER (Chunk-based with LOS) =====
+
+func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
+	"""Generate ASCII map using chunk-based tile data with LOS raycasting."""
+	var map_lines: PackedStringArray = PackedStringArray()
+
+	# Build lookups
+	var depleted_set = {}
+	for coord_key in depleted_nodes:
+		depleted_set[coord_key] = true
+
+	var player_positions = {}
+	for player in nearby_players:
+		var key = "%d,%d" % [player.x, player.y]
+		if not player_positions.has(key):
+			player_positions[key] = []
+		player_positions[key].append(player)
+
+	var dungeon_positions = {}
+	for dungeon in dungeon_locations:
+		var key = "%d,%d" % [dungeon.x, dungeon.y]
+		dungeon_positions[key] = dungeon
+
+	var corpse_positions = {}
+	for corpse in corpse_locations:
+		var key = "%d,%d" % [corpse.get("x", -9999), corpse.get("y", -9999)]
+		corpse_positions[key] = corpse
+
+	var bounty_positions = {}
+	for bounty in bounty_locations:
+		var key = "%d,%d" % [bounty.get("x", -9999), bounty.get("y", -9999)]
+		bounty_positions[key] = bounty
+
+	# Pre-compute LOS for all tiles in vision radius
+	var visible_tiles = {}
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var dist = sqrt(float(dx * dx + dy * dy))
+			if dist > radius:
+				continue
+			var tx = center_x + dx
+			var ty = center_y + dy
+			var key = "%d,%d" % [tx, ty]
+			visible_tiles[key] = is_tile_visible(center_x, center_y, tx, ty)
+
+	# Render map
+	for dy in range(radius, -radius - 1, -1):
+		var line_parts: PackedStringArray = PackedStringArray()
+		for dx in range(-radius, radius + 1):
+			var x = center_x + dx
+			var y = center_y + dy
+			var dist = sqrt(float(dx * dx + dy * dy))
+
+			# Outside vision radius
+			if dist > radius:
+				line_parts.append("  ")
+				continue
+
+			# Out of world bounds
+			if x < WORLD_MIN_X or x > WORLD_MAX_X or y < WORLD_MIN_Y or y > WORLD_MAX_Y:
+				line_parts.append("  ")
+				continue
+
+			var pos_key = "%d,%d" % [x, y]
+
+			# Player position (always visible)
+			if dx == 0 and dy == 0:
+				line_parts.append("[color=#FFFF00] @[/color]")
+				continue
+
+			# LOS check — tiles outside line of sight are fully dark
+			if not visible_tiles.get(pos_key, false):
+				line_parts.append("  ")
+				continue
+
+			# Priority: players > dungeons > bounties > corpses > entities > terrain
+			if player_positions.has(pos_key):
+				var players_here = player_positions[pos_key]
+				var first_player = players_here[0]
+				var player_char = first_player.name[0].to_upper() if first_player.name.length() > 0 else "?"
+				if players_here.size() > 1:
+					player_char = "*"
+				line_parts.append("[color=#00FFFF] %s[/color]" % player_char)
+			elif dungeon_positions.has(pos_key):
+				var dungeon = dungeon_positions[pos_key]
+				var dungeon_color = dungeon.get("color", "#A335EE")
+				line_parts.append("[color=%s] D[/color]" % dungeon_color)
+			elif bounty_positions.has(pos_key):
+				line_parts.append("[color=#FF4500] ![/color]")
+			elif corpse_positions.has(pos_key):
+				line_parts.append("[color=#FF0000] X[/color]")
+			elif is_merchant_at(x, y):
+				var merchant_color = _get_merchant_map_color(x, y)
+				var merchant_char = _get_merchant_map_char(x, y)
+				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
+			else:
+				# Render tile from chunk data
+				var tile = chunk_manager.get_tile(x, y)
+				var tile_type = tile.get("type", "empty")
+				var tile_tier = tile.get("tier", 1)
+				var is_depleted = depleted_set.has(pos_key)
+
+				if is_depleted and tile_type in GATHERABLE_TYPES:
+					# Depleted node — show dim passable ground
+					line_parts.append("[color=#444444] ,[/color]")
+				else:
+					line_parts.append(_render_tile_bbcode(tile_type, tile_tier))
+
+		map_lines.append("".join(line_parts))
+
+	return "\n".join(map_lines)
+
+func _render_tile_bbcode(tile_type: String, tier: int = 1) -> String:
+	"""Render a single tile as BBCode. 2 chars wide: space + character."""
+	var render = TILE_RENDER.get(tile_type, TILE_RENDER["empty"])
+	var char = render.char
+	var color = render.color
+
+	# Apply tier color shift for resources
+	if TIER_COLORS.has(tile_type) and tier >= 1 and tier <= 6:
+		color = TIER_COLORS[tile_type][tier - 1]
+
+	# Flower color variety (deterministic from type name hash)
+	if tile_type == "flower":
+		var flower_colors = ["#FF69B4", "#FFD700", "#DA70D6", "#FF6347"]
+		# Use a simple approach — vary by... well, flowers all look the same per tile
+		# The tier can serve as color index
+		color = flower_colors[(tier - 1) % flower_colors.size()]
+
+	return "[color=%s] %s[/color]" % [color, char]
+
+# ===== COMPASS / NAVIGATION =====
+
+func _get_compass_line(player_x: int, player_y: int, exclude_post: Dictionary = {}) -> String:
+	"""Get compass direction string pointing to nearest NPC post."""
+	if not chunk_manager:
+		return ""
+
+	var nearest = chunk_manager.get_nearest_npc_post(player_x, player_y)
+	if nearest.is_empty():
+		return ""
+
+	# Don't point to the post we're standing in
+	if not exclude_post.is_empty():
+		if nearest.get("x", -999) == exclude_post.get("x", -998) and nearest.get("y", -999) == exclude_post.get("y", -998):
+			# Find second nearest
+			var posts = chunk_manager.get_npc_posts()
+			var best_dist = INF
+			var second_nearest = {}
+			for post in posts:
+				if post.get("x", 0) == exclude_post.get("x", -1) and post.get("y", 0) == exclude_post.get("y", -1):
+					continue
+				var dx = post.get("x", 0) - player_x
+				var dy = post.get("y", 0) - player_y
+				var d = sqrt(dx * dx + dy * dy)
+				if d < best_dist:
+					best_dist = d
+					second_nearest = post
+			if second_nearest.is_empty():
+				return ""
+			nearest = second_nearest
+
+	var dx = nearest.get("x", 0) - player_x
+	var dy = nearest.get("y", 0) - player_y
+	var dist = int(sqrt(dx * dx + dy * dy))
+
+	if dist < 2:
+		return ""  # Already at a post
+
+	# Determine cardinal direction
+	var angle = atan2(dy, dx)
+	var direction = ""
+	if angle > -PI/8 and angle <= PI/8:
+		direction = "E"
+	elif angle > PI/8 and angle <= 3*PI/8:
+		direction = "NE"
+	elif angle > 3*PI/8 and angle <= 5*PI/8:
+		direction = "N"
+	elif angle > 5*PI/8 and angle <= 7*PI/8:
+		direction = "NW"
+	elif angle > 7*PI/8 or angle <= -7*PI/8:
+		direction = "W"
+	elif angle > -7*PI/8 and angle <= -5*PI/8:
+		direction = "SW"
+	elif angle > -5*PI/8 and angle <= -3*PI/8:
+		direction = "S"
+	else:
+		direction = "SE"
+
+	return " [color=#C4A882]%s %s (%d)[/color]" % [direction, nearest.get("name", "Post"), dist]
 
 # ===== PROCEDURAL TRAVELING MERCHANT SYSTEM =====
 # Lightweight merchant system - positions calculated on-demand, not simulated
@@ -1061,6 +1663,9 @@ func _refresh_merchant_cache():
 	var total = _get_total_merchants()
 	for i in range(total):
 		var pos = _get_merchant_position(i, current_time)
+		# Skip merchants in safe zones (NPC posts, trading posts)
+		if is_safe_zone(pos.x, pos.y):
+			continue
 		var key = "%d,%d" % [pos.x, pos.y]
 		if not _merchant_cache.has(key):
 			_merchant_cache[key] = []
@@ -1199,7 +1804,7 @@ func _get_merchant_map_char(x: int, y: int) -> String:
 		return "★"  # Elite merchants are visually distinct
 	return "$"  # Normal merchants
 
-func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 7, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
+func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
 	"""Generate ASCII map with merchants, Trading Posts, dungeons, corpses, bounties, and other players shown.
 	nearby_players is an array of {x, y, name, level} dictionaries for other players to display.
 	dungeon_locations is an array of {x, y, color} dictionaries for dungeon entrances.
@@ -1346,19 +1951,56 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 # ===== TRADING POST HELPERS =====
 
 func is_trading_post_tile(x: int, y: int) -> bool:
-	"""Check if tile is part of any Trading Post"""
+	"""Check if tile is part of any Trading Post or NPC Post"""
+	if chunk_manager:
+		# New system: NPC posts replace legacy trading posts
+		return chunk_manager.is_npc_post_tile(x, y)
 	if trading_post_db:
 		return trading_post_db.is_trading_post_tile(x, y)
 	return false
 
 func get_trading_post_at(x: int, y: int) -> Dictionary:
-	"""Get Trading Post data if at one, empty dict otherwise"""
+	"""Get Trading Post / NPC Post data if at one, empty dict otherwise.
+	Always returns normalized dict with: id, name, center, description, quest_giver."""
+	if chunk_manager:
+		# New system: NPC posts replace legacy trading posts
+		var post = chunk_manager.get_npc_post_at(x, y)
+		if not post.is_empty():
+			return _normalize_npc_post(post)
+		return {}
 	if trading_post_db:
 		return trading_post_db.get_trading_post_at(x, y)
 	return {}
 
+func _normalize_npc_post(post: Dictionary) -> Dictionary:
+	"""Ensure NPC post dict has all fields trading post handlers expect."""
+	var result = post.duplicate()
+	if not result.has("id"):
+		result["id"] = "npc_" + result.get("name", "unknown").to_lower().replace(" ", "_")
+	if not result.has("center"):
+		result["center"] = {"x": result.get("x", 0), "y": result.get("y", 0)}
+	if not result.has("description"):
+		var cat = result.get("category", "default")
+		var descriptions = {
+			"haven": "A sheltered sanctuary for weary travelers.",
+			"market": "A bustling marketplace with goods from across the land.",
+			"shrine": "A place of quiet contemplation and healing.",
+			"farm": "A rural settlement surrounded by cultivated fields.",
+			"mine": "A rugged outpost built around rich mineral deposits.",
+			"tower": "A fortified watchtower overlooking the badlands.",
+			"camp": "A makeshift camp offering basic supplies.",
+			"exotic": "A mysterious outpost trading in rare curiosities.",
+			"fortress": "A heavily fortified stronghold.",
+		}
+		result["description"] = descriptions.get(cat, "A trading post in the wilderness.")
+	return result
+
 func is_trading_post_center(x: int, y: int) -> bool:
-	"""Check if tile is the center of a Trading Post"""
+	"""Check if tile is the center of a Trading Post or NPC Post"""
+	if chunk_manager:
+		for post in chunk_manager.get_npc_posts():
+			if post.get("x", -999) == x and post.get("y", -999) == y:
+				return true
 	if trading_post_db:
 		return trading_post_db.is_trading_post_center(x, y)
 	return false

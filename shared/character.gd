@@ -367,11 +367,32 @@ const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower
 @export var wood_gathered: int = 0  # Total wood gathered (tracking)
 
 # ===== GATHERING TOOLS =====
-# Equipped gathering tools provide bonuses to yield, speed, and tier access
-# Format: {name: String, tier: int, bonuses: {yield_bonus: int, speed_bonus: float, tier_bonus: int}}
-@export var equipped_fishing_rod: Dictionary = {}
-@export var equipped_pickaxe: Dictionary = {}
-@export var equipped_axe: Dictionary = {}
+# Equipped gathering tools — one per subtype (pickaxe, axe, sickle, rod)
+# Format per slot: {id, name, type: "tool", subtype, tier, durability, max_durability, rarity, tool_bonuses}
+@export var equipped_fishing_rod: Dictionary = {}  # Legacy — kept for old save compat
+@export var equipped_pickaxe: Dictionary = {}       # Legacy
+@export var equipped_axe: Dictionary = {}           # Legacy
+@export var equipped_tools: Dictionary = {
+	"pickaxe": {}, "axe": {}, "sickle": {}, "rod": {}
+}
+
+# ===== JOB SYSTEM =====
+@export var gathering_job: String = ""           # "" = uncommitted
+@export var specialty_job: String = ""           # "" = uncommitted (Phase 2)
+@export var gathering_job_committed: bool = false
+@export var specialty_job_committed: bool = false
+@export var job_levels: Dictionary = {
+	"mining": 1, "logging": 1, "foraging": 1, "soldier": 1, "fishing": 1,
+	"blacksmith": 1, "builder": 1, "alchemist": 1, "scribe": 1, "enchanter": 1
+}
+@export var job_xp: Dictionary = {
+	"mining": 0, "logging": 0, "foraging": 0, "soldier": 0, "fishing": 0,
+	"blacksmith": 0, "builder": 0, "alchemist": 0, "scribe": 0, "enchanter": 0
+}
+const JOB_LEVEL_CAP = 100
+const JOB_TRIAL_CAP = 5
+const GATHERING_JOBS = ["mining", "logging", "foraging", "soldier", "fishing"]
+const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]
 
 # ===== SALVAGE SYSTEM =====
 @export var salvage_essence: int = 0  # Currency from salvaging items
@@ -1297,6 +1318,13 @@ func to_dict() -> Dictionary:
 		"equipped_fishing_rod": equipped_fishing_rod,
 		"equipped_pickaxe": equipped_pickaxe,
 		"equipped_axe": equipped_axe,
+		"equipped_tools": equipped_tools,
+		"gathering_job": gathering_job,
+		"specialty_job": specialty_job,
+		"gathering_job_committed": gathering_job_committed,
+		"specialty_job_committed": specialty_job_committed,
+		"job_levels": job_levels,
+		"job_xp": job_xp,
 		"house_bonuses": house_bonuses,
 		"using_registered_companion": using_registered_companion,
 		"registered_companion_slot": registered_companion_slot,
@@ -1529,10 +1557,58 @@ func from_dict(data: Dictionary):
 	crafting_skills = data.get("crafting_skills", {"blacksmithing": 1, "alchemy": 1, "enchanting": 1})
 	crafting_xp = data.get("crafting_xp", {"blacksmithing": 0, "alchemy": 0, "enchanting": 0})
 
-	# Gathering tools
+	# Gathering tools (new system: equipped_tools dict)
 	equipped_fishing_rod = data.get("equipped_fishing_rod", {})
 	equipped_pickaxe = data.get("equipped_pickaxe", {})
 	equipped_axe = data.get("equipped_axe", {})
+	equipped_tools = data.get("equipped_tools", {"pickaxe": {}, "axe": {}, "sickle": {}, "rod": {}})
+	# Ensure all slots exist
+	for slot in ["pickaxe", "axe", "sickle", "rod"]:
+		if not equipped_tools.has(slot):
+			equipped_tools[slot] = {}
+	# Migrate tools from inventory to equipped slots (first tool of each type found)
+	if not data.has("equipped_tools"):
+		for i in range(inventory.size() - 1, -1, -1):
+			var item = inventory[i]
+			if item.get("type", "") == "tool":
+				var st = item.get("subtype", "")
+				if equipped_tools.has(st) and equipped_tools[st].is_empty():
+					equipped_tools[st] = item
+					inventory.remove_at(i)
+
+	# Job system
+	gathering_job = data.get("gathering_job", "")
+	specialty_job = data.get("specialty_job", "")
+	gathering_job_committed = data.get("gathering_job_committed", false)
+	specialty_job_committed = data.get("specialty_job_committed", false)
+	job_levels = data.get("job_levels", {
+		"mining": 1, "logging": 1, "foraging": 1, "soldier": 1, "fishing": 1,
+		"blacksmith": 1, "builder": 1, "alchemist": 1, "scribe": 1, "enchanter": 1
+	})
+	job_xp = data.get("job_xp", {
+		"mining": 0, "logging": 0, "foraging": 0, "soldier": 0, "fishing": 0,
+		"blacksmith": 0, "builder": 0, "alchemist": 0, "scribe": 0, "enchanter": 0
+	})
+
+	# Legacy migration: seed job_levels from old skill system if character predates jobs
+	if not data.has("job_levels") and (data.has("fishing_skill") or data.has("mining_skill") or data.has("logging_skill")):
+		job_levels["fishing"] = mini(int(data.get("fishing_skill", 1)), JOB_TRIAL_CAP)
+		job_levels["mining"] = mini(int(data.get("mining_skill", 1)), JOB_TRIAL_CAP)
+		job_levels["logging"] = mini(int(data.get("logging_skill", 1)), JOB_TRIAL_CAP)
+
+	# Legacy migration: convert old equipped tools to inventory items
+	if not data.has("job_levels"):
+		var _old_tools = [
+			{"old_key": "equipped_pickaxe", "subtype": "pickaxe"},
+			{"old_key": "equipped_axe", "subtype": "axe"},
+			{"old_key": "equipped_fishing_rod", "subtype": "rod"},
+		]
+		for _t in _old_tools:
+			var old_tool = data.get(_t["old_key"], {})
+			if not old_tool.is_empty() and inventory.size() < MAX_INVENTORY_SIZE:
+				var new_tool = DropTables.generate_tool(_t["subtype"], clampi(old_tool.get("tier", 1), 1, 5))
+				if not new_tool.is_empty():
+					inventory.append(new_tool)
 
 	# House (Sanctuary) system
 	house_bonuses = data.get("house_bonuses", {})
@@ -2889,12 +2965,15 @@ func has_salvage_essence(amount: int) -> bool:
 
 # ===== CRAFTING SYSTEM =====
 
+const MAX_MATERIAL_STACK = 999
+
 func add_crafting_material(material_id: String, quantity: int = 1) -> int:
-	"""Add crafting materials. Returns new total."""
+	"""Add crafting materials, capped at MAX_MATERIAL_STACK. Returns amount actually added (may be less than quantity if at cap)."""
 	if not crafting_materials.has(material_id):
 		crafting_materials[material_id] = 0
-	crafting_materials[material_id] += quantity
-	return crafting_materials[material_id]
+	var before = crafting_materials[material_id]
+	crafting_materials[material_id] = mini(before + quantity, MAX_MATERIAL_STACK)
+	return crafting_materials[material_id] - before
 
 func remove_crafting_material(material_id: String, quantity: int = 1) -> bool:
 	"""Remove crafting materials. Returns true if successful."""
@@ -2957,6 +3036,102 @@ func learn_recipe(recipe_id: String) -> bool:
 func knows_recipe(recipe_id: String) -> bool:
 	"""Check if player knows a recipe."""
 	return recipe_id in known_recipes
+
+# ===== JOB SYSTEM =====
+
+func _get_job_xp_needed(current_level: int) -> int:
+	"""Get XP needed for next job level."""
+	return int(100 * pow(current_level, 1.4))
+
+func can_gain_job_xp(job_name: String) -> bool:
+	"""Check if player can gain XP in this job (respects trial cap and commitment)."""
+	var jl = job_levels.get(job_name, 1)
+	if job_name in GATHERING_JOBS:
+		if not gathering_job_committed:
+			return jl < JOB_TRIAL_CAP
+		return gathering_job == job_name
+	elif job_name in SPECIALTY_JOBS:
+		if not specialty_job_committed:
+			return jl < JOB_TRIAL_CAP
+		return specialty_job == job_name
+	return false
+
+func add_job_xp(job_name: String, xp: int) -> Dictionary:
+	"""Add XP to a job. Returns {leveled_up, new_level, char_xp_gained}.
+	Cannot gain XP past trial cap on uncommitted jobs.
+	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x"""
+	if not can_gain_job_xp(job_name):
+		return {"leveled_up": false, "new_level": job_levels.get(job_name, 1), "char_xp_gained": 0}
+
+	if not job_xp.has(job_name):
+		job_xp[job_name] = 0
+	if not job_levels.has(job_name):
+		job_levels[job_name] = 1
+
+	job_xp[job_name] += xp
+	var leveled_up = false
+	var current_level = job_levels[job_name]
+	var xp_needed = _get_job_xp_needed(current_level)
+
+	while job_xp[job_name] >= xp_needed and current_level < JOB_LEVEL_CAP:
+		job_xp[job_name] -= xp_needed
+		current_level += 1
+		job_levels[job_name] = current_level
+		leveled_up = true
+		xp_needed = _get_job_xp_needed(current_level)
+
+	# Character XP taper based on job level
+	var taper: float
+	if current_level <= 20:
+		taper = 1.0
+	elif current_level <= 50:
+		taper = 0.5
+	else:
+		taper = 0.2
+	var char_xp_gained = int(xp * taper)
+
+	return {"leveled_up": leveled_up, "new_level": current_level, "char_xp_gained": char_xp_gained}
+
+func commit_gathering_job(job_name: String) -> bool:
+	"""Commit to a gathering job. Returns true if successful."""
+	if gathering_job_committed:
+		return false
+	if job_name not in GATHERING_JOBS:
+		return false
+	if job_levels.get(job_name, 1) < JOB_TRIAL_CAP:
+		return false
+	gathering_job = job_name
+	gathering_job_committed = true
+	return true
+
+func commit_specialty_job(job_name: String) -> bool:
+	"""Commit to a specialty job. Returns true if successful."""
+	if specialty_job_committed:
+		return false
+	if job_name not in SPECIALTY_JOBS:
+		return false
+	if job_levels.get(job_name, 1) < JOB_TRIAL_CAP:
+		return false
+	specialty_job = job_name
+	specialty_job_committed = true
+	return true
+
+func get_job_stats(job_name: String) -> Dictionary:
+	"""Get job level, XP, XP needed, and committed status."""
+	var jl = job_levels.get(job_name, 1)
+	var jxp = job_xp.get(job_name, 0)
+	var committed = false
+	if job_name in GATHERING_JOBS:
+		committed = gathering_job_committed and gathering_job == job_name
+	elif job_name in SPECIALTY_JOBS:
+		committed = specialty_job_committed and specialty_job == job_name
+	return {
+		"level": jl,
+		"xp": jxp,
+		"xp_needed": _get_job_xp_needed(jl),
+		"committed": committed,
+		"at_trial_cap": jl >= JOB_TRIAL_CAP and not committed
+	}
 
 # ===== CLOAK SYSTEM =====
 

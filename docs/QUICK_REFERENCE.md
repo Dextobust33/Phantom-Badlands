@@ -1,4 +1,4 @@
-# Phantasia Revival - Quick Reference
+# Phantom Badlands - Quick Reference
 
 **Use this as context primer for new Claude sessions.**
 

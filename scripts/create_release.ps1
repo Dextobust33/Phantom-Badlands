@@ -1,5 +1,5 @@
 # create_release.ps1
-# Helper script to create a release package for Phantasia Revival
+# Helper script to create a release package for Phantom Badlands
 # Usage: .\create_release.ps1 -Version "1.0.1"
 
 param(
@@ -23,7 +23,7 @@ Write-Host "Updated VERSION.txt to $Version" -ForegroundColor Green
 
 # Export paths
 $GodotPath = "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe"
-$ClientExport = "$ExportPath\phantasia-client.exe"
+$ClientExport = "$ExportPath\phantom-badlands-client.exe"
 
 Write-Host "Exporting client..." -ForegroundColor Yellow
 & $GodotPath --headless --path $ProjectPath --export-release "Windows Desktop" $ClientExport
@@ -32,13 +32,13 @@ if (Test-Path $ClientExport) {
     Write-Host "Client exported successfully" -ForegroundColor Green
 
     # Create zip package
-    $ZipName = "phantasia-client-v$Version.zip"
+    $ZipName = "phantom-badlands-client-v$Version.zip"
     $ZipPath = "$ReleasePath\$ZipName"
 
     # Files to include in release
     $FilesToZip = @(
-        "$ExportPath\phantasia-client.exe",
-        "$ExportPath\phantasia-client.pck",
+        "$ExportPath\phantom-badlands-client.exe",
+        "$ExportPath\phantom-badlands-client.pck",
         "$ProjectPath\VERSION.txt"
     )
 

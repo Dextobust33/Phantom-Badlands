@@ -131,6 +131,38 @@ const MATERIALS = {
 	"soul_shard": {"name": "Soul Shard", "type": "enchant", "tier": 4, "value": 80},
 	"void_essence": {"name": "Void Essence", "type": "enchant", "tier": 6, "value": 200},
 	"primordial_spark": {"name": "Primordial Spark", "type": "enchant", "tier": 8, "value": 800},
+
+	# Foraging — T1
+	"clover": {"name": "Clover", "type": "herb", "tier": 1, "value": 5},
+	"wild_berries": {"name": "Wild Berries", "type": "plant", "tier": 1, "value": 4},
+	"common_mushroom": {"name": "Common Mushroom", "type": "fungus", "tier": 1, "value": 6},
+	"reed_fiber": {"name": "Reed Fiber", "type": "plant", "tier": 1, "value": 3},
+	"four_leaf_clover": {"name": "Four-Leaf Clover", "type": "herb", "tier": 1, "value": 50},
+	# Foraging — T2
+	"sage": {"name": "Sage", "type": "herb", "tier": 2, "value": 12},
+	"thornberry": {"name": "Thornberry", "type": "plant", "tier": 2, "value": 15},
+	"cave_mushroom": {"name": "Cave Mushroom", "type": "fungus", "tier": 2, "value": 18},
+	"enchanted_pollen": {"name": "Enchanted Pollen", "type": "enchant", "tier": 2, "value": 40},
+	# Foraging — T3
+	"moonpetal": {"name": "Moonpetal", "type": "herb", "tier": 3, "value": 30},
+	"glowing_mushroom": {"name": "Glowing Mushroom", "type": "fungus", "tier": 3, "value": 35},
+	"crystal_flower": {"name": "Crystal Flower", "type": "plant", "tier": 3, "value": 45},
+	"arcane_moss": {"name": "Arcane Moss", "type": "enchant", "tier": 3, "value": 50},
+	# Foraging — T4
+	"bloodroot": {"name": "Bloodroot", "type": "herb", "tier": 4, "value": 60},
+	"nightmare_cap": {"name": "Nightmare Cap", "type": "fungus", "tier": 4, "value": 70},
+	"spirit_blossom": {"name": "Spirit Blossom", "type": "herb", "tier": 4, "value": 80},
+	"heartwood_seed": {"name": "Heartwood Seed", "type": "plant", "tier": 4, "value": 120},
+	# Foraging — T5
+	"starbloom": {"name": "Starbloom", "type": "herb", "tier": 5, "value": 120},
+	"void_spore": {"name": "Void Spore", "type": "fungus", "tier": 5, "value": 150},
+	"celestial_petal": {"name": "Celestial Petal", "type": "herb", "tier": 5, "value": 250},
+	"worldtree_seed": {"name": "Worldtree Seed", "type": "plant", "tier": 5, "value": 300},
+	# Foraging — T6
+	"voidpetal": {"name": "Voidpetal", "type": "herb", "tier": 6, "value": 250},
+	"primordial_fungus": {"name": "Primordial Fungus", "type": "fungus", "tier": 6, "value": 300},
+	"void_blossom": {"name": "Void Blossom", "type": "herb", "tier": 6, "value": 600},
+	"creation_seed": {"name": "Creation Seed", "type": "plant", "tier": 6, "value": 800},
 }
 
 # ===== RECIPES =====
