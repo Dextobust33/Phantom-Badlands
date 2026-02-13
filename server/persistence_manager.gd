@@ -10,6 +10,7 @@ const REALM_STATE_FILE = "user://data/realm_state.json"
 const CHARACTERS_DIR = "user://data/characters/"
 const CORPSES_FILE = "user://data/corpses.json"
 const HOUSES_FILE = "user://data/houses.json"
+const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
@@ -47,6 +48,7 @@ var leaderboard_data: Dictionary = {}
 var realm_state_data: Dictionary = {}
 var corpses_data: Dictionary = {}  # {"corpses": [...]}
 var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
+var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
 
 func _ready():
 	ensure_data_directories()
@@ -56,6 +58,7 @@ func _ready():
 	load_realm_state()
 	load_corpses()
 	load_houses()
+	load_player_tiles()
 
 # ===== DIRECTORY SETUP =====
 
@@ -1373,3 +1376,56 @@ func calculate_baddie_points(character: Character) -> int:
 		points += 1000
 
 	return points
+
+# ===== PLAYER TILES (Building System) =====
+
+func load_player_tiles():
+	"""Load player-placed tile tracking data."""
+	var data = _safe_load(PLAYER_TILES_FILE)
+	if data.is_empty():
+		player_tiles_data = {"tiles": {}}
+	else:
+		player_tiles_data = data
+
+func save_player_tiles():
+	"""Save player-placed tile tracking data."""
+	_safe_save(PLAYER_TILES_FILE, player_tiles_data)
+
+func get_player_tiles(username: String) -> Array:
+	"""Get all tiles placed by a player. Returns [{x, y, type}, ...]."""
+	if not player_tiles_data.has("tiles"):
+		player_tiles_data["tiles"] = {}
+	return player_tiles_data.tiles.get(username, [])
+
+func add_player_tile(username: String, x: int, y: int, tile_type: String):
+	"""Track a player-placed tile."""
+	if not player_tiles_data.has("tiles"):
+		player_tiles_data["tiles"] = {}
+	if not player_tiles_data.tiles.has(username):
+		player_tiles_data.tiles[username] = []
+	player_tiles_data.tiles[username].append({"x": x, "y": y, "type": tile_type})
+	save_player_tiles()
+
+func remove_player_tile(username: String, x: int, y: int):
+	"""Remove a tracked player tile at position."""
+	if not player_tiles_data.has("tiles"):
+		return
+	if not player_tiles_data.tiles.has(username):
+		return
+	var tiles = player_tiles_data.tiles[username]
+	for i in range(tiles.size() - 1, -1, -1):
+		if int(tiles[i].get("x", 0)) == x and int(tiles[i].get("y", 0)) == y:
+			tiles.remove_at(i)
+			break
+	save_player_tiles()
+
+func get_all_player_tiles() -> Dictionary:
+	"""Get all player tiles. Returns {username: [{x, y, type}, ...]}."""
+	if not player_tiles_data.has("tiles"):
+		player_tiles_data["tiles"] = {}
+	return player_tiles_data.tiles
+
+func clear_all_player_tiles():
+	"""Clear all player tile data (called on map wipe)."""
+	player_tiles_data = {"tiles": {}}
+	save_player_tiles()

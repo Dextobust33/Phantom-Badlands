@@ -746,16 +746,28 @@ var crafting_recipes: Array = []  # Available recipes from server
 var crafting_materials: Dictionary = {}  # Player's materials
 var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
+var crafting_job_bonus: Dictionary = {}  # Specialty job bonus {success_bonus, quality_bonus}
 var crafting_selected_recipe: int = -1  # Index of selected recipe
 var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
+var last_crafted_recipe_id: String = ""  # Recipe ID of last craft for "craft another"
+var can_craft_another: bool = false  # Whether player has materials for another craft
+var crafting_preserve_page: bool = false  # Don't reset page on next craft_list response
 const CRAFTING_PAGE_SIZE = 5
+
+# Building mode
+var build_mode: bool = false
+var build_direction_mode: bool = false  # Selecting direction for placement
+var build_selected_item: int = -1  # Inventory index of item to place
+var build_demolish_mode: bool = false  # Selecting direction for demolish
+var pending_build_result: bool = false  # Waiting for server response
 
 # More menu mode
 var more_mode: bool = false
 
 # Job system mode
 var job_mode: bool = false
+var job_page: int = 0  # 0 = gathering, 1 = specialty
 var pending_job_action: String = ""  # "", "commit_confirm"
 var job_commit_target: String = ""   # Job name being committed to
 var job_commit_category: String = "" # "gathering" or "specialty"
@@ -1780,6 +1792,9 @@ func _process(delta):
 					elif pending_inventory_action == "use_item":
 						# Use item uses its own page for filtered list
 						selection_index = use_page * INVENTORY_PAGE_SIZE + i
+					elif pending_inventory_action in ["inspect_equipped_item", "unequip_item"]:
+						# Equipped slot lists use direct index (no pages, no display_order)
+						selection_index = i
 					else:
 						# Regular inventory uses display_order mapping (equipment first, consumables last)
 						var inv_display_order = get_meta("inventory_display_order", [])
@@ -1893,6 +1908,19 @@ func _process(delta):
 					select_craft_recipe(i)  # 0-based index
 			else:
 				set_meta("craftkey_%d_pressed" % i, false)
+
+	# Build mode item selection with keybinds (1-9 for structure items)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and build_mode and not build_direction_mode and not build_demolish_mode and not pending_build_result:
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("buildkey_%d_pressed" % i, false):
+					set_meta("buildkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					_select_build_item(i)
+			else:
+				set_meta("buildkey_%d_pressed" % i, false)
 
 	# Dungeon selection with keybinds when viewing dungeon list
 	if game_state == GameState.PLAYING and not input_field.has_focus() and dungeon_list_mode:
@@ -2279,7 +2307,7 @@ func _process(delta):
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
 			# Same for companions_mode - number keys 1-5 are used for companion selection
-			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or home_stone_mode or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0)) and i >= 5:
+			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or home_stone_mode or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0) or (build_mode and not build_direction_mode and not build_demolish_mode and not pending_build_result)) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -2598,6 +2626,15 @@ func _input(event):
 		if key_name != "":
 			# Q/W/E/R keys no longer used for gathering (now uses action bar buttons)
 			pass
+
+	# Handle build direction input (WASD keys for N/S/W/E placement)
+	if build_mode and (build_direction_mode or build_demolish_mode) and not pending_build_result and event is InputEventKey:
+		_handle_build_direction_key(event)
+		if event.is_pressed() and not event.echo:
+			match event.keycode:
+				KEY_W, KEY_A, KEY_S, KEY_D:
+					get_viewport().set_input_as_handled()
+					return
 
 	# Handle settings mode input
 	if settings_mode and not rebinding_action and event is InputEventKey and event.pressed and not event.echo:
@@ -5292,29 +5329,35 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Main job overview - show committable jobs as buttons
+			# Main job overview with pagination
 			var gathering_committed = character_data.get("gathering_job_committed", false)
+			var specialty_committed_ab = character_data.get("specialty_job_committed", false)
 			var jlevels = character_data.get("job_levels", {})
-			var gathering_buttons = []
-			if not gathering_committed:
+			var commit_buttons = []
+			if job_page == 0 and not gathering_committed:
 				for jname in ["mining", "logging", "foraging", "soldier", "fishing"]:
 					var jlv = int(jlevels.get(jname, 1))
 					if jlv >= 5:
-						gathering_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
+						commit_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
+			elif job_page == 1 and not specialty_committed_ab:
+				for jname in ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]:
+					var jlv = int(jlevels.get(jname, 1))
+					if jlv >= 5:
+						commit_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
 			# Pad to fill slots
-			while gathering_buttons.size() < 4:
-				gathering_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+			while commit_buttons.size() < 5:
+				commit_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "job_close", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "job_prev", "enabled": job_page > 0},
+				{"label": "Next >", "action_type": "local", "action_data": "job_next", "enabled": job_page < 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				gathering_buttons[0],
-				gathering_buttons[1],
-				gathering_buttons[2],
-				gathering_buttons[3],
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				commit_buttons[0],
+				commit_buttons[1],
+				commit_buttons[2],
+				commit_buttons[3],
+				commit_buttons[4],
 			]
 	elif eggs_mode:
 		# Eggs viewing mode with pagination
@@ -5346,6 +5389,50 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif build_mode:
+		# Building mode
+		if build_direction_mode or build_demolish_mode:
+			# Direction selection - WASD handled via _input, action bar just shows Back
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "build_cancel_direction", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_build_result:
+			# Waiting for server response
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# Item selection mode
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "build_close", "enabled": true},
+				{"label": "Demolish", "action_type": "local", "action_data": "build_demolish", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif at_merchant:
 		# Merchant mode
 		var services = merchant_data.get("services", [])
@@ -5691,8 +5778,8 @@ func update_action_bar():
 					{"label": "Smith", "action_type": "local", "action_data": "crafting_skill_blacksmithing", "enabled": true},
 					{"label": "Alchemy", "action_type": "local", "action_data": "crafting_skill_alchemy", "enabled": true},
 					{"label": "Enchant", "action_type": "local", "action_data": "crafting_skill_enchanting", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Scribing", "action_type": "local", "action_data": "crafting_skill_scribing", "enabled": true},
+					{"label": "Build", "action_type": "local", "action_data": "crafting_skill_construction", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5713,19 +5800,33 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			elif awaiting_craft_result:
-				# Showing craft result - wait for player to continue
-				current_actions = [
-					{"label": "Continue", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				]
+				# Showing craft result
+				if can_craft_another:
+					current_actions = [
+						{"label": "Craft Again", "action_type": "local", "action_data": "crafting_repeat", "enabled": true},
+						{"label": "Back", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
+				else:
+					current_actions = [
+						{"label": "Continue", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					]
 			else:
 				# Recipe list
 				var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
@@ -5733,15 +5834,15 @@ func update_action_bar():
 				var has_next = crafting_page < total_pages - 1
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "crafting_skill_cancel", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "< Prev", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
+					{"label": "Next >", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "Prev Pg", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
-					{"label": "Next Pg", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 		elif quest_view_mode:
 			# Quest selection sub-menu
@@ -6076,6 +6177,7 @@ func _create_shortcut_buttons():
 		["Eggs", "eggs_shortcut"],
 		["Jobs", "jobs_shortcut"],
 		["Pouch", "pouch_shortcut"],
+		["Build", "build_shortcut"],
 	]
 
 	for shortcut in shortcuts:
@@ -6164,6 +6266,16 @@ func _on_shortcut_button_pressed(action: String):
 			inventory_mode = true
 			pending_inventory_action = "viewing_materials"
 			display_materials()
+			update_action_bar()
+		"build_shortcut":
+			if build_mode:
+				return
+			more_mode = false
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			pending_inventory_action = ""
+			open_build_mode()
 			update_action_bar()
 
 func _update_shortcut_buttons_visibility():
@@ -7676,6 +7788,16 @@ func execute_local_action(action: String):
 			open_jobs_menu()
 		"job_close":
 			close_jobs_menu()
+		"job_prev":
+			if job_page > 0:
+				job_page -= 1
+				display_job_overview()
+				update_action_bar()
+		"job_next":
+			if job_page < 1:
+				job_page += 1
+				display_job_overview()
+				update_action_bar()
 		"job_commit_cancel":
 			pending_job_action = ""
 			job_commit_target = ""
@@ -7844,6 +7966,26 @@ func execute_local_action(action: String):
 			var total_pages = int(ceil(float(eggs.size()) / float(EGGS_PAGE_SIZE)))
 			eggs_page = min(total_pages - 1, eggs_page + 1)
 			display_eggs()
+			update_action_bar()
+		# Build mode actions
+		"build_close":
+			build_mode = false
+			build_direction_mode = false
+			build_demolish_mode = false
+			build_selected_item = -1
+			pending_build_result = false
+			game_output.clear()
+			display_game("[color=#888888]Exited build mode.[/color]")
+			update_action_bar()
+		"build_demolish":
+			build_demolish_mode = true
+			display_demolish_direction()
+			update_action_bar()
+		"build_cancel_direction":
+			build_direction_mode = false
+			build_demolish_mode = false
+			build_selected_item = -1
+			display_build_items()
 			update_action_bar()
 		"death_continue":
 			_on_continue_pressed()
@@ -8481,6 +8623,10 @@ func execute_local_action(action: String):
 			request_craft_list("alchemy")
 		"crafting_skill_enchanting":
 			request_craft_list("enchanting")
+		"crafting_skill_scribing":
+			request_craft_list("scribing")
+		"crafting_skill_construction":
+			request_craft_list("construction")
 		"crafting_skill_cancel":
 			crafting_skill = ""
 			open_crafting()
@@ -8499,9 +8645,26 @@ func execute_local_action(action: String):
 			crafting_page = min(total_pages - 1, crafting_page + 1)
 			display_craft_recipe_list()
 			update_action_bar()
+		"crafting_repeat":
+			# Craft the same recipe again
+			can_craft_another = false
+			# Find and re-select the recipe by ID
+			for ri in range(crafting_recipes.size()):
+				if crafting_recipes[ri].get("id", "") == last_crafted_recipe_id:
+					crafting_selected_recipe = ri
+					# Show intermediate feedback so player knows attempt went through
+					game_output.clear()
+					var rname = crafting_recipes[ri].get("name", "item")
+					display_game("[color=#FFD700]Crafting %s...[/color]" % rname)
+					awaiting_craft_result = true
+					send_to_server({"type": "craft_item", "recipe_id": last_crafted_recipe_id})
+					update_action_bar()
+					break
 		"crafting_continue":
-			# Player acknowledged craft result, refresh recipe list
+			# Player acknowledged craft result, refresh recipe list (preserves page)
 			awaiting_craft_result = false
+			can_craft_another = false
+			crafting_preserve_page = true
 			request_craft_list(crafting_skill)
 		# Dungeon actions
 		"dungeon_list_cancel":
@@ -13396,6 +13559,9 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh during harvest minigame
 				if harvest_mode:
 					pass  # Keep harvest display as-is
+				# Don't refresh during build mode
+				if build_mode:
+					pass  # Keep build display as-is
 				# Don't refresh Material Pouch when opened from More menu
 				if more_mode and pending_inventory_action == "viewing_materials":
 					pass  # Keep materials display as-is
@@ -14117,6 +14283,9 @@ func handle_server_message(message: Dictionary):
 		"craft_result":
 			handle_craft_result(message)
 
+		"build_result":
+			handle_build_result(message)
+
 		"dungeon_list":
 			handle_dungeon_list(message)
 
@@ -14159,6 +14328,10 @@ func _process_combat_start(message: Dictionary):
 	combat_outsmart_failed = false  # Reset outsmart for new combat
 	more_mode = false
 	companions_mode = false
+	build_mode = false
+	build_direction_mode = false
+	build_demolish_mode = false
+	pending_build_result = false
 	pending_continue = false  # Clear any pending continue from previous combat
 	pending_dungeon_continue = false
 	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
@@ -16380,6 +16553,7 @@ func open_jobs_menu():
 	"""Open the Jobs menu"""
 	job_mode = true
 	more_mode = false
+	job_page = 0
 	pending_job_action = ""
 	send_to_server({"type": "job_info"})
 	display_job_overview()
@@ -16394,10 +16568,8 @@ func close_jobs_menu():
 	update_action_bar()
 
 func display_job_overview():
-	"""Display all jobs with levels and commitment status."""
+	"""Display jobs with pagination: page 0 = gathering, page 1 = specialty."""
 	game_output.clear()
-	display_game("[color=#FFD700]═══════ JOBS ═══════[/color]")
-	display_game("")
 
 	var jlevels = character_data.get("job_levels", {})
 	var jxp = character_data.get("job_xp", {})
@@ -16406,67 +16578,81 @@ func display_job_overview():
 	var specialty_committed = character_data.get("specialty_job_committed", false)
 	var specialty_job_name = character_data.get("specialty_job", "")
 
-	# Gathering Jobs
-	display_game("[color=#FF8800]── Gathering Jobs ──[/color]")
-	if gathering_committed:
-		display_game("[color=#00FF00]Committed to: [color=#FFD700]%s[/color][/color]" % gathering_job_name.capitalize())
-	else:
-		display_game("[color=#808080]Not yet committed (try all to Lv5, then choose one)[/color]")
-	display_game("")
+	if job_page == 0:
+		display_game("[color=#FFD700]═══════ JOBS ═══════[/color] [color=#808080](Page 1/2 — Gathering)[/color]")
+		display_game("")
+		display_game("[color=#FF8800]── Gathering Jobs ──[/color]")
+		if gathering_committed:
+			display_game("[color=#00FF00]Committed to: [color=#FFD700]%s[/color][/color]" % gathering_job_name.capitalize())
+		else:
+			display_game("[color=#808080]Not yet committed (try all to Lv5, then choose one)[/color]")
+		display_game("")
 
-	var gathering_jobs = ["mining", "logging", "foraging", "soldier", "fishing"]
-	for jname in gathering_jobs:
-		var jlv = int(jlevels.get(jname, 1))
-		var xp_cur = int(jxp.get(jname, 0))
-		var xp_needed = int(100 * pow(jlv, 1.4))
-		var is_committed = gathering_committed and gathering_job_name == jname
-		var is_locked = gathering_committed and gathering_job_name != jname
-
-		var status_str = ""
-		if is_committed:
-			status_str = " [color=#00FF00]★ COMMITTED[/color]"
-		elif is_locked:
-			status_str = " [color=#FF4444]✗ LOCKED[/color]"
-		elif jlv >= 5 and not gathering_committed:
-			status_str = " [color=#FFFF00]⚡ READY TO COMMIT[/color]"
-
-		var xp_bar = ""
-		if not is_locked and jlv < 100:
-			var pct = float(xp_cur) / float(xp_needed) if xp_needed > 0 else 0.0
-			var filled = int(pct * 10)
-			xp_bar = " [" + "█".repeat(filled) + "░".repeat(10 - filled) + "] %d/%d" % [xp_cur, xp_needed]
-
-		var color = "#FFD700" if is_committed else ("#808080" if is_locked else "#FFFFFF")
-		var job_desc = _get_job_description(jname)
-		display_game("[color=%s]  %s Lv%d%s[/color]%s" % [color, jname.capitalize(), jlv, xp_bar, status_str])
-		display_game("[color=#808080]    %s[/color]" % job_desc)
-
-	display_game("")
-
-	# Specialty Jobs
-	display_game("[color=#A335EE]── Specialty Jobs ──[/color]")
-	if specialty_committed:
-		display_game("[color=#00FF00]Committed to: [color=#FFD700]%s[/color][/color]" % specialty_job_name.capitalize())
-	else:
-		display_game("[color=#808080]Not yet committed (coming in Phase 2)[/color]")
-	display_game("")
-
-	var specialty_jobs = ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]
-	for jname in specialty_jobs:
-		var jlv = int(jlevels.get(jname, 1))
-		var color = "#808080"
-		display_game("[color=%s]  %s Lv%d[/color] [color=#555555](Coming Soon)[/color]" % [color, jname.capitalize(), jlv])
-
-	display_game("")
-	if not gathering_committed:
-		var has_committable = false
+		var gathering_jobs = ["mining", "logging", "foraging", "soldier", "fishing"]
 		for jname in gathering_jobs:
-			if int(jlevels.get(jname, 1)) >= 5:
-				has_committable = true
-				break
-		if has_committable:
-			display_game("[color=#FFFF00]Use buttons [1]-[5] to commit to a gathering job.[/color]")
-	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
+			_display_job_entry(jname, jlevels, jxp, gathering_committed, gathering_job_name)
+
+		display_game("")
+		if not gathering_committed:
+			var has_committable = false
+			for jname in gathering_jobs:
+				if int(jlevels.get(jname, 1)) >= 5:
+					has_committable = true
+					break
+			if has_committable:
+				display_game("[color=#FFFF00]Use buttons 1-5 to commit to a gathering job.[/color]")
+		display_game("[color=#808080][%s] Back | [%s] Next Page >[/color]" % [get_action_key_name(0), get_action_key_name(2)])
+	else:
+		display_game("[color=#FFD700]═══════ JOBS ═══════[/color] [color=#808080](Page 2/2 — Specialty)[/color]")
+		display_game("")
+		display_game("[color=#A335EE]── Specialty Jobs ──[/color]")
+		if specialty_committed:
+			display_game("[color=#00FF00]Committed to: [color=#FFD700]%s[/color][/color]" % specialty_job_name.capitalize())
+		else:
+			display_game("[color=#808080]Not yet committed (try all to Lv5, then choose one)[/color]")
+		display_game("")
+
+		var specialty_jobs = ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]
+		for jname in specialty_jobs:
+			_display_job_entry(jname, jlevels, jxp, specialty_committed, specialty_job_name)
+
+		display_game("")
+		if not specialty_committed:
+			var has_specialty_committable = false
+			for jname in specialty_jobs:
+				if int(jlevels.get(jname, 1)) >= 5:
+					has_specialty_committable = true
+					break
+			if has_specialty_committable:
+				display_game("[color=#FFFF00]Use buttons 1-5 to commit to a specialty job.[/color]")
+		display_game("[color=#808080][%s] Back | [%s] < Prev Page[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+
+func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_category_committed: bool, committed_name: String):
+	"""Display a single job entry with level, XP bar, and status."""
+	var jlv = int(jlevels.get(jname, 1))
+	var xp_cur = int(jxp.get(jname, 0))
+	var xp_needed = int(100 * pow(jlv, 1.4))
+	var is_committed = is_category_committed and committed_name == jname
+	var is_locked = is_category_committed and committed_name != jname
+
+	var status_str = ""
+	if is_committed:
+		status_str = " [color=#00FF00]★ COMMITTED[/color]"
+	elif is_locked:
+		status_str = " [color=#FF4444]✗ LOCKED[/color]"
+	elif jlv >= 5 and not is_category_committed:
+		status_str = " [color=#FFFF00]⚡ READY TO COMMIT[/color]"
+
+	var xp_bar = ""
+	if not is_locked and jlv < 100:
+		var pct = float(xp_cur) / float(xp_needed) if xp_needed > 0 else 0.0
+		var filled = int(pct * 10)
+		xp_bar = " [" + "█".repeat(filled) + "░".repeat(10 - filled) + "] %d/%d" % [xp_cur, xp_needed]
+
+	var color = "#FFD700" if is_committed else ("#808080" if is_locked else "#FFFFFF")
+	var job_desc = _get_job_description(jname)
+	display_game("[color=%s]  %s Lv%d%s[/color]%s" % [color, jname.capitalize(), jlv, xp_bar, status_str])
+	display_game("[color=#808080]    %s[/color]" % job_desc)
 
 func display_job_commit_confirm(job_name: String, category: String):
 	"""Show commitment confirmation dialog."""
@@ -16490,11 +16676,11 @@ func _get_job_description(job_name: String) -> String:
 		"foraging": return "Gather herbs, mushrooms, and wild plants"
 		"soldier": return "Harvest parts from defeated monsters"
 		"fishing": return "Catch fish and treasures from water"
-		"blacksmith": return "Forge weapons and armor (Phase 2)"
-		"builder": return "Construct and upgrade structures (Phase 2)"
-		"alchemist": return "Brew potions and elixirs (Phase 2)"
-		"scribe": return "Create scrolls and enchantments (Phase 2)"
-		"enchanter": return "Imbue items with magical properties (Phase 2)"
+		"blacksmith": return "Forge weapons and armor"
+		"builder": return "Construct structures and player posts"
+		"alchemist": return "Brew potions and transmute materials"
+		"scribe": return "Create scrolls, maps, and tomes"
+		"enchanter": return "Enchant and disenchant equipment"
 		_: return ""
 
 func display_changelog():
@@ -19597,6 +19783,15 @@ func end_harvest():
 
 # ===== CRAFTING FUNCTIONS =====
 
+func _craft_skill_to_job_name(skill_name: String) -> String:
+	match skill_name.to_lower():
+		"blacksmithing": return "Blacksmith"
+		"alchemy": return "Alchemist"
+		"enchanting": return "Enchanter"
+		"scribing": return "Scribe"
+		"construction": return "Builder"
+		_: return "Specialist"
+
 func open_crafting():
 	"""Open the crafting menu"""
 	if not at_trading_post:
@@ -19622,6 +19817,8 @@ func open_crafting():
 	display_game("[%s] [color=#FF6600]Blacksmithing[/color] - Weapons & Armor" % get_action_key_name(1))
 	display_game("[%s] [color=#00FF00]Alchemy[/color] - Potions & Consumables" % get_action_key_name(2))
 	display_game("[%s] [color=#A335EE]Enchanting[/color] - Enhance Equipment" % get_action_key_name(3))
+	display_game("[%s] [color=#87CEEB]Scribing[/color] - Scrolls, Maps & Tomes" % get_action_key_name(4))
+	display_game("[%s] [color=#AA7744]Construction[/color] - Structures & Posts" % get_action_key_name(5))
 	display_game("")
 	display_game("[%s] Back to Trading Post" % get_action_key_name(0))
 
@@ -19638,10 +19835,17 @@ func handle_craft_list(message: Dictionary):
 	crafting_skill = message.get("skill", "blacksmithing")
 	crafting_skill_level = message.get("skill_level", 1)
 	crafting_post_bonus = message.get("post_bonus", 0)
+	crafting_job_bonus = message.get("job_bonus", {})
 	crafting_recipes = message.get("recipes", [])
 	crafting_materials = message.get("materials", {})
-	crafting_page = 0
 	crafting_selected_recipe = -1
+	if crafting_preserve_page:
+		# Returning from craft result — stay on same page, clamp if recipes changed
+		var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
+		crafting_page = mini(crafting_page, total_pages - 1)
+		crafting_preserve_page = false
+	else:
+		crafting_page = 0
 
 	if awaiting_craft_result:
 		# Don't clear the craft result display - player hasn't acknowledged it yet
@@ -19663,10 +19867,16 @@ func display_craft_recipe_list():
 			skill_color = "#00FF00"
 		"enchanting":
 			skill_color = "#A335EE"
+		"scribing":
+			skill_color = "#87CEEB"
+		"construction":
+			skill_color = "#AA7744"
 
 	display_game("[color=%s]===== %s (Level %d) =====[/color]" % [skill_color, skill_display, crafting_skill_level])
 	if crafting_post_bonus > 0:
 		display_game("[color=#00FFFF]Trading Post Bonus: +%d%% success[/color]" % crafting_post_bonus)
+	if crafting_job_bonus.get("success_bonus", 0) > 0:
+		display_game("[color=#FFD700]Specialist Bonus: +%d%% success, +%d%% quality[/color]" % [crafting_job_bonus.success_bonus, crafting_job_bonus.quality_bonus])
 	display_game("")
 
 	if crafting_recipes.is_empty():
@@ -19692,27 +19902,55 @@ func display_craft_recipe_list():
 		var name = recipe.get("name", "Unknown")
 		var skill_req = recipe.get("skill_required", 1)
 		var description = recipe.get("description", "")
+		var materials = recipe.get("materials", {})
+
+		# Build materials string — cyan for have enough, red for missing
+		var mat_parts = []
+		for mat_id in materials:
+			var mat_name = CraftingDatabase.get_material_name(mat_id)
+			var needed = int(materials[mat_id])
+			var owned = int(crafting_materials.get(mat_id, 0))
+			var mat_color = "#00BFFF" if owned >= needed else "#FF4444"
+			mat_parts.append("[color=%s]%s %d/%d[/color]" % [mat_color, mat_name, owned, needed])
+		var mat_line = "      " + ", ".join(mat_parts) if mat_parts.size() > 0 else ""
+
+		var is_specialist_gated = recipe.get("specialist_gated", false)
 
 		if is_locked:
 			# Locked recipe - show with lock icon and unlock level
-			display_game("[color=#555555][%s] %s (Unlocks at Lv%d)[/color]" % [
-				get_action_key_name(display_idx + 4), name, skill_req
+			var specialist_tag = " [SPECIALIST]" if recipe.get("specialist_only", false) else ""
+			display_game("[color=#555555][%s] %s%s (Unlocks at Lv%d)[/color]" % [
+				get_action_key_name(display_idx + 4), name, specialist_tag, skill_req
 			])
 			if description != "":
 				display_game("[color=#444444]    %s[/color]" % description)
+			if mat_line != "":
+				display_game(mat_line)
+		elif is_specialist_gated:
+			# Specialist-only recipe player can't use
+			var required_job = _craft_skill_to_job_name(crafting_skill)
+			display_game("[color=#FF4444][%s] [SPECIALIST] %s (Requires %s)[/color]" % [
+				get_action_key_name(display_idx + 4), name, required_job
+			])
+			if description != "":
+				display_game("[color=#884444]    %s[/color]" % description)
+			if mat_line != "":
+				display_game(mat_line)
 		else:
 			# Unlocked recipe
 			var color = "#00FF00" if can_craft else "#808080"
-			var craftable_text = "" if can_craft else " [color=#FF4444](Missing materials)[/color]"
-			display_game("[%s] [color=%s]%s[/color] (Lv%d) - %d%% success%s" % [
+			var specialist_tag = " [color=#FFD700]★[/color]" if recipe.get("specialist_only", false) else ""
+			display_game("[%s] [color=%s]%s[/color]%s (Lv%d) - %d%% success" % [
 				get_action_key_name(display_idx + 4),  # Keys 1-5 map to action slots 5-9
-				color, name, skill_req, success_chance, craftable_text
+				color, name, specialist_tag, skill_req, success_chance
 			])
 			if description != "":
 				display_game("[color=#888888]    %s[/color]" % description)
+			if mat_line != "":
+				display_game(mat_line)
 
 	display_game("")
-	display_game("[%s] Back | [%s/%s] Prev/Next Page" % [get_action_key_name(0), get_action_key_name(8), get_action_key_name(9)])
+	display_game("[%s] Back | [%s/%s] Prev/Next Page" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
 
 func select_craft_recipe(index: int):
 	"""Select a recipe to view details/confirm crafting"""
@@ -19724,6 +19962,10 @@ func select_craft_recipe(index: int):
 	if recipe.get("locked", false):
 		var skill_req = recipe.get("skill_required", 1)
 		display_game("[color=#FF4444]This recipe requires %s level %d to unlock![/color]" % [crafting_skill.capitalize(), skill_req])
+		return
+	if recipe.get("specialist_gated", false):
+		var required_job = _craft_skill_to_job_name(crafting_skill)
+		display_game("[color=#FF4444]This recipe requires committing as a %s![/color]" % required_job)
 		return
 
 	crafting_selected_recipe = actual_idx
@@ -19802,6 +20044,31 @@ func handle_craft_result(message: Dictionary):
 		display_game("[color=%s]✦ %s %s ✦[/color]" % [quality_color, quality_name, recipe_name])
 		display_game("")
 		display_game(result_message)
+
+		# Show item stats if equipment was crafted
+		var crafted_item = message.get("crafted_item", {})
+		if not crafted_item.is_empty():
+			var item_type = crafted_item.get("type", "")
+			if item_type == "weapon" or item_type.ends_with("_crafted"):
+				var stats_line = "  "
+				if crafted_item.has("attack"):
+					stats_line += "[color=#FF4444]ATK %d[/color]  " % crafted_item.attack
+				if crafted_item.has("defense"):
+					stats_line += "[color=#4444FF]DEF %d[/color]  " % crafted_item.defense
+				if crafted_item.has("hp"):
+					stats_line += "[color=#00FF00]HP %d[/color]  " % crafted_item.hp
+				if crafted_item.has("speed"):
+					stats_line += "[color=#FFFF00]SPD %d[/color]  " % crafted_item.speed
+				if crafted_item.has("mana"):
+					stats_line += "[color=#00BFFF]MP %d[/color]  " % crafted_item.mana
+				display_game(stats_line)
+				display_game("[color=#808080]  Lv%d — Added to inventory[/color]" % crafted_item.get("level", 1))
+			elif item_type == "structure":
+				display_game("[color=#808080]  Added to inventory — use in Build mode[/color]")
+			elif item_type == "tool":
+				display_game("[color=#808080]  Added to inventory — equip from Inventory > Tools[/color]")
+			else:
+				display_game("[color=#808080]  Added to inventory[/color]")
 	else:
 		# Failure
 		display_game("[color=#FF4444]===== CRAFTING FAILED =====[/color]")
@@ -19814,8 +20081,34 @@ func handle_craft_result(message: Dictionary):
 	if leveled_up:
 		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
 
+	# Show job XP if gained
+	var job_xp_gained = message.get("job_xp_gained", 0)
+	if job_xp_gained > 0:
+		var job_name = message.get("job_name", "")
+		display_game("[color=#FF8800]+%d %s Job XP[/color]" % [job_xp_gained, job_name.capitalize()])
+		if message.get("job_leveled_up", false):
+			display_game("[color=#FFD700]★ %s job increased to %d! ★[/color]" % [job_name.capitalize(), message.get("job_new_level", 1)])
+
+	# Check if player can craft same recipe again
+	last_crafted_recipe_id = message.get("recipe_id", "")
+	can_craft_another = false
+	for r in crafting_recipes:
+		if r.get("id", "") == last_crafted_recipe_id:
+			# Check materials using updated crafting_materials from character_update
+			var mats = r.get("materials", {})
+			var has_all = true
+			for mat_id in mats:
+				if int(crafting_materials.get(mat_id, 0)) < int(mats[mat_id]):
+					has_all = false
+					break
+			can_craft_another = has_all and not r.get("locked", false) and not r.get("specialist_gated", false)
+			break
+
 	display_game("")
-	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	if can_craft_another:
+		display_game("[color=#808080]Press [%s] to craft another, [%s] to return to recipes[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+	else:
+		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
 	# Set flag to prevent craft_list from overwriting the result
 	awaiting_craft_result = true
@@ -19830,6 +20123,9 @@ func close_crafting():
 	crafting_selected_recipe = -1
 	crafting_page = 0
 	awaiting_craft_result = false
+	can_craft_another = false
+	last_crafted_recipe_id = ""
+	crafting_preserve_page = false
 
 	_display_trading_post_ui()
 	update_action_bar()
@@ -20421,6 +20717,7 @@ func _display_trading_post_ui():
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
 	display_game("")
 	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
+	display_game("[color=#808080]Stations: Forge, Apothecary, Workbench, Enchanting Table, Writing Desk[/color]")
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
@@ -22800,3 +23097,184 @@ func _select_companion_unregister(display_index: int):
 
 	display_house_companions()
 	update_action_bar()
+
+# ===== BUILDING SYSTEM =====
+
+func open_build_mode():
+	"""Enter build mode - shows buildable items in inventory."""
+	build_mode = true
+	build_direction_mode = false
+	build_selected_item = -1
+	build_demolish_mode = false
+	pending_build_result = false
+	display_build_items()
+	update_action_bar()
+
+func display_build_items():
+	"""Show buildable structure items in inventory."""
+	game_output.clear()
+	display_game("[color=#AA7744]===== BUILD MODE =====[/color]")
+	display_game("")
+	display_game("Select a structure to place:")
+	display_game("")
+
+	var found = 0
+	for i in range(character_data.get("inventory", []).size()):
+		var item = character_data.inventory[i]
+		if item.get("type", "") == "structure":
+			found += 1
+			var structure_type = item.get("structure_type", "")
+			var color = _get_structure_color(structure_type)
+			display_game("[%d] [color=%s]%s[/color]" % [found, color, item.get("name", "Unknown")])
+			if found >= 9:
+				break
+
+	if found == 0:
+		display_game("[color=#888888]No buildable items in inventory.[/color]")
+		display_game("Craft walls and structures via Construction skill at a Trading Post.")
+
+	display_game("")
+	display_game("[%s] Back" % get_action_key_name(0))
+
+func display_build_direction():
+	"""Show direction selection for placing a structure."""
+	game_output.clear()
+	var item = character_data.inventory[build_selected_item]
+	display_game("[color=#AA7744]===== PLACE: %s =====[/color]" % item.get("name", "Structure"))
+	display_game("")
+	display_game("Select direction to place:")
+	display_game("")
+	display_game("    [W] North")
+	display_game("[A] West    [D] East")
+	display_game("    [S] South")
+	display_game("")
+	display_game("[%s] Cancel" % get_action_key_name(0))
+
+func display_demolish_direction():
+	"""Show direction selection for demolishing."""
+	game_output.clear()
+	display_game("[color=#FF8800]===== DEMOLISH =====[/color]")
+	display_game("")
+	display_game("Select direction to demolish:")
+	display_game("")
+	display_game("    [W] North")
+	display_game("[A] West    [D] East")
+	display_game("    [S] South")
+	display_game("")
+	display_game("[%s] Cancel" % get_action_key_name(0))
+
+func _get_structure_color(structure_type: String) -> String:
+	"""Get display color for a structure type."""
+	match structure_type:
+		"wall": return "#CCCCCC"
+		"door": return "#CCAA00"
+		"forge": return "#FF6600"
+		"apothecary": return "#00FF00"
+		"workbench": return "#AA7744"
+		"enchant_table": return "#A335EE"
+		"writing_desk": return "#87CEEB"
+		"tower": return "#FFDD00"
+		"inn": return "#FF8888"
+		"quest_board": return "#00DDFF"
+		"storage": return "#AAAAFF"
+		_: return "#FFFFFF"
+
+func _get_build_direction(key_name: String) -> int:
+	"""Convert WASD key to numpad direction."""
+	match key_name:
+		"w": return 8  # North
+		"s": return 2  # South
+		"a": return 4  # West
+		"d": return 6  # East
+		_: return 0
+
+func handle_build_result(message: Dictionary):
+	"""Handle build_result message from server."""
+	pending_build_result = false
+	var success = message.get("success", false)
+	var msg = message.get("message", "")
+
+	game_output.clear()
+	display_game(msg)
+	display_game("")
+
+	if success:
+		# After successful build/demolish, return to build items view
+		build_direction_mode = false
+		build_demolish_mode = false
+		build_selected_item = -1
+		display_game("[color=#888888]Press [%s] to continue building or [%s] to exit.[/color]" % [get_action_key_name(1), get_action_key_name(0)])
+		# Show remaining buildable items
+		display_game("")
+		var found = 0
+		for i in range(character_data.get("inventory", []).size()):
+			var item = character_data.inventory[i]
+			if item.get("type", "") == "structure":
+				found += 1
+				var structure_type = item.get("structure_type", "")
+				var color = _get_structure_color(structure_type)
+				display_game("[%d] [color=%s]%s[/color]" % [found, color, item.get("name", "Unknown")])
+				if found >= 9:
+					break
+		if found == 0:
+			display_game("[color=#888888]No more buildable items.[/color]")
+	else:
+		# Failed - return to direction or item selection
+		if build_direction_mode:
+			display_game("[color=#888888]Select another direction or press [%s] to cancel.[/color]" % get_action_key_name(0))
+		elif build_demolish_mode:
+			display_game("[color=#888888]Select another direction or press [%s] to cancel.[/color]" % get_action_key_name(0))
+		else:
+			display_game("[color=#888888]Press [%s] to exit build mode.[/color]" % get_action_key_name(0))
+	update_action_bar()
+
+func _select_build_item(selection_index: int):
+	"""Handle player selecting a structure item by number key."""
+	var inventory = character_data.get("inventory", [])
+	var structure_idx = 0
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		if item.get("type", "") == "structure":
+			if structure_idx == selection_index:
+				build_selected_item = i
+				build_direction_mode = true
+				display_build_direction()
+				update_action_bar()
+				return
+			structure_idx += 1
+	# Invalid selection
+	display_game("[color=#FF4444]Invalid selection.[/color]")
+
+func _handle_build_direction_key(event: InputEventKey):
+	"""Handle WASD direction input for build/demolish placement."""
+	if not event.pressed or event.echo:
+		return
+	var key_str = ""
+	match event.keycode:
+		KEY_W: key_str = "w"
+		KEY_S: key_str = "s"
+		KEY_A: key_str = "a"
+		KEY_D: key_str = "d"
+		_: return
+
+	var direction = _get_build_direction(key_str)
+	if direction == 0:
+		return
+
+	if build_direction_mode and build_selected_item >= 0:
+		# Place structure
+		send_to_server({
+			"type": "build_place",
+			"item_index": build_selected_item,
+			"direction": direction
+		})
+		pending_build_result = true
+		display_game("[color=#888888]Placing...[/color]")
+	elif build_demolish_mode:
+		# Demolish structure
+		send_to_server({
+			"type": "build_demolish",
+			"direction": direction
+		})
+		pending_build_result = true
+		display_game("[color=#888888]Demolishing...[/color]")

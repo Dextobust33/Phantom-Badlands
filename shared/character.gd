@@ -401,8 +401,9 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var auto_salvage_affixes: Array = []  # Up to 2 affix names to auto-salvage regardless of rarity
 
 # ===== CRAFTING SYSTEM =====
-@export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1}
-@export var crafting_xp: Dictionary = {"blacksmithing": 0, "alchemy": 0, "enchanting": 0}
+@export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1, "scribing": 1, "construction": 1}
+@export var crafting_xp: Dictionary = {"blacksmithing": 0, "alchemy": 0, "enchanting": 0, "scribing": 0, "construction": 0}
+@export var tome_bonuses: Dictionary = {}  # Permanent stat bonuses from Spell Tomes {stat: amount}
 @export var known_recipes: Array = []  # Recipe IDs player has learned
 @export var crafting_materials: Dictionary = {}  # {material_id: quantity}
 
@@ -1037,23 +1038,28 @@ func get_effective_stat(stat_name: String) -> int:
 		"strength", "str":
 			var perm = permanent_stat_bonuses.get("strength", 0)
 			var house = house_bonuses.get("str_bonus", 0)
-			return base_stat + bonuses.strength + perm + house
+			var tome = int(tome_bonuses.get("strength", 0))
+			return base_stat + bonuses.strength + perm + house + tome
 		"constitution", "con":
 			var perm = permanent_stat_bonuses.get("constitution", 0)
 			var house = house_bonuses.get("con_bonus", 0)
-			return base_stat + bonuses.constitution + perm + house
+			var tome = int(tome_bonuses.get("constitution", 0))
+			return base_stat + bonuses.constitution + perm + house + tome
 		"dexterity", "dex":
 			var perm = permanent_stat_bonuses.get("dexterity", 0)
 			var house = house_bonuses.get("dex_bonus", 0)
-			return base_stat + bonuses.dexterity + perm + house
+			var tome = int(tome_bonuses.get("dexterity", 0))
+			return base_stat + bonuses.dexterity + perm + house + tome
 		"intelligence", "int":
 			var perm = permanent_stat_bonuses.get("intelligence", 0)
 			var house = house_bonuses.get("int_bonus", 0)
-			return base_stat + bonuses.intelligence + perm + house
+			var tome = int(tome_bonuses.get("intelligence", 0))
+			return base_stat + bonuses.intelligence + perm + house + tome
 		"wisdom", "wis":
 			var perm = permanent_stat_bonuses.get("wisdom", 0)
 			var house = house_bonuses.get("wis_bonus", 0)
-			return base_stat + bonuses.wisdom + perm + house
+			var tome = int(tome_bonuses.get("wisdom", 0))
+			return base_stat + bonuses.wisdom + perm + house + tome
 		"wits", "wit":
 			var perm = permanent_stat_bonuses.get("wits", 0)
 			var house = house_bonuses.get("wits_bonus", 0)
@@ -1315,6 +1321,7 @@ func to_dict() -> Dictionary:
 		"fish_caught": fish_caught,
 		"crafting_skills": crafting_skills,
 		"crafting_xp": crafting_xp,
+		"tome_bonuses": tome_bonuses,
 		"equipped_fishing_rod": equipped_fishing_rod,
 		"equipped_pickaxe": equipped_pickaxe,
 		"equipped_axe": equipped_axe,
@@ -1554,8 +1561,15 @@ func from_dict(data: Dictionary):
 	fishing_skill = data.get("fishing_skill", 1)
 	fishing_xp = data.get("fishing_xp", 0)
 	fish_caught = data.get("fish_caught", 0)
-	crafting_skills = data.get("crafting_skills", {"blacksmithing": 1, "alchemy": 1, "enchanting": 1})
-	crafting_xp = data.get("crafting_xp", {"blacksmithing": 0, "alchemy": 0, "enchanting": 0})
+	crafting_skills = data.get("crafting_skills", {"blacksmithing": 1, "alchemy": 1, "enchanting": 1, "scribing": 1, "construction": 1})
+	crafting_xp = data.get("crafting_xp", {"blacksmithing": 0, "alchemy": 0, "enchanting": 0, "scribing": 0, "construction": 0})
+	# Ensure new crafting skills exist for legacy characters
+	for skill_key in ["scribing", "construction"]:
+		if not crafting_skills.has(skill_key):
+			crafting_skills[skill_key] = 1
+		if not crafting_xp.has(skill_key):
+			crafting_xp[skill_key] = 0
+	tome_bonuses = data.get("tome_bonuses", {})
 
 	# Gathering tools (new system: equipped_tools dict)
 	equipped_fishing_rod = data.get("equipped_fishing_rod", {})
@@ -3132,6 +3146,40 @@ func get_job_stats(job_name: String) -> Dictionary:
 		"committed": committed,
 		"at_trial_cap": jl >= JOB_TRIAL_CAP and not committed
 	}
+
+# ===== SPECIALTY JOB → CRAFTING LINK =====
+
+const JOB_TO_CRAFT_SKILL = {
+	"blacksmith": "blacksmithing",
+	"alchemist": "alchemy",
+	"enchanter": "enchanting",
+	"scribe": "scribing",
+	"builder": "construction"
+}
+
+const CRAFT_SKILL_TO_JOB = {
+	"blacksmithing": "blacksmith",
+	"alchemy": "alchemist",
+	"enchanting": "enchanter",
+	"scribing": "scribe",
+	"construction": "builder"
+}
+
+func get_specialty_crafting_bonus(skill_name: String) -> Dictionary:
+	"""Returns {success_bonus, quality_bonus} from committed specialty job.
+	Only applies if committed to the matching specialty job."""
+	var job_name = CRAFT_SKILL_TO_JOB.get(skill_name.to_lower(), "")
+	if job_name == "" or not specialty_job_committed or specialty_job != job_name:
+		return {"success_bonus": 0, "quality_bonus": 0}
+	var jlv = job_levels.get(job_name, 1)
+	return {"success_bonus": int(jlv * 0.5), "quality_bonus": int(jlv * 0.3)}
+
+func can_use_specialist_recipe(skill_name: String) -> bool:
+	"""True if committed to the matching specialty job for specialist-only recipes."""
+	var job_name = CRAFT_SKILL_TO_JOB.get(skill_name.to_lower(), "")
+	if job_name == "":
+		return false
+	return specialty_job_committed and specialty_job == job_name
 
 # ===== CLOAK SYSTEM =====
 

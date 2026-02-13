@@ -162,8 +162,8 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 	var interior_w = interior_max_x - interior_min_x
 
 	# Crafting stations along the top row (spaced evenly, skip if won't fit)
-	var station_spacing = maxi(2, interior_w / 4)
-	var stations = ["forge", "apothecary", "workbench", "enchant_table"]
+	var station_spacing = maxi(2, interior_w / 5)
+	var stations = ["forge", "apothecary", "workbench", "enchant_table", "writing_desk"]
 	for i in range(stations.size()):
 		var sx = interior_min_x + i * station_spacing
 		if sx <= interior_max_x:

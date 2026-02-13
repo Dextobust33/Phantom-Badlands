@@ -76,6 +76,7 @@ const TILE_RENDER = {
 	"apothecary":    {"char": "A", "color": "#00CC66", "blocks_move": false, "blocks_los": false},
 	"workbench":     {"char": "W", "color": "#AA7744", "blocks_move": false, "blocks_los": false},
 	"enchant_table": {"char": "E", "color": "#AA44FF", "blocks_move": false, "blocks_los": false},
+	"writing_desk":  {"char": "S", "color": "#87CEEB", "blocks_move": false, "blocks_los": false},
 	"market":        {"char": "$", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
 	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": false, "blocks_los": false},
 	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
@@ -308,7 +309,7 @@ func _tile_to_terrain(tile: Dictionary, x: int, y: int) -> Terrain:
 		"water": return Terrain.WATER
 		"deep_water": return Terrain.DEEP_WATER
 		"wall", "void": return Terrain.VOID
-		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "market", "inn", "quest_board", "post_marker":
+		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker":
 			return Terrain.TRADING_POST  # Inside a post = safe
 		"stone", "ore_vein":
 			return Terrain.MOUNTAINS
@@ -896,7 +897,9 @@ func is_safe_zone(x: int, y: int) -> bool:
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
 		var tile_type = tile.get("type", "")
-		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "market", "inn", "quest_board", "post_marker"]:
+		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker"]:
+			return true
+		if tile.has("enclosure_owner"):
 			return true
 	# Legacy: check trading posts
 	var terrain = get_terrain_at(x, y)

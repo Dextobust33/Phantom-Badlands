@@ -191,6 +191,8 @@ func _ready():
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
 	for post in npc_posts:
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+	# Rebuild player enclosures from persisted tile data
+	_rebuild_all_player_enclosures()
 	chunk_manager.save_dirty_chunks()
 
 	# Load persistent depleted nodes
@@ -885,6 +887,11 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_craft_list(peer_id, message)
 		"craft_item":
 			handle_craft_item(peer_id, message)
+		# Building system handlers
+		"build_place":
+			handle_build_place(peer_id, message)
+		"build_demolish":
+			handle_build_demolish(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -5000,21 +5007,49 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		if not target_item.has("enchantments"):
 			target_item["enchantments"] = {}
 
-		# Apply enhancement
+		# Apply enhancement (respects enchantment caps)
+		var enhance_name = target_item.get("name", "item")
 		if stat == "all":
-			# Apply bonus to all 10 stats
+			# Apply bonus to all 10 stats (capped individually)
 			var all_stats = ["attack", "defense", "speed", "max_hp", "strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+			var applied_count = 0
 			for s in all_stats:
-				target_item.enchantments[s] = target_item.enchantments.get(s, 0) + bonus
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#A335EE]Enhanced %s with +%d to ALL stats![/color]" % [target_item.name, bonus]
-			})
+				var cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(s, 60)
+				var current = target_item["enchantments"].get(s, 0)
+				if current < cap:
+					var actual_bonus = mini(bonus, cap - current)
+					target_item["enchantments"][s] = current + actual_bonus
+					applied_count += 1
+			if applied_count > 0:
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#A335EE]Enhanced %s with +%d to ALL stats! (capped at limits)[/color]" % [enhance_name, bonus]
+				})
+			else:
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFFF00]%s is already at enchantment cap for all stats![/color]" % enhance_name
+				})
+				# Don't consume scroll — put it back
+				character.inventory.insert(index, item)
+				send_character_update(peer_id)
+				return
 		else:
-			target_item.enchantments[stat] = target_item.enchantments.get(stat, 0) + bonus
+			var cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+			var current = target_item["enchantments"].get(stat, 0)
+			if current >= cap:
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [enhance_name, stat, cap]
+				})
+				character.inventory.insert(index, item)
+				send_character_update(peer_id)
+				return
+			var actual_bonus = mini(bonus, cap - current)
+			target_item["enchantments"][stat] = current + actual_bonus
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#00FF00]Enhanced %s with +%d %s![/color]" % [target_item.name, bonus, stat]
+				"message": "[color=#00FF00]Enhanced %s with +%d %s! (%d/%d cap)[/color]" % [enhance_name, actual_bonus, stat, current + actual_bonus, cap]
 			})
 
 		# Remove scroll from inventory
@@ -5122,6 +5157,133 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			else:
 				send_to_peer(peer_id, {"type": "error", "message": "You have no equipment in your inventory to send home!"})
 				return
+
+	# Handle new scribing item types (scroll, map, tome, bestiary)
+	if item_type == "scroll":
+		# Scroll: apply buff effect
+		var scroll_effect = item.get("effect", {})
+		var eff_type = scroll_effect.get("type", "buff")
+		var stat = scroll_effect.get("stat", "attack")
+		var bonus_pct = scroll_effect.get("bonus_pct", 0)
+		var dur = scroll_effect.get("duration_battles", 3)
+		var amount = scroll_effect.get("amount", 0)
+
+		# Remove item
+		if is_consumable:
+			character.use_consumable_stack(index)
+		else:
+			character.remove_item(index)
+
+		if stat == "time_stop":
+			character.add_persistent_buff("time_stop", 1, 1)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#9932CC]You read the %s![/color]\n[color=#FFD700]Time bends to your will! Next enemy frozen for one turn![/color]" % item_name
+			})
+		elif eff_type == "debuff":
+			var penalty = scroll_effect.get("penalty_pct", 20)
+			character.pending_monster_debuffs.append({"type": "weakness", "value": penalty})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#9932CC]You read the %s![/color]\n[color=#FFD700]Next enemy's %s reduced by %d%%![/color]" % [item_name, stat.replace("_", " "), penalty]
+			})
+		elif bonus_pct > 0:
+			character.add_persistent_buff(stat, bonus_pct, dur)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#87CEEB]You read the %s![/color]\n[color=#00FF00]+%d%% %s for %d battles![/color]" % [item_name, bonus_pct, stat.replace("_", " "), dur]
+			})
+		elif amount > 0:
+			character.add_persistent_buff(stat, amount, dur)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#87CEEB]You read the %s![/color]\n[color=#00FF00]+%d %s for %d battles![/color]" % [item_name, amount, stat.replace("_", " "), dur]
+			})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	if item_type == "area_map":
+		# Area map: reveal tiles around player
+		var radius = int(item.get("reveal_radius", 50))
+		if is_consumable:
+			character.use_consumable_stack(index)
+		else:
+			character.remove_item(index)
+		# Mark tiles as discovered (client side will re-request location data)
+		var px = character.x
+		var py = character.y
+		var revealed = 0
+		if world_system and world_system.chunk_manager:
+			for dx in range(-radius, radius + 1):
+				for dy in range(-radius, radius + 1):
+					if dx * dx + dy * dy <= radius * radius:
+						var tile = world_system.chunk_manager.get_tile(px + dx, py + dy)
+						if not tile.is_empty():
+							revealed += 1
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#87CEEB]You study the %s![/color]\n[color=#00FF00]Revealed the area within %d tiles![/color]" % [item_name, radius]
+		})
+		# Force location update to reveal map
+		send_location_update(peer_id)
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	if item_type == "spell_tome":
+		# Spell tome: permanent +stat (capped at 10 total)
+		var stat = item.get("stat", "strength")
+		var amount = int(item.get("amount", 1))
+		var total_tomes = 0
+		for k in character.tome_bonuses:
+			total_tomes += int(character.tome_bonuses[k])
+		if total_tomes + amount > 10:
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "You've already gained %d/10 tome points! Cannot use more." % total_tomes
+			})
+			return
+		if is_consumable:
+			character.use_consumable_stack(index)
+		else:
+			character.remove_item(index)
+		character.tome_bonuses[stat] = character.tome_bonuses.get(stat, 0) + amount
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You study the %s![/color]\n[color=#00FF00][b]PERMANENT BONUS![/b] +%d %s![/color]\n[color=#00FFFF](Tome points used: %d/10)[/color]" % [item_name, amount, stat.capitalize(), total_tomes + amount]
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	if item_type == "bestiary_page":
+		# Bestiary page: reveal monster HP for a random type the player doesn't know
+		if is_consumable:
+			character.use_consumable_stack(index)
+		else:
+			character.remove_item(index)
+		# Find a monster type the player doesn't fully know
+		var all_monsters = monster_db.get_all_monster_names()
+		var unknown = []
+		for mname in all_monsters:
+			if not character.knows_monster(mname, 9999):
+				unknown.append(mname)
+		if unknown.is_empty():
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#87CEEB]You read the %s, but you already know all monsters![/color]" % item_name
+			})
+		else:
+			var chosen = unknown[randi() % unknown.size()]
+			character.record_monster_kill(chosen, 9999)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#87CEEB]You study the %s![/color]\n[color=#00FF00]You now know the true HP of [color=#FFD700]%s[/color]![/color]" % [item_name, chosen]
+			})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
 
 	# For consumables with stacking, use the stack function
 	var used_item: Dictionary = {}
@@ -6733,7 +6895,9 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
 			item_type == "health_potion" or item_type == "mana_potion" or
 			item_type == "stamina_potion" or item_type == "energy_potion" or
-			item_type == "elixir")
+			item_type == "elixir" or
+			item_type == "scroll" or item_type == "area_map" or
+			item_type == "spell_tome" or item_type == "bestiary_page")
 
 func handle_merchant_sell_all(peer_id: int):
 	"""Handle selling all EQUIPMENT items to a merchant (skips consumables and title items)"""
@@ -11323,17 +11487,10 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		return
 
 	var skill_name = message.get("skill", "blacksmithing").to_lower()
-	var skill_enum: int
-	match skill_name:
-		"blacksmithing":
-			skill_enum = CraftingDatabaseScript.CraftingSkill.BLACKSMITHING
-		"alchemy":
-			skill_enum = CraftingDatabaseScript.CraftingSkill.ALCHEMY
-		"enchanting":
-			skill_enum = CraftingDatabaseScript.CraftingSkill.ENCHANTING
-		_:
-			send_to_peer(peer_id, {"type": "error", "message": "Unknown crafting skill: %s" % skill_name})
-			return
+	var skill_enum: int = CraftingDatabaseScript.get_skill_enum(skill_name)
+	if skill_enum == -1:
+		send_to_peer(peer_id, {"type": "error", "message": "Unknown crafting skill: %s" % skill_name})
+		return
 
 	var skill_level = character.get_crafting_skill(skill_name)
 	# Get ALL recipes for the skill (including locked ones) so players can see what's coming
@@ -11344,14 +11501,20 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 	var tp_id = tp_data.get("id", "")
 	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
 
+	# Get specialty job crafting bonus
+	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
+	var total_success_bonus = post_bonus + job_bonus.success_bonus
+
 	# Build recipe list with player's materials
 	var recipe_list = []
 	for recipe_entry in recipes:
 		var recipe_id = recipe_entry.id
 		var recipe = recipe_entry.data
 		var is_locked = recipe.skill_required > skill_level
-		var can_craft = not is_locked and character.has_crafting_materials(recipe.materials)
-		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, post_bonus) if not is_locked else 0
+		var is_specialist_only = recipe.get("specialist_only", false)
+		var specialist_gated = is_specialist_only and not character.can_use_specialist_recipe(skill_name)
+		var can_craft = not is_locked and not specialist_gated and character.has_crafting_materials(recipe.materials)
+		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, total_success_bonus) if not is_locked and not specialist_gated else 0
 
 		# Build a description of what this recipe does
 		var description = _get_recipe_description(recipe)
@@ -11366,6 +11529,8 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"success_chance": success_chance,
 			"output_type": recipe.output_type,
 			"locked": is_locked,
+			"specialist_only": is_specialist_only,
+			"specialist_gated": specialist_gated,
 			"description": description
 		})
 
@@ -11374,6 +11539,7 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"skill": skill_name,
 		"skill_level": skill_level,
 		"post_bonus": post_bonus,
+		"job_bonus": job_bonus,
 		"recipes": recipe_list,
 		"materials": character.crafting_materials
 	})
@@ -11407,7 +11573,8 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 			var stat = effect.get("stat", "attack")
 			var bonus = effect.get("bonus", 0)
 			var target = recipe.get("target_slot", "gear")
-			return "+%d %s to %s" % [bonus, stat, target]
+			var recipe_max = recipe.get("max_enchant_value", CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60))
+			return "+%d %s to %s (up to +%d)" % [bonus, stat, target, recipe_max]
 		"enhancement":
 			var stat = effect.get("stat", "attack")
 			var bonus = effect.get("bonus", 0)
@@ -11428,6 +11595,69 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 			if parts.is_empty():
 				return "Basic %s" % type_name
 			return "%s: %s" % [type_name, ", ".join(parts)]
+		"self_repair":
+			return "Repair most-worn equipped item by 25%"
+		"reforge":
+			var slot = recipe.get("reforge_slot", "weapon")
+			return "Reroll equipped %s stats ±10%%" % slot
+		"transmute":
+			var mat_type = recipe.get("transmute_type", "ore")
+			return "Convert 5x T(N) %s → 2x T(N+1)" % mat_type
+		"extract":
+			return "Convert 3x leather/cloth → enchanting essence"
+		"disenchant":
+			return "Destroy inventory item → recover 30-60%% materials"
+		"scroll":
+			var stat = effect.get("stat", "")
+			var bonus = effect.get("bonus_pct", 0)
+			var dur = effect.get("duration_battles", 0)
+			if stat == "time_stop":
+				return "Stun enemy for 1 turn in combat"
+			if bonus > 0:
+				return "+%d%% %s for %d battles" % [bonus, stat.replace("_", " "), dur]
+			var amount = effect.get("amount", 0)
+			if amount > 0:
+				return "+%d %s for %d battles" % [amount, stat.replace("_", " "), dur]
+			return "Combat scroll"
+		"map":
+			var radius = effect.get("reveal_radius", 50)
+			return "Reveals %d-tile radius on map" % radius
+		"tome":
+			var stat = effect.get("stat", "strength")
+			var amount = effect.get("amount", 1)
+			return "Permanently gain +%d %s (max 10 total)" % [amount, stat]
+		"bestiary":
+			return "Reveals true HP for one monster type"
+		"material":
+			var output_item = recipe.get("output_item", "")
+			var output_qty = recipe.get("output_quantity", 1)
+			var mat_name = CraftingDatabaseScript.get_material_name(output_item)
+			if mat_name != "":
+				return "Produces %dx %s" % [output_qty, mat_name]
+			return "Produces crafting materials"
+		"upgrade":
+			var levels = effect.get("levels", 1)
+			var target = recipe.get("target_slot", "gear")
+			var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
+			return "+%d level to equipped %s (works up to +%d)" % [levels, target, recipe_max]
+		"affix":
+			var affix_pool = effect.get("affix_pool", [])
+			if affix_pool.size() > 0:
+				var names = []
+				for a in affix_pool:
+					names.append(a.capitalize())
+				return "Adds random affix (%s) to gear" % "/".join(names)
+			return "Adds random affix to gear"
+		"structure":
+			return "Placeable structure for player posts"
+		"proc_enchant":
+			var proc_type = effect.get("proc_type", "")
+			match proc_type:
+				"lifesteal": return "Adds %d%% lifesteal to equipped weapon" % effect.get("percent", 10)
+				"shocking": return "Adds %d%% bonus lightning damage (%d%% chance)" % [effect.get("percent", 15), int(effect.get("proc_chance", 0.25) * 100)]
+				"damage_reflect": return "Reflects %d%% damage back to attacker" % effect.get("percent", 15)
+				"execute": return "+%d%% damage vs enemies below 30%% HP" % effect.get("bonus_damage", 50)
+			return "Adds special effect to equipment"
 		_:
 			return ""
 
@@ -11461,6 +11691,12 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Requires %s level %d (you have %d)" % [skill_name.capitalize(), recipe.skill_required, skill_level]})
 		return
 
+	# Check specialist-only gating
+	if recipe.get("specialist_only", false) and not character.can_use_specialist_recipe(skill_name):
+		var required_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "specialist")
+		send_to_peer(peer_id, {"type": "error", "message": "This recipe requires committing as a %s!" % required_job.capitalize()})
+		return
+
 	# Check materials
 	if not character.has_crafting_materials(recipe.materials):
 		send_to_peer(peer_id, {"type": "error", "message": "You don't have the required materials!"})
@@ -11470,19 +11706,33 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	for mat_id in recipe.materials:
 		character.remove_crafting_material(mat_id, recipe.materials[mat_id])
 
-	# Get trading post bonus
+	# Get trading post bonus + specialty job bonus
 	var tp_data = at_trading_post[peer_id]
 	var tp_id = tp_data.get("id", "")
 	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
+	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
+	var total_bonus = post_bonus + job_bonus.success_bonus
 
-	# Roll for quality
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, post_bonus)
+	# Roll for quality (job quality_bonus increases quality thresholds)
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus)
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	# Calculate XP
+	# Calculate crafting XP
 	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
+
+	# Award matching specialty job XP (50% of craft XP)
+	var job_xp_gained = 0
+	var job_leveled_up = false
+	var job_new_level = 0
+	var matching_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "")
+	if matching_job != "" and character.can_gain_job_xp(matching_job):
+		job_xp_gained = int(xp_gained * 0.5)
+		if job_xp_gained > 0:
+			var job_result = character.add_job_xp(matching_job, job_xp_gained)
+			job_leveled_up = job_result.leveled_up
+			job_new_level = job_result.new_level
 
 	# Build result message
 	var result_message = ""
@@ -11496,7 +11746,10 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"weapon", "armor":
 				crafted_item = _create_crafted_equipment(recipe, quality)
 				if crafted_item.is_empty():
-					result_message = "[color=#FF4444]Failed to create item![/color]"
+					# Refund materials on creation failure
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
 				else:
 					# Add to inventory
 					character.inventory.append(crafted_item)
@@ -11564,8 +11817,6 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					else:
-						# Consume salvage essence
-						character.remove_salvage_essence(salvage_cost)
 						var effect = recipe.get("effect", {})
 						var stat = effect.get("stat", "attack")
 						var bonus = effect.get("bonus", 5)
@@ -11578,10 +11829,43 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 						if not target_item.has("enchantments"):
 							target_item["enchantments"] = {}
 
-						# Add to existing enchantment (stacking)
-						target_item.enchantments[stat] = target_item.enchantments.get(stat, 0) + bonus
-
-						result_message = "[color=%s]Enchanted %s with +%d %s![/color]" % [quality_color, target_item.name, bonus, stat]
+						# Check per-recipe bracket cap (minor enchants can't reach high values)
+						var current_value = target_item["enchantments"].get(stat, 0)
+						var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
+						if current_value >= recipe_enchant_max:
+							result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						# Check global per-stat cap
+						elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
+							var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						else:
+							# Check max enchantment types (3 different stats per item)
+							var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
+							if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
+								result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
+								for mat_id in recipe.materials:
+									character.add_crafting_material(mat_id, recipe.materials[mat_id])
+								character.add_salvage_essence(salvage_cost)
+								result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+							else:
+								# Consume salvage essence and apply
+								character.remove_salvage_essence(salvage_cost)
+								# Clamp bonus to tightest of recipe bracket and global cap
+								var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+								var effective_cap = mini(recipe_enchant_max, stat_cap_val)
+								var remaining = effective_cap - current_value
+								if bonus > remaining:
+									bonus = remaining
+								target_item["enchantments"][stat] = current_value + bonus
+								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
 			"upgrade":
 				# Upgrades increase equipment level
 				var salvage_cost = recipe.get("salvage_cost", 0)
@@ -11622,10 +11906,33 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 						elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
 							levels_to_add = max(1, int(levels_to_add * 0.5))
 
-						var old_level = target_item.get("level", 1)
-						target_item["level"] = old_level + levels_to_add
+						# Check per-recipe bracket cap (e.g. +1 only works up to 10 total)
+						var upgrades_applied = target_item.get("upgrades_applied", 0)
+						var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
+						if upgrades_applied >= recipe_max:
+							result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						# Check global upgrade cap (max +50 levels from crafting per item)
+						elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
+							result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						else:
+							# Clamp to remaining upgrade room (tightest of recipe bracket and global cap)
+							var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
+							var remaining = mini(recipe_max, global_max) - upgrades_applied
+							if levels_to_add > remaining:
+								levels_to_add = remaining
 
-						result_message = "[color=%s]Upgraded %s from level %d to %d![/color]" % [quality_color, target_item.name, old_level, target_item.level]
+							var old_level = target_item.get("level", 1)
+							target_item["level"] = old_level + levels_to_add
+							target_item["upgrades_applied"] = upgrades_applied + levels_to_add
+							result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
 			"affix":
 				# Affix infusion adds/replaces affixes on equipment
 				var salvage_cost = recipe.get("salvage_cost", 0)
@@ -11687,49 +11994,39 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 							target_item["affixes"] = {}
 
 						# Add or replace affix (only if new value is higher)
-						var old_value = target_item.affixes.get(affix_key, 0)
+						var old_value = target_item["affixes"].get(affix_key, 0)
 						var affix_display = chosen_affix.capitalize()
+						var item_name = target_item.get("name", "item")
 
 						if affix_value > old_value:
-							target_item.affixes[affix_key] = affix_value
+							target_item["affixes"][affix_key] = affix_value
 							if old_value > 0:
-								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, target_item.name, old_value, affix_value]
+								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
 							else:
-								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, target_item.name]
+								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
 						else:
-							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, target_item.name, old_value]
+							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
 			"tool":
-				# Create a gathering tool (fishing rod, pickaxe, axe)
+				# Create a gathering tool using the standard tool format
 				var tool_type = recipe.get("tool_type", "")
 				var tool_tier = recipe.get("tier", 1)
-				var base_bonuses = recipe.get("bonuses", {})
-				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+				var subtype_map = {"fishing_rod": "rod", "pickaxe": "pickaxe", "axe": "axe", "sickle": "sickle"}
+				var subtype = subtype_map.get(tool_type, tool_type)
 
-				# Apply quality to bonuses
-				var final_bonuses = {
-					"yield_bonus": int(base_bonuses.get("yield_bonus", 0) * quality_mult),
-					"speed_bonus": base_bonuses.get("speed_bonus", 0.0) * quality_mult,
-					"tier_bonus": base_bonuses.get("tier_bonus", 0)  # Tier bonus doesn't scale
-				}
-
-				var tool_data = {
-					"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
-					"tier": tool_tier,
-					"bonuses": final_bonuses,
-					"quality": quality_name.to_lower()
-				}
-
-				# Equip the tool directly (replacing any existing tool of same type)
-				match tool_type:
-					"fishing_rod":
-						character.equipped_fishing_rod = tool_data
-					"pickaxe":
-						character.equipped_pickaxe = tool_data
-					"axe":
-						character.equipped_axe = tool_data
-
-				crafted_item = tool_data
-				result_message = "[color=%s]Crafted and equipped %s![/color]" % [quality_color, tool_data.name]
+				var tool_data = DropTables.generate_tool(subtype, tool_tier)
+				if not tool_data.is_empty():
+					if quality != CraftingDatabaseScript.CraftingQuality.STANDARD:
+						tool_data["name"] = "%s %s" % [quality_name, recipe.name]
+					tool_data["rarity"] = _quality_to_rarity(quality)
+					tool_data["crafted"] = true
+					character.inventory.append(tool_data)
+					crafted_item = tool_data
+					result_message = "[color=%s]Crafted %s! Check your inventory to equip it.[/color]" % [quality_color, tool_data.get("name", recipe.name)]
+				else:
+					# Refund materials on creation failure
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create tool! Materials refunded.[/color]"
 			"material":
 				# Creates crafting materials - add directly to materials inventory
 				var output_item = recipe.get("output_item", "")
@@ -11740,7 +12037,90 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 					character.add_crafting_material(output_item, final_quantity)
 					result_message = "[color=%s]Created %d %s %s![/color]" % [quality_color, final_quantity, quality_name, recipe.name.replace("Refine ", "")]
 				else:
-					result_message = "[color=#FF4444]Failed to create materials![/color]"
+					# Refund materials on creation failure
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create materials! Materials refunded.[/color]"
+			"self_repair":
+				result_message = _craft_self_repair(character, recipe, quality)
+			"reforge":
+				result_message = _craft_reforge(character, recipe, quality, quality_color)
+			"transmute":
+				result_message = _craft_transmute(character, recipe, quality, quality_color)
+			"extract":
+				result_message = _craft_extract(character, recipe, quality, quality_color)
+			"disenchant":
+				result_message = _craft_disenchant(character, recipe, quality, quality_color)
+			"scroll":
+				crafted_item = _craft_scroll(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+			"map":
+				crafted_item = _craft_map(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "map")]
+			"tome":
+				crafted_item = _craft_tome(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "tome")]
+			"bestiary":
+				crafted_item = _craft_bestiary(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "bestiary page")]
+			"structure":
+				crafted_item = _craft_structure(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "structure")]
+			"proc_enchant":
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					var target_slot = ""
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							target_slot = slot
+							break
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var proc_type = effect.get("proc_type", "")
+						if not target_item.has("proc_effects"):
+							target_item["proc_effects"] = {}
+						# Apply quality scaling to proc values
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						var proc_data = {}
+						var proc_item_name = target_item.get("name", "item")
+						match proc_type:
+							"lifesteal":
+								var pct = effect.get("percent", 10) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+								result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
+							"shocking":
+								var pct = effect.get("percent", 15) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
+								result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
+							"damage_reflect":
+								var pct = effect.get("percent", 15) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+								result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
+							"execute":
+								var bonus = effect.get("bonus_damage", 50) * quality_mult
+								proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
+								result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
+						target_item["proc_effects"][proc_type] = proc_data
 
 	# Send result
 	send_to_peer(peer_id, {
@@ -11756,11 +12136,322 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		"new_level": xp_result.new_level,
 		"skill_name": skill_name,
 		"message": result_message,
-		"crafted_item": crafted_item
+		"crafted_item": crafted_item,
+		"job_xp_gained": job_xp_gained,
+		"job_leveled_up": job_leveled_up,
+		"job_new_level": job_new_level,
+		"job_name": matching_job
 	})
 
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func _craft_self_repair(character, recipe: Dictionary, quality: int) -> String:
+	"""Blacksmith specialist: repair most-worn equipped item by 25% (quality scales)."""
+	var repair_pct = 0.25 * CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+	var worst_item = null
+	var worst_slot = ""
+	var worst_wear = 0.0
+	for slot in character.equipped:
+		var item = character.equipped[slot]
+		if item == null or item.is_empty():
+			continue
+		var wear = item.get("wear", 0.0)
+		if wear > worst_wear:
+			worst_wear = wear
+			worst_item = item
+			worst_slot = slot
+	if worst_item == null or worst_wear <= 0:
+		# Refund materials since nothing needs repair
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FFFF00]No equipped items need repair. Materials refunded.[/color]"
+	var old_wear = worst_item.get("wear", 0.0)
+	var new_wear = maxf(0.0, old_wear - repair_pct)
+	worst_item["wear"] = new_wear
+	var repaired_pct = int((old_wear - new_wear) * 100)
+	return "[color=#00FF00]Repaired %s by %d%%! Wear: %d%% → %d%%[/color]" % [worst_item.get("name", "item"), repaired_pct, int(old_wear * 100), int(new_wear * 100)]
+
+func _craft_reforge(character, recipe: Dictionary, quality: int, quality_color: String) -> String:
+	"""Blacksmith specialist: reroll weapon/armor stats ±10% (quality improves range)."""
+	var target_slot = recipe.get("reforge_slot", "weapon")
+	var target_item = character.equipped.get(target_slot, null)
+	if target_item == null or target_item.is_empty():
+		# Refund materials since we can't reforge
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FF4444]No %s equipped to reforge! Materials refunded.[/color]" % target_slot
+
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+	var reforge_range = 0.10 * quality_mult  # Better quality = wider range (upward bias)
+
+	# Reroll attack/defense stats
+	var changes = []
+	for stat_key in ["attack", "defense"]:
+		if target_item.has(stat_key):
+			var old_val = int(target_item[stat_key])
+			if old_val <= 0:
+				continue
+			var min_val = int(old_val * (1.0 - 0.10))
+			var max_val = int(old_val * (1.0 + reforge_range))
+			var new_val = max(1, min_val + randi() % max(1, max_val - min_val + 1))
+			target_item[stat_key] = new_val
+			var diff = new_val - old_val
+			var diff_str = ("+%d" % diff) if diff >= 0 else ("%d" % diff)
+			changes.append("%s: %d → %d (%s)" % [stat_key.capitalize(), old_val, new_val, diff_str])
+
+	if changes.is_empty():
+		# Refund materials since item had nothing to reforge
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FFFF00]Item has no stats to reforge. Materials refunded.[/color]"
+	return "[color=%s]Reforged %s!\n%s[/color]" % [quality_color, target_item.get("name", "item"), "\n".join(changes)]
+
+func _craft_transmute(character, recipe: Dictionary, quality: int, quality_color: String) -> String:
+	"""Alchemist specialist: convert 5x T(N) material → 2x T(N+1) of same type."""
+	var transmute_type = recipe.get("transmute_type", "ore")
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+
+	# Find the lowest-tier material of this type that player has 5+ of
+	var best_mat_id = ""
+	var best_tier = 999
+	for mat_id in character.crafting_materials:
+		var count = character.crafting_materials[mat_id]
+		if count < 5:
+			continue
+		var mat_data = CraftingDatabaseScript.get_material(mat_id)
+		if mat_data.is_empty():
+			continue
+		var mat_type = mat_data.get("type", "")
+		if mat_type != transmute_type:
+			continue
+		var tier = int(mat_data.get("tier", 0))
+		if tier < best_tier and tier < 9:  # Can't transmute T9
+			best_tier = tier
+			best_mat_id = mat_id
+
+	if best_mat_id == "":
+		# Refund recipe materials
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FF4444]No %s materials with 5+ quantity to transmute! Materials refunded.[/color]" % transmute_type
+
+	# Find the next tier material of same type
+	var target_tier = best_tier + 1
+	var target_mat_id = ""
+	for mat_id in CraftingDatabaseScript.MATERIALS:
+		var mat_data = CraftingDatabaseScript.MATERIALS[mat_id]
+		if mat_data.get("type", "") == transmute_type and int(mat_data.get("tier", 0)) == target_tier:
+			target_mat_id = mat_id
+			break
+
+	if target_mat_id == "":
+		# Refund recipe materials
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FF4444]No higher-tier %s material exists! Materials refunded.[/color]" % transmute_type
+
+	# Consume 5, produce 2 (quality can increase output)
+	character.remove_crafting_material(best_mat_id, 5)
+	var output_qty = max(1, int(2 * quality_mult))
+	character.add_crafting_material(target_mat_id, output_qty)
+
+	var source_name = CraftingDatabaseScript.get_material_name(best_mat_id)
+	var target_name = CraftingDatabaseScript.get_material_name(target_mat_id)
+	return "[color=%s]Transmuted 5x %s → %dx %s![/color]" % [quality_color, source_name, output_qty, target_name]
+
+func _craft_extract(character, recipe: Dictionary, quality: int, quality_color: String) -> String:
+	"""Alchemist specialist: convert lowest-tier monster parts into crafting essence."""
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+
+	# Monster parts are leather/hide type materials - find lowest tier one with 3+
+	var best_mat_id = ""
+	var best_tier = 999
+	for mat_id in character.crafting_materials:
+		var count = character.crafting_materials[mat_id]
+		if count < 3:
+			continue
+		var mat_data = CraftingDatabaseScript.get_material(mat_id)
+		if mat_data.is_empty():
+			continue
+		var mat_type = mat_data.get("type", "")
+		if mat_type not in ["leather", "cloth"]:
+			continue
+		var tier = int(mat_data.get("tier", 0))
+		if tier < best_tier:
+			best_tier = tier
+			best_mat_id = mat_id
+
+	if best_mat_id == "":
+		# Refund recipe materials
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FF4444]No leather/cloth materials with 3+ quantity to extract! Materials refunded.[/color]"
+
+	# Convert to tier-appropriate enchant material
+	var essence_map = {1: "magic_dust", 2: "magic_dust", 3: "arcane_crystal", 4: "soul_shard", 5: "soul_shard", 6: "void_essence", 7: "void_essence", 8: "primordial_spark", 9: "primordial_spark"}
+	var target_mat = essence_map.get(best_tier, "magic_dust")
+
+	character.remove_crafting_material(best_mat_id, 3)
+	var output_qty = max(1, int(2 * quality_mult))
+	character.add_crafting_material(target_mat, output_qty)
+
+	var source_name = CraftingDatabaseScript.get_material_name(best_mat_id)
+	var target_name = CraftingDatabaseScript.get_material_name(target_mat)
+	return "[color=%s]Extracted %dx %s from 3x %s![/color]" % [quality_color, output_qty, target_name, source_name]
+
+func _craft_disenchant(character, recipe: Dictionary, quality: int, quality_color: String) -> String:
+	"""Enchanter specialist: destroy lowest-level inventory item, recover partial materials."""
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+
+	# Find lowest-level non-quest equipment item in inventory
+	var worst_idx = -1
+	var worst_level = 999999
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		if item.get("type", "") in ["enhancement_scroll", "quest_item"]:
+			continue
+		if item.get("is_consumable", false):
+			continue
+		var item_level = int(item.get("level", 1))
+		if item_level < worst_level:
+			worst_level = item_level
+			worst_idx = i
+
+	if worst_idx == -1:
+		# Refund recipe materials
+		for mat_id in recipe.materials:
+			character.add_crafting_material(mat_id, recipe.materials[mat_id])
+		return "[color=#FF4444]No equipment in inventory to disenchant! Materials refunded.[/color]"
+
+	var item = character.inventory[worst_idx]
+	var item_name = item.get("name", "Unknown")
+
+	# Calculate material recovery: 30-60% based on quality
+	var recovery_pct = 0.30 + (quality_mult - 0.5) * 0.3  # Poor=15%, Standard=30%, Fine=52%, Master=60%
+	recovery_pct = clampf(recovery_pct, 0.15, 0.70)
+
+	# Generate materials based on item level/tier
+	var item_level = int(item.get("level", 1))
+	var tier = clampi(int(item_level / 10) + 1, 1, 9)
+	var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+	var base_amount = max(1, int(3 * recovery_pct))
+	var ore_id = ore_tiers[clampi(tier - 1, 0, 8)]
+	character.add_crafting_material(ore_id, base_amount)
+
+	# Bonus: chance for enchant material
+	var bonus_mat = ""
+	if randf() < recovery_pct:
+		bonus_mat = "magic_dust" if tier <= 3 else ("arcane_crystal" if tier <= 5 else "void_essence")
+		character.add_crafting_material(bonus_mat, 1)
+
+	# Remove item
+	character.inventory.remove_at(worst_idx)
+
+	var result = "[color=%s]Disenchanted %s!\nRecovered: %dx %s[/color]" % [quality_color, item_name, base_amount, CraftingDatabaseScript.get_material_name(ore_id)]
+	if bonus_mat != "":
+		result += "\n[color=#A335EE]Bonus: 1x %s[/color]" % CraftingDatabaseScript.get_material_name(bonus_mat)
+	return result
+
+func _craft_scroll(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a scroll consumable item from a scribing recipe."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var effect = recipe.get("effect", {})
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+
+	# Scale effect by quality
+	var scaled_effect = effect.duplicate()
+	if scaled_effect.has("bonus_pct"):
+		scaled_effect["bonus_pct"] = int(scaled_effect["bonus_pct"] * quality_mult)
+	if scaled_effect.has("amount"):
+		scaled_effect["amount"] = int(scaled_effect["amount"] * quality_mult)
+	if scaled_effect.has("duration_battles"):
+		scaled_effect["duration_battles"] = max(1, int(scaled_effect["duration_battles"] * quality_mult))
+
+	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
+	return {
+		"id": "scroll_%d" % randi(),
+		"name": display_name,
+		"type": "scroll",
+		"is_consumable": true,
+		"quantity": 1,
+		"effect": scaled_effect,
+		"rarity": _quality_to_rarity(quality),
+		"level": 1
+	}
+
+func _craft_map(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create an area map consumable."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+	var effect = recipe.get("effect", {})
+	var base_radius = effect.get("reveal_radius", 50)
+	var radius = int(base_radius * quality_mult)
+
+	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
+	return {
+		"id": "map_%d" % randi(),
+		"name": display_name,
+		"type": "area_map",
+		"is_consumable": true,
+		"quantity": 1,
+		"reveal_radius": radius,
+		"rarity": _quality_to_rarity(quality),
+		"level": 1
+	}
+
+func _craft_tome(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a spell tome consumable (permanent +1 stat)."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var effect = recipe.get("effect", {})
+	var stat = effect.get("stat", "strength")
+	var amount = effect.get("amount", 1)
+	# Masterwork gives +2 instead of +1
+	if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+		amount = 2
+
+	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
+	return {
+		"id": "tome_%d" % randi(),
+		"name": display_name,
+		"type": "spell_tome",
+		"is_consumable": true,
+		"quantity": 1,
+		"stat": stat,
+		"amount": amount,
+		"rarity": _quality_to_rarity(quality),
+		"level": 1
+	}
+
+func _craft_bestiary(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a bestiary page consumable (reveals monster HP)."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
+	return {
+		"id": "bestiary_%d" % randi(),
+		"name": display_name,
+		"type": "bestiary_page",
+		"is_consumable": true,
+		"quantity": 1,
+		"rarity": _quality_to_rarity(quality),
+		"level": 1
+	}
+
+func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
+	"""Create a structure item for player posts."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var structure_type = recipe.get("structure_type", "workbench")
+	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
+	return {
+		"id": "structure_%d" % randi(),
+		"name": display_name,
+		"type": "structure",
+		"structure_type": structure_type,
+		"is_consumable": false,
+		"quantity": 1,
+		"rarity": _quality_to_rarity(quality),
+		"level": 1
+	}
 
 func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 	"""Create a crafted equipment item"""
@@ -11826,7 +12517,8 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 		"crafted": true,
 		"quality": quality,
 		"effect": scaled_effect,
-		"is_consumable": true  # Flag for client-side consumable detection
+		"is_consumable": true,
+		"quantity": 1
 	}
 
 	return item
@@ -11844,6 +12536,438 @@ func _quality_to_rarity(quality: int) -> String:
 			return "epic"
 		_:
 			return "common"
+
+# ===== BUILDING SYSTEM =====
+
+const MAX_PLAYER_ENCLOSURES = 5
+const MAX_ENCLOSURE_SIZE = 11  # 11x11 bounding box max
+const MAX_PLAYER_TILES = 200
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage"]
+const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure boundaries
+
+# In-memory enclosure tracking: {username: [Array of interior tile positions]}
+var player_enclosures: Dictionary = {}
+
+func handle_build_place(peer_id: int, message: Dictionary):
+	"""Handle player placing a structure tile in a direction."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+
+	var item_index = int(message.get("item_index", -1))
+	var direction = int(message.get("direction", 0))
+
+	# Validate item
+	if item_index < 0 or item_index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Invalid item!"})
+		return
+	var item = character.inventory[item_index]
+	if item.get("type", "") != "structure":
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "That's not a buildable item!"})
+		return
+
+	var structure_type = item.get("structure_type", "")
+	if structure_type not in BUILDING_TYPES:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot place that item!"})
+		return
+
+	# Calculate target position from direction
+	var target = world_system.get_direction_offset(character.x, character.y, direction)
+	var tx = target.x
+	var ty = target.y
+
+	# Can't place on self
+	if tx == character.x and ty == character.y:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Select a direction to place!"})
+		return
+
+	# Check world bounds
+	if tx < -1000 or tx > 1000 or ty < -1000 or ty > 1000:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Out of bounds!"})
+		return
+
+	# Check target tile is placeable (not water, not already a player tile, not NPC post)
+	if not chunk_manager:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "World not ready!"})
+		return
+
+	var existing_tile = chunk_manager.get_tile(tx, ty)
+	var existing_type = existing_tile.get("type", "")
+	if existing_tile.get("owner", "") != "":
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
+		return
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board"]:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
+		return
+	if world_system:
+		var terrain = world_system.get_terrain_at(tx, ty)
+		if terrain in [world_system.Terrain.WATER, world_system.Terrain.DEEP_WATER, world_system.Terrain.VOID]:
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on water or void!"})
+			return
+
+	# Check another player isn't standing there (for walls)
+	if structure_type == "wall" and is_player_at(tx, ty, -1):
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "A player is standing there!"})
+		return
+
+	# Structures (non-wall/door) can only be placed inside an enclosure you own
+	if structure_type not in ENCLOSURE_WALL_TYPES:
+		if not _is_in_own_enclosure(tx, ty, username):
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Structures must be placed inside your enclosure!"})
+			return
+
+	# Check tile limit
+	var placed_tiles = persistence.get_player_tiles(username)
+	if placed_tiles.size() >= MAX_PLAYER_TILES:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Tile limit reached (%d max)!" % MAX_PLAYER_TILES})
+		return
+
+	# Consume item
+	character.inventory.remove_at(item_index)
+
+	# Determine tile properties
+	var blocks_move = structure_type == "wall"
+	var blocks_los = structure_type == "wall"
+
+	# Place tile in chunk manager
+	chunk_manager.set_tile(tx, ty, {
+		"type": structure_type,
+		"owner": username,
+		"blocks_move": blocks_move,
+		"blocks_los": blocks_los,
+	})
+
+	# Track placed tile
+	persistence.add_player_tile(username, tx, ty, structure_type)
+
+	# Check for new enclosures after placing wall/door
+	var enclosure_msg = ""
+	if structure_type in ENCLOSURE_WALL_TYPES:
+		enclosure_msg = _check_enclosures_after_build(username)
+
+	chunk_manager.save_dirty_chunks()
+
+	var display_name = item.get("name", structure_type.replace("_", " ").capitalize())
+	var msg = "[color=#00FF00]Placed %s![/color]" % display_name
+	if enclosure_msg != "":
+		msg += "\n" + enclosure_msg
+
+	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	save_character(peer_id)
+
+func handle_build_demolish(peer_id: int, message: Dictionary):
+	"""Handle player demolishing a tile they placed."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+
+	var direction = int(message.get("direction", 0))
+	var target = world_system.get_direction_offset(character.x, character.y, direction)
+	var tx = target.x
+	var ty = target.y
+
+	if tx == character.x and ty == character.y:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Select a direction to demolish!"})
+		return
+
+	if not chunk_manager:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "World not ready!"})
+		return
+
+	var tile = chunk_manager.get_tile(tx, ty)
+	var tile_owner = tile.get("owner", "")
+	if tile_owner != username:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "You can only demolish your own structures!"})
+		return
+
+	var tile_type = tile.get("type", "")
+
+	# Remove the tile (revert to procedural)
+	chunk_manager.remove_tile_modification(tx, ty)
+
+	# Remove from tracking
+	persistence.remove_player_tile(username, tx, ty)
+
+	# Re-check enclosures if wall/door was removed (may break an enclosure)
+	var enclosure_msg = ""
+	if tile_type in ENCLOSURE_WALL_TYPES:
+		enclosure_msg = _recheck_enclosures_after_demolish(username)
+
+	chunk_manager.save_dirty_chunks()
+
+	var msg = "[color=#FFFF00]Demolished %s.[/color]" % tile_type.replace("_", " ").capitalize()
+	if enclosure_msg != "":
+		msg += "\n" + enclosure_msg
+
+	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
+	send_location_update(peer_id)
+
+func _is_in_own_enclosure(x: int, y: int, username: String) -> bool:
+	"""Check if a position is inside one of the player's enclosures."""
+	if not player_enclosures.has(username):
+		return false
+	for enclosure in player_enclosures[username]:
+		for pos in enclosure:
+			if int(pos.x) == x and int(pos.y) == y:
+				return true
+	return false
+
+func _check_enclosures_after_build(username: String) -> String:
+	"""After placing a wall/door, detect any new enclosures. Returns status message."""
+	var placed = persistence.get_player_tiles(username)
+	# Find all wall/door tiles for this player
+	var wall_positions = []
+	for td in placed:
+		if td.get("type", "") in ENCLOSURE_WALL_TYPES:
+			wall_positions.append(Vector2i(int(td.x), int(td.y)))
+
+	if wall_positions.size() < 4:
+		return ""  # Need at least 4 walls to make an enclosure
+
+	# Check each non-wall neighbor of each wall for potential enclosed regions
+	var checked_regions: Array = []
+	var new_enclosures: Array = []
+
+	for wall_pos in wall_positions:
+		for offset in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
+			var check_pos = wall_pos + offset
+			# Skip if already part of a checked region
+			var already_checked = false
+			for region in checked_regions:
+				if check_pos in region:
+					already_checked = true
+					break
+			if already_checked:
+				continue
+
+			# Skip if this is a wall/door tile
+			var check_tile = chunk_manager.get_tile(check_pos.x, check_pos.y)
+			if check_tile.get("blocks_move", false):
+				continue
+			if check_tile.get("type", "") in ENCLOSURE_WALL_TYPES and check_tile.get("owner", "") == username:
+				continue
+
+			# Try to detect enclosure via BFS
+			var result = _detect_enclosure_bfs(check_pos, username)
+			if result.size() > 0:
+				checked_regions.append(result)
+				# Check if this enclosure is already known
+				var is_new = true
+				if player_enclosures.has(username):
+					for existing in player_enclosures[username]:
+						if existing.size() == result.size():
+							var match_count = 0
+							for p in result:
+								if p in existing:
+									match_count += 1
+							if match_count == result.size():
+								is_new = false
+								break
+				if is_new:
+					new_enclosures.append(result)
+
+	if new_enclosures.is_empty():
+		return ""
+
+	# Check enclosure limit
+	var current_count = player_enclosures.get(username, []).size()
+	var added = 0
+	for enclosure in new_enclosures:
+		if current_count + added >= MAX_PLAYER_ENCLOSURES:
+			break
+		if not player_enclosures.has(username):
+			player_enclosures[username] = []
+		player_enclosures[username].append(enclosure)
+		_mark_enclosure_safe(enclosure, username)
+		added += 1
+
+	if added > 0:
+		return "[color=#00FFFF]Enclosure formed! (%d/%d)[/color]" % [current_count + added, MAX_PLAYER_ENCLOSURES]
+	elif new_enclosures.size() > 0:
+		return "[color=#FF8800]Enclosure limit reached (%d/%d)![/color]" % [MAX_PLAYER_ENCLOSURES, MAX_PLAYER_ENCLOSURES]
+	return ""
+
+func _recheck_enclosures_after_demolish(username: String) -> String:
+	"""After demolishing a wall/door, re-validate all enclosures for this player."""
+	if not player_enclosures.has(username):
+		return ""
+
+	var broken_count = 0
+	var remaining: Array = []
+
+	for enclosure in player_enclosures[username]:
+		# Re-check if this enclosure is still valid
+		if enclosure.size() > 0:
+			var still_valid = _detect_enclosure_bfs(enclosure[0], username)
+			if still_valid.size() > 0:
+				remaining.append(still_valid)
+			else:
+				# Enclosure broken - unmark interior tiles
+				_unmark_enclosure_safe(enclosure)
+				broken_count += 1
+
+	player_enclosures[username] = remaining
+
+	if broken_count > 0:
+		return "[color=#FF8800]Enclosure broken! (%d/%d remaining)[/color]" % [remaining.size(), MAX_PLAYER_ENCLOSURES]
+	return ""
+
+func _detect_enclosure_bfs(start: Vector2i, owner: String) -> Array:
+	"""BFS flood fill from start position. Returns interior tile positions if enclosed
+	by walls/doors owned by owner. Returns empty array if not enclosed."""
+	if not chunk_manager:
+		return []
+
+	var queue: Array = [start]
+	var visited: Dictionary = {start: true}
+	var interior: Array = [start]
+	var has_player_wall = false
+	var has_player_door = false
+	var min_x = start.x
+	var max_x = start.x
+	var min_y = start.y
+	var max_y = start.y
+
+	var head = 0
+	while head < queue.size():
+		var current = queue[head]
+		head += 1
+
+		for offset in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
+			var neighbor = current + offset
+			if visited.has(neighbor):
+				continue
+			visited[neighbor] = true
+
+			var tile = chunk_manager.get_tile(neighbor.x, neighbor.y)
+			var tile_type = tile.get("type", "")
+			var tile_owner = tile.get("owner", "")
+
+			# Check if this is a boundary wall/door
+			if tile.get("blocks_move", false) or (tile_type in ENCLOSURE_WALL_TYPES and tile_owner == owner):
+				if tile_owner == owner:
+					if tile_type == "wall":
+						has_player_wall = true
+					elif tile_type == "door":
+						has_player_door = true
+				continue  # Don't expand through walls
+
+			# Passable tile - add to interior
+			interior.append(neighbor)
+
+			# Check bounding box
+			min_x = min(min_x, neighbor.x)
+			max_x = max(max_x, neighbor.x)
+			min_y = min(min_y, neighbor.y)
+			max_y = max(max_y, neighbor.y)
+
+			# Check size limits
+			if max_x - min_x >= MAX_ENCLOSURE_SIZE or max_y - min_y >= MAX_ENCLOSURE_SIZE:
+				return []  # Too big
+			if interior.size() > MAX_ENCLOSURE_SIZE * MAX_ENCLOSURE_SIZE:
+				return []  # Too many tiles
+
+			queue.append(neighbor)
+
+	# BFS completed - check if valid enclosure
+	if not has_player_wall or not has_player_door:
+		return []  # Must have at least one player wall and one door
+	if interior.size() < 1:
+		return []
+
+	return interior
+
+func _mark_enclosure_safe(positions: Array, owner: String):
+	"""Mark interior tiles as safe zone by setting enclosure_owner."""
+	if not chunk_manager:
+		return
+	for pos in positions:
+		var tile = chunk_manager.get_tile(pos.x, pos.y)
+		tile["enclosure_owner"] = owner
+		chunk_manager.set_tile(pos.x, pos.y, tile)
+
+func _unmark_enclosure_safe(positions: Array):
+	"""Remove safe zone marking from tiles."""
+	if not chunk_manager:
+		return
+	for pos in positions:
+		var tile = chunk_manager.get_tile(pos.x, pos.y)
+		if tile.has("enclosure_owner"):
+			if tile.has("owner"):
+				# Player-placed tile - keep it, just remove enclosure marking
+				tile.erase("enclosure_owner")
+				chunk_manager.set_tile(pos.x, pos.y, tile)
+			else:
+				# Natural tile - revert to procedural
+				chunk_manager.remove_tile_modification(pos.x, pos.y)
+
+func _rebuild_all_player_enclosures():
+	"""Rebuild enclosure data from persisted tile tracking. Called on server startup."""
+	player_enclosures.clear()
+	var all_tiles = persistence.get_all_player_tiles()
+	for username in all_tiles:
+		var tiles = all_tiles[username]
+		# Re-stamp all player tiles into chunks (they should already be there from chunk save, but ensure)
+		for td in tiles:
+			var tx = int(td.get("x", 0))
+			var ty = int(td.get("y", 0))
+			var tile_type = td.get("type", "wall")
+			var blocks_move = tile_type == "wall"
+			var blocks_los = tile_type == "wall"
+			chunk_manager.set_tile(tx, ty, {
+				"type": tile_type,
+				"owner": username,
+				"blocks_move": blocks_move,
+				"blocks_los": blocks_los,
+			})
+		# Now detect enclosures
+		_rebuild_enclosures_for_player(username)
+
+func _rebuild_enclosures_for_player(username: String):
+	"""Detect all enclosures for a player from their placed tiles."""
+	var placed = persistence.get_player_tiles(username)
+	var wall_positions: Array = []
+	for td in placed:
+		if td.get("type", "") in ENCLOSURE_WALL_TYPES:
+			wall_positions.append(Vector2i(int(td.x), int(td.y)))
+
+	if wall_positions.size() < 4:
+		return
+
+	var found_enclosures: Array = []
+	var all_interior_tiles: Dictionary = {}  # Track to avoid duplicate detection
+
+	for wall_pos in wall_positions:
+		for offset in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
+			var check_pos = wall_pos + offset
+			if all_interior_tiles.has(check_pos):
+				continue
+			var check_tile = chunk_manager.get_tile(check_pos.x, check_pos.y)
+			if check_tile.get("blocks_move", false):
+				continue
+			if check_tile.get("type", "") in ENCLOSURE_WALL_TYPES and check_tile.get("owner", "") == username:
+				continue
+
+			var result = _detect_enclosure_bfs(check_pos, username)
+			if result.size() > 0 and found_enclosures.size() < MAX_PLAYER_ENCLOSURES:
+				found_enclosures.append(result)
+				for pos in result:
+					all_interior_tiles[pos] = true
+				_mark_enclosure_safe(result, username)
+
+	if found_enclosures.size() > 0:
+		player_enclosures[username] = found_enclosures
+		log_message("Rebuilt %d enclosures for %s" % [found_enclosures.size(), username])
+
+func _get_username(peer_id: int) -> String:
+	"""Get username for a peer_id."""
+	if peers.has(peer_id):
+		return peers[peer_id].get("username", "")
+	return ""
 
 # ===== DUNGEON SYSTEM =====
 
@@ -16695,6 +17819,9 @@ func _execute_map_wipe(admin_peer_id: int):
 		for post in npc_posts:
 			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
 		chunk_manager.save_dirty_chunks()
+		# Clear all player-built tiles (they don't survive map wipe)
+		persistence.clear_all_player_tiles()
+		player_enclosures.clear()
 	else:
 		depleted_nodes.clear()
 	active_bounties.clear()
