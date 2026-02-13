@@ -4876,7 +4876,13 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"message": "[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]"
 				})
 				return
-		elif stone_type == "egg" and character.incubating_eggs.size() > 0:
+			else:
+				send_to_peer(peer_id, {"type": "error", "message": "You have no items to send home!"})
+				return
+		elif stone_type == "egg":
+			if character.incubating_eggs.is_empty():
+				send_to_peer(peer_id, {"type": "error", "message": "You have no eggs to send home!"})
+				return
 			# Multiple eggs - ask player to choose
 			if not _home_stone_pre_validate(peer_id, character, stone_type):
 				return
@@ -4899,22 +4905,25 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			})
 			return
 		elif stone_type == "equipment":
-			# Always show selection UI so player sees what they're sending
-			var equipped_items = []
-			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-				if character.equipped.has(slot) and character.equipped[slot] != null:
-					equipped_items.append({"slot": slot, "item": character.equipped[slot]})
-			if equipped_items.size() > 0:
+			# Show selection UI for inventory equipment items
+			var equipment_items = []
+			for ei in range(character.inventory.size()):
+				var inv_item = character.inventory[ei]
+				var inv_slot = Character.get_item_slot_from_type(inv_item.get("type", ""))
+				if inv_slot != "":
+					equipment_items.append({"index": ei, "item": inv_item})
+			if equipment_items.size() > 0:
 				if not _home_stone_pre_validate(peer_id, character, stone_type):
 					return
 				var options = []
-				for i in range(equipped_items.size()):
-					var entry = equipped_items[i]
-					var item_display = entry.item.get("name", entry.slot.capitalize())
+				for i in range(equipment_items.size()):
+					var entry = equipment_items[i]
+					var itm = entry.item
 					options.append({
 						"index": i,
-						"slot": entry.slot,
-						"label": "%s (%s)" % [item_display, entry.slot.capitalize()]
+						"inv_index": entry.index,
+						"label": itm.get("name", "Unknown"),
+						"item": itm
 					})
 				character.set_meta("pending_home_stone_index", index)
 				send_to_peer(peer_id, {
@@ -4923,6 +4932,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"options": options,
 					"message": "[color=#00FFFF]Choose equipment to send to your Sanctuary:[/color]"
 				})
+				return
+			else:
+				send_to_peer(peer_id, {"type": "error", "message": "You have no equipment in your inventory to send home!"})
 				return
 
 	# For consumables with stacking, use the stack function
@@ -5288,15 +5300,16 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				_process_home_stone_supplies(peer_id, character, sendable, item_name)
 
 			"equipment":
-				# Send one equipped item to house storage (single equipped auto-selects)
-				var equipped_items = []
-				for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-					if character.equipped.has(slot) and character.equipped[slot] != null:
-						equipped_items.append({"slot": slot, "item": character.equipped[slot]})
-				if equipped_items.is_empty():
-					send_to_peer(peer_id, {"type": "error", "message": "You have no equipment to send home!"})
+				# Send one inventory equipment item to house storage (single item auto-selects)
+				var equipment_items = []
+				for ei in range(character.inventory.size()):
+					var inv_item = character.inventory[ei]
+					if Character.get_item_slot_from_type(inv_item.get("type", "")) != "":
+						equipment_items.append({"index": ei, "item": inv_item})
+				if equipment_items.is_empty():
+					send_to_peer(peer_id, {"type": "error", "message": "You have no equipment in your inventory to send home!"})
 					return
-				_process_home_stone_equipment(peer_id, character, equipped_items[0].slot, item_name)
+				_process_home_stone_equipment(peer_id, character, equipment_items[0].index, item_name)
 
 			"companion":
 				# Send choice to player: Register or Store in Kennel
@@ -5329,6 +5342,68 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	# Update character data
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func _get_equipment_slot_abbr(item_type: String) -> String:
+	"""Get short slot abbreviation for equipment display"""
+	if "weapon" in item_type: return "[WPN]"
+	elif "armor" in item_type: return "[ARM]"
+	elif "helm" in item_type: return "[HLM]"
+	elif "shield" in item_type: return "[SHD]"
+	elif "boots" in item_type: return "[BOT]"
+	elif "ring" in item_type: return "[RNG]"
+	elif "amulet" in item_type: return "[AMU]"
+	return ""
+
+func _get_equipment_affix_summary(item: Dictionary) -> String:
+	"""Build a short affix summary like +50ATK, +33DEX, -2WIT"""
+	var affixes = item.get("affixes", {})
+	if affixes.is_empty():
+		return ""
+	var parts = []
+	var affix_abbrevs = {
+		"strength": "STR", "attack": "ATK", "defense": "DEF", "speed": "SPD",
+		"intelligence": "INT", "dexterity": "DEX", "wits": "WIT",
+		"constitution": "CON", "wisdom": "WIS",
+		"max_hp": "HP", "max_mana": "MP", "max_stamina": "STA", "max_energy": "EN",
+		"hp_regen": "HP/rnd", "mana_regen": "MP/rnd", "stamina_regen": "STA/rnd", "energy_regen": "EN/rnd",
+		"crit_chance": "CRT%", "crit_damage": "CRTD", "lifesteal": "LS%",
+		"dodge": "DDG%", "block": "BLK%", "thorns": "THN", "flee_chance": "FLE%"
+	}
+	# Affixes is a Dictionary: {"strength": 50, "dexterity": 33, "prefix_name": "...", "roll_quality": 50, ...}
+	for stat in affixes:
+		if stat in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
+			continue
+		var value = affixes[stat]
+		if not (value is int or value is float):
+			continue
+		var abbr = affix_abbrevs.get(stat, stat.to_upper().left(3))
+		var sign = "+" if value >= 0 else ""
+		parts.append("%s%d%s" % [sign, int(value), abbr])
+	return ", ".join(parts)
+
+func _get_equipment_base_stat(item: Dictionary) -> String:
+	"""Get the base stat bonus text like '+51 Atk' for display"""
+	var item_type = item.get("type", "")
+	var level = item.get("level", 1)
+	var rarity = item.get("rarity", "common")
+	var rarity_mults = {"common": 1.0, "uncommon": 1.15, "rare": 1.3, "epic": 1.5, "legendary": 1.75, "artifact": 2.0}
+	var rarity_mult = rarity_mults.get(rarity, 1.0)
+	var base = int(level * rarity_mult)
+	if "weapon" in item_type:
+		return "+%d Atk" % (base * 2)
+	elif "armor" in item_type:
+		return "+%d Def" % (base * 2)
+	elif "helm" in item_type:
+		return "+%d Def" % base
+	elif "shield" in item_type:
+		return "+%d Def" % int(base * 1.5)
+	elif "ring" in item_type:
+		return "+%d Atk" % int(base * 0.5)
+	elif "amulet" in item_type:
+		return "+%d Resource" % (base * 2)
+	elif "boots" in item_type:
+		return "+%d Spd" % base
+	return ""
 
 func _home_stone_pre_validate(peer_id: int, character, stone_type: String) -> bool:
 	"""Pre-validate home stone usage (combat/dungeon check + house storage check)"""
@@ -5435,11 +5510,15 @@ func _process_home_stone_supplies(peer_id: int, character, items_to_send: Array,
 		"message": "[color=#00FFFF]The %s glows and %d supplies vanish in a flash of light![/color]\n[color=#00FF00]Items safely stored at your house![/color]" % [item_name, sent_count]
 	})
 
-func _process_home_stone_equipment(peer_id: int, character, slot_name: String, item_name: String):
-	"""Process sending equipped item to house storage via Home Stone"""
+func _process_home_stone_equipment(peer_id: int, character, inv_index: int, item_name: String):
+	"""Process sending inventory equipment item to house storage via Home Stone"""
 	var account_id = peers[peer_id].account_id
-	if not character.equipped.has(slot_name) or character.equipped[slot_name] == null:
-		send_to_peer(peer_id, {"type": "error", "message": "No equipment in that slot!"})
+	if inv_index < 0 or inv_index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index!"})
+		return
+	var equip_item = character.inventory[inv_index]
+	if Character.get_item_slot_from_type(equip_item.get("type", "")) == "":
+		send_to_peer(peer_id, {"type": "error", "message": "That item is not equipment!"})
 		return
 	var house = persistence.get_house(account_id)
 	if house == null:
@@ -5449,10 +5528,8 @@ func _process_home_stone_equipment(peer_id: int, character, slot_name: String, i
 	if house.storage.items.size() >= storage_capacity:
 		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
 		return
-	var equip_item = character.equipped[slot_name]
 	persistence.add_item_to_house_storage(account_id, equip_item)
-	character.equipped[slot_name] = null
-	character.recalculate_stats()
+	character.inventory.remove_at(inv_index)
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#00FFFF]The %s glows and your %s vanishes in a flash of light![/color]\n[color=#00FF00]Equipment safely stored at your house![/color]" % [item_name, equip_item.get("name", "equipment")]
@@ -5489,16 +5566,17 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 		"egg":
 			_process_home_stone_egg(peer_id, character, selection_index, item_name)
 		"equipment":
-			# Resolve slot from selection index
-			var equipped_items = []
-			for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-				if character.equipped.has(slot) and character.equipped[slot] != null:
-					equipped_items.append({"slot": slot, "item": character.equipped[slot]})
-			if selection_index < 0 or selection_index >= equipped_items.size():
+			# Resolve inventory index from selection index
+			var equipment_items = []
+			for ei in range(character.inventory.size()):
+				var inv_item = character.inventory[ei]
+				if Character.get_item_slot_from_type(inv_item.get("type", "")) != "":
+					equipment_items.append({"index": ei, "item": inv_item})
+			if selection_index < 0 or selection_index >= equipment_items.size():
 				send_to_peer(peer_id, {"type": "error", "message": "Invalid equipment selection."})
 				return
-			var slot_name = equipped_items[selection_index].slot
-			_process_home_stone_equipment(peer_id, character, slot_name, item_name)
+			var inv_index = equipment_items[selection_index].index
+			_process_home_stone_equipment(peer_id, character, inv_index, item_name)
 		"supplies":
 			# Multi-select: client sends selection_indices array + optional quantities
 			var selection_indices = message.get("selection_indices", [])

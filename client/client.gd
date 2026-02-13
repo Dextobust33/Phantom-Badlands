@@ -555,50 +555,55 @@ const HOUSE_TILE_UPGRADE = "U"    # Upgrades altar
 const HOUSE_TILE_EXIT = "D"       # Door/Exit to play
 const HOUSE_TILE_PLAYER = "@"     # Player marker
 
-# House layouts by upgrade level (array of strings, each string is a row)
-# Legend: # = wall, . = floor, C = companion slot, S = storage, U = upgrades, D = door
-# Player spawn is always in center of floor area
-# C tiles match base capacity (2) + companion_slots upgrades can add more
-const HOUSE_LAYOUTS = {
-	0: [  # Starter cottage (9 wide x 6 tall) - 2 companion slots
-		"#########",
-		"#  C C  #",
-		"#       #",
-		"#  K F  #",
-		"# S   U #",
-		"####D####"
-	],
-	1: [  # Small house (11 wide x 7 tall) - 3 companion slots
-		"###########",
-		"#  C C C  #",
-		"#         #",
-		"#  K   F  #",
-		"#         #",
-		"# S     U #",
-		"#####D#####"
-	],
-	2: [  # Medium house (13 wide x 8 tall) - 4 companion slots
-		"#############",
-		"#  C C C C  #",
-		"#           #",
-		"#  K     F  #",
-		"#           #",
-		"#           #",
-		"# S       U #",
-		"######D######"
-	],
-	3: [  # Large house (15 wide x 9 tall) - 5 companion slots
-		"###############",
-		"#  C C C C C  #",
-		"#             #",
-		"#  K       F  #",
-		"#             #",
-		"#             #",
-		"#             #",
-		"# S         U #",
-		"#######D#######"
-	]
-}
+# House map - single large layout (29 wide x 19 tall) with dedicated facility zones
+# Legend: # = wall, C = companion slot, K = kennel, F = fusion, S = storage, U = upgrades, D = door
+# Zones are well-separated so facilities never touch even at max upgrades
+# C and K tiles are placed dynamically based on upgrade levels
+const HOUSE_MAP_BASE = [
+	"#############################",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                      F    #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#   S                  U    #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"#                           #",
+	"##############D##############"
+]
+
+# Companion tile positions (row, col) - base 2, up to 10 with upgrades
+# Arranged in two rows at the top of the house, spaced 3 apart
+const COMPANION_POSITIONS = [
+	[2, 4], [2, 7],       # base 2
+	[3, 4], [3, 7],       # upgrades 1-2
+	[2, 10], [3, 10],     # upgrades 3-4
+	[2, 13], [3, 13],     # upgrades 5-6
+	[2, 16], [3, 16]      # upgrades 7-8
+]
+
+# Kennel tile positions (row, col) - base 1, up to 10 with upgrades
+# Grows as a block in the left-middle area
+const KENNEL_POSITIONS = [
+	[7, 4],                       # base 1
+	[7, 5], [7, 6],              # upgrades 1-2 (first row)
+	[8, 4], [8, 5], [8, 6],     # upgrades 3-5 (second row)
+	[9, 4], [9, 5], [9, 6],     # upgrades 6-8 (third row)
+	[10, 4]                       # upgrade 9
+]
+
+# Viewport size for the scrolling camera (characters visible)
+const HOUSE_VIEWPORT_W = 21
+const HOUSE_VIEWPORT_H = 9
 
 # Character data
 var character_data = {}
@@ -1794,7 +1799,7 @@ func _process(delta):
 				if not get_meta("itemkey_%d_pressed" % i, false):
 					set_meta("itemkey_%d_pressed" % i, true)
 					# Mark this keycode as consumed so action bar won't also fire
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					var selection_index = i
 					if pending_inventory_action == "equip_item":
 						# Equip uses its own page for filtered list
@@ -1820,7 +1825,7 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("affixkey_%d_pressed" % i, false):
 					set_meta("affixkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					_toggle_affix_filter_item(affix_filter_page * 7 + i)
 			else:
 				set_meta("affixkey_%d_pressed" % i, false)
@@ -1833,7 +1838,7 @@ func _process(delta):
 					continue
 				if not get_meta("merchantkey_%d_pressed" % i, false):
 					set_meta("merchantkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_merchant_sell_item(i)  # 0-based index
 			else:
 				set_meta("merchantkey_%d_pressed" % i, false)
@@ -1846,7 +1851,7 @@ func _process(delta):
 					continue
 				if not get_meta("buykey_%d_pressed" % i, false):
 					set_meta("buykey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_merchant_buy_item(i)  # 0-based index
 			else:
 				set_meta("buykey_%d_pressed" % i, false)
@@ -1859,7 +1864,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradekey_%d_pressed" % i, false):
 					set_meta("tradekey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_trade_item(i)
 			else:
 				set_meta("tradekey_%d_pressed" % i, false)
@@ -1872,7 +1877,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradecompkey_%d_pressed" % i, false):
 					set_meta("tradecompkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_trade_companion(i)
 			else:
 				set_meta("tradecompkey_%d_pressed" % i, false)
@@ -1885,7 +1890,7 @@ func _process(delta):
 					continue
 				if not get_meta("tradeeggkey_%d_pressed" % i, false):
 					set_meta("tradeeggkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_trade_egg(i)
 			else:
 				set_meta("tradeeggkey_%d_pressed" % i, false)
@@ -1898,7 +1903,7 @@ func _process(delta):
 					continue
 				if not get_meta("questkey_%d_pressed" % i, false):
 					set_meta("questkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_quest_option(i)  # 0-based index
 			else:
 				set_meta("questkey_%d_pressed" % i, false)
@@ -1911,7 +1916,7 @@ func _process(delta):
 					continue
 				if not get_meta("craftkey_%d_pressed" % i, false):
 					set_meta("craftkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_craft_recipe(i)  # 0-based index
 			else:
 				set_meta("craftkey_%d_pressed" % i, false)
@@ -1924,7 +1929,7 @@ func _process(delta):
 					continue
 				if not get_meta("dungeonkey_%d_pressed" % i, false):
 					set_meta("dungeonkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_dungeon(i)  # 0-based index
 			else:
 				set_meta("dungeonkey_%d_pressed" % i, false)
@@ -1937,7 +1942,7 @@ func _process(delta):
 					continue
 				if not get_meta("questlogkey_%d_pressed" % i, false):
 					set_meta("questlogkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					abandon_quest_by_index(i)  # 0-based index
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
@@ -1950,7 +1955,7 @@ func _process(delta):
 					continue
 				if not get_meta("combatitemkey_%d_pressed" % i, false):
 					set_meta("combatitemkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					use_combat_item_by_number(i + 1)  # 1-based for user
 			else:
 				set_meta("combatitemkey_%d_pressed" % i, false)
@@ -1996,7 +2001,7 @@ func _process(delta):
 			if is_item_select_key_pressed(i):
 				if not get_meta("companionkey_%d_pressed" % i, false):
 					set_meta("companionkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					activate_companion_by_index(i)
 			else:
 				set_meta("companionkey_%d_pressed" % i, false)
@@ -2061,7 +2066,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("monsterselectkey_%d_pressed" % i, false):
 						set_meta("monsterselectkey_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						select_monster_from_scroll(i)  # 0-based index on current page
 				else:
 					set_meta("monsterselectkey_%d_pressed" % i, false)
@@ -2083,7 +2088,7 @@ func _process(delta):
 					continue
 				if not get_meta("targetfarmkey_%d_pressed" % i, false):
 					set_meta("targetfarmkey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					select_target_farm_ability(i)  # 0-based index
 			else:
 				set_meta("targetfarmkey_%d_pressed" % i, false)
@@ -2096,7 +2101,7 @@ func _process(delta):
 					continue
 				if not get_meta("homestonekey_%d_pressed" % i, false):
 					set_meta("homestonekey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					_select_home_stone_option(i)
 			else:
 				set_meta("homestonekey_%d_pressed" % i, false)
@@ -2111,7 +2116,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						if i < blacksmith_upgrade_items.size():
 							var slot = blacksmith_upgrade_items[i].get("slot", "")
 							send_blacksmith_choice("select_upgrade_item", slot)
@@ -2125,7 +2130,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						if i < blacksmith_upgrade_affixes.size():
 							var affix_key = blacksmith_upgrade_affixes[i].get("affix_key", "")
 							send_blacksmith_choice("confirm_upgrade", "", affix_key)
@@ -2139,7 +2144,7 @@ func _process(delta):
 				if regular_key_pressed or numpad_key_pressed:
 					if not get_meta("blacksmithkey_%d_pressed" % i, false):
 						set_meta("blacksmithkey_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						# Get the slot name from the item at this index
 						if i < blacksmith_items.size():
 							var slot = blacksmith_items[i].get("slot", "")
@@ -2155,7 +2160,7 @@ func _process(delta):
 			if regular_key_pressed or numpad_key_pressed:
 				if not get_meta("rescuekey_%d_pressed" % i, false):
 					set_meta("rescuekey_%d_pressed" % i, true)
-					item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+					_consume_item_select_key(i)
 					send_to_server({"type": "rescue_npc_response", "action": "accept", "item_index": i})
 					_finish_rescue_npc_encounter()
 			else:
@@ -2190,7 +2195,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housecompanion_%d_pressed" % i, false):
 						set_meta("housecompanion_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_toggle_companion_checkout(i)
 				else:
 					set_meta("housecompanion_%d_pressed" % i, false)
@@ -2200,7 +2205,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housediscard_%d_pressed" % i, false):
 						set_meta("housediscard_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_select_storage_discard_item(i)
 				else:
 					set_meta("housediscard_%d_pressed" % i, false)
@@ -2210,7 +2215,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("houseregister_%d_pressed" % i, false):
 						set_meta("houseregister_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_select_storage_register_companion(i)
 				else:
 					set_meta("houseregister_%d_pressed" % i, false)
@@ -2220,7 +2225,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("houseunregister_%d_pressed" % i, false):
 						set_meta("houseunregister_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_select_companion_unregister(i)
 				else:
 					set_meta("houseunregister_%d_pressed" % i, false)
@@ -2230,7 +2235,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housekennel_%d_pressed" % i, false):
 						set_meta("housekennel_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_select_kennel_companion(i)
 				else:
 					set_meta("housekennel_%d_pressed" % i, false)
@@ -2240,7 +2245,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housefusion_%d_pressed" % i, false):
 						set_meta("housefusion_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_select_fusion_group(i)
 				else:
 					set_meta("housefusion_%d_pressed" % i, false)
@@ -2250,7 +2255,7 @@ func _process(delta):
 				if is_item_select_key_pressed(i):
 					if not get_meta("housefusionmix_%d_pressed" % i, false):
 						set_meta("housefusionmix_%d_pressed" % i, true)
-						item_selection_consumed_this_frame.append(get_item_select_keycode(i))
+						_consume_item_select_key(i)
 						_toggle_mixed_fusion_companion(i)
 				else:
 					set_meta("housefusionmix_%d_pressed" % i, false)
@@ -14433,7 +14438,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif item_type == "home_stone_supplies":
 		return "Send up to 10 items to your Sanctuary storage"
 	elif item_type == "home_stone_equipment":
-		return "Send one equipped item to your Sanctuary storage"
+		return "Send one equipment item from inventory to your Sanctuary storage"
 	elif item_type == "home_stone_companion":
 		return "Register your active companion at your Sanctuary"
 	# Tomes - stat tomes
@@ -14932,6 +14937,20 @@ func get_item_select_keycode(index: int) -> int:
 func get_item_select_key_name(index: int) -> String:
 	"""Get the display name for item selection key (index 0-8 for items 1-9)"""
 	return get_key_name(get_item_select_keycode(index))
+
+func _consume_item_select_key(item_index: int):
+	"""Mark an item selection key as consumed to prevent action bar double-trigger.
+	This both prevents same-frame triggers (via consumed array) and next-frame
+	triggers (by marking the corresponding action bar hotkey as already pressed)."""
+	var keycode = get_item_select_keycode(item_index)
+	item_selection_consumed_this_frame.append(keycode)
+	# Mark corresponding action bar hotkey as pressed so next frame doesn't
+	# see it as a new press (the real fix for cross-frame double-trigger)
+	for ab_slot in range(10):
+		var ab_key = keybinds.get("action_%d" % ab_slot, default_keybinds.get("action_%d" % ab_slot, KEY_SPACE))
+		if ab_key == keycode:
+			set_meta("hotkey_%d_pressed" % ab_slot, true)
+			break
 
 func _pre_mark_held_selection_keys(prefix: String, count: int = 9):
 	"""Pre-mark currently held item selection keys to prevent cascade into new selection mode.
@@ -17783,7 +17802,7 @@ func show_help():
 [color=#FFD700]Home Stones:[/color] Found in tier 4-9 loot. Use outside combat/dungeons to send things home:
   • Home Stone (Egg) - Send one incubating egg to storage
   • Home Stone (Supplies) - Send up to 10 consumables to storage
-  • Home Stone (Equipment) - Send one equipped item to storage
+  • Home Stone (Equipment) - Send one equipment item from inventory to storage
   • Home Stone (Companion) - Register your active companion to Sanctuary
 [color=#00BFFF]Egg Freezing:[/color] [color=#FFAA00]More[/color]→[color=#FFAA00]Eggs[/color]: Press Freeze/Unfreeze buttons to pause egg hatching!
   • Frozen eggs don't progress when you walk - perfect for saving until you find a Home Stone
@@ -19823,6 +19842,7 @@ func display_dungeon_floor():
 		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
+		map_display.scroll_to_line(0)
 
 	# GameOutput shows dungeon status (not the map)
 	game_output.clear()
@@ -19860,6 +19880,7 @@ func update_dungeon_map():
 		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
+		map_display.scroll_to_line(0)
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	"""Render dungeon grid viewport centered on player with monster overlay"""
@@ -20434,10 +20455,45 @@ func _display_home_stone_options():
 		display_game("[color=#808080][%s]=Send  [%s]=Cancel  [%s]=Select All  [%s/%s]=Prev/Next Page[/color]" % [
 			get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
 			get_action_key_name(3), get_action_key_name(4)])
+	elif home_stone_type == "equipment":
+		display_game("[color=#00FFFF]===== HOME STONE (EQUIPMENT) =====[/color]")
+		display_game("[color=#808080]Select which equipment to send to your Sanctuary:[/color]")
+		display_game("")
+		var player_class = character_data.get("class", "")
+		var equipped = character_data.get("equipped", {})
+		for i in range(home_stone_options.size()):
+			var option = home_stone_options[i]
+			var itm = option.get("item", {})
+			if itm.is_empty():
+				display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, option.get("label", "Unknown")])
+			else:
+				var item_type = itm.get("type", "")
+				var rarity_color = _get_item_rarity_color(itm.get("rarity", "common"))
+				var item_level = itm.get("level", 1)
+				var themed_name = _get_themed_item_name(itm, player_class)
+				var bonus_text = _get_item_bonus_summary(itm)
+				var slot_abbr = _get_slot_abbreviation(item_type)
+				var slot = _get_slot_for_item_type(item_type)
+				var compare_text = ""
+				if slot != "":
+					var equipped_item = equipped.get(slot)
+					var diff_parts = _get_item_comparison_parts(itm, equipped_item)
+					if diff_parts.size() > 0:
+						compare_text = " [%s]" % ", ".join(diff_parts)
+				var wear = itm.get("wear", 0)
+				var wear_text = ""
+				if wear > 0:
+					var condition_color = _get_condition_color(wear)
+					wear_text = " [color=%s]%d%%[/color]" % [condition_color, wear]
+				display_game("[color=#FFFF00][%d][/color] [color=%s]%s[/color] Lv%d %s %s%s%s" % [
+					i + 1, rarity_color, themed_name, item_level, bonus_text, slot_abbr, wear_text, compare_text
+				])
+		display_game("")
+		display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
 	else:
-		var type_label = "egg" if home_stone_type == "egg" else "equipment"
-		display_game("[color=#00FFFF]===== HOME STONE (%s) =====[/color]" % type_label.to_upper())
-		display_game("[color=#808080]Select which %s to send to your Sanctuary:[/color]" % type_label)
+		# Egg or other types
+		display_game("[color=#00FFFF]===== HOME STONE (EGG) =====[/color]")
+		display_game("[color=#808080]Select which egg to send to your Sanctuary:[/color]")
 		display_game("")
 		for i in range(home_stone_options.size()):
 			var option = home_stone_options[i]
@@ -21524,15 +21580,38 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"wits_bonus": {"name": "Wits Training", "desc": "+1 WITS", "icon": "⚡"}
 }
 
-func _get_house_layout_level() -> int:
-	"""Get current house size level from upgrades"""
-	var upgrades = house_data.get("upgrades", {})
-	return mini(upgrades.get("house_size", 0), HOUSE_LAYOUTS.size() - 1)
-
 func _get_current_house_layout() -> Array:
-	"""Get the current house layout array based on upgrade level"""
-	var level = _get_house_layout_level()
-	return HOUSE_LAYOUTS.get(level, HOUSE_LAYOUTS[0])
+	"""Build the house map with dynamic C and K tiles based on upgrade levels"""
+	# Start with base map
+	var layout = []
+	for row in HOUSE_MAP_BASE:
+		layout.append(row)
+
+	var upgrades = house_data.get("upgrades", {})
+
+	# Place companion tiles (base 2 + companion_slots upgrades)
+	var companion_count = 2 + int(upgrades.get("companion_slots", 0))
+	for i in range(mini(companion_count, COMPANION_POSITIONS.size())):
+		var pos = COMPANION_POSITIONS[i]
+		var y = pos[0]
+		var x = pos[1]
+		if y >= 0 and y < layout.size() and x >= 0 and x < layout[y].length():
+			var row = layout[y]
+			if row[x] == " ":
+				layout[y] = row.substr(0, x) + "C" + row.substr(x + 1)
+
+	# Place kennel tiles (base 1 + kennel_capacity upgrades)
+	var kennel_count = 1 + int(upgrades.get("kennel_capacity", 0))
+	for i in range(mini(kennel_count, KENNEL_POSITIONS.size())):
+		var pos = KENNEL_POSITIONS[i]
+		var y = pos[0]
+		var x = pos[1]
+		if y >= 0 and y < layout.size() and x >= 0 and x < layout[y].length():
+			var row = layout[y]
+			if row[x] == " ":
+				layout[y] = row.substr(0, x) + "K" + row.substr(x + 1)
+
+	return layout
 
 func _init_house_player_position():
 	"""Initialize player position to center of house"""
@@ -21584,26 +21663,31 @@ func _move_house_player(dx: int, dy: int) -> bool:
 	return false
 
 func _render_house_map() -> String:
-	"""Render the ASCII house map with player position"""
+	"""Render the ASCII house map with viewport camera following the player"""
 	var layout = _get_current_house_layout()
 	if layout.size() == 0:
 		return "[color=#FF0000]Error: No house layout[/color]"
 
+	var map_h = layout.size()
+	var map_w = layout[0].length()
 	var lines = PackedStringArray()
 
 	# Title
 	lines.append("[color=#FFD700]    SANCTUARY[/color]")
 	lines.append("")
 
-	# Render each row of the house
-	for y in range(layout.size()):
-		var row = layout[y]
-		var rendered_row = ""
-		for x in range(row.length()):
-			var tile = row[x]
-			var char_to_render = tile
+	# Calculate viewport centered on player
+	var vp_x = house_player_x - HOUSE_VIEWPORT_W / 2
+	var vp_y = house_player_y - HOUSE_VIEWPORT_H / 2
+	# Clamp to map bounds
+	vp_x = clampi(vp_x, 0, maxi(0, map_w - HOUSE_VIEWPORT_W))
+	vp_y = clampi(vp_y, 0, maxi(0, map_h - HOUSE_VIEWPORT_H))
 
-			# If player is at this position, show @ instead
+	# Render visible portion of the map
+	for y in range(vp_y, mini(vp_y + HOUSE_VIEWPORT_H, map_h)):
+		var rendered_row = ""
+		for x in range(vp_x, mini(vp_x + HOUSE_VIEWPORT_W, map_w)):
+			var tile = layout[y][x]
 			if x == house_player_x and y == house_player_y:
 				rendered_row += "[color=#00FF00]@[/color]"
 			elif tile == "#":
@@ -21616,6 +21700,10 @@ func _render_house_map() -> String:
 				rendered_row += "[color=#00FFFF]U[/color]"
 			elif tile == "D":
 				rendered_row += "[color=#FF6600]D[/color]"
+			elif tile == "K":
+				rendered_row += "[color=#FF8800]K[/color]"
+			elif tile == "F":
+				rendered_row += "[color=#FFD700]F[/color]"
 			else:
 				rendered_row += tile
 		lines.append("  " + rendered_row)
@@ -21624,8 +21712,8 @@ func _render_house_map() -> String:
 
 	# Legend
 	lines.append("[color=#808080]Legend:[/color]")
-	lines.append("[color=#00FF00]@[/color]=You [color=#A335EE]C[/color]=Companion")
-	lines.append("[color=#FFD700]S[/color]=Storage [color=#00FFFF]U[/color]=Upgrade")
+	lines.append("[color=#00FF00]@[/color]=You [color=#A335EE]C[/color]=Companion [color=#FF8800]K[/color]=Kennel")
+	lines.append("[color=#FFD700]S[/color]=Storage [color=#00FFFF]U[/color]=Upgrade [color=#FFD700]F[/color]=Fusion")
 	lines.append("[color=#FF6600]D[/color]=Door (Play)")
 	lines.append("")
 
@@ -21652,6 +21740,7 @@ func _update_house_map():
 		map_display.clear()
 		if house_mode == "main":
 			map_display.append_text(_render_house_map())
+			map_display.scroll_to_line(0)
 		else:
 			# Show simplified info when in submodes
 			var lines = PackedStringArray()
