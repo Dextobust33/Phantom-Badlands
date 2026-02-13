@@ -4,7 +4,7 @@ extends Control
 
 # CONFIGURE THESE FOR YOUR GITHUB REPO
 const GITHUB_OWNER = "Dextobust33"
-const GITHUB_REPO = "Phantom-Badlands"
+const GITHUB_REPO = "Phantasia-Revival"
 const GAME_EXECUTABLE = "PhantomBadlandsClient.exe"
 
 @onready var status_label = $VBox/StatusLabel
