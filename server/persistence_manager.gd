@@ -59,6 +59,7 @@ func _ready():
 	load_corpses()
 	load_houses()
 	load_player_tiles()
+	load_player_storage()
 
 # ===== DIRECTORY SETUP =====
 
@@ -1429,3 +1430,29 @@ func clear_all_player_tiles():
 	"""Clear all player tile data (called on map wipe)."""
 	player_tiles_data = {"tiles": {}}
 	save_player_tiles()
+
+# ===== PLAYER STORAGE (Building System - Storage Chests) =====
+
+const PLAYER_STORAGE_FILE = "user://data/player_storage.json"
+var player_storage_data: Dictionary = {}
+
+func load_player_storage():
+	"""Load player storage data."""
+	var data = _safe_load(PLAYER_STORAGE_FILE)
+	if data.is_empty():
+		player_storage_data = {}
+	else:
+		player_storage_data = data
+
+func save_player_storage_file():
+	"""Save player storage data."""
+	_safe_save(PLAYER_STORAGE_FILE, player_storage_data)
+
+func get_player_storage(username: String) -> Array:
+	"""Get storage items for a player. Returns array of item dicts."""
+	return player_storage_data.get(username, [])
+
+func set_player_storage(username: String, items: Array):
+	"""Set storage items for a player."""
+	player_storage_data[username] = items
+	save_player_storage_file()

@@ -72,15 +72,17 @@ const TILE_RENDER = {
 	"door":          {"char": "+", "color": "#CCAA00", "blocks_move": false, "blocks_los": false},
 	"floor":         {"char": ".", "color": "#D4C4A2", "blocks_move": false, "blocks_los": false},
 	"path":          {"char": ":", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
-	"forge":         {"char": "F", "color": "#FF8800", "blocks_move": false, "blocks_los": false},
-	"apothecary":    {"char": "A", "color": "#00CC66", "blocks_move": false, "blocks_los": false},
-	"workbench":     {"char": "W", "color": "#AA7744", "blocks_move": false, "blocks_los": false},
-	"enchant_table": {"char": "E", "color": "#AA44FF", "blocks_move": false, "blocks_los": false},
-	"writing_desk":  {"char": "S", "color": "#87CEEB", "blocks_move": false, "blocks_los": false},
-	"market":        {"char": "$", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
-	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": false, "blocks_los": false},
-	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
+	"forge":         {"char": "F", "color": "#FF8800", "blocks_move": true, "blocks_los": false},
+	"apothecary":    {"char": "A", "color": "#00CC66", "blocks_move": true, "blocks_los": false},
+	"workbench":     {"char": "W", "color": "#AA7744", "blocks_move": true, "blocks_los": false},
+	"enchant_table": {"char": "E", "color": "#AA44FF", "blocks_move": true, "blocks_los": false},
+	"writing_desk":  {"char": "S", "color": "#87CEEB", "blocks_move": true, "blocks_los": false},
+	"market":        {"char": "$", "color": "#FFD700", "blocks_move": true, "blocks_los": false},
+	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": true, "blocks_los": false},
+	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": true, "blocks_los": false},
+	"throne":        {"char": "T", "color": "#FFD700", "blocks_move": true, "blocks_los": false},
 	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
+	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
 	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": false, "blocks_los": false},
 	"post_marker":   {"char": "P", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
@@ -309,7 +311,7 @@ func _tile_to_terrain(tile: Dictionary, x: int, y: int) -> Terrain:
 		"water": return Terrain.WATER
 		"deep_water": return Terrain.DEEP_WATER
 		"wall", "void": return Terrain.VOID
-		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker":
+		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker", "throne":
 			return Terrain.TRADING_POST  # Inside a post = safe
 		"stone", "ore_vein":
 			return Terrain.MOUNTAINS
@@ -897,7 +899,7 @@ func is_safe_zone(x: int, y: int) -> bool:
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
 		var tile_type = tile.get("type", "")
-		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker"]:
+		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "storage", "tower", "post_marker"]:
 			return true
 		if tile.has("enclosure_owner"):
 			return true
@@ -1260,7 +1262,9 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var player_char = first_player.name[0].to_upper() if first_player.name.length() > 0 else "?"
 				if players_here.size() > 1:
 					player_char = "*"
-				line_parts.append("[color=#00FFFF] %s[/color]" % player_char)
+				# Party members show in green, others in cyan
+				var player_color = "#00FF00" if first_player.get("in_my_party", false) else "#00FFFF"
+				line_parts.append("[color=%s] %s[/color]" % [player_color, player_char])
 			elif dungeon_positions.has(pos_key):
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")
@@ -1375,7 +1379,7 @@ func _get_compass_line(player_x: int, player_y: int, exclude_post: Dictionary = 
 
 # Total number of wandering merchants in the world
 # Since positions are calculated on-demand (not simulated), more merchants has minimal server cost
-const TOTAL_WANDERING_MERCHANTS = 260
+const TOTAL_WANDERING_MERCHANTS = 0  # Disabled until market system is implemented
 
 # Merchant type templates for variety
 # Each type has a specialty that affects inventory and map color

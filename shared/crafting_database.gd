@@ -29,6 +29,15 @@ const SKILL_STATION_NAMES = {
 	"construction": "Workbench"
 }
 
+# Reverse map: skill name -> required station tile type
+const SKILL_STATION_MAP = {
+	"blacksmithing": "forge",
+	"alchemy": "apothecary",
+	"enchanting": "enchant_table",
+	"scribing": "writing_desk",
+	"construction": "workbench"
+}
+
 # Quality levels from crafting
 enum CraftingQuality {
 	FAILED,      # 0% - materials lost
@@ -91,6 +100,74 @@ const ENCHANTMENT_STAT_CAPS = {
 	"wisdom": 20,
 	"wits": 20,
 }
+
+# ===== CRAFTING CHALLENGE QUESTIONS =====
+# 10 question sets per skill, each with 3 options (index 0 is always correct)
+const CRAFT_CHALLENGE_QUESTIONS = {
+	"blacksmithing": [
+		{"q": "The metal is cooling. What do you do?", "opts": ["Reheat to orange glow", "Hammer faster", "Quench it now"]},
+		{"q": "The blade is warping. How do you fix it?", "opts": ["Flatten on the anvil face", "Plunge into oil", "Bend it back by hand"]},
+		{"q": "You see bubbles forming in the steel.", "opts": ["Flux the impurities", "Ignore and continue", "Add more coal"]},
+		{"q": "The edge needs to be hardened.", "opts": ["Heat to cherry red then quench", "Cold hammer the edge", "File it sharper"]},
+		{"q": "The tang connection is loose.", "opts": ["Rivet and peen the joint", "Add more solder", "Wrap with wire"]},
+		{"q": "How should you start the forging?", "opts": ["Draw out the billet first", "Start at the tip", "Shape the guard"]},
+		{"q": "The alloy needs tempering.", "opts": ["Heat gently then air cool", "Plunge into ice water", "Leave it in the forge"]},
+		{"q": "You notice scale forming on the surface.", "opts": ["Wire brush and reflux", "Sand it down later", "Scrape with a chisel"]},
+		{"q": "The piece needs to be joined.", "opts": ["Forge weld at white heat", "Use cold rivets only", "Twist the pieces together"]},
+		{"q": "Final finishing step?", "opts": ["Progressive grit polishing", "Single rough pass", "Leave the forge scale"]},
+	],
+	"alchemy": [
+		{"q": "The mixture is bubbling violently.", "opts": ["Reduce the heat slowly", "Add more catalyst", "Stir vigorously"]},
+		{"q": "The solution turned the wrong color.", "opts": ["Add the reagent drop by drop", "Pour in more solvent", "Start over"]},
+		{"q": "When should you add the catalyst?", "opts": ["After the base stabilizes", "Immediately at the start", "When it starts smoking"]},
+		{"q": "The potion needs to be concentrated.", "opts": ["Simmer on low heat", "Boil rapidly", "Add a thickening agent"]},
+		{"q": "Sediment is forming at the bottom.", "opts": ["Filter through silk cloth", "Shake vigorously", "Ignore it"]},
+		{"q": "The extract needs to be preserved.", "opts": ["Add stabilizing salts", "Cork it immediately", "Expose to moonlight"]},
+		{"q": "How do you test the potency?", "opts": ["Smell the vapor carefully", "Taste a drop", "Pour it on metal"]},
+		{"q": "The ingredients are reacting too fast.", "opts": ["Add a buffer solution", "Stir clockwise rapidly", "Remove from heat"]},
+		{"q": "The distillation process stalls.", "opts": ["Check the condenser seal", "Increase flame to maximum", "Add water"]},
+		{"q": "Final step before bottling?", "opts": ["Strain and decant", "Cool naturally", "Add a preservative pinch"]},
+	],
+	"enchanting": [
+		{"q": "The rune circle is flickering.", "opts": ["Realign the focus crystal", "Add more mana", "Draw the circle again"]},
+		{"q": "Which alignment for the sigil?", "opts": ["Align to the item's material", "Point north always", "Random orientation"]},
+		{"q": "The enchantment is resisting.", "opts": ["Channel energy through the gem", "Force more power", "Wait for it to settle"]},
+		{"q": "The glyph sequence matters.", "opts": ["Inner circle first, then outer", "Outer to inner", "All at once"]},
+		{"q": "The binding is unstable.", "opts": ["Anchor with a ward stone", "Press on quickly", "Dispel and restart"]},
+		{"q": "How to strengthen the enchantment?", "opts": ["Layer the runes precisely", "Use a bigger crystal", "Double the mana input"]},
+		{"q": "The essence is dissipating.", "opts": ["Seal the circle boundaries", "Add more reagents", "Chant louder"]},
+		{"q": "Interference from the environment.", "opts": ["Ground the excess energy", "Move to a new location", "Ignore and continue"]},
+		{"q": "The item is resisting the enchantment.", "opts": ["Attune through slow contact", "Strike it with lightning", "Submerge in mana"]},
+		{"q": "Final sealing step?", "opts": ["Trace the binding seal", "Break the circle cleanly", "Flood with energy"]},
+	],
+	"scribing": [
+		{"q": "The ink is bleeding on the parchment.", "opts": ["Switch to finer nib", "Use thicker ink", "Press harder"]},
+		{"q": "The scroll design requires precision.", "opts": ["Use broad strokes for borders", "Freehand everything", "Use a single line weight"]},
+		{"q": "The magical ink is fading.", "opts": ["Recharge with essence drops", "Write faster", "Use normal ink instead"]},
+		{"q": "The binding spell needs a focus.", "opts": ["Inscribe the focus glyph first", "Skip the focus", "Use a random symbol"]},
+		{"q": "The parchment is curling.", "opts": ["Weight the corners flat", "Roll it tighter", "Moisten and press"]},
+		{"q": "Complex diagram ahead. Best approach?", "opts": ["Cross-hatch for shading", "Single bold lines only", "Dot stippling"]},
+		{"q": "The tome needs page reinforcement.", "opts": ["Apply sizing to the paper", "Use thicker pages", "Glue pages together"]},
+		{"q": "You notice an error in the text.", "opts": ["Carefully scrape and rewrite", "Cross it out", "Leave it and continue"]},
+		{"q": "The map scale needs to be set.", "opts": ["Measure and grid first", "Estimate by eye", "Copy from memory"]},
+		{"q": "Finishing the illuminated border.", "opts": ["Fine detail with thin brush", "Broad sweeping strokes", "Skip the decoration"]},
+	],
+	"construction": [
+		{"q": "The foundation is shifting.", "opts": ["Brace the corners first", "Add more weight on top", "Dig deeper"]},
+		{"q": "The load distribution is uneven.", "opts": ["Add a center support pillar", "Shift everything left", "Remove the top layer"]},
+		{"q": "The joint needs reinforcement.", "opts": ["Buttress with cross-beams", "Use more nails", "Lash with rope"]},
+		{"q": "The wall is bowing outward.", "opts": ["Install flying buttresses", "Push it back", "Thin the wall"]},
+		{"q": "The mortar isn't setting.", "opts": ["Adjust the sand-to-lime ratio", "Add more water", "Heat it with fire"]},
+		{"q": "How to waterproof the structure?", "opts": ["Apply pitch to seams", "Build a moat", "Use thicker stone"]},
+		{"q": "The roof angle matters for snow.", "opts": ["Steep pitch for shedding", "Flat for easy building", "Moderate for balance"]},
+		{"q": "Choosing the right wood for beams.", "opts": ["Seasoned hardwood", "Green softwood", "Any available lumber"]},
+		{"q": "The doorframe is sagging.", "opts": ["Install a header beam", "Remove the door", "Add more hinges"]},
+		{"q": "Final structural check?", "opts": ["Test load-bearing capacity", "Visual inspection only", "Move in immediately"]},
+	],
+}
+
+# Auto-skip threshold: if skill - difficulty >= this, skip the minigame
+const CRAFT_CHALLENGE_AUTO_SKIP = 30
 
 # ===== MATERIALS =====
 # Materials can come from fishing, monster drops, or gathering
@@ -2302,7 +2379,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 3,
 		"difficulty": 8,
-		"materials": {"stone": 5},
+		"materials": {"stone_block": 3},
 		"output_type": "structure",
 		"structure_type": "wall",
 		"craft_time": 3.0
@@ -2312,7 +2389,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"common_wood": 10, "stone": 5},
+		"materials": {"wooden_plank": 5, "stone_block": 3},
 		"output_type": "structure",
 		"structure_type": "workbench",
 		"craft_time": 4.0
@@ -2324,7 +2401,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 5,
 		"difficulty": 12,
-		"materials": {"common_wood": 8, "iron_ore": 2},
+		"materials": {"wooden_plank": 4, "iron_ore": 2},
 		"output_type": "structure",
 		"structure_type": "door",
 		"specialist_only": true,
@@ -2335,7 +2412,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 15,
 		"difficulty": 30,
-		"materials": {"iron_ore": 10, "stone": 15, "coal": 5},
+		"materials": {"iron_ore": 10, "stone_block": 8, "coal": 5},
 		"output_type": "structure",
 		"structure_type": "forge",
 		"specialist_only": true,
@@ -2346,7 +2423,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 15,
 		"difficulty": 30,
-		"materials": {"ash_wood": 10, "healing_herb": 5, "stone": 5},
+		"materials": {"wooden_plank": 5, "healing_herb": 5, "stone_block": 3},
 		"output_type": "structure",
 		"structure_type": "apothecary",
 		"specialist_only": true,
@@ -2357,7 +2434,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 15,
 		"difficulty": 30,
-		"materials": {"arcane_crystal": 3, "oak_wood": 8, "magic_dust": 5},
+		"materials": {"arcane_crystal": 3, "wooden_plank": 4, "magic_dust": 5},
 		"output_type": "structure",
 		"structure_type": "enchant_table",
 		"specialist_only": true,
@@ -2368,7 +2445,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 15,
 		"difficulty": 30,
-		"materials": {"oak_wood": 8, "ink": 3, "binding_thread": 2},
+		"materials": {"wooden_plank": 4, "ink": 3, "binding_thread": 2},
 		"output_type": "structure",
 		"structure_type": "writing_desk",
 		"specialist_only": true,
@@ -2379,7 +2456,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 25,
 		"difficulty": 40,
-		"materials": {"steel_ore": 8, "ironwood": 6, "stone": 10},
+		"materials": {"steel_ore": 8, "wooden_plank": 6, "stone_block": 5},
 		"output_type": "structure",
 		"structure_type": "tower",
 		"specialist_only": true,
@@ -2390,7 +2467,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 30,
 		"difficulty": 45,
-		"materials": {"ironwood": 10, "thick_leather": 5, "healing_herb": 5},
+		"materials": {"wooden_plank": 10, "rope": 5, "healing_herb": 5},
 		"output_type": "structure",
 		"structure_type": "inn",
 		"specialist_only": true,
@@ -2401,7 +2478,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 35,
 		"difficulty": 50,
-		"materials": {"ash_wood": 8, "fine_parchment": 3, "arcane_ink": 2},
+		"materials": {"wooden_plank": 4, "fine_parchment": 3, "arcane_ink": 2},
 		"output_type": "structure",
 		"structure_type": "quest_board",
 		"specialist_only": true,
@@ -2412,7 +2489,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 20,
 		"difficulty": 35,
-		"materials": {"oak_wood": 8, "iron_ore": 5},
+		"materials": {"wooden_plank": 4, "iron_ore": 5},
 		"output_type": "structure",
 		"structure_type": "storage",
 		"specialist_only": true,
@@ -2423,7 +2500,7 @@ const RECIPES = {
 		"skill": CraftingSkill.CONSTRUCTION,
 		"skill_required": 45,
 		"difficulty": 60,
-		"materials": {"mithril_ore": 5, "ironwood": 5},
+		"materials": {"mithril_ore": 5, "wooden_plank": 5, "stone_block": 5},
 		"output_type": "structure",
 		"structure_type": "upgrade",
 		"specialist_only": true,
@@ -2820,15 +2897,20 @@ static func get_available_recipes(skill: CraftingSkill, skill_level: int) -> Arr
 	result.sort_custom(func(a, b): return a.data.skill_required < b.data.skill_required)
 	return result
 
-static func calculate_success_chance(skill_level: int, difficulty: int, post_bonus: int = 0) -> int:
-	"""Calculate base success chance (0-100)"""
-	# Base success = 50 + (skill_level - difficulty) * 2 + post_bonus
-	var base = 50 + (skill_level - difficulty) * 2 + post_bonus
+static func calculate_success_chance(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1) -> int:
+	"""Calculate base success chance (0-100). minigame_score: 0-3 from crafting challenge, -1 = legacy (no minigame)."""
+	var base: int
+	if minigame_score >= 0:
+		# New formula: 35 base + score * 15
+		base = 35 + (skill_level - difficulty) * 2 + post_bonus + (minigame_score * 15)
+	else:
+		# Legacy formula (instant craft)
+		base = 50 + (skill_level - difficulty) * 2 + post_bonus
 	return clampi(base, 5, 95)  # Always 5-95% chance
 
-static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0) -> CraftingQuality:
+static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1) -> CraftingQuality:
 	"""Roll for crafting quality based on skill vs difficulty"""
-	var success_chance = calculate_success_chance(skill_level, difficulty, post_bonus)
+	var success_chance = calculate_success_chance(skill_level, difficulty, post_bonus, minigame_score)
 	var roll = randi() % 100
 
 	# Quality thresholds based on success chance vs roll

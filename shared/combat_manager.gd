@@ -21,6 +21,11 @@ const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
+# Active party combats (leader_peer_id -> party_combat_state)
+var active_party_combats = {}
+# Reverse lookup for party combat (peer_id -> leader_peer_id)
+var party_combat_membership = {}
+
 # Pending buff expiration notifications (peer_id -> array of expired buffs)
 var _pending_buff_expirations = {}
 
@@ -3671,6 +3676,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if dodge_duration - 1 <= 0:
 				combat["companion_dodge_buff"] = 0
 
+	# Armor rarity dodge bonus (from all equipped armor pieces)
+	var armor_dodge_total = 0
+	var armor_dr_total = 0.0
+	var char_equipped = character.equipped if character else {}
+	if char_equipped is Dictionary:
+		for slot_name in ["armor", "helm", "shield", "boots"]:
+			var armor_piece = char_equipped.get(slot_name, {})
+			if armor_piece is Dictionary:
+				var arb = armor_piece.get("rarity_bonuses", {})
+				armor_dodge_total += int(arb.get("dodge", 0))
+				armor_dr_total += float(arb.get("damage_reduction", 0))
+	if armor_dodge_total > 0:
+		hit_chance -= armor_dodge_total
+
 	hit_chance = clamp(hit_chance, 40, 95)  # 40% minimum (can dodge well), 95% maximum
 
 	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
@@ -3776,6 +3795,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var damage_reduction = character.get_buff_value("damage_reduction")
 			if damage_reduction > 0:
 				damage = int(damage * (1.0 - damage_reduction / 100.0))
+				damage = max(1, damage)
+
+			# Apply armor rarity damage reduction (percentage)
+			if armor_dr_total > 0:
+				damage = int(damage * (1.0 - armor_dr_total / 100.0))
 				damage = max(1, damage)
 
 			# Apply defense buff (Shield spell)
@@ -4346,6 +4370,16 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var crit_bonus = combat.get("crit_bonus", 0)
 	crit_chance += crit_bonus
 
+	# Add crit bonus from equipment rarity (weapon rarity_bonuses)
+	var crit_equipped = character.equipped if character else {}
+	var weapon_rb = {}
+	if crit_equipped is Dictionary:
+		var wpn = crit_equipped.get("weapon", {})
+		if wpn is Dictionary:
+			weapon_rb = wpn.get("rarity_bonuses", {})
+	if weapon_rb.has("crit_chance"):
+		crit_chance += int(weapon_rb["crit_chance"])
+
 	# Add companion crit bonus (from base bonus)
 	var companion_crit = character.get_companion_bonus("crit_chance")
 	if companion_crit > 0:
@@ -4378,6 +4412,9 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var final_crit_damage = crit_damage
 	if is_crit and effects.has("crit_damage_bonus"):
 		final_crit_damage += effects.get("crit_damage_bonus", 0)
+	# Weapon rarity crit damage bonus (percentage points, e.g., 10 = +10%)
+	if is_crit and weapon_rb.has("crit_damage"):
+		final_crit_damage += weapon_rb["crit_damage"] / 100.0
 	# Companion crit damage bonus (base bonus + passive abilities like Godslayer)
 	var companion_crit_damage = int(character.get_companion_bonus("crit_damage")) + combat.get("companion_crit_damage", 0)
 	if is_crit and companion_crit_damage > 0:
@@ -4678,8 +4715,8 @@ func get_expired_persistent_buffs(peer_id: int) -> Array:
 	return []
 
 func is_in_combat(peer_id: int) -> bool:
-	"""Check if a player is in combat"""
-	return active_combats.has(peer_id)
+	"""Check if a player is in combat (solo or party)"""
+	return active_combats.has(peer_id) or party_combat_membership.has(peer_id)
 
 func get_analyze_bonus(peer_id: int) -> int:
 	"""Get the analyze bonus for a player's current combat"""
@@ -5265,4 +5302,625 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		"message": msg,
 		"combat_state": get_combat_display(peer_id),
 		"restored": true
+	}
+
+# ===== PARTY COMBAT SYSTEM =====
+
+func start_party_combat(party_members: Array, characters: Dictionary, monster: Dictionary) -> Dictionary:
+	"""Start a party combat encounter.
+	party_members: Array of peer_ids (leader first)
+	characters: Dictionary of peer_id -> Character
+	monster: Generated monster dictionary
+	Returns: {success, messages, combat_state}
+	"""
+	if party_members.is_empty():
+		return {"success": false, "message": "No party members"}
+
+	var leader_id = party_members[0]
+	var party_size = party_members.size()
+
+	# Scale monster HP by party size
+	monster["original_max_hp"] = monster.get("max_hp", 100)
+	monster.max_hp = int(monster.get("max_hp", 100) * party_size)
+	monster.current_hp = monster.max_hp
+
+	# Initiative: use leader's stats
+	var leader_char = characters[leader_id]
+	var init_roll = randi() % 100
+	var monster_speed = monster.get("speed", 10)
+	var player_dex = leader_char.dexterity + leader_char.get_equipment_stat("speed")
+	var monster_initiative = clamp(5 + int(monster_speed * 0.15) - int(log(max(1, player_dex)) * 3.0), 5, 55)
+	var monster_goes_first = init_roll < monster_initiative
+
+	# Build per-member combat states
+	var member_states = {}
+	for pid in party_members:
+		var ch = characters[pid]
+		ch.in_combat = true
+		ch.last_stand_used = false
+		member_states[pid] = {
+			"total_damage_dealt": 0,
+			"total_damage_taken": 0,
+			"outsmart_failed": false,
+			"companion_threshold_triggered": false,
+			"player_hp_at_start": ch.current_hp,
+			"analyze_bonus": 0,
+			"fled": false,
+			"dead": false,
+			# Companion buffs applied per member
+			"companion_hp_boost_applied": 0,
+			"companion_resource_boost_applied": 0,
+			"companion_resource_boost_type": "mana",
+			"companion_abilities": {},
+			"forcefield_shield": 0
+		}
+
+	# Create party combat state
+	var combat = {
+		"leader_peer_id": leader_id,
+		"members": party_members.duplicate(),
+		"characters": characters,
+		"monster": monster,
+		"round": 1,
+		"current_turn_index": 0 if not monster_goes_first else -1,
+		"monster_actions_remaining": 0,
+		"fled_members": [],
+		"dead_members": [],
+		"combat_log": [],
+		"started_at": Time.get_ticks_msec(),
+		"member_states": member_states,
+		"monster_went_first": monster_goes_first,
+		"cc_resistance": 0,
+		"enrage_stacks": 0,
+		"target_weights": {},
+		# Monster DOT effects
+		"monster_poison": 0,
+		"monster_poison_duration": 0,
+		"monster_burn": 0,
+		"monster_burn_duration": 0,
+		"monster_bleed": 0,
+		"monster_bleed_duration": 0,
+		"monster_stunned": 0,
+		"monster_charmed": 0,
+	}
+
+	# Initialize equal targeting weights
+	for pid in party_members:
+		combat.target_weights[pid] = 1.0 / float(party_size)
+
+	# Store in tracking dicts
+	active_party_combats[leader_id] = combat
+	for pid in party_members:
+		party_combat_membership[pid] = leader_id
+
+	# Apply companion passives for each member
+	for pid in party_members:
+		_apply_party_member_companion(combat, pid)
+
+	# Build start messages
+	var messages = []
+	var xp_zone = _get_xp_zone_text(leader_char.level, monster)
+	messages.append("[color=#FF4444]%s%s appears! (Lv%d, HP: %d)[/color]" % [
+		monster.get("name", "Monster"), xp_zone, monster.get("level", 1), monster.max_hp])
+	messages.append("[color=#00BFFF]Party combat! %d members vs 1 monster.[/color]" % party_size)
+
+	if monster_goes_first:
+		messages.append("[color=#FF8800]The %s strikes first![/color]" % monster.get("name", "monster"))
+		# Process monster's first actions
+		var first_results = _process_party_monster_phase(combat)
+		messages.append_array(first_results.get("messages", []))
+		# After first strike, check for deaths
+		_check_party_deaths(combat)
+		# Set up first player turn
+		combat.current_turn_index = 0
+		_skip_inactive_members(combat)
+
+	return {
+		"success": true,
+		"messages": messages,
+		"leader_id": leader_id,
+		"first_turn_peer_id": _get_current_turn_peer_id(combat)
+	}
+
+func _apply_party_member_companion(combat: Dictionary, peer_id: int):
+	"""Apply companion passives for a party member in party combat."""
+	var character = combat.characters[peer_id]
+	var ms = combat.member_states[peer_id]
+	var companion = character.active_companion
+	if companion.is_empty():
+		return
+	# Get companion abilities
+	if drop_tables and drop_tables.has_method("get_companion_abilities"):
+		var abilities = drop_tables.get_companion_abilities(companion)
+		ms["companion_abilities"] = abilities
+
+func _get_xp_zone_text(player_level: int, monster: Dictionary) -> String:
+	"""Get XP zone indicator for combat start message."""
+	var monster_level = monster.get("level", 1)
+	var level_diff = monster_level - player_level
+	if level_diff >= 10:
+		return " [color=#FF00FF]*TIER CHALLENGE*[/color]"
+	elif level_diff >= 5:
+		return " [color=#FFD700]*CHALLENGE*[/color]"
+	return ""
+
+func process_party_combat_action(leader_id: int, acting_peer_id: int, action: CombatAction) -> Dictionary:
+	"""Process a party member's combat action.
+	Returns: {success, messages[], combat_ended, victory, next_turn_peer_id, monster_phase_results}
+	"""
+	if not active_party_combats.has(leader_id):
+		return {"success": false, "message": "No active party combat"}
+
+	var combat = active_party_combats[leader_id]
+	var current_pid = _get_current_turn_peer_id(combat)
+
+	if acting_peer_id != current_pid:
+		return {"success": false, "message": "Not your turn"}
+
+	var character = combat.characters[acting_peer_id]
+	var monster = combat.monster
+	var ms = combat.member_states[acting_peer_id]
+	var messages = []
+
+	var monster_hp_before = monster.current_hp
+	var player_hp_before = character.current_hp
+
+	# Process player action using EXISTING solo combat logic adapted for party
+	match action:
+		CombatAction.ATTACK:
+			var result = _party_process_attack(combat, acting_peer_id)
+			messages.append_array(result.get("messages", []))
+		CombatAction.FLEE:
+			var result = _party_process_flee(combat, acting_peer_id)
+			messages.append_array(result.get("messages", []))
+			if result.get("fled", false):
+				combat.fled_members.append(acting_peer_id)
+				ms["fled"] = true
+				messages.append("[color=#FFAA00]%s flees from battle![/color]" % character.name)
+		CombatAction.OUTSMART:
+			var result = _party_process_outsmart(combat, acting_peer_id)
+			messages.append_array(result.get("messages", []))
+
+	# Track damage
+	var damage_dealt = max(0, monster_hp_before - monster.current_hp)
+	ms["total_damage_dealt"] = ms.get("total_damage_dealt", 0) + damage_dealt
+	var self_damage = max(0, player_hp_before - character.current_hp)
+	ms["total_damage_taken"] = ms.get("total_damage_taken", 0) + self_damage
+
+	# Check if monster died
+	if monster.current_hp <= 0:
+		var victory_result = _process_party_victory(combat)
+		messages.append_array(victory_result.get("messages", []))
+		return {
+			"success": true,
+			"messages": messages,
+			"combat_ended": true,
+			"victory": true,
+			"member_rewards": victory_result.get("member_rewards", {})
+		}
+
+	# Check if all members fled/dead
+	if _all_members_inactive(combat):
+		messages.append("[color=#FF4444]The party has been defeated![/color]")
+		_end_party_combat(leader_id, false)
+		return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
+
+	# Advance to next player or monster phase
+	combat.current_turn_index += 1
+	_skip_inactive_members(combat)
+
+	if combat.current_turn_index >= combat.members.size():
+		# All players acted - monster phase
+		var monster_results = _process_party_monster_phase(combat)
+		messages.append_array(monster_results.get("messages", []))
+
+		# Check for deaths
+		_check_party_deaths(combat)
+
+		# Check if all members dead/fled after monster phase
+		if _all_members_inactive(combat):
+			messages.append("[color=#FF4444]The party has been wiped out![/color]")
+			_end_party_combat(leader_id, false)
+			return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
+
+		# Next round
+		combat.round += 1
+		combat.current_turn_index = 0
+		_skip_inactive_members(combat)
+
+	return {
+		"success": true,
+		"messages": messages,
+		"combat_ended": false,
+		"victory": false,
+		"next_turn_peer_id": _get_current_turn_peer_id(combat)
+	}
+
+func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
+	"""Simplified attack logic for party combat member."""
+	var character = combat.characters[peer_id]
+	var monster = combat.monster
+	var ms = combat.member_states[peer_id]
+	var messages = []
+
+	# Resource regen
+	var mage_classes = ["Wizard", "Sorcerer", "Sage"]
+	if character.class_type in mage_classes:
+		var regen_pct = 0.03 if character.class_type == "Sage" else 0.02
+		character.current_mana = min(character.get_total_max_mana(), character.current_mana + max(1, int(character.get_total_max_mana() * regen_pct)))
+
+	# Hit chance
+	var player_dex = character.dexterity + character.get_equipment_stat("speed")
+	var monster_speed = monster.get("speed", 10)
+	var hit_chance = clamp(75 + (player_dex - monster_speed / 2), 30, 95)
+	if character.blind_active:
+		hit_chance = max(10, hit_chance - 30)
+
+	var hit_roll = randi() % 100
+	if hit_roll >= hit_chance:
+		messages.append("[color=#808080]%s's attack misses![/color]" % character.name)
+		return {"messages": messages}
+
+	# Damage calculation
+	var weapon_damage = character.get_equipment_stat("attack")
+	var base_damage = max(1, character.strength + weapon_damage)
+
+	# Critical hit
+	var crit_chance = 5
+	if character.class_type == "Thief":
+		crit_chance = 15
+	elif character.class_type == "Ninja":
+		crit_chance = 12
+	var is_crit = (randi() % 100) < crit_chance
+	if is_crit:
+		base_damage = int(base_damage * 1.5)
+
+	# Apply variance
+	base_damage = apply_damage_variance(base_damage)
+
+	# Analyze bonus
+	var analyze = ms.get("analyze_bonus", 0)
+	if analyze > 0:
+		base_damage = int(base_damage * (1.0 + analyze / 100.0))
+
+	# Apply damage to monster
+	monster.current_hp -= base_damage
+
+	var crit_text = " [color=#FFD700]CRITICAL![/color]" if is_crit else ""
+	messages.append("[color=#00FF00]%s attacks for %d damage!%s[/color]" % [character.name, base_damage, crit_text])
+
+	# Process companion attack if applicable
+	if not character.active_companion.is_empty() and ms.get("companion_abilities", {}).size() > 0:
+		var comp = character.active_companion
+		var comp_level = comp.get("level", 1)
+		var comp_tier = comp.get("tier", 1)
+		var comp_damage = max(1, int(comp_tier * 3 + comp_level * 0.5))
+		comp_damage = apply_damage_variance(comp_damage)
+		monster.current_hp -= comp_damage
+		messages.append("[color=#00FFAA]  %s's companion attacks for %d![/color]" % [character.name, comp_damage])
+
+	return {"messages": messages}
+
+func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
+	"""Process flee attempt for a party member."""
+	var character = combat.characters[peer_id]
+	var monster = combat.monster
+	var messages = []
+
+	var player_dex = character.dexterity + character.get_equipment_stat("speed")
+	var level_diff = max(0, monster.get("level", 1) - character.level)
+	var flee_chance = clamp(40 + player_dex - level_diff, 10, 95)
+
+	# Ninja bonus
+	if character.class_type == "Ninja":
+		flee_chance = min(95, flee_chance + 40)
+
+	var roll = randi() % 100
+	if roll < flee_chance:
+		messages.append("[color=#FFAA00]%s escapes from battle![/color]" % character.name)
+		return {"messages": messages, "fled": true}
+	else:
+		messages.append("[color=#FF4444]%s fails to flee![/color]" % character.name)
+		return {"messages": messages, "fled": false}
+
+func _party_process_outsmart(combat: Dictionary, peer_id: int) -> Dictionary:
+	"""Process outsmart attempt for a party member."""
+	var character = combat.characters[peer_id]
+	var monster = combat.monster
+	var ms = combat.member_states[peer_id]
+	var messages = []
+
+	if ms.get("outsmart_failed", false):
+		messages.append("[color=#808080]%s already failed to outsmart this enemy.[/color]" % character.name)
+		return {"messages": messages}
+
+	var player_wits = character.wits + character.wits_training_bonus
+	var monster_int = monster.get("intelligence", 10)
+	var outsmart_chance = clamp(30 + (player_wits - monster_int) * 2, 5, 75)
+
+	var roll = randi() % 100
+	if roll < outsmart_chance:
+		# Victory by outsmarting
+		messages.append("[color=#FFD700]%s outsmarts the %s![/color]" % [character.name, monster.get("name", "monster")])
+		monster.current_hp = 0
+		return {"messages": messages}
+	else:
+		ms["outsmart_failed"] = true
+		messages.append("[color=#FF4444]%s fails to outsmart the %s![/color]" % [character.name, monster.get("name", "monster")])
+		return {"messages": messages}
+
+func _process_party_monster_phase(combat: Dictionary) -> Dictionary:
+	"""Process the monster's actions against party members."""
+	var monster = combat.monster
+	var messages = []
+
+	# Check if monster is stunned
+	var stun_turns = int(combat.get("monster_stunned", 0))
+	if stun_turns > 0:
+		combat["monster_stunned"] = stun_turns - 1
+		messages.append("[color=#808080]The %s is stunned![/color]" % monster.get("name", "monster"))
+		return {"messages": messages}
+
+	# Monster gets N actions where N = active members
+	var active_members = _get_active_members(combat)
+	if active_members.is_empty():
+		return {"messages": messages}
+
+	var num_actions = active_members.size()
+	var targets = _select_monster_targets(combat, active_members, num_actions)
+
+	messages.append("[color=#FF8800]── %s's Turn ──[/color]" % monster.get("name", "monster"))
+
+	# Tick enrage
+	if "enrage" in monster.get("abilities", []):
+		combat["enrage_stacks"] = min(10, combat.get("enrage_stacks", 0) + 1)
+
+	for i in range(targets.size()):
+		var target_pid = targets[i]
+		var target_char = combat.characters[target_pid]
+		var target_ms = combat.member_states[target_pid]
+
+		# Calculate damage
+		var base_str = monster.get("strength", 10)
+		var enrage_bonus = 1.0 + combat.get("enrage_stacks", 0) * 0.1
+		var raw_damage = max(1, int(float(base_str) * enrage_bonus))
+
+		# Apply defense
+		var player_def = target_char.get_equipment_stat("defense")
+		var damage = max(1, raw_damage - int(player_def * 0.5))
+
+		# Apply variance
+		damage = apply_damage_variance(damage)
+
+		# Dodge check (DEX-based)
+		var dodge_chance = min(30, target_char.dexterity / 5)
+		if (randi() % 100) < dodge_chance:
+			messages.append("         [color=#808080]%s dodges the attack![/color]" % target_char.name)
+			continue
+
+		# Forcefield check
+		var shield = target_ms.get("forcefield_shield", 0)
+		if shield > 0:
+			var absorbed = min(shield, damage)
+			target_ms["forcefield_shield"] = shield - absorbed
+			damage -= absorbed
+			if damage <= 0:
+				messages.append("         [color=#9932CC]%s's forcefield absorbs the hit![/color]" % target_char.name)
+				continue
+
+		# Apply damage
+		target_char.current_hp -= damage
+		target_ms["total_damage_taken"] = target_ms.get("total_damage_taken", 0) + damage
+
+		# Dwarf Last Stand
+		if target_char.current_hp <= 0 and target_char.race == "Dwarf" and not target_char.last_stand_used:
+			target_char.last_stand_used = true
+			target_char.current_hp = max(1, int(target_char.get_total_max_hp() * 0.1))
+			messages.append("         [color=#FF8800]%s takes %d damage! [color=#FFD700]LAST STAND! Dwarf resilience![/color][/color]" % [target_char.name, damage])
+		else:
+			messages.append("         [color=#FF8800]%s takes %d damage! (%d/%d HP)[/color]" % [target_char.name, damage, max(0, target_char.current_hp), target_char.get_total_max_hp()])
+
+	return {"messages": messages}
+
+func _select_monster_targets(combat: Dictionary, active_members: Array, num_actions: int) -> Array:
+	"""Select targets for monster actions using weighted random."""
+	var targets = []
+	var weights = {}
+
+	for pid in active_members:
+		weights[pid] = combat.target_weights.get(pid, 1.0 / float(active_members.size()))
+
+	# Normalize weights
+	var total_weight = 0.0
+	for pid in active_members:
+		total_weight += weights.get(pid, 0.0)
+	if total_weight <= 0:
+		total_weight = 1.0
+	for pid in active_members:
+		weights[pid] = weights.get(pid, 0.0) / total_weight
+
+	for _i in range(num_actions):
+		var roll = randf()
+		var cumulative = 0.0
+		var chosen = active_members[0]
+		for pid in active_members:
+			cumulative += weights.get(pid, 0.0)
+			if roll <= cumulative:
+				chosen = pid
+				break
+		targets.append(chosen)
+
+		# Halve chosen target's weight, redistribute
+		if active_members.size() > 1:
+			var halved = weights[chosen] / 2.0
+			var redistributed = halved / float(active_members.size() - 1)
+			weights[chosen] = halved
+			for pid in active_members:
+				if pid != chosen:
+					weights[pid] = weights.get(pid, 0.0) + redistributed
+
+	# Save updated weights
+	combat.target_weights = weights
+	return targets
+
+func _check_party_deaths(combat: Dictionary):
+	"""Check for newly dead party members."""
+	for pid in combat.members:
+		if pid in combat.dead_members or pid in combat.fled_members:
+			continue
+		var ch = combat.characters[pid]
+		if ch.current_hp <= 0:
+			combat.dead_members.append(pid)
+			combat.member_states[pid]["dead"] = true
+
+func _get_active_members(combat: Dictionary) -> Array:
+	"""Get list of active (alive and not fled) member peer_ids."""
+	var active = []
+	for pid in combat.members:
+		if pid not in combat.dead_members and pid not in combat.fled_members:
+			active.append(pid)
+	return active
+
+func _all_members_inactive(combat: Dictionary) -> bool:
+	"""Check if all party members have fled or died."""
+	return _get_active_members(combat).is_empty()
+
+func _get_current_turn_peer_id(combat: Dictionary) -> int:
+	"""Get the peer_id of the member whose turn it is, or -1 if none."""
+	if combat.current_turn_index < 0 or combat.current_turn_index >= combat.members.size():
+		return -1
+	var pid = combat.members[combat.current_turn_index]
+	if pid in combat.dead_members or pid in combat.fled_members:
+		return -1
+	return pid
+
+func _skip_inactive_members(combat: Dictionary):
+	"""Skip dead/fled members in the turn order."""
+	while combat.current_turn_index < combat.members.size():
+		var pid = combat.members[combat.current_turn_index]
+		if pid not in combat.dead_members and pid not in combat.fled_members:
+			break
+		combat.current_turn_index += 1
+
+func _process_party_victory(combat: Dictionary) -> Dictionary:
+	"""Process victory for all surviving party members."""
+	var monster = combat.monster
+	var messages = []
+	var member_rewards = {}
+
+	messages.append("[color=#00FF00]══════ VICTORY! ══════[/color]")
+	messages.append("[color=#00FF00]The party defeated %s![/color]" % monster.get("name", "monster"))
+
+	# Each surviving member gets FULL rewards (not split)
+	for pid in combat.members:
+		if pid in combat.dead_members:
+			continue
+		var character = combat.characters[pid]
+
+		# XP calculation (per member, based on their level)
+		var base_xp = monster.get("experience_reward", 10)
+		var monster_level = monster.get("level", 1)
+		var xp_level_diff = monster_level - character.level
+		var xp_multiplier = 1.0
+		if xp_level_diff > 0:
+			var reference_gap = 10.0 + float(character.level) * 0.05
+			var gap_ratio = float(xp_level_diff) / reference_gap
+			xp_multiplier = 1.0 + sqrt(gap_ratio) * 0.7
+		elif xp_level_diff < 0:
+			var under_gap = abs(xp_level_diff)
+			var penalty_threshold = 5.0 + float(character.level) * 0.03
+			if under_gap > penalty_threshold:
+				var excess = under_gap - penalty_threshold
+				var penalty = minf(0.6, excess * 0.03)
+				xp_multiplier = maxf(0.4, 1.0 - penalty)
+
+		# House XP bonus
+		var house_xp_mult = 1.0 + (character.house_bonuses.get("xp_bonus", 0) / 100.0)
+		var final_xp = int(base_xp * xp_multiplier * house_xp_mult)
+
+		# Gold
+		var gold_reward = monster.get("gold_reward", 0)
+		if character.race == "Halfling":
+			gold_reward = int(gold_reward * 1.15)
+
+		# Gem drops
+		var gems = 0
+		if drop_tables and drop_tables.has_method("roll_gem_drops"):
+			gems = drop_tables.roll_gem_drops(monster, character)
+
+		member_rewards[pid] = {
+			"xp": final_xp,
+			"gold": gold_reward,
+			"gems": gems,
+			"drops": []
+		}
+
+		# Loot drops
+		if drop_tables and drop_tables.has_method("roll_monster_drops"):
+			var drops = drop_tables.roll_monster_drops(monster, character)
+			member_rewards[pid]["drops"] = drops
+
+		# Apply rewards
+		character.experience += final_xp
+		character.gold += gold_reward
+		character.gems += gems
+
+		# Level up check
+		while character.experience >= character.experience_to_next_level:
+			character.experience -= character.experience_to_next_level
+			character.level_up()
+
+		messages.append("[color=#00BFFF]%s[/color]: +%d XP, +%d gold%s" % [
+			character.name, final_xp, gold_reward,
+			", +%d gems" % gems if gems > 0 else ""])
+
+	return {"messages": messages, "member_rewards": member_rewards}
+
+func _end_party_combat(leader_id: int, victory: bool):
+	"""Clean up party combat state."""
+	if not active_party_combats.has(leader_id):
+		return
+	var combat = active_party_combats[leader_id]
+
+	for pid in combat.members:
+		var character = combat.characters.get(pid)
+		if character:
+			character.in_combat = false
+			# Restore companion boosts
+			var ms = combat.member_states.get(pid, {})
+			var hp_boost = ms.get("companion_hp_boost_applied", 0)
+			if hp_boost > 0:
+				character.max_hp = max(1, character.max_hp - hp_boost)
+				character.current_hp = min(character.current_hp, character.get_total_max_hp())
+		party_combat_membership.erase(pid)
+
+	active_party_combats.erase(leader_id)
+
+func get_party_combat_state(leader_id: int) -> Dictionary:
+	"""Get party combat state for client display."""
+	if not active_party_combats.has(leader_id):
+		return {}
+	var combat = active_party_combats[leader_id]
+	var monster = combat.monster
+	var members_info = []
+	for pid in combat.members:
+		var ch = combat.characters.get(pid)
+		if not ch:
+			continue
+		members_info.append({
+			"peer_id": pid,
+			"name": ch.name,
+			"current_hp": max(0, ch.current_hp),
+			"max_hp": ch.get_total_max_hp(),
+			"is_dead": pid in combat.dead_members,
+			"is_fled": pid in combat.fled_members
+		})
+	return {
+		"monster_name": monster.get("name", "Monster"),
+		"monster_level": monster.get("level", 1),
+		"monster_hp": max(0, monster.current_hp),
+		"monster_max_hp": monster.max_hp,
+		"round": combat.round,
+		"members": members_info,
+		"current_turn_peer_id": _get_current_turn_peer_id(combat)
 	}

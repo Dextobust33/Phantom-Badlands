@@ -755,12 +755,30 @@ var can_craft_another: bool = false  # Whether player has materials for another 
 var crafting_preserve_page: bool = false  # Don't reset page on next craft_list response
 const CRAFTING_PAGE_SIZE = 5
 
+# Crafting challenge minigame state
+var crafting_challenge_mode: bool = false
+var craft_challenge_data: Dictionary = {}  # {rounds, skill_name}
+var craft_challenge_round: int = 0  # Current round (0-2)
+var craft_challenge_answers: Array = []  # Player's answers so far
+
 # Building mode
 var build_mode: bool = false
 var build_direction_mode: bool = false  # Selecting direction for placement
 var build_selected_item: int = -1  # Inventory index of item to place
 var build_demolish_mode: bool = false  # Selecting direction for demolish
 var pending_build_result: bool = false  # Waiting for server response
+
+# Player enclosure state (from location updates)
+var in_own_enclosure: bool = false
+var enclosure_stations: Array = []  # Station tile types available (e.g., "forge", "workbench")
+var enclosure_has_inn: bool = false
+var enclosure_has_storage: bool = false
+
+# Storage chest mode
+var storage_mode: bool = false
+var storage_items: Array = []
+var storage_max_slots: int = 10
+var pending_storage_action: String = ""  # "deposit", "withdraw"
 
 # More menu mode
 var more_mode: bool = false
@@ -843,6 +861,28 @@ var trade_pending_add_egg: bool = false  # Waiting for egg selection
 var pending_summon_from: String = ""  # Name of Jarl requesting to summon us
 var pending_summon_location: Vector2i = Vector2i(0, 0)  # Location we'd be summoned to
 
+# Party system
+var in_party: bool = false
+var is_party_leader: bool = false
+var party_members: Array = []           # [{name, level, class_type, is_leader}]
+var pending_party_invite: String = ""   # Name of player who invited us
+var pending_party_invite_level: int = 0
+var pending_party_invite_class: String = ""
+var pending_party_bump: String = ""     # Name of player we bumped (invite prompt)
+var pending_party_bump_level: int = 0
+var pending_party_bump_class: String = ""
+var party_lead_choice_pending: bool = false  # Waiting for Lead/Follow choice
+var party_lead_choice_name: String = ""      # Name of partner for Lead/Follow
+var party_lead_choice_partner_id: int = -1   # Peer ID of partner
+var party_disband_confirm: bool = false
+var party_leave_confirm: bool = false
+var party_appoint_mode: bool = false    # Selecting member to appoint as leader
+var party_menu_mode: bool = false       # In the party management menu
+var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
+var party_waiting_for_turn: bool = false   # Not our turn in party combat
+var party_combat_active: bool = false      # We are in party combat (our turn)
+var party_combat_turn_name: String = ""    # Name of player whose turn it is
+
 # Bless stat selection
 var title_stat_selection_mode: bool = false  # Waiting for stat selection for Bless
 var pending_bless_target: String = ""  # Target player for Bless
@@ -913,10 +953,13 @@ var gathering_chain_materials: Array = []
 var gathering_options: Array = []  # [{label, id}] from server
 var gathering_risky_available: bool = false
 var gathering_hint_strength: float = 0.0
-var gathering_tool_reveal_used: bool = false
+var gathering_reveals_remaining: int = 0
 var gathering_tool_save_available: bool = false
 var gathering_tool_save_used: bool = false
 var gathering_revealed_correct: int = -1  # Index of revealed correct answer (-1 = none)
+# Per-type bonus tracking (from server)
+var gathering_momentum: int = 0          # Logging: consecutive correct picks
+var gathering_discoveries: Array = []    # Foraging: discovered plant names this session
 
 # Harvest mode (Soldier job post-combat minigame)
 var harvest_mode: bool = false
@@ -928,6 +971,9 @@ var harvest_max_rounds: int = 1
 var harvest_monster_name: String = ""
 var harvest_parts_gained: Array = []
 var harvest_available: bool = false  # Set by combat_end message
+var harvest_saves_remaining: int = 0
+var harvest_mastery_label: String = ""
+var harvest_mastery_count: int = 0
 
 # Dungeon mode
 var dungeon_mode: bool = false
@@ -1704,6 +1750,9 @@ func _on_window_resized():
 	# Scale action bar buttons
 	_scale_action_bar_fonts(base_scale)
 
+	# Scale shortcut buttons above chat
+	_scale_shortcut_buttons(base_scale)
+
 func _process(delta):
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
@@ -1897,7 +1946,7 @@ func _process(delta):
 				set_meta("questkey_%d_pressed" % i, false)
 
 	# Crafting recipe selection with keybinds (1-5 for recipes on current page)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0 and not crafting_challenge_mode and not awaiting_craft_result:
 		for i in range(5):  # Only 5 recipes per page
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
@@ -1921,6 +1970,19 @@ func _process(delta):
 					_select_build_item(i)
 			else:
 				set_meta("buildkey_%d_pressed" % i, false)
+
+	# Storage deposit/withdraw selection with keybinds (1-9)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and storage_mode and pending_storage_action != "":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("storagekey_%d_pressed" % i, false):
+					set_meta("storagekey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					_handle_storage_selection(i)
+			else:
+				set_meta("storagekey_%d_pressed" % i, false)
 
 	# Dungeon selection with keybinds when viewing dungeon list
 	if game_state == GameState.PLAYING and not input_field.has_focus() and dungeon_list_mode:
@@ -2439,8 +2501,8 @@ func _process(delta):
 					update_action_bar()  # Update to show what we're standing on
 				last_move_time = current_time
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, build, or popups)
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not build_mode and not storage_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -4065,6 +4127,12 @@ func _scale_right_panel_fonts(base_scale: float):
 		if hp_label:
 			hp_label.add_theme_font_size_override("font_size", stats_size)
 
+	# Scale resource bar label (stamina/mana/energy)
+	if resource_bar:
+		var res_label = resource_bar.get_node_or_null("ResourceLabel")
+		if res_label:
+			res_label.add_theme_font_size_override("font_size", stats_size)
+
 func _scale_action_bar_fonts(base_scale: float):
 	"""Scale action bar button and label fonts based on window size and user preference"""
 	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons)
@@ -4533,6 +4601,107 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif pending_party_bump != "":
+		# Bumped a player - Invite or Cancel
+		current_actions = [
+			{"label": "Invite", "action_type": "local", "action_data": "party_bump_invite", "enabled": true},
+			{"label": "Cancel", "action_type": "local", "action_data": "party_bump_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif pending_party_invite != "":
+		# Incoming party invite - Accept or Decline
+		current_actions = [
+			{"label": "Accept", "action_type": "local", "action_data": "party_invite_accept", "enabled": true},
+			{"label": "Decline", "action_type": "local", "action_data": "party_invite_decline", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_lead_choice_pending:
+		# Lead/Follow choice for new party
+		current_actions = [
+			{"label": "Lead", "action_type": "local", "action_data": "party_choice_lead", "enabled": true},
+			{"label": "Follow", "action_type": "local", "action_data": "party_choice_follow", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_disband_confirm:
+		# Confirm disband
+		current_actions = [
+			{"label": "Confirm", "action_type": "local", "action_data": "party_disband_yes", "enabled": true},
+			{"label": "Cancel", "action_type": "local", "action_data": "party_disband_no", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_leave_confirm:
+		# Confirm leave
+		current_actions = [
+			{"label": "Confirm", "action_type": "local", "action_data": "party_leave_yes", "enabled": true},
+			{"label": "Cancel", "action_type": "local", "action_data": "party_leave_no", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_appoint_mode:
+		# Selecting a member to appoint as leader
+		var appoint_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "party_appoint_cancel", "enabled": true},
+		]
+		# Show non-leader members as selectable options
+		var member_idx = 0
+		for m in party_members:
+			if not m.get("is_leader", false) and member_idx < 9:
+				appoint_actions.append({"label": m.get("name", "?"), "action_type": "local", "action_data": "party_appoint_%d" % member_idx, "enabled": true})
+				member_idx += 1
+		while appoint_actions.size() < 10:
+			appoint_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+		current_actions = appoint_actions
+	elif party_menu_mode:
+		# Party management menu
+		var party_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "party_menu_close", "enabled": true},
+		]
+		if is_party_leader:
+			party_actions.append({"label": "Disband", "action_type": "local", "action_data": "party_disband", "enabled": true})
+			if party_members.size() > 2:
+				party_actions.append({"label": "Appoint", "action_type": "local", "action_data": "party_appoint", "enabled": true})
+			else:
+				party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+		else:
+			party_actions.append({"label": "Leave", "action_type": "local", "action_data": "party_leave", "enabled": true})
+			party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+		while party_actions.size() < 10:
+			party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+		current_actions = party_actions
 	elif pending_trade_request != "":
 		# Incoming trade request - Decline (slot 0), Accept (slot 1)
 		current_actions = [
@@ -4664,7 +4833,7 @@ func update_action_bar():
 				opt_buttons.append({"label": label, "action_type": "local", "action_data": "gathering_pick_%d" % i, "enabled": true})
 			while opt_buttons.size() < 4:
 				opt_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
-			var has_tool = gathering_tool_save_available and not gathering_tool_reveal_used
+			var has_tool = gathering_tool_save_available and gathering_reveals_remaining > 0
 			current_actions = [
 				{"label": "Stop", "action_type": "local", "action_data": "gathering_stop", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -4760,7 +4929,7 @@ func update_action_bar():
 		# In dungeon, waiting for player to continue after combat/event
 		current_actions = [
 			{"label": "Continue", "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Harvest" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "harvest_start" if harvest_available else "", "enabled": harvest_available},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5121,6 +5290,50 @@ func update_action_bar():
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
+	elif party_combat_active:
+		# Party combat: our turn — Attack, Flee, Outsmart (no items in party combat)
+		var can_outsmart = not combat_outsmart_failed
+		current_actions = [
+			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+			{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_waiting_for_turn:
+		# Party combat: waiting for another member's turn
+		var wait_label = "Wait: %s" % party_combat_turn_name if party_combat_turn_name != "" else "Waiting..."
+		current_actions = [
+			{"label": wait_label, "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif party_combat_spectating:
+		# Party combat: spectating (dead or fled)
+		current_actions = [
+			{"label": "Spectating", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif flock_pending:
 		current_actions = [
 			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
@@ -5192,6 +5405,7 @@ func update_action_bar():
 		]
 	elif more_mode:
 		# More menu - contains Companions, Eggs, Leaders, etc.
+		var party_action = {"label": "Party", "action_type": "local", "action_data": "party_menu", "enabled": true} if in_party else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
 			{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
@@ -5201,7 +5415,7 @@ func update_action_bar():
 			{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
 			{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
 			{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			party_action,
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif companions_mode:
@@ -5767,133 +5981,158 @@ func update_action_bar():
 				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
 				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 			]
-	elif at_trading_post:
-		# Trading Post mode
-		if crafting_mode:
-			# Crafting sub-menu
-			if crafting_skill == "":
-				# Skill selection
-				current_actions = [
-					{"label": "Back", "action_type": "local", "action_data": "crafting_cancel", "enabled": true},
-					{"label": "Smith", "action_type": "local", "action_data": "crafting_skill_blacksmithing", "enabled": true},
-					{"label": "Alchemy", "action_type": "local", "action_data": "crafting_skill_alchemy", "enabled": true},
-					{"label": "Enchant", "action_type": "local", "action_data": "crafting_skill_enchanting", "enabled": true},
-					{"label": "Scribing", "action_type": "local", "action_data": "crafting_skill_scribing", "enabled": true},
-					{"label": "Build", "action_type": "local", "action_data": "crafting_skill_construction", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				]
-			elif crafting_selected_recipe >= 0:
-				# Recipe confirm
-				current_actions = [
-					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
-					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				]
-			elif awaiting_craft_result:
-				# Showing craft result
-				if can_craft_another:
-					current_actions = [
-						{"label": "Craft Again", "action_type": "local", "action_data": "crafting_repeat", "enabled": true},
-						{"label": "Back", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					]
-				else:
-					current_actions = [
-						{"label": "Continue", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-						{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					]
-			else:
-				# Recipe list
-				var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
-				var has_prev = crafting_page > 0
-				var has_next = crafting_page < total_pages - 1
-				current_actions = [
-					{"label": "Back", "action_type": "local", "action_data": "crafting_skill_cancel", "enabled": true},
-					{"label": "< Prev", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
-					{"label": "Next >", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				]
-		elif quest_view_mode:
-			# Quest selection sub-menu
+	elif crafting_challenge_mode:
+		# Crafting challenge minigame — 3 answer options
+		var rounds = craft_challenge_data.get("rounds", [])
+		if craft_challenge_round < rounds.size():
+			var round_opts = rounds[craft_challenge_round].get("options", [])
+			var opt_buttons = []
+			for i in range(round_opts.size()):
+				opt_buttons.append({"label": round_opts[i].substr(0, 18), "action_type": "local", "action_data": "craft_challenge_pick_%d" % i, "enabled": true})
+			while opt_buttons.size() < 3:
+				opt_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 			current_actions = [
-				{"label": "Back", "action_type": "local", "action_data": "trading_post_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				opt_buttons[0],
+				opt_buttons[1],
+				opt_buttons[2],
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif crafting_mode:
+		# Crafting sub-menu (works at both trading posts and player stations)
+		if crafting_skill == "":
+			# Skill selection
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "crafting_cancel", "enabled": true},
+				{"label": "Smith", "action_type": "local", "action_data": "crafting_skill_blacksmithing", "enabled": true},
+				{"label": "Alchemy", "action_type": "local", "action_data": "crafting_skill_alchemy", "enabled": true},
+				{"label": "Enchant", "action_type": "local", "action_data": "crafting_skill_enchanting", "enabled": true},
+				{"label": "Scribing", "action_type": "local", "action_data": "crafting_skill_scribing", "enabled": true},
+				{"label": "Build", "action_type": "local", "action_data": "crafting_skill_construction", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif crafting_selected_recipe >= 0:
+			# Recipe confirm
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
+				{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif awaiting_craft_result:
+			# Showing craft result
+			if can_craft_another:
+				current_actions = [
+					{"label": "Craft Again", "action_type": "local", "action_data": "crafting_repeat", "enabled": true},
+					{"label": "Back", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Continue", "action_type": "local", "action_data": "crafting_continue", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+		else:
+			# Recipe list
+			var total_pages = max(1, ceili(float(crafting_recipes.size()) / CRAFTING_PAGE_SIZE))
+			var has_prev = crafting_page > 0
+			var has_next = crafting_page < total_pages - 1
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "crafting_skill_cancel", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
+				{"label": "Next >", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif storage_mode:
+		# Storage chest mode
+		if pending_storage_action == "deposit":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "storage_deposit_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_storage_action == "withdraw":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "storage_withdraw_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Main Trading Post menu (player walks out to leave)
-			# Get recharge cost from server (includes distance scaling)
-			var recharge_cost = trading_post_data.get("recharge_cost", 100)
-			# Check if at special title locations (use trading post position)
-			var tp_x = trading_post_data.get("x", -999)
-			var tp_y = trading_post_data.get("y", -999)
-			var at_high_seat = (tp_x == 0 and tp_y == 0)
-			var player_title = character_data.get("title", "")
-			var has_title = not player_title.is_empty()
-			# Fifth slot: High Seat at (0,0) or Title if has title, else Craft
-			var fifth_action: Dictionary
-			if has_title:
-				fifth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true}
-			elif at_high_seat:
-				fifth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
-			else:
-				fifth_action = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true}
-			# Sixth slot: Craft if fifth slot is Title/High Seat, otherwise placeholder
-			var sixth_action: Dictionary
-			if has_title or at_high_seat:
-				sixth_action = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true}
-			else:
-				sixth_action = {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
 			current_actions = [
-				{"label": "Status", "action_type": "local", "action_data": "show_status", "enabled": true},
-				{"label": "Shop", "action_type": "local", "action_data": "trading_post_shop", "enabled": true},
-				{"label": "Quests", "action_type": "local", "action_data": "trading_post_quests", "enabled": true},
-				{"label": "Heal(%dg)" % recharge_cost, "action_type": "local", "action_data": "trading_post_recharge", "enabled": true},
-				fifth_action,
-				sixth_action,
+				{"label": "Back", "action_type": "local", "action_data": "storage_close", "enabled": true},
+				{"label": "Deposit", "action_type": "local", "action_data": "storage_deposit_mode", "enabled": true},
+				{"label": "Withdraw", "action_type": "local", "action_data": "storage_withdraw_mode", "enabled": storage_items.size() > 0},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+	elif quest_view_mode:
+		# Quest selection sub-menu (triggered by bumping quest board)
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "trading_post_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif has_character:
 		# Normal movement mode: Spacebar=Status
 		# Mages use "Meditate" instead of "Rest"
@@ -5943,6 +6182,8 @@ func update_action_bar():
 			fifth_action = {"label": "Chop T%d" % wood_tier, "action_type": "local", "action_data": "start_gather_logging", "enabled": true}
 		elif at_foraging_spot:
 			fifth_action = {"label": "Forage T%d" % forage_tier, "action_type": "local", "action_data": "start_gather_foraging", "enabled": true}
+		elif in_own_enclosure:
+			fifth_action = {"label": "Build", "action_type": "local", "action_data": "build_shortcut", "enabled": true}
 		else:
 			fifth_action = {"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true}
 		# Cloak button only shows if unlocked (level 20+), otherwise blank slot
@@ -5951,18 +6192,36 @@ func update_action_bar():
 		var teleport_unlock_level = _get_teleport_unlock_level()
 		var teleport_unlocked = player_level >= teleport_unlock_level
 		var teleport_action = {"label": "Teleport", "action_type": "local", "action_data": "teleport", "enabled": true} if teleport_unlocked else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
-		current_actions = [
-			{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
-			{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
-			{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
-			fourth_action,
-			fifth_action,
-			{"label": "More", "action_type": "local", "action_data": "more_menu", "enabled": true},
-			{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
-			cloak_action,
-			teleport_action,
-			{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
-		]
+		# At own enclosure, replace Cloak/Teleport with enclosure-specific actions
+		if in_own_enclosure:
+			var slot7 = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true} if enclosure_stations.size() > 0 else {"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true}
+			var slot8 = {"label": "Inn", "action_type": "local", "action_data": "inn_rest", "enabled": true} if enclosure_has_inn else cloak_action
+			var slot9 = {"label": "Storage", "action_type": "local", "action_data": "open_storage", "enabled": true} if enclosure_has_storage else teleport_action
+			current_actions = [
+				{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
+				{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
+				{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
+				fourth_action,
+				fifth_action,
+				{"label": "More", "action_type": "local", "action_data": "more_menu", "enabled": true},
+				slot7,
+				slot8,
+				slot9,
+				{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
+			]
+		else:
+			current_actions = [
+				{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
+				{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
+				{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
+				fourth_action,
+				fifth_action,
+				{"label": "More", "action_type": "local", "action_data": "more_menu", "enabled": true},
+				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
+				cloak_action,
+				teleport_action,
+				{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
+			]
 	else:
 		current_actions = [
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
@@ -6171,13 +6430,16 @@ func _create_shortcut_buttons():
 	shortcut_buttons_container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	shortcut_buttons_container.set("theme_override_constants/separation", 2)
 
-	# Define shortcut buttons: [label, tooltip, action]
+	# Define shortcut buttons: [label, action]
 	var shortcuts = [
 		["Companions", "companions"],
 		["Eggs", "eggs_shortcut"],
 		["Jobs", "jobs_shortcut"],
 		["Pouch", "pouch_shortcut"],
 		["Build", "build_shortcut"],
+		["Quests", "quests_shortcut"],
+		["Inv", "inventory_shortcut"],
+		["Help", "help_shortcut"],
 	]
 
 	for shortcut in shortcuts:
@@ -6224,8 +6486,8 @@ func _on_shortcut_button_pressed(action: String):
 		return  # Can't shortcut out of merchant
 	if settings_mode:
 		return  # Can't shortcut out of settings
-	if at_trading_post:
-		return  # Can't shortcut out of trading post
+	if quest_view_mode:
+		return  # Can't shortcut out of quest view
 
 	match action:
 		"companions":
@@ -6277,14 +6539,60 @@ func _on_shortcut_button_pressed(action: String):
 			pending_inventory_action = ""
 			open_build_mode()
 			update_action_bar()
+		"quests_shortcut":
+			more_mode = false
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			pending_inventory_action = ""
+			send_to_server({"type": "get_quest_log"})
+		"inventory_shortcut":
+			if inventory_mode and pending_inventory_action == "":
+				return  # Already in base inventory
+			more_mode = false
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			inventory_mode = true
+			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
+		"help_shortcut":
+			more_mode = false
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			pending_inventory_action = ""
+			show_help()
+			update_action_bar()
 
 func _update_shortcut_buttons_visibility():
 	"""Show/hide shortcut buttons based on game state."""
 	if not shortcut_buttons_container:
 		return
 	# Show during normal gameplay, hide during combat/login/house/etc.
-	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not at_trading_post and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode
+	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode
 	shortcut_buttons_container.visible = should_show
+
+func _scale_shortcut_buttons(base_scale: float):
+	"""Scale shortcut button fonts based on window size and chat scale."""
+	if not shortcut_buttons_container:
+		return
+	var btn_size = int(11 * base_scale * ui_scale_chat)
+	btn_size = clampi(btn_size, 8, 24)
+	var margin = int(3 * base_scale * ui_scale_chat)
+	margin = clampi(margin, 2, 8)
+	var height = int(22 * base_scale * ui_scale_chat)
+	height = clampi(height, 16, 40)
+	shortcut_buttons_container.custom_minimum_size = Vector2(0, height)
+	for child in shortcut_buttons_container.get_children():
+		if child is Button:
+			child.add_theme_font_size_override("font_size", btn_size)
+			child.custom_minimum_size = Vector2(0, height - 2)
+			for style_name in ["normal", "hover", "pressed"]:
+				var style = child.get_theme_stylebox(style_name) as StyleBoxFlat
+				if style:
+					style.set_content_margin_all(margin)
 
 func _create_ability_popup():
 	"""Create the ability input popup panel."""
@@ -7723,6 +8031,20 @@ func continue_flock_encounter():
 	send_to_server({"type": "continue_flock"})
 
 func execute_local_action(action: String):
+	# Handle dynamic party appoint actions (party_appoint_0, party_appoint_1, etc.)
+	if action.begins_with("party_appoint_") and action != "party_appoint_cancel":
+		var pick_idx = int(action.replace("party_appoint_", ""))
+		var non_leaders = []
+		for m in party_members:
+			if not m.get("is_leader", false):
+				non_leaders.append(m)
+		if pick_idx >= 0 and pick_idx < non_leaders.size():
+			var target_name = non_leaders[pick_idx].get("name", "")
+			send_to_server({"type": "party_appoint_leader", "target": target_name})
+			party_appoint_mode = false
+			update_action_bar()
+		return
+
 	# Handle dynamic egg freeze toggle actions before match
 	if action.begins_with("egg_toggle_freeze_"):
 		var egg_index = int(action.replace("egg_toggle_freeze_", ""))
@@ -7734,7 +8056,7 @@ func execute_local_action(action: String):
 		var pick_idx = int(action.replace("gathering_pick_", ""))
 		if pick_idx >= 0 and pick_idx < gathering_options.size():
 			var opt = gathering_options[pick_idx]
-			send_to_server({"type": "gathering_choice", "choice_id": opt.get("id", pick_idx), "used_tool_reveal": gathering_tool_reveal_used})
+			send_to_server({"type": "gathering_choice", "choice_id": opt.get("id", pick_idx)})
 		return
 
 	# Handle dynamic harvest pick actions (harvest_pick_0, harvest_pick_1, etc.)
@@ -7743,6 +8065,14 @@ func execute_local_action(action: String):
 		if pick_idx >= 0 and pick_idx < harvest_options.size():
 			var opt = harvest_options[pick_idx]
 			send_to_server({"type": "harvest_choice", "choice_id": opt.get("id", pick_idx)})
+		return
+
+	# Handle crafting challenge answer picks (craft_challenge_pick_0, etc.)
+	if action.begins_with("craft_challenge_pick_"):
+		var pick_idx = int(action.replace("craft_challenge_pick_", ""))
+		var rounds = craft_challenge_data.get("rounds", [])
+		if pick_idx >= 0 and craft_challenge_round < rounds.size() and pick_idx < rounds[craft_challenge_round].get("options", []).size():
+			handle_craft_challenge_pick(pick_idx)
 		return
 
 	# Handle dynamic job commit actions (job_commit_mining, job_commit_logging, etc.)
@@ -7821,8 +8151,8 @@ func execute_local_action(action: String):
 			end_gathering()
 		"gathering_reveal":
 			# Use tool to reveal correct answer
-			if not gathering_tool_reveal_used:
-				gathering_tool_reveal_used = true
+			if gathering_reveals_remaining > 0:
+				gathering_reveals_remaining -= 1
 				send_to_server({"type": "gathering_choice", "choice_id": "reveal"})
 		"harvest_start":
 			# Start harvest minigame after combat
@@ -7986,6 +8316,29 @@ func execute_local_action(action: String):
 			build_demolish_mode = false
 			build_selected_item = -1
 			display_build_items()
+			update_action_bar()
+		# Inn and Storage actions
+		"inn_rest":
+			send_to_server({"type": "inn_rest"})
+		"open_storage":
+			send_to_server({"type": "storage_access"})
+		"storage_close":
+			storage_mode = false
+			pending_storage_action = ""
+			game_output.clear()
+			display_game("[color=#888888]Closed storage.[/color]")
+			update_action_bar()
+		"storage_deposit_mode":
+			pending_storage_action = "deposit"
+			display_storage_deposit()
+			update_action_bar()
+		"storage_withdraw_mode":
+			pending_storage_action = "withdraw"
+			display_storage_withdraw()
+			update_action_bar()
+		"storage_deposit_cancel", "storage_withdraw_cancel":
+			pending_storage_action = ""
+			display_storage_contents()
 			update_action_bar()
 		"death_continue":
 			_on_continue_pressed()
@@ -8496,6 +8849,91 @@ func execute_local_action(action: String):
 			ability_entered_from_settings = true
 			settings_mode = false
 			enter_ability_mode()
+		# Party actions
+		"party_bump_invite":
+			if pending_party_bump != "":
+				send_to_server({"type": "party_invite", "target": pending_party_bump})
+				pending_party_bump = ""
+				update_action_bar()
+		"party_bump_cancel":
+			pending_party_bump = ""
+			update_action_bar()
+		"party_invite_accept":
+			if pending_party_invite != "":
+				send_to_server({"type": "party_invite_response", "accept": true})
+				pending_party_invite = ""
+				update_action_bar()
+		"party_invite_decline":
+			if pending_party_invite != "":
+				send_to_server({"type": "party_invite_response", "accept": false})
+				pending_party_invite = ""
+				update_action_bar()
+		"party_choice_lead":
+			if party_lead_choice_pending:
+				send_to_server({"type": "party_lead_choice_response", "choice": "lead", "partner_peer_id": party_lead_choice_partner_id})
+				party_lead_choice_pending = false
+				update_action_bar()
+		"party_choice_follow":
+			if party_lead_choice_pending:
+				send_to_server({"type": "party_lead_choice_response", "choice": "follow", "partner_peer_id": party_lead_choice_partner_id})
+				party_lead_choice_pending = false
+				update_action_bar()
+		"party_menu":
+			_open_party_menu()
+		"party_menu_close":
+			party_menu_mode = false
+			more_mode = true
+			display_more_menu()
+			update_action_bar()
+		"party_disband":
+			party_disband_confirm = true
+			game_output.clear()
+			display_game("[color=#FF6666]═══════ DISBAND PARTY ═══════[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]Are you sure you want to disband the party?[/color]")
+			display_game("[color=#808080]All members will be removed.[/color]")
+			update_action_bar()
+		"party_disband_yes":
+			party_disband_confirm = false
+			send_to_server({"type": "party_disband"})
+			update_action_bar()
+		"party_disband_no":
+			party_disband_confirm = false
+			_open_party_menu()
+		"party_leave":
+			party_leave_confirm = true
+			game_output.clear()
+			display_game("[color=#FF6666]═══════ LEAVE PARTY ═══════[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]Are you sure you want to leave the party?[/color]")
+			update_action_bar()
+		"party_leave_yes":
+			party_leave_confirm = false
+			send_to_server({"type": "party_leave"})
+			update_action_bar()
+		"party_leave_no":
+			party_leave_confirm = false
+			_open_party_menu()
+		"party_appoint":
+			party_appoint_mode = true
+			# Pre-mark held keys
+			for i in range(9):
+				if is_item_select_key_pressed(i):
+					_consume_item_select_key(i)
+			game_output.clear()
+			display_game("[color=#FFD700]═══════ APPOINT LEADER ═══════[/color]")
+			display_game("")
+			var idx = 0
+			for m in party_members:
+				if not m.get("is_leader", false):
+					idx += 1
+					display_game("[%d] [color=#00BFFF]%s[/color] (Lv%d %s)" % [idx, m.get("name", "?"), m.get("level", 1), m.get("class_type", "")])
+			display_game("")
+			display_game("[color=#808080]Press [%s] to cancel.[/color]" % get_action_key_name(0))
+			update_action_bar()
+		"party_appoint_cancel":
+			party_appoint_mode = false
+			_open_party_menu()
 		# Trade actions
 		"trade_accept":
 			send_to_server({"type": "trade_response", "accept": true})
@@ -11135,6 +11573,12 @@ func display_inventory():
 				display_game("  %d. %s[color=%s]%s[/color]%s" % [
 					display_num, lock_text, rarity_color, item.get("name", "Unknown"), qty_text
 				])
+			elif item_type == "structure":
+				var structure_type = item.get("structure_type", "")
+				var scolor = _get_structure_color(structure_type)
+				display_game("  %d. %s[color=%s]%s[/color] [color=#808080][Structure][/color]" % [
+					display_num, lock_text, scolor, item.get("name", "Unknown")
+				])
 			else:
 				# Show equipment with arrow on left, stats on right (using themed names)
 				var bonus_text = _get_item_bonus_summary(item)
@@ -11444,14 +11888,15 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()  # Show cancel option
 
 		"use":
-			# Filter for usable items only (all consumables)
+			# Filter for usable items only (all consumables + structures)
 			var usable_items = []
 			for i in range(inventory.size()):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
 				# Also check the is_consumable flag as a fallback
-				if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+				# Also include structure items (walls, doors, etc.) — using them enters placement mode
+				if item.get("is_consumable", false) or item_type == "structure" or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 					usable_items.append({"index": i, "item": item})
 			if usable_items.is_empty():
 				display_game("[color=#FF0000]No usable items in inventory.[/color]")
@@ -11937,6 +12382,18 @@ func select_inventory_item(index: int):
 			display_game("[color=#FF0000]Invalid item number.[/color]")
 			return
 		var actual_index = usable_items[index].index
+		var use_item = inventory[actual_index]
+		# Structure items: enter build placement mode instead of sending to server
+		if use_item.get("type", "") == "structure":
+			close_inventory()
+			build_mode = true
+			build_direction_mode = true
+			build_demolish_mode = false
+			build_selected_item = actual_index
+			pending_build_result = false
+			display_build_direction()
+			update_action_bar()
+			return
 		awaiting_item_use_result = true
 		send_to_server({"type": "inventory_use", "index": actual_index})
 		update_action_bar()
@@ -13292,8 +13749,14 @@ func handle_server_message(message: Dictionary):
 			var was_at_bounty = at_bounty
 			at_bounty = message.get("at_bounty", false)
 			bounty_quest_id = message.get("bounty_quest_id", "")
+			# Update enclosure status
+			var was_in_enclosure = in_own_enclosure
+			in_own_enclosure = message.get("in_own_enclosure", false)
+			enclosure_stations = message.get("enclosure_stations", [])
+			enclosure_has_inn = message.get("enclosure_has_inn", false)
+			enclosure_has_storage = message.get("enclosure_has_storage", false)
 			# Update action bar if any location status changed
-			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_forage != at_foraging_spot or was_at_corpse != at_corpse or was_at_bounty != at_bounty:
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_forage != at_foraging_spot or was_at_corpse != at_corpse or was_at_bounty != at_bounty or was_in_enclosure != in_own_enclosure:
 				update_action_bar()
 
 		"chat":
@@ -13562,6 +14025,15 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh during build mode
 				if build_mode:
 					pass  # Keep build display as-is
+				# Don't refresh during storage mode
+				if storage_mode:
+					pass  # Keep storage display as-is
+				# Don't refresh crafting at player station
+				if crafting_mode:
+					pass  # Keep crafting display as-is
+				# Don't refresh during crafting challenge minigame
+				if crafting_challenge_mode:
+					pass  # Keep challenge display as-is
 				# Don't refresh Material Pouch when opened from More menu
 				if more_mode and pending_inventory_action == "viewing_materials":
 					pass  # Keep materials display as-is
@@ -14026,6 +14498,14 @@ func handle_server_message(message: Dictionary):
 		"trading_post_message":
 			display_game(message.get("message", ""))
 
+		# Bump-to-interact messages (NPC post stations)
+		"station_interact":
+			handle_station_interact(message)
+		"quest_board_interact":
+			handle_quest_board_interact()
+		"throne_interact":
+			handle_throne_interact()
+
 		# Quest messages
 		"quest_list":
 			handle_quest_list(message)
@@ -14126,6 +14606,99 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#808080][%s] Accept  |  [%s] Decline[/color]" % [get_action_key_name(1), get_action_key_name(2)])
 			display_game("[color=#00FFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
+
+		# Party system messages
+		"party_bump":
+			pending_party_bump = message.get("target_name", "")
+			pending_party_bump_level = message.get("target_level", 1)
+			pending_party_bump_class = message.get("target_class", "")
+			display_game("")
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s)" % [pending_party_bump, pending_party_bump_level, pending_party_bump_class])
+			display_game("[color=#FFAA00]Invite to your party?[/color]")
+			display_game("[color=#808080][%s] Invite  |  [%s] Cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
+		"party_invite_received":
+			pending_party_invite = message.get("from_name", "")
+			pending_party_invite_level = message.get("from_level", 1)
+			pending_party_invite_class = message.get("from_class", "")
+			display_game("")
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#FFD700]PARTY INVITE[/color]")
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) invites you to a party!" % [pending_party_invite, pending_party_invite_level, pending_party_invite_class])
+			display_game("[color=#808080][%s] Accept  |  [%s] Decline[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
+		"party_lead_choice":
+			party_lead_choice_pending = true
+			party_lead_choice_name = message.get("partner_name", "")
+			party_lead_choice_partner_id = message.get("partner_peer_id", -1)
+			display_game("")
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#FFD700]PARTY FORMATION[/color]")
+			display_game("[color=#00BFFF]%s[/color] accepted! Who will lead the party?" % party_lead_choice_name)
+			display_game("[color=#808080][%s] Lead  |  [%s] Follow[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
+		"party_formed":
+			in_party = true
+			var leader_name = message.get("leader", "")
+			party_members = message.get("members", [])
+			var my_name = character_data.get("name", "")
+			is_party_leader = (leader_name == my_name)
+			display_game("")
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			display_game("[color=#FFD700]PARTY FORMED![/color]")
+			display_game("[color=#00BFFF]Leader: %s[/color]" % leader_name)
+			for m in party_members:
+				if not m.get("is_leader", false):
+					display_game("  [color=#00BFFF]%s[/color] (Lv%d %s)" % [m.get("name", "?"), m.get("level", 1), m.get("class_type", "")])
+			if is_party_leader:
+				display_game("[color=#808080]You lead the party. Move to guide your group.[/color]")
+			else:
+				display_game("[color=#808080]Follow your leader. Use More → Party for options.[/color]")
+			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
+			update_action_bar()
+
+		"party_update":
+			var leader_name = message.get("leader", "")
+			party_members = message.get("members", [])
+			var my_name = character_data.get("name", "")
+			is_party_leader = (leader_name == my_name)
+			in_party = true
+
+		"party_member_joined":
+			var member = message.get("member", {})
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) joined the party!" % [member.get("name", "?"), member.get("level", 1), member.get("class_type", "")])
+
+		"party_member_left":
+			display_game("[color=#FF8800]%s left the party.[/color]" % message.get("name", "Unknown"))
+
+		"party_disbanded":
+			var reason = message.get("reason", "Party disbanded.")
+			display_game("[color=#FF8800]%s[/color]" % reason)
+			_clear_party_state()
+			update_action_bar()
+
+		"party_leader_changed":
+			var new_leader = message.get("new_leader", "")
+			var my_name = character_data.get("name", "")
+			is_party_leader = (new_leader == my_name)
+			display_game("[color=#FFD700]%s is now the party leader.[/color]" % new_leader)
+			update_action_bar()
+
+		"party_combat_start":
+			_handle_party_combat_start(message)
+
+		"party_combat_update":
+			_handle_party_combat_update(message)
+
+		"party_combat_end":
+			_handle_party_combat_end(message)
 
 		# Trading system messages
 		"trade_request_received":
@@ -14283,8 +14856,30 @@ func handle_server_message(message: Dictionary):
 		"craft_result":
 			handle_craft_result(message)
 
+		"craft_challenge":
+			handle_craft_challenge(message)
+
 		"build_result":
 			handle_build_result(message)
+
+		"inn_rest_result":
+			game_output.clear()
+			display_game(message.get("message", "Rested at the inn."))
+			update_action_bar()
+
+		"storage_contents":
+			storage_items = message.get("items", [])
+			storage_max_slots = message.get("max_slots", 10)
+			var storage_msg = message.get("message", "")
+			if not storage_mode:
+				storage_mode = true
+				pending_storage_action = ""
+			if storage_msg != "":
+				game_output.clear()
+				display_game(storage_msg)
+				display_game("")
+			display_storage_contents()
+			update_action_bar()
 
 		"dungeon_list":
 			handle_dungeon_list(message)
@@ -14332,6 +14927,8 @@ func _process_combat_start(message: Dictionary):
 	build_direction_mode = false
 	build_demolish_mode = false
 	pending_build_result = false
+	storage_mode = false
+	pending_storage_action = ""
 	pending_continue = false  # Clear any pending continue from previous combat
 	pending_dungeon_continue = false
 	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
@@ -14667,6 +15264,20 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		if not stats_shown:
 			display_game("[color=#808080](No stat bonuses)[/color]")
 
+		# Show rarity bonuses (only for uncommon+)
+		var rb = item.get("rarity_bonuses", {})
+		if not rb.is_empty():
+			display_game("")
+			display_game("[color=%s]Rarity Bonuses:[/color]" % rarity_color)
+			if rb.has("crit_chance"):
+				display_game("  [color=#FFD700]+%d%% Crit Chance[/color]" % int(rb["crit_chance"]))
+			if rb.has("crit_damage"):
+				display_game("  [color=#FFD700]+%d%% Crit Damage[/color]" % int(rb["crit_damage"]))
+			if rb.has("damage_reduction"):
+				display_game("  [color=#00FF00]+%d%% Damage Reduction[/color]" % int(rb["damage_reduction"]))
+			if rb.has("dodge"):
+				display_game("  [color=#00BFFF]+%d%% Dodge[/color]" % int(rb["dodge"]))
+
 		# Show comparison with equipped item
 		display_game("")
 		var equipped = character_data.get("equipped", {})
@@ -14690,17 +15301,69 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		var dur_pct = float(durability) / max(max_durability, 1) * 100.0
 		var dur_color = "#00FF00" if dur_pct > 50 else "#FFFF00" if dur_pct > 20 else "#FF4444"
 		display_game("  [color=#FFFF00]Durability:[/color] [color=%s]%d/%d[/color]" % [dur_color, durability, max_durability])
-		if bonuses.get("reveal", false):
-			display_game("  [color=#00FF00]Reveal:[/color] Highlights the correct gathering option once per session")
+		var reveal_count = bonuses.get("reveals", 1 if bonuses.get("reveal", false) else 0)
+		if reveal_count > 0:
+			display_game("  [color=#00FF00]Reveals:[/color] Highlights the correct option %d time%s per session" % [reveal_count, "s" if reveal_count > 1 else ""])
 		if bonuses.get("save", false):
 			display_game("  [color=#00BFFF]Save:[/color] Prevents one wrong pick from ending your chain")
 		display_game("")
 		var job_for_tool = {"pickaxe": "Mining", "axe": "Logging", "sickle": "Foraging", "rod": "Fishing"}.get(subtype, "Gathering")
 		display_game("[color=#808080]Used for %s. Durability decreases by 1 per session.[/color]" % job_for_tool)
 	else:
-		# Consumables: show effect description based on tier
-		var tier = item.get("tier", 1) if is_consumable else level
-		display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, tier, rarity))
+		# Consumables: show effect description
+		if is_consumable and item.get("crafted", false) and item.has("effect"):
+			# Crafted consumables: read effect directly from item data
+			var eff = item.get("effect", {})
+			var eff_type = eff.get("type", "")
+			var amount = int(eff.get("amount", 0))
+			match eff_type:
+				"heal":
+					display_game("[color=#E6CC80]Effect:[/color] Restores %d HP" % amount)
+				"heal_pct":
+					display_game("[color=#E6CC80]Effect:[/color] Restores %d%% of max HP" % amount)
+				"restore_mana":
+					display_game("[color=#E6CC80]Effect:[/color] Restores %d Mana" % amount)
+				"restore_stamina":
+					display_game("[color=#E6CC80]Effect:[/color] Restores %d Stamina" % amount)
+				"restore_energy":
+					display_game("[color=#E6CC80]Effect:[/color] Restores %d Energy" % amount)
+				"buff":
+					var stat = eff.get("stat", "")
+					var is_pct = eff.has("bonus_pct")
+					var buff_val = int(eff.get("bonus_pct", eff.get("amount", 0)))
+					var dur = int(eff.get("duration_battles", eff.get("duration", 0)))
+					var stat_name = ""
+					match stat:
+						"attack": stat_name = "Attack"
+						"defense": stat_name = "Defense"
+						"speed": stat_name = "Speed"
+						"attack_defense": stat_name = "Attack & Defense"
+						"xp_bonus": stat_name = "XP Bonus"
+						"rare_drop": stat_name = "Rare Drop Chance"
+						_: stat_name = stat.replace("_", " ").capitalize()
+					if is_pct:
+						display_game("[color=#E6CC80]Effect:[/color] +%d%% %s for %d battle%s" % [buff_val, stat_name, dur, "s" if dur != 1 else ""])
+					else:
+						display_game("[color=#E6CC80]Effect:[/color] +%d %s for %d battle%s" % [buff_val, stat_name, dur, "s" if dur != 1 else ""])
+				"bane":
+					var monster = eff.get("monster_type", "unknown").capitalize()
+					var pct = int(eff.get("bonus_pct", 50))
+					var dur = int(eff.get("duration_battles", 3))
+					display_game("[color=#E6CC80]Effect:[/color] +%d%% damage vs %ss for %d battle%s" % [pct, monster, dur, "s" if dur != 1 else ""])
+				_:
+					display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, 1, rarity))
+		else:
+			var tier = item.get("tier", 1) if is_consumable else level
+			display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, tier, rarity))
+		# Show rarity bonuses for consumables (potency, uses)
+		var crb = item.get("rarity_bonuses", {})
+		if not crb.is_empty():
+			if crb.has("potency_mult") and float(crb["potency_mult"]) > 1.0:
+				display_game("[color=%s]+%d%% Potency[/color]" % [rarity_color, int((float(crb["potency_mult"]) - 1.0) * 100)])
+			var uses = int(crb.get("uses", 1))
+			if uses > 1:
+				var remaining = item.get("remaining_uses", uses)
+				display_game("[color=%s]Uses: %d/%d[/color]" % [rarity_color, remaining, uses])
 
 	display_game("")
 
@@ -16546,8 +17209,293 @@ func display_more_menu():
 	display_game("[%s] [color=#FFD700]Leaders[/color] - View the leaderboards" % get_action_key_name(4))
 	display_game("[%s] [color=#00FF00]Changes[/color] - What's new in recent updates" % get_action_key_name(5))
 	display_game("[%s] [color=#FF6666]Bestiary[/color] - Monster tiers and Home Stone drops" % get_action_key_name(6))
+	display_game("[%s] [color=#AAAAFF]Pouch[/color] - View materials and essences" % get_action_key_name(7))
+	if in_party:
+		display_game("[%s] [color=#00BFFF]Party[/color] - Manage your party" % get_action_key_name(8))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
+
+func _open_party_menu():
+	"""Open the party management menu."""
+	more_mode = false
+	party_menu_mode = true
+	game_output.clear()
+	display_game("[color=#00BFFF]═══════ PARTY ═══════[/color]")
+	display_game("")
+	display_game("[color=#FFD700]Members:[/color]")
+	for m in party_members:
+		var leader_tag = " [color=#FFD700](Leader)[/color]" if m.get("is_leader", false) else ""
+		display_game("  [color=#00BFFF]%s[/color] - Lv%d %s%s" % [m.get("name", "?"), m.get("level", 1), m.get("class_type", ""), leader_tag])
+	display_game("")
+	if is_party_leader:
+		display_game("[%s] [color=#FF6666]Disband[/color] - Disband the party" % get_action_key_name(1))
+		if party_members.size() > 2:
+			display_game("[%s] [color=#FFAA00]Appoint[/color] - Appoint a new leader" % get_action_key_name(2))
+	else:
+		display_game("[%s] [color=#FF6666]Leave[/color] - Leave the party" % get_action_key_name(1))
+	display_game("")
+	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
+	update_action_bar()
+
+func _clear_party_state():
+	"""Clear all party-related client state."""
+	in_party = false
+	is_party_leader = false
+	party_members = []
+	pending_party_invite = ""
+	pending_party_invite_level = 0
+	pending_party_invite_class = ""
+	pending_party_bump = ""
+	pending_party_bump_level = 0
+	pending_party_bump_class = ""
+	party_lead_choice_pending = false
+	party_lead_choice_name = ""
+	party_lead_choice_partner_id = -1
+	party_disband_confirm = false
+	party_leave_confirm = false
+	party_appoint_mode = false
+	party_menu_mode = false
+	party_combat_spectating = false
+	party_waiting_for_turn = false
+	party_combat_active = false
+	party_combat_turn_name = ""
+
+func _handle_party_combat_start(message: Dictionary):
+	"""Handle party combat starting."""
+	var messages = message.get("messages", [])
+	var monster_name = message.get("monster_name", "Monster")
+	var monster_level = message.get("monster_level", 1)
+	var is_my_turn = message.get("is_your_turn", false)
+	var turn_name = message.get("current_turn_name", "")
+	var combat_bg_color = message.get("combat_bg_color", "")
+	var combat_state = message.get("combat_state", {})
+
+	# Set combat state
+	in_combat = true
+	combat_outsmart_failed = false
+	current_forcefield = 0
+	current_enemy_name = monster_name
+	current_enemy_level = monster_level
+	damage_dealt_to_current_enemy = 0
+	xp_before_combat = character_data.get("experience", 0)
+
+	# Set party combat mode
+	if is_my_turn:
+		party_combat_active = true
+		party_waiting_for_turn = false
+		party_combat_spectating = false
+	else:
+		party_combat_active = false
+		party_waiting_for_turn = true
+		party_combat_spectating = false
+	party_combat_turn_name = turn_name
+
+	# Mark all held hotkeys to prevent double-trigger
+	_mark_all_held_hotkeys()
+
+	# Display combat start
+	game_output.clear()
+	if message.get("use_client_art", false):
+		var local_art = _get_monster_art().get_bordered_art_with_font(monster_name, ui_scale_monster_art)
+		if local_art != "":
+			display_game("[center]" + local_art + "[/center]")
+			display_game("")
+
+	for msg in messages:
+		display_game(msg)
+
+	# Show party HP bar
+	_display_party_combat_hp(combat_state)
+
+	if is_my_turn:
+		display_game("")
+		display_game("[color=#00FF00]═══ YOUR TURN ═══[/color]")
+	else:
+		display_game("")
+		display_game("[color=#808080]Waiting for %s...[/color]" % turn_name)
+
+	# Set up enemy HP bar
+	var m_hp = combat_state.get("monster_hp", -1)
+	var m_max_hp = combat_state.get("monster_max_hp", -1)
+	if m_max_hp > 0:
+		current_enemy_hp = m_hp
+		current_enemy_max_hp = m_max_hp
+	update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+	show_enemy_hp_bar(true)
+	update_player_hp_bar()
+	update_action_bar()
+
+func _handle_party_combat_update(message: Dictionary):
+	"""Handle party combat update (after someone acts)."""
+	var messages = message.get("messages", [])
+	var is_my_turn = message.get("is_your_turn", false)
+	var turn_name = message.get("current_turn_name", "")
+	var combat_state = message.get("combat_state", {})
+
+	# Display combat messages
+	for msg in messages:
+		var enhanced_msg = _enhance_combat_message(msg)
+		display_game(enhanced_msg)
+		_trigger_combat_sounds(msg)
+
+	# Update party HP display
+	_display_party_combat_hp(combat_state)
+
+	# Update monster HP from state
+	if combat_state.has("monster_hp"):
+		current_enemy_hp = combat_state.get("monster_hp", current_enemy_hp)
+		current_enemy_max_hp = combat_state.get("monster_max_hp", current_enemy_max_hp)
+		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+	# Check if we died or fled (are we in dead/fled list?)
+	var my_peer_id = multiplayer.get_unique_id() if multiplayer else -1
+	var members = combat_state.get("members", [])
+	var my_state = {}
+	for m in members:
+		if m.get("peer_id", -1) == my_peer_id:
+			my_state = m
+			break
+
+	if my_state.get("is_dead", false) or my_state.get("is_fled", false):
+		# We're spectating now
+		party_combat_active = false
+		party_waiting_for_turn = false
+		party_combat_spectating = true
+		if my_state.get("is_dead", false):
+			display_game("[color=#FF0000]You have fallen![/color]")
+		_mark_all_held_hotkeys()
+	elif is_my_turn:
+		party_combat_active = true
+		party_waiting_for_turn = false
+		party_combat_spectating = false
+		display_game("")
+		display_game("[color=#00FF00]═══ YOUR TURN ═══[/color]")
+		_mark_all_held_hotkeys()
+	else:
+		party_combat_active = false
+		party_waiting_for_turn = true
+		party_combat_spectating = false
+		party_combat_turn_name = turn_name
+		display_game("")
+		display_game("[color=#808080]Waiting for %s...[/color]" % turn_name)
+		_mark_all_held_hotkeys()
+
+	update_player_hp_bar()
+	update_resource_bar()
+	update_action_bar()
+
+func _handle_party_combat_end(message: Dictionary):
+	"""Handle party combat ending."""
+	var messages = message.get("messages", [])
+	var victory = message.get("victory", false)
+	var your_death = message.get("your_death", false)
+	var death_saved = message.get("death_saved", false)
+
+	# Clear combat states
+	in_combat = false
+	combat_item_mode = false
+	combat_outsmart_failed = false
+	current_forcefield = 0
+	party_combat_active = false
+	party_waiting_for_turn = false
+	party_combat_spectating = false
+	party_combat_turn_name = ""
+	stop_low_hp_pulse()
+
+	# Display combat messages
+	for msg in messages:
+		display_game(msg)
+
+	if victory and not your_death:
+		# We survived and won
+		if message.has("character"):
+			character_data = message.character
+			update_player_level()
+			update_player_hp_bar()
+			update_resource_bar()
+			update_player_xp_bar()
+			update_currency_display()
+
+		# Show drops
+		var flock_drops = message.get("flock_drops", [])
+		if flock_drops.size() > 0:
+			display_game("")
+			display_game("[color=#FFD700].-=[ LOOT ]=-.[/color]")
+			for drop_msg in flock_drops:
+				display_game("  " + drop_msg)
+			display_game("")
+
+		# XP gain
+		var xp_earned = message.get("xp_earned", 0)
+		var gold_earned = message.get("gold_earned", 0)
+		if xp_earned > 0 or gold_earned > 0:
+			display_game("[color=#00BFFF]+%d XP, +%d gold[/color]" % [xp_earned, gold_earned])
+
+		# Check for gem gains
+		var total_gems = message.get("total_gems", 0)
+		if total_gems > 0:
+			play_gem_gain_sound()
+
+		# Sound effects
+		var drop_value = _calculate_drop_value(message)
+		if drop_value > 0:
+			play_rare_drop_sound(drop_value)
+
+		# Require continue press
+		display_game("")
+		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+		pending_continue = true
+	elif death_saved:
+		# Death saved
+		if message.has("character"):
+			character_data = message.character
+			update_player_hp_bar()
+		display_game("[color=#00FFFF]You were saved from death![/color]")
+		pending_continue = true
+		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	elif not victory and not your_death:
+		# We survived (fled) but combat was lost
+		if message.has("character"):
+			character_data = message.character
+			update_player_hp_bar()
+		display_game("[color=#FF8800]The party was defeated.[/color]")
+		pending_continue = true
+		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	# If your_death is true, permadeath handler will take over
+
+	update_action_bar()
+	show_enemy_hp_bar(false)
+	current_enemy_name = ""
+	current_enemy_level = 0
+	damage_dealt_to_current_enemy = 0
+
+func _display_party_combat_hp(combat_state: Dictionary):
+	"""Display party member HP status during combat."""
+	var members = combat_state.get("members", [])
+	if members.is_empty():
+		return
+	var hp_parts = []
+	for m in members:
+		var name = m.get("name", "?")
+		var hp = m.get("current_hp", 0)
+		var max_hp = m.get("max_hp", 1)
+		if m.get("is_dead", false):
+			hp_parts.append("[color=#FF0000]%s: DEAD[/color]" % name)
+		elif m.get("is_fled", false):
+			hp_parts.append("[color=#FFAA00]%s: FLED[/color]" % name)
+		else:
+			var hp_pct = float(hp) / float(max(1, max_hp))
+			var hp_color = "#00FF00" if hp_pct > 0.5 else "#FFAA00" if hp_pct > 0.25 else "#FF0000"
+			hp_parts.append("[color=%s]%s: %d/%d[/color]" % [hp_color, name, hp, max_hp])
+	display_game("[color=#00BFFF]Party:[/color] %s" % " | ".join(hp_parts))
+
+func _mark_all_held_hotkeys():
+	"""Mark all currently held hotkeys as pressed to prevent double-trigger on state transitions."""
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key):
+			set_meta("hotkey_%d_pressed" % i, true)
 
 func open_jobs_menu():
 	"""Open the Jobs menu"""
@@ -16689,21 +17637,33 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.110 changes
+	display_game("[color=#00FF00]v0.9.110[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player Party System[/color]")
+	display_game("  • NEW: Bump into another player to invite them to your party (max 4)")
+	display_game("  • Lead/Follow choice when forming — leader controls movement")
+	display_game("  • Snake formation: followers trail behind the leader")
+	display_game("  • Party combat: fight monsters together with turn-based actions")
+	display_game("  • Monster HP scales by party size, each member gets FULL loot")
+	display_game("  • Monster attacks spread across party with weighted targeting")
+	display_game("  • Party dungeons: enter, explore, and fight bosses together")
+	display_game("  • Each member gets guaranteed boss egg on dungeon completion")
+	display_game("  • Party menu: Disband, Leave, Appoint new leader (More→Party)")
+	display_game("  • Party members shown in green on the map")
+	display_game("")
+
+	# v0.9.109 changes
+	display_game("[color=#00FFFF]v0.9.109[/color]")
+	display_game("  • Phase 2A-2C: Specialty jobs, exclusive crafting recipes, balance caps")
+	display_game("  • Blacksmith/Alchemist/Enchanter exclusive recipes (~40 new)")
+	display_game("  • Scribe skill with scrolls, maps, tomes, bestiary pages")
+	display_game("  • Upgrade cap +50, enchantment stat caps, 3 enchantment types per item")
+	display_game("")
+
 	# v0.9.108 changes
-	display_game("[color=#00FF00]v0.9.108[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Phase 1: Jobs & Gathering System[/color]")
-	display_game("  • NEW: 5 Gathering Jobs — Mining, Logging, Foraging, Fishing, Soldier")
-	display_game("  • Try any job to Lv5, then commit permanently (More→Jobs)")
-	display_game("  • NEW: 3-choice gathering minigame replaces old pattern system")
-	display_game("  • Pick correctly to chain rounds — wrong pick ends the chain")
-	display_game("  • Higher job level = better hints on the correct choice")
-	display_game("  • Risky 4th option: double reward on success, lose materials on failure")
-	display_game("  • NEW: Monster parts — 53 monster types drop parts into Material Pouch")
-	display_game("  • Soldier harvest: post-combat minigame for bonus parts (all players, 5x yield)")
-	display_game("  • NEW: Gathering tools with Reveal (shows answer) and Save (cancels 1 mistake)")
-	display_game("  • Tools equip to dedicated slots (Pickaxe/Axe/Sickle/Rod) — not in backpack")
-	display_game("  • Material Pouch: max 999 per stack, categorized display")
-	display_game("  • Companion gathering bonuses: yield (Wolf/Troll/Hobgoblin) + hints (Kobold/Spider/Wyvern)")
+	display_game("[color=#00FFFF]v0.9.108[/color]")
+	display_game("  • Phase 1: Jobs & Gathering — 5 jobs, 3-choice minigame, monster parts")
+	display_game("  • Gathering tools, Material Pouch, companion gathering bonuses")
 	display_game("  • Quick-access shortcut buttons: Companions, Eggs, Jobs, Pouch")
 	display_game("")
 
@@ -16719,20 +17679,6 @@ func display_changelog():
 	display_game("  • Combat readability: distinct turns with indentation + orange monster damage")
 	display_game("  • Smooth XP scaling curve (no tier boundary jumps)")
 	display_game("  • Bug fixes: house bonuses, scroll cancel, wish in dungeons, and more")
-	display_game("")
-
-	# v0.9.104 changes
-	display_game("[color=#00FFFF]v0.9.104[/color]")
-	display_game("  • Dungeon reconnect: resume where you left off after disconnect")
-	display_game("  • CC diminishing returns (Shield Bash, Paralyze)")
-	display_game("  • Companion inspection shows total in-combat bonuses")
-	display_game("")
-
-	# v0.9.102 changes
-	display_game("[color=#00FFFF]v0.9.102[/color]")
-	display_game("  • Dungeon action bar cleanup, movement pad dungeon navigation")
-	display_game("  • Home Stone (Supplies) sends equipment + consumables, hotkeys work")
-	display_game("  • Fix: Dungeon floors min size 16x16, entrance wall fallback")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -19479,20 +20425,21 @@ func handle_gathering_round(message: Dictionary):
 	gathering_node_type = message.get("node_type", "")
 	gathering_tier = message.get("tier", 1)
 	gathering_tool_save_available = message.get("tool_available", false)
+	gathering_reveals_remaining = int(message.get("reveals_remaining", 0))
 	# Check if server sent a revealed correct answer (tool reveal)
 	var revealed = message.get("revealed_correct", -1)
 	if revealed >= 0:
 		gathering_revealed_correct = revealed
-		gathering_tool_reveal_used = true
 	else:
 		gathering_revealed_correct = -1
-		gathering_tool_reveal_used = false
 	gathering_tool_save_used = false
+	gathering_momentum = message.get("momentum", 0)
+	gathering_discoveries = message.get("discoveries", [])
 	display_gathering_round()
 	update_action_bar()
 
 func display_gathering_round():
-	"""Display the 3-choice gathering interface."""
+	"""Display the 3-choice gathering interface with per-type unique mechanics."""
 	game_output.clear()
 	var job_label = gathering_job_type.capitalize()
 	var tier_label = "T%d" % gathering_tier
@@ -19500,8 +20447,54 @@ func display_gathering_round():
 
 	display_game("[color=%s]═══════ %s (%s) ═══════[/color]" % [color, job_label, tier_label])
 	display_game("")
-	display_game(_get_gathering_ascii_art(gathering_job_type))
-	display_game("")
+
+	# Per-type unique indicator
+	match gathering_job_type:
+		"mining":
+			# Depth meter
+			var depth = gathering_chain_count
+			var max_depth = 10
+			var filled = mini(depth, max_depth)
+			var bar = ""
+			for _i in range(max_depth):
+				bar += "[color=#B87333]█[/color]" if _i < filled else "[color=#444444]░[/color]"
+			display_game("[color=#B87333]⛏[/color] Depth: %s %d/%d" % [bar, depth, max_depth])
+			if depth >= 5:
+				display_game("[color=#FFD700]Deep Vein active! Higher tier ore possible...[/color]")
+			elif depth >= 3:
+				display_game("[color=#FFAA00]Getting deeper... rare ore nearby.[/color]")
+			display_game("")
+		"logging":
+			# Momentum bar
+			var mom = gathering_momentum
+			var max_mom = 7
+			var stars = ""
+			for _i in range(max_mom):
+				stars += "[color=#FFD700]★[/color]" if _i < mom else "[color=#444444]☆[/color]"
+			display_game("[color=#228B22]🪓[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
+			var next_milestone = 3 if mom < 3 else (5 if mom < 5 else (7 if mom < 7 else 0))
+			if next_milestone > 0:
+				display_game("[color=#808080]Next bonus at %d![/color]" % next_milestone)
+			elif mom >= 7:
+				display_game("[color=#FFD700]MAX MOMENTUM! Bonus every round![/color]")
+			display_game("")
+		"foraging":
+			# Discovery journal
+			if gathering_discoveries.size() > 0:
+				var disc_list = ", ".join(gathering_discoveries)
+				display_game("[color=#9ACD32]📖 Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
+			else:
+				display_game("[color=#808080]📖 No discoveries yet this session[/color]")
+			display_game("")
+		"fishing":
+			# Simple chain display with fishing theme
+			display_game(_get_gathering_ascii_art(gathering_job_type))
+			display_game("")
+
+	# Show ASCII art for non-fishing (fishing already shown above)
+	if gathering_job_type != "fishing":
+		display_game(_get_gathering_ascii_art(gathering_job_type))
+		display_game("")
 
 	if gathering_chain_count > 0:
 		display_game("[color=#FFD700]Chain: %d[/color]  |  Materials gathered: %d" % [gathering_chain_count, gathering_chain_materials.size()])
@@ -19518,6 +20511,11 @@ func display_gathering_round():
 		var label = opt.get("label", "Option %d" % (i + 1))
 		var is_risky = opt.get("risky", false)
 		var hint = ""
+		var known_marker = ""
+
+		# Foraging: mark known plants
+		if gathering_job_type == "foraging" and opt.get("known", false):
+			known_marker = " [color=#00FF00]◆ (known)[/color]"
 
 		# Apply hint strength — show subtle visual cues
 		if gathering_hint_strength > 0 and not is_risky:
@@ -19532,11 +20530,11 @@ func display_gathering_round():
 		if is_risky:
 			display_game("[%s] [color=#FF4444]⚡ %s (RISKY - 2x reward or lose 50%% chain)[/color]%s" % [key_name, label, hint])
 		else:
-			display_game("[%s] %s%s" % [key_name, label, hint])
+			display_game("[%s] %s%s%s" % [key_name, label, known_marker, hint])
 
 	display_game("")
-	if gathering_tool_save_available and not gathering_tool_reveal_used:
-		display_game("[color=#808080][%s] Use tool to reveal the correct answer[/color]" % get_action_key_name(4))
+	if gathering_tool_save_available and gathering_reveals_remaining > 0:
+		display_game("[color=#808080][%s] Use tool to reveal the correct answer (%d remaining)[/color]" % [get_action_key_name(4), gathering_reveals_remaining])
 	display_game("[color=#808080][%s] to stop gathering and keep your materials.[/color]" % get_action_key_name(0))
 
 func handle_gathering_result(message: Dictionary):
@@ -19551,6 +20549,8 @@ func handle_gathering_result(message: Dictionary):
 
 	gathering_chain_count = chain_count
 	gathering_chain_materials = chain_mats
+	gathering_momentum = message.get("momentum", gathering_momentum)
+	gathering_discoveries = message.get("discoveries", gathering_discoveries)
 
 	game_output.clear()
 	var color = _get_gathering_color(gathering_job_type)
@@ -19559,6 +20559,8 @@ func handle_gathering_result(message: Dictionary):
 		display_game("[color=#00FFFF]═══════ TOOL SAVE! ═══════[/color]")
 		display_game("")
 		display_game("[color=#00FFFF]Your tool absorbed the failure! Chain continues.[/color]")
+		if gathering_job_type == "logging":
+			display_game("[color=#FF8800]Momentum reset![/color]")
 		display_game("")
 		gathering_tool_save_used = true
 	elif correct:
@@ -19568,9 +20570,42 @@ func handle_gathering_result(message: Dictionary):
 			var mat_name = mat.get("name", "Material")
 			var mat_qty = mat.get("qty", 1)
 			display_game("[color=#1EFF00]◆ +%d %s[/color]" % [mat_qty, mat_name])
-			display_game("")
+
+		# Per-type bonus displays
+		match gathering_job_type:
+			"mining":
+				if message.get("depth_bonus", false):
+					display_game("[color=#FFD700]⛏ DEEP VEIN! Found higher-tier ore![/color]")
+			"fishing":
+				var catch_size = message.get("catch_size", "")
+				if catch_size != "":
+					match catch_size:
+						"trophy":
+							display_game("[color=#FFD700]★★★★ TROPHY CATCH! ★★★★[/color]")
+							display_game("[color=#FFD700]Bonus rare material gained![/color]")
+						"large":
+							display_game("[color=#00BFFF]★★★ LARGE ★★★[/color]")
+						"medium":
+							display_game("[color=#808080]★★ Medium[/color]")
+						"small":
+							display_game("[color=#808080]★ Small[/color]")
+			"logging":
+				var mom_bonus = message.get("momentum_bonus", 0)
+				if mom_bonus > 0:
+					if gathering_momentum >= 7:
+						display_game("[color=#FFD700]★ TIMBER! Bonus Chop x%d! ★[/color]" % mom_bonus)
+					elif gathering_momentum >= 5:
+						display_game("[color=#FFD700]★ Double Chop! +%d bonus materials! ★[/color]" % mom_bonus)
+					else:
+						display_game("[color=#FFD700]★ Bonus Chop! +%d! ★[/color]" % mom_bonus)
+			"foraging":
+				if message.get("is_discovery", false):
+					display_game("[color=#FFD700]★ NEW DISCOVERY! +1 bonus ★[/color]")
+		display_game("")
 	else:
 		display_game("[color=#FF4444]═══════ WRONG! ═══════[/color]")
+		if gathering_job_type == "logging" and gathering_momentum == 0:
+			display_game("[color=#FF8800]Momentum reset![/color]")
 		display_game("")
 
 	if result_msg != "":
@@ -19651,10 +20686,12 @@ func end_gathering(reason: String = ""):
 	gathering_options = []
 	gathering_risky_available = false
 	gathering_hint_strength = 0.0
-	gathering_tool_reveal_used = false
+	gathering_reveals_remaining = 0
 	gathering_tool_save_available = false
 	gathering_tool_save_used = false
 	gathering_revealed_correct = -1
+	gathering_momentum = 0
+	gathering_discoveries = []
 	if reason != "":
 		display_game("[color=#FFAA00]%s[/color]" % reason)
 	update_action_bar()
@@ -19670,7 +20707,7 @@ func _get_gathering_color(job_type: String) -> String:
 func _get_gathering_ascii_art(job_type: String) -> String:
 	match job_type:
 		"mining":
-			return "[color=#B87333]    /\\      /\\\n   /  \\____/  \\\n  / �ite ◇ ore  \\\n /____⛏_______\\[/color]"
+			return "[color=#B87333]    /\\      /\\\n   /  \\____/  \\\n  / white ◇ ore \\\n /____⛏_______\\[/color]"
 		"logging":
 			return "[color=#228B22]     🌲  🪓  🌲\n    /|||\\  /|||\\\n   / ||| \\/ ||| \\\n  ___|||______|||___[/color]"
 		"foraging":
@@ -19701,6 +20738,9 @@ func handle_harvest_round(message: Dictionary):
 	harvest_round = message.get("round", 1)
 	harvest_max_rounds = message.get("max_rounds", 1)
 	harvest_monster_name = message.get("monster_name", "creature")
+	harvest_saves_remaining = message.get("saves_remaining", 0)
+	harvest_mastery_label = message.get("mastery_label", "")
+	harvest_mastery_count = message.get("mastery_count", 0)
 	# Server may reveal correct answer as hint
 	var hint_id = message.get("hint_id", -1)
 	for i in range(harvest_options.size()):
@@ -19712,8 +20752,30 @@ func handle_harvest_round(message: Dictionary):
 func display_harvest_round():
 	"""Display the harvest choices to the player."""
 	game_output.clear()
-	display_game("[color=#FF6600]═══════ HARVEST: %s (Round %d/%d) ═══════[/color]" % [harvest_monster_name, harvest_round, harvest_max_rounds])
+	# Header with mastery
+	var mastery_text = ""
+	if harvest_mastery_label != "":
+		var mastery_color = "#808080"
+		var mastery_next = 0
+		match harvest_mastery_label:
+			"Familiar":
+				mastery_color = "#00FF00"
+				mastery_next = 7
+			"Expert":
+				mastery_color = "#0070DD"
+				mastery_next = 15
+			"Master":
+				mastery_color = "#A335EE"
+				mastery_next = 0
+		if mastery_next > 0:
+			mastery_text = "  |  [color=%s]%s (%d/%d)[/color]" % [mastery_color, harvest_mastery_label, harvest_mastery_count, mastery_next]
+		else:
+			mastery_text = "  |  [color=%s]%s[/color]" % [mastery_color, harvest_mastery_label]
+	display_game("[color=#FF6600]═══════ HARVEST: %s (Round %d/%d)%s ═══════[/color]" % [harvest_monster_name, harvest_round, harvest_max_rounds, mastery_text])
 	display_game("")
+	if harvest_saves_remaining > 0:
+		display_game("[color=#00FFFF]Saves remaining: %d[/color]" % harvest_saves_remaining)
+		display_game("")
 	display_game("[color=#FFAA00]Choose the best approach to harvest parts:[/color]")
 	display_game("")
 	for i in range(harvest_options.size()):
@@ -19722,7 +20784,8 @@ func display_harvest_round():
 		var hint_text = ""
 		if opt.get("hinted", false):
 			hint_text = " [color=#00FF00](looks promising)[/color]"
-		display_game("  [color=#FFD700][%d][/color] %s%s" % [i + 1, label, hint_text])
+		var key_name = get_action_key_name(5 + i)
+		display_game("  [color=#FFD700][%s][/color] %s%s" % [key_name, label, hint_text])
 	display_game("")
 	if harvest_parts_gained.size() > 0:
 		display_game("[color=#808080]Parts gained so far: %d[/color]" % harvest_parts_gained.size())
@@ -19732,18 +20795,25 @@ func handle_harvest_result(message: Dictionary):
 	var correct = message.get("correct", false)
 	var part = message.get("part_gained", {})
 	var cont = message.get("continue", false)
+	var harvest_saved = message.get("harvest_saved", false)
+	var auto_success = message.get("auto_success", false)
 
-	if correct and not part.is_empty():
+	if auto_success and not part.is_empty():
+		harvest_parts_gained.append(part)
+		var mastery_lbl = message.get("mastery_label", "Expert")
+		display_game("[color=#0070DD]★ %s knowledge! Auto-harvested: [color=#FF6600]%s[/color] ★[/color]" % [mastery_lbl, part.get("name", "part")])
+	elif correct and not part.is_empty():
 		harvest_parts_gained.append(part)
 		display_game("[color=#00FF00]✓ Success! You harvested: [color=#FF6600]%s[/color][/color]" % part.get("name", "part"))
+	elif harvest_saved:
+		display_game("[color=#00FFFF]✗ Wrong, but your experience saves you! Try again.[/color]")
+		display_game("[color=#808080](%d save(s) remaining)[/color]" % message.get("saves_remaining", 0))
 	elif not correct:
 		display_game("[color=#FF4444]✗ The harvest attempt failed.[/color]")
 
-	if cont:
-		# More rounds coming - server will send next harvest_round
+	if cont and not harvest_saved:
 		display_game("[color=#808080]Preparing next harvest round...[/color]")
-	else:
-		# No more rounds - wait for harvest_complete
+	elif not cont:
 		pass
 
 func handle_harvest_complete(message: Dictionary):
@@ -19779,6 +20849,9 @@ func end_harvest():
 	harvest_monster_name = ""
 	harvest_parts_gained = []
 	harvest_available = false
+	harvest_saves_remaining = 0
+	harvest_mastery_label = ""
+	harvest_mastery_count = 0
 	update_action_bar()
 
 # ===== CRAFTING FUNCTIONS =====
@@ -19794,11 +20867,17 @@ func _craft_skill_to_job_name(skill_name: String) -> String:
 
 func open_crafting():
 	"""Open the crafting menu"""
-	if not at_trading_post:
-		display_game("[color=#FF4444]You can only craft at Trading Posts![/color]")
+	var at_station = at_trading_post or (in_own_enclosure and enclosure_stations.size() > 0)
+	if not at_station:
+		display_game("[color=#FF4444]You need a crafting station or Trading Post![/color]")
 		return
 
-	# Pre-mark held item keys to prevent double-trigger into crafting selection
+	# Pre-mark held hotkeys to prevent double-trigger into crafting skill selection
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key):
+			set_meta("hotkey_%d_pressed" % i, true)
 	for i in range(9):
 		if is_item_select_key_pressed(i):
 			set_meta("craftkey_%d_pressed" % i, true)
@@ -19809,18 +20888,48 @@ func open_crafting():
 	crafting_selected_recipe = -1
 	crafting_page = 0
 
+	# Map station tile types to skill names for filtering
+	var station_skill_map = {
+		"forge": "blacksmithing", "apothecary": "alchemy",
+		"enchant_table": "enchanting", "writing_desk": "scribing",
+		"workbench": "construction"
+	}
+
 	game_output.clear()
 	display_game("[color=#FFD700]===== CRAFTING =====[/color]")
 	display_game("")
 	display_game("Select a crafting skill:")
 	display_game("")
-	display_game("[%s] [color=#FF6600]Blacksmithing[/color] - Weapons & Armor" % get_action_key_name(1))
-	display_game("[%s] [color=#00FF00]Alchemy[/color] - Potions & Consumables" % get_action_key_name(2))
-	display_game("[%s] [color=#A335EE]Enchanting[/color] - Enhance Equipment" % get_action_key_name(3))
-	display_game("[%s] [color=#87CEEB]Scribing[/color] - Scrolls, Maps & Tomes" % get_action_key_name(4))
-	display_game("[%s] [color=#AA7744]Construction[/color] - Structures & Posts" % get_action_key_name(5))
+
+	# At trading post: all skills available. At player station: only available stations.
+	var skills_available = []
+	if at_trading_post:
+		skills_available = ["blacksmithing", "alchemy", "enchanting", "scribing", "construction"]
+	else:
+		for station in enclosure_stations:
+			var skill = station_skill_map.get(station, "")
+			if skill != "" and skill not in skills_available:
+				skills_available.append(skill)
+
+	var skill_info = {
+		"blacksmithing": {"color": "#FF6600", "label": "Blacksmithing", "desc": "Weapons & Armor"},
+		"alchemy": {"color": "#00FF00", "label": "Alchemy", "desc": "Potions & Consumables"},
+		"enchanting": {"color": "#A335EE", "label": "Enchanting", "desc": "Enhance Equipment"},
+		"scribing": {"color": "#87CEEB", "label": "Scribing", "desc": "Scrolls, Maps & Tomes"},
+		"construction": {"color": "#AA7744", "label": "Construction", "desc": "Structures & Posts"}
+	}
+
+	var slot_index = 1
+	for skill in ["blacksmithing", "alchemy", "enchanting", "scribing", "construction"]:
+		if skill in skills_available:
+			var info = skill_info[skill]
+			display_game("[%s] [color=%s]%s[/color] - %s" % [get_action_key_name(slot_index), info.color, info.label, info.desc])
+		else:
+			display_game("[color=#444444][%s] %s - No station available[/color]" % [get_action_key_name(slot_index), skill_info[skill].label])
+		slot_index += 1
 	display_game("")
-	display_game("[%s] Back to Trading Post" % get_action_key_name(0))
+	var back_label = "Back to Trading Post" if at_trading_post else "Back"
+	display_game("[%s] %s" % [get_action_key_name(0), back_label])
 
 	update_action_bar()
 
@@ -20023,6 +21132,71 @@ func confirm_craft():
 
 	send_to_server({"type": "craft_item", "recipe_id": recipe_id})
 
+func handle_craft_challenge(message: Dictionary):
+	"""Handle crafting challenge minigame from server."""
+	crafting_challenge_mode = true
+	craft_challenge_data = message
+	craft_challenge_round = 0
+	craft_challenge_answers = []
+	display_craft_challenge_round()
+	update_action_bar()
+
+func display_craft_challenge_round():
+	"""Display the current crafting challenge round."""
+	var rounds = craft_challenge_data.get("rounds", [])
+	if craft_challenge_round >= rounds.size():
+		return
+	var round_data = rounds[craft_challenge_round]
+	var skill_name = craft_challenge_data.get("skill_name", "crafting")
+
+	game_output.clear()
+	display_game("[color=#FFD700]═══════ CRAFTING CHALLENGE (%s) ═══════[/color]" % skill_name.capitalize())
+	display_game("[color=#808080]Round %d/3[/color]" % (craft_challenge_round + 1))
+	display_game("")
+	display_game("[color=#FFFF00]%s[/color]" % round_data.get("question", "What do you do?"))
+	display_game("")
+
+	var opts = round_data.get("options", [])
+	var hint_idx = round_data.get("hint_index", -1)
+	for i in range(opts.size()):
+		var label = opts[i]
+		var hint = ""
+		if i == hint_idx:
+			hint = " [color=#FFAA00][Risky][/color]"
+		var key_name = get_action_key_name(5 + i)
+		display_game("[%s] %s%s" % [key_name, label, hint])
+
+	display_game("")
+	# Show progress
+	if craft_challenge_round > 0:
+		display_game("[color=#808080]Answers so far: %d/3[/color]" % craft_challenge_answers.size())
+
+func handle_craft_challenge_pick(choice_idx: int):
+	"""Handle player picking an answer in the crafting challenge."""
+	craft_challenge_answers.append(choice_idx)
+	craft_challenge_round += 1
+
+	if craft_challenge_round >= 3:
+		# All rounds answered — send to server
+		# Consume all held item select keys to prevent double-trigger
+		# (key still held from challenge answer would select a recipe on next frame)
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				_consume_item_select_key(i)
+		send_to_server({
+			"type": "craft_challenge_answer",
+			"answers": craft_challenge_answers,
+		})
+		crafting_challenge_mode = false
+		game_output.clear()
+		display_game("[color=#FFD700]Crafting...[/color]")
+		display_game("[color=#808080]Evaluating your technique...[/color]")
+		update_action_bar()
+	else:
+		# Show next round
+		display_craft_challenge_round()
+		update_action_bar()
+
 func handle_craft_result(message: Dictionary):
 	"""Handle crafting result from server"""
 	var success = message.get("success", false)
@@ -20036,6 +21210,12 @@ func handle_craft_result(message: Dictionary):
 	var result_message = message.get("message", "")
 
 	game_output.clear()
+
+	# Show minigame score if applicable
+	var score = message.get("score", -1)
+	if score >= 0:
+		display_game("[color=#808080]Challenge Score: %d/3[/color]" % score)
+		display_game("")
 
 	if success:
 		# Success animation
@@ -20089,12 +21269,16 @@ func handle_craft_result(message: Dictionary):
 		if message.get("job_leveled_up", false):
 			display_game("[color=#FFD700]★ %s job increased to %d! ★[/color]" % [job_name.capitalize(), message.get("job_new_level", 1)])
 
+	# Update materials from craft result (server sends post-craft materials)
+	var updated_mats = message.get("materials", {})
+	if not updated_mats.is_empty():
+		crafting_materials = updated_mats
+
 	# Check if player can craft same recipe again
 	last_crafted_recipe_id = message.get("recipe_id", "")
 	can_craft_another = false
 	for r in crafting_recipes:
 		if r.get("id", "") == last_crafted_recipe_id:
-			# Check materials using updated crafting_materials from character_update
 			var mats = r.get("materials", {})
 			var has_all = true
 			for mat_id in mats:
@@ -20116,8 +21300,12 @@ func handle_craft_result(message: Dictionary):
 	update_action_bar()
 
 func close_crafting():
-	"""Close crafting menu and return to trading post"""
+	"""Close crafting menu and return to previous state"""
 	crafting_mode = false
+	crafting_challenge_mode = false
+	craft_challenge_data = {}
+	craft_challenge_round = 0
+	craft_challenge_answers = []
 	crafting_skill = ""
 	crafting_recipes = []
 	crafting_selected_recipe = -1
@@ -20127,7 +21315,11 @@ func close_crafting():
 	last_crafted_recipe_id = ""
 	crafting_preserve_page = false
 
-	_display_trading_post_ui()
+	if at_trading_post:
+		_display_trading_post_ui()
+	else:
+		game_output.clear()
+		display_game("[color=#888888]Closed crafting.[/color]")
 	update_action_bar()
 
 # ===== DUNGEON FUNCTIONS =====
@@ -20716,14 +21908,15 @@ func _display_trading_post_ui():
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
 	display_game("")
-	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
-	display_game("[color=#808080]Stations: Forge, Apothecary, Workbench, Enchanting Table, Writing Desk[/color]")
+	display_game("[color=#808080]Walk into tiles to interact:[/color]")
+	display_game("  [color=#FF8800]F[/color] Forge  [color=#00CC66]A[/color] Apothecary  [color=#AA44FF]E[/color] Enchant Table  [color=#87CEEB]S[/color] Scribe  [color=#AA7744]W[/color] Workbench")
+	display_game("  [color=#FFD700]$[/color] Market (Shop)  [color=#FFAA44]I[/color] Inn (Heal)  [color=#C4A882]Q[/color] Quest Board")
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
 		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
 	display_game("")
-	display_game("[color=#808080]Walk in any direction to leave.[/color]")
+	display_game("[color=#808080]Walk outside to leave.[/color]")
 
 func handle_trading_post_end(message: Dictionary):
 	"""Handle leaving a Trading Post"""
@@ -20744,6 +21937,34 @@ func handle_trading_post_end(message: Dictionary):
 		display_game("[color=#808080]You leave the trading post.[/color]")
 
 	update_action_bar()
+
+func handle_station_interact(message: Dictionary):
+	"""Handle bumping into a crafting station — open crafting pre-filtered to that skill."""
+	var skill = message.get("skill", "")
+	if skill == "":
+		return
+	# Enter crafting mode and request recipes for this specific skill
+	crafting_mode = true
+	crafting_selected_recipe = -1
+	crafting_challenge_mode = false
+	craft_challenge_data = {}
+	craft_challenge_round = 0
+	craft_challenge_answers = []
+	# Pre-mark held keys to prevent double-trigger
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key):
+			set_meta("hotkey_%d_pressed" % i, true)
+	request_craft_list(skill)
+
+func handle_quest_board_interact():
+	"""Handle bumping into a quest board — open quest accept UI."""
+	send_to_server({"type": "trading_post_quests"})
+
+func handle_throne_interact():
+	"""Handle bumping into the throne — show title claim interface."""
+	open_title_menu()
 
 func leave_trading_post():
 	"""Leave a Trading Post"""
@@ -23199,25 +24420,18 @@ func handle_build_result(message: Dictionary):
 	display_game("")
 
 	if success:
-		# After successful build/demolish, return to build items view
+		# After successful build/demolish, exit build mode cleanly
 		build_direction_mode = false
 		build_demolish_mode = false
 		build_selected_item = -1
-		display_game("[color=#888888]Press [%s] to continue building or [%s] to exit.[/color]" % [get_action_key_name(1), get_action_key_name(0)])
-		# Show remaining buildable items
-		display_game("")
-		var found = 0
+		build_mode = false
+		# Count remaining structures
+		var remaining = 0
 		for i in range(character_data.get("inventory", []).size()):
-			var item = character_data.inventory[i]
-			if item.get("type", "") == "structure":
-				found += 1
-				var structure_type = item.get("structure_type", "")
-				var color = _get_structure_color(structure_type)
-				display_game("[%d] [color=%s]%s[/color]" % [found, color, item.get("name", "Unknown")])
-				if found >= 9:
-					break
-		if found == 0:
-			display_game("[color=#888888]No more buildable items.[/color]")
+			if character_data.inventory[i].get("type", "") == "structure":
+				remaining += 1
+		if remaining > 0:
+			display_game("[color=#888888]%d structure(s) remaining. Use from inventory to place more.[/color]" % remaining)
 	else:
 		# Failed - return to direction or item selection
 		if build_direction_mode:
@@ -23278,3 +24492,84 @@ func _handle_build_direction_key(event: InputEventKey):
 		})
 		pending_build_result = true
 		display_game("[color=#888888]Demolishing...[/color]")
+
+# ===== STORAGE CHEST FUNCTIONS =====
+
+func display_storage_contents():
+	"""Show storage chest contents."""
+	game_output.clear()
+	display_game("[color=#AAAAFF]===== STORAGE CHEST (%d/%d) =====[/color]" % [storage_items.size(), storage_max_slots])
+	display_game("")
+	if storage_items.size() == 0:
+		display_game("[color=#888888]Empty[/color]")
+	else:
+		for i in range(storage_items.size()):
+			var item = storage_items[i]
+			var rarity = item.get("rarity", "common")
+			var color = _get_rarity_color(rarity)
+			display_game("[%d] [color=%s]%s[/color]" % [i + 1, color, item.get("name", "Unknown")])
+	display_game("")
+	display_game("[%s] Back | [%s] Deposit | [%s] Withdraw" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
+
+func display_storage_deposit():
+	"""Show inventory items for depositing."""
+	game_output.clear()
+	display_game("[color=#AAAAFF]===== DEPOSIT TO STORAGE =====[/color]")
+	display_game("[color=#888888]Storage: %d/%d slots[/color]" % [storage_items.size(), storage_max_slots])
+	display_game("")
+	display_game("Select an item to deposit:")
+	display_game("")
+	var inventory = character_data.get("inventory", [])
+	var count = 0
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		if item.get("type", "") == "structure":
+			continue  # Skip structure items
+		count += 1
+		var rarity = item.get("rarity", "common")
+		var color = _get_rarity_color(rarity)
+		display_game("[%d] [color=%s]%s[/color]" % [count, color, item.get("name", "Unknown")])
+		if count >= 9:
+			break
+	if count == 0:
+		display_game("[color=#888888]No items to deposit.[/color]")
+	display_game("")
+	display_game("[%s] Cancel" % get_action_key_name(0))
+
+func display_storage_withdraw():
+	"""Show storage items for withdrawing."""
+	game_output.clear()
+	display_game("[color=#AAAAFF]===== WITHDRAW FROM STORAGE =====[/color]")
+	display_game("")
+	display_game("Select an item to withdraw:")
+	display_game("")
+	for i in range(storage_items.size()):
+		var item = storage_items[i]
+		var rarity = item.get("rarity", "common")
+		var color = _get_rarity_color(rarity)
+		display_game("[%d] [color=%s]%s[/color]" % [i + 1, color, item.get("name", "Unknown")])
+	if storage_items.size() == 0:
+		display_game("[color=#888888]Storage is empty.[/color]")
+	display_game("")
+	display_game("[%s] Cancel" % get_action_key_name(0))
+
+func _handle_storage_selection(selection_index: int):
+	"""Handle number key selection in storage deposit/withdraw mode."""
+	if pending_storage_action == "deposit":
+		# Find the Nth non-structure item in inventory
+		var inventory = character_data.get("inventory", [])
+		var count = 0
+		for i in range(inventory.size()):
+			var item = inventory[i]
+			if item.get("type", "") == "structure":
+				continue
+			if count == selection_index:
+				send_to_server({"type": "storage_deposit", "item_index": i})
+				return
+			count += 1
+		display_game("[color=#FF4444]Invalid selection.[/color]")
+	elif pending_storage_action == "withdraw":
+		if selection_index < storage_items.size():
+			send_to_server({"type": "storage_withdraw", "storage_index": selection_index})
+		else:
+			display_game("[color=#FF4444]Invalid selection.[/color]")

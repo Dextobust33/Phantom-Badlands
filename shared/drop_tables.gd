@@ -1613,10 +1613,9 @@ const MINING_CATCHES = {
 	1: [  # T1: 0-50 distance
 		{"weight": 40, "item": "copper_ore", "name": "Copper Ore", "type": "ore", "value": 8},
 		{"weight": 25, "item": "stone", "name": "Stone", "type": "mineral", "value": 2},
-		{"weight": 15, "item": "coal", "name": "Coal", "type": "mineral", "value": 5},
-		{"weight": 10, "item": "rough_gem", "name": "Rough Gem", "type": "gem", "value": 25},
-		{"weight": 8, "item": "healing_herb", "name": "Cave Moss", "type": "herb", "value": 10},
-		{"weight": 2, "item": "small_treasure_chest", "name": "Buried Chest", "type": "treasure", "value": 100}
+		{"weight": 20, "item": "coal", "name": "Coal", "type": "mineral", "value": 5},
+		{"weight": 10, "item": "healing_herb", "name": "Healing Herb", "type": "herb", "value": 10},
+		{"weight": 5, "item": "iron_ore", "name": "Iron Ore", "type": "ore", "value": 15},
 	],
 	2: [  # T2: 50-100 distance
 		{"weight": 35, "item": "iron_ore", "name": "Iron Ore", "type": "ore", "value": 15},
@@ -1769,9 +1768,9 @@ const LOGGING_CATCHES = {
 		{"weight": 40, "item": "common_wood", "name": "Common Wood", "type": "wood", "value": 6},
 		{"weight": 25, "item": "bark", "name": "Bark", "type": "plant", "value": 3},
 		{"weight": 15, "item": "sap", "name": "Tree Sap", "type": "plant", "value": 8},
-		{"weight": 10, "item": "healing_herb", "name": "Forest Herb", "type": "herb", "value": 10},
+		{"weight": 10, "item": "healing_herb", "name": "Healing Herb", "type": "herb", "value": 10},
 		{"weight": 7, "item": "acorn", "name": "Golden Acorn", "type": "plant", "value": 20},
-		{"weight": 3, "item": "small_treasure_chest", "name": "Tree Hollow Cache", "type": "treasure", "value": 100}
+		{"weight": 3, "item": "reed_fiber", "name": "Reed Fiber", "type": "plant", "value": 3},
 	],
 	2: [  # T2: 60-120 distance
 		{"weight": 40, "item": "oak_wood", "name": "Oak Wood", "type": "wood", "value": 12},
@@ -2174,9 +2173,108 @@ const TOOL_SUBTYPES = {
 	"rod": {"job": "fishing", "names": ["Wooden Rod", "Bamboo Rod", "Carbon Rod", "Mithril Rod", "Adamant Rod"]},
 }
 
-const TOOL_DURABILITY_BY_TIER = {1: 10, 2: 25, 3: 50, 4: 75, 5: 100}
+const TOOL_DURABILITY_BY_TIER = {1: 20, 2: 50, 3: 100, 4: 150, 5: 200}
 
-static func generate_tool(subtype: String, tier: int) -> Dictionary:
+# Rarity bonuses for tools: durability multiplier, saves per session, reveal bonus
+const TOOL_RARITY_BONUSES = {
+	"common":    {"durability_mult": 1.0, "saves": 1, "reveal_bonus": 0},
+	"uncommon":  {"durability_mult": 1.2, "saves": 1, "reveal_bonus": 1},
+	"rare":      {"durability_mult": 1.5, "saves": 2, "reveal_bonus": 2},
+	"epic":      {"durability_mult": 2.0, "saves": 3, "reveal_bonus": 3},
+	"legendary": {"durability_mult": 2.5, "saves": 4, "reveal_bonus": 4},
+}
+
+# Rarity bonuses for all craftable item types (weapons, armor, consumables, structures, enchantments)
+const RARITY_BONUSES = {
+	"weapon": {
+		"common":    {},
+		"uncommon":  {"atk_mult": 1.10},
+		"rare":      {"atk_mult": 1.20, "crit_chance": 5},
+		"epic":      {"atk_mult": 1.30, "crit_chance": 10, "crit_damage": 5},
+		"legendary": {"atk_mult": 1.40, "crit_chance": 15, "crit_damage": 10},
+	},
+	"armor": {
+		"common":    {},
+		"uncommon":  {"def_mult": 1.10},
+		"rare":      {"def_mult": 1.20, "damage_reduction": 3},
+		"epic":      {"def_mult": 1.30, "damage_reduction": 5, "dodge": 2},
+		"legendary": {"def_mult": 1.40, "damage_reduction": 8, "dodge": 4},
+	},
+	"consumable": {
+		"common":    {"potency_mult": 1.0, "uses": 1},
+		"uncommon":  {"potency_mult": 1.15, "uses": 1},
+		"rare":      {"potency_mult": 1.30, "uses": 1},
+		"epic":      {"potency_mult": 1.50, "uses": 2},
+		"legendary": {"potency_mult": 1.75, "uses": 3},
+	},
+	"structure": {
+		"common":    {},
+		"uncommon":  {"crafting_bonus": 10},
+		"rare":      {"crafting_bonus": 20},
+		"epic":      {"crafting_bonus": 30, "extra_structures": 1},
+		"legendary": {"crafting_bonus": 40, "extra_structures": 2},
+	},
+	"enchantment": {
+		"common":    {"value_mult": 1.0},
+		"uncommon":  {"value_mult": 1.15},
+		"rare":      {"value_mult": 1.30},
+		"epic":      {"value_mult": 1.50},
+		"legendary": {"value_mult": 1.75},
+	},
+}
+
+static func apply_rarity_bonuses(item: Dictionary, rarity: String) -> Dictionary:
+	"""Apply rarity-based bonuses to a crafted item. Modifies and returns the item dict."""
+	var item_type = item.get("type", "")
+	# Map item types to rarity categories
+	var rarity_cat = ""
+	match item_type:
+		"weapon": rarity_cat = "weapon"
+		"armor", "helm", "shield", "boots": rarity_cat = "armor"
+		"consumable", "potion", "scroll", "elixir": rarity_cat = "consumable"
+		"structure": rarity_cat = "structure"
+		"enchantment": rarity_cat = "enchantment"
+		_: return item  # No rarity bonuses for this type
+
+	var type_bonuses = RARITY_BONUSES.get(rarity_cat, {})
+	var bonuses = type_bonuses.get(rarity, {})
+	if bonuses.is_empty():
+		return item
+
+	# Apply multiplicative bonuses to existing stats
+	if bonuses.has("atk_mult") and item.has("attack"):
+		item["attack"] = int(item["attack"] * bonuses["atk_mult"])
+	if bonuses.has("def_mult") and item.has("defense"):
+		item["defense"] = int(item["defense"] * bonuses["def_mult"])
+
+	# Store additive bonuses as a dict for combat/use systems to read
+	var rb = {}
+	if bonuses.has("crit_chance"):
+		rb["crit_chance"] = bonuses["crit_chance"]
+	if bonuses.has("crit_damage"):
+		rb["crit_damage"] = bonuses["crit_damage"]
+	if bonuses.has("damage_reduction"):
+		rb["damage_reduction"] = bonuses["damage_reduction"]
+	if bonuses.has("dodge"):
+		rb["dodge"] = bonuses["dodge"]
+	if bonuses.has("potency_mult"):
+		rb["potency_mult"] = bonuses["potency_mult"]
+	if bonuses.has("uses"):
+		rb["uses"] = bonuses["uses"]
+		item["remaining_uses"] = bonuses["uses"]
+	if bonuses.has("crafting_bonus"):
+		rb["crafting_bonus"] = bonuses["crafting_bonus"]
+	if bonuses.has("extra_structures"):
+		rb["extra_structures"] = bonuses["extra_structures"]
+	if bonuses.has("value_mult"):
+		rb["value_mult"] = bonuses["value_mult"]
+
+	if not rb.is_empty():
+		item["rarity_bonuses"] = rb
+
+	return item
+
+static func generate_tool(subtype: String, tier: int, rarity: String = "common") -> Dictionary:
 	"""Generate a gathering tool item."""
 	tier = clampi(tier, 1, 5)
 	var info = TOOL_SUBTYPES.get(subtype, {})
@@ -2184,7 +2282,13 @@ static func generate_tool(subtype: String, tier: int) -> Dictionary:
 		return {}
 	var names = info.get("names", [])
 	var name = names[tier - 1] if tier - 1 < names.size() else "Tool"
-	var durability = TOOL_DURABILITY_BY_TIER.get(tier, 10)
+	var base_durability = TOOL_DURABILITY_BY_TIER.get(tier, 20)
+	var rarity_bonus = TOOL_RARITY_BONUSES.get(rarity, TOOL_RARITY_BONUSES["common"])
+	var durability = int(base_durability * rarity_bonus["durability_mult"])
+	var max_saves = rarity_bonus["saves"]
+	# Reveals scale with tier + rarity: base = ceil(tier/2), + rarity bonus
+	var base_reveals = ceili(tier / 2.0)  # T1-2: 1, T3-4: 2, T5: 3
+	var total_reveals = base_reveals + rarity_bonus["reveal_bonus"]
 	return {
 		"id": randi(),
 		"name": name,
@@ -2193,8 +2297,9 @@ static func generate_tool(subtype: String, tier: int) -> Dictionary:
 		"tier": tier,
 		"durability": durability,
 		"max_durability": durability,
-		"rarity": "common",
-		"tool_bonuses": {"reveal": true, "save": true},
+		"rarity": rarity,
+		"max_saves": max_saves,
+		"tool_bonuses": {"reveals": total_reveals, "save": true},
 		"value": tier * 25,
 	}
 

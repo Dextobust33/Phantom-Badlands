@@ -42,6 +42,7 @@ var flock_counts = {}  # peer_id -> int (how many monsters in current flock chai
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
+var at_player_station = {}  # peer_id -> {stations: [station_types], has_inn: bool, has_storage: bool}
 var player_in_hotzone = {}  # peer_id -> true when player has confirmed hotzone entry
 
 # Persistent merchant inventory storage
@@ -57,6 +58,14 @@ var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not wa
 # active_trades: {peer_id: {partner_id, my_items: [], partner_items: [], my_ready: bool, partner_ready: bool}}
 var active_trades = {}
 var pending_trade_requests = {}  # {peer_id: requesting_peer_id} - pending incoming trade requests
+
+# Party system - tracks active player parties
+var active_parties = {}          # leader_peer_id -> PartyData dict {leader, members[], formed_at}
+var party_membership = {}        # peer_id -> leader_peer_id (quick lookup)
+var pending_party_invites = {}   # target_peer_id -> {from_peer_id, timestamp}
+var party_invite_cooldowns = {}  # peer_id -> last_invite_time_msec
+const PARTY_INVITE_COOLDOWN_MS = 10000  # 10 sec anti-spam
+const PARTY_MAX_SIZE = 4
 
 # Title system state - only one Jarl and one High King allowed, up to 3 Eternals
 var current_jarl_id: int = -1              # peer_id of current Jarl (-1 if none)
@@ -84,6 +93,7 @@ var active_gathering: Dictionary = {}  # peer_id -> {job_type, node_type, tier, 
 var gathering_cooldown: Dictionary = {}  # peer_id -> true — prevents encounter on first move after gathering
 # Soldier harvest session tracking (post-combat 3-choice)
 var active_harvests: Dictionary = {}  # peer_id -> {monster_name, monster_tier, round, max_rounds, parts_gained}
+var active_crafts: Dictionary = {}  # peer_id -> {recipe_id, skill_name, post_bonus, job_bonus, questions, correct_answers}
 # Rescue system tracking
 var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
 var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
@@ -887,11 +897,21 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_craft_list(peer_id, message)
 		"craft_item":
 			handle_craft_item(peer_id, message)
+		"craft_challenge_answer":
+			handle_craft_challenge_answer(peer_id, message)
 		# Building system handlers
 		"build_place":
 			handle_build_place(peer_id, message)
 		"build_demolish":
 			handle_build_demolish(peer_id, message)
+		"inn_rest":
+			handle_inn_rest(peer_id)
+		"storage_access":
+			handle_storage_access(peer_id)
+		"storage_deposit":
+			handle_storage_deposit(peer_id, message)
+		"storage_withdraw":
+			handle_storage_withdraw(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -987,6 +1007,19 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_house_fusion(peer_id, message)
 		"request_character_list":
 			handle_list_characters(peer_id)
+		# Party system handlers
+		"party_invite":
+			handle_party_invite(peer_id, message)
+		"party_invite_response":
+			handle_party_invite_response(peer_id, message)
+		"party_lead_choice_response":
+			handle_party_lead_choice_response(peer_id, message)
+		"party_disband":
+			handle_party_disband(peer_id)
+		"party_leave":
+			handle_party_leave(peer_id)
+		"party_appoint_leader":
+			handle_party_appoint_leader(peer_id, message)
 		# GM/Admin command handlers
 		"gm_setlevel":
 			handle_gm_setlevel(peer_id, message)
@@ -1790,6 +1823,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	if not characters.has(peer_id):
 		return
 
+	# Party followers can't move independently
+	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls movement.[/color]"})
+		return
+
 	# Check if in combat
 	if combat_mgr.is_in_combat(peer_id):
 		send_to_peer(peer_id, {
@@ -1811,6 +1849,14 @@ func handle_move(peer_id: int, message: Dictionary):
 	if character_check.in_dungeon:
 		return
 
+	# Cannot move while gathering or harvesting
+	if active_gathering.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while gathering!"})
+		return
+	if active_harvests.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while harvesting!"})
+		return
+
 	# Cancel any active trade (moving breaks trade)
 	if active_trades.has(peer_id):
 		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
@@ -1825,20 +1871,63 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Calculate new position
 	var new_pos = world_system.move_player(old_x, old_y, direction)
 
-	# If blocked and not resting (direction 5), check if the blocked tile is a gathering node
+	# If blocked and not resting (direction 5), check what we bumped into
 	if new_pos.x == old_x and new_pos.y == old_y and direction != 5:
 		var target_pos = world_system.get_direction_offset(old_x, old_y, direction)
 		if target_pos.x != old_x or target_pos.y != old_y:
+			# Check gathering nodes first
 			var bump_node = get_gathering_node_at(target_pos.x, target_pos.y)
 			if not bump_node.is_empty():
-				# Bump-to-gather: start gathering at the adjacent node
 				bump_node["node_x"] = target_pos.x
 				bump_node["node_y"] = target_pos.y
 				_start_bump_gathering(peer_id, character, bump_node)
 				return
 
+			# Check NPC post tiles (stations, quest board, market, inn, throne)
+			if chunk_manager:
+				var bump_tile = chunk_manager.get_tile(target_pos.x, target_pos.y)
+				var bump_type = bump_tile.get("type", "")
+				if bump_type in CraftingDatabaseScript.STATION_SKILL_MAP:
+					var skill = CraftingDatabaseScript.STATION_SKILL_MAP[bump_type]
+					send_to_peer(peer_id, {"type": "station_interact", "station": bump_type, "skill": skill})
+					return
+				elif bump_type == "quest_board":
+					send_to_peer(peer_id, {"type": "quest_board_interact"})
+					return
+				elif bump_type == "market":
+					_handle_market_interact(peer_id, character)
+					return
+				elif bump_type == "inn":
+					_handle_inn_interact(peer_id, character)
+					return
+				elif bump_type == "throne":
+					send_to_peer(peer_id, {"type": "throne_interact"})
+					return
+
 	# Check for player collision (can't move onto another player's space)
-	if is_player_at(new_pos.x, new_pos.y, peer_id):
+	# Party members don't block each other (handled by snake movement)
+	if _is_non_party_player_at(new_pos.x, new_pos.y, peer_id):
+		# Check if bumped player is a valid party invite target
+		var bumped_peer_id = _get_player_at(new_pos.x, new_pos.y, peer_id)
+		if bumped_peer_id != -1:
+			var bumped_char = characters[bumped_peer_id]
+			var can_invite = false
+			# Can invite if: we're not in a party, or we're the party leader with room
+			if not party_membership.has(peer_id):
+				can_invite = true
+			elif _is_party_leader(peer_id) and _get_party_size(peer_id) < PARTY_MAX_SIZE:
+				can_invite = true
+			# Target must not be in a party, combat, or dungeon
+			if can_invite and not party_membership.has(bumped_peer_id) \
+					and not combat_mgr.is_in_combat(bumped_peer_id) \
+					and not bumped_char.in_dungeon:
+				send_to_peer(peer_id, {
+					"type": "party_bump",
+					"target_name": bumped_char.name,
+					"target_level": bumped_char.level,
+					"target_class": bumped_char.class_type
+				})
+				return
 		send_to_peer(peer_id, {
 			"type": "error",
 			"message": "Another player is blocking that path!"
@@ -1944,9 +2033,21 @@ func handle_move(peer_id: int, message: Dictionary):
 				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
 
+	# Party snake movement: move followers in chain behind leader
+	if _is_party_leader(peer_id):
+		_move_party_followers(peer_id, old_x, old_y)
+
 	# Send location and character updates
 	send_location_update(peer_id)
 	send_character_update(peer_id)
+
+	# If in party, send updates to all party members too
+	if _is_party_leader(peer_id):
+		var party = active_parties[peer_id]
+		for pid in party.members:
+			if pid != peer_id:
+				send_location_update(pid)
+				send_character_update(pid)
 
 	# Notify nearby players of the movement (so they see us on their map)
 	send_nearby_players_map_update(peer_id, old_x, old_y)
@@ -1978,6 +2079,35 @@ func handle_move(peer_id: int, message: Dictionary):
 	if at_trading_post.has(peer_id):
 		at_trading_post.erase(peer_id)
 		send_to_peer(peer_id, {"type": "trading_post_end"})
+
+	# Check for entering/leaving own enclosure (player-built stations)
+	var move_username = _get_username(peer_id)
+	var now_in_enclosure = false
+	if move_username != "" and player_enclosures.has(move_username):
+		for enclosure in player_enclosures[move_username]:
+			for pos in enclosure:
+				if int(pos.x) == new_pos.x and int(pos.y) == new_pos.y:
+					now_in_enclosure = true
+					break
+			if now_in_enclosure:
+				if not at_player_station.has(peer_id):
+					# Entering own enclosure — find stations
+					var stations: Array = []
+					var has_inn = false
+					var has_storage = false
+					for epos in enclosure:
+						var tile = chunk_manager.get_tile(int(epos.x), int(epos.y))
+						var tile_type = tile.get("type", "")
+						if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in stations:
+							stations.append(tile_type)
+						if tile_type == "inn":
+							has_inn = true
+						if tile_type == "storage":
+							has_storage = true
+					at_player_station[peer_id] = {"stations": stations, "has_inn": has_inn, "has_storage": has_storage}
+				break
+	if not now_in_enclosure and at_player_station.has(peer_id):
+		at_player_station.erase(peer_id)
 
 	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
 	if new_pos.x == -400 and new_pos.y == 0:
@@ -2063,6 +2193,11 @@ func handle_hunt(peer_id: int):
 	# Check if flock encounter pending
 	if pending_flocks.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "More enemies are approaching! Press Space to continue."})
+		return
+
+	# Party members can't hunt independently — only leader triggers encounters
+	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls encounters.[/color]"})
 		return
 
 	# Cancel any active trade (hunting breaks trade)
@@ -2444,6 +2579,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	if command.is_empty():
 		return
 
+	# Check if player is in party combat — route to party combat handler
+	if combat_mgr.party_combat_membership.has(peer_id):
+		_handle_party_combat_command(peer_id, command)
+		return
+
 	# Process combat action
 	var result = combat_mgr.process_combat_command(peer_id, command)
 
@@ -2709,7 +2849,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				var _harvest_chance = 0.20 + (_soldier_lvl * 0.005)  # 20% base + 0.5% per level
 				if randf() < _harvest_chance:
 					characters[peer_id].set_meta("pending_harvest", {
-						"monster_name": killed_monster_name,
+						"monster_name": killed_monster_base_name,
 						"monster_tier": _get_monster_tier(killed_monster_level)
 					})
 
@@ -2964,6 +3104,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 func handle_combat_use_item(peer_id: int, message: Dictionary):
 	"""Handle using an item during combat"""
+	# Items not supported in party combat
+	if combat_mgr.party_combat_membership.has(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Items cannot be used in party combat.[/color]"})
+		return
+
 	var item_index = message.get("index", -1)
 
 	if item_index < 0:
@@ -3539,8 +3684,33 @@ func send_location_update(peer_id: int):
 			bounty_quest_id_at_loc = qid
 			break
 
+	# Check if player is in their own enclosure and what stations are available
+	var in_own_enclosure = false
+	var enclosure_stations: Array = []
+	var enclosure_has_inn = false
+	var enclosure_has_storage = false
+	var username = _get_username(peer_id)
+	if username != "" and player_enclosures.has(username):
+		for enclosure in player_enclosures[username]:
+			for pos in enclosure:
+				if int(pos.x) == character.x and int(pos.y) == character.y:
+					in_own_enclosure = true
+					break
+			if in_own_enclosure:
+				# Found player's enclosure — scan for station tiles
+				for pos in enclosure:
+					var tile = chunk_manager.get_tile(int(pos.x), int(pos.y))
+					var tile_type = tile.get("type", "")
+					if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in enclosure_stations:
+						enclosure_stations.append(tile_type)
+					if tile_type == "inn":
+						enclosure_has_inn = true
+					if tile_type == "storage":
+						enclosure_has_storage = true
+				break
+
 	# Send map display as description
-	send_to_peer(peer_id, {
+	var location_msg = {
 		"type": "location",
 		"x": character.x,
 		"y": character.y,
@@ -3553,12 +3723,18 @@ func send_location_update(peer_id: int):
 		"wood_tier": current_wood_tier,
 		"at_dungeon": at_dungeon,
 		"dungeon_info": dungeon_entrance,
-		"gathering_node": gathering_node,  # Include full node info for client
+		"gathering_node": gathering_node,
 		"at_corpse": not corpse_at_location.is_empty(),
 		"corpse_info": corpse_at_location,
 		"at_bounty": at_bounty,
 		"bounty_quest_id": bounty_quest_id_at_loc
-	})
+	}
+	if in_own_enclosure:
+		location_msg["in_own_enclosure"] = true
+		location_msg["enclosure_stations"] = enclosure_stations
+		location_msg["enclosure_has_inn"] = enclosure_has_inn
+		location_msg["enclosure_has_storage"] = enclosure_has_storage
+	send_to_peer(peer_id, location_msg)
 
 	# Forward location/map to watchers
 	if watchers.has(peer_id) and not watchers[peer_id].is_empty():
@@ -3579,6 +3755,7 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 	var character = characters[peer_id]
 	var my_x = character.x
 	var my_y = character.y
+	var my_party_leader = party_membership.get(peer_id, -1)
 
 	for other_peer_id in characters.keys():
 		if other_peer_id == peer_id:
@@ -3590,11 +3767,13 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 
 		# Check if within map view radius
 		if dx <= radius and dy <= radius:
+			var is_party_mate = (my_party_leader != -1 and party_membership.get(other_peer_id, -1) == my_party_leader)
 			result.append({
 				"x": other_char.x,
 				"y": other_char.y,
 				"name": other_char.name,
-				"level": other_char.level
+				"level": other_char.level,
+				"in_my_party": is_party_mate
 			})
 
 	return result
@@ -3800,6 +3979,14 @@ func handle_disconnect(peer_id: int):
 	pending_scroll_use.erase(peer_id)
 	# Clear combat command cooldown
 	combat_command_cooldown.erase(peer_id)
+	# Clear station tracking
+	at_player_station.erase(peer_id)
+	# Clear pending craft challenge (materials already consumed, lost on disconnect)
+	active_crafts.erase(peer_id)
+	# Clear active gathering/harvest sessions
+	active_gathering.erase(peer_id)
+	active_harvests.erase(peer_id)
+	gathering_cooldown.erase(peer_id)
 
 	# Clean up merchant position tracking
 	var player_key = "p_%d" % peer_id
@@ -3808,6 +3995,9 @@ func handle_disconnect(peer_id: int):
 
 	# Clean up watch relationships before erasing character
 	cleanup_watcher_on_disconnect(peer_id)
+
+	# Clean up party state
+	_cleanup_party_on_disconnect(peer_id)
 
 	# Clean up active trades
 	if active_trades.has(peer_id):
@@ -3959,6 +4149,11 @@ func trigger_encounter(peer_id: int):
 		else:
 			debuff_messages.append("[color=#FFD700]Scroll of Finding: %d encounters remaining[/color]" % character.target_farm_remaining)
 		save_character(peer_id)
+
+	# Check if player is a party leader — start party combat instead
+	if _is_party_leader(peer_id):
+		_start_party_combat_encounter(peer_id, monster, debuff_messages)
+		return
 
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
@@ -5311,6 +5506,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	if item_tier > 0 and drop_tables.CONSUMABLE_TIERS.has(item_tier):
 		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
 
+	# Apply rarity potency multiplier to consumable effects
+	var potency_mult = 1.0
+	var item_rb = item.get("rarity_bonuses", {})
+	if item_rb.has("potency_mult"):
+		potency_mult = float(item_rb["potency_mult"])
+
 	# Apply effect
 	if effect.has("heal"):
 		# Healing potion - hybrid flat + % max HP
@@ -5324,6 +5525,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
 		else:
 			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
+		heal_amount = int(heal_amount * potency_mult)
 		var actual_heal = character.heal(heal_amount)
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -5347,6 +5549,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			resource_amount = int(tier_data.healing * 0.6)
 		else:
 			resource_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
+		resource_amount = int(resource_amount * potency_mult)
 
 		var old_value: int
 		var actual_restore: int
@@ -8368,6 +8571,14 @@ func trigger_trading_post_encounter(peer_id: int):
 		"y": tp_y
 	})
 
+func _handle_market_interact(peer_id: int, character):
+	"""Handle bump into market tile — open shop."""
+	handle_trading_post_shop(peer_id)
+
+func _handle_inn_interact(peer_id: int, character):
+	"""Handle bump into inn tile — open heal/recharge."""
+	handle_trading_post_recharge(peer_id)
+
 func handle_trading_post_shop(peer_id: int):
 	"""Access shop services at a Trading Post"""
 	if not at_trading_post.has(peer_id):
@@ -10110,6 +10321,46 @@ const GATHERING_OPTION_LABELS = {
 	],
 }
 
+# Plant names for foraging discovery system — 10 per tier, used as option labels
+const FORAGING_PLANT_NAMES = {
+	1: ["River Mint", "Clover Tuft", "Dandelion Root", "Wild Garlic", "Meadow Sage",
+		"Chickweed", "Lamb's Ear", "Shepherd's Purse", "Yarrow", "Plantain Leaf",
+		"Foxglove", "Nightshade Bud", "Bitter Root", "Thorn Berry", "Dead Nettle",
+		"Swamp Moss", "Crab Grass", "Milkweed Pod", "Ragwort", "Stinkhorn"],
+	2: ["Fire Blossom", "Cave Moss", "Thornberry", "Ghost Lily", "Iron Fern",
+		"Moon Petal", "Silverleaf", "Stoneflower", "Amber Root", "Dustcap Shroom",
+		"Witch Hazel", "Bogbean", "Rust Lichen", "Sour Stem", "Blister Vine",
+		"Deadman's Finger", "Rot Blossom", "Ash Fungus", "Cracked Cap", "Dry Thistle"],
+	3: ["Sunstone Herb", "Crystal Moss", "Windbloom", "Frost Fern", "Thunder Root",
+		"Storm Petal", "Glowcap", "Starleaf", "Ember Moss", "Twilight Orchid",
+		"False Prophet", "Mirror Vine", "Phantom Grass", "Echo Bloom", "Shade Thorn",
+		"Hollow Reed", "Mirage Petal", "Fools Gold Flower", "Wilt Weed", "Pale Spore"],
+	4: ["Dragon Tongue", "Mithril Bloom", "Arcane Thistle", "Shadow Fern", "Phoenix Petal",
+		"Runic Clover", "Essence Vine", "Spirit Moss", "Warden's Herb", "Void Blossom",
+		"Demon Thorn", "Blood Orchid", "Cursed Root", "Bane Berry", "Lich Moss",
+		"Soul Weed", "Grave Bloom", "Wraith Fern", "Plague Stem", "Hex Flower"],
+	5: ["Celestial Sage", "Titan Root", "Astral Bloom", "Elder Moss", "Mythic Fern",
+		"Primal Orchid", "Ancient Vine", "Divine Petal", "Eternal Herb", "Radiant Leaf",
+		"Fallen Star Bloom", "Abyssal Spore", "Chaos Vine", "Nether Root", "Doom Petal",
+		"Corrupt Moss", "Void Fern", "Oblivion Herb", "Shadow Bloom", "Dark Sage"],
+	6: ["Godtear Bloom", "World Root", "Primordial Fern", "Genesis Flower", "Omega Moss",
+		"Creation Vine", "Eternity Petal", "Infinity Herb", "Transcendent Leaf", "Ascendant Bloom",
+		"Entropy Spore", "Cataclysm Root", "Annihilation Fern", "Void Heart", "Ruin Blossom",
+		"Collapse Vine", "Extinction Moss", "Decay Petal", "Blight Root", "End Bloom"],
+}
+
+# Size categories for fishing trophy catch system
+const FISHING_SIZE_WEIGHTS = {
+	"small": 40,
+	"medium": 35,
+	"large": 20,
+	"trophy": 5,
+}
+const FISHING_SIZE_QTY_MULT = {"small": 1, "medium": 1, "large": 2, "trophy": 3}
+
+# Logging momentum milestone thresholds
+const LOGGING_MOMENTUM_MILESTONES = {3: 1, 5: 2, 7: 3}
+
 func handle_gathering_start(peer_id: int, message: Dictionary):
 	"""Handle player starting a gathering session at a node."""
 	if not characters.has(peer_id):
@@ -10150,18 +10401,27 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	var has_tool = not tool.is_empty()
 
 	# Generate first round
-	var session = _generate_gathering_round(job_type, tier, hint_strength, 0)
+	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
 	session["job_type"] = job_type
 	session["node_type"] = gathering_node.get("type", node_type)
 	session["tier"] = tier
 	session["chain_count"] = 0
 	session["chain_materials"] = []
 	session["has_tool"] = has_tool
-	session["tool_reveal_used"] = false
-	session["tool_save_used"] = false
+	var tool_bonuses = tool.get("tool_bonuses", {}) if has_tool else {}
+	# Reveals: int count (new) or boolean (old tools backwards compat)
+	var max_reveals = tool_bonuses.get("reveals", 1 if tool_bonuses.get("reveal", false) else 0) if has_tool else 0
+	session["reveals_remaining"] = max_reveals
+	session["max_reveals"] = max_reveals
+	var max_saves = tool.get("max_saves", 1) if has_tool else 0
+	session["saves_remaining"] = max_saves
+	session["max_saves"] = max_saves
 	# Store actual node coordinates (may differ from player position for adjacent gathering)
 	session["node_x"] = gathering_node.get("node_x", character.x)
 	session["node_y"] = gathering_node.get("node_y", character.y)
+	# Per-type bonus tracking
+	session["momentum"] = 0          # Logging: consecutive correct picks
+	session["discoveries"] = []      # Foraging: discovered plant names this session
 	active_gathering[peer_id] = session
 
 	send_to_peer(peer_id, {
@@ -10173,7 +10433,11 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 		"job_type": job_type,
 		"node_type": session["node_type"],
 		"tier": tier,
-		"tool_available": has_tool,
+		"tool_available": has_tool and max_reveals > 0,
+		"saves_remaining": max_saves,
+		"reveals_remaining": max_reveals,
+		"momentum": 0,
+		"discoveries": [],
 	})
 
 func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
@@ -10200,17 +10464,25 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	var tool = _find_tool_in_inventory(character, tool_subtype)
 	var has_tool = not tool.is_empty()
 
-	var session = _generate_gathering_round(job_type, tier, hint_strength, 0)
+	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
 	session["job_type"] = job_type
 	session["node_type"] = node_type
 	session["tier"] = tier
 	session["chain_count"] = 0
 	session["chain_materials"] = []
 	session["has_tool"] = has_tool
-	session["tool_reveal_used"] = false
-	session["tool_save_used"] = false
+	var bump_tool_bonuses = tool.get("tool_bonuses", {}) if has_tool else {}
+	var bump_max_reveals = bump_tool_bonuses.get("reveals", 1 if bump_tool_bonuses.get("reveal", false) else 0) if has_tool else 0
+	session["reveals_remaining"] = bump_max_reveals
+	session["max_reveals"] = bump_max_reveals
+	var bump_max_saves = tool.get("max_saves", 1) if has_tool else 0
+	session["saves_remaining"] = bump_max_saves
+	session["max_saves"] = bump_max_saves
 	session["node_x"] = gathering_node.get("node_x", character.x)
 	session["node_y"] = gathering_node.get("node_y", character.y)
+	# Per-type bonus tracking
+	session["momentum"] = 0
+	session["discoveries"] = []
 	active_gathering[peer_id] = session
 
 	send_to_peer(peer_id, {
@@ -10222,28 +10494,56 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 		"job_type": job_type,
 		"node_type": node_type,
 		"tier": tier,
-		"tool_available": has_tool,
+		"tool_available": has_tool and bump_max_reveals > 0,
+		"saves_remaining": bump_max_saves,
+		"reveals_remaining": bump_max_reveals,
+		"momentum": 0,
+		"discoveries": [],
 	})
 
-func _generate_gathering_round(job_type: String, tier: int, hint_strength: float, chain: int) -> Dictionary:
+func _generate_gathering_round(job_type: String, tier: int, hint_strength: float, chain: int, discoveries: Array = []) -> Dictionary:
 	"""Generate a gathering round with 3 options (1 correct, 2 wrong) + optional risky."""
-	var labels_pool = GATHERING_OPTION_LABELS.get(job_type, [["Option A", "Option B", "Option C"]])
-	var label_set = labels_pool[chain % labels_pool.size()]
-
-	# Shuffle label order
-	var shuffled = label_set.duplicate()
-	shuffled.shuffle()
-
 	var correct_idx = randi() % 3
+
+	# Foraging uses plant names from discovery system
+	var shuffled: Array = []
+	var correct_plant_name: String = ""
+	if job_type == "foraging" and FORAGING_PLANT_NAMES.has(tier):
+		var all_plants = FORAGING_PLANT_NAMES[tier]
+		# First 10 are "correct" plants, rest are decoys
+		var correct_pool = all_plants.slice(0, 10)
+		var decoy_pool = all_plants.slice(10)
+		# Pick 1 correct and 2 decoy, avoiding repeats
+		var correct_pick = correct_pool[randi() % correct_pool.size()]
+		correct_plant_name = correct_pick
+		var decoys = decoy_pool.duplicate()
+		decoys.shuffle()
+		var picked_decoys = [decoys[0], decoys[1]]
+		# Build labels array with correct at the right index
+		for i in range(3):
+			if i == correct_idx:
+				shuffled.append(correct_pick)
+			else:
+				shuffled.append(picked_decoys.pop_back())
+	else:
+		var labels_pool = GATHERING_OPTION_LABELS.get(job_type, [["Option A", "Option B", "Option C"]])
+		var label_set = labels_pool[chain % labels_pool.size()]
+		shuffled = label_set.duplicate()
+		shuffled.shuffle()
+
 	var options = []
 	for i in range(3):
-		options.append({
+		var opt_data = {
 			"label": shuffled[i],
 			"id": i,
 			"correct": i == correct_idx,
 			"risky": false,
 			"hint": 1.0 if i == correct_idx else 0.0,
-		})
+		}
+		# For foraging, mark if this plant was previously discovered
+		if job_type == "foraging" and shuffled[i] in discoveries:
+			opt_data["known"] = true
+		options.append(opt_data)
 
 	# 10% chance for risky 4th option
 	var risky_available = randf() < 0.10
@@ -10263,14 +10563,19 @@ func _generate_gathering_round(job_type: String, tier: int, hint_strength: float
 		var co = {"label": opt["label"], "id": opt["id"]}
 		if opt["risky"]:
 			co["risky"] = true
+		if opt.get("known", false):
+			co["known"] = true
 		client_options.append(co)
 
-	return {
+	var result = {
 		"options": options,
 		"client_options": client_options,
 		"correct_id": correct_idx,
 		"risky_available": risky_available,
 	}
+	if correct_plant_name != "":
+		result["correct_plant_name"] = correct_plant_name
+	return result
 
 func handle_gathering_choice(peer_id: int, message: Dictionary):
 	"""Handle player picking an option during gathering."""
@@ -10293,29 +10598,69 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 		var hint_strength = minf(1.0, float(job_level) / 100.0)
 		var chain = session["chain_count"]
 
-		var new_round = _generate_gathering_round(job_type, tier, hint_strength, chain)
-		session["options"] = new_round["options"]
-		session["client_options"] = new_round["client_options"]
-		session["correct_id"] = new_round["correct_id"]
-		session["risky_available"] = new_round["risky_available"]
+		# After a tool save, narrow options: remove the wrong choice player picked, keep correct answer
+		if session.has("last_wrong_id"):
+			var wrong_id = session["last_wrong_id"]
+			var remaining_options = []
+			var remaining_client = []
+			for opt in session["options"]:
+				if int(opt["id"]) != wrong_id:
+					remaining_options.append(opt)
+			for opt in session["client_options"]:
+				if int(opt["id"]) != wrong_id:
+					remaining_client.append(opt)
+			session["options"] = remaining_options
+			session["client_options"] = remaining_client
+			session.erase("last_wrong_id")
 
-		send_to_peer(peer_id, {
-			"type": "gathering_round",
-			"options": new_round["client_options"],
-			"risky_available": new_round["risky_available"],
-			"hint_strength": hint_strength,
-			"chain_count": chain,
-			"job_type": session["job_type"],
-			"node_type": session["node_type"],
-			"tier": tier,
-			"tool_available": session.get("has_tool", false) and not session.get("tool_reveal_used", false),
-		})
+			send_to_peer(peer_id, {
+				"type": "gathering_round",
+				"options": remaining_client,
+				"risky_available": session["risky_available"],
+				"hint_strength": hint_strength,
+				"chain_count": chain,
+				"job_type": session["job_type"],
+				"node_type": session["node_type"],
+				"tier": tier,
+				"tool_available": session.get("has_tool", false) and session.get("reveals_remaining", 0) > 0,
+				"saves_remaining": session.get("saves_remaining", 0),
+				"reveals_remaining": session.get("reveals_remaining", 0),
+				"momentum": session.get("momentum", 0),
+				"discoveries": session.get("discoveries", []),
+			})
+		else:
+			# Normal continue after correct answer — generate fresh round
+			var disc = session.get("discoveries", [])
+			var new_round = _generate_gathering_round(job_type, tier, hint_strength, chain, disc)
+			session["options"] = new_round["options"]
+			session["client_options"] = new_round["client_options"]
+			session["correct_id"] = new_round["correct_id"]
+			session["risky_available"] = new_round["risky_available"]
+			if new_round.has("correct_plant_name"):
+				session["correct_plant_name"] = new_round["correct_plant_name"]
+
+			send_to_peer(peer_id, {
+				"type": "gathering_round",
+				"options": new_round["client_options"],
+				"risky_available": new_round["risky_available"],
+				"hint_strength": hint_strength,
+				"chain_count": chain,
+				"job_type": session["job_type"],
+				"node_type": session["node_type"],
+				"tier": tier,
+				"tool_available": session.get("has_tool", false) and session.get("reveals_remaining", 0) > 0,
+				"saves_remaining": session.get("saves_remaining", 0),
+				"reveals_remaining": session.get("reveals_remaining", 0),
+				"momentum": session.get("momentum", 0),
+				"discoveries": disc,
+			})
 		return
 
 	# Handle "reveal" (tool use)
 	if choice_str == "reveal":
-		if session.get("has_tool", false) and not session.get("tool_reveal_used", false):
-			session["tool_reveal_used"] = true
+		var reveals_left = session.get("reveals_remaining", 0)
+		if session.get("has_tool", false) and reveals_left > 0:
+			session["reveals_remaining"] = reveals_left - 1
 			var correct_id = session["correct_id"]
 			send_to_peer(peer_id, {
 				"type": "gathering_round",
@@ -10326,7 +10671,8 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				"job_type": session["job_type"],
 				"node_type": session["node_type"],
 				"tier": session["tier"],
-				"tool_available": false,
+				"tool_available": session["reveals_remaining"] > 0,
+				"reveals_remaining": session["reveals_remaining"],
 				"revealed_correct": correct_id,
 			})
 		return
@@ -10352,8 +10698,68 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 	if correct:
 		# Roll reward
 		var job_level = character.job_levels.get(job_type, 1)
-		var reward = _roll_gathering_reward(job_type, tier, job_level, is_risky)
+		var depth_bonus = false
+		var catch_size = ""
+		var momentum_bonus_qty = 0
+		var is_discovery = false
+
+		# === MINING: Deep Vein — higher tier chance at depth 3+ ===
+		var effective_tier = tier
+		if job_type == "mining":
+			var depth = session["chain_count"] + 1  # This round counts
+			if depth >= 5 and randf() < 0.50 and tier < 9:
+				effective_tier = tier + 1
+				depth_bonus = true
+			elif depth >= 3 and randf() < 0.25 and tier < 9:
+				effective_tier = tier + 1
+				depth_bonus = true
+
+		var reward = _roll_gathering_reward(job_type, effective_tier, job_level, is_risky)
 		var qty = reward.get("qty", 1)
+
+		# === FISHING: Trophy Catch — size roll affects quantity ===
+		if job_type == "fishing":
+			var trophy_chance = mini(15, 5 + int(job_level / 20))
+			var size_roll = randi() % 100
+			if size_roll < trophy_chance:
+				catch_size = "trophy"
+			elif size_roll < trophy_chance + 20:
+				catch_size = "large"
+			elif size_roll < trophy_chance + 20 + 35:
+				catch_size = "medium"
+			else:
+				catch_size = "small"
+			qty *= FISHING_SIZE_QTY_MULT.get(catch_size, 1)
+			# Trophy gives bonus rare material from same tier
+			if catch_size == "trophy":
+				var bonus_reward = _roll_gathering_reward("fishing", tier, job_level, false)
+				var bonus_qty = 1
+				character.add_crafting_material(bonus_reward["id"], bonus_qty)
+				session["chain_materials"].append({"id": bonus_reward["id"], "name": bonus_reward["name"], "qty": bonus_qty})
+
+		# === LOGGING: Momentum — track consecutive correct ===
+		if job_type == "logging":
+			session["momentum"] = session.get("momentum", 0) + 1
+			var mom = session["momentum"]
+			# Check milestones: 3=1, 5=2, 7=3 bonus materials
+			if LOGGING_MOMENTUM_MILESTONES.has(mom):
+				momentum_bonus_qty = LOGGING_MOMENTUM_MILESTONES[mom]
+				# Auto-award bonus materials (same type as current reward)
+				var bonus_added = character.add_crafting_material(reward["id"], momentum_bonus_qty)
+				session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": momentum_bonus_qty})
+				# At momentum 7, also chance for next-tier material
+				if mom >= 7 and tier < 9 and randf() < 0.30:
+					var high_reward = _roll_gathering_reward("logging", tier + 1, job_level, false)
+					character.add_crafting_material(high_reward["id"], 1)
+					session["chain_materials"].append({"id": high_reward["id"], "name": high_reward["name"], "qty": 1})
+
+		# === FORAGING: Discovery — track first-time plant finds ===
+		if job_type == "foraging":
+			var plant_name = session.get("correct_plant_name", "")
+			if plant_name != "" and plant_name not in session.get("discoveries", []):
+				is_discovery = true
+				session["discoveries"].append(plant_name)
+				qty += 1  # Bonus qty for new discovery
 
 		# Apply house gathering bonus
 		var gathering_bonus = character.house_bonuses.get("gathering_bonus", 0)
@@ -10383,7 +10789,7 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 		if pouch_overflow:
 			msg += "\n[color=#FF4444]Pouch full! Some materials lost (cap: 999)[/color]"
 
-		send_to_peer(peer_id, {
+		var result_msg = {
 			"type": "gathering_result",
 			"correct": true,
 			"material": {"id": reward["id"], "name": reward["name"], "qty": qty},
@@ -10392,17 +10798,37 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			"continue": true,
 			"message": msg,
 			"tool_saved": false,
-		})
+			"momentum": session.get("momentum", 0),
+			"discoveries": session.get("discoveries", []),
+		}
+		# Per-type bonus flags
+		if depth_bonus:
+			result_msg["depth_bonus"] = true
+		if catch_size != "":
+			result_msg["catch_size"] = catch_size
+		if momentum_bonus_qty > 0:
+			result_msg["momentum_bonus"] = momentum_bonus_qty
+		if is_discovery:
+			result_msg["is_discovery"] = true
+		send_to_peer(peer_id, result_msg)
 	else:
-		# Wrong answer
+		# Wrong answer — reset logging momentum (even on tool save)
+		if job_type == "logging":
+			session["momentum"] = 0
 		var tool_saved = false
 
-		# Check tool save (only if not risky and tool not already used for save)
-		if not is_risky and session.get("has_tool", false) and not session.get("tool_save_used", false):
-			session["tool_save_used"] = true
+		# Check tool save (only if not risky and saves remaining)
+		if not is_risky and session.get("has_tool", false) and session.get("saves_remaining", 0) > 0:
+			session["saves_remaining"] -= 1
 			tool_saved = true
 
 		if tool_saved:
+			# Store which option was wrong so "continue" can narrow options
+			session["last_wrong_id"] = choice_id
+			var remaining = session.get("saves_remaining", 0)
+			var save_msg = "[color=#00FFFF]Your tool absorbed the mistake![/color]"
+			if remaining > 0:
+				save_msg += " [color=#808080](%d save(s) left)[/color]" % remaining
 			send_to_peer(peer_id, {
 				"type": "gathering_result",
 				"correct": false,
@@ -10410,8 +10836,9 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				"chain_count": session["chain_count"],
 				"chain_materials": session["chain_materials"],
 				"continue": true,
-				"message": "[color=#00FFFF]Your tool absorbed the mistake![/color]",
+				"message": save_msg,
 				"tool_saved": true,
+				"saves_remaining": remaining,
 			})
 		else:
 			# Check risky penalty
@@ -10460,7 +10887,9 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 		character.add_experience(char_xp)
 
 	# Consume tool durability if tool was used
-	if session.get("has_tool", false) and (session.get("tool_reveal_used", false) or session.get("tool_save_used", false)):
+	var saves_used = session.get("max_saves", 1) - session.get("saves_remaining", 0)
+	var reveals_used = session.get("max_reveals", 0) - session.get("reveals_remaining", 0)
+	if session.get("has_tool", false) and (reveals_used > 0 or saves_used > 0):
 		var tool_subtype = _get_tool_subtype_for_job(job_type)
 		_consume_tool_durability(character, tool_subtype)
 
@@ -10505,11 +10934,32 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	send_location_update(peer_id)
 	save_character(peer_id)
 
+func _end_gathering_session_no_deplete(peer_id: int):
+	"""End gathering without depleting the node (player stopped before any rounds)."""
+	if not active_gathering.has(peer_id):
+		return
+	send_to_peer(peer_id, {
+		"type": "gathering_complete",
+		"total_materials": [],
+		"job_xp_gained": 0,
+		"char_xp_gained": 0,
+		"job_leveled_up": false,
+		"new_job_level": 1,
+		"character": characters[peer_id].to_dict() if characters.has(peer_id) else {},
+	})
+	active_gathering.erase(peer_id)
+	send_location_update(peer_id)
+
 func handle_gathering_end(peer_id: int, message: Dictionary):
 	"""Handle player voluntarily ending gathering."""
 	if not active_gathering.has(peer_id):
 		return
-	_end_gathering_session(peer_id)
+	var session = active_gathering[peer_id]
+	if session.get("chain_count", 0) == 0:
+		# Player stopped before completing any rounds — don't deplete the node
+		_end_gathering_session_no_deplete(peer_id)
+	else:
+		_end_gathering_session(peer_id)
 
 func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risky: bool) -> Dictionary:
 	"""Roll a material reward for a successful gathering round."""
@@ -10663,15 +11113,51 @@ func handle_harvest_start(peer_id: int):
 	elif monster_tier >= 4:
 		max_rounds = 2
 
+	# Calculate soldier saves (level-based)
+	var harvest_saves = 0
+	if soldier_level >= 80:
+		harvest_saves = 3
+	elif soldier_level >= 50:
+		harvest_saves = 2
+	elif soldier_level >= 20:
+		harvest_saves = 1
+
+	# Check harvest mastery for this monster type
+	var mastery_count = int(character.harvest_mastery.get(monster_name, 0))
+	var mastery_label = ""
+	var mastery_auto_round = false
+	var mastery_bonus_parts = 0
+	if mastery_count >= 15:
+		mastery_label = "Master"
+		mastery_bonus_parts = 3  # +3 parts per correct round
+		mastery_auto_round = true  # Round 1 auto-succeeds
+	elif mastery_count >= 7:
+		mastery_label = "Expert"
+		mastery_auto_round = true
+	elif mastery_count >= 3:
+		mastery_label = "Familiar"
+
 	var session = _generate_harvest_round(monster_name, monster_tier)
 	session["monster_name"] = monster_name
 	session["monster_tier"] = monster_tier
 	session["round"] = 1
 	session["max_rounds"] = max_rounds
 	session["parts_gained"] = []
+	session["saves_remaining"] = harvest_saves
+	session["mastery_count"] = mastery_count
+	session["mastery_label"] = mastery_label
+	session["mastery_bonus_parts"] = mastery_bonus_parts
 	active_harvests[peer_id] = session
 
+	# If Expert/Master, auto-succeed round 1
+	if mastery_auto_round:
+		_handle_harvest_auto_success(peer_id, session, character)
+		return
+
 	var _hint_str = minf(1.0, float(soldier_level) / 100.0)
+	# Familiar mastery adds +0.3 hint strength
+	if mastery_count >= 3:
+		_hint_str = minf(1.0, _hint_str + 0.3)
 	var _harvest_msg = {
 		"type": "harvest_round",
 		"options": session["client_options"],
@@ -10679,11 +11165,72 @@ func handle_harvest_start(peer_id: int):
 		"round": 1,
 		"max_rounds": max_rounds,
 		"monster_name": monster_name,
+		"saves_remaining": harvest_saves,
+		"mastery_label": mastery_label,
+		"mastery_count": mastery_count,
 	}
 	# Reveal correct answer as hint if hint_strength > 0.5
 	if _hint_str > 0.5 and randf() < _hint_str:
 		_harvest_msg["hint_id"] = session["correct_id"]
 	send_to_peer(peer_id, _harvest_msg)
+
+func _handle_harvest_auto_success(peer_id: int, session: Dictionary, character):
+	"""Auto-succeed a harvest round due to Expert/Master mastery."""
+	var monster_name = session["monster_name"]
+	var parts = drop_tables.get_monster_parts(monster_name)
+	if not parts.is_empty():
+		var adjusted = parts.duplicate(true)
+		for p in adjusted:
+			p["weight"] = maxi(p["weight"], 20)
+		var total_w = 0
+		for p in adjusted:
+			total_w += p["weight"]
+		var roll = randi() % total_w
+		var cum = 0
+		for p in adjusted:
+			cum += p["weight"]
+			if roll < cum:
+				var qty = 5 + session.get("mastery_bonus_parts", 0)
+				character.add_crafting_material(p["id"], qty)
+				session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
+				break
+
+	send_to_peer(peer_id, {
+		"type": "harvest_result",
+		"correct": true,
+		"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
+		"round": 1,
+		"continue": session["max_rounds"] > 1,
+		"auto_success": true,
+		"mastery_label": session.get("mastery_label", ""),
+	})
+
+	if session["max_rounds"] > 1:
+		session["round"] = 2
+		var new_round = _generate_harvest_round(monster_name, session["monster_tier"])
+		session["options"] = new_round["options"]
+		session["client_options"] = new_round["client_options"]
+		session["correct_id"] = new_round["correct_id"]
+		var soldier_level = character.job_levels.get("soldier", 0)
+		var _h_hint = minf(1.0, float(soldier_level) / 100.0)
+		if session.get("mastery_count", 0) >= 3:
+			_h_hint = minf(1.0, _h_hint + 0.3)
+		var _h_msg = {
+			"type": "harvest_round",
+			"options": new_round["client_options"],
+			"hint_strength": _h_hint,
+			"round": 2,
+			"max_rounds": session["max_rounds"],
+			"monster_name": monster_name,
+			"saves_remaining": session.get("saves_remaining", 0),
+			"mastery_label": session.get("mastery_label", ""),
+			"mastery_count": session.get("mastery_count", 0),
+		}
+		if _h_hint > 0.5 and randf() < _h_hint:
+			_h_msg["hint_id"] = new_round["correct_id"]
+		send_to_peer(peer_id, _h_msg)
+	else:
+		_end_harvest_session(peer_id, true)
 
 func _generate_harvest_round(monster_name: String, monster_tier: int) -> Dictionary:
 	"""Generate a harvest round — reuses gathering 3-choice pattern."""
@@ -10713,14 +11260,12 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 
 	var character = characters[peer_id]
 	var session = active_harvests[peer_id]
-	var choice_id = message.get("choice_id", -1)
-	if typeof(choice_id) == TYPE_STRING:
-		choice_id = int(choice_id)
+	var choice_id = int(message.get("choice_id", -1))
 
 	var options = session.get("options", [])
 	var chosen = null
 	for opt in options:
-		if opt["id"] == choice_id:
+		if int(opt["id"]) == choice_id:
 			chosen = opt
 			break
 	if chosen == null:
@@ -10731,6 +11276,9 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 	var monster_tier = session["monster_tier"]
 
 	if correct:
+		# Track mastery for this monster type
+		character.harvest_mastery[monster_name] = int(character.harvest_mastery.get(monster_name, 0)) + 1
+
 		# Roll a part with higher rare weights
 		var parts = drop_tables.get_monster_parts(monster_name)
 		if not parts.is_empty():
@@ -10746,7 +11294,7 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 			for p in adjusted:
 				cum += p["weight"]
 				if roll < cum:
-					var qty = 5
+					var qty = 5 + session.get("mastery_bonus_parts", 0)
 					character.add_crafting_material(p["id"], qty)
 					session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
 					break
@@ -10767,6 +11315,8 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 				"continue": true,
 			})
 			var _h_hint = minf(1.0, float(soldier_level) / 100.0)
+			if session.get("mastery_count", 0) >= 3:
+				_h_hint = minf(1.0, _h_hint + 0.3)
 			var _h_msg = {
 				"type": "harvest_round",
 				"options": new_round["client_options"],
@@ -10774,6 +11324,9 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 				"round": session["round"],
 				"max_rounds": session["max_rounds"],
 				"monster_name": monster_name,
+				"saves_remaining": session.get("saves_remaining", 0),
+				"mastery_label": session.get("mastery_label", ""),
+				"mastery_count": session.get("mastery_count", 0),
 			}
 			if _h_hint > 0.5 and randf() < _h_hint:
 				_h_msg["hint_id"] = new_round["correct_id"]
@@ -10789,24 +11342,60 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 			})
 			_end_harvest_session(peer_id, true)
 	else:
-		# Wrong — harvest ends but still give 1 base part (like gathering failure)
-		var fail_part = {}
-		var parts = drop_tables.get_monster_parts(monster_name)
-		if not parts.is_empty():
-			# Pick the most common part (highest weight = index 0)
-			var p = parts[0]
-			var qty = 1
-			character.add_crafting_material(p["id"], qty)
-			session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
-			fail_part = {"id": p["id"], "name": p["name"], "qty": qty}
-		send_to_peer(peer_id, {
-			"type": "harvest_result",
-			"correct": false,
-			"part_gained": fail_part,
-			"round": session["round"],
-			"continue": false,
-		})
-		_end_harvest_session(peer_id, false)
+		# Wrong — check for soldier saves
+		var saves_left = session.get("saves_remaining", 0)
+		if saves_left > 0:
+			session["saves_remaining"] -= 1
+			# Re-roll the round (new options)
+			var new_round = _generate_harvest_round(monster_name, monster_tier)
+			session["options"] = new_round["options"]
+			session["client_options"] = new_round["client_options"]
+			session["correct_id"] = new_round["correct_id"]
+			send_to_peer(peer_id, {
+				"type": "harvest_result",
+				"correct": false,
+				"part_gained": {},
+				"round": session["round"],
+				"continue": true,
+				"harvest_saved": true,
+				"saves_remaining": session["saves_remaining"],
+			})
+			var soldier_level = character.job_levels.get("soldier", 0)
+			var _h_hint = minf(1.0, float(soldier_level) / 100.0)
+			if session.get("mastery_count", 0) >= 3:
+				_h_hint = minf(1.0, _h_hint + 0.3)
+			var _h_msg = {
+				"type": "harvest_round",
+				"options": new_round["client_options"],
+				"hint_strength": _h_hint,
+				"round": session["round"],
+				"max_rounds": session["max_rounds"],
+				"monster_name": monster_name,
+				"saves_remaining": session["saves_remaining"],
+				"mastery_label": session.get("mastery_label", ""),
+				"mastery_count": session.get("mastery_count", 0),
+			}
+			if _h_hint > 0.5 and randf() < _h_hint:
+				_h_msg["hint_id"] = new_round["correct_id"]
+			send_to_peer(peer_id, _h_msg)
+		else:
+			# No saves — harvest ends but still give 1 base part
+			var fail_part = {}
+			var parts = drop_tables.get_monster_parts(monster_name)
+			if not parts.is_empty():
+				var p = parts[0]
+				var qty = 1
+				character.add_crafting_material(p["id"], qty)
+				session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
+				fail_part = {"id": p["id"], "name": p["name"], "qty": qty}
+			send_to_peer(peer_id, {
+				"type": "harvest_result",
+				"correct": false,
+				"part_gained": fail_part,
+				"round": session["round"],
+				"continue": false,
+			})
+			_end_harvest_session(peer_id, false)
 
 func _end_harvest_session(peer_id: int, all_correct: bool = false):
 	"""End a harvest session and give job XP."""
@@ -11481,10 +12070,14 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 
 	var character = characters[peer_id]
 
-	# Must be at a trading post to craft
+	# Must be at a trading post OR player station to craft
+	var crafting_at_player_station = false
 	if not at_trading_post.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to craft!"})
-		return
+		if at_player_station.has(peer_id):
+			crafting_at_player_station = true
+		else:
+			send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post or your own crafting station!"})
+			return
 
 	var skill_name = message.get("skill", "blacksmithing").to_lower()
 	var skill_enum: int = CraftingDatabaseScript.get_skill_enum(skill_name)
@@ -11492,14 +12085,25 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown crafting skill: %s" % skill_name})
 		return
 
+	# At player station, verify the matching station exists
+	if crafting_at_player_station:
+		var station_data = at_player_station[peer_id]
+		var needed_station = CraftingDatabaseScript.SKILL_STATION_MAP.get(skill_name, "")
+		if needed_station != "" and needed_station not in station_data.get("stations", []):
+			var station_name = CraftingDatabaseScript.SKILL_STATION_NAMES.get(skill_name, "station")
+			send_to_peer(peer_id, {"type": "error", "message": "You need a %s to craft %s!" % [station_name, skill_name.capitalize()]})
+			return
+
 	var skill_level = character.get_crafting_skill(skill_name)
 	# Get ALL recipes for the skill (including locked ones) so players can see what's coming
 	var recipes = CraftingDatabaseScript.get_recipes_for_skill(skill_enum)
 
-	# Get trading post bonus
-	var tp_data = at_trading_post[peer_id]
-	var tp_id = tp_data.get("id", "")
-	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
+	# Get trading post bonus (0 at player stations)
+	var post_bonus = 0
+	if not crafting_at_player_station:
+		var tp_data = at_trading_post[peer_id]
+		var tp_id = tp_data.get("id", "")
+		post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
 
 	# Get specialty job crafting bonus
 	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
@@ -11668,9 +12272,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 
 	var character = characters[peer_id]
 
-	# Must be at a trading post
-	if not at_trading_post.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post to craft!"})
+	# Must be at a trading post or player station
+	if not at_trading_post.has(peer_id) and not at_player_station.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Trading Post or your own crafting station!"})
 		return
 
 	var recipe_id = message.get("recipe_id", "")
@@ -11706,19 +12310,46 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	for mat_id in recipe.materials:
 		character.remove_crafting_material(mat_id, recipe.materials[mat_id])
 
-	# Get trading post bonus + specialty job bonus
-	var tp_data = at_trading_post[peer_id]
-	var tp_id = tp_data.get("id", "")
-	var post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
+	# Get trading post bonus (0 at player stations) + specialty job bonus
+	var post_bonus = 0
+	if at_trading_post.has(peer_id):
+		var tp_data = at_trading_post[peer_id]
+		var tp_id = tp_data.get("id", "")
+		post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
 	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
 	var total_bonus = post_bonus + job_bonus.success_bonus
 
-	# Roll for quality (job quality_bonus increases quality thresholds)
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus)
+	# Check auto-skip: if skill - difficulty >= threshold, skip minigame with score 3
+	var skill_gap = skill_level - recipe.difficulty
+	if skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP:
+		# Send crafting challenge minigame
+		var is_specialist = character.can_use_specialist_recipe(skill_name)
+		var job_level = character.job_levels.get(character.CRAFT_SKILL_TO_JOB.get(skill_name, ""), 0)
+		var challenge = _generate_craft_challenge(skill_name, job_level, is_specialist)
+		active_crafts[peer_id] = {
+			"recipe_id": recipe_id,
+			"recipe": recipe,
+			"skill_name": skill_name,
+			"skill_level": skill_level,
+			"post_bonus": post_bonus,
+			"total_bonus": total_bonus,
+			"correct_answers": challenge["correct_answers"],
+			"is_specialist": is_specialist,
+			"job_level": job_level,
+		}
+		send_to_peer(peer_id, {
+			"type": "craft_challenge",
+			"rounds": challenge["client_rounds"],
+			"skill_name": skill_name,
+		})
+		return
+
+	# Auto-skip: trivially easy recipe, score = 3
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, 3)
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	# Calculate crafting XP
+	# Calculate crafting XP (existing full path — enhancement/enchantment handled below)
 	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
 
@@ -12012,12 +12643,12 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				var tool_tier = recipe.get("tier", 1)
 				var subtype_map = {"fishing_rod": "rod", "pickaxe": "pickaxe", "axe": "axe", "sickle": "sickle"}
 				var subtype = subtype_map.get(tool_type, tool_type)
+				var tool_rarity = _quality_to_rarity(quality)
 
-				var tool_data = DropTables.generate_tool(subtype, tool_tier)
+				var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
 				if not tool_data.is_empty():
 					if quality != CraftingDatabaseScript.CraftingQuality.STANDARD:
 						tool_data["name"] = "%s %s" % [quality_name, recipe.name]
-					tool_data["rarity"] = _quality_to_rarity(quality)
 					tool_data["crafted"] = true
 					character.inventory.append(tool_data)
 					crafted_item = tool_data
@@ -12070,7 +12701,11 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"structure":
 				crafted_item = _craft_structure(recipe, quality)
 				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "structure")]
+				# Structures always show as standard quality regardless of roll
+				quality = CraftingDatabaseScript.CraftingQuality.STANDARD
+				quality_name = "Standard"
+				quality_color = "#FFFFFF"
+				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
 			"proc_enchant":
 				var salvage_cost = recipe.get("salvage_cost", 0)
 				if not character.has_salvage_essence(salvage_cost):
@@ -12122,7 +12757,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 								result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
 						target_item["proc_effects"][proc_type] = proc_data
 
-	# Send result
+	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
 		"type": "craft_result",
 		"success": quality != CraftingDatabaseScript.CraftingQuality.FAILED,
@@ -12137,6 +12772,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		"skill_name": skill_name,
 		"message": result_message,
 		"crafted_item": crafted_item,
+		"materials": character.crafting_materials,
 		"job_xp_gained": job_xp_gained,
 		"job_leveled_up": job_leveled_up,
 		"job_new_level": job_new_level,
@@ -12439,18 +13075,15 @@ func _craft_bestiary(recipe: Dictionary, quality: int) -> Dictionary:
 
 func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
 	"""Create a structure item for player posts."""
-	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var structure_type = recipe.get("structure_type", "workbench")
-	var display_name = recipe.name if quality == CraftingDatabaseScript.CraftingQuality.STANDARD else "%s %s" % [quality_name, recipe.name]
 	return {
 		"id": "structure_%d" % randi(),
-		"name": display_name,
+		"name": recipe.name,
 		"type": "structure",
 		"structure_type": structure_type,
 		"is_consumable": false,
 		"quantity": 1,
-		"rarity": _quality_to_rarity(quality),
-		"level": 1
+		"rarity": "common",
 	}
 
 func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
@@ -12492,6 +13125,9 @@ func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 	if scaled_stats.has("mana"):
 		item["mana"] = scaled_stats["mana"]
 
+	# Apply rarity bonuses (crit, dodge, damage reduction, etc.)
+	item = drop_tables.apply_rarity_bonuses(item, item.get("rarity", "common"))
+
 	return item
 
 func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
@@ -12521,6 +13157,9 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 		"quantity": 1
 	}
 
+	# Apply rarity bonuses (potency, extra uses)
+	item = drop_tables.apply_rarity_bonuses(item, item.get("rarity", "common"))
+
 	return item
 
 func _quality_to_rarity(quality: int) -> String:
@@ -12536,6 +13175,460 @@ func _quality_to_rarity(quality: int) -> String:
 			return "epic"
 		_:
 			return "common"
+
+func _generate_craft_challenge(skill_name: String, job_level: int, is_specialist: bool) -> Dictionary:
+	"""Generate a 3-round crafting challenge. Returns client_rounds and correct_answers."""
+	var questions = CraftingDatabaseScript.CRAFT_CHALLENGE_QUESTIONS.get(skill_name, [])
+	if questions.is_empty():
+		# Fallback to blacksmithing if skill not found
+		questions = CraftingDatabaseScript.CRAFT_CHALLENGE_QUESTIONS.get("blacksmithing", [])
+
+	# Pick 3 random question sets (non-repeating)
+	var indices = range(questions.size())
+	var shuffled_indices = []
+	for idx in indices:
+		shuffled_indices.append(idx)
+	shuffled_indices.shuffle()
+	var picked = shuffled_indices.slice(0, 3)
+
+	var client_rounds = []
+	var correct_answers = []
+
+	# Specialist hints: Lv1-19 = 1 hint (round 1), Lv20-39 = 2 hints, Lv40+ = all 3
+	var hints_available = 0
+	if is_specialist:
+		if job_level >= 40:
+			hints_available = 3
+		elif job_level >= 20:
+			hints_available = 2
+		else:
+			hints_available = 1
+
+	for round_idx in range(3):
+		var q_data = questions[picked[round_idx]]
+		var opts = q_data["opts"].duplicate()
+		# opts[0] is always correct. Shuffle and track where correct ended up.
+		var correct_label = opts[0]
+		opts.shuffle()
+		var correct_idx = opts.find(correct_label)
+		correct_answers.append(correct_idx)
+
+		# Build client round data
+		var hint_index = -1
+		if round_idx < hints_available:
+			# Mark one WRONG answer as "[Risky]"
+			var wrong_indices = []
+			for i in range(3):
+				if i != correct_idx:
+					wrong_indices.append(i)
+			hint_index = wrong_indices[randi() % wrong_indices.size()]
+
+		client_rounds.append({
+			"question": q_data["q"],
+			"options": opts,
+			"hint_index": hint_index,
+		})
+
+	return {
+		"client_rounds": client_rounds,
+		"correct_answers": correct_answers,
+	}
+
+func handle_craft_challenge_answer(peer_id: int, message: Dictionary):
+	"""Handle player's answers to the crafting challenge minigame."""
+	if not characters.has(peer_id):
+		return
+	if not active_crafts.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No active crafting challenge!"})
+		return
+
+	var character = characters[peer_id]
+	var craft = active_crafts[peer_id]
+	var answers = message.get("answers", [])
+	var correct_answers = craft.get("correct_answers", [])
+
+	# Score the answers
+	var score = 0
+	for i in range(mini(answers.size(), correct_answers.size())):
+		if int(answers[i]) == int(correct_answers[i]):
+			score += 1
+
+	# Specialist save: if score is 0, chance to become 1
+	if score == 0 and craft.get("is_specialist", false):
+		var save_chance = mini(50, craft.get("job_level", 0))
+		if randi() % 100 < save_chance:
+			score = 1
+
+	# Roll quality with score
+	var recipe = craft["recipe"]
+	var skill_level = craft["skill_level"]
+	var total_bonus = craft["total_bonus"]
+	var skill_name = craft["skill_name"]
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, score)
+
+	# Clean up pending craft
+	active_crafts.erase(peer_id)
+
+	# Re-inject into the crafting pipeline by calling the result handler
+	_finalize_craft(peer_id, character, recipe, quality, skill_name, skill_level, total_bonus, score)
+
+func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1):
+	"""Finalize a craft after quality is determined. Handles all output types."""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
+
+	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
+	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
+
+	var job_xp_gained = 0
+	var job_leveled_up = false
+	var job_new_level = 0
+	var matching_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "")
+	if matching_job != "" and character.can_gain_job_xp(matching_job):
+		job_xp_gained = int(xp_gained * 0.5)
+		if job_xp_gained > 0:
+			var job_result = character.add_job_xp(matching_job, job_xp_gained)
+			job_leveled_up = job_result.leveled_up
+			job_new_level = job_result.new_level
+
+	var result_message = ""
+	var crafted_item = {}
+
+	if quality == CraftingDatabaseScript.CraftingQuality.FAILED:
+		result_message = "[color=#FF4444]Crafting failed! Materials lost.[/color]"
+	else:
+		match recipe.output_type:
+			"weapon", "armor":
+				crafted_item = _create_crafted_equipment(recipe, quality)
+				if crafted_item.is_empty():
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
+				else:
+					character.inventory.append(crafted_item)
+					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+			"consumable":
+				crafted_item = _create_crafted_consumable(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+			"enhancement":
+				var effect = recipe.get("effect", {})
+				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+				var stat_type = effect.get("stat", "attack")
+				var base_bonus = 3 if stat_type == "all" else effect.get("bonus", 3)
+				var scaled_bonus = int(base_bonus * quality_mult)
+				var scroll = {
+					"id": "scroll_%d" % randi(),
+					"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+					"type": "enhancement_scroll",
+					"slot": recipe.get("output_slot", "any"),
+					"effect": {"stat": stat_type, "bonus": scaled_bonus},
+					"rarity": _quality_to_rarity(quality),
+					"level": 1, "is_consumable": true, "quantity": 1
+				}
+				character.inventory.append(scroll)
+				crafted_item = scroll
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
+			"enchantment":
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							break
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						var effect = recipe.get("effect", {})
+						var stat = effect.get("stat", "attack")
+						var bonus = effect.get("bonus", 5)
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						bonus = int(bonus * quality_mult)
+						if not target_item.has("enchantments"):
+							target_item["enchantments"] = {}
+						var current_value = target_item["enchantments"].get(stat, 0)
+						var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
+						if current_value >= recipe_enchant_max:
+							result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
+							var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						else:
+							var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
+							if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
+								result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
+								for mat_id in recipe.materials:
+									character.add_crafting_material(mat_id, recipe.materials[mat_id])
+								character.add_salvage_essence(salvage_cost)
+								result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+							else:
+								character.remove_salvage_essence(salvage_cost)
+								var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+								var effective_cap = mini(recipe_enchant_max, stat_cap_val)
+								var remaining = effective_cap - current_value
+								if bonus > remaining:
+									bonus = remaining
+								target_item["enchantments"][stat] = current_value + bonus
+								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
+			"upgrade":
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							break
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var levels_to_add = effect.get("levels", 1)
+						if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+							levels_to_add = int(levels_to_add * 1.5)
+						elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
+							levels_to_add = int(levels_to_add * 1.25)
+						elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
+							levels_to_add = max(1, int(levels_to_add * 0.5))
+						var upgrades_applied = target_item.get("upgrades_applied", 0)
+						var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
+						if upgrades_applied >= recipe_max:
+							result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
+							result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
+							for mat_id in recipe.materials:
+								character.add_crafting_material(mat_id, recipe.materials[mat_id])
+							character.add_salvage_essence(salvage_cost)
+							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+						else:
+							var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
+							var remaining = mini(recipe_max, global_max) - upgrades_applied
+							if levels_to_add > remaining:
+								levels_to_add = remaining
+							var old_level = target_item.get("level", 1)
+							target_item["level"] = old_level + levels_to_add
+							target_item["upgrades_applied"] = upgrades_applied + levels_to_add
+							result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
+			"affix":
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							break
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var affix_pool = effect.get("affix_pool", ["attack"])
+						var chosen_affix = affix_pool[randi() % affix_pool.size()]
+						var item_level = target_item.get("level", 1)
+						var base_value = 5 + int(item_level * 0.5)
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						var affix_value = int(base_value * quality_mult)
+						var affix_key_map = {
+							"strength": "str_bonus", "constitution": "con_bonus",
+							"dexterity": "dex_bonus", "intelligence": "int_bonus",
+							"wisdom": "wis_bonus", "wits": "wits_bonus",
+							"attack": "attack_bonus", "defense": "defense_bonus",
+							"speed": "speed_bonus", "mana": "mana_bonus"
+						}
+						var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
+						if not target_item.has("affixes"):
+							target_item["affixes"] = {}
+						var old_value = target_item["affixes"].get(affix_key, 0)
+						var affix_display = chosen_affix.capitalize()
+						var item_name = target_item.get("name", "item")
+						if affix_value > old_value:
+							target_item["affixes"][affix_key] = affix_value
+							if old_value > 0:
+								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
+							else:
+								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
+						else:
+							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
+			"tool":
+				var tool_type = recipe.get("tool_type", "")
+				var tool_tier = recipe.get("tier", 1)
+				var subtype_map = {"fishing_rod": "rod", "pickaxe": "pickaxe", "axe": "axe", "sickle": "sickle"}
+				var subtype = subtype_map.get(tool_type, tool_type)
+				var tool_rarity = _quality_to_rarity(quality)
+				var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
+				if not tool_data.is_empty():
+					if quality != CraftingDatabaseScript.CraftingQuality.STANDARD:
+						tool_data["name"] = "%s %s" % [quality_name, recipe.name]
+					tool_data["crafted"] = true
+					character.inventory.append(tool_data)
+					crafted_item = tool_data
+					result_message = "[color=%s]Crafted %s! Check your inventory to equip it.[/color]" % [quality_color, tool_data.get("name", recipe.name)]
+				else:
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create tool! Materials refunded.[/color]"
+			"material":
+				var output_item = recipe.get("output_item", "")
+				var base_quantity = recipe.get("output_quantity", 1)
+				var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
+				var final_quantity = int(base_quantity * multiplier)
+				if output_item != "" and final_quantity > 0:
+					character.add_crafting_material(output_item, final_quantity)
+					result_message = "[color=%s]Created %d %s %s![/color]" % [quality_color, final_quantity, quality_name, recipe.name.replace("Refine ", "")]
+				else:
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message = "[color=#FF4444]Failed to create materials! Materials refunded.[/color]"
+			"self_repair":
+				result_message = _craft_self_repair(character, recipe, quality)
+			"reforge":
+				result_message = _craft_reforge(character, recipe, quality, quality_color)
+			"transmute":
+				result_message = _craft_transmute(character, recipe, quality, quality_color)
+			"extract":
+				result_message = _craft_extract(character, recipe, quality, quality_color)
+			"disenchant":
+				result_message = _craft_disenchant(character, recipe, quality, quality_color)
+			"scroll":
+				crafted_item = _craft_scroll(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+			"map":
+				crafted_item = _craft_map(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "map")]
+			"tome":
+				crafted_item = _craft_tome(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "tome")]
+			"bestiary":
+				crafted_item = _craft_bestiary(recipe, quality)
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "bestiary page")]
+			"structure":
+				crafted_item = _craft_structure(recipe, quality)
+				character.inventory.append(crafted_item)
+				quality = CraftingDatabaseScript.CraftingQuality.STANDARD
+				quality_name = "Standard"
+				quality_color = "#FFFFFF"
+				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
+			"proc_enchant":
+				var salvage_cost = recipe.get("salvage_cost", 0)
+				if not character.has_salvage_essence(salvage_cost):
+					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+					for mat_id in recipe.materials:
+						character.add_crafting_material(mat_id, recipe.materials[mat_id])
+					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+				else:
+					var target_slots = recipe.get("target_slot", "").split(",")
+					var target_item = null
+					for slot in target_slots:
+						slot = slot.strip_edges()
+						if character.equipped.has(slot) and character.equipped[slot] != null:
+							target_item = character.equipped[slot]
+							break
+					if target_item == null:
+						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					else:
+						character.remove_salvage_essence(salvage_cost)
+						var effect = recipe.get("effect", {})
+						var proc_type = effect.get("proc_type", "")
+						if not target_item.has("proc_effects"):
+							target_item["proc_effects"] = {}
+						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+						var proc_data = {}
+						var proc_item_name = target_item.get("name", "item")
+						match proc_type:
+							"lifesteal":
+								var pct = effect.get("percent", 10) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+								result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
+							"shocking":
+								var pct = effect.get("percent", 15) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
+								result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
+							"damage_reflect":
+								var pct = effect.get("percent", 15) * quality_mult
+								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+								result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
+							"execute":
+								var bonus = effect.get("bonus_damage", 50) * quality_mult
+								proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
+								result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
+						target_item["proc_effects"][proc_type] = proc_data
+			_:
+				result_message = "[color=%s]Crafted %s %s![/color]" % [quality_color, quality_name, recipe.name]
+
+	send_to_peer(peer_id, {
+		"type": "craft_result",
+		"success": quality != CraftingDatabaseScript.CraftingQuality.FAILED,
+		"recipe_id": recipe.get("id", ""),
+		"quality": quality,
+		"quality_name": quality_name,
+		"quality_color": quality_color,
+		"recipe_name": recipe.name,
+		"crafted_item": crafted_item,
+		"message": result_message,
+		"materials": character.crafting_materials,
+		"xp_gained": xp_gained,
+		"skill_name": skill_name,
+		"leveled_up": xp_result.get("leveled_up", false),
+		"new_level": xp_result.get("new_level", skill_level),
+		"job_xp_gained": job_xp_gained,
+		"job_leveled_up": job_leveled_up,
+		"job_new_level": job_new_level,
+		"job_name": matching_job,
+		"score": score,
+	})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 # ===== BUILDING SYSTEM =====
 
@@ -12597,13 +13690,27 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
 		var terrain = world_system.get_terrain_at(tx, ty)
 		if terrain in [world_system.Terrain.WATER, world_system.Terrain.DEEP_WATER, world_system.Terrain.VOID]:
 			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on water or void!"})
+			return
+
+	# Check NPC post proximity (3 tile buffer)
+	if chunk_manager:
+		for post in chunk_manager.get_npc_posts():
+			var post_half = int(post.get("size", 15)) / 2 + 3
+			if abs(tx - int(post.get("x", 0))) <= post_half and abs(ty - int(post.get("y", 0))) <= post_half:
+				send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to a town. Must be 3+ tiles away."})
+				return
+
+	# Check dungeon entrance proximity (3 tile buffer)
+	for instance in active_dungeons.values():
+		if abs(tx - int(instance.get("world_x", 0))) <= 3 and abs(ty - int(instance.get("world_y", 0))) <= 3:
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to a dungeon entrance."})
 			return
 
 	# Check another player isn't standing there (for walls)
@@ -12969,6 +14076,108 @@ func _get_username(peer_id: int) -> String:
 		return peers[peer_id].get("username", "")
 	return ""
 
+# ===== INN & STORAGE (Player Enclosure Structures) =====
+
+func handle_inn_rest(peer_id: int):
+	"""Handle resting at player-built inn. Free full heal."""
+	if not characters.has(peer_id):
+		return
+	if not at_player_station.has(peer_id) or not at_player_station[peer_id].get("has_inn", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You need to be at an Inn to rest![/color]"})
+		return
+	var character = characters[peer_id]
+	var healed_hp = character.max_hp - character.current_hp
+	var healed_mana = character.max_mana - character.current_mana
+	character.current_hp = character.max_hp
+	character.current_mana = character.max_mana
+	character.current_stamina = character.max_stamina
+	character.current_energy = character.max_energy
+	save_character(peer_id)
+	send_character_update(peer_id)
+	var msg = "[color=#00FF00]You rest at the inn and recover fully.[/color]"
+	if healed_hp > 0:
+		msg += "\n[color=#88FF88]Restored %d HP, %d Mana.[/color]" % [healed_hp, healed_mana]
+	else:
+		msg += "\n[color=#888888]You were already at full health.[/color]"
+	send_to_peer(peer_id, {"type": "inn_rest_result", "message": msg})
+
+const STORAGE_CHEST_SLOTS = 10
+
+func handle_storage_access(peer_id: int):
+	"""Send storage chest contents to player."""
+	if not characters.has(peer_id):
+		return
+	if not at_player_station.has(peer_id) or not at_player_station[peer_id].get("has_storage", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You need to be at a Storage Chest![/color]"})
+		return
+	var username = _get_username(peer_id)
+	var storage = persistence.get_player_storage(username)
+	send_to_peer(peer_id, {
+		"type": "storage_contents",
+		"items": storage,
+		"max_slots": STORAGE_CHEST_SLOTS
+	})
+
+func handle_storage_deposit(peer_id: int, message: Dictionary):
+	"""Deposit an item from inventory into storage."""
+	if not characters.has(peer_id):
+		return
+	if not at_player_station.has(peer_id) or not at_player_station[peer_id].get("has_storage", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You need to be at a Storage Chest![/color]"})
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var item_index = int(message.get("item_index", -1))
+	if item_index < 0 or item_index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid item![/color]"})
+		return
+	var storage = persistence.get_player_storage(username)
+	if storage.size() >= STORAGE_CHEST_SLOTS:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Storage is full! (%d/%d)[/color]" % [storage.size(), STORAGE_CHEST_SLOTS]})
+		return
+	var item = character.inventory[item_index]
+	character.inventory.remove_at(item_index)
+	storage.append(item)
+	persistence.set_player_storage(username, storage)
+	save_character(peer_id)
+	send_character_update(peer_id)
+	send_to_peer(peer_id, {
+		"type": "storage_contents",
+		"items": storage,
+		"max_slots": STORAGE_CHEST_SLOTS,
+		"message": "[color=#00FF00]Deposited %s.[/color]" % item.get("name", "item")
+	})
+
+func handle_storage_withdraw(peer_id: int, message: Dictionary):
+	"""Withdraw an item from storage into inventory."""
+	if not characters.has(peer_id):
+		return
+	if not at_player_station.has(peer_id) or not at_player_station[peer_id].get("has_storage", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You need to be at a Storage Chest![/color]"})
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var storage_index = int(message.get("storage_index", -1))
+	var storage = persistence.get_player_storage(username)
+	if storage_index < 0 or storage_index >= storage.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid storage slot![/color]"})
+		return
+	if character.inventory.size() >= character.max_inventory:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Inventory is full![/color]"})
+		return
+	var item = storage[storage_index]
+	storage.remove_at(storage_index)
+	character.inventory.append(item)
+	persistence.set_player_storage(username, storage)
+	save_character(peer_id)
+	send_character_update(peer_id)
+	send_to_peer(peer_id, {
+		"type": "storage_contents",
+		"items": storage,
+		"max_slots": STORAGE_CHEST_SLOTS,
+		"message": "[color=#00FF00]Withdrew %s.[/color]" % item.get("name", "item")
+	})
+
 # ===== DUNGEON SYSTEM =====
 
 func handle_dungeon_list(peer_id: int):
@@ -13140,18 +14349,52 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		if floor_grid[start_pos.y][start_pos.x] == DungeonDatabaseScript.TileType.WALL:
 			start_pos = _find_any_walkable_tile(floor_grid)
 
-	# Enter dungeon
-	character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
-
-	# Add to active players
-	if not instance.active_players.has(peer_id):
-		instance.active_players.append(peer_id)
-
-	# Send dungeon state to player
-	_send_dungeon_state(peer_id)
-	save_character(peer_id)
-
-	log_message("Player %s entered dungeon %s (instance %s)" % [character.name, dungeon_data.name, instance_id])
+	# Enter dungeon — if party leader, bring all party members
+	if _is_party_leader(peer_id):
+		var party = active_parties[peer_id]
+		var party_members = party.members.duplicate()
+		# Validate all members can enter
+		for pid in party_members:
+			if not characters.has(pid):
+				continue
+			if characters[pid].in_dungeon:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is already in a dungeon![/color]" % characters[pid].name})
+				return
+			if combat_mgr.is_in_combat(pid):
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is in combat![/color]" % characters[pid].name})
+				return
+		# Enter leader at start position
+		character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+		if not instance.active_players.has(peer_id):
+			instance.active_players.append(peer_id)
+		_send_dungeon_state(peer_id)
+		save_character(peer_id)
+		# Enter followers at nearby positions
+		for i in range(1, party_members.size()):
+			var pid = party_members[i]
+			if not characters.has(pid):
+				continue
+			# Place followers offset from leader (or at same position if no room)
+			var follower_x = start_pos.x
+			var follower_y = start_pos.y + i  # Below leader
+			# Bounds check
+			if follower_y >= floor_grid.size() or floor_grid[follower_y][follower_x] == DungeonDatabaseScript.TileType.WALL:
+				follower_x = start_pos.x
+				follower_y = start_pos.y  # Fallback: same position
+			characters[pid].enter_dungeon(instance_id, dungeon_type, follower_x, follower_y)
+			if not instance.active_players.has(pid):
+				instance.active_players.append(pid)
+			_send_dungeon_state(pid)
+			save_character(pid)
+		log_message("Party led by %s entered dungeon %s" % [character.name, dungeon_data.name])
+	else:
+		# Solo entry
+		character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+		if not instance.active_players.has(peer_id):
+			instance.active_players.append(peer_id)
+		_send_dungeon_state(peer_id)
+		save_character(peer_id)
+		log_message("Player %s entered dungeon %s (instance %s)" % [character.name, dungeon_data.name, instance_id])
 
 func handle_dungeon_move(peer_id: int, message: Dictionary):
 	"""Handle player movement within dungeon"""
@@ -13167,6 +14410,11 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# In combat?
 	if combat_mgr.is_in_combat(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while in combat!"})
+		return
+
+	# Party followers can't move independently in dungeons
+	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls movement.[/color]"})
 		return
 
 	# Accept direction strings from client
@@ -13229,8 +14477,14 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		return
 
 	# Move player
+	var old_x = character.dungeon_x
+	var old_y = character.dungeon_y
 	character.dungeon_x = new_x
 	character.dungeon_y = new_y
+
+	# Move party followers in snake formation (dungeon)
+	if _is_party_leader(peer_id):
+		_move_party_followers_dungeon(peer_id, old_x, old_y)
 
 	# Regenerate health and resources on dungeon movement (reduced rate vs overworld)
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
@@ -13372,6 +14626,11 @@ func handle_dungeon_exit(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot exit while in combat!"})
 		return
 
+	# Party followers can't exit independently
+	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls dungeon navigation.[/color]"})
+		return
+
 	# Must be on entrance tile to exit
 	var instance_id_check = character.current_dungeon_id
 	if dungeon_floors.has(instance_id_check):
@@ -13413,7 +14672,7 @@ func handle_dungeon_exit(peer_id: int):
 			if dungeon_monsters.has(instance_id):
 				dungeon_monsters.erase(instance_id)
 
-	# Exit dungeon
+	# Exit dungeon — including party members
 	character.exit_dungeon()
 
 	send_to_peer(peer_id, {
@@ -13424,6 +14683,28 @@ func handle_dungeon_exit(peer_id: int):
 	send_location_update(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+	# Exit party followers from dungeon too
+	if _is_party_leader(peer_id):
+		var party = active_parties[peer_id]
+		for i in range(1, party.members.size()):
+			var pid = party.members[i]
+			if not characters.has(pid) or not characters[pid].in_dungeon:
+				continue
+			# Remove from dungeon active players
+			if active_dungeons.has(instance_id):
+				active_dungeons[instance_id].active_players.erase(pid)
+			characters[pid].exit_dungeon()
+			send_to_peer(pid, {
+				"type": "dungeon_exit",
+				"message": "[color=#FFD700]Your party leaves the dungeon.[/color]"
+			})
+			# Place follower near leader
+			characters[pid].x = character.x
+			characters[pid].y = character.y
+			send_location_update(pid)
+			send_character_update(pid)
+			save_character(pid)
 
 func handle_dungeon_go_back(peer_id: int):
 	"""Handle player going back to previous dungeon floor"""
@@ -13438,6 +14719,11 @@ func handle_dungeon_go_back(peer_id: int):
 
 	if combat_mgr.is_in_combat(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot go back while in combat!"})
+		return
+
+	# Party followers can't navigate independently
+	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls dungeon navigation.[/color]"})
 		return
 
 	if character.dungeon_floor <= 0:
@@ -14123,6 +15409,11 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		# Use boss display name (e.g., "Orc Warlord" instead of just "Orc")
 		monster.name = monster_info.name
 
+	# Party dungeon combat?
+	if _is_party_leader(peer_id):
+		_start_party_combat_encounter(peer_id, monster, [])
+		return
+
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
@@ -14242,7 +15533,7 @@ func _advance_dungeon_floor(peer_id: int):
 		if next_grid[entrance_pos.y][entrance_pos.x] == DungeonDatabaseScript.TileType.WALL:
 			entrance_pos = _find_any_walkable_tile(next_grid)
 
-	# Advance floor
+	# Advance floor — including party members
 	character.advance_dungeon_floor(entrance_pos.x, entrance_pos.y)
 
 	send_to_peer(peer_id, {
@@ -14254,6 +15545,29 @@ func _advance_dungeon_floor(peer_id: int):
 
 	_send_dungeon_state(peer_id)
 	save_character(peer_id)
+
+	# Move party followers to next floor too
+	if _is_party_leader(peer_id):
+		var party = active_parties[peer_id]
+		for i in range(1, party.members.size()):
+			var pid = party.members[i]
+			if not characters.has(pid) or not characters[pid].in_dungeon:
+				continue
+			# Place followers offset from entrance
+			var fy = entrance_pos.y + i
+			var fx = entrance_pos.x
+			if fy >= next_grid.size() or next_grid[fy][fx] == DungeonDatabaseScript.TileType.WALL:
+				fy = entrance_pos.y
+				fx = entrance_pos.x
+			characters[pid].advance_dungeon_floor(fx, fy)
+			send_to_peer(pid, {
+				"type": "dungeon_floor_change",
+				"floor": characters[pid].dungeon_floor + 1,
+				"total_floors": dungeon_data.floors,
+				"message": "[color=#FFFF00]Your party descends to floor %d...[/color]" % (characters[pid].dungeon_floor + 1)
+			})
+			_send_dungeon_state(pid)
+			save_character(pid)
 
 func _complete_dungeon(peer_id: int):
 	"""Handle dungeon completion"""
@@ -14383,6 +15697,88 @@ func _complete_dungeon(peer_id: int):
 	send_location_update(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+	# Complete dungeon for party followers too
+	if _is_party_leader(peer_id):
+		var party = active_parties[peer_id]
+		for i in range(1, party.members.size()):
+			var pid = party.members[i]
+			if not characters.has(pid) or not characters[pid].in_dungeon:
+				continue
+
+			var follower = characters[pid]
+
+			# Give same rewards (full duplication, not split)
+			var f_rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, follower.dungeon_floor + 1, inst_sub_tier)
+			follower.gold += f_rewards.gold
+			var f_xp_result = follower.add_experience(f_rewards.xp)
+
+			# Boss egg for each member
+			var f_egg_given = false
+			var f_egg_name = ""
+			var f_egg_lost = false
+			if boss_egg_monster != "":
+				var f_egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, inst_sub_tier)
+				if not f_egg_data.is_empty():
+					var f_egg_cap = persistence.get_egg_capacity(peers[pid].account_id) if peers.has(pid) else Character.MAX_INCUBATING_EGGS
+					var f_egg_result = follower.add_egg(f_egg_data, f_egg_cap)
+					if f_egg_result.success:
+						f_egg_given = true
+						f_egg_name = f_egg_data.get("name", boss_egg_monster + " Egg")
+					else:
+						f_egg_lost = true
+						f_egg_name = f_egg_data.get("name", boss_egg_monster + " Egg")
+
+			follower.record_dungeon_completion(dungeon_type)
+
+			# Quest progress for follower
+			var f_quest_updates = quest_mgr.check_dungeon_progress(follower, dungeon_type)
+			for update in f_quest_updates:
+				send_to_peer(pid, {
+					"type": "quest_progress",
+					"quest_id": update.quest_id,
+					"progress": update.progress,
+					"target": update.target,
+					"completed": update.completed,
+					"message": update.message
+				})
+
+			# Remove from dungeon
+			if active_dungeons.has(instance_id):
+				active_dungeons[instance_id].active_players.erase(pid)
+
+			follower.exit_dungeon()
+
+			# Build follower completion message
+			var f_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
+			f_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
+			f_msg += "[color=#FFD700]+%d Gold[/color]\n" % f_rewards.gold
+			f_msg += "[color=#00BFFF]+%d XP[/color]\n" % f_rewards.xp
+			if f_egg_given:
+				f_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % f_egg_name
+			elif f_egg_lost:
+				f_msg += "[color=#FF6666]★ %s found but eggs full! ★[/color]" % f_egg_name
+			if f_xp_result.leveled_up:
+				f_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % follower.level
+
+			send_to_peer(pid, {
+				"type": "dungeon_complete",
+				"dungeon_name": dungeon_data.name,
+				"rewards": f_rewards,
+				"leveled_up": f_xp_result.leveled_up,
+				"new_level": follower.level,
+				"message": f_msg,
+				"boss_egg_obtained": f_egg_given,
+				"boss_egg_name": f_egg_name,
+				"boss_egg_lost_to_full": f_egg_lost
+			})
+
+			# Place follower near leader's overworld position
+			follower.x = character.x
+			follower.y = character.y
+			send_location_update(pid)
+			send_character_update(pid)
+			save_character(pid)
 
 	log_message("Player %s completed dungeon %s!" % [character.name, dungeon_data.name])
 
@@ -14759,6 +16155,11 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		monster.strength = int(monster.strength * boss_info.get("attack_mult", 1.5))
 		monster.is_boss = true
 		monster.name = boss_info.get("name", monster.name)
+
+	# Party dungeon combat?
+	if _is_party_leader(peer_id):
+		_start_party_combat_encounter(peer_id, monster, [])
+		return
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
@@ -16271,7 +17672,7 @@ func handle_get_title_menu(peer_id: int):
 	# Get available claimable titles
 	var claimable = []
 	var title_hints = []  # Hints about what's needed to claim titles
-	if character.x == 0 and character.y == 0:
+	if abs(character.x) <= 1 and abs(character.y) <= 1:
 		# At The High Seat - check for claimable titles
 		var has_jarls_ring = _has_title_item(character, "jarls_ring")
 		var has_crown = _has_title_item(character, "crown_of_north")
@@ -17837,3 +19238,910 @@ func _execute_map_wipe(admin_peer_id: int):
 		send_location_update(pid)
 	log_message("[WIPE] Map wipe complete. World regenerated from seed.")
 	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})
+
+# ===== PARTY SYSTEM =====
+
+func _is_non_party_player_at(x: int, y: int, peer_id: int) -> bool:
+	"""Check if any non-party player is at the given coordinates."""
+	var my_party_leader = party_membership.get(peer_id, -1)
+	for other_peer_id in characters.keys():
+		if other_peer_id == peer_id:
+			continue
+		var other_char = characters[other_peer_id]
+		if other_char.x == x and other_char.y == y:
+			# If both in same party, don't block
+			if my_party_leader != -1 and party_membership.get(other_peer_id, -1) == my_party_leader:
+				continue
+			return true
+	return false
+
+func _get_player_at(x: int, y: int, exclude_peer_id: int = -1) -> int:
+	"""Get the peer_id of a player at given coordinates, or -1 if none."""
+	for other_peer_id in characters.keys():
+		if other_peer_id == exclude_peer_id:
+			continue
+		var other_char = characters[other_peer_id]
+		if other_char.x == x and other_char.y == y:
+			return other_peer_id
+	return -1
+
+func _is_party_leader(peer_id: int) -> bool:
+	return active_parties.has(peer_id)
+
+func _get_party_size(peer_id: int) -> int:
+	var leader_id = party_membership.get(peer_id, peer_id)
+	if active_parties.has(leader_id):
+		return active_parties[leader_id].members.size()
+	return 0
+
+func _get_party_members(peer_id: int) -> Array:
+	"""Get all party member peer_ids for the party this peer belongs to."""
+	var leader_id = party_membership.get(peer_id, -1)
+	if leader_id == -1:
+		return []
+	if active_parties.has(leader_id):
+		return active_parties[leader_id].members.duplicate()
+	return []
+
+func _build_party_member_info(peer_id: int) -> Dictionary:
+	"""Build member info dict for a party member."""
+	if not characters.has(peer_id):
+		return {}
+	var ch = characters[peer_id]
+	return {
+		"name": ch.name,
+		"level": ch.level,
+		"class_type": ch.class_type,
+		"is_leader": _is_party_leader(peer_id)
+	}
+
+func _send_party_update(leader_id: int):
+	"""Send full party state to all members."""
+	if not active_parties.has(leader_id):
+		return
+	var party = active_parties[leader_id]
+	var members_info = []
+	for pid in party.members:
+		members_info.append(_build_party_member_info(pid))
+	var update_msg = {
+		"type": "party_update",
+		"leader": characters[leader_id].name if characters.has(leader_id) else "",
+		"members": members_info
+	}
+	for pid in party.members:
+		send_to_peer(pid, update_msg)
+
+func _disband_party(leader_id: int, reason: String = "Party disbanded."):
+	"""Disband a party and notify all members."""
+	if not active_parties.has(leader_id):
+		return
+	var party = active_parties[leader_id]
+	var disband_msg = {"type": "party_disbanded", "reason": reason}
+	for pid in party.members:
+		send_to_peer(pid, disband_msg)
+		party_membership.erase(pid)
+	active_parties.erase(leader_id)
+	log_message("Party led by peer %d disbanded: %s" % [leader_id, reason])
+
+func _remove_party_member(leader_id: int, member_peer_id: int):
+	"""Remove a member from a party. Auto-disbands if only 1 left."""
+	if not active_parties.has(leader_id):
+		return
+	var party = active_parties[leader_id]
+	party.members.erase(member_peer_id)
+	party_membership.erase(member_peer_id)
+	if party.members.size() <= 1:
+		_disband_party(leader_id, "Not enough members to maintain the party.")
+	else:
+		_send_party_update(leader_id)
+
+func _find_adjacent_empty(x: int, y: int, exclude_peers: Array) -> Vector2i:
+	"""Find an empty adjacent tile near the given position."""
+	var offsets = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0),
+					Vector2i(1, -1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(-1, -1)]
+	for off in offsets:
+		var tx = x + off.x
+		var ty = y + off.y
+		# Check if tile blocks movement via chunk_manager
+		if chunk_manager:
+			var tile = chunk_manager.get_tile(tx, ty)
+			if tile.get("blocks_move", false):
+				continue
+		var occupied = false
+		for other_pid in characters.keys():
+			if other_pid in exclude_peers:
+				continue
+			if characters[other_pid].x == tx and characters[other_pid].y == ty:
+				occupied = true
+				break
+		if not occupied:
+			return Vector2i(tx, ty)
+	return Vector2i(x, y)  # Fallback: same position
+
+func handle_party_invite(peer_id: int, message: Dictionary):
+	"""Handle a party invite request from a player."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var target_name = message.get("target", "")
+	if target_name == "":
+		return
+
+	# Anti-spam cooldown
+	var now = Time.get_ticks_msec()
+	if party_invite_cooldowns.has(peer_id) and now - party_invite_cooldowns[peer_id] < PARTY_INVITE_COOLDOWN_MS:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Please wait before sending another party invite.[/color]"})
+		return
+	party_invite_cooldowns[peer_id] = now
+
+	# Validate inviter state
+	if combat_mgr.is_in_combat(peer_id) or character.in_dungeon:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You can't invite while in combat or a dungeon.[/color]"})
+		return
+	# If in a party, must be leader with room
+	if party_membership.has(peer_id):
+		if not _is_party_leader(peer_id):
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only the party leader can invite new members.[/color]"})
+			return
+		if _get_party_size(peer_id) >= PARTY_MAX_SIZE:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Party is full (%d/%d members).[/color]" % [PARTY_MAX_SIZE, PARTY_MAX_SIZE]})
+			return
+
+	# Find target player
+	var target_peer_id = -1
+	for other_pid in characters.keys():
+		if characters[other_pid].name.to_lower() == target_name.to_lower():
+			target_peer_id = other_pid
+			target_name = characters[other_pid].name
+			break
+	if target_peer_id == -1:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is not online.[/color]" % target_name})
+		return
+	if target_peer_id == peer_id:
+		return
+
+	# Validate target state
+	if party_membership.has(target_peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is already in a party.[/color]" % target_name})
+		return
+	if combat_mgr.is_in_combat(target_peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is in combat.[/color]" % target_name})
+		return
+	if characters[target_peer_id].in_dungeon:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is in a dungeon.[/color]" % target_name})
+		return
+	# Check for existing pending invite to this target
+	if pending_party_invites.has(target_peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s already has a pending party invite.[/color]" % target_name})
+		return
+
+	# Store pending invite and notify both players
+	pending_party_invites[target_peer_id] = {"from_peer_id": peer_id, "timestamp": now}
+	send_to_peer(target_peer_id, {
+		"type": "party_invite_received",
+		"from_name": character.name,
+		"from_level": character.level,
+		"from_class": character.class_type
+	})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00BFFF]Party invite sent to %s.[/color]" % target_name})
+
+func handle_party_invite_response(peer_id: int, message: Dictionary):
+	"""Handle accept/decline of a party invite."""
+	if not pending_party_invites.has(peer_id):
+		return
+	var invite = pending_party_invites[peer_id]
+	pending_party_invites.erase(peer_id)
+	var accept = message.get("accept", false)
+	var inviter_id = invite.from_peer_id
+
+	if not characters.has(inviter_id) or not characters.has(peer_id):
+		return
+
+	if not accept:
+		send_to_peer(inviter_id, {"type": "text", "message": "[color=#FF4444]%s declined your party invite.[/color]" % characters[peer_id].name})
+		return
+
+	# Accepted — check if inviter is already in a party
+	if party_membership.has(inviter_id) and _is_party_leader(inviter_id):
+		# Joining existing party — skip lead/follow, join as follower
+		_add_member_to_party(inviter_id, peer_id)
+	else:
+		# New party — ask inviter for Lead/Follow choice
+		send_to_peer(inviter_id, {
+			"type": "party_lead_choice",
+			"partner_name": characters[peer_id].name,
+			"partner_peer_id": peer_id
+		})
+
+func handle_party_lead_choice_response(peer_id: int, message: Dictionary):
+	"""Handle the Lead/Follow choice when forming a new party."""
+	if not characters.has(peer_id):
+		return
+	var choice = message.get("choice", "lead")
+	var partner_id = message.get("partner_peer_id", -1)
+	if not characters.has(partner_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Partner is no longer available.[/color]"})
+		return
+	# Verify partner isn't already in a party (race condition check)
+	if party_membership.has(partner_id) or party_membership.has(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]One of you already joined a party.[/color]"})
+		return
+
+	var leader_id: int
+	var follower_id: int
+	if choice == "follow":
+		leader_id = partner_id
+		follower_id = peer_id
+	else:
+		leader_id = peer_id
+		follower_id = partner_id
+
+	# Create the party
+	active_parties[leader_id] = {
+		"leader": leader_id,
+		"members": [leader_id, follower_id],
+		"formed_at": Time.get_ticks_msec()
+	}
+	party_membership[leader_id] = leader_id
+	party_membership[follower_id] = leader_id
+
+	# Teleport follower to adjacent tile near leader
+	var leader_char = characters[leader_id]
+	var adj = _find_adjacent_empty(leader_char.x, leader_char.y, [leader_id, follower_id])
+	characters[follower_id].x = adj.x
+	characters[follower_id].y = adj.y
+
+	# Send party_formed to both
+	var members_info = []
+	for pid in [leader_id, follower_id]:
+		members_info.append(_build_party_member_info(pid))
+
+	var formed_msg = {
+		"type": "party_formed",
+		"leader": characters[leader_id].name,
+		"members": members_info
+	}
+	send_to_peer(leader_id, formed_msg)
+	send_to_peer(follower_id, formed_msg)
+
+	# Send location updates so both see each other
+	send_location_update(leader_id)
+	send_location_update(follower_id)
+	send_character_update(follower_id)
+
+	log_message("Party formed: %s (leader) + %s" % [characters[leader_id].name, characters[follower_id].name])
+
+func _add_member_to_party(leader_id: int, new_member_id: int):
+	"""Add a new member to an existing party."""
+	if not active_parties.has(leader_id):
+		return
+	var party = active_parties[leader_id]
+	if party.members.size() >= PARTY_MAX_SIZE:
+		send_to_peer(new_member_id, {"type": "text", "message": "[color=#FF4444]Party is full.[/color]"})
+		return
+
+	party.members.append(new_member_id)
+	party_membership[new_member_id] = leader_id
+
+	# Teleport new member to adjacent tile near last member
+	var last_member_id = party.members[party.members.size() - 2]
+	var last_char = characters[last_member_id]
+	var adj = _find_adjacent_empty(last_char.x, last_char.y, party.members)
+	characters[new_member_id].x = adj.x
+	characters[new_member_id].y = adj.y
+
+	# Notify all members
+	var new_member_info = _build_party_member_info(new_member_id)
+	for pid in party.members:
+		if pid != new_member_id:
+			send_to_peer(pid, {
+				"type": "party_member_joined",
+				"member": new_member_info
+			})
+
+	# Send full party update to all (including new member)
+	_send_party_update(leader_id)
+
+	# Send location updates
+	for pid in party.members:
+		send_location_update(pid)
+	send_character_update(new_member_id)
+
+	log_message("Player %s joined party led by %s" % [
+		characters[new_member_id].name, characters[leader_id].name])
+
+func handle_party_disband(peer_id: int):
+	"""Handle party disband request (leader only)."""
+	if not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only the party leader can disband.[/color]"})
+		return
+	_disband_party(peer_id, "Leader disbanded the party.")
+
+func handle_party_leave(peer_id: int):
+	"""Handle a member leaving the party."""
+	if not party_membership.has(peer_id):
+		return
+	var leader_id = party_membership[peer_id]
+	if peer_id == leader_id:
+		# Leader leaving — appoint next member or disband
+		var party = active_parties[leader_id]
+		if party.members.size() <= 2:
+			_disband_party(leader_id, "%s left the party." % characters[peer_id].name)
+		else:
+			# Appoint next member as leader
+			var new_leader_id = -1
+			for pid in party.members:
+				if pid != peer_id:
+					new_leader_id = pid
+					break
+			if new_leader_id != -1:
+				_transfer_leadership(leader_id, new_leader_id)
+				_remove_party_member(new_leader_id, peer_id)
+				send_to_peer(peer_id, {"type": "party_disbanded", "reason": "You left the party."})
+		return
+
+	# Regular member leaving
+	var char_name = characters[peer_id].name if characters.has(peer_id) else "Unknown"
+	# Notify remaining members before removal
+	var party = active_parties[leader_id]
+	for pid in party.members:
+		if pid != peer_id:
+			send_to_peer(pid, {"type": "party_member_left", "name": char_name})
+	send_to_peer(peer_id, {"type": "party_disbanded", "reason": "You left the party."})
+	_remove_party_member(leader_id, peer_id)
+
+func handle_party_appoint_leader(peer_id: int, message: Dictionary):
+	"""Handle appointing a new party leader."""
+	if not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only the party leader can appoint a new leader.[/color]"})
+		return
+	var target_name = message.get("target", "")
+	if target_name == "":
+		return
+
+	var party = active_parties[peer_id]
+	var target_pid = -1
+	for pid in party.members:
+		if pid != peer_id and characters.has(pid) and characters[pid].name.to_lower() == target_name.to_lower():
+			target_pid = pid
+			break
+	if target_pid == -1:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]%s is not in your party.[/color]" % target_name})
+		return
+
+	_transfer_leadership(peer_id, target_pid)
+
+func _transfer_leadership(old_leader_id: int, new_leader_id: int):
+	"""Transfer party leadership from one member to another."""
+	if not active_parties.has(old_leader_id):
+		return
+	var party = active_parties[old_leader_id]
+
+	# Reorder members: new leader first
+	var new_members = [new_leader_id]
+	for pid in party.members:
+		if pid != new_leader_id:
+			new_members.append(pid)
+	party.members = new_members
+	party.leader = new_leader_id
+
+	# Move party data to new leader's key
+	active_parties.erase(old_leader_id)
+	active_parties[new_leader_id] = party
+
+	# Update all membership lookups
+	for pid in party.members:
+		party_membership[pid] = new_leader_id
+
+	# Notify all members
+	var new_leader_name = characters[new_leader_id].name if characters.has(new_leader_id) else "Unknown"
+	for pid in party.members:
+		send_to_peer(pid, {"type": "party_leader_changed", "new_leader": new_leader_name})
+	_send_party_update(new_leader_id)
+
+	log_message("Party leadership transferred to %s" % new_leader_name)
+
+func _move_party_followers(leader_peer_id: int, old_leader_x: int, old_leader_y: int):
+	"""Move party followers in snake formation behind the leader."""
+	if not active_parties.has(leader_peer_id):
+		return
+	var party = active_parties[leader_peer_id]
+	if party.members.size() <= 1:
+		return
+
+	# Build old positions BEFORE moving anyone (leader already moved)
+	var old_positions = []
+	old_positions.append(Vector2i(old_leader_x, old_leader_y))  # Leader's old position
+	for i in range(1, party.members.size()):
+		var follower = characters[party.members[i]]
+		old_positions.append(Vector2i(follower.x, follower.y))
+
+	# Each follower takes the position of the person ahead of them
+	for i in range(1, party.members.size()):
+		var follower_pid = party.members[i]
+		if not characters.has(follower_pid):
+			continue
+		var follower = characters[follower_pid]
+		# Regen for followers (same as leader gets from walking)
+		var early_game_mult = _get_early_game_regen_multiplier(follower.level)
+		var house_regen_mult = 1.0 + (follower.house_bonuses.get("resource_regen", 0) / 100.0)
+		var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult
+		var regen_percent = 0.02 * early_game_mult * house_regen_mult
+		follower.current_hp = min(follower.get_total_max_hp(), follower.current_hp + max(1, int(follower.get_total_max_hp() * hp_regen_percent)))
+		if not follower.cloak_active:
+			follower.current_mana = min(follower.get_total_max_mana(), follower.current_mana + max(1, int(follower.get_total_max_mana() * regen_percent)))
+			follower.current_stamina = min(follower.get_total_max_stamina(), follower.current_stamina + max(1, int(follower.get_total_max_stamina() * regen_percent)))
+			follower.current_energy = min(follower.get_total_max_energy(), follower.current_energy + max(1, int(follower.get_total_max_energy() * regen_percent)))
+		# Move to previous person's old position
+		follower.x = old_positions[i - 1].x
+		follower.y = old_positions[i - 1].y
+		# Process egg steps for followers too
+		follower.process_egg_steps(1)
+
+func _cleanup_party_combat_on_disconnect(peer_id: int):
+	"""Clean up party combat state when a player disconnects during party combat."""
+	if not combat_mgr.party_combat_membership.has(peer_id):
+		return
+	var leader_id = combat_mgr.party_combat_membership[peer_id]
+	if not combat_mgr.active_party_combats.has(leader_id):
+		combat_mgr.party_combat_membership.erase(peer_id)
+		return
+	var combat = combat_mgr.active_party_combats[leader_id]
+	# Mark as dead in the combat
+	if peer_id not in combat.dead_members and peer_id not in combat.fled_members:
+		combat.dead_members.append(peer_id)
+	# Remove from membership tracking
+	combat_mgr.party_combat_membership.erase(peer_id)
+	# If all members are now inactive, end combat
+	if combat_mgr._all_members_inactive(combat):
+		combat_mgr._end_party_combat(leader_id, false)
+		# Notify remaining party members
+		for pid in combat.members:
+			if pid != peer_id and characters.has(pid):
+				send_to_peer(pid, {
+					"type": "party_combat_end",
+					"messages": ["[color=#FF4444]The party has been defeated![/color]"],
+					"victory": false,
+					"your_death": false
+				})
+	else:
+		# Continue combat — advance turn if it was this player's turn
+		var current_pid = combat_mgr._get_current_turn_peer_id(combat)
+		if current_pid == peer_id or current_pid == -1:
+			# Advance to next player
+			combat.current_turn_index += 1
+			combat_mgr._skip_inactive_members(combat)
+			if combat.current_turn_index >= combat.members.size():
+				# Monster phase
+				var monster_results = combat_mgr._process_party_monster_phase(combat)
+				combat_mgr._check_party_deaths(combat)
+				combat.round += 1
+				combat.current_turn_index = 0
+				combat_mgr._skip_inactive_members(combat)
+				# Send update to remaining members
+				var next_pid = combat_mgr._get_current_turn_peer_id(combat)
+				var next_name = characters[next_pid].name if characters.has(next_pid) else ""
+				var cs = combat_mgr.get_party_combat_state(leader_id)
+				var msgs = monster_results.get("messages", [])
+				msgs.insert(0, "[color=#FF8800]%s disconnected from combat![/color]" % (characters[peer_id].name if characters.has(peer_id) else "A party member"))
+				for pid in combat.members:
+					if pid != peer_id and characters.has(pid) and pid not in combat.dead_members:
+						send_to_peer(pid, {
+							"type": "party_combat_update",
+							"messages": msgs,
+							"combat_state": cs,
+							"is_your_turn": (pid == next_pid),
+							"current_turn_name": next_name
+						})
+			else:
+				var next_pid = combat_mgr._get_current_turn_peer_id(combat)
+				var next_name = characters[next_pid].name if characters.has(next_pid) else ""
+				var cs = combat_mgr.get_party_combat_state(leader_id)
+				var msgs = ["[color=#FF8800]%s disconnected from combat![/color]" % (characters[peer_id].name if characters.has(peer_id) else "A party member")]
+				for pid in combat.members:
+					if pid != peer_id and characters.has(pid) and pid not in combat.dead_members:
+						send_to_peer(pid, {
+							"type": "party_combat_update",
+							"messages": msgs,
+							"combat_state": cs,
+							"is_your_turn": (pid == next_pid),
+							"current_turn_name": next_name
+						})
+
+func _cleanup_party_on_disconnect(peer_id: int):
+	"""Clean up party state when a player disconnects."""
+	# First handle party combat disconnect
+	_cleanup_party_combat_on_disconnect(peer_id)
+
+	# Clean up pending invites FROM this player
+	for target_pid in pending_party_invites.keys():
+		if pending_party_invites[target_pid].from_peer_id == peer_id:
+			pending_party_invites.erase(target_pid)
+			send_to_peer(target_pid, {"type": "party_disbanded", "reason": "Inviter disconnected."})
+	# Clean up pending invite TO this player
+	pending_party_invites.erase(peer_id)
+	party_invite_cooldowns.erase(peer_id)
+
+	if not party_membership.has(peer_id):
+		return
+
+	var leader_id = party_membership[peer_id]
+	if not active_parties.has(leader_id):
+		party_membership.erase(peer_id)
+		return
+
+	var char_name = characters[peer_id].name if characters.has(peer_id) else "Unknown"
+
+	if peer_id == leader_id:
+		# Leader disconnected
+		var party = active_parties[leader_id]
+		if party.members.size() <= 2:
+			_disband_party(leader_id, "%s disconnected." % char_name)
+		else:
+			# Appoint next member as leader
+			var new_leader_id = -1
+			for pid in party.members:
+				if pid != peer_id:
+					new_leader_id = pid
+					break
+			if new_leader_id != -1:
+				_transfer_leadership(leader_id, new_leader_id)
+				_remove_party_member(new_leader_id, peer_id)
+			else:
+				_disband_party(leader_id, "%s disconnected." % char_name)
+	else:
+		# Regular member disconnected
+		for pid in active_parties[leader_id].members:
+			if pid != peer_id:
+				send_to_peer(pid, {"type": "party_member_left", "name": char_name})
+		_remove_party_member(leader_id, peer_id)
+
+# ═══════════════════════════════════════════════
+# Party Combat
+# ═══════════════════════════════════════════════
+
+func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, debuff_messages: Array):
+	"""Start a party combat encounter when the party leader triggers an encounter."""
+	if not active_parties.has(leader_peer_id):
+		return
+
+	var party = active_parties[leader_peer_id]
+	var party_members = party.members.duplicate()
+
+	# Build characters dict for combat manager
+	var party_characters = {}
+	for pid in party_members:
+		if characters.has(pid):
+			party_characters[pid] = characters[pid]
+
+	# Start party combat in combat manager
+	var result = combat_mgr.start_party_combat(party_members, party_characters, monster)
+
+	if not result.get("success", false):
+		send_to_peer(leader_peer_id, {"type": "text", "message": "[color=#FF4444]Failed to start party combat![/color]"})
+		return
+
+	var monster_name = monster.get("name", "Monster")
+	var combat_bg_color = combat_mgr.get_monster_combat_bg_color(monster_name)
+	var first_turn_pid = result.get("first_turn_peer_id", leader_peer_id)
+
+	# Prepend debuff messages
+	var start_messages = result.get("messages", [])
+	if debuff_messages.size() > 0:
+		start_messages = debuff_messages + start_messages
+
+	# Get party combat state for display
+	var combat_state = combat_mgr.get_party_combat_state(leader_peer_id)
+
+	# Send party_combat_start to ALL party members
+	for pid in party_members:
+		var is_first_turn = (pid == first_turn_pid)
+		send_to_peer(pid, {
+			"type": "party_combat_start",
+			"messages": start_messages,
+			"monster_name": monster_name,
+			"monster_level": monster.get("level", 1),
+			"combat_bg_color": combat_bg_color,
+			"use_client_art": true,
+			"combat_state": combat_state,
+			"is_your_turn": is_first_turn,
+			"current_turn_name": characters[first_turn_pid].name if characters.has(first_turn_pid) else ""
+		})
+
+func _handle_party_combat_command(peer_id: int, command: String):
+	"""Handle a combat command from a player in party combat."""
+	var leader_id = combat_mgr.party_combat_membership.get(peer_id, -1)
+	if leader_id == -1:
+		return
+
+	# Map command string to CombatAction
+	var action = CombatManager.CombatAction.ATTACK
+	match command:
+		"attack":
+			action = CombatManager.CombatAction.ATTACK
+		"flee":
+			action = CombatManager.CombatAction.FLEE
+		"outsmart":
+			action = CombatManager.CombatAction.OUTSMART
+		_:
+			# Unknown command for party combat (abilities not yet supported)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]That action isn't available in party combat.[/color]"})
+			return
+
+	var result = combat_mgr.process_party_combat_action(leader_id, peer_id, action)
+
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": result.get("message", "Not your turn!")})
+		return
+
+	var messages = result.get("messages", [])
+	var combat_ended = result.get("combat_ended", false)
+	var victory = result.get("victory", false)
+
+	# Get all party members from the combat (before it might be cleaned up)
+	var party_members = []
+	if combat_mgr.active_party_combats.has(leader_id):
+		party_members = combat_mgr.active_party_combats[leader_id].members.duplicate()
+	elif active_parties.has(leader_id):
+		party_members = active_parties[leader_id].members.duplicate()
+
+	if combat_ended:
+		if victory:
+			_handle_party_combat_victory(leader_id, peer_id, result, messages, party_members)
+		else:
+			_handle_party_combat_defeat(leader_id, messages, party_members)
+	else:
+		# Combat continues — send update to all members
+		var next_turn_pid = result.get("next_turn_peer_id", -1)
+		var next_turn_name = characters[next_turn_pid].name if characters.has(next_turn_pid) else ""
+		var combat_state = combat_mgr.get_party_combat_state(leader_id)
+
+		for pid in party_members:
+			if not characters.has(pid):
+				continue
+			send_to_peer(pid, {
+				"type": "party_combat_update",
+				"messages": messages,
+				"combat_state": combat_state,
+				"is_your_turn": (pid == next_turn_pid),
+				"current_turn_name": next_turn_name
+			})
+
+func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: Dictionary, messages: Array, party_members: Array):
+	"""Handle party combat victory — distribute rewards to all surviving members."""
+	var member_rewards = result.get("member_rewards", {})
+	var monster = {}
+	if combat_mgr.active_party_combats.has(leader_id):
+		monster = combat_mgr.active_party_combats[leader_id].monster
+
+	var monster_name = monster.get("name", "Monster")
+	var monster_level = monster.get("level", 1)
+	var monster_base_name = monster.get("base_name", monster_name)
+
+	# Process drops for each surviving member (similar to solo combat victory)
+	for pid in party_members:
+		if not characters.has(pid):
+			continue
+
+		var rewards = member_rewards.get(pid, {})
+		var is_dead = rewards.is_empty()  # Dead members don't get rewards
+
+		if is_dead:
+			# Dead member — handle permadeath
+			var combat_data = {"monster_name": monster_name, "monster_level": monster_level}
+			# End their party combat state
+			send_to_peer(pid, {
+				"type": "party_combat_end",
+				"messages": messages,
+				"victory": true,
+				"your_death": true
+			})
+			continue
+
+		# Record monster knowledge
+		characters[pid].record_monster_kill(monster_base_name, monster_level)
+		characters[pid].monsters_killed += 1
+
+		# Check quest progress
+		check_kill_quest_progress(pid, monster_level, monster_name)
+
+		# Roll for additional drops per member
+		var drop_messages = []
+		var drop_data = []
+		var all_drops = rewards.get("drops", [])
+
+		# Roll for companion egg
+		var egg_drop = drop_tables.roll_egg_drop(monster_name, _get_monster_tier(monster_level))
+		if not egg_drop.is_empty():
+			all_drops.append({"type": "companion_egg", "name": egg_drop.get("name", "Mysterious Egg"), "egg_data": egg_drop, "rarity": "epic"})
+
+		# Roll for crafting materials
+		var material_drop = drop_tables.roll_crafting_material_drop(_get_monster_tier(monster_level))
+		if not material_drop.is_empty():
+			all_drops.append({"type": "crafting_material", "material_id": material_drop.material_id, "quantity": material_drop.quantity, "rarity": "uncommon"})
+
+		# Roll for monster parts
+		var soldier_level = characters[pid].job_levels.get("soldier", 0)
+		var part_drop = drop_tables.roll_monster_part_drop(monster_name, _get_monster_tier(monster_level), soldier_level)
+		if not part_drop.is_empty():
+			all_drops.append({"type": "monster_part", "material_id": part_drop["id"], "material_name": part_drop["name"], "quantity": part_drop["qty"], "rarity": "common"})
+
+		# Roll for tool drop
+		var tool_drop = drop_tables.roll_tool_drop(_get_monster_tier(monster_level))
+		if not tool_drop.is_empty():
+			all_drops.append(tool_drop)
+
+		# Give drops to player
+		var player_level = characters[pid].level
+		for item in all_drops:
+			if item.get("type", "") == "companion_egg":
+				var egg_data = item.get("egg_data", {})
+				var _egg_cap = persistence.get_egg_capacity(peers[pid].account_id) if peers.has(pid) else Character.MAX_INCUBATING_EGGS
+				var egg_result = characters[pid].add_egg(egg_data, _egg_cap)
+				if egg_result.success:
+					drop_messages.append("[color=#A335EE]✦ COMPANION EGG: %s[/color]" % egg_data.get("name", "Mysterious Egg"))
+					drop_data.append({"rarity": "epic", "level": 1, "level_diff": 0, "is_egg": true})
+				else:
+					drop_messages.append("[color=#FF6666]★ %s found but eggs full! ★[/color]" % egg_data.get("name", "Egg"))
+			elif item.get("type", "") == "crafting_material":
+				var mat_id = item.get("material_id", "")
+				var quantity = item.get("quantity", 1)
+				var mat_info = CraftingDatabaseScript.get_material(mat_id)
+				var mat_name = mat_info.get("name", mat_id) if not mat_info.is_empty() else mat_id
+				characters[pid].add_crafting_material(mat_id, quantity)
+				var qty_text = " x%d" % quantity if quantity > 1 else ""
+				drop_messages.append("[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text])
+				drop_data.append({"rarity": "uncommon", "level": 1, "level_diff": 0, "is_material": true})
+			elif item.get("type", "") == "monster_part":
+				var mp_id = item.get("material_id", "")
+				var mp_name = item.get("material_name", mp_id)
+				var mp_qty = item.get("quantity", 1)
+				characters[pid].add_crafting_material(mp_id, mp_qty)
+				var mp_qty_text = " x%d" % mp_qty if mp_qty > 1 else ""
+				drop_messages.append("[color=#FF6600]◆ PART: %s%s[/color]" % [mp_name, mp_qty_text])
+				drop_data.append({"rarity": "common", "level": 1, "level_diff": 0, "is_material": true})
+			elif characters[pid].can_add_item() or _try_auto_salvage(pid):
+				if _should_auto_salvage_item(pid, item):
+					var salvage_result = drop_tables.get_salvage_value(item)
+					var essence = salvage_result.essence
+					characters[pid].add_salvage_essence(essence)
+					drop_messages.append("[color=#AA66FF]⚡ Auto-salvaged %s (+%d ESS)[/color]" % [item.get("name", "item"), essence])
+				else:
+					characters[pid].add_item(item)
+					var rarity = item.get("rarity", "common")
+					var color = _get_rarity_color(rarity)
+					var symbol = _get_rarity_symbol(rarity)
+					var name = item.get("name", "Unknown Item")
+					drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
+					drop_data.append({"rarity": rarity, "level": item.get("level", 1), "level_diff": item.get("level", 1) - player_level})
+			else:
+				drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
+
+		# Gems
+		var total_gems = rewards.get("gems", 0)
+
+		save_character(pid)
+
+		send_to_peer(pid, {
+			"type": "party_combat_end",
+			"messages": messages,
+			"victory": true,
+			"your_death": false,
+			"character": characters[pid].to_dict(),
+			"flock_drops": drop_messages,
+			"total_gems": total_gems,
+			"drop_data": drop_data,
+			"xp_earned": rewards.get("xp", 0),
+			"gold_earned": rewards.get("gold", 0)
+		})
+
+	# End party combat (cleans up combat state)
+	combat_mgr._end_party_combat(leader_id, true)
+
+	# Handle permadeath for dead members AFTER combat cleanup
+	for pid in party_members:
+		if not characters.has(pid):
+			continue
+		if characters[pid].current_hp <= 0:
+			var was_saved = _check_death_saves_in_combat(pid, characters[pid])
+			if was_saved:
+				send_to_peer(pid, {
+					"type": "combat_end",
+					"victory": false,
+					"death_saved": true,
+					"character": characters[pid].to_dict()
+				})
+				send_location_update(pid)
+				save_character(pid)
+			else:
+				# Remove from party before permadeath
+				if party_membership.has(pid):
+					var pid_leader = party_membership[pid]
+					_remove_party_member(pid_leader, pid)
+				handle_permadeath(pid, monster_name, {"monster_name": monster_name, "monster_level": monster_level})
+
+func _handle_party_combat_defeat(leader_id: int, messages: Array, party_members: Array):
+	"""Handle party combat defeat — all members dead or fled."""
+	# End party combat
+	combat_mgr._end_party_combat(leader_id, false)
+
+	for pid in party_members:
+		if not characters.has(pid):
+			continue
+
+		var is_dead = characters[pid].current_hp <= 0
+
+		if is_dead:
+			var was_saved = _check_death_saves_in_combat(pid, characters[pid])
+			if was_saved:
+				send_to_peer(pid, {
+					"type": "party_combat_end",
+					"messages": messages,
+					"victory": false,
+					"your_death": false,
+					"death_saved": true,
+					"character": characters[pid].to_dict()
+				})
+				send_location_update(pid)
+				save_character(pid)
+			else:
+				# Remove from party before permadeath
+				if party_membership.has(pid):
+					var pid_leader = party_membership[pid]
+					_remove_party_member(pid_leader, pid)
+				handle_permadeath(pid, "combat", {})
+		else:
+			# Fled or survived
+			send_to_peer(pid, {
+				"type": "party_combat_end",
+				"messages": messages,
+				"victory": false,
+				"your_death": false,
+				"character": characters[pid].to_dict()
+			})
+			save_character(pid)
+
+func _move_party_followers_dungeon(leader_peer_id: int, old_leader_x: int, old_leader_y: int):
+	"""Move party followers in snake formation within a dungeon."""
+	if not active_parties.has(leader_peer_id):
+		return
+	var party = active_parties[leader_peer_id]
+	var members = party.members
+
+	# Build old positions BEFORE moving anyone
+	var old_positions = []
+	for pid in members:
+		if characters.has(pid):
+			old_positions.append(Vector2i(characters[pid].dungeon_x, characters[pid].dungeon_y))
+		else:
+			old_positions.append(Vector2i(0, 0))
+
+	# Override leader's old position (we already moved the leader)
+	old_positions[0] = Vector2i(old_leader_x, old_leader_y)
+
+	# Move each follower to the previous person's old position
+	for i in range(1, members.size()):
+		var pid = members[i]
+		if not characters.has(pid) or not characters[pid].in_dungeon:
+			continue
+		var follower = characters[pid]
+
+		# Regen for follower (same rate as dungeon movement)
+		var early_game_mult = _get_early_game_regen_multiplier(follower.level)
+		var house_regen_mult = 1.0 + (follower.house_bonuses.get("resource_regen", 0) / 100.0)
+		var dungeon_hp_regen_percent = 0.005 * early_game_mult * house_regen_mult
+		var dungeon_regen_percent = 0.01 * early_game_mult * house_regen_mult
+		follower.current_hp = min(follower.get_total_max_hp(), follower.current_hp + max(1, int(follower.get_total_max_hp() * dungeon_hp_regen_percent)))
+		if not follower.cloak_active:
+			follower.current_mana = min(follower.get_total_max_mana(), follower.current_mana + max(1, int(follower.get_total_max_mana() * dungeon_regen_percent)))
+			follower.current_stamina = min(follower.get_total_max_stamina(), follower.current_stamina + max(1, int(follower.get_total_max_stamina() * dungeon_regen_percent)))
+			follower.current_energy = min(follower.get_total_max_energy(), follower.current_energy + max(1, int(follower.get_total_max_energy() * dungeon_regen_percent)))
+
+		follower.dungeon_x = old_positions[i - 1].x
+		follower.dungeon_y = old_positions[i - 1].y
+
+		# Egg steps
+		follower.process_egg_steps(1)
+
+		# Send dungeon state to follower
+		_send_dungeon_state(pid)

@@ -118,11 +118,15 @@ static func _generate_name(rng: RandomNumberGenerator) -> String:
 
 static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 	"""Write post layout (walls, stations, floor) into chunk data.
-	Clears any resource nodes inside the walls."""
+	Clears any resource nodes inside the walls.
+	Layout: 2 copies of each crafting station (solid/blocking), 2 quest boards,
+	market, inn, post_marker. All stations use bump-to-interact.
+	Crossroads gets a throne tile. Multiple doors per wall side."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
 	var size = int(post.get("size", 15))
 	var half = size / 2
+	var is_crossroads = post.get("is_starter", false)
 
 	# Calculate bounds (all integers — critical: JSON loads numbers as floats)
 	var min_x = px - half
@@ -130,14 +134,28 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 	var min_y = py - half
 	var max_y = py + half
 
-	# Phase 1: Clear interior and place floor
+	# Door offsets from center on each wall side (3 doors per side)
+	var door_offsets = [-3, 0, 3]
+
+	# Phase 1: Clear interior, place walls with multiple doors
 	for x in range(min_x, max_x + 1):
 		for y in range(min_y, max_y + 1):
-			# Wall ring
 			if x == min_x or x == max_x or y == min_y or y == max_y:
-				# Door openings — one on each cardinal side, centered
-				if (x == px and y == min_y) or (x == px and y == max_y) or \
-				   (x == min_x and y == py) or (x == max_x and y == py):
+				# Check if this position is a door
+				var is_door = false
+				for offset in door_offsets:
+					# North/South walls: vary x
+					if (y == min_y or y == max_y) and x == px + offset:
+						is_door = true
+						break
+					# East/West walls: vary y
+					if (x == min_x or x == max_x) and y == py + offset:
+						is_door = true
+						break
+				# Corner tiles are always walls
+				if (x == min_x or x == max_x) and (y == min_y or y == max_y):
+					is_door = false
+				if is_door:
 					chunk_manager.set_tile(x, y, {
 						"type": "door", "tier": 0,
 						"blocks_move": false, "blocks_los": false,
@@ -148,39 +166,36 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 						"blocks_move": true, "blocks_los": true,
 					})
 			else:
-				# Interior floor
 				chunk_manager.set_tile(x, y, {
 					"type": "floor", "tier": 0,
 					"blocks_move": false, "blocks_los": false,
 				})
 
-	# Phase 2: Place stations inside the post
-	var interior_min_x = min_x + 2
-	var interior_min_y = min_y + 2
-	var interior_max_x = max_x - 2
-	var interior_max_y = max_y - 2
-	var interior_w = interior_max_x - interior_min_x
+	# Phase 2: Place stations inside the post (all blocking for bump-to-interact)
+	# Interior bounds (2 tiles in from walls for spacing)
+	var ix0 = min_x + 2  # interior left
+	var ix1 = max_x - 2  # interior right
+	var iy0 = min_y + 2  # interior top
+	var iy1 = max_y - 2  # interior bottom
 
-	# Crafting stations along the top row (spaced evenly, skip if won't fit)
-	var station_spacing = maxi(2, interior_w / 5)
-	var stations = ["forge", "apothecary", "workbench", "enchant_table", "writing_desk"]
-	for i in range(stations.size()):
-		var sx = interior_min_x + i * station_spacing
-		if sx <= interior_max_x:
-			_place_station(chunk_manager, sx, interior_max_y, stations[i])
+	# Row 1 (top interior): Crafting stations, 2 of each, paired
+	# forge, forge, apothecary, apothecary, enchant_table, enchant_table
+	_place_station(chunk_manager, ix0, iy0, "forge")
+	_place_station(chunk_manager, ix0 + 1, iy0, "forge")
+	_place_station(chunk_manager, ix0 + 3, iy0, "apothecary")
+	_place_station(chunk_manager, ix0 + 4, iy0, "apothecary")
+	_place_station(chunk_manager, ix0 + 6, iy0, "enchant_table")
+	_place_station(chunk_manager, ix0 + 7, iy0, "enchant_table")
 
-	# Market tile at center (single tile)
-	chunk_manager.set_tile(px + 1, py, {
-		"type": "market", "tier": 0,
-		"blocks_move": false, "blocks_los": false,
-	})
+	# Row 2 (top+2): writing_desk pair, workbench pair
+	_place_station(chunk_manager, ix0, iy0 + 2, "writing_desk")
+	_place_station(chunk_manager, ix0 + 1, iy0 + 2, "writing_desk")
+	_place_station(chunk_manager, ix0 + 3, iy0 + 2, "workbench")
+	_place_station(chunk_manager, ix0 + 4, iy0 + 2, "workbench")
 
-	# Inn near bottom-right
-	if interior_max_x - 2 >= interior_min_x:
-		_place_station(chunk_manager, interior_max_x - 2, interior_min_y + 1, "inn")
-
-	# Quest Board near Inn
-	_place_station(chunk_manager, interior_max_x, interior_min_y + 1, "quest_board")
+	# Row 3 (middle area): quest boards, post marker, inn
+	_place_station(chunk_manager, ix0, iy0 + 4, "quest_board")
+	_place_station(chunk_manager, ix0 + 2, iy0 + 4, "quest_board")
 
 	# Post marker at center
 	chunk_manager.set_tile(px, py, {
@@ -188,9 +203,17 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 		"blocks_move": false, "blocks_los": false,
 	})
 
+	# Inn and Market on right side
+	_place_station(chunk_manager, ix1 - 1, iy0 + 4, "inn")
+	_place_station(chunk_manager, ix1, iy0 + 4, "market")
+
+	# Crossroads: place throne near center-bottom
+	if is_crossroads:
+		_place_station(chunk_manager, px, iy1, "throne")
+
 static func _place_station(chunk_manager, x: int, y: int, station_type: String) -> void:
-	"""Place a crafting station tile."""
+	"""Place a station tile (blocking — interacted via bump)."""
 	chunk_manager.set_tile(x, y, {
 		"type": station_type, "tier": 0,
-		"blocks_move": false, "blocks_los": false,
+		"blocks_move": true, "blocks_los": false,
 	})

@@ -394,6 +394,9 @@ const JOB_TRIAL_CAP = 5
 const GATHERING_JOBS = ["mining", "logging", "foraging", "soldier", "fishing"]
 const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]
 
+# ===== HARVEST MASTERY =====
+@export var harvest_mastery: Dictionary = {}  # {monster_type: successful_harvests_count}
+
 # ===== SALVAGE SYSTEM =====
 @export var salvage_essence: int = 0  # Currency from salvaging items
 @export var auto_salvage_enabled: bool = false
@@ -1332,6 +1335,7 @@ func to_dict() -> Dictionary:
 		"specialty_job_committed": specialty_job_committed,
 		"job_levels": job_levels,
 		"job_xp": job_xp,
+		"harvest_mastery": harvest_mastery,
 		"house_bonuses": house_bonuses,
 		"using_registered_companion": using_registered_companion,
 		"registered_companion_slot": registered_companion_slot,
@@ -1603,6 +1607,7 @@ func from_dict(data: Dictionary):
 		"mining": 0, "logging": 0, "foraging": 0, "soldier": 0, "fishing": 0,
 		"blacksmith": 0, "builder": 0, "alchemist": 0, "scribe": 0, "enchanter": 0
 	})
+	harvest_mastery = data.get("harvest_mastery", {})
 
 	# Legacy migration: seed job_levels from old skill system if character predates jobs
 	if not data.has("job_levels") and (data.has("fishing_skill") or data.has("mining_skill") or data.has("logging_skill")):
@@ -1750,7 +1755,7 @@ func _add_stackable_consumable(item: Dictionary) -> bool:
 
 	# Find existing stack of same type+tier
 	for inv_item in inventory:
-		if inv_item.get("is_consumable", false) and inv_item.get("type", "") == item_type and inv_item.get("tier", 1) == item_tier:
+		if inv_item.get("is_consumable", false) and inv_item.get("type", "") == item_type and inv_item.get("tier", 1) == item_tier and inv_item.get("rarity", "common") == item.get("rarity", "common"):
 			# Found matching stack - add to it
 			var current_qty = inv_item.get("quantity", 1)
 			var new_qty = mini(MAX_STACK_SIZE, current_qty + add_quantity)
@@ -1777,8 +1782,20 @@ func use_consumable_stack(index: int) -> Dictionary:
 	if quantity <= 0:
 		return {}
 
-	# Decrease quantity
+	# Check for rarity multi-use (epic/legendary consumables have remaining_uses > 1)
+	var remaining_uses = item.get("remaining_uses", 0)
+	if remaining_uses > 1:
+		# Decrement uses but don't consume the item yet
+		item["remaining_uses"] = remaining_uses - 1
+		return item
+
+	# Decrease quantity (normal consumption)
 	item["quantity"] = quantity - 1
+
+	# Reset remaining_uses for next item in stack (if any remain)
+	if item["quantity"] > 0 and item.has("remaining_uses"):
+		var max_uses = item.get("rarity_bonuses", {}).get("uses", 1)
+		item["remaining_uses"] = max_uses
 
 	# Remove from inventory if depleted
 	if item["quantity"] <= 0:
