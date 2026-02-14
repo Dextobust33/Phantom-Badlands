@@ -5328,8 +5328,9 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 	var leader_char = characters[leader_id]
 	var init_roll = randi() % 100
 	var monster_speed = monster.get("speed", 10)
-	var player_dex = leader_char.dexterity + leader_char.get_equipment_stat("speed")
-	var monster_initiative = clamp(5 + int(monster_speed * 0.15) - int(log(max(1, player_dex)) * 3.0), 5, 55)
+	var player_dex = leader_char.get_effective_stat("dexterity")
+	var equipment_speed = leader_char.get_equipment_bonuses().get("speed", 0)
+	var monster_initiative = clamp(5 + int(monster_speed * 0.15) - int(log(max(1, player_dex + equipment_speed)) * 3.0), 5, 55)
 	var monster_goes_first = init_roll < monster_initiative
 
 	# Build per-member combat states
@@ -5406,8 +5407,8 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 
 	if monster_goes_first:
 		messages.append("[color=#FF8800]The %s strikes first![/color]" % monster.get("name", "monster"))
-		# Process monster's first actions
-		var first_results = _process_party_monster_phase(combat)
+		# Process monster's first strike - limited to 1 action to prevent instant kills
+		var first_results = _process_party_monster_phase(combat, 1)
 		messages.append_array(first_results.get("messages", []))
 		# After first strike, check for deaths
 		_check_party_deaths(combat)
@@ -5536,6 +5537,213 @@ func process_party_combat_action(leader_id: int, acting_peer_id: int, action: Co
 		"next_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
 
+func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_name: String, arg: String) -> Dictionary:
+	"""Process an ability command from a player in party combat.
+	Creates an adapter dict so existing ability functions can be reused."""
+	if not active_party_combats.has(leader_id):
+		return {"success": false, "message": "No active party combat"}
+
+	var combat = active_party_combats[leader_id]
+	var current_pid = _get_current_turn_peer_id(combat)
+
+	if acting_peer_id != current_pid:
+		return {"success": false, "message": "Not your turn"}
+
+	var character = combat.characters[acting_peer_id]
+	var monster = combat.monster
+	var ms = combat.member_states[acting_peer_id]
+
+	var monster_hp_before = monster.current_hp
+	var player_hp_before = character.current_hp
+
+	# Normalize ability names (same as solo)
+	match ability_name:
+		"bolt": ability_name = "magic_bolt"
+		"strike": ability_name = "power_strike"
+		"warcry": ability_name = "war_cry"
+		"bash": ability_name = "shield_bash"
+		"ironskin": ability_name = "iron_skin"
+		"heist": ability_name = "perfect_heist"
+		"shield": ability_name = "forcefield"
+
+	# Build adapter dict that mimics solo combat structure
+	var adapter = {
+		"character": character,
+		"monster": monster,
+		"round": combat.round,
+		"player_can_act": true,
+		"messages": [],
+		"total_damage_dealt": ms.get("total_damage_dealt", 0),
+		"total_damage_taken": ms.get("total_damage_taken", 0),
+		# Per-member buff/debuff state (stored in member_states)
+		"outsmart_failed": ms.get("outsmart_failed", false),
+		"analyze_bonus": ms.get("analyze_bonus", 0),
+		"forcefield_shield": ms.get("forcefield_shield", 0),
+		"cloak_active": ms.get("cloak_active", false),
+		"haste_active": ms.get("haste_active", false),
+		"vanished": ms.get("vanished", false),
+		"ninja_flee_protection": ms.get("ninja_flee_protection", false),
+		"pickpocket_count": ms.get("pickpocket_count", 0),
+		"pickpocket_max": ms.get("pickpocket_max", 2),
+		"gambit_kill": ms.get("gambit_kill", false),
+		# Shared monster state (stored on combat dict)
+		"monster_stunned": combat.get("monster_stunned", 0),
+		"monster_burn": combat.get("monster_burn", 0),
+		"monster_burn_duration": combat.get("monster_burn_duration", 0),
+		"monster_bleed": combat.get("monster_bleed", 0),
+		"monster_bleed_duration": combat.get("monster_bleed_duration", 0),
+		"monster_poison": combat.get("monster_poison", 0),
+		"monster_poison_duration": combat.get("monster_poison_duration", 0),
+		"monster_weakness": combat.get("monster_weakness", 0),
+		"monster_weakness_duration": combat.get("monster_weakness_duration", 0),
+		"monster_slowed": combat.get("monster_slowed", 0),
+		"monster_slow_duration": combat.get("monster_slow_duration", 0),
+		"monster_mana_drained": combat.get("monster_mana_drained", 0),
+		"monster_charmed": combat.get("monster_charmed", 0),
+		"monster_sabotaged": combat.get("monster_sabotaged", 0),
+		"enemy_distracted": combat.get("enemy_distracted", false),
+		"cc_resistance": combat.get("cc_resistance", 0),
+		"enrage_stacks": combat.get("enrage_stacks", 0),
+		"damage_buff": ms.get("damage_buff", 0),
+		"defense_buff": ms.get("defense_buff", 0),
+		"disguise_active": combat.get("disguise_active", false),
+		"disguise_revealed": combat.get("disguise_revealed", false),
+		"disguise_true_stats": combat.get("disguise_true_stats", {}),
+		# Companion state
+		"companion_hp_regen": ms.get("companion_hp_regen", 0),
+		"companion_mana_regen": ms.get("companion_mana_regen", 0),
+		"companion_energy_regen": ms.get("companion_energy_regen", 0),
+		"companion_stamina_regen": ms.get("companion_stamina_regen", 0),
+		"companion_wisdom_bonus": ms.get("companion_wisdom_bonus", 0),
+		"companion_speed_bonus": ms.get("companion_speed_bonus", 0),
+		"companion_abilities": ms.get("companion_abilities", {}),
+		"companion_distraction": combat.get("companion_distraction", false),
+		# Dungeon state
+		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+		"is_boss_fight": combat.get("is_boss_fight", false),
+	}
+
+	# Process the ability using existing solo ability functions
+	var result: Dictionary
+	if ability_name == "cloak" or ability_name == "all_or_nothing":
+		result = _process_universal_ability(adapter, ability_name)
+	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
+		result = _process_mage_ability(adapter, ability_name, arg)
+	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
+		result = _process_warrior_ability(adapter, ability_name)
+	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
+		result = _process_trickster_ability(adapter, ability_name)
+	else:
+		return {"success": false, "message": "Unknown ability!"}
+
+	# Copy modified state back from adapter to party combat structures
+	# Per-member state
+	ms["analyze_bonus"] = adapter.get("analyze_bonus", 0)
+	ms["forcefield_shield"] = adapter.get("forcefield_shield", 0)
+	ms["cloak_active"] = adapter.get("cloak_active", false)
+	ms["haste_active"] = adapter.get("haste_active", false)
+	ms["vanished"] = adapter.get("vanished", false)
+	ms["ninja_flee_protection"] = adapter.get("ninja_flee_protection", false)
+	ms["pickpocket_count"] = adapter.get("pickpocket_count", 0)
+	ms["gambit_kill"] = adapter.get("gambit_kill", false)
+	ms["damage_buff"] = adapter.get("damage_buff", 0)
+	ms["defense_buff"] = adapter.get("defense_buff", 0)
+	# Shared monster state — copy back to combat dict
+	combat["monster_stunned"] = adapter.get("monster_stunned", 0)
+	combat["monster_burn"] = adapter.get("monster_burn", 0)
+	combat["monster_burn_duration"] = adapter.get("monster_burn_duration", 0)
+	combat["monster_bleed"] = adapter.get("monster_bleed", 0)
+	combat["monster_bleed_duration"] = adapter.get("monster_bleed_duration", 0)
+	combat["monster_poison"] = adapter.get("monster_poison", 0)
+	combat["monster_poison_duration"] = adapter.get("monster_poison_duration", 0)
+	combat["monster_weakness"] = adapter.get("monster_weakness", 0)
+	combat["monster_weakness_duration"] = adapter.get("monster_weakness_duration", 0)
+	combat["monster_slowed"] = adapter.get("monster_slowed", 0)
+	combat["monster_slow_duration"] = adapter.get("monster_slow_duration", 0)
+	combat["monster_mana_drained"] = adapter.get("monster_mana_drained", 0)
+	combat["monster_charmed"] = adapter.get("monster_charmed", 0)
+	combat["monster_sabotaged"] = adapter.get("monster_sabotaged", 0)
+	combat["enemy_distracted"] = adapter.get("enemy_distracted", false)
+	combat["cc_resistance"] = adapter.get("cc_resistance", 0)
+	combat["enrage_stacks"] = adapter.get("enrage_stacks", 0)
+	combat["disguise_active"] = adapter.get("disguise_active", false)
+	combat["disguise_revealed"] = adapter.get("disguise_revealed", false)
+	combat["companion_distraction"] = adapter.get("companion_distraction", false)
+
+	# Party CC resistance: each CC used by any party member increases resistance faster
+	# This prevents multiple players from perma-stunning/paralyzing
+	if ability_name in ["shield_bash", "paralyze"]:
+		combat["cc_resistance"] = combat.get("cc_resistance", 0) + 2  # Extra +2 per CC in party
+
+	var messages = result.get("messages", [])
+
+	# Track damage
+	var damage_dealt = max(0, monster_hp_before - monster.current_hp)
+	ms["total_damage_dealt"] = ms.get("total_damage_dealt", 0) + damage_dealt
+	var self_damage = max(0, player_hp_before - character.current_hp)
+	ms["total_damage_taken"] = ms.get("total_damage_taken", 0) + self_damage
+
+	# Check if monster died
+	if monster.current_hp <= 0:
+		var victory_result = _process_party_victory(combat)
+		messages.append_array(victory_result.get("messages", []))
+		return {
+			"success": true,
+			"messages": messages,
+			"combat_ended": true,
+			"victory": true,
+			"member_rewards": victory_result.get("member_rewards", {})
+		}
+
+	# Check if player died from ability self-damage (backfire etc.)
+	if character.current_hp <= 0:
+		combat.dead_members.append(acting_peer_id)
+		ms["dead"] = true
+		messages.append("[color=#FF0000]%s has fallen![/color]" % character.name)
+
+	# Check if all members fled/dead
+	if _all_members_inactive(combat):
+		messages.append("[color=#FF4444]The party has been defeated![/color]")
+		_end_party_combat(leader_id, false)
+		return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
+
+	# Check if ability already ended combat (e.g., teleport = flee)
+	if result.get("combat_ended", false):
+		# Treat as this member fleeing
+		if acting_peer_id not in combat.fled_members:
+			combat.fled_members.append(acting_peer_id)
+			ms["fled"] = true
+		if _all_members_inactive(combat):
+			_end_party_combat(leader_id, false)
+			return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
+
+	# Advance turn (same logic as process_party_combat_action)
+	# Free actions (analyze, pickpocket success, etc.) don't advance turns
+	var is_free_action = result.get("free_action", false)
+	if not is_free_action:
+		combat.current_turn_index += 1
+		_skip_inactive_members(combat)
+
+		if combat.current_turn_index >= combat.members.size():
+			var monster_results = _process_party_monster_phase(combat)
+			messages.append_array(monster_results.get("messages", []))
+			_check_party_deaths(combat)
+			if _all_members_inactive(combat):
+				messages.append("[color=#FF4444]The party has been wiped out![/color]")
+				_end_party_combat(leader_id, false)
+				return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
+			combat.round += 1
+			combat.current_turn_index = 0
+			_skip_inactive_members(combat)
+
+	return {
+		"success": true,
+		"messages": messages,
+		"combat_ended": false,
+		"victory": false,
+		"next_turn_peer_id": _get_current_turn_peer_id(combat)
+	}
+
 func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
 	"""Simplified attack logic for party combat member."""
 	var character = combat.characters[peer_id]
@@ -5550,9 +5758,10 @@ func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
 		character.current_mana = min(character.get_total_max_mana(), character.current_mana + max(1, int(character.get_total_max_mana() * regen_pct)))
 
 	# Hit chance
-	var player_dex = character.dexterity + character.get_equipment_stat("speed")
+	var player_dex = character.get_effective_stat("dexterity")
+	var equipment_speed = character.get_equipment_bonuses().get("speed", 0)
 	var monster_speed = monster.get("speed", 10)
-	var hit_chance = clamp(75 + (player_dex - monster_speed / 2), 30, 95)
+	var hit_chance = clamp(75 + (player_dex + equipment_speed - monster_speed / 2), 30, 95)
 	if character.blind_active:
 		hit_chance = max(10, hit_chance - 30)
 
@@ -5562,8 +5771,8 @@ func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
 		return {"messages": messages}
 
 	# Damage calculation
-	var weapon_damage = character.get_equipment_stat("attack")
-	var base_damage = max(1, character.strength + weapon_damage)
+	var weapon_damage = character.get_equipment_bonuses().get("attack", 0)
+	var base_damage = max(1, character.get_effective_stat("strength") + weapon_damage)
 
 	# Critical hit
 	var crit_chance = 5
@@ -5607,9 +5816,10 @@ func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
 	var monster = combat.monster
 	var messages = []
 
-	var player_dex = character.dexterity + character.get_equipment_stat("speed")
+	var player_dex = character.get_effective_stat("dexterity")
+	var equipment_speed = character.get_equipment_bonuses().get("speed", 0)
 	var level_diff = max(0, monster.get("level", 1) - character.level)
-	var flee_chance = clamp(40 + player_dex - level_diff, 10, 95)
+	var flee_chance = clamp(40 + player_dex + equipment_speed - level_diff, 10, 95)
 
 	# Ninja bonus
 	if character.class_type == "Ninja":
@@ -5649,8 +5859,9 @@ func _party_process_outsmart(combat: Dictionary, peer_id: int) -> Dictionary:
 		messages.append("[color=#FF4444]%s fails to outsmart the %s![/color]" % [character.name, monster.get("name", "monster")])
 		return {"messages": messages}
 
-func _process_party_monster_phase(combat: Dictionary) -> Dictionary:
-	"""Process the monster's actions against party members."""
+func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> Dictionary:
+	"""Process the monster's actions against party members.
+	max_actions: If > 0, limits the number of actions (used for first strike to prevent instant kills)."""
 	var monster = combat.monster
 	var messages = []
 
@@ -5661,12 +5872,14 @@ func _process_party_monster_phase(combat: Dictionary) -> Dictionary:
 		messages.append("[color=#808080]The %s is stunned![/color]" % monster.get("name", "monster"))
 		return {"messages": messages}
 
-	# Monster gets N actions where N = active members
+	# Monster gets N actions where N = active members (or capped by max_actions)
 	var active_members = _get_active_members(combat)
 	if active_members.is_empty():
 		return {"messages": messages}
 
 	var num_actions = active_members.size()
+	if max_actions > 0:
+		num_actions = min(num_actions, max_actions)
 	var targets = _select_monster_targets(combat, active_members, num_actions)
 
 	messages.append("[color=#FF8800]── %s's Turn ──[/color]" % monster.get("name", "monster"))
@@ -5686,7 +5899,7 @@ func _process_party_monster_phase(combat: Dictionary) -> Dictionary:
 		var raw_damage = max(1, int(float(base_str) * enrage_bonus))
 
 		# Apply defense
-		var player_def = target_char.get_equipment_stat("defense")
+		var player_def = target_char.get_equipment_bonuses().get("defense", 0)
 		var damage = max(1, raw_damage - int(player_def * 0.5))
 
 		# Apply variance
@@ -5912,6 +6125,13 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 			"name": ch.name,
 			"current_hp": max(0, ch.current_hp),
 			"max_hp": ch.get_total_max_hp(),
+			"current_mana": ch.current_mana,
+			"max_mana": ch.get_total_max_mana(),
+			"current_stamina": ch.current_stamina,
+			"max_stamina": ch.get_total_max_stamina(),
+			"current_energy": ch.current_energy,
+			"max_energy": ch.get_total_max_energy(),
+			"class_type": ch.class_type,
 			"is_dead": pid in combat.dead_members,
 			"is_fled": pid in combat.fled_members
 		})

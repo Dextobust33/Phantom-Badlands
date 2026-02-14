@@ -882,6 +882,8 @@ var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
 var party_combat_active: bool = false      # We are in party combat (our turn)
 var party_combat_turn_name: String = ""    # Name of player whose turn it is
+var party_member_bars: Array = []          # Dynamic UI bars for party members
+var party_bars_container: VBoxContainer = null  # Container for party member bars
 
 # Bless stat selection
 var title_stat_selection_mode: bool = false  # Waiting for stat selection for Bless
@@ -4673,7 +4675,7 @@ func update_action_bar():
 		]
 	elif party_appoint_mode:
 		# Selecting a member to appoint as leader
-		var appoint_actions = [
+		var appoint_actions: Array[Dictionary] = [
 			{"label": "Cancel", "action_type": "local", "action_data": "party_appoint_cancel", "enabled": true},
 		]
 		# Show non-leader members as selectable options
@@ -4687,7 +4689,7 @@ func update_action_bar():
 		current_actions = appoint_actions
 	elif party_menu_mode:
 		# Party management menu
-		var party_actions = [
+		var party_actions: Array[Dictionary] = [
 			{"label": "Back", "action_type": "local", "action_data": "party_menu_close", "enabled": true},
 		]
 		if is_party_leader:
@@ -5291,20 +5293,41 @@ func update_action_bar():
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 	elif party_combat_active:
-		# Party combat: our turn — Attack, Flee, Outsmart (no items in party combat)
+		# Party combat: our turn — same layout as solo combat but no items
+		var ability_actions = _get_combat_ability_actions()
 		var can_outsmart = not combat_outsmart_failed
-		current_actions = [
-			{"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-			{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		var swap_attack = character_data.get("swap_attack_with_ability", false)
+		var attack_action = {"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true}
+		var first_ability = ability_actions[0] if ability_actions.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+
+		if swap_attack and ability_actions.size() > 0:
+			current_actions = [
+				first_ability,
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+				attack_action,
+			]
+			for i in range(1, min(6, ability_actions.size())):
+				current_actions.append(ability_actions[i])
+		else:
+			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart}
+			if swap_attack_outsmart:
+				current_actions = [
+					outsmart_action,
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+					attack_action,
+				]
+			else:
+				current_actions = [
+					attack_action,
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+					outsmart_action,
+				]
+			for i in range(min(6, ability_actions.size())):
+				current_actions.append(ability_actions[i])
 	elif party_waiting_for_turn:
 		# Party combat: waiting for another member's turn
 		var wait_label = "Wait: %s" % party_combat_turn_name if party_combat_turn_name != "" else "Waiting..."
@@ -6719,6 +6742,10 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 				target_hp = estimated
 				using_estimated_hp = true
 
+	# In party combat, use actual monster HP from server even if target_hp is 0
+	if party_combat_active and current_enemy_hp > 0 and target_hp <= 0:
+		target_hp = current_enemy_max_hp
+
 	if ability == "magic_bolt" and target_hp > 0:
 		# Simulate Magic Bolt damage formula to suggest accurate mana amount
 		# Server formula: damage = bolt_amount * (1 + sqrt(INT)/5) * buffs * passives * reductions
@@ -6819,7 +6846,14 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 				bonus_parts.append("[color=#FF6666]-%d%% lvl[/color]" % int(level_penalty * 100))
 
 		# Account for damage already dealt in this fight
-		var remaining_hp = max(1, target_hp - damage_dealt_to_current_enemy)
+		var remaining_hp: int
+		var show_party_hp = false
+		if party_combat_active and current_enemy_hp > 0:
+			# In party combat, use server-reported HP (accounts for all members' damage)
+			remaining_hp = max(1, current_enemy_hp)
+			show_party_hp = true
+		else:
+			remaining_hp = max(1, target_hp - damage_dealt_to_current_enemy)
 
 		# Calculate mana needed with 18% buffer to cover ±15% damage variance
 		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.18)
@@ -6830,9 +6864,11 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 			bonus_text = bonus_text + "\n"
 		var hp_label = "~HP" if using_estimated_hp else "HP"
 		var remaining_note = ""
-		if damage_dealt_to_current_enemy > 0:
+		if show_party_hp:
+			remaining_note = " [color=#808080](%d remaining)[/color]" % remaining_hp
+		elif damage_dealt_to_current_enemy > 0:
 			remaining_note = " [color=#808080](~%d remaining)[/color]" % remaining_hp
-		ability_popup_description.text = "[center]%s%s: %d%s[/center]" % [bonus_text, hp_label, target_hp, remaining_note]
+		ability_popup_description.text = "[center]%s%s: %d%s[/center]" % [bonus_text, hp_label, target_hp if not show_party_hp else current_enemy_max_hp, remaining_note]
 
 	if suggested_amount > 0:
 		ability_popup_input.text = str(suggested_amount)
@@ -17259,6 +17295,7 @@ func _clear_party_state():
 	party_waiting_for_turn = false
 	party_combat_active = false
 	party_combat_turn_name = ""
+	_remove_party_bars()
 
 func _handle_party_combat_start(message: Dictionary):
 	"""Handle party combat starting."""
@@ -17323,6 +17360,7 @@ func _handle_party_combat_start(message: Dictionary):
 	update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 	show_enemy_hp_bar(true)
 	update_player_hp_bar()
+	_update_party_bars(combat_state)
 	update_action_bar()
 
 func _handle_party_combat_update(message: Dictionary):
@@ -17347,12 +17385,21 @@ func _handle_party_combat_update(message: Dictionary):
 		current_enemy_max_hp = combat_state.get("monster_max_hp", current_enemy_max_hp)
 		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 
-	# Check if we died or fled (are we in dead/fled list?)
-	var my_peer_id = multiplayer.get_unique_id() if multiplayer else -1
+	# Update our own HP and resources from combat state
+	var my_name = character_data.get("name", "")
 	var members = combat_state.get("members", [])
+	for m in members:
+		if m.get("name", "") == my_name:
+			character_data["current_hp"] = m.get("current_hp", character_data.get("current_hp", 0))
+			character_data["current_mana"] = m.get("current_mana", character_data.get("current_mana", 0))
+			character_data["current_stamina"] = m.get("current_stamina", character_data.get("current_stamina", 0))
+			character_data["current_energy"] = m.get("current_energy", character_data.get("current_energy", 0))
+			break
+
+	# Check if we died or fled (are we in dead/fled list?)
 	var my_state = {}
 	for m in members:
-		if m.get("peer_id", -1) == my_peer_id:
+		if m.get("name", "") == my_name:
 			my_state = m
 			break
 
@@ -17382,6 +17429,7 @@ func _handle_party_combat_update(message: Dictionary):
 
 	update_player_hp_bar()
 	update_resource_bar()
+	_update_party_bars(combat_state)
 	update_action_bar()
 
 func _handle_party_combat_end(message: Dictionary):
@@ -17465,6 +17513,7 @@ func _handle_party_combat_end(message: Dictionary):
 
 	update_action_bar()
 	show_enemy_hp_bar(false)
+	_remove_party_bars()
 	current_enemy_name = ""
 	current_enemy_level = 0
 	damage_dealt_to_current_enemy = 0
@@ -17488,6 +17537,164 @@ func _display_party_combat_hp(combat_state: Dictionary):
 			var hp_color = "#00FF00" if hp_pct > 0.5 else "#FFAA00" if hp_pct > 0.25 else "#FF0000"
 			hp_parts.append("[color=%s]%s: %d/%d[/color]" % [hp_color, name, hp, max_hp])
 	display_game("[color=#00BFFF]Party:[/color] %s" % " | ".join(hp_parts))
+
+func _create_party_bars():
+	"""Create small HP bars for party members below the resource bar."""
+	_remove_party_bars()
+	if not resource_bar:
+		return
+
+	var right_panel = resource_bar.get_parent()
+	if not right_panel:
+		return
+
+	# Create container for party bars
+	party_bars_container = VBoxContainer.new()
+	party_bars_container.name = "PartyBarsContainer"
+	party_bars_container.add_theme_constant_override("separation", 2)
+
+	# Insert after resource bar
+	var res_idx = resource_bar.get_index()
+	right_panel.add_child(party_bars_container)
+	right_panel.move_child(party_bars_container, res_idx + 1)
+
+func _remove_party_bars():
+	"""Remove party member bars from the UI."""
+	party_member_bars.clear()
+	if party_bars_container and is_instance_valid(party_bars_container):
+		party_bars_container.queue_free()
+		party_bars_container = null
+
+func _update_party_bars(combat_state: Dictionary):
+	"""Update party member HP/resource bars from combat state."""
+	var members = combat_state.get("members", [])
+	if members.is_empty():
+		_remove_party_bars()
+		return
+
+	var my_name = character_data.get("name", "")
+
+	# Filter to only other party members
+	var others = []
+	for m in members:
+		if m.get("name", "") != my_name:
+			others.append(m)
+
+	if others.is_empty():
+		_remove_party_bars()
+		return
+
+	# Create container if needed
+	if not party_bars_container or not is_instance_valid(party_bars_container):
+		_create_party_bars()
+
+	if not party_bars_container:
+		return
+
+	# Rebuild bars if member count changed
+	if party_member_bars.size() != others.size():
+		for child in party_bars_container.get_children():
+			child.queue_free()
+		party_member_bars.clear()
+
+		for m in others:
+			var bar_data = _create_single_party_bar(m)
+			party_bars_container.add_child(bar_data.container)
+			party_member_bars.append(bar_data)
+
+	# Update existing bars
+	for i in range(min(others.size(), party_member_bars.size())):
+		_update_single_party_bar(party_member_bars[i], others[i])
+
+func _create_single_party_bar(member: Dictionary) -> Dictionary:
+	"""Create a single small HP bar for a party member."""
+	var container = VBoxContainer.new()
+	container.add_theme_constant_override("separation", 0)
+
+	# Name label
+	var name_label = Label.new()
+	name_label.text = member.get("name", "?")
+	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_color_override("font_color", Color(0.0, 0.75, 1.0))
+	container.add_child(name_label)
+
+	# HP bar (small)
+	var hp_bar = PanelContainer.new()
+	hp_bar.custom_minimum_size = Vector2(0, 10)
+	var hp_bg_style = StyleBoxFlat.new()
+	hp_bg_style.bg_color = Color(0.15, 0.15, 0.15)
+	hp_bg_style.corner_radius_top_left = 2
+	hp_bg_style.corner_radius_top_right = 2
+	hp_bg_style.corner_radius_bottom_left = 2
+	hp_bg_style.corner_radius_bottom_right = 2
+	hp_bar.add_theme_stylebox_override("panel", hp_bg_style)
+
+	var hp_fill = Panel.new()
+	hp_fill.name = "HPFill"
+	hp_fill.anchor_right = 1.0
+	hp_fill.anchor_bottom = 1.0
+	var hp_fill_style = StyleBoxFlat.new()
+	hp_fill_style.bg_color = Color(0.0, 0.8, 0.0)
+	hp_fill_style.corner_radius_top_left = 2
+	hp_fill_style.corner_radius_top_right = 2
+	hp_fill_style.corner_radius_bottom_left = 2
+	hp_fill_style.corner_radius_bottom_right = 2
+	hp_fill.add_theme_stylebox_override("panel", hp_fill_style)
+	hp_bar.add_child(hp_fill)
+
+	var hp_label = Label.new()
+	hp_label.name = "HPLabel"
+	hp_label.anchor_right = 1.0
+	hp_label.anchor_bottom = 1.0
+	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp_label.add_theme_font_size_override("font_size", 9)
+	hp_label.add_theme_color_override("font_color", Color.WHITE)
+	hp_bar.add_child(hp_label)
+
+	container.add_child(hp_bar)
+
+	return {
+		"container": container,
+		"name_label": name_label,
+		"hp_bar": hp_bar,
+		"hp_fill": hp_fill,
+		"hp_label": hp_label
+	}
+
+func _update_single_party_bar(bar_data: Dictionary, member: Dictionary):
+	"""Update a single party member bar with current data."""
+	var name = member.get("name", "?")
+	var hp = member.get("current_hp", 0)
+	var max_hp = max(1, member.get("max_hp", 1))
+	var is_dead = member.get("is_dead", false)
+	var is_fled = member.get("is_fled", false)
+
+	bar_data.name_label.text = name
+	var hp_pct = float(hp) / float(max_hp)
+
+	if is_dead:
+		bar_data.hp_label.text = "DEAD"
+		hp_pct = 0.0
+	elif is_fled:
+		bar_data.hp_label.text = "FLED"
+		hp_pct = 0.0
+	else:
+		bar_data.hp_label.text = "%d/%d" % [hp, max_hp]
+
+	# Update fill width
+	bar_data.hp_fill.anchor_right = clampf(hp_pct, 0.0, 1.0)
+
+	# Color by HP percentage
+	var color = Color(0.0, 0.8, 0.0)  # Green
+	if hp_pct <= 0.25:
+		color = Color(1.0, 0.0, 0.0)  # Red
+	elif hp_pct <= 0.5:
+		color = Color(1.0, 0.67, 0.0)  # Orange
+
+	var style = bar_data.hp_fill.get_theme_stylebox("panel").duplicate()
+	style.bg_color = color
+	bar_data.hp_fill.add_theme_stylebox_override("panel", style)
 
 func _mark_all_held_hotkeys():
 	"""Mark all currently held hotkeys as pressed to prevent double-trigger on state transitions."""
@@ -17637,8 +17844,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.111 changes
+	display_game("[color=#00FF00]v0.9.111[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Party System Fixes[/color]")
+	display_game("  • Fixed: party menu now displays correct action bar buttons")
+	display_game("  • Fixed: party combat HP bars show correct per-member values")
+	display_game("  • Fixed: monster initiative in party combat limited to 1 action")
+	display_game("  • Party combat now shows full ability bars (same as solo combat)")
+	display_game("  • Party member HP/resource bars shown during party combat")
+	display_game("")
+
 	# v0.9.110 changes
-	display_game("[color=#00FF00]v0.9.110[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.110[/color]")
 	display_game("  [color=#FFD700]Player Party System[/color]")
 	display_game("  • NEW: Bump into another player to invite them to your party (max 4)")
 	display_game("  • Lead/Follow choice when forming — leader controls movement")
@@ -17672,13 +17889,6 @@ func display_changelog():
 	display_game("  • Consumable overhaul: potions scale with level, scrolls replace buff potions")
 	display_game("  • Scrolls scale by tier with multi-battle durations")
 	display_game("  • Fixed: number keys double-triggering in item selection menus")
-	display_game("")
-
-	# v0.9.105 changes
-	display_game("[color=#00FFFF]v0.9.105[/color]")
-	display_game("  • Combat readability: distinct turns with indentation + orange monster damage")
-	display_game("  • Smooth XP scaling curve (no tier boundary jumps)")
-	display_game("  • Bug fixes: house bonuses, scroll cancel, wish in dungeons, and more")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

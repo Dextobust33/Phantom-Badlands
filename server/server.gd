@@ -2294,10 +2294,22 @@ func handle_hunt(peer_id: int):
 			"clear_output": true
 		})
 
-func handle_rest(peer_id: int):
+func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	"""Handle rest action to restore HP (or Meditate for mages)"""
 	if not characters.has(peer_id):
 		return
+
+	# Party check: non-leader members can't rest independently
+	if not _is_party_follower and party_membership.has(peer_id) and not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls resting.[/color]"})
+		return
+
+	# If party leader, rest all followers too
+	if not _is_party_follower and _is_party_leader(peer_id):
+		var party = active_parties.get(peer_id, {})
+		for follower_pid in party.get("members", []):
+			if follower_pid != peer_id and characters.has(follower_pid):
+				handle_rest(follower_pid, true)
 
 	# Skip ambush if just finished gathering (prevents post-gathering encounter)
 	var _gathering_immune = false
@@ -2333,7 +2345,7 @@ func handle_rest(peer_id: int):
 
 	# Mages use Meditate instead of Rest
 	if is_mage:
-		_handle_meditate(peer_id, character, cloak_was_dropped, _gathering_immune)
+		_handle_meditate(peer_id, character, cloak_was_dropped, _gathering_immune, _is_party_follower)
 		return
 
 	# Regenerate primary resource on rest (same as movement - 2%, min 1)
@@ -2428,7 +2440,8 @@ func handle_rest(peer_id: int):
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
 	# Chance to be ambushed while resting (15%) — not in safe zones
-	if not _gathering_immune and not world_system.is_safe_zone(character.x, character.y):
+	# Only the leader (or solo player) can trigger ambush, not party followers
+	if not _is_party_follower and not _gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
 		if ambush_roll < 15:
 			send_to_peer(peer_id, {
@@ -2446,7 +2459,7 @@ func _get_early_game_regen_multiplier(level: int) -> float:
 	var t = float(level - 1) / 24.0  # 0.0 at level 1, 1.0 at level 25
 	return 2.0 - t  # 2.0 at level 1, 1.0 at level 25
 
-func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false, gathering_immune: bool = false):
+func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: bool = false, gathering_immune: bool = false, is_party_follower: bool = false):
 	"""Handle Meditate action for mages - restores HP and mana, always works"""
 	var at_full_hp = character.current_hp >= character.get_total_max_hp()
 
@@ -2556,7 +2569,8 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
 	# Chance to be ambushed while meditating (15%) — not in safe zones
-	if not gathering_immune and not world_system.is_safe_zone(character.x, character.y):
+	# Only the leader (or solo player) can trigger ambush, not party followers
+	if not is_party_follower and not gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
 		if ambush_roll < 15:
 			send_to_peer(peer_id, {
@@ -19458,7 +19472,7 @@ func handle_party_lead_choice_response(peer_id: int, message: Dictionary):
 	if not characters.has(peer_id):
 		return
 	var choice = message.get("choice", "lead")
-	var partner_id = message.get("partner_peer_id", -1)
+	var partner_id = int(message.get("partner_peer_id", -1))
 	if not characters.has(partner_id):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Partner is no longer available.[/color]"})
 		return
@@ -19818,6 +19832,10 @@ func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, deb
 	var result = combat_mgr.start_party_combat(party_members, party_characters, monster)
 
 	if not result.get("success", false):
+		# Clean up in_combat flags that may have been set before the error
+		for pid in party_members:
+			if characters.has(pid):
+				characters[pid].in_combat = false
 		send_to_peer(leader_peer_id, {"type": "text", "message": "[color=#FF4444]Failed to start party combat![/color]"})
 		return
 
@@ -19854,21 +19872,28 @@ func _handle_party_combat_command(peer_id: int, command: String):
 	if leader_id == -1:
 		return
 
-	# Map command string to CombatAction
-	var action = CombatManager.CombatAction.ATTACK
-	match command:
-		"attack":
-			action = CombatManager.CombatAction.ATTACK
-		"flee":
-			action = CombatManager.CombatAction.FLEE
-		"outsmart":
-			action = CombatManager.CombatAction.OUTSMART
-		_:
-			# Unknown command for party combat (abilities not yet supported)
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]That action isn't available in party combat.[/color]"})
-			return
+	# Parse command string (may include args like "magic_bolt 50")
+	var parts = command.to_lower().split(" ", false)
+	var cmd = parts[0] if parts.size() > 0 else ""
+	var arg = parts[1] if parts.size() > 1 else ""
 
-	var result = combat_mgr.process_party_combat_action(leader_id, peer_id, action)
+	var result: Dictionary
+
+	# Map command string to CombatAction or ability
+	match cmd:
+		"attack", "a":
+			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.ATTACK)
+		"flee", "f", "run":
+			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.FLEE)
+		"outsmart", "o":
+			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.OUTSMART)
+		_:
+			# Check if it's an ability command
+			if cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS:
+				result = combat_mgr.process_party_combat_ability(leader_id, peer_id, cmd, arg)
+			else:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Unknown combat command.[/color]"})
+				return
 
 	if not result.get("success", false):
 		send_to_peer(peer_id, {"type": "text", "message": result.get("message", "Not your turn!")})
