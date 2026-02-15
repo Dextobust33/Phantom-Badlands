@@ -768,11 +768,17 @@ var build_selected_item: int = -1  # Inventory index of item to place
 var build_demolish_mode: bool = false  # Selecting direction for demolish
 var pending_build_result: bool = false  # Waiting for server response
 
-# Player enclosure state (from location updates)
+# Player enclosure/post state (from location updates)
 var in_own_enclosure: bool = false
+var in_player_post: bool = false
+var player_post_name: String = ""
+var player_post_is_own: bool = false
 var enclosure_stations: Array = []  # Station tile types available (e.g., "forge", "workbench")
 var enclosure_has_inn: bool = false
 var enclosure_has_storage: bool = false
+# Post naming
+var pending_post_naming: bool = false
+var pending_post_naming_index: int = -1
 
 # Storage chest mode
 var storage_mode: bool = false
@@ -6230,6 +6236,22 @@ func update_action_bar():
 				slot7,
 				slot8,
 				slot9,
+				{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
+			]
+		elif in_player_post and not player_post_is_own:
+			# Visiting another player's post — Craft (if stations) and Inn available, but no Build/Storage
+			var slot7 = {"label": "Craft", "action_type": "local", "action_data": "open_crafting", "enabled": true} if enclosure_stations.size() > 0 else cloak_action
+			var slot8 = {"label": "Inn", "action_type": "local", "action_data": "inn_rest", "enabled": true} if enclosure_has_inn else teleport_action
+			current_actions = [
+				{"label": rest_label, "action_type": "server", "action_data": "rest", "enabled": true},
+				{"label": "Inventory", "action_type": "local", "action_data": "inventory", "enabled": true},
+				{"label": "Status", "action_type": "local", "action_data": "status", "enabled": true},
+				fourth_action,
+				fifth_action,
+				{"label": "More", "action_type": "local", "action_data": "more_menu", "enabled": true},
+				slot7,
+				slot8,
+				cloak_action if enclosure_stations.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Char Select", "action_type": "local", "action_data": "logout_character", "enabled": true},
 			]
 		else:
@@ -13785,14 +13807,24 @@ func handle_server_message(message: Dictionary):
 			var was_at_bounty = at_bounty
 			at_bounty = message.get("at_bounty", false)
 			bounty_quest_id = message.get("bounty_quest_id", "")
-			# Update enclosure status
+			# Update enclosure/post status
 			var was_in_enclosure = in_own_enclosure
+			var was_in_player_post = in_player_post
 			in_own_enclosure = message.get("in_own_enclosure", false)
+			in_player_post = message.get("in_player_post", false)
+			player_post_name = message.get("player_post_name", "")
+			player_post_is_own = message.get("player_post_is_own", false)
 			enclosure_stations = message.get("enclosure_stations", [])
 			enclosure_has_inn = message.get("enclosure_has_inn", false)
 			enclosure_has_storage = message.get("enclosure_has_storage", false)
+			# Display message when entering a named player post
+			if in_player_post and not was_in_enclosure and not player_post_name.is_empty():
+				if player_post_is_own:
+					display_game("[color=#00FFFF]You enter your post: %s[/color]" % player_post_name)
+				else:
+					display_game("[color=#00FFFF]You enter a player post: %s[/color]" % player_post_name)
 			# Update action bar if any location status changed
-			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_forage != at_foraging_spot or was_at_corpse != at_corpse or was_at_bounty != at_bounty or was_in_enclosure != in_own_enclosure:
+			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_forage != at_foraging_spot or was_at_corpse != at_corpse or was_at_bounty != at_bounty or was_in_enclosure != in_own_enclosure or was_in_player_post != in_player_post:
 				update_action_bar()
 
 		"chat":
@@ -14898,6 +14930,18 @@ func handle_server_message(message: Dictionary):
 		"build_result":
 			handle_build_result(message)
 
+		"name_post_prompt":
+			# Server asks us to name a new enclosure
+			pending_post_naming = true
+			pending_post_naming_index = int(message.get("enclosure_index", 0))
+			input_field.placeholder_text = "Enter a name for your new post (1-30 chars)..."
+			input_field.grab_focus()
+
+		"post_named":
+			pending_post_naming = false
+			pending_post_naming_index = -1
+			input_field.placeholder_text = ""
+
 		"inn_rest_result":
 			game_output.clear()
 			display_game(message.get("message", "Rested at the inn."))
@@ -15082,6 +15126,19 @@ func send_input():
 	input_field.placeholder_text = ""
 
 	if text.is_empty():
+		return
+
+	# Check for pending post naming
+	if pending_post_naming:
+		var post_name = text.strip_edges().left(30)
+		if post_name.is_empty():
+			display_game("[color=#808080]Name cannot be empty. Try again.[/color]")
+			input_field.placeholder_text = "Enter a name for your new post (1-30 chars)..."
+			return
+		pending_post_naming = false
+		send_to_server({"type": "name_post", "name": post_name, "enclosure_index": pending_post_naming_index})
+		pending_post_naming_index = -1
+		input_field.placeholder_text = ""
 		return
 
 	# Check for pending inventory action (text-based fallback for unequip)
@@ -21077,7 +21134,7 @@ func _craft_skill_to_job_name(skill_name: String) -> String:
 
 func open_crafting():
 	"""Open the crafting menu"""
-	var at_station = at_trading_post or (in_own_enclosure and enclosure_stations.size() > 0)
+	var at_station = at_trading_post or (in_player_post and enclosure_stations.size() > 0)
 	if not at_station:
 		display_game("[color=#FF4444]You need a crafting station or Trading Post![/color]")
 		return
@@ -23632,6 +23689,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
 	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
 	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
+	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "🏗️"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -24300,7 +24358,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -24336,7 +24394,8 @@ func display_house_upgrades():
 		"dex_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
+		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]}
 	})
 
 	var current_page_upgrades = page_upgrades[house_upgrades_page]
@@ -24402,7 +24461,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]

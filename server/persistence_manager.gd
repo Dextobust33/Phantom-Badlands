@@ -11,6 +11,7 @@ const CHARACTERS_DIR = "user://data/characters/"
 const CORPSES_FILE = "user://data/corpses.json"
 const HOUSES_FILE = "user://data/houses.json"
 const PLAYER_TILES_FILE = "user://data/player_tiles.json"
+const PLAYER_POSTS_FILE = "user://data/player_posts.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
@@ -36,7 +37,8 @@ const HOUSE_UPGRADES = {
 	"dex_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 	"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 	"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]}
+	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
+	"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
@@ -49,6 +51,7 @@ var realm_state_data: Dictionary = {}
 var corpses_data: Dictionary = {}  # {"corpses": [...]}
 var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
+var player_posts_data: Dictionary = {}  # {"posts": {username: [{name, center_x, center_y, created_at}]}}
 
 func _ready():
 	ensure_data_directories()
@@ -59,6 +62,7 @@ func _ready():
 	load_corpses()
 	load_houses()
 	load_player_tiles()
+	load_player_posts()
 	load_player_storage()
 
 # ===== DIRECTORY SETUP =====
@@ -1430,6 +1434,53 @@ func clear_all_player_tiles():
 	"""Clear all player tile data (called on map wipe)."""
 	player_tiles_data = {"tiles": {}}
 	save_player_tiles()
+
+# ===== PLAYER POSTS (Named Enclosures) =====
+
+func load_player_posts():
+	"""Load player post naming data."""
+	var data = _safe_load(PLAYER_POSTS_FILE)
+	if data.is_empty():
+		player_posts_data = {"posts": {}}
+	else:
+		player_posts_data = data
+
+func save_player_posts():
+	"""Save player post naming data."""
+	_safe_save(PLAYER_POSTS_FILE, player_posts_data)
+
+func get_player_posts(username: String) -> Array:
+	"""Get all posts for a player. Returns [{name, center_x, center_y, created_at}, ...]."""
+	if not player_posts_data.has("posts"):
+		player_posts_data["posts"] = {}
+	return player_posts_data.posts.get(username, [])
+
+func set_player_post(username: String, index: int, data: Dictionary):
+	"""Set or update a player post at given index."""
+	if not player_posts_data.has("posts"):
+		player_posts_data["posts"] = {}
+	if not player_posts_data.posts.has(username):
+		player_posts_data.posts[username] = []
+	while player_posts_data.posts[username].size() <= index:
+		player_posts_data.posts[username].append({})
+	player_posts_data.posts[username][index] = data
+	save_player_posts()
+
+func remove_player_post(username: String, index: int):
+	"""Remove a player post at given index."""
+	if not player_posts_data.has("posts"):
+		return
+	if not player_posts_data.posts.has(username):
+		return
+	var posts = player_posts_data.posts[username]
+	if index >= 0 and index < posts.size():
+		posts.remove_at(index)
+	save_player_posts()
+
+func clear_all_player_posts():
+	"""Clear all player post data (called on map wipe)."""
+	player_posts_data = {"posts": {}}
+	save_player_posts()
 
 # ===== PLAYER STORAGE (Building System - Storage Chests) =====
 

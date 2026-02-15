@@ -904,6 +904,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_build_place(peer_id, message)
 		"build_demolish":
 			handle_build_demolish(peer_id, message)
+		"name_post":
+			handle_name_post(peer_id, message)
 		"inn_rest":
 			handle_inn_rest(peer_id)
 		"storage_access":
@@ -2052,6 +2054,13 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Notify nearby players of the movement (so they see us on their map)
 	send_nearby_players_map_update(peer_id, old_x, old_y)
 
+	# Periodic check for nearby player posts (compass hint)
+	if characters.has(peer_id):
+		var mc = characters[peer_id].get_meta("move_count", 0) + 1
+		characters[peer_id].set_meta("move_count", mc)
+		if mc % 20 == 0:
+			_check_nearby_player_posts(peer_id, new_pos.x, new_pos.y)
+
 	# Check for tax collector encounter (before trading post - can happen anywhere)
 	if check_tax_collector_encounter(peer_id):
 		send_character_update(peer_id)  # Update gold display
@@ -2080,32 +2089,34 @@ func handle_move(peer_id: int, message: Dictionary):
 		at_trading_post.erase(peer_id)
 		send_to_peer(peer_id, {"type": "trading_post_end"})
 
-	# Check for entering/leaving own enclosure (player-built stations)
+	# Check for entering/leaving any player enclosure (own or others)
 	var move_username = _get_username(peer_id)
 	var now_in_enclosure = false
-	if move_username != "" and player_enclosures.has(move_username):
-		for enclosure in player_enclosures[move_username]:
-			for pos in enclosure:
-				if int(pos.x) == new_pos.x and int(pos.y) == new_pos.y:
-					now_in_enclosure = true
-					break
-			if now_in_enclosure:
-				if not at_player_station.has(peer_id):
-					# Entering own enclosure — find stations
-					var stations: Array = []
-					var has_inn = false
-					var has_storage = false
-					for epos in enclosure:
-						var tile = chunk_manager.get_tile(int(epos.x), int(epos.y))
-						var tile_type = tile.get("type", "")
-						if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in stations:
-							stations.append(tile_type)
-						if tile_type == "inn":
-							has_inn = true
-						if tile_type == "storage":
-							has_storage = true
-					at_player_station[peer_id] = {"stations": stations, "has_inn": has_inn, "has_storage": has_storage}
-				break
+	var enclosure_owner = ""
+	var lookup_key = Vector2i(new_pos.x, new_pos.y)
+	if enclosure_tile_lookup.has(lookup_key):
+		now_in_enclosure = true
+		enclosure_owner = enclosure_tile_lookup[lookup_key].owner
+	if now_in_enclosure:
+		var is_own = (enclosure_owner == move_username)
+		if not at_player_station.has(peer_id) or at_player_station[peer_id].get("owner", "") != enclosure_owner:
+			# Entering enclosure — find stations
+			var enc_idx = enclosure_tile_lookup[lookup_key].enclosure_idx
+			var enclosure = player_enclosures.get(enclosure_owner, [])
+			var stations: Array = []
+			var has_inn = false
+			var has_storage = false
+			if enc_idx < enclosure.size():
+				for epos in enclosure[enc_idx]:
+					var tile = chunk_manager.get_tile(int(epos.x), int(epos.y))
+					var tile_type = tile.get("type", "")
+					if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in stations:
+						stations.append(tile_type)
+					if tile_type == "inn":
+						has_inn = true
+					if tile_type == "storage":
+						has_storage = true
+			at_player_station[peer_id] = {"stations": stations, "has_inn": has_inn, "has_storage": has_storage and is_own, "owner": enclosure_owner, "is_own": is_own}
 	if not now_in_enclosure and at_player_station.has(peer_id):
 		at_player_station.erase(peer_id)
 
@@ -3698,30 +3709,37 @@ func send_location_update(peer_id: int):
 			bounty_quest_id_at_loc = qid
 			break
 
-	# Check if player is in their own enclosure and what stations are available
+	# Check if player is in any player enclosure (own or others) via fast lookup
 	var in_own_enclosure = false
+	var in_player_post = false
+	var player_post_name = ""
+	var player_post_is_own = false
 	var enclosure_stations: Array = []
 	var enclosure_has_inn = false
 	var enclosure_has_storage = false
 	var username = _get_username(peer_id)
-	if username != "" and player_enclosures.has(username):
-		for enclosure in player_enclosures[username]:
-			for pos in enclosure:
-				if int(pos.x) == character.x and int(pos.y) == character.y:
-					in_own_enclosure = true
-					break
-			if in_own_enclosure:
-				# Found player's enclosure — scan for station tiles
-				for pos in enclosure:
-					var tile = chunk_manager.get_tile(int(pos.x), int(pos.y))
-					var tile_type = tile.get("type", "")
-					if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in enclosure_stations:
-						enclosure_stations.append(tile_type)
-					if tile_type == "inn":
-						enclosure_has_inn = true
-					if tile_type == "storage":
-						enclosure_has_storage = true
-				break
+	var loc_lookup_key = Vector2i(character.x, character.y)
+	if enclosure_tile_lookup.has(loc_lookup_key):
+		in_player_post = true
+		var enc_owner = enclosure_tile_lookup[loc_lookup_key].owner
+		var enc_idx = enclosure_tile_lookup[loc_lookup_key].enclosure_idx
+		player_post_is_own = (enc_owner == username)
+		in_own_enclosure = player_post_is_own
+		# Get post name
+		if player_post_names.has(enc_owner) and enc_idx < player_post_names[enc_owner].size():
+			player_post_name = player_post_names[enc_owner][enc_idx].get("name", "")
+		# Scan stations in this enclosure
+		var enc_list = player_enclosures.get(enc_owner, [])
+		if enc_idx < enc_list.size():
+			for pos in enc_list[enc_idx]:
+				var tile = chunk_manager.get_tile(int(pos.x), int(pos.y))
+				var tile_type = tile.get("type", "")
+				if tile_type in CraftingDatabaseScript.STATION_SKILL_MAP and tile_type not in enclosure_stations:
+					enclosure_stations.append(tile_type)
+				if tile_type == "inn":
+					enclosure_has_inn = true
+				if tile_type == "storage":
+					enclosure_has_storage = true
 
 	# Send map display as description
 	var location_msg = {
@@ -3743,11 +3761,14 @@ func send_location_update(peer_id: int):
 		"at_bounty": at_bounty,
 		"bounty_quest_id": bounty_quest_id_at_loc
 	}
-	if in_own_enclosure:
-		location_msg["in_own_enclosure"] = true
+	if in_player_post:
+		location_msg["in_own_enclosure"] = player_post_is_own
+		location_msg["in_player_post"] = true
+		location_msg["player_post_name"] = player_post_name
+		location_msg["player_post_is_own"] = player_post_is_own
 		location_msg["enclosure_stations"] = enclosure_stations
 		location_msg["enclosure_has_inn"] = enclosure_has_inn
-		location_msg["enclosure_has_storage"] = enclosure_has_storage
+		location_msg["enclosure_has_storage"] = enclosure_has_storage and player_post_is_own
 	send_to_peer(peer_id, location_msg)
 
 	# Forward location/map to watchers
@@ -9169,6 +9190,9 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		check_elder_auto_grant(peer_id)
 		send_character_update(peer_id)
 		save_character(peer_id)
+		# Party quest sync: auto-turn-in for members with same completed quest
+		if _is_party_leader(peer_id):
+			_sync_party_quest_turn_in(peer_id, quest_id, quest)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": result.message})
 
@@ -13646,7 +13670,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 
 # ===== BUILDING SYSTEM =====
 
-const MAX_PLAYER_ENCLOSURES = 5
+const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 11  # 11x11 bounding box max
 const MAX_PLAYER_TILES = 200
 const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage"]
@@ -13654,6 +13678,31 @@ const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure bound
 
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
 var player_enclosures: Dictionary = {}
+# Player post naming: {username: [{name, center, created_at}]} — index-aligned with player_enclosures
+var player_post_names: Dictionary = {}
+# Fast lookup for enclosure tile checks: Vector2i -> {owner: String, enclosure_idx: int}
+var enclosure_tile_lookup: Dictionary = {}
+
+func _get_max_post_count(peer_id: int) -> int:
+	"""Get max enclosure/post count for a player (base 5 + post_slots upgrade)."""
+	if not peers.has(peer_id):
+		return DEFAULT_MAX_PLAYER_ENCLOSURES
+	var account_id = peers[peer_id].get("account_id", "")
+	if account_id == "":
+		return DEFAULT_MAX_PLAYER_ENCLOSURES
+	var house = persistence.get_house(account_id)
+	var upgrade_level = house.get("upgrades", {}).get("post_slots", 0)
+	return DEFAULT_MAX_PLAYER_ENCLOSURES + upgrade_level
+
+func _get_max_post_count_for_username(username: String) -> int:
+	"""Get max post count by username (used during rebuild when peer_id unavailable)."""
+	for pid in peers:
+		if _get_username(pid) == username:
+			return _get_max_post_count(pid)
+	# Player not online — use max possible to avoid losing enclosures during rebuild.
+	# Actual limit is enforced when building new ones (via _get_max_post_count with peer_id).
+	var max_upgrade = PersistenceManager.HOUSE_UPGRADES.get("post_slots", {}).get("max", 5)
+	return DEFAULT_MAX_PLAYER_ENCLOSURES + max_upgrade
 
 func handle_build_place(peer_id: int, message: Dictionary):
 	"""Handle player placing a structure tile in a direction."""
@@ -13765,7 +13814,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	# Check for new enclosures after placing wall/door
 	var enclosure_msg = ""
 	if structure_type in ENCLOSURE_WALL_TYPES:
-		enclosure_msg = _check_enclosures_after_build(username)
+		enclosure_msg = _check_enclosures_after_build(username, peer_id)
 
 	chunk_manager.save_dirty_chunks()
 
@@ -13837,7 +13886,7 @@ func _is_in_own_enclosure(x: int, y: int, username: String) -> bool:
 				return true
 	return false
 
-func _check_enclosures_after_build(username: String) -> String:
+func _check_enclosures_after_build(username: String, peer_id: int = -1) -> String:
 	"""After placing a wall/door, detect any new enclosures. Returns status message."""
 	var placed = persistence.get_player_tiles(username)
 	# Find all wall/door tiles for this player
@@ -13894,23 +13943,53 @@ func _check_enclosures_after_build(username: String) -> String:
 	if new_enclosures.is_empty():
 		return ""
 
-	# Check enclosure limit
+	# Check enclosure limit (dynamic based on house upgrade)
+	var max_posts = _get_max_post_count(peer_id) if peer_id >= 0 else _get_max_post_count_for_username(username)
 	var current_count = player_enclosures.get(username, []).size()
 	var added = 0
 	for enclosure in new_enclosures:
-		if current_count + added >= MAX_PLAYER_ENCLOSURES:
+		if current_count + added >= max_posts:
 			break
 		if not player_enclosures.has(username):
 			player_enclosures[username] = []
 		player_enclosures[username].append(enclosure)
 		_mark_enclosure_safe(enclosure, username)
+		# Calculate center and create post metadata
+		var center = _calculate_enclosure_center(enclosure)
+		var enc_idx = player_enclosures[username].size() - 1
+		_update_enclosure_tile_lookup(enclosure, username, enc_idx)
+		if not player_post_names.has(username):
+			player_post_names[username] = []
+		player_post_names[username].append({"name": "", "center": center, "created_at": int(Time.get_unix_time_from_system())})
+		# Send naming prompt to player
+		if peer_id >= 0:
+			send_to_peer(peer_id, {"type": "name_post_prompt", "enclosure_index": enc_idx})
 		added += 1
 
 	if added > 0:
-		return "[color=#00FFFF]Enclosure formed! (%d/%d)[/color]" % [current_count + added, MAX_PLAYER_ENCLOSURES]
+		return "[color=#00FFFF]Enclosure formed! (%d/%d)[/color]" % [current_count + added, max_posts]
 	elif new_enclosures.size() > 0:
-		return "[color=#FF8800]Enclosure limit reached (%d/%d)![/color]" % [MAX_PLAYER_ENCLOSURES, MAX_PLAYER_ENCLOSURES]
+		return "[color=#FF8800]Enclosure limit reached (%d/%d)![/color]" % [max_posts, max_posts]
 	return ""
+
+func _calculate_enclosure_center(positions: Array) -> Vector2i:
+	"""Calculate the center tile of an enclosure."""
+	var sum_x = 0
+	var sum_y = 0
+	for pos in positions:
+		sum_x += int(pos.x)
+		sum_y += int(pos.y)
+	return Vector2i(sum_x / positions.size(), sum_y / positions.size())
+
+func _update_enclosure_tile_lookup(positions: Array, owner: String, enclosure_idx: int):
+	"""Add enclosure interior tiles to the fast lookup dict."""
+	for pos in positions:
+		enclosure_tile_lookup[Vector2i(int(pos.x), int(pos.y))] = {"owner": owner, "enclosure_idx": enclosure_idx}
+
+func _remove_enclosure_from_tile_lookup(positions: Array):
+	"""Remove enclosure interior tiles from the fast lookup dict."""
+	for pos in positions:
+		enclosure_tile_lookup.erase(Vector2i(int(pos.x), int(pos.y)))
 
 func _recheck_enclosures_after_demolish(username: String) -> String:
 	"""After demolishing a wall/door, re-validate all enclosures for this player."""
@@ -13919,22 +13998,50 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 
 	var broken_count = 0
 	var remaining: Array = []
+	var remaining_names: Array = []
+	var old_names = player_post_names.get(username, [])
 
-	for enclosure in player_enclosures[username]:
+	for idx in range(player_enclosures[username].size()):
+		var enclosure = player_enclosures[username][idx]
+		# Remove old lookup entries
+		_remove_enclosure_from_tile_lookup(enclosure)
 		# Re-check if this enclosure is still valid
 		if enclosure.size() > 0:
 			var still_valid = _detect_enclosure_bfs(enclosure[0], username)
 			if still_valid.size() > 0:
+				var new_idx = remaining.size()
 				remaining.append(still_valid)
+				_update_enclosure_tile_lookup(still_valid, username, new_idx)
+				# Preserve post name
+				if idx < old_names.size():
+					remaining_names.append(old_names[idx])
+				else:
+					remaining_names.append({"name": "", "center": _calculate_enclosure_center(still_valid), "created_at": 0})
 			else:
 				# Enclosure broken - unmark interior tiles
 				_unmark_enclosure_safe(enclosure)
 				broken_count += 1
 
 	player_enclosures[username] = remaining
+	player_post_names[username] = remaining_names
 
 	if broken_count > 0:
-		return "[color=#FF8800]Enclosure broken! (%d/%d remaining)[/color]" % [remaining.size(), MAX_PLAYER_ENCLOSURES]
+		# Re-persist the entire remaining post list (cleaner than index-based removal during iteration)
+		if not persistence.player_posts_data.has("posts"):
+			persistence.player_posts_data["posts"] = {}
+		persistence.player_posts_data.posts[username] = []
+		for i in range(remaining_names.size()):
+			var meta = remaining_names[i]
+			var cx = int(meta.center.x) if meta.center is Vector2i else int(meta.get("center", {}).get("x", 0))
+			var cy = int(meta.center.y) if meta.center is Vector2i else int(meta.get("center", {}).get("y", 0))
+			persistence.set_player_post(username, i, {
+				"name": meta.get("name", ""),
+				"center_x": cx,
+				"center_y": cy,
+				"created_at": int(meta.get("created_at", 0))
+			})
+		var max_posts = _get_max_post_count_for_username(username)
+		return "[color=#FF8800]Enclosure broken! (%d/%d remaining)[/color]" % [remaining.size(), max_posts]
 	return ""
 
 func _detect_enclosure_bfs(start: Vector2i, owner: String) -> Array:
@@ -14029,6 +14136,8 @@ func _unmark_enclosure_safe(positions: Array):
 func _rebuild_all_player_enclosures():
 	"""Rebuild enclosure data from persisted tile tracking. Called on server startup."""
 	player_enclosures.clear()
+	player_post_names.clear()
+	enclosure_tile_lookup.clear()
 	var all_tiles = persistence.get_all_player_tiles()
 	for username in all_tiles:
 		var tiles = all_tiles[username]
@@ -14059,6 +14168,7 @@ func _rebuild_enclosures_for_player(username: String):
 	if wall_positions.size() < 4:
 		return
 
+	var max_posts = _get_max_post_count_for_username(username)
 	var found_enclosures: Array = []
 	var all_interior_tiles: Dictionary = {}  # Track to avoid duplicate detection
 
@@ -14074,15 +14184,95 @@ func _rebuild_enclosures_for_player(username: String):
 				continue
 
 			var result = _detect_enclosure_bfs(check_pos, username)
-			if result.size() > 0 and found_enclosures.size() < MAX_PLAYER_ENCLOSURES:
+			if result.size() > 0 and found_enclosures.size() < max_posts:
+				var enc_idx = found_enclosures.size()
 				found_enclosures.append(result)
 				for pos in result:
 					all_interior_tiles[pos] = true
 				_mark_enclosure_safe(result, username)
+				_update_enclosure_tile_lookup(result, username, enc_idx)
 
 	if found_enclosures.size() > 0:
 		player_enclosures[username] = found_enclosures
+		# Restore post names from persistence by matching center coordinates
+		var saved_posts = persistence.get_player_posts(username)
+		var rebuilt_names: Array = []
+		for enc in found_enclosures:
+			var center = _calculate_enclosure_center(enc)
+			var matched_name = ""
+			var matched_at = 0
+			for sp in saved_posts:
+				var sc = Vector2i(int(sp.get("center_x", sp.get("center", {}).get("x", 0))), int(sp.get("center_y", sp.get("center", {}).get("y", 0))))
+				if abs(center.x - sc.x) <= 1 and abs(center.y - sc.y) <= 1:
+					matched_name = sp.get("name", "")
+					matched_at = int(sp.get("created_at", 0))
+					break
+			rebuilt_names.append({"name": matched_name, "center": center, "created_at": matched_at})
+		player_post_names[username] = rebuilt_names
 		log_message("Rebuilt %d enclosures for %s" % [found_enclosures.size(), username])
+
+func handle_name_post(peer_id: int, message: Dictionary):
+	"""Handle player naming a newly formed enclosure/post."""
+	var username = _get_username(peer_id)
+	if username.is_empty():
+		return
+	var enc_index = int(message.get("enclosure_index", -1))
+	var name_text = str(message.get("name", "")).strip_edges()
+
+	if enc_index < 0 or not player_post_names.has(username) or enc_index >= player_post_names[username].size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000]Invalid enclosure.[/color]"})
+		return
+
+	# Validate name
+	if name_text.is_empty() or name_text.length() > 30:
+		name_text = "%s's Post" % username
+	# Strip BBCode tags for safety
+	var regex = RegEx.new()
+	regex.compile("\\[.*?\\]")
+	name_text = regex.sub(name_text, "", true)
+	if name_text.is_empty():
+		name_text = "%s's Post" % username
+
+	player_post_names[username][enc_index].name = name_text
+	# Persist
+	var meta = player_post_names[username][enc_index]
+	persistence.set_player_post(username, enc_index, {
+		"name": meta.name,
+		"center_x": int(meta.center.x),
+		"center_y": int(meta.center.y),
+		"created_at": meta.created_at
+	})
+	send_to_peer(peer_id, {"type": "post_named", "name": name_text})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]Post established: %s[/color]" % name_text})
+
+func _check_nearby_player_posts(peer_id: int, px: int, py: int):
+	"""Check for nearby named player posts and send a compass hint."""
+	var username = _get_username(peer_id)
+	for owner in player_post_names:
+		if owner == username:
+			continue
+		for meta in player_post_names[owner]:
+			if meta.get("name", "").is_empty():
+				continue
+			var cx = int(meta.center.x) if meta.center is Vector2i else int(meta.get("center", {}).get("x", 0))
+			var cy = int(meta.center.y) if meta.center is Vector2i else int(meta.get("center", {}).get("y", 0))
+			var dist = max(abs(px - cx), abs(py - cy))
+			if dist <= 50 and dist > 0:
+				var dir = _get_compass_direction(px, py, cx, cy)
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]You sense a player post to the %s...[/color]" % dir})
+				return  # One hint per check
+
+func _get_compass_direction(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
+	"""Get compass direction string from one position to another."""
+	var dx = to_x - from_x
+	var dy = to_y - from_y
+	var dir = ""
+	if dy < 0: dir += "N"
+	elif dy > 0: dir += "S"
+	if dx > 0: dir += "E"
+	elif dx < 0: dir += "W"
+	if dir.is_empty(): dir = "nearby"
+	return dir
 
 func _get_username(peer_id: int) -> String:
 	"""Get username for a peer_id."""
@@ -19212,7 +19402,8 @@ func _execute_full_wipe(admin_peer_id: int):
 		"user://data/monster_kills_leaderboard.json", "user://data/monster_kills_leaderboard.json.bak",
 		"user://data/realm_state.json", "user://data/realm_state.json.bak",
 		"user://data/corpses.json", "user://data/corpses.json.bak",
-		"user://data/houses.json", "user://data/houses.json.bak"]:
+		"user://data/houses.json", "user://data/houses.json.bak",
+		"user://data/player_posts.json", "user://data/player_posts.json.bak"]:
 		if FileAccess.file_exists(filepath):
 			DirAccess.remove_absolute(filepath)
 	characters.clear()
@@ -19220,6 +19411,9 @@ func _execute_full_wipe(admin_peer_id: int):
 	pending_trade_requests.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	player_enclosures.clear()
+	player_post_names.clear()
+	enclosure_tile_lookup.clear()
 	log_message("[WIPE] Full wipe complete. Server restart recommended.")
 	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Full wipe complete. Restart the server.[/color]"})
 
@@ -19236,7 +19430,10 @@ func _execute_map_wipe(admin_peer_id: int):
 		chunk_manager.save_dirty_chunks()
 		# Clear all player-built tiles (they don't survive map wipe)
 		persistence.clear_all_player_tiles()
+		persistence.clear_all_player_posts()
 		player_enclosures.clear()
+		player_post_names.clear()
+		enclosure_tile_lookup.clear()
 	else:
 		depleted_nodes.clear()
 	active_bounties.clear()
@@ -19252,6 +19449,48 @@ func _execute_map_wipe(admin_peer_id: int):
 		send_location_update(pid)
 	log_message("[WIPE] Map wipe complete. World regenerated from seed.")
 	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})
+
+# ===== PARTY QUEST SYNC =====
+
+func _sync_party_quest_turn_in(leader_pid: int, quest_id: String, quest: Dictionary):
+	"""Auto-turn-in a quest for party members who also have it completed."""
+	if not active_parties.has(leader_pid):
+		return
+	var party = active_parties[leader_pid]
+
+	for pid in party.members:
+		if pid == leader_pid:
+			continue
+		if not characters.has(pid):
+			continue
+		var member = characters[pid]
+
+		# Check if member has this quest AND it's complete
+		if not quest_mgr.is_quest_complete(member, quest_id):
+			continue
+
+		var old_level = member.level
+		var turn_in_result = quest_mgr.turn_in_quest(member, quest_id)
+		if not turn_in_result.success:
+			continue
+
+		var unlocked = []
+		if turn_in_result.leveled_up:
+			unlocked = member.get_newly_unlocked_abilities(old_level, turn_in_result.new_level)
+
+		send_to_peer(pid, {
+			"type": "quest_turned_in",
+			"quest_id": quest_id,
+			"quest_name": quest.get("name", "Quest"),
+			"message": "[color=#00FFFF](Party) [/color]" + turn_in_result.message,
+			"rewards": turn_in_result.rewards,
+			"leveled_up": turn_in_result.leveled_up,
+			"new_level": turn_in_result.new_level,
+			"unlocked_abilities": unlocked
+		})
+		check_elder_auto_grant(pid)
+		send_character_update(pid)
+		save_character(pid)
 
 # ===== PARTY SYSTEM =====
 
@@ -19691,6 +19930,9 @@ func _move_party_followers(leader_peer_id: int, old_leader_x: int, old_leader_y:
 		follower.y = old_positions[i - 1].y
 		# Process egg steps for followers too
 		follower.process_egg_steps(1)
+		# Check exploration quest progress at new position
+		if world_system.is_trading_post_tile(follower.x, follower.y):
+			check_exploration_quest_progress(follower_pid, follower.x, follower.y)
 
 func _cleanup_party_combat_on_disconnect(peer_id: int):
 	"""Clean up party combat state when a player disconnects during party combat."""
