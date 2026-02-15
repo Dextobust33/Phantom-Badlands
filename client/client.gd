@@ -2003,7 +2003,7 @@ func _process(delta):
 					set_meta("marketmatkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
 					# Find the i-th material and list all of it
-					var materials = character_data.get("materials", {})
+					var materials = character_data.get("crafting_materials", {})
 					var idx = 0
 					for mat_name in materials:
 						var qty = int(materials[mat_name])
@@ -6246,11 +6246,11 @@ func update_action_bar():
 		if pending_market_action == "":
 			# Main menu
 			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_back", "enabled": true},
 				{"label": "Browse", "action_type": "local", "action_data": "market_browse", "enabled": true},
 				{"label": "List Item", "action_type": "local", "action_data": "market_list", "enabled": true},
 				{"label": "List Mats", "action_type": "local", "action_data": "market_list_material", "enabled": true},
 				{"label": "My Listings", "action_type": "local", "action_data": "market_my_listings", "enabled": true},
-				{"label": "Back", "action_type": "local", "action_data": "market_back", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6259,11 +6259,11 @@ func update_action_bar():
 			]
 		elif pending_market_action == "browse":
 			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_browse_back", "enabled": true},
 				{"label": "Prev Page", "action_type": "local", "action_data": "market_prev_page", "enabled": market_page > 0},
 				{"label": "Next Page", "action_type": "local", "action_data": "market_next_page", "enabled": market_page < market_total_pages - 1},
 				{"label": "Filter", "action_type": "local", "action_data": "market_filter", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Back", "action_type": "local", "action_data": "market_browse_back", "enabled": true},
 				{"label": "1-9 Buy", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6272,11 +6272,11 @@ func update_action_bar():
 			]
 		elif pending_market_action == "list_select" or pending_market_action == "list_material":
 			current_actions = [
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Back", "action_type": "local", "action_data": "market_list_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6285,8 +6285,8 @@ func update_action_bar():
 			]
 		elif pending_market_action == "buy_confirm":
 			current_actions = [
-				{"label": "Confirm", "action_type": "local", "action_data": "market_buy_confirm", "enabled": true},
 				{"label": "Cancel", "action_type": "local", "action_data": "market_buy_cancel", "enabled": true},
+				{"label": "Confirm", "action_type": "local", "action_data": "market_buy_confirm", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6298,11 +6298,11 @@ func update_action_bar():
 			]
 		elif pending_market_action == "my_listings":
 			current_actions = [
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Back", "action_type": "local", "action_data": "market_my_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9 Cancel", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -22499,6 +22499,7 @@ func exit_market():
 	pending_market_action = ""
 	market_listings = []
 	market_selected_listing = {}
+	set_meta("hotkey_0_pressed", true)
 	_display_trading_post_ui()
 	update_action_bar()
 
@@ -22513,11 +22514,11 @@ func display_market_main():
 	display_game("")
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
-	display_game("[color=#FFD700]%s[/color] Browse Listings" % get_action_key_name(0))
-	display_game("[color=#FFD700]%s[/color] List Item from Inventory" % get_action_key_name(1))
-	display_game("[color=#FFD700]%s[/color] List Materials" % get_action_key_name(2))
-	display_game("[color=#FFD700]%s[/color] My Listings" % get_action_key_name(3))
-	display_game("[color=#FFD700]%s[/color] Back to Trading Post" % get_action_key_name(4))
+	display_game("[color=#FFD700][%s][/color] Back" % get_action_key_name(0))
+	display_game("[color=#FFD700][%s][/color] Browse Listings" % get_action_key_name(1))
+	display_game("[color=#FFD700][%s][/color] List Item from Inventory" % get_action_key_name(2))
+	display_game("[color=#FFD700][%s][/color] List Materials" % get_action_key_name(3))
+	display_game("[color=#FFD700][%s][/color] My Listings" % get_action_key_name(4))
 
 func display_market_browse():
 	"""Display market browse listings."""
@@ -22552,7 +22553,7 @@ func display_market_browse():
 			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to buy, %s/%s to page, %s to filter, %s to go back[/color]" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2), get_action_key_name(4)])
+	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] to page, [%s] to filter, [%s] to go back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(0)])
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
@@ -22588,7 +22589,7 @@ func display_market_list_select():
 			displayed += 1
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to select, %s to go back[/color]" % get_action_key_name(4))
+	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
 
 func display_market_list_materials():
 	"""Display materials for selecting to list on the market."""
@@ -22599,7 +22600,7 @@ func display_market_list_materials():
 	display_game("[color=#87CEEB]Select a material to list:[/color]")
 	display_game("")
 
-	var materials = character_data.get("materials", {})
+	var materials = character_data.get("crafting_materials", {})
 	if materials.is_empty():
 		display_game("[color=#808080]You have no materials.[/color]")
 	else:
@@ -22614,7 +22615,7 @@ func display_market_list_materials():
 			idx += 1
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to select, %s to go back[/color]" % get_action_key_name(4))
+	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
 
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
@@ -22676,7 +22677,7 @@ func display_market_my_listings():
 			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V (base)[/color]" % [idx + 1, rarity_color, item_name, qty_text, format_number(base_valor)])
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to cancel a listing (buy back at base price), %s to go back[/color]" % get_action_key_name(4))
+	display_game("[color=#808080]Press 1-9 to cancel a listing (buy back at base price), [%s] to go back[/color]" % get_action_key_name(0))
 
 # --- Market message handlers ---
 
