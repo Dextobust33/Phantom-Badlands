@@ -193,9 +193,11 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 	_place_station(chunk_manager, ix0 + 3, iy0 + 2, "workbench")
 	_place_station(chunk_manager, ix0 + 4, iy0 + 2, "workbench")
 
-	# Row 3 (middle area): quest boards, post marker, inn
+	# Row 3 (middle area): quest boards, blacksmith, healer
 	_place_station(chunk_manager, ix0, iy0 + 4, "quest_board")
 	_place_station(chunk_manager, ix0 + 2, iy0 + 4, "quest_board")
+	_place_station(chunk_manager, ix0 + 4, iy0 + 4, "blacksmith")
+	_place_station(chunk_manager, ix0 + 5, iy0 + 4, "blacksmith")
 
 	# Post marker at center
 	chunk_manager.set_tile(px, py, {
@@ -203,9 +205,12 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 		"blocks_move": false, "blocks_los": false,
 	})
 
-	# Inn and Market on right side
-	_place_station(chunk_manager, ix1 - 1, iy0 + 4, "inn")
-	_place_station(chunk_manager, ix1, iy0 + 4, "market")
+	# Row 4 (bottom area): inn, healer, market
+	_place_station(chunk_manager, ix0, iy0 + 6, "inn")
+	_place_station(chunk_manager, ix0 + 2, iy0 + 6, "healer")
+	_place_station(chunk_manager, ix0 + 3, iy0 + 6, "healer")
+	_place_station(chunk_manager, ix1 - 1, iy0 + 6, "market")
+	_place_station(chunk_manager, ix1, iy0 + 6, "market")
 
 	# Crossroads: place throne near center-bottom
 	if is_crossroads:

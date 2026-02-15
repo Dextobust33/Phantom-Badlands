@@ -81,6 +81,8 @@ const TILE_RENDER = {
 	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": true, "blocks_los": false},
 	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": true, "blocks_los": false},
 	"throne":        {"char": "T", "color": "#FFD700", "blocks_move": true, "blocks_los": false},
+	"blacksmith":    {"char": "B", "color": "#DAA520", "blocks_move": true, "blocks_los": false},
+	"healer":        {"char": "H", "color": "#00FF88", "blocks_move": true, "blocks_los": false},
 	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
 	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
 	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": false, "blocks_los": false},
@@ -311,7 +313,7 @@ func _tile_to_terrain(tile: Dictionary, x: int, y: int) -> Terrain:
 		"water": return Terrain.WATER
 		"deep_water": return Terrain.DEEP_WATER
 		"wall", "void": return Terrain.VOID
-		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker", "throne":
+		"floor", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "post_marker", "throne", "blacksmith", "healer":
 			return Terrain.TRADING_POST  # Inside a post = safe
 		"stone", "ore_vein":
 			return Terrain.MOUNTAINS
@@ -807,8 +809,8 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
 
-				# Check if this tile is a hotspot - show in red/orange
-				if _is_hotspot(x, y) and not info.safe:
+				# Check if this tile is a hotspot - show in red/orange (but not inside enclosures)
+				if _is_hotspot(x, y) and not info.safe and not is_safe_zone(x, y):
 					var intensity = _get_hotspot_intensity(x, y)
 					# Gradient from orange (edge) to bright red (center)
 					var hotspot_color = "#FF4500" if intensity > 0.5 else "#FF6600"
@@ -851,6 +853,13 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 		output += "[/center]"
 		return output
 
+	# Check if in a player enclosure — treat as safe zone
+	var in_enclosure = false
+	if chunk_manager:
+		var center_tile = chunk_manager.get_tile(center_x, center_y)
+		if center_tile.has("enclosure_owner"):
+			in_enclosure = true
+
 	# Get location info
 	var terrain = get_terrain_at(center_x, center_y)
 	var info = get_terrain_info(terrain)
@@ -866,8 +875,10 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 
 	output += "\n"
 
-	# Danger info
-	if not info.safe and level_range.min > 0:
+	# Danger info — enclosures are always safe
+	if in_enclosure:
+		output += "[color=#00FF00]Safe[/color]"
+	elif not info.safe and level_range.min > 0:
 		if level_range.is_hotspot:
 			output += "[color=#FF0000]!DANGER![/color] "
 		output += "[color=#FF4444]Lv%d-%d[/color]" % [level_range.min, level_range.max]
@@ -899,7 +910,7 @@ func is_safe_zone(x: int, y: int) -> bool:
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
 		var tile_type = tile.get("type", "")
-		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "storage", "tower", "post_marker"]:
+		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "storage", "tower", "post_marker", "blacksmith", "healer"]:
 			return true
 		if tile.has("enclosure_owner"):
 			return true
@@ -1283,10 +1294,25 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var tile_type = tile.get("type", "empty")
 				var tile_tier = tile.get("tier", 1)
 				var is_depleted = depleted_set.has(pos_key)
+				var in_hotzone = _is_hotspot(x, y) and not is_safe_zone(x, y)
 
 				if is_depleted and tile_type in GATHERABLE_TYPES:
-					# Depleted node — show dim passable ground
-					line_parts.append("[color=#444444] ,[/color]")
+					if in_hotzone:
+						# Depleted node in hotzone — show red ! instead of gray comma
+						var intensity = _get_hotspot_intensity(x, y)
+						var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
+						line_parts.append("[color=%s] ![/color]" % hz_color)
+					else:
+						# Depleted node — show dim passable ground
+						line_parts.append("[color=#444444] ,[/color]")
+				elif in_hotzone and (tile_type == "empty" or not TILE_RENDER.get(tile_type, {}).get("blocks_move", false)):
+					# Passable tile in hotzone — show red ! with intensity gradient
+					var intensity = _get_hotspot_intensity(x, y)
+					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
+					line_parts.append("[color=%s] ![/color]" % hz_color)
+				elif in_hotzone:
+					# Non-passable tile in hotzone — show tile with dark red tint
+					line_parts.append("[color=#8B0000] ![/color]")
 				else:
 					line_parts.append(_render_tile_bbcode(tile_type, tile_tier))
 
@@ -1944,7 +1970,7 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				var terrain = get_terrain_at(x, y)
 				var info = get_terrain_info(terrain)
 
-				if _is_hotspot(x, y) and not info.safe:
+				if _is_hotspot(x, y) and not info.safe and not is_safe_zone(x, y):
 					var intensity = _get_hotspot_intensity(x, y)
 					var hotspot_color = "#FF4500" if intensity > 0.5 else "#FF6600"
 					line_parts.append("[color=%s] ![/color]" % hotspot_color)

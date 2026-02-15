@@ -60,7 +60,7 @@ const ABILITY_ETHEREAL = "ethereal"
 const ABILITY_ARMORED = "armored"
 const ABILITY_SUMMONER = "summoner"
 const ABILITY_PACK_LEADER = "pack_leader"
-const ABILITY_GOLD_HOARDER = "gold_hoarder"
+const ABILITY_GOLD_HOARDER = "gold_hoarder"  # Legacy — no effect (gold removed)
 const ABILITY_GEM_BEARER = "gem_bearer"
 const ABILITY_CURSE = "curse"
 const ABILITY_DISARM = "disarm"
@@ -88,7 +88,7 @@ const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff fo
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
-const ABILITY_GOLD_STEAL = "gold_steal"          # Steals 5-15% of player gold on hit
+const ABILITY_GOLD_STEAL = "gold_steal"          # Legacy — no effect (gold removed)
 const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
 const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
 const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
@@ -457,8 +457,8 @@ func _apply_companion_passive_effect(combat_state: Dictionary, character: Charac
 			combat_state["companion_energy_regen"] = combat_state.get("companion_energy_regen", 0) + value
 		"stamina_regen":
 			combat_state["companion_stamina_regen"] = combat_state.get("companion_stamina_regen", 0) + value
-		"gold_find":
-			combat_state["companion_gold_find"] = combat_state.get("companion_gold_find", 0) + value
+		"gathering_bonus":
+			combat_state["companion_gathering_bonus"] = combat_state.get("companion_gathering_bonus", 0) + value
 		"flee_bonus":
 			combat_state["companion_flee_bonus"] = combat_state.get("companion_flee_bonus", 0) + value
 		"crit_damage":
@@ -701,6 +701,21 @@ func _indent_multiline(text: String, indent: String) -> String:
 			result.append(line)
 	return "\n".join(result)
 
+func _apply_combat_wear(character, messages: Array):
+	"""~30% chance per fight to apply 1-3 wear to one random equipped item."""
+	if randf() >= 0.30:
+		return
+	var slots = ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
+	slots.shuffle()
+	for slot in slots:
+		var result = character.damage_equipment(slot, randi_range(1, 3))
+		if result.success:
+			if result.new_wear >= 75:
+				messages.append("[color=#FFA500]Your %s is badly worn! (%d%%)[/color]" % [result.item_name, result.new_wear])
+			elif result.new_wear >= 50:
+				messages.append("[color=#FFFF00]Your %s took some wear. (%d%%)[/color]" % [result.item_name, result.new_wear])
+			break  # Only 1 item per fight
+
 func _ready():
 	print("Combat Manager initialized")
 
@@ -792,7 +807,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"total_damage_taken": 0,
 		"player_hp_at_start": character.current_hp,
 		"pickpocket_count": 0,
-		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of gold
+		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of salvage essence
 	}
 
 	active_combats[peer_id] = combat_state
@@ -1418,56 +1433,30 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 
 	var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 
-	# Gold calculation with gold hoarder bonus
-	var gold = monster.gold_reward
-	if ABILITY_GOLD_HOARDER in abilities:
-		gold = gold * 3
-		messages.append("[color=#FFD700]The gold hoarder drops a massive treasure![/color]")
-
-	# Gambit kill bonus: +75% gold, +1 gem awarded later
+	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
-	if gambit_kill:
-		gold = int(gold * 1.75)
-		messages.append("[color=#FFD700]Your gambit paid off! +75% gold bonus![/color]")
 
-	# Companion gold find bonus
-	if character.has_active_companion():
-		var companion_gold = int(character.get_companion_bonus("gold_find"))
-		companion_gold += combat.get("companion_gold_find", 0)
-		if companion_gold > 0:
-			gold = int(gold * (1.0 + companion_gold / 100.0))
-
-	# Halfling racial: +15% gold from kills
-	var halfling_gold_mult = character.get_gold_multiplier()
-	if halfling_gold_mult > 1.0:
-		gold = int(gold * halfling_gold_mult)
-
-	# Easy prey: reduced rewards
+	# Easy prey: reduced XP
 	if ABILITY_EASY_PREY in abilities:
 		final_xp = int(final_xp * 0.5)
-		gold = int(gold * 0.5)
 
 	# === CLASS PASSIVE: Ranger Hunter's Mark ===
-	# +30% gold and XP from kills
+	# +30% XP from kills
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
-	if passive_effects.has("gold_bonus") or passive_effects.has("xp_bonus"):
-		var gold_mult = 1.0 + passive_effects.get("gold_bonus", 0)
+	if passive_effects.has("xp_bonus"):
 		var xp_mult = 1.0 + passive_effects.get("xp_bonus", 0)
-		gold = int(gold * gold_mult)
 		final_xp = int(final_xp * xp_mult)
-		messages.append("[color=#228B22]Hunter's Mark: +%d%% gold & XP![/color]" % int(passive_effects.get("gold_bonus", 0) * 100))
+		messages.append("[color=#228B22]Hunter's Mark: +%d%% XP![/color]" % int(passive_effects.get("xp_bonus", 0) * 100))
 
 	var effective_bonus_pct = int((xp_multiplier - 1.0) * 100)
 	if effective_bonus_pct > 0:
 		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus)[/color][/color]" % [final_xp, effective_bonus_pct])
 	else:
 		messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
-	messages.append("[color=#FFD700]You gain %d gold![/color]" % gold)
 
-	# Award experience and gold
+	# Award experience
 	character.add_experience(final_xp)
-	character.gold += gold
 
 	# === COMPANION XP DISTRIBUTION ===
 	# Active companions gain 10% of monster XP
@@ -1486,16 +1475,16 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					if not ability.is_empty():
 						messages.append("[color=#FFD700]* New ability unlocked: %s! *[/color]" % ability.get("name", "Unknown"))
 
-	# Normal gem drops (from high-level monsters)
+	# Normal gem drops (from high-level monsters) → Monster Gem material
 	var gems_earned = roll_gem_drops(monster, character)
 	if gems_earned > 0:
-		character.gems += gems_earned
-		messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]You found %d gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+		character.add_crafting_material("monster_gem", gems_earned)
+		messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]You found %d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
-	# Gambit kill bonus: +1 gem
+	# Gambit kill bonus: +1 Monster Gem
 	if gambit_kill:
-		character.gems += 1
-		messages.append("[color=#FFD700]+ Gambit bonus: +1 gem! +[/color]")
+		character.add_crafting_material("monster_gem", 1)
+		messages.append("[color=#FFD700]+ Gambit bonus: +1 Monster Gem! +[/color]")
 
 	# Gem Bearer bonus (separate from normal drops, scales with monster level)
 	if ABILITY_GEM_BEARER in abilities:
@@ -1519,11 +1508,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		elif monster_level >= 25:
 			tier_bonus = 1
 
-		# Gem Bearer always drops: 2-5 base + tier bonus
+		# Gem Bearer always drops: 2-5 base + tier bonus → Monster Gems
 		var bearer_gems = randi_range(2, 5) + tier_bonus
-		character.gems += bearer_gems
+		character.add_crafting_material("monster_gem", bearer_gems)
 		gems_earned += bearer_gems
-		messages.append("[color=#00FFFF]* The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] *[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
+		messages.append("[color=#00FFFF]* The gem bearer's hoard glitters! [/color][color=#FF00FF]+%d Monster Gem%s![/color][color=#00FFFF] *[/color]" % [bearer_gems, "s" if bearer_gems > 1 else ""])
 
 	# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 	if ABILITY_WEAPON_MASTER in abilities and drop_tables != null:
@@ -1713,6 +1702,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var all_drops = dropped_items.duplicate()
 	if combat.has("extra_drops"):
 		all_drops.append_array(combat.extra_drops)
+
+	# Combat durability wear (~30% chance per fight, 1 random item takes 1-3 wear)
+	_apply_combat_wear(character, messages)
 
 	# Indent all victory/reward messages
 	var victory_indent = "          "  # 10 spaces
@@ -1993,14 +1985,12 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
 
 		var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
-		var gold = monster.gold_reward
 
-		# Add XP and gold
+		# Add XP
 		var old_level = character.level
 		var level_result = character.add_experience(final_xp)
-		character.gold += gold
 
-		messages.append("[color=#FF00FF]+%d XP[/color] | [color=#FFD700]+%d gold[/color]" % [final_xp, gold])
+		messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
 
 		if level_result.leveled_up:
 			messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
@@ -2125,11 +2115,11 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				else:
 					messages.append("[color=#AA8866]- The Warrior Hoarder's armor crumbles...[/color]")
 
-			# Roll for gem drops
+			# Roll for gem drops → Monster Gems
 			gems_earned = roll_gem_drops(monster, character)
 			if gems_earned > 0:
-				character.gems += gems_earned
-				messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
+				character.add_crafting_material("monster_gem", gems_earned)
+				messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 		# Wish granter ability: 10% chance to offer a wish (100% if GM-guaranteed)
 		if ABILITY_WISH_GRANTER in abilities:
@@ -2180,9 +2170,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			# Give rewards as if outsmart succeeded (companion clutch kill)
 			var base_xp = monster.experience_reward
 			var xp_result = character.add_experience(base_xp)
-			var gold = monster.gold_reward
-			character.gold += gold
-			messages.append("[color=#FFD700]+%d XP, +%d Gold[/color]" % [base_xp, gold])
+			messages.append("[color=#FFD700]+%d XP[/color]" % base_xp)
 			return {
 				"success": true,
 				"messages": messages,
@@ -2305,7 +2293,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 
 	# Check if companion killed the monster
 	if combat.monster.current_hp <= 0:
-		# Process full victory with rewards (XP, gold, items, etc.)
+		# Process full victory with rewards (XP, items, etc.)
 		result.messages.append("[color=#00FF00]Your companion finishes off the %s![/color]" % combat.monster.name)
 		var victory_result = _process_victory_with_abilities(combat, result.messages)
 		end_combat(peer_id, true)
@@ -3048,11 +3036,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			is_buff_ability = true
 
 		"pickpocket":
-			# Check if monster has any gold left to steal
+			# Check if monster has anything left to steal
 			var pp_count = combat.get("pickpocket_count", 0)
 			var pp_max = combat.get("pickpocket_max", 2)
 			if pp_count >= pp_max:
-				messages.append("[color=#808080]The enemy has no more gold to steal![/color]")
+				messages.append("[color=#808080]The enemy has nothing left to steal![/color]")
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": false}
 			var wits = character.get_effective_stat("wits")
 			var success_chance = 50 + wits - monster.get("intelligence", 15)
@@ -3060,12 +3048,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var roll = randi() % 100
 			if roll < success_chance:
 				combat["pickpocket_count"] = pp_count + 1
-				# More gold: base * wits multiplier + monster level bonus
-				var base_gold = 50 + (monster.level * 2)
-				var stolen_gold = int(base_gold * (1.0 + wits * 0.05))  # +5% per wits
-				character.gold += stolen_gold
+				# Steal salvage essence based on monster tier
+				var monster_tier = monster.get("tier", 1)
+				var stolen_essence = 5 + (monster_tier * 3) + (wits / 10)
+				character.salvage_essence = character.get("salvage_essence", 0) + stolen_essence
 				messages.append("[color=#00FF00]PICKPOCKET SUCCESS![/color]")
-				messages.append("[color=#FFD700]You steal %d gold![/color]" % stolen_gold)
+				messages.append("[color=#FFD700]You steal %d salvage essence![/color]" % stolen_essence)
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 			else:
 				messages.append("[color=#FF4444]PICKPOCKET FAILED![/color]")
@@ -3144,7 +3132,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
 				messages.append("[color=#00FF00]You execute a flawless heist![/color]")
 
-				# Slight bonus XP and gold (1.25x, was 2x)
+				# Slight bonus XP (1.25x, was 2x)
 				var base_xp = int(monster.experience_reward * 1.25)
 				# Small bonus for level difference, capped at 1.5x max
 				var xp_multiplier = 1.0
@@ -3152,14 +3140,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					xp_multiplier = 1.0 + min(0.5, level_diff * 0.02)  # +2% per level, max +50%
 
 				var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
-				var gold = int(monster.gold_reward * 1.25)
 
 				var heist_old_level = character.level
 				var level_result = character.add_experience(final_xp)
-				character.gold += gold
 
 				messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
-				messages.append("[color=#FFD700]+%d gold[/color]" % gold)
 
 				if level_result.leveled_up:
 					messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
@@ -3188,8 +3173,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					dropped_items = drops_result
 					gems_earned = roll_gem_drops(monster, character)
 					if gems_earned > 0:
-						character.gems += gems_earned
-						messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d gems![/color][color=#00FFFF] + +[/color]" % gems_earned)
+						character.add_crafting_material("monster_gem", gems_earned)
+						messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
 
 				return {
 					"success": true,
@@ -4236,14 +4221,6 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["player_charmed"] = true
 			messages.append("[color=#FF00FF]The %s charms you! You will attack yourself next turn![/color]" % monster.name)
 
-	# Gold steal ability: steals 5-15% of player gold on hit
-	if ABILITY_GOLD_STEAL in abilities and hits > 0:
-		if randi() % 100 < 35:  # 35% chance
-			var steal_percent = randi_range(5, 15)
-			var gold_stolen = max(1, int(character.gold * steal_percent / 100.0))
-			character.gold = max(0, character.gold - gold_stolen)
-			messages.append("[color=#FFD700]The %s steals [color=#FF8800]%d[/color] gold from you![/color]" % [monster.name, gold_stolen])
-
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -4870,8 +4847,6 @@ func generate_encounter_text(monster: Dictionary) -> String:
 		notable_abilities.append("[color=#FF4444]! SUNDERING ![/color]")
 	if ABILITY_CHARM in abilities:
 		notable_abilities.append("[color=#FF00FF]Enchanting[/color]")
-	if ABILITY_GOLD_STEAL in abilities:
-		notable_abilities.append("[color=#FFD700]! THIEF ![/color]")
 	if ABILITY_BUFF_DESTROY in abilities:
 		notable_abilities.append("[color=#808080]Dispeller[/color]")
 	if ABILITY_SHIELD_SHATTER in abilities:
@@ -5158,9 +5133,9 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 		"experience":
 			character.add_experience(wish.amount)
 			return "[color=#00FF00]+ + [/color][color=#FF00FF]WISH GRANTED: +%d XP![/color][color=#00FF00] + +[/color]" % wish.amount
-		"gold":
-			character.gold += wish.amount
-			return "[color=#FFD700]WISH GRANTED: +%d gold![/color]" % wish.amount
+		"essence":
+			character.salvage_essence = character.salvage_essence + wish.amount
+			return "[color=#FFD700]WISH GRANTED: +%d salvage essence![/color]" % wish.amount
 		"buff":
 			character.add_persistent_buff(wish.stat, wish.value, wish.battles)
 			return "[color=#FFD700]WISH GRANTED: %s![/color]" % wish.label
@@ -5208,7 +5183,6 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 			"is_rare_variant": monster.get("is_rare_variant", false),
 			"variant_name": monster.get("variant_name", ""),
 			"experience_reward": monster.get("experience_reward", 10),
-			"gold_reward": monster.get("gold_reward", 0),
 			"class_affinity": monster.get("class_affinity", 0),
 			"is_dungeon_monster": monster.get("is_dungeon_monster", false),
 			"is_boss": monster.get("is_boss", false)
@@ -6051,11 +6025,6 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 		var house_xp_mult = 1.0 + (character.house_bonuses.get("xp_bonus", 0) / 100.0)
 		var final_xp = int(base_xp * xp_multiplier * house_xp_mult)
 
-		# Gold
-		var gold_reward = monster.get("gold_reward", 0)
-		if character.race == "Halfling":
-			gold_reward = int(gold_reward * 1.15)
-
 		# Gem drops
 		var gems = 0
 		if drop_tables and drop_tables.has_method("roll_gem_drops"):
@@ -6063,7 +6032,6 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 
 		member_rewards[pid] = {
 			"xp": final_xp,
-			"gold": gold_reward,
 			"gems": gems,
 			"drops": []
 		}
@@ -6075,17 +6043,23 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 
 		# Apply rewards
 		character.experience += final_xp
-		character.gold += gold_reward
-		character.gems += gems
+		if gems > 0:
+			character.add_crafting_material("monster_gem", gems)
 
 		# Level up check
 		while character.experience >= character.experience_to_next_level:
 			character.experience -= character.experience_to_next_level
 			character.level_up()
 
-		messages.append("[color=#00BFFF]%s[/color]: +%d XP, +%d gold%s" % [
-			character.name, final_xp, gold_reward,
+		messages.append("[color=#00BFFF]%s[/color]: +%d XP%s" % [
+			character.name, final_xp,
 			", +%d gems" % gems if gems > 0 else ""])
+
+		# Combat durability wear for each surviving party member
+		var wear_msgs: Array = []
+		_apply_combat_wear(character, wear_msgs)
+		for wm in wear_msgs:
+			messages.append("[color=#00BFFF]%s[/color] - %s" % [character.name, wm])
 
 	return {"messages": messages, "member_rewards": member_rewards}
 

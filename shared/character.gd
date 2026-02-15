@@ -40,8 +40,8 @@ extends Resource
 # Location & Status (Phantasia 4 style coordinates)
 @export var x: int = 0  # X coordinate
 @export var y: int = 10  # Y coordinate (start at Sanctuary)
-@export var gold: int = 100
-@export var gems: int = 0  # Premium currency from high-level monsters
+@export var gold: int = 0  # Deprecated — kept for migration only
+@export var gems: int = 0  # Deprecated — kept for migration only (→ monster_gem material)
 
 # Combat
 @export var in_combat: bool = false
@@ -245,7 +245,7 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 @export var guardian_granted_by: String = ""  # Name of Eternal who granted it
 
 # Pilgrimage Progress - Elder's journey to become Eternal
-# Format: {stage: String, kills: int, tier8_kills: int, outsmarts: int, gold_donated: int, embers: int, crucible_progress: int}
+# Format: {stage: String, kills: int, tier8_kills: int, outsmarts: int, valor_donated: int, embers: int, crucible_progress: int}
 @export var pilgrimage_progress: Dictionary = {}
 
 # Title Abuse Tracking - for Jarl/High King
@@ -398,7 +398,7 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var harvest_mastery: Dictionary = {}  # {monster_type: successful_harvests_count}
 
 # ===== SALVAGE SYSTEM =====
-@export var salvage_essence: int = 0  # Currency from salvaging items
+@export var salvage_essence: int = 0  # Deprecated — kept for migration only (→ materials)
 @export var auto_salvage_enabled: bool = false
 @export var auto_salvage_max_rarity: int = 0  # 0=off, 1=common, 2=uncommon, 3=rare
 @export var auto_salvage_affixes: Array = []  # Up to 2 affix names to auto-salvage regardless of rarity
@@ -423,7 +423,7 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 
 # ===== HOUSE (SANCTUARY) SYSTEM =====
 # House bonuses applied from account-level upgrades
-# Format: {flee_chance: int, starting_gold: int, xp_bonus: int, gathering_bonus: int}
+# Format: {flee_chance: int, starting_valor: int, xp_bonus: int, gathering_bonus: int}
 @export var house_bonuses: Dictionary = {}
 # Registered companion tracking - companion survives death and returns to house
 @export var using_registered_companion: bool = false
@@ -462,7 +462,7 @@ func initialize(char_name: String, char_class: String, char_race: String = "Huma
 	# Starting location - near origin (0, 0)
 	x = 0
 	y = 0
-	gold = 100
+	gold = 0
 
 	# Tracking fields
 	created_at = int(Time.get_unix_time_from_system())
@@ -577,12 +577,12 @@ func get_class_passive() -> Dictionary:
 		"Ranger":
 			return {
 				"name": "Hunter's Mark",
-				"description": "+25% damage vs beasts, +30% gold/XP from kills",
+				"description": "+25% damage vs beasts, +30% XP from kills, +15% gathering",
 				"color": "#228B22",
 				"effects": {
 					"bonus_vs_beasts": 0.25,
-					"gold_bonus": 0.30,
-					"xp_bonus": 0.30
+					"xp_bonus": 0.30,
+					"gathering_bonus": 0.15
 				}
 			}
 		"Ninja":
@@ -1260,7 +1260,7 @@ func to_dict() -> Dictionary:
 		"y": y,
 		"health_state": get_health_state(),
 		"gold": gold,
-		"gems": gems,
+		"gems": 0,  # Deprecated — migrated to monster_gem material
 		"in_combat": in_combat,
 		"poison_active": poison_active,
 		"poison_damage": poison_damage,
@@ -1309,7 +1309,7 @@ func to_dict() -> Dictionary:
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,
-		"salvage_essence": salvage_essence,
+		"salvage_essence": 0,  # Deprecated — migrated to materials
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
 		"auto_salvage_affixes": auto_salvage_affixes,
@@ -1381,7 +1381,7 @@ func from_dict(data: Dictionary):
 
 	x = data.get("x", 0)
 	y = data.get("y", 10)
-	gold = data.get("gold", 100)
+	gold = data.get("gold", 0)
 	gems = data.get("gems", 0)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
@@ -1553,6 +1553,21 @@ func from_dict(data: Dictionary):
 	# Crafting and gathering
 	crafting_materials = data.get("crafting_materials", {})
 	salvage_essence = data.get("salvage_essence", 0)
+
+	# Migration: Convert gems currency → monster_gem material
+	if gems > 0:
+		if not crafting_materials.has("monster_gem"):
+			crafting_materials["monster_gem"] = 0
+		crafting_materials["monster_gem"] = mini(crafting_materials["monster_gem"] + gems, MAX_MATERIAL_STACK)
+		gems = 0
+
+	# Migration: Convert salvage essence → copper_ore (1 ore per 20 ESS)
+	if salvage_essence > 0:
+		var ore_from_ess = maxi(1, int(salvage_essence / 20))
+		if not crafting_materials.has("copper_ore"):
+			crafting_materials["copper_ore"] = 0
+		crafting_materials["copper_ore"] = mini(crafting_materials["copper_ore"] + ore_from_ess, MAX_MATERIAL_STACK)
+		salvage_essence = 0
 	auto_salvage_enabled = data.get("auto_salvage_enabled", false)
 	auto_salvage_max_rarity = data.get("auto_salvage_max_rarity", 0)
 	auto_salvage_affixes = data.get("auto_salvage_affixes", [])
@@ -2090,11 +2105,11 @@ func get_dodge_bonus() -> float:
 		return 0.10
 	return 0.0
 
-func get_gold_multiplier() -> float:
-	"""Get gold multiplier from racial passive. Halfling gets +15% gold."""
+func get_market_bonus() -> float:
+	"""Get market listing bonus from racial passive. Halfling gets +15% valor from listings."""
 	if race == "Halfling":
-		return 1.15
-	return 1.0
+		return 0.15
+	return 0.0
 
 func get_low_hp_damage_bonus() -> float:
 	"""Get damage bonus when below 50% HP. Orc gets +20% damage."""
@@ -2976,23 +2991,13 @@ func get_logging_stats() -> Dictionary:
 		"total_gathered": wood_gathered
 	}
 
-# ===== SALVAGE SYSTEM =====
-
-func add_salvage_essence(amount: int) -> int:
-	"""Add salvage essence. Returns new total."""
-	salvage_essence += amount
-	return salvage_essence
-
-func remove_salvage_essence(amount: int) -> bool:
-	"""Remove salvage essence. Returns true if successful."""
-	if salvage_essence < amount:
-		return false
-	salvage_essence -= amount
-	return true
-
-func has_salvage_essence(amount: int) -> bool:
-	"""Check if player has enough salvage essence."""
-	return salvage_essence >= amount
+# Deprecated ESS stubs — salvage_cost is removed in crafting recipes
+func add_salvage_essence(_amount: int) -> int:
+	return 0
+func remove_salvage_essence(_amount: int) -> bool:
+	return true  # Always succeed (cost is 0 after migration)
+func has_salvage_essence(_amount: int) -> bool:
+	return true  # Always succeed (cost is 0 after migration)
 
 # ===== CRAFTING SYSTEM =====
 
@@ -3031,7 +3036,8 @@ func get_crafting_skill(skill_name: String) -> int:
 	return crafting_skills.get(skill_name.to_lower(), 1)
 
 func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
-	"""Add XP to a crafting skill. Returns {leveled_up: bool, new_level: int}."""
+	"""Add XP to a crafting skill. Returns {leveled_up, new_level, char_xp_gained}.
+	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x"""
 	var skill = skill_name.to_lower()
 	if not crafting_xp.has(skill):
 		crafting_xp[skill] = 0
@@ -3050,7 +3056,17 @@ func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
 		leveled_up = true
 		xp_needed = _get_crafting_xp_needed(current_level)
 
-	return {"leveled_up": leveled_up, "new_level": current_level}
+	# Character XP: (craft_xp * 3) with taper based on skill level
+	var taper: float
+	if current_level <= 20:
+		taper = 1.0
+	elif current_level <= 50:
+		taper = 0.5
+	else:
+		taper = 0.2
+	var char_xp_gained = int(xp * 3 * taper)
+
+	return {"leveled_up": leveled_up, "new_level": current_level, "char_xp_gained": char_xp_gained}
 
 func _get_crafting_xp_needed(current_level: int) -> int:
 	"""Get XP needed for next crafting level."""
@@ -3294,8 +3310,8 @@ func get_knight_damage_bonus() -> float:
 		return 0.15
 	return 0.0
 
-func get_knight_gold_bonus() -> float:
-	"""Get gold bonus from Knight status (0.10 = +10%)"""
+func get_knight_market_bonus() -> float:
+	"""Get market listing bonus from Knight status (0.10 = +10%)"""
 	if is_knighted():
 		return 0.10
 	return 0.0
@@ -3306,8 +3322,8 @@ func get_mentee_xp_bonus() -> float:
 		return 0.30
 	return 0.0
 
-func get_mentee_gold_bonus() -> float:
-	"""Get gold bonus from Mentee status (0.20 = +20%)"""
+func get_mentee_extra_xp_bonus() -> float:
+	"""Get extra XP bonus from Mentee status (0.20 = +20%, stacks with base +30%)"""
 	if is_mentored():
 		return 0.20
 	return 0.0
@@ -3368,7 +3384,7 @@ func init_pilgrimage():
 		"kills": 0,
 		"tier8_kills": 0,
 		"outsmarts": 0,
-		"gold_donated": 0,
+		"valor_donated": 0,
 		"embers": 0,
 		"crucible_progress": 0,
 		"shrines_completed": []
@@ -3392,11 +3408,11 @@ func add_pilgrimage_outsmarts(count: int = 1):
 		return
 	pilgrimage_progress["outsmarts"] = pilgrimage_progress.get("outsmarts", 0) + count
 
-func add_pilgrimage_gold_donation(amount: int):
-	"""Add gold donation to pilgrimage progress"""
+func add_pilgrimage_valor_donation(amount: int):
+	"""Add valor donation to pilgrimage progress"""
 	if pilgrimage_progress.is_empty():
 		return
-	pilgrimage_progress["gold_donated"] = pilgrimage_progress.get("gold_donated", 0) + amount
+	pilgrimage_progress["valor_donated"] = pilgrimage_progress.get("valor_donated", 0) + amount
 
 func add_pilgrimage_embers(count: int = 1):
 	"""Add embers to pilgrimage progress"""

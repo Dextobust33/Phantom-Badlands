@@ -567,7 +567,7 @@ theme_override_constants/separation = 4
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 14
-text = "Gold:"
+text = "Valor:"
 
 [node name="GoldLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer" unique_id=1706433810]
 layout_mode = 2
@@ -576,23 +576,23 @@ theme_override_colors/font_color = Color(1, 0.84, 0, 1)
 theme_override_font_sizes/font_size = 14
 text = "0"
 
-[node name="GemContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay" unique_id=57881078]
+[node name="RankContainer" type="HBoxContainer" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay" unique_id=57881078]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="GemIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer" unique_id=703040071]
+[node name="RankIcon" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/RankContainer" unique_id=703040071]
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 1, 1, 1)
 theme_override_font_sizes/font_size = 14
-text = "Gems:"
+text = "Rank:"
 
-[node name="GemLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer" unique_id=1476429451]
+[node name="RankLabel" type="Label" parent="RootContainer/MainContainer/RightPanel/CurrencyDisplay/RankContainer" unique_id=1476429451]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0, 1, 1, 1)
 theme_override_font_sizes/font_size = 14
-text = "0"
+text = "--"
 
 [node name="MapDisplay" type="RichTextLabel" parent="RootContainer/MainContainer/RightPanel" unique_id=216649298]
 layout_mode = 2

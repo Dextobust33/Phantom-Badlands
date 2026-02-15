@@ -1876,28 +1876,23 @@ const TREASURE_EGG_CHANCE_BY_TIER = {
 }
 
 static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1) -> Dictionary:
-	"""Roll for treasure chest contents. Eggs use tier-based rarity. Sub-tier scales gold."""
+	"""Roll for treasure chest contents. Eggs use tier-based rarity. Sub-tier scales material quantity."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
-		return {"gold": 100}
+		return {"materials": [], "egg": {}}
 
 	var tier = dungeon.tier
-	var base_gold = tier * 50 * (1 + floor_num)
-	# Sub-tier scales gold: +10% per sub-tier above 1
 	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
-	base_gold = int(base_gold * sub_tier_mult)
 
-	# Roll gold
-	var gold = base_gold + randi() % max(1, base_gold / 2)
-
-	# Roll for materials
+	# Roll for materials (more generous since no gold)
 	var materials = []
 	var material_drops = dungeon.get("material_drops", [])
 	if not material_drops.is_empty():
-		# 50% chance for each material
+		# 60% chance for each material, quantity scales with floor and sub-tier
 		for mat in material_drops:
-			if randi() % 100 < 50:
-				materials.append({"id": mat, "quantity": 1 + randi() % 3})
+			if randi() % 100 < 60:
+				var qty = int((1 + randi() % 3 + floor_num) * sub_tier_mult)
+				materials.append({"id": mat, "quantity": qty})
 
 	# Roll for egg using tier-based rarity (higher tier = lower chance)
 	var egg = {}
@@ -1910,14 +1905,13 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 			egg = {"monster": egg_monster, "sub_tier": sub_tier}
 
 	return {
-		"gold": gold,
 		"materials": materials,
 		"egg": egg
 	}
 
 static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1) -> Dictionary:
 	"""Calculate rewards for completing a dungeon. Includes GUARANTEED boss egg!
-	Sub-tier scales XP and gold by +10% per sub-tier above 1."""
+	Sub-tier scales XP by +10% per sub-tier above 1."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {}
@@ -1928,24 +1922,20 @@ static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int
 	# Base rewards scale with tier and completion
 	var completion_bonus = float(floors_cleared) / float(total_floors)
 	var base_xp = tier * 500 * completion_bonus
-	var base_gold = tier * 200 * completion_bonus
 
 	# Bonus for full clear
 	if floors_cleared >= total_floors:
 		base_xp *= 1.5
-		base_gold *= 1.5
 
 	# Sub-tier scales rewards: +10% per sub-tier above 1
 	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
 	base_xp *= sub_tier_mult
-	base_gold *= sub_tier_mult
 
 	# Get guaranteed boss egg (dungeon completion ALWAYS gives the boss's egg)
 	var boss_egg = dungeon.get("boss_egg", "")
 
 	return {
 		"xp": int(base_xp),
-		"gold": int(base_gold),
 		"floors_cleared": floors_cleared,
 		"total_floors": total_floors,
 		"full_clear": floors_cleared >= total_floors,

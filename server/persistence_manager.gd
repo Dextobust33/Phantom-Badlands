@@ -12,6 +12,7 @@ const CORPSES_FILE = "user://data/corpses.json"
 const HOUSES_FILE = "user://data/houses.json"
 const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 const PLAYER_POSTS_FILE = "user://data/player_posts.json"
+const MARKET_FILE = "user://data/market_data.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
@@ -23,7 +24,7 @@ const HOUSE_UPGRADES = {
 	"companion_slots": {"effect": 1, "max": 8, "costs": [2000, 5000, 10000, 15000, 25000, 40000, 60000, 80000]},
 	"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
 	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
-	"starting_gold": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
+	"starting_valor": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
 	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
 	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
 	"kennel_capacity": {"effect": 0, "max": 9, "costs": [1000, 3000, 6000, 12000, 20000, 35000, 50000, 70000, 100000]},
@@ -52,6 +53,7 @@ var corpses_data: Dictionary = {}  # {"corpses": [...]}
 var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
 var player_posts_data: Dictionary = {}  # {"posts": {username: [{name, center_x, center_y, created_at}]}}
+var market_data: Dictionary = {}  # {"listings": {post_id: [...]}, "next_id": 1}
 
 func _ready():
 	ensure_data_directories()
@@ -64,6 +66,7 @@ func _ready():
 	load_player_tiles()
 	load_player_posts()
 	load_player_storage()
+	load_market_data()
 
 # ===== DIRECTORY SETUP =====
 
@@ -982,6 +985,18 @@ func get_house(account_id: String) -> Dictionary:
 
 	var house = houses_data.houses[account_id]
 
+	# Migration: add valor fields if missing
+	if not house.has("valor"):
+		house["valor"] = 0
+		house["total_valor_earned"] = 0
+		save_house(account_id, house)
+
+	# Migration: rename starting_gold → starting_valor
+	if house.get("upgrades", {}).has("starting_gold"):
+		house.upgrades["starting_valor"] = house.upgrades["starting_gold"]
+		house.upgrades.erase("starting_gold")
+		save_house(account_id, house)
+
 	# Migration: add companion_kennel if missing
 	if not house.has("companion_kennel"):
 		house["companion_kennel"] = {"slots": 30, "companions": []}
@@ -1046,6 +1061,9 @@ func create_house(account_id: String) -> Dictionary:
 			"companions": []
 		},
 
+		"valor": 0,
+		"total_valor_earned": 0,
+
 		"baddie_points": 0,
 		"total_baddie_points_earned": 0,
 
@@ -1054,7 +1072,7 @@ func create_house(account_id: String) -> Dictionary:
 			"storage_slots": 0,
 			"companion_slots": 0,
 			"flee_chance": 0,
-			"starting_gold": 0,
+			"starting_valor": 0,
 			"xp_bonus": 0,
 			"gathering_bonus": 0,
 			"kennel_capacity": 0,
@@ -1072,7 +1090,7 @@ func create_house(account_id: String) -> Dictionary:
 		"stats": {
 			"characters_lost": 0,
 			"highest_level_reached": 0,
-			"total_gold_earned": 0,
+			"total_valor_earned": 0,
 			"total_xp_earned": 0,
 			"total_monsters_killed": 0
 		}
@@ -1324,7 +1342,7 @@ func get_house_bonuses(account_id: String) -> Dictionary:
 	var house = get_house(account_id)
 	var bonuses = {
 		"flee_chance": 0,
-		"starting_gold": 0,
+		"starting_valor": 0,
 		"xp_bonus": 0,
 		"gathering_bonus": 0,
 		"hp_bonus": 0,
@@ -1340,7 +1358,7 @@ func get_house_bonuses(account_id: String) -> Dictionary:
 	}
 
 	var upgrades = house.get("upgrades", {})
-	var bonus_ids = ["flee_chance", "starting_gold", "xp_bonus", "gathering_bonus",
+	var bonus_ids = ["flee_chance", "starting_valor", "xp_bonus", "gathering_bonus",
 					 "hp_bonus", "resource_max", "resource_regen",
 					 "str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus",
 					 "egg_slots"]
@@ -1358,11 +1376,8 @@ func calculate_baddie_points(character: Character) -> int:
 	# XP contribution: 1 BP per 100 XP
 	points += int(character.experience / 100)
 
-	# Gold contribution: 1 BP per 500 gold
-	points += int(character.gold / 500)
-
-	# Gem contribution: 5 BP per gem
-	points += character.gems * 5
+	# Monster Gem contribution: 5 BP per gem
+	points += character.crafting_materials.get("monster_gem", 0) * 5
 
 	# Kill contribution: 1 BP per 10 kills
 	points += int(character.monsters_killed / 10)
@@ -1481,6 +1496,134 @@ func clear_all_player_posts():
 	"""Clear all player post data (called on map wipe)."""
 	player_posts_data = {"posts": {}}
 	save_player_posts()
+
+# ===== VALOR (Account-Level Currency) =====
+
+func get_valor(account_id: String) -> int:
+	"""Get valor balance for an account."""
+	var house = get_house(account_id)
+	return house.get("valor", 0)
+
+func add_valor(account_id: String, amount: int):
+	"""Add valor to an account. Also increments total_valor_earned."""
+	var house = get_house(account_id)
+	house["valor"] = house.get("valor", 0) + amount
+	house["total_valor_earned"] = house.get("total_valor_earned", 0) + amount
+	save_house(account_id, house)
+
+func spend_valor(account_id: String, amount: int) -> bool:
+	"""Spend valor from an account. Returns false if insufficient."""
+	var house = get_house(account_id)
+	if house.get("valor", 0) < amount:
+		return false
+	house["valor"] = house.get("valor", 0) - amount
+	save_house(account_id, house)
+	return true
+
+func set_valor(account_id: String, amount: int):
+	"""Set valor to a specific amount (admin use)."""
+	var house = get_house(account_id)
+	house["valor"] = amount
+	save_house(account_id, house)
+
+func clear_all_valor():
+	"""Reset all house valor to 0 (used during full wipe)."""
+	var houses = _safe_load(HOUSES_FILE)
+	for account_id in houses:
+		if houses[account_id] is Dictionary:
+			houses[account_id]["valor"] = 0
+	_safe_save(HOUSES_FILE, houses)
+
+# ===== OPEN MARKET DATA =====
+
+func load_market_data():
+	"""Load market data from file."""
+	var data = _safe_load(MARKET_FILE)
+	if data.is_empty():
+		market_data = {"listings": {}, "next_id": 1}
+		save_market_data()
+	else:
+		market_data = data
+		if not market_data.has("next_id"):
+			market_data["next_id"] = 1
+
+func save_market_data():
+	"""Save market data to file."""
+	_safe_save(MARKET_FILE, market_data)
+
+func get_market_listings(post_id: String) -> Array:
+	"""Get all listings at a specific post."""
+	if not market_data.has("listings"):
+		market_data["listings"] = {}
+	return market_data.listings.get(post_id, [])
+
+func add_market_listing(post_id: String, listing: Dictionary) -> String:
+	"""Add a listing to a post. Returns listing_id."""
+	if not market_data.has("listings"):
+		market_data["listings"] = {}
+	if not market_data.listings.has(post_id):
+		market_data.listings[post_id] = []
+
+	var listing_id = "mkt_%d" % int(market_data.get("next_id", 1))
+	listing["listing_id"] = listing_id
+	market_data["next_id"] = int(market_data.get("next_id", 1)) + 1
+	market_data.listings[post_id].append(listing)
+	save_market_data()
+	return listing_id
+
+func remove_market_listing(post_id: String, listing_id: String) -> Dictionary:
+	"""Remove a listing by ID. Returns the removed listing or empty dict."""
+	if not market_data.has("listings"):
+		return {}
+	if not market_data.listings.has(post_id):
+		return {}
+
+	var listings = market_data.listings[post_id]
+	for i in range(listings.size()):
+		if listings[i].get("listing_id", "") == listing_id:
+			var removed = listings[i]
+			listings.remove_at(i)
+			save_market_data()
+			return removed
+	return {}
+
+func get_all_listings_by_account(account_id: String) -> Array:
+	"""Get all listings across all posts for an account (for 'My Listings')."""
+	var result = []
+	if not market_data.has("listings"):
+		return result
+	for post_id in market_data.listings.keys():
+		for listing in market_data.listings[post_id]:
+			if listing.get("account_id", "") == account_id:
+				var entry = listing.duplicate()
+				entry["post_id"] = post_id
+				result.append(entry)
+	return result
+
+func get_supply_count(post_id: String, category: String) -> int:
+	"""Count listings in a supply category at a post."""
+	var listings = get_market_listings(post_id)
+	var count = 0
+	for listing in listings:
+		if listing.get("supply_category", "") == category:
+			count += 1
+	return count
+
+func calculate_markup(post_id: String, category: String) -> float:
+	"""Calculate dynamic markup based on local supply. 2x (abundant) to 8x (scarce)."""
+	var count = get_supply_count(post_id, category)
+	if count >= 20:
+		return 2.0
+	if count <= 2:
+		return 8.0
+	# Linear interpolation between 8x and 2x
+	var ratio = float(count - 2) / 18.0
+	return 8.0 - (ratio * 6.0)
+
+func clear_all_market_data():
+	"""Clear all market data (for wipes)."""
+	market_data = {"listings": {}, "next_id": 1}
+	save_market_data()
 
 # ===== PLAYER STORAGE (Building System - Storage Chests) =====
 

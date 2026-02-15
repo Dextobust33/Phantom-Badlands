@@ -13,7 +13,9 @@ const CONSUMABLE_TIERS = {
 	4: {"name": "Greater", "healing": 100, "heal_pct": 25, "resource": 75, "resource_pct": 25, "buff_value": 12, "forcefield_value": 6000, "scroll_stat_pct": 18, "scroll_debuff_pct": 15, "scroll_duration": 2, "level_min": 51, "level_max": 100},
 	5: {"name": "Superior", "healing": 150, "heal_pct": 30, "resource": 125, "resource_pct": 30, "buff_value": 18, "forcefield_value": 10000, "scroll_stat_pct": 22, "scroll_debuff_pct": 18, "scroll_duration": 3, "level_min": 101, "level_max": 250},
 	6: {"name": "Master", "healing": 200, "heal_pct": 35, "resource": 175, "resource_pct": 35, "buff_value": 25, "forcefield_value": 15000, "scroll_stat_pct": 26, "scroll_debuff_pct": 22, "scroll_duration": 3, "level_min": 251, "level_max": 500},
-	7: {"name": "Divine", "healing": 300, "heal_pct": 40, "resource": 250, "resource_pct": 40, "buff_value": 35, "forcefield_value": 25000, "scroll_stat_pct": 30, "scroll_debuff_pct": 25, "scroll_duration": 4, "level_min": 501, "level_max": 99999}
+	7: {"name": "Divine", "healing": 300, "heal_pct": 40, "resource": 250, "resource_pct": 40, "buff_value": 35, "forcefield_value": 25000, "scroll_stat_pct": 30, "scroll_debuff_pct": 25, "scroll_duration": 4, "level_min": 501, "level_max": 1000},
+	8: {"name": "Mythic", "healing": 400, "heal_pct": 45, "resource": 350, "resource_pct": 45, "buff_value": 45, "forcefield_value": 35000, "scroll_stat_pct": 35, "scroll_debuff_pct": 28, "scroll_duration": 5, "level_min": 1001, "level_max": 2500},
+	9: {"name": "Primordial", "healing": 500, "heal_pct": 50, "resource": 500, "resource_pct": 50, "buff_value": 60, "forcefield_value": 50000, "scroll_stat_pct": 40, "scroll_debuff_pct": 32, "scroll_duration": 6, "level_min": 2501, "level_max": 99999}
 }
 
 # Consumable categories for combat quick-use
@@ -30,6 +32,7 @@ const ELIXIR_HEAL_PCT = {7: 50, 8: 70, 9: 100}
 # ===== SALVAGE SYSTEM =====
 # Salvage values by rarity: {base: int, per_level: int}
 # Formula: base + (item_level * per_level)
+# LEGACY — kept for reference only
 const SALVAGE_VALUES = {
 	"common": {"base": 5, "per_level": 1},
 	"uncommon": {"base": 10, "per_level": 2},
@@ -39,88 +42,136 @@ const SALVAGE_VALUES = {
 	"artifact": {"base": 200, "per_level": 12}
 }
 
-# Material bonus from salvaging based on item type
-# When salvaging, there's a chance to get bonus crafting materials
-const SALVAGE_MATERIAL_BONUS = {
-	"weapon": {"material": "ore", "chance": 0.3},      # 30% chance for ore
-	"armor": {"material": "leather", "chance": 0.3},   # 30% chance for leather
-	"helm": {"material": "leather", "chance": 0.2},    # 20% chance for leather
-	"shield": {"material": "ore", "chance": 0.25},     # 25% chance for ore
-	"boots": {"material": "leather", "chance": 0.2},   # 20% chance for leather
-	"ring": {"material": "enchant", "chance": 0.4},    # 40% chance for enchanting mat
-	"amulet": {"material": "enchant", "chance": 0.4},  # 40% chance for enchanting mat
-	"belt": {"material": "leather", "chance": 0.15}    # 15% chance for leather
+# Primary material returned by slot type when salvaging
+const SALVAGE_SLOT_MATERIALS = {
+	"weapon": "ore",
+	"armor": "leather",
+	"helm": "leather",
+	"shield": "ore",
+	"boots": "leather",
+	"ring": "enchant",
+	"amulet": "enchant",
+	"belt": "leather"
+}
+
+# Secondary material type by slot (different from primary)
+const SALVAGE_SECONDARY_MATERIALS = {
+	"weapon": "enchant",
+	"armor": "ore",
+	"helm": "ore",
+	"shield": "leather",
+	"boots": "ore",
+	"ring": "ore",
+	"amulet": "leather",
+	"belt": "ore"
 }
 
 # Maps material type to actual material ID based on item tier/level
 # NOTE: These must match IDs in crafting_database.gd MATERIALS
 const SALVAGE_MATERIAL_TIERS = {
 	"ore": ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"],
-	"leather": ["ragged_leather", "leather_scraps", "thick_leather", "enchanted_leather", "dragonhide", "void_silk"],
+	"leather": ["ragged_leather", "leather_scraps", "thick_leather", "enchanted_leather", "wyvern_leather", "dragonhide", "void_silk", "celestial_hide", "astral_weave"],
 	"enchant": ["magic_dust", "arcane_crystal", "soul_shard", "void_essence", "primordial_spark"]
 }
 
+# Primary quantity ranges by rarity: [min, max]
+const SALVAGE_PRIMARY_QTY = {
+	"common": [1, 2],
+	"uncommon": [2, 3],
+	"rare": [3, 5],
+	"epic": [4, 7],
+	"legendary": [6, 10],
+	"artifact": [8, 14]
+}
+
+# Secondary material chance by rarity
+const SALVAGE_SECONDARY_CHANCE = {
+	"common": 0.0,
+	"uncommon": 0.20,
+	"rare": 0.40,
+	"epic": 0.60,
+	"legendary": 0.80,
+	"artifact": 1.0
+}
+
 func get_salvage_value(item: Dictionary) -> Dictionary:
-	"""Calculate salvage essence value and potential material bonus for an item."""
+	"""Calculate salvage materials for an item. Returns {materials: {id: qty}}."""
 	var rarity = item.get("rarity", "common")
 	var level = item.get("level", 1)
 	var item_type = item.get("type", "")
 
-	# Get base salvage values
-	var salvage_data = SALVAGE_VALUES.get(rarity, SALVAGE_VALUES["common"])
-	var essence = salvage_data.base + (level * salvage_data.per_level)
+	# Determine equipment slot from item type
+	var slot = Character.get_item_slot_from_type(item_type)
+	if slot == "":
+		slot = "weapon"  # Fallback
 
-	# Check for material bonus
-	var material_bonus = null
-	if SALVAGE_MATERIAL_BONUS.has(item_type):
-		var bonus_data = SALVAGE_MATERIAL_BONUS[item_type]
-		if randf() < bonus_data.chance:
-			# Determine material tier based on item level
-			var tier_index = clampi(int(level / 15), 0, 8)  # Every ~15 levels = new tier
-			var material_type = bonus_data.material
-			if SALVAGE_MATERIAL_TIERS.has(material_type):
-				var materials = SALVAGE_MATERIAL_TIERS[material_type]
-				tier_index = mini(tier_index, materials.size() - 1)
-				material_bonus = {
-					"material_id": materials[tier_index],
-					"quantity": randi_range(1, 2)
-				}
+	var result_materials = {}
+	var tier_index = clampi(int(level / 15), 0, 8)
 
-	return {
-		"essence": essence,
-		"material_bonus": material_bonus
-	}
+	# Primary material (always granted)
+	var primary_type = SALVAGE_SLOT_MATERIALS.get(slot, "ore")
+	if SALVAGE_MATERIAL_TIERS.has(primary_type):
+		var mat_list = SALVAGE_MATERIAL_TIERS[primary_type]
+		var mat_idx = mini(tier_index, mat_list.size() - 1)
+		var mat_id = mat_list[mat_idx]
+		var qty_range = SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])
+		result_materials[mat_id] = randi_range(qty_range[0], qty_range[1])
+
+	# Secondary material (chance based on rarity)
+	var secondary_chance = SALVAGE_SECONDARY_CHANCE.get(rarity, 0.0)
+	if randf() < secondary_chance:
+		var secondary_type = SALVAGE_SECONDARY_MATERIALS.get(slot, "ore")
+		if SALVAGE_MATERIAL_TIERS.has(secondary_type):
+			var mat_list = SALVAGE_MATERIAL_TIERS[secondary_type]
+			var mat_idx = mini(tier_index, mat_list.size() - 1)
+			var mat_id = mat_list[mat_idx]
+			var qty = randi_range(1, maxi(1, int(SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])[1] / 2)))
+			if result_materials.has(mat_id):
+				result_materials[mat_id] += qty
+			else:
+				result_materials[mat_id] = qty
+
+	return {"materials": result_materials}
 
 func get_salvage_preview(item: Dictionary) -> Dictionary:
-	"""Get expected salvage value range for preview (without random material roll)."""
+	"""Get expected salvage returns for preview (no randomness on secondary)."""
 	var rarity = item.get("rarity", "common")
 	var level = item.get("level", 1)
 	var item_type = item.get("type", "")
 
-	var salvage_data = SALVAGE_VALUES.get(rarity, SALVAGE_VALUES["common"])
-	var essence = salvage_data.base + (level * salvage_data.per_level)
+	var slot = Character.get_item_slot_from_type(item_type)
+	if slot == "":
+		slot = "weapon"
 
-	var possible_material = null
-	var material_chance = 0.0
-	if SALVAGE_MATERIAL_BONUS.has(item_type):
-		var bonus_data = SALVAGE_MATERIAL_BONUS[item_type]
-		material_chance = bonus_data.chance
-		var tier_index = clampi(int(level / 15), 0, 8)
-		var material_type = bonus_data.material
-		if SALVAGE_MATERIAL_TIERS.has(material_type):
-			var materials = SALVAGE_MATERIAL_TIERS[material_type]
-			tier_index = mini(tier_index, materials.size() - 1)
-			possible_material = materials[tier_index]
+	var tier_index = clampi(int(level / 15), 0, 8)
+
+	# Primary material info
+	var primary_type = SALVAGE_SLOT_MATERIALS.get(slot, "ore")
+	var primary_mat = ""
+	var primary_qty_range = SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])
+	if SALVAGE_MATERIAL_TIERS.has(primary_type):
+		var mat_list = SALVAGE_MATERIAL_TIERS[primary_type]
+		primary_mat = mat_list[mini(tier_index, mat_list.size() - 1)]
+
+	# Secondary material info
+	var secondary_type = SALVAGE_SECONDARY_MATERIALS.get(slot, "ore")
+	var secondary_mat = ""
+	var secondary_chance = SALVAGE_SECONDARY_CHANCE.get(rarity, 0.0)
+	if SALVAGE_MATERIAL_TIERS.has(secondary_type):
+		var mat_list = SALVAGE_MATERIAL_TIERS[secondary_type]
+		secondary_mat = mat_list[mini(tier_index, mat_list.size() - 1)]
 
 	return {
-		"essence": essence,
-		"possible_material": possible_material,
-		"material_chance": material_chance
+		"primary_material": primary_mat,
+		"primary_qty_min": primary_qty_range[0],
+		"primary_qty_max": primary_qty_range[1],
+		"secondary_material": secondary_mat,
+		"secondary_chance": secondary_chance
 	}
 
 func get_tier_for_level(monster_level: int) -> int:
 	"""Get the appropriate consumable tier for a monster level"""
-	for tier in range(7, 0, -1):  # Check from highest to lowest
+	for tier in range(9, 0, -1):  # Check from highest to lowest
 		var tier_data = CONSUMABLE_TIERS[tier]
 		if monster_level >= tier_data.level_min:
 			return tier
@@ -132,7 +183,231 @@ func get_tier_name(tier: int) -> String:
 		return CONSUMABLE_TIERS[tier].name
 	return "Unknown"
 
-# Drop table definitions by tier
+# ===== D2 DROP RARITY SYSTEM =====
+# Dynamic rarity distribution per monster tier (% weights)
+const RARITY_WEIGHTS = {
+	1: {"common": 70, "uncommon": 20, "rare": 7, "epic": 2.5, "legendary": 0.45, "artifact": 0.05},
+	2: {"common": 65, "uncommon": 22, "rare": 8.5, "epic": 3, "legendary": 1.2, "artifact": 0.3},
+	3: {"common": 60, "uncommon": 23, "rare": 10, "epic": 4.5, "legendary": 2, "artifact": 0.5},
+	4: {"common": 58, "uncommon": 24, "rare": 10, "epic": 5, "legendary": 2.5, "artifact": 0.5},
+	5: {"common": 55, "uncommon": 25, "rare": 12, "epic": 5, "legendary": 2.5, "artifact": 0.5},
+	6: {"common": 50, "uncommon": 25, "rare": 14, "epic": 7, "legendary": 3.5, "artifact": 0.5},
+	7: {"common": 45, "uncommon": 25, "rare": 16, "epic": 8, "legendary": 5, "artifact": 1},
+	8: {"common": 40, "uncommon": 25, "rare": 17, "epic": 10, "legendary": 6, "artifact": 2},
+	9: {"common": 35, "uncommon": 25, "rare": 18, "epic": 12, "legendary": 7, "artifact": 3},
+}
+
+# Equipment base types per tier (no rarity — rarity is rolled separately)
+const EQUIPMENT_BASES = {
+	1: [
+		{"weight": 18, "item_type": "weapon_rusty"},
+		{"weight": 10, "item_type": "armor_leather"},
+		{"weight": 8, "item_type": "helm_cloth"},
+		{"weight": 7, "item_type": "shield_wood"},
+		{"weight": 7, "item_type": "boots_cloth"},
+		{"weight": 5, "item_type": "ring_copper"},
+	],
+	2: [
+		{"weight": 18, "item_type": "weapon_iron"},
+		{"weight": 14, "item_type": "armor_chain"},
+		{"weight": 10, "item_type": "helm_leather"},
+		{"weight": 9, "item_type": "shield_iron"},
+		{"weight": 9, "item_type": "boots_leather"},
+		{"weight": 8, "item_type": "ring_silver"},
+	],
+	3: [
+		{"weight": 15, "item_type": "weapon_steel"},
+		{"weight": 12, "item_type": "armor_plate"},
+		{"weight": 9, "item_type": "helm_chain"},
+		{"weight": 8, "item_type": "shield_steel"},
+		{"weight": 8, "item_type": "boots_chain"},
+		{"weight": 7, "item_type": "amulet_bronze"},
+	],
+	4: [
+		{"weight": 15, "item_type": "weapon_enchanted"},
+		{"weight": 12, "item_type": "armor_enchanted"},
+		{"weight": 9, "item_type": "helm_plate"},
+		{"weight": 8, "item_type": "shield_enchanted"},
+		{"weight": 8, "item_type": "boots_plate"},
+		{"weight": 8, "item_type": "ring_gold"},
+		{"weight": 6, "item_type": "amulet_silver"},
+	],
+	5: [
+		{"weight": 16, "item_type": "weapon_magical"},
+		{"weight": 14, "item_type": "armor_magical"},
+		{"weight": 10, "item_type": "helm_magical"},
+		{"weight": 9, "item_type": "shield_magical"},
+		{"weight": 9, "item_type": "boots_magical"},
+		{"weight": 10, "item_type": "amulet_silver"},
+		{"weight": 3, "item_type": "ring_elemental"},
+	],
+	6: [
+		{"weight": 14, "item_type": "weapon_elemental"},
+		{"weight": 12, "item_type": "armor_elemental"},
+		{"weight": 8, "item_type": "helm_elemental"},
+		{"weight": 7, "item_type": "shield_elemental"},
+		{"weight": 7, "item_type": "boots_elemental"},
+		{"weight": 8, "item_type": "ring_elemental"},
+		{"weight": 4, "item_type": "amulet_gold"},
+	],
+	7: [
+		{"weight": 16, "item_type": "weapon_legendary"},
+		{"weight": 14, "item_type": "armor_legendary"},
+		{"weight": 10, "item_type": "helm_legendary"},
+		{"weight": 8, "item_type": "shield_legendary"},
+		{"weight": 8, "item_type": "boots_legendary"},
+		{"weight": 8, "item_type": "amulet_gold"},
+		{"weight": 8, "item_type": "ring_legendary"},
+	],
+	8: [
+		{"weight": 14, "item_type": "weapon_mythic"},
+		{"weight": 12, "item_type": "armor_mythic"},
+		{"weight": 10, "item_type": "helm_mythic"},
+		{"weight": 9, "item_type": "shield_mythic"},
+		{"weight": 9, "item_type": "boots_mythic"},
+		{"weight": 10, "item_type": "ring_mythic"},
+		{"weight": 10, "item_type": "amulet_mythic"},
+	],
+	9: [
+		{"weight": 12, "item_type": "weapon_divine"},
+		{"weight": 11, "item_type": "armor_divine"},
+		{"weight": 9, "item_type": "helm_divine"},
+		{"weight": 8, "item_type": "shield_divine"},
+		{"weight": 8, "item_type": "boots_divine"},
+		{"weight": 8, "item_type": "ring_divine"},
+		{"weight": 7, "item_type": "amulet_divine"},
+		{"weight": 5, "item_type": "artifact"},
+	],
+}
+
+# Consumable drops per tier (keep static rarity)
+const CONSUMABLE_DROPS = {
+	1: [
+		{"weight": 30, "item_type": "potion_minor", "rarity": "common"},
+		{"weight": 15, "item_type": "mana_minor", "rarity": "common"},
+	],
+	2: [
+		{"weight": 22, "item_type": "potion_lesser", "rarity": "common"},
+		{"weight": 10, "item_type": "mana_lesser", "rarity": "common"},
+	],
+	3: [
+		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
+		{"weight": 18, "item_type": "mana_standard", "rarity": "common"},
+		{"weight": 4, "item_type": "scroll_rage", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "scroll_stone_skin", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "scroll_haste", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "uncommon"},
+	],
+	4: [
+		{"weight": 14, "item_type": "potion_greater", "rarity": "uncommon"},
+		{"weight": 15, "item_type": "mana_greater", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "scroll_rage", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_haste", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_precision", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "rare"},
+		{"weight": 2, "item_type": "scroll_weakness", "rarity": "rare"},
+		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "rare"},
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+	],
+	5: [
+		{"weight": 12, "item_type": "potion_superior", "rarity": "rare"},
+		{"weight": 6, "item_type": "mana_superior", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_monster_select", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_rage", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_stone_skin", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_haste", "rarity": "epic"},
+		{"weight": 3, "item_type": "scroll_precision", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_vampirism", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_thorns", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_slow", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_doom", "rarity": "epic"},
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "epic"},
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
+	],
+	6: [
+		{"weight": 8, "item_type": "potion_master", "rarity": "rare"},
+		{"weight": 4, "item_type": "mana_master", "rarity": "rare"},
+		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_dragon_bane", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_undead_bane", "rarity": "epic"},
+		{"weight": 4, "item_type": "potion_beast_bane", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_strength", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_constitution", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_dexterity", "rarity": "epic"},
+		{"weight": 3, "item_type": "tome_intelligence", "rarity": "epic"},
+		{"weight": 3, "item_type": "mysterious_box", "rarity": "epic"},
+		{"weight": 2, "item_type": "cursed_coin", "rarity": "epic"},
+		{"weight": 4, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+	],
+	7: [
+		{"weight": 8, "item_type": "elixir_minor", "rarity": "epic"},
+		{"weight": 2, "item_type": "tome_strength", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_constitution", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_dexterity", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_intelligence", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_wisdom", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_wits", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_searing_bolt", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_brutal_strike", "rarity": "legendary"},
+		{"weight": 2, "item_type": "tome_swift_analyze", "rarity": "legendary"},
+		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"},
+		{"weight": 4, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+	],
+	8: [
+		{"weight": 6, "item_type": "elixir_greater", "rarity": "epic"},
+		{"weight": 1, "item_type": "scroll_resurrect_lesser", "rarity": "legendary"},
+		{"weight": 2, "item_type": "scroll_time_stop", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_greater_cleave", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "legendary"},
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"},
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+	],
+	9: [
+		{"weight": 3, "item_type": "elixir_divine", "rarity": "legendary"},
+		{"weight": 2, "item_type": "scroll_resurrect_lesser", "rarity": "artifact"},
+		{"weight": 1, "item_type": "scroll_resurrect_greater", "rarity": "artifact"},
+		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_searing_bolt", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_greater_forcefield", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_brutal_strike", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_efficient_strike", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_swift_analyze", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "artifact"},
+		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"},
+		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+	],
+}
+
+# Chance of equipment vs consumable per tier (%)
+const EQUIPMENT_DROP_CHANCE = {
+	1: 55, 2: 60, 3: 55, 4: 50, 5: 50, 6: 45, 7: 45, 8: 40, 9: 35
+}
+
+# LEGACY — Drop table definitions by tier (kept for fallback/generate_fallback_item)
 # Each entry: {weight: int, item_type: String, rarity: String}
 # Higher weight = more common
 const DROP_TABLES = {
@@ -334,16 +609,16 @@ const DROP_TABLES = {
 	],
 	"common": [
 		{"weight": 60, "item_type": "potion_minor", "rarity": "common"},
-		{"weight": 30, "item_type": "gold_pouch", "rarity": "common"},
+		{"weight": 30, "item_type": "essence_pouch", "rarity": "common"},
 		{"weight": 10, "item_type": "gem_small", "rarity": "uncommon"}
 	]
 }
 
 # Potion effects for consumables
-# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, gold: grants gold, gems: grants gems
+# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, essence: grants salvage essence, gems: grants gems
 const POTION_EFFECTS = {
-	# Gold pouches - grants variable gold based on item level
-	"gold_pouch": {"gold": true, "base": 50, "per_level": 25, "variance": 0.5},  # 50 + 25*level ± 50%
+	# Essence pouches - grants salvage essence based on item level
+	"essence_pouch": {"essence": true, "base": 10, "per_level": 5, "variance": 0.5},  # 10 + 5*level ± 50%
 	# Gem items - grants gems (premium currency)
 	"gem_small": {"gems": true, "base": 1, "per_tier": 1},  # 1 gem + 1 per tier above 1
 	# === NORMALIZED TYPES (used by tiered consumables) ===
@@ -413,7 +688,7 @@ const POTION_EFFECTS = {
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
-	# Cursed Coin - 50% double gold, 50% lose half gold
+	# Cursed Coin - 50% double essence gain, 50% lose half essence (legacy, may be removed)
 	"cursed_coin": {"cursed_coin": true},
 	# === STAT TOMES (Tier 6+) ===
 	# Each tome permanently increases a stat by 1
@@ -624,7 +899,7 @@ const COMPANION_DATA = {
 	# Tier 1 (Levels 1-5) - Basic companions with single stat bonus
 	"Goblin": {"companion_name": "Goblin Sprite", "tier": 1, "bonuses": {"attack": 2}},
 	"Giant Rat": {"companion_name": "Rat Familiar", "tier": 1, "bonuses": {"speed": 3}},
-	"Kobold": {"companion_name": "Kobold Helper", "tier": 1, "bonuses": {"gold_find": 5}},
+	"Kobold": {"companion_name": "Kobold Helper", "tier": 1, "bonuses": {"gathering_bonus": 5}},
 	"Skeleton": {"companion_name": "Bone Servant", "tier": 1, "bonuses": {"defense": 2}},
 	"Wolf": {"companion_name": "Wolf Pup", "tier": 1, "bonuses": {"attack": 3}},
 	# Tier 2 (Levels 6-15) - Stronger single stat or weak dual stat
@@ -636,7 +911,7 @@ const COMPANION_DATA = {
 	"Wight": {"companion_name": "Wight Wisp", "tier": 2, "bonuses": {"mana_regen": 1}},
 	"Siren": {"companion_name": "Siren Sprite", "tier": 2, "bonuses": {"mana_bonus": 5}},
 	"Kelpie": {"companion_name": "Kelpie Foal", "tier": 2, "bonuses": {"speed": 5}},
-	"Mimic": {"companion_name": "Mimic Trinket", "tier": 2, "bonuses": {"gold_find": 10}},
+	"Mimic": {"companion_name": "Mimic Trinket", "tier": 2, "bonuses": {"gathering_bonus": 10}},
 	# Tier 3 (Levels 16-30) - Moderate bonuses, more dual stats
 	"Ogre": {"companion_name": "Ogre Youngling", "tier": 3, "bonuses": {"attack": 5, "hp_bonus": 3}},
 	"Troll": {"companion_name": "Troll Runt", "tier": 3, "bonuses": {"hp_regen": 2}},
@@ -702,7 +977,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Survival Instinct", "hp_percent": 35, "effect": "speed_buff", "base": 15, "scaling": 0.2, "duration": 3, "description": "Speed boost when low HP"}
 	},
 	"Kobold": {
-		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "effect2": "gathering_hint", "base2": 3, "scaling2": 0.03, "description": "Increases gold find, +gathering hints"},
+		"passive": {"name": "Treasure Sense", "effect": "gathering_bonus", "base": 3, "scaling": 0.05, "effect2": "gathering_hint", "base2": 3, "scaling2": 0.03, "description": "Increases gathering quality, +gathering hints"},
 		"active": {"name": "Trap Trigger", "type": "chance", "base_chance": 8, "chance_scaling": 0.08, "effect": "bonus_damage", "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for bonus damage"},
 		"threshold": {"name": "Hoard Guard", "hp_percent": 45, "effect": "defense_buff", "base": 8, "scaling": 0.15, "duration": 3, "description": "Defense boost when low HP"}
 	},
@@ -759,7 +1034,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Undertow", "hp_percent": 40, "effect": "slow_enemy", "base": 25, "scaling": 0.25, "duration": 2, "description": "Slows enemy when low HP"}
 	},
 	"Mimic": {
-		"passive": {"name": "Treasure Hunter", "effect": "gold_find", "base": 8, "scaling": 0.15, "description": "Greatly increases gold find"},
+		"passive": {"name": "Treasure Hunter", "effect": "gathering_bonus", "base": 8, "scaling": 0.15, "description": "Greatly increases gathering quality"},
 		"active": {"name": "Surprise Attack", "type": "chance", "base_chance": 15, "chance_scaling": 0.12, "effect": "crit", "crit_mult": 1.8, "description": "Chance to critically strike"},
 		"threshold": {"name": "Fake Out", "hp_percent": 30, "effect": "enemy_miss", "duration": 2, "description": "Enemy misses when low HP"}
 	},
@@ -2428,8 +2703,22 @@ func roll_monster_part_drop(monster_name: String, monster_tier: int, soldier_lev
 func _ready():
 	print("Drop Tables initialized")
 
+func _roll_rarity_for_tier(tier: int) -> String:
+	"""D2-style weighted random rarity selection for a given monster tier."""
+	var weights = RARITY_WEIGHTS.get(tier, RARITY_WEIGHTS[1])
+	var total = 0.0
+	for r in weights:
+		total += weights[r]
+	var roll = randf() * total
+	var cumulative = 0.0
+	for rarity in ["common", "uncommon", "rare", "epic", "legendary", "artifact"]:
+		cumulative += weights.get(rarity, 0)
+		if roll < cumulative:
+			return rarity
+	return "common"
+
 func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> Array:
-	"""Roll for item drops from a monster. Returns array of dropped items."""
+	"""Roll for item drops from a monster. Uses D2-style rarity for tier tables."""
 	var drops = []
 
 	# Apply 15% boost to drop chance
@@ -2440,17 +2729,43 @@ func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> 
 	if roll >= boosted_chance:
 		return drops  # No drops
 
-	# Get the drop table
+	# Parse tier from drop_table_id (e.g. "tier5" → 5)
+	var tier = 0
+	if drop_table_id.begins_with("tier"):
+		tier = int(drop_table_id.substr(4))
+
+	# For tier tables, use D2 drop system
+	if tier >= 1 and tier <= 9:
+		# Roll equipment vs consumable
+		var equip_chance = EQUIPMENT_DROP_CHANCE.get(tier, 50)
+		if randi() % 100 < equip_chance:
+			# Equipment drop — pick base type, roll rarity separately
+			if EQUIPMENT_BASES.has(tier):
+				var base_item = _roll_item_from_table(EQUIPMENT_BASES[tier])
+				if not base_item.is_empty():
+					var rolled_rarity = _roll_rarity_for_tier(tier)
+					var generated = _generate_item(base_item, monster_level, rolled_rarity)
+					if not generated.is_empty():
+						drops.append(generated)
+		else:
+			# Consumable drop — static rarity from table
+			if CONSUMABLE_DROPS.has(tier):
+				var cons_item = _roll_item_from_table(CONSUMABLE_DROPS[tier])
+				if not cons_item.is_empty():
+					var generated = _generate_item(cons_item, monster_level)
+					if not generated.is_empty():
+						drops.append(generated)
+		return drops
+
+	# Non-tier tables: fall back to legacy DROP_TABLES
 	var table = get_drop_table(drop_table_id)
 	if table.is_empty():
 		return drops
 
-	# Roll for which item drops
 	var item = _roll_item_from_table(table)
 	if item.is_empty():
 		return drops
 
-	# Generate the actual item with stats based on monster level
 	var generated_item = _generate_item(item, monster_level)
 	if not generated_item.is_empty():
 		drops.append(generated_item)
@@ -2582,8 +2897,8 @@ func _normalize_consumable_type(item_type: String) -> String:
 	# Gold/Gems - keep as-is
 	return item_type
 
-func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
-	"""Generate an actual item from a drop table entry with chance for rarity upgrade."""
+func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity: String = "") -> Dictionary:
+	"""Generate an actual item from a drop table entry. If override_rarity is set, use it (D2 system)."""
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
 
@@ -2601,14 +2916,17 @@ func _generate_item(drop_entry: Dictionary, monster_level: int) -> Dictionary:
 
 	if is_consumable:
 		# Consumables don't have rarity - they use tiers instead
-		# Set to "common" as a placeholder (won't be displayed)
 		final_rarity = "common"
+	elif override_rarity != "":
+		# D2 system: rarity was rolled externally
+		final_rarity = _maybe_upgrade_rarity(override_rarity)  # Small bonus on top
+		if final_rarity != override_rarity:
+			final_level = int(monster_level * 1.1)
 	else:
-		# Equipment gets rarity upgrades
+		# Legacy: rarity from drop table entry + upgrade chance
 		final_rarity = _maybe_upgrade_rarity(base_rarity)
-		# If rarity was upgraded, slightly boost the item level too
 		if final_rarity != base_rarity:
-			final_level = int(monster_level * 1.1)  # 10% level boost on upgrades
+			final_level = int(monster_level * 1.1)
 
 	# Roll for affixes (only for equipment, not consumables)
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
@@ -2729,21 +3047,21 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"home_stone_supplies": "Home Stone (Supplies)",
 		"home_stone_equipment": "Home Stone (Equipment)",
 		"home_stone_companion": "Home Stone (Companion)",
-		# Gold/Gems (special - don't prefix with tier)
-		"gold_pouch": "Gold Pouch",
+		# Essence/Gems (special - don't prefix with tier)
+		"essence_pouch": "Essence Pouch",
 		"gem_small": "Gem",
 	}
 
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "gold_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater":
 		return base_name
 
 	return tier_name + " " + base_name
 
 func _calculate_consumable_value(tier: int, item_type: String) -> int:
-	"""Calculate gold value of a consumable based on tier."""
+	"""Calculate base value of a consumable based on tier."""
 	# Base values per tier (exponential scaling)
 	var tier_values = {
 		1: 10,      # Minor
@@ -2767,6 +3085,17 @@ func _calculate_consumable_value(tier: int, item_type: String) -> int:
 		base_value = int(base_value * 1.5)
 
 	return base_value
+
+# D2-style guaranteed affix counts per rarity
+# Common = salvage fodder, Legendary/Artifact = best-in-slot potential
+const AFFIX_COUNTS = {
+	"common": 0,
+	"uncommon": 1,    # prefix OR suffix
+	"rare": 2,        # prefix AND suffix
+	"epic": 3,        # prefix + suffix + 1 bonus stat
+	"legendary": 4,   # prefix + suffix + 2 bonus stats
+	"artifact": 5,    # prefix + suffix + 3 bonus stats + guaranteed proc
+}
 
 # Prefix affixes: Adjective-style names that appear BEFORE the item name
 # Example: "Draconic Steel Sword"
@@ -2949,148 +3278,223 @@ func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
 	return matching
 
 func roll_affixes_for_specialty(specialty: String, rarity: String, item_level: int) -> Dictionary:
-	"""Roll affixes from a specific specialty's affix pool.
-	Guarantees affixes with stats matching the specialty."""
+	"""Roll affixes from a specific specialty's affix pool using guaranteed count system.
+	Specialty merchants guarantee affixes with stats matching the specialty."""
 	var affixes = {}
 
 	if not SPECIALTY_AFFIX_STATS.has(specialty):
-		# Fall back to normal affix rolling if specialty not found
 		return _roll_affixes(rarity, item_level)
 
 	var spec_data = SPECIALTY_AFFIX_STATS[specialty]
 	var roll_range = _get_stat_roll_range(item_level)
 	var total_roll_quality = 0
 	var affix_count = 0
+	var used_stats = []
 
-	# Specialty merchants guarantee at least one affix
-	# Higher rarity = higher chance of getting both prefix AND suffix
-	var affix_chances = {
-		"common":    {"prefix": 60, "suffix": 30, "both_bonus": 10},
-		"uncommon":  {"prefix": 75, "suffix": 50, "both_bonus": 20},
-		"rare":      {"prefix": 90, "suffix": 70, "both_bonus": 30},
-		"epic":      {"prefix": 100, "suffix": 85, "both_bonus": 50},
-		"legendary": {"prefix": 100, "suffix": 95, "both_bonus": 70},
-		"artifact":  {"prefix": 100, "suffix": 100, "both_bonus": 90}
-	}
+	# Specialty merchants get at least 1 affix even for common
+	var count = maxi(AFFIX_COUNTS.get(rarity, 0), 1)
 
-	var chances = affix_chances.get(rarity, {"prefix": 60, "suffix": 30, "both_bonus": 10})
-
-	# Roll for prefix from specialty's prefix stats
-	var prefix_roll = randi() % 100
-	if prefix_roll < chances.prefix and spec_data.prefix_stats.size() > 0:
-		# Pick a random stat from the specialty's prefix stats
-		var target_stat = spec_data.prefix_stats[randi() % spec_data.prefix_stats.size()]
-		var matching_prefixes = _get_affixes_for_stat(target_stat, true)
-		if matching_prefixes.size() > 0:
-			var prefix = matching_prefixes[randi() % matching_prefixes.size()]
-			var result = _calculate_affix_value(prefix, item_level, roll_range)
-			affixes[prefix.stat] = result.value
-			affixes["prefix_name"] = prefix.name
-			total_roll_quality += result.quality
-			affix_count += 1
-
-	# Roll for suffix from specialty's suffix stats
-	var suffix_roll = randi() % 100
-	var suffix_chance = chances.suffix
-	if affixes.has("prefix_name"):
-		suffix_chance += chances.both_bonus
-
-	if suffix_roll < suffix_chance and spec_data.suffix_stats.size() > 0:
-		# Pick a random stat from the specialty's suffix stats
-		var target_stat = spec_data.suffix_stats[randi() % spec_data.suffix_stats.size()]
-		var matching_suffixes = _get_affixes_for_stat(target_stat, false)
-		if matching_suffixes.size() > 0:
-			var suffix = matching_suffixes[randi() % matching_suffixes.size()]
-			var result = _calculate_affix_value(suffix, item_level, roll_range)
-
-			# If same stat as prefix, add to existing value
-			if affixes.has(suffix.stat):
-				affixes[suffix.stat] += result.value
-			else:
+	if count == 1:
+		# Single affix — 50/50 prefix or suffix from specialty pool
+		if randi() % 2 == 0 and spec_data.prefix_stats.size() > 0:
+			var target_stat = spec_data.prefix_stats[randi() % spec_data.prefix_stats.size()]
+			var matching = _get_affixes_for_stat(target_stat, true)
+			if matching.size() > 0:
+				var prefix = matching[randi() % matching.size()]
+				var result = _calculate_affix_value(prefix, item_level, roll_range)
+				affixes[prefix.stat] = result.value
+				affixes["prefix_name"] = prefix.name
+				used_stats.append(prefix.stat)
+				total_roll_quality += result.quality
+				affix_count += 1
+		if affix_count == 0 and spec_data.suffix_stats.size() > 0:
+			var target_stat = spec_data.suffix_stats[randi() % spec_data.suffix_stats.size()]
+			var matching = _get_affixes_for_stat(target_stat, false)
+			if matching.size() > 0:
+				var suffix = matching[randi() % matching.size()]
+				var result = _calculate_affix_value(suffix, item_level, roll_range)
 				affixes[suffix.stat] = result.value
-			affixes["suffix_name"] = suffix.name
-			total_roll_quality += result.quality
-			affix_count += 1
+				affixes["suffix_name"] = suffix.name
+				used_stats.append(suffix.stat)
+				total_roll_quality += result.quality
+				affix_count += 1
+	else:
+		# count >= 2: guaranteed prefix AND suffix from specialty pool
+		if spec_data.prefix_stats.size() > 0:
+			var target_stat = spec_data.prefix_stats[randi() % spec_data.prefix_stats.size()]
+			var matching = _get_affixes_for_stat(target_stat, true)
+			if matching.size() > 0:
+				var prefix = matching[randi() % matching.size()]
+				var result = _calculate_affix_value(prefix, item_level, roll_range)
+				affixes[prefix.stat] = result.value
+				affixes["prefix_name"] = prefix.name
+				used_stats.append(prefix.stat)
+				total_roll_quality += result.quality
+				affix_count += 1
 
-	# Store average roll quality if we have affixes
+		if spec_data.suffix_stats.size() > 0:
+			var target_stat = spec_data.suffix_stats[randi() % spec_data.suffix_stats.size()]
+			var matching = _get_affixes_for_stat(target_stat, false)
+			if matching.size() > 0:
+				var suffix = matching[randi() % matching.size()]
+				var result = _calculate_affix_value(suffix, item_level, roll_range)
+				if affixes.has(suffix.stat):
+					affixes[suffix.stat] += result.value
+				else:
+					affixes[suffix.stat] = result.value
+				affixes["suffix_name"] = suffix.name
+				if suffix.stat not in used_stats:
+					used_stats.append(suffix.stat)
+				total_roll_quality += result.quality
+				affix_count += 1
+
+		# Bonus stats for epic+ from the specialty's combined pool
+		var bonus_count = count - 2
+		var all_spec_stats = spec_data.prefix_stats + spec_data.suffix_stats
+		for _b in range(bonus_count):
+			var picked_stat = all_spec_stats[randi() % all_spec_stats.size()]
+			# Try for unused stat
+			for _attempt in range(5):
+				var candidate = all_spec_stats[randi() % all_spec_stats.size()]
+				if candidate not in used_stats:
+					picked_stat = candidate
+					break
+			# Get matching affix from either pool
+			var is_prefix = randi() % 2 == 0
+			var matching = _get_affixes_for_stat(picked_stat, is_prefix)
+			if matching.size() == 0:
+				matching = _get_affixes_for_stat(picked_stat, not is_prefix)
+			if matching.size() > 0:
+				var affix = matching[randi() % matching.size()]
+				var result = _calculate_affix_value(affix, item_level, roll_range)
+				if affixes.has(affix.stat):
+					affixes[affix.stat] += result.value
+				else:
+					affixes[affix.stat] = result.value
+				if affix.stat not in used_stats:
+					used_stats.append(affix.stat)
+				total_roll_quality += result.quality
+				affix_count += 1
+
 	if affix_count > 0:
 		affixes["roll_quality"] = int(total_roll_quality / affix_count)
 
 	return affixes
 
-func _roll_affixes(rarity: String, item_level: int) -> Dictionary:
-	"""Roll for item affixes based on rarity. Higher rarity = more/better affixes.
-	Items can have a prefix (adjective), suffix (of X), or both."""
+func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) -> Dictionary:
+	"""Roll for item affixes using D2-style guaranteed counts per rarity.
+	Common=0, Uncommon=1, Rare=2, Epic=3, Legendary=4, Artifact=5+proc.
+	Crafted items get 0 affixes (affixes come from Enchanter Runes)."""
 	var affixes = {}
 
-	# Chances for prefix and suffix by rarity
-	# Format: {prefix_chance, suffix_chance, both_chance (bonus for getting both)}
-	# Common/Uncommon boosted to add gear variety - most items now have a chance for affixes
-	var affix_chances = {
-		"common":    {"prefix": 20, "suffix": 12, "both_bonus": 0},    # ~29% chance for at least one affix
-		"uncommon":  {"prefix": 35, "suffix": 25, "both_bonus": 5},    # ~51% chance for at least one affix
-		"rare":      {"prefix": 45, "suffix": 35, "both_bonus": 15},   # 15% bonus for both
-		"epic":      {"prefix": 70, "suffix": 55, "both_bonus": 30},   # Good chance for both
-		"legendary": {"prefix": 90, "suffix": 80, "both_bonus": 50},   # High chance for both
-		"artifact":  {"prefix": 100, "suffix": 95, "both_bonus": 75}   # Almost always both
-	}
+	# Crafted items don't get random affixes — affixes come from Enchanter Runes
+	if is_crafted:
+		return affixes
 
-	var chances = affix_chances.get(rarity, {"prefix": 10, "suffix": 5, "both_bonus": 0})
+	var count = AFFIX_COUNTS.get(rarity, 0)
+	if count == 0:
+		return affixes
+
 	var roll_range = _get_stat_roll_range(item_level)
 	var total_roll_quality = 0
 	var affix_count = 0
+	var used_stats = []  # Track which stats we've already rolled to avoid duplicates
 
-	# Roll for prefix
-	var prefix_roll = randi() % 100
-	if prefix_roll < chances.prefix:
+	# count=1: prefix OR suffix (50/50)
+	# count>=2: prefix AND suffix, then bonus stats from random pool
+	if count == 1:
+		# 50/50 prefix or suffix
+		if randi() % 2 == 0:
+			var prefix = PREFIX_POOL[randi() % PREFIX_POOL.size()]
+			var result = _calculate_affix_value(prefix, item_level, roll_range)
+			affixes[prefix.stat] = result.value
+			affixes["prefix_name"] = prefix.name
+			used_stats.append(prefix.stat)
+			total_roll_quality += result.quality
+			affix_count += 1
+		else:
+			var suffix = SUFFIX_POOL[randi() % SUFFIX_POOL.size()]
+			var result = _calculate_affix_value(suffix, item_level, roll_range)
+			affixes[suffix.stat] = result.value
+			affixes["suffix_name"] = suffix.name
+			used_stats.append(suffix.stat)
+			total_roll_quality += result.quality
+			affix_count += 1
+	else:
+		# count >= 2: guaranteed prefix AND suffix
 		var prefix = PREFIX_POOL[randi() % PREFIX_POOL.size()]
 		var result = _calculate_affix_value(prefix, item_level, roll_range)
 		affixes[prefix.stat] = result.value
 		affixes["prefix_name"] = prefix.name
+		used_stats.append(prefix.stat)
 		total_roll_quality += result.quality
 		affix_count += 1
 
-	# Roll for suffix
-	var suffix_roll = randi() % 100
-	# If we already have a prefix, apply the both_bonus to make suffix more likely
-	var suffix_chance = chances.suffix
-	if affixes.has("prefix_name"):
-		suffix_chance += chances.both_bonus
-
-	if suffix_roll < suffix_chance:
 		var suffix = SUFFIX_POOL[randi() % SUFFIX_POOL.size()]
-		var result = _calculate_affix_value(suffix, item_level, roll_range)
-
-		# If same stat as prefix, add to existing value instead of replacing
+		result = _calculate_affix_value(suffix, item_level, roll_range)
 		if affixes.has(suffix.stat):
 			affixes[suffix.stat] += result.value
 		else:
 			affixes[suffix.stat] = result.value
 		affixes["suffix_name"] = suffix.name
+		if suffix.stat not in used_stats:
+			used_stats.append(suffix.stat)
 		total_roll_quality += result.quality
 		affix_count += 1
 
-	# Store average roll quality if we have affixes
+		# Bonus stats for epic+ (count - 2 extra affixes from combined pool)
+		var bonus_count = count - 2
+		var combined_pool = PREFIX_POOL + SUFFIX_POOL
+		for _b in range(bonus_count):
+			# Try to pick an affix with a stat we haven't used (up to 5 attempts)
+			var picked = null
+			for _attempt in range(5):
+				var candidate = combined_pool[randi() % combined_pool.size()]
+				if candidate.stat not in used_stats:
+					picked = candidate
+					break
+			if picked == null:
+				# All stats used, just pick any
+				picked = combined_pool[randi() % combined_pool.size()]
+			result = _calculate_affix_value(picked, item_level, roll_range)
+			if affixes.has(picked.stat):
+				affixes[picked.stat] += result.value
+			else:
+				affixes[picked.stat] = result.value
+			if picked.stat not in used_stats:
+				used_stats.append(picked.stat)
+			total_roll_quality += result.quality
+			affix_count += 1
+
+	# Store average roll quality
 	if affix_count > 0:
 		affixes["roll_quality"] = int(total_roll_quality / affix_count)
 
-	# Roll for proc suffix (Tier 6+ only, based on item level)
-	# Chance: 5% at tier 6, 10% at tier 7, 15% at tier 8, 20% at tier 9
+	# Proc suffix handling (Tier 6+ only)
 	var tier = get_tier_for_level(item_level)
 	if tier >= 6:
-		var proc_chance = (tier - 5) * 5  # 5% at tier 6, 20% at tier 9
-		if rarity in ["epic", "legendary", "artifact"]:
-			proc_chance += 10  # +10% for high rarity
-		if randi() % 100 < proc_chance:
+		if rarity == "artifact":
+			# Artifact: guaranteed proc
 			var proc = _roll_proc_suffix(tier)
 			if not proc.is_empty():
 				affixes["proc_type"] = proc.proc_type
 				affixes["proc_value"] = proc.value
 				affixes["proc_chance"] = proc.chance
 				affixes["proc_name"] = proc.name
-				# Replace suffix name with proc name if no regular suffix
 				if not affixes.has("suffix_name"):
 					affixes["suffix_name"] = proc.name
+		elif rarity in ["epic", "legendary"]:
+			# Epic/legendary: scaled proc chance
+			var proc_chance = (tier - 5) * 5 + 10  # 15% at tier 6, 30% at tier 9
+			if randi() % 100 < proc_chance:
+				var proc = _roll_proc_suffix(tier)
+				if not proc.is_empty():
+					affixes["proc_type"] = proc.proc_type
+					affixes["proc_value"] = proc.value
+					affixes["proc_chance"] = proc.chance
+					affixes["proc_name"] = proc.name
+					if not affixes.has("suffix_name"):
+						affixes["suffix_name"] = proc.name
 
 	return affixes
 
@@ -3173,16 +3577,16 @@ func _maybe_upgrade_rarity(base_rarity: String) -> String:
 
 func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	"""Get display name for an item type, with prefix for high rarity."""
-	# Special handling for gold pouches - name based on rarity
-	if item_type == "gold_pouch":
+	# Special handling for essence pouches - name based on rarity
+	if item_type == "essence_pouch":
 		match rarity:
-			"common": return "Small Gold Pouch"
-			"uncommon": return "Gold Pouch"
-			"rare": return "Heavy Gold Pouch"
-			"epic": return "Bulging Gold Sack"
-			"legendary": return "Treasure Chest"
-			"artifact": return "Dragon's Hoard"
-			_: return "Gold Pouch"
+			"common": return "Small Essence Pouch"
+			"uncommon": return "Essence Pouch"
+			"rare": return "Heavy Essence Pouch"
+			"epic": return "Overflowing Essence Sack"
+			"legendary": return "Essence Trove"
+			"artifact": return "Primordial Essence Cache"
+			_: return "Essence Pouch"
 
 	# Special handling for gem items - name based on rarity
 	if item_type == "gem_small":
@@ -3346,7 +3750,7 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	return base_name
 
 func _calculate_item_value(rarity: String, level: int) -> int:
-	"""Calculate gold value of an item based on rarity and level.
+	"""Calculate base value of an item based on rarity and level.
 	Uses quadratic scaling so high-level gear is MUCH more valuable."""
 	var base_values = {
 		"common": 10,
@@ -3360,6 +3764,58 @@ func _calculate_item_value(rarity: String, level: int) -> int:
 	# Quadratic scaling: level 1 = base, level 10 = base*2, level 50 = base*26, level 100 = base*101
 	var level_multiplier = 1.0 + (level * level) / 100.0
 	return int(base * level_multiplier)
+
+func calculate_base_valor(item: Dictionary) -> int:
+	"""Calculate base valor for listing an item on the Open Market.
+	Equipment scales by rarity × sqrt(level). Consumables/materials by tier."""
+	var item_type = item.get("type", "")
+
+	# Equipment
+	if item.has("rarity") and item.has("slot"):
+		var rarity = item.get("rarity", "common")
+		var level = int(item.get("level", 1))
+		var sqrt_level = sqrt(float(level))
+		match rarity:
+			"common": return int(5 + sqrt_level * 2)
+			"uncommon": return int(15 + sqrt_level * 4)
+			"rare": return int(50 + sqrt_level * 8)
+			"epic": return int(150 + sqrt_level * 15)
+			"legendary": return int(500 + sqrt_level * 30)
+			"artifact": return int(2000 + sqrt_level * 50)
+			_: return int(5 + sqrt_level * 2)
+
+	# Consumables (potions, scrolls, etc.)
+	if item.get("is_consumable", false):
+		var tier = int(item.get("tier", 1))
+		return 5 + tier * 3
+
+	# Materials by tier
+	if item.has("material_type") or item_type == "material":
+		var tier = int(item.get("tier", 1))
+		var tier_values = {1: 2, 2: 5, 3: 12, 4: 25, 5: 50, 6: 100}
+		return tier_values.get(tier, 2)
+
+	# Monster parts
+	if item.has("monster_tier") or item_type == "monster_part":
+		var tier = int(item.get("monster_tier", item.get("tier", 1)))
+		return tier * 8
+
+	# Fallback: use old gold value / 20
+	var value = item.get("value", 20)
+	return maxi(1, int(value) / 20)
+
+func get_supply_category(item: Dictionary) -> String:
+	"""Determine the supply category for dynamic pricing."""
+	if item.has("slot"):
+		return "equipment"
+	if item.get("is_consumable", false):
+		return "consumable"
+	if item.has("material_type") or item.get("type", "") == "material":
+		var tier = int(item.get("tier", 1))
+		return "material_t%d" % tier
+	if item.has("monster_tier") or item.get("type", "") == "monster_part":
+		return "monster_part"
+	return "equipment"
 
 func get_rarity_color(rarity: String) -> String:
 	"""Get the display color for a rarity tier"""

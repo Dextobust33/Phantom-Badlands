@@ -68,10 +68,9 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		"quest_type": quest_type
 	}
 	# Store rewards at accept time so they don't change on turn-in
-	var base_rewards = quest.get("rewards", {"xp": 0, "gold": 0, "gems": 0})
+	var base_rewards = quest.get("rewards", {"xp": 0, "gems": 0})
 	extra_data["stored_rewards"] = {
 		"xp": base_rewards.get("xp", 0),
-		"gold": base_rewards.get("gold", 0),
 		"gems": base_rewards.get("gems", 0)
 	}
 	# For dungeon quests, store the specific dungeon type
@@ -301,7 +300,7 @@ func is_quest_complete(character: Character, quest_id: String) -> bool:
 	return quest_data.progress >= quest_data.target
 
 func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
-	"""Calculate quest rewards including hotzone multiplier. Returns {xp, gold, gems, multiplier}"""
+	"""Calculate quest rewards including hotzone multiplier. Returns {xp, gems, multiplier}"""
 	# Use stored rewards if available (stored at accept time to prevent regeneration mismatch)
 	var quest_data = character.get_quest_progress(quest_id)
 	var stored_rewards = quest_data.get("stored_rewards", {})
@@ -325,8 +324,8 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 		var completed_at_post = quest_data.get("completed_at_post", 0)
 		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
 		if quest.is_empty():
-			return {"xp": 0, "gold": 0, "gems": 0, "multiplier": 1.0}
-		base_rewards = quest.get("rewards", {"xp": 0, "gold": 0, "gems": 0})
+			return {"xp": 0, "gems": 0, "multiplier": 1.0}
+		base_rewards = quest.get("rewards", {"xp": 0, "gems": 0})
 		quest_type = quest.get("type", -1)
 
 	var multiplier = 1.0
@@ -339,7 +338,6 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 
 	return {
 		"xp": int(base_rewards.get("xp", 0) * multiplier),
-		"gold": int(base_rewards.get("gold", 0) * multiplier),
 		"gems": int(base_rewards.get("gems", 0) * multiplier),
 		"multiplier": multiplier
 	}
@@ -367,9 +365,10 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	# Calculate and grant rewards (uses stored rewards if available)
 	var rewards = calculate_rewards(character, quest_id)
 
-	# Apply rewards
-	character.gold += rewards.gold
-	character.gems += rewards.gems
+	# Apply rewards — gems → Monster Gem material
+	var gem_reward = rewards.get("gems", 0)
+	if gem_reward > 0:
+		character.add_crafting_material("monster_gem", gem_reward)
 	var level_result = character.add_experience(rewards.xp)
 
 	# Complete the quest
@@ -443,10 +442,8 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		var reward_parts = []
 		if rewards.get("xp", 0) > 0:
 			reward_parts.append("[color=#FF00FF]%d XP[/color]" % rewards.xp)
-		if rewards.get("gold", 0) > 0:
-			reward_parts.append("[color=#FFD700]%d Gold[/color]" % rewards.gold)
 		if rewards.get("gems", 0) > 0:
-			reward_parts.append("[color=#00FFFF]%d Gems[/color]" % rewards.gems)
+			reward_parts.append("[color=#00FFFF]%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
 		if not reward_parts.is_empty():
 			output += "    Rewards: %s\n" % ", ".join(reward_parts)
 
@@ -501,16 +498,13 @@ func format_available_quests(quests: Array, character: Character) -> String:
 		# Rewards preview
 		var rewards = quest.get("rewards", {})
 		var base_xp = rewards.get("xp", 0)
-		var base_gold = rewards.get("gold", 0)
 		var base_gems = rewards.get("gems", 0)
 
 		var reward_parts = []
 		if base_xp > 0:
 			reward_parts.append("%d XP" % base_xp)
-		if base_gold > 0:
-			reward_parts.append("%d Gold" % base_gold)
 		if base_gems > 0:
-			reward_parts.append("%d Gems" % base_gems)
+			reward_parts.append("%d Monster Gem%s" % [base_gems, "s" if base_gems > 1 else ""])
 		if not reward_parts.is_empty():
 			output += "    [color=#00FF00]Rewards: %s[/color]\n" % ", ".join(reward_parts)
 
@@ -520,15 +514,12 @@ func format_available_quests(quests: Array, character: Character) -> String:
 			if min_monster_level > 1:
 				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
 			var max_xp = int(base_xp * 2.5)
-			var max_gold = int(base_gold * 2.5)
 			var max_gems = int(base_gems * 2.5) if base_gems > 0 else 0
 			var bonus_parts = []
 			if max_xp > base_xp:
 				bonus_parts.append("up to %d XP" % max_xp)
-			if max_gold > base_gold:
-				bonus_parts.append("up to %d Gold" % max_gold)
 			if max_gems > base_gems:
-				bonus_parts.append("up to %d Gems" % max_gems)
+				bonus_parts.append("up to %d Monster Gems" % max_gems)
 			if not bonus_parts.is_empty():
 				output += "    [color=#FF6600]Hotzone Bonus: %s[/color]\n" % ", ".join(bonus_parts)
 

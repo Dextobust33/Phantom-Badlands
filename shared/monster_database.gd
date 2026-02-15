@@ -24,7 +24,7 @@ const ABILITY_ETHEREAL = "ethereal"              # 50% chance to dodge
 const ABILITY_ARMORED = "armored"                # Reduces incoming damage by 50%
 const ABILITY_SUMMONER = "summoner"              # Can call another monster
 const ABILITY_PACK_LEADER = "pack_leader"        # High flock chance, stronger pack
-const ABILITY_GOLD_HOARDER = "gold_hoarder"      # 3x gold drops
+const ABILITY_GOLD_HOARDER = "gold_hoarder"      # Legacy — no effect (gold removed)
 const ABILITY_GEM_BEARER = "gem_bearer"          # Always drops gems
 const ABILITY_CURSE = "curse"                    # Reduces stats during combat
 const ABILITY_DISARM = "disarm"                  # Reduces weapon damage
@@ -52,7 +52,7 @@ const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff fo
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
-const ABILITY_GOLD_STEAL = "gold_steal"          # Steals 5-15% of player gold on hit
+const ABILITY_GOLD_STEAL = "gold_steal"          # Legacy — no effect (gold removed)
 const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
 const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
 const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
@@ -1402,7 +1402,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	# Calculate XP and gold with tiered formulas (based on final stats)
 	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
-	var gold_reward = _calculate_gold_reward(base_stats, stat_scale, target_level)
+	# Gold removed — Valor is now earned via market listings only
 
 	# Calculate monster intelligence based on level tier (for Outsmart mechanic)
 	var intelligence = _calculate_monster_intelligence(target_level, base_stats.name)
@@ -1473,7 +1473,6 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"speed": base_stats.base_speed,  # Speed doesn't scale
 		"intelligence": intelligence,    # For Outsmart mechanic
 		"experience_reward": experience_reward,
-		"gold_reward": gold_reward,
 		"flock_chance": base_stats.get("flock_chance", 0),
 		"drop_table_id": base_stats.get("drop_table_id", "common"),
 		"drop_chance": base_stats.get("drop_chance", 5),
@@ -1580,30 +1579,6 @@ func _calculate_experience_reward(hp: int, strength: int, defense: int, level: i
 	lethality_bonus = clamp(lethality_bonus, 0.7, 1.4)
 
 	return max(5, int(base_xp * lethality_bonus))
-
-func _calculate_gold_reward(base_stats: Dictionary, stat_scale: float, level: int) -> int:
-	"""Calculate gold reward with diminishing returns at high levels.
-	   Gold caps at level 100 with log scaling beyond - gems become the primary high-level reward."""
-	var base_gold = base_stats.base_gold
-	var gold_scale = max(0.5, stat_scale)
-	var gold_reward = base_gold * gold_scale
-
-	# Diminishing returns above level 100 - gold caps, gems take over
-	if level >= 100:
-		# Gold bonus is capped with log scaling: 1 + 0.3 * log2(level/100)
-		# L200: 1.3x, L500: 1.69x, L1000: 2.0x (was much higher before)
-		var level_bonus = 1.0 + 0.3 * log(float(level) / 100.0) / log(2.0)
-		gold_reward *= level_bonus
-
-	# Hard cap on gold to push players toward gems at high levels
-	var gold_cap = 10000.0  # Max 10k gold per kill
-	if gold_reward > gold_cap:
-		gold_reward = gold_cap
-
-	# Apply variance
-	gold_reward *= randf_range(0.8, 1.2)
-
-	return max(1, int(gold_reward))
 
 func _get_intelligence_modifier(monster_name: String) -> int:
 	"""Per-monster intelligence adjustment for thematic accuracy.

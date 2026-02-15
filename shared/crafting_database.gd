@@ -233,8 +233,11 @@ const MATERIALS = {
 	"leather_scraps": {"name": "Leather Scraps", "type": "leather", "tier": 2, "value": 10},
 	"thick_leather": {"name": "Thick Leather", "type": "leather", "tier": 3, "value": 20},
 	"enchanted_leather": {"name": "Enchanted Leather", "type": "leather", "tier": 4, "value": 45},
+	"wyvern_leather": {"name": "Wyvern Leather", "type": "leather", "tier": 5, "value": 100},
 	"dragonhide": {"name": "Dragonhide", "type": "leather", "tier": 6, "value": 200},
 	"void_silk": {"name": "Void Silk", "type": "cloth", "tier": 7, "value": 400},
+	"celestial_hide": {"name": "Celestial Hide", "type": "leather", "tier": 8, "value": 800},
+	"astral_weave": {"name": "Astral Weave", "type": "leather", "tier": 9, "value": 1500},
 
 	# Herbs (from monster drops, for alchemy)
 	"healing_herb": {"name": "Healing Herb", "type": "herb", "tier": 1, "value": 5},
@@ -251,6 +254,9 @@ const MATERIALS = {
 	"soul_shard": {"name": "Soul Shard", "type": "enchant", "tier": 4, "value": 80},
 	"void_essence": {"name": "Void Essence", "type": "enchant", "tier": 6, "value": 200},
 	"primordial_spark": {"name": "Primordial Spark", "type": "enchant", "tier": 8, "value": 800},
+
+	# Monster Gems (from combat, quest rewards)
+	"monster_gem": {"name": "Monster Gem", "type": "gem", "tier": 5, "value": 1000},
 
 	# Writing materials (crafted by scribes)
 	"parchment": {"name": "Parchment", "type": "paper", "tier": 1, "value": 5},
@@ -901,6 +907,17 @@ const RECIPES = {
 		"effect": {"type": "restore_energy", "amount": 30},
 		"craft_time": 1.5
 	},
+	"potion_of_vigor": {
+		"name": "Potion of Vigor",
+		"skill": CraftingSkill.ALCHEMY,
+		"skill_required": 10,
+		"difficulty": 12,
+		"materials": {"healing_herb": 3, "vigor_root": 2},
+		"output_type": "consumable",
+		"output_slot": "",
+		"effect": {"type": "heal", "amount": 100},
+		"craft_time": 2.0
+	},
 	"energy_potion": {
 		"name": "Energy Potion",
 		"skill": CraftingSkill.ALCHEMY,
@@ -1016,6 +1033,17 @@ const RECIPES = {
 		"output_quantity": 2,
 		"craft_time": 1.5
 	},
+	"distill_magic_dust": {
+		"name": "Distill Magic Dust",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"sap": 4},
+		"output_type": "material",
+		"output_item": "magic_dust",
+		"output_quantity": 2,
+		"craft_time": 1.5
+	},
 	# ===== ENCHANTMENT RECIPES (modify equipped gear in-place) =====
 	# Attack Enchantments (weapons only)
 	"minor_attack_enchant": {
@@ -1023,8 +1051,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"magic_dust": 3},
-		"salvage_cost": 25,
+		"materials": {"magic_dust": 5, "copper_ore": 2},
 		"output_type": "enchantment",
 		"target_slot": "weapon",
 		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 5},
@@ -1037,7 +1064,6 @@ const RECIPES = {
 		"skill_required": 25,
 		"difficulty": 30,
 		"materials": {"arcane_crystal": 2, "magic_dust": 3},
-		"salvage_cost": 75,
 		"output_type": "enchantment",
 		"target_slot": "weapon",
 		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 15},
@@ -1050,7 +1076,6 @@ const RECIPES = {
 		"skill_required": 50,
 		"difficulty": 55,
 		"materials": {"void_essence": 2, "soul_shard": 2, "arcane_crystal": 3},
-		"salvage_cost": 200,
 		"output_type": "enchantment",
 		"target_slot": "weapon",
 		"effect": {"type": "enchant_stat", "stat": "attack", "bonus": 35},
@@ -1065,7 +1090,6 @@ const RECIPES = {
 		"skill_required": 5,
 		"difficulty": 10,
 		"materials": {"magic_dust": 3},
-		"salvage_cost": 25,
 		"output_type": "enchantment",
 		"target_slot": "armor",
 		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 5},
@@ -1078,7 +1102,6 @@ const RECIPES = {
 		"skill_required": 25,
 		"difficulty": 30,
 		"materials": {"arcane_crystal": 2, "magic_dust": 3},
-		"salvage_cost": 75,
 		"output_type": "enchantment",
 		"target_slot": "armor",
 		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 15},
@@ -1091,7 +1114,6 @@ const RECIPES = {
 		"skill_required": 50,
 		"difficulty": 55,
 		"materials": {"void_essence": 2, "soul_shard": 2, "arcane_crystal": 3},
-		"salvage_cost": 200,
 		"output_type": "enchantment",
 		"target_slot": "armor",
 		"effect": {"type": "enchant_stat", "stat": "defense", "bonus": 35},
@@ -1106,7 +1128,6 @@ const RECIPES = {
 		"skill_required": 10,
 		"difficulty": 15,
 		"materials": {"healing_herb": 5, "magic_dust": 2},
-		"salvage_cost": 30,
 		"output_type": "enchantment",
 		"target_slot": "helm,armor,shield",
 		"effect": {"type": "enchant_stat", "stat": "max_hp", "bonus": 25},
@@ -1119,7 +1140,6 @@ const RECIPES = {
 		"skill_required": 40,
 		"difficulty": 45,
 		"materials": {"phoenix_petal": 2, "dragon_blood": 1, "soul_shard": 2},
-		"salvage_cost": 150,
 		"output_type": "enchantment",
 		"target_slot": "helm,armor,shield",
 		"effect": {"type": "enchant_stat", "stat": "max_hp", "bonus": 100},
@@ -1134,7 +1154,6 @@ const RECIPES = {
 		"skill_required": 10,
 		"difficulty": 15,
 		"materials": {"mana_blossom": 5, "magic_dust": 2},
-		"salvage_cost": 30,
 		"output_type": "enchantment",
 		"target_slot": "amulet,ring",
 		"effect": {"type": "enchant_stat", "stat": "max_mana", "bonus": 20},
@@ -1147,7 +1166,6 @@ const RECIPES = {
 		"skill_required": 40,
 		"difficulty": 45,
 		"materials": {"arcane_crystal": 3, "void_essence": 1, "soul_shard": 2},
-		"salvage_cost": 150,
 		"output_type": "enchantment",
 		"target_slot": "amulet,ring",
 		"effect": {"type": "enchant_stat", "stat": "max_mana", "bonus": 75},
@@ -1162,7 +1180,6 @@ const RECIPES = {
 		"skill_required": 15,
 		"difficulty": 20,
 		"materials": {"vigor_root": 3, "magic_dust": 3},
-		"salvage_cost": 40,
 		"output_type": "enchantment",
 		"target_slot": "boots",
 		"effect": {"type": "enchant_stat", "stat": "speed", "bonus": 3},
@@ -1175,7 +1192,6 @@ const RECIPES = {
 		"skill_required": 45,
 		"difficulty": 50,
 		"materials": {"shadowleaf": 3, "arcane_crystal": 2, "void_essence": 1},
-		"salvage_cost": 175,
 		"output_type": "enchantment",
 		"target_slot": "boots",
 		"effect": {"type": "enchant_stat", "stat": "speed", "bonus": 10},
@@ -1189,7 +1205,6 @@ const RECIPES = {
 		"skill_required": 12,
 		"difficulty": 18,
 		"materials": {"vigor_root": 5, "magic_dust": 2},
-		"salvage_cost": 35,
 		"output_type": "enchantment",
 		"target_slot": "armor,shield",
 		"effect": {"type": "enchant_stat", "stat": "stamina", "bonus": 15},
@@ -1202,7 +1217,6 @@ const RECIPES = {
 		"skill_required": 42,
 		"difficulty": 48,
 		"materials": {"vigor_root": 8, "soul_shard": 2, "arcane_crystal": 1},
-		"salvage_cost": 160,
 		"output_type": "enchantment",
 		"target_slot": "armor,shield",
 		"effect": {"type": "enchant_stat", "stat": "stamina", "bonus": 50},
@@ -1216,7 +1230,6 @@ const RECIPES = {
 		"skill_required": 12,
 		"difficulty": 18,
 		"materials": {"thornberry": 3, "vigor_root": 2, "magic_dust": 2},
-		"salvage_cost": 35,
 		"output_type": "enchantment",
 		"target_slot": "boots,ring",
 		"effect": {"type": "enchant_stat", "stat": "energy", "bonus": 15},
@@ -1229,7 +1242,6 @@ const RECIPES = {
 		"skill_required": 42,
 		"difficulty": 48,
 		"materials": {"shadowleaf": 4, "soul_shard": 2, "arcane_crystal": 1},
-		"salvage_cost": 160,
 		"output_type": "enchantment",
 		"target_slot": "boots,ring",
 		"effect": {"type": "enchant_stat", "stat": "energy", "bonus": 50},
@@ -1245,7 +1257,6 @@ const RECIPES = {
 		"skill_required": 5,
 		"difficulty": 10,
 		"materials": {"copper_ore": 2, "coal": 1},
-		"salvage_cost": 20,
 		"output_type": "upgrade",
 		"target_slot": "weapon",
 		"effect": {"type": "upgrade_level", "levels": 1},
@@ -1258,7 +1269,6 @@ const RECIPES = {
 		"skill_required": 25,
 		"difficulty": 35,
 		"materials": {"iron_ore": 3, "steel_ore": 2, "coal": 2},
-		"salvage_cost": 100,
 		"output_type": "upgrade",
 		"target_slot": "weapon",
 		"effect": {"type": "upgrade_level", "levels": 5},
@@ -1271,7 +1281,6 @@ const RECIPES = {
 		"skill_required": 50,
 		"difficulty": 60,
 		"materials": {"mithril_ore": 3, "adamantine_ore": 2, "magic_dust": 5},
-		"salvage_cost": 300,
 		"output_type": "upgrade",
 		"target_slot": "weapon",
 		"effect": {"type": "upgrade_level", "levels": 10},
@@ -1286,7 +1295,6 @@ const RECIPES = {
 		"skill_required": 5,
 		"difficulty": 10,
 		"materials": {"copper_ore": 2, "ragged_leather": 1},
-		"salvage_cost": 20,
 		"output_type": "upgrade",
 		"target_slot": "armor",
 		"effect": {"type": "upgrade_level", "levels": 1},
@@ -1299,7 +1307,6 @@ const RECIPES = {
 		"skill_required": 25,
 		"difficulty": 35,
 		"materials": {"iron_ore": 3, "steel_ore": 2, "thick_leather": 2},
-		"salvage_cost": 100,
 		"output_type": "upgrade",
 		"target_slot": "armor",
 		"effect": {"type": "upgrade_level", "levels": 5},
@@ -1312,7 +1319,6 @@ const RECIPES = {
 		"skill_required": 50,
 		"difficulty": 60,
 		"materials": {"mithril_ore": 3, "enchanted_leather": 2, "magic_dust": 5},
-		"salvage_cost": 300,
 		"output_type": "upgrade",
 		"target_slot": "armor",
 		"effect": {"type": "upgrade_level", "levels": 10},
@@ -1327,7 +1333,6 @@ const RECIPES = {
 		"skill_required": 5,
 		"difficulty": 10,
 		"materials": {"rough_gem": 1, "magic_dust": 2},
-		"salvage_cost": 25,
 		"output_type": "upgrade",
 		"target_slot": "ring,amulet",
 		"effect": {"type": "upgrade_level", "levels": 1},
@@ -1340,7 +1345,6 @@ const RECIPES = {
 		"skill_required": 25,
 		"difficulty": 35,
 		"materials": {"polished_gem": 2, "arcane_crystal": 2},
-		"salvage_cost": 125,
 		"output_type": "upgrade",
 		"target_slot": "ring,amulet",
 		"effect": {"type": "upgrade_level", "levels": 5},
@@ -1353,7 +1357,6 @@ const RECIPES = {
 		"skill_required": 50,
 		"difficulty": 60,
 		"materials": {"flawless_gem": 2, "soul_shard": 2, "void_essence": 1},
-		"salvage_cost": 350,
 		"output_type": "upgrade",
 		"target_slot": "ring,amulet",
 		"effect": {"type": "upgrade_level", "levels": 10},
@@ -1368,7 +1371,6 @@ const RECIPES = {
 		"skill_required": 40,
 		"difficulty": 50,
 		"materials": {"dragon_blood": 2, "void_essence": 2, "soul_shard": 3},
-		"salvage_cost": 250,
 		"output_type": "affix",
 		"target_slot": "weapon,armor,helm,shield",
 		"effect": {"type": "add_affix", "affix_pool": ["strength", "constitution", "attack"]},
@@ -1380,7 +1382,6 @@ const RECIPES = {
 		"skill_required": 40,
 		"difficulty": 50,
 		"materials": {"essence_of_life": 1, "void_essence": 2, "arcane_crystal": 4},
-		"salvage_cost": 250,
 		"output_type": "affix",
 		"target_slot": "weapon,armor,amulet,ring",
 		"effect": {"type": "add_affix", "affix_pool": ["intelligence", "wisdom", "mana"]},
@@ -1392,7 +1393,6 @@ const RECIPES = {
 		"skill_required": 40,
 		"difficulty": 50,
 		"materials": {"phoenix_petal": 2, "shadowleaf": 4, "soul_shard": 3},
-		"salvage_cost": 250,
 		"output_type": "affix",
 		"target_slot": "weapon,armor,boots,ring",
 		"effect": {"type": "add_affix", "affix_pool": ["dexterity", "wits", "speed"]},
@@ -1825,7 +1825,6 @@ const RECIPES = {
 		"skill_required": 70,
 		"difficulty": 80,
 		"materials": {"primordial_spark": 2, "void_essence": 3},
-		"salvage_cost": 500,
 		"output_type": "enchantment",
 		"target_slot": "weapon",
 		"effect": {"stat": "attack", "bonus": 60},
@@ -1838,7 +1837,6 @@ const RECIPES = {
 		"skill_required": 70,
 		"difficulty": 80,
 		"materials": {"primordial_spark": 2, "void_essence": 3},
-		"salvage_cost": 500,
 		"output_type": "enchantment",
 		"target_slot": "armor,shield",
 		"effect": {"stat": "defense", "bonus": 60},
@@ -1852,7 +1850,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"dragon_blood": 2, "soul_shard": 3},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "weapon,armor,ring,amulet",
 		"effect": {"stat": "strength", "bonus": 10},
@@ -1865,7 +1862,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"dragonhide": 2, "soul_shard": 3},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "armor,shield,helm,amulet",
 		"effect": {"stat": "constitution", "bonus": 10},
@@ -1878,7 +1874,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"shadowleaf": 5, "arcane_crystal": 3},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "weapon,boots,ring",
 		"effect": {"stat": "dexterity", "bonus": 10},
@@ -1891,7 +1886,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"arcane_crystal": 3, "soul_shard": 2, "void_essence": 1},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "weapon,helm,amulet,ring",
 		"effect": {"stat": "intelligence", "bonus": 10},
@@ -1904,7 +1898,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"phoenix_petal": 2, "soul_shard": 2, "void_essence": 1},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "helm,amulet,shield,ring",
 		"effect": {"stat": "wisdom", "bonus": 10},
@@ -1917,7 +1910,6 @@ const RECIPES = {
 		"skill_required": 55,
 		"difficulty": 65,
 		"materials": {"four_leaf_clover": 5, "soul_shard": 3},
-		"salvage_cost": 300,
 		"output_type": "enchantment",
 		"target_slot": "weapon,ring,amulet,boots",
 		"effect": {"stat": "wits", "bonus": 10},
@@ -1931,7 +1923,6 @@ const RECIPES = {
 		"skill_required": 75,
 		"difficulty": 88,
 		"materials": {"dragon_blood": 3, "void_essence": 3, "primordial_spark": 1},
-		"salvage_cost": 750,
 		"output_type": "proc_enchant",
 		"target_slot": "weapon",
 		"effect": {"proc_type": "lifesteal", "percent": 10, "proc_chance": 1.0},
@@ -1944,7 +1935,6 @@ const RECIPES = {
 		"skill_required": 75,
 		"difficulty": 88,
 		"materials": {"arcane_crystal": 5, "void_essence": 3, "primordial_spark": 1},
-		"salvage_cost": 750,
 		"output_type": "proc_enchant",
 		"target_slot": "weapon",
 		"effect": {"proc_type": "shocking", "percent": 15, "proc_chance": 0.25},
@@ -1957,7 +1947,6 @@ const RECIPES = {
 		"skill_required": 75,
 		"difficulty": 88,
 		"materials": {"dragonhide": 3, "void_essence": 3, "primordial_spark": 1},
-		"salvage_cost": 750,
 		"output_type": "proc_enchant",
 		"target_slot": "armor,shield",
 		"effect": {"proc_type": "damage_reflect", "percent": 15, "proc_chance": 1.0},
@@ -1970,7 +1959,6 @@ const RECIPES = {
 		"skill_required": 80,
 		"difficulty": 92,
 		"materials": {"void_essence": 5, "primordial_spark": 2, "essence_of_life": 1},
-		"salvage_cost": 1000,
 		"output_type": "proc_enchant",
 		"target_slot": "weapon",
 		"effect": {"proc_type": "execute", "bonus_damage": 50, "proc_chance": 0.25, "threshold": 0.3},
@@ -2506,6 +2494,39 @@ const RECIPES = {
 		"specialist_only": true,
 		"craft_time": 8.0
 	},
+	"blacksmith_anvil": {
+		"name": "Blacksmith Anvil",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 20,
+		"difficulty": 35,
+		"materials": {"iron_ore": 8, "stone_block": 5, "coal": 3},
+		"output_type": "structure",
+		"structure_type": "blacksmith",
+		"specialist_only": true,
+		"craft_time": 6.0
+	},
+	"healer_shrine": {
+		"name": "Healer's Shrine",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 25,
+		"difficulty": 40,
+		"materials": {"stone_block": 6, "healing_herb": 8, "magic_dust": 3},
+		"output_type": "structure",
+		"structure_type": "healer",
+		"specialist_only": true,
+		"craft_time": 6.0
+	},
+	"market_stall": {
+		"name": "Market Stall",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 30,
+		"difficulty": 45,
+		"materials": {"wooden_plank": 8, "iron_ore": 4, "rope": 3},
+		"output_type": "structure",
+		"structure_type": "market",
+		"specialist_only": true,
+		"craft_time": 7.0
+	},
 }
 
 # ===== GATHERING TOOLS =====
@@ -2916,7 +2937,7 @@ static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0,
 	# Quality thresholds based on success chance vs roll
 	# Higher skill = more likely to get better quality
 	if roll > success_chance + 30:
-		return CraftingQuality.FAILED
+		return CraftingQuality.POOR  # No complete failures — always produce something
 	elif roll > success_chance + 15:
 		return CraftingQuality.POOR
 	elif roll > success_chance - 15:
@@ -2931,8 +2952,6 @@ static func calculate_craft_xp(difficulty: int, quality: CraftingQuality) -> int
 	var base_xp = BASE_CRAFT_XP + difficulty
 	# Bonus XP for quality
 	match quality:
-		CraftingQuality.FAILED:
-			return base_xp / 4  # Still get some XP for trying
 		CraftingQuality.POOR:
 			return base_xp / 2
 		CraftingQuality.STANDARD:

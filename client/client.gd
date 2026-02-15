@@ -411,7 +411,7 @@ var shortcut_buttons_container: HBoxContainer = null
 @onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
 @onready var player_level_label = $RootContainer/MainContainer/RightPanel/LevelRow/PlayerLevel
 @onready var gold_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer/GoldLabel
-@onready var gem_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GemContainer/GemLabel
+@onready var rank_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/RankContainer/RankLabel
 @onready var music_toggle = $RootContainer/MainContainer/RightPanel/LevelRow/MusicToggle
 @onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
 @onready var online_players_label = $RootContainer/MainContainer/RightPanel/OnlinePlayersLabel
@@ -741,6 +741,7 @@ var pending_trading_post_action: String = ""
 
 # Crafting mode (only at trading posts)
 var crafting_mode: bool = false
+var crafting_entered_via_station: bool = false  # True when opened by bumping a station (skip skill selection on back)
 var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
 var crafting_recipes: Array = []  # Available recipes from server
 var crafting_materials: Dictionary = {}  # Player's materials
@@ -788,6 +789,7 @@ var pending_storage_action: String = ""  # "deposit", "withdraw"
 
 # More menu mode
 var more_mode: bool = false
+var pending_more_action: String = ""  # "changelog", "bestiary", "viewing_materials"
 
 # Job system mode
 var job_mode: bool = false
@@ -982,6 +984,16 @@ var harvest_available: bool = false  # Set by combat_end message
 var harvest_saves_remaining: int = 0
 var harvest_mastery_label: String = ""
 var harvest_mastery_count: int = 0
+
+# Open Market system
+var market_mode: bool = false
+var market_listings: Array = []
+var market_page: int = 0
+var market_total_pages: int = 0
+var market_category: String = "all"
+var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_confirm", "buy_confirm", "my_listings"
+var market_selected_listing: Dictionary = {}
+var account_valor: int = 0
 
 # Dungeon mode
 var dungeon_mode: bool = false
@@ -1186,7 +1198,7 @@ const COMPANION_MONSTER_ABILITIES = {
 		"threshold": {"name": "Survival Instinct", "hp_percent": 35, "effect": "speed_buff", "base": 15, "scaling": 0.2, "description": "Speed boost when low HP"}
 	},
 	"Kobold": {
-		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "effect2": "gathering_hint", "base2": 3, "scaling2": 0.03, "description": "+Gold find, +gathering hints"},
+		"passive": {"name": "Treasure Sense", "effect": "gold_find", "base": 3, "scaling": 0.05, "effect2": "gathering_hint", "base2": 3, "scaling2": 0.03, "description": "+Valor find, +gathering hints"},
 		"active": {"name": "Trap Trigger", "base_chance": 8, "chance_scaling": 0.08, "effect": "bonus_damage", "base_damage": 5, "damage_scaling": 0.1, "description": "Chance for bonus damage"},
 		"threshold": {"name": "Hoard Guard", "hp_percent": 45, "effect": "defense_buff", "base": 8, "scaling": 0.15, "description": "Defense boost when low HP"}
 	},
@@ -1250,7 +1262,7 @@ const RACE_DESCRIPTIONS = {
 	"Elf": "Ancient and resilient. 50% reduced poison damage, +20% magic resistance, +25% mana.",
 	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat).",
 	"Ogre": "Massive and regenerative. All healing effects are doubled.",
-	"Halfling": "Lucky and nimble. +10% dodge chance, +15% gold from monster kills.",
+	"Halfling": "Lucky and nimble. +10% dodge chance, +15% Valor from monster kills.",
 	"Orc": "Fierce and relentless. +20% damage when below 50% HP.",
 	"Gnome": "Clever and efficient. All ability costs reduced by 15%.",
 	"Undead": "Deathless and cursed. Immune to death curses, poison heals instead of damages."
@@ -1264,7 +1276,7 @@ const CLASS_DESCRIPTIONS = {
 	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
 	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
 	"Thief": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
-	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% gold/XP from kills",
+	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% Valor/XP from kills",
 	"Ninja": "Trickster Path. Shadow warrior with superior escape abilities. Uses Energy.\n[color=#191970]Passive - Shadow Step:[/color] +40% flee success, take no damage when fleeing"
 }
 
@@ -1940,6 +1952,85 @@ func _process(delta):
 			else:
 				set_meta("tradeeggkey_%d_pressed" % i, false)
 
+	# Market browse buy selection with keybinds (1-9 to buy listing)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "browse":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketbuykey_%d_pressed" % i, false):
+					set_meta("marketbuykey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					# Select listing for purchase confirmation
+					if i < market_listings.size():
+						market_selected_listing = market_listings[i]
+						pending_market_action = "buy_confirm"
+						display_market_buy_confirm()
+						update_action_bar()
+			else:
+				set_meta("marketbuykey_%d_pressed" % i, false)
+
+	# Market list item selection with keybinds (1-9 to select inventory item to list)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "list_select":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketlistkey_%d_pressed" % i, false):
+					set_meta("marketlistkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					# Find the i-th unequipped item and list it
+					var inventory = character_data.get("inventory", [])
+					var displayed = 0
+					for inv_idx in range(inventory.size()):
+						var item = inventory[inv_idx]
+						if item.is_empty() or item.get("equipped", false):
+							continue
+						if displayed == i:
+							send_to_server({"type": "market_list_item", "index": inv_idx})
+							break
+						displayed += 1
+			else:
+				set_meta("marketlistkey_%d_pressed" % i, false)
+
+	# Market list material selection with keybinds (1-9 to select material to list)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "list_material":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketmatkey_%d_pressed" % i, false):
+					set_meta("marketmatkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					# Find the i-th material and list all of it
+					var materials = character_data.get("materials", {})
+					var idx = 0
+					for mat_name in materials:
+						var qty = int(materials[mat_name])
+						if qty <= 0:
+							continue
+						if idx == i:
+							send_to_server({"type": "market_list_material", "material_name": mat_name, "quantity": qty})
+							break
+						idx += 1
+			else:
+				set_meta("marketmatkey_%d_pressed" % i, false)
+
+	# Market my listings cancel selection with keybinds (1-9 to cancel listing)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "my_listings":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketcancelkey_%d_pressed" % i, false):
+					set_meta("marketcancelkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					if i < market_listings.size():
+						var listing_id = market_listings[i].get("listing_id", "")
+						send_to_server({"type": "market_cancel_listing", "listing_id": listing_id})
+			else:
+				set_meta("marketcancelkey_%d_pressed" % i, false)
+
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
 		for i in range(9):
@@ -2361,7 +2452,7 @@ func _process(delta):
 	# Skip if in monster_select_mode (to prevent monster selection from also triggering action bar)
 	# Skip if ability_popup is visible (typing in the input field)
 	# Note: quest_log_mode only blocks slots 5-9 (number keys 1-5 used for abandonment), not slot 0 (Continue)
-	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["sell_gems", "upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
+	var merchant_blocks_hotkeys = pending_merchant_action != "" and pending_merchant_action not in ["upgrade", "buy", "buy_inspect", "buy_equip_prompt", "sell", "gamble", "gamble_again"]
 	# Use flag for ability popup (more reliable than visibility alone)
 	var ability_popup_open = ability_popup_active
 	var gamble_popup_open = gamble_popup != null and gamble_popup.visible
@@ -2415,7 +2506,7 @@ func _process(delta):
 				set_meta("hotkey_%d_pressed" % i, false)
 
 	# Enter key to focus chat input (only in movement mode, not when popups are open)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not at_trading_post and not any_popup_open:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not at_trading_post and not market_mode and not any_popup_open:
 		if Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_KP_ENTER):
 			if not get_meta("enter_pressed", false):
 				set_meta("enter_pressed", true)
@@ -3080,8 +3171,7 @@ func display_death_screen(message: Dictionary):
 	var class_type = message.get("class_type", "Unknown")
 	var stats = message.get("stats", {})
 	var equipped = message.get("equipped", {})
-	var gold = int(message.get("gold", 0))
-	var gems = int(message.get("gems", 0))
+	var valor = int(message.get("valor", 0))
 	var kills = int(message.get("monsters_killed", 0))
 	var active_companion = message.get("active_companion", {})
 	var collected_companions = message.get("collected_companions", [])
@@ -3102,7 +3192,7 @@ func display_death_screen(message: Dictionary):
 	# === CHARACTER INFO ===
 	display_game("[color=#FFD700]── Character ──[/color]")
 	display_game("%s %s  |  Level %d  |  XP: %s" % [race, class_type, level, format_number(experience)])
-	display_game("Gold: %s  |  Gems: %d  |  Kills: %s" % [format_number(gold), gems, format_number(kills)])
+	display_game("Valor: %s  |  Kills: %s" % [format_number(valor), format_number(kills)])
 	display_game("")
 
 	# === STATS ===
@@ -3242,7 +3332,7 @@ func _save_death_log():
 	file.store_line("")
 	file.store_line("── Character ──")
 	file.store_line("%s %s  |  Level %d  |  XP: %s" % [msg.get("race", ""), msg.get("class_type", ""), int(msg.get("level", 1)), format_number(int(msg.get("experience", 0)))])
-	file.store_line("Gold: %s  |  Gems: %d  |  Kills: %s" % [format_number(int(msg.get("gold", 0))), int(msg.get("gems", 0)), format_number(int(msg.get("monsters_killed", 0)))])
+	file.store_line("Valor: %s  |  Kills: %s" % [format_number(int(msg.get("valor", 0))), format_number(int(msg.get("monsters_killed", 0)))])
 	file.store_line("")
 
 	var stats = msg.get("stats", {})
@@ -3770,6 +3860,10 @@ func _reset_character_state():
 	pending_continue = false
 	combat_item_mode = false
 	monster_select_mode = false
+	market_mode = false
+	pending_market_action = ""
+	market_listings = []
+	market_selected_listing = {}
 	# Clear monster HP knowledge (per-character, not shared across characters)
 	known_enemy_hp = {}
 	# Clear the character stats HUD so old values don't linger
@@ -3808,8 +3902,8 @@ func _clear_character_hud():
 			label.text = ""
 	if gold_label:
 		gold_label.text = ""
-	if gem_label:
-		gem_label.text = ""
+	if rank_label:
+		rank_label.text = "--"
 	stop_low_hp_pulse()
 
 # ===== LEADERBOARD HANDLERS =====
@@ -3937,8 +4031,7 @@ func show_player_info_popup(data: Dictionary):
 
 	var char_race = data.get("race", "Human")
 	var title = data.get("title", "")
-	var gold = data.get("gold", 0)
-	var gems = data.get("gems", 0)
+	var valor = data.get("valor", 0)
 	var deaths = data.get("deaths", 0)
 	var quests_done = data.get("quests_completed", 0)
 	var play_time = int(data.get("play_time", 0))
@@ -4019,7 +4112,7 @@ func show_player_info_popup(data: Dictionary):
 		player_info_content.append_text("\n")
 
 	# Wealth
-	player_info_content.append_text("[color=#FFD700]Gold:[/color] %s  [color=#00FFFF]Gems:[/color] %d\n\n" % [format_number(gold), gems])
+	player_info_content.append_text("[color=#FFD700]Valor:[/color] %s\n\n" % format_number(valor))
 
 	# Statistics
 	player_info_content.append_text("[color=#FFA500]Statistics:[/color]\n")
@@ -4101,11 +4194,11 @@ func _scale_right_panel_fonts(base_scale: float):
 	if player_level_label:
 		player_level_label.add_theme_font_size_override("font_size", stats_size)
 
-	# Scale gold and gem labels
+	# Scale gold and rank labels
 	if gold_label:
 		gold_label.add_theme_font_size_override("font_size", small_stats_size)
-	if gem_label:
-		gem_label.add_theme_font_size_override("font_size", small_stats_size)
+	if rank_label:
+		rank_label.add_theme_font_size_override("font_size", small_stats_size)
 
 	# Scale movement pad buttons
 	if movement_pad:
@@ -5433,20 +5526,35 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif more_mode:
-		# More menu - contains Companions, Eggs, Leaders, etc.
-		var party_action = {"label": "Party", "action_type": "local", "action_data": "party_menu", "enabled": true} if in_party else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
-		current_actions = [
-			{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
-			{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
-			{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
-			{"label": "Jobs", "action_type": "local", "action_data": "jobs_menu", "enabled": true},
-			{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-			{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
-			{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
-			{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
-			party_action,
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
+		if pending_more_action in ["changelog", "bestiary", "viewing_materials"]:
+			# Subview within More menu — just show Back button
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "more_subview_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			# More menu - contains Companions, Eggs, Leaders, etc.
+			var party_action = {"label": "Party", "action_type": "local", "action_data": "party_menu", "enabled": true} if in_party else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
+				{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
+				{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
+				{"label": "Jobs", "action_type": "local", "action_data": "jobs_menu", "enabled": true},
+				{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
+				{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
+				{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
+				{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
+				party_action,
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif companions_mode:
 		# Companions viewing mode with pagination and release
 		var collected = character_data.get("collected_companions", [])
@@ -5720,7 +5828,7 @@ func update_action_bar():
 			if selected_shop_item >= 0 and selected_shop_item < shop_items.size():
 				var item = shop_items[selected_shop_item]
 				_buy_price = item.get("shop_price", 0)
-				can_afford = character_data.get("gold", 0) >= _buy_price
+				can_afford = character_data.get("valor", 0) >= _buy_price
 			current_actions = [
 				{"label": "Buy(%dg)" % _buy_price if _buy_price > 0 else "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
 				{"label": "Back", "action_type": "local", "action_data": "cancel_shop_inspect", "enabled": true},
@@ -5751,7 +5859,7 @@ func update_action_bar():
 			# Show equipment slots as action bar options
 			# Calculate if Upgrade All is affordable
 			var upgrade_all_cost = _calculate_upgrade_all_cost()
-			var can_upgrade_all = upgrade_all_cost > 0 and character_data.get("gold", 0) >= upgrade_all_cost
+			var can_upgrade_all = upgrade_all_cost > 0 and character_data.get("valor", 0) >= upgrade_all_cost
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
 				{"label": "Weapon", "action_type": "local", "action_data": "upgrade_weapon", "enabled": equipped.get("weapon") != null},
@@ -5793,20 +5901,6 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
-		elif pending_merchant_action == "sell_gems":
-			# Waiting for gem amount input
-			current_actions = [
-				{"label": "Cancel", "action_type": "local", "action_data": "merchant_cancel", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Sell All", "action_type": "local", "action_data": "sell_all_gems", "enabled": player_gems > 0},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
 		else:
 			current_actions = [
 				{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
@@ -5814,7 +5908,7 @@ func update_action_bar():
 				{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
 				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
 				{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
-				{"label": "SellGems", "action_type": "local", "action_data": "merchant_sell_gems", "enabled": player_gems > 0},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6143,6 +6237,73 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+	elif market_mode:
+		if pending_market_action == "":
+			# Main menu
+			current_actions = [
+				{"label": "Browse", "action_type": "local", "action_data": "market_browse", "enabled": true},
+				{"label": "List Item", "action_type": "local", "action_data": "market_list", "enabled": true},
+				{"label": "List Mats", "action_type": "local", "action_data": "market_list_material", "enabled": true},
+				{"label": "My Listings", "action_type": "local", "action_data": "market_my_listings", "enabled": true},
+				{"label": "Back", "action_type": "local", "action_data": "market_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "browse":
+			current_actions = [
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_prev_page", "enabled": market_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_next_page", "enabled": market_page < market_total_pages - 1},
+				{"label": "Filter", "action_type": "local", "action_data": "market_filter", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "market_browse_back", "enabled": true},
+				{"label": "1-9 Buy", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "list_select" or pending_market_action == "list_material":
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "market_list_back", "enabled": true},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "buy_confirm":
+			current_actions = [
+				{"label": "Confirm", "action_type": "local", "action_data": "market_buy_confirm", "enabled": true},
+				{"label": "Cancel", "action_type": "local", "action_data": "market_buy_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "my_listings":
+			current_actions = [
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Back", "action_type": "local", "action_data": "market_my_back", "enabled": true},
+				{"label": "1-9 Cancel", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6540,6 +6701,7 @@ func _on_shortcut_button_pressed(action: String):
 				return  # Already there
 			# Close other modes
 			more_mode = false
+			pending_more_action = ""
 			eggs_mode = false
 			job_mode = false
 			pending_inventory_action = ""
@@ -6548,6 +6710,7 @@ func _on_shortcut_button_pressed(action: String):
 			if eggs_mode:
 				return
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			job_mode = false
 			pending_inventory_action = ""
@@ -6559,18 +6722,19 @@ func _on_shortcut_button_pressed(action: String):
 			if job_mode:
 				return
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			eggs_mode = false
 			pending_inventory_action = ""
 			open_jobs_menu()
 		"pouch_shortcut":
-			if pending_inventory_action == "viewing_materials":
+			if pending_more_action == "viewing_materials":
 				return
-			more_mode = false
 			companions_mode = false
 			eggs_mode = false
 			job_mode = false
-			inventory_mode = true
+			more_mode = true
+			pending_more_action = "viewing_materials"
 			pending_inventory_action = "viewing_materials"
 			display_materials()
 			update_action_bar()
@@ -6578,6 +6742,7 @@ func _on_shortcut_button_pressed(action: String):
 			if build_mode:
 				return
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			eggs_mode = false
 			job_mode = false
@@ -6586,6 +6751,7 @@ func _on_shortcut_button_pressed(action: String):
 			update_action_bar()
 		"quests_shortcut":
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			eggs_mode = false
 			job_mode = false
@@ -6595,6 +6761,7 @@ func _on_shortcut_button_pressed(action: String):
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			eggs_mode = false
 			job_mode = false
@@ -6604,6 +6771,7 @@ func _on_shortcut_button_pressed(action: String):
 			update_action_bar()
 		"help_shortcut":
 			more_mode = false
+			pending_more_action = ""
 			companions_mode = false
 			eggs_mode = false
 			job_mode = false
@@ -7021,9 +7189,9 @@ func _create_gamble_popup():
 	gamble_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(gamble_popup_title)
 
-	# Gold display
+	# Valor display
 	gamble_popup_gold_label = Label.new()
-	gamble_popup_gold_label.text = "Your gold: 0"
+	gamble_popup_gold_label.text = "Your Valor: 0"
 	gamble_popup_gold_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
 	gamble_popup_gold_label.add_theme_font_size_override("font_size", 14)
 	gamble_popup_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -7095,19 +7263,19 @@ func _create_gamble_popup():
 	# Add to root
 	add_child(gamble_popup)
 
-func _show_gamble_popup(gold: int, min_bet: int, max_bet: int):
-	"""Show the gambling popup with current gold and bet range."""
+func _show_gamble_popup(valor: int, min_bet: int, max_bet: int):
+	"""Show the gambling popup with current valor and bet range."""
 	if not gamble_popup:
 		_create_gamble_popup()
 
 	gamble_min_bet = min_bet
 	gamble_max_bet = max_bet
 
-	gamble_popup_gold_label.text = "Your gold: %d" % gold
-	gamble_popup_range_label.text = "Bet range: %d - %d gold" % [min_bet, max_bet]
+	gamble_popup_gold_label.text = "Your Valor: %d" % valor
+	gamble_popup_range_label.text = "Bet range: %d - %d Valor" % [min_bet, max_bet]
 
 	# Pre-populate with last bet if valid, otherwise empty
-	if last_gamble_bet >= min_bet and last_gamble_bet <= max_bet and last_gamble_bet <= gold:
+	if last_gamble_bet >= min_bet and last_gamble_bet <= max_bet and last_gamble_bet <= valor:
 		gamble_popup_input.text = str(last_gamble_bet)
 		gamble_popup_input.placeholder_text = ""
 	else:
@@ -7151,10 +7319,10 @@ func _on_gamble_popup_confirm():
 		gamble_popup_input.placeholder_text = "Max bet: %d" % gamble_max_bet
 		return
 
-	var gold = character_data.get("gold", 0)
-	if amount > gold:
+	var valor = character_data.get("valor", 0)
+	if amount > valor:
 		gamble_popup_input.text = ""
-		gamble_popup_input.placeholder_text = "Not enough gold!"
+		gamble_popup_input.placeholder_text = "Not enough Valor!"
 		return
 
 	# Remember this bet for next time
@@ -7214,9 +7382,9 @@ func _create_upgrade_popup():
 	upgrade_popup_item_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(upgrade_popup_item_label)
 
-	# Gold display
+	# Valor display
 	upgrade_popup_gold_label = Label.new()
-	upgrade_popup_gold_label.text = "Your gold: 0"
+	upgrade_popup_gold_label.text = "Your Valor: 0"
 	upgrade_popup_gold_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
 	upgrade_popup_gold_label.add_theme_font_size_override("font_size", 14)
 	upgrade_popup_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -7224,7 +7392,7 @@ func _create_upgrade_popup():
 
 	# Cost display
 	upgrade_popup_cost_label = Label.new()
-	upgrade_popup_cost_label.text = "Cost for 1 upgrade: 100 gold"
+	upgrade_popup_cost_label.text = "Cost for 1 upgrade: 100 Valor"
 	upgrade_popup_cost_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	upgrade_popup_cost_label.add_theme_font_size_override("font_size", 13)
 	upgrade_popup_cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -7314,13 +7482,13 @@ func _calculate_upgrade_cost(current_level: int, count: int) -> int:
 		total += int(pow(current_level + i + 1, 2) * 10)
 	return total
 
-func _calculate_max_affordable_upgrades(current_level: int, gold: int) -> int:
-	"""Calculate maximum number of upgrades affordable with current gold."""
+func _calculate_max_affordable_upgrades(current_level: int, valor: int) -> int:
+	"""Calculate maximum number of upgrades affordable with current valor."""
 	var count = 0
 	var total_cost = 0
 	while count < 100:  # Max 100 upgrades at once
 		var next_cost = int(pow(current_level + count + 1, 2) * 10)
-		if total_cost + next_cost > gold:
+		if total_cost + next_cost > valor:
 			break
 		total_cost += next_cost
 		count += 1
@@ -7338,17 +7506,17 @@ func _show_upgrade_popup(slot: String):
 
 	upgrade_pending_slot = slot
 	var current_level = item.get("level", 1)
-	var gold = character_data.get("gold", 0)
+	var valor = character_data.get("valor", 0)
 	var item_name = item.get("name", "Unknown")
 	var rarity = item.get("rarity", "common")
 
 	# Calculate max affordable
-	upgrade_max_affordable = _calculate_max_affordable_upgrades(current_level, gold)
+	upgrade_max_affordable = _calculate_max_affordable_upgrades(current_level, valor)
 
 	# Update labels
 	upgrade_popup_item_label.text = "%s: %s (Lv%d)" % [slot.capitalize(), item_name, current_level]
-	upgrade_popup_gold_label.text = "Your gold: %d" % gold
-	upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d gold" % _calculate_upgrade_cost(current_level, 1)
+	upgrade_popup_gold_label.text = "Your Valor: %d" % valor
+	upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d Valor" % _calculate_upgrade_cost(current_level, 1)
 
 	# Update quick button states
 	upgrade_popup_btn_1.disabled = upgrade_max_affordable < 1
@@ -7365,7 +7533,7 @@ func _show_upgrade_popup(slot: String):
 
 	# Clear input
 	upgrade_popup_input.text = ""
-	upgrade_popup_input.placeholder_text = "1-%d upgrades" % upgrade_max_affordable if upgrade_max_affordable > 0 else "Not enough gold!"
+	upgrade_popup_input.placeholder_text = "1-%d upgrades" % upgrade_max_affordable if upgrade_max_affordable > 0 else "Not enough Valor!"
 
 	# Center the popup on screen
 	upgrade_popup.position = (get_viewport().get_visible_rect().size - upgrade_popup.size) / 2
@@ -7394,9 +7562,9 @@ func _on_upgrade_input_changed(new_text: String):
 	if new_text.is_valid_int():
 		var count = clampi(int(new_text), 1, 100)
 		var cost = _calculate_upgrade_cost(current_level, count)
-		upgrade_popup_cost_label.text = "Cost for %d upgrade%s: %d gold" % [count, "s" if count > 1 else "", cost]
+		upgrade_popup_cost_label.text = "Cost for %d upgrade%s: %d Valor" % [count, "s" if count > 1 else "", cost]
 	else:
-		upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d gold" % _calculate_upgrade_cost(current_level, 1)
+		upgrade_popup_cost_label.text = "Cost for 1 upgrade: %d Valor" % _calculate_upgrade_cost(current_level, 1)
 
 func _on_upgrade_popup_input_submitted(_text: String):
 	"""Handle Enter key in upgrade popup input field."""
@@ -8153,19 +8321,31 @@ func execute_local_action(action: String):
 			open_settings()
 		"leaderboard":
 			more_mode = false
+			pending_more_action = ""
 			show_leaderboard_panel()
 		"changelog":
+			pending_more_action = "changelog"
 			display_changelog()
+			update_action_bar()
 		"bestiary":
+			pending_more_action = "bestiary"
 			display_bestiary()
+			update_action_bar()
 		"pouch_menu":
+			pending_more_action = "viewing_materials"
 			pending_inventory_action = "viewing_materials"
 			display_materials()
+			update_action_bar()
+		"more_subview_back":
+			pending_more_action = ""
+			pending_inventory_action = ""
+			set_meta("hotkey_0_pressed", true)
+			display_more_menu()
 			update_action_bar()
 		"pouch_back":
 			pending_inventory_action = ""
 			more_mode = true
-			set_meta("hotkey_0_pressed", true)  # Prevent Space from also triggering more_close
+			set_meta("hotkey_0_pressed", true)
 			display_more_menu()
 			update_action_bar()
 		"more_menu":
@@ -8336,6 +8516,7 @@ func execute_local_action(action: String):
 		"eggs_menu":
 			# Open eggs page
 			more_mode = false
+			pending_more_action = ""
 			eggs_mode = true
 			eggs_page = 0
 			display_eggs()
@@ -8343,6 +8524,7 @@ func execute_local_action(action: String):
 		"eggs_close":
 			eggs_mode = false
 			more_mode = true
+			set_meta("hotkey_0_pressed", true)
 			display_more_menu()
 			update_action_bar()
 		"eggs_prev":
@@ -8637,12 +8819,8 @@ func execute_local_action(action: String):
 				send_to_server({"type": "merchant_gamble", "amount": last_gamble_bet})
 		"merchant_buy":
 			prompt_merchant_action("buy")
-		"merchant_sell_gems":
-			prompt_merchant_action("sell_gems")
 		"merchant_recharge":
 			send_to_server({"type": "merchant_recharge"})
-		"sell_all_gems":
-			sell_all_gems()
 		"sell_all_items":
 			sell_all_items()
 		"sell_prev_page":
@@ -8698,6 +8876,71 @@ func execute_local_action(action: String):
 			leave_trading_post()
 		"trading_post_cancel":
 			cancel_trading_post_action()
+		# Market actions
+		"market_browse":
+			pending_market_action = "browse"
+			market_page = 0
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0})
+		"market_list":
+			pending_market_action = "list_select"
+			# Pre-mark held keys
+			for i in range(9):
+				if is_item_select_key_pressed(i):
+					set_meta("marketlistkey_%d_pressed" % i, true)
+			display_market_list_select()
+			update_action_bar()
+		"market_list_material":
+			pending_market_action = "list_material"
+			# Pre-mark held keys
+			for i in range(9):
+				if is_item_select_key_pressed(i):
+					set_meta("marketmatkey_%d_pressed" % i, true)
+			display_market_list_materials()
+			update_action_bar()
+		"market_my_listings":
+			send_to_server({"type": "market_my_listings"})
+		"market_back":
+			exit_market()
+		"market_browse_back":
+			pending_market_action = ""
+			market_listings = []
+			display_market_main()
+			update_action_bar()
+		"market_list_back":
+			pending_market_action = ""
+			display_market_main()
+			update_action_bar()
+		"market_my_back":
+			pending_market_action = ""
+			market_listings = []
+			display_market_main()
+			update_action_bar()
+		"market_prev_page":
+			if market_page > 0:
+				market_page -= 1
+				send_to_server({"type": "market_browse", "category": market_category, "page": market_page})
+		"market_next_page":
+			if market_page < market_total_pages - 1:
+				market_page += 1
+				send_to_server({"type": "market_browse", "category": market_category, "page": market_page})
+		"market_filter":
+			# Cycle through categories
+			var categories = ["all", "equipment", "consumable", "material", "monster_part"]
+			var idx = categories.find(market_category)
+			market_category = categories[(idx + 1) % categories.size()]
+			market_page = 0
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0})
+		"market_buy_confirm":
+			if market_selected_listing.is_empty():
+				display_game("[color=#FF0000]No listing selected.[/color]")
+			else:
+				var listing_id = market_selected_listing.get("listing_id", "")
+				send_to_server({"type": "market_buy", "listing_id": listing_id})
+		"market_buy_cancel":
+			pending_market_action = "browse"
+			market_selected_listing = {}
+			display_market_browse()
+			update_action_bar()
 		# Quest actions
 		"show_quests":
 			send_to_server({"type": "get_quest_log"})
@@ -8764,6 +9007,7 @@ func execute_local_action(action: String):
 			title_ability_mode = false
 			title_target_mode = false
 			title_broadcast_mode = false
+			set_meta("hotkey_0_pressed", true)
 			update_action_bar()
 		"forge_crown":
 			# Forge the Unforged Crown at the Infernal Forge
@@ -8941,6 +9185,7 @@ func execute_local_action(action: String):
 		"party_menu_close":
 			party_menu_mode = false
 			more_mode = true
+			set_meta("hotkey_0_pressed", true)
 			display_more_menu()
 			update_action_bar()
 		"party_disband":
@@ -9124,8 +9369,12 @@ func execute_local_action(action: String):
 		"crafting_skill_construction":
 			request_craft_list("construction")
 		"crafting_skill_cancel":
-			crafting_skill = ""
-			open_crafting()
+			# If entered by bumping a station, skip skill selection — close crafting entirely
+			if crafting_entered_via_station:
+				close_crafting()
+			else:
+				crafting_skill = ""
+				open_crafting()
 		"crafting_recipe_cancel":
 			crafting_selected_recipe = -1
 			display_craft_recipe_list()
@@ -9622,18 +9871,18 @@ func prompt_merchant_action(action_type: String):
 			update_action_bar()
 
 		"gamble":
-			var gold = character_data.get("gold", 0)
+			var valor = character_data.get("valor", 0)
 			var level = character_data.get("level", 1)
 			var min_bet = maxi(10, level * 10)  # Level-based minimum
-			var max_bet = gold / 2
+			var max_bet = valor / 2
 
 			if max_bet < min_bet:
-				display_game("[color=#FF4444]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2))
+				display_game("[color=#FF4444]You need at least %d Valor to gamble at your level![/color]" % (min_bet * 2))
 				return
 
 			pending_merchant_action = "gamble"
 			# Show gambling popup instead of text input
-			_show_gamble_popup(gold, min_bet, max_bet)
+			_show_gamble_popup(valor, min_bet, max_bet)
 			update_action_bar()
 
 		"buy":
@@ -9644,33 +9893,6 @@ func prompt_merchant_action(action_type: String):
 			pending_merchant_action = "buy"
 			display_shop_inventory()
 			update_action_bar()
-
-		"sell_gems":
-			var gems = character_data.get("gems", 0)
-			if gems <= 0:
-				display_game("[color=#FF0000]You have no gems to sell.[/color]")
-				return
-			pending_merchant_action = "sell_gems"
-			display_game("[color=#FFD700]===== SELL GEMS =====[/color]")
-			display_game("[color=#00FFFF]Your gems: %d[/color]" % gems)
-			display_game("Value: [color=#FFD700]1000 gold per gem[/color]")
-			display_game("")
-			display_game("[color=#808080]Total value: %d gold[/color]" % (gems * 1000))
-			display_game("")
-			display_game("[color=#FFD700]Press [%s] to sell all, or type amount in chat:[/color]" % get_action_key_name(4))
-			input_field.placeholder_text = "Gems to sell..."
-			# Don't auto-focus input - user can press Q to sell all or click input to type amount
-			update_action_bar()
-
-func sell_all_gems():
-	"""Sell all gems to merchant"""
-	var gems = character_data.get("gems", 0)
-	if gems <= 0:
-		display_game("[color=#FF0000]You have no gems to sell.[/color]")
-		return
-	pending_merchant_action = ""
-	send_to_server({"type": "merchant_sell_gems", "amount": gems})
-	update_action_bar()
 
 func sell_all_items():
 	"""Sell all inventory items to merchant"""
@@ -9685,13 +9907,12 @@ func sell_all_items():
 func display_shop_inventory():
 	"""Display merchant's shop inventory for purchase"""
 	var shop_items = merchant_data.get("shop_items", [])
-	var gold = character_data.get("gold", 0)
-	var gems = character_data.get("gems", 0)
+	var valor = character_data.get("valor", 0)
 	var equipped = character_data.get("equipped", {})
 	var player_class = character_data.get("class", "")
 
 	display_game("[color=#FFD700]===== MERCHANT SHOP =====[/color]")
-	display_game("Your gold: %d  |  Your gems: %d" % [gold, gems])
+	display_game("Your Valor: %d" % valor)
 	display_game("")
 
 	if shop_items.is_empty():
@@ -9722,12 +9943,12 @@ func display_shop_inventory():
 			var themed_name = _get_themed_item_name(item, player_class)
 			var is_consumable = item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "gold_pouch" in item_type or "tome" in item_type
 			if is_consumable:
-				display_game("[%d] %s [color=%s]%s[/color]%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, compare_text, price])
+				display_game("[%d] %s [color=%s]%s[/color]%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, compare_text, price])
 			else:
-				display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d gold[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
+				display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
 
 	display_game("")
-	display_game("[color=#808080]%s to buy with gold[/color]" % get_selection_keys_text(shop_items.size()))
+	display_game("[color=#808080]%s to buy with Valor[/color]" % get_selection_keys_text(shop_items.size()))
 
 func handle_shop_inventory(message: Dictionary):
 	"""Handle shop inventory update from server"""
@@ -9748,8 +9969,8 @@ func handle_shop_inventory(message: Dictionary):
 		merchant_data["shop_items"] = shop_items
 
 	# Update currency display
-	character_data["gold"] = message.get("gold", character_data.get("gold", 0))
-	character_data["gems"] = message.get("gems", character_data.get("gems", 0))
+	character_data["valor"] = message.get("valor", character_data.get("valor", 0))
+	character_data["projected_rank"] = message.get("projected_rank", character_data.get("projected_rank", 0))
 	update_currency_display()
 
 	# Show updated shop if still in buy mode
@@ -9802,16 +10023,16 @@ func skip_equip_bought_item():
 func handle_gamble_result(message: Dictionary):
 	"""Handle gambling result from server"""
 	var success = message.get("success", false)
-	var gold = message.get("gold", 0)
+	var valor = message.get("valor", message.get("gold", 0))
 	var min_bet = message.get("min_bet", 10)
-	var max_bet = message.get("max_bet", gold / 2)
+	var max_bet = message.get("max_bet", valor / 2)
 
-	# Update local gold
-	character_data["gold"] = gold
+	# Update local valor
+	character_data["valor"] = valor
 	update_currency_display()
 
 	if not success:
-		# Failed to gamble (not enough gold, etc.)
+		# Failed to gamble (not enough valor, etc.)
 		display_game(message.get("message", "Gambling failed."))
 		pending_merchant_action = ""
 		show_merchant_menu()
@@ -9831,15 +10052,15 @@ func handle_gamble_result(message: Dictionary):
 		var drop_value = _get_rarity_value(rarity) + 1  # +1 for gambling jackpot
 		play_rare_drop_sound(drop_value)
 
-	# Show current gold and prompt for next bet
+	# Show current valor and prompt for next bet
 	display_game("")
-	display_game("[color=#FFD700]Your gold: %d[/color]" % gold)
+	display_game("[color=#FFD700]Your Valor: %d[/color]" % valor)
 
-	if max_bet >= min_bet and last_gamble_bet <= gold:
-		display_game("[color=#808080]Press [%s] to bet again (%d gold) or [%s] to stop.[/color]" % [get_action_key_name(0), last_gamble_bet, get_action_key_name(1)])
+	if max_bet >= min_bet and last_gamble_bet <= valor:
+		display_game("[color=#808080]Press [%s] to bet again (%d Valor) or [%s] to stop.[/color]" % [get_action_key_name(0), last_gamble_bet, get_action_key_name(1)])
 		pending_merchant_action = "gamble_again"
 	else:
-		display_game("[color=#FF4444]You don't have enough gold to continue gambling.[/color]")
+		display_game("[color=#FF4444]You don't have enough Valor to continue gambling.[/color]")
 		pending_merchant_action = ""
 		show_merchant_menu()
 
@@ -9945,10 +10166,10 @@ func confirm_shop_purchase():
 
 	var item = shop_items[selected_shop_item]
 	var price = item.get("shop_price", 0)
-	var gold = character_data.get("gold", 0)
+	var valor = character_data.get("valor", 0)
 
-	if gold < price:
-		display_game("[color=#FF0000]You don't have enough gold![/color]")
+	if valor < price:
+		display_game("[color=#FF0000]You don't have enough Valor![/color]")
 		return
 
 	send_to_server({"type": "merchant_buy", "index": selected_shop_item})
@@ -9971,7 +10192,7 @@ func display_shop_item_details(item: Dictionary):
 	var level = item.get("level", 1)
 	var price = item.get("shop_price", 0)
 	var gem_price = int(ceil(price / 1000.0))
-	var gold = character_data.get("gold", 0)
+	var valor = character_data.get("valor", 0)
 	var rarity_color = _get_item_rarity_color(rarity)
 	var player_class = character_data.get("class", "")
 	var themed_name = _get_themed_item_name(item, player_class)
@@ -9987,7 +10208,7 @@ func display_shop_item_details(item: Dictionary):
 		display_game("[color=#00FFFF]Tier:[/color] %d" % tier)
 	else:
 		display_game("[color=#00FFFF]Level:[/color] %d" % level)
-	display_game("[color=#00FFFF]Price:[/color] %d gold (%d gems)" % [price, gem_price])
+	display_game("[color=#00FFFF]Price:[/color] %d Valor (%d gems)" % [price, gem_price])
 	display_game("")
 
 	# Display computed stats for equipment, or effect description for consumables
@@ -10015,10 +10236,10 @@ func display_shop_item_details(item: Dictionary):
 	display_game("")
 
 	# Show affordability
-	if gold >= price:
+	if valor >= price:
 		display_game("[color=#00FF00]You can afford this item.[/color]")
 	else:
-		display_game("[color=#FF0000]You need %d more gold![/color]" % (price - gold))
+		display_game("[color=#FF0000]You need %d more Valor![/color]" % (price - valor))
 
 	display_game("")
 	display_game("[color=#808080][%s] Buy  |  [%s] Back to list[/color]" % [get_action_key_name(0), get_action_key_name(1)])
@@ -10561,14 +10782,14 @@ func _calculate_upgrade_all_cost() -> int:
 func send_upgrade_all():
 	"""Send upgrade request for all equipped items (+1 each)."""
 	var cost = _calculate_upgrade_all_cost()
-	var gold = character_data.get("gold", 0)
+	var valor = character_data.get("valor", 0)
 
 	if cost <= 0:
 		display_game("[color=#FF0000]No items equipped to upgrade.[/color]")
 		return
 
-	if gold < cost:
-		display_game("[color=#FF0000]Not enough gold! Need %d, have %d.[/color]" % [cost, gold])
+	if valor < cost:
+		display_game("[color=#FF0000]Not enough Valor! Need %d, have %d.[/color]" % [cost, valor])
 		return
 
 	pending_merchant_action = ""
@@ -10580,7 +10801,6 @@ func show_merchant_menu():
 	var services = merchant_data.get("services", [])
 	var name = merchant_data.get("name", "Merchant")
 	var shop_items = merchant_data.get("shop_items", [])
-	var gems = character_data.get("gems", 0)
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % name.to_upper())
 	display_game("\"What can I do for you, traveler?\"")
@@ -10594,8 +10814,6 @@ func show_merchant_menu():
 		display_game("[%s] Gamble" % get_action_key_name(3))
 	if shop_items.size() > 0:
 		display_game("[%s] Buy items (%d available)" % [get_action_key_name(4), shop_items.size()])
-	if gems > 0:
-		display_game("[%s] Sell gems (%d @ 1000g each)" % [get_action_key_name(5), gems])
 	display_game("[%s] Leave" % get_action_key_name(0))
 
 func display_merchant_sell_list():
@@ -10606,7 +10824,7 @@ func display_merchant_sell_list():
 	sell_page = clamp(sell_page, 0, total_pages - 1)
 
 	display_game("[color=#FFD700]===== SELL ITEMS =====[/color]")
-	display_game("Your gold: %d" % character_data.get("gold", 0))
+	display_game("Your Valor: %d" % character_data.get("valor", 0))
 	if total_pages > 1:
 		display_game("[color=#808080]Page %d/%d (%d items)[/color]" % [sell_page + 1, total_pages, total_items])
 	display_game("")
@@ -10623,7 +10841,7 @@ func display_merchant_sell_list():
 			var key_index = i - start_idx  # 0-8 for key lookup
 			var key_name = get_item_select_key_name(key_index)
 			var sell_lock_text = "[color=#FF4444][L][/color] " if item.get("locked", false) else ""
-			display_game("[%s] %s[color=%s]%s[/color] - [color=#FFD700]%d gold[/color]" % [
+			display_game("[%s] %s[color=%s]%s[/color] - [color=#FFD700]%d Valor[/color]" % [
 				key_name, sell_lock_text, rarity_color, item.get("name", "Unknown"), sell_price
 			])
 		if total_pages > 1:
@@ -10635,7 +10853,7 @@ func display_upgrade_options():
 	var equipped = character_data.get("equipped", {})
 
 	display_game("[color=#FFD700]===== UPGRADE EQUIPMENT =====[/color]")
-	display_game("Your gold: %d" % character_data.get("gold", 0))
+	display_game("Your Valor: %d" % character_data.get("valor", 0))
 	display_game("")
 
 	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
@@ -10647,21 +10865,21 @@ func display_upgrade_options():
 			display_game("%s: [color=%s]%s[/color] (Lv%d)" % [
 				slot.capitalize(), rarity_color, item.get("name", "Unknown"), current_level
 			])
-			display_game("  [color=#FFD700]Upgrade to Lv%d: %d gold[/color]" % [current_level + 1, upgrade_cost])
+			display_game("  [color=#FFD700]Upgrade to Lv%d: %d Valor[/color]" % [current_level + 1, upgrade_cost])
 		else:
 			display_game("%s: [color=#555555](empty)[/color]" % slot.capitalize())
 
 func display_merchant_inventory(message: Dictionary):
 	"""Display inventory sent by server for merchant interaction"""
 	var items = message.get("items", [])
-	var gold = message.get("gold", 0)
+	var valor = message.get("valor", 0)
 
 	display_game("[color=#FFD700]Your items for sale:[/color]")
-	display_game("Gold: %d" % gold)
+	display_game("Valor: %d" % valor)
 
 	for item in items:
 		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-		display_game("%d. [color=%s]%s[/color] - %d gold" % [
+		display_game("%d. [color=%s]%s[/color] - %d Valor" % [
 			item.get("index", 0) + 1,
 			rarity_color,
 			item.get("name", "Unknown"),
@@ -10681,18 +10899,6 @@ func process_merchant_input(input_text: String):
 				send_to_server({"type": "merchant_gamble", "amount": amount})
 			else:
 				display_game("[color=#FF0000]Invalid bet amount.[/color]")
-				show_merchant_menu()
-
-		"sell_gems":
-			if input_text.is_valid_int():
-				var amount = int(input_text)
-				if amount > 0:
-					send_to_server({"type": "merchant_sell_gems", "amount": amount})
-				else:
-					display_game("[color=#FF0000]Invalid gem amount.[/color]")
-					show_merchant_menu()
-			else:
-				display_game("[color=#FF0000]Invalid gem amount. Enter a number.[/color]")
 				show_merchant_menu()
 
 		"buy":
@@ -11193,45 +11399,31 @@ func open_salvage_menu():
 	var player_level = character_data.get("level", 1)
 	var threshold = max(1, player_level - 5)
 
-	# Count items that would be salvaged and estimate essence
+	# Count items that would be salvaged
 	var below_level_count = 0
 	var total_count = 0
-	var below_level_essence = 0
-	var total_essence = 0
 	for item in inventory:
 		var item_level = item.get("level", 1)
-		var rarity = item.get("rarity", "common")
 		var is_consumable = _is_consumable_type(item.get("type", ""))
 		var is_locked = item.get("locked", false) or item.get("is_title_item", false)
 
-		if is_locked:
+		if is_locked or is_consumable:
 			continue
 
-		# Calculate essence using salvage formula: base + (level * per_level)
-		var salvage_values = {"common": [5, 1], "uncommon": [10, 2], "rare": [25, 3], "epic": [50, 5], "legendary": [100, 8], "artifact": [200, 12]}
-		var sv = salvage_values.get(rarity, [5, 1])
-		var essence = sv[0] + (item_level * sv[1])
-
-		if not is_consumable:
-			total_count += 1
-			total_essence += essence
-			if item_level < threshold:
-				below_level_count += 1
-				below_level_essence += essence
-
-	var current_essence = character_data.get("salvage_essence", 0)
+		total_count += 1
+		if item_level < threshold:
+			below_level_count += 1
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== SALVAGE ITEMS =====[/color]")
 	display_game("")
-	display_game("Convert items to [color=#AA66FF]Salvage Essence[/color], used for crafting upgrades.")
-	display_game("Current Essence: [color=#AA66FF]%d[/color]" % current_essence)
+	display_game("Break down items into [color=#AA66FF]crafting materials[/color].")
+	display_game("Higher rarity items yield more and rarer materials.")
 	display_game("")
-	display_game("[color=#FFA500]All (<Lv%d)[/color] - %d items → ~%d essence" % [threshold, below_level_count, below_level_essence])
-	display_game("[color=#FF0000]All Items[/color] - %d items → ~%d essence (use with caution!)" % [total_count, total_essence])
+	display_game("[color=#FFA500]All (<Lv%d)[/color] - %d items" % [threshold, below_level_count])
+	display_game("[color=#FF0000]All Items[/color] - %d items (use with caution!)" % total_count)
 	display_game("")
 	display_game("[color=#808080]Note: Equipped items, locked items, and consumables not affected.[/color]")
-	display_game("[color=#808080]Bonus materials may drop based on item type![/color]")
 	display_game("")
 	display_game("[color=#808080]Use Discard to destroy a single item without salvaging.[/color]")
 	display_game("")
@@ -11674,11 +11866,8 @@ func display_materials():
 
 	game_output.clear()
 	var materials = character_data.get("crafting_materials", {})
-	var salvage_essence = character_data.get("salvage_essence", 0)
 
 	display_game("[color=#FFD700]===== MATERIAL POUCH =====[/color]")
-	display_game("")
-	display_game("[color=#AA66FF]Salvage Essence:[/color] %d" % salvage_essence)
 	display_game("")
 
 	if materials.is_empty():
@@ -11883,11 +12072,6 @@ func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String
 func _get_resources_summary() -> String:
 	"""Get a compact summary line of crafting resources for inventory header"""
 	var parts = []
-
-	# Salvage Essence
-	var essence = character_data.get("salvage_essence", 0)
-	if essence > 0:
-		parts.append("[color=#AA66FF]ESS:%d[/color]" % essence)
 
 	# Count materials by type
 	var materials = character_data.get("crafting_materials", {})
@@ -12934,7 +13118,7 @@ func _get_buff_display_name(buff_type: String) -> String:
 		"damage_reduction": return "Damage Reduction"
 		"damage_penalty": return "Damage Penalty"
 		"defense_penalty": return "Defense Penalty"
-		"gold_find": return "Gold Find"
+		"gold_find": return "Valor Find"
 		"xp_bonus": return "XP Bonus"
 		"war_cry": return "War Cry"
 		"berserk": return "Berserk"
@@ -13081,14 +13265,22 @@ func update_currency_display():
 	if not has_character:
 		return
 
-	var gold = int(character_data.get("gold", 0))
-	var gems = int(character_data.get("gems", 0))
+	var valor = int(character_data.get("valor", 0))
+	var projected_rank = int(character_data.get("projected_rank", 0))
 
 	if gold_label:
-		gold_label.text = format_number(gold)
+		gold_label.text = format_number(valor)
 
-	if gem_label:
-		gem_label.text = "%d" % gems
+	if rank_label:
+		if projected_rank == 1:
+			rank_label.text = "#1!"
+			rank_label.add_theme_color_override("font_color", Color(1, 0.84, 0, 1))  # Gold
+		elif projected_rank > 0:
+			rank_label.text = "#%d" % projected_rank
+			rank_label.add_theme_color_override("font_color", Color(0, 1, 1, 1))  # Cyan
+		else:
+			rank_label.text = "--"
+			rank_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))  # Gray
 
 func format_number(num: int) -> String:
 	"""Format large numbers with K/M suffixes for readability"""
@@ -13949,6 +14141,7 @@ func handle_server_message(message: Dictionary):
 		"character_update":
 			if message.has("character"):
 				character_data = message.character
+				account_valor = int(message.get("valor", character_data.get("valor", 0)))
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -14096,6 +14289,10 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh during storage mode
 				if storage_mode:
 					pass  # Keep storage display as-is
+				# Don't refresh during market mode
+				if market_mode:
+					if pending_market_action != "":
+						pass  # Don't refresh while viewing market
 				# Don't refresh crafting at player station
 				if crafting_mode:
 					pass  # Keep crafting display as-is
@@ -14565,6 +14762,23 @@ func handle_server_message(message: Dictionary):
 
 		"trading_post_message":
 			display_game(message.get("message", ""))
+
+		# Market messages
+		"market_browse_result":
+			_handle_market_browse_result(message)
+		"market_list_success":
+			_handle_market_list_success(message)
+		"market_buy_success":
+			_handle_market_buy_success(message)
+		"market_my_listings_result":
+			_handle_market_my_listings_result(message)
+		"market_error":
+			_handle_market_error(message)
+		"market_cancel_success":
+			_handle_market_cancel_success(message)
+		"market_start":
+			# Server sends this when player bumps $ tile at trading post
+			enter_market()
 
 		# Bump-to-interact messages (NPC post stations)
 		"station_interact":
@@ -15180,7 +15394,7 @@ func send_input():
 	# Commands
 	# Reduced command set - most actions available via action bar
 	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch",
-		"setlevel", "setgold", "setgems", "setessence", "setxp", "godmode", "setbp",
+		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool"]
@@ -15345,7 +15559,7 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		var condition_color = _get_condition_color(wear)
 		display_game("[color=#00FFFF]Condition:[/color] [color=%s]%s (%d%% wear)[/color]" % [condition_color, condition_text, wear])
 
-	display_game("[color=#00FFFF]Value:[/color] %d gold" % value)
+	display_game("[color=#00FFFF]Value:[/color] %d Valor" % value)
 	display_game("")
 
 	# For equipment, show computed stats; for consumables, show effect description
@@ -15570,7 +15784,7 @@ func _get_item_type_description(item_type: String) -> String:
 	elif "amulet" in item_type:
 		return "Amulet - Enchanted necklace"
 	elif "gold_pouch" in item_type:
-		return "Currency - Contains gold"
+		return "Currency - Contains Valor"
 	elif "gem" in item_type:
 		return "Treasure - Valuable gem"
 	else:
@@ -15679,9 +15893,9 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 				scaled_bonus = int(mana_bonus * 0.5)
 		return "+%d Max %s, +%d WIS, +%d WIT" % [scaled_bonus, resource_name, wis_bonus, wit_bonus]
 	elif "gold_pouch" in item_type:
-		return "Contains %d-%d gold" % [level * 10, level * 50]
+		return "Contains %d-%d Valor" % [level * 10, level * 50]
 	elif "gem" in item_type:
-		return "Worth 1000 gold when sold"
+		return "Worth 1000 Valor when sold"
 	# Scroll effects - buff scrolls (tier-based)
 	elif "scroll_forcefield" in item_type:
 		if is_tier_value:
@@ -15793,7 +16007,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif item_type == "mysterious_box":
 		return "Open to receive a random reward (could be anything!)"
 	elif item_type == "cursed_coin":
-		return "Flip the coin: 50% double gold, 50% lose half gold"
+		return "Flip the coin: 50% double Valor, 50% lose half Valor"
 	elif "boots" in item_type:
 		var spd_bonus = int(base_bonus * 0.5)
 		var dex_bonus = int(base_bonus * 0.3)
@@ -15907,7 +16121,7 @@ func process_command(text: String):
 					send_to_server({"type": "pilgrimage_donate", "amount": amount})
 				else:
 					display_game("[color=#FF0000]Usage: /donate <amount>[/color]")
-					display_game("[color=#808080]Donate gold to the Shrine of Wealth (Elder pilgrimage).[/color]")
+					display_game("[color=#808080]Donate Valor to the Shrine of Wealth (Elder pilgrimage).[/color]")
 			else:
 				display_game("You don't have a character yet")
 		"crucible":
@@ -15956,16 +16170,11 @@ func process_command(text: String):
 				display_game("[color=#FF0000]Usage: /setgold <amount>[/color]")
 			else:
 				send_to_server({"type": "gm_setgold", "amount": int(parts[1])})
-		"setgems":
+		"setmonstergems":
 			if parts.size() < 2:
-				display_game("[color=#FF0000]Usage: /setgems <amount>[/color]")
+				display_game("[color=#FF0000]Usage: /setmonstergems <amount>[/color]")
 			else:
-				send_to_server({"type": "gm_setgems", "amount": int(parts[1])})
-		"setessence":
-			if parts.size() < 2:
-				display_game("[color=#FF0000]Usage: /setessence <amount>[/color]")
-			else:
-				send_to_server({"type": "gm_setessence", "amount": int(parts[1])})
+				send_to_server({"type": "gm_setmonstergems", "amount": int(parts[1])})
 		"setxp":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /setxp <amount>[/color]")
@@ -16472,7 +16681,7 @@ func display_ui_scale_settings():
 	display_game("[color=#E6CC80]Chat Output[/color] (Chat text)")
 	display_game("[Q] Increase  [W] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_chat * 100))
 	display_game("")
-	display_game("[color=#E6CC80]Right Panel[/color] (Level, Gold, Gems, Map Controls, Online Players, Send)")
+	display_game("[color=#E6CC80]Right Panel[/color] (Level, Valor, Rank, Map Controls, Online Players, Send)")
 	display_game("[E] Increase  [R] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_right_panel * 100))
 	display_game("")
 	display_game("[9] Reset All to 100%")
@@ -17002,7 +17211,7 @@ func display_character_status():
 	# === PROGRESSION ===
 	text += "[color=#808080]── Progress ──[/color]\n"
 	text += "[color=#FF00FF]XP:[/color] %d / %d  ([color=#FFFF00]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
-	text += "[color=#FFD700]Gold:[/color] %d  |  [color=#00FFFF]Gems:[/color] %d  |  [color=#FF4444]Kills:[/color] %d\n" % [char.get("gold", 0), char.get("gems", 0), char.get("monsters_killed", 0)]
+	text += "[color=#FFD700]Valor:[/color] %d  |  [color=#FF4444]Kills:[/color] %d\n" % [char.get("valor", 0), char.get("monsters_killed", 0)]
 	text += "[color=#808080]Location:[/color] (%d, %d)\n" % [char.get("x", 0), char.get("y", 0)]
 	text += "\n"
 
@@ -17282,12 +17491,16 @@ func _format_tool_bonuses(bonuses: Dictionary) -> String:
 func open_more_menu():
 	"""Open the More menu"""
 	more_mode = true
+	set_meta("hotkey_0_pressed", true)
 	display_more_menu()
 	update_action_bar()
 
 func close_more_menu():
 	"""Close the More menu"""
 	more_mode = false
+	pending_more_action = ""
+	pending_inventory_action = ""
+	set_meta("hotkey_0_pressed", true)
 	game_output.clear()
 	update_action_bar()
 
@@ -17311,6 +17524,7 @@ func display_more_menu():
 func _open_party_menu():
 	"""Open the party management menu."""
 	more_mode = false
+	pending_more_action = ""
 	party_menu_mode = true
 	game_output.clear()
 	display_game("[color=#00BFFF]═══════ PARTY ═══════[/color]")
@@ -17534,7 +17748,7 @@ func _handle_party_combat_end(message: Dictionary):
 		var xp_earned = message.get("xp_earned", 0)
 		var gold_earned = message.get("gold_earned", 0)
 		if xp_earned > 0 or gold_earned > 0:
-			display_game("[color=#00BFFF]+%d XP, +%d gold[/color]" % [xp_earned, gold_earned])
+			display_game("[color=#00BFFF]+%d XP, +%d Valor[/color]" % [xp_earned, gold_earned])
 
 		# Check for gem gains
 		var total_gems = message.get("total_gems", 0)
@@ -17765,6 +17979,7 @@ func open_jobs_menu():
 	"""Open the Jobs menu"""
 	job_mode = true
 	more_mode = false
+	pending_more_action = ""
 	job_page = 0
 	pending_job_action = ""
 	send_to_server({"type": "job_info"})
@@ -17776,6 +17991,7 @@ func close_jobs_menu():
 	job_mode = false
 	pending_job_action = ""
 	more_mode = true
+	set_meta("hotkey_0_pressed", true)
 	display_more_menu()
 	update_action_bar()
 
@@ -17901,51 +18117,47 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.113 changes
+	display_game("[color=#00FF00]v0.9.113[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Stations & Economy[/color]")
+	display_game("  • Blacksmith is now a station (B) in posts — bump to repair/upgrade")
+	display_game("  • Healer is now a station (H) in posts — bump to heal")
+	display_game("  • Market ($) is now buildable — build your own trading post market")
+	display_game("  • All three stations available as Construction recipes")
+	display_game("  • Crafting never fails — worst result is Poor quality")
+	display_game("  • Gathering & crafting XP boosted to ~40%% of combat rate")
+	display_game("  • Alternative enchanting recipe: Distill Magic Dust (sap only)")
+	display_game("  • New alchemy recipe: Potion of Vigor (fills Lv5-15 gap)")
+	display_game("  • Fixed: hotzone markers no longer appear inside posts")
+	display_game("  • Fixed: quests only accessible via quest board, not anywhere in post")
+	display_game("  • Fixed: Space key double-trigger in More menu submenus")
+	display_game("  • MAP WIPE — NPC posts regenerated with new station layout")
+	display_game("")
+
+	# v0.9.112 changes
+	display_game("[color=#00FFFF]v0.9.112[/color]")
+	display_game("  • Phase 2D: Player Posts + Party Quest Sync")
+	display_game("  • Build named enclosures as safe zones for all visitors")
+	display_game("  • Compass hints point to nearby player posts")
+	display_game("  • Leader quest turn-in triggers auto-turn-in for party members")
+	display_game("")
+
 	# v0.9.111 changes
-	display_game("[color=#00FF00]v0.9.111[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Party System Fixes[/color]")
-	display_game("  • Fixed: party menu now displays correct action bar buttons")
-	display_game("  • Fixed: party combat HP bars show correct per-member values")
-	display_game("  • Fixed: monster initiative in party combat limited to 1 action")
-	display_game("  • Party combat now shows full ability bars (same as solo combat)")
-	display_game("  • Party member HP/resource bars shown during party combat")
+	display_game("[color=#00FFFF]v0.9.111[/color]")
+	display_game("  • Party system bug fixes: menu, HP bars, initiative balance")
 	display_game("")
 
 	# v0.9.110 changes
 	display_game("[color=#00FFFF]v0.9.110[/color]")
 	display_game("  [color=#FFD700]Player Party System[/color]")
-	display_game("  • NEW: Bump into another player to invite them to your party (max 4)")
-	display_game("  • Lead/Follow choice when forming — leader controls movement")
-	display_game("  • Snake formation: followers trail behind the leader")
-	display_game("  • Party combat: fight monsters together with turn-based actions")
-	display_game("  • Monster HP scales by party size, each member gets FULL loot")
-	display_game("  • Monster attacks spread across party with weighted targeting")
-	display_game("  • Party dungeons: enter, explore, and fight bosses together")
-	display_game("  • Each member gets guaranteed boss egg on dungeon completion")
-	display_game("  • Party menu: Disband, Leave, Appoint new leader (More→Party)")
-	display_game("  • Party members shown in green on the map")
+	display_game("  • Bump into another player to invite them to your party (max 4)")
+	display_game("  • Party combat, snake movement, party dungeons")
+	display_game("  • Each member gets full loot and guaranteed boss egg")
 	display_game("")
 
 	# v0.9.109 changes
 	display_game("[color=#00FFFF]v0.9.109[/color]")
 	display_game("  • Phase 2A-2C: Specialty jobs, exclusive crafting recipes, balance caps")
-	display_game("  • Blacksmith/Alchemist/Enchanter exclusive recipes (~40 new)")
-	display_game("  • Scribe skill with scrolls, maps, tomes, bestiary pages")
-	display_game("  • Upgrade cap +50, enchantment stat caps, 3 enchantment types per item")
-	display_game("")
-
-	# v0.9.108 changes
-	display_game("[color=#00FFFF]v0.9.108[/color]")
-	display_game("  • Phase 1: Jobs & Gathering — 5 jobs, 3-choice minigame, monster parts")
-	display_game("  • Gathering tools, Material Pouch, companion gathering bonuses")
-	display_game("  • Quick-access shortcut buttons: Companions, Eggs, Jobs, Pouch")
-	display_game("")
-
-	# v0.9.106 changes
-	display_game("[color=#00FFFF]v0.9.106[/color]")
-	display_game("  • Consumable overhaul: potions scale with level, scrolls replace buff potions")
-	display_game("  • Scrolls scale by tier with multi-battle durations")
-	display_game("  • Fixed: number keys double-triggering in item selection menus")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -18035,6 +18247,7 @@ func display_bestiary():
 func show_companion_info():
 	"""Display companions menu - eggs, hatched companions, and active companion"""
 	more_mode = false
+	pending_more_action = ""
 	companions_mode = true
 	companions_page = 0
 	display_companions()
@@ -18430,7 +18643,7 @@ func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: fl
 		parts.append("[color=#FFFF66]+%d%% Crit[/color]" % val)
 	if bonuses.get("gold_find", 0) > 0:
 		var val = int(bonuses.gold_find * multiplier)
-		parts.append("[color=#FFD700]+%d%% Gold[/color]" % val)
+		parts.append("[color=#FFD700]+%d%% Valor[/color]" % val)
 	if bonuses.get("flee_bonus", 0) > 0:
 		var val = int(bonuses.flee_bonus * multiplier)
 		parts.append("[color=#6666FF]+%d%% Flee[/color]" % val)
@@ -18474,7 +18687,7 @@ func _get_companion_bonus_parts(bonuses: Dictionary) -> Array:
 	if bonuses.get("crit_chance", 0) > 0:
 		parts.append("[color=#FFFF66]+%d%% Crit[/color]" % int(bonuses.crit_chance))
 	if bonuses.get("gold_find", 0) > 0:
-		parts.append("[color=#FFD700]+%d%% Gold[/color]" % int(bonuses.gold_find))
+		parts.append("[color=#FFD700]+%d%% Valor[/color]" % int(bonuses.gold_find))
 	if bonuses.get("flee_bonus", 0) > 0:
 		parts.append("[color=#6666FF]+%d%% Flee[/color]" % int(bonuses.flee_bonus))
 	if bonuses.get("lifesteal", 0) > 0:
@@ -18765,6 +18978,7 @@ func close_companions():
 	companions_mode = false
 	companions_page = 0
 	more_mode = true
+	set_meta("hotkey_0_pressed", true)
 	display_more_menu()
 	update_action_bar()
 
@@ -19182,7 +19396,7 @@ func _format_single_effect(effect: String, value: int, chance: int, damage: int,
 		"speed":
 			return "+%d Speed" % value
 		"gold_find":
-			return "+%d%% Gold" % value
+			return "+%d%% Valor" % value
 		"hp_bonus":
 			return "+%d%% HP" % value
 		"mana_bonus":
@@ -19378,7 +19592,7 @@ func _get_class_passive(class_type: String) -> Dictionary:
 		"Thief":
 			return {"name": "Backstab", "description": "+15% base crit, +50% crit damage (2x total). Affects: All attacks", "color": "#2F4F4F"}
 		"Ranger":
-			return {"name": "Hunter's Mark", "description": "+25% dmg vs beasts, +30% gold/XP. Affects: Beast attacks, all rewards", "color": "#228B22"}
+			return {"name": "Hunter's Mark", "description": "+25% dmg vs beasts, +30% Valor/XP. Affects: Beast attacks, all rewards", "color": "#228B22"}
 		"Ninja":
 			return {"name": "Shadow Step", "description": "+40% flee chance, no damage on failed flee. Affects: Flee action only", "color": "#191970"}
 		_:
@@ -19562,7 +19776,7 @@ func show_help():
 
 [color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
   Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.
-  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist. [color=#808080]Races: Halfling(gold+dodge), Gnome(costs)[/color]
+  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
 [color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2%% attack damage per point[/color] | Contributes to Stamina pool
@@ -19574,7 +19788,7 @@ func show_help():
 
 [b][color=#FFD700]══ RACES ══[/color][/b]
 [color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=+50%%poison res,+20%%magic res,+25%%mana | [color=#FFA366]Dwarf[/color]=25%%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
-[color=#D2691E]Halfling[/color]=+10%%dodge,+15%%gold | [color=#556B2F]Orc[/color]=+20%%dmg below 50%%HP | [color=#DDA0DD]Gnome[/color]=-15%%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
+[color=#D2691E]Halfling[/color]=+10%%dodge,+15%%Valor | [color=#556B2F]Orc[/color]=+20%%dmg below 50%%HP | [color=#DDA0DD]Gnome[/color]=-15%%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
@@ -19628,13 +19842,13 @@ func show_help():
 [color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
   [color=#FFFFFF]L1  Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10%% damage bonus for this fight
   [color=#FFFFFF]L10 Distract[/color]     [color=#808080](15 en)[/color]  - -50%% enemy accuracy for 1 attack
-  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal gold (50+lvl×2)×(1+WIT×5%%). 1-3 attempts per fight
+  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%%). 1-3 attempts per fight
   [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%%+WIT/3 (stacks, max 50%%)
   [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50%% crit chance, scales with √WIT
-  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%%+WIT/4 chance (max 80%%): 4× damage + bonus gold/gems. Fail = 15%% self-damage
+  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%%+WIT/4 chance (max 80%%): 4× damage + bonus Valor/gems. Fail = 15%% self-damage
   [color=#FFFFFF]L60 Vanish[/color]       [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next attack auto-crits at 1.5×
   [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35%% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%%+WIT/2 chance: instant win + 25%% bonus gold. Fail = 20%% self-damage
+  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%%+WIT/2 chance: instant win + 25%% bonus Valor. Fail = 20%% self-damage
   [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
@@ -19663,10 +19877,10 @@ func show_help():
   [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at wandering blacksmiths!)
   [color=#FFFFFF]XP Steal[/color] - Steals 1-3%% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5%% chance to steal equipped item
 [color=#00FF00]Loot Abilities:[/color]
-  [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× gold | [color=#FFFFFF]Gem Bearer[/color] - Always drops gems
+  [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× Valor | [color=#FFFFFF]Gem Bearer[/color] - Always drops Monster Gems
   [color=#FFFFFF]Weapon/Shield Master[/color] - 35%% guaranteed equipment drop
   [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35%% class-specific gear drop
-  [color=#FFFFFF]Wish Granter[/color] - 10%% chance for a wish (gems, gear, buff, stats, or equip upgrade!)
+  [color=#FFFFFF]Wish Granter[/color] - 10%% chance for a wish (materials, gear, buff, stats, or equip upgrade!)
 [color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
 [color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
 
@@ -19674,7 +19888,7 @@ func show_help():
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
 [color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
-[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x gold or lose half)
+[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x Valor or lose half)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
 [color=#FF4444]Lock:[/color] Inventory→Lock (key 3) protects items from Sell All, Salvage All, and accidental discard.
 [color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% = BROKEN (no stats). Repair via wandering blacksmiths only!
@@ -19698,7 +19912,7 @@ func show_help():
 [color=#FF6600]Soldier:[/color] After killing a monster, press Harvest to extract bonus parts (3-choice minigame).
 [color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! Reveal shows correct answer, Save cancels 1 mistake.
   Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
-[color=#AA66FF]Salvage:[/color] Inventory→Salvage destroys items for [color=#AA66FF]Essence[/color] (ESS). Value = rarity × level.
+[color=#AA66FF]Salvage:[/color] Inventory→Salvage breaks down items into [color=#AA66FF]crafting materials[/color]. Higher rarity = more materials.
 [color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
 [color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
 
@@ -19733,7 +19947,7 @@ func show_help():
   Each monster type has unique abilities in combat! Lv5=active, Lv15=threshold. Scales with level. Hatch eggs by walking!
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
-[color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 gold.
+[color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 Valor.
   Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
 [color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
   [%s] Quick (25%% HP) = level×22g | [%s] Full (100%% HP) = level×90g | [%s] Cure All (full+debuffs) = level×180g
@@ -19837,7 +20051,7 @@ func search_help(search_term: String):
 		{
 			"title": "RACES",
 			"keywords": ["race", "races", "human", "elf", "dwarf", "ogre", "halfling", "orc", "gnome", "undead", "poison", "lethal", "heal", "xp", "experience", "dodge", "gold", "damage", "cost", "curse", "death"],
-			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance, +20% magic resistance, +25% mana\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources\n[color=#D2691E]Halfling[/color] = +10% dodge chance, +15% gold from kills\n[color=#556B2F]Orc[/color] = +20% damage when below 50% HP\n[color=#DDA0DD]Gnome[/color] = -15% ability costs\n[color=#708090]Undead[/color] = Immune to death curses, poison heals instead of damages"
+			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance, +20% magic resistance, +25% mana\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources\n[color=#D2691E]Halfling[/color] = +10% dodge chance, +15% Valor from kills\n[color=#556B2F]Orc[/color] = +20% damage when below 50% HP\n[color=#DDA0DD]Gnome[/color] = -15% ability costs\n[color=#708090]Undead[/color] = Immune to death curses, poison heals instead of damages"
 		},
 		{
 			"title": "WARRIOR PATH",
@@ -19852,7 +20066,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRICKSTER PATH",
 			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
-			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% gold and XP\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal WITS×10 gold\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
 		},
 		{
 			"title": "COMBAT FORMULAS",
@@ -19872,12 +20086,12 @@ func search_help(search_term: String):
 		{
 			"title": "MONSTER ABILITIES",
 			"keywords": ["monster", "ability", "abilities", "multi", "strike", "berserker", "enrage", "life", "steal", "glass", "cannon", "poison", "blind", "curse", "disarm", "bleed", "drain", "armored", "ethereal", "regeneration", "reflect", "thorns", "death", "summoner", "corrosive", "sunder", "wish", "granter", "gem", "gold", "hoarder"],
-			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (gems scale with level), Gold Hoarder (3x gold)"
+			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (gems scale with level), Gold Hoarder (3x Valor)"
 		},
 		{
 			"title": "ITEMS & POTIONS",
 			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding", "time", "stop", "resurrect", "bane", "mystery", "box", "cursed", "coin", "tome", "stat", "skill"],
-			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double gold, 50% lose half gold\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
+			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double Valor, 50% lose half Valor\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
 		},
 		{
 			"title": "EQUIPMENT & GEAR",
@@ -19890,9 +20104,9 @@ func search_help(search_term: String):
 			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nHaven (0,10) - Spawn point, beginner quests\nCrossroads (0,0) - The High Seat, hotzone quests\nFrostgate (0,-100) - Boss hunts\n+55 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Gamble | Use [color=#AA66FF]Enchanting[/color] to upgrade gear!"
 		},
 		{
-			"title": "GEMS & PROGRESSION",
-			"keywords": ["gem", "gems", "gold", "currency", "level", "experience", "xp", "drop", "reward", "lucky", "find", "treasure", "legendary", "adventurer"],
-			"content": "[color=#00FFFF]Gems:[/color] Premium currency\n• Drop from monsters 5+ levels ABOVE you\n• Higher level difference = better drop chance\n• Sell to merchants: 1 gem = 1000 gold\n• Pay for upgrades (1 gem = 1000g value)\n\n[color=#FFD700]Lucky Finds:[/color] While moving/hunting you may find:\n• Hidden treasure (gold or items)\n• [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!"
+			"title": "LOOT & PROGRESSION",
+			"keywords": ["gem", "gems", "gold", "currency", "level", "experience", "xp", "drop", "reward", "lucky", "find", "treasure", "legendary", "adventurer", "rarity", "affix", "common", "uncommon", "rare", "epic", "artifact"],
+			"content": "[color=#00FFFF]Monster Gems:[/color] Crafting material\n• Drop from monsters 5+ levels ABOVE you\n• Higher level difference = better drop chance\n• Used in crafting recipes\n\n[color=#FFD700]D2-Style Loot:[/color] Equipment rarity rolled dynamically!\n• Common (0 affixes) → salvage fodder\n• Rare (2 affixes) → prefix AND suffix\n• Epic (3), Legendary (4), Artifact (5+ proc)\n• Higher tier monsters = better rarity odds\n\n[color=#FFD700]Lucky Finds:[/color] While moving/hunting you may find:\n• Hidden treasure (Valor or items)\n• [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!"
 		},
 		{
 			"title": "TITLES & ENDGAME",
@@ -20002,9 +20216,8 @@ func display_gm_help():
 	display_game("")
 	display_game("[color=#FFD700]Stats & Resources:[/color]")
 	display_game("  /setlevel <n>        Set character level")
-	display_game("  /setgold <n>         Set gold amount")
-	display_game("  /setgems <n>         Set gems amount")
-	display_game("  /setessence <n>      Set salvage essence")
+	display_game("  /setgold <n>         Set Valor amount")
+	display_game("  /setmonstergems <n>  Set Monster Gem material")
 	display_game("  /setxp <n>           Set XP directly")
 	display_game("  /setbp <n>           Set Baddie Points on house")
 	display_game("  /godmode             Toggle invincibility")
@@ -20019,7 +20232,7 @@ func display_gm_help():
 	display_game("  /spawnmonster [type] [level] Force combat encounter")
 	display_game("  /spawnwish                   Spawn weak Wish Granter (100%)")
 	display_game("  /givemats <id> <amount>      Give crafting materials")
-	display_game("  /giveall                     Starter kit (gold/gems/items/mats)")
+	display_game("  /giveall                     Starter kit (Valor/gems/items/mats)")
 	display_game("")
 	display_game("[color=#FFD700]World & Quests:[/color]")
 	display_game("  /tp <x> <y>          Teleport to coordinates")
@@ -20423,8 +20636,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
 	blacksmith_can_upgrade = message.get("can_upgrade", false)
 	var player_gold = message.get("player_gold", 0)
-	var player_gems = message.get("player_gems", 0)
-	var player_essence = message.get("player_essence", 0)
+	var player_materials = message.get("player_materials", {})
 
 	# Reset all hotkey pressed states to prevent accidental immediate triggers
 	for i in range(10):
@@ -20449,12 +20661,12 @@ func handle_blacksmith_encounter(message: Dictionary):
 			var item = blacksmith_items[i]
 			var wear_pct = item.get("wear", 0)
 			var cost = item.get("cost", 0)
-			var can_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < cost else ""
+			var can_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < cost else ""
 			var key_name = str(i + 1)  # Keys 1-9 for items
-			display_game("[%s] %s (%d%% worn) - %d gold%s" % [key_name, item.get("name", "Item"), wear_pct, cost, can_afford])
+			display_game("[%s] %s (%d%% worn) - %d Valor%s" % [key_name, item.get("name", "Item"), wear_pct, cost, can_afford])
 		display_game("")
-		var all_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < blacksmith_repair_all_cost else ""
-		display_game("[%s] Repair All - %d gold (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
+		var all_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < blacksmith_repair_all_cost else ""
+		display_game("[%s] Repair All - %d Valor (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
 
 	# Show upgrade option if available
 	if blacksmith_can_upgrade:
@@ -20465,7 +20677,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
+	display_game("[color=#808080]Valor: %d[/color]" % player_gold)
 
 	update_action_bar()
 
@@ -20483,8 +20695,6 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	blacksmith_upgrade_mode = "select_item"
 	blacksmith_upgrade_items = message.get("items", [])
 	var player_gold = message.get("player_gold", 0)
-	var player_gems = message.get("player_gems", 0)
-	var player_essence = message.get("player_essence", 0)
 
 	game_output.clear()
 	if blacksmith_trader_art != "":
@@ -20502,7 +20712,7 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
+	display_game("[color=#808080]Valor: %d[/color]" % player_gold)
 	update_action_bar()
 
 func handle_blacksmith_upgrade_select_affix(message: Dictionary):
@@ -20511,8 +20721,7 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 	blacksmith_upgrade_affixes = message.get("affixes", [])
 	blacksmith_upgrade_item_name = message.get("item_name", "Item")
 	var player_gold = message.get("player_gold", 0)
-	var player_gems = message.get("player_gems", 0)
-	var player_essence = message.get("player_essence", 0)
+	var player_materials = message.get("player_materials", {})
 
 	game_output.clear()
 	if blacksmith_trader_art != "":
@@ -20525,26 +20734,32 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 
 	for i in range(blacksmith_upgrade_affixes.size()):
 		var affix = blacksmith_upgrade_affixes[i]
-		var name = affix.get("affix_name", "Unknown")
+		var affix_name = affix.get("affix_name", "Unknown")
 		var current = affix.get("current_value", 0)
 		var upgrade = affix.get("upgrade_amount", 0)
 		var gold = affix.get("gold_cost", 0)
-		var gems = affix.get("gem_cost", 0)
-		var essence = affix.get("essence_cost", 0)
+		var mat_costs = affix.get("material_costs", {})
 
-		var afford_gold = player_gold >= gold
-		var afford_gems = player_gems >= gems
-		var afford_essence = player_essence >= essence
-		var can_afford = afford_gold and afford_gems and afford_essence
+		var can_afford = player_gold >= gold
+		# Check material affordability
+		for mat_id in mat_costs:
+			if player_materials.get(mat_id, 0) < mat_costs[mat_id]:
+				can_afford = false
+				break
 		var afford_color = "[color=#00FF00]" if can_afford else "[color=#FF0000]"
 
-		display_game("[%s] %s: %d → %d (+%d)" % [str(i + 1), name, current, current + upgrade, upgrade])
-		display_game("    %sCost: %d gold, %d gems, %d essence[/color]" % [afford_color, gold, gems, essence])
+		# Format material costs
+		var cost_parts = ["%d Valor" % gold]
+		for mat_id in mat_costs:
+			cost_parts.append("%d %s" % [mat_costs[mat_id], mat_id.replace("_", " ").capitalize()])
+
+		display_game("[%s] %s: %d → %d (+%d)" % [str(i + 1), affix_name, current, current + upgrade, upgrade])
+		display_game("    %sCost: %s[/color]" % [afford_color, ", ".join(cost_parts)])
 
 	display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Gold: %d | Gems: %d | Essence: %d[/color]" % [player_gold, player_gems, player_essence])
+	display_game("[color=#808080]Valor: %d[/color]" % player_gold)
 	update_action_bar()
 
 func handle_healer_encounter(message: Dictionary):
@@ -20578,22 +20793,22 @@ func handle_healer_encounter(message: Dictionary):
 	display_game("")
 
 	# Quick heal (25% HP)
-	var quick_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.quick else ""
-	display_game("[%s] Quick Heal (25%% HP) - %d gold%s" % [get_action_key_name(1), healer_costs.quick, quick_afford])
+	var quick_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.quick else ""
+	display_game("[%s] Quick Heal (25%% HP) - %d Valor%s" % [get_action_key_name(1), healer_costs.quick, quick_afford])
 
 	# Full heal (100% HP)
-	var full_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.full else ""
-	display_game("[%s] Full Heal (100%% HP) - %d gold%s" % [get_action_key_name(2), healer_costs.full, full_afford])
+	var full_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.full else ""
+	display_game("[%s] Full Heal (100%% HP) - %d Valor%s" % [get_action_key_name(2), healer_costs.full, full_afford])
 
 	# Cure All (100% HP + remove debuffs)
-	var cure_afford = " [color=#FF0000](Not enough gold)[/color]" if player_gold < healer_costs.cure_all else ""
+	var cure_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.cure_all else ""
 	var debuff_note = " [color=#808080](no active debuffs)[/color]" if not has_debuffs else ""
-	display_game("[%s] Full + Cure All - %d gold%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note])
+	display_game("[%s] Full + Cure All - %d Valor%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note])
 
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Your gold: %d[/color]" % player_gold)
+	display_game("[color=#808080]Your Valor: %d[/color]" % player_gold)
 
 	update_action_bar()
 
@@ -21139,6 +21354,7 @@ func open_crafting():
 		display_game("[color=#FF4444]You need a crafting station or Trading Post![/color]")
 		return
 
+	crafting_entered_via_station = false  # Opened via menu, not station bump
 	# Pre-mark held hotkeys to prevent double-trigger into crafting skill selection
 	for i in range(10):
 		var action_key = "action_%d" % i
@@ -21484,46 +21700,45 @@ func handle_craft_result(message: Dictionary):
 		display_game("[color=#808080]Challenge Score: %d/3[/color]" % score)
 		display_game("")
 
-	if success:
-		# Success animation
-		display_game("[color=#00FF00]===== CRAFTING SUCCESS! =====[/color]")
-		display_game("")
-		display_game("[color=%s]✦ %s %s ✦[/color]" % [quality_color, quality_name, recipe_name])
-		display_game("")
-		display_game(result_message)
+	# Crafting always succeeds (at least Poor quality)
+	display_game("[color=#00FF00]===== CRAFTING SUCCESS! =====[/color]")
+	display_game("")
+	display_game("[color=%s]✦ %s %s ✦[/color]" % [quality_color, quality_name, recipe_name])
+	display_game("")
+	display_game(result_message)
 
-		# Show item stats if equipment was crafted
-		var crafted_item = message.get("crafted_item", {})
-		if not crafted_item.is_empty():
-			var item_type = crafted_item.get("type", "")
-			if item_type == "weapon" or item_type.ends_with("_crafted"):
-				var stats_line = "  "
-				if crafted_item.has("attack"):
-					stats_line += "[color=#FF4444]ATK %d[/color]  " % crafted_item.attack
-				if crafted_item.has("defense"):
-					stats_line += "[color=#4444FF]DEF %d[/color]  " % crafted_item.defense
-				if crafted_item.has("hp"):
-					stats_line += "[color=#00FF00]HP %d[/color]  " % crafted_item.hp
-				if crafted_item.has("speed"):
-					stats_line += "[color=#FFFF00]SPD %d[/color]  " % crafted_item.speed
-				if crafted_item.has("mana"):
-					stats_line += "[color=#00BFFF]MP %d[/color]  " % crafted_item.mana
-				display_game(stats_line)
-				display_game("[color=#808080]  Lv%d — Added to inventory[/color]" % crafted_item.get("level", 1))
-			elif item_type == "structure":
-				display_game("[color=#808080]  Added to inventory — use in Build mode[/color]")
-			elif item_type == "tool":
-				display_game("[color=#808080]  Added to inventory — equip from Inventory > Tools[/color]")
-			else:
-				display_game("[color=#808080]  Added to inventory[/color]")
-	else:
-		# Failure
-		display_game("[color=#FF4444]===== CRAFTING FAILED =====[/color]")
-		display_game("")
-		display_game(result_message)
+	# Show item stats if equipment was crafted
+	var crafted_item = message.get("crafted_item", {})
+	if not crafted_item.is_empty():
+		var item_type = crafted_item.get("type", "")
+		if item_type == "weapon" or item_type.ends_with("_crafted"):
+			var stats_line = "  "
+			if crafted_item.has("attack"):
+				stats_line += "[color=#FF4444]ATK %d[/color]  " % crafted_item.attack
+			if crafted_item.has("defense"):
+				stats_line += "[color=#4444FF]DEF %d[/color]  " % crafted_item.defense
+			if crafted_item.has("hp"):
+				stats_line += "[color=#00FF00]HP %d[/color]  " % crafted_item.hp
+			if crafted_item.has("speed"):
+				stats_line += "[color=#FFFF00]SPD %d[/color]  " % crafted_item.speed
+			if crafted_item.has("mana"):
+				stats_line += "[color=#00BFFF]MP %d[/color]  " % crafted_item.mana
+			display_game(stats_line)
+			display_game("[color=#808080]  Lv%d — Added to inventory[/color]" % crafted_item.get("level", 1))
+		elif item_type == "structure":
+			display_game("[color=#808080]  Added to inventory — use in Build mode[/color]")
+		elif item_type == "tool":
+			display_game("[color=#808080]  Added to inventory — equip from Inventory > Tools[/color]")
+		else:
+			display_game("[color=#808080]  Added to inventory[/color]")
 
 	display_game("")
 	display_game("[color=#00BFFF]+%d %s XP[/color]" % [xp_gained, skill_name.capitalize()])
+
+	# Show character XP from crafting
+	var char_xp_gained = message.get("char_xp_gained", 0)
+	if char_xp_gained > 0:
+		display_game("[color=#FF00FF]+%d XP[/color]" % char_xp_gained)
 
 	if leveled_up:
 		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
@@ -21569,6 +21784,7 @@ func handle_craft_result(message: Dictionary):
 func close_crafting():
 	"""Close crafting menu and return to previous state"""
 	crafting_mode = false
+	crafting_entered_via_station = false
 	crafting_challenge_mode = false
 	craft_challenge_data = {}
 	craft_challenge_round = 0
@@ -21657,7 +21873,6 @@ func handle_dungeon_state(message: Dictionary):
 
 func handle_dungeon_treasure(message: Dictionary):
 	"""Handle opening a treasure chest in dungeon"""
-	var gold = message.get("gold", 0)
 	var materials = message.get("materials", [])
 	var egg = message.get("egg", {})
 
@@ -21667,8 +21882,6 @@ func handle_dungeon_treasure(message: Dictionary):
 	display_game("[color=#FFD700]  $$$[/color]")
 	display_game("[color=#8B4513] [===][/color]")
 	display_game("")
-
-	display_game("[color=#FFD700]Found %d gold![/color]" % gold)
 
 	if not materials.is_empty():
 		display_game("")
@@ -21743,7 +21956,6 @@ func _display_dungeon_complete(message: Dictionary):
 	var floors_cleared = rewards.get("floors_cleared", 0)
 	var total_floors = rewards.get("total_floors", 0)
 	var xp_reward = rewards.get("xp", 0)
-	var gold_reward = rewards.get("gold", 0)
 	var full_clear = rewards.get("full_clear", false)
 	var boss_egg_obtained = message.get("boss_egg_obtained", false)
 	var boss_egg_name = message.get("boss_egg_name", "")
@@ -21764,7 +21976,6 @@ func _display_dungeon_complete(message: Dictionary):
 	display_game("")
 	display_game("[color=#FFD700]Rewards:[/color]")
 	display_game("  + %d XP" % xp_reward)
-	display_game("  + %d Gold" % gold_reward)
 	if boss_egg_obtained:
 		display_game("[color=#FF69B4]  ★ %s obtained! ★[/color]" % boss_egg_name)
 	elif boss_egg_lost:
@@ -21884,7 +22095,7 @@ func handle_egg_hatched(message: Dictionary):
 		if bonuses.has("crit_chance") and bonuses.crit_chance > 0:
 			bonus_lines.append("  +%d%% Crit Chance" % bonuses.crit_chance)
 		if bonuses.has("gold_find") and bonuses.gold_find > 0:
-			bonus_lines.append("  +%d%% Gold Find" % bonuses.gold_find)
+			bonus_lines.append("  +%d%% Valor Find" % bonuses.gold_find)
 		if bonuses.has("speed") and bonuses.speed > 0:
 			bonus_lines.append("  +%d Speed" % bonuses.speed)
 		if bonuses.has("lifesteal") and bonuses.lifesteal > 0:
@@ -22177,7 +22388,7 @@ func _display_trading_post_ui():
 	display_game("")
 	display_game("[color=#808080]Walk into tiles to interact:[/color]")
 	display_game("  [color=#FF8800]F[/color] Forge  [color=#00CC66]A[/color] Apothecary  [color=#AA44FF]E[/color] Enchant Table  [color=#87CEEB]S[/color] Scribe  [color=#AA7744]W[/color] Workbench")
-	display_game("  [color=#FFD700]$[/color] Market (Shop)  [color=#FFAA44]I[/color] Inn (Heal)  [color=#C4A882]Q[/color] Quest Board")
+	display_game("  [color=#FFD700]$[/color] Open Market  [color=#FFAA44]I[/color] Inn (Heal)  [color=#C4A882]Q[/color] Quest Board")
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
@@ -22193,6 +22404,11 @@ func handle_trading_post_end(message: Dictionary):
 	pending_trading_post_action = ""
 	available_quests = []
 	quests_to_turn_in = []
+	# Clear market mode if active
+	market_mode = false
+	pending_market_action = ""
+	market_listings = []
+	market_selected_listing = {}
 
 	# Clear the trading post UI from game output
 	game_output.clear()
@@ -22212,6 +22428,7 @@ func handle_station_interact(message: Dictionary):
 		return
 	# Enter crafting mode and request recipes for this specific skill
 	crafting_mode = true
+	crafting_entered_via_station = true
 	crafting_selected_recipe = -1
 	crafting_challenge_mode = false
 	craft_challenge_data = {}
@@ -22253,6 +22470,283 @@ func cancel_trading_post_action():
 	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
 	display_game("")
 	display_game("[color=#808080]Walk in any direction to leave.[/color]")
+
+# ===== OPEN MARKET FUNCTIONS =====
+
+func enter_market():
+	"""Enter market mode from trading post $ tile interaction."""
+	market_mode = true
+	pending_market_action = ""
+	market_listings = []
+	market_page = 0
+	market_total_pages = 0
+	market_category = "all"
+	market_selected_listing = {}
+	# Pre-mark held keys to prevent double-trigger
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key):
+			set_meta("hotkey_%d_pressed" % i, true)
+	display_market_main()
+	update_action_bar()
+
+func exit_market():
+	"""Exit market mode and return to trading post."""
+	market_mode = false
+	pending_market_action = ""
+	market_listings = []
+	market_selected_listing = {}
+	_display_trading_post_ui()
+	update_action_bar()
+
+func display_market_main():
+	"""Display the market main menu."""
+	game_output.clear()
+	var tp_name = trading_post_data.get("name", "Trading Post")
+	display_game("[color=#FFD700]===== Open Market - %s =====[/color]" % tp_name)
+	display_game("")
+	display_game("[color=#87CEEB]Welcome to the Open Market![/color]")
+	display_game("[color=#808080]List items to earn Valor. Buy from other players.[/color]")
+	display_game("")
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+	display_game("[color=#FFD700]%s[/color] Browse Listings" % get_action_key_name(0))
+	display_game("[color=#FFD700]%s[/color] List Item from Inventory" % get_action_key_name(1))
+	display_game("[color=#FFD700]%s[/color] List Materials" % get_action_key_name(2))
+	display_game("[color=#FFD700]%s[/color] My Listings" % get_action_key_name(3))
+	display_game("[color=#FFD700]%s[/color] Back to Trading Post" % get_action_key_name(4))
+
+func display_market_browse():
+	"""Display market browse listings."""
+	game_output.clear()
+	var tp_name = trading_post_data.get("name", "Trading Post")
+	display_game("[color=#FFD700]===== Market - %s (Page %d/%d) =====[/color]" % [tp_name, market_page + 1, max(1, market_total_pages)])
+	display_game("[color=#808080]Category: %s[/color]" % market_category.capitalize())
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+
+	if market_listings.is_empty():
+		display_game("[color=#808080]No listings found at this market.[/color]")
+	else:
+		for idx in range(market_listings.size()):
+			var listing = market_listings[idx]
+			var item = listing.get("item", {})
+			var item_name = item.get("name", "Unknown")
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			var price = int(listing.get("markup_price", listing.get("base_valor", 0)))
+			var seller = listing.get("seller_name", "Unknown")
+			var quantity = int(listing.get("quantity", 1))
+
+			var qty_text = ""
+			if quantity > 1:
+				qty_text = " x%d" % quantity
+
+			var level_text = ""
+			if item.has("level"):
+				level_text = " Lv%d" % int(item.level)
+
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to buy, %s/%s to page, %s to filter, %s to go back[/color]" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2), get_action_key_name(4)])
+
+func display_market_list_select():
+	"""Display inventory for selecting an item to list on the market."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+	display_game("[color=#87CEEB]Select an item to list:[/color]")
+	display_game("")
+
+	var inventory = character_data.get("inventory", [])
+	if inventory.is_empty():
+		display_game("[color=#808080]Your inventory is empty.[/color]")
+	else:
+		var displayed = 0
+		for idx in range(inventory.size()):
+			if displayed >= 9:
+				break
+			var item = inventory[idx]
+			if item.is_empty():
+				continue
+			# Skip equipped items
+			if item.get("equipped", false):
+				continue
+			var item_name = item.get("name", "Unknown")
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			var level_text = ""
+			if item.has("level"):
+				level_text = " Lv%d" % int(item.level)
+
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s" % [displayed + 1, rarity_color, item_name, level_text])
+			displayed += 1
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to select, %s to go back[/color]" % get_action_key_name(4))
+
+func display_market_list_materials():
+	"""Display materials for selecting to list on the market."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== List Materials on Market =====[/color]")
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+	display_game("[color=#87CEEB]Select a material to list:[/color]")
+	display_game("")
+
+	var materials = character_data.get("materials", {})
+	if materials.is_empty():
+		display_game("[color=#808080]You have no materials.[/color]")
+	else:
+		var idx = 0
+		for mat_name in materials:
+			if idx >= 9:
+				break
+			var qty = int(materials[mat_name])
+			if qty <= 0:
+				continue
+			display_game("  [color=#FFFF00]%d)[/color] %s x%d" % [idx + 1, mat_name, qty])
+			idx += 1
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to select, %s to go back[/color]" % get_action_key_name(4))
+
+func display_market_buy_confirm():
+	"""Display buy confirmation for selected listing."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== Confirm Purchase =====[/color]")
+	display_game("")
+
+	var item = market_selected_listing.get("item", {})
+	var item_name = item.get("name", "Unknown")
+	var rarity = item.get("rarity", "common")
+	var rarity_color = _get_rarity_color(rarity)
+	var price = int(market_selected_listing.get("markup_price", market_selected_listing.get("base_valor", 0)))
+	var seller = market_selected_listing.get("seller_name", "Unknown")
+	var quantity = int(market_selected_listing.get("quantity", 1))
+
+	var qty_text = ""
+	if quantity > 1:
+		qty_text = " x%d" % quantity
+
+	display_game("  Item: [color=%s]%s[/color]%s" % [rarity_color, item_name, qty_text])
+	display_game("  Seller: %s" % seller)
+	display_game("  Price: [color=#00FF00]%s Valor[/color]" % format_number(price))
+	display_game("")
+	display_game("  Your Valor: [color=#00FF00]%s[/color]" % format_number(account_valor))
+
+	if account_valor >= price:
+		display_game("")
+		display_game("[color=#00FF00]You can afford this purchase.[/color]")
+	else:
+		display_game("")
+		display_game("[color=#FF0000]Not enough Valor! Need %s more.[/color]" % format_number(price - account_valor))
+
+	display_game("")
+	display_game("[color=#FFD700]%s[/color] Confirm  |  [color=#FFD700]%s[/color] Cancel" % [get_action_key_name(0), get_action_key_name(1)])
+
+func display_market_my_listings():
+	"""Display the player's own market listings."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== My Market Listings =====[/color]")
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+
+	if market_listings.is_empty():
+		display_game("[color=#808080]You have no active listings.[/color]")
+	else:
+		for idx in range(market_listings.size()):
+			var listing = market_listings[idx]
+			var item = listing.get("item", {})
+			var item_name = item.get("name", "Unknown")
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			var base_valor = int(listing.get("base_valor", 0))
+			var quantity = int(listing.get("quantity", 1))
+
+			var qty_text = ""
+			if quantity > 1:
+				qty_text = " x%d" % quantity
+
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V (base)[/color]" % [idx + 1, rarity_color, item_name, qty_text, format_number(base_valor)])
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to cancel a listing (buy back at base price), %s to go back[/color]" % get_action_key_name(4))
+
+# --- Market message handlers ---
+
+func _handle_market_browse_result(message: Dictionary):
+	"""Handle market browse result from server."""
+	market_listings = message.get("listings", [])
+	market_page = int(message.get("page", 0))
+	market_total_pages = int(message.get("total_pages", 1))
+	market_category = message.get("category", "all")
+	pending_market_action = "browse"
+	display_market_browse()
+	update_action_bar()
+
+func _handle_market_list_success(message: Dictionary):
+	"""Handle successful market listing."""
+	var valor_earned = int(message.get("valor_earned", 0))
+	var total_valor = int(message.get("total_valor", 0))
+	account_valor = total_valor
+	pending_market_action = ""
+	game_output.clear()
+	display_game("[color=#00FF00]Item listed successfully![/color]")
+	display_game("[color=#00FF00]Earned: %s Valor[/color]" % format_number(valor_earned))
+	display_game("[color=#00FF00]Total Valor: %s[/color]" % format_number(total_valor))
+	display_game("")
+	display_game("[color=#808080]Returning to market menu...[/color]")
+	# Brief delay then show main menu
+	await get_tree().create_timer(1.5).timeout
+	if market_mode:
+		display_market_main()
+		update_action_bar()
+
+func _handle_market_buy_success(message: Dictionary):
+	"""Handle successful market purchase."""
+	var item_name = message.get("item_name", "item")
+	var price = int(message.get("price", 0))
+	var new_valor = int(message.get("new_valor", 0))
+	account_valor = new_valor
+	pending_market_action = ""
+	market_selected_listing = {}
+	game_output.clear()
+	display_game("[color=#00FF00]Purchase successful![/color]")
+	display_game("[color=#00FF00]Bought: %s[/color]" % item_name)
+	display_game("[color=#00FF00]Spent: %s Valor[/color]" % format_number(price))
+	display_game("[color=#00FF00]Remaining: %s Valor[/color]" % format_number(new_valor))
+	display_game("")
+	display_game("[color=#808080]Returning to market menu...[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if market_mode:
+		display_market_main()
+		update_action_bar()
+
+func _handle_market_my_listings_result(message: Dictionary):
+	"""Handle my listings result from server."""
+	market_listings = message.get("listings", [])
+	pending_market_action = "my_listings"
+	display_market_my_listings()
+	update_action_bar()
+
+func _handle_market_error(message: Dictionary):
+	"""Handle market error from server."""
+	var error_msg = message.get("message", "An error occurred.")
+	display_game("[color=#FF0000]Market Error: %s[/color]" % error_msg)
+
+func _handle_market_cancel_success(message: Dictionary):
+	"""Handle successful listing cancellation."""
+	var item_name = message.get("item_name", "item")
+	var refund = int(message.get("refund", 0))
+	display_game("[color=#00FF00]Listing cancelled! %s returned to inventory.[/color]" % item_name)
+	if refund > 0:
+		display_game("[color=#FF8800]Buy-back cost: %s Valor[/color]" % format_number(refund))
+	# Refresh my listings
+	send_to_server({"type": "market_my_listings"})
 
 # ===== QUEST FUNCTIONS =====
 
@@ -22370,10 +22864,8 @@ func _format_rewards(rewards: Dictionary) -> String:
 	var parts = []
 	if rewards.get("xp", 0) > 0:
 		parts.append("[color=#AADDFF]%d XP[/color]" % rewards.xp)
-	if rewards.get("gold", 0) > 0:
-		parts.append("[color=#FFD700]%d Gold[/color]" % rewards.gold)
 	if rewards.get("gems", 0) > 0:
-		parts.append("[color=#00FFFF]%d Gems[/color]" % rewards.gems)
+		parts.append("[color=#00FFFF]%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
 	return ", ".join(parts) if parts.size() > 0 else "None"
 
 func _get_quest_tier_tag(quest: Dictionary) -> String:
@@ -22413,9 +22905,9 @@ func _format_wish_description(wish: Dictionary) -> String:
 			return "[color=%s]%s[/color] - %s" % [rarity_color, wish.get("label", "%s Lv%d Gear" % [rarity.capitalize(), level]), wish.get("description", "Receive powerful equipment")]
 		"buff":
 			return "[color=%s]%s[/color] - %s" % [wish.get("color", "#FFD700"), wish.get("label", "Combat Buff"), wish.get("description", "Powerful combat enhancement")]
-		"gold":
+		"essence":
 			var amount = wish.get("amount", 0)
-			return "[color=#FFD700]%d Gold[/color] - A pile of treasure" % amount
+			return "[color=#8B5CF6]%d crafting materials[/color] - A cache of supplies" % amount
 		"stats":
 			var stat_name = wish.get("stat", "strength").capitalize()
 			var amount = wish.get("amount", 1)
@@ -22744,9 +23236,8 @@ func handle_quest_turned_in(message: Dictionary):
 		display_game("[color=#FF6600]Hotzone Bonus: x%.1f[/color]" % multiplier)
 
 	display_game("[color=#FF00FF]+%d XP[/color]" % rewards.get("xp", 0))
-	display_game("[color=#FFD700]+%d Gold[/color]" % rewards.get("gold", 0))
 	if rewards.get("gems", 0) > 0:
-		display_game("[color=#00FFFF]+%d Gems[/color]" % rewards.gems)
+		display_game("[color=#00FFFF]+%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
 
 	if leveled_up:
 		display_game("")
@@ -22773,6 +23264,10 @@ func handle_quest_turned_in(message: Dictionary):
 
 	# Go back to Trading Post quest menu if still there
 	if at_trading_post:
+		# Decrement the turn-in count so the trading post display stays accurate
+		var old_count = trading_post_data.get("quests_to_turn_in", 0)
+		if old_count > 0:
+			trading_post_data["quests_to_turn_in"] = old_count - 1
 		display_game("")
 		display_game("[%s] Continue" % get_action_key_name(0))
 		quest_view_mode = false
@@ -23120,12 +23615,20 @@ func handle_watch_character(message: Dictionary):
 		player_level_label.text = "[Watching] Lv %d" % level
 
 	# Update currency display
-	var gold = char_data.get("gold", 0)
-	var gems = char_data.get("gems", 0)
+	var valor = char_data.get("valor", 0)
+	var projected_rank = char_data.get("projected_rank", 0)
 	if gold_label:
-		gold_label.text = str(gold)
-	if gem_label:
-		gem_label.text = str(gems)
+		gold_label.text = str(valor)
+	if rank_label:
+		if projected_rank == 1:
+			rank_label.text = "#1!"
+			rank_label.add_theme_color_override("font_color", Color(1, 0.84, 0, 1))  # Gold
+		elif projected_rank > 0:
+			rank_label.text = "#%d" % projected_rank
+			rank_label.add_theme_color_override("font_color", Color(0, 1, 1, 1))  # Cyan
+		else:
+			rank_label.text = "--"
+			rank_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))  # Gray
 
 # ===== BUG REPORTING =====
 
@@ -23221,7 +23724,7 @@ func generate_bug_report(description: String = ""):
 		report_lines.append("Mana: %d / %d" % [character_data.get("current_mana", 0), character_data.get("total_max_mana", character_data.get("max_mana", 0))])
 		report_lines.append("Stamina: %d / %d" % [character_data.get("current_stamina", 0), character_data.get("max_stamina", 0)])
 		report_lines.append("Energy: %d / %d" % [character_data.get("current_energy", 0), character_data.get("max_energy", 0)])
-		report_lines.append("Gold: %d | Gems: %d" % [character_data.get("gold", 0), character_data.get("gems", 0)])
+		report_lines.append("Valor: %d" % character_data.get("valor", 0))
 
 		# Active buffs
 		var active_buffs = character_data.get("active_buffs", [])
@@ -23318,7 +23821,7 @@ func display_title_menu():
 		# Show realm treasury for Jarl/High King
 		if current_title in ["jarl", "high_king"]:
 			var treasury = title_menu_data.get("realm_treasury", 0)
-			display_game("Realm Treasury: [color=#FFD700]%d gold[/color]" % treasury)
+			display_game("Realm Treasury: [color=#FFD700]%d Valor[/color]" % treasury)
 
 			# Always show abuse points status for title holders
 			var abuse_points = title_menu_data.get("abuse_points", 0)
@@ -23357,9 +23860,9 @@ func display_title_menu():
 			if ability.get("gold_cost", 0) > 0:
 				cost_parts.append(_format_gold(ability.gold_cost))
 			if ability.get("gold_cost_percent", 0) > 0:
-				cost_parts.append("%d%% gold" % ability.gold_cost_percent)
+				cost_parts.append("%d%% Valor" % ability.gold_cost_percent)
 			if ability.get("gem_cost", 0) > 0:
-				cost_parts.append("%d gems" % ability.gem_cost)
+				cost_parts.append("%d Monster Gems" % ability.gem_cost)
 			if ability.get("cooldown", 0) > 0:
 				var hours = ability.cooldown / 3600
 				if hours >= 1:
@@ -23373,7 +23876,7 @@ func display_title_menu():
 				if resource == "mana_percent":
 					cost_parts.append("%d%% Mana" % ability.cost)
 				elif resource == "gems":
-					cost_parts.append("%d Gems" % ability.cost)
+					cost_parts.append("%d Monster Gems" % ability.cost)
 				elif resource != "none":
 					cost_parts.append("%d %s" % [ability.cost, resource.capitalize()])
 
@@ -23393,13 +23896,13 @@ func display_title_menu():
 	display_game("[color=#808080]Press [%s] to exit[/color]" % get_action_key_name(0))
 
 func _format_gold(amount: int) -> String:
-	"""Format gold amount with K/M suffixes"""
+	"""Format valor amount with K/M suffixes"""
 	if amount >= 1000000:
-		return "%.1fM gold" % (amount / 1000000.0)
+		return "%.1fM Valor" % (amount / 1000000.0)
 	elif amount >= 1000:
-		return "%.1fK gold" % (amount / 1000.0)
+		return "%.1fK Valor" % (amount / 1000.0)
 	else:
-		return "%d gold" % amount
+		return "%d Valor" % amount
 
 func handle_title_key_input(key: int) -> bool:
 	"""Handle key input in title mode. Returns true if handled."""
@@ -23625,9 +24128,9 @@ func _display_corpse_info():
 		display_game("  [color=#AAAAAA]Egg:[/color] [color=#FFD700]%s Egg[/color]" % egg_type)
 		has_contents = true
 
-	var gems = contents.get("gems", 0)
-	if gems > 0:
-		display_game("  [color=#AAAAAA]Gems:[/color] [color=#00BFFF]%d[/color]" % gems)
+	var monster_gems = contents.get("monster_gems", contents.get("gems", 0))
+	if monster_gems > 0:
+		display_game("  [color=#AAAAAA]Monster Gems:[/color] [color=#00BFFF]%d[/color]" % monster_gems)
 		has_contents = true
 
 	if not has_contents:
@@ -23670,9 +24173,9 @@ func _display_corpse_loot_confirmation():
 		var egg_type = egg.get("monster_type", "Unknown")
 		display_game("  [color=#FFD700]%s Egg[/color]" % egg_type)
 
-	var gems = contents.get("gems", 0)
-	if gems > 0:
-		display_game("  [color=#00BFFF]%d Gems[/color]" % gems)
+	var monster_gems = contents.get("monster_gems", contents.get("gems", 0))
+	if monster_gems > 0:
+		display_game("  [color=#00BFFF]%d Monster Gem%s[/color]" % [monster_gems, "s" if monster_gems > 1 else ""])
 
 	display_game("")
 	display_game("[color=#808080]Press [%s] to confirm, [%s] to cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])
@@ -23685,7 +24188,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "🐾"},
 	"egg_slots": {"name": "Incubation Chamber", "desc": "+1 egg incubation slot", "icon": "🥚"},
 	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
-	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting gold", "icon": "💰"},
+	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting Valor", "icon": "💰"},
 	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
 	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
 	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
@@ -23956,7 +24459,7 @@ func display_house_main():
 	if upgrades.get("flee_chance", 0) > 0:
 		bonus_parts.append("+%d%% Flee" % (upgrades.flee_chance * 2))
 	if upgrades.get("starting_gold", 0) > 0:
-		bonus_parts.append("+%d Gold" % (upgrades.starting_gold * 50))
+		bonus_parts.append("+%d Valor" % (upgrades.starting_gold * 50))
 	if upgrades.get("xp_bonus", 0) > 0:
 		bonus_parts.append("+%d%% XP" % upgrades.xp_bonus)
 	if upgrades.get("gathering_bonus", 0) > 0:
@@ -24441,7 +24944,7 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
 			return "+%d%%" % effect_value
-		"starting_gold": return "+%d gold" % effect_value
+		"starting_gold": return "+%d Valor" % effect_value
 		"str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus":
 			return "+%d" % effect_value
 		_: return "+%d" % effect_value

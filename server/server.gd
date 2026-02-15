@@ -1025,12 +1025,10 @@ func handle_message(peer_id: int, message: Dictionary):
 		# GM/Admin command handlers
 		"gm_setlevel":
 			handle_gm_setlevel(peer_id, message)
-		"gm_setgold":
-			handle_gm_setgold(peer_id, message)
-		"gm_setgems":
-			handle_gm_setgems(peer_id, message)
-		"gm_setessence":
-			handle_gm_setessence(peer_id, message)
+		"gm_setvalor":
+			handle_gm_setvalor(peer_id, message)
+		"gm_setmonstergems":
+			handle_gm_setmonstergems(peer_id, message)
 		"gm_setxp":
 			handle_gm_setxp(peer_id, message)
 		"gm_godmode":
@@ -1071,6 +1069,19 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_setjob(peer_id, message)
 		"gm_givetool":
 			handle_gm_givetool(peer_id, message)
+		# Open Market handlers
+		"market_browse":
+			handle_market_browse(peer_id, message)
+		"market_list_item":
+			handle_market_list_item(peer_id, message)
+		"market_list_material":
+			handle_market_list_material(peer_id, message)
+		"market_buy":
+			handle_market_buy(peer_id, message)
+		"market_my_listings":
+			handle_market_my_listings(peer_id, message)
+		"market_cancel":
+			handle_market_cancel(peer_id, message)
 		_:
 			pass
 
@@ -1216,6 +1227,17 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		character.current_mana = total_mana
 		log_message("HP/Mana repair: %s healed to full (%d HP, %d mana)" % [char_name, total_hp, total_mana])
 		persistence.save_character(account_id, character)
+
+	# === GOLD → VALOR MIGRATION ===
+	# One-time conversion of legacy character gold to account Valor (50 gold = 1 Valor)
+	if character.gold > 0:
+		var converted_valor = maxi(1, character.gold / 50)
+		persistence.add_valor(account_id, converted_valor)
+		log_message("Gold migration: %s converted %d gold → %d Valor" % [char_name, character.gold, converted_valor])
+		character.gold = 0
+		persistence.save_character(account_id, character)
+		# Queue migration message to send after character is fully loaded
+		call_deferred("_send_gold_migration_message", peer_id, converted_valor)
 
 	# Checkout companion from house kennel if requested (and character doesn't already have one)
 	var checkout_slot = message.get("checkout_companion_slot", -1)
@@ -1421,9 +1443,9 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# Apply house bonuses from Sanctuary upgrades
 	var house_bonuses = _get_house_bonuses_for_character(account_id)
 	character.house_bonuses = house_bonuses
-	# Apply starting gold bonus
-	if house_bonuses.get("starting_gold", 0) > 0:
-		character.gold += house_bonuses.starting_gold
+	# Apply starting valor bonus
+	if house_bonuses.get("starting_valor", 0) > 0:
+		persistence.add_valor(account_id, house_bonuses.starting_valor)
 
 	# Checkout companion from house kennel if requested
 	var checkout_slot = message.get("checkout_companion_slot", -1)
@@ -1606,7 +1628,7 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"in_combat": combat_mgr.is_in_combat(pid),
 				"cloak_active": is_cloaked,
 				"gold": char.gold,
-				"gems": char.gems,
+				"valor": persistence.get_valor(peers[pid].account_id) if peers.has(pid) else 0,
 				"title": char.title,
 				"deaths": char.deaths,
 				"quests_completed": char.completed_quests.size() if char.completed_quests else 0,
@@ -1902,6 +1924,12 @@ func handle_move(peer_id: int, message: Dictionary):
 				elif bump_type == "inn":
 					_handle_inn_interact(peer_id, character)
 					return
+				elif bump_type == "blacksmith":
+					_handle_blacksmith_station(peer_id, character)
+					return
+				elif bump_type == "healer":
+					_handle_healer_station(peer_id, character)
+					return
 				elif bump_type == "throne":
 					send_to_peer(peer_id, {"type": "throne_interact"})
 					return
@@ -2061,10 +2089,10 @@ func handle_move(peer_id: int, message: Dictionary):
 		if mc % 20 == 0:
 			_check_nearby_player_posts(peer_id, new_pos.x, new_pos.y)
 
-	# Check for tax collector encounter (before trading post - can happen anywhere)
-	if check_tax_collector_encounter(peer_id):
-		send_character_update(peer_id)  # Update gold display
-		return  # Don't stack encounters with tax collector
+	# Tax collector removed (gold system removed)
+	#if check_tax_collector_encounter(peer_id):
+	#	send_character_update(peer_id)
+	#	return
 
 	# Check for wandering blacksmith encounter (3% when player has damaged gear)
 	if check_blacksmith_encounter(peer_id):
@@ -2917,9 +2945,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						# Check if this item should be immediately auto-salvaged on obtain
 						if _should_auto_salvage_item(peer_id, item):
 							var salvage_result = drop_tables.get_salvage_value(item)
-							var essence = salvage_result.essence
-							characters[peer_id].add_salvage_essence(essence)
-							drop_messages.append("[color=#AA66FF]⚡ Auto-salvaged %s (+%d ESS)[/color]" % [item.get("name", "item"), essence])
+							var sal_mats = salvage_result.get("materials", {})
+							for _mat_id in sal_mats:
+								characters[peer_id].add_crafting_material(_mat_id, sal_mats[_mat_id])
+							var sal_parts = []
+							for _mat_id2 in sal_mats:
+								sal_parts.append("%dx %s" % [sal_mats[_mat_id2], CraftingDatabaseScript.get_material_name(_mat_id2)])
+							drop_messages.append("[color=#AA66FF]Auto-salvaged %s → %s[/color]" % [item.get("name", "item"), ", ".join(sal_parts) if not sal_parts.is_empty() else "nothing"])
 						else:
 							characters[peer_id].add_item(item)
 							# Format with rarity symbol for visual distinction
@@ -3588,7 +3620,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		},
 		"equipped": character.equipped.duplicate(true),
 		"gold": character.gold,
-		"gems": character.gems,
+		"valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 		"monsters_killed": character.monsters_killed,
 		"active_companion": character.get_active_companion(),
 		"collected_companions": character.get_collected_companions(),
@@ -3675,7 +3707,9 @@ func send_location_update(peer_id: int):
 	var is_at_forest = false
 	var current_wood_tier = 1
 
-	if not gathering_node.is_empty():
+	# Suppress gathering nodes inside player enclosures (posts are safe zones, no resource harvesting)
+	var loc_in_enclosure = enclosure_tile_lookup.has(Vector2i(character.x, character.y))
+	if not gathering_node.is_empty() and not loc_in_enclosure:
 		var node_type = gathering_node.get("type", "")
 		var node_job = gathering_node.get("job", "")
 		match node_type:
@@ -3691,6 +3725,8 @@ func send_location_update(peer_id: int):
 			_:
 				# New node types (herb, flower, mushroom, bush, reed) — handled by gathering_node dict
 				pass
+	if loc_in_enclosure:
+		gathering_node = {}  # Clear gathering node data for enclosure tiles
 
 	# Check if player is at a dungeon entrance
 	var dungeon_entrance = _get_dungeon_at_location(character.x, character.y, peer_id)
@@ -3904,6 +3940,14 @@ func send_to_peer(peer_id: int, data: Dictionary):
 	var bytes = json_str.to_utf8_buffer()
 
 	connection.put_data(bytes)
+
+func _send_gold_migration_message(peer_id: int, converted_valor: int):
+	if not peers.has(peer_id):
+		return
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "\n[color=#FFD700]══════════════════════════════════════[/color]\n[color=#FFD700]  CURRENCY CHANGE: Gold → Valor[/color]\n[color=#FFD700]══════════════════════════════════════[/color]\n\nGold has been replaced by [color=#FFD700]Valor[/color], an account-level\ncurrency that persists through death.\n\nYour old gold has been converted:\n  [color=#FFD700]→ %d Valor[/color] added to your account\n\nEarn Valor by listing items on the [color=#00FF00]Open Market[/color]\nat any Trading Post (walk to the $ tile).\n" % converted_valor
+	})
 
 func broadcast_chat(message: String, sender: String = "System"):
 	"""Send a chat message to all connected players with characters"""
@@ -4267,29 +4311,33 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	var item_data = null
 
 	if items.is_empty():
-		# Fallback to gold
-		var gold_amount = max(10, area_level * (randi() % 10 + 5))
-		character.gold += gold_amount
-		# Pad gold text to fit in box (34 chars inner width, plus 2 spaces = 36 total)
-		var gold_text = "Found %d gold!" % gold_amount
-		if gold_text.length() < 34:
-			gold_text = gold_text + " ".repeat(34 - gold_text.length())
+		# Fallback to tier-appropriate materials
+		var tier = clampi(int(area_level / 15), 0, 8)
+		var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+		var ore_id = ore_tiers[mini(tier, ore_tiers.size() - 1)]
+		var qty = maxi(1, randi_range(2, 4) + tier)
+		character.add_crafting_material(ore_id, qty)
+		var mat_name = CraftingDatabaseScript.get_material_name(ore_id)
+		var find_text = "Found %dx %s!" % [qty, mat_name]
+		if find_text.length() < 34:
+			find_text = find_text + " ".repeat(34 - find_text.length())
 		msg = "[color=#FFD700]+====================================+[/color]\n"
 		msg += "[color=#FFD700]|[/color]          [color=#00FF00]* LUCKY FIND! *[/color]           [color=#FFD700]|[/color]\n"
 		msg += "[color=#FFD700]+====================================+[/color]\n"
 		msg += "[color=#FFD700]|[/color] You discover a hidden cache!       [color=#FFD700]|[/color]\n"
-		msg += "[color=#FFD700]|[/color] [color=#FFD700]%s[/color] [color=#FFD700]|[/color]\n" % gold_text
+		msg += "[color=#FFD700]|[/color] [color=#8B5CF6]%s[/color] [color=#FFD700]|[/color]\n" % find_text
 		msg += "[color=#FFD700]+====================================+[/color]"
 	else:
 		# Add items to inventory (with auto-salvage check)
 		var item = items[0]
 		var was_auto_salvaged = false
-		var auto_salvage_essence = 0
+		var auto_salvage_mats: Dictionary = {}
 		if character.can_add_item():
 			if _should_auto_salvage_item(peer_id, item):
 				var salvage_result = drop_tables.get_salvage_value(item)
-				auto_salvage_essence = salvage_result.essence
-				character.add_salvage_essence(auto_salvage_essence)
+				auto_salvage_mats = salvage_result.get("materials", {})
+				for mat_id in auto_salvage_mats:
+					character.add_crafting_material(mat_id, auto_salvage_mats[mat_id])
 				was_auto_salvaged = true
 			else:
 				character.add_item(item)
@@ -4307,7 +4355,12 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		msg += "[color=#FFD700]|[/color] [color=%s]%s[/color] [color=#FFD700]|[/color]\n" % [rarity_color, padded_name]
 		msg += "[color=#FFD700]+====================================+[/color]"
 		if was_auto_salvaged:
-			msg += "\n[color=#AA66FF]⚡ Auto-salvaged for %d essence![/color]" % auto_salvage_essence
+			var sal_parts = []
+			for mat_id in auto_salvage_mats:
+				var mat_name = CraftingDatabaseScript.get_material_name(mat_id)
+				sal_parts.append("%dx %s" % [auto_salvage_mats[mat_id], mat_name])
+			if not sal_parts.is_empty():
+				msg += "\n[color=#AA66FF]Auto-salvaged: %s[/color]" % ", ".join(sal_parts)
 		elif not character.can_add_item() and items.size() > 0:
 			msg += "\n[color=#FF4444]INVENTORY FULL! Item was lost![/color]"
 
@@ -4410,99 +4463,9 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
-func check_tax_collector_encounter(peer_id: int) -> bool:
-	"""Check for and handle a tax collector encounter. Returns true if encounter occurred."""
-	if not characters.has(peer_id):
-		return false
-
-	var character = characters[peer_id]
-
-	# No tax collector in safe zones (NPC posts, trading posts)
-	if world_system.is_safe_zone(character.x, character.y):
-		return false
-
-	# Check cooldown first - decrement and skip if still on cooldown
-	if tax_collector_cooldowns.has(peer_id):
-		tax_collector_cooldowns[peer_id] -= 1
-		if tax_collector_cooldowns[peer_id] > 0:
-			return false
-		else:
-			tax_collector_cooldowns.erase(peer_id)
-
-	# Check if player is tax-immune (Jarl or High King)
-	if TitlesScript.is_title_tax_immune(character.title):
-		# Small chance to show immunity flavor
-		if randf() < 0.02:  # 2% chance to show message
-			var title_name = TitlesScript.get_title_name(character.title)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#808080]A Tax Collector approaches... then recognizes your sigil.[/color]"
-			})
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#C0C0C0]'My %s! Forgive my intrusion. The realm prospers under your rule.'[/color]" % title_name
-			})
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FF00]He bows and leaves without collecting.[/color]"
-			})
-		return false
-
-	# Check encounter rate (halved from 5% to 2.5% and only on movement now)
-	if randf() >= TitlesScript.TAX_COLLECTOR.encounter_rate * 0.5:
-		return false
-
-	# Check minimum gold
-	if character.gold < TitlesScript.TAX_COLLECTOR.minimum_gold:
-		return false
-
-	# Select a random encounter type
-	var encounters = TitlesScript.TAX_ENCOUNTERS
-	var encounter = encounters[randi() % encounters.size()]
-	var encounter_type = encounter.get("type", "quick")
-
-	# Calculate tax amount
-	var tax_rate = TitlesScript.TAX_COLLECTOR.tax_rate
-	if encounter.has("tax_modifier"):
-		tax_rate *= encounter.tax_modifier
-	var tax_amount = max(TitlesScript.TAX_COLLECTOR.minimum_tax, int(character.gold * tax_rate))
-
-	# Deduct gold and add to treasury (persisted)
-	character.gold -= tax_amount
-	persistence.add_to_realm_treasury(tax_amount)
-
-	# Build encounter message
-	var full_message = ""
-	var messages = encounter.get("messages", [])
-	for i in range(messages.size()):
-		var msg = messages[i]
-		# Replace %d placeholder with tax amount
-		if "%d" in msg:
-			msg = msg % tax_amount
-		full_message += "[color=#DAA520]%s[/color]\n" % msg
-
-	# Handle special bonuses (like the negotiator's gold find buff)
-	if encounter.has("bonus"):
-		var bonus = encounter.bonus
-		if bonus.type == "gold_find":
-			character.add_persistent_buff("gold_find", bonus.value, bonus.battles)
-			full_message += "[color=#00FF00]+%d%% gold find for %d battles![/color]\n" % [bonus.value, bonus.battles]
-
-	# Send as NPC encounter that requires acknowledgment
-	send_to_peer(peer_id, {
-		"type": "npc_encounter",
-		"npc_type": "tax_collector",
-		"message": full_message.strip_edges(),
-		"character": character.to_dict()
-	})
-
-	log_message("Tax collector: %s paid %d gold (treasury now %d)" % [character.name, tax_amount, persistence.get_realm_treasury()])
-	save_character(peer_id)
-
-	# Set cooldown to prevent back-to-back encounters
-	tax_collector_cooldowns[peer_id] = TAX_COLLECTOR_COOLDOWN_STEPS
-
-	return true
+# Tax collector removed — gold system no longer exists
+func check_tax_collector_encounter(_peer_id: int) -> bool:
+	return false
 
 # Track pending blacksmith/healer encounters (peer_id -> repair costs/heal costs)
 var pending_blacksmith_encounters: Dictionary = {}
@@ -4510,12 +4473,86 @@ var pending_blacksmith_upgrades: Dictionary = {}  # Track upgrade state
 var pending_healer_encounters: Dictionary = {}
 var healer_decline_state: Dictionary = {}  # peer_id -> {hp_ratio, had_debuffs} - tracks state when declined
 
-func check_blacksmith_encounter(peer_id: int) -> bool:
-	"""Check for a wandering blacksmith encounter. Returns true if encounter occurred."""
+func _handle_blacksmith_station(peer_id: int, character):
+	"""Handle bump into blacksmith station tile — open repair/upgrade menu."""
+	var bs_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
+
+	# Check if player has damaged gear
+	var damaged_items = []
+	var total_repair_cost = 0
+
+	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipped.get(slot_name)
+		if item and item.has("wear"):
+			var wear = item.get("wear", 0)
+			if wear > 0:
+				var item_level = item.get("level", 1)
+				var repair_cost = int(wear * item_level * 25)
+				damaged_items.append({
+					"slot": slot_name,
+					"name": item.get("name", slot_name.capitalize()),
+					"wear": wear,
+					"cost": repair_cost
+				})
+				total_repair_cost += repair_cost
+
+	# Check for items with upgradeable affixes
+	var upgradeable_items = []
+	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipped.get(slot_name)
+		if item and item.has("affixes"):
+			var affixes = item.get("affixes", {})
+			var stat_affixes = []
+			for key in affixes.keys():
+				if key not in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
+					stat_affixes.append(key)
+			if stat_affixes.size() > 0:
+				upgradeable_items.append({
+					"slot": slot_name,
+					"name": item.get("name", slot_name.capitalize()),
+					"level": item.get("level", 1),
+					"affixes": affixes
+				})
+
+	# Store encounter data
+	var repair_all_cost = int(total_repair_cost * 0.9) if total_repair_cost > 0 else 0
+	pending_blacksmith_encounters[peer_id] = {
+		"items": damaged_items,
+		"total_cost": total_repair_cost,
+		"repair_all_cost": repair_all_cost,
+		"upgradeable_items": upgradeable_items
+	}
+
+	# Build message
+	var msg = "[color=#DAA520]═══════ BLACKSMITH ═══════[/color]\n"
+	if damaged_items.size() > 0:
+		msg += "'I can fix up that gear for you, traveler.'"
+	else:
+		msg += "[color=#808080]Your gear is in good shape.[/color]"
+	if upgradeable_items.size() > 0:
+		msg += "\n[color=#FFD700]'I can also enhance your equipment... for a price.'[/color]"
+
+	send_to_peer(peer_id, {
+		"type": "blacksmith_encounter",
+		"message": msg,
+		"items": damaged_items,
+		"repair_all_cost": repair_all_cost,
+		"can_upgrade": upgradeable_items.size() > 0,
+		"player_valor": persistence.get_valor(bs_account_id),
+		"player_materials": character.crafting_materials.duplicate()
+	})
+
+func check_blacksmith_encounter(_peer_id: int) -> bool:
+	"""Blacksmith is now a station — random encounters disabled."""
+	return false
+
+func _legacy_check_blacksmith_encounter(peer_id: int) -> bool:
+	"""Legacy: Check for a wandering blacksmith encounter. Returns true if encounter occurred."""
 	if not characters.has(peer_id):
 		return false
 
 	var character = characters[peer_id]
+	var bs_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
 
 	# No wandering merchants inside NPC posts
 	if world_system.is_safe_zone(character.x, character.y):
@@ -4569,12 +4606,13 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 		var item_level = item_data.get("level", 1)
 		var affixes = item_data.get("affixes", {})
 		var has_affordable_affix = false
+		var bs_valor = persistence.get_valor(bs_account_id) if bs_account_id != "" else 0
 		for affix_key in affixes.keys():
 			if affix_key in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
 				continue
 			var current_value = affixes[affix_key]
 			var costs = _calculate_affix_upgrade_cost(affix_key, current_value, item_level)
-			if character.gold >= costs.gold and character.gems >= costs.gems and character.salvage_essence >= costs.essence:
+			if bs_valor >= costs.valor and character.has_crafting_materials(costs.get("materials", {})):
 				has_affordable_affix = true
 				break
 		if has_affordable_affix:
@@ -4609,9 +4647,8 @@ func check_blacksmith_encounter(peer_id: int) -> bool:
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
 		"can_upgrade": affordable_upgradeable_items.size() > 0,
-		"player_gold": character.gold,
-		"player_gems": character.gems,
-		"player_essence": character.salvage_essence
+		"player_valor": persistence.get_valor(bs_account_id),
+		"player_materials": character.crafting_materials.duplicate()
 	})
 
 	return true
@@ -4632,18 +4669,19 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		pending_blacksmith_encounters.erase(peer_id)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#808080]The Blacksmith nods and continues on his way.[/color]"
+			"message": "[color=#808080]You step away from the anvil.[/color]"
 		})
 		send_to_peer(peer_id, {"type": "blacksmith_done"})
 		return
 
 	if choice == "repair_all":
-		var cost = encounter.repair_all_cost
-		if character.gold < cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+		var gold_cost = encounter.repair_all_cost
+		var valor_cost = max(1, gold_cost / 10)
+		var account_id = peers[peer_id].account_id
+		if not persistence.spend_valor(account_id, valor_cost):
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 			return
 
-		character.gold -= cost
 		# Repair all items
 		for item_data in encounter.items:
 			var slot = item_data.slot
@@ -4653,7 +4691,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		pending_blacksmith_encounters.erase(peer_id)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#00FF00]The Blacksmith repairs all your gear for %d gold (10%% discount!).[/color]" % cost
+			"message": "[color=#00FF00]The Blacksmith repairs all your gear for %d valor (10%% discount!).[/color]" % valor_cost
 		})
 		send_to_peer(peer_id, {"type": "blacksmith_done"})
 		save_character(peer_id)
@@ -4673,11 +4711,12 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			return
 
 		var cost = item_data.cost
-		if character.gold < cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+		var valor_cost = max(1, cost / 10)
+		var account_id = peers[peer_id].account_id
+		if not persistence.spend_valor(account_id, valor_cost):
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 			return
 
-		character.gold -= cost
 		character.equipped[slot]["wear"] = 0
 
 		# Update encounter data
@@ -4687,7 +4726,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#00FF00]The Blacksmith repairs your %s for %d gold.[/color]" % [item_data.name, cost]
+			"message": "[color=#00FF00]The Blacksmith repairs your %s for %d valor.[/color]" % [item_data.name, valor_cost]
 		})
 
 		if encounter.items.size() == 0:
@@ -4701,7 +4740,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 				"message": "[color=#DAA520]'Anything else need fixing?'[/color]",
 				"items": encounter.items,
 				"repair_all_cost": encounter.repair_all_cost,
-				"player_gold": character.gold
+				"player_valor": persistence.get_valor(account_id)
 			})
 
 		save_character(peer_id)
@@ -4720,9 +4759,8 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"type": "blacksmith_upgrade_select_item",
 			"message": "[color=#FFD700]'Which piece needs enhancing?'[/color]",
 			"items": upgradeable,
-			"player_gold": character.gold,
-			"player_gems": character.gems,
-			"player_essence": character.salvage_essence
+			"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
+			"player_materials": character.crafting_materials.duplicate()
 		})
 		return
 
@@ -4764,9 +4802,8 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 				"affix_name": _get_affix_display_name(affix_key),
 				"current_value": current_value,
 				"upgrade_amount": upgrade_amount,
-				"gold_cost": costs.gold,
-				"gem_cost": costs.gems,
-				"essence_cost": costs.essence
+				"valor_cost": costs.valor,
+				"material_costs": costs.get("materials", {})
 			})
 
 		# Store pending upgrade state
@@ -4776,14 +4813,14 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"affixes": affix_options
 		}
 
+		var upgrade_account_id = peers[peer_id].account_id
 		send_to_peer(peer_id, {
 			"type": "blacksmith_upgrade_select_affix",
 			"message": "[color=#FFD700]'Which enchantment shall I strengthen on your %s?'[/color]" % selected_item.name,
 			"item_name": selected_item.name,
 			"affixes": affix_options,
-			"player_gold": character.gold,
-			"player_gems": character.gems,
-			"player_essence": character.salvage_essence
+			"player_valor": persistence.get_valor(upgrade_account_id),
+			"player_materials": character.crafting_materials.duplicate()
 		})
 		return
 
@@ -4808,24 +4845,21 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			return
 
 		# Check costs
-		var gold_cost = selected_affix.gold_cost
-		var gem_cost = selected_affix.gem_cost
-		var essence_cost = selected_affix.essence_cost
+		var valor_cost = selected_affix.get("valor_cost", 50)
+		var mat_costs = selected_affix.get("material_costs", {})
+		var account_id = peers[peer_id].account_id
 
-		if character.gold < gold_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % gold_cost})
+		if not persistence.spend_valor(account_id, valor_cost):
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 			return
-		if character.gems < gem_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems! (Need %d)" % gem_cost})
-			return
-		if character.salvage_essence < essence_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough salvage essence! (Need %d)" % essence_cost})
+		if not character.has_crafting_materials(mat_costs):
+			persistence.add_valor(account_id, valor_cost)  # Refund valor
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough materials for this upgrade!"})
 			return
 
-		# Apply upgrade
-		character.gold -= gold_cost
-		character.gems -= gem_cost
-		character.salvage_essence -= essence_cost
+		# Apply upgrade — spend materials
+		for mat_id in mat_costs:
+			character.remove_crafting_material(mat_id, mat_costs[mat_id])
 
 		var equipped_item = character.equipped.get(slot)
 		if equipped_item and equipped_item.has("affixes"):
@@ -4835,14 +4869,22 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		pending_blacksmith_upgrades.erase(peer_id)
 		pending_blacksmith_encounters.erase(peer_id)
 
+		# Build material cost string
+		var mat_parts = []
+		for mat_id in mat_costs:
+			var mat_name = mat_id.replace("_", " ").capitalize()
+			mat_parts.append("%d %s" % [mat_costs[mat_id], mat_name])
+		var cost_str = "%d valor" % valor_cost
+		if not mat_parts.is_empty():
+			cost_str += ", " + ", ".join(mat_parts)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FFD700]The Blacksmith enhances your %s![/color]\n[color=#00FF00]%s: %d → %d[/color]\n[color=#808080](Cost: %d gold, %d gems, %d essence)[/color]" % [
+			"message": "[color=#FFD700]The Blacksmith enhances your %s![/color]\n[color=#00FF00]%s: %d → %d[/color]\n[color=#808080](Cost: %s)[/color]" % [
 				upgrade_state.item_name,
 				selected_affix.affix_name,
 				selected_affix.current_value,
 				selected_affix.current_value + selected_affix.upgrade_amount,
-				gold_cost, gem_cost, essence_cost
+				cost_str
 			]
 		})
 		send_to_peer(peer_id, {"type": "blacksmith_done"})
@@ -4859,9 +4901,8 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"items": encounter.get("items", []),
 			"repair_all_cost": encounter.get("repair_all_cost", 0),
 			"can_upgrade": encounter.get("upgradeable_items", []).size() > 0,
-			"player_gold": character.gold,
-			"player_gems": character.gems,
-			"player_essence": character.salvage_essence
+			"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
+			"player_materials": character.crafting_materials.duplicate()
 		})
 		return
 
@@ -4879,20 +4920,25 @@ func _calculate_affix_upgrade_amount(affix_key: String, item_level: int) -> int:
 	return base + level_bonus
 
 func _calculate_affix_upgrade_cost(affix_key: String, current_value: int, item_level: int) -> Dictionary:
-	"""Calculate the cost to upgrade an affix. High costs as gold sink."""
-	# Base costs scale with item level and current affix value
-	var level_mult = 1.0 + (item_level / 10.0)  # Higher level = more expensive
-	var value_mult = 1.0 + (current_value / 10.0)  # Higher current value = more expensive
+	"""Calculate the cost to upgrade an affix. Costs: Valor + tier-appropriate materials."""
+	var level_mult = 1.0 + (item_level / 10.0)
+	var value_mult = 1.0 + (current_value / 10.0)
 
-	# Base costs (intentionally high as gold sink)
-	var gold_base = 5000
-	var gem_base = 5
-	var essence_base = 100
+	var valor_base = 50
+
+	# Determine tier-appropriate materials based on item level
+	var tier = clampi(int(item_level / 15), 0, 8)
+	var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+	var enchant_tiers = ["magic_dust", "magic_dust", "arcane_crystal", "arcane_crystal", "soul_shard", "soul_shard", "void_essence", "void_essence", "primordial_spark"]
+	var ore_id = ore_tiers[mini(tier, ore_tiers.size() - 1)]
+	var enchant_id = enchant_tiers[mini(tier, enchant_tiers.size() - 1)]
+
+	var ore_qty = maxi(1, int(2 * level_mult * value_mult))
+	var enchant_qty = maxi(1, int(1 * level_mult * value_mult))
 
 	return {
-		"gold": int(gold_base * level_mult * value_mult),
-		"gems": int(gem_base * level_mult * value_mult),
-		"essence": int(essence_base * level_mult * value_mult)
+		"valor": int(valor_base * level_mult * value_mult),
+		"materials": {ore_id: ore_qty, enchant_id: enchant_qty}
 	}
 
 func _get_affix_display_name(affix_key: String) -> String:
@@ -4914,8 +4960,50 @@ func _get_affix_display_name(affix_key: String) -> String:
 	}
 	return names.get(affix_key, affix_key.capitalize())
 
-func check_healer_encounter(peer_id: int) -> bool:
-	"""Check for a wandering healer encounter. Returns true if encounter occurred."""
+func _handle_healer_station(peer_id: int, character):
+	"""Handle bump into healer station tile — open heal menu."""
+	# Calculate heal costs based on player level
+	var level = character.level
+	var quick_heal_cost = level * 22
+	var full_heal_cost = level * 90
+	var cure_all_cost = level * 180
+
+	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
+
+	# Store encounter data
+	pending_healer_encounters[peer_id] = {
+		"quick_heal_cost": quick_heal_cost,
+		"full_heal_cost": full_heal_cost,
+		"cure_all_cost": cure_all_cost,
+		"has_debuffs": has_debuffs
+	}
+
+	# Build message
+	var msg = "[color=#00FF88]═══════ HEALER ═══════[/color]\n"
+	var hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
+	if hp_ratio < 0.80 or has_debuffs:
+		msg += "'You look injured, traveler. Let me help.'"
+	else:
+		msg += "'You look healthy! But I'm here if you need me.'"
+
+	send_to_peer(peer_id, {
+		"type": "healer_encounter",
+		"message": msg,
+		"quick_heal_cost": quick_heal_cost,
+		"full_heal_cost": full_heal_cost,
+		"cure_all_cost": cure_all_cost,
+		"has_debuffs": has_debuffs,
+		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
+		"current_hp": character.current_hp,
+		"max_hp": character.get_total_max_hp()
+	})
+
+func check_healer_encounter(_peer_id: int) -> bool:
+	"""Healer is now a station — random encounters disabled."""
+	return false
+
+func _legacy_check_healer_encounter(peer_id: int) -> bool:
+	"""Legacy: Check for a wandering healer encounter. Returns true if encounter occurred."""
 	if not characters.has(peer_id):
 		return false
 
@@ -4969,7 +5057,7 @@ func check_healer_encounter(peer_id: int) -> bool:
 		"full_heal_cost": full_heal_cost,
 		"cure_all_cost": cure_all_cost,
 		"has_debuffs": has_debuffs,
-		"player_gold": character.gold,
+		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 		"current_hp": character.current_hp,
 		"max_hp": character.get_total_max_hp()
 	})
@@ -4991,13 +5079,9 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 	pending_healer_encounters.erase(peer_id)
 
 	if choice == "decline":
-		# Record state at decline so healer won't re-appear until situation changes
-		var decline_hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
-		var decline_has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
-		healer_decline_state[peer_id] = {"had_debuffs": decline_has_debuffs, "hp_ratio": decline_hp_ratio}
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#808080]The Healer bows and fades into the distance.[/color]"
+			"message": "[color=#808080]You step away from the healer's shrine.[/color]"
 		})
 		send_to_peer(peer_id, {"type": "healer_done"})
 		return
@@ -5019,17 +5103,18 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 			heal_percent = 100
 			cure_debuffs = true
 
-	if character.gold < cost:
-		send_to_peer(peer_id, {"type": "error", "message": "Not enough gold! (Need %d)" % cost})
+	var valor_cost = max(1, cost / 10)
+	var healer_account_id = peers[peer_id].account_id
+	if not persistence.spend_valor(healer_account_id, valor_cost):
+		send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 		send_to_peer(peer_id, {"type": "healer_done"})
 		return
 
-	character.gold -= cost
 	var total_max_hp = character.get_total_max_hp()
 	heal_amount = int(total_max_hp * heal_percent / 100.0)
 	character.current_hp = mini(character.current_hp + heal_amount, total_max_hp)
 
-	var msg = "[color=#00FF00]The Healer channels their magic. You are healed for %d HP! (-%d gold)[/color]" % [heal_amount, cost]
+	var msg = "[color=#00FF00]The Healer channels their magic. You are healed for %d HP! (-%d valor)[/color]" % [heal_amount, valor_cost]
 
 	if cure_debuffs:
 		character.persistent_buffs.clear()
@@ -5665,25 +5750,25 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, value_suffix, buff_type, duration]
 			})
-	elif effect.has("gold"):
-		# Gold pouch - grants variable gold based on level
-		var base_gold = effect.base + (effect.per_level * item_level)
-		var variance = effect.get("variance", 0.5)  # ±50% by default
-		var min_gold = int(base_gold * (1.0 - variance))
-		var max_gold = int(base_gold * (1.0 + variance))
-		var gold_amount = randi_range(min_gold, max_gold)
-		character.gold += gold_amount
+	elif effect.has("essence") or effect.has("gold"):
+		# Material Pouch — grants random tier-appropriate materials
+		var tier = clampi(int(item_level / 15), 0, 8)
+		var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+		var ore_id = ore_tiers[mini(tier, ore_tiers.size() - 1)]
+		var qty = maxi(1, randi_range(2, 4) + tier)
+		character.add_crafting_material(ore_id, qty)
+		var mat_name = CraftingDatabaseScript.get_material_name(ore_id)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FFD700]You open %s and find %d gold![/color]" % [item_name, gold_amount]
+			"message": "[color=#8B5CF6]You open %s and find %dx %s![/color]" % [item_name, qty, mat_name]
 		})
 	elif effect.has("gems"):
-		# Gem item - grants gems (premium currency) based on tier
+		# Gem item → Monster Gem material
 		var gem_amount = effect.base + (effect.get("per_tier", 1) * max(0, item_tier - 1))
-		character.gems += gem_amount
+		character.add_crafting_material("monster_gem", gem_amount)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#00FFFF]You appraise %s and receive %d gem%s![/color]" % [item_name, gem_amount, "s" if gem_amount > 1 else ""]
+			"message": "[color=#00FFFF]You appraise %s and receive %d Monster Gem%s![/color]" % [item_name, gem_amount, "s" if gem_amount > 1 else ""]
 		})
 	elif effect.has("monster_select"):
 		# Monster Selection Scroll - let player pick next encounter
@@ -5806,24 +5891,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"message": "[color=#FF00FF]You open the %s...[/color]\n[color=#FF0000]But your inventory is full! The item is lost![/color]" % item_name
 				})
 	elif effect.has("cursed_coin"):
-		# Cursed Coin - 50% double gold, 50% lose half gold
-		var current_gold = character.gold
-		if randf() < 0.5:
-			# Win! Double gold
-			character.gold *= 2
-			var gained = character.gold - current_gold
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FFD700]You flip the %s...[/color]\n[color=#00FF00][b]FORTUNE SMILES![/b] Your gold DOUBLES![/color]\n[color=#FFD700]+%d gold! (Total: %d)[/color]" % [item_name, gained, character.gold]
-			})
-		else:
-			# Lose! Halve gold
-			var lost = current_gold / 2
-			character.gold = current_gold - lost
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#9932CC]You flip the %s...[/color]\n[color=#FF0000][b]MISFORTUNE STRIKES![/b] Half your gold vanishes![/color]\n[color=#FF4444]-%d gold! (Total: %d)[/color]" % [item_name, lost, character.gold]
-			})
+		# Cursed Coin - no longer functional (gold system removed)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080]The cursed coin crumbles to dust in your hands. Its dark magic has faded.[/color]"
+		})
 	elif effect.has("permanent_stat"):
 		# Stat Tome - Permanently increase a stat
 		var stat_name = effect.permanent_stat
@@ -6712,17 +6784,13 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 				should_salvage = is_consumable
 
 		if should_salvage:
-			# Calculate salvage value using drop_tables
+			# Calculate salvage materials using drop_tables
 			var salvage_result = drop_tables.get_salvage_value(item)
-			total_essence += salvage_result.essence
-
-			# Check for material bonus
-			if salvage_result.material_bonus != null:
-				var mat_id = salvage_result.material_bonus.material_id
-				var mat_qty = salvage_result.material_bonus.quantity
+			var sal_mats = salvage_result.get("materials", {})
+			for mat_id in sal_mats:
 				if not materials_gained.has(mat_id):
 					materials_gained[mat_id] = 0
-				materials_gained[mat_id] += mat_qty
+				materials_gained[mat_id] += sal_mats[mat_id]
 
 			items_to_remove.append(i)
 
@@ -6739,21 +6807,18 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	for idx in items_to_remove:
 		character.remove_item(idx)
 
-	# Add salvage essence
-	character.add_salvage_essence(total_essence)
-
-	# Add any bonus materials
+	# Add salvage materials
 	for mat_id in materials_gained:
 		character.add_crafting_material(mat_id, materials_gained[mat_id])
 
 	# Build result message
-	var result_msg = "[color=#AA66FF]Salvaged %d items for %d essence![/color]" % [salvaged_count, total_essence]
-	if not materials_gained.is_empty():
-		var mat_strings = []
-		for mat_id in materials_gained:
-			var mat_name = CraftingDatabaseScript.get_material_name(mat_id)
-			mat_strings.append("%dx %s" % [materials_gained[mat_id], mat_name])
-		result_msg += "\n[color=#00FF00]Bonus materials: %s[/color]" % ", ".join(mat_strings)
+	var mat_strings = []
+	for mat_id in materials_gained:
+		var mat_name = CraftingDatabaseScript.get_material_name(mat_id)
+		mat_strings.append("%dx %s" % [materials_gained[mat_id], mat_name])
+	var result_msg = "[color=#AA66FF]Salvaged %d items![/color]" % salvaged_count
+	if not mat_strings.is_empty():
+		result_msg += "\n[color=#00FF00]Materials: %s[/color]" % ", ".join(mat_strings)
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -6882,14 +6947,17 @@ func _try_auto_salvage(peer_id: int) -> bool:
 	if best_idx < 0:
 		return false
 
-	# Salvage the item
+	# Salvage the item → materials
 	var item = character.inventory[best_idx]
 	var salvage_result = drop_tables.get_salvage_value(item)
-	var essence = salvage_result.essence
+	var sal_mats = salvage_result.get("materials", {})
 	character.remove_item(best_idx)
-	character.add_salvage_essence(essence)
-
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvaged %s for %d essence.[/color]" % [item.get("name", "item"), essence]})
+	for _mid in sal_mats:
+		character.add_crafting_material(_mid, sal_mats[_mid])
+	var sal_parts = []
+	for _mid2 in sal_mats:
+		sal_parts.append("%dx %s" % [sal_mats[_mid2], CraftingDatabaseScript.get_material_name(_mid2)])
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Auto-salvaged %s → %s[/color]" % [item.get("name", "item"), ", ".join(sal_parts) if not sal_parts.is_empty() else "nothing"]})
 	return true
 
 func handle_auto_salvage_affix_settings(peer_id: int, message: Dictionary):
@@ -6941,6 +7009,10 @@ func send_character_update(peer_id: int):
 	# Add egg capacity from house upgrades
 	var egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
 	char_dict["egg_capacity"] = egg_cap
+	# Add valor from account-level storage
+	char_dict["valor"] = persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
+	# Projected leaderboard rank — where would this character place if they died now?
+	char_dict["projected_rank"] = _calculate_projected_rank(character)
 	send_to_peer(peer_id, {
 		"type": "character_update",
 		"character": char_dict
@@ -6953,6 +7025,22 @@ func send_character_update(peer_id: int):
 				"type": "watch_character",
 				"character": char_dict
 			})
+
+func _calculate_projected_rank(character: Character) -> int:
+	"""Calculate where this character would rank on the leaderboard if they died now.
+	Leaderboard is sorted by experience descending. Returns 1-based rank, 0 if off-board (>100)."""
+	var entries = persistence.leaderboard_data.get("entries", [])
+	if entries.is_empty():
+		return 1
+	var xp = character.experience
+	var rank = 1
+	for entry in entries:
+		if xp >= entry.get("experience", 0):
+			return rank
+		rank += 1
+	if rank > 100:
+		return 0
+	return rank
 
 # ===== MERCHANT HANDLERS =====
 
@@ -7031,8 +7119,6 @@ func trigger_merchant_encounter(peer_id: int):
 		services_text.append("[R] Buy %s (%d available)" % [specialty_label, shop_items.size()])
 	if "sell" in merchant.services:
 		services_text.append("[Q] Sell items")
-	if character.gems > 0:
-		services_text.append("[1] Sell gems (%d @ 1000g each)" % character.gems)
 	if "upgrade" in merchant.services:
 		services_text.append("[W] Upgrade equipment")
 	if "gamble" in merchant.services:
@@ -7073,54 +7159,12 @@ func _get_merchant_voice(merchant_hash: int) -> String:
 	var voice_index = abs(merchant_hash / 3) % voices.size()
 	return "[color=#808080]%s[/color]" % voices[voice_index]
 
-func handle_merchant_sell(peer_id: int, message: Dictionary):
-	"""Handle selling an item to a merchant"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var index = message.get("index", -1)
-
-	if index < 0 or index >= character.inventory.size():
-		send_to_peer(peer_id, {"type": "error", "message": "Invalid item index"})
-		return
-
-	var item = character.inventory[index]
-
-	if item.get("locked", false):
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]That item is locked! Unlock it first.[/color]"
-		})
-		return
-
-	var item_type = item.get("type", "")
-	var item_level = item.get("level", 1)
-	var sell_price = item.get("value", 10) / 2  # Default: Sell for half value
-
-	# Special handling for gold pouches - sell for their gold content
-	if item_type == "gold_pouch":
-		# Match Effect description: level * 10 to level * 50, average = level * 30
-		sell_price = item_level * 30
-	# Special handling for gems - always worth 1000 gold
-	elif item_type.begins_with("gem_"):
-		sell_price = 1000
-
-	# Remove item and give gold
-	character.remove_item(index)
-	character.gold += sell_price
-
+func handle_merchant_sell(peer_id: int, _message: Dictionary):
+	"""Merchant sell removed — redirect to Open Market"""
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FFD700]You sell %s for %d gold.[/color]" % [item.get("name", "Unknown"), sell_price]
+		"message": "[color=#FFD700]Items can only be sold via the Open Market at trading posts.[/color]"
 	})
-
-	send_character_update(peer_id)
-	# Note: Don't call _send_merchant_inventory here - client handles pagination via display_merchant_sell_list()
 
 func _is_consumable_type(item_type: String) -> bool:
 	"""Check if an item type is a consumable (potion, scroll, etc.)"""
@@ -7128,7 +7172,7 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type.begins_with("elixir_") or
-			item_type == "gold_pouch" or item_type.begins_with("gem_") or
+			item_type == "essence_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
 			item_type == "health_potion" or item_type == "mana_potion" or
@@ -7137,97 +7181,19 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type == "scroll" or item_type == "area_map" or
 			item_type == "spell_tome" or item_type == "bestiary_page")
 
-func handle_merchant_sell_all(peer_id: int):
-	"""Handle selling all EQUIPMENT items to a merchant (skips consumables and title items)"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-
-	if character.inventory.is_empty():
-		send_to_peer(peer_id, {"type": "error", "message": "You have nothing to sell!"})
-		return
-
-	var total_gold = 0
-	var items_sold = 0
-	var items_to_remove = []
-
-	# Identify equipment items to sell (skip consumables, title items, and locked items)
-	for i in range(character.inventory.size()):
-		var item = character.inventory[i]
-		var item_type = item.get("type", "")
-
-		# Skip title items
-		if item.get("is_title_item", false):
-			continue
-
-		# Skip locked/protected items
-		if item.get("locked", false):
-			continue
-
-		# Only sell equipment
-		if not _is_equipment_type(item_type):
-			continue
-
-		var sell_price = item.get("value", 10) / 2
-		total_gold += sell_price
-		items_sold += 1
-		items_to_remove.append(i)
-
-	if items_to_remove.is_empty():
-		send_to_peer(peer_id, {"type": "error", "message": "No equipment to sell! (Use Sell to sell individual items)"})
-		return
-
-	# Remove items in reverse order to preserve indices
-	items_to_remove.reverse()
-	for idx in items_to_remove:
-		character.remove_item(idx)
-
-	character.gold += total_gold
-
-	send_to_peer(peer_id, {
+func handle_merchant_sell_all(_peer_id: int):
+	"""Merchant sell-all removed — redirect to Open Market"""
+	send_to_peer(_peer_id, {
 		"type": "text",
-		"message": "[color=#FFD700]You sell %d equipment items for %d gold![/color]" % [items_sold, total_gold]
+		"message": "[color=#FFD700]Items can only be sold via the Open Market at trading posts.[/color]"
 	})
 
-	send_character_update(peer_id)
-	# Note: Don't call _send_merchant_inventory here - client handles pagination via display_merchant_sell_list()
-
-func handle_merchant_sell_gems(peer_id: int, message: Dictionary):
-	"""Handle selling gems to a merchant"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var amount = message.get("amount", 1)
-
-	# Can't sell more than you have
-	amount = mini(amount, character.gems)
-
-	if amount <= 0:
-		send_to_peer(peer_id, {"type": "error", "message": "You don't have any gems to sell!"})
-		return
-
-	# 1000 gold per gem
-	var gold_value = amount * 1000
-
-	character.gems -= amount
-	character.gold += gold_value
-
-	send_to_peer(peer_id, {
+func handle_merchant_sell_gems(_peer_id: int, _message: Dictionary):
+	"""Gem selling removed — gems cannot be sold"""
+	send_to_peer(_peer_id, {
 		"type": "text",
-		"message": "[color=#00FFFF]You sell %d gem%s for %d gold![/color]" % [amount, "s" if amount > 1 else "", gold_value]
+		"message": "[color=#FF4444]Gems cannot be sold.[/color]"
 	})
-
-	send_character_update(peer_id)
 
 func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	"""Handle gambling with a merchant"""
@@ -7244,29 +7210,33 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		return
 
 	var character = characters[peer_id]
-	var bet_amount = message.get("amount", 100)
+	var gamble_account_id = peers[peer_id].account_id
+	var current_valor = persistence.get_valor(gamble_account_id)
+	var bet_amount = message.get("amount", 1)
 
-	# Minimum bet scales with level: level * 10 (level 1 = 10g, level 100 = 1000g)
-	var min_bet = maxi(10, character.level * 10)
-	var max_bet = character.gold / 2
+	# Minimum bet scales with level
+	var min_bet = maxi(1, character.level)
+	var max_bet = current_valor / 4
 
 	if max_bet < min_bet:
 		send_to_peer(peer_id, {
 			"type": "gamble_result",
 			"success": false,
-			"message": "[color=#FF4444]You need at least %d gold to gamble at your level![/color]" % (min_bet * 2),
-			"gold": character.gold
+			"message": "[color=#FF4444]You need at least %d valor to gamble at your level![/color]" % (min_bet * 4),
+			"gold": 0,
+			"valor": current_valor
 		})
 		return
 
 	bet_amount = clampi(bet_amount, min_bet, max_bet)
 
-	if character.gold < bet_amount or bet_amount < min_bet:
+	if current_valor < bet_amount or bet_amount < min_bet:
 		send_to_peer(peer_id, {
 			"type": "gamble_result",
 			"success": false,
-			"message": "[color=#FF4444]Invalid bet! Min: %d, Max: %d gold[/color]" % [min_bet, max_bet],
-			"gold": character.gold
+			"message": "[color=#FF4444]Invalid bet! Min: %d, Max: %d valor[/color]" % [min_bet, max_bet],
+			"gold": 0,
+			"valor": current_valor
 		})
 		return
 
@@ -7295,7 +7265,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 
 	# Check for triple 6s first - JACKPOT! (rare big win, ~0.46% chance)
 	if player_dice[0] == 6 and player_dice[1] == 6 and player_dice[2] == 6:
-		# Triple 6s - guaranteed item or massive gold!
+		# Triple 6s - guaranteed item or massive valor!
 		var item_level = max(1, character.level + randi() % 30)
 		var tier = _level_to_tier(item_level)
 		var items = drop_tables.roll_drops(tier, 100, item_level)
@@ -7307,14 +7277,14 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! JACKPOT! ★★★[/color]\n[color=%s]You won: %s![/color]" % [rarity_color, items[0].get("name", "Unknown")]
 		else:
 			var winnings = bet_amount * 10
-			character.gold += winnings - bet_amount
-			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! You win %d gold! ★★★[/color]" % winnings
+			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! You win %d valor! ★★★[/color]" % winnings
 		won = true
 	# Check for any triple (other than 6s) - nice bonus (~2.3% chance)
 	elif player_dice[0] == player_dice[1] and player_dice[1] == player_dice[2]:
 		var winnings = bet_amount * 3
-		character.gold += winnings - bet_amount
-		result_msg = "[color=#FFD700]TRIPLE %ds! Lucky roll! You win %d gold![/color]" % [player_dice[0], winnings]
+		persistence.add_valor(gamble_account_id, winnings - bet_amount)
+		result_msg = "[color=#FFD700]TRIPLE %ds! Lucky roll! You win %d valor![/color]" % [player_dice[0], winnings]
 		won = true
 	else:
 		# Normal outcome based on dice difference (vs adjusted merchant total)
@@ -7322,40 +7292,40 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 
 		if diff < -6:
 			# Crushing loss - lose full bet
-			character.gold -= bet_amount
-			result_msg = "[color=#FF4444]Crushing defeat! You lose %d gold.[/color]" % bet_amount
+			persistence.spend_valor(gamble_account_id, bet_amount)
+			result_msg = "[color=#FF4444]Crushing defeat! You lose %d valor.[/color]" % bet_amount
 		elif diff < -2:
 			# Bad loss - lose 75% bet
 			var loss = int(bet_amount * 0.75)
-			character.gold -= loss
-			result_msg = "[color=#FF4444]The merchant outrolls you! You lose %d gold.[/color]" % loss
+			persistence.spend_valor(gamble_account_id, loss)
+			result_msg = "[color=#FF4444]The merchant outrolls you! You lose %d valor.[/color]" % loss
 		elif diff < 0:
 			# Small loss - lose half bet
 			var loss = int(bet_amount * 0.5)
-			character.gold -= loss
-			result_msg = "[color=#FF4444]Close, but not enough. You lose %d gold.[/color]" % loss
+			persistence.spend_valor(gamble_account_id, loss)
+			result_msg = "[color=#FF4444]Close, but not enough. You lose %d valor.[/color]" % loss
 		elif diff == 0:
 			# Near-tie - lose small ante (house always wins ties)
 			var loss = int(bet_amount * 0.25)
-			character.gold -= loss
-			result_msg = "[color=#FFAA00]Too close to call... house takes a small cut: %d gold.[/color]" % loss
+			persistence.spend_valor(gamble_account_id, loss)
+			result_msg = "[color=#FFAA00]Too close to call... house takes a small cut: %d valor.[/color]" % loss
 		elif diff <= 3:
 			# Small win - win 1.25x (net +25%)
 			var winnings = int(bet_amount * 1.25)
-			character.gold += winnings - bet_amount
-			result_msg = "[color=#00FF00]Victory! You win %d gold![/color]" % winnings
+			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			result_msg = "[color=#00FF00]Victory! You win %d valor![/color]" % winnings
 			won = true
 		elif diff <= 6:
 			# Good win - win 1.75x
 			var winnings = int(bet_amount * 1.75)
-			character.gold += winnings - bet_amount
-			result_msg = "[color=#00FF00]Strong roll! You win %d gold![/color]" % winnings
+			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			result_msg = "[color=#00FF00]Strong roll! You win %d valor![/color]" % winnings
 			won = true
 		else:
 			# Dominating win - win 2.5x
 			var winnings = int(bet_amount * 2.5)
-			character.gold += winnings - bet_amount
-			result_msg = "[color=#FFD700]DOMINATING! You win %d gold![/color]" % winnings
+			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			result_msg = "[color=#FFD700]DOMINATING! You win %d valor![/color]" % winnings
 			won = true
 
 	# Bonus: Any winning roll has a 10% chance to also win a random item
@@ -7369,6 +7339,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 			var rarity_color = _get_rarity_color(bonus_items[0].get("rarity", "common"))
 			result_msg += "\n[color=#FFD700]BONUS![/color] [color=%s]You also found: %s![/color]" % [rarity_color, bonus_items[0].get("name", "Unknown")]
 
+	var updated_valor = persistence.get_valor(gamble_account_id)
 	# Send gamble result with prompt to continue
 	send_to_peer(peer_id, {
 		"type": "gamble_result",
@@ -7376,9 +7347,10 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		"dice_message": dice_msg,
 		"result_message": result_msg,
 		"won": won,
-		"gold": character.gold,
+		"gold": 0,
+		"valor": updated_valor,
 		"min_bet": min_bet,
-		"max_bet": character.gold / 2,
+		"max_bet": updated_valor / 4,
 		"item_won": item_won.duplicate() if item_won else null
 	})
 
@@ -7395,9 +7367,8 @@ func handle_merchant_leave(peer_id: int):
 		})
 
 func _get_recharge_cost(player_level: int) -> int:
-	"""Calculate recharge cost based on player level (reduced 10% for economy balance)"""
-	# Base cost 45 gold, scales with level
-	return 45 + (player_level * 9)
+	"""Calculate recharge cost in valor based on player level"""
+	return 5 + player_level
 
 func handle_merchant_recharge(peer_id: int):
 	"""Handle recharging resources at a merchant"""
@@ -7426,11 +7397,12 @@ func handle_merchant_recharge(peer_id: int):
 		})
 		return
 
-	# Check if player has enough gold
-	if character.gold < cost:
+	# Check if player has enough valor
+	var recharge_account_id = peers[peer_id].account_id
+	if not persistence.spend_valor(recharge_account_id, cost):
 		send_to_peer(peer_id, {
 			"type": "merchant_message",
-			"message": "[color=#FF0000]\"You don't have enough gold! Recharge costs %d gold.\"[/color]" % cost
+			"message": "[color=#FF0000]\"You don't have enough valor! Recharge costs %d valor.\"[/color]" % cost
 		})
 		return
 
@@ -7447,8 +7419,7 @@ func handle_merchant_recharge(peer_id: int):
 		character.cure_blind()
 		restored.append("blindness cured")
 
-	# Deduct gold and restore resources
-	character.gold -= cost
+	# Restore resources (valor already deducted)
 	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.get_total_max_mana()
 	character.current_stamina = character.get_total_max_stamina()
@@ -7457,7 +7428,7 @@ func handle_merchant_recharge(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "merchant_message",
-		"message": "[color=#00FF00]The merchant provides you with a revitalizing tonic![/color]\n[color=#00FF00]%s! (-%d gold)[/color]" % [", ".join(restored).capitalize(), cost]
+		"message": "[color=#00FF00]The merchant provides you with a revitalizing tonic![/color]\n[color=#00FF00]%s! (-%d valor)[/color]" % [", ".join(restored).capitalize(), cost]
 	})
 
 	send_character_update(peer_id)
@@ -7482,7 +7453,8 @@ func _send_merchant_inventory(peer_id: int):
 	send_to_peer(peer_id, {
 		"type": "merchant_inventory",
 		"items": items,
-		"gold": character.gold
+		"gold": character.gold,
+		"valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
 	})
 
 func _get_upgraded_item_name(item_type: String, rarity: String, level: int) -> String:
@@ -7844,105 +7816,12 @@ func _get_shop_rarity(item_level: int, rng: RandomNumberGenerator) -> String:
 		else:
 			return "common"
 
-func handle_merchant_buy(peer_id: int, message: Dictionary):
-	"""Handle buying an item from the merchant shop"""
-	if not at_merchant.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
-		return
-
-	if not characters.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var item_index = message.get("index", -1)
-	var use_gems = message.get("use_gems", false)
-
-	# Get shop inventory
-	var merchant = at_merchant[peer_id]
-	var shop_items = merchant.get("shop_items", [])
-
-	if item_index < 0 or item_index >= shop_items.size():
-		send_to_peer(peer_id, {"type": "error", "message": "Invalid item selection"})
-		return
-
-	var item = shop_items[item_index].duplicate(true)  # Deep copy
-	var price = item.get("shop_price", 100)
-
-	# Check inventory space
-	if not character.can_add_item():
-		send_to_peer(peer_id, {"type": "error", "message": "Your inventory is full!"})
-		return
-
-	var bought_item = null
-	if use_gems:
-		var gem_price = int(ceil(price / 1000.0))
-		if character.gems < gem_price:
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FF4444]You need %d gems. You have %d gems.[/color]" % [gem_price, character.gems]
-			})
-			return
-
-		character.gems -= gem_price
-		item.erase("shop_price")  # Remove shop metadata
-		bought_item = item.duplicate()
-		character.add_item(item)
-
-		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]You purchased [/color][color=%s]%s[/color][color=#00FF00] for %d gems![/color]" % [rarity_color, item.get("name", "Unknown"), gem_price]
-		})
-	else:
-		if character.gold < price:
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#FF4444]You need %d gold. You have %d gold.[/color]" % [price, character.gold]
-			})
-			return
-
-		character.gold -= price
-		item.erase("shop_price")  # Remove shop metadata
-		bought_item = item.duplicate()
-		character.add_item(item)
-
-		var rarity_color = _get_rarity_color(item.get("rarity", "common"))
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]You purchased [/color][color=%s]%s[/color][color=#00FF00] for %d gold![/color]" % [rarity_color, item.get("name", "Unknown"), price]
-		})
-
-	# Send buy success with item data for equip prompt
-	if bought_item != null:
-		var item_type = bought_item.get("type", "")
-		var is_equippable = (item_type.begins_with("weapon_") or
-							item_type.begins_with("armor_") or
-							item_type.begins_with("helm_") or
-							item_type.begins_with("shield_") or
-							item_type.begins_with("boots_") or
-							item_type.begins_with("ring_") or
-							item_type.begins_with("amulet_"))
-		if is_equippable:
-			# Find the item's index in inventory (it's the last item added)
-			var inv_index = character.inventory.size() - 1
-			send_to_peer(peer_id, {
-				"type": "merchant_buy_success",
-				"item": bought_item,
-				"inventory_index": inv_index,
-				"is_equippable": true
-			})
-
-	# Remove item from shop (one-time purchase)
-	shop_items.remove_at(item_index)
-	merchant["shop_items"] = shop_items
-
-	# Also update persistent inventory storage
-	var merchant_id = merchant.get("id", "")
-	if merchant_id != "" and merchant_inventories.has(merchant_id):
-		merchant_inventories[merchant_id].items = shop_items
-
-	send_character_update(peer_id)
-	_send_shop_inventory(peer_id)
+func handle_merchant_buy(peer_id: int, _message: Dictionary):
+	"""Merchant purchase removed — redirect to Open Market"""
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]Items can only be purchased via the Open Market at trading posts.[/color]"
+	})
 
 func _send_shop_inventory(peer_id: int):
 	"""Send shop inventory to player"""
@@ -7975,7 +7854,7 @@ func _send_shop_inventory(peer_id: int):
 		"type": "shop_inventory",
 		"items": items,
 		"gold": character.gold,
-		"gems": character.gems
+		"valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
 	})
 
 # ===== ACCOUNT MANAGEMENT =====
@@ -8658,8 +8537,6 @@ func handle_trading_post_shop(peer_id: int):
 	services_text.append("[W] Gamble")
 	if shop_items.size() > 0:
 		services_text.append("[R] Buy items (%d available)" % shop_items.size())
-	if character.gems > 0:
-		services_text.append("[1] Sell gems (%d @ 1000g each)" % character.gems)
 	services_text.append("[Space] Leave shop")
 
 	send_to_peer(peer_id, {
@@ -8672,16 +8549,25 @@ func handle_trading_post_shop(peer_id: int):
 	_send_shop_inventory(peer_id)
 
 func handle_trading_post_quests(peer_id: int):
-	"""Access quest giver at a Trading Post"""
-	if not at_trading_post.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
-		return
-
+	"""Access quest giver at a Trading Post or player post quest board"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
-	var tp = at_trading_post[peer_id]
+	var tp: Dictionary
+
+	if at_trading_post.has(peer_id):
+		tp = at_trading_post[peer_id]
+	elif at_player_station.has(peer_id):
+		# At a player post — use nearest NPC post for quest generation
+		var nearest = chunk_manager.get_nearest_npc_post(character.x, character.y) if chunk_manager else {}
+		if nearest.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "No quest board available!"})
+			return
+		tp = nearest
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a Trading Post!"})
+		return
 
 	# Get active quest IDs
 	var active_quest_ids = []
@@ -8813,7 +8699,6 @@ func _generate_progression_quest(current_post_id: String, player_level: int, com
 
 	# Calculate rewards based on distance (further = better rewards)
 	var base_xp = int(distance * 2)
-	var base_gold = int(distance)
 	var gems = max(0, int(distance / 100))
 
 	return {
@@ -8824,7 +8709,7 @@ func _generate_progression_quest(current_post_id: String, player_level: int, com
 		"trading_post": current_post_id,
 		"target": 1,
 		"destinations": [next_post_id],
-		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"rewards": {"xp": base_xp, "gems": gems},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_progression": true  # Flag to identify progression quests
@@ -8847,7 +8732,7 @@ func handle_trading_post_recharge(peer_id: int):
 	var is_starter_post = tp_id in STARTER_TRADING_POSTS
 	var cost: int
 	if is_starter_post:
-		# Flat 20 gold for starter areas regardless of level
+		# Flat 20 base for starter areas regardless of level (divided by 10 for valor)
 		cost = 20
 	else:
 		# Calculate cost based on level and trading post distance from origin
@@ -8874,10 +8759,12 @@ func handle_trading_post_recharge(peer_id: int):
 		})
 		return
 
-	if character.gold < cost:
+	var valor_cost = max(1, cost / 10)
+	var tp_heal_account_id = peers[peer_id].account_id
+	if not persistence.spend_valor(tp_heal_account_id, valor_cost):
 		send_to_peer(peer_id, {
 			"type": "trading_post_message",
-			"message": "[color=#FF0000]You don't have enough gold! Recharge costs %d gold.[/color]" % cost
+			"message": "[color=#FF0000]You don't have enough valor! Recharge costs %d valor.[/color]" % valor_cost
 		})
 		return
 
@@ -8894,8 +8781,7 @@ func handle_trading_post_recharge(peer_id: int):
 		character.cure_blind()
 		restored.append("blindness cured")
 
-	# Deduct gold and restore ALL resources including HP
-	character.gold -= cost
+	# Restore ALL resources including HP (valor already deducted)
 	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.get_total_max_mana()
 	character.current_stamina = character.get_total_max_stamina()
@@ -8904,7 +8790,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_message",
-		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d gold)[/color]" % [tp.name, ", ".join(restored).capitalize(), cost]
+		"message": "[color=#00FF00]The healers at %s restore you completely![/color]\n[color=#00FF00]%s! (-%d valor)[/color]" % [tp.name, ", ".join(restored).capitalize(), valor_cost]
 	})
 
 	send_character_update(peer_id)
@@ -8912,7 +8798,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 func handle_trading_post_wits_training(peer_id: int):
 	"""Sharpen Wits - Trickster-only WITS training at Trading Posts.
-	Costs gold scaling with current bonus. +1 permanent WITS per purchase, cap +10."""
+	Costs valor scaling with current bonus. +1 permanent WITS per purchase, cap +10."""
 	if not at_trading_post.has(peer_id):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You must be at a Trading Post![/color]"})
 		return
@@ -8932,22 +8818,21 @@ func handle_trading_post_wits_training(peer_id: int):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Your wits are already honed to their peak! (10/10)[/color]"})
 		return
 
-	# Cost scales: 500 * (1 + current_bonus * 0.5)
-	var base_cost = 500
-	var cost = int(base_cost * (1.0 + character.wits_training_bonus * 0.5))
+	# Cost scales: 5 + bonus * 10 valor
+	var valor_cost = 5 + character.wits_training_bonus * 10
+	var wits_account_id = peers[peer_id].account_id
 
-	if character.gold < cost:
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Not enough gold! Training costs %d gold. (You have %d)[/color]" % [cost, character.gold]})
+	if not persistence.spend_valor(wits_account_id, valor_cost):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Not enough valor! Training costs %d valor. (You have %d)[/color]" % [valor_cost, persistence.get_valor(wits_account_id)]})
 		return
 
 	# Apply training
-	character.gold -= cost
 	character.wits_training_bonus += 1
 	var effective_wits = character.get_effective_stat("wits")
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#00FFFF]The masters sharpen your mind![/color]\n[color=#00FF00]+1 permanent WITS! (%d/10 training) Effective WITS: %d (-%d gold)[/color]" % [character.wits_training_bonus, effective_wits, cost]
+		"message": "[color=#00FFFF]The masters sharpen your mind![/color]\n[color=#00FF00]+1 permanent WITS! (%d/10 training) Effective WITS: %d (-%d valor)[/color]" % [character.wits_training_bonus, effective_wits, valor_cost]
 	})
 
 	send_character_update(peer_id)
@@ -8965,6 +8850,401 @@ func handle_trading_post_leave(peer_id: int):
 			"type": "trading_post_end",
 			"message": "[color=#808080]You leave %s behind.[/color]" % tp_name
 		})
+
+# ===== OPEN MARKET HANDLERS =====
+
+func _get_player_post_id(peer_id: int) -> String:
+	"""Get a post_id string if the player is at a player post (enclosure), or empty string."""
+	if not characters.has(peer_id):
+		return ""
+	var character = characters[peer_id]
+	var loc_key = Vector2i(character.x, character.y)
+	if enclosure_tile_lookup.has(loc_key):
+		var enc_owner = enclosure_tile_lookup[loc_key].owner
+		var enc_idx = enclosure_tile_lookup[loc_key].enclosure_idx
+		return "player_" + enc_owner + "_" + str(enc_idx)
+	return ""
+
+func _get_market_post_id(peer_id: int) -> String:
+	"""Get the market post_id for the player's current location (trading post or player post)."""
+	if at_trading_post.has(peer_id):
+		var tp = at_trading_post[peer_id]
+		return str(tp.get("post_id", tp.get("name", "unknown")))
+	var player_post = _get_player_post_id(peer_id)
+	if not player_post.is_empty():
+		return player_post
+	return ""
+
+func handle_market_browse(peer_id: int, message: Dictionary):
+	"""Browse market listings at current trading post or player post."""
+	if not characters.has(peer_id):
+		return
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post to browse the market."})
+		return
+
+	var category = message.get("category", "all")
+	var page = int(message.get("page", 0))
+	var per_page = 9  # Show 9 items per page (selectable with 1-9)
+
+	var all_listings = persistence.get_market_listings(post_id)
+
+	# Filter by category
+	var filtered = []
+	for listing in all_listings:
+		if category == "all" or listing.get("supply_category", "") == category:
+			filtered.append(listing)
+
+	# Calculate markup prices
+	for listing in filtered:
+		var cat = listing.get("supply_category", "equipment")
+		var markup = persistence.calculate_markup(post_id, cat)
+		listing["markup_price"] = int(listing.get("base_valor", 0) * markup)
+		listing["markup"] = markup
+
+	var total_pages = max(1, ceili(float(filtered.size()) / per_page))
+	page = clampi(page, 0, total_pages - 1)
+
+	var start = page * per_page
+	var end_idx = mini(start + per_page, filtered.size())
+	var page_listings = filtered.slice(start, end_idx)
+
+	send_to_peer(peer_id, {
+		"type": "market_browse_result",
+		"listings": page_listings,
+		"page": page,
+		"total_pages": total_pages,
+		"total_listings": filtered.size(),
+		"category": category,
+		"post_id": post_id
+	})
+
+func handle_market_list_item(peer_id: int, message: Dictionary):
+	"""List an inventory item on the market. Awards base valor immediately."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var index = int(message.get("index", -1))
+	if index < 0 or index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid item."})
+		return
+
+	var item = character.inventory[index]
+
+	# Can't list equipped items
+	if item.get("equipped", false):
+		send_to_peer(peer_id, {"type": "market_error", "message": "Unequip the item first."})
+		return
+
+	# Calculate base valor
+	var base_valor = drop_tables.calculate_base_valor(item)
+
+	# Apply market bonuses (Halfling +15%, Knight +10%)
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	if bonus > 0:
+		base_valor = int(base_valor * (1.0 + bonus))
+
+	# Create listing
+	var listing = {
+		"account_id": account_id,
+		"seller_name": character.name,
+		"item": item.duplicate(),
+		"base_valor": base_valor,
+		"supply_category": drop_tables.get_supply_category(item),
+		"listed_at": int(Time.get_unix_time_from_system()),
+		"quantity": 1
+	}
+
+	# Remove item from inventory
+	character.inventory.remove_at(index)
+
+	# Add listing and award valor
+	var listing_id = persistence.add_market_listing(post_id, listing)
+	persistence.add_valor(account_id, base_valor)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_list_success",
+		"listing_id": listing_id,
+		"base_valor": base_valor,
+		"item_name": item.get("name", "item"),
+		"total_valor": persistence.get_valor(account_id)
+	})
+	send_character_update(peer_id)
+
+func handle_market_list_material(peer_id: int, message: Dictionary):
+	"""List materials on the market. Awards base valor immediately."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var material_name = message.get("material_name", "")
+	var quantity = int(message.get("quantity", 1))
+
+	if material_name.is_empty() or quantity <= 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid material or quantity."})
+		return
+
+	# Check character has enough materials
+	var available = int(character.crafting_materials.get(material_name, 0))
+	if available < quantity:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough %s. Have %d, need %d." % [material_name, available, quantity]})
+		return
+
+	# Calculate base valor per unit
+	var material_tier = _get_material_tier(material_name)
+	var tier_values = {1: 2, 2: 5, 3: 12, 4: 25, 5: 50, 6: 100}
+	var per_unit_valor = tier_values.get(material_tier, 2)
+	var total_valor = per_unit_valor * quantity
+
+	# Apply market bonuses
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	if bonus > 0:
+		total_valor = int(total_valor * (1.0 + bonus))
+
+	# Remove materials
+	character.crafting_materials[material_name] = available - quantity
+	if character.crafting_materials[material_name] <= 0:
+		character.crafting_materials.erase(material_name)
+
+	# Create listing
+	var listing = {
+		"account_id": account_id,
+		"seller_name": character.name,
+		"item": {"type": "material", "name": material_name, "material_type": material_name, "tier": material_tier},
+		"base_valor": total_valor,
+		"supply_category": "material_t%d" % material_tier,
+		"listed_at": int(Time.get_unix_time_from_system()),
+		"quantity": quantity
+	}
+
+	persistence.add_market_listing(post_id, listing)
+	persistence.add_valor(account_id, total_valor)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_list_success",
+		"base_valor": total_valor,
+		"item_name": "%dx %s" % [quantity, material_name],
+		"total_valor": persistence.get_valor(account_id)
+	})
+	send_character_update(peer_id)
+
+func _get_material_tier(material_name: String) -> int:
+	"""Determine material tier from name."""
+	var t1 = ["wood", "stone", "clay", "fiber", "bone_fragment", "slime_residue", "iron_ore", "copper_ore", "rough_hide"]
+	var t2 = ["hardwood", "granite", "iron_ingot", "copper_ingot", "leather", "silk_thread", "coal", "tin_ore", "wolf_pelt"]
+	var t3 = ["ironwood", "marble", "steel_ingot", "silver_ore", "silver_ingot", "enchanted_hide", "mithril_ore", "spider_silk"]
+	var t4 = ["ebonwood", "obsidian", "mithril_ingot", "gold_ore", "gold_ingot", "dragon_scale", "phoenix_feather", "demon_hide"]
+	var t5 = ["worldtree_wood", "adamantine_ore", "adamantine_ingot", "celestial_silk", "void_crystal", "titan_bone"]
+	var t6 = ["primordial_essence", "divine_metal", "astral_thread", "chaos_crystal"]
+
+	if material_name in t1: return 1
+	if material_name in t2: return 2
+	if material_name in t3: return 3
+	if material_name in t4: return 4
+	if material_name in t5: return 5
+	if material_name in t6: return 6
+
+	# Check crafting-specific materials
+	if material_name.begins_with("parchment") or material_name.begins_with("ink"):
+		return 2
+
+	return 1  # Default to tier 1
+
+func handle_market_buy(peer_id: int, message: Dictionary):
+	"""Buy a listing from the market."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var buyer_account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var listing_id = message.get("listing_id", "")
+	if listing_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
+		return
+
+	# Find listing
+	var listings = persistence.get_market_listings(post_id)
+	var listing = {}
+	for l in listings:
+		if l.get("listing_id", "") == listing_id:
+			listing = l
+			break
+
+	if listing.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Listing not found."})
+		return
+
+	# Calculate price
+	var base_valor = int(listing.get("base_valor", 0))
+	var seller_account_id = listing.get("account_id", "")
+	var price = base_valor
+
+	if buyer_account_id != seller_account_id:
+		# Apply markup for cross-player purchase
+		var cat = listing.get("supply_category", "equipment")
+		var markup = persistence.calculate_markup(post_id, cat)
+		price = int(base_valor * markup)
+
+	# Check buyer has enough valor
+	var buyer_valor = persistence.get_valor(buyer_account_id)
+	if buyer_valor < price:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [price, buyer_valor]})
+		return
+
+	# Check inventory space (for equipment/consumables)
+	var item = listing.get("item", {})
+	if item.get("type", "") == "material":
+		pass  # Materials go to crafting pouch, always has space
+	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
+		return
+
+	# Process purchase
+	persistence.spend_valor(buyer_account_id, price)
+
+	# If cross-player purchase, seller gets half the markup as bonus
+	if buyer_account_id != seller_account_id and price > base_valor:
+		var markup_total = price - base_valor
+		var seller_bonus = int(markup_total / 2)
+		var treasury_cut = markup_total - seller_bonus
+		if seller_bonus > 0:
+			persistence.add_valor(seller_account_id, seller_bonus)
+			# Notify seller if online
+			for pid in peers.keys():
+				if peers[pid].account_id == seller_account_id and characters.has(pid):
+					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s — you earned %d bonus Valor![/color]" % [
+						item.get("name", "item"), seller_bonus]})
+					break
+		# Treasury gets the rest
+		if treasury_cut > 0:
+			persistence.add_to_realm_treasury(treasury_cut)
+
+	# Add item to buyer
+	if item.get("type", "") == "material":
+		var mat_name = item.get("material_type", item.get("name", ""))
+		var qty = int(listing.get("quantity", 1))
+		if not character.crafting_materials.has(mat_name):
+			character.crafting_materials[mat_name] = 0
+		character.crafting_materials[mat_name] += qty
+	else:
+		character.inventory.append(item)
+
+	# Remove listing
+	persistence.remove_market_listing(post_id, listing_id)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_buy_success",
+		"item_name": item.get("name", "item"),
+		"price": price,
+		"total_valor": persistence.get_valor(buyer_account_id)
+	})
+	send_character_update(peer_id)
+
+func handle_market_my_listings(peer_id: int, message: Dictionary):
+	"""Get all listings by this account across all posts."""
+	if not peers.has(peer_id):
+		return
+	var account_id = peers[peer_id].account_id
+	var my_listings = persistence.get_all_listings_by_account(account_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_my_listings_result",
+		"listings": my_listings
+	})
+
+func handle_market_cancel(peer_id: int, message: Dictionary):
+	"""Cancel own listing and return item to inventory."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var listing_id = message.get("listing_id", "")
+	var post_id = message.get("post_id", "")
+
+	if listing_id.is_empty() or post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
+		return
+
+	# Find and verify listing belongs to this account
+	var listings = persistence.get_market_listings(post_id)
+	var listing = {}
+	for l in listings:
+		if l.get("listing_id", "") == listing_id:
+			listing = l
+			break
+
+	if listing.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Listing not found."})
+		return
+
+	if listing.get("account_id", "") != account_id:
+		send_to_peer(peer_id, {"type": "market_error", "message": "That's not your listing."})
+		return
+
+	# Check inventory space
+	var item = listing.get("item", {})
+	if item.get("type", "") != "material" and character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
+		return
+
+	# Deduct the valor that was awarded on listing (they got paid upfront)
+	var base_valor = int(listing.get("base_valor", 0))
+	var current_valor = persistence.get_valor(account_id)
+	if current_valor < base_valor:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor to cancel (you were paid %d on listing)." % base_valor})
+		return
+
+	persistence.spend_valor(account_id, base_valor)
+
+	# Return item
+	if item.get("type", "") == "material":
+		var mat_name = item.get("material_type", item.get("name", ""))
+		var qty = int(listing.get("quantity", 1))
+		if not character.crafting_materials.has(mat_name):
+			character.crafting_materials[mat_name] = 0
+		character.crafting_materials[mat_name] += qty
+	else:
+		character.inventory.append(item)
+
+	# Remove listing
+	persistence.remove_market_listing(post_id, listing_id)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_cancel_success",
+		"item_name": item.get("name", "item"),
+		"valor_deducted": base_valor,
+		"total_valor": persistence.get_valor(account_id)
+	})
+	send_character_update(peer_id)
 
 # ===== QUEST HANDLERS =====
 
@@ -9199,11 +9479,6 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 func handle_get_quest_log(peer_id: int):
 	"""Send quest log to player with quest IDs for abandonment"""
 	if not characters.has(peer_id):
-		return
-
-	# If at a trading post, show the full quest menu instead
-	if at_trading_post.has(peer_id):
-		handle_trading_post_quests(peer_id)
 		return
 
 	var character = characters[peer_id]
@@ -9511,7 +9786,7 @@ func _trigger_rescue_encounter(peer_id: int, npc: Dictionary, instance_id: Strin
 			npc["merchant_items"] = items  # Store for response handler
 			send_to_peer(peer_id, {"type": "rescue_npc_encounter", "npc_type": "merchant",
 				"message": "[color=#FFD700]A grateful merchant emerges from the shadows![/color]\n[color=#FFFFFF]\"Thank you for finding me! Please, take one of my finest wares as thanks!\"[/color]",
-				"items": items, "player_gold": character.gold})
+				"items": items, "player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0})
 		"healer":
 			character.current_hp = character.get_total_max_hp()
 			character.current_mana = character.get_total_max_mana()
@@ -10917,7 +11192,7 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var chain_count = session.get("chain_count", 0)
 
 	# Calculate job XP: base per round * tier multiplier
-	var base_xp_per_round = 10 + (tier - 1) * 10  # T1=10, T2=20, ... T6=60
+	var base_xp_per_round = 35 + (tier - 1) * 25  # T1=35, T2=60, ... T6=160
 	var total_job_xp = base_xp_per_round * chain_count
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	var char_xp = job_result.get("char_xp_gained", 0)
@@ -11562,11 +11837,13 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 			character.add_crafting_material(catch_result.item_id, quantity)
 			catch_message = "[color=#00BFFF]You found %dx %s![/color]" % [quantity, catch_result.name]
 		"treasure":
-			# Give gold based on value
-			var gold_variance = max(1, catch_result.value / 2)
-			var gold_amount = catch_result.value + randi() % gold_variance
-			character.gold += gold_amount
-			catch_message = "[color=#FFD700]You found a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
+			# Give tier-appropriate ore based on value
+			var t_tier = clampi(character.fishing_skill / 3, 0, 8)
+			var t_ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+			var t_ore_id = t_ore_tiers[mini(t_tier, t_ore_tiers.size() - 1)]
+			var t_qty = maxi(1, catch_result.value / 20)
+			character.add_crafting_material(t_ore_id, t_qty)
+			catch_message = "[color=#8B5CF6]You found a %s containing %dx %s![/color]" % [catch_result.name, t_qty, CraftingDatabaseScript.get_material_name(t_ore_id)]
 		"egg":
 			# Try to add a random egg
 			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else [4, 5, 6]
@@ -11587,8 +11864,12 @@ func handle_fish_catch(peer_id: int, message: Dictionary):
 					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
 					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
-				character.gold += catch_result.value
-				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+				var ess_tier = clampi(character.fishing_skill / 3, 0, 8)
+				var ess_ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+				var ess_ore_id = ess_ore_tiers[mini(ess_tier, ess_ore_tiers.size() - 1)]
+				var ess_qty = maxi(1, catch_result.value / 20)
+				character.add_crafting_material(ess_ore_id, ess_qty)
+				catch_message = "[color=#8B5CF6]You found %dx %s![/color]" % [ess_qty, CraftingDatabaseScript.get_material_name(ess_ore_id)]
 
 	# Build level up message if applicable
 	if xp_result.leveled_up:
@@ -11733,10 +12014,12 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 			character.add_crafting_material(catch_result.item_id, quantity)
 			catch_message = "[color=#32CD32]You found %dx %s growing in the cave![/color]" % [quantity, catch_result.name]
 		"treasure":
-			var gold_variance_m = max(1, catch_result.value / 2)
-			var gold_amount = catch_result.value + randi() % gold_variance_m
-			character.gold += gold_amount
-			catch_message = "[color=#FFD700]You unearthed a %s containing %d gold![/color]" % [catch_result.name, gold_amount]
+			var m_tier = clampi(character.mining_skill / 3, 0, 8)
+			var m_ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+			var m_ore_id = m_ore_tiers[mini(m_tier, m_ore_tiers.size() - 1)]
+			var m_qty = maxi(1, catch_result.value / 20)
+			character.add_crafting_material(m_ore_id, m_qty)
+			catch_message = "[color=#8B5CF6]You unearthed a %s containing %dx %s![/color]" % [catch_result.name, m_qty, CraftingDatabaseScript.get_material_name(m_ore_id)]
 		"egg":
 			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else ([4, 5] if catch_result.item_id == "companion_egg_rare" else [6, 7])
 			var tier = egg_tiers[randi() % egg_tiers.size()]
@@ -11756,8 +12039,12 @@ func handle_mine_catch(peer_id: int, message: Dictionary):
 					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
 					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
-				character.gold += catch_result.value
-				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+				var em_tier = clampi(character.mining_skill / 3, 0, 8)
+				var em_ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+				var em_ore_id = em_ore_tiers[mini(em_tier, em_ore_tiers.size() - 1)]
+				var em_qty = maxi(1, catch_result.value / 20)
+				character.add_crafting_material(em_ore_id, em_qty)
+				catch_message = "[color=#8B5CF6]You found %dx %s![/color]" % [em_qty, CraftingDatabaseScript.get_material_name(em_ore_id)]
 
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Mining skill increased to %d! ★[/color]" % xp_result.new_level)
@@ -11901,10 +12188,12 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 			character.add_crafting_material(catch_result.item_id, quantity)
 			catch_message = "[color=#9400D3]You discovered %dx %s![/color]" % [quantity, catch_result.name]
 		"treasure":
-			var gold_variance_l = max(1, catch_result.value / 2)
-			var gold_amount = catch_result.value + randi() % gold_variance_l
-			character.gold += gold_amount
-			catch_message = "[color=#FFD700]You found a %s hidden in the trunk containing %d gold![/color]" % [catch_result.name, gold_amount]
+			var l_tier = clampi(character.logging_skill / 3, 0, 5)
+			var l_wood_tiers = ["common_wood", "oak_wood", "ash_wood", "ironwood", "darkwood", "worldtree_branch"]
+			var l_wood_id = l_wood_tiers[mini(l_tier, l_wood_tiers.size() - 1)]
+			var l_qty = maxi(1, catch_result.value / 20)
+			character.add_crafting_material(l_wood_id, l_qty)
+			catch_message = "[color=#8B5CF6]You found a %s hidden in the trunk containing %dx %s![/color]" % [catch_result.name, l_qty, CraftingDatabaseScript.get_material_name(l_wood_id)]
 		"egg":
 			var egg_tiers = [1, 2, 3] if catch_result.item_id == "companion_egg_random" else ([4, 5] if catch_result.item_id == "companion_egg_rare" else [6, 7])
 			var tier = egg_tiers[randi() % egg_tiers.size()]
@@ -11924,8 +12213,12 @@ func handle_log_catch(peer_id: int, message: Dictionary):
 					catch_message = "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap]
 					extra_messages.append("[color=#808080]Upgrade Incubation Chamber at your Sanctuary for more slots.[/color]")
 			else:
-				character.gold += catch_result.value
-				catch_message = "[color=#FFD700]You found treasure worth %d gold![/color]" % catch_result.value
+				var el_tier = clampi(character.logging_skill / 3, 0, 5)
+				var el_wood_tiers = ["common_wood", "oak_wood", "ash_wood", "ironwood", "darkwood", "worldtree_branch"]
+				var el_wood_id = el_wood_tiers[mini(el_tier, el_wood_tiers.size() - 1)]
+				var el_qty = maxi(1, catch_result.value / 20)
+				character.add_crafting_material(el_wood_id, el_qty)
+				catch_message = "[color=#8B5CF6]You found %dx %s![/color]" % [el_qty, CraftingDatabaseScript.get_material_name(el_wood_id)]
 
 	if xp_result.leveled_up:
 		extra_messages.append("[color=#FFFF00]★ Logging skill increased to %d! ★[/color]" % xp_result.new_level)
@@ -12391,6 +12684,11 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
 
+	# Award character XP from crafting
+	var craft_char_xp = xp_result.get("char_xp_gained", 0)
+	if craft_char_xp > 0:
+		character.add_experience(craft_char_xp)
+
 	# Award matching specialty job XP (50% of craft XP)
 	var job_xp_gained = 0
 	var job_leveled_up = false
@@ -12407,11 +12705,8 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	var result_message = ""
 	var crafted_item = {}
 
-	if quality == CraftingDatabaseScript.CraftingQuality.FAILED:
-		result_message = "[color=#FF4444]Crafting failed! Materials lost.[/color]"
-	else:
-		# Create the item based on output type
-		match recipe.output_type:
+	# Create the item based on output type
+	match recipe.output_type:
 			"weapon", "armor":
 				crafted_item = _create_crafted_equipment(recipe, quality)
 				if crafted_item.is_empty():
@@ -12798,13 +13093,14 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
 		"type": "craft_result",
-		"success": quality != CraftingDatabaseScript.CraftingQuality.FAILED,
+		"success": true,
 		"recipe_id": recipe_id,
 		"recipe_name": recipe.name,
 		"quality": quality,
 		"quality_name": quality_name,
 		"quality_color": quality_color,
 		"xp_gained": xp_gained,
+		"char_xp_gained": craft_char_xp,
 		"leveled_up": xp_result.leveled_up,
 		"new_level": xp_result.new_level,
 		"skill_name": skill_name,
@@ -13318,6 +13614,11 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
 
+	# Award character XP from crafting
+	var craft_char_xp = xp_result.get("char_xp_gained", 0)
+	if craft_char_xp > 0:
+		character.add_experience(craft_char_xp)
+
 	var job_xp_gained = 0
 	var job_leveled_up = false
 	var job_new_level = 0
@@ -13332,10 +13633,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 	var result_message = ""
 	var crafted_item = {}
 
-	if quality == CraftingDatabaseScript.CraftingQuality.FAILED:
-		result_message = "[color=#FF4444]Crafting failed! Materials lost.[/color]"
-	else:
-		match recipe.output_type:
+	match recipe.output_type:
 			"weapon", "armor":
 				crafted_item = _create_crafted_equipment(recipe, quality)
 				if crafted_item.is_empty():
@@ -13645,7 +13943,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 
 	send_to_peer(peer_id, {
 		"type": "craft_result",
-		"success": quality != CraftingDatabaseScript.CraftingQuality.FAILED,
+		"success": true,
 		"recipe_id": recipe.get("id", ""),
 		"quality": quality,
 		"quality_name": quality_name,
@@ -13655,6 +13953,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 		"message": result_message,
 		"materials": character.crafting_materials,
 		"xp_gained": xp_gained,
+		"char_xp_gained": craft_char_xp,
 		"skill_name": skill_name,
 		"leveled_up": xp_result.get("leveled_up", false),
 		"new_level": xp_result.get("new_level", skill_level),
@@ -13673,7 +13972,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 11  # 11x11 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure boundaries
 
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
@@ -15662,11 +15961,6 @@ func _open_dungeon_treasure(peer_id: int):
 	# Give rewards
 	var reward_messages = []
 
-	# Gold
-	if treasure.gold > 0:
-		character.gold += treasure.gold
-		reward_messages.append("[color=#FFD700]+%d Gold[/color]" % treasure.gold)
-
 	# Materials
 	for mat in treasure.get("materials", []):
 		character.add_crafting_material(mat.id, mat.quantity)
@@ -15693,7 +15987,6 @@ func _open_dungeon_treasure(peer_id: int):
 		"type": "dungeon_treasure",
 		"rewards": reward_messages,
 		"message": "[color=#FFD700]You open the treasure chest![/color]",
-		"gold": treasure.gold,
 		"materials": treasure.get("materials", []),
 		"egg": egg_info,
 		"player_x": character.dungeon_x,
@@ -15786,11 +16079,10 @@ func _complete_dungeon(peer_id: int):
 	if active_dungeons.has(instance_id):
 		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
 
-	# Calculate rewards (sub-tier scales XP/gold)
+	# Calculate rewards (sub-tier scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
 
 	# Give rewards
-	character.gold += rewards.gold
 	var xp_result = character.add_experience(rewards.xp)
 
 	# Give GUARANTEED boss egg (inherits dungeon sub-tier)!
@@ -15873,7 +16165,6 @@ func _complete_dungeon(peer_id: int):
 	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
 	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
 	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, rewards.total_floors]
-	completion_msg += "[color=#FFD700]+%d Gold[/color]\n" % rewards.gold
 	completion_msg += "[color=#00BFFF]+%d XP[/color]\n" % rewards.xp
 
 	# Show boss egg reward!
@@ -15914,7 +16205,6 @@ func _complete_dungeon(peer_id: int):
 
 			# Give same rewards (full duplication, not split)
 			var f_rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, follower.dungeon_floor + 1, inst_sub_tier)
-			follower.gold += f_rewards.gold
 			var f_xp_result = follower.add_experience(f_rewards.xp)
 
 			# Boss egg for each member
@@ -15956,7 +16246,6 @@ func _complete_dungeon(peer_id: int):
 			# Build follower completion message
 			var f_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
 			f_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
-			f_msg += "[color=#FFD700]+%d Gold[/color]\n" % f_rewards.gold
 			f_msg += "[color=#00BFFF]+%d XP[/color]\n" % f_rewards.xp
 			if f_egg_given:
 				f_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % f_egg_name
@@ -17094,20 +17383,21 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Ability on cooldown (%s remaining)." % time_str})
 		return
 
-	# Check and consume gold cost
-	var gold_cost = ability.get("gold_cost", 0)
-	if ability.has("gold_cost_percent"):
-		gold_cost = int(character.gold * ability.gold_cost_percent / 100.0)
-	if gold_cost > 0:
-		if character.gold < gold_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gold (%d required)." % gold_cost})
+	# Check and consume valor cost
+	var valor_cost = ability.get("valor_cost", 0)
+	var title_account_id = peers[peer_id].account_id
+	if ability.has("valor_cost_percent"):
+		valor_cost = int(persistence.get_valor(title_account_id) * ability.valor_cost_percent / 100.0)
+	if valor_cost > 0:
+		if persistence.get_valor(title_account_id) < valor_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor (%d required)." % valor_cost})
 			return
 
-	# Check gem cost
+	# Check gem cost (now uses Monster Gem crafting material)
 	var gem_cost = ability.get("gem_cost", 0)
 	if gem_cost > 0:
-		if character.gems < gem_cost:
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough gems (%d required)." % gem_cost})
+		if not character.has_crafting_materials({"monster_gem": gem_cost}):
+			send_to_peer(peer_id, {"type": "error", "message": "Not enough Monster Gems (%d required)." % gem_cost})
 			return
 
 	# Find target if needed
@@ -17129,10 +17419,10 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 			return
 
 	# Deduct costs after all checks pass
-	if gold_cost > 0:
-		character.gold -= gold_cost
+	if valor_cost > 0:
+		persistence.spend_valor(title_account_id, valor_cost)
 	if gem_cost > 0:
-		character.gems -= gem_cost
+		character.remove_crafting_material("monster_gem", gem_cost)
 
 	# Set cooldown
 	if ability.has("cooldown"):
@@ -17260,6 +17550,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 	"""Execute a specific title ability"""
 	var title_color = TitlesScript.get_title_color(character.title)
 	var title_name = TitlesScript.get_title_name(character.title)
+	var title_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
 
 	match ability_id:
 		# ===== JARL ABILITIES =====
@@ -17285,35 +17576,36 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				})
 
 		"tax_player":
-			if target:
-				var tax_amount = mini(10000, int(target.gold * 0.10))
-				target.gold -= tax_amount
-				character.gold += tax_amount
+			if target and peers.has(target_peer_id):
+				var target_account_id = peers[target_peer_id].account_id
+				var tax_amount = mini(500, int(persistence.get_valor(target_account_id) * 0.05))
+				persistence.spend_valor(target_account_id, tax_amount)
+				persistence.add_valor(title_account_id, tax_amount)
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#C0C0C0]The Jarl has taxed you %d gold![/color]" % tax_amount
+					"message": "[color=#C0C0C0]The Jarl has taxed you %d valor![/color]" % tax_amount
 				})
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You collected %d gold in taxes from %s.[/color]" % [tax_amount, target.name]
+					"message": "[color=#FFD700]You collected %d valor in taxes from %s.[/color]" % [tax_amount, target.name]
 				})
 				_broadcast_chat_from_title(character.name, character.title, "has taxed %s!" % target.name)
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
 		"gift_silver":
-			if target:
-				var gift_amount = int(character.gold * 0.08)  # They already paid 5%, give 8%
-				target.gold += gift_amount
+			if target and peers.has(target_peer_id):
+				var gift_amount = int(persistence.get_valor(title_account_id) * 0.08)  # They already paid 5%, give 8%
+				persistence.add_valor(peers[target_peer_id].account_id, gift_amount)
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]The Jarl has gifted you %d gold![/color]" % gift_amount
+					"message": "[color=#FFD700]The Jarl has gifted you %d valor![/color]" % gift_amount
 				})
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You gifted %d gold to %s.[/color]" % [gift_amount, target.name]
+					"message": "[color=#FFD700]You gifted %d valor to %s.[/color]" % [gift_amount, target.name]
 				})
-				_broadcast_chat_from_title(character.name, character.title, "has gifted %s with silver!" % target.name)
+				_broadcast_chat_from_title(character.name, character.title, "has gifted %s with valor!" % target.name)
 				send_character_update(target_peer_id)
 				save_character(target_peer_id)
 
@@ -17324,10 +17616,10 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
 				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
-				character.gold += withdrawn
+				persistence.add_valor(title_account_id, withdrawn)
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You claim %d gold from the realm treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
+					"message": "[color=#FFD700]You claim %d valor from the realm treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
 				})
 			else:
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
@@ -17351,7 +17643,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				current_knight_peer_id = target_peer_id
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#87CEEB]The High King has knighted you! You gain +15%% damage and +10%% gold permanently![/color]"
+					"message": "[color=#87CEEB]The High King has knighted you! You gain +15%% damage and +10%% market bonus permanently![/color]"
 				})
 				_broadcast_chat_from_title(character.name, character.title, "has knighted %s!" % target.name)
 				send_character_update(target_peer_id)
@@ -17392,10 +17684,10 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
 				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
-				character.gold += withdrawn
+				persistence.add_valor(title_account_id, withdrawn)
 				send_to_peer(peer_id, {
 					"type": "text",
-					"message": "[color=#FFD700]You claim %d gold from the royal treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
+					"message": "[color=#FFD700]You claim %d valor from the royal treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
 				})
 			else:
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The realm treasury is empty.[/color]"})
@@ -17433,7 +17725,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				current_mentee_peer_ids[peer_id] = target_peer_id
 				send_to_peer(target_peer_id, {
 					"type": "text",
-					"message": "[color=#DDA0DD]Elder %s has taken you as their Mentee! You gain +30%% XP and +20%% gold permanently![/color]" % character.name
+					"message": "[color=#DDA0DD]Elder %s has taken you as their Mentee! You gain +50%% XP permanently![/color]" % character.name
 				})
 				_broadcast_chat_from_title(character.name, character.title, "has taken %s as their Mentee!" % target.name)
 				send_character_update(target_peer_id)
@@ -17552,8 +17844,8 @@ func _show_pilgrimage_progress(peer_id: int, character: Character):
 			if wealth_done:
 				msg += "[color=#00FF00][X] Shrine of Wealth - COMPLETE[/color]\n"
 			else:
-				msg += "[color=#FFD700][ ] Shrine of Wealth: %d / %d gold donated[/color]\n" % [donated, gold_req]
-				msg += "[color=#808080]    Use /donate <amount> to donate gold[/color]"
+				msg += "[color=#FFD700][ ] Shrine of Wealth: %d / %d valor donated[/color]\n" % [donated, gold_req]
+				msg += "[color=#808080]    Use /donate <amount> to donate valor[/color]"
 
 			# Check if all done
 			if blood_done and mind_done and wealth_done:
@@ -17606,7 +17898,7 @@ func _broadcast_chat_from_title(player_name: String, title_id: String, action_te
 # ===== PILGRIMAGE SYSTEM HANDLERS =====
 
 func handle_pilgrimage_donate(peer_id: int, message: Dictionary):
-	"""Handle gold donation for Trial of Wealth"""
+	"""Handle valor donation for Trial of Wealth"""
 	if not characters.has(peer_id):
 		return
 
@@ -17634,12 +17926,13 @@ func handle_pilgrimage_donate(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid donation amount."})
 		return
 
-	if character.gold < amount:
-		send_to_peer(peer_id, {"type": "error", "message": "You don't have enough gold."})
+	var pilgrim_account_id = peers[peer_id].account_id
+	if persistence.get_valor(pilgrim_account_id) < amount:
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have enough valor."})
 		return
 
 	# Process donation
-	character.gold -= amount
+	persistence.spend_valor(pilgrim_account_id, amount)
 	character.add_pilgrimage_gold_donation(amount)
 
 	var total_donated = character.pilgrimage_progress.get("gold_donated", 0)
@@ -17647,7 +17940,7 @@ func handle_pilgrimage_donate(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FFD700]You donate %d gold to the Shrine of Wealth.[/color]\n[color=#808080]Total donated: %d / %d gold[/color]" % [amount, total_donated, required]
+		"message": "[color=#FFD700]You donate %d valor to the Shrine of Wealth.[/color]\n[color=#808080]Total donated: %d / %d valor[/color]" % [amount, total_donated, required]
 	})
 
 	# Check if shrine complete
@@ -17712,14 +18005,14 @@ func handle_summon_response(peer_id: int, message: Dictionary):
 			})
 			# Refund costs
 			var abilities = TitlesScript.get_title_abilities("jarl")
-			var gold_cost = abilities.get("summon", {}).get("gold_cost", 500)
-			characters[from_peer_id].gold += gold_cost
+			var refund_valor_cost = abilities.get("summon", {}).get("valor_cost", 50)
+			if peers.has(from_peer_id):
+				persistence.add_valor(peers[from_peer_id].account_id, refund_valor_cost)
 			send_to_peer(from_peer_id, {
 				"type": "text",
-				"message": "[color=#FFD700]%d gold refunded.[/color]" % gold_cost
+				"message": "[color=#FFD700]%d valor refunded.[/color]" % refund_valor_cost
 			})
 			send_character_update(from_peer_id)
-			save_character(from_peer_id)
 
 # Crucible state tracking: {peer_id: {in_crucible: bool, progress: int, current_boss: int}}
 var crucible_state: Dictionary = {}
@@ -18563,9 +18856,9 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	var distance = sqrt(float(death_x * death_x + death_y * death_y))
 	var spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
-	# Avoid spawning corpse on trading post tiles (post interaction overrides looting)
+	# Avoid spawning corpse on trading post tiles or inside player enclosures
 	for _attempt in range(10):
-		if not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y):
+		if not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y) and not enclosure_tile_lookup.has(Vector2i(spawn_location.x, spawn_location.y)):
 			break
 		spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
@@ -18575,7 +18868,7 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 		"active_companion": null,
 		"other_companion": null,
 		"egg": null,
-		"gems": 0
+		"monster_gems": 0
 	}
 
 	# Select TWO random equipped items
@@ -18606,13 +18899,14 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 		var random_idx = randi() % character.incubating_eggs.size()
 		contents["egg"] = character.incubating_eggs[random_idx].duplicate(true)
 
-	# Random percentage of gems (10-50%)
-	if character.gems > 0:
+	# Random percentage of monster gems (10-50%)
+	var player_monster_gems = character.crafting_materials.get("monster_gem", 0)
+	if player_monster_gems > 0:
 		var gem_percent = randf_range(0.1, 0.5)
-		contents["gems"] = int(character.gems * gem_percent)
+		contents["monster_gems"] = int(player_monster_gems * gem_percent)
 
 	# Don't create empty corpses
-	if contents["items"].is_empty() and contents["active_companion"] == null and contents["other_companion"] == null and contents["egg"] == null and contents["gems"] == 0:
+	if contents["items"].is_empty() and contents["active_companion"] == null and contents["other_companion"] == null and contents["egg"] == null and contents["monster_gems"] == 0:
 		return {}
 
 	# Generate unique corpse ID
@@ -18751,11 +19045,11 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 			var egg_type = egg.get("monster_type", "Unknown")
 			warnings.append("[color=#FF6666]★ %s Egg found but eggs full! (%d/%d) ★[/color]" % [egg_type, character.incubating_eggs.size(), _mbox_egg_cap])
 
-	# Transfer gems
-	var gems = contents.get("gems", 0)
-	if gems > 0:
-		character.gems += gems
-		loot_summary.append("[color=#00BFFF]%d Gems[/color]" % gems)
+	# Transfer monster gems
+	var corpse_gems = contents.get("monster_gems", contents.get("gems", 0))
+	if corpse_gems > 0:
+		character.add_crafting_material("monster_gem", corpse_gems)
+		loot_summary.append("[color=#00BFFF]%d Monster Gem%s[/color]" % [corpse_gems, "s" if corpse_gems > 1 else ""])
 
 	# Remove corpse from persistence
 	persistence.remove_corpse(corpse_id)
@@ -18829,41 +19123,29 @@ func handle_gm_setlevel(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Level set to %d[/color]" % ch.level})
 
-func handle_gm_setgold(peer_id: int, message: Dictionary):
+func handle_gm_setvalor(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
 		_gm_deny(peer_id)
 		return
-	if not characters.has(peer_id):
+	if not peers.has(peer_id):
 		return
 	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
-	characters[peer_id].gold = amount
+	var account_id = peers[peer_id].account_id
+	persistence.set_valor(account_id, amount)
 	send_character_update(peer_id)
-	save_character(peer_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gold set to %d[/color]" % amount})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Valor set to %d[/color]" % amount})
 
-func handle_gm_setgems(peer_id: int, message: Dictionary):
+func handle_gm_setmonstergems(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
 		_gm_deny(peer_id)
 		return
 	if not characters.has(peer_id):
 		return
-	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
-	characters[peer_id].gems = amount
+	var amount = clampi(int(message.get("amount", 0)), 0, 999)
+	characters[peer_id].crafting_materials["monster_gem"] = amount
 	send_character_update(peer_id)
 	save_character(peer_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gems set to %d[/color]" % amount})
-
-func handle_gm_setessence(peer_id: int, message: Dictionary):
-	if not _is_admin(peer_id):
-		_gm_deny(peer_id)
-		return
-	if not characters.has(peer_id):
-		return
-	var amount = clampi(int(message.get("amount", 0)), 0, 99999999)
-	characters[peer_id].salvage_essence = amount
-	send_character_update(peer_id)
-	save_character(peer_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Salvage Essence set to %d[/color]" % amount})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Monster Gems set to %d[/color]" % amount})
 
 func handle_gm_setxp(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
@@ -19072,10 +19354,9 @@ func handle_gm_giveall(peer_id: int):
 	if not characters.has(peer_id):
 		return
 	var ch = characters[peer_id]
-	# Gold, gems, essence
-	ch.gold += 50000
-	ch.gems += 100
-	ch.salvage_essence += 5000
+	# Valor and materials
+	persistence.add_valor(peers[peer_id].account_id, 5000)
+	ch.add_crafting_material("monster_gem", 100)
 	# Give a set of materials
 	var mats_to_give = {"copper_ore": 50, "iron_ore": 50, "steel_ore": 30, "mithril_ore": 20,
 		"small_fish": 30, "medium_fish": 20, "healing_herb": 30, "mana_blossom": 20,
@@ -19103,7 +19384,7 @@ func handle_gm_giveall(peer_id: int):
 		ch.incubating_eggs.append(egg)
 	send_character_update(peer_id)
 	save_character(peer_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Starter kit received: 50k gold, 100 gems, 5k ESS, materials, items, and an egg![/color]"})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Starter kit received: 5k valor, 100 gems, 5k ESS, materials, items, and an egg![/color]"})
 
 func handle_gm_teleport(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
@@ -19414,6 +19695,8 @@ func _execute_full_wipe(admin_peer_id: int):
 	player_enclosures.clear()
 	player_post_names.clear()
 	enclosure_tile_lookup.clear()
+	persistence.clear_all_market_data()
+	persistence.clear_all_valor()
 	log_message("[WIPE] Full wipe complete. Server restart recommended.")
 	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Full wipe complete. Restart the server.[/color]"})
 
@@ -19442,6 +19725,7 @@ func _execute_map_wipe(admin_peer_id: int):
 	dungeon_floor_rooms.clear()
 	dungeon_monsters.clear()
 	player_dungeon_instances.clear()
+	persistence.clear_all_market_data()
 	if FileAccess.file_exists("user://data/corpses.json"):
 		DirAccess.remove_absolute("user://data/corpses.json")
 	_check_dungeon_spawns()
@@ -20270,9 +20554,13 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 			elif characters[pid].can_add_item() or _try_auto_salvage(pid):
 				if _should_auto_salvage_item(pid, item):
 					var salvage_result = drop_tables.get_salvage_value(item)
-					var essence = salvage_result.essence
-					characters[pid].add_salvage_essence(essence)
-					drop_messages.append("[color=#AA66FF]⚡ Auto-salvaged %s (+%d ESS)[/color]" % [item.get("name", "item"), essence])
+					var p_sal_mats = salvage_result.get("materials", {})
+					for p_mid in p_sal_mats:
+						characters[pid].add_crafting_material(p_mid, p_sal_mats[p_mid])
+					var p_sal_parts = []
+					for p_mid2 in p_sal_mats:
+						p_sal_parts.append("%dx %s" % [p_sal_mats[p_mid2], CraftingDatabaseScript.get_material_name(p_mid2)])
+					drop_messages.append("[color=#AA66FF]Auto-salvaged %s → %s[/color]" % [item.get("name", "item"), ", ".join(p_sal_parts) if not p_sal_parts.is_empty() else "nothing"])
 				else:
 					characters[pid].add_item(item)
 					var rarity = item.get("rarity", "common")
@@ -20299,7 +20587,7 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 			"total_gems": total_gems,
 			"drop_data": drop_data,
 			"xp_earned": rewards.get("xp", 0),
-			"gold_earned": rewards.get("gold", 0)
+			"gold_earned": 0
 		})
 
 	# End party combat (cleans up combat state)

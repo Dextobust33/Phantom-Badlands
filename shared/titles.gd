@@ -58,7 +58,7 @@ const KNIGHT_STATUS = {
 	"color": "#87CEEB",               # Light blue
 	"prefix": "[Knight]",
 	"damage_bonus": 0.15,             # +15% damage
-	"gold_bonus": 0.10,               # +10% gold find
+	"market_bonus": 0.10,             # +10% market listing bonus
 	"description": "Knighted by the High King. Permanent until King dies or knights another."
 }
 
@@ -68,7 +68,7 @@ const MENTEE_STATUS = {
 	"color": "#DDA0DD",               # Plum
 	"prefix": "[Mentee]",
 	"xp_bonus": 0.30,                 # +30% XP
-	"gold_bonus": 0.20,               # +20% gold find
+	"extra_xp_bonus": 0.20,           # Additional +20% XP (was gold_bonus)
 	"max_level": 500,                 # Can only mentor players below this level
 	"description": "Mentored by an Elder. Permanent until Elder dies or mentors another."
 }
@@ -116,9 +116,9 @@ const PILGRIMAGE_STAGES = {
 	},
 	"trial_wealth": {
 		"name": "Trial of Wealth",
-		"description": "Donate 10,000,000 gold to the Shrine of Wealth.",
-		"requirement": 10000000,
-		"type": "gold_donated",
+		"description": "Donate 50,000 valor to the Shrine of Wealth.",
+		"requirement": 50000,
+		"type": "valor_donated",
 		"shrine_reward_stat": "wisdom",
 		"shrine_reward_amount": 3
 	},
@@ -182,78 +182,11 @@ const TITLE_LOCATIONS = {
 	"infernal_forge": Vector2i(-400, 0) # Fire Mountain - where Crown is forged
 }
 
-# Tax collector settings
-const TAX_COLLECTOR = {
-	"encounter_rate": 0.05,           # 5% chance per movement
-	"tax_rate": 0.08,                 # 8% of current gold
-	"minimum_gold": 100,              # Don't trigger if player has less than this
-	"minimum_tax": 10                 # Minimum tax collected
-}
-
-# Tax collector encounter messages (randomly selected)
-const TAX_ENCOUNTERS = [
-	{
-		"type": "quick",
-		"messages": [
-			"A Tax Collector steps forward. 'The realm requires its due.'",
-			"You pay %d gold."
-		]
-	},
-	{
-		"type": "slip",
-		"messages": [
-			"A hooded figure steps from the shadows... but you slip past!",
-			"The Tax Collector appears anyway. 'Nice try. The realm requires %d gold.'"
-		],
-		"delay": true
-	},
-	{
-		"type": "negotiator",
-		"messages": [
-			"A well-dressed Tax Collector bows. 'Good citizen, the Crown requests a modest contribution.'",
-			"'Your %d gold is noted. May fortune favor you.'",
-			"[color=#00FF00]+5% gold find for 3 battles![/color]"
-		],
-		"bonus": {"type": "gold_find", "value": 5, "battles": 3}
-	},
-	{
-		"type": "bumbling",
-		"messages": [
-			"A nervous Tax Collector fumbles with his ledger. 'Er, let me see... you owe...'",
-			"'...%d gold! Yes, that's it. Sorry for the trouble.'"
-		],
-		"tax_modifier": 0.625  # Only takes 5% instead of 8%
-	},
-	{
-		"type": "veteran",
-		"messages": [
-			"A scarred Tax Collector blocks your path. 'Don't even think about running.'",
-			"'I've been doing this longer than you've been alive. %d gold. Now.'"
-		],
-		"tax_modifier": 1.25  # Takes 10% instead of 8%
-	},
-	{
-		"type": "duo",
-		"messages": [
-			"Two Tax Collectors approach from opposite directions.",
-			"'Nowhere to run!' laughs one. 'The realm requires %d gold,' says the other.",
-			"They split your payment and vanish into the crowd."
-		]
-	}
-]
-
-# Title ruler immunity message
-const TAX_IMMUNITY_MESSAGE = [
-	"A Tax Collector approaches... then recognizes your sigil.",
-	"'My %s! Forgive my intrusion. The realm prospers under your rule.'",
-	"[color=#00FF00]He bows and leaves without collecting.[/color]"
-]
-
-# Title abilities - REVISED with economic costs
+# Title abilities - REVISED with valor costs
 const JARL_ABILITIES = {
 	"summon": {
 		"name": "Summon",
-		"gold_cost": 500,
+		"valor_cost": 10,
 		"resource": "none",
 		"description": "Teleport a willing player to your location",
 		"target": "player",
@@ -262,24 +195,24 @@ const JARL_ABILITIES = {
 	},
 	"tax_player": {
 		"name": "Tax",
-		"gold_cost": 1000,
+		"valor_cost": 20,
 		"resource": "none",
-		"description": "Take 10% of target's gold (max 10,000)",
+		"description": "Take 5% of target's Valor (max 500)",
 		"target": "player",
 		"is_negative": true
 	},
-	"gift_silver": {
-		"name": "Gift of Silver",
-		"gold_cost_percent": 5,           # Costs 5% of your gold
-		"gold_gift_percent": 8,           # Target receives 8% of your gold
+	"gift_valor": {
+		"name": "Gift of Valor",
+		"valor_cost_percent": 5,          # Costs 5% of your Valor
+		"valor_gift_percent": 8,          # Target receives 8% of your Valor
 		"resource": "none",
-		"description": "Gift 8% of your gold to a player (costs 5%)",
+		"description": "Gift 8% of your Valor to a player (costs 5%)",
 		"target": "player",
 		"is_negative": true
 	},
 	"collect_tribute": {
 		"name": "Collect Tribute",
-		"gold_cost": 0,
+		"valor_cost": 0,
 		"resource": "none",
 		"cooldown": 3600,                 # 1 hour cooldown
 		"treasury_percent": 15,           # Collect 15% of realm treasury
@@ -292,16 +225,16 @@ const JARL_ABILITIES = {
 const HIGH_KING_ABILITIES = {
 	"knight": {
 		"name": "Knight",
-		"gold_cost": 50000,
+		"valor_cost": 500,
 		"gem_cost": 5,
 		"resource": "none",
-		"description": "Grant permanent Knight status (+15% dmg, +10% gold)",
+		"description": "Grant permanent Knight status (+15% dmg, +10% market)",
 		"target": "player",
 		"is_negative": true
 	},
 	"cure": {
 		"name": "Cure",
-		"gold_cost": 5000,
+		"valor_cost": 50,
 		"resource": "none",
 		"description": "Remove all debuffs from a player",
 		"target": "player",
@@ -309,7 +242,7 @@ const HIGH_KING_ABILITIES = {
 	},
 	"exile": {
 		"name": "Exile",
-		"gold_cost": 10000,
+		"valor_cost": 100,
 		"resource": "none",
 		"description": "Teleport player 100 tiles in random direction",
 		"target": "player",
@@ -317,7 +250,7 @@ const HIGH_KING_ABILITIES = {
 	},
 	"royal_treasury": {
 		"name": "Royal Treasury",
-		"gold_cost": 0,
+		"valor_cost": 0,
 		"resource": "none",
 		"cooldown": 7200,                 # 2 hour cooldown
 		"treasury_percent": 30,           # Collect 30% of realm treasury
@@ -330,23 +263,23 @@ const HIGH_KING_ABILITIES = {
 const ELDER_ABILITIES = {
 	"heal_other": {
 		"name": "Heal",
-		"gold_cost": 10000,
+		"valor_cost": 100,
 		"resource": "none",
 		"description": "Restore 50% HP to another player",
 		"target": "player"
 	},
 	"mentor": {
 		"name": "Mentor",
-		"gold_cost": 500000,
+		"valor_cost": 5000,
 		"gem_cost": 25,
 		"resource": "none",
-		"description": "Grant permanent Mentee status (+30% XP, +20% gold) to player below Lv500",
+		"description": "Grant permanent Mentee status (+50% XP) to player below Lv500",
 		"target": "player",
 		"max_target_level": 500
 	},
 	"seek_flame": {
 		"name": "Seek Flame",
-		"gold_cost": 25000,
+		"valor_cost": 25,
 		"resource": "none",
 		"description": "Check Eternal Pilgrimage progress",
 		"target": "self"
@@ -356,14 +289,14 @@ const ELDER_ABILITIES = {
 const ETERNAL_ABILITIES = {
 	"restore": {
 		"name": "Restore",
-		"gold_cost": 50000,
+		"valor_cost": 500,
 		"resource": "none",
 		"description": "Fully heal and cure all ailments",
 		"target": "player"
 	},
 	"bless": {
 		"name": "Bless",
-		"gold_cost": 5000000,
+		"valor_cost": 50000,
 		"gem_cost": 100,
 		"resource": "none",
 		"description": "Grant permanent +5 to a chosen stat",
@@ -371,7 +304,7 @@ const ETERNAL_ABILITIES = {
 	},
 	"smite": {
 		"name": "Smite",
-		"gold_cost": 100000,
+		"valor_cost": 1000,
 		"gem_cost": 10,
 		"resource": "none",
 		"description": "Curse target (25 poison, -25% damage for 10 rounds)",
@@ -380,7 +313,7 @@ const ETERNAL_ABILITIES = {
 	},
 	"guardian": {
 		"name": "Guardian",
-		"gold_cost": 2000000,
+		"valor_cost": 20000,
 		"gem_cost": 50,
 		"resource": "none",
 		"description": "Grant 1 permanent death save (until used)",
@@ -460,11 +393,6 @@ static func get_item_for_title(title_id: String) -> String:
 	var title_info = TITLE_DATA.get(title_id, {})
 	return title_info.get("requires_item", "")
 
-static func is_title_tax_immune(title_id: String) -> bool:
-	"""Check if a title grants tax immunity"""
-	var title_info = TITLE_DATA.get(title_id, {})
-	return title_info.get("tax_immune", false)
-
 static func get_abuse_threshold(title_id: String) -> int:
 	"""Get the abuse point threshold for losing a title"""
 	var title_info = TITLE_DATA.get(title_id, {})
@@ -485,11 +413,11 @@ static func format_ability_cost(ability: Dictionary) -> String:
 	"""Format the cost of an ability for display"""
 	var parts = []
 
-	if ability.has("gold_cost") and ability.gold_cost > 0:
-		parts.append("%s gold" % _format_number(ability.gold_cost))
+	if ability.has("valor_cost") and ability.valor_cost > 0:
+		parts.append("%s valor" % _format_number(ability.valor_cost))
 
-	if ability.has("gold_cost_percent") and ability.gold_cost_percent > 0:
-		parts.append("%d%% of your gold" % ability.gold_cost_percent)
+	if ability.has("valor_cost_percent") and ability.valor_cost_percent > 0:
+		parts.append("%d%% of your valor" % ability.valor_cost_percent)
 
 	if ability.has("gem_cost") and ability.gem_cost > 0:
 		parts.append("%d gems" % ability.gem_cost)

@@ -96,7 +96,6 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 
 	# Calculate rewards based on distance
 	var base_xp = int(distance * 2)
-	var base_gold = int(distance)
 	var gems = max(0, int(distance / 100))
 
 	return {
@@ -107,7 +106,7 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 		"trading_post": "",  # Origin unknown when regenerating
 		"target": 1,
 		"destinations": [dest_post_id],
-		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"rewards": {"xp": base_xp, "gems": gems},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_progression": true
@@ -142,20 +141,18 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 	var area_factor = pow(area_level + 1, 2.2)
 	var scale_factor = area_factor / base_factor
 
-	# Scale XP and gold proportionally
+	# Scale XP proportionally
 	var original_xp = quest.rewards.get("xp", 0)
-	var original_gold = quest.rewards.get("gold", 0)
 	var original_gems = quest.rewards.get("gems", 0)
 
 	var scaled_rewards = {
 		"xp": int(original_xp * scale_factor),
-		"gold": int(original_gold * scale_factor * 0.3),  # Gold scales slower than XP
 		"gems": original_gems + int(log(scale_factor + 1) * 2)  # Gems scale with log
 	}
 
 	quest.rewards = scaled_rewards
 	quest["area_level"] = area_level
-	quest["original_rewards"] = {"xp": original_xp, "gold": original_gold, "gems": original_gems}
+	quest["original_rewards"] = {"xp": original_xp, "gems": original_gems}
 
 	# Determine reward tier for display based on area level
 	if area_level < 15:
@@ -290,7 +287,6 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 	if progression_modifier > 0:
 		var bonus_mult = 1.0 + progression_modifier * 0.5  # Up to 25% bonus
 		quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * bonus_mult)
-		quest.rewards["gold"] = int(quest.rewards.get("gold", 0) * bonus_mult)
 
 	# Base target level on player level with progression
 	var base_level = player_level
@@ -710,7 +706,6 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 		if i == featured_index:
 			quest["is_featured"] = true
 			quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * 1.5)
-			quest.rewards["gold"] = int(quest.rewards.get("gold", 0) * 1.5)
 			quest.rewards["gems"] = max(quest.rewards.get("gems", 0), int(quest.rewards.get("gems", 0) * 1.5))
 
 		quests.append(quest)
@@ -743,9 +738,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	# Rewards scale with area level using pow() to match monster XP
 	var level_factor = pow(area_level + 1, 2.2)
 	var tier_base_xp = 3 + index * 2
-	var tier_base_gold = 2 + index
 	var base_xp = int(tier_base_xp * level_factor * tier_mult)
-	var base_gold = int(tier_base_gold * level_factor * tier_mult * 0.1)
 	var gems = max(0, int((index - 1 + area_level / 50) * tier_mult))
 
 	# Pick quest type, cycling through available types
@@ -813,7 +806,6 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["bounty_y"] = bounty_loc.y
 			# Named bounties give better rewards
 			base_xp = int(base_xp * 1.5)
-			base_gold = int(base_gold * 1.5)
 			gems = max(gems + 1, int(gems * 1.5))
 
 		QuestType.RESCUE:
@@ -831,7 +823,6 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["rescue_floor"] = rescue_floor
 			# Rescue quests give enhanced rewards
 			base_xp = int(base_xp * 2.5)
-			base_gold = int(base_gold * 2.0)
 			gems = max(gems + 2, int(gems * 2.0))
 
 		QuestType.EXPLORATION:
@@ -860,7 +851,6 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["dungeon_type"] = dungeon_info.type
 			# Dungeon quests give bonus rewards
 			base_xp = int(base_xp * 2.0)
-			base_gold = int(base_gold * 1.5)
 			gems = max(gems + 2, int(gems * 1.5))
 
 	# Determine reward tier for display tag
@@ -883,7 +873,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		"type": picked_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"rewards": {"xp": base_xp, "gems": gems},
 		"is_daily": true,
 		"prerequisite": "",
 		"is_dynamic": true,
@@ -980,7 +970,6 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 
 	# Rewards scale with tier - more generous for early tiers
 	var base_xp = int(100 + (150 * tier * tier_multiplier))
-	var base_gold = int(50 + (75 * tier * tier_multiplier))
 	var gems = max(0, int((tier - 2) * tier_multiplier))  # Gems start at tier 3
 
 	# Quest type varies by tier - simpler quests early on
@@ -1035,7 +1024,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		"type": quest_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"rewards": {"xp": base_xp, "gems": gems},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_dynamic": true,  # Flag for dynamic quests
@@ -1089,9 +1078,7 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	# This ensures quest rewards remain competitive with grinding at all levels
 	var level_factor = pow(area_level + 1, 2.2)
 	var tier_base_xp = 3 + tier * 2  # 5 for tier 1, up to 13+ for tier 5
-	var tier_base_gold = 2 + tier  # 3 for tier 1, up to 7 for tier 5
 	var base_xp = int(tier_base_xp * level_factor * tier_multiplier)
-	var base_gold = int(tier_base_gold * level_factor * tier_multiplier * 0.1)
 	var gems = max(0, int((tier - 2 + area_level / 50) * tier_multiplier))
 
 	# Quest type varies by tier - includes KILL_TYPE and DUNGEON_CLEAR
@@ -1159,7 +1146,6 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 			target = 1  # Complete 1 dungeon of this type
 			# Dungeon quests give bonus rewards (gems, companion eggs from dungeon)
 			base_xp = int(base_xp * 2.0)
-			base_gold = int(base_gold * 1.5)
 			gems = max(gems + 2, int(gems * 1.5))
 
 	# Determine reward tier
@@ -1180,7 +1166,7 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 		"type": quest_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gold": base_gold, "gems": gems},
+		"rewards": {"xp": base_xp, "gems": gems},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_dynamic": true,
