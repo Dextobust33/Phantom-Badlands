@@ -991,8 +991,14 @@ var market_listings: Array = []
 var market_page: int = 0
 var market_total_pages: int = 0
 var market_category: String = "all"
-var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_confirm", "buy_confirm", "my_listings"
+var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_confirm", "buy_confirm", "my_listings"
 var market_selected_listing: Dictionary = {}
+var market_selected_material: String = ""
+var market_selected_material_qty: int = 0
+var market_buy_quantity: int = 0  # 0 = buy full stack
+var market_list_page: int = 0
+var market_mat_page: int = 0
+var market_my_page: int = 0
 var account_valor: int = 0
 
 # Dungeon mode
@@ -1964,6 +1970,7 @@ func _process(delta):
 					# Select listing for purchase confirmation
 					if i < market_listings.size():
 						market_selected_listing = market_listings[i]
+						market_buy_quantity = 0
 						pending_market_action = "buy_confirm"
 						display_market_buy_confirm()
 						update_action_bar()
@@ -1979,17 +1986,18 @@ func _process(delta):
 				if not get_meta("marketlistkey_%d_pressed" % i, false):
 					set_meta("marketlistkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					# Find the i-th unequipped item and list it
+					# Find the page-offset item in unequipped inventory
 					var inventory = character_data.get("inventory", [])
-					var displayed = 0
+					var listable_idx = market_list_page * 9 + i
+					var count = 0
 					for inv_idx in range(inventory.size()):
 						var item = inventory[inv_idx]
 						if item.is_empty() or item.get("equipped", false):
 							continue
-						if displayed == i:
+						if count == listable_idx:
 							send_to_server({"type": "market_list_item", "index": inv_idx})
 							break
-						displayed += 1
+						count += 1
 			else:
 				set_meta("marketlistkey_%d_pressed" % i, false)
 
@@ -2002,17 +2010,22 @@ func _process(delta):
 				if not get_meta("marketmatkey_%d_pressed" % i, false):
 					set_meta("marketmatkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					# Find the i-th material and list all of it
+					# Find the page-offset material and prompt for quantity
 					var materials = character_data.get("crafting_materials", {})
-					var idx = 0
+					var target_idx = market_mat_page * 9 + i
+					var count = 0
 					for mat_name in materials:
 						var qty = int(materials[mat_name])
 						if qty <= 0:
 							continue
-						if idx == i:
-							send_to_server({"type": "market_list_material", "material_name": mat_name, "quantity": qty})
+						if count == target_idx:
+							market_selected_material = mat_name
+							market_selected_material_qty = qty
+							pending_market_action = "list_material_qty"
+							_display_market_material_qty_prompt()
+							update_action_bar()
 							break
-						idx += 1
+						count += 1
 			else:
 				set_meta("marketmatkey_%d_pressed" % i, false)
 
@@ -2025,9 +2038,10 @@ func _process(delta):
 				if not get_meta("marketcancelkey_%d_pressed" % i, false):
 					set_meta("marketcancelkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					if i < market_listings.size():
-						var listing_id = market_listings[i].get("listing_id", "")
-						send_to_server({"type": "market_cancel_listing", "listing_id": listing_id})
+					var listing_idx = market_my_page * 9 + i
+					if listing_idx < market_listings.size():
+						var listing = market_listings[listing_idx]
+						send_to_server({"type": "market_cancel", "listing_id": listing.get("listing_id", ""), "post_id": listing.get("post_id", "")})
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
 
@@ -2601,7 +2615,7 @@ func _process(delta):
 				last_move_time = current_time
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, build, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not build_mode and not storage_mode:
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not build_mode and not storage_mode and not market_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -6270,11 +6284,49 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
-		elif pending_market_action == "list_select" or pending_market_action == "list_material":
+		elif pending_market_action == "list_material_qty":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_matqty_back", "enabled": true},
+				{"label": "List All", "action_type": "local", "action_data": "market_matqty_all", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "list_select":
+			var _inv = character_data.get("inventory", [])
+			var _listable_count = 0
+			for _it in _inv:
+				if not _it.is_empty() and not _it.get("equipped", false):
+					_listable_count += 1
+			var _list_pages = ceili(float(_listable_count) / 9.0)
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "market_list_back", "enabled": true},
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_list_prev", "enabled": market_list_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_list_next", "enabled": market_list_page < _list_pages - 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "list_material":
+			var _mats = character_data.get("crafting_materials", {})
+			var _mat_count = 0
+			for _mk in _mats:
+				if int(_mats[_mk]) > 0:
+					_mat_count += 1
+			var _mat_pages = ceili(float(_mat_count) / 9.0)
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_list_back", "enabled": true},
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_mat_prev", "enabled": market_mat_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_mat_next", "enabled": market_mat_page < _mat_pages - 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
@@ -6284,9 +6336,10 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_market_action == "buy_confirm":
+			var listing_qty = int(market_selected_listing.get("quantity", 1))
 			current_actions = [
-				{"label": "Cancel", "action_type": "local", "action_data": "market_buy_cancel", "enabled": true},
 				{"label": "Confirm", "action_type": "local", "action_data": "market_buy_confirm", "enabled": true},
+				{"label": "Cancel", "action_type": "local", "action_data": "market_buy_cancel", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6297,10 +6350,11 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_market_action == "my_listings":
+			var _my_pages = ceili(float(market_listings.size()) / 9.0)
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "market_my_back", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_my_prev", "enabled": market_my_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_my_next", "enabled": market_my_page < _my_pages - 1},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9 Cancel", "action_type": "none", "action_data": "", "enabled": false},
@@ -8884,6 +8938,7 @@ func execute_local_action(action: String):
 			send_to_server({"type": "market_browse", "category": market_category, "page": 0})
 		"market_list":
 			pending_market_action = "list_select"
+			market_list_page = 0
 			# Pre-mark held keys
 			for i in range(9):
 				if is_item_select_key_pressed(i):
@@ -8892,6 +8947,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"market_list_material":
 			pending_market_action = "list_material"
+			market_mat_page = 0
 			# Pre-mark held keys
 			for i in range(9):
 				if is_item_select_key_pressed(i):
@@ -8899,6 +8955,7 @@ func execute_local_action(action: String):
 			display_market_list_materials()
 			update_action_bar()
 		"market_my_listings":
+			market_my_page = 0
 			send_to_server({"type": "market_my_listings"})
 		"market_back":
 			exit_market()
@@ -8911,10 +8968,50 @@ func execute_local_action(action: String):
 			pending_market_action = ""
 			display_market_main()
 			update_action_bar()
+		"market_matqty_back":
+			pending_market_action = "list_material"
+			market_selected_material = ""
+			market_selected_material_qty = 0
+			input_field.placeholder_text = ""
+			input_field.release_focus()
+			display_market_list_materials()
+			update_action_bar()
+		"market_matqty_all":
+			if not market_selected_material.is_empty() and market_selected_material_qty > 0:
+				send_to_server({"type": "market_list_material", "material_name": market_selected_material, "quantity": market_selected_material_qty})
+				market_selected_material = ""
+				market_selected_material_qty = 0
+				input_field.placeholder_text = ""
+				input_field.release_focus()
 		"market_my_back":
 			pending_market_action = ""
 			market_listings = []
+			market_my_page = 0
 			display_market_main()
+			update_action_bar()
+		"market_list_prev":
+			market_list_page = maxi(0, market_list_page - 1)
+			display_market_list_select()
+			update_action_bar()
+		"market_list_next":
+			market_list_page += 1
+			display_market_list_select()
+			update_action_bar()
+		"market_mat_prev":
+			market_mat_page = maxi(0, market_mat_page - 1)
+			display_market_list_materials()
+			update_action_bar()
+		"market_mat_next":
+			market_mat_page += 1
+			display_market_list_materials()
+			update_action_bar()
+		"market_my_prev":
+			market_my_page = maxi(0, market_my_page - 1)
+			display_market_my_listings()
+			update_action_bar()
+		"market_my_next":
+			market_my_page += 1
+			display_market_my_listings()
 			update_action_bar()
 		"market_prev_page":
 			if market_page > 0:
@@ -8936,7 +9033,10 @@ func execute_local_action(action: String):
 				display_game("[color=#FF0000]No listing selected.[/color]")
 			else:
 				var listing_id = market_selected_listing.get("listing_id", "")
-				send_to_server({"type": "market_buy", "listing_id": listing_id})
+				var buy_msg = {"type": "market_buy", "listing_id": listing_id}
+				if market_buy_quantity > 0:
+					buy_msg["quantity"] = market_buy_quantity
+				send_to_server(buy_msg)
 		"market_buy_cancel":
 			pending_market_action = "browse"
 			market_selected_listing = {}
@@ -13795,6 +13895,7 @@ func handle_server_message(message: Dictionary):
 			in_combat = false
 			has_character = true
 			character_data = message.get("character", {})
+			account_valor = int(character_data.get("valor", 0))
 			# Reset XP tracking for loaded character
 			recent_xp_gain = 0
 			xp_before_combat = 0
@@ -15356,6 +15457,44 @@ func send_input():
 		input_field.placeholder_text = ""
 		return
 
+	# Check for market material quantity input
+	if market_mode and pending_market_action == "list_material_qty":
+		if text.is_valid_int():
+			var qty = int(text)
+			if qty <= 0:
+				display_game("[color=#FF0000]Quantity must be at least 1.[/color]")
+				return
+			if qty > market_selected_material_qty:
+				display_game("[color=#FF0000]You only have %d. Enter a smaller number.[/color]" % market_selected_material_qty)
+				return
+			send_to_server({"type": "market_list_material", "material_name": market_selected_material, "quantity": qty})
+			market_selected_material = ""
+			market_selected_material_qty = 0
+			input_field.placeholder_text = ""
+		else:
+			display_game("[color=#FF0000]Enter a number (1-%d).[/color]" % market_selected_material_qty)
+		return
+
+	# Check for market buy partial quantity input
+	if market_mode and pending_market_action == "buy_confirm":
+		if text.is_valid_int():
+			var qty = int(text)
+			var max_qty = int(market_selected_listing.get("quantity", 1))
+			if qty <= 0:
+				display_game("[color=#FF0000]Quantity must be at least 1.[/color]")
+				return
+			if qty > max_qty:
+				display_game("[color=#FF0000]Only %d available. Enter a smaller number.[/color]" % max_qty)
+				return
+			market_buy_quantity = qty
+			input_field.placeholder_text = ""
+			input_field.call_deferred("release_focus")
+			display_market_buy_confirm()
+			update_action_bar()
+		else:
+			display_game("[color=#FF0000]Enter a number.[/color]")
+		return
+
 	# Check for pending inventory action (text-based fallback for unequip)
 	if pending_inventory_action != "":
 		var action = pending_inventory_action
@@ -15559,6 +15698,13 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		var condition_text = _get_condition_string(wear)
 		var condition_color = _get_condition_color(wear)
 		display_game("[color=#00FFFF]Condition:[/color] [color=%s]%s (%d%% wear)[/color]" % [condition_color, condition_text, wear])
+		# Show crafter and enchanter names
+		var crafted_by = item.get("crafted_by", "")
+		if crafted_by != "":
+			display_game("[color=#00FFFF]Crafted by:[/color] [color=#E6CC80]%s[/color]" % crafted_by)
+		var enchanted_by = item.get("enchanted_by", "")
+		if enchanted_by != "":
+			display_game("[color=#00FFFF]Enchanted by:[/color] [color=#A335EE]%s[/color]" % enchanted_by)
 
 	display_game("[color=#00FFFF]Value:[/color] %d Valor" % value)
 	display_game("")
@@ -15692,6 +15838,12 @@ func display_equip_comparison(item: Dictionary, inv_index: int):
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
 	display_game("[color=#00FFFF]Level:[/color] %d" % level)
+	var eq_crafted_by = item.get("crafted_by", "")
+	if eq_crafted_by != "":
+		display_game("[color=#00FFFF]Crafted by:[/color] [color=#E6CC80]%s[/color]" % eq_crafted_by)
+	var eq_enchanted_by = item.get("enchanted_by", "")
+	if eq_enchanted_by != "":
+		display_game("[color=#00FFFF]Enchanted by:[/color] [color=#A335EE]%s[/color]" % eq_enchanted_by)
 	display_game("")
 
 	# Display all computed stats
@@ -18118,8 +18270,24 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.116 changes
+	display_game("[color=#00FF00]v0.9.116[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market & Economy Improvements[/color]")
+	display_game("  • Equipment valor now reflects crafting material costs by tier")
+	display_game("  • Material valor reflects gathering difficulty (rarer = more valuable)")
+	display_game("  • Market markup reduced to 15-50%% range (was 2x-8x)")
+	display_game("  • Partial stack buying — choose how many materials to purchase")
+	display_game("  • Inspected equipment now shows crafter and enchanter names")
+	display_game("  • D2 rarity weights applied to special monster drops (Weapon Master, etc.)")
+	display_game("  • Market pagination for List Items, List Materials, and My Listings")
+	display_game("  • Fixed: Confirm/Cancel button order on purchase screen")
+	display_game("  • Fixed: My Listings cancel not working (message type mismatch)")
+	display_game("  • Fixed: movement blocked while in market menus")
+	display_game("  • Fixed: 'Earned: 0 Valor' display when listing items")
+	display_game("")
+
 	# v0.9.114 changes
-	display_game("[color=#00FF00]v0.9.114[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.114[/color]")
 	display_game("  • Fixed: shortcut buttons (Companions, Eggs, etc.) no longer steal keyboard focus")
 	display_game("  • Fixed: market tile now opens the Valor market instead of old merchant shop")
 	display_game("")
@@ -18152,14 +18320,6 @@ func display_changelog():
 	# v0.9.111 changes
 	display_game("[color=#00FFFF]v0.9.111[/color]")
 	display_game("  • Party system bug fixes: menu, HP bars, initiative balance")
-	display_game("")
-
-	# v0.9.110 changes
-	display_game("[color=#00FFFF]v0.9.110[/color]")
-	display_game("  [color=#FFD700]Player Party System[/color]")
-	display_game("  • Bump into another player to invite them to your party (max 4)")
-	display_game("  • Party combat, snake movement, party dungeons")
-	display_game("  • Each member gets full loot and guaranteed boss egg")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22484,6 +22644,9 @@ func enter_market():
 	market_total_pages = 0
 	market_category = "all"
 	market_selected_listing = {}
+	market_list_page = 0
+	market_mat_page = 0
+	market_my_page = 0
 	# Pre-mark held keys to prevent double-trigger
 	for i in range(10):
 		var action_key = "action_%d" % i
@@ -22499,12 +22662,18 @@ func exit_market():
 	pending_market_action = ""
 	market_listings = []
 	market_selected_listing = {}
+	market_selected_material = ""
+	market_selected_material_qty = 0
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	set_meta("hotkey_0_pressed", true)
 	_display_trading_post_ui()
 	update_action_bar()
 
 func display_market_main():
 	"""Display the market main menu."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	game_output.clear()
 	var tp_name = trading_post_data.get("name", "Trading Post")
 	display_game("[color=#FFD700]===== Open Market - %s =====[/color]" % tp_name)
@@ -22522,6 +22691,8 @@ func display_market_main():
 
 func display_market_browse():
 	"""Display market browse listings."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	game_output.clear()
 	var tp_name = trading_post_data.get("name", "Trading Post")
 	display_game("[color=#FFD700]===== Market - %s (Page %d/%d) =====[/color]" % [tp_name, market_page + 1, max(1, market_total_pages)])
@@ -22557,6 +22728,8 @@ func display_market_browse():
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	game_output.clear()
 	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
@@ -22565,34 +22738,55 @@ func display_market_list_select():
 	display_game("")
 
 	var inventory = character_data.get("inventory", [])
-	if inventory.is_empty():
+	# Build list of unequipped items
+	var listable: Array = []
+	for idx in range(inventory.size()):
+		var item = inventory[idx]
+		if item.is_empty() or item.get("equipped", false):
+			continue
+		listable.append({"item": item, "inv_index": idx})
+
+	if listable.is_empty():
 		display_game("[color=#808080]Your inventory is empty.[/color]")
 	else:
-		var displayed = 0
-		for idx in range(inventory.size()):
-			if displayed >= 9:
-				break
-			var item = inventory[idx]
-			if item.is_empty():
-				continue
-			# Skip equipped items
-			if item.get("equipped", false):
-				continue
+		var total_pages = ceili(float(listable.size()) / 9.0)
+		market_list_page = clampi(market_list_page, 0, total_pages - 1)
+		var start = market_list_page * 9
+		var end = mini(start + 9, listable.size())
+		for i in range(start, end):
+			var entry = listable[i]
+			var item = entry.item
 			var item_name = item.get("name", "Unknown")
 			var rarity = item.get("rarity", "common")
 			var rarity_color = _get_rarity_color(rarity)
 			var level_text = ""
 			if item.has("level"):
 				level_text = " Lv%d" % int(item.level)
-
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s" % [displayed + 1, rarity_color, item_name, level_text])
-			displayed += 1
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s" % [i - start + 1, rarity_color, item_name, level_text])
+		if total_pages > 1:
+			display_game("")
+			display_game("[color=#808080]Page %d/%d[/color]" % [market_list_page + 1, total_pages])
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
 
+func _display_market_material_qty_prompt():
+	"""Show quantity prompt after selecting a material to list."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== List Material on Market =====[/color]")
+	display_game("")
+	display_game("  Material: [color=#00FF00]%s[/color]" % market_selected_material)
+	display_game("  Available: [color=#FFFF00]%d[/color]" % market_selected_material_qty)
+	display_game("")
+	display_game("[color=#87CEEB]Type a quantity in chat, or press [%s] to list all.[/color]" % get_action_key_name(1))
+	display_game("[color=#808080][%s] to go back[/color]" % get_action_key_name(0))
+	input_field.placeholder_text = "Enter quantity (1-%d)..." % market_selected_material_qty
+	input_field.grab_focus()
+
 func display_market_list_materials():
 	"""Display materials for selecting to list on the market."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	game_output.clear()
 	display_game("[color=#FFD700]===== List Materials on Market =====[/color]")
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
@@ -22601,18 +22795,26 @@ func display_market_list_materials():
 	display_game("")
 
 	var materials = character_data.get("crafting_materials", {})
-	if materials.is_empty():
+	# Build list of materials with qty > 0
+	var mat_list: Array = []
+	for mat_name in materials:
+		var qty = int(materials[mat_name])
+		if qty > 0:
+			mat_list.append({"name": mat_name, "qty": qty})
+
+	if mat_list.is_empty():
 		display_game("[color=#808080]You have no materials.[/color]")
 	else:
-		var idx = 0
-		for mat_name in materials:
-			if idx >= 9:
-				break
-			var qty = int(materials[mat_name])
-			if qty <= 0:
-				continue
-			display_game("  [color=#FFFF00]%d)[/color] %s x%d" % [idx + 1, mat_name, qty])
-			idx += 1
+		var total_pages = ceili(float(mat_list.size()) / 9.0)
+		market_mat_page = clampi(market_mat_page, 0, total_pages - 1)
+		var start = market_mat_page * 9
+		var end = mini(start + 9, mat_list.size())
+		for i in range(start, end):
+			var entry = mat_list[i]
+			display_game("  [color=#FFFF00]%d)[/color] %s x%d" % [i - start + 1, entry.name, entry.qty])
+		if total_pages > 1:
+			display_game("")
+			display_game("[color=#808080]Page %d/%d[/color]" % [market_mat_page + 1, total_pages])
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
@@ -22627,17 +22829,29 @@ func display_market_buy_confirm():
 	var item_name = item.get("name", "Unknown")
 	var rarity = item.get("rarity", "common")
 	var rarity_color = _get_rarity_color(rarity)
-	var price = int(market_selected_listing.get("markup_price", market_selected_listing.get("base_valor", 0)))
+	var full_price = int(market_selected_listing.get("markup_price", market_selected_listing.get("base_valor", 0)))
 	var seller = market_selected_listing.get("seller_name", "Unknown")
 	var quantity = int(market_selected_listing.get("quantity", 1))
 
+	# Calculate actual buy quantity and price
+	var buy_qty = market_buy_quantity if market_buy_quantity > 0 else quantity
+	var price = full_price
+	if buy_qty < quantity and quantity > 1:
+		var per_unit = int(full_price / quantity)
+		price = per_unit * buy_qty
+
 	var qty_text = ""
-	if quantity > 1:
-		qty_text = " x%d" % quantity
+	if buy_qty > 1:
+		qty_text = " x%d" % buy_qty
+	if buy_qty < quantity:
+		qty_text += " [color=#808080](of %d)[/color]" % quantity
 
 	display_game("  Item: [color=%s]%s[/color]%s" % [rarity_color, item_name, qty_text])
 	display_game("  Seller: %s" % seller)
 	display_game("  Price: [color=#00FF00]%s Valor[/color]" % format_number(price))
+	if quantity > 1:
+		var per_unit = int(full_price / quantity)
+		display_game("  Per Unit: [color=#00FF00]%s Valor[/color]" % format_number(per_unit))
 	display_game("")
 	display_game("  Your Valor: [color=#00FF00]%s[/color]" % format_number(account_valor))
 
@@ -22650,9 +22864,19 @@ func display_market_buy_confirm():
 
 	display_game("")
 	display_game("[color=#FFD700]%s[/color] Confirm  |  [color=#FFD700]%s[/color] Cancel" % [get_action_key_name(0), get_action_key_name(1)])
+	if quantity > 1 and market_buy_quantity <= 0:
+		display_game("")
+		display_game("[color=#87CEEB]Type a quantity in chat, or press [%s] to buy all %d.[/color]" % [get_action_key_name(0), quantity])
+		input_field.placeholder_text = "Enter quantity (1-%d)..." % quantity
+		input_field.grab_focus()
+	else:
+		input_field.placeholder_text = ""
+		input_field.call_deferred("release_focus")
 
 func display_market_my_listings():
 	"""Display the player's own market listings."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
 	game_output.clear()
 	display_game("[color=#FFD700]===== My Market Listings =====[/color]")
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
@@ -22661,7 +22885,11 @@ func display_market_my_listings():
 	if market_listings.is_empty():
 		display_game("[color=#808080]You have no active listings.[/color]")
 	else:
-		for idx in range(market_listings.size()):
+		var total_pages = ceili(float(market_listings.size()) / 9.0)
+		market_my_page = clampi(market_my_page, 0, total_pages - 1)
+		var start = market_my_page * 9
+		var end_idx = mini(start + 9, market_listings.size())
+		for idx in range(start, end_idx):
 			var listing = market_listings[idx]
 			var item = listing.get("item", {})
 			var item_name = item.get("name", "Unknown")
@@ -22674,7 +22902,10 @@ func display_market_my_listings():
 			if quantity > 1:
 				qty_text = " x%d" % quantity
 
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V (base)[/color]" % [idx + 1, rarity_color, item_name, qty_text, format_number(base_valor)])
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V (base)[/color]" % [idx - start + 1, rarity_color, item_name, qty_text, format_number(base_valor)])
+		if total_pages > 1:
+			display_game("")
+			display_game("[color=#808080]Page %d/%d[/color]" % [market_my_page + 1, total_pages])
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to cancel a listing (buy back at base price), [%s] to go back[/color]" % get_action_key_name(0))
@@ -22693,10 +22924,14 @@ func _handle_market_browse_result(message: Dictionary):
 
 func _handle_market_list_success(message: Dictionary):
 	"""Handle successful market listing."""
-	var valor_earned = int(message.get("valor_earned", 0))
+	var valor_earned = int(message.get("base_valor", 0))
 	var total_valor = int(message.get("total_valor", 0))
 	account_valor = total_valor
 	pending_market_action = ""
+	market_selected_material = ""
+	market_selected_material_qty = 0
+	input_field.placeholder_text = ""
+	input_field.release_focus()
 	game_output.clear()
 	display_game("[color=#00FF00]Item listed successfully![/color]")
 	display_game("[color=#00FF00]Earned: %s Valor[/color]" % format_number(valor_earned))

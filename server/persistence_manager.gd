@@ -1587,6 +1587,17 @@ func remove_market_listing(post_id: String, listing_id: String) -> Dictionary:
 			return removed
 	return {}
 
+func update_market_listing_quantity(post_id: String, listing_id: String, new_qty: int, new_base_valor: int):
+	"""Update a listing's quantity and base valor after a partial purchase."""
+	if not market_data.has("listings") or not market_data.listings.has(post_id):
+		return
+	for listing in market_data.listings[post_id]:
+		if listing.get("listing_id", "") == listing_id:
+			listing["quantity"] = new_qty
+			listing["base_valor"] = new_base_valor
+			save_market_data()
+			return
+
 func get_all_listings_by_account(account_id: String) -> Array:
 	"""Get all listings across all posts for an account (for 'My Listings')."""
 	var result = []
@@ -1610,15 +1621,15 @@ func get_supply_count(post_id: String, category: String) -> int:
 	return count
 
 func calculate_markup(post_id: String, category: String) -> float:
-	"""Calculate dynamic markup based on local supply. 2x (abundant) to 8x (scarce)."""
+	"""Calculate dynamic markup based on local supply. 1.15x (abundant) to 1.50x (scarce)."""
 	var count = get_supply_count(post_id, category)
 	if count >= 20:
-		return 2.0
+		return 1.15
 	if count <= 2:
-		return 8.0
-	# Linear interpolation between 8x and 2x
+		return 1.50
+	# Linear interpolation between 1.50x and 1.15x
 	var ratio = float(count - 2) / 18.0
-	return 8.0 - (ratio * 6.0)
+	return 1.50 - (ratio * 0.35)
 
 func clear_all_market_data():
 	"""Clear all market data (for wipes)."""

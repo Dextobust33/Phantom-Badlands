@@ -1290,9 +1290,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 			save_character(peer_id)
 			log_message("DUNGEON RECONNECT: Dungeon %s expired for %s, returning to overworld" % [instance_id, char_name])
 
+	var char_dict_loaded = character.to_dict()
+	# Add account-level valor and projected rank (same as send_character_update)
+	char_dict_loaded["valor"] = persistence.get_valor(account_id)
+	char_dict_loaded["projected_rank"] = _calculate_projected_rank(character)
 	var char_loaded_msg = {
 		"type": "character_loaded",
-		"character": character.to_dict(),
+		"character": char_dict_loaded,
 		"message": "Welcome back, %s!" % char_name,
 		"title_holders": _get_current_title_holders(),
 		"dungeon_restore": dungeon_restored
@@ -9007,10 +9011,11 @@ func handle_market_list_material(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough %s. Have %d, need %d." % [material_name, available, quantity]})
 		return
 
-	# Calculate base valor per unit
-	var material_tier = _get_material_tier(material_name)
-	var tier_values = {1: 2, 2: 5, 3: 12, 4: 25, 5: 50, 6: 100}
-	var per_unit_valor = tier_values.get(material_tier, 2)
+	# Calculate base valor per unit using actual material value (reflects gathering difficulty)
+	var mat_info = CraftingDatabaseScript.MATERIALS.get(material_name, {})
+	var mat_value = int(mat_info.get("value", 5))
+	var per_unit_valor = maxi(1, int(mat_value / 3.0))
+	var material_tier = int(mat_info.get("tier", _get_material_tier(material_name)))
 	var total_valor = per_unit_valor * quantity
 
 	# Apply market bonuses
@@ -9070,7 +9075,7 @@ func _get_material_tier(material_name: String) -> int:
 	return 1  # Default to tier 1
 
 func handle_market_buy(peer_id: int, message: Dictionary):
-	"""Buy a listing from the market."""
+	"""Buy a listing from the market. Supports partial quantity for material stacks."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -9086,9 +9091,10 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
 		return
 
-	# Find listing
-	var listings = persistence.get_market_listings(post_id)
+	# Find listing across all posts (buyer may be at a different post than seller)
 	var listing = {}
+	var listing_post_id = post_id
+	var listings = persistence.get_market_listings(post_id)
 	for l in listings:
 		if l.get("listing_id", "") == listing_id:
 			listing = l
@@ -9098,16 +9104,25 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Listing not found."})
 		return
 
-	# Calculate price
+	var item = listing.get("item", {})
+	var listing_qty = int(listing.get("quantity", 1))
+	var buy_qty = int(message.get("quantity", 0))
+	if buy_qty <= 0:
+		buy_qty = listing_qty  # Buy full stack by default
+	buy_qty = mini(buy_qty, listing_qty)
+
+	# Calculate price proportional to quantity
 	var base_valor = int(listing.get("base_valor", 0))
 	var seller_account_id = listing.get("account_id", "")
-	var price = base_valor
+	var per_unit_valor = int(base_valor / maxi(listing_qty, 1))
+	var partial_base = per_unit_valor * buy_qty if buy_qty < listing_qty else base_valor
+	var price = partial_base
 
 	if buyer_account_id != seller_account_id:
 		# Apply markup for cross-player purchase
 		var cat = listing.get("supply_category", "equipment")
 		var markup = persistence.calculate_markup(post_id, cat)
-		price = int(base_valor * markup)
+		price = int(partial_base * markup)
 
 	# Check buyer has enough valor
 	var buyer_valor = persistence.get_valor(buyer_account_id)
@@ -9116,7 +9131,6 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		return
 
 	# Check inventory space (for equipment/consumables)
-	var item = listing.get("item", {})
 	if item.get("type", "") == "material":
 		pass  # Materials go to crafting pouch, always has space
 	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
@@ -9127,8 +9141,8 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	persistence.spend_valor(buyer_account_id, price)
 
 	# If cross-player purchase, seller gets half the markup as bonus
-	if buyer_account_id != seller_account_id and price > base_valor:
-		var markup_total = price - base_valor
+	if buyer_account_id != seller_account_id and price > partial_base:
+		var markup_total = price - partial_base
 		var seller_bonus = int(markup_total / 2)
 		var treasury_cut = markup_total - seller_bonus
 		if seller_bonus > 0:
@@ -9136,8 +9150,9 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 			# Notify seller if online
 			for pid in peers.keys():
 				if peers[pid].account_id == seller_account_id and characters.has(pid):
-					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s — you earned %d bonus Valor![/color]" % [
-						item.get("name", "item"), seller_bonus]})
+					var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
+					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s%s — you earned %d bonus Valor![/color]" % [
+						item.get("name", "item"), qty_text, seller_bonus]})
 					break
 		# Treasury gets the rest
 		if treasury_cut > 0:
@@ -9146,21 +9161,28 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	# Add item to buyer
 	if item.get("type", "") == "material":
 		var mat_name = item.get("material_type", item.get("name", ""))
-		var qty = int(listing.get("quantity", 1))
 		if not character.crafting_materials.has(mat_name):
 			character.crafting_materials[mat_name] = 0
-		character.crafting_materials[mat_name] += qty
+		character.crafting_materials[mat_name] += buy_qty
 	else:
 		character.inventory.append(item)
 
-	# Remove listing
-	persistence.remove_market_listing(post_id, listing_id)
+	# Update or remove listing
+	if buy_qty < listing_qty:
+		# Partial purchase — reduce listing quantity and valor
+		var remaining_qty = listing_qty - buy_qty
+		var remaining_valor = per_unit_valor * remaining_qty
+		persistence.update_market_listing_quantity(listing_post_id, listing_id, remaining_qty, remaining_valor)
+	else:
+		# Full purchase — remove listing
+		persistence.remove_market_listing(listing_post_id, listing_id)
 
 	save_character(peer_id)
 
+	var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
 	send_to_peer(peer_id, {
 		"type": "market_buy_success",
-		"item_name": item.get("name", "item"),
+		"item_name": item.get("name", "item") + qty_text,
 		"price": price,
 		"total_valor": persistence.get_valor(buyer_account_id)
 	})
@@ -12715,11 +12737,12 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
 				else:
-					# Add to inventory
+					crafted_item["crafted_by"] = character.name
 					character.inventory.append(crafted_item)
 					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
+				crafted_item["crafted_by"] = character.name
 				character.inventory.append(crafted_item)
 				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"enhancement":
@@ -12829,6 +12852,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 								if bonus > remaining:
 									bonus = remaining
 								target_item["enchantments"][stat] = current_value + bonus
+								target_item["enchanted_by"] = character.name
 								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
 			"upgrade":
 				# Upgrades increase equipment level
@@ -13444,7 +13468,8 @@ func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 		"level": scaled_stats.get("level", 1),
 		"rarity": _quality_to_rarity(quality),
 		"crafted": true,
-		"quality": quality
+		"quality": quality,
+		"crafted_by": ""
 	}
 
 	# Add stats
@@ -13641,10 +13666,12 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
 				else:
+					crafted_item["crafted_by"] = character.name
 					character.inventory.append(crafted_item)
 					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
+				crafted_item["crafted_by"] = character.name
 				character.inventory.append(crafted_item)
 				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"enhancement":
@@ -13660,7 +13687,8 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 					"slot": recipe.get("output_slot", "any"),
 					"effect": {"stat": stat_type, "bonus": scaled_bonus},
 					"rarity": _quality_to_rarity(quality),
-					"level": 1, "is_consumable": true, "quantity": 1
+					"level": 1, "is_consumable": true, "quantity": 1,
+					"crafted_by": character.name
 				}
 				character.inventory.append(scroll)
 				crafted_item = scroll
@@ -13724,6 +13752,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 								if bonus > remaining:
 									bonus = remaining
 								target_item["enchantments"][stat] = current_value + bonus
+								target_item["enchanted_by"] = character.name
 								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
 			"upgrade":
 				var salvage_cost = recipe.get("salvage_cost", 0)

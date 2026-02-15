@@ -3767,40 +3767,45 @@ func _calculate_item_value(rarity: String, level: int) -> int:
 
 func calculate_base_valor(item: Dictionary) -> int:
 	"""Calculate base valor for listing an item on the Open Market.
-	Equipment scales by rarity × sqrt(level). Consumables/materials by tier."""
+	Equipment: tier-based (reflects crafting costs) × rarity multiplier.
+	Materials: based on actual material value (reflects gathering difficulty).
+	Consumables/parts: tier-scaled."""
 	var item_type = item.get("type", "")
 
-	# Equipment
+	# Equipment — valor reflects what it costs to craft equivalent gear
+	# Base per tier approximates material costs for a full crafted piece
 	if item.has("rarity") and item.has("slot"):
 		var rarity = item.get("rarity", "common")
 		var level = int(item.get("level", 1))
-		var sqrt_level = sqrt(float(level))
-		match rarity:
-			"common": return int(5 + sqrt_level * 2)
-			"uncommon": return int(15 + sqrt_level * 4)
-			"rare": return int(50 + sqrt_level * 8)
-			"epic": return int(150 + sqrt_level * 15)
-			"legendary": return int(500 + sqrt_level * 30)
-			"artifact": return int(2000 + sqrt_level * 50)
-			_: return int(5 + sqrt_level * 2)
+		var tier = get_tier_for_level(level)
+		# Base valor per tier (approximate crafting material cost in valor)
+		var tier_base = {1: 12, 2: 30, 3: 65, 4: 120, 5: 200, 6: 400, 7: 1000, 8: 2500, 9: 5000}
+		var base = tier_base.get(tier, 12)
+		# Rarity multiplier — common is salvage fodder, legendary+ exceeds crafted ceiling
+		var rarity_mult = {"common": 0.5, "uncommon": 1.0, "rare": 2.0, "epic": 4.0, "legendary": 8.0, "artifact": 20.0}
+		var mult = rarity_mult.get(rarity, 0.5)
+		return maxi(1, int(base * mult))
 
 	# Consumables (potions, scrolls, etc.)
 	if item.get("is_consumable", false):
 		var tier = int(item.get("tier", 1))
 		return 5 + tier * 3
 
-	# Materials by tier
+	# Materials — use actual material value from crafting database (reflects gathering difficulty)
 	if item.has("material_type") or item_type == "material":
-		var tier = int(item.get("tier", 1))
-		var tier_values = {1: 2, 2: 5, 3: 12, 4: 25, 5: 50, 6: 100}
-		return tier_values.get(tier, 2)
+		var mat_name = item.get("material_type", item.get("name", ""))
+		var CraftDB = preload("res://shared/crafting_database.gd")
+		var mat_info = CraftDB.MATERIALS.get(mat_name, {})
+		var mat_value = int(mat_info.get("value", 5))
+		# Convert material gold value to valor (roughly value / 3, min 1)
+		return maxi(1, int(mat_value / 3.0))
 
 	# Monster parts
 	if item.has("monster_tier") or item_type == "monster_part":
 		var tier = int(item.get("monster_tier", item.get("tier", 1)))
 		return tier * 8
 
-	# Fallback: use old gold value / 20
+	# Fallback
 	var value = item.get("value", 20)
 	return maxi(1, int(value) / 20)
 
@@ -3836,8 +3841,8 @@ func generate_weapon(monster_level: int) -> Dictionary:
 	"""Generate a guaranteed weapon drop from a Weapon Master monster.
 	These are special high-quality weapons scaled to the monster's level.
 	Weapons are biased toward attack bonuses."""
-	# Determine rarity based on level - higher level = better chance of good rarity
-	var rarity = _get_rare_drop_rarity(monster_level)
+	# Use D2 rarity weights based on monster tier
+	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
 
 	# Pick a weapon type based on level tier
 	var weapon_type = "weapon_rusty"
@@ -3879,8 +3884,8 @@ func generate_shield(monster_level: int) -> Dictionary:
 	"""Generate a guaranteed shield drop from a Shield Guardian monster.
 	These are special high-quality shields scaled to the monster's level.
 	Shields are biased toward HP bonuses."""
-	# Determine rarity based on level - higher level = better chance of good rarity
-	var rarity = _get_rare_drop_rarity(monster_level)
+	# Use D2 rarity weights based on monster tier
+	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
 
 	# Pick a shield type based on level tier
 	var shield_type = "shield_wood"
@@ -3921,7 +3926,7 @@ func generate_shield(monster_level: int) -> Dictionary:
 func generate_mage_gear(monster_level: int) -> Dictionary:
 	"""Generate mage-specific gear from an Arcane Hoarder monster.
 	Returns arcane ring or mystic amulet scaled to monster level."""
-	var rarity = _get_rare_drop_rarity(monster_level)
+	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
 
 	# 50/50 ring or amulet
 	var is_ring = randf() < 0.5
@@ -3961,7 +3966,7 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 func generate_trickster_gear(monster_level: int) -> Dictionary:
 	"""Generate trickster-specific gear from a Cunning Prey monster.
 	Returns shadow ring, evasion amulet, or swift boots scaled to monster level."""
-	var rarity = _get_rare_drop_rarity(monster_level)
+	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
 
 	# 33/33/33 distribution
 	var roll = randf()
@@ -4008,7 +4013,7 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 func generate_warrior_gear(monster_level: int) -> Dictionary:
 	"""Generate warrior-specific gear from a Warrior Hoarder monster.
 	Returns warlord blade or bulwark shield scaled to monster level."""
-	var rarity = _get_rare_drop_rarity(monster_level)
+	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
 
 	# 50/50 weapon or shield
 	var is_weapon = randf() < 0.5
@@ -4031,48 +4036,6 @@ func generate_warrior_gear(monster_level: int) -> Dictionary:
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
 	}
-
-func _get_rare_drop_rarity(monster_level: int) -> String:
-	"""Determine rarity for rare monster drops. Higher level = better rarity."""
-	var roll = randf()
-
-	# Level-based thresholds for rarity
-	if monster_level >= 1000:
-		# High level: 20% legendary, 50% epic, 30% rare
-		if roll < 0.20:
-			return "legendary"
-		elif roll < 0.70:
-			return "epic"
-		else:
-			return "rare"
-	elif monster_level >= 100:
-		# Mid level: 10% legendary, 40% epic, 40% rare, 10% uncommon
-		if roll < 0.10:
-			return "legendary"
-		elif roll < 0.50:
-			return "epic"
-		elif roll < 0.90:
-			return "rare"
-		else:
-			return "uncommon"
-	elif monster_level >= 30:
-		# Lower mid: 5% epic, 35% rare, 40% uncommon, 20% common
-		if roll < 0.05:
-			return "epic"
-		elif roll < 0.40:
-			return "rare"
-		elif roll < 0.80:
-			return "uncommon"
-		else:
-			return "common"
-	else:
-		# Low level: 20% rare, 40% uncommon, 40% common
-		if roll < 0.20:
-			return "rare"
-		elif roll < 0.60:
-			return "uncommon"
-		else:
-			return "common"
 
 func generate_shop_item_with_specialty(item_type: String, rarity: String, item_level: int, specialty: String) -> Dictionary:
 	"""Generate a shop item with affixes guaranteed from a specific specialty pool.
