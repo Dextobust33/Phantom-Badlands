@@ -807,7 +807,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"total_damage_taken": 0,
 		"player_hp_at_start": character.current_hp,
 		"pickpocket_count": 0,
-		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of salvage essence
+		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of materials
 	}
 
 	active_combats[peer_id] = combat_state
@@ -3048,12 +3048,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var roll = randi() % 100
 			if roll < success_chance:
 				combat["pickpocket_count"] = pp_count + 1
-				# Steal salvage essence based on monster tier
+				# Steal crafting materials based on monster tier
 				var monster_tier = monster.get("tier", 1)
-				var stolen_essence = 5 + (monster_tier * 3) + (wits / 10)
-				character.salvage_essence = character.get("salvage_essence", 0) + stolen_essence
+				var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+				var ore_id = ore_tiers[mini(monster_tier - 1, ore_tiers.size() - 1)]
+				var stolen_qty = randi_range(1, 2) + (monster_tier / 3)
+				character.add_crafting_material(ore_id, stolen_qty)
+				var mat_name = ore_id.replace("_", " ").capitalize()
 				messages.append("[color=#00FF00]PICKPOCKET SUCCESS![/color]")
-				messages.append("[color=#FFD700]You steal %d salvage essence![/color]" % stolen_essence)
+				messages.append("[color=#FFD700]You steal %dx %s![/color]" % [stolen_qty, mat_name])
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 			else:
 				messages.append("[color=#FF4444]PICKPOCKET FAILED![/color]")
@@ -5133,9 +5136,11 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 		"experience":
 			character.add_experience(wish.amount)
 			return "[color=#00FF00]+ + [/color][color=#FF00FF]WISH GRANTED: +%d XP![/color][color=#00FF00] + +[/color]" % wish.amount
-		"essence":
-			character.salvage_essence = character.salvage_essence + wish.amount
-			return "[color=#FFD700]WISH GRANTED: +%d salvage essence![/color]" % wish.amount
+		"materials":
+			var mat_id = wish.get("material_id", "copper_ore")
+			character.add_crafting_material(mat_id, wish.amount)
+			var mat_name = mat_id.replace("_", " ").capitalize()
+			return "[color=#FFD700]WISH GRANTED: +%d %s![/color]" % [wish.amount, mat_name]
 		"buff":
 			character.add_persistent_buff(wish.stat, wish.value, wish.battles)
 			return "[color=#FFD700]WISH GRANTED: %s![/color]" % wish.label

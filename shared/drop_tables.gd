@@ -615,12 +615,12 @@ const DROP_TABLES = {
 }
 
 # Potion effects for consumables
-# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, essence: grants salvage essence, gems: grants gems
+# heal: restores HP, mana: restores mana, buff: applies temporary combat buff, gems: grants Monster Gem material
 const POTION_EFFECTS = {
-	# Essence pouches - grants salvage essence based on item level
-	"essence_pouch": {"essence": true, "base": 10, "per_level": 5, "variance": 0.5},  # 10 + 5*level ± 50%
-	# Gem items - grants gems (premium currency)
-	"gem_small": {"gems": true, "base": 1, "per_tier": 1},  # 1 gem + 1 per tier above 1
+	# Material pouches - grants tier-appropriate ore materials
+	"essence_pouch": {"essence": true, "base": 10, "per_level": 5, "variance": 0.5},  # grants ore via server handler
+	# Gem items - grants Monster Gem material
+	"gem_small": {"gems": true, "base": 1, "per_tier": 1},  # 1 Monster Gem + 1 per tier above 1
 	# === NORMALIZED TYPES (used by tiered consumables) ===
 	"health_potion": {"heal": true, "base": 0, "per_level": 0},  # Uses tier system for actual values
 	"mana_potion": {"mana": true, "base": 0, "per_level": 0},
@@ -3047,8 +3047,8 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"home_stone_supplies": "Home Stone (Supplies)",
 		"home_stone_equipment": "Home Stone (Equipment)",
 		"home_stone_companion": "Home Stone (Companion)",
-		# Essence/Gems (special - don't prefix with tier)
-		"essence_pouch": "Essence Pouch",
+		# Material Pouches/Gems (special - don't prefix with tier)
+		"essence_pouch": "Material Pouch",
 		"gem_small": "Gem",
 	}
 
@@ -3577,16 +3577,16 @@ func _maybe_upgrade_rarity(base_rarity: String) -> String:
 
 func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	"""Get display name for an item type, with prefix for high rarity."""
-	# Special handling for essence pouches - name based on rarity
+	# Special handling for material pouches - name based on rarity
 	if item_type == "essence_pouch":
 		match rarity:
-			"common": return "Small Essence Pouch"
-			"uncommon": return "Essence Pouch"
-			"rare": return "Heavy Essence Pouch"
-			"epic": return "Overflowing Essence Sack"
-			"legendary": return "Essence Trove"
-			"artifact": return "Primordial Essence Cache"
-			_: return "Essence Pouch"
+			"common": return "Small Material Pouch"
+			"uncommon": return "Material Pouch"
+			"rare": return "Heavy Material Pouch"
+			"epic": return "Overflowing Material Sack"
+			"legendary": return "Material Trove"
+			"artifact": return "Primordial Material Cache"
+			_: return "Material Pouch"
 
 	# Special handling for gem items - name based on rarity
 	if item_type == "gem_small":

@@ -18270,8 +18270,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.117 changes
+	display_game("[color=#00FF00]v0.9.117[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Economy Cleanup — Phase B[/color]")
+	display_game("  • Salvage Essence removed — salvaging now returns crafting materials directly")
+	display_game("  • Pickpocket steals tier-appropriate ore instead of essence")
+	display_game("  • Essence Pouches renamed to Material Pouches")
+	display_game("  • Removed dead salvage cost checks from all crafting recipes")
+	display_game("  • Updated help pages for new salvage system")
+	display_game("")
+
 	# v0.9.116 changes
-	display_game("[color=#00FF00]v0.9.116[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.116[/color]")
 	display_game("  [color=#FFD700]Market & Economy Improvements[/color]")
 	display_game("  • Equipment valor now reflects crafting material costs by tier")
 	display_game("  • Material valor reflects gathering difficulty (rarer = more valuable)")
@@ -18280,46 +18290,26 @@ func display_changelog():
 	display_game("  • Inspected equipment now shows crafter and enchanter names")
 	display_game("  • D2 rarity weights applied to special monster drops (Weapon Master, etc.)")
 	display_game("  • Market pagination for List Items, List Materials, and My Listings")
-	display_game("  • Fixed: Confirm/Cancel button order on purchase screen")
-	display_game("  • Fixed: My Listings cancel not working (message type mismatch)")
-	display_game("  • Fixed: movement blocked while in market menus")
-	display_game("  • Fixed: 'Earned: 0 Valor' display when listing items")
 	display_game("")
 
 	# v0.9.114 changes
 	display_game("[color=#00FFFF]v0.9.114[/color]")
-	display_game("  • Fixed: shortcut buttons (Companions, Eggs, etc.) no longer steal keyboard focus")
+	display_game("  • Fixed: shortcut buttons no longer steal keyboard focus")
 	display_game("  • Fixed: market tile now opens the Valor market instead of old merchant shop")
 	display_game("")
 
 	# v0.9.113 changes
 	display_game("[color=#00FFFF]v0.9.113[/color]")
 	display_game("  [color=#FFD700]Stations & Economy[/color]")
-	display_game("  • Blacksmith is now a station (B) in posts — bump to repair/upgrade")
-	display_game("  • Healer is now a station (H) in posts — bump to heal")
-	display_game("  • Market ($) is now buildable — build your own trading post market")
-	display_game("  • All three stations available as Construction recipes")
+	display_game("  • Blacksmith, Healer, Market are now bump-to-interact stations in posts")
 	display_game("  • Crafting never fails — worst result is Poor quality")
 	display_game("  • Gathering & crafting XP boosted to ~40%% of combat rate")
-	display_game("  • Alternative enchanting recipe: Distill Magic Dust (sap only)")
-	display_game("  • New alchemy recipe: Potion of Vigor (fills Lv5-15 gap)")
-	display_game("  • Fixed: hotzone markers no longer appear inside posts")
-	display_game("  • Fixed: quests only accessible via quest board, not anywhere in post")
-	display_game("  • Fixed: Space key double-trigger in More menu submenus")
 	display_game("  • MAP WIPE — NPC posts regenerated with new station layout")
 	display_game("")
 
 	# v0.9.112 changes
 	display_game("[color=#00FFFF]v0.9.112[/color]")
-	display_game("  • Phase 2D: Player Posts + Party Quest Sync")
-	display_game("  • Build named enclosures as safe zones for all visitors")
-	display_game("  • Compass hints point to nearby player posts")
-	display_game("  • Leader quest turn-in triggers auto-turn-in for party members")
-	display_game("")
-
-	# v0.9.111 changes
-	display_game("[color=#00FFFF]v0.9.111[/color]")
-	display_game("  • Party system bug fixes: menu, HP bars, initiative balance")
+	display_game("  • Player Posts + Party Quest Sync")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20313,7 +20303,7 @@ func search_help(search_term: String):
 		{
 			"title": "CRAFTING & GATHERING",
 			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
-			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for Salvage Essence (ESS)\n• Value scales with rarity and item level\n• Bonus chance for crafting materials (ore from weapons, leather from armor, etc.)\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
+			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
 		},
 		{
 			"title": "DUNGEONS",

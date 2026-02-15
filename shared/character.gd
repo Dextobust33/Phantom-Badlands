@@ -1309,7 +1309,6 @@ func to_dict() -> Dictionary:
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"crafting_materials": crafting_materials,
-		"salvage_essence": 0,  # Deprecated — migrated to materials
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
 		"auto_salvage_affixes": auto_salvage_affixes,
@@ -2990,14 +2989,6 @@ func get_logging_stats() -> Dictionary:
 		"xp_needed": _get_gathering_xp_needed(logging_skill),
 		"total_gathered": wood_gathered
 	}
-
-# Deprecated ESS stubs — salvage_cost is removed in crafting recipes
-func add_salvage_essence(_amount: int) -> int:
-	return 0
-func remove_salvage_essence(_amount: int) -> bool:
-	return true  # Always succeed (cost is 0 after migration)
-func has_salvage_essence(_amount: int) -> bool:
-	return true  # Always succeed (cost is 0 after migration)
 
 # ===== CRAFTING SYSTEM =====
 

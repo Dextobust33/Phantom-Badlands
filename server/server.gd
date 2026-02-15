@@ -12776,224 +12776,188 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
 			"enchantment":
 				# Enchantments add permanent stat bonuses to equipped gear
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
-					# Refund materials
+				# Parse target slots (can be comma-separated)
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				var target_slot = ""
+
+				# Find first equipped item matching target slots
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						target_slot = slot
+						break
+
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					# Parse target slots (can be comma-separated)
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					var target_slot = ""
+					var effect = recipe.get("effect", {})
+					var stat = effect.get("stat", "attack")
+					var bonus = effect.get("bonus", 5)
 
-					# Find first equipped item matching target slots
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							target_slot = slot
-							break
+					# Apply quality scaling to bonus
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					bonus = int(bonus * quality_mult)
 
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
-						# Refund materials (salvage essence not consumed yet)
+					# Initialize enchantments dict if needed
+					if not target_item.has("enchantments"):
+						target_item["enchantments"] = {}
+
+					# Check per-recipe bracket cap (minor enchants can't reach high values)
+					var current_value = target_item["enchantments"].get(stat, 0)
+					var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
+					if current_value >= recipe_enchant_max:
+						result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					# Check global per-stat cap
+					elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
+						var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+						result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					else:
-						var effect = recipe.get("effect", {})
-						var stat = effect.get("stat", "attack")
-						var bonus = effect.get("bonus", 5)
-
-						# Apply quality scaling to bonus
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						bonus = int(bonus * quality_mult)
-
-						# Initialize enchantments dict if needed
-						if not target_item.has("enchantments"):
-							target_item["enchantments"] = {}
-
-						# Check per-recipe bracket cap (minor enchants can't reach high values)
-						var current_value = target_item["enchantments"].get(stat, 0)
-						var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
-						if current_value >= recipe_enchant_max:
-							result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+						# Check max enchantment types (3 different stats per item)
+						var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
+						if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
+							result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
 							for mat_id in recipe.materials:
 								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						# Check global per-stat cap
-						elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
-							var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
-							result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
 							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 						else:
-							# Check max enchantment types (3 different stats per item)
-							var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
-							if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
-								result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
-								for mat_id in recipe.materials:
-									character.add_crafting_material(mat_id, recipe.materials[mat_id])
-								character.add_salvage_essence(salvage_cost)
-								result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-							else:
-								# Consume salvage essence and apply
-								character.remove_salvage_essence(salvage_cost)
-								# Clamp bonus to tightest of recipe bracket and global cap
-								var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
-								var effective_cap = mini(recipe_enchant_max, stat_cap_val)
-								var remaining = effective_cap - current_value
-								if bonus > remaining:
-									bonus = remaining
-								target_item["enchantments"][stat] = current_value + bonus
-								target_item["enchanted_by"] = character.name
-								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
+							# Clamp bonus to tightest of recipe bracket and global cap
+							var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							var effective_cap = mini(recipe_enchant_max, stat_cap_val)
+							var remaining = effective_cap - current_value
+							if bonus > remaining:
+								bonus = remaining
+							target_item["enchantments"][stat] = current_value + bonus
+							target_item["enchanted_by"] = character.name
+							result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
 			"upgrade":
 				# Upgrades increase equipment level
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
-					# Refund materials
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				var target_slot = ""
+
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						target_slot = slot
+						break
+
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					var target_slot = ""
+					var effect = recipe.get("effect", {})
+					var levels_to_add = effect.get("levels", 1)
 
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							target_slot = slot
-							break
+					# Apply quality scaling (masterwork = more levels)
+					if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+						levels_to_add = int(levels_to_add * 1.5)
+					elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
+						levels_to_add = int(levels_to_add * 1.25)
+					elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
+						levels_to_add = max(1, int(levels_to_add * 0.5))
 
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
-						# Refund materials (salvage essence not consumed yet)
+					# Check per-recipe bracket cap (e.g. +1 only works up to 10 total)
+					var upgrades_applied = target_item.get("upgrades_applied", 0)
+					var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
+					if upgrades_applied >= recipe_max:
+						result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					# Check global upgrade cap (max +50 levels from crafting per item)
+					elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
+						result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var levels_to_add = effect.get("levels", 1)
+						# Clamp to remaining upgrade room (tightest of recipe bracket and global cap)
+						var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
+						var remaining = mini(recipe_max, global_max) - upgrades_applied
+						if levels_to_add > remaining:
+							levels_to_add = remaining
 
-						# Apply quality scaling (masterwork = more levels)
-						if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
-							levels_to_add = int(levels_to_add * 1.5)
-						elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
-							levels_to_add = int(levels_to_add * 1.25)
-						elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
-							levels_to_add = max(1, int(levels_to_add * 0.5))
-
-						# Check per-recipe bracket cap (e.g. +1 only works up to 10 total)
-						var upgrades_applied = target_item.get("upgrades_applied", 0)
-						var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
-						if upgrades_applied >= recipe_max:
-							result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						# Check global upgrade cap (max +50 levels from crafting per item)
-						elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
-							result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						else:
-							# Clamp to remaining upgrade room (tightest of recipe bracket and global cap)
-							var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
-							var remaining = mini(recipe_max, global_max) - upgrades_applied
-							if levels_to_add > remaining:
-								levels_to_add = remaining
-
-							var old_level = target_item.get("level", 1)
-							target_item["level"] = old_level + levels_to_add
-							target_item["upgrades_applied"] = upgrades_applied + levels_to_add
-							result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
+						var old_level = target_item.get("level", 1)
+						target_item["level"] = old_level + levels_to_add
+						target_item["upgrades_applied"] = upgrades_applied + levels_to_add
+						result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
 			"affix":
 				# Affix infusion adds/replaces affixes on equipment
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
-					# Refund materials
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				var target_slot = ""
+
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						target_slot = slot
+						break
+
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					var target_slot = ""
+					var effect = recipe.get("effect", {})
+					var affix_pool = effect.get("affix_pool", ["attack"])
 
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							target_slot = slot
-							break
+					# Pick random affix from pool
+					var chosen_affix = affix_pool[randi() % affix_pool.size()]
 
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
-						# Refund materials (salvage essence not consumed yet)
-						for mat_id in recipe.materials:
-							character.add_crafting_material(mat_id, recipe.materials[mat_id])
-						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var affix_pool = effect.get("affix_pool", ["attack"])
+					# Calculate affix value based on item level and quality
+					var item_level = target_item.get("level", 1)
+					var base_value = 5 + int(item_level * 0.5)  # Scales with item level
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					var affix_value = int(base_value * quality_mult)
 
-						# Pick random affix from pool
-						var chosen_affix = affix_pool[randi() % affix_pool.size()]
+					# Map affix pool names to actual affix keys
+					var affix_key_map = {
+						"strength": "str_bonus",
+						"constitution": "con_bonus",
+						"dexterity": "dex_bonus",
+						"intelligence": "int_bonus",
+						"wisdom": "wis_bonus",
+						"wits": "wits_bonus",
+						"attack": "attack_bonus",
+						"defense": "defense_bonus",
+						"speed": "speed_bonus",
+						"mana": "mana_bonus"
+					}
+					var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
 
-						# Calculate affix value based on item level and quality
-						var item_level = target_item.get("level", 1)
-						var base_value = 5 + int(item_level * 0.5)  # Scales with item level
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						var affix_value = int(base_value * quality_mult)
+					# Initialize affixes dict if needed
+					if not target_item.has("affixes"):
+						target_item["affixes"] = {}
 
-						# Map affix pool names to actual affix keys
-						var affix_key_map = {
-							"strength": "str_bonus",
-							"constitution": "con_bonus",
-							"dexterity": "dex_bonus",
-							"intelligence": "int_bonus",
-							"wisdom": "wis_bonus",
-							"wits": "wits_bonus",
-							"attack": "attack_bonus",
-							"defense": "defense_bonus",
-							"speed": "speed_bonus",
-							"mana": "mana_bonus"
-						}
-						var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
+					# Add or replace affix (only if new value is higher)
+					var old_value = target_item["affixes"].get(affix_key, 0)
+					var affix_display = chosen_affix.capitalize()
+					var item_name = target_item.get("name", "item")
 
-						# Initialize affixes dict if needed
-						if not target_item.has("affixes"):
-							target_item["affixes"] = {}
-
-						# Add or replace affix (only if new value is higher)
-						var old_value = target_item["affixes"].get(affix_key, 0)
-						var affix_display = chosen_affix.capitalize()
-						var item_name = target_item.get("name", "item")
-
-						if affix_value > old_value:
-							target_item["affixes"][affix_key] = affix_value
-							if old_value > 0:
-								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
-							else:
-								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
+					if affix_value > old_value:
+						target_item["affixes"][affix_key] = affix_value
+						if old_value > 0:
+							result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
 						else:
-							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
+							result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
+					else:
+						result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
 			"tool":
 				# Create a gathering tool using the standard tool format
 				var tool_type = recipe.get("tool_type", "")
@@ -13064,55 +13028,47 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				quality_color = "#FFFFFF"
 				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
 			"proc_enchant":
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				var target_slot = ""
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						target_slot = slot
+						break
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					var target_slot = ""
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							target_slot = slot
-							break
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
-						for mat_id in recipe.materials:
-							character.add_crafting_material(mat_id, recipe.materials[mat_id])
-						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var proc_type = effect.get("proc_type", "")
-						if not target_item.has("proc_effects"):
-							target_item["proc_effects"] = {}
-						# Apply quality scaling to proc values
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						var proc_data = {}
-						var proc_item_name = target_item.get("name", "item")
-						match proc_type:
-							"lifesteal":
-								var pct = effect.get("percent", 10) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
-								result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
-							"shocking":
-								var pct = effect.get("percent", 15) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
-								result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
-							"damage_reflect":
-								var pct = effect.get("percent", 15) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
-								result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
-							"execute":
-								var bonus = effect.get("bonus_damage", 50) * quality_mult
-								proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
-								result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
-						target_item["proc_effects"][proc_type] = proc_data
+					var effect = recipe.get("effect", {})
+					var proc_type = effect.get("proc_type", "")
+					if not target_item.has("proc_effects"):
+						target_item["proc_effects"] = {}
+					# Apply quality scaling to proc values
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					var proc_data = {}
+					var proc_item_name = target_item.get("name", "item")
+					match proc_type:
+						"lifesteal":
+							var pct = effect.get("percent", 10) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+							result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
+						"shocking":
+							var pct = effect.get("percent", 15) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
+							result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
+						"damage_reflect":
+							var pct = effect.get("percent", 15) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+							result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
+						"execute":
+							var bonus = effect.get("bonus_damage", 50) * quality_mult
+							proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
+							result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
+					target_item["proc_effects"][proc_type] = proc_data
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -13694,169 +13650,140 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 				crafted_item = scroll
 				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
 			"enchantment":
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						break
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							break
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
+					var effect = recipe.get("effect", {})
+					var stat = effect.get("stat", "attack")
+					var bonus = effect.get("bonus", 5)
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					bonus = int(bonus * quality_mult)
+					if not target_item.has("enchantments"):
+						target_item["enchantments"] = {}
+					var current_value = target_item["enchantments"].get(stat, 0)
+					var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
+					if current_value >= recipe_enchant_max:
+						result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
+						var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+						result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					else:
-						var effect = recipe.get("effect", {})
-						var stat = effect.get("stat", "attack")
-						var bonus = effect.get("bonus", 5)
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						bonus = int(bonus * quality_mult)
-						if not target_item.has("enchantments"):
-							target_item["enchantments"] = {}
-						var current_value = target_item["enchantments"].get(stat, 0)
-						var recipe_enchant_max = recipe.get("max_enchant_value", 9999)
-						if current_value >= recipe_enchant_max:
-							result_message = "[color=#FFFF00]%s already has +%d %s — this recipe only works up to +%d. Use a higher-tier enchantment![/color]" % [target_item.get("name", "item"), current_value, stat, recipe_enchant_max]
+						var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
+						if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
+							result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
 							for mat_id in recipe.materials:
 								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
-							var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
-							result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
 							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 						else:
-							var max_types = CraftingDatabaseScript.MAX_ENCHANTMENT_TYPES
-							if not target_item["enchantments"].has(stat) and target_item["enchantments"].size() >= max_types:
-								result_message = "[color=#FFFF00]%s already has %d enchantment types (max %d)! Remove one first.[/color]" % [target_item.get("name", "item"), target_item["enchantments"].size(), max_types]
-								for mat_id in recipe.materials:
-									character.add_crafting_material(mat_id, recipe.materials[mat_id])
-								character.add_salvage_essence(salvage_cost)
-								result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-							else:
-								character.remove_salvage_essence(salvage_cost)
-								var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
-								var effective_cap = mini(recipe_enchant_max, stat_cap_val)
-								var remaining = effective_cap - current_value
-								if bonus > remaining:
-									bonus = remaining
-								target_item["enchantments"][stat] = current_value + bonus
-								target_item["enchanted_by"] = character.name
-								result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
+							var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							var effective_cap = mini(recipe_enchant_max, stat_cap_val)
+							var remaining = effective_cap - current_value
+							if bonus > remaining:
+								bonus = remaining
+							target_item["enchantments"][stat] = current_value + bonus
+							target_item["enchanted_by"] = character.name
+							result_message = "[color=%s]Enchanted %s with +%d %s! (%d/%d cap)[/color]" % [quality_color, target_item.get("name", "item"), bonus, stat, current_value + bonus, stat_cap_val]
 			"upgrade":
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						break
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							break
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to upgrade![/color]" % recipe.get("target_slot", "")
+					var effect = recipe.get("effect", {})
+					var levels_to_add = effect.get("levels", 1)
+					if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
+						levels_to_add = int(levels_to_add * 1.5)
+					elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
+						levels_to_add = int(levels_to_add * 1.25)
+					elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
+						levels_to_add = max(1, int(levels_to_add * 0.5))
+					var upgrades_applied = target_item.get("upgrades_applied", 0)
+					var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
+					if upgrades_applied >= recipe_max:
+						result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
+					elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
+						result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var levels_to_add = effect.get("levels", 1)
-						if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK:
-							levels_to_add = int(levels_to_add * 1.5)
-						elif quality == CraftingDatabaseScript.CraftingQuality.FINE:
-							levels_to_add = int(levels_to_add * 1.25)
-						elif quality == CraftingDatabaseScript.CraftingQuality.POOR:
-							levels_to_add = max(1, int(levels_to_add * 0.5))
-						var upgrades_applied = target_item.get("upgrades_applied", 0)
-						var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
-						if upgrades_applied >= recipe_max:
-							result_message = "[color=#FFFF00]%s has %d upgrades — this recipe only works up to +%d. Use a higher-tier upgrade recipe![/color]" % [target_item.get("name", "item"), upgrades_applied, recipe_max]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						elif upgrades_applied >= CraftingDatabaseScript.MAX_UPGRADE_LEVELS:
-							result_message = "[color=#FFFF00]%s has reached the upgrade cap (+%d levels)![/color]" % [target_item.get("name", "item"), CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
-							for mat_id in recipe.materials:
-								character.add_crafting_material(mat_id, recipe.materials[mat_id])
-							character.add_salvage_essence(salvage_cost)
-							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-						else:
-							var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
-							var remaining = mini(recipe_max, global_max) - upgrades_applied
-							if levels_to_add > remaining:
-								levels_to_add = remaining
-							var old_level = target_item.get("level", 1)
-							target_item["level"] = old_level + levels_to_add
-							target_item["upgrades_applied"] = upgrades_applied + levels_to_add
-							result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
+						var global_max = CraftingDatabaseScript.MAX_UPGRADE_LEVELS
+						var remaining = mini(recipe_max, global_max) - upgrades_applied
+						if levels_to_add > remaining:
+							levels_to_add = remaining
+						var old_level = target_item.get("level", 1)
+						target_item["level"] = old_level + levels_to_add
+						target_item["upgrades_applied"] = upgrades_applied + levels_to_add
+						result_message = "[color=%s]Upgraded %s from level %d to %d! (%d/%d upgrade cap)[/color]" % [quality_color, target_item.get("name", "item"), old_level, old_level + levels_to_add, upgrades_applied + levels_to_add, global_max]
 			"affix":
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						break
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							break
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot for affix![/color]" % recipe.get("target_slot", "")
-						for mat_id in recipe.materials:
-							character.add_crafting_material(mat_id, recipe.materials[mat_id])
-						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var affix_pool = effect.get("affix_pool", ["attack"])
-						var chosen_affix = affix_pool[randi() % affix_pool.size()]
-						var item_level = target_item.get("level", 1)
-						var base_value = 5 + int(item_level * 0.5)
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						var affix_value = int(base_value * quality_mult)
-						var affix_key_map = {
-							"strength": "str_bonus", "constitution": "con_bonus",
-							"dexterity": "dex_bonus", "intelligence": "int_bonus",
-							"wisdom": "wis_bonus", "wits": "wits_bonus",
-							"attack": "attack_bonus", "defense": "defense_bonus",
-							"speed": "speed_bonus", "mana": "mana_bonus"
-						}
-						var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
-						if not target_item.has("affixes"):
-							target_item["affixes"] = {}
-						var old_value = target_item["affixes"].get(affix_key, 0)
-						var affix_display = chosen_affix.capitalize()
-						var item_name = target_item.get("name", "item")
-						if affix_value > old_value:
-							target_item["affixes"][affix_key] = affix_value
-							if old_value > 0:
-								result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
-							else:
-								result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
+					var effect = recipe.get("effect", {})
+					var affix_pool = effect.get("affix_pool", ["attack"])
+					var chosen_affix = affix_pool[randi() % affix_pool.size()]
+					var item_level = target_item.get("level", 1)
+					var base_value = 5 + int(item_level * 0.5)
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					var affix_value = int(base_value * quality_mult)
+					var affix_key_map = {
+						"strength": "str_bonus", "constitution": "con_bonus",
+						"dexterity": "dex_bonus", "intelligence": "int_bonus",
+						"wisdom": "wis_bonus", "wits": "wits_bonus",
+						"attack": "attack_bonus", "defense": "defense_bonus",
+						"speed": "speed_bonus", "mana": "mana_bonus"
+					}
+					var affix_key = affix_key_map.get(chosen_affix, chosen_affix + "_bonus")
+					if not target_item.has("affixes"):
+						target_item["affixes"] = {}
+					var old_value = target_item["affixes"].get(affix_key, 0)
+					var affix_display = chosen_affix.capitalize()
+					var item_name = target_item.get("name", "item")
+					if affix_value > old_value:
+						target_item["affixes"][affix_key] = affix_value
+						if old_value > 0:
+							result_message = "[color=%s]Upgraded %s affix on %s: %d → %d![/color]" % [quality_color, affix_display, item_name, old_value, affix_value]
 						else:
-							result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
+							result_message = "[color=%s]Added +%d %s affix to %s![/color]" % [quality_color, affix_value, affix_display, item_name]
+					else:
+						result_message = "[color=#FFFF00]Rolled +%d %s, but %s already has +%d. No change.[/color]" % [affix_value, affix_display, item_name, old_value]
 			"tool":
 				var tool_type = recipe.get("tool_type", "")
 				var tool_tier = recipe.get("tier", 1)
@@ -13921,52 +13848,44 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 				quality_color = "#FFFFFF"
 				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
 			"proc_enchant":
-				var salvage_cost = recipe.get("salvage_cost", 0)
-				if not character.has_salvage_essence(salvage_cost):
-					result_message = "[color=#FF4444]Not enough Salvage Essence! Need %d, have %d.[/color]" % [salvage_cost, character.salvage_essence]
+				var target_slots = recipe.get("target_slot", "").split(",")
+				var target_item = null
+				for slot in target_slots:
+					slot = slot.strip_edges()
+					if character.equipped.has(slot) and character.equipped[slot] != null:
+						target_item = character.equipped[slot]
+						break
+				if target_item == null:
+					result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
 					result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 				else:
-					var target_slots = recipe.get("target_slot", "").split(",")
-					var target_item = null
-					for slot in target_slots:
-						slot = slot.strip_edges()
-						if character.equipped.has(slot) and character.equipped[slot] != null:
-							target_item = character.equipped[slot]
-							break
-					if target_item == null:
-						result_message = "[color=#FF4444]No equipment in %s slot to enchant![/color]" % recipe.get("target_slot", "")
-						for mat_id in recipe.materials:
-							character.add_crafting_material(mat_id, recipe.materials[mat_id])
-						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-					else:
-						character.remove_salvage_essence(salvage_cost)
-						var effect = recipe.get("effect", {})
-						var proc_type = effect.get("proc_type", "")
-						if not target_item.has("proc_effects"):
-							target_item["proc_effects"] = {}
-						var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-						var proc_data = {}
-						var proc_item_name = target_item.get("name", "item")
-						match proc_type:
-							"lifesteal":
-								var pct = effect.get("percent", 10) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
-								result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
-							"shocking":
-								var pct = effect.get("percent", 15) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
-								result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
-							"damage_reflect":
-								var pct = effect.get("percent", 15) * quality_mult
-								proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
-								result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
-							"execute":
-								var bonus = effect.get("bonus_damage", 50) * quality_mult
-								proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
-								result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
-						target_item["proc_effects"][proc_type] = proc_data
+					var effect = recipe.get("effect", {})
+					var proc_type = effect.get("proc_type", "")
+					if not target_item.has("proc_effects"):
+						target_item["proc_effects"] = {}
+					var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+					var proc_data = {}
+					var proc_item_name = target_item.get("name", "item")
+					match proc_type:
+						"lifesteal":
+							var pct = effect.get("percent", 10) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+							result_message = "[color=%s]Enchanted %s with %d%% Lifesteal![/color]" % [quality_color, proc_item_name, int(pct)]
+						"shocking":
+							var pct = effect.get("percent", 15) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 0.25)}
+							result_message = "[color=%s]Enchanted %s with Shocking (+%d%% damage, %d%% chance)![/color]" % [quality_color, proc_item_name, int(pct), int(effect.get("proc_chance", 0.25) * 100)]
+						"damage_reflect":
+							var pct = effect.get("percent", 15) * quality_mult
+							proc_data = {"percent": pct, "proc_chance": effect.get("proc_chance", 1.0)}
+							result_message = "[color=%s]Enchanted %s with %d%% Damage Reflect![/color]" % [quality_color, proc_item_name, int(pct)]
+						"execute":
+							var bonus = effect.get("bonus_damage", 50) * quality_mult
+							proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
+							result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
+					target_item["proc_effects"][proc_type] = proc_data
 			_:
 				result_message = "[color=%s]Crafted %s %s![/color]" % [quality_color, quality_name, recipe.name]
 
