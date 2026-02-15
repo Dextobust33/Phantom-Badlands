@@ -6652,6 +6652,7 @@ func _create_shortcut_buttons():
 		var btn = Button.new()
 		btn.text = shortcut[0]
 		btn.flat = true
+		btn.focus_mode = Control.FOCUS_NONE
 		btn.custom_minimum_size = Vector2(0, 20)
 		# Style: small, semi-transparent, green border
 		var style_normal = StyleBoxFlat.new()
@@ -18117,8 +18118,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.114 changes
+	display_game("[color=#00FF00]v0.9.114[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed: shortcut buttons (Companions, Eggs, etc.) no longer steal keyboard focus")
+	display_game("  • Fixed: market tile now opens the Valor market instead of old merchant shop")
+	display_game("")
+
 	# v0.9.113 changes
-	display_game("[color=#00FF00]v0.9.113[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.113[/color]")
 	display_game("  [color=#FFD700]Stations & Economy[/color]")
 	display_game("  • Blacksmith is now a station (B) in posts — bump to repair/upgrade")
 	display_game("  • Healer is now a station (H) in posts — bump to heal")
@@ -18153,11 +18160,6 @@ func display_changelog():
 	display_game("  • Bump into another player to invite them to your party (max 4)")
 	display_game("  • Party combat, snake movement, party dungeons")
 	display_game("  • Each member gets full loot and guaranteed boss egg")
-	display_game("")
-
-	# v0.9.109 changes
-	display_game("[color=#00FFFF]v0.9.109[/color]")
-	display_game("  • Phase 2A-2C: Specialty jobs, exclusive crafting recipes, balance caps")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

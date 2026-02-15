@@ -8485,9 +8485,9 @@ func trigger_trading_post_encounter(peer_id: int):
 		"y": tp_y
 	})
 
-func _handle_market_interact(peer_id: int, character):
-	"""Handle bump into market tile — open shop."""
-	handle_trading_post_shop(peer_id)
+func _handle_market_interact(peer_id: int, _character):
+	"""Handle bump into market tile — open market (list/buy items for Valor)."""
+	send_to_peer(peer_id, {"type": "market_start"})
 
 func _handle_inn_interact(peer_id: int, character):
 	"""Handle bump into inn tile — open heal/recharge."""
