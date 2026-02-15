@@ -6,6 +6,7 @@ extends Control
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantasia-Revival"
 const GAME_EXECUTABLE = "PhantomBadlandsClient.exe"
+const MAX_DOWNLOAD_RETRIES = 3
 
 @onready var status_label = $VBox/StatusLabel
 @onready var progress_bar = $VBox/ProgressBar
@@ -18,6 +19,7 @@ var local_version = ""
 var remote_version = ""
 var download_url = ""
 var game_path = ""
+var download_retries = 0
 
 func _ready():
 	play_button.disabled = true
@@ -99,6 +101,7 @@ func _on_version_check_completed(result: int, response_code: int, headers: Packe
 		_enable_play_if_installed()
 	elif download_url != "":
 		status_label.text = "Update available: %s" % remote_version
+		download_retries = 0
 		_start_download()
 	else:
 		status_label.text = "No download found in release"
@@ -113,7 +116,10 @@ func _start_download():
 	add_child(download_request)
 	download_request.request_completed.connect(_on_download_completed)
 
-	var headers = ["User-Agent: PhantomBadlandsLauncher/1.0"]
+	var headers = [
+		"User-Agent: PhantomBadlandsLauncher/1.0",
+		"Accept: application/octet-stream"
+	]
 	var error = download_request.request(download_url, headers)
 	if error != OK:
 		status_label.text = "Failed to start download"
@@ -134,6 +140,18 @@ func _on_download_completed(result: int, response_code: int, headers: PackedStri
 	download_request = null
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		# Retry on server errors (502, 503, etc.)
+		if response_code >= 500 and download_retries < MAX_DOWNLOAD_RETRIES:
+			download_retries += 1
+			status_label.text = "Download failed (code: %d), retrying (%d/%d)..." % [response_code, download_retries, MAX_DOWNLOAD_RETRIES]
+			# Clean up partial download
+			var zip_path = game_path.path_join("update.zip")
+			if FileAccess.file_exists(zip_path):
+				DirAccess.remove_absolute(zip_path)
+			# Wait a moment before retrying
+			await get_tree().create_timer(2.0).timeout
+			_start_download()
+			return
 		status_label.text = "Download failed (code: %d)" % response_code
 		_enable_play_if_installed()
 		return
