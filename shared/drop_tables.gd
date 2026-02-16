@@ -43,131 +43,232 @@ const SALVAGE_VALUES = {
 }
 
 # Primary material returned by slot type when salvaging
-const SALVAGE_SLOT_MATERIALS = {
-	"weapon": "ore",
-	"armor": "leather",
-	"helm": "leather",
-	"shield": "ore",
-	"boots": "leather",
-	"ring": "enchant",
-	"amulet": "enchant",
-	"belt": "leather"
+# Ore tier list for equipment craft templates (by tier_index 0-8)
+const SALVAGE_ORE_TIERS = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
+const SALVAGE_LEATHER_TIERS = ["ragged_leather", "leather_scraps", "thick_leather", "enchanted_leather", "wyvern_leather", "dragonhide", "void_silk", "celestial_hide", "astral_weave"]
+const SALVAGE_ENCHANT_TIERS = ["magic_dust", "arcane_crystal", "soul_shard", "void_essence", "primordial_spark"]
+const SALVAGE_FUEL_TIERS = ["coal", "coal", "coal", "mana_blossom", "arcane_crystal", "soul_shard", "void_essence", "primordial_spark", "primordial_spark"]
+
+# Rarity multiplier for salvage quantity (higher rarity = more materials)
+const SALVAGE_RARITY_MULT = {
+	"common": 0.5, "uncommon": 0.7, "rare": 1.0, "epic": 1.3, "legendary": 1.6, "artifact": 2.0
 }
 
-# Secondary material type by slot (different from primary)
-const SALVAGE_SECONDARY_MATERIALS = {
-	"weapon": "enchant",
-	"armor": "ore",
-	"helm": "ore",
-	"shield": "leather",
-	"boots": "ore",
-	"ring": "ore",
-	"amulet": "leather",
-	"belt": "ore"
+# Enchantment stat → rune recipe materials (approximate cost of the rune that grants this stat)
+const SALVAGE_ENCHANT_MATERIALS = {
+	"attack_bonus": {"monster_part": 3, "enchant": 3},
+	"defense_bonus": {"monster_part": 3, "enchant": 3},
+	"hp_bonus": {"monster_part": 3, "enchant": 3},
+	"speed_bonus": {"monster_part": 3, "enchant": 3},
+	"mana_bonus": {"monster_part": 3, "enchant": 3},
+	"stamina_bonus": {"monster_part": 3, "enchant": 2},
+	"energy_bonus": {"monster_part": 3, "enchant": 2},
+	"str_bonus": {"monster_part": 3, "enchant": 2},
+	"con_bonus": {"monster_part": 3, "enchant": 2},
+	"dex_bonus": {"monster_part": 3, "enchant": 2},
+	"int_bonus": {"monster_part": 3, "enchant": 2},
+	"wis_bonus": {"monster_part": 3, "enchant": 2},
+	"wits_bonus": {"monster_part": 3, "enchant": 2},
 }
 
-# Maps material type to actual material ID based on item tier/level
-# NOTE: These must match IDs in crafting_database.gd MATERIALS
-const SALVAGE_MATERIAL_TIERS = {
-	"ore": ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"],
-	"leather": ["ragged_leather", "leather_scraps", "thick_leather", "enchanted_leather", "wyvern_leather", "dragonhide", "void_silk", "celestial_hide", "astral_weave"],
-	"enchant": ["magic_dust", "arcane_crystal", "soul_shard", "void_essence", "primordial_spark"]
-}
-
-# Primary quantity ranges by rarity: [min, max]
-const SALVAGE_PRIMARY_QTY = {
-	"common": [1, 2],
-	"uncommon": [2, 3],
-	"rare": [3, 5],
-	"epic": [4, 7],
-	"legendary": [6, 10],
-	"artifact": [8, 14]
-}
-
-# Secondary material chance by rarity
-const SALVAGE_SECONDARY_CHANCE = {
-	"common": 0.0,
-	"uncommon": 0.20,
-	"rare": 0.40,
-	"epic": 0.60,
-	"legendary": 0.80,
-	"artifact": 1.0
-}
+# Monster parts by tier (for enchantment salvage)
+const SALVAGE_MONSTER_PART_TIERS = ["orc_tooth", "skeleton_bone", "troll_charm", "ogre_ear", "demon_horn", "hydra_scale", "iron_golem_plate", "iron_golem_plate", "iron_golem_plate"]
 
 func get_salvage_value(item: Dictionary) -> Dictionary:
-	"""Calculate salvage materials for an item. Returns {materials: {id: qty}}."""
-	var rarity = item.get("rarity", "common")
-	var level = item.get("level", 1)
+	"""Calculate salvage materials based on what it would cost to craft the item.
+	Returns ~50% of the crafting materials, randomly varied."""
+	var item_name = item.get("name", "")
 	var item_type = item.get("type", "")
+	var rarity = item.get("rarity", "common")
+	var materials_pool: Dictionary = {}
 
-	# Determine equipment slot from item type
-	var slot = Character.get_item_slot_from_type(item_type)
-	if slot == "":
-		slot = "weapon"  # Fallback
+	# 1. Try exact recipe match by name (works for crafted items, structures, runes, etc.)
+	var recipe_mats = _find_recipe_materials_by_name(item_name)
+	if not recipe_mats.is_empty():
+		for mat_id in recipe_mats:
+			_add_to_salvage_pool(materials_pool, mat_id, int(recipe_mats[mat_id]))
+	elif _is_equipment_type(item_type):
+		# 2. For equipment without a recipe match (drops), use slot+tier template
+		var slot = Character.get_item_slot_from_type(item_type)
+		if slot == "":
+			slot = "weapon"
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var template = _get_equipment_craft_template(slot, tier_index)
+		for mat_id in template:
+			_add_to_salvage_pool(materials_pool, mat_id, template[mat_id])
 
-	var result_materials = {}
-	var tier_index = clampi(int(level / 15), 0, 8)
+	# 3. Add enchantment materials (rune costs for each applied enchantment)
+	var enchantments = item.get("enchantments", {})
+	if not enchantments.is_empty():
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		for stat in enchantments:
+			var rune_template = SALVAGE_ENCHANT_MATERIALS.get(stat, {})
+			for mat_type in rune_template:
+				var qty = int(rune_template[mat_type])
+				var mat_id = _resolve_salvage_material(mat_type, tier_index)
+				_add_to_salvage_pool(materials_pool, mat_id, qty)
 
-	# Primary material (always granted)
-	var primary_type = SALVAGE_SLOT_MATERIALS.get(slot, "ore")
-	if SALVAGE_MATERIAL_TIERS.has(primary_type):
-		var mat_list = SALVAGE_MATERIAL_TIERS[primary_type]
-		var mat_idx = mini(tier_index, mat_list.size() - 1)
-		var mat_id = mat_list[mat_idx]
-		var qty_range = SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])
-		result_materials[mat_id] = randi_range(qty_range[0], qty_range[1])
+	# 4. Add upgrade materials (each upgrade used materials)
+	var upgrades = int(item.get("upgrades_applied", 0))
+	if upgrades > 0:
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
+		# Each upgrade costs ~2 ore, return half
+		_add_to_salvage_pool(materials_pool, ore, upgrades)
 
-	# Secondary material (chance based on rarity)
-	var secondary_chance = SALVAGE_SECONDARY_CHANCE.get(rarity, 0.0)
-	if randf() < secondary_chance:
-		var secondary_type = SALVAGE_SECONDARY_MATERIALS.get(slot, "ore")
-		if SALVAGE_MATERIAL_TIERS.has(secondary_type):
-			var mat_list = SALVAGE_MATERIAL_TIERS[secondary_type]
-			var mat_idx = mini(tier_index, mat_list.size() - 1)
-			var mat_id = mat_list[mat_idx]
-			var qty = randi_range(1, maxi(1, int(SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])[1] / 2)))
-			if result_materials.has(mat_id):
-				result_materials[mat_id] += qty
-			else:
-				result_materials[mat_id] = qty
+	# 5. Apply rarity multiplier and ~50% return rate
+	var rarity_mult = SALVAGE_RARITY_MULT.get(rarity, 0.5)
+	var result_materials: Dictionary = {}
+	for mat_id in materials_pool:
+		var full_qty = materials_pool[mat_id]
+		# Scale by rarity, then return ~50% with some randomness (30-70%)
+		var scaled = full_qty * rarity_mult
+		var return_qty = maxi(1, int(ceil(scaled * randf_range(0.3, 0.7))))
+		result_materials[mat_id] = return_qty
+
+	# Ensure at least something is returned
+	if result_materials.is_empty():
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
+		result_materials[ore] = 1
 
 	return {"materials": result_materials}
 
 func get_salvage_preview(item: Dictionary) -> Dictionary:
-	"""Get expected salvage returns for preview (no randomness on secondary)."""
-	var rarity = item.get("rarity", "common")
-	var level = item.get("level", 1)
+	"""Get expected salvage returns for preview display."""
+	var item_name = item.get("name", "")
 	var item_type = item.get("type", "")
+	var rarity = item.get("rarity", "common")
+	var materials_pool: Dictionary = {}
 
-	var slot = Character.get_item_slot_from_type(item_type)
-	if slot == "":
-		slot = "weapon"
+	# Same logic as get_salvage_value but deterministic
+	var recipe_mats = _find_recipe_materials_by_name(item_name)
+	if not recipe_mats.is_empty():
+		for mat_id in recipe_mats:
+			_add_to_salvage_pool(materials_pool, mat_id, int(recipe_mats[mat_id]))
+	elif _is_equipment_type(item_type):
+		var slot = Character.get_item_slot_from_type(item_type)
+		if slot == "":
+			slot = "weapon"
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var template = _get_equipment_craft_template(slot, tier_index)
+		for mat_id in template:
+			_add_to_salvage_pool(materials_pool, mat_id, template[mat_id])
 
-	var tier_index = clampi(int(level / 15), 0, 8)
+	var enchantments = item.get("enchantments", {})
+	if not enchantments.is_empty():
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		for stat in enchantments:
+			var rune_template = SALVAGE_ENCHANT_MATERIALS.get(stat, {})
+			for mat_type in rune_template:
+				var qty = int(rune_template[mat_type])
+				var mat_id = _resolve_salvage_material(mat_type, tier_index)
+				_add_to_salvage_pool(materials_pool, mat_id, qty)
 
-	# Primary material info
-	var primary_type = SALVAGE_SLOT_MATERIALS.get(slot, "ore")
-	var primary_mat = ""
-	var primary_qty_range = SALVAGE_PRIMARY_QTY.get(rarity, [1, 2])
-	if SALVAGE_MATERIAL_TIERS.has(primary_type):
-		var mat_list = SALVAGE_MATERIAL_TIERS[primary_type]
-		primary_mat = mat_list[mini(tier_index, mat_list.size() - 1)]
+	var upgrades = int(item.get("upgrades_applied", 0))
+	if upgrades > 0:
+		var level = int(item.get("level", 1))
+		var tier_index = clampi(int(level / 15), 0, 8)
+		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
+		_add_to_salvage_pool(materials_pool, ore, upgrades)
 
-	# Secondary material info
-	var secondary_type = SALVAGE_SECONDARY_MATERIALS.get(slot, "ore")
-	var secondary_mat = ""
-	var secondary_chance = SALVAGE_SECONDARY_CHANCE.get(rarity, 0.0)
-	if SALVAGE_MATERIAL_TIERS.has(secondary_type):
-		var mat_list = SALVAGE_MATERIAL_TIERS[secondary_type]
-		secondary_mat = mat_list[mini(tier_index, mat_list.size() - 1)]
+	# Show 50% of each material (deterministic preview)
+	var rarity_mult = SALVAGE_RARITY_MULT.get(rarity, 0.5)
+	var preview_materials: Dictionary = {}
+	for mat_id in materials_pool:
+		var full_qty = materials_pool[mat_id]
+		var return_qty = maxi(1, int(ceil(full_qty * rarity_mult * 0.5)))
+		preview_materials[mat_id] = return_qty
 
-	return {
-		"primary_material": primary_mat,
-		"primary_qty_min": primary_qty_range[0],
-		"primary_qty_max": primary_qty_range[1],
-		"secondary_material": secondary_mat,
-		"secondary_chance": secondary_chance
-	}
+	return {"materials": preview_materials}
+
+func _add_to_salvage_pool(pool: Dictionary, mat_id: String, qty: int):
+	"""Add materials to the salvage pool, accumulating quantities."""
+	if pool.has(mat_id):
+		pool[mat_id] += qty
+	else:
+		pool[mat_id] = qty
+
+func _resolve_salvage_material(mat_type: String, tier_index: int) -> String:
+	"""Resolve a generic material type (ore, leather, enchant, monster_part) to a specific material ID."""
+	match mat_type:
+		"ore":
+			return SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
+		"leather":
+			return SALVAGE_LEATHER_TIERS[mini(tier_index, SALVAGE_LEATHER_TIERS.size() - 1)]
+		"enchant":
+			return SALVAGE_ENCHANT_TIERS[mini(tier_index / 2, SALVAGE_ENCHANT_TIERS.size() - 1)]
+		"monster_part":
+			return SALVAGE_MONSTER_PART_TIERS[mini(tier_index, SALVAGE_MONSTER_PART_TIERS.size() - 1)]
+		"fuel":
+			return SALVAGE_FUEL_TIERS[mini(tier_index, SALVAGE_FUEL_TIERS.size() - 1)]
+		_:
+			return mat_type  # Already a specific material ID
+
+func _get_equipment_craft_template(slot: String, tier_index: int) -> Dictionary:
+	"""Get approximate crafting materials for a piece of equipment by slot and tier.
+	Based on actual blacksmith recipes, extrapolated for higher tiers."""
+	var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
+	var leather = SALVAGE_LEATHER_TIERS[mini(tier_index, SALVAGE_LEATHER_TIERS.size() - 1)]
+	var fuel = SALVAGE_FUEL_TIERS[mini(tier_index, SALVAGE_FUEL_TIERS.size() - 1)]
+	var enchant_mat = SALVAGE_ENCHANT_TIERS[mini(tier_index / 2, SALVAGE_ENCHANT_TIERS.size() - 1)]
+	# Scale quantities with tier (higher tier = more materials invested)
+	var tier_scale = 1 + tier_index / 3  # 1 at T1, 2 at T4, 3 at T7
+	match slot:
+		"weapon":
+			return {ore: 3 * tier_scale, fuel: 2 * tier_scale}
+		"armor":
+			return {ore: 2 * tier_scale, leather: 3 * tier_scale}
+		"helm":
+			return {ore: 2 * tier_scale, leather: 1 * tier_scale}
+		"shield":
+			return {ore: 3 * tier_scale, fuel: 1 * tier_scale}
+		"boots":
+			return {leather: 3 * tier_scale, ore: 1 * tier_scale}
+		"ring":
+			return {enchant_mat: 3 * tier_scale, ore: 1 * tier_scale}
+		"amulet":
+			return {enchant_mat: 3 * tier_scale, leather: 1 * tier_scale}
+		_:
+			return {ore: 2 * tier_scale}
+
+func _find_recipe_materials_by_name(item_name: String) -> Dictionary:
+	"""Look up the raw materials for a crafted item by matching its name to a recipe.
+	Handles quality prefixes (e.g. 'Masterwork Stone Wall' -> 'Stone Wall')."""
+	_build_recipe_materials_cache()
+	if _recipe_materials_cache.has(item_name):
+		return _recipe_materials_cache[item_name]
+	var quality_prefixes = ["Masterwork ", "Fine ", "Poor ", "Failed "]
+	for prefix in quality_prefixes:
+		if item_name.begins_with(prefix):
+			var stripped = item_name.substr(prefix.length())
+			if _recipe_materials_cache.has(stripped):
+				return _recipe_materials_cache[stripped]
+	return {}
+
+var _recipe_materials_cache: Dictionary = {}
+var _recipe_materials_cache_built: bool = false
+
+func _build_recipe_materials_cache():
+	"""Build a cache mapping recipe output names to their input materials."""
+	if _recipe_materials_cache_built:
+		return
+	_recipe_materials_cache_built = true
+	var CraftDB = preload("res://shared/crafting_database.gd")
+	for recipe_id in CraftDB.RECIPES:
+		var recipe = CraftDB.RECIPES[recipe_id]
+		var recipe_name = recipe.get("name", "")
+		if recipe_name.is_empty():
+			continue
+		var mats = recipe.get("materials", {})
+		if not mats.is_empty():
+			_recipe_materials_cache[recipe_name] = mats
 
 func get_tier_for_level(monster_level: int) -> int:
 	"""Get the appropriate consumable tier for a monster level"""
@@ -1843,13 +1944,17 @@ func roll_fishing_catch(water_type: String, fishing_skill: int) -> Dictionary:
 		cumulative += entry.weight
 		if roll < cumulative:
 			var catch = entry.catch
-			return {
+			var result = {
 				"item_id": catch.item,
 				"name": catch.name,
 				"type": catch.type,
 				"value": catch.value,
 				"xp": FISHING_XP.get(catch.item, 10)
 			}
+			if catch.has("is_consumable"):
+				result["is_consumable"] = true
+				result["tier"] = catch.get("tier", 1)
+			return result
 
 	# Fallback
 	var fallback = catches[0]
@@ -1990,13 +2095,17 @@ func roll_mining_catch(ore_tier: int, mining_skill: int) -> Dictionary:
 		cumulative += entry.weight
 		if roll < cumulative:
 			var catch = entry.catch
-			return {
+			var result = {
 				"item_id": catch.item,
 				"name": catch.name,
 				"type": catch.type,
 				"value": catch.value,
 				"xp": MINING_XP.get(catch.item, 10)
 			}
+			if catch.has("is_consumable"):
+				result["is_consumable"] = true
+				result["tier"] = catch.get("tier", 1)
+			return result
 
 	# Fallback
 	var fallback = catches[0]
@@ -2122,13 +2231,17 @@ func roll_logging_catch(wood_tier: int, logging_skill: int) -> Dictionary:
 		cumulative += entry.weight
 		if roll < cumulative:
 			var catch = entry.catch
-			return {
+			var result = {
 				"item_id": catch.item,
 				"name": catch.name,
 				"type": catch.type,
 				"value": catch.value,
 				"xp": LOGGING_XP.get(catch.item, 10)
 			}
+			if catch.has("is_consumable"):
+				result["is_consumable"] = true
+				result["tier"] = catch.get("tier", 1)
+			return result
 
 	# Fallback
 	var fallback = catches[0]
@@ -3788,38 +3901,65 @@ func _is_equipment_type(item_type: String) -> bool:
 
 func calculate_base_valor(item: Dictionary) -> int:
 	"""Calculate base valor for listing an item on the Open Market.
-	Equipment: tier-based (reflects crafting costs) × rarity multiplier.
-	Materials: based on actual material value (reflects gathering difficulty).
-	Consumables/parts: tier-scaled."""
+	All items reflect their true cost: raw materials by gathering difficulty,
+	crafted items by the sum of their input material costs."""
 	var item_type = item.get("type", "")
+	var item_name = item.get("name", "")
 
 	# Equipment — valor reflects what it costs to craft equivalent gear
-	# Base per tier approximates material costs for a full crafted piece
+	# Crafted equipment uses recipe cost; dropped equipment uses tier/rarity
 	if item.has("rarity") and _is_equipment_type(item_type):
+		# Check for recipe cost first (crafted gear)
+		var recipe_valor = _find_recipe_valor_by_name(item_name)
+		if recipe_valor > 0:
+			var rarity = item.get("rarity", "common")
+			var rarity_mult = {"common": 1.0, "uncommon": 1.5, "rare": 2.5, "epic": 5.0, "legendary": 10.0, "artifact": 25.0}
+			var mult = rarity_mult.get(rarity, 1.0)
+			return maxi(1, int(recipe_valor * mult))
+		# Dropped equipment — tier-based
 		var rarity = item.get("rarity", "common")
 		var level = int(item.get("level", 1))
 		var tier = get_tier_for_level(level)
-		# Base valor per tier (approximate crafting material cost in valor)
 		var tier_base = {1: 12, 2: 30, 3: 65, 4: 120, 5: 200, 6: 400, 7: 1000, 8: 2500, 9: 5000}
 		var base = tier_base.get(tier, 12)
-		# Rarity multiplier — common is salvage fodder, legendary+ exceeds crafted ceiling
 		var rarity_mult = {"common": 0.5, "uncommon": 1.0, "rare": 2.0, "epic": 4.0, "legendary": 8.0, "artifact": 20.0}
 		var mult = rarity_mult.get(rarity, 0.5)
 		return maxi(1, int(base * mult))
 
-	# Consumables (potions, scrolls, etc.)
+	# Structures (walls, forges, workbenches, etc.) — always crafted, use recipe cost
+	if item_type == "structure":
+		var recipe_valor = _find_recipe_valor_by_name(item_name)
+		if recipe_valor > 0:
+			return recipe_valor
+		# Fallback for structures without matching recipe
+		return maxi(5, int(item.get("value", 20)))
+
+	# Runes — always crafted, use recipe cost
+	if item_type == "rune":
+		var recipe_valor = _find_recipe_valor_by_name(item_name)
+		if recipe_valor > 0:
+			var rarity = item.get("rarity", "common")
+			var rarity_mult = {"common": 1.0, "uncommon": 1.5, "rare": 2.5, "epic": 5.0, "legendary": 10.0}
+			var mult = rarity_mult.get(rarity, 1.0)
+			return maxi(1, int(recipe_valor * mult))
+		# Fallback: use difficulty-based value
+		return maxi(5, int(item.get("value", 50)) / 5)
+
+	# Consumables — check for recipe cost (scrolls, tomes), fall back to tier for drops (potions)
 	if item.get("is_consumable", false):
+		var recipe_valor = _find_recipe_valor_by_name(item_name)
+		if recipe_valor > 0:
+			return recipe_valor
+		# Dropped consumables (potions, etc.) — tier-based
 		var tier = int(item.get("tier", 1))
 		return 5 + tier * 3
 
-	# Materials — use actual material value from crafting database (reflects gathering difficulty)
+	# Materials — use recipe chain cost if crafted, otherwise gathering difficulty
 	if item.has("material_type") or item_type == "material":
-		var mat_name = item.get("material_type", item.get("name", ""))
-		var CraftDB = preload("res://shared/crafting_database.gd")
-		var mat_info = CraftDB.MATERIALS.get(mat_name, {})
-		var mat_value = int(mat_info.get("value", 5))
-		# Convert material gold value to valor (roughly value / 3, min 1)
-		return maxi(1, int(mat_value / 3.0))
+		var mat_id = item.get("material_type", item.get("material_id", ""))
+		if mat_id.is_empty():
+			mat_id = item.get("name", "").to_lower().replace(" ", "_")
+		return _get_material_valor(mat_id)
 
 	# Tools — tier-based with rarity multiplier
 	if item_type == "tool":
@@ -3836,9 +3976,90 @@ func calculate_base_valor(item: Dictionary) -> int:
 		var tier = int(item.get("monster_tier", item.get("tier", 1)))
 		return tier * 8
 
-	# Fallback
+	# Fallback — try recipe lookup by name
+	var recipe_valor = _find_recipe_valor_by_name(item_name)
+	if recipe_valor > 0:
+		return recipe_valor
 	var value = item.get("value", 20)
-	return maxi(1, int(value) / 20)
+	return maxi(1, int(value) / 10)
+
+# ===== VALOR CALCULATION HELPERS =====
+
+var _material_valor_cache: Dictionary = {}
+var _recipe_valor_cache: Dictionary = {}  # recipe_name -> total input material cost
+var _recipe_cache_built: bool = false
+
+func _get_material_valor(mat_id: String) -> int:
+	"""Get the valor of a single unit of material, considering crafting chains.
+	Crafted materials (e.g. stone_block) reflect the cost of their inputs."""
+	if _material_valor_cache.has(mat_id):
+		return _material_valor_cache[mat_id]
+
+	var CraftDB = preload("res://shared/crafting_database.gd")
+	var mat_info = CraftDB.MATERIALS.get(mat_id, {})
+	var raw_value = int(mat_info.get("value", 5))
+	# Base valor from raw material value (gathering difficulty)
+	var base_valor = maxi(1, int(ceil(raw_value / 3.0)))
+
+	# Check if a recipe produces this material — if so, use input costs
+	for recipe_id in CraftDB.RECIPES:
+		var recipe = CraftDB.RECIPES[recipe_id]
+		if recipe.get("output_type", "") == "material" and recipe.get("output_item", "") == mat_id:
+			var input_cost = 0
+			for input_mat in recipe.get("materials", {}):
+				var input_qty = int(recipe["materials"][input_mat])
+				# Guard against infinite recursion (shouldn't happen but be safe)
+				if input_mat == mat_id:
+					continue
+				input_cost += _get_material_valor(input_mat) * input_qty
+			var output_qty = maxi(1, int(recipe.get("output_quantity", 1)))
+			var crafted_valor = maxi(base_valor, int(ceil(float(input_cost) / output_qty)))
+			_material_valor_cache[mat_id] = crafted_valor
+			return crafted_valor
+
+	_material_valor_cache[mat_id] = base_valor
+	return base_valor
+
+func _build_recipe_valor_cache():
+	"""Build a cache mapping recipe output names to their total material cost in valor."""
+	if _recipe_cache_built:
+		return
+	_recipe_cache_built = true
+	var CraftDB = preload("res://shared/crafting_database.gd")
+	for recipe_id in CraftDB.RECIPES:
+		var recipe = CraftDB.RECIPES[recipe_id]
+		var output_type = recipe.get("output_type", "")
+		# Skip material recipes (handled by _get_material_valor)
+		if output_type == "material":
+			continue
+		# Skip recipes that don't produce a named item
+		var recipe_name = recipe.get("name", "")
+		if recipe_name.is_empty():
+			continue
+		# Calculate total input material cost
+		var input_cost = 0
+		for mat_id in recipe.get("materials", {}):
+			var qty = int(recipe["materials"][mat_id])
+			input_cost += _get_material_valor(mat_id) * qty
+		if input_cost > 0:
+			# Store by exact recipe name (recipes have unique names)
+			_recipe_valor_cache[recipe_name] = input_cost
+
+func _find_recipe_valor_by_name(item_name: String) -> int:
+	"""Look up the material cost valor for a crafted item by its name.
+	Handles quality prefixes (e.g. 'Masterwork Stone Wall' -> 'Stone Wall')."""
+	_build_recipe_valor_cache()
+	# Direct match
+	if _recipe_valor_cache.has(item_name):
+		return _recipe_valor_cache[item_name]
+	# Try stripping quality prefixes (crafted items get prefixed)
+	var quality_prefixes = ["Masterwork ", "Fine ", "Poor ", "Failed "]
+	for prefix in quality_prefixes:
+		if item_name.begins_with(prefix):
+			var stripped = item_name.substr(prefix.length())
+			if _recipe_valor_cache.has(stripped):
+				return _recipe_valor_cache[stripped]
+	return 0
 
 func get_supply_category(item: Dictionary) -> String:
 	"""Determine the supply category for dynamic pricing."""

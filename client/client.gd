@@ -18555,8 +18555,24 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.123 changes
+	display_game("[color=#00FF00]v0.9.123[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Valor, Salvage & Treasure Chests[/color]")
+	display_game("  • Valor now reflects true crafting cost — structures, runes, scrolls all priced correctly")
+	display_game("  • Crafted items valued by their input materials (recursive chain calculation)")
+	display_game("  • Salvage reworked: returns ~50%% of the materials it would take to craft the item")
+	display_game("  • Salvage now returns varied materials (ore, leather, enchant mats, etc.)")
+	display_game("  • Enchanted items return rune recipe materials when salvaged")
+	display_game("  • Treasure Chests now go to inventory — open from Items for materials + gold")
+	display_game("  • Dungeon rest now costs foraged herbs/berries instead of ores")
+	display_game("  • Fixed: Valor display showing 0 on rest, meditate, and other screens")
+	display_game("  • My Listings page now shows category dividers and trading post locations")
+	display_game("  • Pull All button to cancel all market listings at once")
+	display_game("  • Job bonuses now displayed on the Jobs page")
+	display_game("")
+
 	# v0.9.119 changes
-	display_game("[color=#00FF00]v0.9.119[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.119[/color]")
 	display_game("  [color=#FFD700]Market Polish & Bug Fixes[/color]")
 	display_game("  • Market listings now stack — identical items grouped with quantity")
 	display_game("  • Sort button [R]: Category, Price ▲/▼, Name, Newest")
@@ -18604,11 +18620,6 @@ func display_changelog():
 	display_game("  • Market pagination for List Items, List Materials, and My Listings")
 	display_game("")
 
-	# v0.9.114 changes
-	display_game("[color=#00FFFF]v0.9.114[/color]")
-	display_game("  • Fixed: shortcut buttons no longer steal keyboard focus")
-	display_game("  • Fixed: market tile now opens the Valor market instead of old merchant shop")
-	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 

@@ -1560,6 +1560,25 @@ func from_dict(data: Dictionary):
 		crafting_materials["monster_gem"] = mini(crafting_materials["monster_gem"] + gems, MAX_MATERIAL_STACK)
 		gems = 0
 
+	# Migration: Convert treasure chests from crafting_materials → inventory items
+	for chest_id in ["small_treasure_chest", "large_treasure_chest"]:
+		var chest_qty = crafting_materials.get(chest_id, 0)
+		if chest_qty > 0:
+			crafting_materials.erase(chest_id)
+			var chest_name = "Small Treasure Chest" if chest_id == "small_treasure_chest" else "Large Treasure Chest"
+			var chest_tier = 1 if chest_id == "small_treasure_chest" else 4
+			var chest_value = 50 if chest_id == "small_treasure_chest" else 100
+			for _i in range(chest_qty):
+				if inventory.size() >= MAX_INVENTORY_SIZE:
+					break
+				inventory.append({
+					"name": chest_name,
+					"type": "treasure_chest",
+					"is_consumable": true,
+					"tier": chest_tier,
+					"value": chest_value,
+				})
+
 	# Migration: Convert salvage essence → copper_ore (1 ore per 20 ESS)
 	if salvage_essence > 0:
 		var ore_from_ess = maxi(1, int(salvage_essence / 20))

@@ -11501,8 +11501,8 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			if catch_size == "trophy":
 				var bonus_reward = _roll_gathering_reward("fishing", tier, job_level, false)
 				var bonus_qty = 1
-				character.add_crafting_material(bonus_reward["id"], bonus_qty)
-				session["chain_materials"].append({"id": bonus_reward["id"], "name": bonus_reward["name"], "qty": bonus_qty})
+				_add_gathering_reward(character, bonus_reward, bonus_qty)
+				session["chain_materials"].append({"id": bonus_reward["id"], "name": bonus_reward["name"], "qty": bonus_qty, "type": bonus_reward.get("type", "")})
 
 		# === LOGGING: Momentum — track consecutive correct ===
 		if job_type == "logging":
@@ -11512,13 +11512,13 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			if LOGGING_MOMENTUM_MILESTONES.has(mom):
 				momentum_bonus_qty = LOGGING_MOMENTUM_MILESTONES[mom]
 				# Auto-award bonus materials (same type as current reward)
-				var bonus_added = character.add_crafting_material(reward["id"], momentum_bonus_qty)
-				session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": momentum_bonus_qty})
+				var bonus_added = _add_gathering_reward(character, reward, momentum_bonus_qty)
+				session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": momentum_bonus_qty, "type": reward.get("type", "")})
 				# At momentum 7, also chance for next-tier material
 				if mom >= 7 and tier < 9 and randf() < 0.30:
 					var high_reward = _roll_gathering_reward("logging", tier + 1, job_level, false)
-					character.add_crafting_material(high_reward["id"], 1)
-					session["chain_materials"].append({"id": high_reward["id"], "name": high_reward["name"], "qty": 1})
+					_add_gathering_reward(character, high_reward, 1)
+					session["chain_materials"].append({"id": high_reward["id"], "name": high_reward["name"], "qty": 1, "type": high_reward.get("type", "")})
 
 		# === FORAGING: Discovery — track first-time plant finds ===
 		if job_type == "foraging":
@@ -11540,12 +11540,12 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			qty += 1
 			companion_extra = true
 
-		# Add to material pouch
-		var actually_added = character.add_crafting_material(reward["id"], qty)
+		# Add to material pouch (or inventory for treasure chests)
+		var actually_added = _add_gathering_reward(character, reward, qty)
 		var pouch_overflow = actually_added < qty
 
 		session["chain_count"] += 1
-		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty})
+		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty, "type": reward.get("type", "")})
 
 		var msg = "[color=#1EFF00]Correct![/color]"
 		if is_risky:
@@ -11616,8 +11616,8 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 					if session["chain_materials"].size() > 0:
 						var lost = session["chain_materials"].pop_back()
 						lost_materials.append(lost)
-						# Remove from character inventory
-						character.remove_crafting_material(lost["id"], lost["qty"])
+						# Remove from character (inventory for treasure chests, materials for everything else)
+						_remove_gathering_reward(character, lost["id"], lost["qty"], lost.get("type", ""))
 
 				var msg = "[color=#FF4444]Risky Gamble failed! Lost %d materials from your chain![/color]" % lost_count
 				# End session
@@ -11626,8 +11626,8 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				# Still give a base reward (1x material) on failure
 				var fail_reward = _roll_gathering_reward(job_type, tier, character.job_levels.get(job_type, 1), false)
 				var fail_qty = 1
-				character.add_crafting_material(fail_reward["id"], fail_qty)
-				session["chain_materials"].append({"id": fail_reward["id"], "name": fail_reward["name"], "qty": fail_qty})
+				_add_gathering_reward(character, fail_reward, fail_qty)
+				session["chain_materials"].append({"id": fail_reward["id"], "name": fail_reward["name"], "qty": fail_qty, "type": fail_reward.get("type", "")})
 				_end_gathering_session(peer_id, "[color=#FF4444]Wrong choice! Your gathering chain ends.[/color]\n[color=#808080]You still managed to gather 1x %s.[/color]" % fail_reward["name"])
 
 func _end_gathering_session(peer_id: int, fail_message: String = ""):
@@ -11766,6 +11766,46 @@ func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risk
 		reward["qty"] = 1
 
 	return reward
+
+func _add_gathering_reward(character: Character, reward: Dictionary, qty: int) -> int:
+	"""Add a gathering reward — treasure chests go to inventory, everything else to materials pouch.
+	Returns quantity actually added."""
+	if reward.get("type", "") == "treasure_chest":
+		# Treasure chests are inventory items, not materials
+		for _i in range(qty):
+			if character.inventory.size() >= character.MAX_INVENTORY_SIZE:
+				return _i  # Inventory full — return how many we added
+			character.inventory.append({
+				"name": reward.get("name", "Treasure Chest"),
+				"type": "treasure_chest",
+				"is_consumable": true,
+				"tier": int(reward.get("tier", 1)),
+				"value": int(reward.get("value", 50)),
+			})
+		return qty
+	else:
+		return character.add_crafting_material(reward["id"], qty)
+
+func _remove_gathering_reward(character: Character, mat_id: String, qty: int, mat_type: String = ""):
+	"""Remove a gathering reward — treasure chests from inventory, everything else from materials."""
+	if mat_type == "treasure_chest":
+		var removed = 0
+		for i in range(character.inventory.size() - 1, -1, -1):
+			if removed >= qty:
+				break
+			if character.inventory[i].get("type", "") == "treasure_chest" and character.inventory[i].get("name", "") == mat_id:
+				character.inventory.remove_at(i)
+				removed += 1
+		# Fall back to checking item field name
+		if removed < qty:
+			for i in range(character.inventory.size() - 1, -1, -1):
+				if removed >= qty:
+					break
+				if character.inventory[i].get("type", "") == "treasure_chest":
+					character.inventory.remove_at(i)
+					removed += 1
+	else:
+		character.remove_crafting_material(mat_id, qty)
 
 func handle_equip_tool(peer_id: int, message: Dictionary):
 	"""Equip a tool from inventory to the tool slot."""
@@ -17130,15 +17170,15 @@ func _clear_dungeon_tile(peer_id: int):
 
 # Rest material costs by dungeon tier
 const DUNGEON_REST_COSTS = {
-	1: {"copper_ore": 1},
-	2: {"copper_ore": 2},
-	3: {"iron_ore": 1},
-	4: {"iron_ore": 2},
-	5: {"steel_ore": 1},
-	6: {"steel_ore": 2},
-	7: {"mithril_ore": 1},
-	8: {"adamantine_ore": 1},
-	9: {"orichalcum_ore": 1}
+	1: {"wild_berries": 2},
+	2: {"healing_herb": 1},
+	3: {"sage": 1},
+	4: {"cave_mushroom": 1},
+	5: {"moonpetal": 1},
+	6: {"glowing_mushroom": 1},
+	7: {"bloodroot": 1},
+	8: {"spirit_blossom": 1},
+	9: {"starbloom": 1}
 }
 
 func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dungeon_level: int):
@@ -17533,7 +17573,7 @@ func handle_dungeon_rest(peer_id: int):
 	var tier = dungeon_data.get("tier", 1)
 
 	# Check material cost
-	var cost = DUNGEON_REST_COSTS.get(tier, {"common_wood": 1})
+	var cost = DUNGEON_REST_COSTS.get(tier, {"wild_berries": 2})
 	var missing_materials = []
 	for mat_id in cost:
 		var needed = cost[mat_id]
