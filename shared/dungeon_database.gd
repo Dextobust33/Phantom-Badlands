@@ -12,7 +12,8 @@ enum TileType {
 	ENCOUNTER,   # Monster encounter (? on map)
 	TREASURE,    # Treasure chest
 	BOSS,        # Boss encounter (final floor only)
-	CLEARED      # Cleared encounter (was ENCOUNTER or TREASURE)
+	CLEARED,     # Cleared encounter (was ENCOUNTER or TREASURE)
+	RESOURCE     # Gathering node (ore/herb/crystal)
 }
 
 # Tile display characters
@@ -24,7 +25,8 @@ const TILE_CHARS = {
 	TileType.ENCOUNTER: "?",
 	TileType.TREASURE: "$",
 	TileType.BOSS: "B",
-	TileType.CLEARED: "·"
+	TileType.CLEARED: "·",
+	TileType.RESOURCE: "&"
 }
 
 # Tile colors for display
@@ -36,7 +38,8 @@ const TILE_COLORS = {
 	TileType.ENCOUNTER: "#FF4444",
 	TileType.TREASURE: "#FFD700",
 	TileType.BOSS: "#FF0000",
-	TileType.CLEARED: "#303030"
+	TileType.CLEARED: "#303030",
+	TileType.RESOURCE: "#00FFCC"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -52,6 +55,62 @@ const TIER_LEVEL_RANGES = {
 	8: {"min": 2001, "max": 5000},
 	9: {"min": 5001, "max": 10000}
 }
+
+# ===== STEP PRESSURE SYSTEM =====
+# Steps allowed per floor before collapse. Boss floors get +50%.
+const DUNGEON_STEP_LIMITS = {1: 100, 2: 95, 3: 90, 4: 85, 5: 80, 6: 75, 7: 70, 8: 65, 9: 60}
+
+# Number of hidden traps per floor by tier
+const TRAPS_PER_FLOOR = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 4}
+const TRAP_TYPES = ["rust", "thief", "teleport"]
+const TRAP_WEIGHTS = {"rust": 40, "thief": 30, "teleport": 30}
+
+static func get_step_limit(tier: int, is_boss_floor: bool) -> int:
+	"""Get step limit for a dungeon floor based on tier. Boss floors get +50%."""
+	var base = DUNGEON_STEP_LIMITS.get(tier, 400)
+	if is_boss_floor:
+		base = int(base * 1.5)
+	return base
+
+static func generate_traps(grid: Array, floor_num: int, tier: int, rng: RandomNumberGenerator) -> Array:
+	"""Generate hidden trap positions on a floor. Returns array of {x, y, type}."""
+	var count = TRAPS_PER_FLOOR.get(tier, 2)
+	var traps = []
+	var occupied = {}
+
+	# Build list of valid EMPTY tiles (not in treasure rooms, not entrance/exit)
+	var candidates = []
+	for y in range(grid.size()):
+		for x in range(grid[y].size()):
+			var t = grid[y][x]
+			if t == TileType.EMPTY:
+				candidates.append(Vector2i(x, y))
+
+	# Weighted random selection of trap types
+	var total_weight = 0
+	for w in TRAP_WEIGHTS.values():
+		total_weight += w
+
+	for _i in range(count):
+		if candidates.is_empty():
+			break
+		var idx = rng.randi_range(0, candidates.size() - 1)
+		var pos = candidates[idx]
+		candidates.remove_at(idx)
+
+		# Pick trap type by weight
+		var roll = rng.randi_range(0, total_weight - 1)
+		var trap_type = "rust"
+		var cumulative = 0
+		for tt in TRAP_TYPES:
+			cumulative += TRAP_WEIGHTS[tt]
+			if roll < cumulative:
+				trap_type = tt
+				break
+
+		traps.append({"x": pos.x, "y": pos.y, "type": trap_type, "triggered": false})
+
+	return traps
 
 # ===== DUNGEON DEFINITIONS =====
 # Dungeons are now named after their boss monster. Defeating the boss GUARANTEES
@@ -1634,6 +1693,24 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			if grid[tpos.y][tpos.x] == TileType.EMPTY:
 				grid[tpos.y][tpos.x] = TileType.TREASURE
 
+	# Place 1-2 gathering resource nodes in unused rooms
+	var resource_count = rng.randi_range(1, 2)
+	for _i in range(resource_count):
+		var best_room = -1
+		var best_area = 999
+		for ri in range(rooms.size()):
+			if ri in used_rooms:
+				continue
+			var area = rooms[ri].size.x * rooms[ri].size.y
+			if area < best_area:
+				best_area = area
+				best_room = ri
+		if best_room >= 0:
+			used_rooms.append(best_room)
+			var rpos = _get_room_center(rooms[best_room])
+			if grid[rpos.y][rpos.x] == TileType.EMPTY:
+				grid[rpos.y][rpos.x] = TileType.RESOURCE
+
 	return {"grid": grid, "rooms": rooms, "entrance_pos": entrance_pos, "exit_pos": exit_pos}
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
@@ -1990,3 +2067,49 @@ static func get_dungeon_display_name(dungeon_id: String, tier: int, sub_tier: in
 	if dungeon.is_empty():
 		return "Unknown Dungeon [T%d-%d]" % [tier, sub_tier]
 	return "%s [T%d-%d]" % [dungeon.name, tier, sub_tier]
+
+static func get_dungeon_resource_tier(dungeon_tier: int) -> int:
+	"""Map dungeon tier to resource material tier for gathering nodes."""
+	if dungeon_tier <= 3:
+		return clampi(dungeon_tier + 3, 4, 5)  # T1-3 dungeons → T4-5 materials
+	elif dungeon_tier <= 6:
+		return clampi(dungeon_tier + 1, 6, 7)  # T4-6 dungeons → T6-7 materials
+	else:
+		return clampi(dungeon_tier, 7, 9)       # T7-9 dungeons → T7-9 materials (dungeon-exclusive)
+
+static func roll_dungeon_resource_type(rng: RandomNumberGenerator) -> String:
+	"""Roll a random resource node type for dungeons."""
+	var roll = rng.randi_range(0, 99)
+	if roll < 40:
+		return "ore"
+	elif roll < 70:
+		return "herb"
+	else:
+		return "crystal"
+
+# Escape scroll tier mapping: dungeon tier → scroll item_type
+const ESCAPE_SCROLL_TIERS = {
+	1: "scroll_of_escape", 2: "scroll_of_escape", 3: "scroll_of_escape", 4: "scroll_of_escape",
+	5: "scroll_of_greater_escape", 6: "scroll_of_greater_escape", 7: "scroll_of_greater_escape",
+	8: "scroll_of_supreme_escape", 9: "scroll_of_supreme_escape"
+}
+
+static func roll_escape_scroll_drop(dungeon_tier: int) -> Dictionary:
+	"""20% chance to drop an escape scroll from treasure. Returns empty dict or scroll item."""
+	if randi() % 100 >= 20:
+		return {}
+	var scroll_id = ESCAPE_SCROLL_TIERS.get(dungeon_tier, "scroll_of_escape")
+	var tier_max = 4
+	var scroll_name = "Scroll of Escape"
+	if scroll_id == "scroll_of_greater_escape":
+		tier_max = 7
+		scroll_name = "Scroll of Greater Escape"
+	elif scroll_id == "scroll_of_supreme_escape":
+		tier_max = 9
+		scroll_name = "Scroll of Supreme Escape"
+	return {
+		"name": scroll_name,
+		"item_type": "escape_scroll",
+		"tier_max": tier_max,
+		"type": "consumable"
+	}

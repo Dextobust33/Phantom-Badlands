@@ -15,13 +15,13 @@ Text-based multiplayer RPG built with **Godot 4.6** / GDScript. Client-server ar
 | File | Lines | Purpose |
 |------|------:|---------|
 | `client/client.gd` | 26300 | All client UI, networking, action bar state machine, market, gathering, crafting, dungeon, party, house screens |
-| `server/server.gd` | 21550 | Message routing, game logic, combat dispatch, market, crafting, gathering, party, dungeon, persistence orchestration |
+| `server/server.gd` | 21550 | Message routing, game logic, combat dispatch, market, crafting, gathering, party, dungeon, persistence orchestration. Admin tool has Map Wipe UI button (2-step confirmation). New dungeon vars: `dungeon_traps`, `dungeon_gathered_materials` |
 | `shared/combat_manager.gd` | 6135 | Turn-based combat engine, damage formulas, ability processing, party combat, companion combat |
 | `shared/drop_tables.gd` | 4527 | Item generation, fishing/mining/logging/foraging catch tables, salvage values, valor calculation, egg definitions, companion abilities |
 | `shared/crafting_database.gd` | 3472 | 5 crafting skills, recipes, materials dictionary, quality system, upgrade/enchantment caps, crafting challenge questions |
 | `shared/character.gd` | 3653 | Player stats, inventory, equipment, jobs, companions, eggs, quests, titles, racial passives, dungeon/house state |
 | `shared/world_system.gd` | ~2400 | Procedural terrain generation, tile types, LOS raycasting, tier zones, NPC post layout building, A* pathfinding, road system, merchant circuits |
-| `shared/dungeon_database.gd` | 1991 | Dungeon definitions (T1-T9), floor layouts, boss data, sub-tier level ranges, egg drops |
+| `shared/dungeon_database.gd` | 1991 | Dungeon definitions (T1-T9), floor layouts, boss data, sub-tier level ranges, egg drops, step limits, trap definitions |
 | `shared/monster_database.gd` | 1728 | 50+ monsters across 9 tiers, monster abilities, stat scaling, lethality calculation |
 | `shared/quest_database.gd` | 1261 | Dynamic daily quest generation (seeded per-post per-day), quest types, reward scaling |
 | `shared/trading_post_database.gd` | 1054 | Static trading post definitions (core zone through frontier), coordinates, quest givers |
@@ -225,19 +225,38 @@ Jobs level from 1-100. Trial cap of 5 levels before commitment required. Each jo
 
 ### Dungeons
 
-Grid-based dungeon exploration with multiple floors, encounters, treasures, and a boss on the final floor.
+Grid-based dungeon exploration with multiple floors, encounters, treasures, and a boss on the final floor. Dungeons are dangerous -- there is no free exit.
 
 **Sub-tier system:** Each overarching tier (1-9) has 8 sub-tiers that subdivide the level range. Dungeons scale within their tier's range.
 
 **Key mechanics:**
 - Enter via Action Bar "Dungeon" button at D tile on world map
 - Navigate with directional keys (Q=N, W=S, E=W, R=E)
-- Encounter tiles (?), Treasure tiles ($), Boss tile (B)
+- Encounter tiles (?), Treasure tiles ($), Boss tile (B), Gathering nodes (&)
 - Boss kill guarantees a companion egg of the boss monster type
 - Cooldown per dungeon type (4-24 hours depending on tier)
 - Party dungeons: all members enter shared instance with snake movement
 
+**Step Pressure (Phase 5):** Each floor has a step limit (60-100 steps, defined in `DUNGEON_STEP_LIMITS`). Exceeding the limit triggers collapse penalties (HP damage, stat debuffs). Forces players to explore efficiently rather than exhaustively clearing every tile.
+
+**No Free Exit:** The dungeon entrance is blocked once you enter. Fleeing from combat relocates you to a random tile on the current floor (does not exit the dungeon). The only safe way to leave is via an **Escape Scroll**.
+
+**Escape Scrolls:** 3 tiers of scrolls that teleport the player out of the dungeon safely. Crafted by Scribes or found in dungeon treasure chests. Using one preserves all loot collected so far. Without one, the only way out is defeating the boss or dying.
+
+**Gathering Nodes (&):** Dungeons contain gathering nodes that yield exclusive T7-T9 crystals not found in the overworld. Tracked per-player via `dungeon_gathered_materials` server variable to prevent re-harvesting.
+
+**Hidden Traps:** Floors contain hidden traps (count per floor defined in `TRAPS_PER_FLOOR`). Trap types (defined in `TRAP_TYPES`):
+- **Rust trap** -- corrodes equipment, reducing durability
+- **Thief trap** -- steals gold or items from inventory
+- **Teleport trap** -- warps player to a random tile on the floor
+
+Traps are tracked per-player in the `dungeon_traps` server variable.
+
+**Rest System:** Players can rest in dungeons to recover HP, but it consumes food materials (herbs, fish, berries, mushrooms) from inventory. No free healing inside dungeons.
+
 **Dungeon examples:** Goblin Caves (T1), Wolf Den (T1), and many more through T9.
+
+**Key constants in `dungeon_database.gd`:** `DUNGEON_STEP_LIMITS`, `TRAPS_PER_FLOOR`, `TRAP_TYPES`.
 
 ### Companions
 

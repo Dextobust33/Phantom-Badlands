@@ -680,42 +680,197 @@ Title holders can lose their title through abuse of power.
 
 ## Dungeon System
 
-Procedural dungeons that spawn at random world locations.
+Procedural dungeons that spawn at random world locations. Dungeons span all 9 tiers with BSP-generated floor layouts, step pressure mechanics, hidden traps, gathering nodes, and escape-only exit policy.
 
-### Dungeon Types
+### Dungeon Tiers
 
-| Dungeon | Tier | Level Range | Floors | Boss |
-|---------|------|-------------|--------|------|
-| Goblin Cave | T3 | 16-35 | 3 | Goblin King |
-| Spider Nest | T4 | 31-55 | 4 | Broodmother |
-| Undead Crypt | T5 | 51-110 | 5 | Lich Lord |
-| Dragon's Lair | T6 | 101-260 | 5 | Elder Dragon |
-| Demon Fortress | T7 | 251-550 | 6 | Demon Prince |
-| Void Sanctum | T8 | 500-1200 | 7 | Void Lord |
+Dungeons cover all tiers (T1-T9). Each tier spans a level range, with 8 sub-tiers subdividing it further:
+
+| Tier | Level Range | Notes |
+|------|-------------|-------|
+| T1 | 1-12 | Beginner dungeons |
+| T2 | 6-22 | |
+| T3 | 16-40 | |
+| T4 | 31-60 | |
+| T5 | 51-120 | |
+| T6 | 101-500 | |
+| T7 | 501-2000 | Dungeon-exclusive crystals start here |
+| T8 | 2001-5000 | |
+| T9 | 5001-10000 | Endgame dungeons |
 
 ### Dungeon Flow
 
 1. **Find Entrance** - Dungeons spawn at random world coordinates (higher tier = further from origin)
-2. **Enter** - Press R (Action Bar) when at entrance
-3. **Explore** - Navigate grid-based floors using Q/W/E/R for N/S/W/E movement
-4. **Encounters** - Step on `?` tiles to fight monsters
-5. **Treasures** - Step on `$` tiles for loot (gold, materials, rare eggs)
-6. **Boss** - Final floor has a boss at center, defeat to complete
-7. **Cooldown** - Each dungeon type has a cooldown before you can enter again
+2. **Entry Warning** - Every dungeon entry shows a warning: no free exit, escape scroll required, collapse risk
+3. **Enter** - Confirm entry (level warning also shown if under-leveled)
+4. **Explore** - Navigate BSP-generated grid floors using Q/W/E/R for N/S/W/E movement
+5. **Encounters** - Step on `?` tiles to fight monsters (same type as the dungeon boss)
+6. **Gathering** - Step on `&` tiles to gather ore, herbs, or crystals (costs 5 steps)
+7. **Treasures** - Step on `$` tiles for loot (gold, materials, rare eggs, 20% escape scroll chance)
+8. **Traps** - Hidden traps on empty tiles; triggered by stepping on them
+9. **Rest** - Consume food materials to recover HP/mana (action bar button)
+10. **Boss** - Final floor has a boss; defeat to complete the dungeon
+11. **Exit** - Use an Escape Scroll (only safe exit) or complete the dungeon
 
 ### Dungeon Tiles
 
 | Symbol | Meaning |
 |--------|---------|
 | `@` | Player position |
-| `.` | Empty (walkable) |
+| `.` | Empty (walkable, may contain hidden traps) |
 | `#` | Wall |
 | `E` | Entrance |
 | `>` | Exit to next floor |
 | `?` | Encounter (monster) |
 | `$` | Treasure chest |
+| `&` | Resource node (ore/herb/crystal) |
 | `B` | Boss |
-| `·` | Cleared encounter |
+| `·` | Cleared encounter/treasure/resource |
+| `×` | Triggered trap (revealed after stepping on it) |
+
+### Step Pressure System
+
+Each dungeon floor has a limited step budget. Moving costs 1 step; gathering from resource nodes costs 5 steps. Exceeding the limit causes the dungeon to collapse.
+
+**Step Limits by Tier:**
+
+| Tier | Base Steps | Boss Floor (+50%) |
+|------|-----------|-------------------|
+| T1 | 100 | 150 |
+| T2 | 95 | 142 |
+| T3 | 90 | 135 |
+| T4 | 85 | 127 |
+| T5 | 80 | 120 |
+| T6 | 75 | 112 |
+| T7 | 70 | 105 |
+| T8 | 65 | 97 |
+| T9 | 60 | 90 |
+
+**Pressure Thresholds:**
+
+| Threshold | Effect |
+|-----------|--------|
+| 75% of limit | Warning: "The walls tremble..." with step counter |
+| 90% of limit | Earthquake: 5-10% max HP damage per step, step counter shown |
+| 100% of limit | **Collapse**: 30% of gathered materials lost, +15 wear on all equipment, ejected to dungeon entrance |
+
+The client displays a color-coded step counter (green/yellow/red) in the dungeon HUD.
+
+### Gathering Nodes
+
+Each dungeon floor contains 1-2 resource nodes (`&` tiles) placed in smaller rooms. Gathering costs 5 steps from the step budget.
+
+**Node Types (randomly assigned per tile):**
+
+| Type | Chance | Description |
+|------|--------|-------------|
+| Ore | 40% | Metal ores scaled to dungeon resource tier |
+| Herb | 30% | Plants and botanical materials |
+| Crystal | 30% | Magical crystals; T7-9 dungeons yield exclusive materials |
+
+**Resource Tier Mapping:**
+
+| Dungeon Tier | Material Tier |
+|-------------|---------------|
+| T1-T3 | T4-T5 materials |
+| T4-T6 | T6-T7 materials |
+| T7-T9 | T7-T9 materials (dungeon-exclusive) |
+
+**Dungeon-Exclusive Crystals (T7-T9 only):**
+
+| Material | Source Tier | Usage |
+|----------|------------|-------|
+| Void Crystal | T7-T9 | Mythic runes, Supreme Escape Scrolls |
+| Celestial Shard | T7 | Mythic enchantments |
+| Abyssal Shard | T8-T9 | Endgame crafting |
+| Primordial Essence | T8-T9 | Highest-tier crafting |
+
+Materials gathered during a dungeon run are tracked separately for the collapse penalty. On collapse, 30% of materials gathered THIS run are lost. On clean exit (escape scroll or completion), all materials are kept.
+
+### Trap System
+
+Each dungeon floor contains 1-4 hidden traps placed on empty tiles. Traps are invisible until triggered by stepping on them, at which point they are revealed as `×` on the map.
+
+**Traps Per Floor by Tier:**
+
+| Tier | Traps |
+|------|-------|
+| T1-T2 | 1 |
+| T3-T4 | 2 |
+| T5-T6 | 3 |
+| T7-T9 | 4 |
+
+**Trap Types:**
+
+| Type | Weight | Effect |
+|------|--------|--------|
+| Rust | 40% | Corrosive mist: +10-20 wear on 1-2 random equipped items |
+| Thief | 30% | Shadowy hands: steal 1-3 gathered materials (or 1 from inventory if none gathered) |
+| Teleport | 30% | Floor gives way: player relocated to a random empty tile on the same floor |
+
+### Escape Scrolls
+
+Escape scrolls are the **only** way to safely exit a dungeon mid-run. There is no free exit — the entrance does not function as an exit, and fleeing combat only relocates you to a random tile on the same floor.
+
+**Scroll Tiers:**
+
+| Scroll | Works In | Scribe Level | Materials |
+|--------|----------|-------------|-----------|
+| Scroll of Escape | T1-T4 dungeons | Lv 8 | 2 Parchment, 1 Ink, 1 Moonpetal |
+| Scroll of Greater Escape | T1-T7 dungeons | Lv 16 (specialist) | 2 Fine Parchment, 1 Arcane Ink, 1 Soul Shard |
+| Scroll of Supreme Escape | T1-T9 dungeons | Lv 24 (specialist) | 2 Fine Parchment, 1 Arcane Ink, 1 Void Crystal |
+
+**Obtaining Escape Scrolls:**
+- **Crafted by Scribes** at a Writing Desk (Greater and Supreme require Scribe specialization)
+- **Treasure chest drops** inside dungeons (20% chance per chest)
+- **Market** - Buy from other players using Valor
+
+**Using an Escape Scroll:**
+- Accessible via the "Escape" button on the dungeon action bar (only shown if scroll is in inventory)
+- Cannot be used during combat
+- Consumes the scroll and exits the dungeon safely, keeping all gathered materials
+- In a party, the leader's scroll exits all party members
+
+### Dungeon Rest System
+
+Players can rest inside dungeons to recover HP and resources by consuming food-type crafting materials.
+
+**Food Material Types:** plant, herb, fungus, fish (herbs, berries, mushrooms, fish from gathering)
+
+**Recovery Rates:**
+
+| Class Path | HP Recovery | Resource Recovery |
+|------------|-----------|-------------------|
+| Mage | 3-5% max HP | 5-12.5% max Mana |
+| Warrior/Trickster | 5-12.5% max HP | — |
+
+Resting is available via the action bar while not in combat. If the player has no food materials, a message explains which material types are needed.
+
+### Fleeing in Dungeons
+
+Fleeing combat inside a dungeon does **not** exit the dungeon. Instead, the player is relocated to a random walkable tile on the same floor. The message reads "You flee deeper into the dungeon!"
+
+### Enhanced Rewards
+
+**Boss Material Drops:**
+- T1-T3 bosses: 1 material drop
+- T4-T6 bosses: 1-2 material drops
+- T7-T9 bosses: 2-3 material drops + guaranteed dungeon-exclusive crystal
+
+**Flawless Run Bonus:**
+Completing a dungeon without triggering a collapse grants +20% bonus XP on the completion reward. The completion screen displays a "FLAWLESS RUN" indicator.
+
+**Guaranteed Boss Egg:**
+Every dungeon completion awards a guaranteed companion egg of the boss monster type, inheriting the dungeon's sub-tier. In party dungeons, each member receives their own boss egg.
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `shared/dungeon_database.gd` | Dungeon definitions, `DUNGEON_STEP_LIMITS`, `TRAPS_PER_FLOOR`, `generate_traps()`, `get_step_limit()`, `get_dungeon_resource_tier()`, `roll_dungeon_resource_type()`, `roll_escape_scroll_drop()`, `ESCAPE_SCROLL_TIERS` |
+| `server/server.gd` | `handle_dungeon_enter()`, `handle_dungeon_move()` (step pressure checks), `_collapse_dungeon()`, `_trigger_trap()`, `_prompt_dungeon_gather()`, `handle_dungeon_gather_confirm()`, `_roll_dungeon_gather()`, `handle_dungeon_rest()`, `_use_escape_scroll()`, `_complete_dungeon()`, `dungeon_gathered_materials` tracking |
+| `shared/crafting_database.gd` | Escape scroll recipes (`scroll_of_escape`, `scroll_of_greater_escape`, `scroll_of_supreme_escape`) |
+| `client/client.gd` | Dungeon HUD (step counter display), escape scroll action bar button, dungeon gather/rest/trap UI |
 
 ---
 
@@ -1489,3 +1644,30 @@ When a merchant arrives at a post:
 | File | Contents |
 |------|---------|
 | `user://data/world/paths.json` | Computed paths, road graph, post positions |
+
+---
+
+## Server Administration
+
+The server UI includes administrative tools accessible from the server window's button row.
+
+### Map Wipe
+
+A "Map Wipe" button on the server UI triggers a full world map reset. This uses a 2-step confirmation dialog to prevent accidental activation:
+
+1. **Step 1:** Click "Map Wipe" button -- a confirmation dialog appears ("Confirm Map Wipe -- Step 1 of 2")
+2. **Step 2:** Confirm step 1 -- a second, final confirmation dialog appears ("FINAL CONFIRMATION -- Map Wipe")
+3. **Execute:** Confirm step 2 -- `_execute_map_wipe()` runs, resetting the world map
+
+This erases all terrain modifications, roads, player-placed structures, and regenerates the world. Active dungeons and player positions are handled by the wipe logic.
+
+### Broadcast
+
+A text input and "Broadcast" button allows the server admin to send a server-wide announcement message to all connected players. Messages appear as `server_broadcast` type in the client.
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `_on_map_wipe_button_pressed()`, `_on_map_wipe_step1_confirmed()`, `_on_map_wipe_final_confirmed()`, `_execute_map_wipe()`, `_send_broadcast()` |
+| `server/server.tscn` | `MapWipeButton`, `MapWipeDialog`, `MapWipeFinalDialog`, `BroadcastInput`, `BroadcastButton` |

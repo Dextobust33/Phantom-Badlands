@@ -902,3 +902,147 @@ func handle_server_message(message: Dictionary):
 - `send_to_peer()`: line ~3987
 - `handle_craft_list()`: line ~12815
 - `handle_craft_item()`: line ~13023
+
+---
+
+## 7. Phase 5: Dungeon Expansion
+
+Phase 5 adds step pressure, dungeon gathering, traps, escape scrolls, restricted exit, rest food, and a server UI map wipe button. The implementation spans `dungeon_database.gd`, `character.gd`, `server.gd`, `client.gd`, `crafting_database.gd`, and `server.tscn`.
+
+### 7a. Step Pressure
+
+Every move inside a dungeon increments a per-floor step counter. When it hits 100% the dungeon collapses.
+
+**Constants (dungeon_database.gd line ~61):**
+```gdscript
+const DUNGEON_STEP_LIMITS = {1: 100, 2: 95, 3: 90, 4: 85, 5: 80, 6: 75, 7: 70, 8: 65, 9: 60}
+```
+
+Boss floors get +50% via `get_step_limit(tier, is_boss_floor)` (line ~68).
+
+**Character tracking (character.gd):** `dungeon_floor_steps` is incremented by the server on every `handle_dungeon_move()` call (server.gd line ~15977). It is reset when the player advances to a new floor.
+
+**Threshold warnings (server.gd line ~15976):**
+1. Server increments `character.dungeon_floor_steps`
+2. Computes `step_pct = dungeon_floor_steps / step_limit`
+3. At 100%: calls `_collapse_dungeon(peer_id)` (line ~17399) -- penalizes player and ejects from dungeon
+4. At 90%+: sends a warning text message to the client
+
+`_collapse_dungeon()` at line ~17399 handles the penalty (loses gathered dungeon materials) and ejects the player.
+
+### 7b. Dungeon Gathering
+
+Resource tiles (`TileType.RESOURCE = 8`) appear on dungeon floors as `&` characters (cyan `#00FFCC` on the map).
+
+**Floor generation (dungeon_database.gd line ~1712):** Resource tiles are placed at room centers during floor generation.
+
+**Server flow (server.gd):**
+1. Player steps onto a `TileType.RESOURCE` tile in `handle_dungeon_move()` (line ~16099)
+2. Server calls `_prompt_dungeon_gather(peer_id)` -- sends a prompt to the client
+3. Client enters `dungeon_resource_prompt = true` state (client.gd line ~1026)
+4. Client shows Gather / Skip action bar buttons
+5. Player confirms: client sends `dungeon_gather_confirm` message (server.gd line ~1017)
+6. Player skips: client sends `dungeon_gather_skip` (server.gd line ~1019)
+
+**Display protection (client.gd line ~1027):** `awaiting_dungeon_gather_result = true` flag prevents `_send_dungeon_state()` from overwriting the gather result text. The flag is cleared when the player makes their next dungeon move (line ~17685) or when the dungeon state refreshes without pending results (line ~22581).
+
+**Dungeon movement is blocked** while `dungeon_resource_prompt` is true (client.gd line ~2607).
+
+### 7c. Traps
+
+Traps are server-only hidden data. The client only sees traps AFTER they trigger.
+
+**Data structure (server.gd line ~102):**
+```gdscript
+var dungeon_traps: Dictionary = {}  # instance_id -> {floor_num: [{x, y, type, triggered}]}
+```
+
+**Generation (server.gd line ~17485):** `_generate_dungeon_traps()` is called during dungeon creation (both normal and player dungeon instances). It delegates to `DungeonDatabaseScript.generate_traps()` (dungeon_database.gd line ~75), which uses a seeded RNG per floor.
+
+**Trap count per floor (dungeon_database.gd line ~64):**
+```gdscript
+const TRAPS_PER_FLOOR = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 4}
+```
+
+**Detection (server.gd line ~17505):** `_check_dungeon_trap()` checks if an untriggered trap exists at the player's position after each move. If found, `_trigger_trap()` (line ~17515) applies the effect and marks `trap.triggered = true`.
+
+**Three trap types (server.gd line ~17522):**
+
+| Type | Effect | Color |
+|------|--------|-------|
+| `rust` | +10-20 wear on 1-2 random equipped items | `#FF4444` (red) |
+| `thief` | Steals 1-3 dungeon-gathered materials (or 1 from inventory as fallback) | `#A335EE` (purple) |
+| `teleport` | Teleports player to a random empty tile on the same floor | `#00BFFF` (cyan) |
+
+**Client display:** Server sends `dungeon_trap` message with `trap_x`, `trap_y`, `trap_color`. Client adds the position to `dungeon_triggered_traps` array (client.gd line ~1025) so triggered traps are visible on the dungeon map in subsequent renders.
+
+### 7d. Escape Scrolls
+
+The only way to voluntarily leave a dungeon (besides completing it or dying).
+
+**Crafting (crafting_database.gd line ~2999):** Three tiers, all Scribing skill:
+
+| Recipe | Skill Req | Specialist | Tier Max |
+|--------|-----------|------------|----------|
+| Scroll of Escape | 8 | No | T4 |
+| Scroll of Greater Escape | 16 | Yes | T7 |
+| Scroll of Supreme Escape | 24 | Yes | T9 |
+
+Each has `output_type: "escape_scroll"` and a `tier_max` field limiting which dungeon tiers it works in.
+
+**Usage (server.gd line ~5298):** When a player uses an item with `item_type == "escape_scroll"`, the server calls `_use_escape_scroll()` (line ~17733). This function:
+1. Validates the player is in a dungeon
+2. Checks `tier_max >= dungeon_tier` (scroll must cover the dungeon's tier)
+3. Bypasses the normal `handle_dungeon_exit()` block
+4. Removes the scroll from inventory and exits the player safely
+
+**Chest drops (server.gd line ~17010):** Dungeon treasure chests have a 20% chance to drop an escape scroll. The tier of the scroll matches the dungeon tier via `DungeonDatabaseScript.roll_escape_scroll_drop(dungeon_tier)`.
+
+### 7e. No Free Exit
+
+`handle_dungeon_exit()` (server.gd line ~16135) blocks voluntary exit:
+```gdscript
+func handle_dungeon_exit(peer_id: int):
+    """Handle player exiting dungeon -- no free exit, must use escape scroll"""
+    # ...
+    send_to_peer(peer_id, {
+        "type": "text",
+        "message": "[color=#FF6666]There is no way out! Use an Escape Scroll to leave safely.[/color]"
+    })
+```
+
+**Flee behavior (server.gd line ~3168):** When a player flees combat inside a dungeon, they are NOT ejected. Instead:
+1. The player is relocated to a random empty/cleared/entrance tile on the **same floor**
+2. A message appears: "You flee deeper into the dungeon!"
+3. The dungeon state is re-sent so the map updates
+
+This means fleeing is a survival tool but not an escape mechanism.
+
+### 7f. Rest Food
+
+Players can rest in dungeons to heal, but only if they have food materials.
+
+**Material types (server.gd line ~17804):**
+```gdscript
+const DUNGEON_REST_FOOD_MATERIAL_TYPES = ["plant", "herb", "fungus", "fish"]
+```
+
+When a player rests (`handle_dungeon_rest`, routed via `dungeon_rest` message type at line ~1015), the server scans `character.crafting_materials` for any material whose type (from `CraftingDatabase.MATERIALS`) matches one of these food types (line ~18215). If found, one unit is consumed and the player heals.
+
+### 7g. Map Wipe Button (Server UI)
+
+The server scene has a GUI button for wiping the world map without a full data wipe.
+
+**Scene nodes (server.tscn):**
+- `MapWipeButton` -- Button in `VBox/ButtonRow`
+- `MapWipeDialog` -- First confirmation dialog ("Step 1 of 2")
+- `MapWipeFinalDialog` -- Final confirmation dialog
+
+**Signal connections (server.gd line ~308):**
+```gdscript
+map_wipe_button.pressed.connect(_on_map_wipe_button_pressed)      # line ~328
+map_wipe_dialog.confirmed.connect(_on_map_wipe_step1_confirmed)   # line ~333
+map_wipe_final_dialog.confirmed.connect(_on_map_wipe_final_confirmed)  # line ~338
+```
+
+The final confirmation calls `_execute_map_wipe(-1)` (line ~341), where `-1` indicates the wipe was triggered from the server UI rather than by an admin player (admin-triggered wipes pass the `peer_id`). `_execute_map_wipe()` is defined at line ~21202.

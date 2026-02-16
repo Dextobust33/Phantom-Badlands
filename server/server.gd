@@ -13,6 +13,9 @@ var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 @onready var pending_update_button = $VBox/ButtonRow/PendingUpdateButton
 @onready var cancel_update_button = $VBox/ButtonRow/CancelUpdateButton
 @onready var confirm_dialog = $ConfirmDialog
+@onready var map_wipe_button = $VBox/ButtonRow/MapWipeButton
+@onready var map_wipe_dialog = $MapWipeDialog
+@onready var map_wipe_final_dialog = $MapWipeFinalDialog
 @onready var broadcast_input = $VBox/BroadcastRow/BroadcastInput
 @onready var broadcast_button = $VBox/BroadcastRow/BroadcastButton
 
@@ -96,6 +99,8 @@ var active_harvests: Dictionary = {}  # peer_id -> {monster_name, monster_tier, 
 var active_crafts: Dictionary = {}  # peer_id -> {recipe_id, skill_name, post_bonus, job_bonus, questions, correct_answers}
 # Rescue system tracking
 var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
+var dungeon_traps: Dictionary = {}  # instance_id -> {floor_num: [{x, y, type, triggered}]}
+var dungeon_gathered_materials: Dictionary = {}  # peer_id -> {material_id: qty} — materials gathered in current dungeon run
 var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
@@ -300,6 +305,14 @@ func _ready():
 	if cancel_update_button:
 		cancel_update_button.pressed.connect(_on_cancel_update_pressed)
 
+	# Connect map wipe button and dialogs
+	if map_wipe_button:
+		map_wipe_button.pressed.connect(_on_map_wipe_button_pressed)
+	if map_wipe_dialog:
+		map_wipe_dialog.confirmed.connect(_on_map_wipe_step1_confirmed)
+	if map_wipe_final_dialog:
+		map_wipe_final_dialog.confirmed.connect(_on_map_wipe_final_confirmed)
+
 func log_message(msg: String):
 	"""Log a message to console and server UI."""
 	print(msg)
@@ -311,6 +324,21 @@ func _on_restart_button_pressed():
 	"""Show confirmation dialog before restarting."""
 	if confirm_dialog:
 		confirm_dialog.popup_centered()
+
+func _on_map_wipe_button_pressed():
+	"""Show first confirmation dialog for map wipe."""
+	if map_wipe_dialog:
+		map_wipe_dialog.popup_centered()
+
+func _on_map_wipe_step1_confirmed():
+	"""First confirmation passed — show final confirmation."""
+	if map_wipe_final_dialog:
+		map_wipe_final_dialog.popup_centered()
+
+func _on_map_wipe_final_confirmed():
+	"""Final confirmation — execute the map wipe."""
+	log_message("[WIPE] Map wipe initiated from server UI button")
+	_execute_map_wipe(-1)
 
 func _on_broadcast_button_pressed():
 	"""Send broadcast message from button press."""
@@ -986,6 +1014,12 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_dungeon_go_back(peer_id)
 		"dungeon_rest":
 			handle_dungeon_rest(peer_id)
+		"dungeon_gather_confirm":
+			handle_dungeon_gather_confirm(peer_id, message)
+		"dungeon_gather_skip":
+			# Player skipped gathering — just refresh state
+			if characters.has(peer_id) and characters[peer_id].in_dungeon:
+				_send_dungeon_state(peer_id)
 		"dungeon_state":
 			# Client requesting current dungeon state (after combat continue)
 			if characters.has(peer_id) and characters[peer_id].current_dungeon_id != "":
@@ -3131,22 +3165,31 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				"new_y": characters[peer_id].y
 			})
 
-			# Check if fleeing from dungeon - also eject from dungeon
+			# Check if fleeing from dungeon - stay in dungeon but relocate
 			var character = characters[peer_id]
 			if character.in_dungeon:
-				var dungeon_name = ""
 				var instance_id = character.current_dungeon_id
-				if active_dungeons.has(instance_id):
-					dungeon_name = active_dungeons[instance_id].get("name", "Dungeon")
-				character.exit_dungeon()
-				save_character(peer_id)
+				# Move player to a random empty tile on the same floor (escape combat, not dungeon)
+				if dungeon_floors.has(instance_id):
+					var grid = dungeon_floors[instance_id][character.dungeon_floor]
+					var empty_tiles = []
+					for gy in range(grid.size()):
+						for gx in range(grid[gy].size()):
+							var tile_val = grid[gy][gx]
+							if tile_val == int(DungeonDatabaseScript.TileType.EMPTY) or tile_val == int(DungeonDatabaseScript.TileType.CLEARED) or tile_val == int(DungeonDatabaseScript.TileType.ENTRANCE):
+								# Don't teleport to same position
+								if gx != character.dungeon_x or gy != character.dungeon_y:
+									empty_tiles.append(Vector2i(gx, gy))
+					if not empty_tiles.is_empty():
+						var new_pos = empty_tiles[randi() % empty_tiles.size()]
+						character.dungeon_x = new_pos.x
+						character.dungeon_y = new_pos.y
 				send_to_peer(peer_id, {
-					"type": "dungeon_exit",
-					"reason": "fled",
-					"dungeon_name": dungeon_name
+					"type": "text",
+					"message": "[color=#FFAA00]You flee deeper into the dungeon![/color]"
 				})
-				# Send location update to refresh map with player's position outside dungeon
-				send_location_update(peer_id)
+				_send_dungeon_state(peer_id)
+				save_character(peer_id)
 			else:
 				# Non-dungeon flee: send location update to refresh map at new position
 				send_location_update(peer_id)
@@ -5250,6 +5293,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				# Crafted buffs are round-based (single combat) by default
 				if crafted_effect.get("battles", false):
 					effect["battles"] = true
+
+	# Escape scroll — safe dungeon exit
+	if item_type == "escape_scroll":
+		_use_escape_scroll(peer_id, index)
+		return
 
 	# Treasure chest — open for random materials and gold
 	if item_type == "treasure_chest":
@@ -13071,6 +13119,9 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 			return "Adds random affix to gear"
 		"structure":
 			return "Placeable structure for player posts"
+		"escape_scroll":
+			var tier_max = recipe.get("tier_max", 4)
+			return "Safely exit any T1-%d dungeon" % tier_max
 		"proc_enchant":
 			var proc_type = effect.get("proc_type", "")
 			match proc_type:
@@ -13480,6 +13531,17 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				crafted_item = _craft_scroll(recipe, quality)
 				character.inventory.append(crafted_item)
 				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+			"escape_scroll":
+				crafted_item = {
+					"name": recipe.get("name", "Scroll of Escape"),
+					"item_type": "escape_scroll",
+					"tier_max": recipe.get("tier_max", 4),
+					"type": "consumable",
+					"level": 1,
+					"rarity": "uncommon"
+				}
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.name]
 			"map":
 				crafted_item = _craft_map(recipe, quality)
 				character.inventory.append(crafted_item)
@@ -14440,6 +14502,17 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				crafted_item = _craft_scroll(recipe, quality)
 				character.inventory.append(crafted_item)
 				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+			"escape_scroll":
+				crafted_item = {
+					"name": recipe.get("name", "Scroll of Escape"),
+					"item_type": "escape_scroll",
+					"tier_max": recipe.get("tier_max", 4),
+					"type": "consumable",
+					"level": 1,
+					"rarity": "uncommon"
+				}
+				character.inventory.append(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.name]
 			"map":
 				crafted_item = _craft_map(recipe, quality)
 				character.inventory.append(crafted_item)
@@ -15697,18 +15770,23 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown dungeon type!"})
 		return
 
-	# Check level - warn but don't block if player hasn't confirmed
+	# Always require confirmation — warn about escape-only exit
 	var confirmed = message.get("confirmed", false)
-	if character.level < dungeon_data.min_level and not confirmed:
-		# Send warning and require confirmation
-		var level_diff = dungeon_data.min_level - character.level
+	if not confirmed:
+		var warning_text = "[color=#FF6666]WARNING: There is NO free exit from dungeons![/color]\n"
+		warning_text += "[color=#FFAA00]The only safe way out is an Escape Scroll.[/color]\n"
+		warning_text += "[color=#808080]If you run out of steps, the dungeon collapses — losing materials and damaging equipment.[/color]\n"
+		if character.level < dungeon_data.min_level:
+			var level_diff = dungeon_data.min_level - character.level
+			warning_text += "\n[color=#FF4444]You are also %d levels below the recommended level %d![/color]\n" % [level_diff, dungeon_data.min_level]
+		warning_text += "\nAre you sure you want to enter?"
 		send_to_peer(peer_id, {
 			"type": "dungeon_level_warning",
 			"dungeon_type": dungeon_type,
 			"dungeon_name": dungeon_data.name,
 			"min_level": dungeon_data.min_level,
 			"player_level": character.level,
-			"message": "WARNING: This dungeon is designed for level %d+ players. You are %d levels below the recommended level. Monsters here may be too powerful for you. Are you sure you want to enter?" % [dungeon_data.min_level, level_diff]
+			"message": warning_text
 		})
 		return
 
@@ -15895,6 +15973,38 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	if _is_party_leader(peer_id):
 		_move_party_followers_dungeon(peer_id, old_x, old_y)
 
+	# === STEP PRESSURE: Increment and check thresholds ===
+	character.dungeon_floor_steps += 1
+	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
+	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
+	var step_limit = DungeonDatabaseScript.get_step_limit(tier_sp, is_boss_floor_sp)
+	var step_pct = float(character.dungeon_floor_steps) / float(step_limit)
+
+	if character.dungeon_floor_steps >= step_limit:
+		# Collapse!
+		_collapse_dungeon(peer_id)
+		return
+	elif step_pct >= 0.90:
+		# Earthquake warning + damage
+		var quake_dmg = int(character.get_total_max_hp() * randf_range(0.05, 0.10))
+		character.current_hp = max(1, character.current_hp - quake_dmg)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF8800]EARTHQUAKE! Rocks fall! [color=#FF4444]-%d HP[/color][/color] [color=#FF4444][Steps: %d/%d][/color]" % [quake_dmg, character.dungeon_floor_steps, step_limit]
+		})
+	elif step_pct >= 0.75:
+		# Warning
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFFF00]The walls tremble... [Steps: %d/%d][/color]" % [character.dungeon_floor_steps, step_limit]
+		})
+
+	# === TRAP CHECK: Check if player stepped on a hidden trap ===
+	var trap = _check_dungeon_trap(instance_id, character.dungeon_floor, new_x, new_y)
+	if trap != null:
+		_trigger_trap(peer_id, trap, instance_id)
+
 	# Regenerate health and resources on dungeon movement (reduced rate vs overworld)
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
@@ -15986,6 +16096,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile_int == int(DungeonDatabaseScript.TileType.EXIT):
 		_advance_dungeon_floor(peer_id)
 		return
+	elif tile_int == int(DungeonDatabaseScript.TileType.RESOURCE):
+		_prompt_dungeon_gather(peer_id)
+		return
 
 	# Check if player walked onto a rescue NPC
 	var rescue_npc = _get_dungeon_npc_at(instance_id, character.dungeon_floor, new_x, new_y)
@@ -16020,7 +16133,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	_send_dungeon_state(peer_id)
 
 func handle_dungeon_exit(peer_id: int):
-	"""Handle player exiting dungeon"""
+	"""Handle player exiting dungeon — no free exit, must use escape scroll"""
 	if not characters.has(peer_id):
 		return
 
@@ -16030,24 +16143,14 @@ func handle_dungeon_exit(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "You are not in a dungeon!"})
 		return
 
-	# Cannot exit during combat
-	if combat_mgr.is_in_combat(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You cannot exit while in combat!"})
-		return
+	# No free exit — must use escape scroll or complete the dungeon
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FF6666]There is no way out! Use an Escape Scroll to leave safely.[/color]"
+	})
+	return
 
-	# Party followers can't exit independently
-	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls dungeon navigation.[/color]"})
-		return
-
-	# Must be on entrance tile to exit
-	var instance_id_check = character.current_dungeon_id
-	if dungeon_floors.has(instance_id_check):
-		var floor_grids = dungeon_floors[instance_id_check]
-		var grid = floor_grids[character.dungeon_floor]
-		if grid[character.dungeon_y][character.dungeon_x] != int(DungeonDatabaseScript.TileType.ENTRANCE):
-			send_to_peer(peer_id, {"type": "error", "message": "You must return to the dungeon entrance (E) to exit."})
-			return
+	# === Legacy exit code below (kept for escape scroll / collapse internal calls) ===
 
 	# Clear any pending flock encounters
 	if pending_flocks.has(peer_id):
@@ -16065,6 +16168,10 @@ func handle_dungeon_exit(peer_id: int):
 		var instance = active_dungeons[instance_id]
 		instance.active_players.erase(peer_id)
 
+	# Clear gathered materials tracking
+	if dungeon_gathered_materials.has(peer_id):
+		dungeon_gathered_materials.erase(peer_id)
+
 	# Clean up free-run (non-quest) dungeons when exiting
 	# Quest dungeons are kept so player can return
 	if player_dungeon_instances.has(peer_id):
@@ -16080,6 +16187,8 @@ func handle_dungeon_exit(peer_id: int):
 				dungeon_floor_rooms.erase(instance_id)
 			if dungeon_monsters.has(instance_id):
 				dungeon_monsters.erase(instance_id)
+			if dungeon_traps.has(instance_id):
+				dungeon_traps.erase(instance_id)
 
 	# Exit dungeon — including party members
 	character.exit_dungeon()
@@ -16224,6 +16333,9 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	# Spawn monsters on all floors
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
+	# Generate traps for all floors
+	_generate_dungeon_traps(instance_id, dungeon_type, floor_grids)
+
 	log_message("Created dungeon instance: %s (%s) [T%d-%d]" % [instance_id, dungeon_data.name, dungeon_data.tier, sub_tier])
 	return instance_id
 
@@ -16311,6 +16423,9 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	# Spawn monsters on all floors
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 
+	# Generate traps for all floors
+	_generate_dungeon_traps(instance_id, dungeon_type, floor_grids)
+
 	log_message("Created player dungeon instance: %s (%s) for peer %d at (%d, %d)" % [instance_id, dungeon_data.name, peer_id, spawn_x, spawn_y])
 	return instance_id
 
@@ -16333,6 +16448,8 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 		dungeon_floor_rooms.erase(instance_id)
 	if dungeon_monsters.has(instance_id):
 		dungeon_monsters.erase(instance_id)
+	if dungeon_traps.has(instance_id):
+		dungeon_traps.erase(instance_id)
 
 	# Remove from player's tracking
 	player_dungeon_instances[peer_id].erase(quest_id)
@@ -16758,7 +16875,10 @@ func _send_dungeon_state(peer_id: int):
 		"encounters_cleared": character.dungeon_encounters_cleared,
 		"color": dungeon_data.color,
 		"monsters": monster_list,
-		"npcs": npc_list
+		"npcs": npc_list,
+		"steps_taken": character.dungeon_floor_steps,
+		"step_limit": DungeonDatabaseScript.get_step_limit(dungeon_data.tier, character.dungeon_floor >= dungeon_data.floors - 1),
+		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor)
 	})
 
 func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
@@ -16870,6 +16990,7 @@ func _open_dungeon_treasure(peer_id: int):
 	# Materials
 	for mat in treasure.get("materials", []):
 		character.add_crafting_material(mat.id, mat.quantity)
+		_track_dungeon_material(peer_id, mat.id, mat.quantity)
 		var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 		reward_messages.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.capitalize().replace("_", " "), qty_text])
 
@@ -16885,6 +17006,30 @@ func _open_dungeon_treasure(peer_id: int):
 				reward_messages.append("[color=#A335EE]★ %s ★[/color]" % egg_data.name)
 			else:
 				reward_messages.append("[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap])
+
+	# Roll for escape scroll drop (20% chance)
+	var dungeon_data_t = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var dungeon_tier = dungeon_data_t.get("tier", 1) if not dungeon_data_t.is_empty() else 1
+	var scroll_drop = DungeonDatabaseScript.roll_escape_scroll_drop(dungeon_tier)
+	if not scroll_drop.is_empty():
+		var scroll_item = {
+			"name": scroll_drop.name,
+			"item_type": "escape_scroll",
+			"tier_max": scroll_drop.tier_max,
+			"type": "consumable",
+			"level": 1,
+			"rarity": "uncommon"
+		}
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(scroll_item)
+			reward_messages.append("[color=#87CEEB]★ %s ★[/color]" % scroll_drop.name)
+		else:
+			reward_messages.append("[color=#808080]%s found but inventory full![/color]" % scroll_drop.name)
+
+	# Track treasures opened for exploration bonus
+	if active_dungeons.has(instance_id):
+		var inst = active_dungeons[instance_id]
+		inst["treasures_opened"] = inst.get("treasures_opened", 0) + 1
 
 	# Mark tile as cleared
 	_clear_dungeon_tile(peer_id)
@@ -16988,8 +17133,38 @@ func _complete_dungeon(peer_id: int):
 	# Calculate rewards (sub-tier scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
 
+	# Enhanced rewards: Flawless run (no collapse) bonus
+	var flawless = true  # If we got here, no collapse happened
+	var bonus_xp = 0
+	if flawless:
+		bonus_xp = int(rewards.xp * 0.2)  # +20% XP for flawless run
+	var total_xp = rewards.xp + bonus_xp
+
 	# Give rewards
-	var xp_result = character.add_experience(rewards.xp)
+	var xp_result = character.add_experience(total_xp)
+
+	# Boss material drops (T7-9 = 2-3 materials + guaranteed crystal)
+	var tier = dungeon_data.get("tier", 1)
+	var bonus_material_msgs = []
+	var boss_mat_count = 1
+	if tier >= 4:
+		boss_mat_count = randi_range(1, 2)
+	if tier >= 7:
+		boss_mat_count = randi_range(2, 3)
+	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(tier)
+	for _i in range(boss_mat_count):
+		var boss_mats = _roll_dungeon_gather("ore", resource_tier, tier)
+		for mat in boss_mats:
+			character.add_crafting_material(mat.id, mat.quantity)
+			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
+			bonus_material_msgs.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
+	# T7-9 boss guaranteed dungeon-exclusive crystal
+	if tier >= 7:
+		var crystal_mats = _roll_dungeon_gather("crystal", resource_tier, tier)
+		for mat in crystal_mats:
+			character.add_crafting_material(mat.id, mat.quantity)
+			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
+			bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
 	# Give GUARANTEED boss egg (inherits dungeon sub-tier)!
 	var boss_egg_given = false
@@ -17033,6 +17208,10 @@ func _complete_dungeon(peer_id: int):
 	if flock_counts.has(peer_id):
 		flock_counts.erase(peer_id)
 
+	# Clear gathered materials tracking (no penalty on completion)
+	if dungeon_gathered_materials.has(peer_id):
+		dungeon_gathered_materials.erase(peer_id)
+
 	# Mark the dungeon as completed for despawn timer (world dungeons only)
 	if active_dungeons.has(instance_id):
 		var instance = active_dungeons[instance_id]
@@ -17064,21 +17243,33 @@ func _complete_dungeon(peer_id: int):
 				dungeon_floor_rooms.erase(instance_id)
 			if dungeon_monsters.has(instance_id):
 				dungeon_monsters.erase(instance_id)
+			if dungeon_traps.has(instance_id):
+				dungeon_traps.erase(instance_id)
 
 	character.exit_dungeon()
 
 	# Build completion message
 	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
+	if flawless:
+		completion_msg += "[color=#00FF00]★ FLAWLESS RUN ★[/color]\n"
 	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
 	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, rewards.total_floors]
-	completion_msg += "[color=#00BFFF]+%d XP[/color]\n" % rewards.xp
+	completion_msg += "[color=#00BFFF]+%d XP[/color]" % total_xp
+	if bonus_xp > 0:
+		completion_msg += " [color=#808080](+%d flawless bonus)[/color]" % bonus_xp
+	completion_msg += "\n"
 
 	# Show boss egg reward!
 	if boss_egg_given:
-		completion_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % boss_egg_name
+		completion_msg += "[color=#FF69B4]★ %s obtained! ★[/color]\n" % boss_egg_name
 	elif boss_egg_lost_to_full:
 		var _egg_cap2 = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
-		completion_msg += "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [boss_egg_name, character.incubating_eggs.size(), _egg_cap2]
+		completion_msg += "[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]\n" % [boss_egg_name, character.incubating_eggs.size(), _egg_cap2]
+
+	# Show boss material drops
+	if not bonus_material_msgs.is_empty():
+		completion_msg += "\n[color=#FFD700]Boss Materials:[/color]\n"
+		completion_msg += "\n".join(bonus_material_msgs)
 
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
@@ -17199,24 +17390,418 @@ func _clear_dungeon_tile(peer_id: int):
 	var grid = floor_grids[character.dungeon_floor]
 	var current_tile = grid[character.dungeon_y][character.dungeon_x]
 
-	# Only clear encounter/treasure tiles
-	if current_tile in [DungeonDatabaseScript.TileType.ENCOUNTER, DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.BOSS]:
+	# Only clear encounter/treasure/resource tiles
+	if current_tile in [DungeonDatabaseScript.TileType.ENCOUNTER, DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.BOSS, DungeonDatabaseScript.TileType.RESOURCE]:
 		grid[character.dungeon_y][character.dungeon_x] = DungeonDatabaseScript.TileType.CLEARED
+
+# ===== DUNGEON STEP PRESSURE + TRAPS + GATHERING =====
+
+func _collapse_dungeon(peer_id: int):
+	"""Collapse! Player exceeds step limit — penalize and eject."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+
+	# Calculate material penalty: lose 30% of materials gathered THIS dungeon run
+	var penalty_msgs = []
+	if dungeon_gathered_materials.has(peer_id):
+		var gathered = dungeon_gathered_materials[peer_id]
+		for mat_id in gathered.keys():
+			var qty = gathered[mat_id]
+			var lose = max(1, int(qty * 0.3))
+			var current = character.crafting_materials.get(mat_id, 0)
+			var actual_loss = mini(lose, current)
+			if actual_loss > 0:
+				character.crafting_materials[mat_id] = current - actual_loss
+				if character.crafting_materials[mat_id] <= 0:
+					character.crafting_materials.erase(mat_id)
+				penalty_msgs.append("[color=#FF4444]-%d %s[/color]" % [actual_loss, mat_id.replace("_", " ").capitalize()])
+		dungeon_gathered_materials.erase(peer_id)
+
+	# Apply +15 wear to all equipped items
+	var wear_msgs = []
+	for slot in character.equipped.keys():
+		if character.equipped[slot] != null:
+			var result = character.damage_equipment(slot, 15)
+			if result.success:
+				wear_msgs.append(result.item_name)
+
+	# Build collapse message
+	var msg = "[color=#FF0000]===== THE DUNGEON COLLAPSES! =====[/color]\n"
+	msg += "[color=#FF4444]Rocks crash down around you as the floor gives way![/color]\n"
+	if not penalty_msgs.is_empty():
+		msg += "\n[color=#FF8800]Materials lost:[/color] " + ", ".join(penalty_msgs)
+	if not wear_msgs.is_empty():
+		msg += "\n[color=#FF8800]Equipment damaged:[/color] " + ", ".join(wear_msgs)
+
+	# Remove from dungeon
+	if active_dungeons.has(instance_id):
+		active_dungeons[instance_id].active_players.erase(peer_id)
+	character.exit_dungeon()
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_exit",
+		"message": msg,
+		"collapsed": true
+	})
+	send_location_update(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	# Also collapse party followers
+	if _is_party_leader(peer_id):
+		var party = active_parties.get(peer_id, {})
+		var members = party.get("members", [])
+		for i in range(1, members.size()):
+			var pid = members[i]
+			if not characters.has(pid) or not characters[pid].in_dungeon:
+				continue
+			if active_dungeons.has(instance_id):
+				active_dungeons[instance_id].active_players.erase(pid)
+			characters[pid].exit_dungeon()
+			characters[pid].x = character.x
+			characters[pid].y = character.y
+			send_to_peer(pid, {"type": "dungeon_exit", "message": "[color=#FF0000]The dungeon collapses! Your party is ejected![/color]", "collapsed": true})
+			send_location_update(pid)
+			send_character_update(pid)
+			save_character(pid)
+
+func _get_triggered_traps(instance_id: String, floor_num: int) -> Array:
+	"""Get list of triggered traps on a floor (for client display)."""
+	var result = []
+	if dungeon_traps.has(instance_id):
+		var floor_traps = dungeon_traps[instance_id].get(floor_num, [])
+		for trap in floor_traps:
+			if trap.triggered:
+				var color = "#FF4444"
+				if trap.type == "thief":
+					color = "#A335EE"
+				elif trap.type == "teleport":
+					color = "#00BFFF"
+				result.append({"x": trap.x, "y": trap.y, "type": trap.type, "color": color})
+	return result
+
+func _generate_dungeon_traps(instance_id: String, dungeon_type: String, floor_grids: Array):
+	"""Generate hidden traps for all floors of a dungeon instance."""
+	var dungeon_data_t = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data_t.is_empty():
+		return
+	var tier = dungeon_data_t.get("tier", 1)
+	dungeon_traps[instance_id] = {}
+	for floor_num in range(floor_grids.size()):
+		var rng = RandomNumberGenerator.new()
+		rng.seed = hash(instance_id + "_traps_" + str(floor_num))
+		var traps = DungeonDatabaseScript.generate_traps(floor_grids[floor_num], floor_num, tier, rng)
+		dungeon_traps[instance_id][floor_num] = traps
+
+func _track_dungeon_material(peer_id: int, material_id: String, quantity: int):
+	"""Track materials gathered during a dungeon run (for collapse penalty)."""
+	if not dungeon_gathered_materials.has(peer_id):
+		dungeon_gathered_materials[peer_id] = {}
+	var current = dungeon_gathered_materials[peer_id].get(material_id, 0)
+	dungeon_gathered_materials[peer_id][material_id] = current + quantity
+
+func _check_dungeon_trap(instance_id: String, floor_num: int, x: int, y: int):
+	"""Check if there's an untriggered trap at position. Returns trap dict or null."""
+	if not dungeon_traps.has(instance_id):
+		return null
+	var floor_traps = dungeon_traps[instance_id].get(floor_num, [])
+	for trap in floor_traps:
+		if trap.x == x and trap.y == y and not trap.triggered:
+			return trap
+	return null
+
+func _trigger_trap(peer_id: int, trap: Dictionary, instance_id: String):
+	"""Trigger a dungeon trap and apply its effect."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	trap["triggered"] = true
+
+	match trap.type:
+		"rust":
+			# +10-20 wear on 1-2 random equipped items
+			var slots = []
+			for slot in character.equipped.keys():
+				if character.equipped[slot] != null:
+					slots.append(slot)
+			if not slots.is_empty():
+				slots.shuffle()
+				var count = mini(randi_range(1, 2), slots.size())
+				var damaged = []
+				for i in range(count):
+					var wear = randi_range(10, 20)
+					var result = character.damage_equipment(slots[i], wear)
+					if result.success:
+						damaged.append("[color=#FF8800]%s (+%d wear)[/color]" % [result.item_name, wear])
+				send_to_peer(peer_id, {
+					"type": "dungeon_trap",
+					"trap_type": "rust",
+					"message": "[color=#FF4444]A corrosive mist engulfs you![/color]\n" + "\n".join(damaged) if not damaged.is_empty() else "[color=#FF4444]A corrosive mist engulfs you![/color] [color=#808080](no equipment to damage)[/color]",
+					"trap_x": trap.x, "trap_y": trap.y, "trap_color": "#FF4444"
+				})
+			else:
+				send_to_peer(peer_id, {
+					"type": "dungeon_trap",
+					"trap_type": "rust",
+					"message": "[color=#FF4444]A corrosive mist engulfs you![/color] [color=#808080](no equipment to damage)[/color]",
+					"trap_x": trap.x, "trap_y": trap.y, "trap_color": "#FF4444"
+				})
+
+		"thief":
+			# Steal 1-3 random materials from dungeon_gathered_materials, or 1 from inventory
+			var stolen = []
+			var count = randi_range(1, 3)
+			if dungeon_gathered_materials.has(peer_id) and not dungeon_gathered_materials[peer_id].is_empty():
+				var gathered = dungeon_gathered_materials[peer_id]
+				var mat_keys = gathered.keys()
+				mat_keys.shuffle()
+				for i in range(mini(count, mat_keys.size())):
+					var mat_id = mat_keys[i]
+					var lose = mini(1, gathered[mat_id])
+					gathered[mat_id] -= lose
+					if gathered[mat_id] <= 0:
+						gathered.erase(mat_id)
+					var current = character.crafting_materials.get(mat_id, 0)
+					if current > 0:
+						character.crafting_materials[mat_id] = current - mini(lose, current)
+						if character.crafting_materials[mat_id] <= 0:
+							character.crafting_materials.erase(mat_id)
+					stolen.append(mat_id.replace("_", " ").capitalize())
+			elif not character.crafting_materials.is_empty():
+				var mat_keys = character.crafting_materials.keys()
+				mat_keys.shuffle()
+				var mat_id = mat_keys[0]
+				var current = character.crafting_materials[mat_id]
+				if current > 0:
+					character.crafting_materials[mat_id] = current - 1
+					if character.crafting_materials[mat_id] <= 0:
+						character.crafting_materials.erase(mat_id)
+					stolen.append(mat_id.replace("_", " ").capitalize())
+			var stolen_text = ", ".join(stolen) if not stolen.is_empty() else "nothing"
+			send_to_peer(peer_id, {
+				"type": "dungeon_trap",
+				"trap_type": "thief",
+				"message": "[color=#A335EE]Shadowy hands snatch at your pack![/color]\nStolen: %s" % stolen_text,
+				"trap_x": trap.x, "trap_y": trap.y, "trap_color": "#A335EE"
+			})
+
+		"teleport":
+			# Teleport to random empty tile on same floor
+			var floor_grids = dungeon_floors.get(instance_id, [])
+			if character.dungeon_floor < floor_grids.size():
+				var grid = floor_grids[character.dungeon_floor]
+				var new_pos = _find_any_walkable_tile(grid)
+				character.dungeon_x = new_pos.x
+				character.dungeon_y = new_pos.y
+			send_to_peer(peer_id, {
+				"type": "dungeon_trap",
+				"trap_type": "teleport",
+				"message": "[color=#00BFFF]The floor gives way beneath you! You tumble through a passage...[/color]",
+				"trap_x": trap.x, "trap_y": trap.y, "trap_color": "#00BFFF"
+			})
+
+	save_character(peer_id)
+
+func _prompt_dungeon_gather(peer_id: int):
+	"""Prompt player to gather from a dungeon resource node."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var instance_id = character.current_dungeon_id
+	var dungeon_data_g = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var tier = dungeon_data_g.get("tier", 1) if not dungeon_data_g.is_empty() else 1
+	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(tier)
+
+	# Determine node type from seed
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(instance_id + str(character.dungeon_floor) + str(character.dungeon_x) + str(character.dungeon_y))
+	var node_type = DungeonDatabaseScript.roll_dungeon_resource_type(rng)
+
+	var type_names = {"ore": "Ore Vein", "herb": "Herb Patch", "crystal": "Crystal Formation"}
+	var type_colors = {"ore": "#C0C0C0", "herb": "#00FF00", "crystal": "#00FFCC"}
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_resource_prompt",
+		"node_type": node_type,
+		"resource_tier": resource_tier,
+		"message": "[color=%s]You found a %s! (T%d)[/color]\n[color=#808080]Gathering costs 5 steps from your pressure budget.[/color]" % [type_colors.get(node_type, "#FFFFFF"), type_names.get(node_type, "Resource"), resource_tier]
+	})
+
+func handle_dungeon_gather_confirm(peer_id: int, message: Dictionary):
+	"""Handle player confirming dungeon gather from resource node."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.in_dungeon:
+		return
+
+	# Add 5 steps for gathering
+	character.dungeon_floor_steps += 5
+
+	var instance_id = character.current_dungeon_id
+	var dungeon_data_g = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var tier = dungeon_data_g.get("tier", 1) if not dungeon_data_g.is_empty() else 1
+	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(tier)
+
+	# Determine node type from seed (same seed as prompt)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(instance_id + str(character.dungeon_floor) + str(character.dungeon_x) + str(character.dungeon_y))
+	var node_type = DungeonDatabaseScript.roll_dungeon_resource_type(rng)
+
+	# Roll materials based on node type and resource tier
+	var materials_gained = _roll_dungeon_gather(node_type, resource_tier, tier)
+
+	# Give materials and track for collapse penalty
+	var reward_msgs = []
+	for mat in materials_gained:
+		character.add_crafting_material(mat.id, mat.quantity)
+		_track_dungeon_material(peer_id, mat.id, mat.quantity)
+		var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
+		reward_msgs.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.capitalize().replace("_", " "), qty_text])
+
+	# Mark tile as cleared
+	_clear_dungeon_tile(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_gather_result",
+		"message": "[color=#00FFCC]You gather resources from the node![/color]\n" + "\n".join(reward_msgs) if not reward_msgs.is_empty() else "[color=#00FFCC]You gather resources but find nothing useful.[/color]",
+		"materials": materials_gained
+	})
+
+	_send_dungeon_state(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _roll_dungeon_gather(node_type: String, resource_tier: int, dungeon_tier: int) -> Array:
+	"""Roll materials from a dungeon gathering node."""
+	var materials = []
+
+	if node_type == "crystal":
+		# Crystal nodes in T7-9 dungeons give dungeon-exclusive materials
+		if dungeon_tier >= 7:
+			var crystal_table = {
+				7: [{"weight": 60, "id": "void_crystal", "qty_min": 1, "qty_max": 2},
+					{"weight": 40, "id": "celestial_shard", "qty_min": 1, "qty_max": 1}],
+				8: [{"weight": 60, "id": "abyssal_shard", "qty_min": 1, "qty_max": 2},
+					{"weight": 30, "id": "void_crystal", "qty_min": 1, "qty_max": 1},
+					{"weight": 10, "id": "primordial_essence", "qty_min": 1, "qty_max": 1}],
+				9: [{"weight": 50, "id": "primordial_essence", "qty_min": 1, "qty_max": 2},
+					{"weight": 30, "id": "abyssal_shard", "qty_min": 1, "qty_max": 2},
+					{"weight": 20, "id": "void_crystal", "qty_min": 1, "qty_max": 1}]
+			}
+			var table = crystal_table.get(dungeon_tier, crystal_table[7])
+			var total_w = 0
+			for entry in table:
+				total_w += entry.weight
+			var roll = randi() % total_w
+			var cum = 0
+			for entry in table:
+				cum += entry.weight
+				if roll < cum:
+					materials.append({"id": entry.id, "quantity": randi_range(entry.qty_min, entry.qty_max)})
+					break
+		else:
+			# Lower tier crystal nodes give existing enchant materials
+			var enchant_mats = {
+				4: "arcane_crystal", 5: "soul_shard", 6: "void_essence"
+			}
+			var mat_id = enchant_mats.get(resource_tier, "arcane_crystal")
+			materials.append({"id": mat_id, "quantity": randi_range(1, 2)})
+
+	elif node_type == "ore":
+		# Ore nodes give existing high-tier ores
+		var ore_table = {
+			4: "mithril_ore", 5: "adamantite_ore", 6: "starmetal_ore",
+			7: "void_ore", 8: "celestial_ore", 9: "primordial_ore"
+		}
+		var mat_id = ore_table.get(resource_tier, "mithril_ore")
+		materials.append({"id": mat_id, "quantity": randi_range(1, 3)})
+
+	elif node_type == "herb":
+		# Herb nodes give existing high-tier herbs
+		var herb_table = {
+			4: "moonpetal", 5: "bloodthorn", 6: "starbloom",
+			7: "starbloom", 8: "starbloom", 9: "starbloom"
+		}
+		var mat_id = herb_table.get(resource_tier, "moonpetal")
+		materials.append({"id": mat_id, "quantity": randi_range(1, 3)})
+
+	return materials
+
+func _use_escape_scroll(peer_id: int, item_index: int):
+	"""Use an escape scroll to safely exit a dungeon."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You can only use escape scrolls while in a dungeon!"})
+		return
+
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot use an escape scroll during combat!"})
+		return
+
+	# Validate scroll exists and check tier
+	if item_index < 0 or item_index >= character.inventory.size():
+		return
+	var item = character.inventory[item_index]
+	if item.get("item_type", "") != "escape_scroll":
+		return
+
+	var tier_max = item.get("tier_max", 4)
+	var dungeon_data_e = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var dungeon_tier = dungeon_data_e.get("tier", 1) if not dungeon_data_e.is_empty() else 1
+
+	if dungeon_tier > tier_max:
+		send_to_peer(peer_id, {"type": "error", "message": "This scroll only works in tier %d or lower dungeons!" % tier_max})
+		return
+
+	# Consume scroll
+	character.remove_item(item_index)
+
+	# Clean exit — keep all materials (no collapse penalty)
+	var instance_id = character.current_dungeon_id
+	if dungeon_gathered_materials.has(peer_id):
+		dungeon_gathered_materials.erase(peer_id)
+
+	if active_dungeons.has(instance_id):
+		active_dungeons[instance_id].active_players.erase(peer_id)
+
+	character.exit_dungeon()
+
+	send_to_peer(peer_id, {
+		"type": "dungeon_exit",
+		"message": "[color=#87CEEB]You read the scroll... magical light envelops you![/color]\n[color=#00FF00]You escape the dungeon safely with all your materials![/color]"
+	})
+	send_location_update(peer_id)
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	# Exit party followers too
+	if _is_party_leader(peer_id):
+		var party = active_parties.get(peer_id, {})
+		var members = party.get("members", [])
+		for i in range(1, members.size()):
+			var pid = members[i]
+			if not characters.has(pid) or not characters[pid].in_dungeon:
+				continue
+			if active_dungeons.has(instance_id):
+				active_dungeons[instance_id].active_players.erase(pid)
+			characters[pid].exit_dungeon()
+			characters[pid].x = character.x
+			characters[pid].y = character.y
+			send_to_peer(pid, {"type": "dungeon_exit", "message": "[color=#87CEEB]Your party leader uses an escape scroll![/color]\n[color=#00FF00]You escape safely![/color]"})
+			send_location_update(pid)
+			send_character_update(pid)
+			save_character(pid)
 
 # ===== DUNGEON MONSTER ENTITY SYSTEM =====
 
-# Rest material costs by dungeon tier
-const DUNGEON_REST_COSTS = {
-	1: {"wild_berries": 2},
-	2: {"healing_herb": 1},
-	3: {"sage": 1},
-	4: {"cave_mushroom": 1},
-	5: {"moonpetal": 1},
-	6: {"glowing_mushroom": 1},
-	7: {"bloodroot": 1},
-	8: {"spirit_blossom": 1},
-	9: {"starbloom": 1}
-}
+# Material types that count as food for dungeon rest
+const DUNGEON_REST_FOOD_MATERIAL_TYPES = ["plant", "herb", "fungus", "fish"]
 
 func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dungeon_level: int):
 	"""Spawn monsters on all floors of a dungeon instance"""
@@ -17620,31 +18205,29 @@ func handle_dungeon_rest(peer_id: int):
 	if not active_dungeons.has(instance_id):
 		return
 
-	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var tier = dungeon_data.get("tier", 1)
+	# Find any food-type crafting material to consume
+	var food_id = ""
+	var food_name = ""
+	for mat_id in character.crafting_materials:
+		if character.crafting_materials[mat_id] <= 0:
+			continue
+		var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_id, {})
+		if mat_info.get("type", "") in DUNGEON_REST_FOOD_MATERIAL_TYPES:
+			food_id = mat_id
+			food_name = mat_info.get("name", mat_id.capitalize().replace("_", " "))
+			break
 
-	# Check material cost
-	var cost = DUNGEON_REST_COSTS.get(tier, {"wild_berries": 2})
-	var missing_materials = []
-	for mat_id in cost:
-		var needed = cost[mat_id]
-		var have = character.crafting_materials.get(mat_id, 0)
-		if have < needed:
-			var mat_name = mat_id.capitalize().replace("_", " ")
-			missing_materials.append("%d %s (have %d)" % [needed, mat_name, have])
-
-	if not missing_materials.is_empty():
+	if food_id == "":
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FF6666]Not enough materials to rest! Need: %s[/color]" % ", ".join(missing_materials)
+			"message": "[color=#FF6666]You have no food to rest with! Gather herbs, berries, mushrooms, or fish first.[/color]"
 		})
 		return
 
-	# Consume materials
-	for mat_id in cost:
-		character.crafting_materials[mat_id] -= cost[mat_id]
-		if character.crafting_materials[mat_id] <= 0:
-			character.crafting_materials.erase(mat_id)
+	# Consume 1 food material
+	character.crafting_materials[food_id] -= 1
+	if character.crafting_materials[food_id] <= 0:
+		character.crafting_materials.erase(food_id)
 
 	# Heal based on class
 	var heal_messages = []
@@ -17715,13 +18298,9 @@ func handle_dungeon_rest(peer_id: int):
 	# so the rest message appears below the dungeon floor status
 	_send_dungeon_state(peer_id)
 
-	var cost_text = []
-	for mat_id in cost:
-		cost_text.append("%d %s" % [cost[mat_id], mat_id.capitalize().replace("_", " ")])
-
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#87CEEB]You rest briefly...[/color] %s [color=#808080](-%s)[/color]" % [" ".join(heal_messages), ", ".join(cost_text)]
+		"message": "[color=#87CEEB]You rest briefly...[/color] %s [color=#808080](-1 %s)[/color]" % [" ".join(heal_messages), food_name]
 	})
 
 	send_character_update(peer_id)
@@ -20644,6 +21223,8 @@ func _execute_map_wipe(admin_peer_id: int):
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
 	dungeon_monsters.clear()
+	dungeon_traps.clear()
+	dungeon_gathered_materials.clear()
 	player_dungeon_instances.clear()
 	persistence.clear_all_market_data()
 	if FileAccess.file_exists("user://data/corpses.json"):
@@ -20652,7 +21233,8 @@ func _execute_map_wipe(admin_peer_id: int):
 	for pid in characters:
 		send_location_update(pid)
 	log_message("[WIPE] Map wipe complete. World regenerated from seed.")
-	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})
+	if admin_peer_id >= 0:
+		send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})
 
 # ===== PARTY QUEST SYNC =====
 

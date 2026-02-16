@@ -418,6 +418,7 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var dungeon_x: int = 0  # Position on floor grid
 @export var dungeon_y: int = 0
 @export var dungeon_encounters_cleared: int = 0  # Total encounters cleared this run
+@export var dungeon_floor_steps: int = 0  # Steps taken on current floor (for step pressure)
 @export var dungeon_cooldowns: Dictionary = {}  # {dungeon_type: timestamp when available}
 @export var dungeons_completed: Dictionary = {}  # {dungeon_type: times_completed}
 
@@ -3610,6 +3611,7 @@ func enter_dungeon(instance_id: String, dungeon_type: String, start_x: int, star
 	dungeon_x = start_x
 	dungeon_y = start_y
 	dungeon_encounters_cleared = 0
+	dungeon_floor_steps = 0
 
 func exit_dungeon():
 	"""Exit current dungeon"""
@@ -3620,12 +3622,14 @@ func exit_dungeon():
 	dungeon_x = 0
 	dungeon_y = 0
 	dungeon_encounters_cleared = 0
+	dungeon_floor_steps = 0
 
 func advance_dungeon_floor(new_x: int, new_y: int):
 	"""Move to the next floor of the dungeon"""
 	dungeon_floor += 1
 	dungeon_x = new_x
 	dungeon_y = new_y
+	dungeon_floor_steps = 0
 
 func is_dungeon_on_cooldown(dungeon_type: String) -> bool:
 	"""Check if a dungeon type is on cooldown for this character"""

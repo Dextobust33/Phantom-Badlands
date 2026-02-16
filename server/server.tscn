@@ -134,6 +134,11 @@ custom_minimum_size = Vector2(120, 35)
 layout_mode = 2
 text = "Cancel Update"
 
+[node name="MapWipeButton" type="Button" parent="VBox/ButtonRow"]
+custom_minimum_size = Vector2(120, 35)
+layout_mode = 2
+text = "Map Wipe"
+
 [node name="Spacer" type="Control" parent="VBox/ButtonRow" unique_id=571777013]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -145,3 +150,27 @@ size = Vector2i(350, 120)
 ok_button_text = "Restart"
 dialog_text = "Are you sure you want to restart the server?
 All connected players will be disconnected."
+
+[node name="MapWipeDialog" type="ConfirmationDialog" parent="."]
+title = "Confirm Map Wipe — Step 1 of 2"
+initial_position = 1
+size = Vector2i(450, 150)
+ok_button_text = "Continue"
+dialog_text = "MAP WIPE will delete:
+• World chunks, roads, guards, player posts, market listings
+
+PRESERVED: Characters, Sanctuary, inventories, companions.
+
+Continue to final confirmation?"
+
+[node name="MapWipeFinalDialog" type="ConfirmationDialog" parent="."]
+title = "FINAL CONFIRMATION — Map Wipe"
+initial_position = 1
+size = Vector2i(450, 150)
+ok_button_text = "WIPE MAP"
+dialog_text = "This is your LAST CHANCE to cancel.
+
+All world data will be permanently deleted.
+Characters and houses will be preserved.
+
+Are you absolutely sure?"

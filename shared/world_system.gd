@@ -1473,8 +1473,9 @@ func _is_walkable_for_path(x: int, y: int) -> bool:
 		return true
 	var tile = chunk_manager.get_tile(x, y)
 	var tile_type = tile.get("type", "empty")
-	# Structure tiles and existing roads are walkable
-	if tile_type in ["path", "floor", "door", "tower", "storage", "post_marker"]:
+	# NPC post structure tiles are walkable (but NOT existing road "path" tiles —
+	# roads must not create shortcuts for discovering other roads)
+	if tile_type in ["floor", "door", "tower", "storage", "post_marker"]:
 		return true
 	# Modified empty tiles (explicitly set by chunk system, not procedurally generated)
 	# Check if this tile has been modified from its procedural state

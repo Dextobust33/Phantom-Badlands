@@ -801,3 +801,178 @@ Linear interpolation between: 1.50 - ((count-2)/18 * 0.35)
 | `client/monster_art.gd` | ~3000 | ASCII art for monsters/eggs |
 | `client/trader_art.gd` | ~500 | Trading post ASCII art |
 | `client/trading_post_art.gd` | ~600 | Trading post category art |
+
+---
+
+## 7. Phase 5: Dungeon Expansion
+
+### Dungeon Step Pressure System
+
+Each dungeon floor has a step limit that creates urgency. Lower-tier dungeons are more lenient; higher-tier dungeons demand efficiency.
+
+**Step Limits by Tier (`DUNGEON_STEP_LIMITS` in `dungeon_database.gd`):**
+
+| Tier | Base Steps | Boss Floor (+50%) |
+|------|-----------|-------------------|
+| 1 | 100 | 150 |
+| 2 | 95 | 142 |
+| 3 | 90 | 135 |
+| 4 | 85 | 127 |
+| 5 | 80 | 120 |
+| 6 | 75 | 112 |
+| 7 | 70 | 105 |
+| 8 | 65 | 97 |
+| 9 | 60 | 90 |
+
+**Pressure Phases (server.gd `handle_dungeon_move`):**
+- 0-74% steps: normal exploration
+- 75-89% steps: warning text ("The walls tremble...")
+- 90-99% steps: earthquake warning + damage (5% max HP)
+- 100% steps: collapse — ejects player with penalties
+
+**Collapse Penalties (`_collapse_dungeon()`):**
+- Lose 30% of materials gathered during this dungeon run (tracked in `dungeon_gathered_materials`)
+- +15 wear applied to all equipped items
+- Forcible ejection from dungeon
+
+**Flawless Run Bonus:** Completing a dungeon without collapse grants +20% XP on completion rewards.
+
+### Dungeon Tile: RESOURCE
+
+New `TileType.RESOURCE = 8` added to the dungeon tile enum:
+
+| Property | Value |
+|----------|-------|
+| Enum value | `TileType.RESOURCE` (8) |
+| Display char | `&` |
+| Color | `#00FFCC` (cyan-green) |
+
+Resource nodes are placed in dungeon rooms by the floor generation algorithm. When the player steps on a `&` tile, the server sends a `dungeon_resource_prompt` message and the client shows Gather/Skip buttons.
+
+### Dungeon Gathering Flow
+
+```
+CLIENT                                        SERVER
+  Player steps on & tile ──►
+                              ◄── {type:"dungeon_resource_prompt", materials:[...]}
+  dungeon_resource_prompt = true
+  Action bar: [Gather] [Skip]
+  Player presses Gather ──►  {type:"dungeon_gather_confirm"}
+                              Server rolls materials from tier-scaled table
+                              _track_dungeon_material(peer_id, material_id, qty)
+                              ◄── {type:"dungeon_gather_result", materials:[{id, name, qty}]}
+  awaiting_dungeon_gather_result = true
+  Displays gathered materials
+  Player moves ──►            awaiting_dungeon_gather_result = false
+```
+
+**Dungeon-Exclusive Materials (crafting_database.gd `MATERIALS`):**
+
+| Material | Type | Tier | Value | Dungeon Source |
+|----------|------|------|-------|---------------|
+| `void_crystal` | crystal | 7 | 600 | T7 dungeon nodes (60% weight) |
+| `abyssal_shard` | crystal | 8 | 1200 | T8 dungeon nodes (60% weight) |
+| `primordial_essence` | crystal | 9 | 2500 | T9 dungeon nodes (50% weight) |
+
+These materials are used in high-tier crafting recipes: escape scrolls, enchantments (void/abyssal/primordial), upgrade recipes, and elite consumables.
+
+### Hidden Trap System
+
+Traps are server-side only — there is no trap tile type in the dungeon grid. Traps are invisible until triggered.
+
+**Constants (dungeon_database.gd):**
+- `TRAPS_PER_FLOOR`: {1:1, 2:1, 3:2, 4:2, 5:3, 6:3, 7:4, 8:4, 9:4}
+- `TRAP_TYPES`: ["rust", "thief", "teleport"]
+- `TRAP_WEIGHTS`: {"rust": 40, "thief": 30, "teleport": 30}
+
+**Trap Effects:**
+| Type | Effect |
+|------|--------|
+| `rust` | Applies wear damage to equipped items |
+| `thief` | Steals 1-3 gathered dungeon materials (or 1 inventory item) |
+| `teleport` | Randomly repositions player on the current floor |
+
+**How traps work:**
+1. `_generate_dungeon_traps()` places traps on empty floor tiles during dungeon creation
+2. Server stores traps in `dungeon_traps[instance_id][floor_num]` as `[{x, y, type, triggered}]`
+3. On each move, `_check_dungeon_trap()` checks the player's position against untriggered traps
+4. When triggered, trap is marked `triggered = true` and appears as `x` on the client map
+5. Client receives triggered trap positions via `triggered_traps` in `dungeon_state` messages
+6. `_get_triggered_traps()` returns only triggered traps for client display (with color `#FF4444`)
+
+### Escape Scroll System
+
+Escape scrolls are the only safe way to exit a dungeon. There is no free entrance/exit or flee option.
+
+**Entry Warning:** On entering any dungeon, the server sends a warning:
+- "WARNING: There is NO free exit from dungeons!"
+- "The only safe way out is an Escape Scroll."
+- If under-leveled, an additional level warning is shown
+
+**Scroll Tiers (crafting_database.gd, scribing skill):**
+
+| Recipe | Materials | Tier Max | Specialist |
+|--------|-----------|----------|------------|
+| `scroll_of_escape` | parchment x2, ink x1, moonpetal x1 | T1-4 | No |
+| `scroll_of_greater_escape` | fine_parchment x2, arcane_ink x1, soul_shard x1 | T1-7 | Yes |
+| `scroll_of_supreme_escape` | fine_parchment x2, arcane_ink x1, void_crystal x1 | T1-9 | Yes |
+
+**Scroll Drop:** 20% chance from dungeon treasure chests (`roll_escape_scroll_drop()` in dungeon_database.gd). Drop tier matches dungeon tier.
+
+**Client Action Bar:** Dungeon mode shows an "Escape" button (slot 3) when the player has an escape scroll. The button finds and uses the first escape scroll in inventory.
+
+**Server Flow (`_use_escape_scroll()`):**
+1. Validates player is in dungeon and not in combat
+2. Checks `tier_max >= dungeon_tier`
+3. Consumes the scroll from inventory
+4. Clears `dungeon_gathered_materials` (no penalty — clean exit)
+5. Sends `dungeon_exit` message with reason "escape_scroll"
+
+### Dungeon Rest System
+
+Resting in dungeons consumes food-type crafting materials from the player's `crafting_materials` inventory.
+
+**Food Material Types (`DUNGEON_REST_FOOD_MATERIAL_TYPES`):** `["plant", "herb", "fungus", "fish"]`
+
+**Rest Effects:**
+- Mages: +5-12.5% max mana, +3-5% max HP
+- Non-mages: +5-12.5% max HP
+
+**Action Bar:** Rest button label changes dynamically based on whether the player has food materials.
+
+### New Variables
+
+**Server (`server.gd`):**
+
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `dungeon_traps` | `Dictionary` | `instance_id -> {floor_num: [{x, y, type, triggered}]}` |
+| `dungeon_gathered_materials` | `Dictionary` | `peer_id -> {material_id: qty}` — materials gathered this dungeon run |
+
+**Client (`client.gd`):**
+
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `dungeon_triggered_traps` | `Array` | Triggered trap positions for map display |
+| `dungeon_resource_prompt` | `bool` | Waiting for gather/skip choice at resource node |
+| `awaiting_dungeon_gather_result` | `bool` | Protects gather result display from refresh |
+
+### New Message Types
+
+| Direction | Type | Key Fields | Purpose |
+|-----------|------|-----------|---------|
+| S->C | `dungeon_resource_prompt` | materials[] | Prompt player to gather at resource node |
+| C->S | `dungeon_gather_confirm` | - | Player chose to gather |
+| C->S | `dungeon_gather_skip` | - | Player chose to skip |
+| S->C | `dungeon_gather_result` | materials[] | Gathered materials result |
+
+### Server UI: MapWipeButton
+
+The server scene (`server.tscn`) includes a MapWipeButton with a 2-step ConfirmationDialog:
+
+1. `MapWipeButton` — opens `MapWipeDialog` ("Confirm Map Wipe - Step 1 of 2")
+2. On confirm, opens `MapWipeFinalDialog` ("FINAL CONFIRMATION - Map Wipe")
+3. On final confirm, calls `_execute_map_wipe(-1)`
+
+**What map wipe preserves:** Characters, Sanctuary, inventories, companions
+**What map wipe deletes:** World chunks, guards, player posts, market data, dungeon instances

@@ -308,6 +308,11 @@ const MATERIALS = {
 	"void_essence": {"name": "Void Essence", "type": "enchant", "tier": 6, "value": 200},
 	"primordial_spark": {"name": "Primordial Spark", "type": "enchant", "tier": 8, "value": 800},
 
+	# Dungeon-exclusive crystals (only from dungeon gathering nodes)
+	"void_crystal": {"name": "Void Crystal", "type": "crystal", "tier": 7, "value": 600},
+	"abyssal_shard": {"name": "Abyssal Shard", "type": "crystal", "tier": 8, "value": 1200},
+	"primordial_essence": {"name": "Primordial Essence", "type": "crystal", "tier": 9, "value": 2500},
+
 	# Monster Gems (from combat, quest rewards)
 	"monster_gem": {"name": "Monster Gem", "type": "gem", "tier": 5, "value": 1000},
 
@@ -2987,6 +2992,116 @@ const RECIPES = {
 		"structure_type": "healer",
 		"specialist_only": true,
 		"craft_time": 10.0
+	},
+
+	# ===== ESCAPE SCROLLS (Scribing) =====
+	"scroll_of_escape": {
+		"name": "Scroll of Escape",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 8,
+		"difficulty": 15,
+		"materials": {"parchment": 2, "ink": 1, "moonpetal": 1},
+		"output_type": "escape_scroll",
+		"tier_max": 4,
+		"craft_time": 3.0
+	},
+	"scroll_of_greater_escape": {
+		"name": "Scroll of Greater Escape",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 16,
+		"difficulty": 30,
+		"materials": {"fine_parchment": 2, "arcane_ink": 1, "soul_shard": 1},
+		"output_type": "escape_scroll",
+		"tier_max": 7,
+		"specialist_only": true,
+		"craft_time": 4.0
+	},
+	"scroll_of_supreme_escape": {
+		"name": "Scroll of Supreme Escape",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 24,
+		"difficulty": 45,
+		"materials": {"fine_parchment": 2, "arcane_ink": 1, "void_crystal": 1},
+		"output_type": "escape_scroll",
+		"tier_max": 9,
+		"specialist_only": true,
+		"craft_time": 5.0
+	},
+
+	# ===== DUNGEON-EXCLUSIVE CRYSTAL RECIPES =====
+	# Enchanter: Mythic runes using dungeon crystals
+	"void_rune": {
+		"name": "Void Rune",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 25,
+		"difficulty": 40,
+		"materials": {"void_crystal": 2, "primordial_spark": 1},
+		"output_type": "enchantment",
+		"enchant_stat": "attack",
+		"enchant_amount": 45,
+		"specialist_only": true,
+		"craft_time": 5.0
+	},
+	"abyssal_rune": {
+		"name": "Abyssal Rune",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 30,
+		"difficulty": 50,
+		"materials": {"abyssal_shard": 2, "void_crystal": 1},
+		"output_type": "enchantment",
+		"enchant_stat": "defense",
+		"enchant_amount": 50,
+		"specialist_only": true,
+		"craft_time": 6.0
+	},
+	"primordial_rune": {
+		"name": "Primordial Rune",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 35,
+		"difficulty": 60,
+		"materials": {"primordial_essence": 2, "abyssal_shard": 1},
+		"output_type": "enchantment",
+		"enchant_stat": "max_hp",
+		"enchant_amount": 180,
+		"specialist_only": true,
+		"craft_time": 7.0
+	},
+
+	# Blacksmith: Legendary upgrade using dungeon crystals
+	"primordial_upgrade": {
+		"name": "Primordial Upgrade (+10)",
+		"skill": CraftingSkill.BLACKSMITHING,
+		"skill_required": 30,
+		"difficulty": 55,
+		"materials": {"primordial_essence": 1, "primordial_ore": 3},
+		"output_type": "upgrade",
+		"upgrade_amount": 10,
+		"specialist_only": true,
+		"craft_time": 6.0
+	},
+
+	# Alchemist: Endgame elixirs using dungeon crystals
+	"elixir_of_the_void": {
+		"name": "Elixir of the Void",
+		"skill": CraftingSkill.ALCHEMY,
+		"skill_required": 28,
+		"difficulty": 45,
+		"materials": {"void_crystal": 1, "starbloom": 2, "essence_of_life": 1},
+		"output_type": "consumable",
+		"effect": {"type": "buff", "stat": "all_stats", "bonus_pct": 15, "duration_battles": 5},
+		"specialist_only": true,
+		"craft_time": 5.0
+	},
+	"elixir_of_the_abyss": {
+		"name": "Elixir of the Abyss",
+		"skill": CraftingSkill.ALCHEMY,
+		"skill_required": 32,
+		"difficulty": 55,
+		"materials": {"abyssal_shard": 1, "bloodthorn": 2, "primordial_spark": 1},
+		"output_type": "consumable",
+		"effect": {"type": "buff", "stat": "attack", "bonus_pct": 30, "duration_battles": 5},
+		"specialist_only": true,
+		"craft_time": 6.0
 	},
 }
 

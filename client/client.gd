@@ -1022,6 +1022,9 @@ var dungeon_floor_grid: Array = []  # 2D array of tile types
 var dungeon_monsters_data: Array = []  # Monster entities on current floor
 var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
+var dungeon_triggered_traps: Array = []  # Triggered trap positions for map display
+var dungeon_resource_prompt: bool = false  # Waiting for gather/skip choice
+var awaiting_dungeon_gather_result: bool = false  # Protect gather result display from refresh
 
 # Password change mode
 var changing_password: bool = false
@@ -2601,7 +2604,7 @@ func _process(delta):
 			set_meta("enter_pressed", false)
 
 	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
-	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not any_popup_open:
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not dungeon_resource_prompt and not any_popup_open and not inventory_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -5169,16 +5172,37 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif dungeon_mode and dungeon_resource_prompt and not in_combat:
+		# Dungeon resource gather/skip prompt
+		current_actions = [
+			{"label": "Gather", "action_type": "local", "action_data": "dungeon_gather", "enabled": true},
+			{"label": "Skip", "action_type": "local", "action_data": "dungeon_skip_gather", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif dungeon_mode and not in_combat and not pending_continue and not flock_pending and not inventory_mode and not wish_selection_mode:
 		# In dungeon (not fighting, not waiting for continue/flock) - movement via numpad/arrows
 		var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 		var rest_label = "Meditate" if is_mage else "Rest"
 		var on_entrance = dungeon_data.get("current_tile", -1) == 2  # TileType.ENTRANCE = 2
 		var can_go_back = on_entrance and dungeon_data.get("floor", 1) > 1
+		# Check for escape scroll in inventory
+		var has_escape_scroll = false
+		var inv = character_data.get("inventory", [])
+		for item in inv:
+			if item.get("item_type", "") == "escape_scroll":
+				has_escape_scroll = true
+				break
 		current_actions = [
 			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": rest_label, "action_type": "local", "action_data": "dungeon_rest", "enabled": true},
-			{"label": "Exit", "action_type": "local", "action_data": "dungeon_exit", "enabled": on_entrance},
+			{"label": "Escape" if has_escape_scroll else "---", "action_type": "local" if has_escape_scroll else "none", "action_data": "dungeon_escape_scroll" if has_escape_scroll else "", "enabled": has_escape_scroll},
 			{"label": "Back", "action_type": "local", "action_data": "dungeon_go_back", "enabled": can_go_back},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9732,6 +9756,19 @@ func execute_local_action(action: String):
 			send_to_server({"type": "dungeon_go_back"})
 		"dungeon_rest":
 			send_to_server({"type": "dungeon_rest"})
+		"dungeon_gather":
+			dungeon_resource_prompt = false
+			send_to_server({"type": "dungeon_gather_confirm"})
+		"dungeon_skip_gather":
+			dungeon_resource_prompt = false
+			send_to_server({"type": "dungeon_gather_skip"})
+		"dungeon_escape_scroll":
+			# Find and use the first escape scroll in inventory
+			var inv_e = character_data.get("inventory", [])
+			for idx in range(inv_e.size()):
+				if inv_e[idx].get("item_type", "") == "escape_scroll":
+					send_to_server({"type": "use_item", "index": idx})
+					break
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
@@ -10097,9 +10134,11 @@ func acknowledge_continue():
 	if input_field and input_field.has_focus():
 		input_field.release_focus()
 
-	# If at trading post, go back to quest menu so player can turn in more
+	# If at trading post, return to main trading post view (player can walk to quest board again)
 	if at_trading_post:
-		send_to_server({"type": "trading_post_quests"})
+		quest_view_mode = false
+		_display_trading_post_ui()
+		update_action_bar()
 		return
 
 	# If at dungeon entrance in overworld (not in dungeon), show dungeon info
@@ -11666,7 +11705,10 @@ func close_inventory():
 	rune_apply_index = -1
 	reset_combat_background()  # Reset to default black background
 	update_action_bar()
-	display_game("[color=#808080]Inventory closed.[/color]")
+	if dungeon_mode:
+		display_dungeon_floor()
+	else:
+		display_game("[color=#808080]Inventory closed.[/color]")
 
 func open_sort_menu():
 	"""Open sort submenu for inventory"""
@@ -14997,7 +15039,9 @@ func handle_server_message(message: Dictionary):
 				# Player fled - reset combat XP tracking but keep previous XP gain highlight
 				xp_before_combat = 0
 				# Update position if server moved us
-				if message.has("new_x") and message.has("new_y"):
+				if dungeon_mode:
+					display_game("[color=#FFAA00]You flee deeper into the dungeon![/color]")
+				elif message.has("new_x") and message.has("new_y"):
 					character_data["x"] = message.new_x
 					character_data["y"] = message.new_y
 					display_game("[color=#FFD700]You fled to (%d, %d)![/color]" % [message.new_x, message.new_y])
@@ -15616,6 +15660,15 @@ func handle_server_message(message: Dictionary):
 
 		"dungeon_exit":
 			handle_dungeon_exit(message)
+
+		"dungeon_resource_prompt":
+			handle_dungeon_resource_prompt(message)
+
+		"dungeon_trap":
+			handle_dungeon_trap(message)
+
+		"dungeon_gather_result":
+			handle_dungeon_gather_result(message)
 
 		"egg_hatched":
 			handle_egg_hatched(message)
@@ -17629,6 +17682,7 @@ func _on_move_button(direction: int):
 				4: dungeon_dir = "w"
 				6: dungeon_dir = "e"
 			if dungeon_dir != "":
+				awaiting_dungeon_gather_result = false
 				send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 				last_move_time = current_time
 			return
@@ -18668,8 +18722,28 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.129 changes
+	display_game("[color=#00FF00]v0.9.129[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Expansion[/color]")
+	display_game("  • Step pressure: each floor has a step limit (60-100 by tier)")
+	display_game("  • Warnings at 75%/90% of steps, collapse at 100% with penalties")
+	display_game("  • Gathering nodes (&) appear in dungeon floors — ore, herbs, crystals")
+	display_game("  • T7-9 dungeon crystals: Void Crystal, Abyssal Shard, Primordial Essence")
+	display_game("  • Hidden traps: rust (equipment wear), thief (material loss), teleport")
+	display_game("  • Triggered traps visible on the dungeon map as × markers")
+	display_game("  • Escape scrolls: the ONLY way to safely exit a dungeon (3 tiers)")
+	display_game("  • Treasure chests have 20% chance to drop escape scrolls")
+	display_game("  • Scribes can craft escape scrolls (Lv8/16/24)")
+	display_game("  • Boss kills now drop bonus materials (T7-9: guaranteed dungeon crystal)")
+	display_game("  • Flawless Run bonus: +20% XP for completing without collapse")
+	display_game("  • New endgame recipes: Void/Abyssal/Primordial Runes, elixirs, upgrades")
+	display_game("  • No free dungeon exits — fleeing combat relocates you on the same floor")
+	display_game("  • Rest in dungeons uses food materials (herbs, fish, berries, mushrooms)")
+	display_game("  • Dungeon entry warning about escape scrolls and collapse risk")
+	display_game("")
+
 	# v0.9.128 changes
-	display_game("[color=#00FF00]v0.9.128[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.128[/color]")
 	display_game("  [color=#FFD700]Roads & Merchants[/color]")
 	display_game("  • Roads now form between NPC posts as players clear terrain!")
 	display_game("  • A* pathfinding builds roads through player-cleared corridors")
@@ -18709,35 +18783,6 @@ func display_changelog():
 	display_game("  • Stone and wood now drop from T1-T2 combat (early-game fix)")
 	display_game("  • Increased stone yield from T1 mining")
 	display_game("  • Added recipes for rare_fish, legendary_fish, monster_gem, and more")
-	display_game("")
-
-	# v0.9.124 changes
-	display_game("[color=#00FFFF]v0.9.124[/color]")
-	display_game("  [color=#FFD700]Egg Market & Rune QOL[/color]")
-	display_game("  • Companion eggs can now be listed on the Open Market!")
-	display_game("  • Market main menu: press [4] to list an egg from your incubator")
-	display_game("  • Browse eggs with the new 'egg' category filter")
-	display_game("  • Egg listings show variant rarity tier, color, and tier-subtier info")
-	display_game("  • Egg valor scales with tier, sub-tier, variant rarity, and bonuses")
-	display_game("  • Buy/cancel egg listings route to incubator (not inventory)")
-	display_game("  • Runes now appear in the consumables section of inventory (was mixed with gear)")
-	display_game("  • Runes stack by name — crafting 5 Minor Rune of Defense shows 'x5'")
-	display_game("")
-
-	# v0.9.123 changes
-	display_game("[color=#00FFFF]v0.9.123[/color]")
-	display_game("  [color=#FFD700]Valor, Salvage & Treasure Chests[/color]")
-	display_game("  • Valor now reflects true crafting cost — structures, runes, scrolls all priced correctly")
-	display_game("  • Crafted items valued by their input materials (recursive chain calculation)")
-	display_game("  • Salvage reworked: returns ~50%% of the materials it would take to craft the item")
-	display_game("  • Salvage now returns varied materials (ore, leather, enchant mats, etc.)")
-	display_game("  • Enchanted items return rune recipe materials when salvaged")
-	display_game("  • Treasure Chests now go to inventory — open from Items for materials + gold")
-	display_game("  • Dungeon rest now costs foraged herbs/berries instead of ores")
-	display_game("  • Fixed: Valor display showing 0 on rest, meditate, and other screens")
-	display_game("  • My Listings page now shows category dividers and trading post locations")
-	display_game("  • Pull All button to cancel all market listings at once")
-	display_game("  • Job bonuses now displayed on the Jobs page")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20582,7 +20627,7 @@ func show_help():
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
 [color=#00FFFF]v0.9.83:[/color] Item locking, 53 dungeons (all monsters), 5x blacksmith upgrades, quest scaling, bug fixes.
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
+""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
 	# Add discovered trading posts section (dynamic per character)
@@ -22521,17 +22566,19 @@ func handle_dungeon_state(message: Dictionary):
 	"""Handle dungeon state update from server"""
 	dungeon_mode = true
 	dungeon_list_mode = false
+	dungeon_resource_prompt = false
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
 	dungeon_monsters_data = message.get("monsters", [])
 	dungeon_npcs_data = message.get("npcs", [])
+	dungeon_triggered_traps = message.get("triggered_traps", [])
 
 	# Always update the map display (right panel) so player position is current
 	update_dungeon_map()
 
 	# Only update GameOutput if player doesn't need to acknowledge something
-	# (e.g., combat victory, treasure found, floor change)
-	if not pending_continue:
+	# (e.g., combat victory, treasure found, floor change, gather result)
+	if not pending_continue and not awaiting_dungeon_gather_result:
 		display_dungeon_floor()
 	update_action_bar()
 
@@ -22696,19 +22743,26 @@ func handle_hotzone_warning(message: Dictionary):
 	update_action_bar()
 
 func handle_dungeon_exit(message: Dictionary):
-	"""Handle exiting a dungeon (voluntary or death)"""
+	"""Handle exiting a dungeon (voluntary, death, collapse, or escape scroll)"""
 	dungeon_mode = false
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	dungeon_triggered_traps = []
+	dungeon_resource_prompt = false
+	awaiting_dungeon_gather_result = false
 
 	var reason = message.get("reason", "exit")
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
+	var collapsed = message.get("collapsed", false)
+	var exit_message = message.get("message", "")
 
 	game_output.clear()
 
-	if reason == "fled":
+	if exit_message != "":
+		display_game(exit_message)
+	elif reason == "fled":
 		display_game("[color=#FF4444]===== RETREAT =====[/color]")
 		display_game("")
 		display_game("You fled from the %s." % dungeon_name)
@@ -22777,6 +22831,47 @@ func handle_egg_hatched(message: Dictionary):
 	pending_continue = true
 	update_action_bar()
 
+func handle_dungeon_resource_prompt(message: Dictionary):
+	"""Handle resource node gather/skip prompt"""
+	dungeon_resource_prompt = true
+	game_output.clear()
+	display_game(message.get("message", "[color=#00FFCC]You found a resource node![/color]"))
+	display_game("")
+	display_game("Press [color=#FFFF00][%s][/color] to Gather or [color=#FFFF00][%s][/color] to Skip" % [get_action_key_name(0), get_action_key_name(1)])
+	update_action_bar()
+
+func handle_dungeon_trap(message: Dictionary):
+	"""Handle trap trigger display"""
+	# Add this trap to our triggered list for map display
+	var trap_x = message.get("trap_x", -1)
+	var trap_y = message.get("trap_y", -1)
+	if trap_x >= 0 and trap_y >= 0:
+		dungeon_triggered_traps.append({
+			"x": trap_x, "y": trap_y,
+			"type": message.get("trap_type", "rust"),
+			"color": message.get("trap_color", "#FF4444")
+		})
+	# Display trap message in game output
+	game_output.clear()
+	display_game("[color=#FFD700]===== TRAP! =====[/color]")
+	display_game("")
+	display_game(message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
+	display_game("")
+	display_game("[color=#808080]Move to continue exploring...[/color]")
+	update_dungeon_map()
+
+func handle_dungeon_gather_result(message: Dictionary):
+	"""Handle gathering result from dungeon resource node"""
+	dungeon_resource_prompt = false
+	awaiting_dungeon_gather_result = true
+	game_output.clear()
+	display_game("[color=#FFD700]===== GATHERING =====[/color]")
+	display_game("")
+	display_game(message.get("message", "[color=#00FFCC]You gathered resources![/color]"))
+	display_game("")
+	display_game("[color=#808080]Move to continue exploring...[/color]")
+	update_action_bar()
+
 func display_dungeon_floor():
 	"""Display the current dungeon floor - map goes in MapDisplay, status in GameOutput"""
 	if not dungeon_mode or dungeon_data.is_empty():
@@ -22806,7 +22901,7 @@ func display_dungeon_floor():
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 		map_display.scroll_to_line(0)
@@ -22815,6 +22910,18 @@ func display_dungeon_floor():
 	game_output.clear()
 	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
 	display_game("Floor %d/%d | Defeated: %d" % [floor_num, total_floors, encounters_cleared])
+
+	# Step pressure counter
+	var steps_taken = dungeon_data.get("steps_taken", 0)
+	var step_limit = dungeon_data.get("step_limit", 999)
+	var step_pct = float(steps_taken) / float(max(1, step_limit))
+	var step_color = "#FFFFFF"
+	if step_pct >= 0.90:
+		step_color = "#FF4444"
+	elif step_pct >= 0.75:
+		step_color = "#FFFF00"
+	display_game("[color=%s]Steps: %d/%d[/color]" % [step_color, steps_taken, step_limit])
+
 	if alive_count > 0:
 		var alert_text = " ([color=#FF0000]%d alert![/color])" % alert_count if alert_count > 0 else ""
 		display_game("Monsters remaining: [color=#FF4444]%d[/color]%s" % [alive_count, alert_text])
@@ -22844,7 +22951,7 @@ func update_dungeon_map():
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\nLetters = Monsters   B = Boss[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 		map_display.scroll_to_line(0)
@@ -22885,6 +22992,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		var key = "%d,%d" % [npc.get("x", -1), npc.get("y", -1)]
 		npc_map[key] = npc
 
+	# Build triggered trap position lookup
+	var trap_map = {}
+	for trap in dungeon_triggered_traps:
+		var key = "%d,%d" % [trap.get("x", -1), trap.get("y", -1)]
+		trap_map[key] = trap
+
 	# Top border
 	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
@@ -22913,6 +23026,10 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						mchar = "B"
 						mcolor = "#FF0000"
 					line += "[color=%s]%s[/color]" % [mcolor, mchar]
+				elif trap_map.has(mkey):
+					# Render triggered trap marker
+					var tcolor = trap_map[mkey].get("color", "#FF4444")
+					line += "[color=%s]×[/color]" % tcolor
 				else:
 					var tile = grid[y][x]
 					var tile_info = _get_dungeon_tile_display(tile)
@@ -22945,6 +23062,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "B", "color": "#FF0000"}
 		7:  # CLEARED
 			return {"char": "·", "color": "#303030"}
+		8:  # RESOURCE
+			return {"char": "&", "color": "#00FFCC"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
@@ -23219,6 +23338,7 @@ func cancel_trading_post_action():
 
 func enter_market():
 	"""Enter market mode from trading post $ tile interaction."""
+	quest_view_mode = false
 	market_mode = true
 	pending_market_action = ""
 	market_listings = []
