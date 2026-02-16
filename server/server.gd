@@ -1301,6 +1301,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		_withdraw_house_storage_items(account_id, character, withdraw_indices, peer_id)
 		persistence.save_character(account_id, character)
 
+	# Consolidate fragmented consumable stacks (one-time cleanup on login)
+	var pre_size = character.inventory.size()
+	character.consolidate_consumable_stacks()
+	if character.inventory.size() < pre_size:
+		log_message("Stack consolidation: %s inventory %d → %d slots" % [char_name, pre_size, character.inventory.size()])
+		persistence.save_character(account_id, character)
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -13230,9 +13237,12 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "You don't have the required materials!"})
 		return
 
-	# Consume materials
+	# Consume materials (@ prefixed keys are monster part groups)
 	for mat_id in recipe.materials:
-		character.remove_crafting_material(mat_id, recipe.materials[mat_id])
+		if mat_id.begins_with("@"):
+			character.remove_group_materials(mat_id, recipe.materials[mat_id])
+		else:
+			character.remove_crafting_material(mat_id, recipe.materials[mat_id])
 
 	# Get trading post bonus (0 at player stations) + specialty job bonus
 	var post_bonus = 0
@@ -13314,7 +13324,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
-				character.inventory.append(crafted_item)
+				character.add_item(crafted_item)
 				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"enhancement":
 				# Create enhancement scroll as inventory item
@@ -13642,27 +13652,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 					target_item["proc_effects"][proc_type] = proc_data
 			"rune":
 				# Runes are tradeable inventory items — create and add to inventory
-				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
-				var rune_item = {
-					"id": "rune_%d" % randi(),
-					"type": "rune",
-					"name": recipe.name,
-					"target_slot": recipe.get("target_slot", ""),
-					"crafted_by": character.name,
-					"rarity": _quality_to_rarity(quality),
-					"value": recipe.difficulty * 10,
-				}
-				if recipe.has("rune_proc"):
-					rune_item["rune_proc"] = recipe.get("rune_proc", "")
-					rune_item["rune_proc_value"] = int(recipe.get("rune_proc_value", 10) * quality_mult)
-					rune_item["rune_proc_chance"] = recipe.get("rune_proc_chance", 1.0)
-				else:
-					rune_item["rune_stat"] = recipe.get("rune_stat", "")
-					rune_item["rune_tier"] = recipe.get("rune_tier", "minor")
-					rune_item["rune_cap"] = int(recipe.get("rune_cap", 0) * quality_mult)
-				character.inventory.append(rune_item)
-				crafted_item = rune_item
-				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				character.add_item(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", recipe.name)]
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -14093,6 +14085,41 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 
 	return item
 
+func _create_crafted_rune(recipe: Dictionary, quality: int, crafter_name: String) -> Dictionary:
+	"""Create a crafted rune item with proper stacking fields"""
+	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
+	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+	var rune_name = "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name
+	var rune_item = {
+		"id": "rune_%d" % randi(),
+		"type": "rune",
+		"name": rune_name,
+		"target_slot": recipe.get("target_slot", ""),
+		"crafted_by": crafter_name,
+		"rarity": _quality_to_rarity(quality),
+		"value": recipe.difficulty * 10,
+		"is_consumable": true,
+		"quantity": 1,
+	}
+	if recipe.has("rune_proc"):
+		rune_item["rune_proc"] = recipe.get("rune_proc", "")
+		rune_item["rune_proc_value"] = int(recipe.get("rune_proc_value", 10) * quality_mult)
+		rune_item["rune_proc_chance"] = recipe.get("rune_proc_chance", 1.0)
+	else:
+		rune_item["rune_stat"] = recipe.get("rune_stat", "")
+		rune_item["rune_tier"] = recipe.get("rune_tier", "minor")
+		rune_item["rune_cap"] = int(recipe.get("rune_cap", 0) * quality_mult)
+	return rune_item
+
+func _consume_one_from_stack(character, index: int) -> void:
+	"""Remove one item from a consumable stack, or remove the slot if quantity reaches 0"""
+	var item = character.inventory[index]
+	var qty = item.get("quantity", 1)
+	if qty <= 1:
+		character.inventory.remove_at(index)
+	else:
+		item["quantity"] = qty - 1
+
 func handle_use_rune(peer_id: int, message: Dictionary):
 	"""Apply a Rune from inventory to an equipped gear slot"""
 	if not characters.has(peer_id):
@@ -14144,7 +14171,7 @@ func handle_use_rune(peer_id: int, message: Dictionary):
 			"execute":
 				proc_data = {"bonus_damage": rune.get("rune_proc_value", 50), "proc_chance": rune.get("rune_proc_chance", 0.25), "threshold": 0.3}
 		target_item["proc_effects"][proc_type] = proc_data
-		character.inventory.remove_at(rune_index)
+		_consume_one_from_stack(character, rune_index)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! Added %s effect.[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), proc_type.replace("_", " ")]})
 	else:
 		# Stat rune — set affix value (upgrade only, refuse if no improvement)
@@ -14160,7 +14187,7 @@ func handle_use_rune(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No improvement possible — %s already has +%d %s (Rune cap: +%d).[/color]" % [target_item.get("name", "item"), current_value, stat_key.replace("_", " "), rune_cap]})
 			return
 		target_item["affixes"][stat_key] = rune_cap
-		character.inventory.remove_at(rune_index)
+		_consume_one_from_stack(character, rune_index)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! %s: +%d → +%d[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), stat_key.replace("_", " ").capitalize(), current_value, rune_cap]})
 
 	send_character_update(peer_id)
@@ -14317,8 +14344,12 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
-				character.inventory.append(crafted_item)
+				character.add_item(crafted_item)
 				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+			"rune":
+				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				character.add_item(crafted_item)
+				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", recipe.name)]
 			"enhancement":
 				var effect = recipe.get("effect", {})
 				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
@@ -14335,7 +14366,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 					"level": 1, "is_consumable": true, "quantity": 1,
 					"crafted_by": character.name
 				}
-				character.inventory.append(scroll)
+				character.add_item(scroll)
 				crafted_item = scroll
 				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
 			"enchantment":

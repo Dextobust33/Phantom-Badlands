@@ -2053,8 +2053,8 @@ func get_fishing_reaction_window(fishing_skill: int) -> float:
 # Mining catches by tier (1-9, matching ore tiers by distance)
 const MINING_CATCHES = {
 	1: [  # T1: 0-50 distance
-		{"weight": 40, "item": "copper_ore", "name": "Copper Ore", "type": "ore", "value": 8},
-		{"weight": 25, "item": "stone", "name": "Stone", "type": "mineral", "value": 2},
+		{"weight": 35, "item": "copper_ore", "name": "Copper Ore", "type": "ore", "value": 8},
+		{"weight": 30, "item": "stone", "name": "Stone", "type": "mineral", "value": 2},
 		{"weight": 20, "item": "coal", "name": "Coal", "type": "mineral", "value": 5},
 		{"weight": 10, "item": "healing_herb", "name": "Healing Herb", "type": "herb", "value": 10},
 		{"weight": 5, "item": "iron_ore", "name": "Iron Ore", "type": "ore", "value": 15},
@@ -2478,17 +2478,21 @@ static func get_foraging_reactions_required(forage_tier: int) -> int:
 # Material drops by tier (lower tiers drop more common materials)
 const CRAFTING_MATERIAL_DROPS = {
 	1: [  # T1 monsters
-		{"weight": 40, "material": "copper_ore", "quantity": 1},
-		{"weight": 30, "material": "ragged_leather", "quantity": 1},
-		{"weight": 20, "material": "healing_herb", "quantity": 1},
-		{"weight": 10, "material": "magic_dust", "quantity": 1}
+		{"weight": 30, "material": "copper_ore", "quantity": 1},
+		{"weight": 20, "material": "ragged_leather", "quantity": 1},
+		{"weight": 15, "material": "healing_herb", "quantity": 1},
+		{"weight": 10, "material": "magic_dust", "quantity": 1},
+		{"weight": 15, "material": "stone", "quantity": 2},
+		{"weight": 10, "material": "common_wood", "quantity": 2}
 	],
 	2: [  # T2 monsters
-		{"weight": 35, "material": "copper_ore", "quantity": 2},
-		{"weight": 25, "material": "iron_ore", "quantity": 1},
-		{"weight": 20, "material": "leather_scraps", "quantity": 1},
-		{"weight": 10, "material": "mana_blossom", "quantity": 1},
-		{"weight": 10, "material": "vigor_root", "quantity": 1}
+		{"weight": 30, "material": "copper_ore", "quantity": 2},
+		{"weight": 20, "material": "iron_ore", "quantity": 1},
+		{"weight": 14, "material": "leather_scraps", "quantity": 1},
+		{"weight": 8, "material": "mana_blossom", "quantity": 1},
+		{"weight": 8, "material": "vigor_root", "quantity": 1},
+		{"weight": 10, "material": "stone", "quantity": 3},
+		{"weight": 10, "material": "common_wood", "quantity": 2}
 	],
 	3: [  # T3 monsters
 		{"weight": 30, "material": "iron_ore", "quantity": 2},
@@ -2874,6 +2878,61 @@ func roll_monster_part_drop(monster_name: String, monster_tier: int, soldier_lev
 				qty += 1
 			return {"id": p["id"], "name": p["name"], "qty": qty, "type": "monster_part", "tier": p["tier"]}
 	return {}
+
+# ===== MONSTER PART GROUP RESOLUTION =====
+# Static cache mapping part_id → monster tier (built lazily)
+static var _part_tier_cache: Dictionary = {}
+static var _part_tier_cache_built: bool = false
+
+static func _ensure_part_tier_cache():
+	"""Build the part_id → tier cache from monster data (once)."""
+	if _part_tier_cache_built:
+		return
+	for monster_name in MONSTER_BODY_TYPES:
+		var body = MONSTER_BODY_TYPES[monster_name]
+		var parts = MONSTER_PART_TEMPLATES.get(body, ["Fragment", "Shard", "Core"])
+		var tier = 1
+		if COMPANION_DATA.has(monster_name):
+			tier = COMPANION_DATA[monster_name].get("tier", 1)
+		var base_name = monster_name.to_lower().replace(" ", "_")
+		for p in parts:
+			var part_id = base_name + "_" + p.to_lower().replace(" ", "_")
+			_part_tier_cache[part_id] = tier
+	_part_tier_cache_built = true
+
+static func get_part_tier(part_id: String) -> int:
+	"""Get the monster tier for a given part ID."""
+	_ensure_part_tier_cache()
+	return _part_tier_cache.get(part_id, 0)
+
+static func get_matching_parts_for_group(group_key: String, player_materials: Dictionary) -> Dictionary:
+	"""Given '@attack:minor', return {part_id: qty_owned} for all matching parts player has."""
+	_ensure_part_tier_cache()
+	var parts = group_key.replace("@", "").split(":")
+	var stat_group = parts[0]
+	var tier_group = parts[1] if parts.size() > 1 else "minor"
+	var CraftDB = preload("res://shared/crafting_database.gd")
+	var suffixes = CraftDB.PART_SUFFIX_GROUPS.get(stat_group, [])
+	var tier_range = CraftDB.RUNE_TIER_RANGES.get(tier_group, [1, 9])
+	var matches = {}
+	for mat_id in player_materials:
+		if player_materials[mat_id] <= 0:
+			continue
+		for suffix in suffixes:
+			if mat_id.ends_with(suffix):
+				var tier = _part_tier_cache.get(mat_id, 0)
+				if tier >= tier_range[0] and tier <= tier_range[1]:
+					matches[mat_id] = player_materials[mat_id]
+				break
+	return matches
+
+static func get_total_for_group(group_key: String, player_materials: Dictionary) -> int:
+	"""Total quantity of all matching parts for a group key."""
+	var matches = get_matching_parts_for_group(group_key, player_materials)
+	var total = 0
+	for qty in matches.values():
+		total += qty
+	return total
 
 func _ready():
 	print("Drop Tables initialized")

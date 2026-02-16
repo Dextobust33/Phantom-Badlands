@@ -101,6 +101,48 @@ const ENCHANTMENT_STAT_CAPS = {
 	"wits": 20,
 }
 
+# ===== MONSTER PART GROUP SYSTEM =====
+# Maps rune stats to the part suffixes that provide them
+const PART_SUFFIX_GROUPS = {
+	"attack": ["_fang", "_tooth", "_claw", "_horn", "_mandible"],
+	"defense": ["_hide", "_scale", "_plate", "_chitin"],
+	"hp": ["_heart"],
+	"speed": ["_fin", "_gear"],
+	"mana": ["_soul_shard"],
+	"stamina": ["_core"],
+	"energy": ["_charm", "_spark", "_ember"],
+	"str": ["_ichor", "_venom_sac"],
+	"con": ["_bone"],
+	"dex": ["_tentacle"],
+	"int": ["_dust", "_eye"],
+	"wis": ["_essence", "_pearl"],
+	"wits": ["_ear"],
+}
+
+# Maps rune tier names to the monster tier range [min, max] that qualifies
+const RUNE_TIER_RANGES = {
+	"minor": [1, 2],
+	"greater": [3, 6],
+	"supreme": [7, 9],
+}
+
+# Human-readable display names for each part group
+const PART_GROUP_DISPLAY = {
+	"attack": "Fang/Tooth/Claw",
+	"defense": "Hide/Scale/Plate",
+	"hp": "Heart",
+	"speed": "Fin/Gear",
+	"mana": "Soul Shard",
+	"stamina": "Core",
+	"energy": "Charm/Spark/Ember",
+	"str": "Ichor/Venom",
+	"con": "Bone",
+	"dex": "Tentacle",
+	"int": "Dust/Eye",
+	"wis": "Essence/Pearl",
+	"wits": "Ear",
+}
+
 # ===== CRAFTING CHALLENGE QUESTIONS =====
 # 10 question sets per skill, each with 3 options (index 0 is always correct)
 const CRAFT_CHALLENGE_QUESTIONS = {
@@ -865,7 +907,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 20,
 		"difficulty": 25,
-		"materials": {"vigor_root": 4, "medium_fish": 2},
+		"materials": {"vigor_root": 3, "medium_fish": 1, "rare_fish": 1},
 		"output_type": "consumable",
 		"output_slot": "",
 		"effect": {"type": "restore_stamina", "amount": 80},
@@ -900,7 +942,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 40,
 		"difficulty": 45,
-		"materials": {"shadowleaf": 2, "golden_fish": 2, "arcane_crystal": 1},
+		"materials": {"shadowleaf": 2, "golden_fish": 1, "legendary_fish": 1, "arcane_crystal": 1},
 		"output_type": "consumable",
 		"output_slot": "",
 		"effect": {"type": "buff", "stat": "speed", "amount": 20, "duration": 8},
@@ -1062,7 +1104,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 3,
 		"difficulty": 8,
-		"materials": {"orc_tooth": 3, "magic_dust": 3},
+		"materials": {"@attack:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "weapon",
 		"rune_stat": "attack_bonus",
@@ -1075,7 +1117,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 3,
 		"difficulty": 8,
-		"materials": {"skeleton_bone": 3, "magic_dust": 3},
+		"materials": {"@defense:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "defense_bonus",
@@ -1088,7 +1130,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 3,
 		"difficulty": 8,
-		"materials": {"troll_charm": 3, "magic_dust": 3},
+		"materials": {"@hp:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "helm,armor,shield",
 		"rune_stat": "hp_bonus",
@@ -1101,7 +1143,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"wolf_fang": 3, "magic_dust": 3},
+		"materials": {"@speed:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "boots",
 		"rune_stat": "speed_bonus",
@@ -1114,7 +1156,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"wight_dust": 3, "magic_dust": 3},
+		"materials": {"@mana:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "amulet,ring",
 		"rune_stat": "mana_bonus",
@@ -1127,7 +1169,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"gnoll_tooth": 3, "magic_dust": 3},
+		"materials": {"@stamina:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "stamina_bonus",
@@ -1140,7 +1182,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"kobold_charm": 3, "magic_dust": 3},
+		"materials": {"@energy:minor": 3, "magic_dust": 3},
 		"output_type": "rune",
 		"target_slot": "boots,ring",
 		"rune_stat": "energy_bonus",
@@ -1153,7 +1195,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"ogre_ear": 3, "magic_dust": 2},
+		"materials": {"@str:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,armor,ring,amulet",
 		"rune_stat": "str_bonus",
@@ -1166,7 +1208,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"troll_tooth": 3, "magic_dust": 2},
+		"materials": {"@con:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield,helm,amulet",
 		"rune_stat": "con_bonus",
@@ -1179,7 +1221,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"giant_spider_mandible": 3, "magic_dust": 2},
+		"materials": {"@dex:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,boots,ring",
 		"rune_stat": "dex_bonus",
@@ -1192,7 +1234,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"siren_eye": 3, "magic_dust": 2},
+		"materials": {"@int:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,helm,amulet,ring",
 		"rune_stat": "int_bonus",
@@ -1205,7 +1247,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"wraith_dust": 3, "magic_dust": 2},
+		"materials": {"@wis:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "helm,amulet,shield,ring",
 		"rune_stat": "wis_bonus",
@@ -1218,7 +1260,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 5,
 		"difficulty": 10,
-		"materials": {"goblin_ear": 3, "magic_dust": 2},
+		"materials": {"@wits:minor": 3, "magic_dust": 1, "enchanted_pollen": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,ring,amulet,boots",
 		"rune_stat": "wits_bonus",
@@ -1232,7 +1274,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 30,
 		"difficulty": 40,
-		"materials": {"demon_horn": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@attack:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "weapon",
 		"rune_stat": "attack_bonus",
@@ -1245,7 +1287,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 30,
 		"difficulty": 40,
-		"materials": {"iron_golem_plate": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@defense:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "defense_bonus",
@@ -1258,7 +1300,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 30,
 		"difficulty": 40,
-		"materials": {"hydra_scale": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@hp:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "helm,armor,shield",
 		"rune_stat": "hp_bonus",
@@ -1271,7 +1313,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 33,
 		"difficulty": 43,
-		"materials": {"gryphon_fang": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@speed:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "boots",
 		"rune_stat": "speed_bonus",
@@ -1284,7 +1326,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 33,
 		"difficulty": 43,
-		"materials": {"sphinx_fang": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@mana:greater": 4, "arcane_crystal": 2, "giant_pearl": 1},
 		"output_type": "rune",
 		"target_slot": "amulet,ring",
 		"rune_stat": "mana_bonus",
@@ -1297,7 +1339,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 33,
 		"difficulty": 43,
-		"materials": {"titan_tooth": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@stamina:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "stamina_bonus",
@@ -1310,7 +1352,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 33,
 		"difficulty": 43,
-		"materials": {"vampire_bone": 4, "arcane_crystal": 2, "soul_shard": 1},
+		"materials": {"@energy:greater": 4, "arcane_crystal": 2, "soul_shard": 1},
 		"output_type": "rune",
 		"target_slot": "boots,ring",
 		"rune_stat": "energy_bonus",
@@ -1323,7 +1365,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"giant_ear": 4, "arcane_crystal": 2},
+		"materials": {"@str:greater": 4, "arcane_crystal": 2, "monster_gem": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,armor,ring,amulet",
 		"rune_stat": "str_bonus",
@@ -1336,7 +1378,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"cerberus_heart": 4, "arcane_crystal": 2},
+		"materials": {"@con:greater": 4, "arcane_crystal": 2},
 		"output_type": "rune",
 		"target_slot": "armor,shield,helm,amulet",
 		"rune_stat": "con_bonus",
@@ -1349,7 +1391,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"succubus_horn": 4, "arcane_crystal": 2},
+		"materials": {"@dex:greater": 4, "arcane_crystal": 2},
 		"output_type": "rune",
 		"target_slot": "weapon,boots,ring",
 		"rune_stat": "dex_bonus",
@@ -1362,7 +1404,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"lich_dust": 4, "arcane_crystal": 2},
+		"materials": {"@int:greater": 4, "arcane_crystal": 2},
 		"output_type": "rune",
 		"target_slot": "weapon,helm,amulet,ring",
 		"rune_stat": "int_bonus",
@@ -1375,7 +1417,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"phoenix_essence": 4, "arcane_crystal": 2},
+		"materials": {"@wis:greater": 4, "arcane_crystal": 2},
 		"output_type": "rune",
 		"target_slot": "helm,amulet,shield,ring",
 		"rune_stat": "wis_bonus",
@@ -1388,7 +1430,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 35,
 		"difficulty": 45,
-		"materials": {"nazgul_dust": 4, "arcane_crystal": 2},
+		"materials": {"@wits:greater": 4, "arcane_crystal": 2},
 		"output_type": "rune",
 		"target_slot": "weapon,ring,amulet,boots",
 		"rune_stat": "wits_bonus",
@@ -2046,7 +2088,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 60,
 		"difficulty": 70,
-		"materials": {"avatar_of_chaos_ember": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@attack:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "weapon",
 		"rune_stat": "attack_bonus",
@@ -2060,7 +2102,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 60,
 		"difficulty": 70,
-		"materials": {"cosmic_horror_eye": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@defense:supreme": 5, "void_essence": 2, "celestial_hide": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "defense_bonus",
@@ -2074,7 +2116,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 60,
 		"difficulty": 70,
-		"materials": {"primordial_dragon_heart": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@hp:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "helm,armor,shield",
 		"rune_stat": "hp_bonus",
@@ -2088,7 +2130,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 63,
 		"difficulty": 73,
-		"materials": {"world_serpent_scale": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@speed:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "boots",
 		"rune_stat": "speed_bonus",
@@ -2102,7 +2144,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 63,
 		"difficulty": 73,
-		"materials": {"elder_lich_soul_shard": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@mana:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "amulet,ring",
 		"rune_stat": "mana_bonus",
@@ -2116,7 +2158,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 63,
 		"difficulty": 73,
-		"materials": {"god_slayer_spark": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@stamina:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield",
 		"rune_stat": "stamina_bonus",
@@ -2130,7 +2172,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 63,
 		"difficulty": 73,
-		"materials": {"void_walker_ichor": 5, "void_essence": 2, "primordial_spark": 1},
+		"materials": {"@energy:supreme": 5, "void_essence": 2, "primordial_spark": 1},
 		"output_type": "rune",
 		"target_slot": "boots,ring",
 		"rune_stat": "energy_bonus",
@@ -2144,7 +2186,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"the_nameless_one_ichor": 5, "void_essence": 2},
+		"materials": {"@str:supreme": 5, "void_essence": 2, "celestial_shard": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,armor,ring,amulet",
 		"rune_stat": "str_bonus",
@@ -2158,7 +2200,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"cosmic_horror_tentacle": 5, "void_essence": 2},
+		"materials": {"@con:supreme": 5, "void_essence": 2, "celestial_shard": 1},
 		"output_type": "rune",
 		"target_slot": "armor,shield,helm,amulet",
 		"rune_stat": "con_bonus",
@@ -2172,7 +2214,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"time_weaver_essence": 5, "void_essence": 2},
+		"materials": {"@dex:supreme": 5, "void_essence": 2, "celestial_shard": 1},
 		"output_type": "rune",
 		"target_slot": "weapon,boots,ring",
 		"rune_stat": "dex_bonus",
@@ -2186,7 +2228,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"elder_lich_dust": 5, "void_essence": 2},
+		"materials": {"@int:supreme": 5, "void_essence": 2},
 		"output_type": "rune",
 		"target_slot": "weapon,helm,amulet,ring",
 		"rune_stat": "int_bonus",
@@ -2200,7 +2242,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"entropy_spark": 5, "void_essence": 2},
+		"materials": {"@wis:supreme": 5, "void_essence": 2},
 		"output_type": "rune",
 		"target_slot": "helm,amulet,shield,ring",
 		"rune_stat": "wis_bonus",
@@ -2214,7 +2256,7 @@ const RECIPES = {
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 65,
 		"difficulty": 75,
-		"materials": {"time_weaver_core": 5, "void_essence": 2},
+		"materials": {"@wits:supreme": 5, "void_essence": 2},
 		"output_type": "rune",
 		"target_slot": "weapon,ring,amulet,boots",
 		"rune_stat": "wits_bonus",
@@ -2376,7 +2418,7 @@ const RECIPES = {
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 15,
 		"difficulty": 20,
-		"materials": {"ink": 3, "arcane_crystal": 1},
+		"materials": {"ink": 2, "arcane_moss": 1, "arcane_crystal": 1},
 		"output_type": "material",
 		"output_item": "arcane_ink",
 		"output_quantity": 2,
@@ -3309,6 +3351,13 @@ static func get_material(material_id: String) -> Dictionary:
 	return MATERIALS.get(material_id, {})
 
 static func get_material_name(material_id: String) -> String:
+	if material_id.begins_with("@"):
+		var parts = material_id.replace("@", "").split(":")
+		var stat_group = parts[0]
+		var tier_group = parts[1] if parts.size() > 1 else "minor"
+		var display = PART_GROUP_DISPLAY.get(stat_group, stat_group)
+		var tier_range = RUNE_TIER_RANGES.get(tier_group, [1, 9])
+		return "%s (T%d-T%d)" % [display, tier_range[0], tier_range[1]]
 	var mat = MATERIALS.get(material_id, {})
 	return mat.get("name", material_id.replace("_", " ").capitalize())
 
@@ -3404,8 +3453,20 @@ static func format_materials_list(materials: Dictionary, owned_materials: Dictio
 	var lines = []
 	for mat_id in materials:
 		var required = materials[mat_id]
-		var owned = owned_materials.get(mat_id, 0)
-		var mat_info = MATERIALS.get(mat_id, {"name": mat_id})
-		var color = "#00FF00" if owned >= required else "#FF4444"
-		lines.append("[color=%s]%s: %d/%d[/color]" % [color, mat_info.name, owned, required])
+		if mat_id.begins_with("@"):
+			var owned = DropTables.get_total_for_group(mat_id, owned_materials)
+			var parts = mat_id.replace("@", "").split(":")
+			var stat_group = parts[0]
+			var tier_group = parts[1] if parts.size() > 1 else "minor"
+			var display = PART_GROUP_DISPLAY.get(stat_group, stat_group)
+			var tier_range = RUNE_TIER_RANGES.get(tier_group, [1, 9])
+			var tier_label = "T%d-T%d" % [tier_range[0], tier_range[1]]
+			var mat_name = "%s (%s)" % [display, tier_label]
+			var color = "#00FF00" if owned >= required else "#FF4444"
+			lines.append("[color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+		else:
+			var owned = owned_materials.get(mat_id, 0)
+			var mat_info = MATERIALS.get(mat_id, {"name": mat_id})
+			var color = "#00FF00" if owned >= required else "#FF4444"
+			lines.append("[color=%s]%s: %d/%d[/color]" % [color, mat_info.name, owned, required])
 	return "\n".join(lines)

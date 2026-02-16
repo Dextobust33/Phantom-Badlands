@@ -1781,14 +1781,15 @@ func add_item(item: Dictionary) -> bool:
 	return true
 
 func _add_stackable_consumable(item: Dictionary) -> bool:
-	"""Add a consumable item, stacking with existing items of same type+tier"""
+	"""Add a consumable item, stacking with existing items of same name+type+tier+rarity"""
 	var item_type = item.get("type", "")
 	var item_tier = item.get("tier", 1)
+	var item_name = item.get("name", "")
 	var add_quantity = item.get("quantity", 1)
 
-	# Find existing stack of same type+tier
+	# Find existing stack of same name+type+tier+rarity
 	for inv_item in inventory:
-		if inv_item.get("is_consumable", false) and inv_item.get("type", "") == item_type and inv_item.get("tier", 1) == item_tier and inv_item.get("rarity", "common") == item.get("rarity", "common"):
+		if inv_item.get("is_consumable", false) and inv_item.get("name", "") == item_name and inv_item.get("type", "") == item_type and inv_item.get("tier", 1) == item_tier and inv_item.get("rarity", "common") == item.get("rarity", "common"):
 			# Found matching stack - add to it
 			var current_qty = inv_item.get("quantity", 1)
 			var new_qty = mini(MAX_STACK_SIZE, current_qty + add_quantity)
@@ -1801,6 +1802,30 @@ func _add_stackable_consumable(item: Dictionary) -> bool:
 	item["quantity"] = mini(MAX_STACK_SIZE, add_quantity)
 	inventory.append(item)
 	return true
+
+func consolidate_consumable_stacks() -> void:
+	"""Merge fragmented consumable/rune stacks in inventory by name+type+rarity"""
+	var seen: Dictionary = {}  # "name|type|rarity" → inventory index
+	var to_remove: Array = []
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		if not item.get("is_consumable", false):
+			continue
+		var key = "%s|%s|%s" % [item.get("name", ""), item.get("type", ""), item.get("rarity", "common")]
+		if seen.has(key):
+			var target_idx = seen[key]
+			var target_item = inventory[target_idx]
+			target_item["quantity"] = mini(MAX_STACK_SIZE, target_item.get("quantity", 1) + item.get("quantity", 1))
+			to_remove.append(i)
+		else:
+			# Ensure quantity field exists
+			if not item.has("quantity"):
+				item["quantity"] = 1
+			seen[key] = i
+	# Remove merged items in reverse order to preserve indices
+	to_remove.reverse()
+	for idx in to_remove:
+		inventory.remove_at(idx)
 
 func use_consumable_stack(index: int) -> Dictionary:
 	"""Use one consumable from a stack. Returns the item data or empty if invalid/empty."""
@@ -3033,13 +3058,43 @@ func remove_crafting_material(material_id: String, quantity: int = 1) -> bool:
 	return true
 
 func has_crafting_materials(materials: Dictionary) -> bool:
-	"""Check if player has required materials. Format: {material_id: quantity}"""
+	"""Check if player has required materials. Format: {material_id: quantity}
+	Keys prefixed with @ are group references (e.g., '@attack:minor')."""
 	for mat_id in materials:
 		var needed = materials[mat_id]
-		var owned = crafting_materials.get(mat_id, 0)
-		if owned < needed:
-			return false
+		if mat_id.begins_with("@"):
+			var total = DropTables.get_total_for_group(mat_id, crafting_materials)
+			if total < needed:
+				return false
+		else:
+			var owned = crafting_materials.get(mat_id, 0)
+			if owned < needed:
+				return false
 	return true
+
+func remove_group_materials(group_key: String, quantity: int) -> Dictionary:
+	"""Remove quantity of materials from a group, consuming from largest stacks first.
+	Returns dictionary of {part_id: qty_consumed} for refund tracking."""
+	var matches = DropTables.get_matching_parts_for_group(group_key, crafting_materials)
+	var total = 0
+	for qty in matches.values():
+		total += qty
+	if total < quantity:
+		return {}
+	# Sort by quantity descending (consume from largest stacks first)
+	var sorted_ids = matches.keys()
+	sorted_ids.sort_custom(func(a, b): return matches[a] > matches[b])
+	var consumed = {}
+	var remaining = quantity
+	for mat_id in sorted_ids:
+		if remaining <= 0:
+			break
+		var available = crafting_materials.get(mat_id, 0)
+		var to_take = mini(available, remaining)
+		remove_crafting_material(mat_id, to_take)
+		consumed[mat_id] = to_take
+		remaining -= to_take
+	return consumed
 
 func get_crafting_skill(skill_name: String) -> int:
 	"""Get a crafting skill level."""

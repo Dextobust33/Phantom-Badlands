@@ -1904,6 +1904,23 @@ func _process(delta):
 			else:
 				set_meta("affixkey_%d_pressed" % i, false)
 
+	# Rune apply — number keys select target gear slot
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "rune_apply":
+		var rune_slot_list = get_meta("rune_slot_list", [])
+		for i in range(mini(9, rune_slot_list.size())):
+			if is_item_select_key_pressed(i):
+				if not get_meta("runekey_%d_pressed" % i, false):
+					set_meta("runekey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					var target_slot = rune_slot_list[i]
+					send_to_server({"type": "use_rune", "rune_index": rune_apply_index, "target_slot": target_slot})
+					rune_apply_mode = false
+					rune_apply_index = -1
+					pending_inventory_action = "use_item"
+					update_action_bar()
+			else:
+				set_meta("runekey_%d_pressed" % i, false)
+
 	# Merchant item selection with keybinds when action is pending
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "sell":
 		for i in range(9):
@@ -6172,16 +6189,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_inventory_action == "rune_apply":
-			# Rune apply mode — show slot buttons for target gear
-			var slot_list = get_meta("rune_slot_list", [])
-			var actions: Array[Dictionary] = [
+			# Rune apply mode — number keys select target gear slot
+			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "rune_apply_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
-			for si in range(slot_list.size()):
-				actions.append({"label": slot_list[si].capitalize(), "action_type": "local", "action_data": "rune_slot_%d" % si, "enabled": true})
-			while actions.size() < 10:
-				actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
-			current_actions = actions
 		elif pending_inventory_action != "":
 			# Waiting for item selection - show cancel and page navigation
 			var inv = character_data.get("inventory", [])
@@ -8489,19 +8509,6 @@ func execute_local_action(action: String):
 		update_action_bar()
 		return
 
-	# Handle dynamic rune slot selection before match statement
-	if action.begins_with("rune_slot_") and rune_apply_mode:
-		var slot_idx = int(action.replace("rune_slot_", ""))
-		var slot_list = get_meta("rune_slot_list", [])
-		if slot_idx >= 0 and slot_idx < slot_list.size():
-			var target_slot = slot_list[slot_idx]
-			send_to_server({"type": "use_rune", "rune_index": rune_apply_index, "target_slot": target_slot})
-			rune_apply_mode = false
-			rune_apply_index = -1
-			pending_inventory_action = ""
-			inventory_mode = false
-			update_action_bar()
-		return
 
 	match action:
 		"status":
@@ -12074,7 +12081,7 @@ func display_inventory():
 				if equipment_items.size() > 0 or di > start_idx:
 					display_game("  [color=#808080]--- Tools ---[/color]")
 				showed_tools_sep = true
-			elif not showed_consumables_sep and item.get("is_consumable", false):
+			elif not showed_consumables_sep and (item.get("is_consumable", false) or item.get("type", "") == "rune"):
 				if equipment_items.size() > 0 or tool_items.size() > 0:
 					display_game("  [color=#808080]--- Consumables ---[/color]")
 				showed_consumables_sep = true
@@ -13182,7 +13189,7 @@ func _display_rune_apply_slots(rune_item: Dictionary):
 						current_info = " [color=#FF4444](already +%d, no improvement)[/color]" % current_val
 					else:
 						current_info = " [color=#00FF00](+%d → +%d)[/color]" % [current_val, rune_cap]
-			display_game("  %d. [color=%s]%s[/color] [color=#808080](%s)[/color]%s" % [slot_num, rarity_color, item.get("name", "Unknown"), s, current_info])
+			display_game("  [%d] [color=%s]%s[/color] [color=#808080](%s)[/color]%s" % [slot_num, rarity_color, item.get("name", "Unknown"), s, current_info])
 			slot_list.append(s)
 			slot_num += 1
 		else:
@@ -22047,7 +22054,7 @@ func display_craft_recipe_list():
 		for mat_id in materials:
 			var mat_name = CraftingDatabase.get_material_name(mat_id)
 			var needed = int(materials[mat_id])
-			var owned = int(crafting_materials.get(mat_id, 0))
+			var owned = _count_group_materials(mat_id) if mat_id.begins_with("@") else int(crafting_materials.get(mat_id, 0))
 			var mat_color = "#00BFFF" if owned >= needed else "#FF4444"
 			mat_parts.append("[color=%s]%s %d/%d[/color]" % [mat_color, mat_name, owned, needed])
 		var mat_line = "      " + ", ".join(mat_parts) if mat_parts.size() > 0 else ""
@@ -22134,10 +22141,23 @@ func display_craft_recipe_details():
 	# Display materials with owned count
 	for mat_id in materials:
 		var required = materials[mat_id]
-		var owned = crafting_materials.get(mat_id, 0)
-		var mat_name = mat_id.capitalize().replace("_", " ")
-		var color = "#00FF00" if owned >= required else "#FF4444"
-		display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+		if mat_id.begins_with("@"):
+			# Group material — show group name + total owned across matching parts
+			var owned = _count_group_materials(mat_id)
+			var parts = mat_id.replace("@", "").split(":")
+			var stat_group = parts[0]
+			var tier_group = parts[1] if parts.size() > 1 else "minor"
+			var display = CraftingDatabase.PART_GROUP_DISPLAY.get(stat_group, stat_group)
+			var tier_range = CraftingDatabase.RUNE_TIER_RANGES.get(tier_group, [1, 9])
+			var tier_label = "T%d-T%d" % [tier_range[0], tier_range[1]]
+			var mat_name = "%s (%s)" % [display, tier_label]
+			var color = "#00FF00" if owned >= required else "#FF4444"
+			display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+		else:
+			var owned = crafting_materials.get(mat_id, 0)
+			var mat_name = mat_id.capitalize().replace("_", " ")
+			var color = "#00FF00" if owned >= required else "#FF4444"
+			display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
 
 	display_game("")
 	display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
@@ -22149,6 +22169,10 @@ func display_craft_recipe_details():
 	else:
 		display_game("[color=#FF4444]Missing required materials![/color]")
 		display_game("[%s] Cancel" % get_action_key_name(0))
+
+func _count_group_materials(group_key: String) -> int:
+	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
+	return DropTables.get_total_for_group(group_key, crafting_materials)
 
 func confirm_craft():
 	"""Send craft request to server"""
