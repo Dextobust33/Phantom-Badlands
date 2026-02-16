@@ -11663,6 +11663,7 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			"tool_saved": false,
 			"momentum": session.get("momentum", 0),
 			"discoveries": session.get("discoveries", []),
+			"correct_index": session.get("correct_id", -1),
 		}
 		# Per-type bonus flags
 		if depth_bonus:
@@ -11702,6 +11703,7 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				"message": save_msg,
 				"tool_saved": true,
 				"saves_remaining": remaining,
+				"correct_index": session.get("correct_id", -1),
 			})
 		else:
 			# Check risky penalty
@@ -11780,6 +11782,7 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 			"continue": false,
 			"message": fail_message,
 			"tool_saved": false,
+			"correct_index": session.get("correct_id", -1),
 		})
 
 	send_to_peer(peer_id, {
@@ -12936,7 +12939,9 @@ func handle_job_info(peer_id: int):
 		"gathering_job_committed": character.gathering_job_committed,
 		"specialty_job_committed": character.specialty_job_committed,
 		"job_levels": character.job_levels,
-		"job_xp": character.job_xp
+		"job_xp": character.job_xp,
+		"crafting_skills": character.crafting_skills,
+		"crafting_xp": character.crafting_xp
 	})
 
 func handle_job_commit(peer_id: int, message: Dictionary):
@@ -17508,6 +17513,20 @@ func _move_dungeon_monsters(peer_id: int) -> bool:
 
 	for m in floor_monsters:
 		if not m.alive:
+			continue
+
+		# Bosses are stationary — they stay in their room and don't block hallways
+		if m.get("is_boss", false):
+			var monster_pos = Vector2i(m.x, m.y)
+			var dist = abs(monster_pos.x - player_pos.x) + abs(monster_pos.y - player_pos.y)
+			if dist <= 3 and _has_line_of_sight(grid, monster_pos, player_pos):
+				m.alert = true
+			else:
+				m.alert = false
+			# Check if player walked onto boss
+			if m.alive and m.x == player_pos.x and m.y == player_pos.y:
+				_start_dungeon_monster_combat(peer_id, m)
+				return true
 			continue
 
 		var monster_pos = Vector2i(m.x, m.y)

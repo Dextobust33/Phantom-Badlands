@@ -126,7 +126,7 @@ func get_salvage_value(item: Dictionary) -> Dictionary:
 		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
 		for mat_type in rune_template:
 			var qty = int(rune_template[mat_type])
-			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			var mat_id = _resolve_salvage_material(mat_type, tier_index, base_key)
 			_add_to_salvage_pool(materials_pool, mat_id, qty)
 	# Check enchantments (from enchanting table / enhancement scrolls)
 	var enchantments = item.get("enchantments", {})
@@ -138,7 +138,7 @@ func get_salvage_value(item: Dictionary) -> Dictionary:
 		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
 		for mat_type in rune_template:
 			var qty = int(rune_template[mat_type])
-			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			var mat_id = _resolve_salvage_material(mat_type, tier_index, base_key)
 			_add_to_salvage_pool(materials_pool, mat_id, qty)
 	# Check proc effects (from proc runes like lifesteal, shocking, etc.)
 	var proc_effects = item.get("proc_effects", {})
@@ -210,7 +210,7 @@ func get_salvage_preview(item: Dictionary) -> Dictionary:
 		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
 		for mat_type in rune_template:
 			var qty = int(rune_template[mat_type])
-			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			var mat_id = _resolve_salvage_material(mat_type, tier_index, base_key)
 			_add_to_salvage_pool(materials_pool, mat_id, qty)
 	var enchantments = item.get("enchantments", {})
 	for key in enchantments:
@@ -221,7 +221,7 @@ func get_salvage_preview(item: Dictionary) -> Dictionary:
 		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
 		for mat_type in rune_template:
 			var qty = int(rune_template[mat_type])
-			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			var mat_id = _resolve_salvage_material(mat_type, tier_index, base_key)
 			_add_to_salvage_pool(materials_pool, mat_id, qty)
 	var proc_effects = item.get("proc_effects", {})
 	for proc_type in proc_effects:
@@ -259,7 +259,7 @@ func _normalize_stat_key(key: String) -> String:
 		return key.substr(0, key.length() - 6)
 	return key
 
-func _resolve_salvage_material(mat_type: String, tier_index: int) -> String:
+func _resolve_salvage_material(mat_type: String, tier_index: int, stat_key: String = "") -> String:
 	"""Resolve a generic material type (ore, leather, enchant, monster_part) to a specific material ID."""
 	match mat_type:
 		"ore":
@@ -269,11 +269,41 @@ func _resolve_salvage_material(mat_type: String, tier_index: int) -> String:
 		"enchant":
 			return SALVAGE_ENCHANT_TIERS[mini(tier_index / 2, SALVAGE_ENCHANT_TIERS.size() - 1)]
 		"monster_part":
-			return SALVAGE_MONSTER_PART_TIERS[mini(tier_index, SALVAGE_MONSTER_PART_TIERS.size() - 1)]
+			return _resolve_salvage_monster_part(tier_index, stat_key)
 		"fuel":
 			return SALVAGE_FUEL_TIERS[mini(tier_index, SALVAGE_FUEL_TIERS.size() - 1)]
 		_:
 			return mat_type  # Already a specific material ID
+
+func _resolve_salvage_monster_part(tier_index: int, stat_key: String) -> String:
+	"""Pick a random monster part matching the stat group and tier range."""
+	_ensure_part_tier_cache()
+	var CraftDB = preload("res://shared/crafting_database.gd")
+	# Get suffixes for this stat (e.g., "attack" → ["_fang", "_tooth", "_claw", ...])
+	var suffixes = CraftDB.PART_SUFFIX_GROUPS.get(stat_key, [])
+	if suffixes.is_empty():
+		# No matching group — pick from all parts at this tier
+		suffixes = []
+		for group in CraftDB.PART_SUFFIX_GROUPS.values():
+			suffixes.append_array(group)
+	# Map salvage tier_index to monster tier with ±1 range for variety
+	var target_tier = mini(tier_index + 1, 9)
+	var min_tier = maxi(target_tier - 1, 1)
+	var max_tier = mini(target_tier + 1, 9)
+	# Collect all matching parts
+	var candidates: Array[String] = []
+	for part_id in _part_tier_cache:
+		var ptier = _part_tier_cache[part_id]
+		if ptier < min_tier or ptier > max_tier:
+			continue
+		for suffix in suffixes:
+			if part_id.ends_with(suffix):
+				candidates.append(part_id)
+				break
+	if candidates.is_empty():
+		# Fallback to hardcoded list
+		return SALVAGE_MONSTER_PART_TIERS[mini(tier_index, SALVAGE_MONSTER_PART_TIERS.size() - 1)]
+	return candidates[randi() % candidates.size()]
 
 func _get_equipment_craft_template(slot: String, tier_index: int) -> Dictionary:
 	"""Get approximate crafting materials for a piece of equipment by slot and tier.

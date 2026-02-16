@@ -973,6 +973,8 @@ var gathering_reveals_remaining: int = 0
 var gathering_tool_save_available: bool = false
 var gathering_tool_save_used: bool = false
 var gathering_revealed_correct: int = -1  # Index of revealed correct answer (-1 = none)
+var gathering_last_chosen: int = -1      # Index of last chosen option
+var gathering_last_correct: int = -1     # Index of correct answer from result
 # Per-type bonus tracking (from server)
 var gathering_momentum: int = 0          # Logging: consecutive correct picks
 var gathering_discoveries: Array = []    # Foraging: discovered plant names this session
@@ -8478,6 +8480,7 @@ func execute_local_action(action: String):
 	if action.begins_with("gathering_pick_"):
 		var pick_idx = int(action.replace("gathering_pick_", ""))
 		if pick_idx >= 0 and pick_idx < gathering_options.size():
+			gathering_last_chosen = pick_idx
 			var opt = gathering_options[pick_idx]
 			send_to_server({"type": "gathering_choice", "choice_id": opt.get("id", pick_idx)})
 		return
@@ -15489,6 +15492,8 @@ func handle_server_message(message: Dictionary):
 			character_data["specialty_job_committed"] = message.get("specialty_job_committed", false)
 			character_data["job_levels"] = message.get("job_levels", {})
 			character_data["job_xp"] = message.get("job_xp", {})
+			character_data["crafting_skills"] = message.get("crafting_skills", {})
+			character_data["crafting_xp"] = message.get("crafting_xp", {})
 			if job_mode:
 				display_job_overview()
 				update_action_bar()
@@ -18537,11 +18542,28 @@ func display_job_overview():
 				display_game("[color=#FFFF00]Use buttons 1-5 to commit to a specialty job.[/color]")
 		display_game("[color=#808080][%s] Back | [%s] < Prev Page[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
+const JOB_TO_CRAFT_SKILL = {
+	"blacksmith": "blacksmithing", "alchemist": "alchemy", "enchanter": "enchanting",
+	"scribe": "scribing", "builder": "construction"
+}
+
 func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_category_committed: bool, committed_name: String):
 	"""Display a single job entry with level, XP bar, status, and bonuses."""
-	var jlv = int(jlevels.get(jname, 1))
-	var xp_cur = int(jxp.get(jname, 0))
-	var xp_needed = int(100 * pow(jlv, 1.4))
+	# For specialty jobs, use crafting skill level (matches what the bench shows)
+	var craft_skill = JOB_TO_CRAFT_SKILL.get(jname, "")
+	var jlv: int
+	var xp_cur: int
+	var xp_needed: int
+	if craft_skill != "":
+		var cskills = character_data.get("crafting_skills", {})
+		var cxp = character_data.get("crafting_xp", {})
+		jlv = int(cskills.get(craft_skill, jlevels.get(jname, 1)))
+		xp_cur = int(cxp.get(craft_skill, 0))
+		xp_needed = int(50 * pow(jlv, 1.3))  # Crafting XP formula
+	else:
+		jlv = int(jlevels.get(jname, 1))
+		xp_cur = int(jxp.get(jname, 0))
+		xp_needed = int(100 * pow(jlv, 1.4))  # Job XP formula
 	var is_committed = is_category_committed and committed_name == jname
 	var is_locked = is_category_committed and committed_name != jname
 
@@ -18629,8 +18651,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.125 changes
+	display_game("[color=#00FF00]v0.9.125[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Monster Part Crafting & Material Fixes[/color]")
+	display_game("  • Rune recipes now accept ANY matching part type within tier range!")
+	display_game("  • e.g., Minor Rune of Attack takes any Fang/Tooth/Claw/Horn (T1-T2)")
+	display_game("  • 13 stat groups × 3 tier ranges = every monster part is useful")
+	display_game("  • Recipe display shows group name + tier range with owned count")
+	display_game("  • Stone and wood now drop from T1-T2 combat (early-game fix)")
+	display_game("  • Increased stone yield from T1 mining")
+	display_game("  • Added recipes for rare_fish, legendary_fish, monster_gem, and more")
+	display_game("")
+
 	# v0.9.124 changes
-	display_game("[color=#00FF00]v0.9.124[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.124[/color]")
 	display_game("  [color=#FFD700]Egg Market & Rune QOL[/color]")
 	display_game("  • Companion eggs can now be listed on the Open Market!")
 	display_game("  • Market main menu: press [4] to list an egg from your incubator")
@@ -18686,15 +18720,6 @@ func display_changelog():
 	display_game("  • Bump guard post to interact — hire, feed, dismiss, or view status")
 	display_game("  • Map: green G = active guard, gray G = empty post, gold ^ = boosted tower")
 	display_game("")
-
-	# v0.9.117 changes
-	display_game("[color=#00FFFF]v0.9.117[/color]")
-	display_game("  [color=#FFD700]Economy Cleanup — Phase B[/color]")
-	display_game("  • Salvage Essence removed — salvaging now returns crafting materials directly")
-	display_game("  • Pickpocket steals tier-appropriate ore instead of essence")
-	display_game("  • Essence Pouches renamed to Material Pouches")
-	display_game("")
-
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -21468,6 +21493,8 @@ func handle_gathering_round(message: Dictionary):
 	else:
 		gathering_revealed_correct = -1
 	gathering_tool_save_used = false
+	gathering_last_chosen = -1
+	gathering_last_correct = -1
 	gathering_momentum = message.get("momentum", 0)
 	gathering_discoveries = message.get("discoveries", [])
 	display_gathering_round()
@@ -21522,14 +21549,11 @@ func display_gathering_round():
 				display_game("[color=#808080]📖 No discoveries yet this session[/color]")
 			display_game("")
 		"fishing":
-			# Simple chain display with fishing theme
-			display_game(_get_gathering_ascii_art(gathering_job_type))
-			display_game("")
+			pass  # No special indicator — art shows below
 
-	# Show ASCII art for non-fishing (fishing already shown above)
-	if gathering_job_type != "fishing":
-		display_game(_get_gathering_ascii_art(gathering_job_type))
-		display_game("")
+	# Show interactive ASCII art with embedded option markers
+	display_game(_get_gathering_ascii_art(gathering_job_type, gathering_options.size(), -1, -1, gathering_revealed_correct))
+	display_game("")
 
 	if gathering_chain_count > 0:
 		display_game("[color=#FFD700]Chain: %d[/color]  |  Materials gathered: %d" % [gathering_chain_count, gathering_chain_materials.size()])
@@ -21540,7 +21564,7 @@ func display_gathering_round():
 	display_game("[color=#FFFF00]%s[/color]" % prompt)
 	display_game("")
 
-	# Display options
+	# Display option labels below the art
 	for i in range(gathering_options.size()):
 		var opt = gathering_options[i]
 		var label = opt.get("label", "Option %d" % (i + 1))
@@ -21586,9 +21610,14 @@ func handle_gathering_result(message: Dictionary):
 	gathering_chain_materials = chain_mats
 	gathering_momentum = message.get("momentum", gathering_momentum)
 	gathering_discoveries = message.get("discoveries", gathering_discoveries)
+	gathering_last_correct = message.get("correct_index", -1)
 
 	game_output.clear()
 	var color = _get_gathering_color(gathering_job_type)
+
+	# Show visual art with result markers (chosen + correct indicators)
+	display_game(_get_gathering_ascii_art(gathering_job_type, gathering_options.size(), gathering_last_chosen, gathering_last_correct))
+	display_game("")
 
 	if tool_saved:
 		display_game("[color=#00FFFF]═══════ TOOL SAVE! ═══════[/color]")
@@ -21646,6 +21675,28 @@ func handle_gathering_result(message: Dictionary):
 	if result_msg != "":
 		display_game(result_msg)
 		display_game("")
+
+	# Show per-type indicator on result screen so it's always visible
+	match gathering_job_type:
+		"mining":
+			var depth = gathering_chain_count
+			var max_depth = 10
+			var filled = mini(depth, max_depth)
+			var bar = ""
+			for _i in range(max_depth):
+				bar += "[color=#B87333]█[/color]" if _i < filled else "[color=#444444]░[/color]"
+			display_game("[color=#B87333]⛏[/color] Depth: %s %d/%d" % [bar, depth, max_depth])
+		"logging":
+			var mom = gathering_momentum
+			var max_mom = 7
+			var stars = ""
+			for _i in range(max_mom):
+				stars += "[color=#FFD700]★[/color]" if _i < mom else "[color=#444444]☆[/color]"
+			display_game("[color=#228B22]🪓[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
+		"foraging":
+			if gathering_discoveries.size() > 0:
+				var disc_list = ", ".join(gathering_discoveries)
+				display_game("[color=#9ACD32]📖 Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
 
 	display_game("[color=#FFD700]Chain: %d  |  Materials in chain: %d[/color]" % [gathering_chain_count, gathering_chain_materials.size()])
 
@@ -21739,16 +21790,41 @@ func _get_gathering_color(job_type: String) -> String:
 		"fishing": return "#00BFFF"
 		_: return "#FFD700"
 
-func _get_gathering_ascii_art(job_type: String) -> String:
+func _get_gathering_option_markers(num_options: int, chosen: int = -1, correct: int = -1, revealed: int = -1) -> Array:
+	"""Build option markers like [1] [2] [3] with color-coded result states."""
+	var markers: Array[String] = []
+	for i in range(num_options):
+		var key_name = str(i + 1)
+		if chosen >= 0:
+			# Result phase — show what happened
+			if i == chosen and chosen == correct:
+				markers.append("[color=#00FF00][✓][/color]")
+			elif i == chosen and chosen != correct:
+				markers.append("[color=#FF4444][✗][/color]")
+			elif i == correct:
+				markers.append("[color=#00FF00][✓][/color]")
+			else:
+				markers.append("[color=#444444][%s][/color]" % key_name)
+		elif revealed >= 0 and i == revealed:
+			# Reveal phase — highlight correct answer
+			markers.append("[color=#00FF00][%s][/color]" % key_name)
+		else:
+			# Normal choosing phase
+			markers.append("[color=#FFD700][%s][/color]" % key_name)
+	return markers
+
+func _get_gathering_ascii_art(job_type: String, num_options: int = 3, chosen: int = -1, correct: int = -1, revealed: int = -1) -> String:
+	var m = _get_gathering_option_markers(num_options, chosen, correct, revealed)
+	var slots = "  ".join(m)
 	match job_type:
 		"mining":
-			return "[color=#B87333]    /\\      /\\\n   /  \\____/  \\\n  / white ◇ ore \\\n /____⛏_______\\[/color]"
+			return "[color=#B87333]       _______________\n      /   .  ◇  .    \\\n     /[/color]  %s  [color=#B87333]  \\\n    /___________________\\[/color]" % slots
 		"logging":
-			return "[color=#228B22]     🌲  🪓  🌲\n    /|||\\  /|||\\\n   / ||| \\/ ||| \\\n  ___|||______|||___[/color]"
+			return "[color=#228B22]        /\\\n       /||\\\n      / || \\\n     /  ||  \\[/color]\n     %s\n[color=#228B22]     |  ||  |[/color]" % slots
 		"foraging":
-			return "[color=#9ACD32]   🌿 ~ 🍄 ~ 🌿\n  ~  🌸  🌱  🌸  ~\n   ~ ~ 🌿 ~ ~ ~[/color]"
+			return "[color=#9ACD32]   🌿 ~ 🍄 ~ 🌿\n[/color]     %s\n[color=#9ACD32]  ~  🌸  🌱  🌸  ~[/color]" % slots
 		"fishing":
-			return "[color=#87CEEB]    ~  ~  ~  ~  ~\n  ~     o      ~\n    ~  ~│~  ~  ~\n[color=#0077BE]  ≈≈≈≈≈≈≈≈≈≈≈≈≈≈[/color][/color]"
+			return "[color=#87CEEB]     ~~ o ~~\n      /|\\\n[/color]     %s\n[color=#0077BE]   ≈≈≈≈≈≈≈≈≈≈≈≈[/color]" % slots
 		_:
 			return ""
 
