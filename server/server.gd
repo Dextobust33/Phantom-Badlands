@@ -218,6 +218,10 @@ func _ready():
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
 	# Rebuild player enclosures from persisted tile data
 	_rebuild_all_player_enclosures()
+
+	# Compute and stamp road paths between posts
+	_initialize_road_paths(npc_posts)
+
 	chunk_manager.save_dirty_chunks()
 
 	# Load persistent depleted nodes
@@ -607,6 +611,18 @@ func _process(delta):
 		if merchant_update_timer >= MERCHANT_UPDATE_INTERVAL:
 			merchant_update_timer = 0.0
 			send_merchant_movement_updates()
+
+		# Check for merchant arrivals at posts (equalization)
+		_merchant_check_timer += delta
+		if _merchant_check_timer >= MERCHANT_CHECK_INTERVAL:
+			_merchant_check_timer = 0.0
+			_check_merchant_arrivals()
+
+	# Periodic road path check — try to connect one unconnected post pair
+	_road_check_timer += delta
+	if _road_check_timer >= ROAD_CHECK_INTERVAL:
+		_road_check_timer = 0.0
+		_try_connect_road()
 
 	# Process pending update countdown
 	if pending_update_active:
@@ -4516,7 +4532,7 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 		"character": character.to_dict()
 	})
 
-	persistence.save_character(character)
+	save_character(peer_id)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
 
@@ -5664,11 +5680,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			duration = tier_data.get("scroll_duration", 1)
 		elif effect.get("stat_pct", false):
 			var stat_pct = tier_data.get("scroll_stat_pct", 10)
+			var equip_bonuses = character.get_equipment_bonuses()
 			match buff_type:
-				"strength": buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"strength": buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
 				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
-				"speed": buff_value = maxi(1, int(character.get_total_speed() * stat_pct / 100.0))
-				_: buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"speed": buff_value = maxi(1, int((character.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
+				_: buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
 			duration = tier_data.get("scroll_duration", 1)
 		elif effect.get("tier_value", false):
 			buff_value = tier_data.get("buff_value", 3)
@@ -7045,8 +7062,15 @@ func trigger_merchant_encounter(peer_id: int):
 	if merchant.is_empty():
 		return
 
-	# Get or generate persistent shop inventory
 	var merchant_id = merchant.get("id", "unknown")
+	var is_road = merchant.get("road_merchant", false)
+
+	if is_road:
+		# Road merchant — show carried inventory only
+		_trigger_road_merchant_encounter(peer_id, merchant)
+		return
+
+	# Post merchant — get or generate persistent shop inventory
 	var shop_items = get_or_generate_merchant_inventory(
 		merchant_id,
 		character.level,
@@ -7084,8 +7108,8 @@ func trigger_merchant_encounter(peer_id: int):
 	var greeting = "[color=#FFD700]A %s approaches you![/color]\n" % merchant.name
 	var merchant_hash = merchant.get("hash", 0)
 	var voice_text = _get_merchant_voice(merchant_hash)
-	if merchant.has("destination") and merchant.destination != "":
-		greeting += "[color=#808080]\"I'm headed to %s, then on to %s. Care to trade?\"[/color]\n\n" % [merchant.destination, merchant.get("next_destination", "parts unknown")]
+	if merchant.get("destination", "") != "":
+		greeting += "[color=#808080]\"I'm headed to %s. Care to trade?\"[/color]\n\n" % merchant.destination
 	else:
 		greeting += voice_text + "\n\n"
 
@@ -7093,6 +7117,50 @@ func trigger_merchant_encounter(peer_id: int):
 		"type": "merchant_start",
 		"merchant": merchant,
 		"message": greeting + "\n".join(services_text)
+	})
+
+func _trigger_road_merchant_encounter(peer_id: int, merchant: Dictionary) -> void:
+	"""Road merchant encounter — show only carried items from equalization."""
+	var merchant_id = merchant.get("id", "unknown")
+
+	# Check if this merchant is carrying items
+	var carried = merchant_inventory.get(merchant_id, {})
+	var carried_items = carried.get("items", [])
+
+	var dest_name = merchant.get("destination", "parts unknown")
+	var greeting = "[color=#FFD700]A %s approaches on the road![/color]\n" % merchant.name
+	greeting += "[color=#808080]\"I'm on my way to %s.\"[/color]\n\n" % dest_name
+
+	if carried_items.size() == 0:
+		greeting += "[color=#AAAAAA]The merchant has nothing to sell right now.[/color]\n"
+		greeting += "[Space] Leave"
+		merchant["shop_items"] = []
+		merchant["road_merchant"] = true
+		at_merchant[peer_id] = merchant
+		send_to_peer(peer_id, {
+			"type": "merchant_start",
+			"merchant": merchant,
+			"message": greeting,
+			"road_merchant": true
+		})
+		return
+
+	# Build shop items from carried inventory
+	merchant["shop_items"] = carried_items
+	merchant["road_merchant"] = true
+	at_merchant[peer_id] = merchant
+
+	var services_text = []
+	services_text.append("[R] Browse wares (%d items)" % carried_items.size())
+	services_text.append("[Space] Leave")
+
+	greeting += "\n".join(services_text)
+
+	send_to_peer(peer_id, {
+		"type": "merchant_start",
+		"merchant": merchant,
+		"message": greeting,
+		"road_merchant": true
 	})
 
 func _get_merchant_voice(merchant_hash: int) -> String:
@@ -14791,6 +14859,9 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 			send_to_peer(peer_id, {"type": "name_post_prompt", "enclosure_index": enc_idx})
 		added += 1
 
+		# Connect new player post to road network
+		_connect_player_post_to_roads(center, username)
+
 	if added > 0:
 		return "[color=#00FFFF]Enclosure formed! (%d/%d)[/color]" % [current_count + added, max_posts]
 	elif new_enclosures.size() > 0:
@@ -21549,3 +21620,185 @@ func _move_party_followers_dungeon(leader_peer_id: int, old_leader_x: int, old_l
 
 		# Send dungeon state to follower
 		_send_dungeon_state(pid)
+
+# ===== ROAD PATHS & MERCHANT EQUALIZATION =====
+
+# Merchant carry inventory: {merchant_id: {items: [], destination_post_key: String}}
+var merchant_inventory: Dictionary = {}
+const MERCHANT_CARRY_CAPACITY = 10
+# Track which post each merchant was last processed at (avoid re-processing same rest stop)
+var merchant_last_processed_post: Dictionary = {}
+# Timer for merchant arrival checks
+var _merchant_check_timer: float = 0.0
+const MERCHANT_CHECK_INTERVAL = 30.0
+# Timer for periodic road path checks (try to connect unconnected post pairs)
+var _road_check_timer: float = 0.0
+const ROAD_CHECK_INTERVAL = 60.0  # Check every 60 seconds
+
+func _initialize_road_paths(npc_posts: Array) -> void:
+	"""Initialize road graph and load any persisted paths. Called on startup.
+	Paths are NOT auto-computed — they form incrementally as players clear terrain."""
+	# Initialize the desired edge graph (MST + extras)
+	world_system.initialize_post_graph(npc_posts)
+
+	# Load any previously persisted paths
+	var saved = chunk_manager.load_path_data()
+	if not saved.is_empty():
+		world_system._path_waypoints = saved.get("paths", {})
+		var saved_graph = saved.get("graph", {})
+		# Merge saved graph connections into the initialized graph
+		for key in saved_graph:
+			if world_system._path_graph.has(key):
+				for conn in saved_graph[key]:
+					if conn not in world_system._path_graph[key]:
+						world_system._path_graph[key].append(conn)
+			else:
+				world_system._path_graph[key] = saved_graph[key]
+		var saved_positions = saved.get("post_positions", {})
+		for key in saved_positions:
+			if not world_system._path_post_positions.has(key):
+				world_system._path_post_positions[key] = saved_positions[key]
+		log_message("Loaded %d road path segments from disk" % world_system._path_waypoints.size())
+		# Re-stamp paths (in case chunks were wiped)
+		world_system.stamp_paths_into_chunks(world_system._path_waypoints)
+	else:
+		log_message("No existing roads — paths will form as players clear terrain")
+
+	var unconnected = world_system.get_unconnected_edge_count()
+	log_message("Road network: %d connected, %d awaiting cleared paths" % [world_system._path_waypoints.size(), unconnected])
+
+	# Compute merchant circuits from whatever paths exist
+	world_system.compute_merchant_circuits()
+
+func _try_connect_road() -> void:
+	"""Periodically try to find a path for one unconnected post pair.
+	Runs in the background during normal gameplay. If terrain has been
+	cleared enough by players, a road will form automatically."""
+	if world_system.get_unconnected_edge_count() == 0:
+		return  # All desired edges connected
+
+	var result = world_system.try_connect_one_pair()
+	if result.size() > 0:
+		# New road found! Stamp it and save
+		world_system.stamp_paths_into_chunks(result)
+		chunk_manager.save_path_data(
+			world_system._path_waypoints,
+			world_system._path_graph,
+			world_system._path_post_positions
+		)
+		chunk_manager.save_dirty_chunks()
+		# Recompute merchant circuits with new connection
+		world_system.compute_merchant_circuits()
+		var path_key = result.keys()[0]
+		var wp_count = result[path_key].size()
+		log_message("New road formed: %s (%d tiles)" % [path_key, wp_count])
+		# Notify connected players
+		for peer_id in characters:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#C4A882]A new road has been discovered between settlements![/color]"})
+
+func _connect_player_post_to_roads(center: Vector2i, _username: String) -> void:
+	"""Connect a new player-built enclosure to the road network."""
+	var post_data = {"x": center.x, "y": center.y, "name": "Player Post", "id": "player_%d_%d" % [center.x, center.y]}
+	var new_paths = world_system.connect_new_post(post_data)
+	if new_paths.size() > 0:
+		# Save updated path data
+		chunk_manager.save_path_data(
+			world_system._path_waypoints,
+			world_system._path_graph,
+			world_system._path_post_positions
+		)
+		chunk_manager.save_dirty_chunks()
+		# Recompute merchant circuits to include new post
+		world_system.compute_merchant_circuits()
+		log_message("Connected player post at (%d,%d) to road network" % [center.x, center.y])
+
+func _check_merchant_arrivals() -> void:
+	"""Check if any merchants just arrived at a post. Called periodically."""
+	var current_time = Time.get_unix_time_from_system()
+	var total = world_system._get_total_merchants()
+
+	for merchant_idx in range(total):
+		var pos = world_system._get_merchant_position(merchant_idx, current_time)
+		if not pos.get("is_resting", false):
+			continue
+
+		var at_post = pos.get("at_post", "")
+		if at_post == "":
+			continue
+
+		var merchant_id = "merchant_%d" % merchant_idx
+		# Skip if we already processed this merchant at this post
+		if merchant_last_processed_post.get(merchant_id, "") == at_post:
+			continue
+
+		merchant_last_processed_post[merchant_id] = at_post
+		_merchant_arrive_at_post(merchant_id, at_post, merchant_idx)
+
+func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_idx: int) -> void:
+	"""Called when a merchant arrives at a post. Offload carried items, pick up excess."""
+	# Step 1: Offload carried items to this post's market
+	if merchant_inventory.has(merchant_id):
+		var carried = merchant_inventory[merchant_id]
+		var items = carried.get("items", [])
+		for item in items:
+			var listing = item.duplicate()
+			listing.erase("listing_id")  # Will get a new ID
+			persistence.add_market_listing(post_key, listing)
+		if items.size() > 0:
+			log_message("Merchant %s offloaded %d items at %s" % [merchant_id, items.size(), post_key])
+		merchant_inventory.erase(merchant_id)
+
+	# Step 2: Equalize — compare this post's listings vs next post
+	var circuit = world_system._merchant_circuits.get(merchant_idx, [])
+	if circuit.size() < 2:
+		return
+
+	var current_idx = circuit.find(post_key)
+	if current_idx < 0:
+		return
+	var next_key = circuit[(current_idx + 1) % circuit.size()]
+
+	var this_listings = persistence.get_market_listings(post_key)
+	var next_listings = persistence.get_market_listings(next_key)
+
+	# Count by category
+	var this_counts: Dictionary = {}
+	var next_counts: Dictionary = {}
+	for listing in this_listings:
+		var cat = listing.get("category", "equipment")
+		this_counts[cat] = this_counts.get(cat, 0) + 1
+	for listing in next_listings:
+		var cat = listing.get("category", "equipment")
+		next_counts[cat] = next_counts.get(cat, 0) + 1
+
+	# Pick up excess items to carry to next post
+	var to_carry: Array = []
+	var remaining_capacity = MERCHANT_CARRY_CAPACITY
+
+	for cat in this_counts:
+		var this_count = this_counts[cat]
+		var next_count = next_counts.get(cat, 0)
+		if this_count > next_count + 1:
+			var take = mini((this_count - next_count) / 2, remaining_capacity)
+			if take <= 0:
+				continue
+			# Find listings in this category to take (oldest first)
+			var cat_listings: Array = []
+			for listing in this_listings:
+				if listing.get("category", "equipment") == cat:
+					cat_listings.append(listing)
+			cat_listings.sort_custom(func(a, b): return a.get("listed_at", 0) < b.get("listed_at", 0))
+			for i in range(mini(take, cat_listings.size())):
+				var listing = cat_listings[i]
+				var removed = persistence.remove_market_listing(post_key, listing.get("listing_id", ""))
+				if not removed.is_empty():
+					to_carry.append(removed)
+				remaining_capacity -= 1
+				if remaining_capacity <= 0:
+					break
+		if remaining_capacity <= 0:
+			break
+
+	if to_carry.size() > 0:
+		merchant_inventory[merchant_id] = {"items": to_carry, "destination_post_key": next_key}
+		log_message("Merchant %s picked up %d items at %s, heading to %s" % [merchant_id, to_carry.size(), post_key, next_key])

@@ -942,7 +942,13 @@ func check_encounter(x: int, y: int) -> bool:
 		return false
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
-	return randf() < info.encounter_rate
+	var rate = info.encounter_rate
+	# Roads are safer — halve encounter rate on path tiles
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(x, y)
+		if tile.get("type", "") == "path":
+			rate *= 0.5
+	return randf() < rate
 
 func get_monster_level_range(x: int, y: int) -> Dictionary:
 	"""Get the monster level range for this location based on distance from origin"""
@@ -1441,280 +1447,597 @@ func _get_compass_line(player_x: int, player_y: int, exclude_post: Dictionary = 
 
 	return " [color=#C4A882]%s %s (%d)[/color]" % [direction, nearest.get("name", "Post"), dist]
 
+# ===== A* PATHFINDING & ROAD SYSTEM =====
+# Computes roads between NPC posts, stamps path tiles, merchants follow roads.
+
+const ASTAR_MAX_NODES = 50000  # Generous cap — the walkability check is strict, not the cap
+const ASTAR_DIRECTIONS = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]  # N, S, W, E only
+
+# Path graph: computed once on world init, updated when player posts are built
+# Format: {post_key: [connected_post_keys]}
+var _path_graph: Dictionary = {}
+# Precomputed waypoints for each path segment: {"keyA->keyB": [Vector2i waypoints]}
+var _path_waypoints: Dictionary = {}
+# All post positions for pathfinding: {post_key: Vector2i}
+var _path_post_positions: Dictionary = {}
+
+func _is_walkable_for_path(x: int, y: int) -> bool:
+	"""Check if a tile can be pathed through for road building.
+	Roads ONLY form through player-cleared terrain. The wilderness must be tamed
+	before roads can connect settlements. Walkable for road = depleted (harvested)
+	gathering nodes, existing paths/floors, or NPC post tiles."""
+	if not chunk_manager:
+		return false
+	# Depleted gathering nodes count as cleared (player harvested them)
+	if chunk_manager.is_node_depleted(x, y):
+		return true
+	var tile = chunk_manager.get_tile(x, y)
+	var tile_type = tile.get("type", "empty")
+	# Structure tiles and existing roads are walkable
+	if tile_type in ["path", "floor", "door", "tower", "storage", "post_marker"]:
+		return true
+	# Modified empty tiles (explicitly set by chunk system, not procedurally generated)
+	# Check if this tile has been modified from its procedural state
+	if tile_type == "empty" and chunk_manager.is_tile_modified(x, y):
+		return true
+	return false
+
+func _is_npc_post_interior(x: int, y: int) -> bool:
+	"""Check if a tile is inside an NPC post (walls/stations/floor)."""
+	if not chunk_manager:
+		return false
+	return chunk_manager.is_npc_post_tile(x, y)
+
+func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int) -> Array:
+	"""A* pathfinding from one point to another. Returns array of Vector2i waypoints.
+	Uses 4-directional movement only for clean visual roads. Returns empty if no path."""
+	var start = Vector2i(start_x, start_y)
+	var goal = Vector2i(end_x, end_y)
+
+	if start == goal:
+		return [start]
+
+	# Binary heap priority queue: array of [f_score, position]
+	# Heap operations: push = append + bubble up, pop = swap root with last + sift down
+	var heap: Array = [[absi(end_x - start_x) + absi(end_y - start_y), start]]
+	var came_from: Dictionary = {}
+	var g_score: Dictionary = {start: 0}
+	var closed_set: Dictionary = {}
+	var nodes_explored = 0
+
+	while heap.size() > 0 and nodes_explored < ASTAR_MAX_NODES:
+		# Pop minimum from heap
+		var current_entry = _heap_pop(heap)
+		var current = current_entry[1]
+
+		if current == goal:
+			# Reconstruct path
+			var path: Array = [current]
+			while came_from.has(current):
+				current = came_from[current]
+				path.push_front(current)
+			return path
+
+		if closed_set.has(current):
+			continue
+		closed_set[current] = true
+		nodes_explored += 1
+
+		for dir in ASTAR_DIRECTIONS:
+			var neighbor = current + dir
+			if closed_set.has(neighbor):
+				continue
+
+			if not _is_walkable_for_path(neighbor.x, neighbor.y):
+				if neighbor != goal:
+					continue
+
+			var tentative_g = g_score[current] + 1
+
+			if not g_score.has(neighbor) or tentative_g < g_score[neighbor]:
+				came_from[neighbor] = current
+				g_score[neighbor] = tentative_g
+				var h = absi(goal.x - neighbor.x) + absi(goal.y - neighbor.y)
+				var f = tentative_g + h
+				_heap_push(heap, [f, neighbor])
+
+	return []  # No path found
+
+func _heap_push(heap: Array, item: Array) -> void:
+	"""Push item onto binary min-heap."""
+	heap.append(item)
+	var idx = heap.size() - 1
+	while idx > 0:
+		var parent = (idx - 1) / 2
+		if heap[idx][0] < heap[parent][0]:
+			var tmp = heap[parent]
+			heap[parent] = heap[idx]
+			heap[idx] = tmp
+			idx = parent
+		else:
+			break
+
+func _heap_pop(heap: Array) -> Array:
+	"""Pop minimum item from binary min-heap."""
+	if heap.size() == 1:
+		return heap.pop_back()
+	var result = heap[0]
+	heap[0] = heap.pop_back()
+	var idx = 0
+	var size = heap.size()
+	while true:
+		var smallest = idx
+		var left = 2 * idx + 1
+		var right = 2 * idx + 2
+		if left < size and heap[left][0] < heap[smallest][0]:
+			smallest = left
+		if right < size and heap[right][0] < heap[smallest][0]:
+			smallest = right
+		if smallest != idx:
+			var tmp = heap[idx]
+			heap[idx] = heap[smallest]
+			heap[smallest] = tmp
+			idx = smallest
+		else:
+			break
+	return result
+
+func initialize_post_graph(posts: Array) -> void:
+	"""Initialize post positions and desired edges (MST + extra) without pathfinding.
+	Actual path computation happens incrementally as terrain is cleared."""
+	if posts.size() < 2:
+		return
+
+	# Build post position lookup
+	_path_post_positions.clear()
+	var post_list: Array = []
+	for post in posts:
+		var px = int(post.get("x", 0))
+		var py = int(post.get("y", 0))
+		var key = _get_post_key(post)
+		_path_post_positions[key] = Vector2i(px, py)
+		post_list.append({"key": key, "x": px, "y": py})
+
+	# Compute all pairwise Euclidean distances
+	var edges: Array = []
+	for i in range(post_list.size()):
+		for j in range(i + 1, post_list.size()):
+			var dx = post_list[j].x - post_list[i].x
+			var dy = post_list[j].y - post_list[i].y
+			var dist = sqrt(dx * dx + dy * dy)
+			edges.append({"from": post_list[i].key, "to": post_list[j].key, "dist": dist})
+	edges.sort_custom(func(a, b): return a.dist < b.dist)
+
+	# Kruskal's MST
+	var parent: Dictionary = {}
+	for p in post_list:
+		parent[p.key] = p.key
+	var mst_edges: Array = []
+	var adjacency: Dictionary = {}
+	for p in post_list:
+		adjacency[p.key] = []
+
+	for edge in edges:
+		var root_a = _uf_find(parent, edge.from)
+		var root_b = _uf_find(parent, edge.to)
+		if root_a != root_b:
+			parent[root_a] = root_b
+			mst_edges.append(edge)
+			adjacency[edge.from].append(edge.to)
+			adjacency[edge.to].append(edge.from)
+			if mst_edges.size() == post_list.size() - 1:
+				break
+
+	# Add extra short edges for redundancy
+	var extra_edges: Array = []
+	for edge in edges:
+		if adjacency[edge.from].size() < 3 and adjacency[edge.to].size() < 3:
+			if edge.to not in adjacency[edge.from]:
+				extra_edges.append(edge)
+				adjacency[edge.from].append(edge.to)
+				adjacency[edge.to].append(edge.from)
+				if extra_edges.size() >= post_list.size() / 2:
+					break
+
+	# Store desired edges (not yet connected by paths)
+	_desired_edges = mst_edges + extra_edges
+
+	# Initialize graph — no connections yet (paths haven't been found)
+	_path_graph.clear()
+	for p in post_list:
+		_path_graph[p.key] = []
+
+# Desired edges (MST + extra) that we want to connect via roads
+var _desired_edges: Array = []
+
+func try_connect_one_pair() -> Dictionary:
+	"""Try A* on one unconnected desired edge. Returns {path_key: waypoints} if found, else empty.
+	Called periodically by server. Cheap if no path exists yet (hits node cap quickly)."""
+	for edge in _desired_edges:
+		var path_key = _make_path_key(edge.from, edge.to)
+		if _path_waypoints.has(path_key):
+			continue  # Already connected
+
+		var from_pos = _path_post_positions.get(edge.from, Vector2i(0, 0))
+		var to_pos = _path_post_positions.get(edge.to, Vector2i(0, 0))
+		var from_exit = _find_post_exit(from_pos.x, from_pos.y)
+		var to_exit = _find_post_exit(to_pos.x, to_pos.y)
+
+		var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y)
+		if waypoints.size() > 0:
+			_path_waypoints[path_key] = waypoints
+			if edge.to not in _path_graph.get(edge.from, []):
+				if not _path_graph.has(edge.from):
+					_path_graph[edge.from] = []
+				_path_graph[edge.from].append(edge.to)
+			if edge.from not in _path_graph.get(edge.to, []):
+				if not _path_graph.has(edge.to):
+					_path_graph[edge.to] = []
+				_path_graph[edge.to].append(edge.from)
+			return {path_key: waypoints}
+
+	return {}  # All edges either connected or unreachable for now
+
+func get_unconnected_edge_count() -> int:
+	"""Count how many desired edges don't have paths yet."""
+	var count = 0
+	for edge in _desired_edges:
+		var path_key = _make_path_key(edge.from, edge.to)
+		if not _path_waypoints.has(path_key):
+			count += 1
+	return count
+
+func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
+	"""Find a walkable tile just outside a post's walls, near a door."""
+	if not chunk_manager:
+		return Vector2i(center_x, center_y)
+
+	# Search in expanding rings for a door tile, then go one step past it
+	for radius in range(1, 12):
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				if absi(dx) != radius and absi(dy) != radius:
+					continue  # Only check ring perimeter
+				var tx = center_x + dx
+				var ty = center_y + dy
+				var tile = chunk_manager.get_tile(tx, ty)
+				if tile.get("type", "") == "door":
+					# Found a door — return the walkable tile just outside it
+					for dir in ASTAR_DIRECTIONS:
+						var outside = Vector2i(tx + dir.x, ty + dir.y)
+						var outside_tile = chunk_manager.get_tile(outside.x, outside.y)
+						if not outside_tile.get("blocks_move", false) and not _is_npc_post_interior(outside.x, outside.y):
+							return outside
+					# Door found but no walkable outside? Return door itself
+					return Vector2i(tx, ty)
+
+	# Fallback: return center (shouldn't happen with well-formed posts)
+	return Vector2i(center_x, center_y)
+
+func stamp_paths_into_chunks(paths: Dictionary) -> void:
+	"""Write path tiles into chunks for each waypoint that isn't already a floor/door/post tile."""
+	if not chunk_manager:
+		return
+
+	for path_key in paths:
+		var waypoints = paths[path_key]
+		for wp in waypoints:
+			var x = wp.x if wp is Vector2i else int(wp.get("x", 0))
+			var y = wp.y if wp is Vector2i else int(wp.get("y", 0))
+
+			# Skip NPC post interior tiles
+			if _is_npc_post_interior(x, y):
+				continue
+
+			# Skip tiles that are already non-blocking walkable types we don't want to overwrite
+			var existing = chunk_manager.get_tile(x, y)
+			var existing_type = existing.get("type", "empty")
+			if existing_type in ["floor", "door", "forge", "apothecary", "workbench",
+				"enchant_table", "writing_desk", "market", "inn", "quest_board",
+				"tower", "storage", "post_marker", "blacksmith", "healer", "guard"]:
+				continue
+
+			# Stamp path tile
+			chunk_manager.set_tile(x, y, {"type": "path", "blocks_move": false, "blocks_los": false})
+
+func clear_path_tiles(waypoints: Array) -> void:
+	"""Remove path tiles for a specific route (for rerouting)."""
+	if not chunk_manager:
+		return
+	for wp in waypoints:
+		var x = wp.x if wp is Vector2i else int(wp.get("x", 0))
+		var y = wp.y if wp is Vector2i else int(wp.get("y", 0))
+		var tile = chunk_manager.get_tile(x, y)
+		if tile.get("type", "") == "path":
+			chunk_manager.remove_tile_modification(x, y)
+
+func connect_new_post(post: Dictionary) -> Dictionary:
+	"""Connect a new post (player-built) to the nearest existing post.
+	Returns the new path waypoints dict, or empty if no connection found."""
+	var px = int(post.get("x", 0))
+	var py = int(post.get("y", 0))
+	var new_key = _get_post_key(post)
+	_path_post_positions[new_key] = Vector2i(px, py)
+
+	if not _path_graph.has(new_key):
+		_path_graph[new_key] = []
+
+	# Find nearest post within 200 tiles
+	var nearest_key = ""
+	var nearest_dist = 999999.0
+	for key in _path_post_positions:
+		if key == new_key:
+			continue
+		var pos = _path_post_positions[key]
+		var dist = sqrt(pow(pos.x - px, 2) + pow(pos.y - py, 2))
+		if dist < nearest_dist and dist <= 200:
+			nearest_dist = dist
+			nearest_key = key
+
+	if nearest_key == "":
+		return {}
+
+	# Compute path
+	var from_exit = _find_post_exit(px, py)
+	var to_pos = _path_post_positions[nearest_key]
+	var to_exit = _find_post_exit(to_pos.x, to_pos.y)
+	var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y)
+
+	if waypoints.size() == 0:
+		return {}
+
+	var path_key = _make_path_key(new_key, nearest_key)
+	_path_waypoints[path_key] = waypoints
+	if nearest_key not in _path_graph[new_key]:
+		_path_graph[new_key].append(nearest_key)
+	if not _path_graph.has(nearest_key):
+		_path_graph[nearest_key] = []
+	if new_key not in _path_graph[nearest_key]:
+		_path_graph[nearest_key].append(new_key)
+
+	# Stamp the path tiles
+	stamp_paths_into_chunks({path_key: waypoints})
+
+	return {path_key: waypoints}
+
+func get_post_connections() -> Dictionary:
+	"""Returns the computed path graph: {post_key: [connected_post_keys]}"""
+	return _path_graph
+
+func _get_post_key(post: Dictionary) -> String:
+	"""Generate a unique key for a post."""
+	var post_id = post.get("id", "")
+	if post_id != "":
+		return post_id
+	var name = post.get("name", "unknown")
+	return "post_%s_%d_%d" % [name.to_lower().replace(" ", "_"), int(post.get("x", 0)), int(post.get("y", 0))]
+
+func _make_path_key(key_a: String, key_b: String) -> String:
+	"""Create a canonical path key from two post keys (alphabetical order)."""
+	if key_a < key_b:
+		return "%s->%s" % [key_a, key_b]
+	return "%s->%s" % [key_b, key_a]
+
+func _uf_find(parent: Dictionary, x: String) -> String:
+	"""Union-find: find root with path compression."""
+	while parent[x] != x:
+		parent[x] = parent[parent[x]]
+		x = parent[x]
+	return x
+
+func get_path_waypoints_for_segment(from_key: String, to_key: String) -> Array:
+	"""Get waypoints for a specific path segment. Returns them in the correct direction."""
+	var path_key = _make_path_key(from_key, to_key)
+	if not _path_waypoints.has(path_key):
+		return []
+	var waypoints = _path_waypoints[path_key]
+	# If the canonical key has from_key first, return as-is; otherwise reverse
+	if path_key.begins_with(from_key):
+		return waypoints
+	else:
+		var reversed_path: Array = []
+		for i in range(waypoints.size() - 1, -1, -1):
+			reversed_path.append(waypoints[i])
+		return reversed_path
+
 # ===== PROCEDURAL TRAVELING MERCHANT SYSTEM =====
-# Lightweight merchant system - positions calculated on-demand, not simulated
-# Merchants travel between trading posts with deterministic positions based on time
+# Merchants follow stamped road tiles between connected NPC posts.
+# Positions calculated on-demand based on time + precomputed waypoints.
 
-# Total number of wandering merchants in the world
-# Since positions are calculated on-demand (not simulated), more merchants has minimal server cost
-const TOTAL_WANDERING_MERCHANTS = 0  # Disabled until market system is implemented
+const TOTAL_WANDERING_MERCHANTS = 10
 
-# Merchant type templates for variety
-# Each type has a specialty that affects inventory and map color
+# Merchant type templates
 const MERCHANT_TYPES = [
-	# Weapons (Red on map)
 	{"prefix": "Traveling", "suffix": "Weaponsmith", "specialty": "weapons", "services": ["buy", "sell"]},
 	{"prefix": "Grizzled", "suffix": "Blademaster", "specialty": "weapons", "services": ["buy", "sell"]},
-	# Armor (Blue on map)
 	{"prefix": "Wandering", "suffix": "Armorer", "specialty": "armor", "services": ["buy", "sell"]},
 	{"prefix": "Dwarven", "suffix": "Smithy", "specialty": "armor", "services": ["buy", "sell"]},
-	# Jewelry (Purple on map)
 	{"prefix": "Mysterious", "suffix": "Jeweler", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
 	{"prefix": "Exotic", "suffix": "Dealer", "specialty": "jewelry", "services": ["buy", "sell", "gamble"]},
-	# Potions (Green on map)
 	{"prefix": "Wandering", "suffix": "Alchemist", "specialty": "potions", "services": ["buy", "sell"]},
 	{"prefix": "Hooded", "suffix": "Herbalist", "specialty": "potions", "services": ["buy", "sell"]},
-	# Scrolls (Cyan on map)
 	{"prefix": "Arcane", "suffix": "Scribe", "specialty": "scrolls", "services": ["buy", "sell"]},
 	{"prefix": "Mystical", "suffix": "Sage", "specialty": "scrolls", "services": ["buy", "sell", "gamble"]},
-	# General (Gold on map)
 	{"prefix": "Lucky", "suffix": "Gambler", "specialty": "all", "services": ["buy", "sell", "gamble"]},
 	{"prefix": "Old", "suffix": "Trader", "specialty": "all", "services": ["buy", "sell"]},
 	{"prefix": "Swift", "suffix": "Peddler", "specialty": "all", "services": ["buy", "sell"]},
 	{"prefix": "Master", "suffix": "Merchant", "specialty": "all", "services": ["buy", "sell", "gamble"]},
-	# Elite (White on map) - Rare, sells everything with better odds
 	{"prefix": "Legendary", "suffix": "Collector", "specialty": "elite", "services": ["buy", "sell", "gamble"]},
-	# === AFFIX-FOCUSED MERCHANTS (sell equipment with guaranteed stat affixes) ===
-	# Warrior gear (Orange on map) - STR, CON, Stamina, Attack affixes
 	{"prefix": "Veteran", "suffix": "Outfitter", "specialty": "warrior_affixes", "services": ["buy", "sell"]},
 	{"prefix": "Battle-worn", "suffix": "Supplier", "specialty": "warrior_affixes", "services": ["buy", "sell"]},
-	# Mage gear (Light Blue on map) - INT, WIS, Mana affixes
 	{"prefix": "Enchanted", "suffix": "Emporium", "specialty": "mage_affixes", "services": ["buy", "sell"]},
 	{"prefix": "Arcane", "suffix": "Outfitter", "specialty": "mage_affixes", "services": ["buy", "sell"]},
-	# Trickster gear (Lime on map) - DEX, WITS, Energy, Speed affixes
 	{"prefix": "Shadowy", "suffix": "Fence", "specialty": "trickster_affixes", "services": ["buy", "sell"]},
 	{"prefix": "Cunning", "suffix": "Dealer", "specialty": "trickster_affixes", "services": ["buy", "sell"]},
-	# Tank gear (Gray on map) - HP, Defense, CON affixes
 	{"prefix": "Ironclad", "suffix": "Supplier", "specialty": "tank_affixes", "services": ["buy", "sell"]},
 	{"prefix": "Stalwart", "suffix": "Armorer", "specialty": "tank_affixes", "services": ["buy", "sell"]},
-	# DPS gear (Yellow on map) - Attack, Speed, STR affixes
 	{"prefix": "Keen", "suffix": "Bladedealer", "specialty": "dps_affixes", "services": ["buy", "sell"]},
 	{"prefix": "Swift", "suffix": "Striker", "specialty": "dps_affixes", "services": ["buy", "sell"]},
 ]
 
-# Name parts for generating unique merchant names
 const MERCHANT_FIRST_NAMES = ["Grim", "Kira", "Marcus", "Zara", "Lou", "Mira", "Tom", "Vex", "Rook", "Sage",
 	"Finn", "Nora", "Brock", "Ivy", "Cole", "Luna", "Rex", "Faye", "Jax", "Wren"]
 
-# Trading post IDs for routing (referenced by index for efficiency)
-const TRADING_POST_IDS = [
-	# Core zone (0-30 distance)
-	"haven", "crossroads", "south_gate", "east_market", "west_shrine",
-	# Inner zone (30-75 distance)
-	"northeast_farm", "northwest_mill", "southeast_mine", "southwest_grove",
-	"northwatch", "eastern_camp", "western_refuge", "southern_watch",
-	"northeast_tower", "northwest_inn", "southeast_bridge", "southwest_temple",
-	# Mid zone (75-200 distance)
-	"frostgate", "highland_post", "eastwatch", "westhold", "southport",
-	"northeast_bastion", "northwest_lodge", "southeast_outpost", "southwest_camp",
-	# Mid-outer zone (200-350 distance)
-	"far_east_station", "far_west_haven", "deep_south_port", "high_north_peak",
-	"northeast_frontier", "northwest_citadel", "southeast_garrison", "southwest_fortress",
-	# Outer zone (350-500 distance)
-	"shadowmere", "inferno_outpost", "voids_edge", "frozen_reach",
-	"abyssal_depths", "celestial_spire", "storm_peak", "dragons_rest",
-	# Extreme zone (500-700 distance)
-	"primordial_sanctum", "nether_gate", "eastern_terminus", "western_terminus",
-	"chaos_refuge", "entropy_station", "oblivion_watch", "genesis_point",
-	# World's edge (700+ distance)
-	"world_spine_north", "world_spine_south", "eternal_east", "eternal_west",
-	"apex_northeast", "apex_southeast", "apex_northwest", "apex_southwest"
-]
-
 # Merchant travel parameters
-# Slower speed so players can follow merchants on the map
-const MERCHANT_SPEED = 0.02  # Tiles per second (1 tile every 50 seconds - very slow, easy to follow)
-const MERCHANT_JOURNEY_TIME = 900.0  # ~15 minutes per journey segment (longer journeys)
-const MERCHANT_REST_TIME = 300.0  # 5 minutes rest at each trading post (longer rest for catchup)
+const MERCHANT_SPEED = 0.02  # Tiles per second (1 tile every 50 seconds)
+const MERCHANT_REST_TIME = 300.0  # 5 minutes rest at each trading post
 
 # Cache for merchant positions (cleared periodically)
 var _merchant_cache: Dictionary = {}
 var _merchant_cache_time: float = 0.0
-const MERCHANT_CACHE_DURATION = 30.0  # Recalculate every 30 seconds
+const MERCHANT_CACHE_DURATION = 30.0
+
+# Precomputed merchant circuits: {merchant_idx: [post_key, post_key, ...]}
+var _merchant_circuits: Dictionary = {}
+# Precomputed merchant route waypoints: {merchant_idx: [[Vector2i segment1], [Vector2i segment2], ...]}
+var _merchant_route_waypoints: Dictionary = {}
+# Total waypoint counts per merchant for time-based position lookup
+var _merchant_total_waypoints: Dictionary = {}
 
 func _get_total_merchants() -> int:
 	return TOTAL_WANDERING_MERCHANTS
 
-func _get_elite_merchant_route(merchant_idx: int) -> Dictionary:
-	"""Get route for elite merchants - they stay in outer zones (100+ from center).
-	Destinations are weighted toward the outer edge of the map."""
-	# Find all posts that are at least 100 distance from center
-	var outer_posts: Array = []
-	for i in range(TRADING_POST_IDS.size()):
-		var post_id = TRADING_POST_IDS[i]
-		var post = trading_post_db.get_trading_post_by_id(post_id)
-		if post.is_empty():
-			continue
-		var dist = sqrt(pow(post.center.x, 2) + pow(post.center.y, 2))
-		if dist >= 100:
-			outer_posts.append({"idx": i, "id": post_id, "dist": dist})
+func compute_merchant_circuits() -> void:
+	"""Assign each merchant a circuit of 3-5 connected posts from the path graph.
+	Deterministic based on merchant index."""
+	_merchant_circuits.clear()
+	_merchant_route_waypoints.clear()
+	_merchant_total_waypoints.clear()
 
-	if outer_posts.size() < 2:
-		# Fallback if not enough outer posts
-		return {"home_id": "shadowmere", "dest_id": "voids_edge", "home_idx": 26, "dest_idx": 27}
+	var post_keys = _path_graph.keys()
+	if post_keys.size() < 2:
+		return
 
-	# Use merchant index to pick home post from outer posts
-	var home_idx_in_outer = merchant_idx % outer_posts.size()
-	var home_post = outer_posts[home_idx_in_outer]
+	for merchant_idx in range(TOTAL_WANDERING_MERCHANTS):
+		# Pick a starting post deterministically
+		var start_idx = (merchant_idx * 7 + 3) % post_keys.size()
+		var circuit: Array = [post_keys[start_idx]]
 
-	# Pick destination weighted toward furthest posts
-	# Sort by distance descending and pick from top half more often
-	outer_posts.sort_custom(func(a, b): return a.dist > b.dist)
+		# Walk the graph to build a circuit of 3-5 posts
+		var visited: Dictionary = {post_keys[start_idx]: true}
+		var current_key = post_keys[start_idx]
+		var circuit_len = 3 + (merchant_idx % 3)  # 3, 4, or 5 posts
 
-	# Use a different seed for destination selection
-	var dest_seed = (merchant_idx * 31 + 17) % outer_posts.size()
-	# Bias toward outer posts: 70% chance to pick from outer half
-	var pick_outer = ((merchant_idx * 7) % 10) < 7
-	var dest_idx_in_outer: int
-	if pick_outer and outer_posts.size() > 1:
-		# Pick from outer half (sorted by distance, so first half is furthest)
-		dest_idx_in_outer = dest_seed % maxi(1, outer_posts.size() / 2)
-	else:
-		# Pick from anywhere in outer posts
-		dest_idx_in_outer = dest_seed
+		for _step in range(circuit_len - 1):
+			var neighbors = _path_graph.get(current_key, [])
+			if neighbors.size() == 0:
+				break
+			# Pick next unvisited neighbor deterministically
+			var picked = ""
+			var pick_seed = (merchant_idx * 13 + _step * 7) % maxi(1, neighbors.size())
+			for attempt in range(neighbors.size()):
+				var candidate = neighbors[(pick_seed + attempt) % neighbors.size()]
+				if not visited.has(candidate):
+					picked = candidate
+					break
+			if picked == "":
+				# All neighbors visited, pick any neighbor to create a shorter circuit
+				picked = neighbors[pick_seed % neighbors.size()]
+			circuit.append(picked)
+			visited[picked] = true
+			current_key = picked
 
-	# Make sure destination is different from home
-	if dest_idx_in_outer == home_idx_in_outer:
-		dest_idx_in_outer = (dest_idx_in_outer + 1) % outer_posts.size()
+		_merchant_circuits[merchant_idx] = circuit
 
-	var dest_post = outer_posts[dest_idx_in_outer]
+		# Precompute waypoints for each segment in the circuit
+		var route_waypoints: Array = []
+		var total_wp = 0
+		for seg_idx in range(circuit.size()):
+			var from_key = circuit[seg_idx]
+			var to_key = circuit[(seg_idx + 1) % circuit.size()]
+			var segment = get_path_waypoints_for_segment(from_key, to_key)
+			if segment.size() == 0:
+				# No path between these posts — use direct line as fallback
+				var from_pos = _path_post_positions.get(from_key, Vector2i(0, 0))
+				var to_pos = _path_post_positions.get(to_key, Vector2i(0, 0))
+				segment = [from_pos, to_pos]
+			route_waypoints.append(segment)
+			total_wp += segment.size()
 
-	return {
-		"home_id": home_post.id,
-		"dest_id": dest_post.id,
-		"home_idx": home_post.idx,
-		"dest_idx": dest_post.idx
-	}
-
-func _get_merchant_route(merchant_idx: int) -> Dictionary:
-	"""Get the route for a specific merchant based on their index.
-	Elite merchants (0-7) use special outer-zone routing.
-	Other merchants are spread evenly across all zones."""
-
-	# Elite merchants have special routing - they stay in outer zones
-	if _is_elite_merchant(merchant_idx):
-		return _get_elite_merchant_route(merchant_idx)
-
-	var num_posts = TRADING_POST_IDS.size()
-
-	# Zone boundaries in TRADING_POST_IDS:
-	# 0-4: Core zone (5 posts) - 25% of merchants (reduced from 40%)
-	# 5-16: Inner zone (12 posts) - 25% of merchants (reduced from 30%)
-	# 17-25: Mid zone (9 posts) - 25% of merchants (increased from 15%)
-	# 26+: Outer zones (32 posts) - 25% of merchants (increased from 15%)
-	# This ensures merchants are findable everywhere, not just near spawn
-
-	# Adjust merchant_idx to account for elite merchants (0-7)
-	var adjusted_idx = merchant_idx - 8
-
-	var home_post_idx: int
-	var zone_roll = adjusted_idx % 100
-
-	if zone_roll < 25:  # 25% in core zone
-		home_post_idx = (adjusted_idx * 3) % 5  # Posts 0-4
-	elif zone_roll < 50:  # 25% in inner zone
-		home_post_idx = 5 + ((adjusted_idx * 7) % 12)  # Posts 5-16
-	elif zone_roll < 75:  # 25% in mid zone
-		home_post_idx = 17 + ((adjusted_idx * 11) % 9)  # Posts 17-25
-	else:  # 25% in outer zones
-		home_post_idx = 26 + ((adjusted_idx * 13) % (num_posts - 26))  # Posts 26+
-
-	# Destination varies - some stay local, some travel far
-	# This creates more varied travel patterns visible on the map
-	var dest_offset = ((adjusted_idx * 17) % 15) + 1  # 1-15 posts away (increased range)
-	var dest_post_idx = (home_post_idx + dest_offset) % num_posts
-
-	# Ensure destination is different from home
-	if dest_post_idx == home_post_idx:
-		dest_post_idx = (dest_post_idx + 1) % num_posts
-
-	return {
-		"home_id": TRADING_POST_IDS[home_post_idx],
-		"dest_id": TRADING_POST_IDS[dest_post_idx],
-		"home_idx": home_post_idx,
-		"dest_idx": dest_post_idx
-	}
+		_merchant_route_waypoints[merchant_idx] = route_waypoints
+		_merchant_total_waypoints[merchant_idx] = total_wp
 
 func _get_merchant_position(merchant_idx: int, current_time: float) -> Dictionary:
-	"""Calculate where a merchant is right now based on time.
-	Returns {x, y, is_resting, at_post}"""
-	var route = _get_merchant_route(merchant_idx)
+	"""Calculate merchant position by walking along precomputed waypoints.
+	Returns {x, y, is_resting, at_post, segment_idx, destination_key}"""
+	if not _merchant_circuits.has(merchant_idx):
+		return {"x": 0, "y": 0, "is_resting": true, "at_post": "", "segment_idx": 0, "destination_key": ""}
 
-	var home_post = trading_post_db.get_trading_post_by_id(route.home_id)
-	var dest_post = trading_post_db.get_trading_post_by_id(route.dest_id)
+	var circuit = _merchant_circuits[merchant_idx]
+	var route_waypoints = _merchant_route_waypoints.get(merchant_idx, [])
+	if circuit.size() < 2 or route_waypoints.size() == 0:
+		var pos = _path_post_positions.get(circuit[0], Vector2i(0, 0))
+		return {"x": pos.x, "y": pos.y, "is_resting": true, "at_post": circuit[0], "segment_idx": 0, "destination_key": ""}
 
-	if home_post.is_empty() or dest_post.is_empty():
-		return {"x": 0, "y": 0, "is_resting": true, "at_post": "haven"}
+	# Calculate total cycle time: for each segment, travel_time + rest_time
+	var segment_times: Array = []
+	var total_cycle_time = 0.0
+	for seg in route_waypoints:
+		var travel_time = float(seg.size()) / MERCHANT_SPEED if MERCHANT_SPEED > 0 else 300.0
+		segment_times.append({"travel": travel_time, "rest": MERCHANT_REST_TIME})
+		total_cycle_time += travel_time + MERCHANT_REST_TIME
 
-	# Calculate journey cycle time (travel + rest at each end)
-	var home_x = float(home_post.center.x)
-	var home_y = float(home_post.center.y)
-	var dest_x = float(dest_post.center.x)
-	var dest_y = float(dest_post.center.y)
+	if total_cycle_time <= 0:
+		var pos = _path_post_positions.get(circuit[0], Vector2i(0, 0))
+		return {"x": pos.x, "y": pos.y, "is_resting": true, "at_post": circuit[0], "segment_idx": 0, "destination_key": ""}
 
-	var route_dist = sqrt(pow(dest_x - home_x, 2) + pow(dest_y - home_y, 2))
-	var travel_time = route_dist / MERCHANT_SPEED if MERCHANT_SPEED > 0 else MERCHANT_JOURNEY_TIME
-	travel_time = min(travel_time, MERCHANT_JOURNEY_TIME)  # Cap journey time
+	# Time offset for desynchronization
+	var time_offset = float(merchant_idx * 137)
+	var cycle_pos = fmod(current_time + time_offset, total_cycle_time)
 
-	# Full cycle: rest at home -> travel to dest -> rest at dest -> travel home
-	var cycle_time = (travel_time + MERCHANT_REST_TIME) * 2
+	# Find which segment/phase we're in
+	var elapsed = 0.0
+	for seg_idx in range(segment_times.size()):
+		var seg_travel = segment_times[seg_idx].travel
+		var seg_rest = segment_times[seg_idx].rest
 
-	# Add offset based on merchant index so they're not all synchronized
-	var time_offset = float(merchant_idx * 137) # Prime number for spread
-	var cycle_position = fmod(current_time + time_offset, cycle_time)
+		# Rest phase at this post
+		if cycle_pos < elapsed + seg_rest:
+			var post_key = circuit[seg_idx]
+			var pos = _path_post_positions.get(post_key, Vector2i(0, 0))
+			return {"x": pos.x, "y": pos.y, "is_resting": true, "at_post": post_key, "segment_idx": seg_idx, "destination_key": circuit[(seg_idx + 1) % circuit.size()]}
+		elapsed += seg_rest
 
-	# Determine phase: 0=resting at home, 1=traveling to dest, 2=resting at dest, 3=traveling home
-	var phase_time = cycle_time / 4.0
-	var phase = int(cycle_position / phase_time) % 4
-	var phase_progress = fmod(cycle_position, phase_time) / phase_time
+		# Travel phase
+		if cycle_pos < elapsed + seg_travel:
+			var travel_progress = cycle_pos - elapsed
+			var waypoints = route_waypoints[seg_idx]
+			var wp_idx = int(travel_progress * MERCHANT_SPEED)
+			wp_idx = clampi(wp_idx, 0, waypoints.size() - 1)
+			var wp = waypoints[wp_idx]
+			var dest_key = circuit[(seg_idx + 1) % circuit.size()]
+			return {"x": wp.x, "y": wp.y, "is_resting": false, "at_post": "", "segment_idx": seg_idx, "destination_key": dest_key}
+		elapsed += seg_travel
 
-	match phase:
-		0:  # Resting at home
-			return {"x": int(home_x), "y": int(home_y), "is_resting": true, "at_post": route.home_id}
-		1:  # Traveling to destination
-			var x = home_x + (dest_x - home_x) * phase_progress
-			var y = home_y + (dest_y - home_y) * phase_progress
-			return {"x": int(round(x)), "y": int(round(y)), "is_resting": false, "at_post": ""}
-		2:  # Resting at destination
-			return {"x": int(dest_x), "y": int(dest_y), "is_resting": true, "at_post": route.dest_id}
-		3:  # Traveling home
-			var x = dest_x + (home_x - dest_x) * phase_progress
-			var y = dest_y + (home_y - dest_y) * phase_progress
-			return {"x": int(round(x)), "y": int(round(y)), "is_resting": false, "at_post": ""}
-
-	return {"x": int(home_x), "y": int(home_y), "is_resting": true, "at_post": route.home_id}
+	# Fallback (shouldn't reach here due to fmod)
+	var pos = _path_post_positions.get(circuit[0], Vector2i(0, 0))
+	return {"x": pos.x, "y": pos.y, "is_resting": true, "at_post": circuit[0], "segment_idx": 0, "destination_key": ""}
 
 # Inventory refresh interval (5 minutes)
 const INVENTORY_REFRESH_INTERVAL = 300.0
 
 func _is_elite_merchant(merchant_idx: int) -> bool:
-	"""Check if a merchant index is one of the 8 elite merchants."""
-	# Elite merchants are indices 0-7 (the first 8 merchants are elite)
-	# They have special routing that keeps them in outer zones
-	return merchant_idx < 8
+	"""Check if a merchant index is one of the first 2 elite merchants."""
+	return merchant_idx < 2
 
 func _get_merchant_info(merchant_idx: int) -> Dictionary:
 	"""Generate merchant info based on index (deterministic)"""
 	var name_idx = merchant_idx % MERCHANT_FIRST_NAMES.size()
 
-	# Elite merchants are VERY rare - only 8 total, they roam the outer zones
 	var merchant_type: Dictionary
 	if _is_elite_merchant(merchant_idx):
-		# Find the elite type in MERCHANT_TYPES
 		for mt in MERCHANT_TYPES:
 			if mt.specialty == "elite":
 				merchant_type = mt
 				break
 	else:
-		# Normal merchant type assignment (skip elite type at index 14)
-		# Offset by 8 since indices 0-7 are reserved for elite
-		var adjusted_idx = merchant_idx - 8
-		var type_idx = adjusted_idx % (MERCHANT_TYPES.size() - 1)  # -1 to exclude elite
-		if type_idx >= 14:  # Elite is at index 14, skip it
+		# Skip elite type at index 14
+		var adjusted_idx = merchant_idx - 2  # 2 elite merchants
+		var type_idx = adjusted_idx % (MERCHANT_TYPES.size() - 1)
+		if type_idx >= 14:
 			type_idx += 1
 		merchant_type = MERCHANT_TYPES[type_idx]
 
-	# Inventory seed changes every 5 minutes
 	var time_window = int(Time.get_unix_time_from_system() / INVENTORY_REFRESH_INTERVAL)
 	var inventory_seed = (merchant_idx * 7919 + time_window * 104729) % 2147483647
 
@@ -1738,8 +2061,8 @@ func _refresh_merchant_cache():
 	var total = _get_total_merchants()
 	for i in range(total):
 		var pos = _get_merchant_position(i, current_time)
-		# Skip merchants in safe zones (NPC posts, trading posts)
-		if is_safe_zone(pos.x, pos.y):
+		# Skip merchants resting inside NPC posts (they're "inside" — not visible on road)
+		if pos.get("is_resting", false) and pos.get("at_post", "") != "":
 			continue
 		var key = "%d,%d" % [pos.x, pos.y]
 		if not _merchant_cache.has(key):
@@ -1764,15 +2087,22 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 	if not _merchant_cache.has(key):
 		return {}
 
-	# Get the first merchant at this location
 	var merchant_idx = _merchant_cache[key][0]
 	var info = _get_merchant_info(merchant_idx)
 	var pos = _get_merchant_position(merchant_idx, Time.get_unix_time_from_system())
-	var route = _get_merchant_route(merchant_idx)
 
-	# Get destination info
-	var dest_post = trading_post_db.get_trading_post_by_id(route.dest_id)
-	var home_post = trading_post_db.get_trading_post_by_id(route.home_id)
+	# Get destination name from post positions
+	var dest_key = pos.get("destination_key", "")
+	var dest_name = ""
+	if dest_key != "":
+		# Look up post name from NPC posts
+		if chunk_manager:
+			for npc_post in chunk_manager.get_npc_posts():
+				if _get_post_key(npc_post) == dest_key:
+					dest_name = npc_post.get("name", "Unknown")
+					break
+		if dest_name == "":
+			dest_name = dest_key  # Fallback to key
 
 	return {
 		"id": info.id,
@@ -1783,13 +2113,13 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 		"y": y,
 		"hash": info.inventory_seed,
 		"is_wanderer": false,
-		"destination": dest_post.get("name", "Unknown") if not pos.is_resting else "",
-		"destination_id": route.dest_id,
-		"next_destination": home_post.get("name", "Unknown"),
-		"next_destination_id": route.home_id,
+		"destination": dest_name if not pos.is_resting else "",
+		"destination_id": dest_key,
 		"last_restock": Time.get_unix_time_from_system(),
 		"is_resting": pos.is_resting,
-		"at_post": pos.at_post
+		"at_post": pos.get("at_post", ""),
+		"merchant_idx": merchant_idx,
+		"road_merchant": not pos.is_resting
 	}
 
 func get_all_merchant_positions() -> Array:

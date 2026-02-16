@@ -1,4 +1,4 @@
-# Phantom Badlands v0.9.126 -- Quick Reference
+# Phantom Badlands v0.9.128 -- Quick Reference
 
 **Use this as context primer for new Claude sessions.**
 
@@ -20,14 +20,14 @@ Text-based multiplayer RPG built with **Godot 4.6** / GDScript. Client-server ar
 | `shared/drop_tables.gd` | 4527 | Item generation, fishing/mining/logging/foraging catch tables, salvage values, valor calculation, egg definitions, companion abilities |
 | `shared/crafting_database.gd` | 3472 | 5 crafting skills, recipes, materials dictionary, quality system, upgrade/enchantment caps, crafting challenge questions |
 | `shared/character.gd` | 3653 | Player stats, inventory, equipment, jobs, companions, eggs, quests, titles, racial passives, dungeon/house state |
-| `shared/world_system.gd` | 2136 | Procedural terrain generation, tile types, LOS raycasting, tier zones, NPC post layout building |
+| `shared/world_system.gd` | ~2400 | Procedural terrain generation, tile types, LOS raycasting, tier zones, NPC post layout building, A* pathfinding, road system, merchant circuits |
 | `shared/dungeon_database.gd` | 1991 | Dungeon definitions (T1-T9), floor layouts, boss data, sub-tier level ranges, egg drops |
 | `shared/monster_database.gd` | 1728 | 50+ monsters across 9 tiers, monster abilities, stat scaling, lethality calculation |
 | `shared/quest_database.gd` | 1261 | Dynamic daily quest generation (seeded per-post per-day), quest types, reward scaling |
 | `shared/trading_post_database.gd` | 1054 | Static trading post definitions (core zone through frontier), coordinates, quest givers |
 | `shared/quest_manager.gd` | 563 | Quest acceptance validation, progress tracking, turn-in logic, party quest sync |
 | `shared/titles.gd` | 444 | Title hierarchy (Jarl, High King, Elder, Eternal), abuse tracking, pilgrimage stages |
-| `shared/chunk_manager.gd` | 438 | 32x32 chunk system, delta JSON persistence, depleted node tracking, geological events |
+| `shared/chunk_manager.gd` | ~500 | 32x32 chunk system, delta JSON persistence, depleted node tracking, geological events, path persistence, is_tile_modified |
 | `shared/npc_post_database.gd` | 224 | Procedural NPC post placement (~18 posts from seed), naming, category assignment |
 
 ### Client Art & UI
@@ -350,6 +350,36 @@ Player-built safe zones in the world. Other players can visit. Compass hints gui
 
 **Requirements:** Construction skill, post_slots house upgrade, materials.
 
+### Roads & Merchants
+
+Road network connecting NPC posts, formed by player clearing terrain between settlements.
+
+**Road Formation:**
+- Server computes desired road edges using Kruskal's MST + extra edges
+- Every 60 seconds, server tries A* pathfinding on one unconnected pair
+- Roads only form through player-cleared terrain (depleted resource nodes, modified tiles)
+- Procedurally-generated empty tiles do NOT count as walkable for roads
+- When terrain is cleared between two posts, a road appears as `:` tiles
+- Player posts also connect to the road network when built
+
+**Merchants (10 wandering):**
+- Follow road tiles between connected posts in 3-5 post circuits
+- Time-based position along precomputed waypoints
+- Rest at posts for 5 minutes, then travel at ~1 tile per 50 seconds
+- Elite merchants (first 2) patrol outer-zone circuits
+- Invisible on map while resting inside posts
+
+**Road Encounters:**
+- Walking on road tiles halves the monster encounter rate
+- Bump into a merchant on the road → mobile market (carried items only, no sell option)
+- Bump into a merchant at a post → full merchant interaction
+
+**Market Equalization:**
+- Merchants carry up to 10 items between posts
+- On arriving at a post, merchants offload carried items and pick up excess
+- Excess = categories where current post has more listings than next post
+- Takes half the surplus (FIFO: oldest listings first)
+
 ### Titles & Trophies
 
 **Title hierarchy (lowest to highest):** Jarl -> High King -> Elder -> Eternal.
@@ -381,6 +411,8 @@ Two types of NPC posts exist in the world:
 Procedural 4000x4000 tile world (-2000 to +2000 on each axis). Chunk-based (32x32 tiles per chunk).
 
 **Tile types:** empty, stone, tree, ore_vein, herb, flower, mushroom, bush, reed, dense_brush, water, deep_water, wall, door, floor, path, forge, apothecary, workbench, enchant_table, writing_desk, market, inn, quest_board, blacksmith, healer, tower, storage, guard, post_marker, void.
+
+Road paths (`:`) form between NPC posts as players clear terrain corridors.
 
 **Vision:** Bresenham LOS raycasting, radius 11 (radius 2 when blind). Stones, trees, ore veins, and walls block line of sight.
 

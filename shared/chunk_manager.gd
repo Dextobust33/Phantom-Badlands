@@ -130,6 +130,15 @@ func remove_tile_modification(world_x: int, world_y: int) -> void:
 			modified_tiles.erase(tile_key)
 			_dirty_chunks[chunk_key] = true
 
+func is_tile_modified(world_x: int, world_y: int) -> bool:
+	"""Check if a tile has been explicitly modified from its procedural state."""
+	var chunk_key = get_chunk_key(world_x, world_y)
+	var tile_key = "%d,%d" % [world_x, world_y]
+	if _loaded_chunks.has(chunk_key):
+		var chunk_data = _loaded_chunks[chunk_key]
+		return chunk_data.get("modified_tiles", {}).has(tile_key)
+	return false
+
 # ===== GATHERING NODE DEPLETION =====
 
 func deplete_node(world_x: int, world_y: int, tile_type: String = "") -> void:
@@ -411,6 +420,70 @@ func get_npc_post_at(world_x: int, world_y: int) -> Dictionary:
 func is_npc_post_tile(world_x: int, world_y: int) -> bool:
 	"""Check if a tile is inside any NPC post."""
 	return not get_npc_post_at(world_x, world_y).is_empty()
+
+# ===== PATH DATA PERSISTENCE =====
+
+const PATHS_FILE = "user://data/world/paths.json"
+
+func save_path_data(paths: Dictionary, graph: Dictionary, post_positions: Dictionary) -> void:
+	"""Save computed paths to disk. Converts Vector2i to serializable format."""
+	_ensure_world_directory()
+	var serialized_paths: Dictionary = {}
+	for key in paths:
+		var waypoints: Array = []
+		for wp in paths[key]:
+			if wp is Vector2i:
+				waypoints.append({"x": wp.x, "y": wp.y})
+			else:
+				waypoints.append(wp)
+		serialized_paths[key] = waypoints
+
+	var serialized_positions: Dictionary = {}
+	for key in post_positions:
+		var pos = post_positions[key]
+		if pos is Vector2i:
+			serialized_positions[key] = {"x": pos.x, "y": pos.y}
+		else:
+			serialized_positions[key] = pos
+
+	var data = {"paths": serialized_paths, "graph": graph, "post_positions": serialized_positions}
+	var file = FileAccess.open(PATHS_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data, "\t"))
+		file.close()
+		print("Saved %d path segments" % serialized_paths.size())
+
+func load_path_data() -> Dictionary:
+	"""Load saved paths. Returns {paths, graph, post_positions} or empty dict."""
+	if not FileAccess.file_exists(PATHS_FILE):
+		return {}
+	var file = FileAccess.open(PATHS_FILE, FileAccess.READ)
+	if not file:
+		return {}
+	var content = file.get_as_text()
+	file.close()
+	var json = JSON.new()
+	var error = json.parse(content)
+	if error != OK or not (json.data is Dictionary):
+		return {}
+
+	var data = json.data
+	# Convert waypoints back to Vector2i
+	var paths: Dictionary = {}
+	var raw_paths = data.get("paths", {})
+	for key in raw_paths:
+		var waypoints: Array = []
+		for wp in raw_paths[key]:
+			waypoints.append(Vector2i(int(wp.get("x", 0)), int(wp.get("y", 0))))
+		paths[key] = waypoints
+
+	var post_positions: Dictionary = {}
+	var raw_positions = data.get("post_positions", {})
+	for key in raw_positions:
+		var pos = raw_positions[key]
+		post_positions[key] = Vector2i(int(pos.get("x", 0)), int(pos.get("y", 0)))
+
+	return {"paths": paths, "graph": data.get("graph", {}), "post_positions": post_positions}
 
 # ===== GEOLOGICAL EVENTS =====
 

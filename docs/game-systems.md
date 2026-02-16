@@ -1397,3 +1397,95 @@ Material quantity per roll is 1 to (2 + tier).
 |------|-----------|
 | `server/server.gd` | `_open_treasure_chest()`, `_get_chest_material_pool()` |
 | `shared/drop_tables.gd` | Treasure chest definitions in gathering catch tables |
+
+## Roads & Merchant Network
+
+Phase 4 system: A* pathfinding roads between NPC posts, with merchants that follow roads and equalize market supply.
+
+### Road Formation
+
+Roads form organically as players clear terrain between settlements:
+
+1. **Desired Edges:** On server init, Kruskal's MST algorithm + extra redundant edges compute which post pairs SHOULD be connected (~26 edges for 18 posts)
+2. **Periodic Check:** Every 60 seconds, the server tries A* pathfinding on one unconnected pair
+3. **Strict Walkability:** Only player-cleared tiles count as walkable for road pathfinding:
+   - Depleted resource nodes (previously harvested/mined/chopped)
+   - Modified empty tiles (tiles explicitly changed by player actions)
+   - Existing structures (path, floor, door, tower, storage, post_marker tiles)
+   - Procedurally-generated empty tiles do NOT count
+4. **Stamping:** When A* finds a valid path, `:` (path) tiles are stamped and persisted
+5. **Player Posts:** When a player builds an enclosure, it automatically connects to the nearest post in the road network
+
+### A* Implementation
+
+- Grid-based, 4-directional (N/S/E/W only for clean visual roads)
+- Binary min-heap priority queue for performance
+- Manhattan distance heuristic
+- Max 50,000 nodes explored per search (fails fast on uncleared terrain)
+- Paths exit NPC posts via the nearest door tile
+
+### Merchant System (10 wandering merchants)
+
+| Constant | Value |
+|----------|-------|
+| `TOTAL_WANDERING_MERCHANTS` | 10 |
+| `MERCHANT_SPEED` | 0.02 tiles/sec (~1 tile per 50 sec) |
+| `MERCHANT_REST_TIME` | 300 sec (5 minutes at each post) |
+| `MERCHANT_CARRY_CAPACITY` | 10 items max |
+| `MERCHANT_CHECK_INTERVAL` | 30 sec (arrival check) |
+| `ROAD_CHECK_INTERVAL` | 60 sec (pathfinding check) |
+
+**Merchant Circuits:**
+- Each merchant gets a 3-5 post circuit computed from the road graph
+- Deterministic based on merchant_idx and world seed
+- Elite merchants (index 0-1) patrol outer-zone circuits
+- Merchants cycle continuously: Post A -> Post B -> Post C -> Post A -> ...
+- Merchants resting at posts are invisible on the map
+
+**Position Calculation:**
+- Time-based walk along precomputed waypoint arrays
+- Phase cycle: rest at post -> walk waypoints -> rest at next post -> repeat
+- Position recalculated on demand (no per-frame updates)
+
+### Road Encounter Rate
+
+Walking on path tiles halves the normal encounter rate:
+```
+check_encounter():
+    rate = terrain_encounter_rate
+    if tile.type == "path":
+        rate *= 0.5
+    return randf() < rate
+```
+
+### Road Merchant Interaction
+
+| Context | Behavior |
+|---------|----------|
+| Bump merchant on road | Mobile market: see carried items only, buy only (no sell/upgrade/gamble) |
+| Bump merchant at post | Full merchant: buy, sell, upgrade, gamble |
+| Merchant has no items | "The merchant has nothing to sell right now" |
+
+### Market Equalization
+
+When a merchant arrives at a post:
+1. **Offload:** All carried items are added as market listings at the arrival post
+2. **Equalize:** Compare this post's listings by category against the next post on route
+3. For each category where this post has more: take `(excess) / 2` items (oldest first)
+4. Cap at MERCHANT_CARRY_CAPACITY total items
+5. Merchant departs toward next post carrying the items
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `shared/world_system.gd` | A* pathfinding, path graph, merchant circuits, position calc |
+| `shared/chunk_manager.gd` | Path data persistence (`paths.json`), `is_tile_modified()` |
+| `server/server.gd` | Road init, periodic checks, merchant inventory, equalization, road encounters |
+| `client/client.gd` | `is_road_merchant` flag, road merchant action bar (buy only) |
+
+### Persistence
+
+| File | Contents |
+|------|---------|
+| `user://data/world/paths.json` | Computed paths, road graph, post positions |

@@ -3466,11 +3466,12 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		elif effect.get("stat_pct", false):
 			# Stat scroll: % of character's base stat
 			var stat_pct = tier_data.get("scroll_stat_pct", 10)
+			var equip_bonuses = character.get_equipment_bonuses()
 			match buff_type:
-				"strength": buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"strength": buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
 				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
-				"speed": buff_value = maxi(1, int(character.get_total_speed() * stat_pct / 100.0))
-				_: buff_value = maxi(1, int(character.get_total_strength() * stat_pct / 100.0))
+				"speed": buff_value = maxi(1, int((character.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
+				_: buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
 			duration = tier_data.get("scroll_duration", 1)
 		elif effect.get("tier_value", false):
 			# Percentage scroll: use buff_value directly (lifesteal, thorns, crit %)

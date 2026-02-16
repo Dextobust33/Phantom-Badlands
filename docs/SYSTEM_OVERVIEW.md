@@ -22,7 +22,7 @@ SERVER SUBSYSTEMS:
   server.gd ──► CombatManager (combat_manager.gd)
                   └── Turn-based engine, ability system, party combat
   server.gd ──► WorldSystem (world_system.gd)
-                  └── Procedural terrain, tile types, LOS, map gen
+                  └── Procedural terrain, tile types, LOS, map gen, A* roads, merchant circuits
   server.gd ──► ChunkManager (chunk_manager.gd)
                   └── 32x32 chunks, delta JSON, tile storage
   server.gd ──► MonsterDatabase (monster_database.gd)
@@ -709,6 +709,7 @@ Level milestones: +50 (Lv10), +150 (Lv25), +400 (Lv50), +1000 (Lv100)
 | `player_tiles.json` | Player-placed structures |
 | `player_posts.json` | Named player posts/enclosures |
 | `market_data.json` | Open Market listings |
+| `world/paths.json` | Road network paths, graph, post positions |
 | `guards.json` | Hired guard data |
 | `player_storage.json` | Storage chest contents |
 
@@ -773,6 +774,10 @@ Linear interpolation between: 1.50 - ((count-2)/18 * 0.35)
 | Max player enclosures | 5 | server.gd |
 | Max enclosure size | 11x11 | server.gd |
 | Sanctuary viewport | 21x9 (min) | client.gd |
+| Road check interval | 60 seconds | server.gd |
+| Merchant count | 10 | world_system.gd |
+| Merchant speed | 0.02 tiles/sec | world_system.gd |
+| A* max nodes | 50,000 | world_system.gd |
 
 ### Key File Locations
 
@@ -782,8 +787,8 @@ Linear interpolation between: 1.50 - ((count-2)/18 * 0.35)
 | `server/server.gd` | ~14000 | Server logic, message routing, game systems |
 | `shared/character.gd` | ~3300 | Player stats, inventory, equipment, jobs |
 | `shared/combat_manager.gd` | ~6000 | Turn-based combat engine, abilities |
-| `shared/world_system.gd` | ~2000 | Terrain gen, tile types, LOS, map display |
-| `shared/chunk_manager.gd` | ~400 | Chunk loading/saving, delta system |
+| `shared/world_system.gd` | ~2400 | Terrain gen, tile types, LOS, map display |
+| `shared/chunk_manager.gd` | ~500 | Chunk loading/saving, delta system |
 | `shared/monster_database.gd` | ~1600 | Monster definitions, stat scaling |
 | `shared/drop_tables.gd` | ~4200 | Loot gen, catches, salvage, valor calc |
 | `shared/crafting_database.gd` | ~2200 | Recipes, materials, quality |

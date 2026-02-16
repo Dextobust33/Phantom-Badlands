@@ -736,6 +736,7 @@ var at_merchant: bool = false
 var merchant_data: Dictionary = {}
 var pending_merchant_action: String = ""
 var selected_shop_item: int = -1  # Currently selected shop item for inspection (-1 = none)
+var is_road_merchant: bool = false  # Road merchants can't buy from player
 var bought_item_pending_equip: Dictionary = {}  # Item just bought that can be equipped
 var bought_item_inventory_index: int = -1  # Index of the bought item in inventory
 var sell_page: int = 0  # Current page in merchant sell list
@@ -6030,17 +6031,32 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			current_actions = [
-				{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
-				{"label": "Sell", "action_type": "local", "action_data": "merchant_sell", "enabled": "sell" in services},
-				{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
-				{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
-				{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			if is_road_merchant:
+				# Road merchants only let you browse carried items
+				current_actions = [
+					{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Leave", "action_type": "local", "action_data": "merchant_leave", "enabled": true},
+					{"label": "Sell", "action_type": "local", "action_data": "merchant_sell", "enabled": "sell" in services},
+					{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
+					{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
+					{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif inventory_mode:
 		if pending_inventory_action == "sort_select":
@@ -15108,10 +15124,10 @@ func handle_server_message(message: Dictionary):
 		"merchant_start":
 			at_merchant = true
 			merchant_data = message.get("merchant", {})
-			# Display trader art for wandering merchants (they have destination)
-			if merchant_data.has("destination") and merchant_data.get("destination", "") != "":
+			is_road_merchant = message.get("road_merchant", false)
+			# Display trader art for wandering merchants
+			if merchant_data.get("destination", "") != "" or is_road_merchant:
 				game_output.clear()
-				# Use merchant hash for consistent art per merchant
 				var merchant_hash = merchant_data.get("hash", randi())
 				var trader_art = _get_trader_art().get_trader_art_for_id(merchant_hash)
 				display_game(trader_art)
@@ -15123,6 +15139,7 @@ func handle_server_message(message: Dictionary):
 			at_merchant = false
 			merchant_data = {}
 			pending_merchant_action = ""
+			is_road_merchant = false
 			display_game(message.get("message", "The merchant departs."))
 			update_action_bar()
 
@@ -18651,8 +18668,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.128 changes
+	display_game("[color=#00FF00]v0.9.128[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Roads & Merchants[/color]")
+	display_game("  • Roads now form between NPC posts as players clear terrain!")
+	display_game("  • A* pathfinding builds roads through player-cleared corridors")
+	display_game("  • 10 wandering merchants follow roads between connected posts")
+	display_game("  • Bump a merchant on the road to browse their carried items")
+	display_game("  • Merchants equalize market supply — carry items between posts")
+	display_game("  • Walking on roads halves the monster encounter rate")
+	display_game("  • Player posts automatically connect to the road network")
+	display_game("  • Fixed: Legendary Adventurer encounter save crash")
+	display_game("  • Fixed: Buff scroll crash (get_total_strength/speed)")
+	display_game("")
+
 	# v0.9.127 changes
-	display_game("[color=#00FF00]v0.9.127[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.127[/color]")
 	display_game("  [color=#FFD700]Cleanup, UI Fixes & Market Tools[/color]")
 	display_game("  • Market: Tools now have their own category (separate from consumables)")
 	display_game("  • Market: Tools filter added to category cycle and My Listings view")
@@ -18707,23 +18738,6 @@ func display_changelog():
 	display_game("  • My Listings page now shows category dividers and trading post locations")
 	display_game("  • Pull All button to cancel all market listings at once")
 	display_game("  • Job bonuses now displayed on the Jobs page")
-	display_game("")
-
-	# v0.9.119 changes
-	display_game("[color=#00FFFF]v0.9.119[/color]")
-	display_game("  [color=#FFD700]Market Polish & Bug Fixes[/color]")
-	display_game("  • Market listings now stack — identical items grouped with quantity")
-	display_game("  • Sort button [R]: Category, Price ▲/▼, Name, Newest")
-	display_game("  • Category dividers in browse view (Equipment, Consumables, etc.)")
-	display_game("  • Bulk listing: [1] All Equipment, [2] All Items, [3] All Materials")
-	display_game("  • Rune category added to market filter")
-	display_game("  • Treasure Chests are now usable — open for random materials + gold")
-	display_game("  • Tool break notification — message when tools hit 0 durability")
-	display_game("  • Tools now have proper valor (tier + rarity based)")
-	display_game("  • Fixed: Blacksmith/Healer showed 'Not enough Valor' always")
-	display_game("  • Fixed: Inventory consumables separator missing after tools")
-	display_game("  • Fixed: Market item/material lists now refresh after selling")
-	display_game("  • Crafting UI no longer shows misleading success %% (all crafts succeed)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
