@@ -13562,6 +13562,12 @@ func update_resource_bar():
 	if label:
 		label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
 
+func _set_character_data(new_data: Dictionary):
+	"""Replace character_data, preserving account-level fields that to_dict() doesn't include."""
+	character_data = new_data
+	if not character_data.has("valor"):
+		character_data["valor"] = account_valor
+
 func update_currency_display():
 	if not has_character:
 		return
@@ -14094,7 +14100,7 @@ func handle_server_message(message: Dictionary):
 			dungeon_floor_grid = []
 			in_combat = false
 			has_character = true
-			character_data = message.get("character", {})
+			_set_character_data(message.get("character", {}))
 			account_valor = int(character_data.get("valor", 0))
 			# Reset XP tracking for loaded character
 			recent_xp_gain = 0
@@ -14124,7 +14130,7 @@ func handle_server_message(message: Dictionary):
 			dungeon_floor_grid = []
 			in_combat = false
 			has_character = true
-			character_data = message.get("character", {})
+			_set_character_data(message.get("character", {}))
 			# Reset XP tracking for new character
 			recent_xp_gain = 0
 			xp_before_combat = 0
@@ -14381,7 +14387,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			# Update character data (gold/items were added)
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -14404,7 +14410,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			# Update character data (stats were modified)
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -14431,7 +14437,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 			# Update character data (gold/stats may have changed)
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -14442,7 +14448,7 @@ func handle_server_message(message: Dictionary):
 
 		"character_update":
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				account_valor = int(message.get("valor", character_data.get("valor", 0)))
 				update_player_level()
 				update_player_hp_bar()
@@ -14811,7 +14817,7 @@ func handle_server_message(message: Dictionary):
 				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
 					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
 				if message.has("character"):
-					character_data = message.character
+					_set_character_data(message.character)
 					update_player_level()
 					update_player_hp_bar()
 					update_resource_bar()
@@ -14876,7 +14882,7 @@ func handle_server_message(message: Dictionary):
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
-					character_data = message.character
+					_set_character_data(message.character)
 					update_player_level()
 					update_player_hp_bar()
 					update_resource_bar()
@@ -14951,7 +14957,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#FF00FF]%s[/color]" % result_msg)
 			# Update character data if items were added
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -15164,7 +15170,7 @@ func handle_server_message(message: Dictionary):
 		"title_claimed":
 			display_game(message.get("message", ""))
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 			# Request updated player list to show new title
 			send_to_server({"type": "get_player_list"})
@@ -15173,7 +15179,7 @@ func handle_server_message(message: Dictionary):
 		"title_lost":
 			display_game(message.get("message", ""))
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 			# Request updated player list to reflect title removal
 			send_to_server({"type": "get_player_list"})
@@ -15182,7 +15188,7 @@ func handle_server_message(message: Dictionary):
 		"title_achieved":
 			display_game(message.get("message", ""))
 			if message.has("character"):
-				character_data = message.character
+				_set_character_data(message.character)
 				update_player_level()
 			# Request updated player list to show new title
 			send_to_server({"type": "get_player_list"})
@@ -18130,7 +18136,7 @@ func _handle_party_combat_end(message: Dictionary):
 	if victory and not your_death:
 		# We survived and won
 		if message.has("character"):
-			character_data = message.character
+			_set_character_data(message.character)
 			update_player_level()
 			update_player_hp_bar()
 			update_resource_bar()
@@ -18169,7 +18175,7 @@ func _handle_party_combat_end(message: Dictionary):
 	elif death_saved:
 		# Death saved
 		if message.has("character"):
-			character_data = message.character
+			_set_character_data(message.character)
 			update_player_hp_bar()
 		display_game("[color=#00FFFF]You were saved from death![/color]")
 		pending_continue = true
@@ -18177,7 +18183,7 @@ func _handle_party_combat_end(message: Dictionary):
 	elif not victory and not your_death:
 		# We survived (fled) but combat was lost
 		if message.has("character"):
-			character_data = message.character
+			_set_character_data(message.character)
 			update_player_hp_bar()
 		display_game("[color=#FF8800]The party was defeated.[/color]")
 		pending_continue = true
@@ -18458,7 +18464,7 @@ func display_job_overview():
 		display_game("[color=#808080][%s] Back | [%s] < Prev Page[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
 func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_category_committed: bool, committed_name: String):
-	"""Display a single job entry with level, XP bar, and status."""
+	"""Display a single job entry with level, XP bar, status, and bonuses."""
 	var jlv = int(jlevels.get(jname, 1))
 	var xp_cur = int(jxp.get(jname, 0))
 	var xp_needed = int(100 * pow(jlv, 1.4))
@@ -18483,6 +18489,11 @@ func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_
 	var job_desc = _get_job_description(jname)
 	display_game("[color=%s]  %s Lv%d%s[/color]%s" % [color, jname.capitalize(), jlv, xp_bar, status_str])
 	display_game("[color=#808080]    %s[/color]" % job_desc)
+	# Show current level bonuses
+	if not is_locked:
+		var bonus_text = _get_job_bonus_text(jname, jlv, is_committed)
+		if not bonus_text.is_empty():
+			display_game("[color=#00BFFF]    %s[/color]" % bonus_text)
 
 func display_job_commit_confirm(job_name: String, category: String):
 	"""Show commitment confirmation dialog."""
@@ -18512,6 +18523,31 @@ func _get_job_description(job_name: String) -> String:
 		"scribe": return "Create scrolls, maps, and tomes"
 		"enchanter": return "Enchant and disenchant equipment"
 		_: return ""
+
+func _get_job_bonus_text(job_name: String, level: int, is_committed: bool) -> String:
+	"""Return a description of the bonuses this job level provides."""
+	# Gathering jobs: hint_strength = min(1.0, level / 100.0)
+	if job_name in ["mining", "logging", "foraging", "fishing"]:
+		var hint_pct = mini(100, level)
+		return "Hint accuracy: %d%%" % hint_pct
+	# Soldier: harvest chance = 20% + level * 0.5%
+	if job_name == "soldier":
+		var harvest_pct = mini(70, 20 + int(level * 0.5))
+		return "Harvest chance: %d%% | Part drops in combat" % harvest_pct
+	# Specialty jobs: quality_bonus = int(level * 0.3)
+	if job_name in ["blacksmith", "alchemist", "enchanter", "scribe", "builder"]:
+		var quality = int(level * 0.3)
+		var parts = []
+		if quality > 0:
+			parts.append("+%d%% quality" % quality)
+		if is_committed:
+			parts.append("Exclusive recipes unlocked")
+		elif level >= 5:
+			parts.append("Commit to unlock exclusive recipes")
+		if parts.is_empty():
+			return ""
+		return " | ".join(parts)
+	return ""
 
 func display_changelog():
 	"""Display recent changes and updates"""
@@ -21571,7 +21607,7 @@ func handle_gathering_complete(message: Dictionary):
 
 	# Update character data if included
 	if message.has("character"):
-		character_data = message.character
+		_set_character_data(message.character)
 		update_player_level()
 		update_player_hp_bar()
 		update_resource_bar()
@@ -23243,41 +23279,63 @@ func display_market_buy_confirm():
 		input_field.call_deferred("release_focus")
 
 func display_market_my_listings():
-	"""Display the player's own market listings."""
+	"""Display the player's own market listings, sorted by category."""
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	game_output.clear()
-	display_game("[color=#FFD700]===== My Market Listings =====[/color]")
+	display_game("[color=#FFD700]===== My Market Listings (%d) =====[/color]" % market_listings.size())
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
 
 	if market_listings.is_empty():
 		display_game("[color=#808080]You have no active listings.[/color]")
 	else:
+		# Sort listings by category for display
+		var cat_order = {"equipment": 0, "consumable": 1, "rune": 2, "monster_part": 3}
+		market_listings.sort_custom(func(a, b):
+			var a_cat = a.get("supply_category", "equipment")
+			var b_cat = b.get("supply_category", "equipment")
+			var a_o = cat_order.get(a_cat, 4 if not a_cat.begins_with("material") else 3)
+			var b_o = cat_order.get(b_cat, 4 if not b_cat.begins_with("material") else 3)
+			if a_o != b_o: return a_o < b_o
+			return int(a.get("base_valor", 0)) > int(b.get("base_valor", 0)))
+
 		var total_pages = ceili(float(market_listings.size()) / 9.0)
 		market_my_page = clampi(market_my_page, 0, total_pages - 1)
 		var start = market_my_page * 9
 		var end_idx = mini(start + 9, market_listings.size())
+		var last_category = ""
 		for idx in range(start, end_idx):
 			var listing = market_listings[idx]
 			var item = listing.get("item", {})
+			var supply_cat = listing.get("supply_category", "equipment")
+			var display_cat = _get_my_listing_category(supply_cat)
+			if display_cat != last_category:
+				display_game("[color=#FFD700]--- %s ---[/color]" % display_cat)
+				last_category = display_cat
 			var item_name = item.get("name", "Unknown")
 			var rarity = item.get("rarity", "common")
 			var rarity_color = _get_rarity_color(rarity)
 			var base_valor = int(listing.get("base_valor", 0))
 			var quantity = int(listing.get("quantity", 1))
-
-			var qty_text = ""
-			if quantity > 1:
-				qty_text = " x%d" % quantity
-
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V (base)[/color]" % [idx - start + 1, rarity_color, item_name, qty_text, format_number(base_valor)])
+			var post_name = listing.get("post_name", "")
+			var qty_text = " x%d" % quantity if quantity > 1 else ""
+			var post_text = " [color=#808080]@%s[/color]" % post_name if not post_name.is_empty() else ""
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rarity_color, item_name, qty_text, format_number(base_valor), post_text])
 		if total_pages > 1:
 			display_game("")
 			display_game("[color=#808080]Page %d/%d[/color]" % [market_my_page + 1, total_pages])
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to cancel a listing (buy back at base price), [%s] to go back[/color]" % get_action_key_name(0))
+	display_game("[color=#808080]Press 1-9 to cancel, [%s] Pull All, [%s] to go back[/color]" % [get_action_key_name(3), get_action_key_name(0)])
+
+func _get_my_listing_category(supply_cat: String) -> String:
+	if supply_cat == "equipment": return "Equipment"
+	if supply_cat == "consumable": return "Consumables"
+	if supply_cat == "rune": return "Runes"
+	if supply_cat.begins_with("material"): return "Materials"
+	if supply_cat == "monster_part": return "Monster Parts"
+	return "Other"
 
 # --- Market message handlers ---
 
