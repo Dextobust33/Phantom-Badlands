@@ -1881,7 +1881,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "affix_filter_select", "rune_apply"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -6162,6 +6162,32 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_inventory_action == "salvage_all_confirm":
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
+				{"label": "Confirm", "action_type": "local", "action_data": "salvage_all_confirmed", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "salvage_below_confirm":
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
+				{"label": "Confirm", "action_type": "local", "action_data": "salvage_below_confirmed", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_inventory_action == "salvage_consumables_confirm":
 			# Confirmation prompt for salvaging consumables
 			current_actions = [
@@ -8961,12 +8987,23 @@ func execute_local_action(action: String):
 			display_inventory()
 			update_action_bar()
 		"salvage_all":
+			pending_inventory_action = "salvage_all_confirm"
+			display_game("[color=#FF4444]WARNING: This will salvage ALL unequipped equipment![/color]")
+			display_game("[color=#FFD700]Press Confirm to proceed or Cancel to abort.[/color]")
+			update_action_bar()
+		"salvage_all_confirmed":
 			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "all"})
 			game_output.clear()
 			display_game("[color=#AA66FF]Salvaging all items...[/color]")
 			update_action_bar()
 		"salvage_below_level":
+			var _threshold = max(1, character_data.get("level", 1) - 5)
+			pending_inventory_action = "salvage_below_confirm"
+			display_game("[color=#FF4444]WARNING: This will salvage all equipment below Lv%d![/color]" % _threshold)
+			display_game("[color=#FFD700]Press Confirm to proceed or Cancel to abort.[/color]")
+			update_action_bar()
+		"salvage_below_confirmed":
 			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
 			game_output.clear()
@@ -14747,7 +14784,7 @@ func handle_server_message(message: Dictionary):
 						# Refresh unequip slot list after unequipping
 						game_output.clear()
 						_show_unequip_slots()
-					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "affix_filter_select", "rune_apply"]:
+					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply"]:
 						# Player is in a sub-view — don't refresh, keep current display
 						pass
 					else:
@@ -18783,8 +18820,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.132 changes
+	display_game("[color=#00FF00]v0.9.132[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug Fixes & Stability[/color]")
+	display_game("  • Market: Self-buyback now correctly applies markup pricing")
+	display_game("  • Market: Fixed race condition when two players buy simultaneously")
+	display_game("  • Building: Added placement cooldown to prevent rapid-fire exploits")
+	display_game("  • Party: Flee now correctly applies all bonuses (speed, equipment, companion)")
+	display_game("  • Crafting: Materials refunded if disconnected during crafting challenge")
+	display_game("  • Salvage: Bulk salvage (All / Below Level) now requires confirmation")
+	display_game("  • Walls: Decay notifications batched (\"X walls crumbled\" instead of spam)")
+	display_game("")
+
 	# v0.9.131 changes
-	display_game("[color=#00FF00]v0.9.131[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.131[/color]")
 	display_game("  [color=#FFD700]Market QOL & Tutorial[/color]")
 	display_game("  • Market: Equipment listings now show comparison arrows and stat diffs")
 	display_game("  • Market: Press 1-9 to inspect items before buying (full stat details)")
@@ -18833,15 +18882,6 @@ func display_changelog():
 	display_game("  • Player posts automatically connect to the road network")
 	display_game("  • Fixed: Legendary Adventurer encounter save crash")
 	display_game("  • Fixed: Buff scroll crash (get_total_strength/speed)")
-	display_game("")
-
-	# v0.9.127 changes
-	display_game("[color=#00FFFF]v0.9.127[/color]")
-	display_game("  [color=#FFD700]Cleanup, UI Fixes & Market Tools[/color]")
-	display_game("  • Market: Tools now have their own category (separate from consumables)")
-	display_game("  • Market: Tools filter added to category cycle and My Listings view")
-	display_game("  • House/Market displays now consistently refresh action bar")
-	display_game("  • Removed legacy dead code (wandering blacksmith/healer, tax collector)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

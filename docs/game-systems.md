@@ -9,6 +9,31 @@ Detailed documentation for game features and mechanics.
 
 ---
 
+## Interactive Tutorial (v0.9.131)
+
+New accounts receive a guided 7-step tutorial on their first character creation.
+
+### Tutorial Steps
+
+| Step | Topic | Description |
+|------|-------|-------------|
+| 1 | Welcome | Introduction to the game world |
+| 2 | Movement | How to move using the action bar (N/S/E/W) |
+| 3 | Action Bar | Overview of the 10-slot contextual action bar |
+| 4 | Open Inventory | Prompts the player to open their inventory |
+| 5 | Close Inventory | Prompts the player to close inventory and return to exploration |
+| 6 | Combat Basics | How turn-based combat works (attack, abilities, flee) |
+| 7 | Exploration Tips | Gathering, quests, dungeons, and next steps |
+
+### Behavior
+
+- The tutorial overlays action bar slots 0-1 with **Next** and **Skip** buttons
+- Players can advance one step at a time or skip the entire tutorial
+- The tutorial **pauses automatically** during combat and resumes afterward
+- Tutorial state is tracked per account; it only runs once on the first character
+
+---
+
 ## Universal Resource Bonuses
 
 Equipment resource stats (mana, stamina, energy) convert to your class's primary resource.
@@ -101,6 +126,18 @@ Rare variants display a **★** symbol before their name in the combat HP bar:
 ### Flock Encounters
 
 Rare variants can appear in flock encounters (multi-monster battles). Each monster in a flock has an independent chance to be a rare variant.
+
+---
+
+## Starter Area Safety (v0.9.131)
+
+Players below level 10 within Manhattan distance 20 of the origin (0,0) have their encounter rate halved. This gives new characters a safer zone to learn the game without being overwhelmed by frequent combat.
+
+**Conditions (both must be met):**
+- Player level < 10
+- Manhattan distance from (0,0) <= 20 (i.e., `abs(x) + abs(y) <= 20`)
+
+Once either condition is no longer true (player levels past 9 or moves beyond distance 20), the normal encounter rate applies.
 
 ---
 
@@ -886,6 +923,10 @@ Skill-based crafting available at Trading Posts.
 | Alchemy | Potions, Consumables |
 | Enchanting | Equipment Upgrades |
 
+### Disconnect Refund (v0.9.132)
+
+If a player disconnects during a crafting challenge (the minigame phase), all consumed materials are automatically refunded to their inventory. This prevents material loss from connection drops, client crashes, or unexpected disconnects mid-craft.
+
 ### Quality System
 
 Quality is determined by skill level vs recipe difficulty:
@@ -1489,6 +1530,21 @@ Identical non-equipment listings from the same seller with the same price merge 
 | Name A-Z | Alphabetical |
 | Newest | Most recently listed first |
 
+### Item Inspection (v0.9.131)
+
+While browsing market listings, press 1-9 to inspect an item before buying. The inspection view shows:
+
+- **Full stat details** for the item (attack, defense, affixes, procs, etc.)
+- **Comparison with your equipped gear** in the same slot (stat differences highlighted)
+- **Action bar:** Buy (confirm purchase) or Back (return to browse)
+
+Equipment listings in the browse view also show inline comparison indicators:
+- `↑` — stat is higher than your equipped item
+- `↓` — stat is lower than your equipped item
+- `=` — stat is equal
+
+This lets players make informed purchase decisions without leaving the market.
+
 ### Cancelling Listings
 
 Cancelling a listing returns the item to inventory but deducts the base Valor that was originally awarded. Bulk cancel is available via "Cancel All" option.
@@ -1552,6 +1608,18 @@ Material quantity per roll is 1 to (2 + tier).
 |------|-----------|
 | `server/server.gd` | `_open_treasure_chest()`, `_get_chest_material_pool()` |
 | `shared/drop_tables.gd` | Treasure chest definitions in gathering catch tables |
+
+## Salvage Confirmations (v0.9.132)
+
+Bulk salvage operations now require a confirmation step before executing. This prevents accidental mass-salvaging of items.
+
+**Affected Actions:**
+- **Salvage All** - Converts all unequipped, unlocked items to Salvage Essence
+- **Salvage Below Level** - Salvages all items below the configured level threshold
+
+When triggered, the player sees a summary of how many items will be salvaged and must confirm (Yes/No) before the operation proceeds. Individual item salvage does not require confirmation.
+
+---
 
 ## Roads & Merchant Network
 

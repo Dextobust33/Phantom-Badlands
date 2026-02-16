@@ -132,6 +132,15 @@ PARTY COMBAT:
 | `party_appoint_mode` | 893 | Appointing new leader | Selecting member |
 | `rune_apply_mode` | 671 | Using a rune from inventory | Selecting gear slot |
 
+### Tutorial Overlay
+
+| Flag | Type | Purpose |
+|------|------|---------|
+| `tutorial_active` | `bool` | Tutorial sequence in progress |
+| `tutorial_step` | `int` | Current step index (0-6) |
+
+`TUTORIAL_STEPS` constant defines 7 steps. Triggered on `character_created` when `is_first_character` is true. While active and not in combat, action bar slots 0-1 are overridden with Next/Skip buttons.
+
 ### Combat Mode Flags
 
 | Flag | Line | Trigger | Controls |
@@ -486,10 +495,14 @@ PARTY COMBAT:
 | `leaderboard_mode: String` | Leaderboard tab | `"fallen_heroes"`, `"monster_kills"`, `"trophy_hall"` |
 
 ### Key `pending_inventory_action` States
-`""`, `"equip_confirm"`, `"unequip_item"`, `"sort_select"`, `"salvage_select"`, `"salvage_consumables_confirm"`, `"viewing_materials"`, `"awaiting_salvage_result"`, `"affix_filter_select"`, `"rune_apply"`
+`""`, `"equip_confirm"`, `"unequip_item"`, `"sort_select"`, `"salvage_select"`, `"salvage_all_confirm"`, `"salvage_below_confirm"`, `"salvage_consumables_confirm"`, `"viewing_materials"`, `"awaiting_salvage_result"`, `"affix_filter_select"`, `"rune_apply"`
+
+**Bulk salvage confirmations:** `"salvage_all_confirm"` and `"salvage_below_confirm"` are confirmation prompts before executing bulk salvage operations. Action bar shows Confirm/Cancel.
 
 ### Key `pending_market_action` States
-`""`, `"browse"`, `"list_select"`, `"list_material"`, `"list_material_qty"`, `"list_confirm"`, `"buy_confirm"`, `"my_listings"`
+`""`, `"browse"`, `"list_select"`, `"list_material"`, `"list_material_qty"`, `"list_confirm"`, `"inspect"`, `"buy_confirm"`, `"my_listings"`
+
+**Inspect sub-state:** `pending_market_action = "inspect"` sits between browse and buy_confirm. Shows item details with Buy/Back action bar. Variable: `market_inspected_listing: Dictionary` holds the selected listing data.
 
 ### Key `pending_house_action` States
 `""`, `"withdraw_select"`, `"checkout_select"`, `"kennel_view"`, `"kennel_release"`, `"kennel_register"`, `"fusion_select"`, etc.
@@ -573,6 +586,9 @@ recipe_id: {
 | Upgrade bracket: +1 recipes | up to +10 |
 | Upgrade bracket: +5 recipes | up to +30 |
 | Upgrade bracket: +10 recipes | up to +50 |
+
+### Crafting Disconnect Refund
+`active_crafts` dictionary (server.gd) now stores `consumed_materials` alongside each in-progress craft. If a player disconnects mid-craft, materials are refunded to their `crafting_materials` inventory.
 
 ### Specialty Job Gating
 - Gathering jobs: fishing, mining, logging, foraging (commit at level 5)
@@ -778,6 +794,7 @@ Linear interpolation between: 1.50 - ((count-2)/18 * 0.35)
 | Merchant count | 10 | world_system.gd |
 | Merchant speed | 0.02 tiles/sec | world_system.gd |
 | A* max nodes | 50,000 | world_system.gd |
+| Build cooldown | 0.5s per player | server.gd (`build_cooldown` dict) |
 
 ### Key File Locations
 

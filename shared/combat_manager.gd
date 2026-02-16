@@ -5801,19 +5801,56 @@ func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
 	return {"messages": messages}
 
 func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
-	"""Process flee attempt for a party member."""
+	"""Process flee attempt for a party member (mirrors solo process_flee bonuses)."""
 	var character = combat.characters[peer_id]
 	var monster = combat.monster
 	var messages = []
 
-	var player_dex = character.get_effective_stat("dexterity")
-	var equipment_speed = character.get_equipment_bonuses().get("speed", 0)
-	var level_diff = max(0, monster.get("level", 1) - character.level)
-	var flee_chance = clamp(40 + player_dex + equipment_speed - level_diff, 10, 95)
+	# Get class passive for flee bonuses
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
 
-	# Ninja bonus
-	if character.class_type == "Ninja":
-		flee_chance = min(95, flee_chance + 40)
+	# Base flee calculation: 40 + DEX + equipment speed/flee + speed buffs - level diff
+	var equipment_bonuses = character.get_equipment_bonuses()
+	var player_dex = character.get_effective_stat("dexterity")
+	var speed_buff = character.get_buff_value("speed")
+	var equipment_speed = equipment_bonuses.get("speed", 0)
+	var flee_bonus = equipment_bonuses.get("flee_bonus", 0)
+	var level_diff = max(0, monster.get("level", 1) - character.level)
+	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus - level_diff
+
+	# Class passive: Ninja Shadow Step (+40% flee)
+	if passive_effects.has("flee_bonus"):
+		var ninja_flee_bonus = int(passive_effects.get("flee_bonus", 0) * 100)
+		flee_chance += ninja_flee_bonus
+		messages.append("[color=#191970]Shadow Step: +%d%% flee chance![/color]" % ninja_flee_bonus)
+
+	# Companion bonuses
+	var companion_flee = character.get_companion_bonus("flee_bonus")
+	var companion_speed_flee = int(character.get_companion_bonus("speed")) / 2.0
+	companion_flee += companion_speed_flee
+	if companion_flee > 0:
+		flee_chance += int(companion_flee)
+		messages.append("[color=#00FFFF]Companion: +%d%% flee chance![/color]" % int(companion_flee))
+
+	# Slow aura debuff (from monster ability)
+	var slow_penalty = combat.get("player_slow", 0)
+	if slow_penalty > 0:
+		flee_chance -= slow_penalty
+
+	# Flock flee bonus
+	var flock_count = combat.get("flock_count", 0)
+	if flock_count > 0:
+		var flock_flee_bonus = flock_count * 15
+		flee_chance += flock_flee_bonus
+		messages.append("[color=#FFD700]Flock fatigue: +%d%% flee chance![/color]" % flock_flee_bonus)
+
+	# House flee bonus
+	var house_flee = character.house_bonuses.get("flee_bonus", 0)
+	if house_flee > 0:
+		flee_chance += house_flee
+
+	flee_chance = clamp(flee_chance, 10, 95)
 
 	var roll = randi() % 100
 	if roll < flee_chance:

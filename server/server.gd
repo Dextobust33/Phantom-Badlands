@@ -94,6 +94,7 @@ var active_bounties: Dictionary = {}  # quest_id -> {x, y, monster_type, level, 
 # Gathering session tracking (3-choice until-fail)
 var active_gathering: Dictionary = {}  # peer_id -> {job_type, node_type, tier, chain_count, chain_materials, correct_id, options, risky_available}
 var gathering_cooldown: Dictionary = {}  # peer_id -> true — prevents encounter on first move after gathering
+var build_cooldown: Dictionary = {}  # peer_id -> timestamp — prevents rapid build spam
 # Soldier harvest session tracking (post-combat 3-choice)
 var active_harvests: Dictionary = {}  # peer_id -> {monster_name, monster_tier, round, max_rounds, parts_gained}
 var active_crafts: Dictionary = {}  # peer_id -> {recipe_id, skill_name, post_bonus, job_bonus, questions, correct_answers}
@@ -4184,12 +4185,21 @@ func handle_disconnect(peer_id: int):
 	combat_command_cooldown.erase(peer_id)
 	# Clear station tracking
 	at_player_station.erase(peer_id)
-	# Clear pending craft challenge (materials already consumed, lost on disconnect)
-	active_crafts.erase(peer_id)
+	# Refund materials from pending craft challenge on disconnect
+	if active_crafts.has(peer_id):
+		var craft = active_crafts[peer_id]
+		var consumed = craft.get("consumed_materials", {})
+		if characters.has(peer_id) and not consumed.is_empty():
+			var char = characters[peer_id]
+			for mat_id in consumed:
+				char.add_crafting_material(mat_id, consumed[mat_id])
+			log_message("Refunded crafting materials for disconnected player %d" % peer_id)
+		active_crafts.erase(peer_id)
 	# Clear active gathering/harvest sessions
 	active_gathering.erase(peer_id)
 	active_harvests.erase(peer_id)
 	gathering_cooldown.erase(peer_id)
+	build_cooldown.erase(peer_id)
 
 	# Clean up merchant position tracking
 	var player_key = "p_%d" % peer_id
@@ -9341,12 +9351,10 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	var seller_account_id = listing.get("account_id", "")
 	var per_unit_valor = int(base_valor / maxi(first_listing_qty, 1))
 	var partial_base = per_unit_valor * buy_qty
-	var price = partial_base
-
-	if buyer_account_id != seller_account_id:
-		var cat = listing.get("supply_category", "equipment")
-		var markup = persistence.calculate_markup(post_id, cat)
-		price = int(partial_base * markup)
+	# Apply markup for ALL buyers (including self-purchase to prevent Valor farming)
+	var cat = listing.get("supply_category", "equipment")
+	var markup = persistence.calculate_markup(post_id, cat)
+	var price = int(partial_base * markup)
 
 	# Check buyer has enough valor
 	var buyer_valor = persistence.get_valor(buyer_account_id)
@@ -9365,6 +9373,40 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
 		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
 		return
+
+	# Consume from listings FIRST to prevent race conditions (two buyers same listing)
+	var remaining_to_buy = buy_qty
+	var actually_bought = 0
+	for vl in valid_listings:
+		if remaining_to_buy <= 0:
+			break
+		var vl_id = vl.get("listing_id", "")
+		var vl_qty = int(vl.get("quantity", 1))
+		var vl_base = int(vl.get("base_valor", 0))
+		var vl_per_unit = int(vl_base / maxi(vl_qty, 1))
+		if remaining_to_buy >= vl_qty:
+			# Try to consume entire listing — if it's already gone, skip
+			var removed = persistence.remove_market_listing(listing_post_id, vl_id)
+			if removed.is_empty():
+				continue  # Already purchased by another player
+			remaining_to_buy -= vl_qty
+			actually_bought += vl_qty
+		else:
+			# Partial consume
+			var rem = vl_qty - remaining_to_buy
+			persistence.update_market_listing_quantity(listing_post_id, vl_id, rem, vl_per_unit * rem)
+			actually_bought += remaining_to_buy
+			remaining_to_buy = 0
+
+	# If nothing was actually available (race condition), abort
+	if actually_bought <= 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "That listing is no longer available."})
+		return
+
+	# Recalculate price if we got fewer items than requested (partial race)
+	if actually_bought < buy_qty:
+		buy_qty = actually_bought
+		price = int(per_unit_valor * buy_qty * markup)
 
 	# Process purchase
 	persistence.spend_valor(buyer_account_id, price)
@@ -9395,25 +9437,6 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		character.incubating_eggs.append(item)
 	else:
 		character.inventory.append(item)
-
-	# Consume from listings in order until buy_qty is fulfilled
-	var remaining_to_buy = buy_qty
-	for vl in valid_listings:
-		if remaining_to_buy <= 0:
-			break
-		var vl_id = vl.get("listing_id", "")
-		var vl_qty = int(vl.get("quantity", 1))
-		var vl_base = int(vl.get("base_valor", 0))
-		var vl_per_unit = int(vl_base / maxi(vl_qty, 1))
-		if remaining_to_buy >= vl_qty:
-			# Consume entire listing
-			persistence.remove_market_listing(listing_post_id, vl_id)
-			remaining_to_buy -= vl_qty
-		else:
-			# Partial consume
-			var rem = vl_qty - remaining_to_buy
-			persistence.update_market_listing_quantity(listing_post_id, vl_id, rem, vl_per_unit * rem)
-			remaining_to_buy = 0
 
 	save_character(peer_id)
 
@@ -13190,11 +13213,16 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		return
 
 	# Consume materials (@ prefixed keys are monster part groups)
+	# Track what was actually consumed for disconnect refund
+	var _consumed_for_refund: Dictionary = {}
 	for mat_id in recipe.materials:
 		if mat_id.begins_with("@"):
-			character.remove_group_materials(mat_id, recipe.materials[mat_id])
+			var group_consumed = character.remove_group_materials(mat_id, recipe.materials[mat_id])
+			for gk in group_consumed:
+				_consumed_for_refund[gk] = _consumed_for_refund.get(gk, 0) + group_consumed[gk]
 		else:
 			character.remove_crafting_material(mat_id, recipe.materials[mat_id])
+			_consumed_for_refund[mat_id] = _consumed_for_refund.get(mat_id, 0) + recipe.materials[mat_id]
 
 	# Get trading post bonus (0 at player stations) + specialty job bonus
 	var post_bonus = 0
@@ -13222,6 +13250,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"correct_answers": challenge["correct_answers"],
 			"is_specialist": is_specialist,
 			"job_level": job_level,
+			"consumed_materials": _consumed_for_refund,
 		}
 		send_to_peer(peer_id, {
 			"type": "craft_challenge",
@@ -14649,6 +14678,12 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	"""Handle player placing a structure tile in a direction."""
 	if not characters.has(peer_id):
 		return
+	# Rate limit: 0.5 second cooldown between placements
+	var now = Time.get_unix_time_from_system()
+	if build_cooldown.has(peer_id) and now - build_cooldown[peer_id] < 0.5:
+		return
+	build_cooldown[peer_id] = now
+
 	var character = characters[peer_id]
 	var username = _get_username(peer_id)
 
@@ -15531,24 +15566,28 @@ func _tick_wall_decay():
 
 	# Remove up to 5 walls per tick
 	var removed = 0
+	var decay_counts: Dictionary = {}  # owner -> count
 	for wd in walls_to_remove:
 		if removed >= 5:
 			break
 		chunk_manager.remove_tile_modification(wd.x, wd.y)
 		persistence.remove_player_tile(wd.owner, wd.x, wd.y)
 		removed += 1
-		# Notify owner if online
-		for pid in peers:
-			if _get_username(pid) == wd.owner:
-				send_to_peer(pid, {
-					"type": "text",
-					"message": "[color=#808080]A wall at (%d, %d) has crumbled from neglect.[/color]" % [wd.x, wd.y]
-				})
-				break
+		decay_counts[wd.owner] = decay_counts.get(wd.owner, 0) + 1
 
 	if removed > 0:
 		chunk_manager.save_dirty_chunks()
 		persistence.save_player_tiles()
+		# Batch-notify each affected owner
+		for owner_name in decay_counts:
+			var count = decay_counts[owner_name]
+			for pid in peers:
+				if _get_username(pid) == owner_name:
+					if count == 1:
+						send_to_peer(pid, {"type": "text", "message": "[color=#808080]A wall has crumbled from neglect.[/color]"})
+					else:
+						send_to_peer(pid, {"type": "text", "message": "[color=#808080]%d walls have crumbled from neglect.[/color]" % count})
+					break
 		log_message("Wall decay: removed %d orphan walls" % removed)
 
 func _update_guard_cache():
