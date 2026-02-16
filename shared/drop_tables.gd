@@ -4239,6 +4239,8 @@ func get_supply_category(item: Dictionary) -> String:
 	"""Determine the supply category for dynamic pricing."""
 	if item.get("type", "") == "egg":
 		return "egg"
+	if item.get("type", "") == "tool":
+		return "tool"
 	if _is_equipment_type(item.get("type", "")):
 		return "equipment"
 	if item.get("is_consumable", false):

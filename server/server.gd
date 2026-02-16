@@ -105,9 +105,6 @@ const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tile
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 
-# Tax collector cooldown tracking (peer_id -> steps since last encounter)
-var tax_collector_cooldowns: Dictionary = {}  # peer_id -> steps remaining
-const TAX_COLLECTOR_COOLDOWN_STEPS = 50  # Minimum steps between tax encounters
 
 # Combat command rate limiting (peer_id -> last command time in msec)
 var combat_command_cooldown: Dictionary = {}
@@ -2152,11 +2149,6 @@ func handle_move(peer_id: int, message: Dictionary):
 		characters[peer_id].set_meta("move_count", mc)
 		if mc % 20 == 0:
 			_check_nearby_player_posts(peer_id, new_pos.x, new_pos.y)
-
-	# Tax collector removed (gold system removed)
-	#if check_tax_collector_encounter(peer_id):
-	#	send_character_update(peer_id)
-	#	return
 
 	# Check for wandering blacksmith encounter (3% when player has damaged gear)
 	if check_blacksmith_encounter(peer_id):
@@ -4527,15 +4519,11 @@ func trigger_legendary_adventurer(peer_id: int, character: Character, area_level
 	persistence.save_character(character)
 	log_message("Legendary training: %s gained +%d %s from %s" % [character.name, bonus, stat_name, adventurer])
 
-# Tax collector removed — gold system no longer exists
-func check_tax_collector_encounter(_peer_id: int) -> bool:
-	return false
 
 # Track pending blacksmith/healer encounters (peer_id -> repair costs/heal costs)
 var pending_blacksmith_encounters: Dictionary = {}
 var pending_blacksmith_upgrades: Dictionary = {}  # Track upgrade state
 var pending_healer_encounters: Dictionary = {}
-var healer_decline_state: Dictionary = {}  # peer_id -> {hp_ratio, had_debuffs} - tracks state when declined
 
 func _handle_blacksmith_station(peer_id: int, character):
 	"""Handle bump into blacksmith station tile — open repair/upgrade menu."""
@@ -4610,114 +4598,6 @@ func _handle_blacksmith_station(peer_id: int, character):
 func check_blacksmith_encounter(_peer_id: int) -> bool:
 	"""Blacksmith is now a station — random encounters disabled."""
 	return false
-
-func _legacy_check_blacksmith_encounter(peer_id: int) -> bool:
-	"""Legacy: Check for a wandering blacksmith encounter. Returns true if encounter occurred."""
-	if not characters.has(peer_id):
-		return false
-
-	var character = characters[peer_id]
-	var bs_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
-
-	# No wandering merchants inside NPC posts
-	if world_system.is_safe_zone(character.x, character.y):
-		return false
-
-	# 3% encounter rate
-	if randf() >= 0.03:
-		return false
-
-	# Check if player has damaged gear
-	var damaged_items = []
-	var total_repair_cost = 0
-
-	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = character.equipped.get(slot_name)
-		if item and item.has("wear"):
-			var wear = item.get("wear", 0)
-			if wear > 0:
-				var item_level = item.get("level", 1)
-				var repair_cost = int(wear * item_level * 25)
-				var valor_cost = max(1, repair_cost / 10)
-				damaged_items.append({
-					"slot": slot_name,
-					"name": item.get("name", slot_name.capitalize()),
-					"wear": wear,
-					"cost": valor_cost
-				})
-				total_repair_cost += valor_cost
-
-	# Check for items with upgradeable affixes
-	var upgradeable_items = []
-	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = character.equipped.get(slot_name)
-		if item and item.has("affixes"):
-			var affixes = item.get("affixes", {})
-			# Only items with actual stat affixes (not just prefix_name/suffix_name)
-			var stat_affixes = []
-			for key in affixes.keys():
-				if key not in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
-					stat_affixes.append(key)
-			if stat_affixes.size() > 0:
-				upgradeable_items.append({
-					"slot": slot_name,
-					"name": item.get("name", slot_name.capitalize()),
-					"level": item.get("level", 1),
-					"affixes": affixes
-				})
-
-	# Filter upgradeable items to only those the player can afford at least one affix on
-	var affordable_upgradeable_items = []
-	for item_data in upgradeable_items:
-		var item_level = item_data.get("level", 1)
-		var affixes = item_data.get("affixes", {})
-		var has_affordable_affix = false
-		var bs_valor = persistence.get_valor(bs_account_id) if bs_account_id != "" else 0
-		for affix_key in affixes.keys():
-			if affix_key in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
-				continue
-			var current_value = affixes[affix_key]
-			var costs = _calculate_affix_upgrade_cost(affix_key, current_value, item_level)
-			if bs_valor >= costs.valor and character.has_crafting_materials(costs.get("materials", {})):
-				has_affordable_affix = true
-				break
-		if has_affordable_affix:
-			affordable_upgradeable_items.append(item_data)
-
-	# No damaged gear and no affordable upgrades - no encounter
-	if damaged_items.size() == 0 and affordable_upgradeable_items.size() == 0:
-		return false
-
-	# Store encounter data for when player responds
-	var repair_all_cost = int(total_repair_cost * 0.9) if total_repair_cost > 0 else 0
-	pending_blacksmith_encounters[peer_id] = {
-		"items": damaged_items,
-		"total_cost": total_repair_cost,
-		"repair_all_cost": repair_all_cost,
-		"upgradeable_items": affordable_upgradeable_items
-	}
-
-	# Build encounter message
-	var msg = "[color=#DAA520]A wandering Blacksmith stops you on the road.[/color]\n"
-	if damaged_items.size() > 0:
-		msg += "'I can fix up that gear for you, traveler.'"
-	if affordable_upgradeable_items.size() > 0:
-		if damaged_items.size() > 0:
-			msg += "\n"
-		msg += "[color=#FFD700]'I can also enhance your equipment... for a price.'[/color]"
-
-	# Send encounter message
-	send_to_peer(peer_id, {
-		"type": "blacksmith_encounter",
-		"message": msg,
-		"items": damaged_items,
-		"repair_all_cost": repair_all_cost,
-		"can_upgrade": affordable_upgradeable_items.size() > 0,
-		"player_valor": persistence.get_valor(bs_account_id),
-		"player_materials": character.crafting_materials.duplicate()
-	})
-
-	return true
 
 func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 	"""Handle player's choice for blacksmith encounter."""
@@ -5065,68 +4945,6 @@ func _handle_healer_station(peer_id: int, character):
 func check_healer_encounter(_peer_id: int) -> bool:
 	"""Healer is now a station — random encounters disabled."""
 	return false
-
-func _legacy_check_healer_encounter(peer_id: int) -> bool:
-	"""Legacy: Check for a wandering healer encounter. Returns true if encounter occurred."""
-	if not characters.has(peer_id):
-		return false
-
-	var character = characters[peer_id]
-
-	# No wandering healers inside NPC posts
-	if world_system.is_safe_zone(character.x, character.y):
-		return false
-
-	# 12% encounter rate (tripled from 4%)
-	if randf() >= 0.12:
-		return false
-
-	# Trigger if player is injured (HP < 80%) or has actual debuffs (poison/blind/weakness)
-	# Note: persistent_buffs includes positive buffs too (gold_find, etc.) - only check for negative effects
-	var hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
-	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
-	if hp_ratio >= 0.80 and not has_debuffs:
-		return false
-
-	# Check if player previously declined - only re-offer if situation changed
-	if healer_decline_state.has(peer_id):
-		var prev = healer_decline_state[peer_id]
-		var new_debuff = has_debuffs and not prev.had_debuffs
-		var very_low_hp = hp_ratio < 0.30
-		# Re-offer if: got a new debuff, or HP dropped very low (below 30%)
-		if not new_debuff and not very_low_hp:
-			return false
-		# Situation changed enough - clear decline state and re-offer
-		healer_decline_state.erase(peer_id)
-
-	# Calculate heal costs in valor (gold / 10)
-	var level = character.level
-	var quick_heal_cost = max(1, level * 22 / 10)
-	var full_heal_cost = max(1, level * 90 / 10)
-	var cure_all_cost = max(1, level * 180 / 10)
-
-	# Store encounter data
-	pending_healer_encounters[peer_id] = {
-		"quick_heal_cost": quick_heal_cost,
-		"full_heal_cost": full_heal_cost,
-		"cure_all_cost": cure_all_cost,
-		"has_debuffs": has_debuffs
-	}
-
-	# Send encounter message
-	send_to_peer(peer_id, {
-		"type": "healer_encounter",
-		"message": "[color=#00FF00]A wandering Healer approaches, their staff glowing softly.[/color]\n'You look injured, traveler. Let me help.'",
-		"quick_heal_cost": quick_heal_cost,
-		"full_heal_cost": full_heal_cost,
-		"cure_all_cost": cure_all_cost,
-		"has_debuffs": has_debuffs,
-		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
-		"current_hp": character.current_hp,
-		"max_hp": character.get_total_max_hp()
-	})
-
-	return true
 
 func handle_healer_choice(peer_id: int, message: Dictionary):
 	"""Handle player's choice for healer encounter."""
@@ -9060,7 +8878,7 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 	for listing in filtered:
 		var supply_cat = listing.get("supply_category", "")
-		var is_unique = supply_cat == "equipment" or supply_cat == "egg"
+		var is_unique = supply_cat == "equipment" or supply_cat == "egg" or supply_cat == "tool"
 
 		if is_unique:
 			var entry = listing.duplicate()
@@ -9118,13 +8936,14 @@ func _get_display_category(supply_cat: String) -> String:
 	if supply_cat == "equipment": return "Equipment"
 	if supply_cat == "egg": return "Companion Eggs"
 	if supply_cat == "consumable": return "Consumables"
+	if supply_cat == "tool": return "Tools"
 	if supply_cat == "rune": return "Runes"
 	if supply_cat.begins_with("material"): return "Materials"
 	if supply_cat == "monster_part": return "Monster Parts"
 	return "Other"
 
 func _sort_stacks_by_category(a: Dictionary, b: Dictionary) -> bool:
-	var order = {"Equipment": 0, "Companion Eggs": 1, "Consumables": 2, "Runes": 3, "Materials": 4, "Monster Parts": 5, "Other": 6}
+	var order = {"Equipment": 0, "Companion Eggs": 1, "Consumables": 2, "Tools": 3, "Runes": 4, "Materials": 5, "Monster Parts": 6, "Other": 7}
 	var a_o = order.get(a.get("display_category", "Other"), 5)
 	var b_o = order.get(b.get("display_category", "Other"), 5)
 	if a_o != b_o: return a_o < b_o

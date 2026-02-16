@@ -9185,7 +9185,7 @@ func execute_local_action(action: String):
 				send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		"market_filter":
 			# Cycle through categories
-			var categories = ["all", "equipment", "egg", "consumable", "rune", "material", "monster_part"]
+			var categories = ["all", "equipment", "egg", "consumable", "tool", "rune", "material", "monster_part"]
 			var idx = categories.find(market_category)
 			market_category = categories[(idx + 1) % categories.size()]
 			market_page = 0
@@ -18651,8 +18651,25 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.127 changes
+	display_game("[color=#00FF00]v0.9.127[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Cleanup, UI Fixes & Market Tools[/color]")
+	display_game("  • Market: Tools now have their own category (separate from consumables)")
+	display_game("  • Market: Tools filter added to category cycle and My Listings view")
+	display_game("  • House/Market displays now consistently refresh action bar")
+	display_game("  • Removed legacy dead code (wandering blacksmith/healer, tax collector)")
+	display_game("")
+
+	# v0.9.126 changes
+	display_game("[color=#00FFFF]v0.9.126[/color]")
+	display_game("  [color=#FFD700]Visual Minigames & Fixes[/color]")
+	display_game("  • Visual minigames for gathering (ASCII art choices)")
+	display_game("  • Dungeon boss fix, momentum display, crafting level sync")
+	display_game("  • Salvage variety improvements")
+	display_game("")
+
 	# v0.9.125 changes
-	display_game("[color=#00FF00]v0.9.125[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.125[/color]")
 	display_game("  [color=#FFD700]Monster Part Crafting & Material Fixes[/color]")
 	display_game("  • Rune recipes now accept ANY matching part type within tier range!")
 	display_game("  • e.g., Minor Rune of Attack takes any Fang/Tooth/Claw/Horn (T1-T2)")
@@ -18707,18 +18724,6 @@ func display_changelog():
 	display_game("  • Fixed: Inventory consumables separator missing after tools")
 	display_game("  • Fixed: Market item/material lists now refresh after selling")
 	display_game("  • Crafting UI no longer shows misleading success %% (all crafts succeed)")
-	display_game("")
-
-	# v0.9.118 changes
-	display_game("[color=#00FFFF]v0.9.118[/color]")
-	display_game("  [color=#FFD700]Guards, Towers & Wall Decay — Phase 3[/color]")
-	display_game("  • Guard Post: new Construction Lv15 recipe — place anywhere (10-tile spacing)")
-	display_game("  • Hire guards (50 Valor + 5 food) to suppress encounters in 5-tile radius")
-	display_game("  • Tower boost: guard near a Watch Tower gets 15-tile radius!")
-	display_game("  • Guards need feeding (3 food = +3 days, max 14). Unfed guards leave.")
-	display_game("  • Wall decay: orphan walls not part of an enclosure crumble after 72 hours")
-	display_game("  • Bump guard post to interact — hire, feed, dismiss, or view status")
-	display_game("  • Map: green G = active guard, gray G = empty post, gold ^ = boosted tower")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -23260,6 +23265,7 @@ func display_market_main():
 	display_game("  [color=#FFD700][3][/color] List All Materials")
 	display_game("")
 	display_game("  [color=#FFD700][4][/color] List Egg from Incubator")
+	update_action_bar()
 
 func display_market_browse():
 	"""Display market browse listings."""
@@ -23317,6 +23323,7 @@ func display_market_browse():
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
+	update_action_bar()
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
@@ -23539,12 +23546,12 @@ func display_market_my_listings():
 		display_game("[color=#808080]You have no active listings.[/color]")
 	else:
 		# Sort listings by category for display
-		var cat_order = {"equipment": 0, "egg": 1, "consumable": 2, "rune": 3, "monster_part": 4}
+		var cat_order = {"equipment": 0, "egg": 1, "consumable": 2, "tool": 3, "rune": 4, "monster_part": 5}
 		market_listings.sort_custom(func(a, b):
 			var a_cat = a.get("supply_category", "equipment")
 			var b_cat = b.get("supply_category", "equipment")
-			var a_o = cat_order.get(a_cat, 5 if not a_cat.begins_with("material") else 4)
-			var b_o = cat_order.get(b_cat, 5 if not b_cat.begins_with("material") else 4)
+			var a_o = cat_order.get(a_cat, 7 if not a_cat.begins_with("material") else 6)
+			var b_o = cat_order.get(b_cat, 7 if not b_cat.begins_with("material") else 6)
 			if a_o != b_o: return a_o < b_o
 			return int(a.get("base_valor", 0)) > int(b.get("base_valor", 0)))
 
@@ -23589,6 +23596,7 @@ func _get_my_listing_category(supply_cat: String) -> String:
 	if supply_cat == "equipment": return "Equipment"
 	if supply_cat == "egg": return "Companion Eggs"
 	if supply_cat == "consumable": return "Consumables"
+	if supply_cat == "tool": return "Tools"
 	if supply_cat == "rune": return "Runes"
 	if supply_cat.begins_with("material"): return "Materials"
 	if supply_cat == "monster_part": return "Monster Parts"
@@ -25437,6 +25445,7 @@ func display_house_main():
 
 	display_game("")
 	display_game("[color=#FFD700]═══════════════════════════════════════[/color]")
+	update_action_bar()
 
 func display_house_storage():
 	"""Display house storage with items and withdraw options"""
@@ -25503,6 +25512,7 @@ func display_house_storage():
 
 	display_game("")
 	display_game("[color=#FFD700]════════════════════════════[/color]")
+	update_action_bar()
 
 func display_house_companions():
 	"""Display registered companions in the house"""
@@ -25563,6 +25573,7 @@ func display_house_companions():
 	display_game("[color=#808080]You can also register companions from Storage using the Register button.[/color]")
 	display_game("")
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
+	update_action_bar()
 
 func display_house_kennel():
 	"""Display the companion kennel (bulk storage for fusion)"""
@@ -25623,6 +25634,7 @@ func display_house_kennel():
 	display_game("")
 	display_game("[color=#808080]Store companions here for fusion![/color]")
 	display_game("[color=#FF8800]════════════════════════════════[/color]")
+	update_action_bar()
 
 func display_house_fusion():
 	"""Display the fusion station"""
@@ -25711,6 +25723,7 @@ func display_house_fusion():
 
 	display_game("")
 	display_game("[color=#FFD700]═════════════════════════════════[/color]")
+	update_action_bar()
 
 func _get_fuseable_groups(kennel_companions: Array) -> Array:
 	"""Get groups of companions that can be fused (3+ of same monster_type + sub_tier)"""
@@ -25886,6 +25899,7 @@ func display_house_upgrades():
 		idx += 1
 
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
+	update_action_bar()
 
 func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 	"""Get display text for current upgrade effect"""

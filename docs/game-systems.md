@@ -773,45 +773,14 @@ Higher fishing skill = shorter wait times, longer reaction windows, better catch
 
 ---
 
-## Open Market System
+## Market & Services (Overview)
 
-Players trade items through the Open Market at trading post `$` tiles.
+Players trade items through the Open Market at trading post `$` tiles using Valor currency.
 
-### Valor Economy
-
-- **Listing items** awards base Valor immediately (seller is paid upfront)
-- **Buying items** costs Valor with dynamic markup based on supply/demand
-- **Cancelling** a listing costs back the Valor that was awarded
-- Cross-player purchases: seller gets 50% of markup as bonus, rest goes to treasury
-
-### Valor Calculation
-
-| Item Type | Formula |
-|-----------|---------|
-| Equipment | Tier base (12-5000) × rarity multiplier (0.5-20) |
-| Consumables | 5 + tier × 3 |
-| Materials | Material gold value / 3 (min 1) |
-| Tools | Tier base (10-250) × rarity multiplier (0.5-8) |
-| Monster Parts | Tier × 8 |
-| Companion Eggs | Tier base (200-300K) × sub-tier mult × variant rarity mult × bonus mult |
-
-### Market Features
-
-- **Stacking:** Identical non-equipment listings (same name, price, seller) merge into stacks. Eggs and equipment are always unique (never stacked).
-- **Sort modes:** Category, Price ▲/▼, Name A-Z, Newest
-- **Category filter:** All, Equipment, Egg, Consumable, Rune, Material, Monster Part
-- **Category dividers:** Visual separators when browsing "All" with Category sort
-- **Bulk listing:** List All Equipment / All Items / All Materials in one action
-- **Partial buying:** Choose quantity when purchasing material stacks
-
-### Supply Categories
-
-- `equipment` — Gear with slots (weapon, armor, etc.)
-- `egg` — Companion eggs (listed from incubator, returned to incubator on buy/cancel)
-- `consumable` — Potions, scrolls, food
-- `rune` — Rune items
-- `material_tN` — Crafting materials by tier (1-6)
-- `monster_part` — Monster drops
+See the detailed sections below for full documentation:
+- **Valor Economy** - How Valor is earned and spent
+- **Open Market System** - Market categories, listing, buying, sorting
+- **Treasure Chests** - Rare gathering catches with material rewards
 
 ### Blacksmith & Healer
 
@@ -820,13 +789,6 @@ Both are bump-to-interact stations (`B`/`H` tiles) in NPC posts.
 - **Blacksmith:** Repairs worn gear (costs Valor), enhances equipment affixes
 - **Healer:** Quick heal (25% HP), full heal, cure debuffs (costs Valor)
 - Costs are calculated in Valor and displayed with affordability check
-
-### Treasure Chests
-
-Found from fishing, mining, and logging (rare catches). Usable consumables that grant:
-- 2-4 random crafting materials (tier-appropriate)
-- Gold bonus (25-350 scaled by tier)
-- Tiers: T1 (shallow fishing), T2 (mining T1-2), T3 (mining T3), T4 (deep fishing)
 
 ---
 
@@ -855,3 +817,583 @@ Companions are miniature monsters that fight alongside you.
 - Companions attack automatically each round
 - Companion damage scales with tier and player level
 - Companions cannot be targeted or damaged
+
+---
+
+## Momentum System (Logging)
+
+Logging has a momentum mechanic that rewards consecutive correct picks during a gathering session.
+
+### How It Works
+
+1. Each correct answer in a logging session increments the momentum counter (starts at 0)
+2. A wrong answer resets momentum to 0, even if a tool save prevents session end
+3. At milestone thresholds, bonus materials are awarded automatically (same type as current reward)
+4. Momentum persists across rounds within a single gathering session but resets when the session ends
+
+### Milestone Thresholds
+
+| Momentum | Bonus Materials | Display |
+|----------|----------------|---------|
+| 3 | +1 | "Bonus Chop! +1!" |
+| 5 | +2 | "Double Chop! +2 bonus materials!" |
+| 7 (MAX) | +3 | "TIMBER! Bonus Chop x3!" |
+
+At momentum 7+, there is also a 30% chance to receive one material from the next higher tier (if current tier < 9).
+
+### Visual Display
+
+The client shows a star bar during logging sessions:
+
+```
+MOMENTUM: ★★★☆☆☆☆ (3/7)
+Next bonus at 5!
+```
+
+At maximum momentum:
+```
+MOMENTUM: ★★★★★★★ (7/7)
+MAX MOMENTUM! Bonus every round!
+```
+
+### Other Gathering Bonuses
+
+Each gathering type has its own unique bonus mechanic:
+
+| Gathering Type | Unique Mechanic | Description |
+|----------------|-----------------|-------------|
+| **Mining** | Deep Vein | At depth 3+: 25% chance for next-tier ore. At depth 5+: 50% chance |
+| **Logging** | Momentum | Consecutive correct picks award bonus materials at milestones |
+| **Fishing** | Trophy Catch | Size roll (small/medium/large/trophy) multiplies quantity. Trophy gives bonus rare material |
+| **Foraging** | Discovery | First-time plant finds in a session grant +1 bonus quantity |
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `LOGGING_MOMENTUM_MILESTONES`, momentum tracking in `handle_gathering_answer()` |
+| `client/client.gd` | `gathering_momentum`, momentum display in `display_gathering_round()` |
+
+---
+
+## Visual Minigames (Gathering)
+
+All gathering types use a unified 3-choice minigame with ASCII art visuals.
+
+### Flow
+
+1. Player walks to a resource node (water, ore, forest, foliage, monster corpse)
+2. Presses the contextual action bar button (R key by default)
+3. Server generates 3 options with one correct answer and sends them to the client
+4. Client displays an ASCII art scene with embedded option markers `[1] [2] [3]`
+5. Player selects an option using number keys (action bar slots 6-8)
+6. Server validates the choice and sends back the result
+7. On correct: chain continues with a new round. On wrong: session ends (unless tool save activates)
+
+### ASCII Art by Gathering Type
+
+Each gathering type has a unique ASCII art template:
+
+- **Mining** - Rock face with a pickaxe and gem sparkles
+- **Logging** - Tree with trunk and option markers at the base
+- **Foraging** - Garden scene with mushrooms, flowers, and plants
+- **Fishing** - Fisher with a rod over wavy water
+
+### Result Markers
+
+After choosing, the art updates with result indicators:
+
+| Marker | Meaning |
+|--------|---------|
+| `[color=#00FF00][checkmark][/color]` | Correct choice |
+| `[color=#FF4444][X][/color]` | Wrong choice |
+| `[color=#00FF00][N][/color]` | Revealed correct answer (tool ability) |
+| `[color=#444444][N][/color]` | Unchosen, incorrect option |
+
+### Tool Integration
+
+Gathering tools provide two key bonuses:
+
+- **Reveals** - Shows which option is correct before choosing (highlighted with a star)
+- **Saves** - If you pick wrong, the tool absorbs the failure and the chain continues (momentum still resets for logging)
+
+### Hint System
+
+Higher job levels increase `hint_strength` (0.0 to 1.0, where `hint_strength = job_level / 100`). The hint system gives probabilistic visual cues (green diamond markers) next to likely-correct options. Companion `gathering_hint` bonuses add to this.
+
+### Risky Gamble
+
+Some rounds offer a risky 4th option. Picking the risky option gives double reward on success, but always ends the session on failure (no tool save).
+
+### Soldier Harvest Minigame
+
+After killing a monster, Soldier-job players can harvest monster parts using the same 3-choice system:
+
+- Triggered via "Harvest" button on the post-combat action bar
+- Has mastery levels (Familiar, Expert, Master) based on how many times you've harvested that monster type
+- Expert+ mastery auto-succeeds on some rounds
+- Awards monster parts used in crafting recipes
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `client/client.gd` | `_get_gathering_ascii_art()`, `_get_gathering_option_markers()`, `display_gathering_round()` |
+| `server/server.gd` | `handle_gathering_start()`, `handle_gathering_answer()`, `_generate_gathering_round()` |
+
+---
+
+## Valor Economy
+
+Valor is the account-level currency used for all market transactions, services, and upgrades. It replaced gold for these purposes.
+
+### Earning Valor
+
+| Source | Amount |
+|--------|--------|
+| **Listing items on the market** | Base valor calculated from item type, tier, and rarity (paid immediately upon listing) |
+| **Cross-player market sales** | 50% of markup when another player buys your listing |
+| **Gold migration** | Old characters: gold / 50 converted to Valor on first login |
+| **Starting valor (house upgrade)** | +50 Valor per upgrade level on new character creation |
+| **Gambling** | Win/lose Valor at merchant dice games |
+| **Title abilities** | Tax, tribute, royal treasury |
+
+### Spending Valor
+
+| Service | Cost |
+|---------|------|
+| **Buying market listings** | Base valor x markup (1.15x to 1.50x) |
+| **Blacksmith repairs** | Repair cost / 10 |
+| **Healer services** | Quick heal, full heal, cure (level-scaled) |
+| **Blacksmith upgrades** | Affix enhancement costs |
+| **Cancelling market listings** | Refunds the base valor that was awarded |
+| **Guard post hiring** | Fixed Valor cost |
+
+### Market Markup
+
+Dynamic markup based on local supply at each trading post:
+
+| Supply Count | Markup Multiplier |
+|-------------|-------------------|
+| 20+ listings | 1.15x (abundant) |
+| 2 or fewer | 1.50x (scarce) |
+| 3-19 | Linear interpolation between 1.50x and 1.15x |
+
+When buying from another player, the markup goes: 50% to the seller as a bonus, 50% to the realm treasury.
+
+### Valor Calculation for Listings
+
+| Item Type | Formula |
+|-----------|---------|
+| **Equipment (crafted)** | Recipe material cost x rarity multiplier (1.0-25.0) |
+| **Equipment (dropped)** | Tier base (12-5000) x rarity multiplier (0.5-20.0) |
+| **Consumables** | Recipe cost if crafted, otherwise 5 + tier x 3 |
+| **Materials** | Gold value / 3 (min 1) |
+| **Runes** | Recipe cost x rarity multiplier |
+| **Structures** | Recipe material cost |
+| **Companion Eggs** | Tier base (200-300K) x sub-tier x variant rarity x bonus mult |
+
+Market bonuses: Halfling racial (+15%), Knight status (+10%) increase listing valor.
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/persistence_manager.gd` | `get_valor()`, `add_valor()`, `spend_valor()`, `calculate_markup()` |
+| `shared/drop_tables.gd` | `calculate_base_valor()` |
+| `server/server.gd` | Market handlers, blacksmith/healer valor costs |
+
+---
+
+## Player Posts / Enclosures
+
+Players can build walls and structures in the overworld to create named safe zones called Player Posts.
+
+### Building Structures
+
+Structures are crafted at Workbenches (Construction skill) and placed directionally from the player's position.
+
+**Available Structure Types:**
+
+| Structure | Purpose |
+|-----------|---------|
+| Wall | Forms enclosure boundaries, blocks movement and line of sight |
+| Door | Part of enclosure boundaries, allows passage |
+| Forge | Blacksmithing crafting station |
+| Apothecary | Alchemy crafting station |
+| Enchanting Table | Enchanting crafting station |
+| Writing Desk | Scribing crafting station |
+| Workbench | Construction crafting station |
+| Inn | Rest point inside enclosure |
+| Storage | Personal storage chest (owner only) |
+| Blacksmith | Repair station |
+| Healer | Healing station |
+| Market | Market access point |
+| Guard | Guard post (can be placed outside enclosures, 10-tile spacing) |
+| Tower | Watchtower structure |
+| Quest Board | Quest access point |
+
+### Forming an Enclosure
+
+1. Place wall and door tiles to form a closed perimeter (minimum 4 walls)
+2. After placing, the server runs BFS flood-fill to detect enclosed regions
+3. If a new enclosure is detected (max 11x11 bounding box), the player is prompted to name it
+4. Names can be up to 30 characters (BBCode tags are stripped)
+5. The enclosure becomes a safe zone: no monster encounters, no gathering nodes inside
+
+### Limits
+
+| Limit | Value |
+|-------|-------|
+| Base post count | 5 |
+| Max post count | 5 + post_slots upgrade level (max +5 = 10 total) |
+| Max enclosure size | 11x11 bounding box |
+| Max player tiles | 200 |
+| NPC post buffer | 3 tiles minimum distance |
+| Dungeon entrance buffer | 3 tiles minimum distance |
+
+### Post Slots House Upgrade
+
+| Level | Cost (Baddie Points) | Total Posts |
+|-------|---------------------|-------------|
+| 1 | 5,000 | 6 |
+| 2 | 10,000 | 7 |
+| 3 | 20,000 | 8 |
+| 4 | 35,000 | 9 |
+| 5 | 60,000 | 10 |
+
+### Compass Hints
+
+When a player moves within 50 tiles of another player's named post, they receive a compass hint:
+```
+You sense a player post to the NE...
+```
+
+Only one hint is sent per movement check, and the player's own posts are excluded.
+
+### Enclosure Features
+
+- **Safe Zone** - No monster encounters or resource nodes spawn inside enclosures
+- **Stations** - Crafting stations placed inside can be used by any visitor
+- **Inn** - Rest functionality for visitors
+- **Storage** - Personal storage accessible only by the owner
+- **Other players** - All visitors benefit from the safe zone; crafting stations are shared
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `handle_build_place()`, `_check_enclosures_after_build()`, `handle_name_post()`, `_check_nearby_player_posts()` |
+| `server/persistence_manager.gd` | `add_player_tile()`, `get_player_tiles()`, `set_player_post()` |
+
+---
+
+## Party System
+
+Up to 4 players can form a party to explore and fight together.
+
+### Formation
+
+1. **Bump-to-invite** - Walk into another player to trigger an invite (or use `/invite <name>`)
+2. Target receives Accept/Decline prompt on their action bar
+3. If accepted and no party exists yet, the inviter chooses Lead or Follow
+4. If accepted and a party already exists, the new member joins as a follower
+5. Only the party leader can invite new members
+
+**Restrictions:** Cannot invite players who are in combat, in a dungeon, or already in a party.
+
+### Snake Movement
+
+- Only the party leader can move; followers trail behind automatically
+- Followers occupy the positions the leader (and other followers) previously stood on, in join order
+- This creates a "snake" effect where the party moves as a chain
+- Followers cannot move independently while in a party
+
+### Party Combat
+
+When the leader encounters a monster, all party members enter combat together.
+
+**Monster Scaling:**
+- Monster HP is multiplied by party size (e.g., 2 players = 2x HP, 4 players = 4x HP)
+- Other monster stats (damage, speed, etc.) are not scaled
+
+**Turn Order:**
+- Members take turns in order (leader first, then followers in join order)
+- Monster attacks between member turns based on initiative
+- Each member gets their normal combat actions (attack, ability, flee)
+- Items are disabled in party combat
+
+**Monster Targeting:**
+- Uses weighted random targeting across party members
+- Initial weights are equal (1/N per member)
+- After each attack, the targeted player's weight is halved and redistributed to other members
+- This prevents one player from being focused down too heavily
+
+**Rewards (on victory):**
+- Full XP is granted to each surviving member (not split)
+- Full gold is granted to each survivor
+- Full loot drops are duplicated for each survivor
+- Each member gets their own independent loot roll
+
+**Death and Flee:**
+- If a member dies, they enter spectate mode (can watch but not act)
+- If a member flees, they enter spectate mode
+- Combat continues as long as at least one member is alive and fighting
+- If all members die or flee, the combat ends in defeat
+
+### Party Dungeons
+
+The party leader can enter dungeons, bringing all party members along.
+
+**Entry:**
+- All members are validated (not in combat, not already in a dungeon)
+- Leader enters at the start position; followers are placed at adjacent positions
+- All members share the same dungeon instance
+
+**Navigation:**
+- Snake movement applies inside dungeons (leader moves, followers trail)
+- Followers cannot move independently in dungeons
+
+**Encounters:**
+- Dungeon encounters (? tiles) trigger party combat for the whole group
+- Boss fights use party combat with the same HP scaling
+
+**Rewards:**
+- Dungeon completion rewards are fully duplicated for each member
+- Boss eggs are guaranteed for each party member (not just the leader)
+- Each member gets independent completion XP
+
+### Party Management
+
+| Action | Who Can Do It |
+|--------|---------------|
+| Invite | Leader only |
+| Leave | Any member |
+| Disband | Leader only |
+| Appoint new leader | Leader only |
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `active_parties`, `party_membership`, `pending_party_invites`, party handlers |
+| `shared/combat_manager.gd` | `start_party_combat()`, `process_party_combat_action()`, `_select_monster_targets()` |
+| `client/client.gd` | `in_party`, `is_party_leader`, `party_members`, party UI state |
+
+---
+
+## Crafting Specializations
+
+Players can commit to specialty jobs that unlock exclusive crafting recipes.
+
+### Job System Overview
+
+**Gathering Jobs:** Mining, Logging, Foraging, Soldier, Fishing
+**Specialty Jobs:** Blacksmith, Builder, Alchemist, Scribe, Enchanter
+
+### Crafting Skills
+
+Each specialty job maps to a crafting skill:
+
+| Specialty Job | Crafting Skill | Station Required |
+|---------------|----------------|------------------|
+| Blacksmith | Blacksmithing | Forge |
+| Builder | Construction | Workbench |
+| Alchemist | Alchemy | Apothecary |
+| Scribe | Scribing | Writing Desk |
+| Enchanter | Enchanting | Enchanting Table |
+
+### Job Commitment
+
+1. All players can try any job up to level 5 (the trial cap)
+2. At level 5, the player must "commit" to continue leveling that job
+3. Each character can commit to one gathering job and one specialty job
+4. Commitment is permanent for that character
+5. Committed jobs can level beyond the trial cap without limit
+
+### Specialist-Only Recipes
+
+Recipes marked `specialist_only: true` require the player to have committed to the corresponding specialty job. There are 50+ specialist-only recipes across the specializations.
+
+**Blacksmith Exclusive Recipes:**
+- Self Repair (repair your own gear)
+- Reforge Weapon / Armor (re-roll stats)
+- High-tier crafted weapons and armor (Void Blade, Celestial Plate, etc.)
+
+**Alchemist Exclusive Recipes:**
+- Transmutation (convert materials between types)
+- Extraction (break down items for rare materials)
+- Advanced potions and elixirs
+
+**Enchanter Exclusive Recipes:**
+- Equipment enchantments (add stat bonuses)
+- Affix enhancement
+- Proc enchantments (add special effects)
+- Disenchanting (remove enchantments for materials)
+
+**Scribe Exclusive Recipes:**
+- Scrolls (combat consumables)
+- Maps (reveal nearby areas)
+- Tomes (permanent stat books)
+- Bestiary Pages (monster info)
+
+**Builder Exclusive Recipes:**
+- Structure items (walls, doors, stations)
+- Guard posts, towers, inns
+
+### Crafting Output Types
+
+Specialist recipes produce unique output types beyond normal equipment:
+
+| Output Type | Description |
+|-------------|-------------|
+| `self_repair` | Repair equipped gear without a blacksmith |
+| `reforge` | Re-roll stats on a specific equipment slot |
+| `transmute` | Convert materials between types |
+| `extract` | Break down items for rare materials |
+| `disenchant` | Remove enchantments, recover some materials |
+| `upgrade` | Increase equipment level |
+| `enchantment` | Add stat bonuses to equipment |
+| `affix` | Add special affixes to equipment |
+| `proc_enchant` | Add proc effects (vampire, thunder, etc.) |
+
+### Balance Caps
+
+| Cap Type | Limit |
+|----------|-------|
+| Upgrade levels per item | +50 (tracked via `upgrades_applied` field) |
+| Upgrade brackets | +1 recipes to +10, +5 to +30, +10 to +50 |
+| Max enchantment types per item | 3 |
+| ATK/DEF enchantment cap | 60 |
+| HP enchantment cap | 200 |
+| Mana enchantment cap | 150 |
+| Speed enchantment cap | 15 |
+| Stat enchantment cap | 20 |
+| Stamina/Energy enchantment cap | 50 |
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `shared/crafting_database.gd` | `specialist_only` flag, `STATION_SKILL_MAP`, recipe definitions |
+| `shared/character.gd` | `GATHERING_JOBS`, `SPECIALTY_JOBS`, `JOB_TRIAL_CAP`, `commit_specialty_job()` |
+| `server/server.gd` | `handle_job_commit()`, crafting validation |
+
+---
+
+## Open Market System
+
+The Open Market allows players to trade items through trading post `$` tiles using Valor as currency.
+
+### Market Categories
+
+| Category | Includes |
+|----------|----------|
+| Equipment | Weapons, armor, accessories, shields |
+| Companion Eggs | Eggs from incubator (returned on buy/cancel) |
+| Consumables | Potions, scrolls, food |
+| Tools | Gathering tools |
+| Runes | Crafted runes |
+| Materials | Crafting materials (sub-categorized by tier: T1-T6) |
+| Monster Parts | Monster drops used in crafting |
+
+### Listing Items
+
+1. Navigate to a trading post with a Market tile (`$`)
+2. Choose an item from inventory to list
+3. The item is removed from inventory and placed on the market
+4. Base Valor is calculated and awarded immediately to the seller
+5. The listing appears for other players to browse and buy
+
+**Bulk Listing Options:**
+- **List All Equipment** - Lists all unequipped, unlocked gear
+- **List All Items** - Lists all consumables and tools (excludes treasure chests)
+- **List All Materials** - Lists all crafting materials from pouch
+
+### Buying Items
+
+1. Browse the market (category filter + sort modes)
+2. Select a listing and confirm purchase
+3. Pay the markup price (base valor x markup multiplier)
+4. If buying from another player: seller receives 50% of markup as bonus Valor, other 50% goes to realm treasury
+5. If buying your own listing: no markup applied
+
+**Partial Buying:** When purchasing material stacks, choose any quantity (not forced to buy all).
+
+### Stacking
+
+Identical non-equipment listings from the same seller with the same price merge into visual stacks. Equipment and eggs are always displayed individually (never stacked).
+
+### Sort Modes
+
+| Mode | Description |
+|------|-------------|
+| Category | Groups by item type, then by price within category |
+| Price (ascending) | Cheapest first |
+| Price (descending) | Most expensive first |
+| Name A-Z | Alphabetical |
+| Newest | Most recently listed first |
+
+### Cancelling Listings
+
+Cancelling a listing returns the item to inventory but deducts the base Valor that was originally awarded. Bulk cancel is available via "Cancel All" option.
+
+### Crafter Tracking
+
+Listed items retain their crafter name, allowing buyers to see who made the item.
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `handle_market_browse()`, `handle_market_list_item()`, `handle_market_buy()`, `handle_market_list_all()` |
+| `server/persistence_manager.gd` | `add_market_listing()`, `get_market_listings()`, `calculate_markup()` |
+| `shared/drop_tables.gd` | `calculate_base_valor()`, `get_supply_category()` |
+
+---
+
+## Treasure Chests
+
+Treasure chests are usable consumable items that grant crafting materials and gold.
+
+### Sources
+
+Treasure chests are rare catches from gathering activities:
+
+| Source | Tier |
+|--------|------|
+| Shallow fishing | T1 |
+| Mining T1-T2 | T2 |
+| Mining T3 | T3 |
+| Deep fishing | T4 |
+
+### Opening a Chest
+
+Use the chest from inventory to receive:
+
+1. **2-4 random crafting materials** appropriate to the chest's tier
+2. **Gold bonus** scaled by tier (25 + tier x 25 to 100 + tier x 50)
+
+### Material Pools by Tier
+
+| Tier | Possible Materials |
+|------|-------------------|
+| T1 | Small Fish, Medium Fish, Seaweed, Copper Ore, Coal, Rough Gem, Oak Log, Pine Log, Healing Herb |
+| T2 | Freshwater Pearl, Iron Ore, Tin Ore, Birch Log, Maple Log, Leather, Healing Herb, Mana Blossom |
+| T3 | Steel Ore, Silver Ore, Polished Gem, Ironwood, Enchanted Hide, Arcane Crystal, Shadowleaf |
+| T4 | Mithril Ore, Gold Ore, Ebonwood, Flawless Gem, Dragon Scale, Phoenix Feather, Soul Shard |
+
+Material quantity per roll is 1 to (2 + tier).
+
+### Special Notes
+
+- Treasure chests are excluded from bulk listing on the market
+- They take up inventory space until opened
+- They cannot be equipped or used in crafting
+
+### Implementation Files
+
+| File | Component |
+|------|-----------|
+| `server/server.gd` | `_open_treasure_chest()`, `_get_chest_material_pool()` |
+| `shared/drop_tables.gd` | Treasure chest definitions in gathering catch tables |

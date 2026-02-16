@@ -6,12 +6,14 @@ This file provides guidance to Claude Code when working with this repository.
 
 **Detailed diagrams in `/docs/`:**
 - `QUICK_REFERENCE.md` - Condensed overview, file map, common tasks
+- `SYSTEM_OVERVIEW.md` - Dense AI context reference (mode flags, message types, conventions)
+- `CODE_GUIDE.md` - Walkthrough for modifying the game (templates, patterns, debugging)
 - `architecture.md` - System architecture, data flow, class hierarchy
 - `action-bar-states.md` - Complete action bar state machine (CRITICAL for UI work)
 - `combat-flow.md` - Combat lifecycle, damage formulas, monster abilities
 - `networking-protocol.md` - All message types, sequence diagrams
 - `quest-system.md` - Quest flow, trading posts
-- `game-systems.md` - Feature documentation (gems, trading, abilities, etc.)
+- `game-systems.md` - Feature documentation (all game systems)
 
 ## Project Overview
 
@@ -84,7 +86,7 @@ rebinding_action = "my_new_action"              # For settings/keybind mode
 - `equip_confirm`, `unequip_item` - Equipment action states
 
 **Step 2: Add action bar state for the new view**
-Find the appropriate mode's action bar section in `update_action_bar()` (~line 3700-4200) and add:
+Find the appropriate mode's action bar section in `update_action_bar()` (~line 4348+) and add:
 ```gdscript
 elif pending_xxx_action == "my_new_action":
     current_actions = [
@@ -97,7 +99,7 @@ elif pending_xxx_action == "my_new_action":
 Find where incoming messages trigger UI refreshes and add your state to prevent clearing:
 
 ```gdscript
-# In "character_update" handler (~line 9910-9990):
+# In "character_update" handler (~line 14523+):
 # Find the mode check (e.g., `if inventory_mode:`) and add:
 elif pending_inventory_action == "my_new_action":
     pass  # Don't redisplay - keep showing current view
@@ -114,7 +116,7 @@ elif pending_inventory_action == "my_new_action":
     update_action_bar()
 ```
 
-**Step 5: CRITICAL - Add to item selection exclusion list** (~line 1751 in client.gd)
+**Step 5: CRITICAL - Add to item selection exclusion list** (~line 1866 in client.gd)
 The `_process()` function has item selection handling that checks `pending_inventory_action`. If your new state isn't excluded, number key presses will be processed as item selections AND action bar presses simultaneously, causing immediate unwanted actions.
 
 ```gdscript
@@ -136,7 +138,7 @@ if ... and pending_inventory_action not in ["equip_confirm", "sort_select", "sal
 - Player changes setting → "Setting saved" → any update → settings redisplay → message gone
 
 **Another common cause - Item Selection Conflict:**
-The `_process()` function (~line 1751) handles item selection with number keys (1-9). If your new `pending_inventory_action` state isn't in the exclusion list, pressing a number key to select an action bar button ALSO triggers item selection handling, which can immediately call `display_inventory()` or other functions.
+The `_process()` function (~line 1866) handles item selection with number keys (1-9). If your new `pending_inventory_action` state isn't in the exclusion list, pressing a number key to select an action bar button ALSO triggers item selection handling, which can immediately call `display_inventory()` or other functions.
 
 Example: Player presses "3" for Materials button → action bar processes "view_materials" → BUT _process() also sees key "3" as item selection → processes item at index 3 → calls display_inventory() → materials view immediately replaced
 
@@ -149,7 +151,7 @@ Example: Player presses "3" for Materials button → action bar processes "view_
 
 ### Quick Reference - Where Refreshes Happen
 Search client.gd for these to find where to add bypasses:
-- `if inventory_mode:` in character_update handler (~line 9926)
+- `if inventory_mode:` in character_update handler (~line 14540)
 - `if at_merchant` in character_update handler
 - `if at_trading_post` in various handlers
 - `if ability_mode` in relevant handlers
@@ -193,20 +195,26 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 
 | File | Purpose |
 |------|---------|
-| `client/client.gd` | Client UI, networking, action bar (~21000 lines) |
-| `client/monster_art.gd` | ASCII art rendering |
-| `server/server.gd` | Server logic, message routing (~14000 lines) |
-| `shared/character.gd` | Player stats, inventory, equipment |
-| `shared/combat_manager.gd` | Turn-based combat engine |
-| `shared/world_system.gd` | Terrain, hotspots, coordinates |
-| `shared/monster_database.gd` | Monster definitions (9 tiers) |
-| `shared/quest_database.gd` | Quest definitions |
-| `shared/dungeon_database.gd` | Dungeon types, floors, bosses |
-| `shared/drop_tables.gd` | Item generation, fishing/mining/logging catches, salvage |
-| `shared/crafting_database.gd` | Crafting recipes, materials |
-| `shared/trading_post_database.gd` | Trading post definitions, categories, colors, shapes |
+| `client/client.gd` | Client UI, networking, action bar (~21000+ lines) |
+| `client/monster_art.gd` | ASCII art rendering for monsters and eggs |
+| `client/trader_art.gd` | Trader ASCII art (persistent per-post) |
 | `client/trading_post_art.gd` | Trading post ASCII art by category |
+| `server/server.gd` | Server logic, message routing (~14000+ lines) |
+| `server/persistence_manager.gd` | SQLite persistence, houses, kennel, market, valor |
 | `server/balance_config.json` | Combat tuning, lethality weights, ability modifiers |
+| `shared/character.gd` | Player stats, inventory, equipment, companions |
+| `shared/combat_manager.gd` | Turn-based combat engine (solo + party) |
+| `shared/world_system.gd` | Terrain, hotspots, procedural world, tile detection |
+| `shared/chunk_manager.gd` | 32x32 chunk system for world streaming (delta JSON) |
+| `shared/monster_database.gd` | Monster definitions (9 tiers), variant generation |
+| `shared/quest_database.gd` | Quest definitions, dynamic daily generation |
+| `shared/quest_manager.gd` | Quest tracking, turn-in logic, party sync |
+| `shared/dungeon_database.gd` | Dungeon types, floors, bosses, sub-tier system |
+| `shared/drop_tables.gd` | Item gen, gathering catches, salvage, tools, eggs |
+| `shared/crafting_database.gd` | Crafting recipes, materials, specialty job gating |
+| `shared/npc_post_database.gd` | NPC post definitions, station layouts |
+| `shared/trading_post_database.gd` | Trading post categories, shapes, colors |
+| `shared/titles.gd` | Title/rank system |
 | `tools/combat_simulator/` | Combat simulation tool for balance testing |
 
 ## Combat Simulator Tool
@@ -334,8 +342,8 @@ git push
 
 ## Maintenance Reminders
 
-- **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 5024)
-- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 15458) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
+- **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 20311)
+- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 18648) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
 - **After significant changes:** Remind user to create a release for players
 
 ## Code Conventions
@@ -353,7 +361,7 @@ Key rules:
 1. **Always call `update_action_bar()` after state changes**
 2. State priority: settings > trade > combat > merchant > inventory > trading_post > movement
 3. Action bar slots 5-9 share keys with item selection (1-5)
-4. When adding sub-menus using buttons, exclude from item selection at ~line 1451
+4. When adding sub-menus using buttons, exclude from item selection at ~line 1866
 5. **CRITICAL: Mark hotkeys as pressed when exiting modes via key press** (see Pitfall #7)
 6. **GOLDEN RULE: A single hotkey press must NEVER trigger actions in two different menus.** When a hotkey opens a new menu/mode, any item selection keys that are currently held must be pre-marked as pressed in the new mode so they don't immediately trigger a selection. Pattern:
 ```gdscript
@@ -527,8 +535,66 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 
 **Client Variables:**
 - `house_data` - Current house data from server
-- `house_mode` - Current house tab: "", "main", "storage", "companions", "upgrades"
+- `house_mode` - Current house tab: "", "main", "storage", "companions", "upgrades", "kennel", "fusion"
 - `pending_house_action` - Action state within house mode
+
+## Market System
+
+**Overview:** Players list items at trading posts to earn Valor (the universal currency). Other players can buy listed items using Valor.
+
+**Categories:** Equipment, Companion Eggs, Consumables, Tools, Runes, Materials, Monster Parts
+
+**Key concepts:**
+- `base_valor` - Seller receives this immediately on listing
+- `markup_price` - Buyer pays this (includes supply/demand markup)
+- Markup based on supply at each trading post per category
+- Bulk listing: list all equipment, all consumables/tools, or all materials at once
+- Items stack in browse view (except equipment, eggs, tools which are unique)
+
+**Key files:**
+- `server/persistence_manager.gd` - `get_market_listings()`, `add_market_listing()`, `buy_market_listing()`, `calculate_markup()`
+- `server/server.gd` - `handle_market_browse()`, `handle_market_list_item()`, `handle_market_buy()`
+- `client/client.gd` - `display_market_main()`, `display_market_browse()`, `display_market_my_listings()`
+
+**Client Variables:**
+- `market_mode` - Boolean, at market
+- `pending_market_action` - Sub-state: "browse", "list_select", "list_material", "buy_confirm", "my_listings"
+- `market_category` - Filter: "all", "equipment", "egg", "consumable", "tool", "rune", "material", "monster_part"
+- `market_sort` - Sort mode: "category", "price_asc", "price_desc", "name", "level"
+- `account_valor` - Player's current valor balance
+
+## Party System
+
+**Overview:** Up to 4 players form a party. Leader moves, followers trail in snake formation. Combat scales monster HP by party size.
+
+**Formation:** Walk into another player → invite sent. Both choose Lead/Follow.
+
+**Movement:** Snake pattern — leader moves, followers occupy previous positions in join order.
+
+**Combat:** Monster HP scales by party size. Weighted targeting (halving redistribution). Full XP/gold/loot duplicated per survivor. Death → spectate. Flee → spectate.
+
+**Party Dungeons:** All members enter shared instance. Snake movement in dungeon. Party combat for encounters/bosses. Guaranteed boss egg for each member.
+
+**Key data (server):**
+- `active_parties` - party_id → {leader, members[], created_at}
+- `party_membership` - peer_id → party_id
+- `pending_party_invites` - peer_id → {from, to, timestamp}
+
+**Key data (client):**
+- `in_party`, `is_party_leader`, `party_members` array
+- `party_combat_active`, `party_waiting_for_turn`, `party_combat_spectating`
+
+**Max 4 players per party. Items disabled in party combat.**
+
+## Player Posts (Enclosures)
+
+**Overview:** Players can build named enclosures on the world map as safe zones. All visitors can use them.
+
+**Mechanics:**
+- Built via building mode at valid locations
+- Require `post_slots` house upgrade for additional posts
+- Compass hints point other players toward posts
+- Posts are visible on the map as colored tiles
 
 ## Common Pitfalls
 
@@ -553,11 +619,11 @@ GDScript 4 static functions CAN access class constants. If errors occur, check f
 ### 6. New Commands Need Whitelist Entry
 **Symptom:** New `/command` goes to chat instead of being processed
 **Cause:** Commands must be added to TWO places in `client/client.gd`:
-1. `command_keywords` array (~line 8993) - whitelist that routes input to `process_command()` instead of chat
-2. `process_command()` match statement (~line 9421) - actual command handler
+1. `command_keywords` array (~line 15835) - whitelist that routes input to `process_command()` instead of chat
+2. `process_command()` match statement (~line 16505) - actual command handler
 
 **Also for server-side commands:** Add to `server/server.gd`:
-1. `handle_message()` match statement (~line 470)
+1. `handle_message()` match statement (~line 755)
 2. Create the handler function
 
 ### 7. Mode Exit Hotkey Double-Trigger (CRITICAL)
@@ -581,7 +647,7 @@ set_meta("hotkey_%d_pressed" % action_slot, true)
 - Currently excluded: `settings_mode`, `combat_item_mode`, `monster_select_mode`, `title_mode`
 - Modes that need this fix when exiting: `ability_mode`, any new custom modes
 
-**Location:** `client/client.gd` ~line 1755 for exclusion list, ~line 1780 for hotkey processing
+**Location:** `client/client.gd` ~line 1866 for exclusion list, ~line 2547 for hotkey processing
 
 ### 8. JSON Float vs Integer Dictionary Keys
 **Symptom:** Dictionary lookup with `.has()` returns false even though key appears to exist
@@ -629,7 +695,7 @@ if not get_meta("mykey_%d_pressed" % i, false):
 
 **When to apply:** EVERY place in `_process()` that calls `is_item_select_key_pressed(i)` and triggers an action. No exceptions.
 
-**Files:** `client/client.gd` — `_consume_item_select_key()` (~line 14936), `item_selection_consumed_this_frame` var (~line 709), checked in action bar loop (~line 2298)
+**Files:** `client/client.gd` — `_consume_item_select_key()` (~line 16960), `item_selection_consumed_this_frame` var (~line 724), checked in action bar loop (~line 2550+)
 
 ## Dungeon Combat Issues (Fixed v0.9.31)
 
@@ -644,17 +710,17 @@ if not get_meta("mykey_%d_pressed" % i, false):
 - Server's `_start_dungeon_encounter()` didn't include `use_client_art: true` in the combat_start message
 - Client checks `message.get("use_client_art", false)` to decide whether to render ASCII art
 - Also needed to add a `message` field with encounter text as fallback
-- **Fix:** Added `use_client_art: true` and `message` to dungeon combat_start (server.gd ~line 8125)
+- **Fix:** Added `use_client_art: true` and `message` to dungeon combat_start (server.gd ~line 16709)
 
 **Issue 2: Action bar showed dungeon navigation during combat**
 - In `update_action_bar()`, `dungeon_mode` check (line ~3464) came before `in_combat` check (line ~3694)
 - When entering combat in dungeon, `dungeon_mode` stayed true, so dungeon actions took precedence
-- **Fix:** Changed condition to `elif dungeon_mode and not in_combat:` (client.gd ~line 3464)
+- **Fix:** Changed condition to `elif dungeon_mode and not in_combat:` (client.gd ~line 5171)
 
 **Key Files:**
-- `server/server.gd` ~line 8125: `_start_dungeon_encounter()` combat_start message
-- `client/client.gd` ~line 3464: `update_action_bar()` dungeon_mode condition
-- `client/client.gd` ~line 10301: combat_start handler checks `use_client_art`
+- `server/server.gd` ~line 16709: `_start_dungeon_encounter()` combat_start message
+- `client/client.gd` ~line 5171: `update_action_bar()` dungeon_mode condition
+- `client/client.gd` ~line 15650: combat_start handler checks `use_client_art`
 
 ## Player Info Popup (WORKING)
 
