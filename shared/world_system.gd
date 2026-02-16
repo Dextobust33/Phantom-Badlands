@@ -85,7 +85,7 @@ const TILE_RENDER = {
 	"healer":        {"char": "H", "color": "#00FF88", "blocks_move": true, "blocks_los": false},
 	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
 	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
-	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": false, "blocks_los": false},
+	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": true, "blocks_los": false},
 	"post_marker":   {"char": "P", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
@@ -910,7 +910,7 @@ func is_safe_zone(x: int, y: int) -> bool:
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
 		var tile_type = tile.get("type", "")
-		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "storage", "tower", "post_marker", "blacksmith", "healer"]:
+		if tile_type in ["floor", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "market", "inn", "quest_board", "storage", "tower", "post_marker", "blacksmith", "healer", "guard"]:
 			return true
 		if tile.has("enclosure_owner"):
 			return true
@@ -919,9 +919,26 @@ func is_safe_zone(x: int, y: int) -> bool:
 	var info = get_terrain_info(terrain)
 	return info.safe
 
+# Guard position cache for encounter suppression
+var _guard_positions: Array = []  # [{x, y, radius}]
+
+func update_guard_positions(guards: Array):
+	"""Update guard position cache from server data."""
+	_guard_positions = guards
+
+func is_guard_suppressed(x: int, y: int) -> bool:
+	"""Check if a position is within any active guard's suppression radius (Manhattan distance)."""
+	for gp in _guard_positions:
+		var dist = abs(x - int(gp.x)) + abs(y - int(gp.y))
+		if dist <= int(gp.radius):
+			return true
+	return false
+
 func check_encounter(x: int, y: int) -> bool:
 	"""Check if player encounters a monster (roll)"""
 	if is_safe_zone(x, y):
+		return false
+	if is_guard_suppressed(x, y):
 		return false
 	var terrain = get_terrain_at(x, y)
 	var info = get_terrain_info(terrain)
@@ -1313,6 +1330,12 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				elif in_hotzone:
 					# Non-passable tile in hotzone — show tile with dark red tint
 					line_parts.append("[color=#8B0000] ![/color]")
+				elif tile_type == "guard":
+					# Guard post — color based on active guard status
+					line_parts.append(_render_guard_tile(x, y))
+				elif tile_type == "tower":
+					# Tower — gold if boosting a nearby guard
+					line_parts.append(_render_tower_tile(x, y))
 				else:
 					line_parts.append(_render_tile_bbcode(tile_type, tile_tier))
 
@@ -1338,6 +1361,25 @@ func _render_tile_bbcode(tile_type: String, tier: int = 1) -> String:
 		color = flower_colors[(tier - 1) % flower_colors.size()]
 
 	return "[color=%s] %s[/color]" % [color, char]
+
+func _render_guard_tile(x: int, y: int) -> String:
+	"""Render guard post tile with color based on active guard status."""
+	# Check if an active guard is at this exact position
+	for gp in _guard_positions:
+		if int(gp.x) == x and int(gp.y) == y:
+			# Active guard — color by implied food status
+			# We don't have days_remaining on client, so active = green
+			return "[color=#00FF00] G[/color]"
+	# Empty guard post — gray
+	return "[color=#555555] G[/color]"
+
+func _render_tower_tile(x: int, y: int) -> String:
+	"""Render tower tile — gold if boosting a nearby guard, white otherwise."""
+	# Check if any active guard is within 2 tiles (tower boost range)
+	for gp in _guard_positions:
+		if abs(x - int(gp.x)) <= 2 and abs(y - int(gp.y)) <= 2:
+			return "[color=#FFD700] ^[/color]"  # Gold — actively boosting
+	return "[color=#FFFFFF] ^[/color]"  # White — normal
 
 # ===== COMPASS / NAVIGATION =====
 

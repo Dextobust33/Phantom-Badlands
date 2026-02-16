@@ -1772,9 +1772,8 @@ const FISHING_CATCHES = {
 		# Rare catches (12%)
 		{"weight": 5, "item": "golden_fish", "name": "Golden Fish", "type": "fish", "value": 100},
 		{"weight": 4, "item": "enchanted_kelp", "name": "Enchanted Kelp", "type": "material", "value": 75},
-		{"weight": 3, "item": "fish_scale_armor", "name": "Fish Scale", "type": "material", "value": 40},
 		# Treasure (3%)
-		{"weight": 3, "item": "small_treasure_chest", "name": "Small Treasure Chest", "type": "treasure", "value": 150}
+		{"weight": 3, "item": "small_treasure_chest", "name": "Small Treasure Chest", "type": "treasure_chest", "is_consumable": true, "tier": 1, "value": 50}
 	],
 	"deep": [
 		# Common catches (45%)
@@ -1791,7 +1790,7 @@ const FISHING_CATCHES = {
 		{"weight": 5, "item": "ancient_relic", "name": "Ancient Relic", "type": "treasure", "value": 400},
 		{"weight": 4, "item": "kraken_ink", "name": "Kraken Ink", "type": "material", "value": 350},
 		# Treasure (5%)
-		{"weight": 5, "item": "large_treasure_chest", "name": "Large Treasure Chest", "type": "treasure", "value": 500}
+		{"weight": 5, "item": "large_treasure_chest", "name": "Large Treasure Chest", "type": "treasure_chest", "is_consumable": true, "tier": 4, "value": 100}
 	]
 }
 
@@ -1805,7 +1804,6 @@ const FISHING_XP = {
 	"river_crab": 15,
 	"golden_fish": 50,
 	"enchanted_kelp": 30,
-	"fish_scale_armor": 20,
 	"small_treasure_chest": 40,
 	"deep_sea_fish": 25,
 	"magic_kelp": 30,
@@ -1899,7 +1897,7 @@ const MINING_CATCHES = {
 		{"weight": 12, "item": "rough_gem", "name": "Rough Gem", "type": "gem", "value": 25},
 		{"weight": 10, "item": "mana_blossom", "name": "Crystal Flower", "type": "herb", "value": 20},
 		{"weight": 5, "item": "polished_gem", "name": "Polished Gem", "type": "gem", "value": 75},
-		{"weight": 3, "item": "small_treasure_chest", "name": "Buried Chest", "type": "treasure", "value": 150}
+		{"weight": 3, "item": "small_treasure_chest", "name": "Buried Chest", "type": "treasure_chest", "is_consumable": true, "tier": 2, "value": 50}
 	],
 	3: [  # T3: 100-150 distance
 		{"weight": 35, "item": "steel_ore", "name": "Steel Ore", "type": "ore", "value": 30},
@@ -1908,7 +1906,7 @@ const MINING_CATCHES = {
 		{"weight": 12, "item": "polished_gem", "name": "Polished Gem", "type": "gem", "value": 75},
 		{"weight": 10, "item": "arcane_crystal", "name": "Arcane Crystal", "type": "enchant", "value": 50},
 		{"weight": 5, "item": "flawless_gem", "name": "Flawless Gem", "type": "gem", "value": 150},
-		{"weight": 3, "item": "large_treasure_chest", "name": "Ancient Chest", "type": "treasure", "value": 300}
+		{"weight": 3, "item": "large_treasure_chest", "name": "Ancient Chest", "type": "treasure_chest", "is_consumable": true, "tier": 3, "value": 75}
 	],
 	4: [  # T4: 150-200 distance
 		{"weight": 35, "item": "mithril_ore", "name": "Mithril Ore", "type": "ore", "value": 60},
@@ -3268,6 +3266,22 @@ const PROC_SUFFIX_POOL = [
 	{"name": "of the Executioner", "proc_type": "execute", "value": 75, "chance": 30},  # Stronger
 ]
 
+const RUNE_AFFIX_CAPS = {
+	"attack_bonus": {"minor": 8, "greater": 30, "supreme": 60},
+	"defense_bonus": {"minor": 8, "greater": 30, "supreme": 60},
+	"hp_bonus": {"minor": 25, "greater": 80, "supreme": 180},
+	"speed_bonus": {"minor": 3, "greater": 9, "supreme": 20},
+	"mana_bonus": {"minor": 12, "greater": 40, "supreme": 100},
+	"stamina_bonus": {"minor": 6, "greater": 20, "supreme": 45},
+	"energy_bonus": {"minor": 6, "greater": 20, "supreme": 45},
+	"str_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	"con_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	"dex_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	"int_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	"wis_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	"wits_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+}
+
 func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
 	"""Get all affixes that have a specific stat from prefix or suffix pool."""
 	var pool = PREFIX_POOL if is_prefix else SUFFIX_POOL
@@ -3800,6 +3814,16 @@ func calculate_base_valor(item: Dictionary) -> int:
 		# Convert material gold value to valor (roughly value / 3, min 1)
 		return maxi(1, int(mat_value / 3.0))
 
+	# Tools — tier-based with rarity multiplier
+	if item_type == "tool":
+		var tier = int(item.get("tier", 1))
+		var rarity = item.get("rarity", "common")
+		var tool_tier_base = {1: 10, 2: 25, 3: 50, 4: 90, 5: 150, 6: 250}
+		var base = tool_tier_base.get(tier, 10)
+		var tool_rarity_mult = {"common": 0.5, "uncommon": 1.0, "rare": 2.0, "epic": 4.0, "legendary": 8.0}
+		var mult = tool_rarity_mult.get(rarity, 0.5)
+		return maxi(2, int(base * mult))
+
 	# Monster parts
 	if item.has("monster_tier") or item_type == "monster_part":
 		var tier = int(item.get("monster_tier", item.get("tier", 1)))
@@ -3820,6 +3844,8 @@ func get_supply_category(item: Dictionary) -> String:
 		return "material_t%d" % tier
 	if item.has("monster_tier") or item.get("type", "") == "monster_part":
 		return "monster_part"
+	if item.get("type", "") == "rune":
+		return "rune"
 	return "equipment"
 
 func get_rarity_color(rarity: String) -> String:

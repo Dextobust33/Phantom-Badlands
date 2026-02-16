@@ -668,6 +668,8 @@ var selected_item_index: int = -1  # Currently selected inventory item (0-based,
 var pending_inventory_action: String = ""  # Action waiting for item selection
 var last_item_use_result: String = ""  # Store last item use result to display after inventory refresh
 var awaiting_item_use_result: bool = false  # Flag to capture next text message as item use result
+var rune_apply_mode: bool = false  # Selecting equipped gear slot to apply a rune
+var rune_apply_index: int = -1  # Inventory index of the rune being applied
 
 # Auto-salvage affix filter
 var affix_filter_page: int = 0
@@ -707,6 +709,10 @@ var rescue_npc_type: String = ""  # merchant, healer, blacksmith, scholar, breed
 var rescue_npc_items: Array = []  # Items offered by rescue merchant
 var rescue_npc_message: String = ""  # Display message from the NPC
 var dungeon_npcs_data: Array = []  # NPC entities on current dungeon floor
+
+# Guard post interaction state
+var at_guard_post: bool = false
+var guard_post_data: Dictionary = {}  # Data from guard_post_interact message
 
 # Bounty tracking
 var at_bounty: bool = false
@@ -999,6 +1005,10 @@ var market_buy_quantity: int = 0  # 0 = buy full stack
 var market_list_page: int = 0
 var market_mat_page: int = 0
 var market_my_page: int = 0
+var market_list_flash: String = ""  # Brief success message shown in listing view
+var market_sort: String = "category"
+const MARKET_SORT_LABELS = {"category": "Category", "price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "newest": "Newest"}
+const MARKET_SORT_ORDER = ["category", "price_asc", "price_desc", "name_asc", "newest"]
 var account_valor: int = 0
 
 # Dungeon mode
@@ -1850,7 +1860,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "affix_filter_select"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "affix_filter_select", "rune_apply"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -2044,6 +2054,20 @@ func _process(delta):
 						send_to_server({"type": "market_cancel", "listing_id": listing.get("listing_id", ""), "post_id": listing.get("post_id", "")})
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
+
+	# Market main menu bulk listing with keybinds (1-3 for bulk actions)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "":
+		for i in range(3):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketbulkkey_%d_pressed" % i, false):
+					set_meta("marketbulkkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					var bulk_types = ["equipment", "items", "materials"]
+					send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
+			else:
+				set_meta("marketbulkkey_%d_pressed" % i, false)
 
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
@@ -4892,6 +4916,49 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif at_guard_post:
+		# Guard post interaction
+		var has_guard = guard_post_data.get("has_guard", false)
+		var is_owner = guard_post_data.get("is_owner", false)
+		if not has_guard:
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "guard_post_back", "enabled": true},
+				{"label": "Hire", "action_type": "local", "action_data": "guard_hire", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif is_owner:
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "guard_post_back", "enabled": true},
+				{"label": "Feed", "action_type": "local", "action_data": "guard_feed", "enabled": true},
+				{"label": "Dismiss", "action_type": "local", "action_data": "guard_dismiss", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		else:
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "guard_post_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 	elif pending_rescue_npc:
 		# Rescue NPC encounter in dungeon
 		if rescue_npc_type == "merchant" and rescue_npc_items.size() > 0:
@@ -6076,6 +6143,17 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_inventory_action == "rune_apply":
+			# Rune apply mode — show slot buttons for target gear
+			var slot_list = get_meta("rune_slot_list", [])
+			var actions: Array[Dictionary] = [
+				{"label": "Cancel", "action_type": "local", "action_data": "rune_apply_cancel", "enabled": true},
+			]
+			for si in range(slot_list.size()):
+				actions.append({"label": slot_list[si].capitalize(), "action_type": "local", "action_data": "rune_slot_%d" % si, "enabled": true})
+			while actions.size() < 10:
+				actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+			current_actions = actions
 		elif pending_inventory_action != "":
 			# Waiting for item selection - show cancel and page navigation
 			var inv = character_data.get("inventory", [])
@@ -6272,12 +6350,13 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_market_action == "browse":
+			var sort_label = MARKET_SORT_LABELS.get(market_sort, "Category")
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "market_browse_back", "enabled": true},
 				{"label": "Prev Page", "action_type": "local", "action_data": "market_prev_page", "enabled": market_page > 0},
 				{"label": "Next Page", "action_type": "local", "action_data": "market_next_page", "enabled": market_page < market_total_pages - 1},
 				{"label": "Filter", "action_type": "local", "action_data": "market_filter", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Sort: %s" % sort_label, "action_type": "local", "action_data": "market_sort_cycle", "enabled": true},
 				{"label": "1-9 Buy", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6839,7 +6918,7 @@ func _update_shortcut_buttons_visibility():
 	if not shortcut_buttons_container:
 		return
 	# Show during normal gameplay, hide during combat/login/house/etc.
-	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode
+	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode and not at_guard_post
 	shortcut_buttons_container.visible = should_show
 
 func _scale_shortcut_buttons(base_scale: float):
@@ -8367,6 +8446,20 @@ func execute_local_action(action: String):
 		update_action_bar()
 		return
 
+	# Handle dynamic rune slot selection before match statement
+	if action.begins_with("rune_slot_") and rune_apply_mode:
+		var slot_idx = int(action.replace("rune_slot_", ""))
+		var slot_list = get_meta("rune_slot_list", [])
+		if slot_idx >= 0 and slot_idx < slot_list.size():
+			var target_slot = slot_list[slot_idx]
+			send_to_server({"type": "use_rune", "rune_index": rune_apply_index, "target_slot": target_slot})
+			rune_apply_mode = false
+			rune_apply_index = -1
+			pending_inventory_action = ""
+			inventory_mode = false
+			update_action_bar()
+		return
+
 	match action:
 		"status":
 			display_character_status()
@@ -8802,6 +8895,12 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
+		"rune_apply_cancel":
+			rune_apply_mode = false
+			rune_apply_index = -1
+			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
 		"confirm_equip":
 			confirm_equip_item()
 		"cancel_equip_confirm":
@@ -8935,7 +9034,7 @@ func execute_local_action(action: String):
 		"market_browse":
 			pending_market_action = "browse"
 			market_page = 0
-			send_to_server({"type": "market_browse", "category": market_category, "page": 0})
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
 		"market_list":
 			pending_market_action = "list_select"
 			market_list_page = 0
@@ -9016,24 +9115,35 @@ func execute_local_action(action: String):
 		"market_prev_page":
 			if market_page > 0:
 				market_page -= 1
-				send_to_server({"type": "market_browse", "category": market_category, "page": market_page})
+				send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		"market_next_page":
 			if market_page < market_total_pages - 1:
 				market_page += 1
-				send_to_server({"type": "market_browse", "category": market_category, "page": market_page})
+				send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		"market_filter":
 			# Cycle through categories
-			var categories = ["all", "equipment", "consumable", "material", "monster_part"]
+			var categories = ["all", "equipment", "consumable", "rune", "material", "monster_part"]
 			var idx = categories.find(market_category)
 			market_category = categories[(idx + 1) % categories.size()]
 			market_page = 0
-			send_to_server({"type": "market_browse", "category": market_category, "page": 0})
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
+		"market_sort_cycle":
+			# Cycle through sort modes
+			var sort_idx = MARKET_SORT_ORDER.find(market_sort)
+			market_sort = MARKET_SORT_ORDER[(sort_idx + 1) % MARKET_SORT_ORDER.size()]
+			market_page = 0
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
 		"market_buy_confirm":
 			if market_selected_listing.is_empty():
 				display_game("[color=#FF0000]No listing selected.[/color]")
 			else:
-				var listing_id = market_selected_listing.get("listing_id", "")
-				var buy_msg = {"type": "market_buy", "listing_id": listing_id}
+				var buy_msg = {"type": "market_buy"}
+				# Use stack_listing_ids if available (stacked listings), else single listing_id
+				var stack_ids = market_selected_listing.get("stack_listing_ids", [])
+				if stack_ids.size() > 0:
+					buy_msg["listing_ids"] = stack_ids
+				else:
+					buy_msg["listing_id"] = market_selected_listing.get("listing_id", "")
 				if market_buy_quantity > 0:
 					buy_msg["quantity"] = market_buy_quantity
 				send_to_server(buy_msg)
@@ -9443,6 +9553,25 @@ func execute_local_action(action: String):
 			send_healer_choice("full")
 		"healer_cure_all":
 			send_healer_choice("cure_all")
+		# Guard post actions
+		"guard_post_back":
+			at_guard_post = false
+			guard_post_data = {}
+			game_output.clear()
+			display_game("[color=#808080]You step away from the guard post.[/color]")
+			update_action_bar()
+		"guard_hire":
+			var gx = guard_post_data.get("guard_x", 0)
+			var gy = guard_post_data.get("guard_y", 0)
+			send_to_server({"type": "guard_hire", "guard_x": gx, "guard_y": gy})
+		"guard_feed":
+			var gx2 = guard_post_data.get("guard_x", 0)
+			var gy2 = guard_post_data.get("guard_y", 0)
+			send_to_server({"type": "guard_feed", "guard_x": gx2, "guard_y": gy2})
+		"guard_dismiss":
+			var gx3 = guard_post_data.get("guard_x", 0)
+			var gy3 = guard_post_data.get("guard_y", 0)
+			send_to_server({"type": "guard_dismiss", "guard_x": gx3, "guard_y": gy3})
 		# Rescue NPC encounter actions
 		"rescue_npc_decline":
 			_finish_rescue_npc_encounter()
@@ -11454,6 +11583,8 @@ func close_inventory():
 	inventory_mode = false
 	pending_inventory_action = ""
 	selected_item_index = -1
+	rune_apply_mode = false
+	rune_apply_index = -1
 	reset_combat_background()  # Reset to default black background
 	update_action_bar()
 	display_game("[color=#808080]Inventory closed.[/color]")
@@ -11505,10 +11636,11 @@ func open_salvage_menu():
 	var total_count = 0
 	for item in inventory:
 		var item_level = item.get("level", 1)
-		var is_consumable = _is_consumable_type(item.get("type", ""))
+		var itype = item.get("type", "")
+		var is_consumable = _is_consumable_type(itype)
 		var is_locked = item.get("locked", false) or item.get("is_title_item", false)
 
-		if is_locked or is_consumable:
+		if is_locked or is_consumable or itype == "tool" or itype == "rune" or itype == "structure":
 			continue
 
 		total_count += 1
@@ -11865,7 +11997,8 @@ func display_inventory():
 	else:
 		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
 		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, display_order.size())
-		var showed_separator = false
+		var showed_tools_sep = false
+		var showed_consumables_sep = false
 
 		for di in range(start_idx, end_idx):
 			var entry = display_order[di]
@@ -11873,16 +12006,14 @@ func display_inventory():
 			var item = entry.item
 
 			# Show separator when transitioning between sections
-			if not showed_separator and (item.get("type", "") == "tool" or item.get("is_consumable", false)):
-				if item.get("type", "") == "tool":
-					if equipment_items.size() > 0:
-						display_game("  [color=#808080]--- Tools ---[/color]")
-				elif item.get("is_consumable", false):
-					if (equipment_items.size() > 0 or tool_items.size() > 0) and di > 0 and not display_order[di - 1].item.get("is_consumable", false):
-						display_game("  [color=#808080]--- Consumables ---[/color]")
-					elif di == start_idx and (equipment_items.size() > 0 or tool_items.size() > 0):
-						display_game("  [color=#808080]--- Consumables ---[/color]")
-				showed_separator = true
+			if not showed_tools_sep and item.get("type", "") == "tool":
+				if equipment_items.size() > 0 or di > start_idx:
+					display_game("  [color=#808080]--- Tools ---[/color]")
+				showed_tools_sep = true
+			elif not showed_consumables_sep and item.get("is_consumable", false):
+				if equipment_items.size() > 0 or tool_items.size() > 0:
+					display_game("  [color=#808080]--- Consumables ---[/color]")
+				showed_consumables_sep = true
 
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var item_level = item.get("level", 1)
@@ -11929,6 +12060,15 @@ func display_inventory():
 				var scolor = _get_structure_color(structure_type)
 				display_game("  %d. %s[color=%s]%s[/color] [color=#808080][Structure][/color]" % [
 					display_num, lock_text, scolor, item.get("name", "Unknown")
+				])
+			elif item_type == "rune":
+				var rune_info = ""
+				if item.has("rune_proc"):
+					rune_info = "[color=#808080][%s][/color]" % item.get("rune_proc", "").replace("_", " ").capitalize()
+				else:
+					rune_info = "[color=#808080][+%d %s][/color]" % [item.get("rune_cap", 0), item.get("rune_stat", "").replace("_bonus", "").replace("_", " ")]
+				display_game("  %d. %s[color=#A335EE]%s[/color] %s" % [
+					display_num, lock_text, item.get("name", "Rune"), rune_info
 				])
 			else:
 				# Show equipment with arrow on left, stats on right (using themed names)
@@ -12239,7 +12379,7 @@ func prompt_inventory_action(action_type: String):
 				# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
 				# Also check the is_consumable flag as a fallback
 				# Also include structure items (walls, doors, etc.) — using them enters placement mode
-				if item.get("is_consumable", false) or item_type == "structure" or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+				if item.get("is_consumable", false) or item_type == "structure" or item_type == "rune" or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 					usable_items.append({"index": i, "item": item})
 			if usable_items.is_empty():
 				display_game("[color=#FF0000]No usable items in inventory.[/color]")
@@ -12252,13 +12392,13 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()
 
 		"equip":
-			# Filter for equippable items only (exclude consumables)
+			# Filter for equippable items only (exclude consumables, runes, structures)
 			var equippable_items = []
 			for i in range(inventory.size()):
 				var item = inventory[i]
 				var item_type = item.get("type", "")
 				var is_consumable = _is_consumable_type(item_type) or "potion" in item_type or "elixir" in item_type
-				if not is_consumable:
+				if not is_consumable and item_type != "rune" and item_type != "structure":
 					equippable_items.append({"index": i, "item": item})
 			if equippable_items.is_empty():
 				display_game("[color=#FF0000]No equippable items in inventory.[/color]")
@@ -12737,6 +12877,14 @@ func select_inventory_item(index: int):
 			display_build_direction()
 			update_action_bar()
 			return
+		# Rune items: enter rune apply mode to select target gear slot
+		if use_item.get("type", "") == "rune":
+			rune_apply_mode = true
+			rune_apply_index = actual_index
+			pending_inventory_action = "rune_apply"
+			_display_rune_apply_slots(use_item)
+			update_action_bar()
+			return
 		awaiting_item_use_result = true
 		send_to_server({"type": "inventory_use", "index": actual_index})
 		update_action_bar()
@@ -12806,6 +12954,8 @@ func cancel_inventory_action():
 	if pending_inventory_action != "":
 		pending_inventory_action = ""
 		selected_item_index = -1
+		rune_apply_mode = false
+		rune_apply_index = -1
 		set_inventory_background("base")  # Reset to base inventory background
 		display_game("[color=#808080]Action cancelled.[/color]")
 		display_inventory()  # Re-show inventory
@@ -12927,6 +13077,54 @@ func _display_usable_items_page():
 		display_game("")
 		display_game(last_item_use_result)
 		last_item_use_result = ""
+
+func _display_rune_apply_slots(rune_item: Dictionary):
+	"""Display equipped gear slots that match a rune's target_slot"""
+	var allowed_slots = rune_item.get("target_slot", "").split(",")
+	var equipped = character_data.get("equipped", {})
+	game_output.clear()
+	display_game("[color=#A335EE]===== APPLY RUNE =====[/color]")
+	display_game("")
+	var rune_info = ""
+	if rune_item.has("rune_proc"):
+		rune_info = "Adds %s effect" % rune_item.get("rune_proc", "").replace("_", " ")
+	else:
+		rune_info = "+%d %s" % [rune_item.get("rune_cap", 0), rune_item.get("rune_stat", "").replace("_bonus", "").replace("_", " ")]
+	display_game("[color=#A335EE]%s[/color] — %s" % [rune_item.get("name", "Rune"), rune_info])
+	display_game("")
+	display_game("[color=#FFD700]Select an equipped item to apply this rune to:[/color]")
+	display_game("")
+	var slot_list: Array = []
+	var slot_num = 1
+	for s in allowed_slots:
+		s = s.strip_edges()
+		var item = equipped.get(s)
+		if item != null:
+			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
+			var current_info = ""
+			if rune_item.has("rune_proc"):
+				var proc_type = rune_item.get("rune_proc", "")
+				var existing = item.get("proc_effects", {}).get(proc_type, {})
+				if not existing.is_empty():
+					current_info = " [color=#FFAA00](has %s — will replace)[/color]" % proc_type.replace("_", " ")
+			else:
+				var stat_key = rune_item.get("rune_stat", "")
+				var current_val = int(item.get("affixes", {}).get(stat_key, 0))
+				var rune_cap = rune_item.get("rune_cap", 0)
+				if current_val > 0:
+					if current_val >= rune_cap:
+						current_info = " [color=#FF4444](already +%d, no improvement)[/color]" % current_val
+					else:
+						current_info = " [color=#00FF00](+%d → +%d)[/color]" % [current_val, rune_cap]
+			display_game("  %d. [color=%s]%s[/color] [color=#808080](%s)[/color]%s" % [slot_num, rarity_color, item.get("name", "Unknown"), s, current_info])
+			slot_list.append(s)
+			slot_num += 1
+		else:
+			display_game("  [color=#555555]%s — (empty)[/color]" % s.capitalize())
+	if slot_list.is_empty():
+		display_game("")
+		display_game("[color=#FF4444]No matching equipment found! Equip an item in one of: %s[/color]" % rune_item.get("target_slot", ""))
+	set_meta("rune_slot_list", slot_list)
 
 func cancel_equip_confirmation():
 	"""Cancel equip confirmation and return to equip item selection"""
@@ -14268,7 +14466,7 @@ func handle_server_message(message: Dictionary):
 							var itm = inv[ii]
 							var itm_type = itm.get("type", "")
 							var is_consumable = _is_consumable_type(itm_type) or "potion" in itm_type or "elixir" in itm_type
-							if not is_consumable:
+							if not is_consumable and itm_type != "rune" and itm_type != "structure":
 								equippable_items.append({"index": ii, "item": itm})
 						set_meta("equippable_items", equippable_items)
 						if equippable_items.size() > 0:
@@ -14331,7 +14529,7 @@ func handle_server_message(message: Dictionary):
 						for ii in range(inv.size()):
 							var itm = inv[ii]
 							var itm_type = itm.get("type", "")
-							if itm.get("is_consumable", false) or "potion" in itm_type or "elixir" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("scroll_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_"):
+							if itm.get("is_consumable", false) or itm_type == "rune" or "potion" in itm_type or "elixir" in itm_type or itm_type.begins_with("gold_") or itm_type.begins_with("gem_") or itm_type.begins_with("scroll_") or itm_type.begins_with("mana_") or itm_type.begins_with("stamina_") or itm_type.begins_with("energy_"):
 								usable_items.append({"index": ii, "item": itm})
 						if usable_items.is_empty():
 							# No more usable items, return to inventory
@@ -14348,7 +14546,7 @@ func handle_server_message(message: Dictionary):
 						# Refresh unequip slot list after unequipping
 						game_output.clear()
 						_show_unequip_slots()
-					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "affix_filter_select"]:
+					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "affix_filter_select", "rune_apply"]:
 						# Player is in a sub-view — don't refresh, keep current display
 						pass
 					else:
@@ -14391,10 +14589,16 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh during storage mode
 				if storage_mode:
 					pass  # Keep storage display as-is
-				# Don't refresh during market mode
+				# Refresh market list views after selling, but don't refresh other market modes
 				if market_mode:
-					if pending_market_action != "":
-						pass  # Don't refresh while viewing market
+					if pending_market_action == "list_material":
+						display_market_list_materials()
+						update_action_bar()
+					elif pending_market_action == "list_select":
+						display_market_list_select()
+						update_action_bar()
+					elif pending_market_action != "":
+						pass  # Don't refresh for other market modes
 				# Don't refresh crafting at player station
 				if crafting_mode:
 					pass  # Keep crafting display as-is
@@ -14878,6 +15082,8 @@ func handle_server_message(message: Dictionary):
 			_handle_market_error(message)
 		"market_cancel_success":
 			_handle_market_cancel_success(message)
+		"market_list_all_success":
+			_handle_market_list_all_success(message)
 		"market_start":
 			# Server sends this when player bumps $ tile at trading post
 			enter_market()
@@ -14889,6 +15095,10 @@ func handle_server_message(message: Dictionary):
 			handle_quest_board_interact()
 		"throne_interact":
 			handle_throne_interact()
+		"guard_post_interact":
+			_handle_guard_post_interact(message)
+		"guard_result":
+			_handle_guard_result(message)
 
 		# Quest messages
 		"quest_list":
@@ -15677,6 +15887,41 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		display_game("[color=#E6CC80]%s[/color]" % desc)
 		display_game("")
 		display_game("[color=#808080]This item cannot be equipped or sold.[/color]")
+		display_game("")
+		return
+
+	# Rune items show rune-specific details
+	if item_type == "rune":
+		display_game("[color=#00FFFF]Type:[/color] Rune")
+		display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
+		display_game("[color=#00FFFF]Target Slots:[/color] %s" % item.get("target_slot", "").replace(",", ", "))
+		var crafted_by = item.get("crafted_by", "")
+		if crafted_by != "":
+			display_game("[color=#00FFFF]Crafted by:[/color] [color=#E6CC80]%s[/color]" % crafted_by)
+		display_game("[color=#00FFFF]Value:[/color] %d Valor" % value)
+		display_game("")
+		if item.has("rune_proc"):
+			var proc = item.get("rune_proc", "")
+			var proc_val = item.get("rune_proc_value", 0)
+			var proc_chance = item.get("rune_proc_chance", 1.0)
+			display_game("[color=#A335EE]Effect:[/color] Adds %s" % proc.replace("_", " ").capitalize())
+			match proc:
+				"lifesteal":
+					display_game("  Heal %d%% of damage dealt (always)" % int(proc_val))
+				"shocking":
+					display_game("  +%d%% bonus damage (%d%% chance)" % [int(proc_val), int(proc_chance * 100)])
+				"damage_reflect":
+					display_game("  Reflect %d%% damage to attacker (always)" % int(proc_val))
+				"execute":
+					display_game("  +%d%% damage vs enemies below 30%% HP (%d%% chance)" % [int(proc_val), int(proc_chance * 100)])
+		else:
+			var stat = item.get("rune_stat", "").replace("_bonus", "").replace("_", " ").capitalize()
+			var tier = item.get("rune_tier", "minor").capitalize()
+			var cap = item.get("rune_cap", 0)
+			display_game("[color=#A335EE]Effect:[/color] Sets %s to +%d (%s)" % [stat, cap, tier])
+			display_game("[color=#808080]Upgrades existing affixes if current value is lower.[/color]")
+		display_game("")
+		display_game("[color=#808080]Use from inventory to apply to equipped gear.[/color]")
 		display_game("")
 		return
 
@@ -18270,14 +18515,41 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.119 changes
+	display_game("[color=#00FF00]v0.9.119[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market Polish & Bug Fixes[/color]")
+	display_game("  • Market listings now stack — identical items grouped with quantity")
+	display_game("  • Sort button [R]: Category, Price ▲/▼, Name, Newest")
+	display_game("  • Category dividers in browse view (Equipment, Consumables, etc.)")
+	display_game("  • Bulk listing: [1] All Equipment, [2] All Items, [3] All Materials")
+	display_game("  • Rune category added to market filter")
+	display_game("  • Treasure Chests are now usable — open for random materials + gold")
+	display_game("  • Tool break notification — message when tools hit 0 durability")
+	display_game("  • Tools now have proper valor (tier + rarity based)")
+	display_game("  • Fixed: Blacksmith/Healer showed 'Not enough Valor' always")
+	display_game("  • Fixed: Inventory consumables separator missing after tools")
+	display_game("  • Fixed: Market item/material lists now refresh after selling")
+	display_game("  • Crafting UI no longer shows misleading success %% (all crafts succeed)")
+	display_game("")
+
+	# v0.9.118 changes
+	display_game("[color=#00FFFF]v0.9.118[/color]")
+	display_game("  [color=#FFD700]Guards, Towers & Wall Decay — Phase 3[/color]")
+	display_game("  • Guard Post: new Construction Lv15 recipe — place anywhere (10-tile spacing)")
+	display_game("  • Hire guards (50 Valor + 5 food) to suppress encounters in 5-tile radius")
+	display_game("  • Tower boost: guard near a Watch Tower gets 15-tile radius!")
+	display_game("  • Guards need feeding (3 food = +3 days, max 14). Unfed guards leave.")
+	display_game("  • Wall decay: orphan walls not part of an enclosure crumble after 72 hours")
+	display_game("  • Bump guard post to interact — hire, feed, dismiss, or view status")
+	display_game("  • Map: green G = active guard, gray G = empty post, gold ^ = boosted tower")
+	display_game("")
+
 	# v0.9.117 changes
-	display_game("[color=#00FF00]v0.9.117[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.117[/color]")
 	display_game("  [color=#FFD700]Economy Cleanup — Phase B[/color]")
 	display_game("  • Salvage Essence removed — salvaging now returns crafting materials directly")
 	display_game("  • Pickpocket steals tier-appropriate ore instead of essence")
 	display_game("  • Essence Pouches renamed to Material Pouches")
-	display_game("  • Removed dead salvage cost checks from all crafting recipes")
-	display_game("  • Updated help pages for new salvage system")
 	display_game("")
 
 	# v0.9.116 changes
@@ -18296,20 +18568,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.114[/color]")
 	display_game("  • Fixed: shortcut buttons no longer steal keyboard focus")
 	display_game("  • Fixed: market tile now opens the Valor market instead of old merchant shop")
-	display_game("")
-
-	# v0.9.113 changes
-	display_game("[color=#00FFFF]v0.9.113[/color]")
-	display_game("  [color=#FFD700]Stations & Economy[/color]")
-	display_game("  • Blacksmith, Healer, Market are now bump-to-interact stations in posts")
-	display_game("  • Crafting never fails — worst result is Poor quality")
-	display_game("  • Gathering & crafting XP boosted to ~40%% of combat rate")
-	display_game("  • MAP WIPE — NPC posts regenerated with new station layout")
-	display_game("")
-
-	# v0.9.112 changes
-	display_game("[color=#00FFFF]v0.9.112[/color]")
-	display_game("  • Player Posts + Party Quest Sync")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -19945,7 +20203,7 @@ func show_help():
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
 [color=#00FFFF]Cmds:[/color] /inventory ([%s]) | /abilities ([%s]) | /who | /examine <name> | /help | /clear
-[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post(color-coded) [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You
+[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You [color=#00FF00]G[/color]=Guard [color=#FFD700]^[/color]=Tower
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
 [color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
@@ -20076,6 +20334,15 @@ func show_help():
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
+
+[b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
+[color=#C0C0C0]Guard Post:[/color] Construction Lv15 recipe. Place anywhere (10-tile spacing). Bump to interact.
+[color=#00FF00]Hire Guard:[/color] 50 Valor + 5 food (fish/herbs). Suppresses random encounters in 5-tile radius.
+[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower → radius jumps to 15 tiles!
+[color=#FF8800]Feeding:[/color] Guards need food. Initial=7 days. Feed 3 materials = +3 days (max 14). Unfed guards leave.
+[color=#808080]Map:[/color] [color=#00FF00]G[/color]=Active guard | [color=#555555]G[/color]=Empty post | [color=#FFD700]^[/color]=Tower boosting a guard
+[color=#808080]Wall Decay:[/color] Walls not part of an enclosure crumble after 72 hours. Enclosed walls are safe.
+[color=#00FFFF]Hunting:[/color] You CAN still hunt for monsters in guard-protected areas (voluntary combat).
 
 [b][color=#FFD700]══ PROGRESSION ══[/color][/b]
 [color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
@@ -20304,6 +20571,11 @@ func search_help(search_term: String):
 			"title": "CRAFTING & GATHERING",
 			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
 			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
+		},
+		{
+			"title": "GUARDS & TOWERS",
+			"keywords": ["guard", "guards", "tower", "towers", "suppress", "encounter", "safe", "zone", "wall", "decay", "patrol", "hire", "feed", "dismiss", "construction"],
+			"content": "[color=#C0C0C0]Guards & Towers[/color]\n\n[color=#FFD700]Guard Posts:[/color] Craft with Construction Lv15 (3 stone, 2 planks, 2 iron).\nPlace anywhere with 10-tile spacing. Bump to interact.\n\n[color=#00FF00]Hiring:[/color] 50 Valor + 5 food materials (fish or herbs).\nGuards suppress random encounters in a 5-tile radius.\nYou CAN still hunt voluntarily in guard zones.\n\n[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower.\nGuard radius increases to 15 tiles!\n\n[color=#FF8800]Maintenance:[/color] Guards start with 7 days of food.\nFeed 3 food materials to add 3 days (max 14).\nUnfed guards abandon their post.\n\n[color=#808080]Wall Decay:[/color] Walls not part of a valid enclosure will\ncrumble after 72 hours. Keep walls enclosed to protect them."
 		},
 		{
 			"title": "DUNGEONS",
@@ -20787,7 +21059,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 	blacksmith_items = message.get("items", [])
 	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
 	blacksmith_can_upgrade = message.get("can_upgrade", false)
-	var player_gold = message.get("player_gold", 0)
+	var player_gold = message.get("player_valor", 0)
 	var player_materials = message.get("player_materials", {})
 
 	# Reset all hotkey pressed states to prevent accidental immediate triggers
@@ -20846,7 +21118,7 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	"""Handle item selection for upgrade"""
 	blacksmith_upgrade_mode = "select_item"
 	blacksmith_upgrade_items = message.get("items", [])
-	var player_gold = message.get("player_gold", 0)
+	var player_gold = message.get("player_valor", 0)
 
 	game_output.clear()
 	if blacksmith_trader_art != "":
@@ -20872,7 +21144,7 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 	blacksmith_upgrade_mode = "select_affix"
 	blacksmith_upgrade_affixes = message.get("affixes", [])
 	blacksmith_upgrade_item_name = message.get("item_name", "Item")
-	var player_gold = message.get("player_gold", 0)
+	var player_gold = message.get("player_valor", 0)
 	var player_materials = message.get("player_materials", {})
 
 	game_output.clear()
@@ -20923,7 +21195,7 @@ func handle_healer_encounter(message: Dictionary):
 		"cure_all": message.get("cure_all_cost", 0)
 	}
 	var has_debuffs = message.get("has_debuffs", false)
-	var player_gold = message.get("player_gold", 0)
+	var player_gold = message.get("player_valor", 0)
 	var current_hp = message.get("current_hp", 0)
 	var max_hp = message.get("max_hp", 100)
 
@@ -21618,9 +21890,9 @@ func display_craft_recipe_list():
 
 	display_game("[color=%s]===== %s (Level %d) =====[/color]" % [skill_color, skill_display, crafting_skill_level])
 	if crafting_post_bonus > 0:
-		display_game("[color=#00FFFF]Trading Post Bonus: +%d%% success[/color]" % crafting_post_bonus)
-	if crafting_job_bonus.get("success_bonus", 0) > 0:
-		display_game("[color=#FFD700]Specialist Bonus: +%d%% success, +%d%% quality[/color]" % [crafting_job_bonus.success_bonus, crafting_job_bonus.quality_bonus])
+		display_game("[color=#00FFFF]Trading Post Bonus: +%d%% quality[/color]" % crafting_post_bonus)
+	if crafting_job_bonus.get("quality_bonus", 0) > 0:
+		display_game("[color=#FFD700]Specialist Bonus: +%d%% quality[/color]" % crafting_job_bonus.quality_bonus)
 	display_game("")
 
 	if crafting_recipes.is_empty():
@@ -21684,9 +21956,9 @@ func display_craft_recipe_list():
 			# Unlocked recipe
 			var color = "#00FF00" if can_craft else "#808080"
 			var specialist_tag = " [color=#FFD700]★[/color]" if recipe.get("specialist_only", false) else ""
-			display_game("[%s] [color=%s]%s[/color]%s (Lv%d) - %d%% success" % [
+			display_game("[%s] [color=%s]%s[/color]%s (Lv%d)" % [
 				get_action_key_name(display_idx + 4),  # Keys 1-5 map to action slots 5-9
-				color, name, specialist_tag, skill_req, success_chance
+				color, name, specialist_tag, skill_req
 			])
 			if description != "":
 				display_game("[color=#888888]    %s[/color]" % description)
@@ -21734,7 +22006,6 @@ func display_craft_recipe_details():
 	display_game("")
 	display_game("Skill Required: %d" % skill_req)
 	display_game("Difficulty: %d" % difficulty)
-	display_game("Success Chance: [color=#00FF00]%d%%[/color]" % success_chance)
 	display_game("")
 	display_game("[color=#87CEEB]Materials Required:[/color]")
 
@@ -22602,6 +22873,86 @@ func handle_throne_interact():
 	"""Handle bumping into the throne — show title claim interface."""
 	open_title_menu()
 
+func _handle_guard_post_interact(message: Dictionary):
+	"""Handle bumping into a guard post — show guard status/hire UI."""
+	at_guard_post = true
+	guard_post_data = message
+	# Pre-mark held keys to prevent double-trigger
+	for i in range(10):
+		var action_key = "action_%d" % i
+		var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
+		if Input.is_physical_key_pressed(key):
+			set_meta("hotkey_%d_pressed" % i, true)
+	_display_guard_post()
+	update_action_bar()
+
+func _display_guard_post():
+	"""Display guard post status in game output."""
+	game_output.clear()
+	var has_guard = guard_post_data.get("has_guard", false)
+	var gx = guard_post_data.get("guard_x", 0)
+	var gy = guard_post_data.get("guard_y", 0)
+
+	display_game("[color=#C0C0C0]========== GUARD POST (%d, %d) ==========[/color]" % [gx, gy])
+	display_game("")
+
+	if not has_guard:
+		display_game("[color=#808080]This guard post is empty.[/color]")
+		display_game("")
+		display_game("[color=#AAAAAA]Hire a guard to suppress monster encounters")
+		display_game("within a radius around this post.[/color]")
+		display_game("")
+		display_game("[color=#FFD700]Cost:[/color] %d Valor + %d food materials" % [
+			guard_post_data.get("hire_valor_cost", 50),
+			guard_post_data.get("hire_food_cost", 5)
+		])
+		display_game("[color=#808080](Fish or herbs accepted as food)[/color]")
+		display_game("")
+		display_game("[color=#00FFFF][Space] Back  [Q] Hire Guard[/color]")
+	else:
+		var owner = guard_post_data.get("owner", "???")
+		var days = guard_post_data.get("days_remaining", 0)
+		var radius = guard_post_data.get("radius", 5)
+		var in_tower = guard_post_data.get("in_tower", false)
+		var is_owner = guard_post_data.get("is_owner", false)
+
+		# Color based on days remaining
+		var day_color = "#00FF00"
+		if days < 2:
+			day_color = "#FF4444"
+		elif days < 5:
+			day_color = "#FFFF00"
+
+		display_game("[color=#00FF00]A guard is stationed here.[/color]")
+		display_game("")
+		display_game("  Posted by:  [color=#00FFFF]%s[/color]" % owner)
+		display_game("  Days left:  [color=%s]%.1f[/color]" % [day_color, days])
+		display_game("  Radius:     [color=#AAAAAA]%d tiles[/color]%s" % [radius, " [color=#FFD700](Tower boosted!)[/color]" if in_tower else ""])
+		display_game("  Effect:     [color=#AAAAAA]Suppresses random encounters[/color]")
+		display_game("")
+
+		if is_owner:
+			display_game("[color=#808080]Feed: %d food materials (+%d days, max %d)[/color]" % [
+				guard_post_data.get("feed_food_cost", 3), 3, 14
+			])
+			display_game("")
+			display_game("[color=#00FFFF][Space] Back  [Q] Feed  [W] Dismiss[/color]")
+		else:
+			display_game("[color=#00FFFF][Space] Back[/color]")
+
+func _handle_guard_result(message: Dictionary):
+	"""Handle guard_result message from server (hire/feed/dismiss response)."""
+	var success = message.get("success", false)
+	var msg = message.get("message", "")
+
+	if success:
+		# Close guard post UI on success
+		at_guard_post = false
+		guard_post_data = {}
+	game_output.clear()
+	display_game(msg)
+	update_action_bar()
+
 func leave_trading_post():
 	"""Leave a Trading Post"""
 	send_to_server({"type": "trading_post_leave"})
@@ -22654,6 +23005,7 @@ func exit_market():
 	market_selected_listing = {}
 	market_selected_material = ""
 	market_selected_material_qty = 0
+	market_list_flash = ""
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	set_meta("hotkey_0_pressed", true)
@@ -22678,6 +23030,11 @@ func display_market_main():
 	display_game("[color=#FFD700][%s][/color] List Item from Inventory" % get_action_key_name(2))
 	display_game("[color=#FFD700][%s][/color] List Materials" % get_action_key_name(3))
 	display_game("[color=#FFD700][%s][/color] My Listings" % get_action_key_name(4))
+	display_game("")
+	display_game("[color=#FF8800]Bulk Listing:[/color]")
+	display_game("  [color=#FFD700][1][/color] List All Equipment")
+	display_game("  [color=#FFD700][2][/color] List All Consumables/Tools")
+	display_game("  [color=#FFD700][3][/color] List All Materials")
 
 func display_market_browse():
 	"""Display market browse listings."""
@@ -22685,14 +23042,17 @@ func display_market_browse():
 	input_field.placeholder_text = ""
 	game_output.clear()
 	var tp_name = trading_post_data.get("name", "Trading Post")
+	var sort_label = MARKET_SORT_LABELS.get(market_sort, "Category")
 	display_game("[color=#FFD700]===== Market - %s (Page %d/%d) =====[/color]" % [tp_name, market_page + 1, max(1, market_total_pages)])
-	display_game("[color=#808080]Category: %s[/color]" % market_category.capitalize())
+	display_game("[color=#808080]Category: %s | Sort: %s[/color]" % [market_category.capitalize(), sort_label])
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
 
 	if market_listings.is_empty():
 		display_game("[color=#808080]No listings found at this market.[/color]")
 	else:
+		var last_category = ""
+		var show_dividers = market_category == "all" and market_sort == "category"
 		for idx in range(market_listings.size()):
 			var listing = market_listings[idx]
 			var item = listing.get("item", {})
@@ -22701,11 +23061,20 @@ func display_market_browse():
 			var rarity_color = _get_rarity_color(rarity)
 			var price = int(listing.get("markup_price", listing.get("base_valor", 0)))
 			var seller = listing.get("seller_name", "Unknown")
-			var quantity = int(listing.get("quantity", 1))
+			var total_qty = int(listing.get("total_quantity", listing.get("quantity", 1)))
+
+			# Show category divider
+			if show_dividers:
+				var disp_cat = listing.get("display_category", "")
+				if disp_cat != "" and disp_cat != last_category:
+					if last_category != "":
+						display_game("")
+					display_game("[color=#FFD700]--- %s ---[/color]" % disp_cat)
+					last_category = disp_cat
 
 			var qty_text = ""
-			if quantity > 1:
-				qty_text = " x%d" % quantity
+			if total_qty > 1:
+				qty_text = " x%d" % total_qty
 
 			var level_text = ""
 			if item.has("level"):
@@ -22714,7 +23083,7 @@ func display_market_browse():
 			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] to page, [%s] to filter, [%s] to go back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(0)])
+	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
@@ -22722,6 +23091,9 @@ func display_market_list_select():
 	input_field.placeholder_text = ""
 	game_output.clear()
 	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
+	if not market_list_flash.is_empty():
+		display_game(market_list_flash)
+		market_list_flash = ""
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
 	display_game("[color=#87CEEB]Select an item to list:[/color]")
@@ -22779,6 +23151,9 @@ func display_market_list_materials():
 	input_field.placeholder_text = ""
 	game_output.clear()
 	display_game("[color=#FFD700]===== List Materials on Market =====[/color]")
+	if not market_list_flash.is_empty():
+		display_game(market_list_flash)
+		market_list_flash = ""
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
 	display_game("[color=#87CEEB]Select a material to list:[/color]")
@@ -22821,7 +23196,7 @@ func display_market_buy_confirm():
 	var rarity_color = _get_rarity_color(rarity)
 	var full_price = int(market_selected_listing.get("markup_price", market_selected_listing.get("base_valor", 0)))
 	var seller = market_selected_listing.get("seller_name", "Unknown")
-	var quantity = int(market_selected_listing.get("quantity", 1))
+	var quantity = int(market_selected_listing.get("total_quantity", market_selected_listing.get("quantity", 1)))
 
 	# Calculate actual buy quantity and price
 	var buy_qty = market_buy_quantity if market_buy_quantity > 0 else quantity
@@ -22908,31 +23283,31 @@ func _handle_market_browse_result(message: Dictionary):
 	market_page = int(message.get("page", 0))
 	market_total_pages = int(message.get("total_pages", 1))
 	market_category = message.get("category", "all")
+	market_sort = message.get("sort", "category")
 	pending_market_action = "browse"
 	display_market_browse()
 	update_action_bar()
 
 func _handle_market_list_success(message: Dictionary):
-	"""Handle successful market listing."""
+	"""Handle successful market listing. Stay in listing mode for bulk selling."""
 	var valor_earned = int(message.get("base_valor", 0))
 	var total_valor = int(message.get("total_valor", 0))
 	account_valor = total_valor
-	pending_market_action = ""
+	var item_name = message.get("item_name", "item")
+	var was_material = pending_market_action == "list_material_qty" or pending_market_action == "list_material"
 	market_selected_material = ""
 	market_selected_material_qty = 0
 	input_field.placeholder_text = ""
 	input_field.release_focus()
-	game_output.clear()
-	display_game("[color=#00FF00]Item listed successfully![/color]")
-	display_game("[color=#00FF00]Earned: %s Valor[/color]" % format_number(valor_earned))
-	display_game("[color=#00FF00]Total Valor: %s[/color]" % format_number(total_valor))
-	display_game("")
-	display_game("[color=#808080]Returning to market menu...[/color]")
-	# Brief delay then show main menu
-	await get_tree().create_timer(1.5).timeout
-	if market_mode:
-		display_market_main()
-		update_action_bar()
+	market_list_flash = "[color=#00FF00]Listed %s! +%s Valor[/color]" % [item_name, format_number(valor_earned)]
+	# Stay in listing mode so player can list more items
+	if was_material:
+		pending_market_action = "list_material"
+		display_market_list_materials()
+	else:
+		pending_market_action = "list_select"
+		display_market_list_select()
+	update_action_bar()
 
 func _handle_market_buy_success(message: Dictionary):
 	"""Handle successful market purchase."""
@@ -22965,6 +23340,22 @@ func _handle_market_error(message: Dictionary):
 	"""Handle market error from server."""
 	var error_msg = message.get("message", "An error occurred.")
 	display_game("[color=#FF0000]Market Error: %s[/color]" % error_msg)
+
+func _handle_market_list_all_success(message: Dictionary):
+	"""Handle successful bulk market listing."""
+	var count = int(message.get("count", 0))
+	var total_valor = int(message.get("total_valor", 0))
+	var new_valor = int(message.get("new_valor", 0))
+	account_valor = new_valor
+	game_output.clear()
+	display_game("[color=#00FF00]Bulk listed %d items for %s Valor![/color]" % [count, format_number(total_valor)])
+	display_game("[color=#00FF00]Total Valor: %s[/color]" % format_number(new_valor))
+	display_game("")
+	display_game("[color=#808080]Returning to market menu...[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if market_mode:
+		display_market_main()
+		update_action_bar()
 
 func _handle_market_cancel_success(message: Dictionary):
 	"""Handle successful listing cancellation."""

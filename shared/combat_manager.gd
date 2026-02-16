@@ -2152,7 +2152,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"wish_pending": wish_pending,
 			"wish_options": wish_options,
 			"is_dungeon_combat": combat.get("is_dungeon_combat", false),
-			"is_boss_fight": combat.get("is_boss_fight", false)
+			"is_boss_fight": combat.get("is_boss_fight", false),
+			"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 		}
 	else:
 		# FAILURE! Monster gets free attack

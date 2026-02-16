@@ -773,6 +773,61 @@ Higher fishing skill = shorter wait times, longer reaction windows, better catch
 
 ---
 
+## Open Market System
+
+Players trade items through the Open Market at trading post `$` tiles.
+
+### Valor Economy
+
+- **Listing items** awards base Valor immediately (seller is paid upfront)
+- **Buying items** costs Valor with dynamic markup based on supply/demand
+- **Cancelling** a listing costs back the Valor that was awarded
+- Cross-player purchases: seller gets 50% of markup as bonus, rest goes to treasury
+
+### Valor Calculation
+
+| Item Type | Formula |
+|-----------|---------|
+| Equipment | Tier base (12-5000) × rarity multiplier (0.5-20) |
+| Consumables | 5 + tier × 3 |
+| Materials | Material gold value / 3 (min 1) |
+| Tools | Tier base (10-250) × rarity multiplier (0.5-8) |
+| Monster Parts | Tier × 8 |
+
+### Market Features
+
+- **Stacking:** Identical non-equipment listings (same name, price, seller) merge into stacks
+- **Sort modes:** Category, Price ▲/▼, Name A-Z, Newest
+- **Category filter:** All, Equipment, Consumable, Rune, Material, Monster Part
+- **Category dividers:** Visual separators when browsing "All" with Category sort
+- **Bulk listing:** List All Equipment / All Items / All Materials in one action
+- **Partial buying:** Choose quantity when purchasing material stacks
+
+### Supply Categories
+
+- `equipment` — Gear with slots (weapon, armor, etc.)
+- `consumable` — Potions, scrolls, food
+- `rune` — Rune items
+- `material_tN` — Crafting materials by tier (1-6)
+- `monster_part` — Monster drops
+
+### Blacksmith & Healer
+
+Both are bump-to-interact stations (`B`/`H` tiles) in NPC posts.
+
+- **Blacksmith:** Repairs worn gear (costs Valor), enhances equipment affixes
+- **Healer:** Quick heal (25% HP), full heal, cure debuffs (costs Valor)
+- Costs are calculated in Valor and displayed with affordability check
+
+### Treasure Chests
+
+Found from fishing, mining, and logging (rare catches). Usable consumables that grant:
+- 2-4 random crafting materials (tier-appropriate)
+- Gold bonus (25-350 scaled by tier)
+- Tiers: T1 (shallow fishing), T2 (mining T1-2), T3 (mining T3), T4 (deep fishing)
+
+---
+
 ## Companion System
 
 Companions are miniature monsters that fight alongside you.

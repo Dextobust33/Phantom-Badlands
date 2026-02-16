@@ -13,6 +13,7 @@ const HOUSES_FILE = "user://data/houses.json"
 const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 const PLAYER_POSTS_FILE = "user://data/player_posts.json"
 const MARKET_FILE = "user://data/market_data.json"
+const GUARDS_FILE = "user://data/guards.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
@@ -1417,13 +1418,15 @@ func get_player_tiles(username: String) -> Array:
 		player_tiles_data["tiles"] = {}
 	return player_tiles_data.tiles.get(username, [])
 
-func add_player_tile(username: String, x: int, y: int, tile_type: String):
-	"""Track a player-placed tile."""
+func add_player_tile(username: String, x: int, y: int, tile_type: String, meta: Dictionary = {}):
+	"""Track a player-placed tile. Optional meta dict merged into tile data."""
 	if not player_tiles_data.has("tiles"):
 		player_tiles_data["tiles"] = {}
 	if not player_tiles_data.tiles.has(username):
 		player_tiles_data.tiles[username] = []
-	player_tiles_data.tiles[username].append({"x": x, "y": y, "type": tile_type})
+	var entry = {"x": x, "y": y, "type": tile_type}
+	entry.merge(meta)
+	player_tiles_data.tiles[username].append(entry)
 	save_player_tiles()
 
 func remove_player_tile(username: String, x: int, y: int):
@@ -1661,3 +1664,16 @@ func set_player_storage(username: String, items: Array):
 	"""Set storage items for a player."""
 	player_storage_data[username] = items
 	save_player_storage_file()
+
+# ===== GUARD SYSTEM PERSISTENCE =====
+
+func load_guards() -> Dictionary:
+	"""Load active guards from file."""
+	var data = _safe_load(GUARDS_FILE)
+	if data.is_empty():
+		return {}
+	return data.get("guards", {})
+
+func save_guards(guards: Dictionary):
+	"""Save active guards to file."""
+	_safe_save(GUARDS_FILE, {"guards": guards})

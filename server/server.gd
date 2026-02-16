@@ -151,6 +151,24 @@ const MERCHANT_UPDATE_INTERVAL = 10.0  # Check every 10 seconds
 var merchant_update_timer = 0.0
 var last_merchant_cache_positions: Dictionary = {}  # Tracks merchant positions for change detection
 
+# ===== GUARD SYSTEM =====
+# Active guards: "x,y" -> {owner, hired_at, last_fed, food_remaining, in_tower, radius}
+var active_guards: Dictionary = {}
+const GUARD_HIRE_VALOR_COST = 50
+const GUARD_HIRE_FOOD_COST = 5
+const GUARD_FEED_FOOD_COST = 3
+const GUARD_FEED_DAYS_ADDED = 3
+const GUARD_MAX_FOOD_DAYS = 14
+const GUARD_BASE_RADIUS = 5
+const GUARD_TOWER_RADIUS = 15
+const GUARD_FOOD_MATERIALS = ["minnow", "trout", "pike", "swordfish", "leviathan", "abyssal_eel",
+	"clover", "sage", "moonpetal", "bloodroot", "starbloom", "voidpetal"]
+const GUARD_DECAY_CHECK_INTERVAL = 60.0  # Check guard decay every 60 seconds
+var guard_decay_timer: float = 0.0
+const WALL_DECAY_CHECK_INTERVAL = 300.0  # Check wall decay every 5 minutes
+var wall_decay_timer: float = 0.0
+const WALL_DECAY_GRACE_PERIOD = 259200  # 72 hours in seconds
+
 # ===== GATHERING NODE SYSTEM =====
 # Simplified node tracking for performance - nodes are deterministic so we only track depleted ones
 # Key format: "x,y" -> respawn_timestamp (Unix time when node respawns)
@@ -207,6 +225,11 @@ func _ready():
 
 	# Load persistent depleted nodes
 	chunk_manager.load_depleted_nodes()
+
+	# Load guard data and initialize cache
+	active_guards = persistence.load_guards()
+	_update_guard_cache()
+	log_message("Loaded %d active guards" % active_guards.size())
 
 	# Initialize geological event timer
 	chunk_manager.initialize_geo_timer()
@@ -616,6 +639,18 @@ func _process(delta):
 	else:
 		process_node_respawns(delta)
 
+	# Guard decay timer
+	guard_decay_timer += delta
+	if guard_decay_timer >= GUARD_DECAY_CHECK_INTERVAL:
+		guard_decay_timer = 0.0
+		_tick_guard_decay()
+
+	# Wall decay timer
+	wall_decay_timer += delta
+	if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
+		wall_decay_timer = 0.0
+		_tick_wall_decay()
+
 	# Check for new connections
 	if server.is_connection_available():
 		var peer = server.take_connection()
@@ -899,6 +934,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_craft_item(peer_id, message)
 		"craft_challenge_answer":
 			handle_craft_challenge_answer(peer_id, message)
+		"use_rune":
+			handle_use_rune(peer_id, message)
 		# Building system handlers
 		"build_place":
 			handle_build_place(peer_id, message)
@@ -914,6 +951,13 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_storage_deposit(peer_id, message)
 		"storage_withdraw":
 			handle_storage_withdraw(peer_id, message)
+		# Guard system handlers
+		"guard_hire":
+			handle_guard_hire(peer_id, message)
+		"guard_feed":
+			handle_guard_feed(peer_id, message)
+		"guard_dismiss":
+			handle_guard_dismiss(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -1082,6 +1126,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_market_my_listings(peer_id, message)
 		"market_cancel":
 			handle_market_cancel(peer_id, message)
+		"market_list_all":
+			handle_market_list_all(peer_id, message)
 		_:
 			pass
 
@@ -1933,6 +1979,9 @@ func handle_move(peer_id: int, message: Dictionary):
 					return
 				elif bump_type == "healer":
 					_handle_healer_station(peer_id, character)
+					return
+				elif bump_type == "guard":
+					_handle_guard_post_interact(peer_id, character, target_pos.x, target_pos.y)
 					return
 				elif bump_type == "throne":
 					send_to_peer(peer_id, {"type": "throne_interact"})
@@ -4492,13 +4541,14 @@ func _handle_blacksmith_station(peer_id: int, character):
 			if wear > 0:
 				var item_level = item.get("level", 1)
 				var repair_cost = int(wear * item_level * 25)
+				var valor_cost = max(1, repair_cost / 10)
 				damaged_items.append({
 					"slot": slot_name,
 					"name": item.get("name", slot_name.capitalize()),
 					"wear": wear,
-					"cost": repair_cost
+					"cost": valor_cost
 				})
-				total_repair_cost += repair_cost
+				total_repair_cost += valor_cost
 
 	# Check for items with upgradeable affixes
 	var upgradeable_items = []
@@ -4518,7 +4568,7 @@ func _handle_blacksmith_station(peer_id: int, character):
 					"affixes": affixes
 				})
 
-	# Store encounter data
+	# Store encounter data (costs are already in valor)
 	var repair_all_cost = int(total_repair_cost * 0.9) if total_repair_cost > 0 else 0
 	pending_blacksmith_encounters[peer_id] = {
 		"items": damaged_items,
@@ -4577,13 +4627,14 @@ func _legacy_check_blacksmith_encounter(peer_id: int) -> bool:
 			if wear > 0:
 				var item_level = item.get("level", 1)
 				var repair_cost = int(wear * item_level * 25)
+				var valor_cost = max(1, repair_cost / 10)
 				damaged_items.append({
 					"slot": slot_name,
 					"name": item.get("name", slot_name.capitalize()),
 					"wear": wear,
-					"cost": repair_cost
+					"cost": valor_cost
 				})
-				total_repair_cost += repair_cost
+				total_repair_cost += valor_cost
 
 	# Check for items with upgradeable affixes
 	var upgradeable_items = []
@@ -4679,8 +4730,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		return
 
 	if choice == "repair_all":
-		var gold_cost = encounter.repair_all_cost
-		var valor_cost = max(1, gold_cost / 10)
+		var valor_cost = encounter.repair_all_cost
 		var account_id = peers[peer_id].account_id
 		if not persistence.spend_valor(account_id, valor_cost):
 			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
@@ -4714,8 +4764,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "error", "message": "Invalid item slot."})
 			return
 
-		var cost = item_data.cost
-		var valor_cost = max(1, cost / 10)
+		var valor_cost = item_data.cost
 		var account_id = peers[peer_id].account_id
 		if not persistence.spend_valor(account_id, valor_cost):
 			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
@@ -4725,7 +4774,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 
 		# Update encounter data
 		encounter.items.erase(item_data)
-		encounter.total_cost -= cost
+		encounter.total_cost -= valor_cost
 		encounter.repair_all_cost = int(encounter.total_cost * 0.9)
 
 		send_to_peer(peer_id, {
@@ -4966,11 +5015,11 @@ func _get_affix_display_name(affix_key: String) -> String:
 
 func _handle_healer_station(peer_id: int, character):
 	"""Handle bump into healer station tile — open heal menu."""
-	# Calculate heal costs based on player level
+	# Calculate heal costs in valor (gold / 10)
 	var level = character.level
-	var quick_heal_cost = level * 22
-	var full_heal_cost = level * 90
-	var cure_all_cost = level * 180
+	var quick_heal_cost = max(1, level * 22 / 10)
+	var full_heal_cost = max(1, level * 90 / 10)
+	var cure_all_cost = max(1, level * 180 / 10)
 
 	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
 
@@ -5039,11 +5088,11 @@ func _legacy_check_healer_encounter(peer_id: int) -> bool:
 		# Situation changed enough - clear decline state and re-offer
 		healer_decline_state.erase(peer_id)
 
-	# Calculate heal costs based on player level (reduced 10% for economy balance)
+	# Calculate heal costs in valor (gold / 10)
 	var level = character.level
-	var quick_heal_cost = level * 22
-	var full_heal_cost = level * 90
-	var cure_all_cost = level * 180
+	var quick_heal_cost = max(1, level * 22 / 10)
+	var full_heal_cost = max(1, level * 90 / 10)
+	var cure_all_cost = max(1, level * 180 / 10)
 
 	# Store encounter data
 	pending_healer_encounters[peer_id] = {
@@ -5107,7 +5156,7 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 			heal_percent = 100
 			cure_debuffs = true
 
-	var valor_cost = max(1, cost / 10)
+	var valor_cost = cost  # Already in valor
 	var healer_account_id = peers[peer_id].account_id
 	if not persistence.spend_valor(healer_account_id, valor_cost):
 		send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
@@ -5234,6 +5283,70 @@ func handle_continue_flock(peer_id: int):
 
 # ===== INVENTORY HANDLERS =====
 
+func _open_treasure_chest(peer_id: int, item_index: int):
+	"""Open a treasure chest for random materials and gold."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if item_index < 0 or item_index >= character.inventory.size():
+		return
+	var item = character.inventory[item_index]
+	var tier = int(item.get("tier", 1))
+	var chest_name = item.get("name", "Treasure Chest")
+
+	# Remove chest from inventory
+	character.inventory.remove_at(item_index)
+
+	# Roll 2-4 random materials appropriate to the tier
+	var num_rewards = randi_range(2, 4)
+	var reward_materials = {}
+	var material_pool = _get_chest_material_pool(tier)
+	for _i in range(num_rewards):
+		if material_pool.is_empty():
+			break
+		var mat_id = material_pool[randi() % material_pool.size()]
+		var qty = randi_range(1, 2 + tier)
+		if reward_materials.has(mat_id):
+			reward_materials[mat_id] += qty
+		else:
+			reward_materials[mat_id] = qty
+
+	# Grant materials
+	for mat_id in reward_materials:
+		character.add_crafting_material(mat_id, reward_materials[mat_id])
+
+	# Gold bonus scaled by tier
+	var gold_bonus = randi_range(25 + tier * 25, 100 + tier * 50)
+	character.gold += gold_bonus
+
+	# Build result message
+	var msg = "[color=#FFD700]You open the %s![/color]\n" % chest_name
+	msg += "[color=#00FF00]Found:[/color]\n"
+	for mat_id in reward_materials:
+		var mat_name = mat_id.replace("_", " ").capitalize()
+		msg += "  [color=#00BFFF]%s x%d[/color]\n" % [mat_name, reward_materials[mat_id]]
+	msg += "  [color=#FFD700]%d Gold[/color]" % gold_bonus
+
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func _get_chest_material_pool(tier: int) -> Array:
+	"""Get a pool of possible materials for a treasure chest of given tier."""
+	var pool = []
+	match tier:
+		1:
+			pool = ["small_fish", "medium_fish", "seaweed", "copper_ore", "coal", "rough_gem", "oak_log", "pine_log", "healing_herb"]
+		2:
+			pool = ["freshwater_pearl", "iron_ore", "tin_ore", "birch_log", "maple_log", "leather", "healing_herb", "mana_blossom"]
+		3:
+			pool = ["steel_ore", "silver_ore", "polished_gem", "ironwood", "enchanted_hide", "arcane_crystal", "shadowleaf"]
+		4:
+			pool = ["mithril_ore", "gold_ore", "ebonwood", "flawless_gem", "dragon_scale", "phoenix_feather", "soul_shard"]
+		_:
+			pool = ["copper_ore", "coal", "oak_log", "small_fish"]
+	return pool
+
 func handle_inventory_use(peer_id: int, message: Dictionary):
 	"""Handle using an item from inventory"""
 	if not characters.has(peer_id):
@@ -5292,6 +5405,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				# Crafted buffs are round-based (single combat) by default
 				if crafted_effect.get("battles", false):
 					effect["battles"] = true
+
+	# Treasure chest — open for random materials and gold
+	if item_type == "treasure_chest":
+		_open_treasure_chest(peer_id, index)
+		return
 
 	# Check for enhancement scroll (special item type that applies permanent enchantments)
 	if item_type == "enhancement_scroll":
@@ -6765,12 +6883,12 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		var item_type = item.get("type", "")
 		var should_salvage = false
 
-		# Never salvage title items, locked items, or tools
+		# Never salvage title items, locked items, tools, runes, or structures
 		if item.get("is_title_item", false):
 			continue
 		if item.get("locked", false):
 			continue
-		if item_type == "tool":
+		if item_type == "tool" or item_type == "rune" or item_type == "structure" or item_type == "treasure_chest":
 			continue
 
 		# Check if item is a consumable (use item flag first, then type check as fallback)
@@ -6861,12 +6979,13 @@ func _should_auto_salvage_item(peer_id: int, item: Dictionary) -> bool:
 	var character = characters[peer_id]
 	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity <= 0:
 		return false
-	# Don't auto-salvage consumables, locked items, title items, or tools
+	# Don't auto-salvage consumables, locked items, title items, tools, or runes
 	if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
 		return false
 	if item.get("locked", false) or item.get("is_title_item", false):
 		return false
-	if item.get("type", "") == "tool":
+	var itype = item.get("type", "")
+	if itype == "tool" or itype == "rune" or itype == "structure" or itype == "treasure_chest":
 		return false
 
 	var rarity = item.get("rarity", "common")
@@ -6919,6 +7038,9 @@ func _try_auto_salvage(peer_id: int) -> bool:
 		if item.get("is_title_item", false):
 			continue
 		if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
+			continue
+		var itype = item.get("type", "")
+		if itype == "tool" or itype == "rune" or itype == "structure":
 			continue
 
 		var rarity = item.get("rarity", "common")
@@ -8890,6 +9012,7 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		return
 
 	var category = message.get("category", "all")
+	var sort_mode = message.get("sort", "category")
 	var page = int(message.get("page", 0))
 	var per_page = 9  # Show 9 items per page (selectable with 1-9)
 
@@ -8898,7 +9021,16 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 	# Filter by category
 	var filtered = []
 	for listing in all_listings:
-		if category == "all" or listing.get("supply_category", "") == category:
+		var supply_cat = listing.get("supply_category", "")
+		if category == "all":
+			filtered.append(listing)
+		elif category == "material":
+			if supply_cat.begins_with("material"):
+				filtered.append(listing)
+		elif category == "rune":
+			if supply_cat == "rune":
+				filtered.append(listing)
+		elif supply_cat == category:
 			filtered.append(listing)
 
 	# Calculate markup prices
@@ -8908,22 +9040,80 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		listing["markup_price"] = int(listing.get("base_valor", 0) * markup)
 		listing["markup"] = markup
 
-	var total_pages = max(1, ceili(float(filtered.size()) / per_page))
+	# Stack compatible listings (same item name + same price + same seller = one stack)
+	var stacks: Array = []
+	var stack_map: Dictionary = {}
+
+	for listing in filtered:
+		var supply_cat = listing.get("supply_category", "")
+		var is_equipment = supply_cat == "equipment"
+
+		if is_equipment:
+			var entry = listing.duplicate()
+			entry["stack_listing_ids"] = [listing.get("listing_id", "")]
+			entry["total_quantity"] = int(listing.get("quantity", 1))
+			entry["display_category"] = _get_display_category(supply_cat)
+			stacks.append(entry)
+		else:
+			var item = listing.get("item", {})
+			var key = "%s|%d|%s" % [item.get("name", ""), int(listing.get("markup_price", 0)), listing.get("seller_name", "")]
+			if stack_map.has(key):
+				var idx = stack_map[key]
+				stacks[idx]["stack_listing_ids"].append(listing.get("listing_id", ""))
+				stacks[idx]["total_quantity"] += int(listing.get("quantity", 1))
+			else:
+				var entry = listing.duplicate()
+				entry["stack_listing_ids"] = [listing.get("listing_id", "")]
+				entry["total_quantity"] = int(listing.get("quantity", 1))
+				entry["display_category"] = _get_display_category(supply_cat)
+				stack_map[key] = stacks.size()
+				stacks.append(entry)
+
+	# Sort stacks
+	match sort_mode:
+		"category":
+			stacks.sort_custom(_sort_stacks_by_category)
+		"price_asc":
+			stacks.sort_custom(func(a, b): return int(a.get("markup_price", 0)) < int(b.get("markup_price", 0)))
+		"price_desc":
+			stacks.sort_custom(func(a, b): return int(a.get("markup_price", 0)) > int(b.get("markup_price", 0)))
+		"name_asc":
+			stacks.sort_custom(func(a, b): return a.get("item", {}).get("name", "") < b.get("item", {}).get("name", ""))
+		"newest":
+			stacks.sort_custom(func(a, b): return int(a.get("listed_at", 0)) > int(b.get("listed_at", 0)))
+
+	var total_pages = max(1, ceili(float(stacks.size()) / per_page))
 	page = clampi(page, 0, total_pages - 1)
 
 	var start = page * per_page
-	var end_idx = mini(start + per_page, filtered.size())
-	var page_listings = filtered.slice(start, end_idx)
+	var end_idx = mini(start + per_page, stacks.size())
+	var page_listings = stacks.slice(start, end_idx)
 
 	send_to_peer(peer_id, {
 		"type": "market_browse_result",
 		"listings": page_listings,
 		"page": page,
 		"total_pages": total_pages,
-		"total_listings": filtered.size(),
+		"total_listings": stacks.size(),
 		"category": category,
+		"sort": sort_mode,
 		"post_id": post_id
 	})
+
+func _get_display_category(supply_cat: String) -> String:
+	if supply_cat == "equipment": return "Equipment"
+	if supply_cat == "consumable": return "Consumables"
+	if supply_cat == "rune": return "Runes"
+	if supply_cat.begins_with("material"): return "Materials"
+	if supply_cat == "monster_part": return "Monster Parts"
+	return "Other"
+
+func _sort_stacks_by_category(a: Dictionary, b: Dictionary) -> bool:
+	var order = {"Equipment": 0, "Consumables": 1, "Runes": 2, "Materials": 3, "Monster Parts": 4, "Other": 5}
+	var a_o = order.get(a.get("display_category", "Other"), 5)
+	var b_o = order.get(b.get("display_category", "Other"), 5)
+	if a_o != b_o: return a_o < b_o
+	return int(a.get("markup_price", 0)) < int(b.get("markup_price", 0))
 
 func handle_market_list_item(peer_id: int, message: Dictionary):
 	"""List an inventory item on the market. Awards base valor immediately."""
@@ -9086,17 +9276,23 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
 		return
 
-	var listing_id = message.get("listing_id", "")
-	if listing_id.is_empty():
+	# Support both single listing_id and array of listing_ids (for stacked buys)
+	var listing_ids: Array = []
+	var single_id = message.get("listing_id", "")
+	if not single_id.is_empty():
+		listing_ids = [single_id]
+	else:
+		listing_ids = message.get("listing_ids", [])
+	if listing_ids.is_empty():
 		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
 		return
 
-	# Find listing across all posts (buyer may be at a different post than seller)
+	# Find first valid listing (use it for item info and pricing)
 	var listing = {}
 	var listing_post_id = post_id
 	var listings = persistence.get_market_listings(post_id)
 	for l in listings:
-		if l.get("listing_id", "") == listing_id:
+		if l.get("listing_id", "") == listing_ids[0]:
 			listing = l
 			break
 
@@ -9105,21 +9301,31 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		return
 
 	var item = listing.get("item", {})
-	var listing_qty = int(listing.get("quantity", 1))
+
+	# Calculate total available across all listed IDs
+	var total_available = 0
+	var valid_listings: Array = []
+	for lid in listing_ids:
+		for l in listings:
+			if l.get("listing_id", "") == lid:
+				valid_listings.append(l)
+				total_available += int(l.get("quantity", 1))
+				break
+
 	var buy_qty = int(message.get("quantity", 0))
 	if buy_qty <= 0:
-		buy_qty = listing_qty  # Buy full stack by default
-	buy_qty = mini(buy_qty, listing_qty)
+		buy_qty = total_available
+	buy_qty = mini(buy_qty, total_available)
 
-	# Calculate price proportional to quantity
+	# Calculate price using first listing's per-unit rate
+	var first_listing_qty = int(listing.get("quantity", 1))
 	var base_valor = int(listing.get("base_valor", 0))
 	var seller_account_id = listing.get("account_id", "")
-	var per_unit_valor = int(base_valor / maxi(listing_qty, 1))
-	var partial_base = per_unit_valor * buy_qty if buy_qty < listing_qty else base_valor
+	var per_unit_valor = int(base_valor / maxi(first_listing_qty, 1))
+	var partial_base = per_unit_valor * buy_qty
 	var price = partial_base
 
 	if buyer_account_id != seller_account_id:
-		# Apply markup for cross-player purchase
 		var cat = listing.get("supply_category", "equipment")
 		var markup = persistence.calculate_markup(post_id, cat)
 		price = int(partial_base * markup)
@@ -9147,14 +9353,12 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		var treasury_cut = markup_total - seller_bonus
 		if seller_bonus > 0:
 			persistence.add_valor(seller_account_id, seller_bonus)
-			# Notify seller if online
 			for pid in peers.keys():
 				if peers[pid].account_id == seller_account_id and characters.has(pid):
 					var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
 					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s%s — you earned %d bonus Valor![/color]" % [
 						item.get("name", "item"), qty_text, seller_bonus]})
 					break
-		# Treasury gets the rest
 		if treasury_cut > 0:
 			persistence.add_to_realm_treasury(treasury_cut)
 
@@ -9167,15 +9371,24 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	else:
 		character.inventory.append(item)
 
-	# Update or remove listing
-	if buy_qty < listing_qty:
-		# Partial purchase — reduce listing quantity and valor
-		var remaining_qty = listing_qty - buy_qty
-		var remaining_valor = per_unit_valor * remaining_qty
-		persistence.update_market_listing_quantity(listing_post_id, listing_id, remaining_qty, remaining_valor)
-	else:
-		# Full purchase — remove listing
-		persistence.remove_market_listing(listing_post_id, listing_id)
+	# Consume from listings in order until buy_qty is fulfilled
+	var remaining_to_buy = buy_qty
+	for vl in valid_listings:
+		if remaining_to_buy <= 0:
+			break
+		var vl_id = vl.get("listing_id", "")
+		var vl_qty = int(vl.get("quantity", 1))
+		var vl_base = int(vl.get("base_valor", 0))
+		var vl_per_unit = int(vl_base / maxi(vl_qty, 1))
+		if remaining_to_buy >= vl_qty:
+			# Consume entire listing
+			persistence.remove_market_listing(listing_post_id, vl_id)
+			remaining_to_buy -= vl_qty
+		else:
+			# Partial consume
+			var rem = vl_qty - remaining_to_buy
+			persistence.update_market_listing_quantity(listing_post_id, vl_id, rem, vl_per_unit * rem)
+			remaining_to_buy = 0
 
 	save_character(peer_id)
 
@@ -9184,7 +9397,7 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		"type": "market_buy_success",
 		"item_name": item.get("name", "item") + qty_text,
 		"price": price,
-		"total_valor": persistence.get_valor(buyer_account_id)
+		"new_valor": persistence.get_valor(buyer_account_id)
 	})
 	send_character_update(peer_id)
 
@@ -9265,6 +9478,141 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		"item_name": item.get("name", "item"),
 		"valor_deducted": base_valor,
 		"total_valor": persistence.get_valor(account_id)
+	})
+	send_character_update(peer_id)
+
+func handle_market_list_all(peer_id: int, message: Dictionary):
+	"""Bulk-list all items of a type on the market. Awards valor immediately."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var list_type = message.get("list_type", "")
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	var total_valor = 0
+	var count = 0
+	var now = int(Time.get_unix_time_from_system())
+
+	if list_type == "equipment":
+		# List all unequipped, unlocked equipment from inventory
+		var to_remove: Array = []
+		for i in range(character.inventory.size() - 1, -1, -1):
+			var item = character.inventory[i]
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			if itype == "tool" or itype == "rune" or itype == "structure" or itype == "treasure_chest":
+				continue
+			if item.get("is_consumable", false) or _is_consumable_type(itype):
+				continue
+			if not item.has("slot") and not item.has("rarity"):
+				continue  # Not equipment
+
+			var base_valor = drop_tables.calculate_base_valor(item)
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			var listing = {
+				"account_id": account_id,
+				"seller_name": character.name,
+				"item": item.duplicate(),
+				"base_valor": base_valor,
+				"supply_category": drop_tables.get_supply_category(item),
+				"listed_at": now,
+				"quantity": 1
+			}
+			persistence.add_market_listing(post_id, listing)
+			total_valor += base_valor
+			count += 1
+			to_remove.append(i)
+		for i in to_remove:
+			character.inventory.remove_at(i)
+
+	elif list_type == "items":
+		# List all unlocked consumables + tools
+		var to_remove: Array = []
+		for i in range(character.inventory.size() - 1, -1, -1):
+			var item = character.inventory[i]
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			var is_listable = item.get("is_consumable", false) or _is_consumable_type(itype) or itype == "tool"
+			if not is_listable:
+				continue
+			if itype == "treasure_chest":
+				continue  # Don't bulk-list treasure chests
+
+			var base_valor = drop_tables.calculate_base_valor(item)
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			var listing = {
+				"account_id": account_id,
+				"seller_name": character.name,
+				"item": item.duplicate(),
+				"base_valor": base_valor,
+				"supply_category": drop_tables.get_supply_category(item),
+				"listed_at": now,
+				"quantity": 1
+			}
+			persistence.add_market_listing(post_id, listing)
+			total_valor += base_valor
+			count += 1
+			to_remove.append(i)
+		for i in to_remove:
+			character.inventory.remove_at(i)
+
+	elif list_type == "materials":
+		# List all crafting materials
+		var mat_keys = character.crafting_materials.keys().duplicate()
+		for mat_name in mat_keys:
+			var qty = int(character.crafting_materials.get(mat_name, 0))
+			if qty <= 0:
+				continue
+			var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+			var mat_value = int(mat_info.get("value", 5))
+			var per_unit_valor = maxi(1, int(mat_value / 3.0))
+			var material_tier = int(mat_info.get("tier", _get_material_tier(mat_name)))
+			var mat_total = per_unit_valor * qty
+			if bonus > 0:
+				mat_total = int(mat_total * (1.0 + bonus))
+			var listing = {
+				"account_id": account_id,
+				"seller_name": character.name,
+				"item": {"type": "material", "name": mat_name, "material_type": mat_name, "tier": material_tier},
+				"base_valor": mat_total,
+				"supply_category": "material_t%d" % material_tier,
+				"listed_at": now,
+				"quantity": qty
+			}
+			persistence.add_market_listing(post_id, listing)
+			total_valor += mat_total
+			count += 1
+			character.crafting_materials[mat_name] = 0
+		# Clean up zero entries
+		for mat_name in mat_keys:
+			if int(character.crafting_materials.get(mat_name, 0)) <= 0:
+				character.crafting_materials.erase(mat_name)
+	else:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid list type."})
+		return
+
+	if count == 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Nothing to list!"})
+		return
+
+	persistence.add_valor(account_id, total_valor)
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_list_all_success",
+		"count": count,
+		"total_valor": total_valor,
+		"new_valor": persistence.get_valor(account_id)
 	})
 	send_character_update(peer_id)
 
@@ -10947,6 +11295,11 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			session["options"] = remaining_options
 			session["client_options"] = remaining_client
 			session.erase("last_wrong_id")
+			# Update correct_id to match new array index after filtering
+			for i in range(remaining_options.size()):
+				if remaining_options[i].get("correct", false):
+					session["correct_id"] = i
+					break
 
 			send_to_peer(peer_id, {
 				"type": "gathering_round",
@@ -11226,7 +11579,7 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var reveals_used = session.get("max_reveals", 0) - session.get("reveals_remaining", 0)
 	if session.get("has_tool", false) and (reveals_used > 0 or saves_used > 0):
 		var tool_subtype = _get_tool_subtype_for_job(job_type)
-		_consume_tool_durability(character, tool_subtype)
+		_consume_tool_durability(peer_id, character, tool_subtype)
 
 	# Deplete gathering node (use stored node coordinates for adjacent gathering)
 	deplete_gathering_node(session.get("node_x", character.x), session.get("node_y", character.y), session.get("node_type", ""))
@@ -11404,14 +11757,16 @@ func _find_tool_in_inventory(character, tool_subtype: String) -> Dictionary:
 				return item
 	return {}
 
-func _consume_tool_durability(character, tool_subtype: String):
-	"""Reduce durability of a tool by 1. Remove if broken."""
+func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
+	"""Reduce durability of a tool by 1. Remove if broken and notify player."""
 	# Check equipped tool slot first
 	var equipped = character.equipped_tools.get(tool_subtype, {})
 	if not equipped.is_empty():
 		equipped["durability"] = equipped.get("durability", 1) - 1
 		if equipped["durability"] <= 0:
+			var tool_name = equipped.get("name", tool_subtype.capitalize())
 			character.equipped_tools[tool_subtype] = {}
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Your %s has broken![/color]" % tool_name})
 		return
 	# Fallback: check inventory
 	for i in range(character.inventory.size()):
@@ -11419,7 +11774,9 @@ func _consume_tool_durability(character, tool_subtype: String):
 		if item.get("type", "") == "tool" and item.get("subtype", "") == tool_subtype:
 			item["durability"] = item.get("durability", 1) - 1
 			if item["durability"] <= 0:
+				var tool_name = item.get("name", tool_subtype.capitalize())
 				character.inventory.remove_at(i)
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Your %s has broken![/color]" % tool_name})
 			break
 
 # ===== SOLDIER HARVEST SYSTEM =====
@@ -12615,6 +12972,12 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 				"damage_reflect": return "Reflects %d%% damage back to attacker" % effect.get("percent", 15)
 				"execute": return "+%d%% damage vs enemies below 30%% HP" % effect.get("bonus_damage", 50)
 			return "Adds special effect to equipment"
+		"rune":
+			if recipe.has("rune_proc"):
+				var rune_proc = recipe.get("rune_proc", "")
+				return "Creates a Rune that adds %s to equipped gear" % rune_proc.replace("_", " ")
+			var stat_display = recipe.get("rune_stat", "").replace("_bonus", "").replace("_", " ").capitalize()
+			return "Creates a %s Rune of %s (max +%d)" % [recipe.get("rune_tier", "minor").capitalize(), stat_display, recipe.get("rune_cap", 0)]
 		_:
 			return ""
 
@@ -13069,6 +13432,29 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 							proc_data = {"bonus_damage": bonus, "proc_chance": effect.get("proc_chance", 0.25), "threshold": effect.get("threshold", 0.3)}
 							result_message = "[color=%s]Enchanted %s with Execute (+%d%% damage below 30%% HP)![/color]" % [quality_color, proc_item_name, int(bonus)]
 					target_item["proc_effects"][proc_type] = proc_data
+			"rune":
+				# Runes are tradeable inventory items — create and add to inventory
+				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
+				var rune_item = {
+					"id": "rune_%d" % randi(),
+					"type": "rune",
+					"name": recipe.name,
+					"target_slot": recipe.get("target_slot", ""),
+					"crafted_by": character.name,
+					"rarity": _quality_to_rarity(quality),
+					"value": recipe.difficulty * 10,
+				}
+				if recipe.has("rune_proc"):
+					rune_item["rune_proc"] = recipe.get("rune_proc", "")
+					rune_item["rune_proc_value"] = int(recipe.get("rune_proc_value", 10) * quality_mult)
+					rune_item["rune_proc_chance"] = recipe.get("rune_proc_chance", 1.0)
+				else:
+					rune_item["rune_stat"] = recipe.get("rune_stat", "")
+					rune_item["rune_tier"] = recipe.get("rune_tier", "minor")
+					rune_item["rune_cap"] = int(recipe.get("rune_cap", 0) * quality_mult)
+				character.inventory.append(rune_item)
+				crafted_item = rune_item
+				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -13477,6 +13863,79 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 
 	return item
 
+func handle_use_rune(peer_id: int, message: Dictionary):
+	"""Apply a Rune from inventory to an equipped gear slot"""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var rune_index = int(message.get("rune_index", -1))
+	var target_slot = message.get("target_slot", "")
+
+	# Validate rune index
+	if rune_index < 0 or rune_index >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid rune selection.[/color]"})
+		return
+	var rune = character.inventory[rune_index]
+	if rune.get("type", "") != "rune":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]That item is not a Rune.[/color]"})
+		return
+
+	# Validate target slot is allowed by the rune
+	var allowed_slots = rune.get("target_slot", "").split(",")
+	var slot_valid = false
+	for s in allowed_slots:
+		if s.strip_edges() == target_slot:
+			slot_valid = true
+			break
+	if not slot_valid:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]This Rune cannot be applied to that slot.[/color]"})
+		return
+
+	# Validate equipped item exists
+	if not character.equipped.has(target_slot) or character.equipped[target_slot] == null:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No item equipped in %s slot.[/color]" % target_slot})
+		return
+
+	var target_item = character.equipped[target_slot]
+
+	if rune.has("rune_proc"):
+		# Proc rune — set proc effect on item
+		var proc_type = rune.get("rune_proc", "")
+		if not target_item.has("proc_effects"):
+			target_item["proc_effects"] = {}
+		var proc_data = {}
+		match proc_type:
+			"lifesteal":
+				proc_data = {"percent": rune.get("rune_proc_value", 10), "proc_chance": rune.get("rune_proc_chance", 1.0)}
+			"shocking":
+				proc_data = {"percent": rune.get("rune_proc_value", 15), "proc_chance": rune.get("rune_proc_chance", 0.25)}
+			"damage_reflect":
+				proc_data = {"percent": rune.get("rune_proc_value", 15), "proc_chance": rune.get("rune_proc_chance", 1.0)}
+			"execute":
+				proc_data = {"bonus_damage": rune.get("rune_proc_value", 50), "proc_chance": rune.get("rune_proc_chance", 0.25), "threshold": 0.3}
+		target_item["proc_effects"][proc_type] = proc_data
+		character.inventory.remove_at(rune_index)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! Added %s effect.[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), proc_type.replace("_", " ")]})
+	else:
+		# Stat rune — set affix value (upgrade only, refuse if no improvement)
+		var stat_key = rune.get("rune_stat", "")
+		var rune_cap = int(rune.get("rune_cap", 0))
+		if stat_key == "" or rune_cap <= 0:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid Rune data.[/color]"})
+			return
+		if not target_item.has("affixes"):
+			target_item["affixes"] = {}
+		var current_value = int(target_item["affixes"].get(stat_key, 0))
+		if current_value >= rune_cap:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No improvement possible — %s already has +%d %s (Rune cap: +%d).[/color]" % [target_item.get("name", "item"), current_value, stat_key.replace("_", " "), rune_cap]})
+			return
+		target_item["affixes"][stat_key] = rune_cap
+		character.inventory.remove_at(rune_index)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! %s: +%d → +%d[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), stat_key.replace("_", " ").capitalize(), current_value, rune_cap]})
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
 func _quality_to_rarity(quality: int) -> String:
 	"""Convert crafting quality to item rarity"""
 	match quality:
@@ -13585,9 +14044,9 @@ func handle_craft_challenge_answer(peer_id: int, message: Dictionary):
 	active_crafts.erase(peer_id)
 
 	# Re-inject into the crafting pipeline by calling the result handler
-	_finalize_craft(peer_id, character, recipe, quality, skill_name, skill_level, total_bonus, score)
+	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score)
 
-func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1):
+func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1):
 	"""Finalize a craft after quality is determined. Handles all output types."""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
@@ -13892,7 +14351,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 	send_to_peer(peer_id, {
 		"type": "craft_result",
 		"success": true,
-		"recipe_id": recipe.get("id", ""),
+		"recipe_id": recipe_id,
 		"quality": quality,
 		"quality_name": quality_name,
 		"quality_color": quality_color,
@@ -13920,7 +14379,7 @@ func _finalize_craft(peer_id: int, character, recipe: Dictionary, quality: int, 
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 11  # 11x11 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure boundaries
 
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
@@ -14028,8 +14487,13 @@ func handle_build_place(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "A player is standing there!"})
 		return
 
-	# Structures (non-wall/door) can only be placed inside an enclosure you own
-	if structure_type not in ENCLOSURE_WALL_TYPES:
+	# Guard posts can be placed anywhere (not just inside enclosures) but need 10-tile spacing
+	if structure_type == "guard":
+		if _has_nearby_guard_post(tx, ty, 10):
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to another guard post! Must be 10+ tiles away."})
+			return
+	# Structures (non-wall/door/guard) can only be placed inside an enclosure you own
+	elif structure_type not in ENCLOSURE_WALL_TYPES:
 		if not _is_in_own_enclosure(tx, ty, username):
 			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Structures must be placed inside your enclosure!"})
 			return
@@ -14048,15 +14512,21 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	var blocks_los = structure_type == "wall"
 
 	# Place tile in chunk manager
-	chunk_manager.set_tile(tx, ty, {
+	var tile_data = {
 		"type": structure_type,
 		"owner": username,
 		"blocks_move": blocks_move,
 		"blocks_los": blocks_los,
-	})
+	}
+	if structure_type == "wall":
+		tile_data["placed_at"] = Time.get_unix_time_from_system()
+	chunk_manager.set_tile(tx, ty, tile_data)
 
-	# Track placed tile
-	persistence.add_player_tile(username, tx, ty, structure_type)
+	# Track placed tile (include placed_at for wall decay tracking)
+	var tile_meta = {}
+	if structure_type == "wall":
+		tile_meta["placed_at"] = tile_data["placed_at"]
+	persistence.add_player_tile(username, tx, ty, structure_type, tile_meta)
 
 	# Check for new enclosures after placing wall/door
 	var enclosure_msg = ""
@@ -14103,6 +14573,14 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 
 	var tile_type = tile.get("type", "")
 
+	# If demolishing a guard post, remove any active guard
+	if tile_type == "guard":
+		var pos_key = "%d,%d" % [tx, ty]
+		if active_guards.has(pos_key):
+			active_guards.erase(pos_key)
+			_update_guard_cache()
+			persistence.save_guards(active_guards)
+
 	# Remove the tile (revert to procedural)
 	chunk_manager.remove_tile_modification(tx, ty)
 
@@ -14131,6 +14609,21 @@ func _is_in_own_enclosure(x: int, y: int, username: String) -> bool:
 		for pos in enclosure:
 			if int(pos.x) == x and int(pos.y) == y:
 				return true
+	return false
+
+func _has_nearby_guard_post(x: int, y: int, min_distance: int) -> bool:
+	"""Check if there's another guard post within min_distance tiles (Manhattan distance)."""
+	if not chunk_manager:
+		return false
+	# Check all player tiles for guard posts
+	var all_tiles = persistence.player_tiles_data.get("tiles", {})
+	for username_key in all_tiles:
+		for td in all_tiles[username_key]:
+			if td.get("type", "") == "guard":
+				var gx = int(td.get("x", 0))
+				var gy = int(td.get("y", 0))
+				if abs(x - gx) + abs(y - gy) < min_distance:
+					return true
 	return false
 
 func _check_enclosures_after_build(username: String, peer_id: int = -1) -> String:
@@ -14526,6 +15019,315 @@ func _get_username(peer_id: int) -> String:
 	if peers.has(peer_id):
 		return peers[peer_id].get("username", "")
 	return ""
+
+# ===== GUARD SYSTEM HANDLERS =====
+
+func _handle_guard_post_interact(peer_id: int, character, gx: int, gy: int):
+	"""Handle player bumping into a guard post tile."""
+	var pos_key = "%d,%d" % [gx, gy]
+	var username = _get_username(peer_id)
+	var guard = active_guards.get(pos_key, {})
+
+	if guard.is_empty():
+		# No guard hired — show hire option
+		send_to_peer(peer_id, {
+			"type": "guard_post_interact",
+			"guard_x": gx, "guard_y": gy,
+			"has_guard": false,
+			"hire_valor_cost": GUARD_HIRE_VALOR_COST,
+			"hire_food_cost": GUARD_HIRE_FOOD_COST,
+		})
+	else:
+		# Guard exists — show status
+		var is_owner = guard.get("owner", "") == username
+		var now = Time.get_unix_time_from_system()
+		var days_remaining = guard.get("food_remaining", 0) - (now - guard.get("last_fed", now)) / 86400.0
+		days_remaining = max(0.0, days_remaining)
+		send_to_peer(peer_id, {
+			"type": "guard_post_interact",
+			"guard_x": gx, "guard_y": gy,
+			"has_guard": true,
+			"is_owner": is_owner,
+			"owner": guard.get("owner", ""),
+			"days_remaining": snapped(days_remaining, 0.1),
+			"radius": guard.get("radius", GUARD_BASE_RADIUS),
+			"in_tower": guard.get("in_tower", false),
+			"feed_food_cost": GUARD_FEED_FOOD_COST,
+		})
+
+func handle_guard_hire(peer_id: int, message: Dictionary):
+	"""Handle hiring a guard at a guard post."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var gx = int(message.get("guard_x", 0))
+	var gy = int(message.get("guard_y", 0))
+	var pos_key = "%d,%d" % [gx, gy]
+
+	# Verify guard post exists
+	if not chunk_manager:
+		return
+	var tile = chunk_manager.get_tile(gx, gy)
+	if tile.get("type", "") != "guard":
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "No guard post here!"})
+		return
+
+	# Check not already hired
+	if active_guards.has(pos_key):
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "A guard is already stationed here!"})
+		return
+
+	# Check Valor (stored on account, not character)
+	var account_id = peers[peer_id].get("account_id", "")
+	var current_valor = persistence.get_valor(account_id) if account_id != "" else 0
+	if current_valor < GUARD_HIRE_VALOR_COST:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "Not enough Valor! Need %d, have %d." % [GUARD_HIRE_VALOR_COST, current_valor]})
+		return
+
+	# Check food materials
+	var food_count = _count_guard_food(character)
+	if food_count < GUARD_HIRE_FOOD_COST:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "Not enough food! Need %d food materials, have %d.\nAccepted: fish, herbs." % [GUARD_HIRE_FOOD_COST, food_count]})
+		return
+
+	# Deduct costs
+	persistence.add_valor(account_id, -GUARD_HIRE_VALOR_COST)
+	_consume_guard_food(character, GUARD_HIRE_FOOD_COST)
+
+	# Check for nearby tower
+	var in_tower = _find_nearby_tower(gx, gy, 2)
+	var radius = GUARD_TOWER_RADIUS if in_tower else GUARD_BASE_RADIUS
+
+	# Hire guard
+	var now = Time.get_unix_time_from_system()
+	active_guards[pos_key] = {
+		"owner": username,
+		"hired_at": now,
+		"last_fed": now,
+		"food_remaining": 7,
+		"in_tower": in_tower,
+		"radius": radius,
+	}
+
+	_update_guard_cache()
+	persistence.save_guards(active_guards)
+
+	var tower_msg = " (Tower boosted! Radius: %d)" % radius if in_tower else " (Radius: %d)" % radius
+	send_to_peer(peer_id, {"type": "guard_result", "success": true, "message": "[color=#00FF00]Guard hired!%s\nFood for 7 days.[/color]" % tower_msg})
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	save_character(peer_id)
+
+func handle_guard_feed(peer_id: int, message: Dictionary):
+	"""Handle feeding an existing guard."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var gx = int(message.get("guard_x", 0))
+	var gy = int(message.get("guard_y", 0))
+	var pos_key = "%d,%d" % [gx, gy]
+
+	if not active_guards.has(pos_key):
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "No guard stationed here!"})
+		return
+
+	var guard = active_guards[pos_key]
+	if guard.get("owner", "") != username:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "This is not your guard!"})
+		return
+
+	# Check food
+	var food_count = _count_guard_food(character)
+	if food_count < GUARD_FEED_FOOD_COST:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "Not enough food! Need %d food materials, have %d." % [GUARD_FEED_FOOD_COST, food_count]})
+		return
+
+	# Check cap
+	var now = Time.get_unix_time_from_system()
+	var days_elapsed = (now - guard.get("last_fed", now)) / 86400.0
+	var current_days = guard.get("food_remaining", 0) - days_elapsed
+	if current_days >= GUARD_MAX_FOOD_DAYS:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "Guard is already fully fed! (Max %d days)" % GUARD_MAX_FOOD_DAYS})
+		return
+
+	# Consume food and extend
+	_consume_guard_food(character, GUARD_FEED_FOOD_COST)
+	var new_days = min(current_days + GUARD_FEED_DAYS_ADDED, float(GUARD_MAX_FOOD_DAYS))
+	guard["last_fed"] = now
+	guard["food_remaining"] = new_days
+
+	persistence.save_guards(active_guards)
+
+	send_to_peer(peer_id, {"type": "guard_result", "success": true, "message": "[color=#00FF00]Guard fed! %.1f days remaining.[/color]" % new_days})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_guard_dismiss(peer_id: int, message: Dictionary):
+	"""Handle dismissing a guard from a post."""
+	if not characters.has(peer_id):
+		return
+	var username = _get_username(peer_id)
+	var gx = int(message.get("guard_x", 0))
+	var gy = int(message.get("guard_y", 0))
+	var pos_key = "%d,%d" % [gx, gy]
+
+	if not active_guards.has(pos_key):
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "No guard stationed here!"})
+		return
+
+	var guard = active_guards[pos_key]
+	if guard.get("owner", "") != username:
+		send_to_peer(peer_id, {"type": "guard_result", "success": false, "message": "This is not your guard!"})
+		return
+
+	active_guards.erase(pos_key)
+	_update_guard_cache()
+	persistence.save_guards(active_guards)
+
+	send_to_peer(peer_id, {"type": "guard_result", "success": true, "message": "[color=#FFFF00]Guard dismissed.[/color]"})
+	send_location_update(peer_id)
+
+func _count_guard_food(character) -> int:
+	"""Count total food materials in player crafting_materials."""
+	var count = 0
+	for mat_name in GUARD_FOOD_MATERIALS:
+		count += int(character.crafting_materials.get(mat_name, 0))
+	return count
+
+func _consume_guard_food(character, amount: int):
+	"""Consume food materials from player crafting_materials. Tries cheapest first."""
+	var remaining = amount
+	for mat_name in GUARD_FOOD_MATERIALS:
+		if remaining <= 0:
+			break
+		var have = int(character.crafting_materials.get(mat_name, 0))
+		if have > 0:
+			var take = mini(have, remaining)
+			character.crafting_materials[mat_name] = have - take
+			if character.crafting_materials[mat_name] <= 0:
+				character.crafting_materials.erase(mat_name)
+			remaining -= take
+
+func _find_nearby_tower(gx: int, gy: int, search_radius: int = 2) -> bool:
+	"""Check if there's a tower within search_radius tiles of the given position."""
+	if not chunk_manager:
+		return false
+	for dx in range(-search_radius, search_radius + 1):
+		for dy in range(-search_radius, search_radius + 1):
+			if dx == 0 and dy == 0:
+				continue
+			var tile = chunk_manager.get_tile(gx + dx, gy + dy)
+			if tile.get("type", "") == "tower":
+				return true
+	return false
+
+func _tick_guard_decay():
+	"""Check all active guards for food expiry. Remove expired guards."""
+	if active_guards.is_empty():
+		return
+	var now = Time.get_unix_time_from_system()
+	var expired = []
+	for pos_key in active_guards:
+		var guard = active_guards[pos_key]
+		var days_since_fed = (now - guard.get("last_fed", now)) / 86400.0
+		if days_since_fed >= guard.get("food_remaining", 0):
+			expired.append(pos_key)
+
+	if expired.is_empty():
+		return
+
+	for pos_key in expired:
+		var guard = active_guards[pos_key]
+		var owner = guard.get("owner", "")
+		active_guards.erase(pos_key)
+		# Notify owner if online
+		for pid in peers:
+			if _get_username(pid) == owner:
+				send_to_peer(pid, {
+					"type": "text",
+					"message": "[color=#FF8800]Your guard at %s has left — out of food![/color]" % pos_key
+				})
+				break
+
+	_update_guard_cache()
+	persistence.save_guards(active_guards)
+	log_message("Guard decay: %d guards expired" % expired.size())
+
+func _tick_wall_decay():
+	"""Remove orphan walls (not part of any enclosure) after grace period."""
+	if not chunk_manager:
+		return
+	var now = Time.get_unix_time_from_system()
+	var walls_to_remove = []
+
+	var all_tiles = persistence.player_tiles_data.get("tiles", {})
+	for username_key in all_tiles:
+		for td in all_tiles[username_key]:
+			if td.get("type", "") != "wall":
+				continue
+			var wx = int(td.get("x", 0))
+			var wy = int(td.get("y", 0))
+			# Skip if wall is part of a valid enclosure
+			if enclosure_tile_lookup.has(Vector2i(wx, wy)):
+				continue
+			# Also skip if this wall is adjacent to an enclosure interior tile
+			# (it's a boundary wall of an enclosure)
+			var is_boundary = false
+			for offset in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
+				if enclosure_tile_lookup.has(Vector2i(wx + offset.x, wy + offset.y)):
+					is_boundary = true
+					break
+			if is_boundary:
+				continue
+			# Check grace period
+			var placed_at = td.get("placed_at", 0)
+			if placed_at == 0:
+				# Old walls without timestamp — set one now and skip
+				td["placed_at"] = now
+				continue
+			if now - placed_at < WALL_DECAY_GRACE_PERIOD:
+				continue
+			walls_to_remove.append({"x": wx, "y": wy, "owner": username_key})
+
+	# Remove up to 5 walls per tick
+	var removed = 0
+	for wd in walls_to_remove:
+		if removed >= 5:
+			break
+		chunk_manager.remove_tile_modification(wd.x, wd.y)
+		persistence.remove_player_tile(wd.owner, wd.x, wd.y)
+		removed += 1
+		# Notify owner if online
+		for pid in peers:
+			if _get_username(pid) == wd.owner:
+				send_to_peer(pid, {
+					"type": "text",
+					"message": "[color=#808080]A wall at (%d, %d) has crumbled from neglect.[/color]" % [wd.x, wd.y]
+				})
+				break
+
+	if removed > 0:
+		chunk_manager.save_dirty_chunks()
+		persistence.save_player_tiles()
+		log_message("Wall decay: removed %d orphan walls" % removed)
+
+func _update_guard_cache():
+	"""Update the guard position cache in world_system for encounter suppression."""
+	if not world_system:
+		return
+	var positions = []
+	for pos_key in active_guards:
+		var guard = active_guards[pos_key]
+		var parts = pos_key.split(",")
+		if parts.size() == 2:
+			positions.append({
+				"x": int(parts[0]),
+				"y": int(parts[1]),
+				"radius": guard.get("radius", GUARD_BASE_RADIUS),
+			})
+	world_system.update_guard_positions(positions)
 
 # ===== INN & STORAGE (Player Enclosure Structures) =====
 

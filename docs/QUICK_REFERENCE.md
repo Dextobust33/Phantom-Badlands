@@ -10,15 +10,17 @@ Text-based multiplayer RPG in Godot 4.5/GDScript. Client-server architecture ove
 
 | File | ~Lines | What It Does |
 |------|--------|--------------|
-| `client/client.gd` | 8000 | UI, networking, action bar, all client logic |
-| `server/server.gd` | 4000 | Message routing, persistence, game logic |
-| `shared/combat_manager.gd` | 3500 | Turn-based combat, damage calc, abilities |
+| `client/client.gd` | 24000 | UI, networking, action bar, market, all client logic |
+| `server/server.gd` | 15000 | Message routing, persistence, market, crafting, game logic |
+| `shared/combat_manager.gd` | 5000 | Turn-based combat, party combat, damage calc, abilities |
+| `shared/drop_tables.gd` | 4000 | Item generation, gathering, valor calculation |
+| `shared/crafting_database.gd` | 2000 | Crafting recipes, materials, enchantment caps |
 | `shared/monster_database.gd` | 1400 | 40+ monsters across 9 tiers |
+| `server/persistence_manager.gd` | 1500 | SQLite, houses, market listings |
 | `client/monster_art.gd` | 1200 | ASCII art for combat |
-| `shared/world_system.gd` | 1000 | Terrain, hotspots, coordinates |
-| `shared/character.gd` | 1000 | Player stats, inventory, equipment |
+| `shared/world_system.gd` | 1200 | Terrain, chunks, gathering nodes |
+| `shared/character.gd` | 1200 | Player stats, inventory, companions, equipment |
 | `shared/quest_database.gd` | 900 | Quest definitions |
-| `shared/drop_tables.gd` | 600 | Item generation |
 
 ## Running the Game
 
