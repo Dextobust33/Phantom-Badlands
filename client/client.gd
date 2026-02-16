@@ -1000,8 +1000,9 @@ var market_listings: Array = []
 var market_page: int = 0
 var market_total_pages: int = 0
 var market_category: String = "all"
-var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_confirm", "buy_confirm", "my_listings"
+var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_confirm", "buy_confirm", "inspect", "my_listings"
 var market_selected_listing: Dictionary = {}
+var market_inspected_listing: Dictionary = {}
 var market_selected_material: String = ""
 var market_selected_material_qty: int = 0
 var market_buy_quantity: int = 0  # 0 = buy full stack
@@ -1014,6 +1015,19 @@ var market_egg_page: int = 0
 const MARKET_SORT_LABELS = {"category": "Category", "price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "newest": "Newest"}
 const MARKET_SORT_ORDER = ["category", "price_asc", "price_desc", "name_asc", "newest"]
 var account_valor: int = 0
+
+# Tutorial
+var tutorial_active: bool = false
+var tutorial_step: int = 0
+const TUTORIAL_STEPS = [
+	{"text": "Welcome to the Phantom Badlands! This quick tutorial will show you the basics.", "wait_for": "continue"},
+	{"text": "Use the numpad or arrow keys to move around the world. Try taking a step!", "wait_for": "move"},
+	{"text": "See the Action Bar at the bottom? [Space], [Q], [W], [E], [R] are your quick actions. [1]-[5] are extra slots.", "wait_for": "continue"},
+	{"text": "Press [E] to open your Inventory. Try it now!", "wait_for": "inventory_open"},
+	{"text": "Good! Press [E] or [Space] to close it.", "wait_for": "inventory_close"},
+	{"text": "When you encounter a monster, you'll enter combat. Use Attack, abilities, or Flee. Be careful — death is permanent!", "wait_for": "continue"},
+	{"text": "Look for [color=#FF69B4]P[/color] tiles (trading posts) for quests and crafting. [R] shows contextual actions based on your location. Good luck out there!", "wait_for": "done"},
+]
 
 # Dungeon mode
 var dungeon_mode: bool = false
@@ -1992,7 +2006,7 @@ func _process(delta):
 			else:
 				set_meta("tradeeggkey_%d_pressed" % i, false)
 
-	# Market browse buy selection with keybinds (1-9 to buy listing)
+	# Market browse selection with keybinds (1-9 to inspect listing)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "browse":
 		for i in range(9):
 			if is_item_select_key_pressed(i):
@@ -2001,12 +2015,11 @@ func _process(delta):
 				if not get_meta("marketbuykey_%d_pressed" % i, false):
 					set_meta("marketbuykey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					# Select listing for purchase confirmation
+					# Select listing for inspection
 					if i < market_listings.size():
-						market_selected_listing = market_listings[i]
-						market_buy_quantity = 0
-						pending_market_action = "buy_confirm"
-						display_market_buy_confirm()
+						market_inspected_listing = market_listings[i]
+						pending_market_action = "inspect"
+						display_market_inspect()
 						update_action_bar()
 			else:
 				set_meta("marketbuykey_%d_pressed" % i, false)
@@ -6519,6 +6532,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_market_action == "inspect":
+			current_actions = [
+				{"label": "Buy", "action_type": "local", "action_data": "market_inspect_buy", "enabled": true},
+				{"label": "Back", "action_type": "local", "action_data": "market_inspect_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_market_action == "buy_confirm":
 			var listing_qty = int(market_selected_listing.get("quantity", 1))
 			current_actions = [
@@ -6679,6 +6705,17 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+
+	# Tutorial overlay: replace first two action bar slots with Next/Skip
+	if tutorial_active and not in_combat and current_actions.size() >= 2:
+		var step_wait = ""
+		if tutorial_step < TUTORIAL_STEPS.size():
+			step_wait = TUTORIAL_STEPS[tutorial_step].get("wait_for", "continue")
+		if step_wait == "continue" or step_wait == "done":
+			var next_label = "Finish" if step_wait == "done" else "Next"
+			current_actions[0] = {"label": next_label, "action_type": "local", "action_data": "tutorial_next", "enabled": true}
+			if step_wait != "done":
+				current_actions[1] = {"label": "Skip", "action_type": "local", "action_data": "tutorial_skip", "enabled": true}
 
 	for i in range(min(action_buttons.size(), current_actions.size())):
 		var button = action_buttons[i]
@@ -9255,6 +9292,22 @@ func execute_local_action(action: String):
 			market_selected_listing = {}
 			display_market_browse()
 			update_action_bar()
+		"market_inspect_buy":
+			market_selected_listing = market_inspected_listing
+			market_buy_quantity = 0
+			pending_market_action = "buy_confirm"
+			display_market_buy_confirm()
+			update_action_bar()
+		"market_inspect_back":
+			market_inspected_listing = {}
+			pending_market_action = "browse"
+			display_market_browse()
+			update_action_bar()
+		# Tutorial actions
+		"tutorial_next":
+			_advance_tutorial()
+		"tutorial_skip":
+			_skip_tutorial()
 		# Quest actions
 		"show_quests":
 			send_to_server({"type": "get_quest_log"})
@@ -11695,6 +11748,7 @@ func open_inventory():
 
 	update_action_bar()
 	display_inventory()
+	_check_tutorial_trigger("inventory_open")
 
 func close_inventory():
 	"""Close inventory view and return to normal mode"""
@@ -11709,6 +11763,7 @@ func close_inventory():
 		display_dungeon_floor()
 	else:
 		display_game("[color=#808080]Inventory closed.[/color]")
+	_check_tutorial_trigger("inventory_close")
 
 func open_sort_menu():
 	"""Open sort submenu for inventory"""
@@ -14277,6 +14332,11 @@ func handle_server_message(message: Dictionary):
 			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
+			# Start tutorial for brand-new accounts
+			if message.get("is_first_character", false):
+				tutorial_active = true
+				tutorial_step = 0
+				_display_tutorial_step()
 
 		"character_deleted":
 			display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Character deleted"))
@@ -14458,6 +14518,7 @@ func handle_server_message(message: Dictionary):
 			# Update action bar if any location status changed
 			if was_at_water != at_water or was_at_dungeon != at_dungeon_entrance or was_at_ore != at_ore_deposit or was_at_forest != at_dense_forest or was_at_forage != at_foraging_spot or was_at_corpse != at_corpse or was_at_bounty != at_bounty or was_in_enclosure != in_own_enclosure or was_in_player_post != in_player_post:
 				update_action_bar()
+			_check_tutorial_trigger("move")
 
 		"chat":
 			var sender = message.get("sender", "Unknown")
@@ -18722,8 +18783,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.131 changes
+	display_game("[color=#00FF00]v0.9.131[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market QOL & Tutorial[/color]")
+	display_game("  • Market: Equipment listings now show comparison arrows and stat diffs")
+	display_game("  • Market: Press 1-9 to inspect items before buying (full stat details)")
+	display_game("  • Market: Buy from inspection view with full item comparison")
+	display_game("  • Tutorial: New players get a guided walkthrough on first character")
+	display_game("  • Starter Safety: Halved encounter rate near Crossroads for low-level players")
+	display_game("")
+
 	# v0.9.130 changes
-	display_game("[color=#00FF00]v0.9.130[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.130[/color]")
 	display_game("  [color=#FFD700]Guard Radius Increase[/color]")
 	display_game("  • Guard encounter suppression radius tripled (5 → 15 tiles)")
 	display_game("  • Tower guard radius tripled (15 → 45 tiles)")
@@ -18771,14 +18842,6 @@ func display_changelog():
 	display_game("  • Market: Tools filter added to category cycle and My Listings view")
 	display_game("  • House/Market displays now consistently refresh action bar")
 	display_game("  • Removed legacy dead code (wandering blacksmith/healer, tax collector)")
-	display_game("")
-
-	# v0.9.126 changes
-	display_game("[color=#00FFFF]v0.9.126[/color]")
-	display_game("  [color=#FFD700]Visual Minigames & Fixes[/color]")
-	display_game("  • Visual minigames for gathering (ASCII art choices)")
-	display_game("  • Dungeon boss fix, momentum display, crafting level sync")
-	display_game("  • Salvage variety improvements")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -23449,10 +23512,22 @@ func display_market_browse():
 				var level_text = ""
 				if item.has("level"):
 					level_text = " Lv%d" % int(item.level)
-				display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
+				# Equipment comparison arrows + stat diffs
+				var compare_text = ""
+				var _item_type = item.get("type", "")
+				var _slot = _get_slot_for_item_type(_item_type)
+				if _slot != "":
+					var _equipped = character_data.get("equipped", {})
+					var _equipped_item = _equipped.get(_slot, null)
+					var _arrow = _get_compare_arrow(item, _equipped_item)
+					var _parts = _get_item_comparison_parts(item, _equipped_item)
+					compare_text = " %s" % _arrow
+					if _parts.size() > 0:
+						compare_text += " [%s]" % ", ".join(_parts)
+				display_game("  [color=#FFFF00]%d)[/color]%s [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, compare_text, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
-	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
+	display_game("[color=#808080]Press 1-9 to inspect, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
 	update_action_bar()
 
 func display_market_list_select():
@@ -23594,6 +23669,67 @@ func display_market_list_eggs():
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
+
+func display_market_inspect():
+	"""Display detailed inspection of a market listing before buying."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
+	game_output.clear()
+
+	var item = market_inspected_listing.get("item", {})
+	var item_name = item.get("name", "Unknown")
+	var price = int(market_inspected_listing.get("markup_price", market_inspected_listing.get("base_valor", 0)))
+	var seller = market_inspected_listing.get("seller_name", "Unknown")
+	var total_qty = int(market_inspected_listing.get("total_quantity", market_inspected_listing.get("quantity", 1)))
+	var item_type = item.get("type", "")
+
+	if item_type == "egg":
+		# Show egg details with art
+		var variant = item.get("variant", "Normal")
+		var variant_color = item.get("variant_color", "#FFAA00")
+		var egg_tier = item.get("tier", 1)
+		var egg_sub = item.get("sub_tier", 1)
+		var rinfo = _get_variant_rarity_info(variant)
+		var monster_name = item.get("companion_name", item_name.replace(" Egg", ""))
+
+		display_game("[color=#FFD700]===== Market Listing - Egg =====[/color]")
+		display_game("")
+
+		# Show egg art with variant colors and pattern
+		var color2 = item.get("variant_color2", variant_color)
+		var pattern = item.get("variant_pattern", "solid")
+		var egg_art = MonsterArt.get_egg_art(variant, variant_color, color2, pattern, ui_scale_monster_art)
+		if egg_art != "":
+			display_game(egg_art)
+			display_game("")
+
+		display_game("[color=#00FFFF]Name:[/color] [color=%s]%s[/color]" % [variant_color, item_name])
+		display_game("[color=#00FFFF]Monster:[/color] %s" % monster_name)
+		display_game("[color=#00FFFF]Variant:[/color] [color=%s][%s] %s[/color]" % [rinfo.color, rinfo.tier, variant])
+		display_game("[color=#00FFFF]Tier:[/color] T%d-%d" % [egg_tier, egg_sub])
+		var hatch_steps = item.get("hatch_steps_remaining", 0)
+		var hatch_total = item.get("hatch_steps_needed", 0)
+		if hatch_total > 0:
+			display_game("[color=#00FFFF]Hatching:[/color] %d / %d steps" % [hatch_total - hatch_steps, hatch_total])
+	else:
+		# Use display_item_details for equipment/consumable/tool/rune
+		display_item_details(item, "Market Listing")
+
+	display_game("")
+	display_game("[color=#808080]─────────────────────────────────[/color]")
+	display_game("  Seller: %s" % seller)
+	if total_qty > 1:
+		display_game("  Quantity: %d" % total_qty)
+	display_game("  Price: [color=#00FF00]%s Valor[/color]" % format_number(price))
+	display_game("  Your Valor: [color=#00FF00]%s[/color]" % format_number(account_valor))
+
+	if account_valor >= price:
+		display_game("[color=#00FF00]You can afford this.[/color]")
+	else:
+		display_game("[color=#FF0000]Not enough Valor! Need %s more.[/color]" % format_number(price - account_valor))
+
+	display_game("")
+	display_game("[color=#FFD700]%s[/color] Buy  |  [color=#FFD700]%s[/color] Back" % [get_action_key_name(0), get_action_key_name(1)])
 
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
@@ -26441,3 +26577,50 @@ func _handle_storage_selection(selection_index: int):
 			send_to_server({"type": "storage_withdraw", "storage_index": selection_index})
 		else:
 			display_game("[color=#FF4444]Invalid selection.[/color]")
+
+# ===== TUTORIAL =====
+
+func _display_tutorial_step():
+	"""Display the current tutorial step text."""
+	if tutorial_step >= TUTORIAL_STEPS.size():
+		tutorial_active = false
+		return
+	var step = TUTORIAL_STEPS[tutorial_step]
+	display_game("")
+	display_game("[color=#00BFFF]--- Tutorial (%d/%d) ---[/color]" % [tutorial_step + 1, TUTORIAL_STEPS.size()])
+	display_game("[color=#87CEEB]%s[/color]" % step.text)
+	var wait = step.get("wait_for", "continue")
+	if wait == "continue":
+		display_game("[color=#808080]Press [%s] to continue or [%s] to skip tutorial[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+	elif wait == "done":
+		display_game("[color=#808080]Press [%s] to finish tutorial[/color]" % get_action_key_name(0))
+	update_action_bar()
+
+func _advance_tutorial():
+	"""Advance to the next tutorial step."""
+	tutorial_step += 1
+	if tutorial_step >= TUTORIAL_STEPS.size():
+		tutorial_active = false
+		display_game("")
+		display_game("[color=#00FF00]Tutorial complete! Enjoy Phantom Badlands![/color]")
+		update_action_bar()
+		return
+	_display_tutorial_step()
+
+func _skip_tutorial():
+	"""Skip the tutorial entirely."""
+	tutorial_active = false
+	tutorial_step = 0
+	display_game("")
+	display_game("[color=#808080]Tutorial skipped.[/color]")
+	update_action_bar()
+
+func _check_tutorial_trigger(event: String):
+	"""Check if a game event matches the tutorial's wait condition and auto-advance."""
+	if not tutorial_active:
+		return
+	if tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	var step = TUTORIAL_STEPS[tutorial_step]
+	if step.get("wait_for", "") == event:
+		_advance_tutorial()

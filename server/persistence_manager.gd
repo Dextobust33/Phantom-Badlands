@@ -299,6 +299,19 @@ func can_create_character(account_id: String) -> bool:
 	var account = accounts_data.accounts[account_id]
 	return account.character_slots.size() < account.max_characters
 
+func is_first_character_ever(account_id: String) -> bool:
+	"""Check if this account has never had a character before (for tutorial)."""
+	if not accounts_data.accounts.has(account_id):
+		return true
+	var account = accounts_data.accounts[account_id]
+	if account.character_slots.size() > 0:
+		return false
+	# Check if they've earned baddie points (means a previous character died)
+	var house = get_house(account_id)
+	if house and house.get("total_baddie_points_earned", 0) > 0:
+		return false
+	return true
+
 func add_character_to_account(account_id: String, char_name: String):
 	"""Add character name to account's character slots"""
 	if not accounts_data.accounts.has(account_id):

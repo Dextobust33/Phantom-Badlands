@@ -1560,6 +1560,9 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	if checkout_slot >= 0:
 		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
 
+	# Check if this is the account's very first character (for tutorial)
+	var is_first_character = persistence.is_first_character_ever(account_id)
+
 	# Save character to persistence
 	persistence.save_character(account_id, character)
 	persistence.add_character_to_account(account_id, char_name)
@@ -1575,7 +1578,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"type": "character_created",
 		"character": character.to_dict(),
 		"message": "Welcome to the world, %s!" % char_name,
-		"title_holders": _get_current_title_holders()
+		"title_holders": _get_current_title_holders(),
+		"is_first_character": is_first_character
 	})
 
 	# Broadcast join message to other players
@@ -2307,7 +2311,12 @@ func handle_move(peer_id: int, message: Dictionary):
 		trigger_merchant_encounter(peer_id)
 	# Check for monster encounter (only if no merchant and not cloaked)
 	elif not character.cloak_active and world_system.check_encounter(new_pos.x, new_pos.y):
-		trigger_encounter(peer_id)
+		# Starter area safety: halve encounters for low-level players near origin
+		var _dist = abs(new_pos.x) + abs(new_pos.y)
+		if _dist <= 20 and character.level < 10 and randf() < 0.5:
+			pass  # Suppressed encounter for new player safety
+		else:
+			trigger_encounter(peer_id)
 
 func handle_hunt(peer_id: int):
 	"""Handle hunt action - actively search for monsters with increased encounter chance"""
@@ -15737,7 +15746,12 @@ func handle_hotzone_confirm(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	# Now check for encounter at the new position
 	if not character.cloak_active and world_system.check_encounter(target_x, target_y):
-		trigger_encounter(peer_id)
+		# Starter area safety: halve encounters for low-level players near origin
+		var _hdist = abs(target_x) + abs(target_y)
+		if _hdist <= 20 and character.level < 10 and randf() < 0.5:
+			pass
+		else:
+			trigger_encounter(peer_id)
 
 func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	"""Handle player entering a dungeon"""
