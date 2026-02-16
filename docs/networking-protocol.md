@@ -269,6 +269,7 @@ MSG_ERROR = "error"
 | `market_browse` | `category`, `page`, `sort` | Browse listings (sort: category/price_asc/price_desc/name_asc/newest) |
 | `market_list_item` | `index` | List inventory item on market |
 | `market_list_material` | `material_name`, `quantity` | List crafting materials |
+| `market_list_egg` | `index` | List companion egg from incubator on market |
 | `market_list_all` | `list_type` | Bulk list (equipment/items/materials) |
 | `market_buy` | `listing_id` or `listing_ids[]`, `quantity` | Buy from market (supports multi-listing stacks) |
 | `market_my_listings` | | Get own listings |
@@ -279,11 +280,11 @@ MSG_ERROR = "error"
 | Message | Fields | Description |
 |---------|--------|-------------|
 | `market_browse_result` | `listings[]`, `page`, `total_pages`, `category`, `sort` | Browse results (stacked listings with `stack_listing_ids`, `total_quantity`, `display_category`) |
-| `market_list_success` | `base_valor`, `item_name`, `total_valor` | Single item listed |
+| `market_list_success` | `base_valor`, `item_name`, `total_valor`, `listed_type` | Single item listed (`listed_type`: "egg" for eggs) |
 | `market_list_all_success` | `count`, `total_valor`, `new_valor` | Bulk listing result |
 | `market_buy_success` | `item_name`, `price`, `new_valor` | Purchase successful |
 | `market_my_listings_result` | `listings[]` | Own listings |
-| `market_cancel_success` | `item_name`, `refund` | Listing cancelled |
+| `market_cancel_success` | `item_name`, `refund`, `item_type` | Listing cancelled (`item_type`: "egg" returns to incubator) |
 | `market_error` | `message` | Error message |
 | `market_start` | | Player bumped $ tile |
 

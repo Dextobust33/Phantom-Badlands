@@ -1130,6 +1130,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_market_cancel_all(peer_id, message)
 		"market_list_all":
 			handle_market_list_all(peer_id, message)
+		"market_list_egg":
+			handle_market_list_egg(peer_id, message)
 		_:
 			pass
 
@@ -9032,6 +9034,9 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		elif category == "rune":
 			if supply_cat == "rune":
 				filtered.append(listing)
+		elif category == "egg":
+			if supply_cat == "egg":
+				filtered.append(listing)
 		elif supply_cat == category:
 			filtered.append(listing)
 
@@ -9048,9 +9053,9 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 	for listing in filtered:
 		var supply_cat = listing.get("supply_category", "")
-		var is_equipment = supply_cat == "equipment"
+		var is_unique = supply_cat == "equipment" or supply_cat == "egg"
 
-		if is_equipment:
+		if is_unique:
 			var entry = listing.duplicate()
 			entry["stack_listing_ids"] = [listing.get("listing_id", "")]
 			entry["total_quantity"] = int(listing.get("quantity", 1))
@@ -9104,6 +9109,7 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 func _get_display_category(supply_cat: String) -> String:
 	if supply_cat == "equipment": return "Equipment"
+	if supply_cat == "egg": return "Companion Eggs"
 	if supply_cat == "consumable": return "Consumables"
 	if supply_cat == "rune": return "Runes"
 	if supply_cat.begins_with("material"): return "Materials"
@@ -9111,7 +9117,7 @@ func _get_display_category(supply_cat: String) -> String:
 	return "Other"
 
 func _sort_stacks_by_category(a: Dictionary, b: Dictionary) -> bool:
-	var order = {"Equipment": 0, "Consumables": 1, "Runes": 2, "Materials": 3, "Monster Parts": 4, "Other": 5}
+	var order = {"Equipment": 0, "Companion Eggs": 1, "Consumables": 2, "Runes": 3, "Materials": 4, "Monster Parts": 5, "Other": 6}
 	var a_o = order.get(a.get("display_category", "Other"), 5)
 	var b_o = order.get(b.get("display_category", "Other"), 5)
 	if a_o != b_o: return a_o < b_o
@@ -9266,6 +9272,65 @@ func _get_material_tier(material_name: String) -> int:
 
 	return 1  # Default to tier 1
 
+func handle_market_list_egg(peer_id: int, message: Dictionary):
+	"""List an incubating egg on the market. Awards base valor immediately."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var index = int(message.get("index", -1))
+	if index < 0 or index >= character.incubating_eggs.size():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid egg."})
+		return
+
+	var egg = character.incubating_eggs[index].duplicate(true)
+	egg["type"] = "egg"
+	egg["is_consumable"] = false
+
+	# Calculate valor
+	var base_valor = drop_tables.calculate_egg_valor(egg)
+
+	# Apply market bonuses (Halfling +15%, Knight +10%)
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	if bonus > 0:
+		base_valor = int(base_valor * (1.0 + bonus))
+
+	# Create listing
+	var listing = {
+		"account_id": account_id,
+		"seller_name": character.name,
+		"item": egg,
+		"base_valor": base_valor,
+		"supply_category": "egg",
+		"listed_at": int(Time.get_unix_time_from_system()),
+		"quantity": 1
+	}
+
+	# Remove egg from incubator
+	character.incubating_eggs.remove_at(index)
+
+	# Add listing and award valor
+	var listing_id = persistence.add_market_listing(post_id, listing)
+	persistence.add_valor(account_id, base_valor)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_list_success",
+		"listing_id": listing_id,
+		"base_valor": base_valor,
+		"item_name": egg.get("name", "Egg"),
+		"total_valor": persistence.get_valor(account_id),
+		"listed_type": "egg"
+	})
+	send_character_update(peer_id)
+
 func handle_market_buy(peer_id: int, message: Dictionary):
 	"""Buy a listing from the market. Supports partial quantity for material stacks."""
 	if not characters.has(peer_id):
@@ -9338,9 +9403,14 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [price, buyer_valor]})
 		return
 
-	# Check inventory space (for equipment/consumables)
+	# Check inventory/egg space
 	if item.get("type", "") == "material":
 		pass  # Materials go to crafting pouch, always has space
+	elif item.get("type", "") == "egg":
+		var egg_cap = persistence.get_egg_capacity(buyer_account_id)
+		if character.incubating_eggs.size() >= egg_cap:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Your egg incubator is full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
+			return
 	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
 		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
 		return
@@ -9370,6 +9440,8 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		if not character.crafting_materials.has(mat_name):
 			character.crafting_materials[mat_name] = 0
 		character.crafting_materials[mat_name] += buy_qty
+	elif item.get("type", "") == "egg":
+		character.incubating_eggs.append(item)
 	else:
 		character.inventory.append(item)
 
@@ -9445,9 +9517,14 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "That's not your listing."})
 		return
 
-	# Check inventory space
+	# Check inventory/egg space
 	var item = listing.get("item", {})
-	if item.get("type", "") != "material" and character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+	if item.get("type", "") == "egg":
+		var egg_cap = persistence.get_egg_capacity(account_id)
+		if character.incubating_eggs.size() >= egg_cap:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Egg incubator full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
+			return
+	elif item.get("type", "") != "material" and character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
 		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
 		return
 
@@ -9467,6 +9544,8 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		if not character.crafting_materials.has(mat_name):
 			character.crafting_materials[mat_name] = 0
 		character.crafting_materials[mat_name] += qty
+	elif item.get("type", "") == "egg":
+		character.incubating_eggs.append(item)
 	else:
 		character.inventory.append(item)
 
@@ -9478,6 +9557,7 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "market_cancel_success",
 		"item_name": item.get("name", "item"),
+		"item_type": item.get("type", ""),
 		"valor_deducted": base_valor,
 		"total_valor": persistence.get_valor(account_id)
 	})
@@ -9497,6 +9577,8 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 
 	var current_valor = persistence.get_valor(account_id)
 	var free_slots = Character.MAX_INVENTORY_SIZE - character.inventory.size()
+	var egg_cap = persistence.get_egg_capacity(account_id)
+	var free_egg_slots = egg_cap - character.incubating_eggs.size()
 	var pulled_count = 0
 	var total_valor_deducted = 0
 	var skipped_no_space = 0
@@ -9508,6 +9590,7 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 		var listing_id = listing.get("listing_id", "")
 		var post_id = listing.get("post_id", "")
 		var is_material = item.get("type", "") == "material" or item.has("material_type")
+		var is_egg = item.get("type", "") == "egg"
 
 		# Check if we can afford to cancel (valor was paid upfront)
 		if current_valor < base_valor:
@@ -9521,6 +9604,12 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 			if not character.crafting_materials.has(mat_name):
 				character.crafting_materials[mat_name] = 0
 			character.crafting_materials[mat_name] += qty
+		elif is_egg:
+			if free_egg_slots <= 0:
+				skipped_no_space += 1
+				continue
+			character.incubating_eggs.append(item)
+			free_egg_slots -= 1
 		else:
 			# Non-materials need inventory space
 			if free_slots <= 0:
@@ -13963,10 +14052,32 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 
 	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
 
+	# Map crafted effect type to a recognized POTION_EFFECTS key so combat can use the item
+	var effect_type = scaled_effect.get("type", "")
+	var consumable_type = "consumable"
+	match effect_type:
+		"heal":
+			consumable_type = "health_potion"
+		"restore_mana":
+			consumable_type = "mana_potion"
+		"restore_stamina":
+			consumable_type = "stamina_potion"
+		"restore_energy":
+			consumable_type = "energy_potion"
+		"buff":
+			var buff_stat = scaled_effect.get("stat", "")
+			match buff_stat:
+				"attack":
+					consumable_type = "scroll_rage"
+				"defense":
+					consumable_type = "scroll_stone_skin"
+				"speed":
+					consumable_type = "scroll_haste"
+
 	var item = {
 		"id": item_id,
 		"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
-		"type": "consumable",
+		"type": consumable_type,
 		"slot": "",
 		"level": 1,
 		"rarity": _quality_to_rarity(quality),

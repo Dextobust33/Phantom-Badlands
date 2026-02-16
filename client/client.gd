@@ -1007,6 +1007,7 @@ var market_mat_page: int = 0
 var market_my_page: int = 0
 var market_list_flash: String = ""  # Brief success message shown in listing view
 var market_sort: String = "category"
+var market_egg_page: int = 0
 const MARKET_SORT_LABELS = {"category": "Category", "price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "newest": "Newest"}
 const MARKET_SORT_ORDER = ["category", "price_asc", "price_desc", "name_asc", "newest"]
 var account_valor: int = 0
@@ -2055,19 +2056,46 @@ func _process(delta):
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
 
-	# Market main menu bulk listing with keybinds (1-3 for bulk actions)
+	# Market main menu bulk listing with keybinds (1-3 for bulk actions, 4 for list egg)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "":
-		for i in range(3):
+		for i in range(4):
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
 					continue
 				if not get_meta("marketbulkkey_%d_pressed" % i, false):
 					set_meta("marketbulkkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					var bulk_types = ["equipment", "items", "materials"]
-					send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
+					if i < 3:
+						var bulk_types = ["equipment", "items", "materials"]
+						send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
+					else:
+						# Key 4 = List Egg from Incubator
+						pending_market_action = "list_egg"
+						market_egg_page = 0
+						for j in range(9):
+							if is_item_select_key_pressed(j):
+								set_meta("marketeggkey_%d_pressed" % j, true)
+						display_market_list_eggs()
+						update_action_bar()
 			else:
 				set_meta("marketbulkkey_%d_pressed" % i, false)
+
+	# Market egg selection with keybinds
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "list_egg":
+		var eggs = character_data.get("incubating_eggs", [])
+		var egg_start = market_egg_page * 9
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketeggkey_%d_pressed" % i, false):
+					set_meta("marketeggkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					var egg_idx = egg_start + i
+					if egg_idx < eggs.size():
+						send_to_server({"type": "market_list_egg", "index": egg_idx})
+			else:
+				set_meta("marketeggkey_%d_pressed" % i, false)
 
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
@@ -6414,6 +6442,21 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_market_action == "list_egg":
+			var _eggs = character_data.get("incubating_eggs", [])
+			var _egg_pages = ceili(float(_eggs.size()) / 9.0)
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_list_back", "enabled": true},
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_egg_prev", "enabled": market_egg_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_egg_next", "enabled": market_egg_page < _egg_pages - 1},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_market_action == "buy_confirm":
 			var listing_qty = int(market_selected_listing.get("quantity", 1))
 			current_actions = [
@@ -9104,6 +9147,14 @@ func execute_local_action(action: String):
 			market_mat_page += 1
 			display_market_list_materials()
 			update_action_bar()
+		"market_egg_prev":
+			market_egg_page = maxi(0, market_egg_page - 1)
+			display_market_list_eggs()
+			update_action_bar()
+		"market_egg_next":
+			market_egg_page += 1
+			display_market_list_eggs()
+			update_action_bar()
 		"market_my_prev":
 			market_my_page = maxi(0, market_my_page - 1)
 			display_market_my_listings()
@@ -9124,7 +9175,7 @@ func execute_local_action(action: String):
 				send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		"market_filter":
 			# Cycle through categories
-			var categories = ["all", "equipment", "consumable", "rune", "material", "monster_part"]
+			var categories = ["all", "equipment", "egg", "consumable", "rune", "material", "monster_part"]
 			var idx = categories.find(market_category)
 			market_category = categories[(idx + 1) % categories.size()]
 			market_page = 0
@@ -11978,14 +12029,25 @@ func display_inventory():
 	var equipment_items: Array = []
 	var tool_items: Array = []
 	var consumable_items: Array = []
+	# Group identical consumables by name for stacked display
+	var consumable_groups: Dictionary = {}  # name → {index, item, count, indices}
+	var consumable_order: Array = []  # Preserve first-seen order
 	for idx in range(inventory.size()):
 		var itm = inventory[idx]
-		if itm.get("is_consumable", false):
-			consumable_items.append({"index": idx, "item": itm})
+		if itm.get("is_consumable", false) or itm.get("type", "") == "rune":
+			var cname = itm.get("name", "")
+			if consumable_groups.has(cname):
+				consumable_groups[cname]["count"] += 1
+				consumable_groups[cname]["indices"].append(idx)
+			else:
+				consumable_groups[cname] = {"index": idx, "item": itm, "count": 1, "indices": [idx]}
+				consumable_order.append(cname)
 		elif itm.get("type", "") == "tool":
 			tool_items.append({"index": idx, "item": itm})
 		else:
 			equipment_items.append({"index": idx, "item": itm})
+	for cname in consumable_order:
+		consumable_items.append(consumable_groups[cname])
 	var display_order: Array = equipment_items + tool_items + consumable_items
 	set_meta("inventory_display_order", display_order)
 
@@ -12052,8 +12114,8 @@ func display_inventory():
 					subtype.capitalize(), item.get("tier", 1), dur_color, dur, max_dur
 				])
 			elif is_consumable:
-				var quantity = item.get("quantity", 1)
-				var qty_text = " x%d" % quantity if quantity > 1 else ""
+				var stack_count = entry.get("count", 1)
+				var qty_text = " [color=#AAAAAA]x%d[/color]" % stack_count if stack_count > 1 else ""
 				display_game("  %d. %s[color=%s]%s[/color]%s" % [
 					display_num, lock_text, rarity_color, item.get("name", "Unknown"), qty_text
 				])
@@ -12069,8 +12131,10 @@ func display_inventory():
 					rune_info = "[color=#808080][%s][/color]" % item.get("rune_proc", "").replace("_", " ").capitalize()
 				else:
 					rune_info = "[color=#808080][+%d %s][/color]" % [item.get("rune_cap", 0), item.get("rune_stat", "").replace("_bonus", "").replace("_", " ")]
-				display_game("  %d. %s[color=#A335EE]%s[/color] %s" % [
-					display_num, lock_text, item.get("name", "Rune"), rune_info
+				var rune_stack = entry.get("count", 1)
+				var rune_qty = " [color=#AAAAAA]x%d[/color]" % rune_stack if rune_stack > 1 else ""
+				display_game("  %d. %s[color=#A335EE]%s[/color]%s %s" % [
+					display_num, lock_text, item.get("name", "Rune"), rune_qty, rune_info
 				])
 			else:
 				# Show equipment with arrow on left, stats on right (using themed names)
@@ -14604,6 +14668,9 @@ func handle_server_message(message: Dictionary):
 						update_action_bar()
 					elif pending_market_action == "list_select":
 						display_market_list_select()
+						update_action_bar()
+					elif pending_market_action == "list_egg":
+						display_market_list_eggs()
 						update_action_bar()
 					elif pending_market_action != "":
 						pass  # Don't refresh for other market modes
@@ -18555,8 +18622,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.124 changes
+	display_game("[color=#00FF00]v0.9.124[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Egg Market & Rune QOL[/color]")
+	display_game("  • Companion eggs can now be listed on the Open Market!")
+	display_game("  • Market main menu: press [4] to list an egg from your incubator")
+	display_game("  • Browse eggs with the new 'egg' category filter")
+	display_game("  • Egg listings show variant rarity tier, color, and tier-subtier info")
+	display_game("  • Egg valor scales with tier, sub-tier, variant rarity, and bonuses")
+	display_game("  • Buy/cancel egg listings route to incubator (not inventory)")
+	display_game("  • Runes now appear in the consumables section of inventory (was mixed with gear)")
+	display_game("  • Runes stack by name — crafting 5 Minor Rune of Defense shows 'x5'")
+	display_game("")
+
 	# v0.9.123 changes
-	display_game("[color=#00FF00]v0.9.123[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.123[/color]")
 	display_game("  [color=#FFD700]Valor, Salvage & Treasure Chests[/color]")
 	display_game("  • Valor now reflects true crafting cost — structures, runes, scrolls all priced correctly")
 	display_game("  • Crafted items valued by their input materials (recursive chain calculation)")
@@ -18606,18 +18686,6 @@ func display_changelog():
 	display_game("  • Salvage Essence removed — salvaging now returns crafting materials directly")
 	display_game("  • Pickpocket steals tier-appropriate ore instead of essence")
 	display_game("  • Essence Pouches renamed to Material Pouches")
-	display_game("")
-
-	# v0.9.116 changes
-	display_game("[color=#00FFFF]v0.9.116[/color]")
-	display_game("  [color=#FFD700]Market & Economy Improvements[/color]")
-	display_game("  • Equipment valor now reflects crafting material costs by tier")
-	display_game("  • Material valor reflects gathering difficulty (rarer = more valuable)")
-	display_game("  • Market markup reduced to 15-50%% range (was 2x-8x)")
-	display_game("  • Partial stack buying — choose how many materials to purchase")
-	display_game("  • Inspected equipment now shows crafter and enchanter names")
-	display_game("  • D2 rarity weights applied to special monster drops (Weapon Master, etc.)")
-	display_game("  • Market pagination for List Items, List Materials, and My Listings")
 	display_game("")
 
 
@@ -20349,6 +20417,9 @@ func show_help():
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
 [color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
+[color=#A335EE]Runes:[/color] Enchanting-crafted consumables. Use on equipped gear to add affixes or proc effects.
+  Stat runes set affix caps (+8 def, +200 HP, etc). Proc runes add lifesteal/shocking/reflect/execute.
+  Runes stack in inventory. Sell on market under the Runes category.
 [color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x Valor or lose half)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
 [color=#FF4444]Lock:[/color] Inventory→Lock (key 3) protects items from Sell All, Salvage All, and accidental discard.
@@ -23057,6 +23128,7 @@ func exit_market():
 	market_selected_material = ""
 	market_selected_material_qty = 0
 	market_list_flash = ""
+	market_egg_page = 0
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	set_meta("hotkey_0_pressed", true)
@@ -23086,6 +23158,8 @@ func display_market_main():
 	display_game("  [color=#FFD700][1][/color] List All Equipment")
 	display_game("  [color=#FFD700][2][/color] List All Consumables/Tools")
 	display_game("  [color=#FFD700][3][/color] List All Materials")
+	display_game("")
+	display_game("  [color=#FFD700][4][/color] List Egg from Incubator")
 
 func display_market_browse():
 	"""Display market browse listings."""
@@ -23127,11 +23201,19 @@ func display_market_browse():
 			if total_qty > 1:
 				qty_text = " x%d" % total_qty
 
-			var level_text = ""
-			if item.has("level"):
-				level_text = " Lv%d" % int(item.level)
-
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
+			# Egg items show variant/tier info instead of rarity/level
+			if item.get("type", "") == "egg":
+				var variant = item.get("variant", "Normal")
+				var variant_color = item.get("variant_color", "#FFAA00")
+				var egg_tier = item.get("tier", 1)
+				var egg_sub = item.get("sub_tier", 1)
+				var rinfo = _get_variant_rarity_info(variant)
+				display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(price), seller])
+			else:
+				var level_text = ""
+				if item.has("level"):
+					level_text = " Lv%d" % int(item.level)
+				display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to buy, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
@@ -23235,6 +23317,47 @@ func display_market_list_materials():
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
 
+func display_market_list_eggs():
+	"""Display incubating eggs for listing on the market."""
+	input_field.release_focus()
+	input_field.placeholder_text = ""
+	game_output.clear()
+	display_game("[color=#FFD700]===== List Egg on Market =====[/color]")
+	if not market_list_flash.is_empty():
+		display_game(market_list_flash)
+		market_list_flash = ""
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+	display_game("[color=#87CEEB]Select an egg to list:[/color]")
+	display_game("")
+
+	var eggs = character_data.get("incubating_eggs", [])
+
+	if eggs.is_empty():
+		display_game("[color=#808080]You have no eggs.[/color]")
+	else:
+		var total_pages = ceili(float(eggs.size()) / 9.0)
+		market_egg_page = clampi(market_egg_page, 0, total_pages - 1)
+		var start = market_egg_page * 9
+		var end_idx = mini(start + 9, eggs.size())
+		for i in range(start, end_idx):
+			var egg = eggs[i]
+			var egg_name = egg.get("companion_name", "Unknown")
+			var variant = egg.get("variant", "Normal")
+			var variant_color = egg.get("variant_color", "#FFAA00")
+			var tier = egg.get("tier", 1)
+			var sub_tier = egg.get("sub_tier", 1)
+			var is_frozen = egg.get("frozen", false)
+			var rarity_info = _get_variant_rarity_info(variant)
+			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](T%d-%d)[/color]%s" % [i - start + 1, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, sub_tier, frozen_str])
+		if total_pages > 1:
+			display_game("")
+			display_game("[color=#808080]Page %d/%d[/color]" % [market_egg_page + 1, total_pages])
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to select, [%s] to go back[/color]" % get_action_key_name(0))
+
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
 	game_output.clear()
@@ -23262,7 +23385,21 @@ func display_market_buy_confirm():
 	if buy_qty < quantity:
 		qty_text += " [color=#808080](of %d)[/color]" % quantity
 
-	display_game("  Item: [color=%s]%s[/color]%s" % [rarity_color, item_name, qty_text])
+	# Show egg-specific info or standard item info
+	if item.get("type", "") == "egg":
+		var variant = item.get("variant", "Normal")
+		var variant_color = item.get("variant_color", "#FFAA00")
+		var egg_tier = item.get("tier", 1)
+		var egg_sub = item.get("sub_tier", 1)
+		var rinfo = _get_variant_rarity_info(variant)
+		display_game("  Egg: [color=%s][%s][/color] [color=%s]%s[/color]" % [rinfo.color, rinfo.tier, variant_color, item_name])
+		display_game("  Tier: T%d-%d" % [egg_tier, egg_sub])
+		var eggs = character_data.get("incubating_eggs", [])
+		var egg_cap = character_data.get("egg_capacity", 3)
+		if eggs.size() >= egg_cap:
+			display_game("  [color=#FF6666]WARNING: Incubator full! (%d/%d)[/color]" % [eggs.size(), egg_cap])
+	else:
+		display_game("  Item: [color=%s]%s[/color]%s" % [rarity_color, item_name, qty_text])
 	display_game("  Seller: %s" % seller)
 	display_game("  Price: [color=#00FF00]%s Valor[/color]" % format_number(price))
 	if quantity > 1:
@@ -23302,12 +23439,12 @@ func display_market_my_listings():
 		display_game("[color=#808080]You have no active listings.[/color]")
 	else:
 		# Sort listings by category for display
-		var cat_order = {"equipment": 0, "consumable": 1, "rune": 2, "monster_part": 3}
+		var cat_order = {"equipment": 0, "egg": 1, "consumable": 2, "rune": 3, "monster_part": 4}
 		market_listings.sort_custom(func(a, b):
 			var a_cat = a.get("supply_category", "equipment")
 			var b_cat = b.get("supply_category", "equipment")
-			var a_o = cat_order.get(a_cat, 4 if not a_cat.begins_with("material") else 3)
-			var b_o = cat_order.get(b_cat, 4 if not b_cat.begins_with("material") else 3)
+			var a_o = cat_order.get(a_cat, 5 if not a_cat.begins_with("material") else 4)
+			var b_o = cat_order.get(b_cat, 5 if not b_cat.begins_with("material") else 4)
 			if a_o != b_o: return a_o < b_o
 			return int(a.get("base_valor", 0)) > int(b.get("base_valor", 0)))
 
@@ -23325,14 +23462,22 @@ func display_market_my_listings():
 				display_game("[color=#FFD700]--- %s ---[/color]" % display_cat)
 				last_category = display_cat
 			var item_name = item.get("name", "Unknown")
-			var rarity = item.get("rarity", "common")
-			var rarity_color = _get_rarity_color(rarity)
 			var base_valor = int(listing.get("base_valor", 0))
 			var quantity = int(listing.get("quantity", 1))
 			var post_name = listing.get("post_name", "")
 			var qty_text = " x%d" % quantity if quantity > 1 else ""
 			var post_text = " [color=#808080]@%s[/color]" % post_name if not post_name.is_empty() else ""
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rarity_color, item_name, qty_text, format_number(base_valor), post_text])
+			if item.get("type", "") == "egg":
+				var variant = item.get("variant", "Normal")
+				var variant_color = item.get("variant_color", "#FFAA00")
+				var egg_tier = item.get("tier", 1)
+				var egg_sub = item.get("sub_tier", 1)
+				var rinfo = _get_variant_rarity_info(variant)
+				display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(base_valor), post_text])
+			else:
+				var rarity = item.get("rarity", "common")
+				var rarity_color = _get_rarity_color(rarity)
+				display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rarity_color, item_name, qty_text, format_number(base_valor), post_text])
 		if total_pages > 1:
 			display_game("")
 			display_game("[color=#808080]Page %d/%d[/color]" % [market_my_page + 1, total_pages])
@@ -23342,6 +23487,7 @@ func display_market_my_listings():
 
 func _get_my_listing_category(supply_cat: String) -> String:
 	if supply_cat == "equipment": return "Equipment"
+	if supply_cat == "egg": return "Companion Eggs"
 	if supply_cat == "consumable": return "Consumables"
 	if supply_cat == "rune": return "Runes"
 	if supply_cat.begins_with("material"): return "Materials"
@@ -23368,13 +23514,17 @@ func _handle_market_list_success(message: Dictionary):
 	account_valor = total_valor
 	var item_name = message.get("item_name", "item")
 	var was_material = pending_market_action == "list_material_qty" or pending_market_action == "list_material"
+	var was_egg = pending_market_action == "list_egg" or message.get("listed_type", "") == "egg"
 	market_selected_material = ""
 	market_selected_material_qty = 0
 	input_field.placeholder_text = ""
 	input_field.release_focus()
 	market_list_flash = "[color=#00FF00]Listed %s! +%s Valor[/color]" % [item_name, format_number(valor_earned)]
 	# Stay in listing mode so player can list more items
-	if was_material:
+	if was_egg:
+		pending_market_action = "list_egg"
+		display_market_list_eggs()
+	elif was_material:
 		pending_market_action = "list_material"
 		display_market_list_materials()
 	else:
@@ -23434,7 +23584,9 @@ func _handle_market_cancel_success(message: Dictionary):
 	"""Handle successful listing cancellation."""
 	var item_name = message.get("item_name", "item")
 	var refund = int(message.get("refund", 0))
-	display_game("[color=#00FF00]Listing cancelled! %s returned to inventory.[/color]" % item_name)
+	var item_type = message.get("item_type", "")
+	var dest = "incubator" if item_type == "egg" else "inventory"
+	display_game("[color=#00FF00]Listing cancelled! %s returned to %s.[/color]" % [item_name, dest])
 	if refund > 0:
 		display_game("[color=#FF8800]Buy-back cost: %s Valor[/color]" % format_number(refund))
 	# Refresh my listings

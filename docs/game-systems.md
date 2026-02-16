@@ -793,12 +793,13 @@ Players trade items through the Open Market at trading post `$` tiles.
 | Materials | Material gold value / 3 (min 1) |
 | Tools | Tier base (10-250) × rarity multiplier (0.5-8) |
 | Monster Parts | Tier × 8 |
+| Companion Eggs | Tier base (200-300K) × sub-tier mult × variant rarity mult × bonus mult |
 
 ### Market Features
 
-- **Stacking:** Identical non-equipment listings (same name, price, seller) merge into stacks
+- **Stacking:** Identical non-equipment listings (same name, price, seller) merge into stacks. Eggs and equipment are always unique (never stacked).
 - **Sort modes:** Category, Price ▲/▼, Name A-Z, Newest
-- **Category filter:** All, Equipment, Consumable, Rune, Material, Monster Part
+- **Category filter:** All, Equipment, Egg, Consumable, Rune, Material, Monster Part
 - **Category dividers:** Visual separators when browsing "All" with Category sort
 - **Bulk listing:** List All Equipment / All Items / All Materials in one action
 - **Partial buying:** Choose quantity when purchasing material stacks
@@ -806,6 +807,7 @@ Players trade items through the Open Market at trading post `$` tiles.
 ### Supply Categories
 
 - `equipment` — Gear with slots (weapon, armor, etc.)
+- `egg` — Companion eggs (listed from incubator, returned to incubator on buy/cancel)
 - `consumable` — Potions, scrolls, food
 - `rune` — Rune items
 - `material_tN` — Crafting materials by tier (1-6)

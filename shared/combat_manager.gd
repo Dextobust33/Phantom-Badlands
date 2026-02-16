@@ -3381,6 +3381,8 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
 
 	# Apply effect
+	# Check for crafted item's own effect data (quality-scaled amounts from recipe)
+	var item_effect = item.get("effect", {})
 	if effect.has("heal"):
 		# Healing potion - hybrid flat + % max HP
 		var heal_amount: int
@@ -3388,6 +3390,9 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 			# Elixir: pure % max HP heal
 			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
 			heal_amount = int(character.get_total_max_hp() * elixir_pct / 100.0)
+		elif item_effect.get("type", "") == "heal" and item_effect.has("amount"):
+			# Crafted potion: use item's own quality-scaled amount
+			heal_amount = int(item_effect.get("amount", 0))
 		elif tier_data.has("healing"):
 			# Tier-based: flat + % max HP
 			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
@@ -3408,7 +3413,11 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 
 		# Hybrid flat + % max resource
 		var resource_amount: int
-		if tier_data.has("resource"):
+		var item_effect_type = item_effect.get("type", "")
+		if item_effect_type in ["restore_mana", "restore_stamina", "restore_energy"] and item_effect.has("amount"):
+			# Crafted potion: use item's own quality-scaled amount
+			resource_amount = int(item_effect.get("amount", 0))
+		elif tier_data.has("resource"):
 			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
 		elif tier_data.has("healing"):
 			resource_amount = int(tier_data.healing * 0.6)

@@ -54,22 +54,34 @@ const SALVAGE_RARITY_MULT = {
 	"common": 0.5, "uncommon": 0.7, "rare": 1.0, "epic": 1.3, "legendary": 1.6, "artifact": 2.0
 }
 
-# Enchantment stat → rune recipe materials (approximate cost of the rune that grants this stat)
+# Stat key → rune recipe materials (approximate cost of the rune that grants this stat)
+# Keys use BASE names (no _bonus suffix) — lookup normalizes both "attack" and "attack_bonus" → "attack"
 const SALVAGE_ENCHANT_MATERIALS = {
-	"attack_bonus": {"monster_part": 3, "enchant": 3},
-	"defense_bonus": {"monster_part": 3, "enchant": 3},
-	"hp_bonus": {"monster_part": 3, "enchant": 3},
-	"speed_bonus": {"monster_part": 3, "enchant": 3},
-	"mana_bonus": {"monster_part": 3, "enchant": 3},
-	"stamina_bonus": {"monster_part": 3, "enchant": 2},
-	"energy_bonus": {"monster_part": 3, "enchant": 2},
-	"str_bonus": {"monster_part": 3, "enchant": 2},
-	"con_bonus": {"monster_part": 3, "enchant": 2},
-	"dex_bonus": {"monster_part": 3, "enchant": 2},
-	"int_bonus": {"monster_part": 3, "enchant": 2},
-	"wis_bonus": {"monster_part": 3, "enchant": 2},
-	"wits_bonus": {"monster_part": 3, "enchant": 2},
+	"attack": {"monster_part": 3, "enchant": 3},
+	"defense": {"monster_part": 3, "enchant": 3},
+	"hp": {"monster_part": 3, "enchant": 3},
+	"speed": {"monster_part": 3, "enchant": 3},
+	"mana": {"monster_part": 3, "enchant": 3},
+	"stamina": {"monster_part": 3, "enchant": 2},
+	"energy": {"monster_part": 3, "enchant": 2},
+	"str": {"monster_part": 3, "enchant": 2},
+	"con": {"monster_part": 3, "enchant": 2},
+	"dex": {"monster_part": 3, "enchant": 2},
+	"int": {"monster_part": 3, "enchant": 2},
+	"wis": {"monster_part": 3, "enchant": 2},
+	"wits": {"monster_part": 3, "enchant": 2},
 }
+
+# Proc effect → approximate rune material cost (proc runes use rare monster parts + high-tier enchant mats)
+const SALVAGE_PROC_MATERIALS = {
+	"lifesteal": {"monster_part": 5, "enchant": 4},
+	"shocking": {"monster_part": 5, "enchant": 4},
+	"damage_reflect": {"monster_part": 5, "enchant": 4},
+	"execute": {"monster_part": 5, "enchant": 5},
+}
+
+# Keys to skip when reading affixes dict (metadata, not stat bonuses)
+const SALVAGE_AFFIX_SKIP_KEYS = ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance"]
 
 # Monster parts by tier (for enchantment salvage)
 const SALVAGE_MONSTER_PART_TIERS = ["orc_tooth", "skeleton_bone", "troll_charm", "ogre_ear", "demon_horn", "hydra_scale", "iron_golem_plate", "iron_golem_plate", "iron_golem_plate"]
@@ -87,34 +99,59 @@ func get_salvage_value(item: Dictionary) -> Dictionary:
 	if not recipe_mats.is_empty():
 		for mat_id in recipe_mats:
 			_add_to_salvage_pool(materials_pool, mat_id, int(recipe_mats[mat_id]))
-	elif _is_equipment_type(item_type):
+	# Compute tier info once for the whole function
+	var level = int(item.get("level", 1))
+	var tier_index = clampi(int(level / 15), 0, 8)
+
+	if recipe_mats.is_empty() and _is_equipment_type(item_type):
 		# 2. For equipment without a recipe match (drops), use slot+tier template
 		var slot = Character.get_item_slot_from_type(item_type)
 		if slot == "":
 			slot = "weapon"
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
 		var template = _get_equipment_craft_template(slot, tier_index)
 		for mat_id in template:
 			_add_to_salvage_pool(materials_pool, mat_id, template[mat_id])
 
-	# 3. Add enchantment materials (rune costs for each applied enchantment)
+	# 3. Add materials for stat bonuses from affixes (drops + applied runes) and enchantments (crafting table)
+	var _seen_stats: Dictionary = {}
+	# Check affixes (dropped item random stats + applied rune stats)
+	var affixes = item.get("affixes", {})
+	for key in affixes:
+		if key in SALVAGE_AFFIX_SKIP_KEYS:
+			continue
+		var base_key = _normalize_stat_key(key)
+		if _seen_stats.has(base_key):
+			continue
+		_seen_stats[base_key] = true
+		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
+		for mat_type in rune_template:
+			var qty = int(rune_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
+	# Check enchantments (from enchanting table / enhancement scrolls)
 	var enchantments = item.get("enchantments", {})
-	if not enchantments.is_empty():
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
-		for stat in enchantments:
-			var rune_template = SALVAGE_ENCHANT_MATERIALS.get(stat, {})
-			for mat_type in rune_template:
-				var qty = int(rune_template[mat_type])
-				var mat_id = _resolve_salvage_material(mat_type, tier_index)
-				_add_to_salvage_pool(materials_pool, mat_id, qty)
+	for key in enchantments:
+		var base_key = _normalize_stat_key(key)
+		if _seen_stats.has(base_key):
+			continue
+		_seen_stats[base_key] = true
+		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
+		for mat_type in rune_template:
+			var qty = int(rune_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
+	# Check proc effects (from proc runes like lifesteal, shocking, etc.)
+	var proc_effects = item.get("proc_effects", {})
+	for proc_type in proc_effects:
+		var proc_template = SALVAGE_PROC_MATERIALS.get(proc_type, {})
+		for mat_type in proc_template:
+			var qty = int(proc_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
 
 	# 4. Add upgrade materials (each upgrade used materials)
 	var upgrades = int(item.get("upgrades_applied", 0))
 	if upgrades > 0:
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
 		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
 		# Each upgrade costs ~2 ore, return half
 		_add_to_salvage_pool(materials_pool, ore, upgrades)
@@ -131,8 +168,6 @@ func get_salvage_value(item: Dictionary) -> Dictionary:
 
 	# Ensure at least something is returned
 	if result_materials.is_empty():
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
 		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
 		result_materials[ore] = 1
 
@@ -154,27 +189,50 @@ func get_salvage_preview(item: Dictionary) -> Dictionary:
 		var slot = Character.get_item_slot_from_type(item_type)
 		if slot == "":
 			slot = "weapon"
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
-		var template = _get_equipment_craft_template(slot, tier_index)
+		var p_level = int(item.get("level", 1))
+		var p_tier_index = clampi(int(p_level / 15), 0, 8)
+		var template = _get_equipment_craft_template(slot, p_tier_index)
 		for mat_id in template:
 			_add_to_salvage_pool(materials_pool, mat_id, template[mat_id])
 
+	# Add materials for stat bonuses (affixes + enchantments + proc effects)
+	var level = int(item.get("level", 1))
+	var tier_index = clampi(int(level / 15), 0, 8)
+	var _seen_stats: Dictionary = {}
+	var affixes = item.get("affixes", {})
+	for key in affixes:
+		if key in SALVAGE_AFFIX_SKIP_KEYS:
+			continue
+		var base_key = _normalize_stat_key(key)
+		if _seen_stats.has(base_key):
+			continue
+		_seen_stats[base_key] = true
+		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
+		for mat_type in rune_template:
+			var qty = int(rune_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
 	var enchantments = item.get("enchantments", {})
-	if not enchantments.is_empty():
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
-		for stat in enchantments:
-			var rune_template = SALVAGE_ENCHANT_MATERIALS.get(stat, {})
-			for mat_type in rune_template:
-				var qty = int(rune_template[mat_type])
-				var mat_id = _resolve_salvage_material(mat_type, tier_index)
-				_add_to_salvage_pool(materials_pool, mat_id, qty)
+	for key in enchantments:
+		var base_key = _normalize_stat_key(key)
+		if _seen_stats.has(base_key):
+			continue
+		_seen_stats[base_key] = true
+		var rune_template = SALVAGE_ENCHANT_MATERIALS.get(base_key, {})
+		for mat_type in rune_template:
+			var qty = int(rune_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
+	var proc_effects = item.get("proc_effects", {})
+	for proc_type in proc_effects:
+		var proc_template = SALVAGE_PROC_MATERIALS.get(proc_type, {})
+		for mat_type in proc_template:
+			var qty = int(proc_template[mat_type])
+			var mat_id = _resolve_salvage_material(mat_type, tier_index)
+			_add_to_salvage_pool(materials_pool, mat_id, qty)
 
 	var upgrades = int(item.get("upgrades_applied", 0))
 	if upgrades > 0:
-		var level = int(item.get("level", 1))
-		var tier_index = clampi(int(level / 15), 0, 8)
 		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
 		_add_to_salvage_pool(materials_pool, ore, upgrades)
 
@@ -194,6 +252,12 @@ func _add_to_salvage_pool(pool: Dictionary, mat_id: String, qty: int):
 		pool[mat_id] += qty
 	else:
 		pool[mat_id] = qty
+
+func _normalize_stat_key(key: String) -> String:
+	"""Normalize stat key: strip _bonus suffix so both 'attack' and 'attack_bonus' → 'attack'."""
+	if key.ends_with("_bonus"):
+		return key.substr(0, key.length() - 6)
+	return key
 
 func _resolve_salvage_material(mat_type: String, tier_index: int) -> String:
 	"""Resolve a generic material type (ore, leather, enchant, monster_part) to a specific material ID."""
@@ -3899,6 +3963,23 @@ func _is_equipment_type(item_type: String) -> bool:
 		item_type.begins_with("boots_") or item_type.begins_with("ring_") or
 		item_type.begins_with("amulet_") or item_type == "artifact")
 
+const EGG_TIER_BASE_VALOR = {
+	1: 200, 2: 500, 3: 1200, 4: 3000, 5: 8000,
+	6: 20000, 7: 50000, 8: 120000, 9: 300000
+}
+
+func calculate_egg_valor(egg: Dictionary) -> int:
+	"""Calculate valor for a companion egg based on tier, sub-tier, variant rarity, and bonuses."""
+	var tier = int(egg.get("tier", 1))
+	var base = EGG_TIER_BASE_VALOR.get(tier, 200)
+	var sub_tier = int(egg.get("sub_tier", 1))
+	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.15
+	var variant_rarity = int(egg.get("variant_rarity", 10))
+	var rarity_mult = 1.0 + (10 - variant_rarity) * 0.3
+	var bonus_count = egg.get("bonuses", {}).size()
+	var bonus_mult = 1.0 + bonus_count * 0.1
+	return maxi(1, int(base * sub_tier_mult * rarity_mult * bonus_mult))
+
 func calculate_base_valor(item: Dictionary) -> int:
 	"""Calculate base valor for listing an item on the Open Market.
 	All items reflect their true cost: raw materials by gathering difficulty,
@@ -3975,6 +4056,10 @@ func calculate_base_valor(item: Dictionary) -> int:
 	if item.has("monster_tier") or item_type == "monster_part":
 		var tier = int(item.get("monster_tier", item.get("tier", 1)))
 		return tier * 8
+
+	# Eggs — companion eggs use dedicated valor formula
+	if item.get("type", "") == "egg":
+		return calculate_egg_valor(item)
 
 	# Fallback — try recipe lookup by name
 	var recipe_valor = _find_recipe_valor_by_name(item_name)
@@ -4063,6 +4148,8 @@ func _find_recipe_valor_by_name(item_name: String) -> int:
 
 func get_supply_category(item: Dictionary) -> String:
 	"""Determine the supply category for dynamic pricing."""
+	if item.get("type", "") == "egg":
+		return "egg"
 	if _is_equipment_type(item.get("type", "")):
 		return "equipment"
 	if item.get("is_consumable", false):
