@@ -13564,7 +13564,7 @@ func update_currency_display():
 	if not has_character:
 		return
 
-	var valor = int(character_data.get("valor", 0))
+	var valor = int(character_data.get("valor", account_valor))
 	var projected_rank = int(character_data.get("projected_rank", 0))
 
 	if gold_label:
