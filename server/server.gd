@@ -161,8 +161,8 @@ const GUARD_HIRE_FOOD_COST = 5
 const GUARD_FEED_FOOD_COST = 3
 const GUARD_FEED_DAYS_ADDED = 3
 const GUARD_MAX_FOOD_DAYS = 14
-const GUARD_BASE_RADIUS = 5
-const GUARD_TOWER_RADIUS = 15
+const GUARD_BASE_RADIUS = 15
+const GUARD_TOWER_RADIUS = 45
 const GUARD_FOOD_MATERIALS = ["minnow", "trout", "pike", "swordfish", "leviathan", "abyssal_eel",
 	"clover", "sage", "moonpetal", "bloodroot", "starbloom", "voidpetal"]
 const GUARD_DECAY_CHECK_INTERVAL = 60.0  # Check guard decay every 60 seconds

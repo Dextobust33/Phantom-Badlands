@@ -18722,8 +18722,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.130 changes
+	display_game("[color=#00FF00]v0.9.130[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Guard Radius Increase[/color]")
+	display_game("  • Guard encounter suppression radius tripled (5 → 15 tiles)")
+	display_game("  • Tower guard radius tripled (15 → 45 tiles)")
+	display_game("  • Guards now create meaningful safe corridors between posts")
+	display_game("")
+
 	# v0.9.129 changes
-	display_game("[color=#00FF00]v0.9.129[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.129[/color]")
 	display_game("  [color=#FFD700]Dungeon Expansion[/color]")
 	display_game("  • Step pressure: each floor has a step limit (60-100 by tier)")
 	display_game("  • Warnings at 75%/90% of steps, collapse at 100% with penalties")
@@ -18771,18 +18779,6 @@ func display_changelog():
 	display_game("  • Visual minigames for gathering (ASCII art choices)")
 	display_game("  • Dungeon boss fix, momentum display, crafting level sync")
 	display_game("  • Salvage variety improvements")
-	display_game("")
-
-	# v0.9.125 changes
-	display_game("[color=#00FFFF]v0.9.125[/color]")
-	display_game("  [color=#FFD700]Monster Part Crafting & Material Fixes[/color]")
-	display_game("  • Rune recipes now accept ANY matching part type within tier range!")
-	display_game("  • e.g., Minor Rune of Attack takes any Fang/Tooth/Claw/Horn (T1-T2)")
-	display_game("  • 13 stat groups × 3 tier ranges = every monster part is useful")
-	display_game("  • Recipe display shows group name + tier range with owned count")
-	display_game("  • Stone and wood now drop from T1-T2 combat (early-game fix)")
-	display_game("  • Increased stone yield from T1 mining")
-	display_game("  • Added recipes for rare_fish, legendary_fish, monster_gem, and more")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
