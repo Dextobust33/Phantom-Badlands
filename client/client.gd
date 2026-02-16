@@ -6434,7 +6434,7 @@ func update_action_bar():
 				{"label": "Back", "action_type": "local", "action_data": "market_my_back", "enabled": true},
 				{"label": "Prev Page", "action_type": "local", "action_data": "market_my_prev", "enabled": market_my_page > 0},
 				{"label": "Next Page", "action_type": "local", "action_data": "market_my_next", "enabled": market_my_page < _my_pages - 1},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Pull All", "action_type": "local", "action_data": "market_pull_all", "enabled": market_listings.size() > 0},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9 Cancel", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9112,6 +9112,8 @@ func execute_local_action(action: String):
 			market_my_page += 1
 			display_market_my_listings()
 			update_action_bar()
+		"market_pull_all":
+			send_to_server({"type": "market_cancel_all"})
 		"market_prev_page":
 			if market_page > 0:
 				market_page -= 1
@@ -15082,6 +15084,8 @@ func handle_server_message(message: Dictionary):
 			_handle_market_error(message)
 		"market_cancel_success":
 			_handle_market_cancel_success(message)
+		"market_cancel_all_success":
+			_handle_market_cancel_all_success(message)
 		"market_list_all_success":
 			_handle_market_list_all_success(message)
 		"market_start":
@@ -23364,6 +23368,14 @@ func _handle_market_cancel_success(message: Dictionary):
 	display_game("[color=#00FF00]Listing cancelled! %s returned to inventory.[/color]" % item_name)
 	if refund > 0:
 		display_game("[color=#FF8800]Buy-back cost: %s Valor[/color]" % format_number(refund))
+	# Refresh my listings
+	send_to_server({"type": "market_my_listings"})
+
+func _handle_market_cancel_all_success(message: Dictionary):
+	"""Handle successful pull-all listings."""
+	var msg = message.get("message", "Listings pulled.")
+	account_valor = int(message.get("total_valor", account_valor))
+	display_game(msg)
 	# Refresh my listings
 	send_to_server({"type": "market_my_listings"})
 

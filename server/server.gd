@@ -1126,6 +1126,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_market_my_listings(peer_id, message)
 		"market_cancel":
 			handle_market_cancel(peer_id, message)
+		"market_cancel_all":
+			handle_market_cancel_all(peer_id, message)
 		"market_list_all":
 			handle_market_list_all(peer_id, message)
 		_:
@@ -9478,6 +9480,83 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		"item_name": item.get("name", "item"),
 		"valor_deducted": base_valor,
 		"total_valor": persistence.get_valor(account_id)
+	})
+	send_character_update(peer_id)
+
+func handle_market_cancel_all(peer_id: int, message: Dictionary):
+	"""Pull all own listings back to inventory, limited by free space."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var my_listings = persistence.get_all_listings_by_account(account_id)
+	if my_listings.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You have no active listings."})
+		return
+
+	var current_valor = persistence.get_valor(account_id)
+	var free_slots = Character.MAX_INVENTORY_SIZE - character.inventory.size()
+	var pulled_count = 0
+	var total_valor_deducted = 0
+	var skipped_no_space = 0
+	var skipped_no_valor = 0
+
+	for listing in my_listings:
+		var item = listing.get("item", {})
+		var base_valor = int(listing.get("base_valor", 0))
+		var listing_id = listing.get("listing_id", "")
+		var post_id = listing.get("post_id", "")
+		var is_material = item.get("type", "") == "material" or item.has("material_type")
+
+		# Check if we can afford to cancel (valor was paid upfront)
+		if current_valor < base_valor:
+			skipped_no_valor += 1
+			continue
+
+		# Materials go to crafting_materials (no inventory slot needed)
+		if is_material:
+			var mat_name = item.get("material_type", item.get("name", ""))
+			var qty = int(listing.get("quantity", 1))
+			if not character.crafting_materials.has(mat_name):
+				character.crafting_materials[mat_name] = 0
+			character.crafting_materials[mat_name] += qty
+		else:
+			# Non-materials need inventory space
+			if free_slots <= 0:
+				skipped_no_space += 1
+				continue
+			character.inventory.append(item)
+			free_slots -= 1
+
+		# Deduct valor and remove listing
+		persistence.spend_valor(account_id, base_valor)
+		current_valor -= base_valor
+		total_valor_deducted += base_valor
+		persistence.remove_market_listing(post_id, listing_id)
+		pulled_count += 1
+
+	if pulled_count == 0:
+		var reason = "Not enough Valor to cancel listings." if skipped_no_valor > 0 else "Inventory full."
+		send_to_peer(peer_id, {"type": "market_error", "message": reason})
+		return
+
+	save_character(peer_id)
+
+	var msg = "[color=#00FF00]Pulled %d listing%s back.[/color]" % [pulled_count, "s" if pulled_count != 1 else ""]
+	if total_valor_deducted > 0:
+		msg += " [color=#FF8800](-%d Valor refunded to market)[/color]" % total_valor_deducted
+	if skipped_no_space > 0:
+		msg += "\n[color=#FF4444]%d item%s skipped — inventory full.[/color]" % [skipped_no_space, "s" if skipped_no_space != 1 else ""]
+	if skipped_no_valor > 0:
+		msg += "\n[color=#FF4444]%d listing%s skipped — not enough Valor.[/color]" % [skipped_no_valor, "s" if skipped_no_valor != 1 else ""]
+
+	send_to_peer(peer_id, {
+		"type": "market_cancel_all_success",
+		"pulled_count": pulled_count,
+		"valor_deducted": total_valor_deducted,
+		"total_valor": persistence.get_valor(account_id),
+		"message": msg
 	})
 	send_character_update(peer_id)
 

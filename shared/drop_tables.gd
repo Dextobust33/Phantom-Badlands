@@ -3779,6 +3779,13 @@ func _calculate_item_value(rarity: String, level: int) -> int:
 	var level_multiplier = 1.0 + (level * level) / 100.0
 	return int(base * level_multiplier)
 
+func _is_equipment_type(item_type: String) -> bool:
+	"""Check if an item type maps to an equipment slot (weapon_, armor_, helm_, etc.)."""
+	return (item_type.begins_with("weapon_") or item_type.begins_with("armor_") or
+		item_type.begins_with("helm_") or item_type.begins_with("shield_") or
+		item_type.begins_with("boots_") or item_type.begins_with("ring_") or
+		item_type.begins_with("amulet_") or item_type == "artifact")
+
 func calculate_base_valor(item: Dictionary) -> int:
 	"""Calculate base valor for listing an item on the Open Market.
 	Equipment: tier-based (reflects crafting costs) × rarity multiplier.
@@ -3788,7 +3795,7 @@ func calculate_base_valor(item: Dictionary) -> int:
 
 	# Equipment — valor reflects what it costs to craft equivalent gear
 	# Base per tier approximates material costs for a full crafted piece
-	if item.has("rarity") and item.has("slot"):
+	if item.has("rarity") and _is_equipment_type(item_type):
 		var rarity = item.get("rarity", "common")
 		var level = int(item.get("level", 1))
 		var tier = get_tier_for_level(level)
@@ -3835,7 +3842,7 @@ func calculate_base_valor(item: Dictionary) -> int:
 
 func get_supply_category(item: Dictionary) -> String:
 	"""Determine the supply category for dynamic pricing."""
-	if item.has("slot"):
+	if _is_equipment_type(item.get("type", "")):
 		return "equipment"
 	if item.get("is_consumable", false):
 		return "consumable"
