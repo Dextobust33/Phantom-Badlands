@@ -312,6 +312,12 @@ func save_world_seed() -> void:
 		file.store_string(JSON.stringify({"seed": world_seed}, "\t"))
 		file.close()
 
+func regenerate_world_seed() -> void:
+	"""Generate a new random world seed and save it. Used during map/full wipe."""
+	world_seed = randi()
+	save_world_seed()
+	print("Regenerated world seed: %d" % world_seed)
+
 # ===== DIRECTORY MANAGEMENT =====
 
 func _ensure_world_directory() -> void:
@@ -410,11 +416,19 @@ func get_nearest_npc_post(world_x: int, world_y: int) -> Dictionary:
 func get_npc_post_at(world_x: int, world_y: int) -> Dictionary:
 	"""Get NPC post data if the player is inside a post's bounds. Returns {} if not."""
 	for post in npc_posts:
-		var px = int(post.get("x", 0))
-		var py = int(post.get("y", 0))
-		var half_size = int(post.get("size", 15)) / 2
-		if abs(world_x - px) <= half_size and abs(world_y - py) <= half_size:
-			return post
+		var bounds = post.get("bounds", {})
+		if not bounds.is_empty():
+			# New bounds-based check (compound shapes)
+			if world_x >= int(bounds.get("min_x", 0)) and world_x <= int(bounds.get("max_x", 0)) \
+					and world_y >= int(bounds.get("min_y", 0)) and world_y <= int(bounds.get("max_y", 0)):
+				return post
+		else:
+			# Legacy size-based fallback
+			var px = int(post.get("x", 0))
+			var py = int(post.get("y", 0))
+			var half_size = int(post.get("size", 15)) / 2
+			if abs(world_x - px) <= half_size and abs(world_y - py) <= half_size:
+				return post
 	return {}
 
 func is_npc_post_tile(world_x: int, world_y: int) -> bool:

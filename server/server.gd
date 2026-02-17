@@ -13,11 +13,17 @@ var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 @onready var pending_update_button = $VBox/ButtonRow/PendingUpdateButton
 @onready var cancel_update_button = $VBox/ButtonRow/CancelUpdateButton
 @onready var confirm_dialog = $ConfirmDialog
-@onready var map_wipe_button = $VBox/ButtonRow/MapWipeButton
-@onready var map_wipe_dialog = $MapWipeDialog
-@onready var map_wipe_final_dialog = $MapWipeFinalDialog
 @onready var broadcast_input = $VBox/BroadcastRow/BroadcastInput
 @onready var broadcast_button = $VBox/BroadcastRow/BroadcastButton
+# Wipe UI
+@onready var respawn_button = $VBox/WipeRow/RespawnButton
+@onready var map_seed_keep_market_button = $VBox/WipeRow/MapSeedKeepMarketButton
+@onready var map_seed_wipe_market_button = $VBox/WipeRow/MapSeedWipeMarketButton
+@onready var map_new_seed_button = $VBox/WipeRow/MapNewSeedButton
+@onready var full_wipe_button = $VBox/WipeRow/FullWipeButton
+@onready var wipe_confirm_dialog = $WipeConfirmDialog
+@onready var wipe_final_dialog = $WipeFinalDialog
+var pending_wipe_type: String = ""  # Tracks which wipe is being confirmed
 
 # Pending update shutdown state
 var pending_update_active: bool = false
@@ -306,13 +312,21 @@ func _ready():
 	if cancel_update_button:
 		cancel_update_button.pressed.connect(_on_cancel_update_pressed)
 
-	# Connect map wipe button and dialogs
-	if map_wipe_button:
-		map_wipe_button.pressed.connect(_on_map_wipe_button_pressed)
-	if map_wipe_dialog:
-		map_wipe_dialog.confirmed.connect(_on_map_wipe_step1_confirmed)
-	if map_wipe_final_dialog:
-		map_wipe_final_dialog.confirmed.connect(_on_map_wipe_final_confirmed)
+	# Connect wipe buttons
+	if respawn_button:
+		respawn_button.pressed.connect(_on_wipe_button.bind("respawn"))
+	if map_seed_keep_market_button:
+		map_seed_keep_market_button.pressed.connect(_on_wipe_button.bind("map_keep_market"))
+	if map_seed_wipe_market_button:
+		map_seed_wipe_market_button.pressed.connect(_on_wipe_button.bind("map_wipe_market"))
+	if map_new_seed_button:
+		map_new_seed_button.pressed.connect(_on_wipe_button.bind("map_new_seed"))
+	if full_wipe_button:
+		full_wipe_button.pressed.connect(_on_wipe_button.bind("full_wipe"))
+	if wipe_confirm_dialog:
+		wipe_confirm_dialog.confirmed.connect(_on_wipe_confirm_step1)
+	if wipe_final_dialog:
+		wipe_final_dialog.confirmed.connect(_on_wipe_confirm_final)
 
 func log_message(msg: String):
 	"""Log a message to console and server UI."""
@@ -326,20 +340,79 @@ func _on_restart_button_pressed():
 	if confirm_dialog:
 		confirm_dialog.popup_centered()
 
-func _on_map_wipe_button_pressed():
-	"""Show first confirmation dialog for map wipe."""
-	if map_wipe_dialog:
-		map_wipe_dialog.popup_centered()
+func _on_wipe_button(wipe_type: String):
+	"""Show confirmation dialog for a wipe action."""
+	pending_wipe_type = wipe_type
+	if not wipe_confirm_dialog:
+		return
+	match wipe_type:
+		"respawn":
+			wipe_confirm_dialog.title = "Confirm — Respawn Gatherables"
+			wipe_confirm_dialog.dialog_text = "RESPAWN GATHERABLES\n\nThis will reset all depleted mining, logging, and foraging nodes.\nPlayers can harvest them again immediately.\n\nNothing else is affected."
+			wipe_confirm_dialog.ok_button_text = "Respawn"
+		"map_keep_market":
+			wipe_confirm_dialog.title = "Confirm — Map Wipe (Same Seed, Keep Market)"
+			wipe_confirm_dialog.dialog_text = "MAP WIPE (Same Seed, Keep Market)\n\nWiped: World chunks, roads, guards, player posts, dungeons\nKept: Same world seed, market listings, characters, houses"
+			wipe_confirm_dialog.ok_button_text = "Continue"
+		"map_wipe_market":
+			wipe_confirm_dialog.title = "Confirm — Map Wipe (Same Seed, Wipe Market)"
+			wipe_confirm_dialog.dialog_text = "MAP WIPE (Same Seed, Wipe Market)\n\nWiped: World chunks, roads, guards, player posts, dungeons, market listings\nKept: Same world seed, characters, houses"
+			wipe_confirm_dialog.ok_button_text = "Continue"
+		"map_new_seed":
+			wipe_confirm_dialog.title = "Confirm — Map Wipe (New Seed)"
+			wipe_confirm_dialog.dialog_text = "MAP WIPE (New Seed)\n\nWiped: World chunks, roads, guards, player posts, dungeons, market listings\nNew world seed = new NPC post positions!\nKept: Characters, houses"
+			wipe_confirm_dialog.ok_button_text = "Continue"
+		"full_wipe":
+			wipe_confirm_dialog.title = "Confirm — FULL WIPE (Step 1 of 2)"
+			wipe_confirm_dialog.dialog_text = "FULL WIPE — DELETES EVERYTHING\n\nWiped: World, characters, accounts, houses, market,\nleaderboards, valor — ALL DATA\n\nThis cannot be undone. Continue to final confirmation?"
+			wipe_confirm_dialog.ok_button_text = "Continue"
+	wipe_confirm_dialog.popup_centered()
 
-func _on_map_wipe_step1_confirmed():
-	"""First confirmation passed — show final confirmation."""
-	if map_wipe_final_dialog:
-		map_wipe_final_dialog.popup_centered()
+func _on_wipe_confirm_step1():
+	"""First confirmation passed. Respawn executes immediately. Others go to final confirm."""
+	if pending_wipe_type == "respawn":
+		# Respawn is safe — execute immediately after single confirm
+		_execute_respawn_gatherables()
+		pending_wipe_type = ""
+		return
+	# All map/full wipes need a second confirmation
+	if not wipe_final_dialog:
+		return
+	match pending_wipe_type:
+		"map_keep_market":
+			wipe_final_dialog.title = "FINAL — Map Wipe (Keep Seed+Market)"
+			wipe_final_dialog.dialog_text = "This is your LAST CHANCE to cancel.\n\nAll world data will be wiped and regenerated\nusing the SAME seed.\nMarket listings will be preserved.\nCharacters and houses are safe."
+			wipe_final_dialog.ok_button_text = "WIPE MAP"
+		"map_wipe_market":
+			wipe_final_dialog.title = "FINAL — Map Wipe (Keep Seed)"
+			wipe_final_dialog.dialog_text = "This is your LAST CHANCE to cancel.\n\nAll world data AND market listings will be wiped.\nMap regenerated using the SAME seed.\nCharacters and houses are safe."
+			wipe_final_dialog.ok_button_text = "WIPE MAP + MARKET"
+		"map_new_seed":
+			wipe_final_dialog.title = "FINAL — Map Wipe (New Seed)"
+			wipe_final_dialog.dialog_text = "This is your LAST CHANCE to cancel.\n\nAll world data AND market listings will be wiped.\nA NEW world seed will be generated.\nNPC posts will be in DIFFERENT locations!\nCharacters and houses are safe."
+			wipe_final_dialog.ok_button_text = "WIPE MAP (NEW SEED)"
+		"full_wipe":
+			wipe_final_dialog.title = "FINAL CONFIRMATION — FULL WIPE (Step 2 of 2)"
+			wipe_final_dialog.dialog_text = "ABSOLUTELY EVERYTHING WILL BE DELETED.\n\nCharacters, accounts, houses, world, market,\nleaderboards, valor — ALL OF IT.\n\nServer restart will be required.\n\nARE YOU SURE?"
+			wipe_final_dialog.ok_button_text = "DELETE EVERYTHING"
+	wipe_final_dialog.popup_centered()
 
-func _on_map_wipe_final_confirmed():
-	"""Final confirmation — execute the map wipe."""
-	log_message("[WIPE] Map wipe initiated from server UI button")
-	_execute_map_wipe(-1)
+func _on_wipe_confirm_final():
+	"""Final confirmation — execute the wipe."""
+	match pending_wipe_type:
+		"map_keep_market":
+			log_message("[WIPE] Map wipe (same seed, keep market) from server UI")
+			_execute_map_wipe_same_seed(true)
+		"map_wipe_market":
+			log_message("[WIPE] Map wipe (same seed, wipe market) from server UI")
+			_execute_map_wipe_same_seed(false)
+		"map_new_seed":
+			log_message("[WIPE] Map wipe (new seed) from server UI")
+			_execute_map_wipe(-1)
+		"full_wipe":
+			log_message("[WIPE] Full wipe from server UI")
+			_execute_full_wipe(-1)
+	pending_wipe_type = ""
 
 func _on_broadcast_button_pressed():
 	"""Send broadcast message from button press."""
@@ -1102,6 +1175,8 @@ func handle_message(peer_id: int, message: Dictionary):
 		"request_character_list":
 			handle_list_characters(peer_id)
 		# Party system handlers
+		"pass_through":
+			handle_pass_through(peer_id, message)
 		"party_invite":
 			handle_party_invite(peer_id, message)
 		"party_invite_response":
@@ -2053,7 +2128,6 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check for player collision (can't move onto another player's space)
 	# Party members don't block each other (handled by snake movement)
 	if _is_non_party_player_at(new_pos.x, new_pos.y, peer_id):
-		# Check if bumped player is a valid party invite target
 		var bumped_peer_id = _get_player_at(new_pos.x, new_pos.y, peer_id)
 		if bumped_peer_id != -1:
 			var bumped_char = characters[bumped_peer_id]
@@ -2063,17 +2137,22 @@ func handle_move(peer_id: int, message: Dictionary):
 				can_invite = true
 			elif _is_party_leader(peer_id) and _get_party_size(peer_id) < PARTY_MAX_SIZE:
 				can_invite = true
-			# Target must not be in a party, combat, or dungeon
-			if can_invite and not party_membership.has(bumped_peer_id) \
-					and not combat_mgr.is_in_combat(bumped_peer_id) \
-					and not bumped_char.in_dungeon:
-				send_to_peer(peer_id, {
-					"type": "party_bump",
-					"target_name": bumped_char.name,
-					"target_level": bumped_char.level,
-					"target_class": bumped_char.class_type
-				})
-				return
+			# Target must not be in a party, combat, or dungeon to be invited
+			if can_invite and (party_membership.has(bumped_peer_id) \
+					or combat_mgr.is_in_combat(bumped_peer_id) \
+					or bumped_char.in_dungeon):
+				can_invite = false
+			# Always send player_bump with pass-through option
+			send_to_peer(peer_id, {
+				"type": "player_bump",
+				"bumped_name": bumped_char.name,
+				"bumped_level": bumped_char.level,
+				"bumped_class": bumped_char.class_type,
+				"can_invite": can_invite,
+				"target_x": new_pos.x,
+				"target_y": new_pos.y,
+			})
+			return
 		send_to_peer(peer_id, {
 			"type": "error",
 			"message": "Another player is blocking that path!"
@@ -3804,8 +3883,8 @@ func send_location_update(peer_id: int):
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
 
-	# Get nearby dungeon entrances for map display
-	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius)
+	# Get nearby dungeon entrances for map display (filtered to exclude other players' personal dungeons)
+	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius, peer_id)
 
 	# Get depleted node keys for map display (shows dim markers for depleted nodes)
 	var depleted_keys = chunk_manager.get_depleted_keys() if chunk_manager else depleted_nodes.keys()
@@ -8726,7 +8805,7 @@ func handle_trading_post_quests(peer_id: int):
 					# Fall back to showing nearest world dungeon
 					var dungeon_type = quest.get("dungeon_type", "")
 					var tier = 1 if quest_data.quest_id.begins_with("haven_") else 0
-					var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier)
+					var nearest = _find_nearest_dungeon_for_quest(tp_x, tp_y, dungeon_type, tier, peer_id)
 					if not nearest.is_empty():
 						description += "\n\n[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
 							nearest.dungeon_name, nearest.direction_text
@@ -10037,7 +10116,7 @@ func handle_get_quest_log(peer_id: int):
 
 				if not dungeon_type.is_empty():
 					var tier = 1 if qid.begins_with("haven_") else 0
-					var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier)
+					var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type, tier, peer_id)
 					if not nearest.is_empty():
 						direction_text = "[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [
 							nearest.dungeon_name, nearest.direction_text
@@ -12944,7 +13023,11 @@ func handle_job_commit(peer_id: int, message: Dictionary):
 		if job_name not in character.SPECIALTY_JOBS:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Invalid specialty job.[/color]"})
 			return
-		if character.job_levels.get(job_name, 1) < character.JOB_TRIAL_CAP:
+		# Accept either job_levels or crafting_skills being >= trial cap
+		var craft_skill = character.JOB_TO_CRAFT_SKILL.get(job_name, "")
+		var craft_lv = character.crafting_skills.get(craft_skill, 1) if craft_skill != "" else 0
+		var job_lv = character.job_levels.get(job_name, 1)
+		if job_lv < character.JOB_TRIAL_CAP and craft_lv < character.JOB_TRIAL_CAP:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]You must reach level %d in %s before committing.[/color]" % [character.JOB_TRIAL_CAP, job_name.capitalize()]})
 			return
 		character.commit_specialty_job(job_name)
@@ -14741,8 +14824,19 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	# Check NPC post proximity (3 tile buffer)
 	if chunk_manager:
 		for post in chunk_manager.get_npc_posts():
-			var post_half = int(post.get("size", 15)) / 2 + 3
-			if abs(tx - int(post.get("x", 0))) <= post_half and abs(ty - int(post.get("y", 0))) <= post_half:
+			var bounds = post.get("bounds", {})
+			var too_close_to_post = false
+			if not bounds.is_empty():
+				# Bounds-based check (compound shapes)
+				if tx >= int(bounds.get("min_x", 0)) - 3 and tx <= int(bounds.get("max_x", 0)) + 3 \
+						and ty >= int(bounds.get("min_y", 0)) - 3 and ty <= int(bounds.get("max_y", 0)) + 3:
+					too_close_to_post = true
+			else:
+				# Legacy size-based fallback
+				var post_half = int(post.get("size", 15)) / 2 + 3
+				if abs(tx - int(post.get("x", 0))) <= post_half and abs(ty - int(post.get("y", 0))) <= post_half:
+					too_close_to_post = true
+			if too_close_to_post:
 				send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to a town. Must be 3+ tiles away."})
 				return
 
@@ -16421,21 +16515,33 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	var spawn_y = 0
 	var max_attempts = 20
 
+	# Seed RNG with player-specific data so different players get different positions
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(str(peer_id) + quest_id + str(int(Time.get_unix_time_from_system())))
+
+	# Collect existing dungeon coordinates to avoid collisions
+	var existing_coords = {}
+	for eid in active_dungeons:
+		var ed = active_dungeons[eid]
+		existing_coords[Vector2i(ed.world_x, ed.world_y)] = true
+
 	for _attempt in range(max_attempts):
 		if character:
 			# Spawn dungeon 25-40 tiles from the player's current location
-			var distance = 25 + randi() % 16  # 25-40 tiles
-			var angle = randf() * TAU  # Random direction
-			spawn_x = int(character.x + cos(angle) * distance)
-			spawn_y = int(character.y + sin(angle) * distance)
+			var dist_offset = 25 + rng.randi() % 16  # 25-40 tiles
+			var angle = rng.randf() * TAU  # Random direction
+			spawn_x = int(character.x + cos(angle) * dist_offset)
+			spawn_y = int(character.y + sin(angle) * dist_offset)
 		else:
 			# Fallback to standard spawn location
 			var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
 			spawn_x = spawn_loc.x
 			spawn_y = spawn_loc.y
 
-		# Check if location is valid (not on a trading post or NPC post)
-		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) and not world_system.is_safe_zone(spawn_x, spawn_y):
+		# Check if location is valid (not on a trading post, NPC post, or existing dungeon)
+		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) \
+				and not world_system.is_safe_zone(spawn_x, spawn_y) \
+				and not existing_coords.has(Vector2i(spawn_x, spawn_y)):
 			break
 
 	# Calculate sub-tier based on distance from origin
@@ -16741,14 +16847,17 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 			}
 	return {}
 
-func get_visible_dungeons(center_x: int, center_y: int, radius: int) -> Array:
+func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
 	"""Get all dungeon entrances visible within the given radius.
-	Excludes completed dungeons (waiting to despawn)."""
+	Excludes completed dungeons and other players' personal quest dungeons."""
 	var visible = []
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
 		# Skip completed dungeons - they're waiting to despawn
 		if instance.get("completed_at", 0) > 0:
+			continue
+		# Skip other players' personal quest dungeons (they can't interact with them)
+		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
 			continue
 		var dx = abs(instance.world_x - center_x)
 		var dy = abs(instance.world_y - center_y)
@@ -16783,13 +16892,20 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 
 	return "%d tiles %s" % [distance, direction]
 
-func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: String, tier: int) -> Dictionary:
-	"""Find the nearest dungeon matching the quest requirements. Returns {x, y, distance, direction_text} or empty dict."""
+func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: String, tier: int, peer_id: int = -1) -> Dictionary:
+	"""Find the nearest dungeon matching the quest requirements. Returns {x, y, distance, direction_text} or empty dict.
+	Excludes other players' personal quest dungeons."""
 	var nearest = {}
 	var nearest_dist = 999999
 
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
+		# Skip completed dungeons
+		if instance.get("completed_at", 0) > 0:
+			continue
+		# Skip other players' personal quest dungeons
+		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
+			continue
 		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
 
 		# Check if this dungeon matches the quest requirements
@@ -21210,17 +21326,81 @@ func handle_gm_givetool(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gave %s (T%d, %d durability).[/color]" % [tool_item.name, tier, tool_item.durability]})
 
+func _execute_respawn_gatherables():
+	"""Respawn all depleted gathering nodes. Keeps everything else intact."""
+	var count = 0
+	if chunk_manager:
+		count = chunk_manager.depleted_nodes.size()
+		chunk_manager.depleted_nodes.clear()
+		chunk_manager.save_depleted_nodes()
+	else:
+		count = depleted_nodes.size()
+		depleted_nodes.clear()
+	# Refresh maps for connected players
+	for pid in characters:
+		send_location_update(pid)
+	log_message("[WIPE] Respawned %d gathering nodes." % count)
+
+func _execute_map_wipe_same_seed(keep_market: bool):
+	"""Execute map wipe using the SAME world seed. Optionally keep market listings."""
+	for pid in peers.keys():
+		send_to_peer(pid, {"type": "text", "message": "[color=#FF8800][SERVER] Map wipe in progress. The world is being reset.[/color]"})
+	if chunk_manager:
+		chunk_manager.wipe_all_chunks()
+		# NO regenerate_world_seed — use the same seed
+		var npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
+		chunk_manager.save_npc_posts(npc_posts)
+		for post in npc_posts:
+			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+		chunk_manager.save_dirty_chunks()
+		# Clear road paths
+		if FileAccess.file_exists(chunk_manager.PATHS_FILE):
+			DirAccess.remove_absolute(chunk_manager.PATHS_FILE)
+		_initialize_road_paths(npc_posts)
+		# Clear player-built tiles
+		persistence.clear_all_player_tiles()
+		persistence.clear_all_player_posts()
+		player_enclosures.clear()
+		player_post_names.clear()
+		enclosure_tile_lookup.clear()
+	else:
+		depleted_nodes.clear()
+	active_bounties.clear()
+	active_dungeons.clear()
+	dungeon_floors.clear()
+	dungeon_floor_rooms.clear()
+	dungeon_monsters.clear()
+	dungeon_traps.clear()
+	dungeon_gathered_materials.clear()
+	player_dungeon_instances.clear()
+	if not keep_market:
+		persistence.clear_all_market_data()
+	if FileAccess.file_exists("user://data/corpses.json"):
+		DirAccess.remove_absolute("user://data/corpses.json")
+	active_guards.clear()
+	persistence.save_guards(active_guards)
+	_update_guard_cache()
+	_check_dungeon_spawns()
+	for pid in characters:
+		send_location_update(pid)
+	var market_note = " Market preserved." if keep_market else ""
+	log_message("[WIPE] Map wipe complete (same seed).%s" % market_note)
+
 func _execute_full_wipe(admin_peer_id: int):
 	"""Execute full wipe — delete everything."""
 	for pid in peers.keys():
 		send_to_peer(pid, {"type": "text", "message": "[color=#FF0000][SERVER] Full wipe in progress. All data will be deleted.[/color]"})
 	if chunk_manager:
 		chunk_manager.wipe_all_chunks()
+		chunk_manager.regenerate_world_seed()
 		var npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
 		chunk_manager.save_npc_posts(npc_posts)
 		for post in npc_posts:
 			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
 		chunk_manager.save_dirty_chunks()
+		# Clear road paths (they depend on post positions which changed)
+		if FileAccess.file_exists(chunk_manager.PATHS_FILE):
+			DirAccess.remove_absolute(chunk_manager.PATHS_FILE)
 	var char_dir = DirAccess.open("user://data/characters/")
 	if char_dir:
 		char_dir.list_dir_begin()
@@ -21249,6 +21429,9 @@ func _execute_full_wipe(admin_peer_id: int):
 	enclosure_tile_lookup.clear()
 	persistence.clear_all_market_data()
 	persistence.clear_all_valor()
+	active_guards.clear()
+	persistence.save_guards(active_guards)
+	_update_guard_cache()
 	log_message("[WIPE] Full wipe complete. Server restart recommended.")
 	send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Full wipe complete. Restart the server.[/color]"})
 
@@ -21258,11 +21441,16 @@ func _execute_map_wipe(admin_peer_id: int):
 		send_to_peer(pid, {"type": "text", "message": "[color=#FF8800][SERVER] Map wipe in progress. The world is being reset.[/color]"})
 	if chunk_manager:
 		chunk_manager.wipe_all_chunks()
+		chunk_manager.regenerate_world_seed()
 		var npc_posts = NpcPostDatabaseScript.generate_posts(chunk_manager.world_seed)
 		chunk_manager.save_npc_posts(npc_posts)
 		for post in npc_posts:
 			NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
 		chunk_manager.save_dirty_chunks()
+		# Clear road paths (they depend on post positions which changed)
+		if FileAccess.file_exists(chunk_manager.PATHS_FILE):
+			DirAccess.remove_absolute(chunk_manager.PATHS_FILE)
+		_initialize_road_paths(npc_posts)
 		# Clear all player-built tiles (they don't survive map wipe)
 		persistence.clear_all_player_tiles()
 		persistence.clear_all_player_posts()
@@ -21282,10 +21470,13 @@ func _execute_map_wipe(admin_peer_id: int):
 	persistence.clear_all_market_data()
 	if FileAccess.file_exists("user://data/corpses.json"):
 		DirAccess.remove_absolute("user://data/corpses.json")
+	active_guards.clear()
+	persistence.save_guards(active_guards)
+	_update_guard_cache()
 	_check_dungeon_spawns()
 	for pid in characters:
 		send_location_update(pid)
-	log_message("[WIPE] Map wipe complete. World regenerated from seed.")
+	log_message("[WIPE] Map wipe complete. World regenerated with new seed.")
 	if admin_peer_id >= 0:
 		send_to_peer(admin_peer_id, {"type": "text", "message": "[color=#00FF00][WIPE] Map wipe complete. World regenerated from seed.[/color]"})
 
@@ -21449,6 +21640,39 @@ func _find_adjacent_empty(x: int, y: int, exclude_peers: Array) -> Vector2i:
 		if not occupied:
 			return Vector2i(tx, ty)
 	return Vector2i(x, y)  # Fallback: same position
+
+func handle_pass_through(peer_id: int, message: Dictionary):
+	"""Handle a player requesting to pass through another player's tile."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	# Don't allow pass-through during combat or in dungeons
+	if combat_mgr.is_in_combat(peer_id) or character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "Cannot pass through right now."})
+		return
+
+	var tx = int(message.get("target_x", 0))
+	var ty = int(message.get("target_y", 0))
+
+	# Validate target is adjacent (Manhattan distance 1)
+	if abs(tx - character.x) + abs(ty - character.y) != 1:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid pass-through target."})
+		return
+
+	# Validate another player is actually there
+	var blocking_peer = _get_player_at(tx, ty, peer_id)
+	if blocking_peer == -1:
+		# Player moved away, just do normal movement
+		send_to_peer(peer_id, {"type": "error", "message": "No one is blocking that tile anymore."})
+		return
+
+	# Move the player to the target tile (bypass collision check)
+	character.x = tx
+	character.y = ty
+
+	# Send location update (triggers map refresh, encounter checks etc.)
+	send_location_update(peer_id)
 
 func handle_party_invite(peer_id: int, message: Dictionary):
 	"""Handle a party invite request from a player."""

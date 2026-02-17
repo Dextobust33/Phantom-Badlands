@@ -648,6 +648,7 @@ var current_actions: Array[Dictionary] = []
 var inventory_mode: bool = false
 var inventory_page: int = 0  # Current page (0-indexed)
 var equip_page: int = 0  # Current page for filtered equip list (0-indexed)
+var unequip_page: int = 0  # Current page for unequip slot list (0-indexed)
 var use_page: int = 0  # Current page for filtered usable items list (0-indexed)
 var combat_use_page: int = 0  # Current page for combat usable items list (0-indexed)
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
@@ -886,6 +887,9 @@ var pending_party_invite_class: String = ""
 var pending_party_bump: String = ""     # Name of player we bumped (invite prompt)
 var pending_party_bump_level: int = 0
 var pending_party_bump_class: String = ""
+var bump_can_invite: bool = false       # Whether we can invite the bumped player
+var bump_target_x: int = 0             # Target tile for pass-through
+var bump_target_y: int = 0
 var party_lead_choice_pending: bool = false  # Waiting for Lead/Follow choice
 var party_lead_choice_name: String = ""      # Name of partner for Lead/Follow
 var party_lead_choice_partner_id: int = -1   # Peer ID of partner
@@ -1898,7 +1902,10 @@ func _process(delta):
 					elif pending_inventory_action == "use_item":
 						# Use item uses its own page for filtered list
 						selection_index = use_page * INVENTORY_PAGE_SIZE + i
-					elif pending_inventory_action in ["inspect_equipped_item", "unequip_item"]:
+					elif pending_inventory_action == "unequip_item":
+						# Unequip uses its own page for slot list
+						selection_index = unequip_page * INVENTORY_PAGE_SIZE + i
+					elif pending_inventory_action == "inspect_equipped_item":
 						# Equipped slot lists use direct index (no pages, no display_order)
 						selection_index = i
 					else:
@@ -2741,6 +2748,10 @@ func _process(delta):
 						move_dir = 6  # East
 
 				if move_dir > 0:
+					# Dismiss bump prompt on movement
+					if pending_party_bump != "":
+						pending_party_bump = ""
+						update_action_bar()
 					send_move(move_dir)
 					# Don't clear trading post UI - server will notify if we leave
 					if at_trading_post:
@@ -4805,11 +4816,11 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif pending_party_bump != "":
-		# Bumped a player - Invite or Cancel
+		# Bumped a player - Pass through, Invite (if possible), or Cancel
 		current_actions = [
-			{"label": "Invite", "action_type": "local", "action_data": "party_bump_invite", "enabled": true},
+			{"label": "Pass", "action_type": "local", "action_data": "bump_pass_through", "enabled": true},
+			{"label": "Invite", "action_type": "local", "action_data": "party_bump_invite", "enabled": bump_can_invite},
 			{"label": "Cancel", "action_type": "local", "action_data": "party_bump_cancel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -5857,9 +5868,12 @@ func update_action_bar():
 					if jlv >= 5:
 						commit_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
 			elif job_page == 1 and not specialty_committed_ab:
+				var cskills = character_data.get("crafting_skills", {})
+				var jtc = {"blacksmith": "blacksmithing", "builder": "construction", "alchemist": "alchemy", "scribe": "scribing", "enchanter": "enchanting"}
 				for jname in ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]:
 					var jlv = int(jlevels.get(jname, 1))
-					if jlv >= 5:
+					var clv = int(cskills.get(jtc.get(jname, ""), 1))
+					if jlv >= 5 or clv >= 5:
 						commit_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
 			# Pad to fill slots
 			while commit_buttons.size() < 5:
@@ -6225,6 +6239,24 @@ func update_action_bar():
 				{"label": "Equip", "action_type": "local", "action_data": "confirm_equip", "enabled": true},
 				{"label": "Cancel", "action_type": "local", "action_data": "cancel_equip_confirm", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "unequip_item":
+			# Unequip mode uses slot list with its own pagination
+			var unequip_slots = get_meta("unequip_slots", [])
+			var total_pages = max(1, int(ceil(float(unequip_slots.size()) / INVENTORY_PAGE_SIZE)))
+			var has_prev = unequip_page > 0
+			var has_next = unequip_page < total_pages - 1
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "inventory_cancel", "enabled": true},
+				{"label": "Prev Pg", "action_type": "local", "action_data": "unequip_prev_page", "enabled": has_prev},
+				{"label": "Next Pg", "action_type": "local", "action_data": "unequip_next_page", "enabled": has_next},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9088,6 +9120,20 @@ func execute_local_action(action: String):
 				# Re-prompt for current action
 				_reprompt_inventory_action()
 				update_action_bar()
+		"unequip_prev_page":
+			if unequip_page > 0:
+				unequip_page -= 1
+				game_output.clear()
+				_display_unequip_page()
+				update_action_bar()
+		"unequip_next_page":
+			var unequip_slots = get_meta("unequip_slots", [])
+			var unequip_total = max(1, int(ceil(float(unequip_slots.size()) / INVENTORY_PAGE_SIZE)))
+			if unequip_page < unequip_total - 1:
+				unequip_page += 1
+				game_output.clear()
+				_display_unequip_page()
+				update_action_bar()
 		"equip_prev_page":
 			if equip_page > 0:
 				equip_page -= 1
@@ -9556,8 +9602,13 @@ func execute_local_action(action: String):
 			settings_mode = false
 			enter_ability_mode()
 		# Party actions
-		"party_bump_invite":
+		"bump_pass_through":
 			if pending_party_bump != "":
+				send_to_server({"type": "pass_through", "target_x": bump_target_x, "target_y": bump_target_y})
+				pending_party_bump = ""
+				update_action_bar()
+		"party_bump_invite":
+			if pending_party_bump != "" and bump_can_invite:
 				send_to_server({"type": "party_invite", "target": pending_party_bump})
 				pending_party_bump = ""
 				update_action_bar()
@@ -12652,28 +12703,9 @@ func prompt_inventory_action(action_type: String):
 				return
 			pending_inventory_action = "unequip_item"
 			set_inventory_background("unequip")
-			var player_class = character_data.get("class", "")
-			var tool_labels = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Rod"}
-			# Display equipped items with numbers
-			display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
-			for i in range(slots_with_items.size()):
-				var slot = slots_with_items[i]
-				if slot.begins_with("tool:"):
-					var tkey = slot.substr(5)
-					var t = eq_tools.get(tkey, {})
-					var dur = t.get("durability", 0)
-					var max_dur = t.get("max_durability", dur)
-					display_game("%d. [color=#9ACD32]%s:[/color] [color=#9ACD32]%s[/color] (%d/%d)" % [i + 1, tool_labels.get(tkey, tkey), t.get("name", "?"), dur, max_dur])
-				else:
-					var item = equipped.get(slot)
-					var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-					var themed_name = _get_themed_item_name(item, player_class)
-					var slot_display = _get_themed_slot_name(slot, player_class)
-					display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot_display, rarity_color, themed_name])
-			display_game("")
-			display_game("[color=#FFD700]%s to unequip an item:[/color]" % get_selection_keys_text(slots_with_items.size()))
-			# Store slots for number key selection
+			unequip_page = 0
 			set_meta("unequip_slots", slots_with_items)
+			_display_unequip_page()
 			update_action_bar()
 
 		"inspect_equipped":
@@ -12726,13 +12758,12 @@ func prompt_inventory_action(action_type: String):
 			update_action_bar()
 
 func _show_unequip_slots():
-	"""Display equipped items for unequipping (used after unequip to show remaining)"""
+	"""Rebuild unequip slot list after an item was unequipped, then display current page."""
 	var equipped = character_data.get("equipped", {})
 	var slots_with_items = []
 	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 		if equipped.get(slot) != null:
 			slots_with_items.append(slot)
-	# Also include equipped tools
 	var eq_tools = character_data.get("equipped_tools", {})
 	for tslot in ["pickaxe", "axe", "sickle", "rod"]:
 		var t = eq_tools.get(tslot, {})
@@ -12745,29 +12776,45 @@ func _show_unequip_slots():
 		display_inventory()
 		return
 
+	set_meta("unequip_slots", slots_with_items)
+	# Clamp page to valid range after item removal
+	var total_pages = max(1, int(ceil(float(slots_with_items.size()) / INVENTORY_PAGE_SIZE)))
+	unequip_page = clamp(unequip_page, 0, total_pages - 1)
+	_display_unequip_page()
+	update_action_bar()
+
+func _display_unequip_page():
+	"""Display current page of equipped items for unequipping."""
+	var slots_with_items = get_meta("unequip_slots", [])
+	var equipped = character_data.get("equipped", {})
+	var eq_tools = character_data.get("equipped_tools", {})
 	var player_class = character_data.get("class", "")
 	var tool_labels = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Rod"}
-	# Display equipped items with numbers
-	display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]")
-	for i in range(slots_with_items.size()):
+	var total_pages = max(1, int(ceil(float(slots_with_items.size()) / INVENTORY_PAGE_SIZE)))
+	var start_idx = unequip_page * INVENTORY_PAGE_SIZE
+	var end_idx = mini(start_idx + INVENTORY_PAGE_SIZE, slots_with_items.size())
+	var page_label = " [color=#808080](Page %d/%d)[/color]" % [unequip_page + 1, total_pages] if total_pages > 1 else ""
+	display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]%s" % page_label)
+	for i in range(start_idx, end_idx):
 		var slot = slots_with_items[i]
+		var display_num = (i - start_idx) + 1
 		if slot.begins_with("tool:"):
 			var tkey = slot.substr(5)
 			var t = eq_tools.get(tkey, {})
 			var dur = t.get("durability", 0)
 			var max_dur = t.get("max_durability", dur)
-			display_game("%d. [color=#9ACD32]%s:[/color] [color=#9ACD32]%s[/color] (%d/%d)" % [i + 1, tool_labels.get(tkey, tkey), t.get("name", "?"), dur, max_dur])
+			display_game("%d. [color=#9ACD32]%s:[/color] [color=#9ACD32]%s[/color] (%d/%d)" % [display_num, tool_labels.get(tkey, tkey), t.get("name", "?"), dur, max_dur])
 		else:
 			var item = equipped.get(slot)
 			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 			var themed_name = _get_themed_item_name(item, player_class)
 			var slot_display = _get_themed_slot_name(slot, player_class)
-			display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [i + 1, slot_display, rarity_color, themed_name])
+			display_game("%d. [color=#AAAAAA]%s:[/color] [color=%s]%s[/color]" % [display_num, slot_display, rarity_color, themed_name])
 	display_game("")
-	display_game("[color=#FFD700]%s to unequip another item, or [%s] to go back:[/color]" % [get_selection_keys_text(slots_with_items.size()), get_action_key_name(0)])
-	# Store slots for number key selection
-	set_meta("unequip_slots", slots_with_items)
-	update_action_bar()
+	var page_hint = ""
+	if total_pages > 1:
+		page_hint = " [%s]Prev [%s]Next |" % [get_action_key_name(1), get_action_key_name(2)]
+	display_game("[color=#FFD700]Press 1-%d to unequip |%s [%s] Back[/color]" % [end_idx - start_idx, page_hint, get_action_key_name(0)])
 
 func _count_equipped_items(equipped: Dictionary) -> int:
 	"""Count number of equipped items"""
@@ -15448,15 +15495,21 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 
 		# Party system messages
-		"party_bump":
-			pending_party_bump = message.get("target_name", "")
-			pending_party_bump_level = message.get("target_level", 1)
-			pending_party_bump_class = message.get("target_class", "")
+		"player_bump":
+			pending_party_bump = message.get("bumped_name", "")
+			pending_party_bump_level = message.get("bumped_level", 1)
+			pending_party_bump_class = message.get("bumped_class", "")
+			bump_can_invite = message.get("can_invite", false)
+			bump_target_x = int(message.get("target_x", 0))
+			bump_target_y = int(message.get("target_y", 0))
 			display_game("")
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
-			display_game("[color=#00BFFF]%s[/color] (Lv%d %s)" % [pending_party_bump, pending_party_bump_level, pending_party_bump_class])
-			display_game("[color=#FFAA00]Invite to your party?[/color]")
-			display_game("[color=#808080][%s] Invite  |  [%s] Cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) is here." % [pending_party_bump, pending_party_bump_level, pending_party_bump_class])
+			var hint_parts = ["[%s] Pass" % get_action_key_name(0)]
+			if bump_can_invite:
+				hint_parts.append("[%s] Invite" % get_action_key_name(1))
+			hint_parts.append("[%s] Cancel" % get_action_key_name(2))
+			display_game("[color=#808080]%s[/color]" % "  |  ".join(hint_parts))
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
 
@@ -16251,17 +16304,24 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		var durability = item.get("durability", 0)
 		var max_durability = item.get("max_durability", 10)
 		var bonuses = item.get("tool_bonuses", {})
+		var save_count = item.get("max_saves", 0)
 		display_game("[color=#E6CC80]Tool Info:[/color]")
-		display_game("  [color=#FFFF00]Subtype:[/color] %s" % subtype.capitalize())
+		display_game("  [color=#FFFF00]Type:[/color] %s" % subtype.capitalize())
 		display_game("  [color=#FFFF00]Tier:[/color] %d" % tool_tier)
 		var dur_pct = float(durability) / max(max_durability, 1) * 100.0
 		var dur_color = "#00FF00" if dur_pct > 50 else "#FFFF00" if dur_pct > 20 else "#FF4444"
 		display_game("  [color=#FFFF00]Durability:[/color] [color=%s]%d/%d[/color]" % [dur_color, durability, max_durability])
+		display_game("")
+		display_game("[color=#E6CC80]Bonuses:[/color]")
 		var reveal_count = bonuses.get("reveals", 1 if bonuses.get("reveal", false) else 0)
 		if reveal_count > 0:
-			display_game("  [color=#00FF00]Reveals:[/color] Highlights the correct option %d time%s per session" % [reveal_count, "s" if reveal_count > 1 else ""])
-		if bonuses.get("save", false):
-			display_game("  [color=#00BFFF]Save:[/color] Prevents one wrong pick from ending your chain")
+			display_game("  [color=#00FF00]Reveals: %d[/color] — Highlights the correct option per session" % reveal_count)
+		else:
+			display_game("  [color=#808080]Reveals: 0[/color]")
+		if save_count > 0:
+			display_game("  [color=#00BFFF]Saves: %d[/color] — Prevents wrong picks from ending your chain" % save_count)
+		else:
+			display_game("  [color=#808080]Saves: 0[/color]")
 		display_game("")
 		var job_for_tool = {"pickaxe": "Mining", "axe": "Logging", "sickle": "Foraging", "rod": "Fishing"}.get(subtype, "Gathering")
 		display_game("[color=#808080]Used for %s. Durability decreases by 1 per session.[/color]" % job_for_tool)
@@ -18211,6 +18271,9 @@ func _clear_party_state():
 	pending_party_bump = ""
 	pending_party_bump_level = 0
 	pending_party_bump_class = ""
+	bump_can_invite = false
+	bump_target_x = 0
+	bump_target_y = 0
 	party_lead_choice_pending = false
 	party_lead_choice_name = ""
 	party_lead_choice_partner_id = -1
@@ -18703,8 +18766,10 @@ func display_job_overview():
 		display_game("")
 		if not specialty_committed:
 			var has_specialty_committable = false
+			var cskills_hint = character_data.get("crafting_skills", {})
 			for jname in specialty_jobs:
-				if int(jlevels.get(jname, 1)) >= 5:
+				var cs_name = JOB_TO_CRAFT_SKILL.get(jname, "")
+				if int(jlevels.get(jname, 1)) >= 5 or int(cskills_hint.get(cs_name, 1)) >= 5:
 					has_specialty_committable = true
 					break
 			if has_specialty_committable:
@@ -18820,8 +18885,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.133 changes
+	display_game("[color=#00FF00]v0.9.133[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]World & QOL[/color]")
+	display_game("  • NPC posts now have unique shapes (compound rooms with wings)")
+	display_game("  • Map wipes generate new world seed — posts, terrain, and content refresh")
+	display_game("  • Player pass-through: bump into a player and press Space to squeeze past")
+	display_game("  • Fixed: Personal dungeon quests no longer share between players")
+	display_game("  • Fixed: Other players' personal dungeons no longer visible on your map")
+	display_game("  • Server: 5 granular wipe options with confirmation dialogs")
+	display_game("")
+
 	# v0.9.132 changes
-	display_game("[color=#00FF00]v0.9.132[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.132[/color]")
 	display_game("  [color=#FFD700]Bug Fixes & Stability[/color]")
 	display_game("  • Market: Self-buyback now correctly applies markup pricing")
 	display_game("  • Market: Fixed race condition when two players buy simultaneously")
@@ -18857,31 +18933,10 @@ func display_changelog():
 	display_game("  • Warnings at 75%/90% of steps, collapse at 100% with penalties")
 	display_game("  • Gathering nodes (&) appear in dungeon floors — ore, herbs, crystals")
 	display_game("  • T7-9 dungeon crystals: Void Crystal, Abyssal Shard, Primordial Essence")
-	display_game("  • Hidden traps: rust (equipment wear), thief (material loss), teleport")
-	display_game("  • Triggered traps visible on the dungeon map as × markers")
 	display_game("  • Escape scrolls: the ONLY way to safely exit a dungeon (3 tiers)")
-	display_game("  • Treasure chests have 20% chance to drop escape scrolls")
-	display_game("  • Scribes can craft escape scrolls (Lv8/16/24)")
 	display_game("  • Boss kills now drop bonus materials (T7-9: guaranteed dungeon crystal)")
 	display_game("  • Flawless Run bonus: +20% XP for completing without collapse")
-	display_game("  • New endgame recipes: Void/Abyssal/Primordial Runes, elixirs, upgrades")
-	display_game("  • No free dungeon exits — fleeing combat relocates you on the same floor")
-	display_game("  • Rest in dungeons uses food materials (herbs, fish, berries, mushrooms)")
-	display_game("  • Dungeon entry warning about escape scrolls and collapse risk")
-	display_game("")
-
-	# v0.9.128 changes
-	display_game("[color=#00FFFF]v0.9.128[/color]")
-	display_game("  [color=#FFD700]Roads & Merchants[/color]")
-	display_game("  • Roads now form between NPC posts as players clear terrain!")
-	display_game("  • A* pathfinding builds roads through player-cleared corridors")
-	display_game("  • 10 wandering merchants follow roads between connected posts")
-	display_game("  • Bump a merchant on the road to browse their carried items")
-	display_game("  • Merchants equalize market supply — carry items between posts")
-	display_game("  • Walking on roads halves the monster encounter rate")
-	display_game("  • Player posts automatically connect to the road network")
-	display_game("  • Fixed: Legendary Adventurer encounter save crash")
-	display_game("  • Fixed: Buff scroll crash (get_total_strength/speed)")
+	display_game("  • No free dungeon exits — fleeing relocates you on the same floor")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20654,8 +20709,8 @@ func show_help():
 
 [b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
 [color=#C0C0C0]Guard Post:[/color] Construction Lv15 recipe. Place anywhere (10-tile spacing). Bump to interact.
-[color=#00FF00]Hire Guard:[/color] 50 Valor + 5 food (fish/herbs). Suppresses random encounters in 5-tile radius.
-[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower → radius jumps to 15 tiles!
+[color=#00FF00]Hire Guard:[/color] 50 Valor + 5 food (fish/herbs). Suppresses random encounters in 15-tile radius.
+[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower → radius jumps to 45 tiles!
 [color=#FF8800]Feeding:[/color] Guards need food. Initial=7 days. Feed 3 materials = +3 days (max 14). Unfed guards leave.
 [color=#808080]Map:[/color] [color=#00FF00]G[/color]=Active guard | [color=#555555]G[/color]=Empty post | [color=#FFD700]^[/color]=Tower boosting a guard
 [color=#808080]Wall Decay:[/color] Walls not part of an enclosure crumble after 72 hours. Enclosed walls are safe.

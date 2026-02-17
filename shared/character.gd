@@ -3103,19 +3103,27 @@ func get_crafting_skill(skill_name: String) -> int:
 
 func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
 	"""Add XP to a crafting skill. Returns {leveled_up, new_level, char_xp_gained}.
-	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x"""
+	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x
+	Crafting skills for uncommitted specialty jobs are capped at JOB_TRIAL_CAP."""
 	var skill = skill_name.to_lower()
 	if not crafting_xp.has(skill):
 		crafting_xp[skill] = 0
 	if not crafting_skills.has(skill):
 		crafting_skills[skill] = 1
 
+	# Cap crafting skills at trial cap for uncommitted specialty jobs
+	var matching_job = CRAFT_SKILL_TO_JOB.get(skill, "")
+	var craft_level_cap = 100
+	if matching_job != "" and matching_job in SPECIALTY_JOBS:
+		if not specialty_job_committed or specialty_job != matching_job:
+			craft_level_cap = JOB_TRIAL_CAP
+
 	crafting_xp[skill] += xp
 	var leveled_up = false
 	var current_level = crafting_skills[skill]
 	var xp_needed = _get_crafting_xp_needed(current_level)
 
-	while crafting_xp[skill] >= xp_needed and current_level < 100:
+	while crafting_xp[skill] >= xp_needed and current_level < craft_level_cap:
 		crafting_xp[skill] -= xp_needed
 		current_level += 1
 		crafting_skills[skill] = current_level
@@ -3218,13 +3226,20 @@ func commit_gathering_job(job_name: String) -> bool:
 	return true
 
 func commit_specialty_job(job_name: String) -> bool:
-	"""Commit to a specialty job. Returns true if successful."""
+	"""Commit to a specialty job. Returns true if successful.
+	Accepts either job_levels or crafting_skills being >= JOB_TRIAL_CAP."""
 	if specialty_job_committed:
 		return false
 	if job_name not in SPECIALTY_JOBS:
 		return false
-	if job_levels.get(job_name, 1) < JOB_TRIAL_CAP:
+	var craft_skill = JOB_TO_CRAFT_SKILL.get(job_name, "")
+	var craft_lv = crafting_skills.get(craft_skill, 1) if craft_skill != "" else 0
+	var job_lv = job_levels.get(job_name, 1)
+	if job_lv < JOB_TRIAL_CAP and craft_lv < JOB_TRIAL_CAP:
 		return false
+	# Sync job_levels up to trial cap if crafting skill got there first
+	if job_lv < JOB_TRIAL_CAP:
+		job_levels[job_name] = JOB_TRIAL_CAP
 	specialty_job = job_name
 	specialty_job_committed = true
 	return true

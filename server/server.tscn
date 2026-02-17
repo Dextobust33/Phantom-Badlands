@@ -134,12 +134,47 @@ custom_minimum_size = Vector2(120, 35)
 layout_mode = 2
 text = "Cancel Update"
 
-[node name="MapWipeButton" type="Button" parent="VBox/ButtonRow"]
-custom_minimum_size = Vector2(120, 35)
-layout_mode = 2
-text = "Map Wipe"
-
 [node name="Spacer" type="Control" parent="VBox/ButtonRow" unique_id=571777013]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="WipeLabel" type="Label" parent="VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "Wipe Options:"
+
+[node name="WipeRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RespawnButton" type="Button" parent="VBox/WipeRow"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+text = "Respawn Gatherables"
+
+[node name="MapSeedKeepMarketButton" type="Button" parent="VBox/WipeRow"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+text = "Map (Keep Seed+Market)"
+
+[node name="MapSeedWipeMarketButton" type="Button" parent="VBox/WipeRow"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+text = "Map (Keep Seed)"
+
+[node name="MapNewSeedButton" type="Button" parent="VBox/WipeRow"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+text = "Map (New Seed)"
+
+[node name="FullWipeButton" type="Button" parent="VBox/WipeRow"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.3, 0.3, 1)
+text = "FULL WIPE"
+
+[node name="WipeSpacer" type="Control" parent="VBox/WipeRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -151,26 +186,16 @@ ok_button_text = "Restart"
 dialog_text = "Are you sure you want to restart the server?
 All connected players will be disconnected."
 
-[node name="MapWipeDialog" type="ConfirmationDialog" parent="."]
-title = "Confirm Map Wipe — Step 1 of 2"
+[node name="WipeConfirmDialog" type="ConfirmationDialog" parent="."]
+title = "Confirm"
 initial_position = 1
-size = Vector2i(450, 150)
-ok_button_text = "Continue"
-dialog_text = "MAP WIPE will delete:
-• World chunks, roads, guards, player posts, market listings
+size = Vector2i(500, 180)
+ok_button_text = "Confirm"
+dialog_text = ""
 
-PRESERVED: Characters, Sanctuary, inventories, companions.
-
-Continue to final confirmation?"
-
-[node name="MapWipeFinalDialog" type="ConfirmationDialog" parent="."]
-title = "FINAL CONFIRMATION — Map Wipe"
+[node name="WipeFinalDialog" type="ConfirmationDialog" parent="."]
+title = "FINAL CONFIRMATION"
 initial_position = 1
-size = Vector2i(450, 150)
-ok_button_text = "WIPE MAP"
-dialog_text = "This is your LAST CHANCE to cancel.
-
-All world data will be permanently deleted.
-Characters and houses will be preserved.
-
-Are you absolutely sure?"
+size = Vector2i(500, 180)
+ok_button_text = "CONFIRM"
+dialog_text = ""
