@@ -19092,8 +19092,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.135 changes
+	display_game("[color=#00FF00]v0.9.135[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Corpse Improvements[/color]")
+	display_game("  • Corpses no longer spawn on impassable tiles (mountains, walls, water)")
+	display_game("  • Death broadcast now shows compass direction & rough distance to remains")
+	display_game("  • Compass hints when walking near fallen remains (within ~75 tiles)")
+	display_game("")
+
 	# v0.9.134 changes
-	display_game("[color=#00FF00]v0.9.134[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.134[/color]")
 	display_game("  [color=#FFD700]Leaderboard & Dungeon Fixes[/color]")
 	display_game("  • Leaderboard: Click any name to view their full death screen & final battle")
 	display_game("  • Dungeons: Escape scrolls now work correctly from inventory")
@@ -19137,14 +19145,6 @@ func display_changelog():
 	display_game("  • Market: Buy from inspection view with full item comparison")
 	display_game("  • Tutorial: New players get a guided walkthrough on first character")
 	display_game("  • Starter Safety: Halved encounter rate near Crossroads for low-level players")
-	display_game("")
-
-	# v0.9.130 changes
-	display_game("[color=#00FFFF]v0.9.130[/color]")
-	display_game("  [color=#FFD700]Guard Radius Increase[/color]")
-	display_game("  • Guard encounter suppression radius tripled (5 → 15 tiles)")
-	display_game("  • Tower guard radius tripled (15 → 45 tiles)")
-	display_game("  • Guards now create meaningful safe corridors between posts")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

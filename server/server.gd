@@ -2308,6 +2308,7 @@ func handle_move(peer_id: int, message: Dictionary):
 		characters[peer_id].set_meta("move_count", mc)
 		if mc % 20 == 0:
 			_check_nearby_player_posts(peer_id, new_pos.x, new_pos.y)
+			_check_nearby_corpses(peer_id, new_pos.x, new_pos.y)
 
 	# Check for wandering blacksmith encounter (3% when player has damaged gear)
 	if check_blacksmith_encounter(peer_id):
@@ -3872,6 +3873,15 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
 	var death_message = "[color=#FF4444]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
+
+	# Add corpse location hint to death broadcast if corpse was created
+	if not corpse.is_empty():
+		var cx = corpse.get("x", 0)
+		var cy = corpse.get("y", 0)
+		var corpse_dir = _get_compass_direction(0, 0, cx, cy)
+		var corpse_dist = int(round(sqrt(float(cx * cx + cy * cy)) / 10.0) * 10)
+		death_message += "\n[color=#FF6600]Their remains lie to the %s, roughly %d tiles from the Crossroads.[/color]" % [corpse_dir, corpse_dist]
+
 	for pid in peers.keys():
 		send_to_peer(pid, {
 			"type": "chat",
@@ -15398,6 +15408,18 @@ func _check_nearby_player_posts(peer_id: int, px: int, py: int):
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]You sense a player post to the %s...[/color]" % dir})
 				return  # One hint per check
 
+func _check_nearby_corpses(peer_id: int, px: int, py: int):
+	"""Check for nearby corpses and send a compass hint."""
+	var corpses = persistence.get_corpses()
+	for corpse in corpses:
+		var cx = corpse.get("x", -9999)
+		var cy = corpse.get("y", -9999)
+		var dist = max(abs(px - cx), abs(py - cy))
+		if dist <= 75 and dist > 0:
+			var dir = _get_compass_direction(px, py, cx, cy)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6600]You sense fallen remains to the %s...[/color]" % dir})
+			return  # One hint per check
+
 func _get_compass_direction(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
 	"""Get compass direction string from one position to another."""
 	var dx = to_x - from_x
@@ -20534,9 +20556,11 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	var distance = sqrt(float(death_x * death_x + death_y * death_y))
 	var spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
-	# Avoid spawning corpse on trading post tiles or inside player enclosures
-	for _attempt in range(10):
-		if not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y) and not enclosure_tile_lookup.has(Vector2i(spawn_location.x, spawn_location.y)):
+	# Avoid spawning corpse on impassable tiles, trading posts, or player enclosures
+	for _attempt in range(20):
+		var tile = chunk_manager.get_tile(spawn_location.x, spawn_location.y) if chunk_manager else {}
+		var blocked = tile.get("blocks_move", false)
+		if not blocked and not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y) and not enclosure_tile_lookup.has(Vector2i(spawn_location.x, spawn_location.y)):
 			break
 		spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
