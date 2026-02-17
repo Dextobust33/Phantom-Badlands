@@ -1627,17 +1627,18 @@ Phase 4 system: A* pathfinding roads between NPC posts, with merchants that foll
 
 ### Road Formation
 
-Roads form organically as players clear terrain between settlements:
+Roads form organically between settlements:
 
 1. **Desired Edges:** On server init, Kruskal's MST algorithm + extra redundant edges compute which post pairs SHOULD be connected (~26 edges for 18 posts)
 2. **Periodic Check:** Every 60 seconds, the server tries A* pathfinding on one unconnected pair
-3. **Strict Walkability:** Only player-cleared tiles count as walkable for road pathfinding:
+3. **NPC Post Roads (Strict Walkability):** Only player-cleared tiles count as walkable:
    - Depleted resource nodes (previously harvested/mined/chopped)
    - Modified empty tiles (tiles explicitly changed by player actions)
    - Existing structures (path, floor, door, tower, storage, post_marker tiles)
    - Procedurally-generated empty tiles do NOT count
-4. **Stamping:** When A* finds a valid path, `:` (path) tiles are stamped and persisted
-5. **Player Posts:** When a player builds an enclosure, it automatically connects to the nearest post in the road network
+4. **Player Post Roads (Permissive Pathfinding):** Any non-blocking tile is walkable. Roads form automatically through passable terrain without requiring players to clear corridors first.
+5. **Stamping:** When A* finds a valid path, `:` (path) tiles are stamped and persisted
+6. **Player Posts:** When a player builds an enclosure, it automatically connects to the nearest post in the road network
 
 ### A* Implementation
 
@@ -1647,28 +1648,27 @@ Roads form organically as players clear terrain between settlements:
 - Max 50,000 nodes explored per search (fails fast on uncleared terrain)
 - Paths exit NPC posts via the nearest door tile
 
-### Merchant System (10 wandering merchants)
+### Merchant System (1 per road segment)
 
 | Constant | Value |
 |----------|-------|
-| `TOTAL_WANDERING_MERCHANTS` | 10 |
 | `MERCHANT_SPEED` | 0.02 tiles/sec (~1 tile per 50 sec) |
 | `MERCHANT_REST_TIME` | 300 sec (5 minutes at each post) |
 | `MERCHANT_CARRY_CAPACITY` | 10 items max |
 | `MERCHANT_CHECK_INTERVAL` | 30 sec (arrival check) |
 | `ROAD_CHECK_INTERVAL` | 60 sec (pathfinding check) |
 
-**Merchant Circuits:**
-- Each merchant gets a 3-5 post circuit computed from the road graph
-- Deterministic based on merchant_idx and world seed
-- Elite merchants (index 0-1) patrol outer-zone circuits
-- Merchants cycle continuously: Post A -> Post B -> Post C -> Post A -> ...
-- Merchants resting at posts are invisible on the map
+**Merchant Spawning:**
+- 1 merchant per valid road segment (connected post pair), not a fixed global count
+- Only posts with active market stations (`$` tile) attract merchants
+- Player posts need a Market tile to participate in merchant routes
+- Merchants are pure couriers -- they carry market goods between posts, no own inventory or specialty
 
 **Position Calculation:**
 - Time-based walk along precomputed waypoint arrays
 - Phase cycle: rest at post -> walk waypoints -> rest at next post -> repeat
 - Position recalculated on demand (no per-frame updates)
+- Merchants resting at posts are invisible on the map
 
 ### Road Encounter Rate
 
@@ -1685,24 +1685,23 @@ check_encounter():
 
 | Context | Behavior |
 |---------|----------|
-| Bump merchant on road | Mobile market: see carried items only, buy only (no sell/upgrade/gamble) |
-| Bump merchant at post | Full merchant: buy, sell, upgrade, gamble |
+| Bump merchant on road | See carried market goods only, buy only (no sell/upgrade/gamble) |
 | Merchant has no items | "The merchant has nothing to sell right now" |
 
 ### Market Equalization
 
 When a merchant arrives at a post:
 1. **Offload:** All carried items are added as market listings at the arrival post
-2. **Equalize:** Compare this post's listings by category against the next post on route
+2. **Equalize:** Compare this post's listings by category against the other connected post
 3. For each category where this post has more: take `(excess) / 2` items (oldest first)
 4. Cap at MERCHANT_CARRY_CAPACITY total items
-5. Merchant departs toward next post carrying the items
+5. Merchant departs toward the other post carrying the items
 
 ### Implementation Files
 
 | File | Component |
 |------|-----------|
-| `shared/world_system.gd` | A* pathfinding, path graph, merchant circuits, position calc |
+| `shared/world_system.gd` | A* pathfinding, path graph, merchant routing, position calc |
 | `shared/chunk_manager.gd` | Path data persistence (`paths.json`), `is_tile_modified()` |
 | `server/server.gd` | Road init, periodic checks, merchant inventory, equalization, road encounters |
 | `client/client.gd` | `is_road_merchant` flag, road merchant action bar (buy only) |

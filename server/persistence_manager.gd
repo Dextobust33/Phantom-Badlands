@@ -1578,11 +1578,26 @@ func get_market_listings(post_id: String) -> Array:
 	return market_data.listings.get(post_id, [])
 
 func add_market_listing(post_id: String, listing: Dictionary) -> String:
-	"""Add a listing to a post. Returns listing_id."""
+	"""Add a listing to a post. Merges with existing same-seller same-item listing if possible. Returns listing_id."""
 	if not market_data.has("listings"):
 		market_data["listings"] = {}
 	if not market_data.listings.has(post_id):
 		market_data.listings[post_id] = []
+
+	# Try to merge with existing listing from same seller + same item (non-unique only)
+	var seller = listing.get("seller_name", "")
+	var item_name = listing.get("item", {}).get("name", "")
+	var supply_cat = listing.get("supply_category", "")
+	var is_unique = supply_cat in ["equipment", "egg"]
+
+	if not is_unique and seller != "" and item_name != "":
+		for existing in market_data.listings[post_id]:
+			if existing.get("seller_name", "") == seller and \
+			   existing.get("item", {}).get("name", "") == item_name:
+				existing["quantity"] = int(existing.get("quantity", 1)) + int(listing.get("quantity", 1))
+				existing["base_valor"] = int(existing.get("base_valor", 0)) + int(listing.get("base_valor", 0))
+				save_market_data()
+				return existing.get("listing_id", "")
 
 	var listing_id = "mkt_%d" % int(market_data.get("next_id", 1))
 	listing["listing_id"] = listing_id

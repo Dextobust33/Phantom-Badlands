@@ -59,7 +59,7 @@ graph TB
 | `server/persistence_manager.gd` | ~1500 | SQLite persistence, houses, market listings |
 | `shared/character.gd` | ~1200 | Player data, stats, inventory, companions |
 | `shared/combat_manager.gd` | ~5000 | Turn-based combat engine, party combat |
-| `shared/world_system.gd` | ~2400 | Terrain, chunks, gathering nodes, A* pathfinding, road network, merchant circuits |
+| `shared/world_system.gd` | ~2400 | Terrain, chunks, gathering nodes, A* pathfinding, road network, merchant routing |
 | `shared/monster_database.gd` | ~1400 | Monster definitions (9 tiers) |
 | `shared/quest_database.gd` | ~900 | Quest definitions |
 | `shared/drop_tables.gd` | ~4000 | Item generation, crafting materials, valor calc |
@@ -140,7 +140,7 @@ classDiagram
         +compute_path_between()
         +initialize_post_graph()
         +try_connect_one_pair()
-        +compute_merchant_circuits()
+        +spawn_road_merchants()
     }
 
     class MonsterDatabase {

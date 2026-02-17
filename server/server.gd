@@ -228,17 +228,18 @@ func _ready():
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
 	for post in npc_posts:
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
-	# Compute and stamp road paths between posts (must happen before player enclosure rebuild
-	# so that NPC posts are in the path graph when player posts try to connect)
+	# Compute and stamp road paths between posts
 	_initialize_road_paths(npc_posts)
-
-	# Rebuild player enclosures from persisted tile data (after roads so posts can connect)
-	_rebuild_all_player_enclosures()
 
 	chunk_manager.save_dirty_chunks()
 
-	# Load persistent depleted nodes
+	# Load persistent depleted nodes (must happen before player enclosure rebuild
+	# so that A* pathfinding can see cleared corridors when connecting player posts)
 	chunk_manager.load_depleted_nodes()
+
+	# Rebuild player enclosures from persisted tile data (after roads + depleted nodes
+	# so posts can connect to road network via cleared terrain)
+	_rebuild_all_player_enclosures()
 
 	# Load guard data and initialize cache
 	active_guards = persistence.load_guards()
@@ -1000,6 +1001,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_toggle_cloak(peer_id)
 		"toggle_swap_attack":
 			handle_toggle_swap_attack(peer_id, message)
+		"setting_change":
+			handle_setting_change(peer_id, message)
 		"teleport":
 			handle_teleport(peer_id, message)
 		"get_abilities":
@@ -7238,7 +7241,7 @@ func get_or_generate_merchant_inventory(merchant_id: String, player_level: int, 
 	return items
 
 func trigger_merchant_encounter(peer_id: int):
-	"""Trigger a merchant encounter for the player"""
+	"""Trigger a merchant encounter — merchants are couriers carrying market goods."""
 	if not characters.has(peer_id):
 		return
 
@@ -7248,65 +7251,6 @@ func trigger_merchant_encounter(peer_id: int):
 	if merchant.is_empty():
 		return
 
-	var merchant_id = merchant.get("id", "unknown")
-	var is_road = merchant.get("road_merchant", false)
-
-	if is_road:
-		# Road merchant — show carried inventory only
-		_trigger_road_merchant_encounter(peer_id, merchant)
-		return
-
-	# Post merchant — get or generate persistent shop inventory
-	var shop_items = get_or_generate_merchant_inventory(
-		merchant_id,
-		character.level,
-		merchant.get("hash", 0),
-		merchant.get("specialty", "all")
-	)
-	merchant["shop_items"] = shop_items
-
-	# Store merchant state
-	at_merchant[peer_id] = merchant
-
-	# Build services message
-	var services_text = []
-	if shop_items.size() > 0:
-		var specialty_label = ""
-		match merchant.get("specialty", "all"):
-			"weapons":
-				specialty_label = "weapons"
-			"armor":
-				specialty_label = "armor"
-			"jewelry":
-				specialty_label = "jewelry"
-			_:
-				specialty_label = "items"
-		services_text.append("[R] Buy %s (%d available)" % [specialty_label, shop_items.size()])
-	if "sell" in merchant.services:
-		services_text.append("[Q] Sell items")
-	if "upgrade" in merchant.services:
-		services_text.append("[W] Upgrade equipment")
-	if "gamble" in merchant.services:
-		services_text.append("[E] Gamble")
-	services_text.append("[Space] Leave")
-
-	# Build greeting with destination info and voice text
-	var greeting = "[color=#FFD700]A %s approaches you![/color]\n" % merchant.name
-	var merchant_hash = merchant.get("hash", 0)
-	var voice_text = _get_merchant_voice(merchant_hash)
-	if merchant.get("destination", "") != "":
-		greeting += "[color=#808080]\"I'm headed to %s. Care to trade?\"[/color]\n\n" % merchant.destination
-	else:
-		greeting += voice_text + "\n\n"
-
-	send_to_peer(peer_id, {
-		"type": "merchant_start",
-		"merchant": merchant,
-		"message": greeting + "\n".join(services_text)
-	})
-
-func _trigger_road_merchant_encounter(peer_id: int, merchant: Dictionary) -> void:
-	"""Road merchant encounter — show only carried items from equalization."""
 	var merchant_id = merchant.get("id", "unknown")
 
 	# Check if this merchant is carrying items
@@ -7411,7 +7355,7 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 		return
 
 	var merchant = at_merchant[peer_id]
-	if not "gamble" in merchant.services:
+	if not "gamble" in merchant.get("services", []):
 		send_to_peer(peer_id, {"type": "error", "message": "This merchant doesn't offer gambling."})
 		return
 
@@ -9127,21 +9071,31 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		listing["markup"] = markup
 
 	# Stack compatible listings (same item name + same price + same seller = one stack)
+	# Only eggs are truly unique (random variants). Everything else stacks.
+	# Equipment with different stats will have different prices, providing differentiation.
 	var stacks: Array = []
 	var stack_map: Dictionary = {}
 
 	for listing in filtered:
 		var supply_cat = listing.get("supply_category", "")
-		var is_unique = supply_cat == "equipment" or supply_cat == "egg" or supply_cat == "tool"
+		var item = listing.get("item", {})
+		var item_type = item.get("type", "")
+
+		# Fix display category for old listings with wrong supply_category
+		if item_type in ["structure", "door"] and supply_cat == "equipment":
+			supply_cat = "consumable"
+		var display_cat = _get_display_category(supply_cat)
+
+		# Only eggs are truly unique (random variants per individual)
+		var is_unique = supply_cat == "egg"
 
 		if is_unique:
 			var entry = listing.duplicate()
 			entry["stack_listing_ids"] = [listing.get("listing_id", "")]
 			entry["total_quantity"] = int(listing.get("quantity", 1))
-			entry["display_category"] = _get_display_category(supply_cat)
+			entry["display_category"] = display_cat
 			stacks.append(entry)
 		else:
-			var item = listing.get("item", {})
 			var key = "%s|%d|%s" % [item.get("name", ""), int(listing.get("markup_price", 0)), listing.get("seller_name", "")]
 			if stack_map.has(key):
 				var idx = stack_map[key]
@@ -9151,7 +9105,7 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 				var entry = listing.duplicate()
 				entry["stack_listing_ids"] = [listing.get("listing_id", "")]
 				entry["total_quantity"] = int(listing.get("quantity", 1))
-				entry["display_category"] = _get_display_category(supply_cat)
+				entry["display_category"] = display_cat
 				stack_map[key] = stacks.size()
 				stacks.append(entry)
 
@@ -10796,6 +10750,22 @@ func handle_toggle_swap_attack(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	send_character_update(peer_id)
 
+func handle_setting_change(peer_id: int, message: Dictionary):
+	"""Handle player toggling a game setting."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var setting = message.get("setting", "")
+	var value = message.get("value", false)
+	match setting:
+		"skip_craft_minigame":
+			character.skip_craft_minigame = bool(value)
+		"skip_gather_minigame":
+			character.skip_gather_minigame = bool(value)
+		_:
+			return
+	save_character(peer_id)
+
 func handle_teleport(peer_id: int, message: Dictionary):
 	"""Handle teleport ability - allows player to teleport to coordinates"""
 	if not characters.has(peer_id):
@@ -11368,6 +11338,11 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	session["discoveries"] = []      # Foraging: discovered plant names this session
 	active_gathering[peer_id] = session
 
+	# Skip minigame if player has skip_gather_minigame enabled
+	if character.skip_gather_minigame:
+		_auto_resolve_gathering(peer_id, character, session)
+		return
+
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
 		"options": session["client_options"],
@@ -11429,6 +11404,11 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	session["discoveries"] = []
 	active_gathering[peer_id] = session
 
+	# Skip minigame if player has skip_gather_minigame enabled
+	if character.skip_gather_minigame:
+		_auto_resolve_gathering(peer_id, character, session)
+		return
+
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
 		"options": session["client_options"],
@@ -11444,6 +11424,68 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 		"momentum": 0,
 		"discoveries": [],
 	})
+
+func _auto_resolve_gathering(peer_id: int, character, session: Dictionary):
+	"""Auto-resolve gathering without minigame. Awards ~half normal rewards."""
+	var job_type = session.get("job_type", "")
+	var tier = session.get("tier", 1)
+	var job_level = character.job_levels.get(job_type, 1)
+	var auto_chains = ceili(float(tier) / 2.0) + 1  # T1:2, T2:2, T3:3, T4:3, T5:4, T6:4
+
+	# Roll rewards for each chain
+	for i in range(auto_chains):
+		var reward = _roll_gathering_reward(job_type, tier, job_level, false)
+		var qty = reward.get("qty", 1)
+		# Apply house gathering bonus
+		var gathering_bonus = character.house_bonuses.get("gathering_bonus", 0)
+		if gathering_bonus > 0:
+			qty += maxi(1, int(qty * gathering_bonus))
+		_add_gathering_reward(character, reward, qty)
+		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty, "type": reward.get("type", "")})
+		session["chain_count"] += 1
+
+	# Consume tool durability
+	if session.get("has_tool", false):
+		var tool_subtype = _get_tool_subtype_for_job(job_type)
+		_consume_tool_durability(peer_id, character, tool_subtype)
+
+	# Deplete gathering node
+	deplete_gathering_node(session.get("node_x", character.x), session.get("node_y", character.y), session.get("node_type", ""))
+
+	# Calculate job XP
+	var base_xp_per_round = 35 + (tier - 1) * 25
+	var total_job_xp = base_xp_per_round * session["chain_count"]
+	var job_result = character.add_job_xp(job_type, total_job_xp)
+	var char_xp = job_result.get("char_xp_gained", 0)
+	if char_xp > 0:
+		character.add_experience(char_xp)
+
+	# Aggregate materials for display
+	var mat_summary = {}
+	for mat in session["chain_materials"]:
+		var mid = mat["id"]
+		if not mat_summary.has(mid):
+			mat_summary[mid] = {"name": mat["name"], "qty": 0}
+		mat_summary[mid]["qty"] += mat["qty"]
+	var total_materials = []
+	for mid in mat_summary:
+		total_materials.append({"id": mid, "name": mat_summary[mid]["name"], "qty": mat_summary[mid]["qty"]})
+
+	send_to_peer(peer_id, {
+		"type": "gathering_complete",
+		"total_materials": total_materials,
+		"job_xp_gained": total_job_xp,
+		"char_xp_gained": char_xp,
+		"job_leveled_up": job_result.get("leveled_up", false),
+		"new_job_level": job_result.get("new_level", 1),
+		"character": character.to_dict(),
+		"auto_skipped": true,
+	})
+
+	active_gathering.erase(peer_id)
+	gathering_cooldown[peer_id] = true
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _generate_gathering_round(job_type: String, tier: int, hint_strength: float, chain: int, discoveries: Array = []) -> Dictionary:
 	"""Generate a gathering round with 3 options (1 correct, 2 wrong) + optional risky."""
@@ -13143,6 +13185,9 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		# Build a description of what this recipe does
 		var description = _get_recipe_description(recipe)
 
+		var is_bulk = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
+		var max_craft = character.max_craftable(recipe.materials) if can_craft and is_bulk else (1 if can_craft else 0)
+
 		recipe_list.append({
 			"id": recipe_id,
 			"name": recipe.name,
@@ -13155,7 +13200,9 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
 			"specialist_gated": specialist_gated,
-			"description": description
+			"description": description,
+			"bulk_craftable": is_bulk,
+			"max_craftable": max_craft
 		})
 
 	send_to_peer(peer_id, {
@@ -13330,22 +13377,34 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "This recipe requires committing as a %s!" % required_job.capitalize()})
 		return
 
-	# Check materials
-	if not character.has_crafting_materials(recipe.materials):
-		send_to_peer(peer_id, {"type": "error", "message": "You don't have the required materials!"})
-		return
+	# Bulk crafting: read quantity (only for bulk-craftable types)
+	var quantity = clampi(int(message.get("quantity", 1)), 1, 99)
+	var is_bulk_type = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
+	if quantity > 1 and not is_bulk_type:
+		quantity = 1
+
+	# Check materials (scaled by quantity for bulk crafting)
+	if quantity > 1:
+		if not character.has_crafting_materials_scaled(recipe.materials, quantity):
+			send_to_peer(peer_id, {"type": "error", "message": "You don't have enough materials for %dx!" % quantity})
+			return
+	else:
+		if not character.has_crafting_materials(recipe.materials):
+			send_to_peer(peer_id, {"type": "error", "message": "You don't have the required materials!"})
+			return
 
 	# Consume materials (@ prefixed keys are monster part groups)
 	# Track what was actually consumed for disconnect refund
 	var _consumed_for_refund: Dictionary = {}
 	for mat_id in recipe.materials:
+		var consume_amount = recipe.materials[mat_id] * quantity
 		if mat_id.begins_with("@"):
-			var group_consumed = character.remove_group_materials(mat_id, recipe.materials[mat_id])
+			var group_consumed = character.remove_group_materials(mat_id, consume_amount)
 			for gk in group_consumed:
 				_consumed_for_refund[gk] = _consumed_for_refund.get(gk, 0) + group_consumed[gk]
 		else:
-			character.remove_crafting_material(mat_id, recipe.materials[mat_id])
-			_consumed_for_refund[mat_id] = _consumed_for_refund.get(mat_id, 0) + recipe.materials[mat_id]
+			character.remove_crafting_material(mat_id, consume_amount)
+			_consumed_for_refund[mat_id] = _consumed_for_refund.get(mat_id, 0) + consume_amount
 
 	# Get trading post bonus (0 at player stations) + specialty job bonus
 	var post_bonus = 0
@@ -13357,8 +13416,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	var total_bonus = post_bonus + job_bonus.success_bonus
 
 	# Check auto-skip: if skill - difficulty >= threshold, skip minigame with score 3
+	# Also skip if player has skip_craft_minigame enabled (with reduced score)
 	var skill_gap = skill_level - recipe.difficulty
-	if skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP:
+	if skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP and not character.skip_craft_minigame:
 		# Send crafting challenge minigame
 		var is_specialist = character.can_use_specialist_recipe(skill_name)
 		var job_level = character.job_levels.get(character.CRAFT_SKILL_TO_JOB.get(skill_name, ""), 0)
@@ -13374,6 +13434,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"is_specialist": is_specialist,
 			"job_level": job_level,
 			"consumed_materials": _consumed_for_refund,
+			"quantity": quantity,
 		}
 		send_to_peer(peer_id, {
 			"type": "craft_challenge",
@@ -13382,13 +13443,14 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Auto-skip: trivially easy recipe, score = 3
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, 3)
+	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
+	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, auto_score)
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	# Calculate crafting XP (existing full path — enhancement/enchantment handled below)
-	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
+	# Calculate crafting XP (scaled by quantity for bulk)
+	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
 
 	# Award character XP from crafting
@@ -13428,8 +13490,10 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
+				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
-				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+				var qty_label = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s %s![/color]" % [quality_color, qty_label, quality_name, recipe.name]
 			"enhancement":
 				# Create enhancement scroll as inventory item
 				var effect = recipe.get("effect", {})
@@ -13453,12 +13517,13 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 					"rarity": _quality_to_rarity(quality),
 					"level": 1,
 					"is_consumable": true,
-					"quantity": 1
+					"quantity": quantity
 				}
 
-				character.inventory.append(scroll)
+				character.add_item(scroll)
 				crafted_item = scroll
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
+				var enh_qty_label = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, enh_qty_label, scroll.name]
 			"enchantment":
 				# Enchantments add permanent stat bonuses to equipped gear
 				# Parse target slots (can be comma-separated)
@@ -13669,7 +13734,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				var output_item = recipe.get("output_item", "")
 				var base_quantity = recipe.get("output_quantity", 1)
 				var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
-				var final_quantity = int(base_quantity * multiplier)
+				var final_quantity = int(base_quantity * multiplier) * quantity
 				if output_item != "" and final_quantity > 0:
 					character.add_crafting_material(output_item, final_quantity)
 					result_message = "[color=%s]Created %d %s %s![/color]" % [quality_color, final_quantity, quality_name, recipe.name.replace("Refine ", "")]
@@ -13690,39 +13755,52 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				result_message = _craft_disenchant(character, recipe, quality, quality_color)
 			"scroll":
 				crafted_item = _craft_scroll(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var scr_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, scr_qty, crafted_item.get("name", "scroll")]
 			"escape_scroll":
 				crafted_item = {
 					"name": recipe.get("name", "Scroll of Escape"),
 					"item_type": "escape_scroll",
 					"tier_max": recipe.get("tier_max", 4),
 					"type": "consumable",
+					"is_consumable": true,
+					"quantity": quantity,
 					"level": 1,
 					"rarity": "uncommon"
 				}
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.name]
+				character.add_item(crafted_item)
+				var esc_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, esc_qty, crafted_item.name]
 			"map":
 				crafted_item = _craft_map(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "map")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var map_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, map_qty, crafted_item.get("name", "map")]
 			"tome":
 				crafted_item = _craft_tome(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "tome")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var tome_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, tome_qty, crafted_item.get("name", "tome")]
 			"bestiary":
 				crafted_item = _craft_bestiary(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "bestiary page")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var best_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, best_qty, crafted_item.get("name", "bestiary page")]
 			"structure":
 				crafted_item = _craft_structure(recipe, quality)
-				character.inventory.append(crafted_item)
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
 				# Structures always show as standard quality regardless of roll
 				quality = CraftingDatabaseScript.CraftingQuality.STANDARD
 				quality_name = "Standard"
 				quality_color = "#FFFFFF"
-				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
+				var str_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=#00FF00]Built %s%s![/color]" % [str_qty, crafted_item.get("name", "structure")]
 			"proc_enchant":
 				var target_slots = recipe.get("target_slot", "").split(",")
 				var target_item = null
@@ -13768,8 +13846,10 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"rune":
 				# Runes are tradeable inventory items — create and add to inventory
 				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", recipe.name)]
+				var rune_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, rune_qty, crafted_item.get("name", recipe.name)]
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -14096,7 +14176,7 @@ func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
 		"name": recipe.name,
 		"type": "structure",
 		"structure_type": structure_type,
-		"is_consumable": false,
+		"is_consumable": true,
 		"quantity": 1,
 		"rarity": "common",
 	}
@@ -14416,14 +14496,15 @@ func handle_craft_challenge_answer(peer_id: int, message: Dictionary):
 	active_crafts.erase(peer_id)
 
 	# Re-inject into the crafting pipeline by calling the result handler
-	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score)
+	var craft_quantity = craft.get("quantity", 1)
+	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score, craft_quantity)
 
-func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1):
+func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1, quantity: int = 1):
 	"""Finalize a craft after quality is determined. Handles all output types."""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality)
+	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
 	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
 
 	# Award character XP from crafting
@@ -14459,12 +14540,16 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
+				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
-				result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+				var con_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s %s![/color]" % [quality_color, con_qty, quality_name, recipe.name]
 			"rune":
 				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", recipe.name)]
+				var rn_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, rn_qty, crafted_item.get("name", recipe.name)]
 			"enhancement":
 				var effect = recipe.get("effect", {})
 				var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
@@ -14478,12 +14563,13 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 					"slot": recipe.get("output_slot", "any"),
 					"effect": {"stat": stat_type, "bonus": scaled_bonus},
 					"rarity": _quality_to_rarity(quality),
-					"level": 1, "is_consumable": true, "quantity": 1,
+					"level": 1, "is_consumable": true, "quantity": quantity,
 					"crafted_by": character.name
 				}
 				character.add_item(scroll)
 				crafted_item = scroll
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, scroll.name]
+				var en_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, en_qty, scroll.name]
 			"enchantment":
 				var target_slots = recipe.get("target_slot", "").split(",")
 				var target_item = null
@@ -14641,7 +14727,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				var output_item = recipe.get("output_item", "")
 				var base_quantity = recipe.get("output_quantity", 1)
 				var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
-				var final_quantity = int(base_quantity * multiplier)
+				var final_quantity = int(base_quantity * multiplier) * quantity
 				if output_item != "" and final_quantity > 0:
 					character.add_crafting_material(output_item, final_quantity)
 					result_message = "[color=%s]Created %d %s %s![/color]" % [quality_color, final_quantity, quality_name, recipe.name.replace("Refine ", "")]
@@ -14661,38 +14747,51 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				result_message = _craft_disenchant(character, recipe, quality, quality_color)
 			"scroll":
 				crafted_item = _craft_scroll(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "scroll")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var fscr_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, fscr_qty, crafted_item.get("name", "scroll")]
 			"escape_scroll":
 				crafted_item = {
 					"name": recipe.get("name", "Scroll of Escape"),
 					"item_type": "escape_scroll",
 					"tier_max": recipe.get("tier_max", 4),
 					"type": "consumable",
+					"is_consumable": true,
+					"quantity": quantity,
 					"level": 1,
 					"rarity": "uncommon"
 				}
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.name]
+				character.add_item(crafted_item)
+				var fesc_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, fesc_qty, crafted_item.name]
 			"map":
 				crafted_item = _craft_map(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "map")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var fmap_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, fmap_qty, crafted_item.get("name", "map")]
 			"tome":
 				crafted_item = _craft_tome(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "tome")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var ftome_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, ftome_qty, crafted_item.get("name", "tome")]
 			"bestiary":
 				crafted_item = _craft_bestiary(recipe, quality)
-				character.inventory.append(crafted_item)
-				result_message = "[color=%s]Created %s![/color]" % [quality_color, crafted_item.get("name", "bestiary page")]
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
+				var fbest_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, fbest_qty, crafted_item.get("name", "bestiary page")]
 			"structure":
 				crafted_item = _craft_structure(recipe, quality)
-				character.inventory.append(crafted_item)
+				crafted_item["quantity"] = quantity
+				character.add_item(crafted_item)
 				quality = CraftingDatabaseScript.CraftingQuality.STANDARD
 				quality_name = "Standard"
 				quality_color = "#FFFFFF"
-				result_message = "[color=#00FF00]Built %s![/color]" % crafted_item.get("name", "structure")
+				var fstr_qty = "%dx " % quantity if quantity > 1 else ""
+				result_message = "[color=#00FF00]Built %s%s![/color]" % [fstr_qty, crafted_item.get("name", "structure")]
 			"proc_enchant":
 				var target_slots = recipe.get("target_slot", "").split(",")
 				var target_item = null
@@ -22537,6 +22636,35 @@ func _move_party_followers_dungeon(leader_peer_id: int, old_leader_x: int, old_l
 
 # ===== ROAD PATHS & MERCHANT EQUALIZATION =====
 
+func _player_post_has_market(post_key: String) -> bool:
+	"""Check if a player-built post has a market station tile inside it."""
+	# Format: "player_%d_%d" e.g. "player_30_-7"
+	var id_str = post_key.substr(7)  # Remove "player_"
+	var sep = id_str.rfind("_")
+	if sep < 0:
+		return false
+	var px = int(id_str.substr(0, sep))
+	var py = int(id_str.substr(sep + 1))
+	# Check tiles in a small area around center for a market tile
+	for dx in range(-8, 9):
+		for dy in range(-8, 9):
+			var tile = chunk_manager.get_tile(px + dx, py + dy)
+			if tile.get("type", "") == "market" and tile.get("owner", "") != "":
+				return true
+	return false
+
+func _get_posts_with_markets() -> Array:
+	"""Get all connected post keys that have active markets.
+	NPC posts always have markets. Player posts only if they built a market station."""
+	var result: Array = []
+	for key in world_system._path_graph:
+		if key.begins_with("player_"):
+			if _player_post_has_market(key):
+				result.append(key)
+		else:
+			result.append(key)  # NPC posts always have markets
+	return result
+
 # Merchant carry inventory: {merchant_id: {items: [], destination_post_key: String}}
 var merchant_inventory: Dictionary = {}
 const MERCHANT_CARRY_CAPACITY = 10
@@ -22582,7 +22710,7 @@ func _initialize_road_paths(npc_posts: Array) -> void:
 	log_message("Road network: %d connected, %d awaiting cleared paths" % [world_system._path_waypoints.size(), unconnected])
 
 	# Compute merchant circuits from whatever paths exist
-	world_system.compute_merchant_circuits()
+	world_system.compute_merchant_circuits(_get_posts_with_markets())
 
 func _try_connect_road() -> void:
 	"""Periodically try to find a path for one unconnected post pair.
@@ -22602,7 +22730,7 @@ func _try_connect_road() -> void:
 		)
 		chunk_manager.save_dirty_chunks()
 		# Recompute merchant circuits with new connection
-		world_system.compute_merchant_circuits()
+		world_system.compute_merchant_circuits(_get_posts_with_markets())
 		var path_key = result.keys()[0]
 		var wp_count = result[path_key].size()
 		log_message("New road formed: %s (%d tiles)" % [path_key, wp_count])
@@ -22623,7 +22751,7 @@ func _connect_player_post_to_roads(center: Vector2i, _username: String) -> void:
 		)
 		chunk_manager.save_dirty_chunks()
 		# Recompute merchant circuits to include new post
-		world_system.compute_merchant_circuits()
+		world_system.compute_merchant_circuits(_get_posts_with_markets())
 		log_message("Connected player post at (%d,%d) to road network" % [center.x, center.y])
 
 func _check_merchant_arrivals() -> void:
@@ -22650,6 +22778,9 @@ func _check_merchant_arrivals() -> void:
 
 func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_idx: int) -> void:
 	"""Called when a merchant arrives at a post. Offload carried items, pick up excess."""
+	# Skip player posts that don't have a market station
+	if post_key.begins_with("player_") and not _player_post_has_market(post_key):
+		return
 	# Step 1: Offload carried items to this post's market
 	if merchant_inventory.has(merchant_id):
 		var carried = merchant_inventory[merchant_id]

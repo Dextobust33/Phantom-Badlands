@@ -211,6 +211,10 @@ const CRAFT_CHALLENGE_QUESTIONS = {
 # Auto-skip threshold: if skill - difficulty >= this, skip the minigame
 const CRAFT_CHALLENGE_AUTO_SKIP = 30
 
+# Output types that support bulk crafting (quantity > 1)
+const BULK_CRAFTABLE_TYPES = ["consumable", "structure", "rune", "enhancement",
+	"escape_scroll", "material", "scroll", "map", "tome", "bestiary"]
+
 # ===== MATERIALS =====
 # Materials can come from fishing, monster drops, or gathering
 const MATERIALS = {

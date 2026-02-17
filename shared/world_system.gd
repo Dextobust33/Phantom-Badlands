@@ -1461,11 +1461,10 @@ var _path_waypoints: Dictionary = {}
 # All post positions for pathfinding: {post_key: Vector2i}
 var _path_post_positions: Dictionary = {}
 
-func _is_walkable_for_path(x: int, y: int) -> bool:
+func _is_walkable_for_path(x: int, y: int, permissive: bool = false) -> bool:
 	"""Check if a tile can be pathed through for road building.
-	Roads ONLY form through player-cleared terrain. The wilderness must be tamed
-	before roads can connect settlements. Walkable for road = depleted (harvested)
-	gathering nodes, existing paths/floors, or NPC post tiles."""
+	Strict mode (NPC-to-NPC): only depleted nodes, structure tiles, modified empty.
+	Permissive mode (player posts): any non-blocking tile is walkable."""
 	if not chunk_manager:
 		return false
 	# Depleted gathering nodes count as cleared (player harvested them)
@@ -1473,13 +1472,14 @@ func _is_walkable_for_path(x: int, y: int) -> bool:
 		return true
 	var tile = chunk_manager.get_tile(x, y)
 	var tile_type = tile.get("type", "empty")
-	# NPC post structure tiles are walkable (but NOT existing road "path" tiles —
-	# roads must not create shortcuts for discovering other roads)
+	# NPC post structure tiles and player structure tiles are walkable
 	if tile_type in ["floor", "door", "tower", "storage", "post_marker"]:
 		return true
 	# Modified empty tiles (explicitly set by chunk system, not procedurally generated)
-	# Check if this tile has been modified from its procedural state
 	if tile_type == "empty" and chunk_manager.is_tile_modified(x, y):
+		return true
+	# Permissive mode: any non-blocking tile is walkable (for player post connections)
+	if permissive and not tile.get("blocks_move", false):
 		return true
 	return false
 
@@ -1489,9 +1489,10 @@ func _is_npc_post_interior(x: int, y: int) -> bool:
 		return false
 	return chunk_manager.is_npc_post_tile(x, y)
 
-func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int) -> Array:
+func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int, permissive: bool = false) -> Array:
 	"""A* pathfinding from one point to another. Returns array of Vector2i waypoints.
-	Uses 4-directional movement only for clean visual roads. Returns empty if no path."""
+	Uses 4-directional movement only for clean visual roads. Returns empty if no path.
+	Permissive mode allows any non-blocking tile (used for player post connections)."""
 	var start = Vector2i(start_x, start_y)
 	var goal = Vector2i(end_x, end_y)
 
@@ -1529,7 +1530,7 @@ func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int) ->
 			if closed_set.has(neighbor):
 				continue
 
-			if not _is_walkable_for_path(neighbor.x, neighbor.y):
+			if not _is_walkable_for_path(neighbor.x, neighbor.y, permissive):
 				if neighbor != goal:
 					continue
 
@@ -1689,11 +1690,13 @@ func get_unconnected_edge_count() -> int:
 	return count
 
 func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
-	"""Find a walkable tile just outside a post's walls, near a door."""
+	"""Find a walkable tile just outside a post's walls, near a door.
+	Returns the door tile itself if no non-blocking outside tile exists."""
 	if not chunk_manager:
 		return Vector2i(center_x, center_y)
 
 	# Search in expanding rings for a door tile, then go one step past it
+	var found_door = Vector2i(-99999, -99999)
 	for radius in range(1, 12):
 		for dx in range(-radius, radius + 1):
 			for dy in range(-radius, radius + 1):
@@ -1703,6 +1706,7 @@ func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
 				var ty = center_y + dy
 				var tile = chunk_manager.get_tile(tx, ty)
 				if tile.get("type", "") == "door":
+					found_door = Vector2i(tx, ty)
 					# Found a door — return the walkable tile just outside it
 					for dir in ASTAR_DIRECTIONS:
 						var outside = Vector2i(tx + dir.x, ty + dir.y)
@@ -1712,7 +1716,7 @@ func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
 					# Door found but no walkable outside? Return door itself
 					return Vector2i(tx, ty)
 
-	# Fallback: return center (shouldn't happen with well-formed posts)
+	# No door found — return center (shouldn't happen with well-formed posts)
 	return Vector2i(center_x, center_y)
 
 func stamp_paths_into_chunks(paths: Dictionary) -> void:
@@ -1778,11 +1782,11 @@ func connect_new_post(post: Dictionary) -> Dictionary:
 	if nearest_key == "":
 		return {}
 
-	# Compute path
+	# Compute path — use permissive mode (any non-blocking tile) for player posts
 	var from_exit = _find_post_exit(px, py)
 	var to_pos = _path_post_positions[nearest_key]
 	var to_exit = _find_post_exit(to_pos.x, to_pos.y)
-	var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y)
+	var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true)
 
 	if waypoints.size() == 0:
 		return {}
@@ -1845,7 +1849,7 @@ func get_path_waypoints_for_segment(from_key: String, to_key: String) -> Array:
 # Merchants follow stamped road tiles between connected NPC posts.
 # Positions calculated on-demand based on time + precomputed waypoints.
 
-const TOTAL_WANDERING_MERCHANTS = 10
+# Dynamic merchant count: 1 per valid road segment (set by compute_merchant_circuits)
 
 # Merchant type templates
 const MERCHANT_TYPES = [
@@ -1896,67 +1900,58 @@ var _merchant_route_waypoints: Dictionary = {}
 var _merchant_total_waypoints: Dictionary = {}
 
 func _get_total_merchants() -> int:
-	return TOTAL_WANDERING_MERCHANTS
+	return _merchant_circuits.size()
 
-func compute_merchant_circuits() -> void:
-	"""Assign each merchant a circuit of 3-5 connected posts from the path graph.
-	Deterministic based on merchant index."""
+func compute_merchant_circuits(valid_post_keys: Array = []) -> void:
+	"""Assign 1 merchant per valid road segment between posts with markets.
+	Each merchant walks back and forth between the two posts on its road."""
 	_merchant_circuits.clear()
 	_merchant_route_waypoints.clear()
 	_merchant_total_waypoints.clear()
+	_merchant_cache.clear()
 
-	var post_keys = _path_graph.keys()
-	if post_keys.size() < 2:
-		return
+	var allowed = valid_post_keys if valid_post_keys.size() > 0 else _path_graph.keys()
+	var allowed_set: Dictionary = {}
+	for k in allowed:
+		allowed_set[k] = true
 
-	for merchant_idx in range(TOTAL_WANDERING_MERCHANTS):
-		# Pick a starting post deterministically
-		var start_idx = (merchant_idx * 7 + 3) % post_keys.size()
-		var circuit: Array = [post_keys[start_idx]]
+	# Collect unique connected edges where both posts have markets
+	var seen_edges: Dictionary = {}
+	var merchant_idx = 0
+	for key_a in allowed_set:
+		for key_b in _path_graph.get(key_a, []):
+			if not allowed_set.has(key_b):
+				continue
+			var edge_key = _make_path_key(key_a, key_b)
+			if seen_edges.has(edge_key):
+				continue
+			# Must have an actual path between them
+			var path_key = _make_path_key(key_a, key_b)
+			if not _path_waypoints.has(path_key):
+				continue
+			seen_edges[edge_key] = true
 
-		# Walk the graph to build a circuit of 3-5 posts
-		var visited: Dictionary = {post_keys[start_idx]: true}
-		var current_key = post_keys[start_idx]
-		var circuit_len = 3 + (merchant_idx % 3)  # 3, 4, or 5 posts
+			# 2-post circuit: [A, B] → walks A→B then B→A
+			var circuit: Array = [key_a, key_b]
+			_merchant_circuits[merchant_idx] = circuit
 
-		for _step in range(circuit_len - 1):
-			var neighbors = _path_graph.get(current_key, [])
-			if neighbors.size() == 0:
-				break
-			# Pick next unvisited neighbor deterministically
-			var picked = ""
-			var pick_seed = (merchant_idx * 13 + _step * 7) % maxi(1, neighbors.size())
-			for attempt in range(neighbors.size()):
-				var candidate = neighbors[(pick_seed + attempt) % neighbors.size()]
-				if not visited.has(candidate):
-					picked = candidate
-					break
-			if picked == "":
-				# All neighbors visited, pick any neighbor to create a shorter circuit
-				picked = neighbors[pick_seed % neighbors.size()]
-			circuit.append(picked)
-			visited[picked] = true
-			current_key = picked
+			# Precompute waypoints for each segment
+			var route_waypoints: Array = []
+			var total_wp = 0
+			for seg_idx in range(circuit.size()):
+				var from_key = circuit[seg_idx]
+				var to_key = circuit[(seg_idx + 1) % circuit.size()]
+				var segment = get_path_waypoints_for_segment(from_key, to_key)
+				if segment.size() == 0:
+					var from_pos = _path_post_positions.get(from_key, Vector2i(0, 0))
+					var to_pos = _path_post_positions.get(to_key, Vector2i(0, 0))
+					segment = [from_pos, to_pos]
+				route_waypoints.append(segment)
+				total_wp += segment.size()
 
-		_merchant_circuits[merchant_idx] = circuit
-
-		# Precompute waypoints for each segment in the circuit
-		var route_waypoints: Array = []
-		var total_wp = 0
-		for seg_idx in range(circuit.size()):
-			var from_key = circuit[seg_idx]
-			var to_key = circuit[(seg_idx + 1) % circuit.size()]
-			var segment = get_path_waypoints_for_segment(from_key, to_key)
-			if segment.size() == 0:
-				# No path between these posts — use direct line as fallback
-				var from_pos = _path_post_positions.get(from_key, Vector2i(0, 0))
-				var to_pos = _path_post_positions.get(to_key, Vector2i(0, 0))
-				segment = [from_pos, to_pos]
-			route_waypoints.append(segment)
-			total_wp += segment.size()
-
-		_merchant_route_waypoints[merchant_idx] = route_waypoints
-		_merchant_total_waypoints[merchant_idx] = total_wp
+			_merchant_route_waypoints[merchant_idx] = route_waypoints
+			_merchant_total_waypoints[merchant_idx] = total_wp
+			merchant_idx += 1
 
 func _get_merchant_position(merchant_idx: int, current_time: float) -> Dictionary:
 	"""Calculate merchant position by walking along precomputed waypoints.
@@ -2018,35 +2013,23 @@ func _get_merchant_position(merchant_idx: int, current_time: float) -> Dictionar
 const INVENTORY_REFRESH_INTERVAL = 300.0
 
 func _is_elite_merchant(merchant_idx: int) -> bool:
-	"""Check if a merchant index is one of the first 2 elite merchants."""
-	return merchant_idx < 2
+	"""Check if a merchant is elite (assigned to a long road)."""
+	# First merchant on a road > 100 waypoints gets elite status
+	var total_wp = _merchant_total_waypoints.get(merchant_idx, 0)
+	return total_wp > 100
 
 func _get_merchant_info(merchant_idx: int) -> Dictionary:
-	"""Generate merchant info based on index (deterministic)"""
+	"""Generate merchant info based on index (deterministic).
+	Merchants are couriers — no specialty shop, just carry market goods."""
 	var name_idx = merchant_idx % MERCHANT_FIRST_NAMES.size()
+	var type_idx = merchant_idx % MERCHANT_TYPES.size()
+	var merchant_type = MERCHANT_TYPES[type_idx]
 
-	var merchant_type: Dictionary
-	if _is_elite_merchant(merchant_idx):
-		for mt in MERCHANT_TYPES:
-			if mt.specialty == "elite":
-				merchant_type = mt
-				break
-	else:
-		# Skip elite type at index 14
-		var adjusted_idx = merchant_idx - 2  # 2 elite merchants
-		var type_idx = adjusted_idx % (MERCHANT_TYPES.size() - 1)
-		if type_idx >= 14:
-			type_idx += 1
-		merchant_type = MERCHANT_TYPES[type_idx]
-
-	var time_window = int(Time.get_unix_time_from_system() / INVENTORY_REFRESH_INTERVAL)
-	var inventory_seed = (merchant_idx * 7919 + time_window * 104729) % 2147483647
+	var inventory_seed = (merchant_idx * 7919 + 42) % 2147483647
 
 	return {
 		"id": "merchant_%d" % merchant_idx,
 		"name": "%s %s %s" % [merchant_type.prefix, MERCHANT_FIRST_NAMES[name_idx], merchant_type.suffix],
-		"specialty": merchant_type.specialty,
-		"services": merchant_type.services,
 		"inventory_seed": inventory_seed
 	}
 
@@ -2108,19 +2091,15 @@ func get_merchant_at(x: int, y: int) -> Dictionary:
 	return {
 		"id": info.id,
 		"name": info.name,
-		"services": info.services,
-		"specialty": info.specialty,
 		"x": x,
 		"y": y,
 		"hash": info.inventory_seed,
-		"is_wanderer": false,
 		"destination": dest_name if not pos.is_resting else "",
 		"destination_id": dest_key,
-		"last_restock": Time.get_unix_time_from_system(),
 		"is_resting": pos.is_resting,
 		"at_post": pos.get("at_post", ""),
 		"merchant_idx": merchant_idx,
-		"road_merchant": not pos.is_resting
+		"road_merchant": true
 	}
 
 func get_all_merchant_positions() -> Array:

@@ -409,6 +409,8 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var tome_bonuses: Dictionary = {}  # Permanent stat bonuses from Spell Tomes {stat: amount}
 @export var known_recipes: Array = []  # Recipe IDs player has learned
 @export var crafting_materials: Dictionary = {}  # {material_id: quantity}
+@export var skip_craft_minigame: bool = false
+@export var skip_gather_minigame: bool = false
 
 # ===== DUNGEON SYSTEM =====
 @export var in_dungeon: bool = false
@@ -1337,6 +1339,8 @@ func to_dict() -> Dictionary:
 		"job_xp": job_xp,
 		"harvest_mastery": harvest_mastery,
 		"house_bonuses": house_bonuses,
+		"skip_craft_minigame": skip_craft_minigame,
+		"skip_gather_minigame": skip_gather_minigame,
 		"using_registered_companion": using_registered_companion,
 		"registered_companion_slot": registered_companion_slot,
 		"saved_dungeon_state": {
@@ -1667,6 +1671,8 @@ func from_dict(data: Dictionary):
 	house_bonuses = data.get("house_bonuses", {})
 	using_registered_companion = data.get("using_registered_companion", false)
 	registered_companion_slot = data.get("registered_companion_slot", -1)
+	skip_craft_minigame = data.get("skip_craft_minigame", false)
+	skip_gather_minigame = data.get("skip_gather_minigame", false)
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
@@ -3074,6 +3080,35 @@ func has_crafting_materials(materials: Dictionary) -> bool:
 			if owned < needed:
 				return false
 	return true
+
+func has_crafting_materials_scaled(materials: Dictionary, quantity: int) -> bool:
+	"""Check if player has required materials scaled by quantity for bulk crafting."""
+	for mat_id in materials:
+		var needed = materials[mat_id] * quantity
+		if mat_id.begins_with("@"):
+			var total = DropTables.get_total_for_group(mat_id, crafting_materials)
+			if total < needed:
+				return false
+		else:
+			var owned = crafting_materials.get(mat_id, 0)
+			if owned < needed:
+				return false
+	return true
+
+func max_craftable(materials: Dictionary) -> int:
+	"""Return maximum number of times this recipe can be crafted with current materials."""
+	var result = 99
+	for mat_id in materials:
+		var per_craft = materials[mat_id]
+		if per_craft <= 0:
+			continue
+		var owned: int
+		if mat_id.begins_with("@"):
+			owned = DropTables.get_total_for_group(mat_id, crafting_materials)
+		else:
+			owned = crafting_materials.get(mat_id, 0)
+		result = mini(result, owned / per_craft)
+	return result
 
 func remove_group_materials(group_key: String, quantity: int) -> Dictionary:
 	"""Remove quantity of materials from a group, consuming from largest stacks first.

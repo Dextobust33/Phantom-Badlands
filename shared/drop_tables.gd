@@ -4241,6 +4241,8 @@ func get_supply_category(item: Dictionary) -> String:
 		return "egg"
 	if item.get("type", "") == "tool":
 		return "tool"
+	if item.get("type", "") in ["structure", "door"]:
+		return "consumable"
 	if _is_equipment_type(item.get("type", "")):
 		return "equipment"
 	if item.get("is_consumable", false):

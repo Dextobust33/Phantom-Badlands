@@ -757,6 +757,7 @@ var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
 var crafting_job_bonus: Dictionary = {}  # Specialty job bonus {success_bonus, quality_bonus}
 var crafting_selected_recipe: int = -1  # Index of selected recipe
+var craft_quantity: int = 1  # Bulk crafting quantity
 var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 var last_crafted_recipe_id: String = ""  # Recipe ID of last craft for "craft another"
@@ -2952,9 +2953,10 @@ func _input(event):
 			elif keycode == key_action_4:
 				reset_keybinds_to_defaults()
 			elif keycode == key_action_5:
-				toggle_swap_attack_setting()
-			elif keycode == key_action_6:
-				toggle_swap_outsmart_setting()
+				settings_submenu = "game"
+				game_output.clear()
+				display_game_settings()
+				update_action_bar()
 			elif keycode == key_action_7:
 				# Open Abilities from Settings
 				ability_entered_from_settings = true
@@ -3093,6 +3095,32 @@ func _input(event):
 				_save_keybinds()
 				game_output.clear()
 				display_sound_settings()
+			elif keycode == back_key:
+				settings_submenu = ""
+				game_output.clear()
+				display_settings_menu()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
+		elif settings_submenu == "game":
+			# Game settings submenu (minigame skip, swap toggles)
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if keycode == KEY_1:
+				toggle_swap_attack_setting()
+				# Refresh the game settings display after toggle
+				await get_tree().create_timer(1.5).timeout
+				if settings_mode and settings_submenu == "game":
+					game_output.clear()
+					display_game_settings()
+			elif keycode == KEY_2:
+				toggle_swap_outsmart_setting()
+				await get_tree().create_timer(1.5).timeout
+				if settings_mode and settings_submenu == "game":
+					game_output.clear()
+					display_game_settings()
+			elif keycode == KEY_3:
+				_toggle_skip_craft_minigame()
+			elif keycode == KEY_4:
+				_toggle_skip_gather_minigame()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -4645,18 +4673,32 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			current_actions = [
-				{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
-				{"label": "Actions", "action_type": "local", "action_data": "settings_action_keys", "enabled": true},
-				{"label": "Movement", "action_type": "local", "action_data": "settings_movement_keys", "enabled": true},
-				{"label": "Items", "action_type": "local", "action_data": "settings_item_keys", "enabled": true},
-				{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
-				{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
-				{"label": "Sound", "action_type": "local", "action_data": "settings_sound", "enabled": true},
-			]
+			if settings_submenu == "game":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "settings_game_back", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
+					{"label": "Actions", "action_type": "local", "action_data": "settings_action_keys", "enabled": true},
+					{"label": "Movement", "action_type": "local", "action_data": "settings_movement_keys", "enabled": true},
+					{"label": "Items", "action_type": "local", "action_data": "settings_item_keys", "enabled": true},
+					{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
+					{"label": "Game", "action_type": "local", "action_data": "settings_game", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
+					{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
+					{"label": "Sound", "action_type": "local", "action_data": "settings_sound", "enabled": true},
+				]
 	elif game_state == GameState.DEAD:
 		current_actions = [
 			{"label": "Continue", "action_type": "local", "action_data": "death_continue", "enabled": true},
@@ -6594,19 +6636,35 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif crafting_selected_recipe >= 0:
-			# Recipe confirm
-			current_actions = [
-				{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
-				{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
+			# Recipe confirm — show quantity controls for bulk-craftable recipes
+			var sel_recipe = crafting_recipes[crafting_selected_recipe] if crafting_selected_recipe < crafting_recipes.size() else {}
+			var is_bulk = sel_recipe.get("bulk_craftable", false) and sel_recipe.get("max_craftable", 1) > 1
+			if is_bulk:
+				current_actions = [
+					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
+					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": "-Qty", "action_type": "local", "action_data": "craft_qty_down", "enabled": craft_quantity > 1},
+					{"label": "+Qty", "action_type": "local", "action_data": "craft_qty_up", "enabled": craft_quantity < sel_recipe.get("max_craftable", 1)},
+					{"label": "Max", "action_type": "local", "action_data": "craft_qty_max", "enabled": craft_quantity < sel_recipe.get("max_craftable", 1)},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			else:
+				current_actions = [
+					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
+					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
 		elif awaiting_craft_result:
 			# Showing craft result
 			if can_craft_another:
@@ -10054,10 +10112,27 @@ func execute_local_action(action: String):
 				open_crafting()
 		"crafting_recipe_cancel":
 			crafting_selected_recipe = -1
+			craft_quantity = 1
 			display_craft_recipe_list()
 			update_action_bar()
 		"crafting_confirm":
 			confirm_craft()
+		"craft_qty_down":
+			craft_quantity = maxi(1, craft_quantity - 1)
+			display_craft_recipe_details()
+			update_action_bar()
+		"craft_qty_up":
+			var max_q = 1
+			if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
+				max_q = crafting_recipes[crafting_selected_recipe].get("max_craftable", 1)
+			craft_quantity = mini(max_q, craft_quantity + 1)
+			display_craft_recipe_details()
+			update_action_bar()
+		"craft_qty_max":
+			if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
+				craft_quantity = crafting_recipes[crafting_selected_recipe].get("max_craftable", 1)
+			display_craft_recipe_details()
+			update_action_bar()
 		"crafting_prev_page":
 			crafting_page = max(0, crafting_page - 1)
 			display_craft_recipe_list()
@@ -17520,11 +17595,7 @@ func display_settings_menu():
 	display_game("[%s] Configure Movement Keys" % get_action_key_name(2))
 	display_game("[%s] Configure Item Selection Keys" % get_action_key_name(3))
 	display_game("[%s] Reset All to Defaults" % get_action_key_name(4))
-	var swap_ability_enabled = character_data.get("swap_attack_with_ability", false)
-	var swap_ability_status = "[color=#00FF00]ON[/color]" if swap_ability_enabled else "[color=#FF6666]OFF[/color]"
-	display_game("[%s] Swap Attack with First Ability: %s" % [get_action_key_name(5), swap_ability_status])
-	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
-	display_game("[%s] Swap Attack with Outsmart: %s" % [get_action_key_name(6), swap_outsmart_status])
+	display_game("[%s] Game Settings (Swaps, Minigames)" % get_action_key_name(5))
 	display_game("[%s] Manage Abilities" % get_action_key_name(7))
 	display_game("[%s] UI Scale Settings" % get_action_key_name(8))
 	display_game("[%s] Sound Settings" % get_action_key_name(9))
@@ -17776,6 +17847,65 @@ func toggle_swap_outsmart_setting():
 	await get_tree().create_timer(1.5).timeout
 	display_settings_menu()
 	update_action_bar()
+
+func display_game_settings():
+	"""Display the game settings submenu (minigame toggles, combat swaps)"""
+	display_game("[color=#FFD700]===== GAME SETTINGS =====[/color]")
+	display_game("")
+	var swap_ability_enabled = character_data.get("swap_attack_with_ability", false)
+	var swap_ability_status = "[color=#00FF00]ON[/color]" if swap_ability_enabled else "[color=#FF6666]OFF[/color]"
+	display_game("[1] Swap Attack with First Ability: %s" % swap_ability_status)
+	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
+	display_game("[2] Swap Attack with Outsmart: %s" % swap_outsmart_status)
+	var skip_craft = character_data.get("skip_craft_minigame", false)
+	var skip_craft_status = "[color=#00FF00]ON[/color]" if skip_craft else "[color=#FF6666]OFF[/color]"
+	display_game("[3] Skip Craft Minigame: %s" % skip_craft_status)
+	var skip_gather = character_data.get("skip_gather_minigame", false)
+	var skip_gather_status = "[color=#00FF00]ON[/color]" if skip_gather else "[color=#FF6666]OFF[/color]"
+	display_game("[4] Skip Gather Minigame: %s" % skip_gather_status)
+	display_game("")
+	if skip_craft or skip_gather:
+		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
+		display_game("")
+	display_game("[%s] Back" % get_action_key_name(0))
+
+func _toggle_skip_craft_minigame():
+	"""Toggle skip craft minigame setting."""
+	var current = character_data.get("skip_craft_minigame", false)
+	var new_value = not current
+	character_data["skip_craft_minigame"] = new_value
+	send_to_server({"type": "setting_change", "setting": "skip_craft_minigame", "value": new_value})
+	game_output.clear()
+	if new_value:
+		display_game("[color=#00FF00]Skip Craft Minigame: ENABLED[/color]")
+		display_game("[color=#FFFF00]Warning: Skipping crafting minigames gives lower quality results.[/color]")
+		display_game("[color=#808080]Disable in Settings > Game anytime.[/color]")
+	else:
+		display_game("[color=#FF6666]Skip Craft Minigame: DISABLED[/color]")
+		display_game("[color=#808080]Crafting minigames will play normally.[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
+func _toggle_skip_gather_minigame():
+	"""Toggle skip gather minigame setting."""
+	var current = character_data.get("skip_gather_minigame", false)
+	var new_value = not current
+	character_data["skip_gather_minigame"] = new_value
+	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": new_value})
+	game_output.clear()
+	if new_value:
+		display_game("[color=#00FF00]Skip Gather Minigame: ENABLED[/color]")
+		display_game("[color=#FFFF00]Warning: Skipping gathering minigames gives ~50% average rewards.[/color]")
+		display_game("[color=#808080]Disable in Settings > Game anytime.[/color]")
+	else:
+		display_game("[color=#FF6666]Skip Gather Minigame: DISABLED[/color]")
+		display_game("[color=#808080]Gathering minigames will play normally.[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
 
 func _create_connection_panel():
 	"""Create the connection panel UI dynamically"""
@@ -19092,8 +19222,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.138 changes
+	display_game("[color=#00FF00]v0.9.138[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bulk Crafting, Market Stacking & Merchant Rework[/color]")
+	display_game("  • Bulk crafting: Craft up to 99 stackable items at once (structures, scrolls, etc.)")
+	display_game("  • Crafted items now properly stack in inventory (structures, doors, scrolls, maps)")
+	display_game("  • Market: Identical items stack in browse view (equipment, tools, structures)")
+	display_game("  • Market: Same-seller listings auto-merge into single entries")
+	display_game("  • Minigame skip: Settings → Game → skip crafting/gathering minigames (~50% rewards)")
+	display_game("  • Roads: Player post roads form automatically through passable terrain")
+	display_game("  • Merchants: 1 courier per road — carries market goods between connected posts")
+	display_game("  • Merchants: Player posts need a Market station to attract merchants")
+	display_game("")
+
 	# v0.9.135 changes
-	display_game("[color=#00FF00]v0.9.135[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.135[/color]")
 	display_game("  [color=#FFD700]Corpse Improvements[/color]")
 	display_game("  • Corpses no longer spawn on impassable tiles (mountains, walls, water)")
 	display_game("  • Death broadcast now shows compass direction & rough distance to remains")
@@ -19135,16 +19278,6 @@ func display_changelog():
 	display_game("  • Crafting: Materials refunded if disconnected during crafting challenge")
 	display_game("  • Salvage: Bulk salvage (All / Below Level) now requires confirmation")
 	display_game("  • Walls: Decay notifications batched (\"X walls crumbled\" instead of spam)")
-	display_game("")
-
-	# v0.9.131 changes
-	display_game("[color=#00FFFF]v0.9.131[/color]")
-	display_game("  [color=#FFD700]Market QOL & Tutorial[/color]")
-	display_game("  • Market: Equipment listings now show comparison arrows and stat diffs")
-	display_game("  • Market: Press 1-9 to inspect items before buying (full stat details)")
-	display_game("  • Market: Buy from inspection view with full item comparison")
-	display_game("  • Tutorial: New players get a guided walkthrough on first character")
-	display_game("  • Starter Safety: Halved encounter rate near Crossroads for low-level players")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20861,7 +20994,7 @@ func show_help():
 [color=#FFD700]Special:[/color]
   [color=#FFFFFF]Death Curse[/color] - Deals 10%% max HP damage when killed (can't kill you)
   [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
-  [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at wandering blacksmiths!)
+  [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at blacksmith stations!)
   [color=#FFFFFF]XP Steal[/color] - Steals 1-3%% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5%% chance to steal equipped item
 [color=#00FF00]Loot Abilities:[/color]
   [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× Valor | [color=#FFFFFF]Gem Bearer[/color] - Always drops Monster Gems
@@ -20902,13 +21035,16 @@ func show_help():
 [color=#FF6600]Soldier:[/color] After killing a monster, press Harvest to extract bonus parts (3-choice minigame).
 [color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! Reveal shows correct answer, Save cancels 1 mistake.
   Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
+[color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
+  Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
+[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~50%% average rewards.
 [color=#AA66FF]Salvage:[/color] Inventory→Salvage breaks down items into [color=#AA66FF]crafting materials[/color]. Higher rarity = more materials.
 [color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
 [color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
 
 [b][color=#FFD700]══ WORLD ══[/color][/b]
 [color=#00FF00]Posts(58):[/color] Haven(0,10)=spawn | Crossroads(0,0)=throne | Frostgate(0,-100)=boss. Recharge([%s])!
-[color=#FFD700]Merchants(110):[/color] [color=#FF4444]$[/color]=Weapon [color=#4488FF]$[/color]=Armor [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General. Buy/sell/gamble!
+[color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
@@ -22616,6 +22752,7 @@ func select_craft_recipe(index: int):
 		return
 
 	crafting_selected_recipe = actual_idx
+	craft_quantity = 1
 	display_craft_recipe_details()
 	update_action_bar()
 
@@ -22632,17 +22769,28 @@ func display_craft_recipe_details():
 	var can_craft = recipe.get("can_craft", false)
 	var materials = recipe.get("materials", {})
 
+	var is_bulk = recipe.get("bulk_craftable", false) and recipe.get("max_craftable", 1) > 1
+	var max_qty = recipe.get("max_craftable", 1) if is_bulk else 1
+	# Clamp quantity to max
+	if is_bulk:
+		craft_quantity = clampi(craft_quantity, 1, max_qty)
+	else:
+		craft_quantity = 1
+
 	game_output.clear()
 	display_game("[color=#FFD700]===== %s =====[/color]" % name)
 	display_game("")
 	display_game("Skill Required: %d" % skill_req)
 	display_game("Difficulty: %d" % difficulty)
+	if is_bulk:
+		display_game("[color=#87CEEB]Quantity: %d[/color] (max %d)" % [craft_quantity, max_qty])
 	display_game("")
-	display_game("[color=#87CEEB]Materials Required:[/color]")
+	var mat_label = "Materials Required:" if craft_quantity <= 1 else "Materials Required (x%d):" % craft_quantity
+	display_game("[color=#87CEEB]%s[/color]" % mat_label)
 
-	# Display materials with owned count
+	# Display materials with owned count (scaled by quantity)
 	for mat_id in materials:
-		var required = materials[mat_id]
+		var required = materials[mat_id] * craft_quantity
 		if mat_id.begins_with("@"):
 			# Group material — show group name + total owned across matching parts
 			var owned = _count_group_materials(mat_id)
@@ -22667,7 +22815,10 @@ func display_craft_recipe_details():
 	display_game("")
 
 	if can_craft:
-		display_game("[%s] [color=#00FF00]CRAFT![/color] | [%s] Cancel" % [get_action_key_name(1), get_action_key_name(0)])
+		var craft_label = "CRAFT %dx!" % craft_quantity if craft_quantity > 1 else "CRAFT!"
+		display_game("[%s] [color=#00FF00]%s[/color] | [%s] Cancel" % [get_action_key_name(1), craft_label, get_action_key_name(0)])
+		if is_bulk:
+			display_game("[%s] -Qty | [%s] +Qty | [%s] Max" % [get_action_key_name(2), get_action_key_name(3), get_action_key_name(4)])
 	else:
 		display_game("[color=#FF4444]Missing required materials![/color]")
 		display_game("[%s] Cancel" % get_action_key_name(0))
@@ -22684,7 +22835,10 @@ func confirm_craft():
 	var recipe = crafting_recipes[crafting_selected_recipe]
 	var recipe_id = recipe.get("id", "")
 
-	send_to_server({"type": "craft_item", "recipe_id": recipe_id})
+	var msg = {"type": "craft_item", "recipe_id": recipe_id}
+	if craft_quantity > 1:
+		msg["quantity"] = craft_quantity
+	send_to_server(msg)
 
 func handle_craft_challenge(message: Dictionary):
 	"""Handle crafting challenge minigame from server."""
