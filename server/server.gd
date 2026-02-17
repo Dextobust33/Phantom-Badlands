@@ -228,11 +228,12 @@ func _ready():
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
 	for post in npc_posts:
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
-	# Rebuild player enclosures from persisted tile data
-	_rebuild_all_player_enclosures()
-
-	# Compute and stamp road paths between posts
+	# Compute and stamp road paths between posts (must happen before player enclosure rebuild
+	# so that NPC posts are in the path graph when player posts try to connect)
 	_initialize_road_paths(npc_posts)
+
+	# Rebuild player enclosures from persisted tile data (after roads so posts can connect)
+	_rebuild_all_player_enclosures()
 
 	chunk_manager.save_dirty_chunks()
 
@@ -14910,8 +14911,8 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	# Consume item
 	character.inventory.remove_at(item_index)
 
-	# Determine tile properties
-	var blocks_move = structure_type == "wall"
+	# Determine tile properties — stations block movement (interact by bump), doors don't
+	var blocks_move = structure_type != "door"
 	var blocks_los = structure_type == "wall"
 
 	# Place tile in chunk manager
@@ -15305,7 +15306,7 @@ func _rebuild_all_player_enclosures():
 			var tx = int(td.get("x", 0))
 			var ty = int(td.get("y", 0))
 			var tile_type = td.get("type", "wall")
-			var blocks_move = tile_type == "wall"
+			var blocks_move = tile_type != "door"
 			var blocks_los = tile_type == "wall"
 			chunk_manager.set_tile(tx, ty, {
 				"type": tile_type,
