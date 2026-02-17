@@ -9801,7 +9801,7 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 			if item.get("locked", false) or item.get("equipped", false):
 				continue
 			var itype = item.get("type", "")
-			var is_listable = item.get("is_consumable", false) or _is_consumable_type(itype) or itype == "tool"
+			var is_listable = item.get("is_consumable", false) or _is_consumable_type(itype) or itype == "tool" or itype == "structure"
 			if not is_listable:
 				continue
 			if itype == "treasure_chest":
@@ -14763,7 +14763,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 # ===== BUILDING SYSTEM =====
 
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
-const MAX_ENCLOSURE_SIZE = 11  # 11x11 bounding box max
+const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
 const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure boundaries
@@ -15057,11 +15057,13 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 			if already_checked:
 				continue
 
-			# Skip if this is a wall/door tile
+			# Skip player's own walls/doors and other players' blocking structures
 			var check_tile = chunk_manager.get_tile(check_pos.x, check_pos.y)
-			if check_tile.get("blocks_move", false):
+			var check_type = check_tile.get("type", "")
+			var check_owner = check_tile.get("owner", "")
+			if check_type in ENCLOSURE_WALL_TYPES and check_owner == username:
 				continue
-			if check_tile.get("type", "") in ENCLOSURE_WALL_TYPES and check_tile.get("owner", "") == username:
+			if check_tile.get("blocks_move", false) and check_owner != "" and check_owner != username:
 				continue
 
 			# Try to detect enclosure via BFS
@@ -15221,16 +15223,23 @@ func _detect_enclosure_bfs(start: Vector2i, owner: String) -> Array:
 			var tile_type = tile.get("type", "")
 			var tile_owner = tile.get("owner", "")
 
-			# Check if this is a boundary wall/door
-			if tile.get("blocks_move", false) or (tile_type in ENCLOSURE_WALL_TYPES and tile_owner == owner):
-				if tile_owner == owner:
-					if tile_type == "wall":
-						has_player_wall = true
-					elif tile_type == "door":
-						has_player_door = true
-				continue  # Don't expand through walls
+			# Player-owned wall/door = enclosure boundary
+			if tile_type in ENCLOSURE_WALL_TYPES and tile_owner == owner:
+				if tile_type == "wall":
+					has_player_wall = true
+				elif tile_type == "door":
+					has_player_door = true
+				continue
 
-			# Passable tile - add to interior
+			# Other player's blocking structures = boundary (don't expand through)
+			if tile.get("blocks_move", false) and tile_owner != "" and tile_owner != owner:
+				continue
+
+			# Unowned blocking tiles (natural terrain like trees, stones, water, ore, dense brush)
+			# are treated as interior — they'll be auto-cleared when the enclosure forms.
+			# If the enclosure isn't sealed, BFS escapes and hits size limit → returns empty.
+
+			# Interior tile (passable or natural terrain to be cleared)
 			interior.append(neighbor)
 
 			# Check bounding box
@@ -15256,11 +15265,15 @@ func _detect_enclosure_bfs(start: Vector2i, owner: String) -> Array:
 	return interior
 
 func _mark_enclosure_safe(positions: Array, owner: String):
-	"""Mark interior tiles as safe zone by setting enclosure_owner."""
+	"""Mark interior tiles as safe zone by setting enclosure_owner.
+	Also auto-clears natural blocking terrain (trees, stones, water, ore, dense brush)."""
 	if not chunk_manager:
 		return
 	for pos in positions:
 		var tile = chunk_manager.get_tile(pos.x, pos.y)
+		# Clear natural blocking terrain (unowned tiles with blocks_move)
+		if tile.get("blocks_move", false) and tile.get("owner", "") == "":
+			tile = {"type": "floor", "blocks_move": false, "blocks_los": false}
 		tile["enclosure_owner"] = owner
 		chunk_manager.set_tile(pos.x, pos.y, tile)
 
@@ -15324,9 +15337,13 @@ func _rebuild_enclosures_for_player(username: String):
 			if all_interior_tiles.has(check_pos):
 				continue
 			var check_tile = chunk_manager.get_tile(check_pos.x, check_pos.y)
-			if check_tile.get("blocks_move", false):
+			var check_type = check_tile.get("type", "")
+			var check_owner = check_tile.get("owner", "")
+			# Skip player's own walls/doors (these are boundaries, not interior)
+			if check_type in ENCLOSURE_WALL_TYPES and check_owner == username:
 				continue
-			if check_tile.get("type", "") in ENCLOSURE_WALL_TYPES and check_tile.get("owner", "") == username:
+			# Skip other players' blocking structures
+			if check_tile.get("blocks_move", false) and check_owner != "" and check_owner != username:
 				continue
 
 			var result = _detect_enclosure_bfs(check_pos, username)
@@ -15355,6 +15372,9 @@ func _rebuild_enclosures_for_player(username: String):
 					break
 			rebuilt_names.append({"name": matched_name, "center": center, "created_at": matched_at})
 		player_post_names[username] = rebuilt_names
+		# Reconnect rebuilt enclosures to road network
+		for rn in rebuilt_names:
+			_connect_player_post_to_roads(rn.center, username)
 		log_message("Rebuilt %d enclosures for %s" % [found_enclosures.size(), username])
 
 func handle_name_post(peer_id: int, message: Dictionary):
