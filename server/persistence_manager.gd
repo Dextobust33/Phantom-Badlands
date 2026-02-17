@@ -480,13 +480,9 @@ func save_leaderboard():
 	"""Save leaderboard data to file"""
 	_safe_save(LEADERBOARD_FILE, leaderboard_data)
 
-func add_to_leaderboard(character: Character, cause_of_death: String, account_username: String) -> int:
-	"""Add a deceased character to the leaderboard. Returns their rank."""
-	# Admin accounts are excluded from leaderboards
-	if is_admin_username(account_username):
-		print("Admin account '%s' excluded from leaderboard" % account_username)
-		return -1
-
+func add_to_leaderboard(character: Character, cause_of_death: String, account_username: String, death_snapshot: Dictionary = {}) -> int:
+	"""Add a deceased character to the leaderboard. Returns their rank.
+	death_snapshot: Full character snapshot for viewing the death screen later."""
 	var entry = {
 		"character_name": character.name,
 		"class": character.class_type,
@@ -495,7 +491,8 @@ func add_to_leaderboard(character: Character, cause_of_death: String, account_us
 		"account_username": account_username,
 		"cause_of_death": cause_of_death,
 		"monsters_killed": character.monsters_killed,
-		"died_at": int(Time.get_unix_time_from_system())
+		"died_at": int(Time.get_unix_time_from_system()),
+		"death_data": death_snapshot
 	}
 
 	# Add to entries
@@ -527,17 +524,26 @@ func add_to_leaderboard(character: Character, cause_of_death: String, account_us
 	return rank
 
 func get_leaderboard(limit: int = 10) -> Array:
-	"""Get top entries from leaderboard (excludes admin accounts)"""
+	"""Get top entries from leaderboard (excludes bulky death_data for bandwidth)"""
 	var result = []
 
 	for entry in leaderboard_data.entries:
-		if is_admin_username(entry.get("account_username", "")):
-			continue
-		result.append(entry)
+		var entry_copy = entry.duplicate()
+		entry_copy.erase("death_data")
+		result.append(entry_copy)
 		if result.size() >= limit:
 			break
 
 	return result
+
+func get_leaderboard_death_data(character_name: String, died_at: int = 0) -> Dictionary:
+	"""Get death screen data for a specific leaderboard entry."""
+	for entry in leaderboard_data.entries:
+		if entry.get("character_name", "") == character_name:
+			if died_at > 0 and entry.get("died_at", 0) != died_at:
+				continue
+			return entry.get("death_data", {})
+	return {}
 
 func remove_from_leaderboard(character_name: String) -> bool:
 	"""Remove a specific entry from the leaderboard by character name. Returns true if found and removed."""
@@ -829,11 +835,9 @@ func get_trophy_leaderboard() -> Dictionary:
 	# Track per-character trophy counts for "most collected" ranking
 	var char_trophy_counts: Dictionary = {}  # char_name -> count
 
-	# Scan all accounts and their characters (exclude admins)
+	# Scan all accounts and their characters
 	for account_id in accounts_data.accounts.keys():
 		var account = accounts_data.accounts[account_id]
-		if account.get("is_admin", false):
-			continue
 		for char_name in account.character_slots:
 			var char_data = load_character(account_id, char_name)
 			if char_data.is_empty():

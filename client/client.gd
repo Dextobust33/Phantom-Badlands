@@ -962,6 +962,7 @@ var ability_entered_from_settings: bool = false
 
 # Leaderboard mode
 var leaderboard_mode: String = "fallen_heroes"  # "fallen_heroes", "monster_kills", or "trophy_hall"
+var viewing_leaderboard_death: bool = false  # True when viewing a death screen from leaderboard
 
 # Unified gathering mode (replaces fishing_mode, mining_mode, logging_mode)
 var gathering_mode: bool = false
@@ -1043,6 +1044,7 @@ var dungeon_list_mode: bool = false  # Viewing dungeon list
 var dungeon_triggered_traps: Array = []  # Triggered trap positions for map display
 var dungeon_resource_prompt: bool = false  # Waiting for gather/skip choice
 var awaiting_dungeon_gather_result: bool = false  # Protect gather result display from refresh
+var awaiting_dungeon_trap_ack: bool = false  # Protect trap display from dungeon state refresh
 
 # Password change mode
 var changing_password: bool = false
@@ -1423,6 +1425,12 @@ func _ready():
 	# Connect leaderboard signals
 	if close_leaderboard_button:
 		close_leaderboard_button.pressed.connect(_on_close_leaderboard_pressed)
+	# Make leaderboard entries clickable (for viewing death screens)
+	if leaderboard_list:
+		leaderboard_list.selection_enabled = true
+		leaderboard_list.meta_underlined = true
+		if not leaderboard_list.meta_clicked.is_connected(_on_leaderboard_entry_clicked):
+			leaderboard_list.meta_clicked.connect(_on_leaderboard_entry_clicked)
 	# Connect leaderboard toggle button
 	var leaderboard_toggle = leaderboard_panel.get_node_or_null("VBox/ToggleButton") if leaderboard_panel else null
 	if leaderboard_toggle:
@@ -1939,6 +1947,8 @@ func _process(delta):
 				if not get_meta("runekey_%d_pressed" % i, false):
 					set_meta("runekey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
+					# Also mark itemkey as pressed to prevent item selection handler from firing
+					set_meta("itemkey_%d_pressed" % i, true)
 					var target_slot = rune_slot_list[i]
 					send_to_server({"type": "use_rune", "rune_index": rune_apply_index, "target_slot": target_slot})
 					rune_apply_mode = false
@@ -2568,7 +2578,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "affix_filter_select"]
@@ -3552,6 +3562,8 @@ func update_leaderboard_display(entries: Array):
 		_reset_leaderboard_scroll.call_deferred()
 		return
 
+	leaderboard_list.append_text("[center][color=#808080]Click a name to view their death screen[/color][/center]\n\n")
+
 	for entry in entries:
 		var rank = entry.get("rank", 0)
 		var name = entry.get("character_name", "Unknown")
@@ -3559,6 +3571,7 @@ func update_leaderboard_display(entries: Array):
 		var level = entry.get("level", 1)
 		var exp = entry.get("experience", 0)
 		var cause = entry.get("cause_of_death", "Unknown")
+		var died_at = entry.get("died_at", 0)
 
 		var color = "#FFFFFF"
 		if rank == 1:
@@ -3568,7 +3581,13 @@ func update_leaderboard_display(entries: Array):
 		elif rank == 3:
 			color = "#CD7F32"  # Bronze
 
-		leaderboard_list.append_text("[color=%s]#%d %s[/color]\n" % [color, rank, name])
+		# Make the name clickable - meta stores character_name + died_at for lookup
+		var meta_value = "%s|%d" % [name, died_at]
+		leaderboard_list.append_text("[color=%s]#%d [/color]" % [color, rank])
+		leaderboard_list.push_meta(meta_value)
+		leaderboard_list.append_text("[color=%s][u]%s[/u][/color]" % [color, name])
+		leaderboard_list.pop()
+		leaderboard_list.append_text("\n")
 		leaderboard_list.append_text("   Level %d %s - %d XP\n" % [level, cls, exp])
 		leaderboard_list.append_text("   [color=#555555]Slain by: %s[/color]\n\n" % cause)
 
@@ -4024,6 +4043,171 @@ func _clear_character_hud():
 func _on_close_leaderboard_pressed():
 	if leaderboard_panel:
 		leaderboard_panel.visible = false
+
+func _on_leaderboard_entry_clicked(meta):
+	"""Handle click on a leaderboard entry name - request death screen data"""
+	var meta_str = str(meta)
+	var parts = meta_str.rsplit("|", true, 1)
+	if parts.size() < 2:
+		return
+	var char_name = parts[0]
+	var died_at = int(parts[1])
+	send_to_server({"type": "get_leaderboard_death", "character_name": char_name, "died_at": died_at})
+
+func display_leaderboard_death_screen(message: Dictionary):
+	"""Display a death screen from leaderboard data (viewing another player's death)."""
+	if not game_output:
+		return
+	# Hide the leaderboard panel so the death screen is visible
+	if leaderboard_panel:
+		leaderboard_panel.visible = false
+	game_output.clear()
+
+	var death_data = message.get("death_data", {})
+	var char_name = death_data.get("character_name", message.get("character_name", "Unknown"))
+
+	if death_data.is_empty():
+		display_game("[color=#808080]No death data available for %s.[/color]" % char_name)
+		display_game("")
+		display_game("[color=#FFD700]Press %s to return to leaderboard[/color]" % get_action_key_name(0))
+		viewing_leaderboard_death = true
+		update_action_bar()
+		return
+
+	# Reuse the death screen renderer with the death_data
+	var level = int(death_data.get("level", 1))
+	var experience = int(death_data.get("experience", 0))
+	var cause = death_data.get("cause_of_death", "Unknown")
+	var rank = int(death_data.get("leaderboard_rank", 0))
+	var race = death_data.get("race", "Unknown")
+	var class_type = death_data.get("class_type", "Unknown")
+	var stats = death_data.get("stats", {})
+	var equipped = death_data.get("equipped", {})
+	var valor = int(death_data.get("valor", 0))
+	var kills = int(death_data.get("monsters_killed", 0))
+	var active_companion = death_data.get("active_companion", {})
+	var collected_companions = death_data.get("collected_companions", [])
+	var incubating_eggs = death_data.get("incubating_eggs", [])
+	var combat_log = death_data.get("combat_log", [])
+	var rounds_fought = int(death_data.get("rounds_fought", 0))
+	var monster_max_hp = int(death_data.get("monster_max_hp", 0))
+	var total_damage_dealt = int(death_data.get("total_damage_dealt", 0))
+	var total_damage_taken = int(death_data.get("total_damage_taken", 0))
+
+	# === HEADER ===
+	display_game("[color=#FF0000]═══════════════════════════════════════════════[/color]")
+	display_game("[center][color=#FF0000][b]%s HAS FALLEN[/b][/color][/center]" % char_name.to_upper())
+	display_game("[center][color=#FF6666]Slain by %s[/color][/center]" % cause)
+	display_game("[color=#FF0000]═══════════════════════════════════════════════[/color]")
+	display_game("")
+
+	# === CHARACTER INFO ===
+	display_game("[color=#FFD700]── Character ──[/color]")
+	display_game("%s %s  |  Level %d  |  XP: %s" % [race, class_type, level, format_number(experience)])
+	display_game("Valor: %s  |  Kills: %s" % [format_number(valor), format_number(kills)])
+	display_game("")
+
+	# === STATS ===
+	if not stats.is_empty():
+		display_game("[color=#FFD700]── Stats ──[/color]")
+		display_game("STR: %d  |  CON: %d  |  DEX: %d  |  INT: %d  |  WIS: %d  |  WIT: %d" % [
+			stats.get("strength", 0), stats.get("constitution", 0), stats.get("dexterity", 0),
+			stats.get("intelligence", 0), stats.get("wisdom", 0), stats.get("wits", 0)
+		])
+		display_game("")
+
+	# === EQUIPMENT ===
+	var has_equipment = false
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = equipped.get(slot)
+		if item != null and item is Dictionary and not item.is_empty():
+			has_equipment = true
+			break
+
+	if has_equipment:
+		display_game("[color=#FFD700]── Equipment ──[/color]")
+		for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+			var item = equipped.get(slot)
+			if item != null and item is Dictionary and not item.is_empty():
+				var item_name = item.get("name", "Unknown")
+				var rarity = item.get("rarity", "common")
+				var item_level = item.get("level", 1)
+				var color = _get_rarity_color(rarity)
+				display_game("  %s: [color=%s]%s[/color] (Lv %d)" % [slot.capitalize(), color, item_name, item_level])
+		display_game("")
+
+	# === COMPANIONS ===
+	var has_companions = not active_companion.is_empty() or collected_companions.size() > 0
+	if has_companions:
+		display_game("[color=#FFD700]── Companions ──[/color]")
+		if not active_companion.is_empty():
+			var comp_name = active_companion.get("name", "Unknown")
+			var comp_level = active_companion.get("level", 1)
+			var comp_variant = active_companion.get("variant", "")
+			var variant_text = " %s" % comp_variant if comp_variant != "" and comp_variant != "Normal" else ""
+			display_game("  [color=#00FF00][ACTIVE][/color] %s%s (Lv %d)" % [comp_name, variant_text, comp_level])
+		for comp in collected_companions:
+			if comp.get("name", "") == active_companion.get("name", "__none__") and comp.get("level", 0) == active_companion.get("level", -1):
+				continue
+			var comp_name = comp.get("name", "Unknown")
+			var comp_level = comp.get("level", 1)
+			var comp_variant = comp.get("variant", "")
+			var variant_text = " %s" % comp_variant if comp_variant != "" and comp_variant != "Normal" else ""
+			display_game("  %s%s (Lv %d)" % [comp_name, variant_text, comp_level])
+		display_game("")
+
+	# === EGGS ===
+	if incubating_eggs.size() > 0:
+		display_game("[color=#FFD700]── Eggs ──[/color]")
+		for egg in incubating_eggs:
+			var egg_name = egg.get("name", "Unknown Egg")
+			var steps = egg.get("steps", 0)
+			var hatch_at = egg.get("hatch_steps", 500)
+			var frozen = egg.get("frozen", false)
+			var frozen_text = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
+			display_game("  %s (%d/%d steps)%s" % [egg_name, steps, hatch_at, frozen_text])
+		display_game("")
+
+	# === COMBAT SUMMARY ===
+	if rounds_fought > 0 or combat_log.size() > 0:
+		display_game("[color=#FF4444]═══════════════════════════════════════════════[/color]")
+		var round_text = "%d Round%s" % [rounds_fought, "s" if rounds_fought != 1 else ""]
+		display_game("[center][color=#FF4444][b]FINAL BATTLE - %s[/b][/color][/center]" % round_text)
+		display_game("[color=#FF4444]═══════════════════════════════════════════════[/color]")
+
+		var monster_base_name = death_data.get("monster_base_name", "")
+		if monster_base_name != "":
+			var local_art = _get_monster_art().get_bordered_art_with_font(monster_base_name, ui_scale_monster_art)
+			if local_art != "":
+				display_game("[center]" + local_art + "[/center]")
+				display_game("")
+
+		var player_max_hp = int(death_data.get("player_max_hp", 0))
+		var player_hp_start = int(death_data.get("player_hp_at_start", player_max_hp))
+		if player_hp_start > 0:
+			display_game("[color=#FF6666]Their HP: %s/%s → Killed[/color]" % [format_number(player_hp_start), format_number(player_max_hp)])
+
+		if total_damage_dealt > 0 or total_damage_taken > 0:
+			display_game("[color=#00FF00]Damage Dealt: %s[/color]  |  [color=#FF6666]Damage Taken: %s[/color]" % [format_number(total_damage_dealt), format_number(total_damage_taken)])
+			if monster_max_hp > 0:
+				display_game("[color=#808080]Monster HP: %s[/color]" % format_number(monster_max_hp))
+			display_game("")
+
+		for entry in combat_log:
+			if entry is String:
+				display_game(entry)
+		display_game("")
+
+	# === FOOTER ===
+	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
+	if rank > 0:
+		display_game("[center][color=#FFFFFF]Leaderboard Rank: #%d[/color][/center]" % rank)
+	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
+	display_game("")
+	display_game("[center][color=#FFD700]Press %s to return to leaderboard[/color][/center]" % get_action_key_name(0))
+
+	viewing_leaderboard_death = true
+	update_action_bar()
 
 # ===== PLAYER INFO POPUP HANDLERS =====
 
@@ -5636,6 +5820,20 @@ func update_action_bar():
 	elif flock_pending:
 		current_actions = [
 			{"label": "Continue", "action_type": "flock", "action_data": "continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif viewing_leaderboard_death:
+		# Viewing a death screen from the leaderboard
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "leaderboard_death_back", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9172,6 +9370,11 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"acknowledge_continue":
 			acknowledge_continue()
+		"leaderboard_death_back":
+			viewing_leaderboard_death = false
+			game_output.clear()
+			show_leaderboard_panel()
+			update_action_bar()
 		"merchant_leave":
 			leave_merchant()
 		"merchant_sell":
@@ -14499,6 +14702,9 @@ func handle_server_message(message: Dictionary):
 		"trophy_leaderboard":
 			update_trophy_leaderboard_display(message.get("entries", []), message.get("top_collectors", []))
 
+		"leaderboard_death":
+			display_leaderboard_death_screen(message)
+
 		"leaderboard_top5":
 			# A player entered the Hall of Heroes (top 5) - show in chat only
 			var char_name = message.get("character_name", "Unknown")
@@ -15847,6 +16053,7 @@ func _process_combat_start(message: Dictionary):
 	pending_storage_action = ""
 	pending_continue = false  # Clear any pending continue from previous combat
 	pending_dungeon_continue = false
+	awaiting_dungeon_trap_ack = false
 	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 	last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
 	update_action_bar()
@@ -18885,15 +19092,29 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.134 changes
+	display_game("[color=#00FF00]v0.9.134[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Leaderboard & Dungeon Fixes[/color]")
+	display_game("  • Leaderboard: Click any name to view their full death screen & final battle")
+	display_game("  • Dungeons: Escape scrolls now work correctly from inventory")
+	display_game("  • Dungeons: Step counter now advances after fleeing combat")
+	display_game("  • Dungeons: Display clears properly when moving between rooms")
+	display_game("  • Dungeons: Treasures now always list their contents")
+	display_game("  • Dungeons: Party leader escape scroll exits the whole party")
+	display_game("  • Dungeons: Rest action key hint now shows correctly")
+	display_game("  • Market: Companion eggs no longer show as \"Unknown\"")
+	display_game("  • Runes: Fixed hotkey double-trigger when applying runes to equipment")
+	display_game("  • Specialty jobs can now level up without committing (recipes still gated)")
+	display_game("")
+
 	# v0.9.133 changes
-	display_game("[color=#00FF00]v0.9.133[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.133[/color]")
 	display_game("  [color=#FFD700]World & QOL[/color]")
 	display_game("  • NPC posts now have unique shapes (compound rooms with wings)")
 	display_game("  • Map wipes generate new world seed — posts, terrain, and content refresh")
 	display_game("  • Player pass-through: bump into a player and press Space to squeeze past")
 	display_game("  • Fixed: Personal dungeon quests no longer share between players")
 	display_game("  • Fixed: Other players' personal dungeons no longer visible on your map")
-	display_game("  • Server: 5 granular wipe options with confirmation dialogs")
 	display_game("")
 
 	# v0.9.132 changes
@@ -18924,19 +19145,6 @@ func display_changelog():
 	display_game("  • Guard encounter suppression radius tripled (5 → 15 tiles)")
 	display_game("  • Tower guard radius tripled (15 → 45 tiles)")
 	display_game("  • Guards now create meaningful safe corridors between posts")
-	display_game("")
-
-	# v0.9.129 changes
-	display_game("[color=#00FFFF]v0.9.129[/color]")
-	display_game("  [color=#FFD700]Dungeon Expansion[/color]")
-	display_game("  • Step pressure: each floor has a step limit (60-100 by tier)")
-	display_game("  • Warnings at 75%/90% of steps, collapse at 100% with penalties")
-	display_game("  • Gathering nodes (&) appear in dungeon floors — ore, herbs, crystals")
-	display_game("  • T7-9 dungeon crystals: Void Crystal, Abyssal Shard, Primordial Essence")
-	display_game("  • Escape scrolls: the ONLY way to safely exit a dungeon (3 tiers)")
-	display_game("  • Boss kills now drop bonus materials (T7-9: guaranteed dungeon crystal)")
-	display_game("  • Flawless Run bonus: +20% XP for completing without collapse")
-	display_game("  • No free dungeon exits — fleeing relocates you on the same floor")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22731,15 +22939,17 @@ func handle_dungeon_state(message: Dictionary):
 	update_dungeon_map()
 
 	# Only update GameOutput if player doesn't need to acknowledge something
-	# (e.g., combat victory, treasure found, floor change, gather result)
-	if not pending_continue and not awaiting_dungeon_gather_result:
+	# (e.g., combat victory, treasure found, floor change, gather result, trap)
+	if not pending_continue and not awaiting_dungeon_gather_result and not awaiting_dungeon_trap_ack:
 		display_dungeon_floor()
+	# Clear trap ack flag after dungeon state update (next move will refresh)
+	if awaiting_dungeon_trap_ack:
+		awaiting_dungeon_trap_ack = false
 	update_action_bar()
 
 func handle_dungeon_treasure(message: Dictionary):
 	"""Handle opening a treasure chest in dungeon"""
-	var materials = message.get("materials", [])
-	var egg = message.get("egg", {})
+	var rewards = message.get("rewards", [])
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== TREASURE! =====[/color]")
@@ -22748,18 +22958,12 @@ func handle_dungeon_treasure(message: Dictionary):
 	display_game("[color=#8B4513] [===][/color]")
 	display_game("")
 
-	if not materials.is_empty():
-		display_game("")
-		display_game("[color=#87CEEB]Materials:[/color]")
-		for mat in materials:
-			var mat_name = mat.get("id", "unknown").capitalize().replace("_", " ")
-			var quantity = mat.get("quantity", 1)
-			display_game("  + %d x %s" % [quantity, mat_name])
-
-	if not egg.is_empty():
-		var egg_monster = egg.get("monster", "Unknown")
-		display_game("")
-		display_game("[color=#A335EE]★ Found a %s Egg! ★[/color]" % egg_monster)
+	if not rewards.is_empty():
+		display_game("[color=#87CEEB]Found:[/color]")
+		for reward_text in rewards:
+			display_game("  %s" % reward_text)
+	else:
+		display_game("[color=#808080]The chest was empty...[/color]")
 
 	display_game("")
 	display_game("[color=#808080]Move to continue exploring...[/color]")
@@ -22906,6 +23110,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_triggered_traps = []
 	dungeon_resource_prompt = false
 	awaiting_dungeon_gather_result = false
+	awaiting_dungeon_trap_ack = false
 
 	var reason = message.get("reason", "exit")
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
@@ -23012,6 +23217,7 @@ func handle_dungeon_trap(message: Dictionary):
 	display_game(message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
 	display_game("")
 	display_game("[color=#808080]Move to continue exploring...[/color]")
+	awaiting_dungeon_trap_ack = true  # Prevent dungeon state from clearing trap display
 	update_dungeon_map()
 
 func handle_dungeon_gather_result(message: Dictionary):
@@ -23082,10 +23288,7 @@ func display_dungeon_floor():
 	else:
 		display_game("[color=#00FF00]Floor cleared![/color]")
 	display_game("")
-	display_game("Use [color=#FFFF00]N/S/W/E[/color] to move. [color=#FFFF00][%s][/color] to rest." % get_action_key_name(7))
-	display_game("Press [color=#FFFF00][%s][/color] to exit." % get_action_key_name(5))
-	display_game("")
-	display_game("[color=#808080]The dungeon map is displayed on the right.[/color]")
+	display_game("Use numpad/arrows to move. [color=#FFFF00][%s][/color] Items, [color=#FFFF00][%s][/color] %s" % [get_action_key_name(0), get_action_key_name(1), "Meditate" if character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"] else "Rest"])
 
 func update_dungeon_map():
 	"""Update just the dungeon map display (right panel) without touching GameOutput"""

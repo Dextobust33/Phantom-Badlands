@@ -888,6 +888,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_delete_character(peer_id, message)
 		"get_leaderboard":
 			handle_get_leaderboard(peer_id, message)
+		"get_leaderboard_death":
+			handle_get_leaderboard_death(peer_id, message)
 		"get_monster_kills_leaderboard":
 			handle_get_monster_kills_leaderboard(peer_id, message)
 		"get_trophy_leaderboard":
@@ -1713,6 +1715,29 @@ func handle_get_leaderboard(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {
 		"type": "leaderboard",
 		"entries": entries
+	})
+
+func handle_get_leaderboard_death(peer_id: int, message: Dictionary):
+	"""Get death screen data for a specific leaderboard entry."""
+	var char_name = message.get("character_name", "")
+	var died_at = int(message.get("died_at", 0))
+	if char_name.is_empty():
+		return
+
+	var death_data = persistence.get_leaderboard_death_data(char_name, died_at)
+	if death_data.is_empty():
+		send_to_peer(peer_id, {
+			"type": "leaderboard_death",
+			"character_name": char_name,
+			"death_data": {},
+			"error": "No death data available for this entry."
+		})
+		return
+
+	send_to_peer(peer_id, {
+		"type": "leaderboard_death",
+		"character_name": char_name,
+		"death_data": death_data
 	})
 
 func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
@@ -3273,6 +3298,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						var new_pos = empty_tiles[randi() % empty_tiles.size()]
 						character.dungeon_x = new_pos.x
 						character.dungeon_y = new_pos.y
+				# Count flee as a step for step pressure
+				character.dungeon_floor_steps += 1
 				send_to_peer(peer_id, {
 					"type": "text",
 					"message": "[color=#FFAA00]You flee deeper into the dungeon![/color]"
@@ -3785,33 +3812,12 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 	# Record monster kill for Monster Kills leaderboard
 	persistence.record_monster_kill(cause_of_death)
 
-	# Add to leaderboard
-	var rank = persistence.add_to_leaderboard(character, cause_of_death, username)
-
-	# Broadcast top 5 achievement to all connected players
-	if rank <= 5:
-		for pid in peers.keys():
-			send_to_peer(pid, {
-				"type": "leaderboard_top5",
-				"character_name": character.name,
-				"level": character.level,
-				"rank": rank
-			})
-
-	# Award baddie points to house before deleting character (need value for permadeath message)
-	var baddie_points_earned = _award_baddie_points_on_death(peer_id, character, account_id, cause_of_death)
-
-	# Send enriched permadeath message with full character snapshot
-	send_to_peer(peer_id, {
-		"type": "permadeath",
+	# Build death snapshot for leaderboard storage and client display
+	var death_snapshot = {
 		"character_name": character.name,
 		"level": character.level,
 		"experience": character.experience,
 		"cause_of_death": cause_of_death,
-		"leaderboard_rank": rank,
-		"baddie_points_earned": baddie_points_earned,
-		"message": "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death],
-		# Character snapshot
 		"race": character.race,
 		"class_type": character.class_type,
 		"stats": {
@@ -3829,7 +3835,6 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"active_companion": character.get_active_companion(),
 		"collected_companions": character.get_collected_companions(),
 		"incubating_eggs": character.incubating_eggs.duplicate(true),
-		# Combat data from final fight
 		"combat_log": combat_data.get("combat_log", []),
 		"rounds_fought": combat_data.get("rounds", 0),
 		"monster_base_name": combat_data.get("monster_base_name", ""),
@@ -3839,7 +3844,31 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),
 		"player_hp_at_start": combat_data.get("player_hp_at_start", 0),
-	})
+	}
+
+	# Add to leaderboard with full death snapshot
+	var rank = persistence.add_to_leaderboard(character, cause_of_death, username, death_snapshot)
+
+	# Broadcast top 5 achievement to all connected players
+	if rank <= 5:
+		for pid in peers.keys():
+			send_to_peer(pid, {
+				"type": "leaderboard_top5",
+				"character_name": character.name,
+				"level": character.level,
+				"rank": rank
+			})
+
+	# Award baddie points to house before deleting character (need value for permadeath message)
+	var baddie_points_earned = _award_baddie_points_on_death(peer_id, character, account_id, cause_of_death)
+
+	# Send enriched permadeath message with full character snapshot
+	var permadeath_msg = death_snapshot.duplicate(true)
+	permadeath_msg["type"] = "permadeath"
+	permadeath_msg["leaderboard_rank"] = rank
+	permadeath_msg["baddie_points_earned"] = baddie_points_earned
+	permadeath_msg["message"] = "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death]
+	send_to_peer(peer_id, permadeath_msg)
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
 	var death_message = "[color=#FF4444]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
@@ -5393,7 +5422,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					effect["battles"] = true
 
 	# Escape scroll — safe dungeon exit
-	if item_type == "escape_scroll":
+	if item_type == "escape_scroll" or item.get("item_type", "") == "escape_scroll":
 		_use_escape_scroll(peer_id, index)
 		return
 
@@ -16128,6 +16157,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	var step_limit = DungeonDatabaseScript.get_step_limit(tier_sp, is_boss_floor_sp)
 	var step_pct = float(character.dungeon_floor_steps) / float(step_limit)
 
+	# Collect event messages to send AFTER dungeon state (so they don't get cleared)
+	var dungeon_event_texts: Array[String] = []
+
 	if character.dungeon_floor_steps >= step_limit:
 		# Collapse!
 		_collapse_dungeon(peer_id)
@@ -16136,16 +16168,10 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		# Earthquake warning + damage
 		var quake_dmg = int(character.get_total_max_hp() * randf_range(0.05, 0.10))
 		character.current_hp = max(1, character.current_hp - quake_dmg)
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF8800]EARTHQUAKE! Rocks fall! [color=#FF4444]-%d HP[/color][/color] [color=#FF4444][Steps: %d/%d][/color]" % [quake_dmg, character.dungeon_floor_steps, step_limit]
-		})
+		dungeon_event_texts.append("[color=#FF8800]EARTHQUAKE! Rocks fall! [color=#FF4444]-%d HP[/color][/color] [color=#FF4444][Steps: %d/%d][/color]" % [quake_dmg, character.dungeon_floor_steps, step_limit])
 	elif step_pct >= 0.75:
 		# Warning
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FFFF00]The walls tremble... [Steps: %d/%d][/color]" % [character.dungeon_floor_steps, step_limit]
-		})
+		dungeon_event_texts.append("[color=#FFFF00]The walls tremble... [Steps: %d/%d][/color]" % [character.dungeon_floor_steps, step_limit])
 
 	# === TRAP CHECK: Check if player stepped on a hidden trap ===
 	var trap = _check_dungeon_trap(instance_id, character.dungeon_floor, new_x, new_y)
@@ -16176,10 +16202,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 				"companion": companion,
 				"message": "[color=#A335EE]✦ Your %s Egg has hatched! ✦[/color]" % companion.name
 			})
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
-			})
+			dungeon_event_texts.append("[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name)
 
 	# Tick poison on dungeon movement
 	if character.poison_active:
@@ -16199,41 +16222,22 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 				poison_msg += " (%d rounds remaining)" % turns_left
 			else:
 				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
-			send_to_peer(peer_id, {
-				"type": "status_effect",
-				"effect": "poison",
-				"message": poison_msg,
-				"damage": poison_dmg,
-				"turns_remaining": turns_left
-			})
+			dungeon_event_texts.append(poison_msg)
 
 	# Tick blind on dungeon movement
 	if character.blind_active:
 		var still_blind = character.tick_blind()
 		var turns_left = character.blind_turns_remaining
 		if still_blind:
-			send_to_peer(peer_id, {
-				"type": "status_effect",
-				"effect": "blind",
-				"message": "[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left,
-				"turns_remaining": turns_left
-			})
+			dungeon_event_texts.append("[color=#808080]You are blinded! (%d rounds remaining)[/color]" % turns_left)
 		else:
-			send_to_peer(peer_id, {
-				"type": "status_effect",
-				"effect": "blind_cured",
-				"message": "[color=#00FF00]Your vision clears![/color]"
-			})
+			dungeon_event_texts.append("[color=#00FF00]Your vision clears![/color]")
 
 	# Tick active buffs on dungeon movement
 	if not character.active_buffs.is_empty():
 		var expired = character.tick_buffs()
 		for buff in expired:
-			send_to_peer(peer_id, {
-				"type": "status_effect",
-				"effect": "buff_expired",
-				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
-			})
+			dungeon_event_texts.append("[color=#808080]%s buff has worn off.[/color]" % buff.type)
 
 	# Check tile interaction FIRST (treasure, exit)
 	var tile_int = int(tile)
@@ -16276,8 +16280,12 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		_start_dungeon_encounter(peer_id, true)
 		return
 
-	# Send updated dungeon state
+	# Send updated dungeon state FIRST (clears game_output), then event texts AFTER
 	_send_dungeon_state(peer_id)
+
+	# Send event texts AFTER dungeon state so they appear below the dungeon status
+	for event_text in dungeon_event_texts:
+		send_to_peer(peer_id, {"type": "text", "message": event_text})
 
 func handle_dungeon_exit(peer_id: int):
 	"""Handle player exiting dungeon — no free exit, must use escape scroll"""
@@ -17957,6 +17965,8 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 			var pid = members[i]
 			if not characters.has(pid) or not characters[pid].in_dungeon:
 				continue
+			if dungeon_gathered_materials.has(pid):
+				dungeon_gathered_materials.erase(pid)
 			if active_dungeons.has(instance_id):
 				active_dungeons[instance_id].active_players.erase(pid)
 			characters[pid].exit_dungeon()

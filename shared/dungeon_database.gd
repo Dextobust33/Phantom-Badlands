@@ -1970,6 +1970,11 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 			if randi() % 100 < 60:
 				var qty = int((1 + randi() % 3 + floor_num) * sub_tier_mult)
 				materials.append({"id": mat, "quantity": qty})
+		# Guarantee at least 1 material from the pool
+		if materials.is_empty():
+			var mat = material_drops[randi() % material_drops.size()]
+			var qty = int((1 + floor_num) * sub_tier_mult)
+			materials.append({"id": mat, "quantity": qty})
 
 	# Roll for egg using tier-based rarity (higher tier = lower chance)
 	var egg = {}

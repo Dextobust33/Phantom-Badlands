@@ -2648,10 +2648,12 @@ func add_egg(egg_data: Dictionary, max_eggs: int = MAX_INCUBATING_EGGS) -> Dicti
 	if incubating_eggs.size() >= max_eggs:
 		return {"success": false, "message": "You can only incubate %d eggs at a time." % max_eggs}
 
+	var comp_name = egg_data.get("companion_name", "")
 	var egg = {
 		"egg_id": egg_data.get("id", ""),
 		"monster_type": egg_data.get("monster_type", ""),
-		"companion_name": egg_data.get("companion_name", ""),
+		"companion_name": comp_name,
+		"name": egg_data.get("name", comp_name + " Egg" if comp_name != "" else "Unknown Egg"),
 		"tier": egg_data.get("tier", 1),
 		"sub_tier": egg_data.get("sub_tier", 1),
 		"steps_remaining": egg_data.get("hatch_steps", 100),
@@ -3104,19 +3106,14 @@ func get_crafting_skill(skill_name: String) -> int:
 func add_crafting_xp(skill_name: String, xp: int) -> Dictionary:
 	"""Add XP to a crafting skill. Returns {leveled_up, new_level, char_xp_gained}.
 	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x
-	Crafting skills for uncommitted specialty jobs are capped at JOB_TRIAL_CAP."""
+	Specialist-only recipes are gated by commitment, not skill level."""
 	var skill = skill_name.to_lower()
 	if not crafting_xp.has(skill):
 		crafting_xp[skill] = 0
 	if not crafting_skills.has(skill):
 		crafting_skills[skill] = 1
 
-	# Cap crafting skills at trial cap for uncommitted specialty jobs
-	var matching_job = CRAFT_SKILL_TO_JOB.get(skill, "")
 	var craft_level_cap = 100
-	if matching_job != "" and matching_job in SPECIALTY_JOBS:
-		if not specialty_job_committed or specialty_job != matching_job:
-			craft_level_cap = JOB_TRIAL_CAP
 
 	crafting_xp[skill] += xp
 	var leveled_up = false
@@ -3165,16 +3162,18 @@ func _get_job_xp_needed(current_level: int) -> int:
 	return int(100 * pow(current_level, 1.4))
 
 func can_gain_job_xp(job_name: String) -> bool:
-	"""Check if player can gain XP in this job (respects trial cap and commitment)."""
+	"""Check if player can gain XP in this job.
+	Gathering jobs still require commitment after trial cap.
+	Specialty jobs can always level — specialist_only recipes gate access by commitment."""
 	var jl = job_levels.get(job_name, 1)
 	if job_name in GATHERING_JOBS:
 		if not gathering_job_committed:
 			return jl < JOB_TRIAL_CAP
 		return gathering_job == job_name
 	elif job_name in SPECIALTY_JOBS:
-		if not specialty_job_committed:
-			return jl < JOB_TRIAL_CAP
-		return specialty_job == job_name
+		if specialty_job_committed:
+			return specialty_job == job_name
+		return true  # Can always level specialty jobs — recipes gate access
 	return false
 
 func add_job_xp(job_name: String, xp: int) -> Dictionary:
