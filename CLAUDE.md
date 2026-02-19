@@ -430,9 +430,17 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 
 **Boss generation:** `get_boss_for_dungeon()` returns both `name` (display name like "Orc Warlord") and `monster_type` (base monster like "Orc"). Server uses `monster_type` to generate the monster, then renames it to the display name.
 
+**World Dungeons vs Player Instances (IMPORTANT):**
+- **World dungeons** (`_create_world_dungeon()`) are map markers showing 'D' tiles. They exist in `active_dungeons` with NO `owner_peer_id`. They are NOT the dungeon a player actually enters.
+- **Player instances** (`_create_player_dungeon_instance()`) are created when a player enters a 'D' tile. They have `owner_peer_id` set. Each player gets their own instance.
+- When a player enters a world dungeon 'D' tile, `handle_dungeon_enter()` calls `_mark_world_dungeon_completed()` to set `completed_at` on the world marker, then creates a personal instance.
+- `_check_dungeon_spawns()` removes completed world dungeons after `DUNGEON_DESPAWN_DELAY` (60s) and spawns replacements.
+- **CRITICAL:** `_create_world_dungeon()` MUST check `existing_coords` to prevent stacking multiple dungeons on the same tile. `_create_player_dungeon_instance()` already does this.
+- `get_visible_dungeons()` and `_get_dungeon_at_location()` both skip `completed_at > 0` entries.
+
 **Key files:**
 - `shared/dungeon_database.gd` - Dungeon definitions, `get_monster_for_encounter()`, `get_boss_for_dungeon()`
-- `server/server.gd` - `handle_dungeon_enter()`, `_start_dungeon_encounter()`
+- `server/server.gd` - `handle_dungeon_enter()`, `_start_dungeon_encounter()`, `_create_world_dungeon()`, `_mark_world_dungeon_completed()`
 
 ## Companion System
 
@@ -696,6 +704,33 @@ if not get_meta("mykey_%d_pressed" % i, false):
 **When to apply:** EVERY place in `_process()` that calls `is_item_select_key_pressed(i)` and triggers an action. No exceptions.
 
 **Files:** `client/client.gd` — `_consume_item_select_key()` (~line 16960), `item_selection_consumed_this_frame` var (~line 724), checked in action bar loop (~line 2550+)
+
+### 11. Action Bar Buttons Need BOTH Input Paths
+**Symptom:** Clicking an action bar button does nothing, even though the hotkey works
+**Cause:** Action bar buttons use TWO input paths that must BOTH be implemented:
+1. **Keyboard:** Handled by `_input()` (for modes excluded from `should_process_action_bar` like `settings_mode`) or by `_process()` hotkey polling
+2. **Click:** `_on_action_button_pressed()` → `trigger_action()` → `execute_local_action(action_data)` — requires a matching case in `execute_local_action()`
+
+**Fix:** When adding a new action bar button with `action_type: "local"`, ALWAYS add a matching handler in `execute_local_action()`. Even if `_input()` handles the keyboard path, the click path goes through `execute_local_action()`.
+
+**Modes affected:** Any mode in the `should_process_action_bar` exclusion list (`settings_mode`, `combat_item_mode`, `monster_select_mode`, `target_farm_mode`, `title_mode`) handles keyboard via `_input()` and clicks via `execute_local_action()`. Both must work.
+
+### 12. Dual-Type Items (type vs item_type) — Consumables
+**Symptom:** Item doesn't appear as usable, shows under wrong market category, inspect shows wrong effect
+**Cause:** Some items have BOTH `type` (broad category) and `item_type` (specific subtype). Example: Escape Scroll has `type: "consumable"` AND `item_type: "escape_scroll"`. Code that only checks one field misses the other.
+
+**All places that must handle BOTH fields:**
+1. **`_is_consumable_type()`** — must check `item_type == "consumable"` as well as specific subtypes
+2. **Inventory "Use" filter** — must accept `type == "consumable"` items, not just `is_consumable` flag
+3. **`display_item_details()` / inspect** — must resolve `item.get("item_type", item_type)` to get the specific subtype for effect descriptions
+4. **`_get_item_effect_description()`** — specific subtypes (e.g., `"escape_scroll"`) must be checked BEFORE generic catch-alls (e.g., `"scroll" in item_type`)
+5. **Drop table generation** — treasure/chest drops must include `"is_consumable": true` if the item should be usable (crafted items get this automatically, drops may not)
+6. **Market categorization** — `_is_consumable_type()` determines market category; items with `type: "consumable"` that aren't recognized end up under "Equipment"
+
+**Pattern:** When an item has both `type` and `item_type`, always resolve to the more specific one:
+```gdscript
+var resolved_type = item.get("item_type", item.get("type", ""))
+```
 
 ## Dungeon Combat Issues (Fixed v0.9.31)
 

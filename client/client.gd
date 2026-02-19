@@ -361,6 +361,7 @@ var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare
 
 # Combat action bar swap settings (per-client)
 var swap_attack_outsmart: bool = false  # Swap Attack (slot 0) with Outsmart (slot 3)
+var disable_tutorial: bool = false  # Skip tutorial on new character creation
 
 # Settings mode
 var settings_mode: bool = false
@@ -1029,8 +1030,8 @@ const TUTORIAL_STEPS = [
 	{"text": "Welcome to the Phantom Badlands! This quick tutorial will show you the basics.", "wait_for": "continue"},
 	{"text": "Use the numpad or arrow keys to move around the world. Try taking a step!", "wait_for": "move"},
 	{"text": "See the Action Bar at the bottom? [Space], [Q], [W], [E], [R] are your quick actions. [1]-[5] are extra slots.", "wait_for": "continue"},
-	{"text": "Press [E] to open your Inventory. Try it now!", "wait_for": "inventory_open"},
-	{"text": "Good! Press [E] or [Space] to close it.", "wait_for": "inventory_close"},
+	{"text": "Press [Q] to open your Inventory. Try it now!", "wait_for": "inventory_open"},
+	{"text": "Good! Press [Q] or [Space] to close it.", "wait_for": "inventory_close"},
 	{"text": "When you encounter a monster, you'll enter combat. Use Attack, abilities, or Flee. Be careful — death is permanent!", "wait_for": "continue"},
 	{"text": "Look for [color=#FF69B4]P[/color] tiles (trading posts) for quests and crafting. [R] shows contextual actions based on your location. Good luck out there!", "wait_for": "done"},
 ]
@@ -1046,6 +1047,9 @@ var dungeon_triggered_traps: Array = []  # Triggered trap positions for map disp
 var dungeon_resource_prompt: bool = false  # Waiting for gather/skip choice
 var awaiting_dungeon_gather_result: bool = false  # Protect gather result display from refresh
 var awaiting_dungeon_trap_ack: bool = false  # Protect trap display from dungeon state refresh
+var dungeon_food_select: bool = false  # Selecting food for dungeon rest
+var dungeon_food_list: Array = []  # [{id, name, quantity, type}] food materials available
+var dungeon_food_page: int = 0  # Current page of food selection
 
 # Password change mode
 var changing_password: bool = false
@@ -2110,20 +2114,20 @@ func _process(delta):
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
 
-	# Market main menu bulk listing with keybinds (1-3 for bulk actions, 4 for list egg)
+	# Market main menu bulk listing with keybinds (1-4 for bulk actions, 5 for list egg)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "":
-		for i in range(4):
+		for i in range(5):
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
 					continue
 				if not get_meta("marketbulkkey_%d_pressed" % i, false):
 					set_meta("marketbulkkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					if i < 3:
-						var bulk_types = ["equipment", "items", "materials"]
+					if i < 4:
+						var bulk_types = ["equipment", "items", "materials", "food"]
 						send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
 					else:
-						# Key 4 = List Egg from Incubator
+						# Key 5 = List Egg from Incubator
 						pending_market_action = "list_egg"
 						market_egg_page = 0
 						for j in range(9):
@@ -2150,6 +2154,25 @@ func _process(delta):
 						send_to_server({"type": "market_list_egg", "index": egg_idx})
 			else:
 				set_meta("marketeggkey_%d_pressed" % i, false)
+
+	# Dungeon food selection with keybinds (1-9)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and dungeon_mode and dungeon_food_select:
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("foodkey_%d_pressed" % i, false):
+					set_meta("foodkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					var food_idx = dungeon_food_page * 9 + i
+					if food_idx < dungeon_food_list.size():
+						var food = dungeon_food_list[food_idx]
+						dungeon_food_select = false
+						dungeon_food_list = []
+						send_to_server({"type": "dungeon_rest", "food_id": food.id})
+						update_action_bar()
+			else:
+				set_meta("foodkey_%d_pressed" % i, false)
 
 	# Quest selection with keybinds when in quest view mode
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_trading_post and quest_view_mode:
@@ -2635,7 +2658,7 @@ func _process(delta):
 			set_meta("enter_pressed", false)
 
 	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
-	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not dungeon_resource_prompt and not any_popup_open and not inventory_mode:
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not dungeon_resource_prompt and not dungeon_food_select and not any_popup_open and not inventory_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -3121,6 +3144,10 @@ func _input(event):
 				_toggle_skip_craft_minigame()
 			elif keycode == KEY_4:
 				_toggle_skip_gather_minigame()
+			elif keycode == KEY_5:
+				_toggle_skip_harvest_minigame()
+			elif keycode == KEY_6:
+				_toggle_disable_tutorial()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -5414,6 +5441,21 @@ func update_action_bar():
 			{"label": "Continue", "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
 			{"label": "Harvest" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "harvest_start" if harvest_available else "", "enabled": harvest_available},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif dungeon_mode and dungeon_food_select and not in_combat:
+		# Dungeon food selection for rest
+		var total_food_pages = max(1, ceili(float(dungeon_food_list.size()) / 9.0))
+		current_actions = [
+			{"label": "Back", "action_type": "local", "action_data": "dungeon_food_back", "enabled": true},
+			{"label": "Prev", "action_type": "local", "action_data": "dungeon_food_prev", "enabled": dungeon_food_page > 0},
+			{"label": "Next", "action_type": "local", "action_data": "dungeon_food_next", "enabled": dungeon_food_page < total_food_pages - 1},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9841,6 +9883,16 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"settings_reset":
 			reset_keybinds_to_defaults()
+		"settings_game":
+			settings_submenu = "game"
+			game_output.clear()
+			display_game_settings()
+			update_action_bar()
+		"settings_game_back":
+			settings_submenu = ""
+			game_output.clear()
+			display_settings_menu()
+			update_action_bar()
 		"settings_back_to_main":
 			settings_submenu = ""
 			game_output.clear()
@@ -10174,7 +10226,47 @@ func execute_local_action(action: String):
 		"dungeon_go_back":
 			send_to_server({"type": "dungeon_go_back"})
 		"dungeon_rest":
-			send_to_server({"type": "dungeon_rest"})
+			# Build food list from crafting materials
+			var food_types = ["plant", "herb", "fungus", "fish"]
+			var mats = character_data.get("crafting_materials", {})
+			dungeon_food_list = []
+			for mat_id in mats.keys():
+				var qty = int(mats[mat_id])
+				if qty <= 0:
+					continue
+				var mat_info = CraftingDatabase.MATERIALS.get(mat_id, {})
+				var mat_type = mat_info.get("type", "")
+				if mat_type in food_types:
+					dungeon_food_list.append({"id": mat_id, "name": mat_info.get("name", mat_id), "quantity": qty, "type": mat_type, "tier": int(mat_info.get("tier", 1))})
+			# Sort by tier then name
+			dungeon_food_list.sort_custom(func(a, b): return a.tier < b.tier if a.tier != b.tier else a.name < b.name)
+			if dungeon_food_list.is_empty():
+				display_game("[color=#FF4444]You have no food materials to rest! (plant, herb, fungus, or fish)[/color]")
+			else:
+				dungeon_food_select = true
+				dungeon_food_page = 0
+				# Pre-mark held keys to avoid double-trigger
+				for j in range(9):
+					if is_item_select_key_pressed(j):
+						set_meta("foodkey_%d_pressed" % j, true)
+				display_dungeon_food_select()
+				update_action_bar()
+		"dungeon_food_back":
+			dungeon_food_select = false
+			dungeon_food_list = []
+			display_dungeon_floor()
+			update_action_bar()
+		"dungeon_food_prev":
+			if dungeon_food_page > 0:
+				dungeon_food_page -= 1
+				display_dungeon_food_select()
+				update_action_bar()
+		"dungeon_food_next":
+			var total_food_pages = max(1, ceili(float(dungeon_food_list.size()) / 9.0))
+			if dungeon_food_page < total_food_pages - 1:
+				dungeon_food_page += 1
+				display_dungeon_food_select()
+				update_action_bar()
 		"dungeon_gather":
 			dungeon_resource_prompt = false
 			send_to_server({"type": "dungeon_gather_confirm"})
@@ -10186,7 +10278,7 @@ func execute_local_action(action: String):
 			var inv_e = character_data.get("inventory", [])
 			for idx in range(inv_e.size()):
 				if inv_e[idx].get("item_type", "") == "escape_scroll":
-					send_to_server({"type": "use_item", "index": idx})
+					send_to_server({"type": "inventory_use", "index": idx})
 					break
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
@@ -10570,7 +10662,9 @@ func acknowledge_continue():
 
 	# If in dungeon, refresh the dungeon display
 	if dungeon_mode:
-		if need_dungeon_refresh:
+		if dungeon_food_select:
+			pass  # Don't redisplay — keep food selection view
+		elif need_dungeon_refresh:
 			# Request fresh state from server (e.g., after treasure collection cleared tile)
 			send_to_server({"type": "dungeon_move", "direction": "none"})
 		else:
@@ -10969,7 +11063,7 @@ func display_shop_item_details(item: Dictionary):
 	display_game("")
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
-	var is_consumable_item = item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "tome" in item_type
+	var is_consumable_item = item.get("is_consumable", false) or item_type == "consumable" or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "tome" in item_type
 	if is_consumable_item:
 		var tier = item.get("tier", level)
 		display_game("[color=#00FFFF]Tier:[/color] %d" % tier)
@@ -10980,7 +11074,9 @@ func display_shop_item_details(item: Dictionary):
 
 	# Display computed stats for equipment, or effect description for consumables
 	if is_consumable_item:
-		var effect_desc = _get_item_effect_description(item_type, item.get("tier", level), rarity)
+		# Use item_type field for escape scrolls (type is "consumable" but item_type is "escape_scroll")
+		var effect_item_type = item.get("item_type", item_type) if item_type == "consumable" else item_type
+		var effect_desc = _get_item_effect_description(effect_item_type, item.get("tier", level), rarity)
 		display_game("[color=#E6CC80]Effect:[/color] %s" % effect_desc)
 	else:
 		var stats_shown = _display_computed_item_bonuses(item)
@@ -12934,7 +13030,7 @@ func prompt_inventory_action(action_type: String):
 				# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
 				# Also check the is_consumable flag as a fallback
 				# Also include structure items (walls, doors, etc.) — using them enters placement mode
-				if item.get("is_consumable", false) or item_type == "structure" or item_type == "rune" or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+				if item.get("is_consumable", false) or item_type == "structure" or item_type == "rune" or item_type == "consumable" or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
 					usable_items.append({"index": i, "item": item})
 			if usable_items.is_empty():
 				display_game("[color=#FF0000]No usable items in inventory.[/color]")
@@ -14694,8 +14790,8 @@ func handle_server_message(message: Dictionary):
 			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
-			# Start tutorial for brand-new accounts
-			if message.get("is_first_character", false):
+			# Start tutorial for new characters (unless disabled in settings)
+			if not disable_tutorial:
 				tutorial_active = true
 				tutorial_step = 0
 				_display_tutorial_step()
@@ -16520,6 +16616,10 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 	display_game("[color=#00FFFF]Type:[/color] %s" % _get_item_type_description(item_type))
 	display_game("[color=#00FFFF]Rarity:[/color] [color=%s]%s[/color]" % [rarity_color, rarity.capitalize()])
 
+	# Treat items with type "consumable" as consumable even without is_consumable flag
+	if not is_consumable and item_type == "consumable":
+		is_consumable = true
+
 	# Show tier and quantity for consumables, level for equipment, tier for tools
 	if is_consumable:
 		var tier = item.get("tier", 1)
@@ -16649,10 +16749,12 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 					var dur = int(eff.get("duration_battles", 3))
 					display_game("[color=#E6CC80]Effect:[/color] +%d%% damage vs %ss for %d battle%s" % [pct, monster, dur, "s" if dur != 1 else ""])
 				_:
-					display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, 1, rarity))
+					var eff_type2 = item.get("item_type", item_type) if item_type == "consumable" else item_type
+					display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type2, 1, rarity))
 		else:
 			var tier = item.get("tier", 1) if is_consumable else level
-			display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(item_type, tier, rarity))
+			var eff_type3 = item.get("item_type", item_type) if item_type == "consumable" else item_type
+			display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type3, tier, rarity))
 		# Show rarity bonuses for consumables (potency, uses)
 		var crb = item.get("rarity_bonuses", {})
 		if not crb.is_empty():
@@ -16949,6 +17051,8 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Revive with 50% HP on death (permanent until used)"
 	elif "scroll_resurrect_lesser" in item_type:
 		return "Revive with 25% HP on death (next battle only)"
+	elif item_type == "escape_scroll":
+		return "Safely exit a dungeon without defeating the boss"
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
 	# Home Stones
@@ -17365,6 +17469,8 @@ func _load_keybinds():
 				# Load combat swap settings
 				if data.has("swap_attack_outsmart"):
 					swap_attack_outsmart = data["swap_attack_outsmart"]
+				if data.has("disable_tutorial"):
+					disable_tutorial = data["disable_tutorial"]
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -17392,6 +17498,7 @@ func _save_keybinds():
 	# Include other persistent settings
 	save_data["inventory_compare_stat"] = inventory_compare_stat
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
+	save_data["disable_tutorial"] = disable_tutorial
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -17863,8 +17970,13 @@ func display_game_settings():
 	var skip_gather = character_data.get("skip_gather_minigame", false)
 	var skip_gather_status = "[color=#00FF00]ON[/color]" if skip_gather else "[color=#FF6666]OFF[/color]"
 	display_game("[4] Skip Gather Minigame: %s" % skip_gather_status)
+	var skip_harvest = character_data.get("skip_harvest_minigame", false)
+	var skip_harvest_status = "[color=#00FF00]ON[/color]" if skip_harvest else "[color=#FF6666]OFF[/color]"
+	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
+	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
+	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
 	display_game("")
-	if skip_craft or skip_gather:
+	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
 		display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
@@ -17902,6 +18014,39 @@ func _toggle_skip_gather_minigame():
 	else:
 		display_game("[color=#FF6666]Skip Gather Minigame: DISABLED[/color]")
 		display_game("[color=#808080]Gathering minigames will play normally.[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
+func _toggle_skip_harvest_minigame():
+	"""Toggle skip harvest minigame setting."""
+	var current = character_data.get("skip_harvest_minigame", false)
+	var new_value = not current
+	character_data["skip_harvest_minigame"] = new_value
+	send_to_server({"type": "setting_change", "setting": "skip_harvest_minigame", "value": new_value})
+	game_output.clear()
+	if new_value:
+		display_game("[color=#00FF00]Skip Harvest Minigame: ENABLED[/color]")
+		display_game("[color=#FFFF00]Warning: Skipping harvest minigames gives ~50% average rewards.[/color]")
+		display_game("[color=#808080]Disable in Settings > Game anytime.[/color]")
+	else:
+		display_game("[color=#FF6666]Skip Harvest Minigame: DISABLED[/color]")
+		display_game("[color=#808080]Harvest minigames will play normally.[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
+func _toggle_disable_tutorial():
+	"""Toggle whether tutorial shows on new character creation."""
+	disable_tutorial = not disable_tutorial
+	_save_keybinds()
+	game_output.clear()
+	if disable_tutorial:
+		display_game("[color=#FF6666]Tutorial on New Character: DISABLED[/color]")
+	else:
+		display_game("[color=#00FF00]Tutorial on New Character: ENABLED[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
@@ -19222,8 +19367,24 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.139 changes
+	display_game("[color=#00FF00]v0.9.139[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon, Gathering & UI Fixes[/color]")
+	display_game("  • Dungeons: Completed dungeons now properly despawn from the map")
+	display_game("  • Dungeons: Dungeons can no longer stack on the same tile")
+	display_game("  • Dungeons: Rest now requires food (plant/herb/fungus/fish) with selection UI")
+	display_game("  • Dungeons: Monsters move 1 step each time you rest")
+	display_game("  • Dungeons: Escape scrolls now work from both inventory and action bar")
+	display_game("  • Harvest: Wrong picks now give reduced parts instead of ending the session")
+	display_game("  • Harvest: Skip setting added (Settings → Game → Skip Harvest Minigame)")
+	display_game("  • Gathering: Auto-skip now requires appropriate tool equipped")
+	display_game("  • Gathering: Better tools give more resources when auto-skipping")
+	display_game("  • Market: Food items now have their own \"List All Food\" category")
+	display_game("  • Settings: Fixed Game settings button not responding to clicks")
+	display_game("")
+
 	# v0.9.138 changes
-	display_game("[color=#00FF00]v0.9.138[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.138[/color]")
 	display_game("  [color=#FFD700]Bulk Crafting, Market Stacking & Merchant Rework[/color]")
 	display_game("  • Bulk crafting: Craft up to 99 stackable items at once (structures, scrolls, etc.)")
 	display_game("  • Crafted items now properly stack in inventory (structures, doors, scrolls, maps)")
@@ -19247,7 +19408,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.134[/color]")
 	display_game("  [color=#FFD700]Leaderboard & Dungeon Fixes[/color]")
 	display_game("  • Leaderboard: Click any name to view their full death screen & final battle")
-	display_game("  • Dungeons: Escape scrolls now work correctly from inventory")
 	display_game("  • Dungeons: Step counter now advances after fleeing combat")
 	display_game("  • Dungeons: Display clears properly when moving between rooms")
 	display_game("  • Dungeons: Treasures now always list their contents")
@@ -19266,18 +19426,6 @@ func display_changelog():
 	display_game("  • Player pass-through: bump into a player and press Space to squeeze past")
 	display_game("  • Fixed: Personal dungeon quests no longer share between players")
 	display_game("  • Fixed: Other players' personal dungeons no longer visible on your map")
-	display_game("")
-
-	# v0.9.132 changes
-	display_game("[color=#00FFFF]v0.9.132[/color]")
-	display_game("  [color=#FFD700]Bug Fixes & Stability[/color]")
-	display_game("  • Market: Self-buyback now correctly applies markup pricing")
-	display_game("  • Market: Fixed race condition when two players buy simultaneously")
-	display_game("  • Building: Added placement cooldown to prevent rapid-fire exploits")
-	display_game("  • Party: Flee now correctly applies all bonuses (speed, equipment, companion)")
-	display_game("  • Crafting: Materials refunded if disconnected during crafting challenge")
-	display_game("  • Salvage: Bulk salvage (All / Below Level) now requires confirmation")
-	display_game("  • Walls: Decay notifications batched (\"X walls crumbled\" instead of spam)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22482,7 +22630,11 @@ func handle_harvest_result(message: Dictionary):
 		display_game("[color=#00FFFF]✗ Wrong, but your experience saves you! Try again.[/color]")
 		display_game("[color=#808080](%d save(s) remaining)[/color]" % message.get("saves_remaining", 0))
 	elif not correct:
-		display_game("[color=#FF4444]✗ The harvest attempt failed.[/color]")
+		if not part.is_empty():
+			harvest_parts_gained.append(part)
+			display_game("[color=#FF4444]✗ Wrong pick, but you salvaged: [color=#FF6600]%s[/color][/color]" % part.get("name", "part"))
+		else:
+			display_game("[color=#FF4444]✗ The harvest attempt failed.[/color]")
 
 	if cont and not harvest_saved:
 		display_game("[color=#808080]Preparing next harvest round...[/color]")
@@ -23083,6 +23235,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_mode = true
 	dungeon_list_mode = false
 	dungeon_resource_prompt = false
+	dungeon_food_select = false
 	dungeon_data = message
 	dungeon_floor_grid = message.get("grid", [])
 	dungeon_monsters_data = message.get("monsters", [])
@@ -23263,6 +23416,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_npcs_data = []
 	dungeon_triggered_traps = []
 	dungeon_resource_prompt = false
+	dungeon_food_select = false
 	awaiting_dungeon_gather_result = false
 	awaiting_dungeon_trap_ack = false
 
@@ -23443,6 +23597,32 @@ func display_dungeon_floor():
 		display_game("[color=#00FF00]Floor cleared![/color]")
 	display_game("")
 	display_game("Use numpad/arrows to move. [color=#FFFF00][%s][/color] Items, [color=#FFFF00][%s][/color] %s" % [get_action_key_name(0), get_action_key_name(1), "Meditate" if character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"] else "Rest"])
+
+func display_dungeon_food_select():
+	"""Display food selection for dungeon rest."""
+	game_output.clear()
+	var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
+	var action_name = "Meditate" if is_mage else "Rest"
+	display_game("[color=#FFD700]===== %s - Select Food =====[/color]" % action_name)
+	display_game("[color=#808080]Consume food to rest and recover. Monsters may move![/color]")
+	display_game("")
+	var page_start = dungeon_food_page * 9
+	var page_end = mini(page_start + 9, dungeon_food_list.size())
+	var total_pages = max(1, ceili(float(dungeon_food_list.size()) / 9.0))
+	for idx in range(page_start, page_end):
+		var food = dungeon_food_list[idx]
+		var num = idx - page_start + 1
+		var type_color = "#00FF00"
+		match food.type:
+			"fish": type_color = "#4488FF"
+			"herb": type_color = "#44FF44"
+			"fungus": type_color = "#CC88FF"
+			"plant": type_color = "#88CC44"
+		display_game("  [color=#FFD700][%d][/color] %s x%d [color=%s][%s T%d][/color]" % [num, food.name, food.quantity, type_color, food.type.capitalize(), food.tier])
+	display_game("")
+	if total_pages > 1:
+		display_game("[color=#808080]Page %d/%d[/color]" % [dungeon_food_page + 1, total_pages])
+	display_game("[color=#FFFF00][%s][/color] Back  [color=#FFFF00][%s][/color] Prev Page  [color=#FFFF00][%s][/color] Next Page" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
 
 func update_dungeon_map():
 	"""Update just the dungeon map display (right panel) without touching GameOutput"""
@@ -23907,9 +24087,10 @@ func display_market_main():
 	display_game("[color=#FF8800]Bulk Listing:[/color]")
 	display_game("  [color=#FFD700][1][/color] List All Equipment")
 	display_game("  [color=#FFD700][2][/color] List All Consumables/Tools")
-	display_game("  [color=#FFD700][3][/color] List All Materials")
+	display_game("  [color=#FFD700][3][/color] List All Materials [color=#808080](non-food)[/color]")
+	display_game("  [color=#FFD700][4][/color] List All Food [color=#808080](plant/herb/fungus/fish)[/color]")
 	display_game("")
-	display_game("  [color=#FFD700][4][/color] List Egg from Incubator")
+	display_game("  [color=#FFD700][5][/color] List Egg from Incubator")
 	update_action_bar()
 
 func display_market_browse():
@@ -23932,7 +24113,13 @@ func display_market_browse():
 		for idx in range(market_listings.size()):
 			var listing = market_listings[idx]
 			var item = listing.get("item", {})
-			var item_name = item.get("name", "Unknown")
+			var item_name = item.get("name", "")
+			if item_name == "" and item.get("type", "") == "egg":
+				var comp_name = item.get("companion_name", "")
+				if comp_name != "":
+					item_name = comp_name + " Egg"
+			if item_name == "":
+				item_name = "Unknown"
 			var rarity = item.get("rarity", "common")
 			var rarity_color = _get_rarity_color(rarity)
 			var price = int(listing.get("markup_price", listing.get("base_valor", 0)))

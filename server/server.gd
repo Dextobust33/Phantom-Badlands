@@ -1093,7 +1093,7 @@ func handle_message(peer_id: int, message: Dictionary):
 		"dungeon_go_back":
 			handle_dungeon_go_back(peer_id)
 		"dungeon_rest":
-			handle_dungeon_rest(peer_id)
+			handle_dungeon_rest(peer_id, message)
 		"dungeon_gather_confirm":
 			handle_dungeon_gather_confirm(peer_id, message)
 		"dungeon_gather_skip":
@@ -7321,7 +7321,8 @@ func handle_merchant_sell(peer_id: int, _message: Dictionary):
 
 func _is_consumable_type(item_type: String) -> bool:
 	"""Check if an item type is a consumable (potion, scroll, etc.)"""
-	return (item_type.begins_with("potion_") or item_type.begins_with("mana_") or
+	return (item_type == "consumable" or
+			item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type.begins_with("elixir_") or
@@ -9326,6 +9327,13 @@ func handle_market_list_egg(peer_id: int, message: Dictionary):
 	var egg = character.incubating_eggs[index].duplicate(true)
 	egg["type"] = "egg"
 	egg["is_consumable"] = false
+	# Ensure name field exists for market display
+	if not egg.has("name") or egg.get("name", "") == "":
+		var comp_name = egg.get("companion_name", "")
+		if comp_name != "":
+			egg["name"] = comp_name + " Egg"
+		else:
+			egg["name"] = egg.get("monster_type", "Unknown") + " Egg"
 
 	# Calculate valor
 	var base_valor = drop_tables.calculate_egg_valor(egg)
@@ -9761,6 +9769,8 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 				continue
 			if itype == "treasure_chest":
 				continue  # Don't bulk-list treasure chests
+			if item.get("item_type", "") == "escape_scroll":
+				continue  # Don't bulk-list escape scrolls
 
 			var base_valor = drop_tables.calculate_base_valor(item)
 			if bonus > 0:
@@ -9782,13 +9792,51 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 			character.inventory.remove_at(i)
 
 	elif list_type == "materials":
-		# List all crafting materials
+		# List all crafting materials (excluding food: plant, herb, fungus, fish)
+		var food_types = ["plant", "herb", "fungus", "fish"]
 		var mat_keys = character.crafting_materials.keys().duplicate()
 		for mat_name in mat_keys:
 			var qty = int(character.crafting_materials.get(mat_name, 0))
 			if qty <= 0:
 				continue
 			var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+			if mat_info.get("type", "") in food_types:
+				continue  # Skip food — use "List All Food" instead
+			var mat_value = int(mat_info.get("value", 5))
+			var per_unit_valor = maxi(1, int(mat_value / 3.0))
+			var material_tier = int(mat_info.get("tier", _get_material_tier(mat_name)))
+			var mat_total = per_unit_valor * qty
+			if bonus > 0:
+				mat_total = int(mat_total * (1.0 + bonus))
+			var listing = {
+				"account_id": account_id,
+				"seller_name": character.name,
+				"item": {"type": "material", "name": mat_name, "material_type": mat_name, "tier": material_tier},
+				"base_valor": mat_total,
+				"supply_category": "material_t%d" % material_tier,
+				"listed_at": now,
+				"quantity": qty
+			}
+			persistence.add_market_listing(post_id, listing)
+			total_valor += mat_total
+			count += 1
+			character.crafting_materials[mat_name] = 0
+		# Clean up zero entries
+		for mat_name in mat_keys:
+			if int(character.crafting_materials.get(mat_name, 0)) <= 0:
+				character.crafting_materials.erase(mat_name)
+
+	elif list_type == "food":
+		# List all food materials (plant, herb, fungus, fish)
+		var food_types = ["plant", "herb", "fungus", "fish"]
+		var mat_keys = character.crafting_materials.keys().duplicate()
+		for mat_name in mat_keys:
+			var qty = int(character.crafting_materials.get(mat_name, 0))
+			if qty <= 0:
+				continue
+			var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+			if mat_info.get("type", "") not in food_types:
+				continue  # Skip non-food
 			var mat_value = int(mat_info.get("value", 5))
 			var per_unit_valor = maxi(1, int(mat_value / 3.0))
 			var material_tier = int(mat_info.get("tier", _get_material_tier(mat_name)))
@@ -10762,6 +10810,8 @@ func handle_setting_change(peer_id: int, message: Dictionary):
 			character.skip_craft_minigame = bool(value)
 		"skip_gather_minigame":
 			character.skip_gather_minigame = bool(value)
+		"skip_harvest_minigame":
+			character.skip_harvest_minigame = bool(value)
 		_:
 			return
 	save_character(peer_id)
@@ -11338,10 +11388,14 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	session["discoveries"] = []      # Foraging: discovered plant names this session
 	active_gathering[peer_id] = session
 
-	# Skip minigame if player has skip_gather_minigame enabled
+	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
 	if character.skip_gather_minigame:
-		_auto_resolve_gathering(peer_id, character, session)
-		return
+		if has_tool:
+			_auto_resolve_gathering(peer_id, character, session, tool)
+			return
+		else:
+			var tool_label = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Fishing Rod"}.get(tool_subtype, "tool")
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Auto-gather skipped: no %s equipped. Starting minigame...[/color]" % tool_label})
 
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
@@ -11404,10 +11458,14 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	session["discoveries"] = []
 	active_gathering[peer_id] = session
 
-	# Skip minigame if player has skip_gather_minigame enabled
+	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
 	if character.skip_gather_minigame:
-		_auto_resolve_gathering(peer_id, character, session)
-		return
+		if has_tool:
+			_auto_resolve_gathering(peer_id, character, session, tool)
+			return
+		else:
+			var tool_label = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Fishing Rod"}.get(tool_subtype, "tool")
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Auto-gather skipped: no %s equipped. Starting minigame...[/color]" % tool_label})
 
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
@@ -11425,12 +11483,29 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 		"discoveries": [],
 	})
 
-func _auto_resolve_gathering(peer_id: int, character, session: Dictionary):
-	"""Auto-resolve gathering without minigame. Awards ~half normal rewards."""
+func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool: Dictionary = {}):
+	"""Auto-resolve gathering without minigame. Rewards scale with tool quality."""
 	var job_type = session.get("job_type", "")
 	var tier = session.get("tier", 1)
 	var job_level = character.job_levels.get(job_type, 1)
-	var auto_chains = ceili(float(tier) / 2.0) + 1  # T1:2, T2:2, T3:3, T4:3, T5:4, T6:4
+	var base_chains = ceili(float(tier) / 2.0) + 1  # T1:2, T2:2, T3:3, T4:3, T5:4, T6:4
+
+	# Tool quality bonus: saves + reveals + max durability give bonus chains
+	var tool_saves = tool.get("max_saves", 0)
+	var tool_reveals = tool.get("tool_bonuses", {}).get("reveals", 0)
+	var tool_max_durability = maxi(tool.get("max_durability", 1), 1)
+	# Quality score: saves (1-4) + reveals (1-7) + durability tiers (0-3)
+	# Durability tiers: 0-50=0, 51-100=1, 101-200=2, 201+=3
+	var durability_bonus = 0
+	if tool_max_durability > 200:
+		durability_bonus = 3
+	elif tool_max_durability > 100:
+		durability_bonus = 2
+	elif tool_max_durability > 50:
+		durability_bonus = 1
+	var quality_score = tool_saves + tool_reveals + durability_bonus
+	var bonus_chains = floori(float(quality_score) / 4.0)  # 0-4 bonus chains
+	var auto_chains = base_chains + bonus_chains
 
 	# Roll rewards for each chain
 	for i in range(auto_chains):
@@ -12187,6 +12262,11 @@ func handle_harvest_start(peer_id: int):
 	session["mastery_bonus_parts"] = mastery_bonus_parts
 	active_harvests[peer_id] = session
 
+	# Skip harvest minigame if setting enabled — 50% chance per round, auto-complete
+	if character.skip_harvest_minigame:
+		_handle_harvest_skip(peer_id, session, character)
+		return
+
 	# If Expert/Master, auto-succeed round 1
 	if mastery_auto_round:
 		_handle_harvest_auto_success(peer_id, session, character)
@@ -12211,6 +12291,51 @@ func handle_harvest_start(peer_id: int):
 	if _hint_str > 0.5 and randf() < _hint_str:
 		_harvest_msg["hint_id"] = session["correct_id"]
 	send_to_peer(peer_id, _harvest_msg)
+
+func _handle_harvest_skip(peer_id: int, session: Dictionary, character):
+	"""Auto-complete all harvest rounds with 50% success chance each (skip minigame)."""
+	var monster_name = session["monster_name"]
+	var parts = drop_tables.get_monster_parts(monster_name)
+	var total_parts: Array = []
+
+	for r in range(session["max_rounds"]):
+		if randf() < 0.5 and not parts.is_empty():
+			# 50% chance to succeed this round
+			character.harvest_mastery[monster_name] = int(character.harvest_mastery.get(monster_name, 0)) + 1
+			var adjusted = parts.duplicate(true)
+			for p in adjusted:
+				p["weight"] = maxi(p["weight"], 20)
+			var total_w = 0
+			for p in adjusted:
+				total_w += p["weight"]
+			var roll = randi() % total_w
+			var cum = 0
+			for p in adjusted:
+				cum += p["weight"]
+				if roll < cum:
+					var qty = 5 + session.get("mastery_bonus_parts", 0)
+					character.add_crafting_material(p["id"], qty)
+					total_parts.append({"id": p["id"], "name": p["name"], "qty": qty})
+					break
+
+	# Award soldier XP
+	var soldier_level = character.job_levels.get("soldier", 1)
+	var base_xp = 10 + session["monster_tier"] * 5
+	var job_xp = base_xp * total_parts.size()
+	if job_xp > 0:
+		character.add_job_xp("soldier", job_xp)
+
+	# Send auto-skipped completion directly
+	send_to_peer(peer_id, {
+		"type": "harvest_complete",
+		"total_parts": total_parts,
+		"job_xp_gained": job_xp,
+		"auto_skipped": true,
+	})
+	active_harvests.erase(peer_id)
+	character.remove_meta("pending_harvest")
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _handle_harvest_auto_success(peer_id: int, session: Dictionary, character):
 	"""Auto-succeed a harvest round due to Expert/Master mastery."""
@@ -12380,11 +12505,11 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 			})
 			_end_harvest_session(peer_id, true)
 	else:
-		# Wrong — check for soldier saves
+		# Wrong — check for soldier saves (re-roll same round for another chance)
 		var saves_left = session.get("saves_remaining", 0)
 		if saves_left > 0:
 			session["saves_remaining"] -= 1
-			# Re-roll the round (new options)
+			# Re-roll the round (new options, same round number)
 			var new_round = _generate_harvest_round(monster_name, monster_tier)
 			session["options"] = new_round["options"]
 			session["client_options"] = new_round["client_options"]
@@ -12417,7 +12542,7 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 				_h_msg["hint_id"] = new_round["correct_id"]
 			send_to_peer(peer_id, _h_msg)
 		else:
-			# No saves — harvest ends but still give 1 base part
+			# No saves — give 1 base part (reduced) and continue to next round
 			var fail_part = {}
 			var parts = drop_tables.get_monster_parts(monster_name)
 			if not parts.is_empty():
@@ -12426,14 +12551,48 @@ func handle_harvest_choice(peer_id: int, message: Dictionary):
 				character.add_crafting_material(p["id"], qty)
 				session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
 				fail_part = {"id": p["id"], "name": p["name"], "qty": qty}
-			send_to_peer(peer_id, {
-				"type": "harvest_result",
-				"correct": false,
-				"part_gained": fail_part,
-				"round": session["round"],
-				"continue": false,
-			})
-			_end_harvest_session(peer_id, false)
+			if session["round"] < session["max_rounds"]:
+				# More rounds — continue
+				session["round"] += 1
+				var new_round = _generate_harvest_round(monster_name, monster_tier)
+				session["options"] = new_round["options"]
+				session["client_options"] = new_round["client_options"]
+				session["correct_id"] = new_round["correct_id"]
+				send_to_peer(peer_id, {
+					"type": "harvest_result",
+					"correct": false,
+					"part_gained": fail_part,
+					"round": session["round"] - 1,
+					"continue": true,
+				})
+				var soldier_level = character.job_levels.get("soldier", 0)
+				var _h_hint = minf(1.0, float(soldier_level) / 100.0)
+				if session.get("mastery_count", 0) >= 3:
+					_h_hint = minf(1.0, _h_hint + 0.3)
+				var _h_msg = {
+					"type": "harvest_round",
+					"options": new_round["client_options"],
+					"hint_strength": _h_hint,
+					"round": session["round"],
+					"max_rounds": session["max_rounds"],
+					"monster_name": monster_name,
+					"saves_remaining": 0,
+					"mastery_label": session.get("mastery_label", ""),
+					"mastery_count": session.get("mastery_count", 0),
+				}
+				if _h_hint > 0.5 and randf() < _h_hint:
+					_h_msg["hint_id"] = new_round["correct_id"]
+				send_to_peer(peer_id, _h_msg)
+			else:
+				# Last round — end session
+				send_to_peer(peer_id, {
+					"type": "harvest_result",
+					"correct": false,
+					"part_gained": fail_part,
+					"round": session["round"],
+					"continue": false,
+				})
+				_end_harvest_session(peer_id, false)
 
 func _end_harvest_session(peer_id: int, all_correct: bool = false):
 	"""End a harvest session and give job XP."""
@@ -16092,7 +16251,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	var confirmed = message.get("confirmed", false)
 	if not confirmed:
 		var warning_text = "[color=#FF6666]WARNING: There is NO free exit from dungeons![/color]\n"
-		warning_text += "[color=#FFAA00]The only safe way out is an Escape Scroll.[/color]\n"
+		warning_text += "[color=#FFAA00]To leave early, you need an Escape Scroll. You can also exit by defeating the boss.[/color]\n"
 		warning_text += "[color=#808080]If you run out of steps, the dungeon collapses — losing materials and damaging equipment.[/color]\n"
 		if character.level < dungeon_data.min_level:
 			var level_diff = dungeon_data.min_level - character.level
@@ -16133,6 +16292,9 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":
+		# Mark any world dungeon at this location as completed (player is entering it)
+		_mark_world_dungeon_completed(character.x, character.y)
+
 		# Players always get their own dungeon instance now
 		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level)
 		if instance_id == "":
@@ -16443,7 +16605,7 @@ func handle_dungeon_exit(peer_id: int):
 	# No free exit — must use escape scroll or complete the dungeon
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FF6666]There is no way out! Use an Escape Scroll to leave safely.[/color]"
+		"message": "[color=#FF6666]You can't leave from here! Use an Escape Scroll or defeat the boss to exit.[/color]"
 	})
 	return
 
@@ -16910,11 +17072,17 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	# Get spawn location based on tier - higher tiers spawn further from origin
 	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
 
-	# Try to find a valid spawn location (not on a trading post)
+	# Try to find a valid spawn location (not on a trading post or existing dungeon)
 	var world_x = 0
 	var world_y = 0
 	var max_attempts = 20
 	var found_valid = false
+
+	# Collect existing dungeon coordinates to avoid stacking
+	var existing_coords = {}
+	for eid in active_dungeons:
+		var ed = active_dungeons[eid]
+		existing_coords[Vector2i(ed.world_x, ed.world_y)] = true
 
 	for _attempt in range(max_attempts):
 		# Add more randomness to position (within 100 tiles of tier's base location)
@@ -16924,8 +17092,10 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		world_x = spawn_loc.x + offset_x
 		world_y = spawn_loc.y + offset_y
 
-		# Check if this location overlaps with a trading post or NPC post
-		if not trading_post_db.is_trading_post_tile(world_x, world_y) and not world_system.is_safe_zone(world_x, world_y):
+		# Check if this location overlaps with a trading post, NPC post, or existing dungeon
+		if not trading_post_db.is_trading_post_tile(world_x, world_y) \
+				and not world_system.is_safe_zone(world_x, world_y) \
+				and not existing_coords.has(Vector2i(world_x, world_y)):
 			found_valid = true
 			break
 
@@ -16996,6 +17166,21 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 				"color": dungeon_data.color
 			}
 	return {}
+
+func _mark_world_dungeon_completed(x: int, y: int):
+	"""Mark any world dungeon at (x,y) as completed so it despawns."""
+	for instance_id in active_dungeons:
+		var inst = active_dungeons[instance_id]
+		# Only affect world dungeons (no owner), not player instances
+		if inst.get("owner_peer_id", -1) >= 0:
+			continue
+		# Skip already completed
+		if inst.get("completed_at", 0) > 0:
+			continue
+		if inst.world_x == x and inst.world_y == y:
+			inst["completed_at"] = int(Time.get_unix_time_from_system())
+			log_message("World dungeon %s at (%d,%d) marked completed (player entered)" % [instance_id, x, y])
+			break
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
 	"""Get all dungeon entrances visible within the given radius.
@@ -17334,6 +17519,7 @@ func _open_dungeon_treasure(peer_id: int):
 		var scroll_item = {
 			"name": scroll_drop.name,
 			"item_type": "escape_scroll",
+			"is_consumable": true,
 			"tier_max": scroll_drop.tier_max,
 			"type": "consumable",
 			"level": 1,
@@ -18122,7 +18308,6 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 # ===== DUNGEON MONSTER ENTITY SYSTEM =====
 
 # Material types that count as food for dungeon rest
-const DUNGEON_REST_FOOD_MATERIAL_TYPES = ["plant", "herb", "fungus", "fish"]
 
 func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dungeon_level: int):
 	"""Spawn monsters on all floors of a dungeon instance"""
@@ -18507,8 +18692,8 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		"extra_combat_text": result.get("extra_combat_text", "")
 	})
 
-func handle_dungeon_rest(peer_id: int):
-	"""Handle player resting in a dungeon to recover HP/mana"""
+func handle_dungeon_rest(peer_id: int, message: Dictionary):
+	"""Handle player resting in a dungeon — costs 1 food material, monsters move"""
 	if not characters.has(peer_id):
 		return
 
@@ -18526,49 +18711,168 @@ func handle_dungeon_rest(peer_id: int):
 	if not active_dungeons.has(instance_id):
 		return
 
-	# Find any food-type crafting material to consume
-	var food_id = ""
-	var food_name = ""
-	for mat_id in character.crafting_materials:
-		if character.crafting_materials[mat_id] <= 0:
-			continue
-		var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_id, {})
-		if mat_info.get("type", "") in DUNGEON_REST_FOOD_MATERIAL_TYPES:
-			food_id = mat_id
-			food_name = mat_info.get("name", mat_id.capitalize().replace("_", " "))
-			break
-
-	if food_id == "":
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF6666]You have no food to rest with! Gather herbs, berries, mushrooms, or fish first.[/color]"
-		})
+	# Validate and consume food material
+	var food_id = message.get("food_id", "")
+	if food_id.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "No food selected!"})
+		return
+	var mat_info = CraftingDatabaseScript.MATERIALS.get(food_id, {})
+	var mat_type = mat_info.get("type", "")
+	if mat_type not in ["plant", "herb", "fungus", "fish"]:
+		send_to_peer(peer_id, {"type": "error", "message": "That is not a food material!"})
+		return
+	var current_qty = int(character.crafting_materials.get(food_id, 0))
+	if current_qty <= 0:
+		send_to_peer(peer_id, {"type": "error", "message": "You don't have any %s!" % mat_info.get("name", food_id)})
 		return
 
-	# Consume 1 food material
-	character.crafting_materials[food_id] -= 1
+	# Consume 1 food
+	character.crafting_materials[food_id] = current_qty - 1
 	if character.crafting_materials[food_id] <= 0:
 		character.crafting_materials.erase(food_id)
+	var food_name = mat_info.get("name", food_id)
 
-	# Heal based on class
-	var heal_messages = []
-	var is_mage = character.character_class in ["Wizard", "Sorcerer", "Sage"]
+	var class_type = character.class_type
+	var is_mage = class_type in ["Wizard", "Sorcerer", "Sage"]
 
+	# Break cloak if active
+	if character.cloak_active:
+		character.cloak_active = false
+		send_to_peer(peer_id, {
+			"type": "status_effect",
+			"effect": "cloak_dropped",
+			"message": ""
+		})
+
+	# Mages use Meditate
 	if is_mage:
-		# Mages recover mana (5-12.5%) and some HP (3-5%)
-		var mana_restore = int(character.max_mana * randf_range(0.05, 0.125))
-		character.current_mana = min(character.max_mana, character.current_mana + mana_restore)
-		var hp_restore = int(character.max_hp * randf_range(0.03, 0.05))
-		character.current_hp = min(character.max_hp, character.current_hp + hp_restore)
-		heal_messages.append("[color=#00BFFF]+%d Mana[/color]" % mana_restore)
-		heal_messages.append("[color=#00FF00]+%d HP[/color]" % hp_restore)
-	else:
-		# Non-mages recover HP (5-12.5%)
-		var hp_restore = int(character.max_hp * randf_range(0.05, 0.125))
-		character.current_hp = min(character.max_hp, character.current_hp + hp_restore)
-		heal_messages.append("[color=#00FF00]+%d HP[/color]" % hp_restore)
+		_handle_dungeon_meditate(peer_id, character, food_name)
+		return
 
-	# Tick poison on dungeon rest
+	# --- Non-mage rest (matches overworld rest) ---
+	# Regenerate stamina/energy (2%, with early game + house bonuses)
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
+	var regen_percent = 0.02 * early_game_mult * house_regen_mult
+	var total_max_stamina = character.get_total_max_stamina()
+	var total_max_energy = character.get_total_max_energy()
+	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
+	var energy_regen = max(1, int(total_max_energy * regen_percent))
+	character.current_stamina = min(total_max_stamina, character.current_stamina + stamina_regen)
+	character.current_energy = min(total_max_energy, character.current_energy + energy_regen)
+
+	# HP recovery: 10-25% of max HP
+	var hp_full = character.current_hp >= character.get_total_max_hp()
+	var heal_amount = 0
+	if not hp_full:
+		var heal_percent = randf_range(0.10, 0.25)
+		heal_amount = int(character.get_total_max_hp() * heal_percent)
+		heal_amount = max(1, heal_amount)
+		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+
+	# Build rest message
+	var rest_msg = "[color=#808080](Consumed 1 %s)[/color]\n" % food_name
+	if hp_full:
+		rest_msg += "[color=#00FF00]You rest"
+	else:
+		rest_msg += "[color=#00FF00]You rest and recover %d HP" % heal_amount
+	if class_type in ["Fighter", "Barbarian", "Paladin"]:
+		rest_msg += " and %d Stamina" % stamina_regen
+	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
+		rest_msg += " and %d Energy" % energy_regen
+	rest_msg += ".[/color]"
+
+	# Tick status effects
+	_tick_dungeon_rest_status_effects(peer_id, character)
+
+	# Move dungeon monsters — may trigger combat
+	var combat_triggered = _move_dungeon_monsters(peer_id)
+	if combat_triggered:
+		rest_msg += "\n[color=#FF4444]A monster found you while resting![/color]"
+		send_to_peer(peer_id, {"type": "text", "message": rest_msg})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	# Send dungeon state first, then rest message
+	_send_dungeon_state(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": rest_msg})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _handle_dungeon_meditate(peer_id: int, character: Character, food_name: String = ""):
+	"""Handle Meditate in dungeon for mages — matches overworld meditate"""
+	var at_full_hp = character.current_hp >= character.get_total_max_hp()
+
+	# Equipment meditate bonus
+	var meditate_bonus = character.get_equipment_bonuses().get("meditate_bonus", 0)
+	var bonus_mult = 1.0 + (meditate_bonus / 100.0)
+
+	# Sage Mana Mastery passive
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+	var sage_meditate_bonus = 0
+	if passive_effects.has("meditate_bonus"):
+		sage_meditate_bonus = passive_effects.get("meditate_bonus", 0)
+		bonus_mult += sage_meditate_bonus
+
+	# Early game + house bonuses
+	var early_game_mult = _get_early_game_regen_multiplier(character.level)
+	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
+
+	# Mana regeneration: 4% base, double if at full HP
+	var base_mana_percent = 0.04 * early_game_mult * house_regen_mult
+	var mana_percent = base_mana_percent
+	if at_full_hp:
+		mana_percent *= 2.0
+	mana_percent *= bonus_mult
+
+	var total_max_mana = character.get_total_max_mana()
+	var mana_regen = int(total_max_mana * mana_percent)
+	mana_regen = max(1, mana_regen)
+	character.current_mana = min(total_max_mana, character.current_mana + mana_regen)
+
+	# Build meditate message
+	var bonus_text = ""
+	if meditate_bonus > 0 and sage_meditate_bonus > 0:
+		bonus_text = " [color=#66CCCC](+%d%% from gear)[/color][color=#20B2AA](+%d%% Mana Mastery)[/color]" % [meditate_bonus, int(sage_meditate_bonus * 100)]
+	elif meditate_bonus > 0:
+		bonus_text = " [color=#66CCCC](+%d%% from gear)[/color]" % meditate_bonus
+	elif sage_meditate_bonus > 0:
+		bonus_text = " [color=#20B2AA](+%d%% Mana Mastery)[/color]" % int(sage_meditate_bonus * 100)
+
+	var meditate_msg = ""
+	if not food_name.is_empty():
+		meditate_msg = "[color=#808080](Consumed 1 %s)[/color]\n" % food_name
+	if at_full_hp:
+		meditate_msg += "[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [mana_regen, bonus_text]
+	else:
+		var heal_percent = randf_range(0.10, 0.25)
+		var heal_amount = int(character.get_total_max_hp() * heal_percent)
+		heal_amount = max(1, heal_amount)
+		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
+		meditate_msg += "[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [heal_amount, mana_regen, bonus_text]
+
+	# Tick status effects
+	_tick_dungeon_rest_status_effects(peer_id, character)
+
+	# Move dungeon monsters — may trigger combat
+	var combat_triggered = _move_dungeon_monsters(peer_id)
+	if combat_triggered:
+		meditate_msg += "\n[color=#FF4444]A monster found you while meditating![/color]"
+		send_to_peer(peer_id, {"type": "text", "message": meditate_msg})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
+
+	# Send dungeon state first, then meditate message
+	_send_dungeon_state(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": meditate_msg})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func _tick_dungeon_rest_status_effects(peer_id: int, character: Character):
+	"""Tick poison, blind, and buffs on dungeon rest"""
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
 		if poison_dmg != 0:
@@ -18588,7 +18892,6 @@ func handle_dungeon_rest(peer_id: int):
 				poison_msg += " - [color=#00FF00]Poison has worn off![/color]"
 			send_to_peer(peer_id, {"type": "status_effect", "effect": "poison", "message": poison_msg, "damage": poison_dmg, "turns_remaining": turns_left})
 
-	# Tick blind on dungeon rest
 	if character.blind_active:
 		var still_blind = character.tick_blind()
 		var turns_left = character.blind_turns_remaining
@@ -18597,35 +18900,10 @@ func handle_dungeon_rest(peer_id: int):
 		else:
 			send_to_peer(peer_id, {"type": "status_effect", "effect": "blind_cured", "message": "[color=#00FF00]Your vision clears![/color]"})
 
-	# Tick active buffs on dungeon rest
 	if not character.active_buffs.is_empty():
 		var expired = character.tick_buffs()
 		for buff in expired:
 			send_to_peer(peer_id, {"type": "status_effect", "effect": "buff_expired", "message": "[color=#808080]%s buff has worn off.[/color]" % buff.type})
-
-	# Move all monsters (rest is not free!)
-	var monster_combat = _move_dungeon_monsters(peer_id)
-	if monster_combat:
-		# A monster found the player during rest!
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FF4444]Your rest is interrupted![/color] " + " ".join(heal_messages)
-		})
-		send_character_update(peer_id)
-		save_character(peer_id)
-		return
-
-	# Send dungeon state FIRST (this redraws game_output), then rest result text AFTER
-	# so the rest message appears below the dungeon floor status
-	_send_dungeon_state(peer_id)
-
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#87CEEB]You rest briefly...[/color] %s [color=#808080](-1 %s)[/color]" % [" ".join(heal_messages), food_name]
-	})
-
-	send_character_update(peer_id)
-	save_character(peer_id)
 
 func _randomize_eternal_flame_location():
 	"""Set the Eternal Flame to a random location within 500 distance from origin"""

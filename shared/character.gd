@@ -411,6 +411,7 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var crafting_materials: Dictionary = {}  # {material_id: quantity}
 @export var skip_craft_minigame: bool = false
 @export var skip_gather_minigame: bool = false
+@export var skip_harvest_minigame: bool = false
 
 # ===== DUNGEON SYSTEM =====
 @export var in_dungeon: bool = false
@@ -1341,6 +1342,7 @@ func to_dict() -> Dictionary:
 		"house_bonuses": house_bonuses,
 		"skip_craft_minigame": skip_craft_minigame,
 		"skip_gather_minigame": skip_gather_minigame,
+		"skip_harvest_minigame": skip_harvest_minigame,
 		"using_registered_companion": using_registered_companion,
 		"registered_companion_slot": registered_companion_slot,
 		"saved_dungeon_state": {
@@ -1525,10 +1527,15 @@ func from_dict(data: Dictionary):
 			deduped_companions.append(companion)
 	collected_companions = deduped_companions
 
-	# Migrate incubating eggs: add sub_tier if missing
+	# Migrate incubating eggs: add sub_tier and name if missing
 	for egg in incubating_eggs:
 		if not egg.has("sub_tier"):
 			egg["sub_tier"] = 1
+		if not egg.has("name") or egg.get("name", "") == "":
+			var comp_name = egg.get("companion_name", "")
+			if comp_name == "":
+				comp_name = egg.get("monster_type", "Unknown")
+			egg["name"] = comp_name + " Egg"
 
 	# Migrate active_companion if needed
 	if not active_companion.is_empty():
@@ -1673,6 +1680,7 @@ func from_dict(data: Dictionary):
 	registered_companion_slot = data.get("registered_companion_slot", -1)
 	skip_craft_minigame = data.get("skip_craft_minigame", false)
 	skip_gather_minigame = data.get("skip_gather_minigame", false)
+	skip_harvest_minigame = data.get("skip_harvest_minigame", false)
 
 	# Clamp resources to max in case saved data has resources over max
 	_clamp_resources_to_max()
