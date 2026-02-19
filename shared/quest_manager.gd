@@ -68,10 +68,10 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		"quest_type": quest_type
 	}
 	# Store rewards at accept time so they don't change on turn-in
-	var base_rewards = quest.get("rewards", {"xp": 0, "gems": 0})
+	var base_rewards = quest.get("rewards", {"xp": 0, "valor": 0})
 	extra_data["stored_rewards"] = {
 		"xp": base_rewards.get("xp", 0),
-		"gems": base_rewards.get("gems", 0)
+		"valor": base_rewards.get("valor", 0)
 	}
 	# For dungeon quests, store the specific dungeon type
 	if quest_type == QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
@@ -101,6 +101,13 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
 		extra_data["rescue_floor"] = quest.get("rescue_floor", 1)
 
+	# For GATHER quests, store gathering job type
+	if quest_type == QuestDatabaseScript.QuestType.GATHER:
+		extra_data["gather_job"] = quest.get("gather_job", "")
+
+	# Store character name for per-character quest regeneration
+	extra_data["character_name"] = character.name
+
 	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post, extra_data):
 		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
 
@@ -118,7 +125,8 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 		# Use stored player level for proper dynamic quest regeneration
 		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
 		var completed_at_post = quest_data.get("completed_at_post", 0)
-		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+		var char_name = quest_data.get("character_name", "")
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 		if quest.is_empty():
 			continue
 
@@ -220,7 +228,8 @@ func check_exploration_progress(character: Character, player_x: int, player_y: i
 
 	for quest_data in character.active_quests:
 		var quest_id = quest_data.quest_id
-		var quest = quest_db.get_quest(quest_id)
+		var char_name = quest_data.get("character_name", "")
+		var quest = quest_db.get_quest(quest_id, -1, 0, char_name)
 		if quest.is_empty():
 			continue
 
@@ -260,7 +269,8 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 		# Use stored player level for proper dynamic quest regeneration
 		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
 		var completed_at_post = quest_data.get("completed_at_post", 0)
-		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+		var char_name = quest_data.get("character_name", "")
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 
 		# Get quest type from stored data (fallback) or regenerated quest
 		var quest_type = quest_data.get("quest_type", quest.get("type", -1))
@@ -300,7 +310,7 @@ func is_quest_complete(character: Character, quest_id: String) -> bool:
 	return quest_data.progress >= quest_data.target
 
 func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
-	"""Calculate quest rewards including hotzone multiplier. Returns {xp, gems, multiplier}"""
+	"""Calculate quest rewards including hotzone multiplier. Returns {xp, valor, multiplier}"""
 	# Use stored rewards if available (stored at accept time to prevent regeneration mismatch)
 	var quest_data = character.get_quest_progress(quest_id)
 	var stored_rewards = quest_data.get("stored_rewards", {})
@@ -312,20 +322,18 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 		# Use rewards locked in at accept time
 		base_rewards = stored_rewards
 		quest_type = quest_data.get("quest_type", -1)
-		# Migration: fix quests accepted when gem scaling zeroed out gems
-		if base_rewards.get("gems", 0) == 0:
-			var quest_def = quest_db.get_quest(quest_id)
-			var def_gems = quest_def.get("rewards", {}).get("gems", 0)
-			if def_gems > 0:
-				base_rewards["gems"] = def_gems
+		# Migration: old quests stored "gems" — convert to "valor"
+		if not base_rewards.has("valor") and base_rewards.has("gems"):
+			base_rewards["valor"] = base_rewards["gems"]
 	else:
 		# Fallback for quests accepted before this fix: regenerate with stored params
 		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
 		var completed_at_post = quest_data.get("completed_at_post", 0)
-		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+		var char_name = quest_data.get("character_name", "")
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 		if quest.is_empty():
-			return {"xp": 0, "gems": 0, "multiplier": 1.0}
-		base_rewards = quest.get("rewards", {"xp": 0, "gems": 0})
+			return {"xp": 0, "valor": 0, "multiplier": 1.0}
+		base_rewards = quest.get("rewards", {"xp": 0, "valor": 0})
 		quest_type = quest.get("type", -1)
 
 	var multiplier = 1.0
@@ -338,7 +346,7 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 
 	return {
 		"xp": int(base_rewards.get("xp", 0) * multiplier),
-		"gems": int(base_rewards.get("gems", 0) * multiplier),
+		"valor": int(base_rewards.get("valor", 0) * multiplier),
 		"multiplier": multiplier
 	}
 
@@ -355,7 +363,8 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	# Regenerate quest with stored params for metadata (is_daily, etc.)
 	var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
 	var completed_at_post = quest_data.get("completed_at_post", 0)
-	var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+	var char_name = quest_data.get("character_name", "")
+	var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 	if quest.is_empty() and quest_name.is_empty():
 		return {"success": false, "message": "Quest not found", "rewards": {}}
 	if quest_name.is_empty():
@@ -365,10 +374,7 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	# Calculate and grant rewards (uses stored rewards if available)
 	var rewards = calculate_rewards(character, quest_id)
 
-	# Apply rewards — gems → Monster Gem material
-	var gem_reward = rewards.get("gems", 0)
-	if gem_reward > 0:
-		character.add_crafting_material("monster_gem", gem_reward)
+	# Apply rewards — XP directly, valor awarded by server via persistence
 	var level_result = character.add_experience(rewards.xp)
 
 	# Complete the quest
@@ -403,7 +409,8 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		# Use stored player level and completion count for proper dynamic quest regeneration
 		var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
 		var completed_at_post = quest_data.get("completed_at_post", 0)
-		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post)
+		var char_name = quest_data.get("character_name", "")
+		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 		if quest.is_empty():
 			continue
 
@@ -442,8 +449,10 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		var reward_parts = []
 		if rewards.get("xp", 0) > 0:
 			reward_parts.append("[color=#FF00FF]%d XP[/color]" % rewards.xp)
-		if rewards.get("gems", 0) > 0:
-			reward_parts.append("[color=#00FFFF]%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
+		# Migration: support old "gems" key from pre-existing quests
+		var valor_amount = rewards.get("valor", rewards.get("gems", 0))
+		if valor_amount > 0:
+			reward_parts.append("[color=#00FFFF]%d Valor[/color]" % valor_amount)
 		if not reward_parts.is_empty():
 			output += "    Rewards: %s\n" % ", ".join(reward_parts)
 
@@ -498,13 +507,14 @@ func format_available_quests(quests: Array, character: Character) -> String:
 		# Rewards preview
 		var rewards = quest.get("rewards", {})
 		var base_xp = rewards.get("xp", 0)
-		var base_gems = rewards.get("gems", 0)
+		# Migration: support old "gems" key
+		var base_valor = rewards.get("valor", rewards.get("gems", 0))
 
 		var reward_parts = []
 		if base_xp > 0:
 			reward_parts.append("%d XP" % base_xp)
-		if base_gems > 0:
-			reward_parts.append("%d Monster Gem%s" % [base_gems, "s" if base_gems > 1 else ""])
+		if base_valor > 0:
+			reward_parts.append("%d Valor" % base_valor)
 		if not reward_parts.is_empty():
 			output += "    [color=#00FF00]Rewards: %s[/color]\n" % ", ".join(reward_parts)
 
@@ -514,12 +524,12 @@ func format_available_quests(quests: Array, character: Character) -> String:
 			if min_monster_level > 1:
 				output += "    [color=#FFA500]Requires monsters level %d+[/color]\n" % min_monster_level
 			var max_xp = int(base_xp * 2.5)
-			var max_gems = int(base_gems * 2.5) if base_gems > 0 else 0
+			var max_valor = int(base_valor * 2.5) if base_valor > 0 else 0
 			var bonus_parts = []
 			if max_xp > base_xp:
 				bonus_parts.append("up to %d XP" % max_xp)
-			if max_gems > base_gems:
-				bonus_parts.append("up to %d Monster Gems" % max_gems)
+			if max_valor > base_valor:
+				bonus_parts.append("up to %d Valor" % max_valor)
 			if not bonus_parts.is_empty():
 				output += "    [color=#FF6600]Hotzone Bonus: %s[/color]\n" % ", ".join(bonus_parts)
 
@@ -553,6 +563,36 @@ func check_rescue_progress(character: Character, quest_id: String) -> Dictionary
 			"message": message
 		}
 	return {"updated": false}
+
+func check_gathering_progress(character: Character, gather_job: String) -> Array:
+	"""Check and update gathering quest progress. Returns array of {quest_id, progress, target, completed, message}"""
+	var updates = []
+
+	for quest_data in character.active_quests:
+		var quest_id = quest_data.quest_id
+		var quest_type = quest_data.get("quest_type", -1)
+		if quest_type != QuestDatabaseScript.QuestType.GATHER:
+			continue
+
+		var required_job = quest_data.get("gather_job", "")
+		if required_job != "" and required_job != gather_job:
+			continue
+
+		var result = character.update_quest_progress(quest_id, 1)
+		if result.updated:
+			var quest_name = quest_data.get("quest_name", "Gathering Quest")
+			var message = "Quest '%s': %d/%d" % [quest_name, result.progress, result.target]
+			if result.completed:
+				message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest_name
+			updates.append({
+				"quest_id": quest_id,
+				"progress": result.progress,
+				"target": result.target,
+				"completed": result.completed,
+				"message": message
+			})
+
+	return updates
 
 func _get_tier_from_level(level: int) -> int:
 	"""Map a monster level to its tier using TIER_LEVEL_RANGES from quest_database."""

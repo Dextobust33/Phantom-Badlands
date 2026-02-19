@@ -1087,6 +1087,12 @@ var combat_animation_timer: float = 0.0
 const SPINNER_SPEED: float = 0.08
 const ANIMATION_DURATION: float = 0.6
 
+# Phased combat message display
+var combat_msg_queue: Array[Dictionary] = []
+var combat_phase_timer: float = 0.0
+var combat_phase_paused: bool = false
+var combat_speed: int = 1  # 0=instant, 1=normal(0.6s), 2=slow(1.2s)
+
 # Player list auto-refresh
 var player_list_refresh_timer: float = 0.0
 const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
@@ -1845,7 +1851,12 @@ func _process(delta):
 			var frame_time = fmod(ANIMATION_DURATION - combat_animation_timer, SPINNER_SPEED * combat_spinner_frames.size())
 			combat_spinner_index = int(frame_time / SPINNER_SPEED) % combat_spinner_frames.size()
 
-	# (Gathering is now turn-based — no timers needed in _process)
+	# Phased combat message display
+	if combat_phase_paused:
+		combat_phase_timer -= delta
+		if combat_phase_timer <= 0:
+			combat_phase_paused = false
+			_drain_combat_queue()
 
 	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
@@ -2114,20 +2125,20 @@ func _process(delta):
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
 
-	# Market main menu bulk listing with keybinds (1-4 for bulk actions, 5 for list egg)
+	# Market main menu bulk listing with keybinds (1-5 for bulk actions, 6 for list egg)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "":
-		for i in range(5):
+		for i in range(6):
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
 					continue
 				if not get_meta("marketbulkkey_%d_pressed" % i, false):
 					set_meta("marketbulkkey_%d_pressed" % i, true)
 					_consume_item_select_key(i)
-					if i < 4:
-						var bulk_types = ["equipment", "items", "materials", "food"]
+					if i < 5:
+						var bulk_types = ["equipment", "consumables", "tools", "materials", "food"]
 						send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
 					else:
-						# Key 5 = List Egg from Incubator
+						# Key 6 = List Egg from Incubator
 						pending_market_action = "list_egg"
 						market_egg_page = 0
 						for j in range(9):
@@ -2891,6 +2902,10 @@ func _input(event):
 				get_viewport().set_input_as_handled()
 				return
 
+	# Skip combat phase pause on any key press
+	if combat_phase_paused and event is InputEventKey and event.pressed and not event.echo:
+		_flush_combat_queue()
+
 	# Handle ESC to cancel bug report mode
 	if bug_report_mode and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		bug_report_mode = false
@@ -3148,6 +3163,8 @@ func _input(event):
 				_toggle_skip_harvest_minigame()
 			elif keycode == KEY_6:
 				_toggle_disable_tutorial()
+			elif keycode == KEY_7:
+				_cycle_combat_speed()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -9888,6 +9905,8 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_game_settings()
 			update_action_bar()
+		"settings_combat_speed":
+			_cycle_combat_speed()
 		"settings_game_back":
 			settings_submenu = ""
 			game_output.clear()
@@ -15369,44 +15388,14 @@ func handle_server_message(message: Dictionary):
 
 		"combat_message":
 			var combat_msg = message.get("message", "")
-			# Add visual flair to damage messages
-			var enhanced_msg = _enhance_combat_message(combat_msg)
-			display_game(enhanced_msg)
-			# Stop any ongoing animation when we receive combat feedback
-			stop_combat_animation()
-
-			# Trigger combat sounds based on message content
-			_trigger_combat_sounds(combat_msg)
-
-			# Loot vanish detection (failed special monster drops)
-			var lower_msg = combat_msg.to_lower()
-			if "shatters on death" in lower_msg or "crumbles to dust" in lower_msg or "fades away" in lower_msg:
-				play_loot_vanish_sound()
-
-			# Trigger shake animations for combat actions
-			# Companion attack: "Your X attacks for" (cyan #00FFFF)
-			if "Your " in combat_msg and " attacks" in combat_msg:
-				shake_companion_art()
-			# Companion ability use: "X uses" or "X's" ability messages (cyan #00FFFF)
-			elif "#00FFFF" in combat_msg and (" uses " in combat_msg or "'s " in combat_msg):
-				shake_companion_art()
-			# Monster attack: "The X attacks" (red #FF4444 or #FF0000)
-			if "The " in combat_msg and " attacks" in combat_msg:
-				shake_game_output()
-			# Monster special attacks: "strikes" patterns
-			elif "strikes" in combat_msg.to_lower() and ("The " in combat_msg or "#FF" in combat_msg):
-				shake_game_output()
-
-			var damage = parse_damage_dealt(combat_msg)
-			if damage > 0:
-				damage_dealt_to_current_enemy += damage
-				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
-
-			# Track monster healing (life steal, regeneration) to fix HP bar estimate
-			var monster_heal = parse_monster_healing(combat_msg)
-			if monster_heal > 0:
-				damage_dealt_to_current_enemy = max(0, damage_dealt_to_current_enemy - monster_heal)
-				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+			if combat_speed == 0:
+				# Instant mode — display immediately (current behavior)
+				_display_combat_msg(combat_msg)
+			else:
+				# Queue for phased display
+				combat_msg_queue.append({"raw": combat_msg})
+				if not combat_phase_paused:
+					_drain_combat_queue()
 
 		"enemy_hp_revealed":
 			# Analyze ability revealed enemy HP - update the health bar for THIS combat
@@ -15462,6 +15451,9 @@ func handle_server_message(message: Dictionary):
 				update_action_bar()  # Refresh action bar for ability availability
 
 		"combat_end":
+			# Flush any remaining phased combat messages before processing end
+			if not combat_msg_queue.is_empty():
+				_flush_combat_queue()
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
@@ -16203,6 +16195,9 @@ func handle_server_message(message: Dictionary):
 
 func _process_combat_start(message: Dictionary):
 	"""Process a combat_start message - separated out so queued combat can call it"""
+	# Flush any leftover phased combat messages from previous combat
+	if not combat_msg_queue.is_empty():
+		_flush_combat_queue()
 	# Release input field focus immediately so ability hotkeys work
 	# This prevents the bug where typing in chat when combat starts causes abilities to be sent as text
 	if input_field and input_field.has_focus():
@@ -17491,6 +17486,8 @@ func _load_keybinds():
 					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
 				if data.has("sfx_muted"):
 					sfx_muted = data["sfx_muted"]
+				if data.has("combat_speed"):
+					combat_speed = clampi(int(data["combat_speed"]), 0, 2)
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -17510,6 +17507,7 @@ func _save_keybinds():
 	save_data["sfx_volume"] = sfx_volume
 	save_data["music_volume"] = music_volume
 	save_data["sfx_muted"] = sfx_muted
+	save_data["combat_speed"] = combat_speed
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -17975,6 +17973,9 @@ func display_game_settings():
 	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
 	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
+	var speed_labels = ["Instant", "Normal", "Slow"]
+	var speed_colors = ["#FF6666", "#00FF00", "#00BFFF"]
+	display_game("[7] Combat Speed: [color=%s]%s[/color]" % [speed_colors[combat_speed], speed_labels[combat_speed]])
 	display_game("")
 	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -19367,8 +19368,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.140 changes
+	display_game("[color=#00FF00]v0.9.140[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quest System Overhaul[/color]")
+	display_game("  • Quests now reward Valor instead of Monster Gems")
+	display_game("  • Each character sees different quests at the same trading post")
+	display_game("  • Starter post quests now give meaningful XP (minimum floor added)")
+	display_game("  • New quest type: Gather — fish, mine, log, or forage for quest credit")
+	display_game("  • Rescue quests now show dungeon direction hints in quest log")
+	display_game("")
+
 	# v0.9.139 changes
-	display_game("[color=#00FF00]v0.9.139[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.139[/color]")
 	display_game("  [color=#FFD700]Dungeon, Gathering & UI Fixes[/color]")
 	display_game("  • Dungeons: Completed dungeons now properly despawn from the map")
 	display_game("  • Dungeons: Dungeons can no longer stack on the same tile")
@@ -19416,16 +19427,6 @@ func display_changelog():
 	display_game("  • Market: Companion eggs no longer show as \"Unknown\"")
 	display_game("  • Runes: Fixed hotkey double-trigger when applying runes to equipment")
 	display_game("  • Specialty jobs can now level up without committing (recipes still gated)")
-	display_game("")
-
-	# v0.9.133 changes
-	display_game("[color=#00FFFF]v0.9.133[/color]")
-	display_game("  [color=#FFD700]World & QOL[/color]")
-	display_game("  • NPC posts now have unique shapes (compound rooms with wings)")
-	display_game("  • Map wipes generate new world seed — posts, terrain, and content refresh")
-	display_game("  • Player pass-through: bump into a player and press Space to squeeze past")
-	display_game("  • Fixed: Personal dungeon quests no longer share between players")
-	display_game("  • Fixed: Other players' personal dungeons no longer visible on your map")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -21645,6 +21646,82 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 
 	return msg
 
+func _display_combat_msg(combat_msg: String):
+	"""Display a single combat message with all visual effects (extracted from combat_message handler)"""
+	var enhanced_msg = _enhance_combat_message(combat_msg)
+	display_game(enhanced_msg)
+	stop_combat_animation()
+
+	# Trigger combat sounds based on message content
+	_trigger_combat_sounds(combat_msg)
+
+	# Loot vanish detection (failed special monster drops)
+	var lower_msg = combat_msg.to_lower()
+	if "shatters on death" in lower_msg or "crumbles to dust" in lower_msg or "fades away" in lower_msg:
+		play_loot_vanish_sound()
+
+	# Trigger shake animations for combat actions
+	if "Your " in combat_msg and " attacks" in combat_msg:
+		shake_companion_art()
+	elif "#00FFFF" in combat_msg and (" uses " in combat_msg or "'s " in combat_msg):
+		shake_companion_art()
+	if "The " in combat_msg and " attacks" in combat_msg:
+		shake_game_output()
+	elif "strikes" in combat_msg.to_lower() and ("The " in combat_msg or "#FF" in combat_msg):
+		shake_game_output()
+
+	var damage = parse_damage_dealt(combat_msg)
+	if damage > 0:
+		damage_dealt_to_current_enemy += damage
+		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+	# Track monster healing (life steal, regeneration) to fix HP bar estimate
+	var monster_heal = parse_monster_healing(combat_msg)
+	if monster_heal > 0:
+		damage_dealt_to_current_enemy = max(0, damage_dealt_to_current_enemy - monster_heal)
+		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+func _drain_combat_queue():
+	"""Display one queued combat message, then pause before showing the next."""
+	if combat_msg_queue.is_empty():
+		combat_phase_paused = false
+		return
+	var entry = combat_msg_queue.pop_front()
+	var raw = entry.raw
+	_display_combat_msg(raw)
+	# Separator lines get a longer pause; regular messages get a short pause
+	var delay: float
+	if "─────────" in raw:
+		delay = 0.6 if combat_speed == 1 else 1.2
+	else:
+		delay = 0.15 if combat_speed == 1 else 0.3
+	# Always pause after showing a message — process_buffer() delivers all
+	# combat messages in a single frame, so we must block immediate draining
+	# of the next message that arrives from the same buffer batch.
+	combat_phase_timer = delay
+	combat_phase_paused = true
+
+func _flush_combat_queue():
+	"""Instantly display all remaining queued combat messages"""
+	combat_phase_paused = false
+	combat_phase_timer = 0.0
+	while not combat_msg_queue.is_empty():
+		var entry = combat_msg_queue.pop_front()
+		_display_combat_msg(entry.raw)
+
+func _cycle_combat_speed():
+	"""Cycle combat speed setting: Instant → Normal → Slow → Instant"""
+	combat_speed = (combat_speed + 1) % 3
+	_save_keybinds()
+	game_output.clear()
+	var labels = ["Instant", "Normal", "Slow"]
+	var colors = ["#FF6666", "#00FF00", "#00BFFF"]
+	display_game("[color=%s]Combat Speed: %s[/color]" % [colors[combat_speed], labels[combat_speed]])
+	await get_tree().create_timer(1.0).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
 func _enhance_combat_message(msg: String) -> String:
 	"""Add visual flair and BBCode effects to combat messages"""
 	var enhanced = msg
@@ -22208,6 +22285,11 @@ func handle_gathering_round(message: Dictionary):
 	gathering_momentum = message.get("momentum", 0)
 	gathering_discoveries = message.get("discoveries", [])
 	display_gathering_round()
+	# Show skip warning if player had skip enabled but no tool
+	var skip_warning = message.get("skip_warning", "")
+	if skip_warning != "":
+		display_game("")
+		display_game("[color=#FFAA00]%s[/color]" % skip_warning)
 	update_action_bar()
 
 func display_gathering_round():
@@ -22465,8 +22547,9 @@ func handle_gathering_complete(message: Dictionary):
 		update_currency_display()
 
 	display_game("")
-	display_game("[color=#808080]Press [%s] to continue.[/color]" % get_action_key_name(0))
-	update_action_bar()
+
+	# Auto-end gathering — no need to press Space, player can just move
+	end_gathering()
 
 func end_gathering(reason: String = ""):
 	"""Clean up gathering state and exit."""
@@ -22660,8 +22743,9 @@ func handle_harvest_complete(message: Dictionary):
 	if job_xp > 0:
 		display_game("[color=#00BFFF]+%d Soldier XP[/color]" % job_xp)
 	display_game("")
-	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-	update_action_bar()
+
+	# Auto-end harvest — no need to press Space, player can just move
+	end_harvest()
 
 func end_harvest():
 	"""Clean up harvest state."""
@@ -24086,11 +24170,12 @@ func display_market_main():
 	display_game("")
 	display_game("[color=#FF8800]Bulk Listing:[/color]")
 	display_game("  [color=#FFD700][1][/color] List All Equipment")
-	display_game("  [color=#FFD700][2][/color] List All Consumables/Tools")
-	display_game("  [color=#FFD700][3][/color] List All Materials [color=#808080](non-food)[/color]")
-	display_game("  [color=#FFD700][4][/color] List All Food [color=#808080](plant/herb/fungus/fish)[/color]")
+	display_game("  [color=#FFD700][2][/color] List All Consumables")
+	display_game("  [color=#FFD700][3][/color] List All Tools")
+	display_game("  [color=#FFD700][4][/color] List All Materials [color=#808080](non-food)[/color]")
+	display_game("  [color=#FFD700][5][/color] List All Food [color=#808080](plant/herb/fungus/fish)[/color]")
 	display_game("")
-	display_game("  [color=#FFD700][5][/color] List Egg from Incubator")
+	display_game("  [color=#FFD700][6][/color] List Egg from Incubator")
 	update_action_bar()
 
 func display_market_browse():
@@ -24729,8 +24814,10 @@ func _format_rewards(rewards: Dictionary) -> String:
 	var parts = []
 	if rewards.get("xp", 0) > 0:
 		parts.append("[color=#AADDFF]%d XP[/color]" % rewards.xp)
-	if rewards.get("gems", 0) > 0:
-		parts.append("[color=#00FFFF]%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
+	# Migration: support old "gems" key
+	var valor_amt = rewards.get("valor", rewards.get("gems", 0))
+	if valor_amt > 0:
+		parts.append("[color=#00FFFF]%d Valor[/color]" % valor_amt)
 	return ", ".join(parts) if parts.size() > 0 else "None"
 
 func _get_quest_tier_tag(quest: Dictionary) -> String:
@@ -25101,8 +25188,10 @@ func handle_quest_turned_in(message: Dictionary):
 		display_game("[color=#FF6600]Hotzone Bonus: x%.1f[/color]" % multiplier)
 
 	display_game("[color=#FF00FF]+%d XP[/color]" % rewards.get("xp", 0))
-	if rewards.get("gems", 0) > 0:
-		display_game("[color=#00FFFF]+%d Monster Gem%s[/color]" % [rewards.gems, "s" if rewards.gems > 1 else ""])
+	# Migration: support old "gems" key from pre-existing quests
+	var valor_reward = rewards.get("valor", rewards.get("gems", 0))
+	if valor_reward > 0:
+		display_game("[color=#00FFFF]+%d Valor[/color]" % valor_reward)
 
 	if leveled_up:
 		display_game("")

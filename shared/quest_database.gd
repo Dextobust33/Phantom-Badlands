@@ -15,7 +15,8 @@ enum QuestType {
 	BOSS_HUNT,          # 5 - Defeat a high-level monster
 	DUNGEON_CLEAR,      # 6 - Clear a specific dungeon type (defeat boss)
 	KILL_TIER,          # 7 - Kill X monsters of tier N or higher
-	RESCUE              # 8 - Rescue NPC from dungeon
+	RESCUE,             # 8 - Rescue NPC from dungeon
+	GATHER              # 9 - Gather X materials through fishing/mining/logging/foraging
 }
 
 # Quest data structure:
@@ -30,7 +31,7 @@ enum QuestType {
 #   "min_intensity": float (for high-intensity hotzone quests),
 #   "destination": Vector2i (for exploration quests),
 #   "destination_post": String (for exploration quests targeting a Trading Post),
-#   "rewards": {xp: int, gold: int, gems: int},
+#   "rewards": {xp: int, gold: int, valor: int},
 #   "is_daily": bool,
 #   "prerequisite": String (quest_id that must be completed first, or empty)
 # }
@@ -67,7 +68,7 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 
 	# Handle daily quest IDs (format: postid_daily_YYYYMMDD_index)
 	if "_daily_" in quest_id:
-		return _regenerate_daily_quest(quest_id, player_level, quests_completed_at_post)
+		return _regenerate_daily_quest(quest_id, player_level, quests_completed_at_post, character_name)
 
 	# Handle legacy dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:
@@ -96,7 +97,7 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 
 	# Calculate rewards based on distance
 	var base_xp = int(distance * 2)
-	var gems = max(0, int(distance / 100))
+	var valor = max(0, int(distance / 100))
 
 	return {
 		"id": quest_id,
@@ -106,7 +107,7 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 		"trading_post": "",  # Origin unknown when regenerating
 		"target": 1,
 		"destinations": [dest_post_id],
-		"rewards": {"xp": base_xp, "gems": gems},
+		"rewards": {"xp": base_xp, "valor": valor},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_progression": true
@@ -129,8 +130,9 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 	# Base level for reward scaling (Haven area is ~level 5)
 	const BASE_LEVEL = 5
 
-	# Don't scale if we're at or below base level
+	# Don't scale if we're at or below base level, but enforce minimum XP
 	if area_level <= BASE_LEVEL:
+		quest.rewards["xp"] = max(quest.rewards.get("xp", 0), 50)
 		quest["area_level"] = area_level
 		quest["reward_tier"] = "beginner"
 		return quest
@@ -143,16 +145,16 @@ func _scale_quest_rewards(quest: Dictionary, area_level: int) -> Dictionary:
 
 	# Scale XP proportionally
 	var original_xp = quest.rewards.get("xp", 0)
-	var original_gems = quest.rewards.get("gems", 0)
+	var original_valor = quest.rewards.get("valor", 0)
 
 	var scaled_rewards = {
 		"xp": int(original_xp * scale_factor),
-		"gems": original_gems + int(log(scale_factor + 1) * 2)  # Gems scale with log
+		"valor": original_valor + int(log(scale_factor + 1) * 2)  # Valor scales with log
 	}
 
 	quest.rewards = scaled_rewards
 	quest["area_level"] = area_level
-	quest["original_rewards"] = {"xp": original_xp, "gems": original_gems}
+	quest["original_rewards"] = {"xp": original_xp, "valor": original_valor}
 
 	# Determine reward tier for display based on area level
 	if area_level < 15:
@@ -225,8 +227,8 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 		if quest_id.begins_with(trading_post_id + "_daily_") or quest_id.begins_with(trading_post_id + "_dynamic_"):
 			completed_at_post += 1
 
-	# Generate the daily quest board (date-seeded, same for all players at this post today)
-	var daily_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post, daily_cooldowns)
+	# Generate the daily quest board (date-seeded, per character at this post today)
+	var daily_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post, daily_cooldowns, character_name)
 	available.append_array(daily_quests)
 
 	return available
@@ -640,6 +642,9 @@ const BOUNTY_PREFIXES = {
 # NPC types for RESCUE quests with area level thresholds
 const RESCUE_NPC_TYPES = ["merchant", "healer", "blacksmith", "scholar", "breeder"]
 
+# Gathering job types for GATHER quests
+const GATHER_QUEST_TYPES = ["fishing", "mining", "logging", "foraging"]
+
 func _get_dungeon_for_area(area_level: int) -> Dictionary:
 	"""Get an appropriate dungeon type for the area level. Returns empty dict if none suitable.
 	Randomly selects from available dungeons at the appropriate tier."""
@@ -652,9 +657,9 @@ func _get_dungeon_for_area(area_level: int) -> Dictionary:
 			return dungeons[randi() % dungeons.size()]
 	return {}
 
-func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0, daily_cooldowns: Dictionary = {}) -> Array:
-	"""Generate daily quest board for a trading post. Seeded by date + post ID so all
-	players see the same quests at the same post on the same day."""
+func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0, daily_cooldowns: Dictionary = {}, character_name: String = "") -> Array:
+	"""Generate daily quest board for a trading post. Seeded by date + post ID + character name
+	so each character sees different quests at the same post on the same day."""
 	var quests = []
 	var date_str = _get_date_string()
 
@@ -665,7 +670,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	var monster_tier = _get_tier_for_area_level(area_level)
 
 	# Quest count scales with area level: starter 3-4, mid 5-6, endgame 6-8
-	var daily_seed = hash(trading_post_id + date_str)
+	var daily_seed = hash(trading_post_id + date_str + character_name)
 	var rng = RandomNumberGenerator.new()
 	rng.seed = daily_seed
 	var quest_count: int
@@ -681,7 +686,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 
 	# Available quest types for cycling (weighted by what makes sense for the area)
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
 
 	# Featured quest is index 0 (seeded by date across all posts)
 	var featured_index = hash(date_str) % quest_count
@@ -706,7 +711,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 		if i == featured_index:
 			quest["is_featured"] = true
 			quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * 1.5)
-			quest.rewards["gems"] = max(quest.rewards.get("gems", 0), int(quest.rewards.get("gems", 0) * 1.5))
+			quest.rewards["valor"] = max(quest.rewards.get("valor", 0), int(quest.rewards.get("valor", 0) * 1.5))
 
 		quests.append(quest)
 
@@ -739,7 +744,10 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	var level_factor = pow(area_level + 1, 2.2)
 	var tier_base_xp = 3 + index * 2
 	var base_xp = int(tier_base_xp * level_factor * tier_mult)
-	var gems = max(0, int((index - 1 + area_level / 50) * tier_mult))
+	# Minimum XP floor so starter post quests aren't near-zero
+	var min_xp = int((40 + index * 20) * tier_mult)
+	base_xp = max(base_xp, min_xp)
+	var valor = max(0, int((index - 1 + area_level / 50) * tier_mult))
 
 	# Pick quest type, cycling through available types
 	var type_index = rng.randi() % quest_types.size()
@@ -806,7 +814,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["bounty_y"] = bounty_loc.y
 			# Named bounties give better rewards
 			base_xp = int(base_xp * 1.5)
-			gems = max(gems + 1, int(gems * 1.5))
+			valor = max(valor + 1, int(valor * 1.5))
 
 		QuestType.RESCUE:
 			var rescue_npc = RESCUE_NPC_TYPES[rng.randi() % RESCUE_NPC_TYPES.size()]
@@ -823,7 +831,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["rescue_floor"] = rescue_floor
 			# Rescue quests give enhanced rewards
 			base_xp = int(base_xp * 2.5)
-			gems = max(gems + 2, int(gems * 2.0))
+			valor = max(valor + 2, int(valor * 2.0))
 
 		QuestType.EXPLORATION:
 			var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
@@ -851,7 +859,16 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["dungeon_type"] = dungeon_info.type
 			# Dungeon quests give bonus rewards
 			base_xp = int(base_xp * 2.0)
-			gems = max(gems + 2, int(gems * 1.5))
+			valor = max(valor + 2, int(valor * 1.5))
+
+		QuestType.GATHER:
+			var gather_job = GATHER_QUEST_TYPES[rng.randi() % GATHER_QUEST_TYPES.size()]
+			var gather_count = max(3, int(3 + index + (area_level / 15)))
+			quest_name = "%s Supplies" % gather_job.capitalize()
+			quest_desc = "Gather %d materials through %s." % [gather_count, gather_job]
+			target = gather_count
+			extra_fields["gather_job"] = gather_job
+			base_xp = int(base_xp * 1.3)
 
 	# Determine reward tier for display tag
 	var reward_tier: String
@@ -873,7 +890,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		"type": picked_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gems": gems},
+		"rewards": {"xp": base_xp, "valor": valor},
 		"is_daily": true,
 		"prerequisite": "",
 		"is_dynamic": true,
@@ -888,7 +905,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	randomize()
 	return quest
 
-func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0) -> Dictionary:
+func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_completed_at_post: int = 0, character_name: String = "") -> Dictionary:
 	"""Regenerate a daily quest from its ID for quest lookup/turn-in.
 	Daily IDs have format: postid_daily_YYYYMMDD_index"""
 	var parts = quest_id.split("_daily_")
@@ -906,15 +923,15 @@ func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_co
 	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
 	var effective_player_level = max(1, player_level)
 
-	# Re-seed RNG the same way generate_dynamic_quests does
+	# Re-seed RNG the same way generate_dynamic_quests does (includes character_name)
 	var date_str = date_parts[0]
-	var daily_seed = hash(trading_post_id + date_str)
+	var daily_seed = hash(trading_post_id + date_str + character_name)
 	var rng = RandomNumberGenerator.new()
 	rng.seed = daily_seed
 	# Advance rng state to match the index (each quest consumes some rng calls)
 	# We need to regenerate all quests up to and including this index
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
+		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
 
 	# Determine quest count (same logic as generate_dynamic_quests)
 	var area_level = max(1, int(post_distance * 0.5))
@@ -970,7 +987,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 
 	# Rewards scale with tier - more generous for early tiers
 	var base_xp = int(100 + (150 * tier * tier_multiplier))
-	var gems = max(0, int((tier - 2) * tier_multiplier))  # Gems start at tier 3
+	var valor = max(0, int((tier - 2) * tier_multiplier))  # Valor starts at tier 3
 
 	# Quest type varies by tier - simpler quests early on
 	var quest_type: int
@@ -1024,7 +1041,7 @@ func _generate_quest_for_tier(trading_post_id: String, quest_id: String, tier: i
 		"type": quest_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gems": gems},
+		"rewards": {"xp": base_xp, "valor": valor},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_dynamic": true,  # Flag for dynamic quests
@@ -1079,7 +1096,7 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 	var level_factor = pow(area_level + 1, 2.2)
 	var tier_base_xp = 3 + tier * 2  # 5 for tier 1, up to 13+ for tier 5
 	var base_xp = int(tier_base_xp * level_factor * tier_multiplier)
-	var gems = max(0, int((tier - 2 + area_level / 50) * tier_multiplier))
+	var valor = max(0, int((tier - 2 + area_level / 50) * tier_multiplier))
 
 	# Quest type varies by tier - includes KILL_TYPE and DUNGEON_CLEAR
 	var quest_type: int
@@ -1144,9 +1161,9 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 			quest_name = "Conquer the %s" % dungeon_info.name
 			quest_desc = "Venture into a %s and defeat %s. Dungeons may spawn in the wilderness - explore to find one!" % [dungeon_info.name, dungeon_info.boss]
 			target = 1  # Complete 1 dungeon of this type
-			# Dungeon quests give bonus rewards (gems, companion eggs from dungeon)
+			# Dungeon quests give bonus rewards (companion eggs from dungeon)
 			base_xp = int(base_xp * 2.0)
-			gems = max(gems + 2, int(gems * 1.5))
+			valor = max(valor + 2, int(valor * 1.5))
 
 	# Determine reward tier
 	var reward_tier: String
@@ -1166,7 +1183,7 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 		"type": quest_type,
 		"trading_post": trading_post_id,
 		"target": target,
-		"rewards": {"xp": base_xp, "gems": gems},
+		"rewards": {"xp": base_xp, "valor": valor},
 		"is_daily": false,
 		"prerequisite": "",
 		"is_dynamic": true,
@@ -1217,6 +1234,10 @@ func is_quest_type_dungeon(quest_type: int) -> bool:
 func is_quest_type_rescue(quest_type: int) -> bool:
 	"""Check if quest type involves rescuing an NPC."""
 	return quest_type == QuestType.RESCUE
+
+func is_quest_type_gather(quest_type: int) -> bool:
+	"""Check if quest type involves gathering materials."""
+	return quest_type == QuestType.GATHER
 
 # ===== BOUNTY & RESCUE HELPER FUNCTIONS =====
 

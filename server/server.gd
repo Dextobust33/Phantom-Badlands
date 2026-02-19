@@ -8609,7 +8609,7 @@ func trigger_trading_post_encounter(peer_id: int):
 	# Check for quests ready to turn in
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
-		var quest = quest_db.get_quest(quest_data.quest_id)
+		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
 		if not quest.is_empty() and quest.get("trading_post", "") == tp_id:
 			if quest_data.progress >= quest_data.target:
 				quests_to_turn_in.append(quest_data.quest_id)
@@ -8748,7 +8748,7 @@ func handle_trading_post_quests(peer_id: int):
 	# Get quests ready to turn in at this Trading Post
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
-		var quest = quest_db.get_quest(quest_data.quest_id)
+		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
 		if quest.is_empty():
 			continue
 
@@ -8774,12 +8774,12 @@ func handle_trading_post_quests(peer_id: int):
 	# Build active quests list for unified display (with abandon option)
 	var active_quests_display = []
 	for quest_data in character.active_quests:
-		var quest = quest_db.get_quest(quest_data.quest_id)
+		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
 		if not quest.is_empty():
 			var description = quest.get("description", "")
 
-			# Add dungeon direction hints for dungeon quests
-			if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+			# Add dungeon direction hints for dungeon and rescue quests
+			if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE]:
 				# Check for player's personal dungeon first
 				var dungeon_info = _get_player_dungeon_info(peer_id, quest_data.quest_id, tp_x, tp_y)
 				if not dungeon_info.is_empty():
@@ -9756,21 +9756,55 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 		for i in to_remove:
 			character.inventory.remove_at(i)
 
-	elif list_type == "items":
-		# List all unlocked consumables + tools
+	elif list_type == "consumables":
+		# List all unlocked consumables (not tools)
 		var to_remove: Array = []
 		for i in range(character.inventory.size() - 1, -1, -1):
 			var item = character.inventory[i]
 			if item.get("locked", false) or item.get("equipped", false):
 				continue
 			var itype = item.get("type", "")
-			var is_listable = item.get("is_consumable", false) or _is_consumable_type(itype) or itype == "tool" or itype == "structure"
-			if not is_listable:
+			var is_consumable = item.get("is_consumable", false) or _is_consumable_type(itype)
+			if not is_consumable:
+				continue
+			if itype == "tool" or itype == "structure":
 				continue
 			if itype == "treasure_chest":
-				continue  # Don't bulk-list treasure chests
+				continue
 			if item.get("item_type", "") == "escape_scroll":
 				continue  # Don't bulk-list escape scrolls
+
+			var base_valor = drop_tables.calculate_base_valor(item)
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			var listing = {
+				"account_id": account_id,
+				"seller_name": character.name,
+				"item": item.duplicate(),
+				"base_valor": base_valor,
+				"supply_category": drop_tables.get_supply_category(item),
+				"listed_at": now,
+				"quantity": 1
+			}
+			persistence.add_market_listing(post_id, listing)
+			total_valor += base_valor
+			count += 1
+			to_remove.append(i)
+		for i in to_remove:
+			character.inventory.remove_at(i)
+
+	elif list_type == "tools":
+		# List all unlocked tools and structures
+		var to_remove: Array = []
+		for i in range(character.inventory.size() - 1, -1, -1):
+			var item = character.inventory[i]
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			if itype != "tool" and itype != "structure":
+				continue
+			if itype == "treasure_chest":
+				continue
 
 			var base_valor = drop_tables.calculate_base_valor(item)
 			if bonus > 0:
@@ -9984,7 +10018,7 @@ func handle_quest_abandon(peer_id: int, message: Dictionary):
 		return
 
 	var character = characters[peer_id]
-	var quest = quest_db.get_quest(quest_id)
+	var quest = quest_db.get_quest(quest_id, -1, 0, character.name)
 
 	if character.abandon_quest(quest_id):
 		# Clean up bounty if this was a bounty quest
@@ -10020,7 +10054,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 
 	# Check if at the right Trading Post
-	var quest = quest_db.get_quest(quest_id)
+	var quest = quest_db.get_quest(quest_id, -1, 0, character.name)
 	if quest.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Quest not found"})
 		return
@@ -10084,6 +10118,11 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 	var result = quest_mgr.turn_in_quest(character, quest_id)
 
 	if result.success:
+		# Award valor via persistence (quest_manager no longer handles this)
+		var valor_reward = result.rewards.get("valor", 0)
+		if valor_reward > 0 and peers.has(peer_id):
+			persistence.add_valor(peers[peer_id].account_id, valor_reward)
+
 		# Check for newly unlocked abilities
 		var unlocked_abilities = []
 		if result.leveled_up:
@@ -10131,7 +10170,8 @@ func handle_get_quest_log(peer_id: int):
 		if quest_name.is_empty() or quest_type < 0:
 			var player_level = quest.get("player_level_at_accept", 1)
 			var completed_at_post = quest.get("completed_at_post", 0)
-			var quest_data = quest_db.get_quest(qid, player_level, completed_at_post)
+			var char_name_q = quest.get("character_name", character.name)
+			var quest_data = quest_db.get_quest(qid, player_level, completed_at_post, char_name_q)
 			if quest_data:
 				quest_name = quest_data.get("name", "Unknown Quest")
 				quest_type = quest_data.get("type", -1)
@@ -10151,10 +10191,11 @@ func handle_get_quest_log(peer_id: int):
 				# Use stored dungeon_type if available, otherwise try to get from quest data
 				var dungeon_type = quest.get("dungeon_type", "")
 				if dungeon_type.is_empty():
-					var player_level = quest.get("player_level_at_accept", 1)
-					var completed_at_post = quest.get("completed_at_post", 0)
-					var quest_data = quest_db.get_quest(qid, player_level, completed_at_post)
-					dungeon_type = quest_data.get("dungeon_type", "") if quest_data else ""
+					var player_level2 = quest.get("player_level_at_accept", 1)
+					var completed_at_post2 = quest.get("completed_at_post", 0)
+					var char_name2 = quest.get("character_name", character.name)
+					var quest_data2 = quest_db.get_quest(qid, player_level2, completed_at_post2, char_name2)
+					dungeon_type = quest_data2.get("dungeon_type", "") if quest_data2 else ""
 
 				if not dungeon_type.is_empty():
 					var tier = 1 if qid.begins_with("haven_") else 0
@@ -10177,7 +10218,8 @@ func handle_get_quest_log(peer_id: int):
 				# Try to get from quest data
 				var player_level_e = quest.get("player_level_at_accept", 1)
 				var completed_at_post_e = quest.get("completed_at_post", 0)
-				var quest_data_e = quest_db.get_quest(qid, player_level_e, completed_at_post_e)
+				var char_name_e = quest.get("character_name", character.name)
+				var quest_data_e = quest_db.get_quest(qid, player_level_e, completed_at_post_e, char_name_e)
 				if quest_data_e:
 					destinations = quest_data_e.get("destinations", [])
 			if not destinations.is_empty():
@@ -10194,6 +10236,22 @@ func handle_get_quest_log(peer_id: int):
 					direction_parts.append("[color=#00FFFF]%s[/color] at (%d, %d) — %s" % [dest_name, dest_coords.x, dest_coords.y, dir_text])
 				if not direction_parts.is_empty():
 					description += "\n\n" + "\n".join(direction_parts)
+
+		# Add dungeon direction hints for rescue quests (same as dungeon quests)
+		if quest_type == quest_db.QuestType.RESCUE:
+			var dungeon_type_r = quest.get("dungeon_type", "")
+			if not dungeon_type_r.is_empty():
+				var dungeon_info_r = _get_player_dungeon_info(peer_id, qid, character.x, character.y)
+				if not dungeon_info_r.is_empty():
+					var rescue_dir = "[color=#00FFFF]Your dungeon:[/color] %s (%s)" % [dungeon_info_r.dungeon_name, dungeon_info_r.direction_text]
+					extra_info[qid] = rescue_dir
+					description += "\n\n" + rescue_dir
+				else:
+					var nearest_r = _find_nearest_dungeon_for_quest(character.x, character.y, dungeon_type_r, 0, peer_id)
+					if not nearest_r.is_empty():
+						var rescue_dir = "[color=#00FFFF]Nearest dungeon:[/color] %s (%s)" % [nearest_r.dungeon_name, nearest_r.direction_text]
+						extra_info[qid] = rescue_dir
+						description += "\n\n" + rescue_dir
 
 		active_quests_info.append({
 			"id": qid,
@@ -11389,13 +11447,14 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	active_gathering[peer_id] = session
 
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
+	var skip_failed_msg = ""
 	if character.skip_gather_minigame:
 		if has_tool:
 			_auto_resolve_gathering(peer_id, character, session, tool)
 			return
 		else:
 			var tool_label = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Fishing Rod"}.get(tool_subtype, "tool")
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Auto-gather skipped: no %s equipped. Starting minigame...[/color]" % tool_label})
+			skip_failed_msg = "Auto-gather skipped: no %s equipped." % tool_label
 
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
@@ -11411,6 +11470,7 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 		"reveals_remaining": max_reveals,
 		"momentum": 0,
 		"discoveries": [],
+		"skip_warning": skip_failed_msg,
 	})
 
 func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
@@ -11459,13 +11519,14 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	active_gathering[peer_id] = session
 
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
+	var skip_failed_msg = ""
 	if character.skip_gather_minigame:
 		if has_tool:
 			_auto_resolve_gathering(peer_id, character, session, tool)
 			return
 		else:
 			var tool_label = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Fishing Rod"}.get(tool_subtype, "tool")
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Auto-gather skipped: no %s equipped. Starting minigame...[/color]" % tool_label})
+			skip_failed_msg = "Auto-gather skipped: no %s equipped." % tool_label
 
 	send_to_peer(peer_id, {
 		"type": "gathering_round",
@@ -11481,6 +11542,7 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 		"reveals_remaining": bump_max_reveals,
 		"momentum": 0,
 		"discoveries": [],
+		"skip_warning": skip_failed_msg,
 	})
 
 func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool: Dictionary = {}):
@@ -11559,7 +11621,7 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 
 	active_gathering.erase(peer_id)
 	gathering_cooldown[peer_id] = true
-	send_character_update(peer_id)
+	send_location_update(peer_id)
 	save_character(peer_id)
 
 func _generate_gathering_round(job_type: String, tier: int, hint_strength: float, chain: int, discoveries: Array = []) -> Dictionary:
@@ -11878,6 +11940,20 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 		if is_discovery:
 			result_msg["is_discovery"] = true
 		send_to_peer(peer_id, result_msg)
+
+		# Check gathering quest progress
+		var gather_updates = quest_mgr.check_gathering_progress(character, job_type)
+		for update in gather_updates:
+			send_to_peer(peer_id, {
+				"type": "quest_progress",
+				"quest_id": update.quest_id,
+				"progress": update.progress,
+				"target": update.target,
+				"completed": update.completed,
+				"message": update.message
+			})
+		if not gather_updates.is_empty():
+			save_character(peer_id)
 	else:
 		# Wrong answer — reset logging momentum (even on tool save)
 		if job_type == "logging":
@@ -17277,8 +17353,8 @@ func _add_dungeon_directions_to_quests(quests: Array, _tp_x: int, _tp_y: int) ->
 	for quest in quests:
 		var updated_quest = quest.duplicate()
 
-		# Check if this is a dungeon quest
-		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
+		# Check if this is a dungeon or rescue quest
+		if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE]:
 			# Add note about personal dungeon being created
 			var dungeon_hint = "\n\n[color=#00FFFF]A personal dungeon will be created for you nearby when you accept this quest.[/color]"
 			updated_quest["description"] = quest.get("description", "") + dungeon_hint
@@ -21935,6 +22011,11 @@ func _sync_party_quest_turn_in(leader_pid: int, quest_id: String, quest: Diction
 		var turn_in_result = quest_mgr.turn_in_quest(member, quest_id)
 		if not turn_in_result.success:
 			continue
+
+		# Award valor via persistence for party member
+		var member_valor = turn_in_result.rewards.get("valor", 0)
+		if member_valor > 0 and peers.has(pid):
+			persistence.add_valor(peers[pid].account_id, member_valor)
 
 		var unlocked = []
 		if turn_in_result.leveled_up:
