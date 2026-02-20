@@ -11365,52 +11365,47 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	return stats_shown
 
 func _get_item_compare_value(item: Dictionary, stat: String) -> int:
-	"""Get the comparison value for an item based on the chosen stat"""
+	"""Get the comparison value for an item based on the chosen stat.
+	   Uses effective derived stats (HP includes CON×5, ATK includes STR, etc.)"""
+	var bonuses = _compute_item_bonuses(item)
 	match stat:
 		"level":
 			return item.get("level", 1)
 		"hp":
-			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("max_hp", 0)
+			# Effective HP = max_hp + CON×5
+			return bonuses.get("max_hp", 0) + bonuses.get("constitution", 0) * 5
 		"atk":
-			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("attack", 0)
+			# Effective ATK = attack + STR
+			return bonuses.get("attack", 0) + bonuses.get("strength", 0)
 		"def":
-			var bonuses = _compute_item_bonuses(item)
-			return bonuses.get("defense", 0)
+			# Effective DEF = defense + CON/2
+			return bonuses.get("defense", 0) + int(bonuses.get("constitution", 0) / 2)
 		"wit":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("wits", 0)
 		"mana", "stamina", "energy", "resource":
-			# Universal resource - combined with scaling (mana is 2x larger)
-			var bonuses = _compute_item_bonuses(item)
-			var mana_val = bonuses.get("max_mana", 0)
-			var stam_energy_val = bonuses.get("max_stamina", 0) + bonuses.get("max_energy", 0)
+			# Effective resource with attribute contributions
+			var eff_mana = bonuses.get("max_mana", 0) + bonuses.get("intelligence", 0) * 3 + int(bonuses.get("wisdom", 0) * 1.5)
+			var eff_stam = bonuses.get("max_stamina", 0) + bonuses.get("strength", 0) + bonuses.get("constitution", 0)
+			var eff_energy = bonuses.get("max_energy", 0) + int((bonuses.get("wits", 0) + bonuses.get("dexterity", 0)) * 0.75)
 			var player_class = character_data.get("class", "")
 			match player_class:
 				"Wizard", "Sorcerer", "Sage":
-					return mana_val + (stam_energy_val * 2)
+					return eff_mana + (eff_stam + eff_energy) * 2
 				"Fighter", "Barbarian", "Paladin", "Thief", "Ranger", "Ninja", "Trickster":
-					return int(mana_val * 0.5) + stam_energy_val
+					return int(eff_mana * 0.5) + eff_stam + eff_energy
 				_:
-					return mana_val + stam_energy_val
+					return eff_mana + eff_stam + eff_energy
 		"speed":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("speed", 0)
 		"str":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("strength", 0)
 		"con":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("constitution", 0)
 		"dex":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("dexterity", 0)
 		"int":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("intelligence", 0)
 		"wis":
-			var bonuses = _compute_item_bonuses(item)
 			return bonuses.get("wisdom", 0)
 		_:
 			return item.get("level", 1)
@@ -11432,45 +11427,54 @@ func _get_compare_arrow(new_item: Dictionary, equipped_item) -> String:
 
 func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	"""Get array of stat difference strings for inline comparison display.
-	   If old_item is null, shows new item's stats as gains."""
+	   Uses EFFECTIVE derived stats so comparisons account for attribute contributions:
+	   HP includes CON×5, ATK includes STR, DEF includes CON/2, resources include attributes."""
 	var new_bonuses = _compute_item_bonuses(new_item)
 	var old_bonuses = {}
 	if old_item != null and old_item is Dictionary:
 		old_bonuses = _compute_item_bonuses(old_item)
 	var diff_parts = []
 
-	# Stats to compare with their display labels and colors (ordered by importance)
-	# Note: resource stats (mana/stamina/energy) are handled separately below
-	var stats_to_compare = [
-		["attack", "ATK", "#FFFF00"],      # Yellow
-		["defense", "DEF", "#00FF00"],     # Green
-		["max_hp", "HP", "#FF6666"],       # Light red
-		["speed", "SPD", "#FFA500"],       # Orange
-		["strength", "STR", "#FF6666"],    # Red
-		["constitution", "CON", "#00FF00"], # Green
-		["dexterity", "DEX", "#FFFF00"],   # Yellow
-		["intelligence", "INT", "#9999FF"], # Purple
-		["wisdom", "WIS", "#66CCFF"],      # Cyan
-		["wits", "WIT", "#FF00FF"]         # Magenta
-	]
+	# Effective ATK = attack + strength (matches get_total_attack formula)
+	var new_eff_atk = new_bonuses.get("attack", 0) + new_bonuses.get("strength", 0)
+	var old_eff_atk = old_bonuses.get("attack", 0) + old_bonuses.get("strength", 0)
+	var atk_diff = new_eff_atk - old_eff_atk
+	if atk_diff != 0:
+		var c = "#FFFF00" if atk_diff > 0 else "#808080"
+		diff_parts.append("[color=%s]%+dATK[/color]" % [c, atk_diff])
 
-	for stat_info in stats_to_compare:
-		var stat = stat_info[0]
-		var label = stat_info[1]
-		var stat_color = stat_info[2]
-		var new_val = new_bonuses.get(stat, 0)
-		var old_val = old_bonuses.get(stat, 0)
-		var diff = new_val - old_val
-		if diff != 0:
-			# Use stat color but dim it for negative values
-			var c = stat_color if diff > 0 else "#808080"
-			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
+	# Effective DEF = defense + constitution/2 (matches get_total_defense formula)
+	var new_eff_def = new_bonuses.get("defense", 0) + int(new_bonuses.get("constitution", 0) / 2)
+	var old_eff_def = old_bonuses.get("defense", 0) + int(old_bonuses.get("constitution", 0) / 2)
+	var def_diff = new_eff_def - old_eff_def
+	if def_diff != 0:
+		var c = "#00FF00" if def_diff > 0 else "#808080"
+		diff_parts.append("[color=%s]%+dDEF[/color]" % [c, def_diff])
 
-	# Universal resource comparison with scaling (mana is 2x larger than stam/energy)
-	var new_mana = new_bonuses.get("max_mana", 0)
-	var new_stam_energy = new_bonuses.get("max_stamina", 0) + new_bonuses.get("max_energy", 0)
-	var old_mana = old_bonuses.get("max_mana", 0)
-	var old_stam_energy = old_bonuses.get("max_stamina", 0) + old_bonuses.get("max_energy", 0)
+	# Effective HP = max_hp + constitution×5 (matches get_total_max_hp formula)
+	var new_eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
+	var old_eff_hp = old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5
+	var hp_diff = new_eff_hp - old_eff_hp
+	if hp_diff != 0:
+		var c = "#FF6666" if hp_diff > 0 else "#808080"
+		diff_parts.append("[color=%s]%+dHP[/color]" % [c, hp_diff])
+
+	# Speed (no attribute derivation)
+	var spd_diff = new_bonuses.get("speed", 0) - old_bonuses.get("speed", 0)
+	if spd_diff != 0:
+		var c = "#FFA500" if spd_diff > 0 else "#808080"
+		diff_parts.append("[color=%s]%+dSPD[/color]" % [c, spd_diff])
+
+	# Effective resource comparison — fold attribute contributions into pool sizes
+	# Mana effective = direct mana + INT×3 + WIS×1.5
+	# Stamina effective = direct stamina + STR + CON
+	# Energy effective = direct energy + (WITS + DEX) × 0.75
+	var new_eff_mana = new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)
+	var new_eff_stam = new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)
+	var new_eff_energy = new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)
+	var old_eff_mana = old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)
+	var old_eff_stam = old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)
+	var old_eff_energy = old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)
 
 	var player_class = character_data.get("class", "")
 	var resource_label = "RES"
@@ -11482,31 +11486,31 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		"Wizard", "Sorcerer", "Sage":
 			resource_label = "MP"
 			resource_color = "#9999FF"
-			new_scaled = new_mana + (new_stam_energy * 2)
-			old_scaled = old_mana + (old_stam_energy * 2)
+			new_scaled = new_eff_mana + (new_eff_stam + new_eff_energy) * 2
+			old_scaled = old_eff_mana + (old_eff_stam + old_eff_energy) * 2
 		"Fighter", "Barbarian", "Paladin":
 			resource_label = "STA"
 			resource_color = "#FFCC00"
-			new_scaled = int(new_mana * 0.5) + new_stam_energy
-			old_scaled = int(old_mana * 0.5) + old_stam_energy
+			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
+			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
 		"Thief", "Ranger", "Ninja", "Trickster":
 			resource_label = "EN"
 			resource_color = "#66FF66"
-			new_scaled = int(new_mana * 0.5) + new_stam_energy
-			old_scaled = int(old_mana * 0.5) + old_stam_energy
+			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
+			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
 
 	var resource_diff = new_scaled - old_scaled
 	if resource_diff != 0:
 		var c = resource_color if resource_diff > 0 else "#808080"
 		diff_parts.append("[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label])
 
-	# Class-specific gear bonuses comparison
+	# Class-specific gear bonuses comparison (flat bonuses, no attribute derivation)
 	var class_bonuses_to_compare = [
-		["mana_regen", "MP/rnd", "#66CCCC"],       # Mage mana per round
-		["meditate_bonus", "%Med", "#66CCCC"],     # Mage meditate bonus
-		["energy_regen", "EN/rnd", "#66FF66"],     # Trickster energy per round
-		["flee_bonus", "%Flee", "#66FF66"],        # Trickster flee bonus
-		["stamina_regen", "STA/rnd", "#FFCC00"]    # Warrior stamina per round
+		["mana_regen", "MP/rnd", "#66CCCC"],
+		["meditate_bonus", "%Med", "#66CCCC"],
+		["energy_regen", "EN/rnd", "#66FF66"],
+		["flee_bonus", "%Flee", "#66FF66"],
+		["stamina_regen", "STA/rnd", "#FFCC00"]
 	]
 
 	for bonus_info in class_bonuses_to_compare:
@@ -11541,64 +11545,127 @@ func _get_compare_stat_label(stat: String) -> String:
 		"wis": return "Wisdom"
 		_: return stat.capitalize()
 
+func _get_tool_compare_arrow(new_tool: Dictionary, equipped_tool) -> String:
+	"""Get comparison arrow for a tool vs currently equipped tool of same subtype."""
+	if equipped_tool == null or not (equipped_tool is Dictionary) or equipped_tool.is_empty():
+		return "[color=#00FF00]NEW[/color]"
+	# Compare by tier first, then max_durability, then reveals, then saves
+	var new_score = new_tool.get("tier", 1) * 100 + new_tool.get("max_durability", 0)
+	var old_score = equipped_tool.get("tier", 1) * 100 + equipped_tool.get("max_durability", 0)
+	if new_score > old_score:
+		return "[color=#00FF00]↑[/color]"
+	elif new_score < old_score:
+		return "[color=#FF6666]↓[/color]"
+	else:
+		return "[color=#FFFF66]=[/color]"
+
+func _get_tool_comparison_parts(new_tool: Dictionary, old_tool) -> Array:
+	"""Get inline stat difference strings for tool comparison."""
+	var parts: Array = []
+	if old_tool == null or not (old_tool is Dictionary) or old_tool.is_empty():
+		# No equipped tool — show stats as absolute values
+		var dur = new_tool.get("max_durability", 0)
+		var reveals = new_tool.get("tool_bonuses", {}).get("reveals", 0)
+		var saves = new_tool.get("max_saves", 0)
+		if dur > 0:
+			parts.append("[color=#00FF00]%dDur[/color]" % dur)
+		if reveals > 0:
+			parts.append("[color=#00FF00]%dRev[/color]" % reveals)
+		if saves > 0:
+			parts.append("[color=#00FF00]%dSav[/color]" % saves)
+		return parts
+	var dur_diff = new_tool.get("max_durability", 0) - old_tool.get("max_durability", 0)
+	var new_reveals = new_tool.get("tool_bonuses", {}).get("reveals", 0)
+	var old_reveals = old_tool.get("tool_bonuses", {}).get("reveals", 0)
+	var reveal_diff = new_reveals - old_reveals
+	var save_diff = new_tool.get("max_saves", 0) - old_tool.get("max_saves", 0)
+	if dur_diff != 0:
+		var c = "#00FF00" if dur_diff > 0 else "#808080"
+		parts.append("[color=%s]%+dDur[/color]" % [c, dur_diff])
+	if reveal_diff != 0:
+		var c = "#00FF00" if reveal_diff > 0 else "#808080"
+		parts.append("[color=%s]%+dRev[/color]" % [c, reveal_diff])
+	if save_diff != 0:
+		var c = "#00FF00" if save_diff > 0 else "#808080"
+		parts.append("[color=%s]%+dSav[/color]" % [c, save_diff])
+	return parts
+
 func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
-	"""Display stat comparison between two items using computed bonuses"""
+	"""Display stat comparison between two items using effective derived stats.
+	   HP includes CON×5, ATK includes STR, DEF includes CON/2, resources include attributes."""
 	var new_bonuses = _compute_item_bonuses(new_item)
 	var old_bonuses = _compute_item_bonuses(old_item)
 	var comparisons = []
 
-	# Compare all stats (excluding resource pools which are combined below)
-	var stat_labels = {
-		"attack": "ATK",
-		"defense": "DEF",
-		"max_hp": "HP",
-		"strength": "STR",
-		"constitution": "CON",
-		"dexterity": "DEX",
-		"intelligence": "INT",
-		"wisdom": "WIS",
-		"wits": "WIT",
-		"speed": "SPD",
-		# Class-specific bonuses
-		"mana_regen": "Mana/rnd",
-		"meditate_bonus": "Meditate%",
-		"energy_regen": "Energy/rnd",
-		"flee_bonus": "Flee%",
-		"stamina_regen": "Stam/rnd"
-	}
+	# Effective ATK = attack + strength (matches get_total_attack)
+	var new_eff_atk = new_bonuses.get("attack", 0) + new_bonuses.get("strength", 0)
+	var old_eff_atk = old_bonuses.get("attack", 0) + old_bonuses.get("strength", 0)
+	if new_eff_atk != old_eff_atk:
+		var diff = new_eff_atk - old_eff_atk
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d ATK[/color]" % [color, diff])
 
-	for stat in stat_labels.keys():
+	# Effective DEF = defense + constitution/2 (matches get_total_defense)
+	var new_eff_def = new_bonuses.get("defense", 0) + int(new_bonuses.get("constitution", 0) / 2)
+	var old_eff_def = old_bonuses.get("defense", 0) + int(old_bonuses.get("constitution", 0) / 2)
+	if new_eff_def != old_eff_def:
+		var diff = new_eff_def - old_eff_def
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d DEF[/color]" % [color, diff])
+
+	# Effective HP = max_hp + constitution×5 (matches get_total_max_hp)
+	var new_eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
+	var old_eff_hp = old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5
+	if new_eff_hp != old_eff_hp:
+		var diff = new_eff_hp - old_eff_hp
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d HP[/color]" % [color, diff])
+
+	# Speed (no attribute derivation)
+	var new_spd = new_bonuses.get("speed", 0)
+	var old_spd = old_bonuses.get("speed", 0)
+	if new_spd != old_spd:
+		var diff = new_spd - old_spd
+		var color = "#00FF00" if diff > 0 else "#FF6666"
+		comparisons.append("[color=%s]%+d SPD[/color]" % [color, diff])
+
+	# Class-specific gear bonuses (flat, no attribute derivation)
+	var class_stats = {"mana_regen": "Mana/rnd", "meditate_bonus": "Meditate%",
+		"energy_regen": "Energy/rnd", "flee_bonus": "Flee%", "stamina_regen": "Stam/rnd"}
+	for stat in class_stats.keys():
 		var new_val = new_bonuses.get(stat, 0)
 		var old_val = old_bonuses.get(stat, 0)
 		if new_val != old_val:
 			var diff = new_val - old_val
 			var color = "#00FF00" if diff > 0 else "#FF6666"
-			comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, stat_labels[stat]])
+			comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, class_stats[stat]])
 
-	# Universal resource comparison - combine with scaling (mana is 2x larger than stam/energy)
+	# Effective resource comparison with attribute contributions
+	var new_eff_mana = new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)
+	var new_eff_stam = new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)
+	var new_eff_energy = new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)
+	var old_eff_mana = old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)
+	var old_eff_stam = old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)
+	var old_eff_energy = old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)
+
 	var player_class = character_data.get("class", "")
 	var resource_label = "Resource"
 	var new_scaled = 0
 	var old_scaled = 0
 
-	var new_mana = new_bonuses.get("max_mana", 0)
-	var new_stam_energy = new_bonuses.get("max_stamina", 0) + new_bonuses.get("max_energy", 0)
-	var old_mana = old_bonuses.get("max_mana", 0)
-	var old_stam_energy = old_bonuses.get("max_stamina", 0) + old_bonuses.get("max_energy", 0)
-
 	match player_class:
 		"Wizard", "Sorcerer", "Sage":
 			resource_label = "Mana"
-			new_scaled = new_mana + (new_stam_energy * 2)
-			old_scaled = old_mana + (old_stam_energy * 2)
+			new_scaled = new_eff_mana + (new_eff_stam + new_eff_energy) * 2
+			old_scaled = old_eff_mana + (old_eff_stam + old_eff_energy) * 2
 		"Fighter", "Barbarian", "Paladin":
 			resource_label = "Stamina"
-			new_scaled = int(new_mana * 0.5) + new_stam_energy
-			old_scaled = int(old_mana * 0.5) + old_stam_energy
+			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
+			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
 		"Thief", "Ranger", "Ninja", "Trickster":
 			resource_label = "Energy"
-			new_scaled = int(new_mana * 0.5) + new_stam_energy
-			old_scaled = int(old_mana * 0.5) + old_stam_energy
+			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
+			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
 
 	if new_scaled != old_scaled:
 		var diff = new_scaled - old_scaled
@@ -11616,14 +11683,16 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 	if comparisons.size() > 0:
 		display_game("  " + " | ".join(comparisons))
 	else:
-		# Items have same stats - show what both provide for clarity
-		var shared_stats = []
-		for stat in stat_labels.keys():
-			var val = new_bonuses.get(stat, 0)
-			if val > 0:
-				shared_stats.append("+%d %s" % [val, stat_labels[stat]])
-		if shared_stats.size() > 0:
-			display_game("  [color=#808080](Same stats: %s)[/color]" % " | ".join(shared_stats))
+		# Items have same effective stats
+		var eff_atk = new_bonuses.get("attack", 0) + new_bonuses.get("strength", 0)
+		var eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
+		var eff_def = new_bonuses.get("defense", 0) + int(new_bonuses.get("constitution", 0) / 2)
+		if eff_atk > 0 or eff_hp > 0 or eff_def > 0:
+			var shared = []
+			if eff_atk > 0: shared.append("+%d ATK" % eff_atk)
+			if eff_def > 0: shared.append("+%d DEF" % eff_def)
+			if eff_hp > 0: shared.append("+%d HP" % eff_hp)
+			display_game("  [color=#808080](Same stats: %s)[/color]" % " | ".join(shared))
 		else:
 			display_game("  [color=#808080](No stat bonuses)[/color]")
 
@@ -12713,9 +12782,16 @@ func display_inventory():
 				var dur_pct = float(dur) / float(max_dur) * 100.0 if max_dur > 0 else 0.0
 				var dur_color = "#00FF00" if dur_pct > 50.0 else ("#FFAA00" if dur_pct > 20.0 else "#FF4444")
 				var subtype = item.get("subtype", "tool")
-				display_game("  %d. %s[color=%s]%s[/color] [color=#808080](%s T%d)[/color] [color=%s]%d/%d dur[/color]" % [
-					display_num, lock_text, rarity_color, item.get("name", "Tool"),
-					subtype.capitalize(), item.get("tier", 1), dur_color, dur, max_dur
+				# Tool comparison vs equipped tool of same subtype
+				var eq_tool = eq_tools.get(subtype, {})
+				var tool_arrow = _get_tool_compare_arrow(item, eq_tool) + " "
+				var tool_cmp_parts = _get_tool_comparison_parts(item, eq_tool)
+				var tool_cmp_text = ""
+				if tool_cmp_parts.size() > 0:
+					tool_cmp_text = " [%s]" % ", ".join(tool_cmp_parts)
+				display_game("  %d. %s%s[color=%s]%s[/color] [color=#808080](%s T%d)[/color] [color=%s]%d/%d dur[/color]%s" % [
+					display_num, lock_text, tool_arrow, rarity_color, item.get("name", "Tool"),
+					subtype.capitalize(), item.get("tier", 1), dur_color, dur, max_dur, tool_cmp_text
 				])
 			elif is_consumable:
 				var stack_count = entry.get("count", 1)
@@ -15523,11 +15599,18 @@ func handle_server_message(message: Dictionary):
 					# Require continue press so player can read loot before display refreshes
 					display_game("")
 					if harvest_available:
-						display_game("[color=#FF6600]You can harvest this creature for parts! Press [%s] to Harvest.[/color]" % get_action_key_name(1))
-					display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-					pending_continue = true
-					if dungeon_mode:
-						pending_dungeon_continue = true
+						# Auto-harvest: send harvest_start immediately (no Q press needed)
+						display_game("[color=#FF6600]Auto-harvesting creature for parts...[/color]")
+						harvest_available = false
+						send_to_server({"type": "harvest_start"})
+						# Don't set pending_continue — harvest flow will handle continuation
+						if dungeon_mode:
+							pending_dungeon_continue = true
+					else:
+						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						pending_continue = true
+						if dungeon_mode:
+							pending_dungeon_continue = true
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -16702,6 +16785,34 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 		display_game("")
 		var job_for_tool = {"pickaxe": "Mining", "axe": "Logging", "sickle": "Foraging", "rod": "Fishing"}.get(subtype, "Gathering")
 		display_game("[color=#808080]Used for %s. Durability decreases by 1 per session.[/color]" % job_for_tool)
+		# Show comparison with equipped tool of same subtype
+		var eq_tools = character_data.get("equipped_tools", {})
+		var eq_tool = eq_tools.get(subtype, {})
+		if not eq_tool.is_empty():
+			display_game("")
+			display_game("[color=#E6CC80]Compared to equipped %s:[/color]" % eq_tool.get("name", subtype.capitalize()))
+			var dur_diff = max_durability - eq_tool.get("max_durability", 0)
+			var eq_reveals = eq_tool.get("tool_bonuses", {}).get("reveals", 0)
+			var eq_saves = eq_tool.get("max_saves", 0)
+			var rev_diff = reveal_count - eq_reveals
+			var sav_diff = save_count - eq_saves
+			if dur_diff > 0:
+				display_game("  [color=#00FF00]+%d Max Durability[/color]" % dur_diff)
+			elif dur_diff < 0:
+				display_game("  [color=#FF6666]%d Max Durability[/color]" % dur_diff)
+			if rev_diff > 0:
+				display_game("  [color=#00FF00]+%d Reveals[/color]" % rev_diff)
+			elif rev_diff < 0:
+				display_game("  [color=#FF6666]%d Reveals[/color]" % rev_diff)
+			if sav_diff > 0:
+				display_game("  [color=#00FF00]+%d Saves[/color]" % sav_diff)
+			elif sav_diff < 0:
+				display_game("  [color=#FF6666]%d Saves[/color]" % sav_diff)
+			if dur_diff == 0 and rev_diff == 0 and sav_diff == 0:
+				display_game("  [color=#FFFF66]Identical stats[/color]")
+		else:
+			display_game("")
+			display_game("[color=#00FF00]No %s currently equipped.[/color]" % subtype.capitalize())
 	else:
 		# Consumables: show effect description
 		if is_consumable and item.get("crafted", false) and item.has("effect"):
@@ -22761,6 +22872,12 @@ func end_harvest():
 	harvest_saves_remaining = 0
 	harvest_mastery_label = ""
 	harvest_mastery_count = 0
+	# After auto-harvest in dungeon, set pending_continue so player can advance
+	if dungeon_mode and pending_dungeon_continue:
+		pending_continue = true
+		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	# Reset combat background
+	reset_combat_background()
 	update_action_bar()
 
 # ===== CRAFTING FUNCTIONS =====
@@ -23204,13 +23321,7 @@ func handle_craft_result(message: Dictionary):
 	if leveled_up:
 		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
 
-	# Show job XP if gained
-	var job_xp_gained = message.get("job_xp_gained", 0)
-	if job_xp_gained > 0:
-		var job_name = message.get("job_name", "")
-		display_game("[color=#FF8800]+%d %s Job XP[/color]" % [job_xp_gained, job_name.capitalize()])
-		if message.get("job_leveled_up", false):
-			display_game("[color=#FFD700]★ %s job increased to %d! ★[/color]" % [job_name.capitalize(), message.get("job_new_level", 1)])
+	# Job XP is awarded silently in the background (used for recipe gating)
 
 	# Update materials from craft result (server sends post-craft materials)
 	var updated_mats = message.get("materials", {})
@@ -24245,6 +24356,15 @@ func display_market_browse():
 					var _equipped_item = _equipped.get(_slot, null)
 					var _arrow = _get_compare_arrow(item, _equipped_item)
 					var _parts = _get_item_comparison_parts(item, _equipped_item)
+					compare_text = " %s" % _arrow
+					if _parts.size() > 0:
+						compare_text += " [%s]" % ", ".join(_parts)
+				elif _item_type == "tool":
+					# Tool comparison vs equipped tool of same subtype
+					var _eq_tools = character_data.get("equipped_tools", {})
+					var _eq_tool = _eq_tools.get(item.get("subtype", ""), {})
+					var _arrow = _get_tool_compare_arrow(item, _eq_tool)
+					var _parts = _get_tool_comparison_parts(item, _eq_tool)
 					compare_text = " %s" % _arrow
 					if _parts.size() > 0:
 						compare_text += " [%s]" % ", ".join(_parts)

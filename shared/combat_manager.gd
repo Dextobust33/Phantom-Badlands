@@ -484,6 +484,11 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	var companion_bonuses = companion.get("bonuses", {})
 	var companion_sub_tier = companion.get("sub_tier", 1)
 
+	# 95% hit chance for companions
+	if randi() % 100 >= 95:
+		messages.append("[color=#00FFFF]Your %s lunges but misses![/color]" % companion.get("name", "companion"))
+		return
+
 	# Calculate companion damage (now scales with companion level and sub-tier)
 	var companion_damage = 0
 	if drop_tables:
@@ -1056,8 +1061,8 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		end_combat(peer_id, result.get("victory", false))
 		return result
 
-	# Monster's turn (if still alive)
-	if combat.monster.current_hp > 0:
+	# Monster's turn (if still alive and didn't already act this round)
+	if combat.monster.current_hp > 0 and not result.get("monster_acted", false):
 		var player_hp_before_monster = combat.character.current_hp
 		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
@@ -1329,11 +1334,6 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FF4444]ðŸ’€ Execute strikes for %d bonus damage![/color]" % execute_damage)
 
-		# === COMPANION ATTACK ===
-		var _ca = messages.size()
-		_process_companion_attack(combat, messages)
-		_indent_new_messages(messages, _ca, "   ")
-
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
 			var thorn_damage = max(1, int(damage * 0.25))
@@ -1354,6 +1354,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	else:
 		# Miss
 		messages.append("[color=#FF4444]You swing at the %s but miss![/color]" % monster.name)
+
+	# === COMPANION ATTACK (independent of player hit/miss) ===
+	if monster.current_hp > 0:
+		var _ca = messages.size()
+		_process_companion_attack(combat, messages)
+		_indent_new_messages(messages, _ca, "   ")
+		if monster.current_hp <= 0:
+			return _process_victory_with_abilities(combat, messages)
 
 	combat.player_can_act = false
 
@@ -2217,7 +2225,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"success": true,
 			"messages": messages,
 			"combat_ended": false,
-			"outsmart_failed": true  # Tell client outsmart can't be used again
+			"outsmart_failed": true,  # Tell client outsmart can't be used again
+			"monster_acted": true  # Monster already got free attack, don't give another turn
 		}
 
 # ===== ABILITY SYSTEM =====

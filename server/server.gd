@@ -1441,6 +1441,45 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
+	# Restore quest state from saved quests (survives server restart)
+	for quest_data in character.active_quests:
+		if quest_data.get("progress", 0) >= quest_data.get("target", 1):
+			continue  # Already completed, just needs turn-in
+		var qid = quest_data.get("quest_id", "")
+		if qid == "":
+			continue
+
+		# Restore BOSS_HUNT bounties
+		var bounty_name = quest_data.get("bounty_name", "")
+		if bounty_name != "" and not active_bounties.has(qid):
+			active_bounties[qid] = {
+				"x": int(quest_data.get("bounty_x", 0)),
+				"y": int(quest_data.get("bounty_y", 0)),
+				"monster_type": quest_data.get("bounty_monster_type", ""),
+				"level": int(quest_data.get("bounty_level", character.level)),
+				"name": bounty_name,
+				"peer_id": peer_id,
+			}
+			log_message("Restored bounty '%s' at (%d, %d) for %s" % [bounty_name, int(quest_data.get("bounty_x", 0)), int(quest_data.get("bounty_y", 0)), char_name])
+
+		# Restore DUNGEON_CLEAR / RESCUE — ensure matching world dungeon exists nearby
+		var quest_dungeon_type = quest_data.get("dungeon_type", "")
+		if quest_dungeon_type != "":
+			# Check if a world dungeon of this type already exists
+			var found_matching = false
+			for did in active_dungeons:
+				var d = active_dungeons[did]
+				if d.get("dungeon_type", "") == quest_dungeon_type and d.get("completed_at", 0) == 0 and not d.has("owner_peer_id"):
+					found_matching = true
+					break
+			if not found_matching:
+				var origin_x = int(quest_data.get("origin_x", 0))
+				var origin_y = int(quest_data.get("origin_y", 0))
+				var new_id = _create_world_dungeon_near(quest_dungeon_type, origin_x, origin_y)
+				if new_id != "":
+					var nd = active_dungeons[new_id]
+					log_message("Restored dungeon '%s' at (%d, %d) for %s's quest" % [quest_dungeon_type, nd.world_x, nd.world_y, char_name])
+
 	# Update title holder tracking
 	_update_title_holders_on_login(peer_id)
 
@@ -9499,12 +9538,18 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		var treasury_cut = markup_total - seller_bonus
 		if seller_bonus > 0:
 			persistence.add_valor(seller_account_id, seller_bonus)
-			for pid in peers.keys():
-				if peers[pid].account_id == seller_account_id and characters.has(pid):
-					var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
+		for pid in peers.keys():
+			if peers[pid].account_id == seller_account_id and characters.has(pid):
+				var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
+				if seller_bonus > 0:
 					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s%s — you earned %d bonus Valor![/color]" % [
 						item.get("name", "item"), qty_text, seller_bonus]})
-					break
+				else:
+					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]Market sale! Someone bought your %s%s.[/color]" % [
+						item.get("name", "item"), qty_text]})
+				# Update seller's client with accurate valor from server
+				send_character_update(pid)
+				break
 		if treasury_cut > 0:
 			persistence.add_to_realm_treasury(treasury_cut)
 
@@ -9517,7 +9562,11 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	elif item.get("type", "") == "egg":
 		character.incubating_eggs.append(item)
 	else:
-		character.inventory.append(item)
+		# Add each item individually (tools, consumables, etc. need separate copies)
+		for _i in range(buy_qty):
+			var item_copy = item.duplicate(true)
+			item_copy["id"] = randi()  # Unique ID per item
+			character.inventory.append(item_copy)
 
 	save_character(peer_id)
 
@@ -17132,6 +17181,62 @@ func _check_dungeon_spawns():
 				break
 		else:
 			break  # Stop if random check fails
+
+func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, radius: int = 60) -> String:
+	"""Create a world dungeon near specific coordinates (for quest restoration after restart)."""
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		return ""
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return ""
+	var instance_id = "world_dungeon_%d" % next_dungeon_id
+	next_dungeon_id += 1
+	var existing_coords = {}
+	for eid in active_dungeons:
+		var ed = active_dungeons[eid]
+		existing_coords[Vector2i(ed.world_x, ed.world_y)] = true
+	var world_x = 0
+	var world_y = 0
+	var found_valid = false
+	for _attempt in range(30):
+		var offset_x = (randi() % (radius * 2 + 1)) - radius
+		var offset_y = (randi() % (radius * 2 + 1)) - radius
+		world_x = near_x + offset_x
+		world_y = near_y + offset_y
+		if not trading_post_db.is_trading_post_tile(world_x, world_y) \
+				and not world_system.is_safe_zone(world_x, world_y) \
+				and not existing_coords.has(Vector2i(world_x, world_y)):
+			found_valid = true
+			break
+	if not found_valid:
+		next_dungeon_id -= 1
+		return ""
+	var distance = sqrt(float(world_x * world_x + world_y * world_y))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
+	active_dungeons[instance_id] = {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": world_x,
+		"world_y": world_y,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": dungeon_level,
+		"sub_tier": sub_tier,
+		"completed_at": 0
+	}
+	var floor_grids = []
+	var floor_rooms = []
+	for floor_num in range(dungeon_data.floors):
+		var is_boss_floor = floor_num == dungeon_data.floors - 1
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+		floor_grids.append(floor_data.grid)
+		floor_rooms.append(floor_data.rooms)
+	dungeon_floors[instance_id] = floor_grids
+	dungeon_floor_rooms[instance_id] = floor_rooms
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
+	return instance_id
 
 func _create_world_dungeon(dungeon_type: String) -> String:
 	"""Create a random world dungeon at a random location"""
