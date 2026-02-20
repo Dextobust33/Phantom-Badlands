@@ -19479,8 +19479,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.141 changes
+	display_game("[color=#00FF00]v0.9.141[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug Fixes & Comparison Improvements[/color]")
+	display_game("  • Equipment comparison now shows effective stats (HP includes CON, ATK includes STR, etc.)")
+	display_game("  • Tool comparison added — inventory, market, and inspection show durability/reveals/saves diffs")
+	display_game("  • AutoHarvest: Soldier job auto-harvests after combat without pressing Q")
+	display_game("  • Market: Buying multiple tools now correctly gives all purchased items")
+	display_game("  • Market: Sellers now get valor updates immediately when items are purchased")
+	display_game("  • Quests: Boss Hunt bounties now survive server restarts")
+	display_game("  • Quests: Dungeon quests now ensure matching dungeon exists on reconnect")
+	display_game("  • Crafting: Removed redundant job level display from craft results")
+	display_game("")
+
 	# v0.9.140 changes
-	display_game("[color=#00FF00]v0.9.140[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.140[/color]")
 	display_game("  [color=#FFD700]Quest System Overhaul[/color]")
 	display_game("  • Quests now reward Valor instead of Monster Gems")
 	display_game("  • Each character sees different quests at the same trading post")
@@ -19524,20 +19537,6 @@ func display_changelog():
 	display_game("  • Corpses no longer spawn on impassable tiles (mountains, walls, water)")
 	display_game("  • Death broadcast now shows compass direction & rough distance to remains")
 	display_game("  • Compass hints when walking near fallen remains (within ~75 tiles)")
-	display_game("")
-
-	# v0.9.134 changes
-	display_game("[color=#00FFFF]v0.9.134[/color]")
-	display_game("  [color=#FFD700]Leaderboard & Dungeon Fixes[/color]")
-	display_game("  • Leaderboard: Click any name to view their full death screen & final battle")
-	display_game("  • Dungeons: Step counter now advances after fleeing combat")
-	display_game("  • Dungeons: Display clears properly when moving between rooms")
-	display_game("  • Dungeons: Treasures now always list their contents")
-	display_game("  • Dungeons: Party leader escape scroll exits the whole party")
-	display_game("  • Dungeons: Rest action key hint now shows correctly")
-	display_game("  • Market: Companion eggs no longer show as \"Unknown\"")
-	display_game("  • Runes: Fixed hotkey double-trigger when applying runes to equipment")
-	display_game("  • Specialty jobs can now level up without committing (recipes still gated)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
