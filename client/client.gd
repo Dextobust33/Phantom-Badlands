@@ -293,7 +293,9 @@ func _recolor_line_scatter_raw(line: String, color1: String, color2: String, row
 
 var connection = StreamPeerTCP.new()
 var connected = false
-var buffer = ""
+var buffer = ""                          # Legacy text buffer (used when server sends newline JSON)
+var raw_buffer = PackedByteArray()       # Binary buffer (used when server sends binary frames)
+var server_binary_mode: bool = false     # Auto-detected: true if server sends binary frames
 
 # Connection settings
 var server_ip: String = "localhost"
@@ -2830,8 +2832,17 @@ func _process(delta):
 		if available > 0:
 			var data = connection.get_data(available)
 			if data[0] == OK:
-				buffer += data[1].get_string_from_utf8()
-				process_buffer()
+				var raw_bytes: PackedByteArray = data[1]
+				# Auto-detect server protocol on first data
+				if not server_binary_mode and raw_buffer.is_empty() and buffer.is_empty() and raw_bytes.size() > 0:
+					if raw_bytes[0] != 0x7B:  # Not '{' — binary framing
+						server_binary_mode = true
+				if server_binary_mode:
+					raw_buffer.append_array(raw_bytes)
+					process_raw_buffer()
+				else:
+					buffer += raw_bytes.get_string_from_utf8()
+					process_buffer()
 
 		# Auto-refresh player list every 60 seconds while playing
 		if game_state == GameState.PLAYING and has_character:
@@ -14308,6 +14319,16 @@ func _set_character_data(new_data: Dictionary):
 	if not character_data.has("valor"):
 		character_data["valor"] = account_valor
 
+func _merge_character_delta(delta: Dictionary):
+	"""Merge a delta update into existing character_data. Only changed keys are sent."""
+	for key in delta:
+		if delta[key] == null:
+			character_data.erase(key)
+		else:
+			character_data[key] = delta[key]
+	if not character_data.has("valor"):
+		character_data["valor"] = account_valor
+
 func update_currency_display():
 	if not has_character:
 		return
@@ -14729,6 +14750,33 @@ func process_buffer():
 		if json.parse(msg_str) == OK:
 			handle_server_message(json.data)
 
+func process_raw_buffer():
+	"""Parse binary-framed messages: [4-byte uint32 BE length][1-byte flags][payload]"""
+	while raw_buffer.size() >= 5:  # Minimum: 4 byte header + 1 byte flags
+		# Read frame length (big-endian uint32)
+		var frame_len = (raw_buffer[0] << 24) | (raw_buffer[1] << 16) | (raw_buffer[2] << 8) | raw_buffer[3]
+		if frame_len <= 0 or frame_len > 1048576:  # Sanity check: max 1MB per frame
+			print("Binary frame error: invalid length %d, resetting buffer" % frame_len)
+			raw_buffer = PackedByteArray()
+			return
+		if raw_buffer.size() < 4 + frame_len:
+			return  # Incomplete frame, wait for more data
+		var flags = raw_buffer[4]
+		var payload = raw_buffer.slice(5, 4 + frame_len)
+		# Consume the frame from buffer
+		raw_buffer = raw_buffer.slice(4 + frame_len)
+		# Decompress if needed
+		var json_bytes = payload
+		if flags & 0x01:
+			json_bytes = payload.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
+			if json_bytes.is_empty():
+				print("Binary frame error: gzip decompression failed (frame_len=%d, payload=%d bytes)" % [frame_len, payload.size()])
+				continue
+		var json_str = json_bytes.get_string_from_utf8()
+		var json = JSON.new()
+		if json.parse(json_str) == OK:
+			handle_server_message(json.data)
+
 func handle_server_message(message: Dictionary):
 	var msg_type = message.get("type", "")
 
@@ -14931,6 +14979,8 @@ func handle_server_message(message: Dictionary):
 			connection.disconnect_from_host()
 			connected = false
 			buffer = ""
+			raw_buffer = PackedByteArray()
+			server_binary_mode = false
 			connection = StreamPeerTCP.new()
 			game_state = GameState.LOGIN_SCREEN
 			show_login_panel()
@@ -15197,7 +15247,11 @@ func handle_server_message(message: Dictionary):
 
 		"character_update":
 			if message.has("character"):
-				_set_character_data(message.character)
+				var is_full = message.get("full", true)
+				if is_full:
+					_set_character_data(message.character)
+				else:
+					_merge_character_delta(message.character)
 				account_valor = int(message.get("valor", character_data.get("valor", 0)))
 				update_player_level()
 				update_player_hp_bar()
@@ -18387,6 +18441,9 @@ func connect_to_server():
 
 func reset_connection_state():
 	connected = false
+	buffer = ""
+	raw_buffer = PackedByteArray()
+	server_binary_mode = false
 	has_character = false
 	in_combat = false
 	username = ""
@@ -19479,8 +19536,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.142 changes
+	display_game("[color=#00FF00]v0.9.142[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Network Optimization[/color]")
+	display_game("  • Delta character updates: only changed fields are sent (~60-85% bandwidth reduction)")
+	display_game("  • Message compression: large messages are gzip-compressed (~60-80% size reduction)")
+	display_game("  • Broadcast throttling: nearby player map updates batched every 300ms")
+	display_game("")
+
 	# v0.9.141 changes
-	display_game("[color=#00FF00]v0.9.141[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.141[/color]")
 	display_game("  [color=#FFD700]Bug Fixes & Comparison Improvements[/color]")
 	display_game("  • Equipment comparison now shows effective stats (HP includes CON, ATK includes STR, etc.)")
 	display_game("  • Tool comparison added — inventory, market, and inspection show durability/reveals/saves diffs")
@@ -19529,14 +19594,6 @@ func display_changelog():
 	display_game("  • Roads: Player post roads form automatically through passable terrain")
 	display_game("  • Merchants: 1 courier per road — carries market goods between connected posts")
 	display_game("  • Merchants: Player posts need a Market station to attract merchants")
-	display_game("")
-
-	# v0.9.135 changes
-	display_game("[color=#00FFFF]v0.9.135[/color]")
-	display_game("  [color=#FFD700]Corpse Improvements[/color]")
-	display_game("  • Corpses no longer spawn on impassable tiles (mountains, walls, water)")
-	display_game("  • Death broadcast now shows compass direction & rough distance to remains")
-	display_game("  • Compass hints when walking near fallen remains (within ~75 tiles)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

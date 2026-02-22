@@ -5,6 +5,12 @@ extends Control
 const DEFAULT_PORT = 9080
 var PORT = DEFAULT_PORT  # Can be overridden by command line arg --port=XXXX
 
+# ===== NETWORK OPTIMIZATION FLAGS =====
+# Set any to false to revert that optimization without code changes
+const USE_DELTA_UPDATES = true      # Phase 1: delta character_update (false = always full dict)
+const USE_COMPRESSION = true        # Phase 2: gzip compress large messages (false = legacy newline JSON)
+const USE_BROADCAST_THROTTLE = true # Phase 3: batch nearby-player map updates (false = send immediately)
+
 # UI References
 @onready var player_count_label = $VBox/StatusRow/PlayerCountLabel
 @onready var player_list = $VBox/PlayerList
@@ -150,6 +156,19 @@ var ip_connection_times: Dictionary = {}  # IP -> last connection timestamp
 var ip_connection_counts: Dictionary = {}  # IP -> current connection count
 var security_check_timer: float = 0.0
 const SECURITY_CHECK_INTERVAL = 5.0  # Check for stale connections every 5 seconds
+
+# ===== NETWORK OPTIMIZATION STATE =====
+# Phase 1: Delta character updates
+var last_sent_character_state: Dictionary = {}  # peer_id -> last to_dict() snapshot
+var pending_char_updates: Dictionary = {}       # peer_id -> true (batched per-frame)
+const FULL_UPDATE_INTERVAL = 60.0               # Force full update every 60s as safety net
+var full_update_timer: float = 0.0
+# Phase 2: Compression threshold
+const COMPRESSION_THRESHOLD = 512               # Only compress messages larger than this (bytes)
+# Phase 3: Broadcast throttling
+var map_update_dirty: Dictionary = {}           # peer_id -> true (needs map refresh)
+const MAP_UPDATE_FLUSH_INTERVAL = 0.3           # 300ms batch timer
+var map_update_flush_timer: float = 0.0
 
 # Player list update timer (refreshes connected players display)
 const PLAYER_LIST_UPDATE_INTERVAL = 180.0  # Update every 3 minutes
@@ -846,6 +865,26 @@ func _process(delta):
 	for peer_id in disconnected_peers:
 		handle_disconnect(peer_id)
 
+	# ===== NETWORK OPTIMIZATION: Flush batched updates =====
+	# Phase 1: Flush pending character deltas (one send per peer per frame)
+	if USE_DELTA_UPDATES:
+		_flush_pending_character_updates()
+
+	# Phase 1: Periodic forced full update (desync safety net)
+	if USE_DELTA_UPDATES:
+		full_update_timer += delta
+		if full_update_timer >= FULL_UPDATE_INTERVAL:
+			full_update_timer = 0.0
+			for pid in characters:
+				force_full_character_update(pid)
+
+	# Phase 3: Flush batched map updates
+	if USE_BROADCAST_THROTTLE:
+		map_update_flush_timer += delta
+		if map_update_flush_timer >= MAP_UPDATE_FLUSH_INTERVAL:
+			map_update_flush_timer = 0.0
+			_flush_dirty_map_updates()
+
 	# Security: Periodically check for stale unauthenticated connections
 	security_check_timer += delta
 	if security_check_timer >= SECURITY_CHECK_INTERVAL:
@@ -1527,6 +1566,10 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		"dungeon_restore": dungeon_restored
 	}
 	send_to_peer(peer_id, char_loaded_msg)
+
+	# Snapshot character state for delta encoding (so first send_character_update can delta)
+	if USE_DELTA_UPDATES:
+		last_sent_character_state[peer_id] = char_dict_loaded.duplicate(true)
 
 	# Broadcast join message to other players (include title if present)
 	var display_name = char_name
@@ -4164,9 +4207,21 @@ func send_nearby_players_map_update(peer_id: int, old_x: int, old_y: int, radius
 		var saw_old = abs(other_char.x - old_x) <= radius and abs(other_char.y - old_y) <= radius
 		var sees_new = abs(other_char.x - new_x) <= radius and abs(other_char.y - new_y) <= radius
 
-		# Send update if they could see the movement
+		# Mark for update if they could see the movement
 		if saw_old or sees_new:
-			send_location_update(other_peer_id)
+			if USE_BROADCAST_THROTTLE:
+				map_update_dirty[other_peer_id] = true
+			else:
+				send_location_update(other_peer_id)
+
+func _flush_dirty_map_updates():
+	"""Called periodically (300ms) to send batched map updates."""
+	if map_update_dirty.is_empty():
+		return
+	for peer_id in map_update_dirty:
+		if characters.has(peer_id):
+			send_location_update(peer_id)
+	map_update_dirty.clear()
 
 func send_merchant_movement_updates():
 	"""Send map updates to players when merchants move in/out of their visible area.
@@ -4222,10 +4277,32 @@ func send_to_peer(peer_id: int, data: Dictionary):
 	if connection.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 		return
 
-	var json_str = JSON.stringify(data) + "\n"
-	var bytes = json_str.to_utf8_buffer()
-
-	connection.put_data(bytes)
+	if USE_COMPRESSION:
+		# Binary framing: [4-byte uint32 length][1-byte flags][payload]
+		var json_bytes = JSON.stringify(data).to_utf8_buffer()
+		var flags: int = 0x00  # Plain JSON
+		var payload = json_bytes
+		if json_bytes.size() > COMPRESSION_THRESHOLD:
+			var compressed = json_bytes.compress(FileAccess.COMPRESSION_GZIP)
+			if compressed.size() < json_bytes.size():
+				payload = compressed
+				flags = 0x01  # Gzip compressed
+		# Build frame: 4-byte length (of flags+payload) + 1 byte flags + payload
+		var frame_len = 1 + payload.size()
+		var header = PackedByteArray()
+		header.resize(5)
+		# Store length as big-endian uint32
+		header[0] = (frame_len >> 24) & 0xFF
+		header[1] = (frame_len >> 16) & 0xFF
+		header[2] = (frame_len >> 8) & 0xFF
+		header[3] = frame_len & 0xFF
+		header[4] = flags
+		header.append_array(payload)
+		connection.put_data(header)
+	else:
+		# Legacy: newline-delimited JSON
+		var json_str = JSON.stringify(data) + "\n"
+		connection.put_data(json_str.to_utf8_buffer())
 
 func _send_gold_migration_message(peer_id: int, converted_valor: int):
 	if not peers.has(peer_id):
@@ -4402,6 +4479,11 @@ func handle_disconnect(peer_id: int):
 
 	if characters.has(peer_id):
 		characters.erase(peer_id)
+
+	# Clean up network optimization state
+	last_sent_character_state.erase(peer_id)
+	pending_char_updates.erase(peer_id)
+	map_update_dirty.erase(peer_id)
 
 	peers.erase(peer_id)
 
@@ -7200,7 +7282,17 @@ func handle_auto_salvage_affix_settings(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 
 func send_character_update(peer_id: int):
-	"""Send character data update to client"""
+	"""Queue character data update for client. Actual send happens at end of frame."""
+	if not characters.has(peer_id):
+		return
+	if USE_DELTA_UPDATES:
+		# Batch: mark dirty, flush at end of _process()
+		pending_char_updates[peer_id] = true
+	else:
+		_send_character_update_immediate(peer_id, true)
+
+func _send_character_update_immediate(peer_id: int, force_full: bool):
+	"""Actually send character data update to client (full or delta)."""
 	if not characters.has(peer_id):
 		return
 
@@ -7211,20 +7303,73 @@ func send_character_update(peer_id: int):
 	char_dict["egg_capacity"] = egg_cap
 	# Add valor from account-level storage
 	char_dict["valor"] = persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
-	# Projected leaderboard rank — where would this character place if they died now?
+	# Projected leaderboard rank
 	char_dict["projected_rank"] = _calculate_projected_rank(character)
-	send_to_peer(peer_id, {
-		"type": "character_update",
-		"character": char_dict
-	})
 
-	# Forward character update to watchers
+	if USE_DELTA_UPDATES and not force_full and last_sent_character_state.has(peer_id):
+		var delta = _compute_character_delta(last_sent_character_state[peer_id], char_dict)
+		if delta.is_empty():
+			return  # Nothing changed — skip send entirely
+		send_to_peer(peer_id, {
+			"type": "character_update",
+			"character": delta,
+			"full": false
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "character_update",
+			"character": char_dict,
+			"full": true
+		})
+
+	# Snapshot current state for future deltas
+	last_sent_character_state[peer_id] = char_dict.duplicate(true)
+
+	# Forward character update to watchers (always full for simplicity)
 	if watchers.has(peer_id) and not watchers[peer_id].is_empty():
 		for watcher_id in watchers[peer_id]:
 			send_to_peer(watcher_id, {
 				"type": "watch_character",
 				"character": char_dict
 			})
+
+func _compute_character_delta(old_state: Dictionary, new_state: Dictionary) -> Dictionary:
+	"""Compute shallow diff of character dictionaries. For nested objects (Arrays/Dicts),
+	include the whole value if any part changed."""
+	var delta = {}
+	# Check for changed or new keys
+	for key in new_state:
+		if not old_state.has(key):
+			delta[key] = new_state[key]
+		elif typeof(old_state[key]) != typeof(new_state[key]):
+			delta[key] = new_state[key]
+		elif old_state[key] is Array or old_state[key] is Dictionary:
+			# Deep compare via JSON serialization (fast enough for per-frame use)
+			if JSON.stringify(old_state[key]) != JSON.stringify(new_state[key]):
+				delta[key] = new_state[key]
+		elif old_state[key] != new_state[key]:
+			delta[key] = new_state[key]
+	# Check for removed keys (rare but possible)
+	for key in old_state:
+		if not new_state.has(key):
+			delta[key] = null
+	return delta
+
+func _flush_pending_character_updates():
+	"""Called at end of _process() to send batched character updates."""
+	if pending_char_updates.is_empty():
+		return
+	for peer_id in pending_char_updates:
+		_send_character_update_immediate(peer_id, false)
+	pending_char_updates.clear()
+
+func force_full_character_update(peer_id: int):
+	"""Force a full (non-delta) character update. Use on login, character load, etc."""
+	if not characters.has(peer_id):
+		return
+	# Clear cached state so next send is always full
+	last_sent_character_state.erase(peer_id)
+	_send_character_update_immediate(peer_id, true)
 
 func _calculate_projected_rank(character: Character) -> int:
 	"""Calculate where this character would rank on the leaderboard if they died now.
