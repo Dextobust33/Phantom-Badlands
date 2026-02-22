@@ -396,29 +396,32 @@ enum GameState {
 }
 var game_state = GameState.DISCONNECTED
 
-# UI References - Main game
-@onready var game_output = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/GameOutput
-@onready var game_output_container = $RootContainer/MainContainer/LeftPanel/GameOutputContainer
-@onready var buff_display_label = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/BuffDisplayLabel
-@onready var companion_art_overlay = $RootContainer/MainContainer/LeftPanel/GameOutputContainer/CompanionArtOverlay
-@onready var chat_output = $RootContainer/MainContainer/LeftPanel/ChatOutput
+# UI References - Main game (top-heavy layout)
+@onready var game_output = $RootContainer/TopSection/GameOutputContainer/GameOutput
+@onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
+@onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
+@onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
+@onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
+@onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
-@onready var map_display = $RootContainer/MainContainer/RightPanel/MapDisplay
-@onready var input_field = $RootContainer/BottomBar/InputField
-@onready var send_button = $RootContainer/BottomBar/SendButton
-@onready var bug_button = $RootContainer/BottomBar/BugButton
-@onready var action_bar = $RootContainer/MainContainer/LeftPanel/ActionBar
-@onready var enemy_health_bar = $RootContainer/MainContainer/LeftPanel/EnemyHealthBar
-@onready var player_health_bar = $RootContainer/MainContainer/RightPanel/PlayerHealthBar
-@onready var resource_bar = $RootContainer/MainContainer/RightPanel/ResourceBar
-@onready var player_xp_bar = $RootContainer/MainContainer/RightPanel/PlayerXPBar
-@onready var player_level_label = $RootContainer/MainContainer/RightPanel/LevelRow/PlayerLevel
-@onready var gold_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/GoldContainer/GoldLabel
-@onready var rank_label = $RootContainer/MainContainer/RightPanel/CurrencyDisplay/RankContainer/RankLabel
-@onready var music_toggle = $RootContainer/MainContainer/RightPanel/LevelRow/MusicToggle
-@onready var online_players_list = $RootContainer/MainContainer/RightPanel/OnlinePlayersList
-@onready var online_players_label = $RootContainer/MainContainer/RightPanel/OnlinePlayersLabel
-@onready var movement_pad = $RootContainer/MainContainer/RightPanel/MovementPad
+@onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
+@onready var input_field = $RootContainer/BottomStrip/ChatPanel/InputRow/InputField
+@onready var send_button = $RootContainer/BottomStrip/ChatPanel/InputRow/SendButton
+@onready var action_bar = $RootContainer/BottomStrip/CenterPanel/ActionBar
+@onready var enemy_health_bar = $RootContainer/EnemyHealthBar
+@onready var player_health_bar = $RootContainer/StatsBar/PlayerHealthBar
+@onready var resource_bar = $RootContainer/StatsBar/ResourceBar
+@onready var player_xp_bar = $RootContainer/StatsBar/PlayerXPBar
+@onready var player_level_label = $RootContainer/StatsBar/LevelRow/PlayerLevel
+@onready var gold_label = $RootContainer/StatsBar/CurrencyDisplay/GoldContainer/GoldLabel
+@onready var rank_label = $RootContainer/StatsBar/CurrencyDisplay/RankContainer/RankLabel
+@onready var music_toggle = $RootContainer/StatsBar/LevelRow/MusicToggle
+@onready var online_players_list = $RootContainer/BottomStrip/ChatPanel/OnlinePlayersList
+# Chat/Players tab system
+@onready var chat_tab_bar = $RootContainer/BottomStrip/ChatPanel/ChatTabBar
+@onready var chat_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/ChatTab
+@onready var players_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/PlayersTab
+var chat_tab: String = "chat"  # "chat" or "players"
 
 # UI References - Login Panel
 @onready var login_panel = $LoginPanel
@@ -616,6 +619,18 @@ var character_data = {}
 var has_character = false
 var last_move_time = 0.0
 const MOVE_COOLDOWN = 0.5
+# Dark Parchment Theme Colors
+const THEME_BG = Color(0.102, 0.082, 0.063, 1)         # #1A1510
+const THEME_BG_PANEL = Color(0.12, 0.09, 0.07, 0.97)   # #1F1712
+const THEME_BORDER = Color(0.545, 0.451, 0.333, 1)      # #8B7355
+const THEME_BORDER_GOLD = Color(1.0, 0.84, 0.0, 1)      # #FFD700
+const THEME_TEXT = Color(0.831, 0.769, 0.627, 1)         # #D4C4A0
+const THEME_TEXT_DIM = Color(0.42, 0.357, 0.271, 1)      # #6B5B45
+const THEME_TEXT_ACCENT = Color(0.784, 0.663, 0.431, 1)  # #C8A96E
+const THEME_BTN_BG = Color(0.165, 0.125, 0.082, 0.8)    # #2A2015
+const THEME_BTN_HOVER = Color(0.22, 0.17, 0.1, 0.9)
+const THEME_BTN_BORDER = Color(0.545, 0.451, 0.333, 0.5) # #8B7355 at 50%
+
 const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
 const MAP_MIN_FONT_SIZE = 10
 const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for 4K
@@ -637,6 +652,17 @@ var combat_item_mode = false  # Selecting item to use in combat
 var combat_outsmart_failed = false  # Track if outsmart already failed this combat
 var pending_variable_ability: String = ""  # Ability waiting for resource amount input
 var pending_variable_resource: String = ""  # Resource type for pending ability (mana/stamina/energy)
+var current_enemy_is_boss: bool = false  # Track boss fights for pulsing border
+
+# Low HP vignette overlay
+var vignette_overlay: ColorRect = null
+var vignette_material: ShaderMaterial = null
+
+# Boss border pulsing
+var boss_border_tween: Tween = null
+
+# Map legend
+var show_map_legend: bool = true
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -1376,14 +1402,19 @@ func _ready():
 	# Save default game output stylebox for combat background changes
 	if game_output:
 		var existing_style = game_output.get_theme_stylebox("normal")
-		if existing_style:
+		if existing_style is StyleBoxFlat:
 			default_game_output_stylebox = existing_style.duplicate()
 		else:
-			# Create a default black stylebox
+			# Create a default parchment stylebox
 			default_game_output_stylebox = StyleBoxFlat.new()
-			default_game_output_stylebox.bg_color = Color("#000000")
+			default_game_output_stylebox.bg_color = THEME_BG
 			default_game_output_stylebox.set_corner_radius_all(4)
-			default_game_output_stylebox.set_content_margin_all(8)
+			default_game_output_stylebox.set_content_margin_all(6)
+			default_game_output_stylebox.border_color = THEME_BTN_BORDER
+			default_game_output_stylebox.set_border_width_all(1)
+
+	# Setup low HP vignette overlay
+	_setup_vignette_overlay()
 
 	# Setup action bar
 	if action_bar:
@@ -1391,8 +1422,6 @@ func _ready():
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
-	if bug_button:
-		bug_button.pressed.connect(_on_bug_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
 	input_field.focus_entered.connect(_on_input_focus_entered)
 	input_field.focus_exited.connect(_on_input_focus_exited)
@@ -1502,17 +1531,11 @@ func _ready():
 		music_toggle.text = "♪"
 		music_toggle.modulate = Color(0.5, 0.5, 0.5)
 
-	# Connect movement pad buttons
-	if movement_pad:
-		movement_pad.get_node("NW").pressed.connect(_on_move_button.bind(7))
-		movement_pad.get_node("N").pressed.connect(_on_move_button.bind(8))
-		movement_pad.get_node("NE").pressed.connect(_on_move_button.bind(9))
-		movement_pad.get_node("W").pressed.connect(_on_move_button.bind(4))
-		movement_pad.get_node("Hunt").pressed.connect(_on_hunt_button)
-		movement_pad.get_node("E").pressed.connect(_on_move_button.bind(6))
-		movement_pad.get_node("SW").pressed.connect(_on_move_button.bind(1))
-		movement_pad.get_node("S").pressed.connect(_on_move_button.bind(2))
-		movement_pad.get_node("SE").pressed.connect(_on_move_button.bind(3))
+	# Connect chat tab buttons
+	if chat_tab_button:
+		chat_tab_button.pressed.connect(_on_chat_tab_pressed.bind("chat"))
+	if players_tab_button:
+		players_tab_button.pressed.connect(_on_chat_tab_pressed.bind("players"))
 
 	# Defer music generation to not block startup
 	call_deferred("_start_background_music")
@@ -1524,6 +1547,9 @@ func _ready():
 
 	# Load connection settings
 	_load_connection_settings()
+
+	# Initialize chat tab style
+	_update_chat_tab_style()
 
 	# Initial display
 	display_game("[b][color=#FFFF00]Welcome to Phantom Badlands[/color][/b]")
@@ -1821,12 +1847,7 @@ func _on_window_resized():
 		online_size = clampi(online_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
 		online_players_list.add_theme_font_size_override("normal_font_size", online_size)
 
-	if online_players_label:
-		var label_size = int(12 * base_scale * ui_scale_right_panel)
-		label_size = clampi(label_size, CHAT_MIN_FONT_SIZE, CHAT_MAX_FONT_SIZE)
-		online_players_label.add_theme_font_size_override("font_size", label_size)
-
-	# Scale right panel elements (stats, map controls, send button)
+	# Scale center panel elements (stats, send button)
 	_scale_right_panel_fonts(base_scale)
 
 	# Scale action bar buttons
@@ -3176,6 +3197,8 @@ func _input(event):
 				_toggle_disable_tutorial()
 			elif keycode == KEY_7:
 				_cycle_combat_speed()
+			elif keycode == KEY_8:
+				_toggle_map_legend()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -3827,6 +3850,34 @@ func _get_title_display_info(title_id: String) -> Dictionary:
 	}
 	return title_data.get(title_id, {"name": title_id.capitalize(), "color": "#FFFFFF", "prefix": ""})
 
+func _on_chat_tab_pressed(tab: String):
+	"""Switch between chat and players tab"""
+	chat_tab = tab
+	if chat_tab == "chat":
+		chat_output.visible = true
+		online_players_list.visible = false
+	else:
+		chat_output.visible = false
+		online_players_list.visible = true
+	_update_chat_tab_style()
+
+func _update_chat_tab_style():
+	"""Update chat tab button appearances based on active tab"""
+	if not chat_tab_button or not players_tab_button:
+		return
+	for btn in [chat_tab_button, players_tab_button]:
+		var is_active = (btn == chat_tab_button and chat_tab == "chat") or (btn == players_tab_button and chat_tab == "players")
+		btn.add_theme_color_override("font_color", THEME_BORDER_GOLD if is_active else THEME_TEXT_DIM)
+		var style = StyleBoxFlat.new()
+		style.bg_color = THEME_BTN_HOVER if is_active else THEME_BTN_BG
+		style.border_color = THEME_BORDER_GOLD if is_active else THEME_BTN_BORDER
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(3)
+		style.set_content_margin_all(2)
+		btn.add_theme_stylebox_override("normal", style)
+		btn.add_theme_stylebox_override("hover", style)
+		btn.add_theme_stylebox_override("pressed", style)
+
 func display_examine_result(data: Dictionary):
 	"""Display examined player info in game output"""
 	var pname = data.get("name", "Unknown")
@@ -4120,6 +4171,7 @@ func _clear_character_hud():
 	if rank_label:
 		rank_label.text = "--"
 	stop_low_hp_pulse()
+	hide_resource_bars_overlay()
 
 # ===== LEADERBOARD HANDLERS =====
 
@@ -4540,7 +4592,7 @@ func setup_action_bar():
 			if button:
 				action_buttons.append(button)
 				button.pressed.connect(_on_action_button_pressed.bind(i))
-				# Font size will be set by _scale_action_bar_fonts()
+				_style_action_button(button)
 
 			# Get hotkey label reference
 			var hotkey_label = action_container.get_node_or_null("Hotkey")
@@ -4559,6 +4611,34 @@ func setup_action_bar():
 				action_container.add_child(cost_label)
 			action_cost_labels.append(cost_label)
 
+func _style_action_button(btn: Button):
+	"""Apply parchment theme to an action bar button"""
+	var style_normal = StyleBoxFlat.new()
+	style_normal.bg_color = THEME_BTN_BG
+	style_normal.border_color = THEME_BTN_BORDER
+	style_normal.set_border_width_all(1)
+	style_normal.set_corner_radius_all(4)
+	style_normal.set_content_margin_all(2)
+	var style_hover = StyleBoxFlat.new()
+	style_hover.bg_color = THEME_BTN_HOVER
+	style_hover.border_color = THEME_BORDER_GOLD
+	style_hover.set_border_width_all(1)
+	style_hover.set_corner_radius_all(4)
+	style_hover.set_content_margin_all(2)
+	var style_disabled = StyleBoxFlat.new()
+	style_disabled.bg_color = Color(0.1, 0.08, 0.06, 0.5)
+	style_disabled.border_color = Color(0.3, 0.25, 0.2, 0.3)
+	style_disabled.set_border_width_all(1)
+	style_disabled.set_corner_radius_all(4)
+	style_disabled.set_content_margin_all(2)
+	btn.add_theme_stylebox_override("normal", style_normal)
+	btn.add_theme_stylebox_override("hover", style_hover)
+	btn.add_theme_stylebox_override("pressed", style_hover)
+	btn.add_theme_stylebox_override("disabled", style_disabled)
+	btn.add_theme_color_override("font_color", THEME_TEXT)
+	btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
+	btn.add_theme_color_override("font_disabled_color", THEME_TEXT_DIM)
+
 func _scale_right_panel_fonts(base_scale: float):
 	"""Scale right panel fonts (stats, map controls, send button) based on window size and user preference"""
 	var stats_size = int(14 * base_scale * ui_scale_right_panel)
@@ -4567,8 +4647,8 @@ func _scale_right_panel_fonts(base_scale: float):
 	var small_stats_size = int(12 * base_scale * ui_scale_right_panel)
 	small_stats_size = clampi(small_stats_size, 7, 32)
 
-	var movement_size = int(12 * base_scale * ui_scale_right_panel)
-	movement_size = clampi(movement_size, 8, 28)
+	var small_btn_size = int(12 * base_scale * ui_scale_right_panel)
+	small_btn_size = clampi(small_btn_size, 8, 28)
 
 	# Scale level label
 	if player_level_label:
@@ -4580,15 +4660,15 @@ func _scale_right_panel_fonts(base_scale: float):
 	if rank_label:
 		rank_label.add_theme_font_size_override("font_size", small_stats_size)
 
-	# Scale movement pad buttons
-	if movement_pad:
-		for child in movement_pad.get_children():
-			if child is Button:
-				child.add_theme_font_size_override("font_size", movement_size)
-
 	# Scale send button
 	if send_button:
-		send_button.add_theme_font_size_override("font_size", movement_size)
+		send_button.add_theme_font_size_override("font_size", small_btn_size)
+
+	# Scale chat tab buttons
+	if chat_tab_button:
+		chat_tab_button.add_theme_font_size_override("font_size", small_btn_size)
+	if players_tab_button:
+		players_tab_button.add_theme_font_size_override("font_size", small_btn_size)
 
 	# Scale health bar label
 	if player_health_bar:
@@ -7279,15 +7359,17 @@ func _create_shortcut_buttons():
 	if not chat_output:
 		return
 
-	# Create a container anchored to top-right of chat_output's parent
+	# Create a container anchored to top-right of game output area
 	shortcut_buttons_container = HBoxContainer.new()
 	shortcut_buttons_container.name = "ShortcutButtons"
 
-	# Get the LeftPanel (chat_output's parent) and add as sibling overlay
-	var left_panel = chat_output.get_parent()
-	left_panel.add_child(shortcut_buttons_container)
-	# Move it just above chat_output in the tree so it overlays
-	left_panel.move_child(shortcut_buttons_container, chat_output.get_index())
+	# Add as overlay above the bottom strip in the root container
+	var root_container = $RootContainer
+	root_container.add_child(shortcut_buttons_container)
+	# Move it just before the bottom strip so it overlays above it
+	var bottom_strip = root_container.get_node_or_null("BottomStrip")
+	if bottom_strip:
+		root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
 
 	shortcut_buttons_container.layout_mode = 2
 	shortcut_buttons_container.size_flags_horizontal = Control.SIZE_SHRINK_END
@@ -7313,16 +7395,16 @@ func _create_shortcut_buttons():
 		btn.flat = true
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.custom_minimum_size = Vector2(0, 20)
-		# Style: small, semi-transparent, green border
+		# Style: small, parchment themed
 		var style_normal = StyleBoxFlat.new()
-		style_normal.bg_color = Color(0, 0.15, 0, 0.8)
-		style_normal.border_color = Color(0, 0.5, 0, 0.6)
+		style_normal.bg_color = THEME_BTN_BG
+		style_normal.border_color = THEME_BTN_BORDER
 		style_normal.set_border_width_all(1)
 		style_normal.set_corner_radius_all(3)
 		style_normal.set_content_margin_all(3)
 		var style_hover = StyleBoxFlat.new()
-		style_hover.bg_color = Color(0, 0.25, 0, 0.9)
-		style_hover.border_color = Color(0, 0.8, 0, 0.8)
+		style_hover.bg_color = THEME_BTN_HOVER
+		style_hover.border_color = THEME_BORDER_GOLD
 		style_hover.set_border_width_all(1)
 		style_hover.set_corner_radius_all(3)
 		style_hover.set_content_margin_all(3)
@@ -7330,8 +7412,8 @@ func _create_shortcut_buttons():
 		btn.add_theme_stylebox_override("hover", style_hover)
 		btn.add_theme_stylebox_override("pressed", style_hover)
 		btn.add_theme_font_size_override("font_size", 11)
-		btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5, 0.9))
-		btn.add_theme_color_override("font_hover_color", Color(0.7, 1.0, 0.7, 1.0))
+		btn.add_theme_color_override("font_color", THEME_TEXT_ACCENT)
+		btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 		btn.pressed.connect(_on_shortcut_button_pressed.bind(shortcut[1]))
 		shortcut_buttons_container.add_child(btn)
 
@@ -7477,8 +7559,8 @@ func _create_ability_popup():
 
 	# Style the panel
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.15, 0.95)
-	style.border_color = Color(0.6, 0.5, 0.2, 1.0)  # Gold border
+	style.bg_color = THEME_BG_PANEL
+	style.border_color = THEME_BORDER_GOLD
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
 	ability_popup.add_theme_stylebox_override("panel", style)
@@ -7826,8 +7908,8 @@ func _create_gamble_popup():
 
 	# Style the popup
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.15, 0.98)
-	style.border_color = Color(0.9, 0.8, 0.2, 1)  # Gold border
+	style.bg_color = THEME_BG_PANEL
+	style.border_color = THEME_BORDER_GOLD
 	style.set_border_width_all(3)
 	style.set_corner_radius_all(8)
 	gamble_popup.add_theme_stylebox_override("panel", style)
@@ -8011,8 +8093,8 @@ func _create_upgrade_popup():
 
 	# Style the popup
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.08, 0.08, 0.98)
-	style.border_color = Color(0.2, 0.8, 0.2, 1)  # Green border
+	style.bg_color = THEME_BG_PANEL
+	style.border_color = THEME_BORDER
 	style.set_border_width_all(3)
 	style.set_corner_radius_all(8)
 	upgrade_popup.add_theme_stylebox_override("panel", style)
@@ -8297,7 +8379,7 @@ func _create_teleport_popup():
 
 	# Style the popup
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.08, 0.08, 0.98)
+	style.bg_color = THEME_BG_PANEL
 	style.border_color = Color(0.6, 0.2, 0.8, 1)  # Purple border for magic
 	style.set_border_width_all(3)
 	style.set_corner_radius_all(8)
@@ -10644,7 +10726,12 @@ func select_wish(index: int):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
-	harvest_available = false  # Clear harvest option when continuing
+	# Auto-harvest if available — send request and let harvest flow handle the rest
+	if harvest_available:
+		harvest_available = false
+		send_to_server({"type": "harvest_start"})
+		return
+	harvest_available = false
 
 	# If combat was queued while showing egg hatch celebration, start it now
 	if not queued_combat_message.is_empty():
@@ -12309,6 +12396,7 @@ func open_inventory():
 
 	update_action_bar()
 	display_inventory()
+	_mode_transition_fade()
 	_check_tutorial_trigger("inventory_open")
 
 func close_inventory():
@@ -13930,7 +14018,9 @@ func set_combat_background(hex_color: String):
 	var stylebox = StyleBoxFlat.new()
 	stylebox.bg_color = color
 	stylebox.set_corner_radius_all(4)
-	stylebox.set_content_margin_all(8)  # Add some padding
+	stylebox.set_content_margin_all(6)
+	stylebox.border_color = THEME_BTN_BORDER
+	stylebox.set_border_width_all(1)
 	game_output.add_theme_stylebox_override("normal", stylebox)
 
 func reset_combat_background():
@@ -13939,25 +14029,114 @@ func reset_combat_background():
 		return
 
 	current_combat_bg_color = ""
+	current_enemy_is_boss = false
+	_stop_boss_border_pulse()
 
 	if default_game_output_stylebox:
 		game_output.add_theme_stylebox_override("normal", default_game_output_stylebox)
 	else:
 		# Fallback to black if no default saved
 		var stylebox = StyleBoxFlat.new()
-		stylebox.bg_color = Color("#000000")
+		stylebox.bg_color = THEME_BG
 		stylebox.set_corner_radius_all(4)
-		stylebox.set_content_margin_all(8)
+		stylebox.set_content_margin_all(6)
+		stylebox.border_color = THEME_BTN_BORDER
+		stylebox.set_border_width_all(1)
 		game_output.add_theme_stylebox_override("normal", stylebox)
 
-# Inventory mode background colors
+# ===== LOW HP VIGNETTE OVERLAY =====
+
+func _setup_vignette_overlay():
+	"""Create a CanvasLayer + ColorRect with the low HP vignette shader"""
+	var shader = load("res://client/shaders/low_hp_vignette.gdshader")
+	if not shader:
+		return
+
+	var canvas_layer = CanvasLayer.new()
+	canvas_layer.layer = 10  # Above all game UI
+	canvas_layer.name = "VignetteLayer"
+	add_child(canvas_layer)
+
+	vignette_overlay = ColorRect.new()
+	vignette_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vignette_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vignette_material = ShaderMaterial.new()
+	vignette_material.shader = shader
+	vignette_material.set_shader_parameter("intensity", 0.0)
+	vignette_overlay.material = vignette_material
+	canvas_layer.add_child(vignette_overlay)
+
+func _update_vignette_intensity():
+	"""Update vignette intensity based on HP percentage"""
+	if not vignette_material:
+		return
+	if not has_character:
+		vignette_material.set_shader_parameter("intensity", 0.0)
+		return
+
+	var current_hp = character_data.get("current_hp", 0)
+	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))
+	var percent = float(current_hp) / float(max(max_hp, 1))
+
+	# Active below 25% HP, scales from 0 at 25% to 1.0 at 0%
+	var intensity = 0.0
+	if percent < 0.25:
+		intensity = clampf((0.25 - percent) / 0.25, 0.0, 1.0)
+
+	vignette_material.set_shader_parameter("intensity", intensity)
+
+# ===== BOSS COMBAT PULSING BORDER =====
+
+func _start_boss_border_pulse():
+	"""Start gold pulsing border on game output during boss fights"""
+	if not game_output:
+		return
+	_stop_boss_border_pulse()
+	boss_border_tween = create_tween().set_loops()
+	boss_border_tween.tween_method(_set_boss_border_alpha, 0.3, 0.8, 0.8)
+	boss_border_tween.tween_method(_set_boss_border_alpha, 0.8, 0.3, 0.8)
+
+func _set_boss_border_alpha(alpha: float):
+	"""Set the game output border to gold at given alpha"""
+	if not game_output:
+		return
+	var style = game_output.get_theme_stylebox("normal")
+	if style:
+		var new_style = style.duplicate()
+		new_style.border_color = Color(1.0, 0.84, 0.0, alpha)
+		new_style.set_border_width_all(2)
+		game_output.add_theme_stylebox_override("normal", new_style)
+
+func _stop_boss_border_pulse():
+	"""Stop the boss border pulse and restore default border"""
+	if boss_border_tween:
+		boss_border_tween.kill()
+		boss_border_tween = null
+	# Restore original border
+	if game_output and default_game_output_stylebox:
+		if default_game_output_stylebox is StyleBoxFlat:
+			game_output.add_theme_stylebox_override("normal", default_game_output_stylebox.duplicate())
+		else:
+			game_output.remove_theme_stylebox_override("normal")
+
+# ===== MODE TRANSITION FADES =====
+
+func _mode_transition_fade():
+	"""Quick fade-in effect when switching modes (content already displayed)"""
+	if not game_output:
+		return
+	game_output.modulate.a = 0.3
+	var tween = create_tween()
+	tween.tween_property(game_output, "modulate:a", 1.0, 0.12)
+
+# Inventory mode background colors (parchment-tinted)
 const INVENTORY_BG_COLORS = {
-	"base": "#1A1208",      # Dark brown - base inventory
-	"equip": "#0D1A0D",     # Dark green tint - equip mode
-	"unequip": "#1A0D0D",   # Dark red tint - unequip mode
-	"inspect": "#0D0D1A",   # Dark blue tint - inspect mode
-	"use": "#1A1A0D",       # Dark yellow tint - use mode
-	"discard": "#1A0808",   # Darker red - discard mode
+	"base": "#1A1510",      # Dark parchment - base inventory
+	"equip": "#1A1A10",     # Warm green tint - equip mode
+	"unequip": "#1F1210",   # Warm red tint - unequip mode
+	"inspect": "#151518",   # Blue tint - inspect mode
+	"use": "#1C1A10",       # Yellow tint - use mode
+	"discard": "#1F1010",   # Red tint - discard mode
 }
 
 func set_inventory_background(mode: String = "base"):
@@ -13970,7 +14149,9 @@ func set_inventory_background(mode: String = "base"):
 	var stylebox = StyleBoxFlat.new()
 	stylebox.bg_color = color
 	stylebox.set_corner_radius_all(4)
-	stylebox.set_content_margin_all(8)
+	stylebox.set_content_margin_all(6)
+	stylebox.border_color = THEME_BTN_BORDER
+	stylebox.set_border_width_all(1)
 	game_output.add_theme_stylebox_override("normal", stylebox)
 
 # ===== HP BAR FUNCTIONS =====
@@ -14104,6 +14285,12 @@ func update_player_hp_bar():
 
 	# Update the buff display panel
 	update_buff_display()
+
+	# Update low HP vignette
+	_update_vignette_intensity()
+
+	# Update resource bars overlay
+	update_resource_bars_overlay()
 
 func update_buff_display():
 	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
@@ -14312,6 +14499,9 @@ func update_resource_bar():
 
 	if label:
 		label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
+
+	# Update resource bars overlay
+	update_resource_bars_overlay()
 
 func _set_character_data(new_data: Dictionary):
 	"""Replace character_data, preserving account-level fields that to_dict() doesn't include."""
@@ -15005,6 +15195,7 @@ func handle_server_message(message: Dictionary):
 			character_data = {}
 			hide_all_panels()
 			hide_companion_art_overlay()
+			hide_resource_bars_overlay()
 			display_death_screen(message)
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -15628,9 +15819,10 @@ func handle_server_message(message: Dictionary):
 					var flock_drops = message.get("flock_drops", [])
 					if flock_drops.size() > 0:
 						display_game("")
-						display_game("[color=#FFD700].-=[ LOOT ]=-.[/color]")
+						display_game("[color=#FFD700]────── LOOT ──────[/color]")
 						for drop_msg in flock_drops:
 							display_game("  " + drop_msg)
+						display_game("[color=#FFD700]─────────────────────[/color]")
 						display_game("")
 
 					# Check for rare drops and play sound effect
@@ -15653,18 +15845,12 @@ func handle_server_message(message: Dictionary):
 					# Require continue press so player can read loot before display refreshes
 					display_game("")
 					if harvest_available:
-						# Auto-harvest: send harvest_start immediately (no Q press needed)
-						display_game("[color=#FF6600]Auto-harvesting creature for parts...[/color]")
-						harvest_available = false
-						send_to_server({"type": "harvest_start"})
-						# Don't set pending_continue — harvest flow will handle continuation
-						if dungeon_mode:
-							pending_dungeon_continue = true
+						display_game("[color=#FF6600]Press [%s] to auto-harvest...[/color]" % get_action_key_name(0))
 					else:
 						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-						pending_continue = true
-						if dungeon_mode:
-							pending_dungeon_continue = true
+					pending_continue = true
+					if dungeon_mode:
+						pending_dungeon_continue = true
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -16416,8 +16602,13 @@ func _process_combat_start(message: Dictionary):
 	current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
 	current_enemy_abilities = combat_state.get("monster_abilities", [])
 	current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
+	current_enemy_is_boss = message.get("is_boss", false)
 	damage_dealt_to_current_enemy = 0
 	analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
+
+	# Start boss border pulse for boss fights
+	if current_enemy_is_boss:
+		_start_boss_border_pulse()
 	# Get actual monster HP from server
 	current_enemy_hp = combat_state.get("monster_hp", -1)
 	current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
@@ -17653,6 +17844,8 @@ func _load_keybinds():
 					sfx_muted = data["sfx_muted"]
 				if data.has("combat_speed"):
 					combat_speed = clampi(int(data["combat_speed"]), 0, 2)
+				if data.has("show_map_legend"):
+					show_map_legend = data["show_map_legend"]
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -17673,6 +17866,7 @@ func _save_keybinds():
 	save_data["music_volume"] = music_volume
 	save_data["sfx_muted"] = sfx_muted
 	save_data["combat_speed"] = combat_speed
+	save_data["show_map_legend"] = show_map_legend
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -17845,6 +18039,7 @@ func open_settings():
 	rebinding_action = ""
 	game_output.clear()
 	display_settings_menu()
+	_mode_transition_fade()
 	update_action_bar()
 
 func close_settings():
@@ -18138,9 +18333,11 @@ func display_game_settings():
 	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
 	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
-	var speed_labels = ["Instant", "Normal", "Slow"]
-	var speed_colors = ["#FF6666", "#00FF00", "#00BFFF"]
+	var speed_labels = ["Instant", "Fast", "Normal"]
+	var speed_colors = ["#FF6666", "#FFD700", "#00BFFF"]
 	display_game("[7] Combat Speed: [color=%s]%s[/color]" % [speed_colors[combat_speed], speed_labels[combat_speed]])
+	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
+	display_game("[8] Map Legend: %s" % legend_status)
 	display_game("")
 	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -18228,8 +18425,8 @@ func _create_connection_panel():
 	connection_panel.custom_minimum_size = Vector2(400, 350)
 
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.1, 0.95)
-	style.border_color = Color(0.0, 0.5, 0.0)
+	style.bg_color = THEME_BG_PANEL
+	style.border_color = THEME_BORDER
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
 	connection_panel.add_theme_stylebox_override("panel", style)
@@ -18551,7 +18748,7 @@ func display_character_status():
 
 	# Clear output and set contrasting background
 	game_output.clear()
-	_set_game_output_background(Color(0.05, 0.08, 0.12, 1.0))
+	_set_game_output_background(Color(0.08, 0.07, 0.06, 1.0))
 
 	var char = character_data
 	var stats = char.get("stats", {})
@@ -18564,10 +18761,9 @@ func display_character_status():
 
 	var text = ""
 
-	# === HEADER ===
-	text += "[b][color=#FFD700]════════════════════════════════════════════[/color][/b]\n"
-	text += "[b][color=#FFD700]  %s[/color][/b] - %s %s Level %d\n" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
-	text += "[b][color=#FFD700]════════════════════════════════════════════[/color][/b]\n"
+	# === HEADER (stat card style) ===
+	var char_title = "%s — %s %s Lv.%d" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
+	text += _header(char_title) + "\n"
 
 	# Class passive
 	var class_passive = _get_class_passive(char.get("class", ""))
@@ -18575,15 +18771,8 @@ func display_character_status():
 		text += "[color=%s]%s:[/color] %s\n" % [class_passive.color, class_passive.name, class_passive.description]
 	text += "\n"
 
-	# === PROGRESSION ===
-	text += "[color=#808080]── Progress ──[/color]\n"
-	text += "[color=#FF00FF]XP:[/color] %d / %d  ([color=#FFFF00]%d to next level[/color])\n" % [current_xp, xp_needed, xp_remaining]
-	text += "[color=#FFD700]Valor:[/color] %d  |  [color=#FF4444]Kills:[/color] %d\n" % [char.get("valor", 0), char.get("monsters_killed", 0)]
-	text += "[color=#808080]Location:[/color] (%d, %d)\n" % [char.get("x", 0), char.get("y", 0)]
-	text += "\n"
-
-	# === RESOURCES ===
-	text += "[color=#808080]── Resources ──[/color]\n"
+	# === RESOURCES (with stat bars) ===
+	text += _subheader("Resources") + "\n"
 	var base_hp = char.get("max_hp", 0)
 	var total_hp = char.get("total_max_hp", base_hp)
 	var base_mana = char.get("max_mana", 0)
@@ -18592,18 +18781,24 @@ func display_character_status():
 	var total_stamina = char.get("total_max_stamina", base_stamina)
 	var base_energy = char.get("max_energy", 0)
 	var total_energy = char.get("total_max_energy", base_energy)
-	text += "[color=#FF6666]HP:[/color] %d/%d  |  [color=#9999FF]Mana:[/color] %d/%d  |  [color=#FFCC00]Stam:[/color] %d/%d  |  [color=#66FF66]Ener:[/color] %d/%d\n" % [
-		char.get("current_hp", 0), total_hp,
-		char.get("current_mana", 0), total_mana,
-		char.get("current_stamina", 0), total_stamina,
-		char.get("current_energy", 0), total_energy
-	]
+	text += _stat_bar("HP:  ", char.get("current_hp", 0), total_hp, 20, "#FF6666") + "\n"
+	if total_mana > 0:
+		text += _stat_bar("Mana:", char.get("current_mana", 0), total_mana, 20, "#9999FF") + "\n"
+	if total_stamina > 0:
+		text += _stat_bar("Stam:", char.get("current_stamina", 0), total_stamina, 20, "#FFCC00") + "\n"
+	if total_energy > 0:
+		text += _stat_bar("Ener:", char.get("current_energy", 0), total_energy, 20, "#66FF66") + "\n"
+	text += "\n"
+
+	# === PROGRESSION ===
+	text += _subheader("Progress") + "\n"
+	text += _stat_bar("XP:  ", current_xp, xp_needed, 20, "#FF00FF") + "  [color=#FFFF00](%d to next)[/color]\n" % xp_remaining
+	text += "[color=#FFD700]Valor:[/color] %d  |  [color=#FF4444]Kills:[/color] %d  |  [color=#8B7355]Loc:[/color] (%d, %d)\n" % [char.get("valor", 0), char.get("monsters_killed", 0), char.get("x", 0), char.get("y", 0)]
 	text += "\n"
 
 	# === STATS ===
-	text += "[color=#808080]── Base Stats ──[/color]\n"
+	text += _subheader("Stats") + "\n"
 	var stat_parts = []
-	# [label, key, color]
 	var stat_colors = [
 		["STR", "strength", "#FF6666"],
 		["CON", "constitution", "#00FF00"],
@@ -18619,11 +18814,11 @@ func display_character_status():
 			stat_parts.append("[color=%s]%s:[/color] %d [color=#00FF00]+%d[/color]" % [stat_info[2], stat_info[0], base_val, bonus_val])
 		else:
 			stat_parts.append("[color=%s]%s:[/color] %d" % [stat_info[2], stat_info[0], base_val])
-	text += "%s\n" % "  |  ".join(stat_parts)
+	text += "%s\n" % " | ".join(stat_parts)
 	text += "\n"
 
 	# === COMBAT ===
-	text += "[color=#808080]── Combat ──[/color]\n"
+	text += _subheader("Combat") + "\n"
 	var base_str = stats.get("strength", 0)
 	var total_attack = base_str + bonuses.get("strength", 0) + bonuses.get("attack", 0)
 	var base_con = stats.get("constitution", 0)
@@ -18659,7 +18854,7 @@ func display_character_status():
 			has_gear = true
 			break
 	if has_gear:
-		text += "[color=#808080]── Equipment ──[/color]\n"
+		text += _subheader("Equipment") + "\n"
 		var player_class = char.get("class", "")
 		for slot in ["weapon", "shield", "armor", "helm", "boots", "ring", "amulet"]:
 			var item = equipped.get(slot)
@@ -19109,10 +19304,10 @@ func _handle_party_combat_end(message: Dictionary):
 		var flock_drops = message.get("flock_drops", [])
 		if flock_drops.size() > 0:
 			display_game("")
-			display_game("[color=#FFD700].-=[ LOOT ]=-.[/color]")
+			display_game("[color=#FFD700]────── LOOT ──────[/color]")
 			for drop_msg in flock_drops:
 				display_game("  " + drop_msg)
-			display_game("")
+			display_game("[color=#FFD700]─────────────────────[/color]")
 
 		# XP gain
 		var xp_earned = message.get("xp_earned", 0)
@@ -19263,7 +19458,7 @@ func _create_single_party_bar(member: Dictionary) -> Dictionary:
 	var hp_bar = PanelContainer.new()
 	hp_bar.custom_minimum_size = Vector2(0, 10)
 	var hp_bg_style = StyleBoxFlat.new()
-	hp_bg_style.bg_color = Color(0.15, 0.15, 0.15)
+	hp_bg_style.bg_color = Color(0.1, 0.08, 0.06)
 	hp_bg_style.corner_radius_top_left = 2
 	hp_bg_style.corner_radius_top_right = 2
 	hp_bg_style.corner_radius_bottom_left = 2
@@ -19536,8 +19731,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.143 changes
+	display_game("[color=#00FF00]v0.9.143[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Resource Bars Overlay[/color]")
+	display_game("  • HP and class resource bars (Mana/Stamina/Energy) now display as a persistent overlay")
+	display_game("  • Bars appear bottom-right of game output, next to companion art")
+	display_game("  • Updates in real-time during combat, ability use, and healing")
+	display_game("")
+
 	# v0.9.142 changes
-	display_game("[color=#00FF00]v0.9.142[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.142[/color]")
 	display_game("  [color=#FFD700]Network Optimization[/color]")
 	display_game("  • Delta character updates: only changed fields are sent (~60-85% bandwidth reduction)")
 	display_game("  • Message compression: large messages are gzip-compressed (~60-80% size reduction)")
@@ -19581,19 +19784,6 @@ func display_changelog():
 	display_game("  • Gathering: Better tools give more resources when auto-skipping")
 	display_game("  • Market: Food items now have their own \"List All Food\" category")
 	display_game("  • Settings: Fixed Game settings button not responding to clicks")
-	display_game("")
-
-	# v0.9.138 changes
-	display_game("[color=#00FFFF]v0.9.138[/color]")
-	display_game("  [color=#FFD700]Bulk Crafting, Market Stacking & Merchant Rework[/color]")
-	display_game("  • Bulk crafting: Craft up to 99 stackable items at once (structures, scrolls, etc.)")
-	display_game("  • Crafted items now properly stack in inventory (structures, doors, scrolls, maps)")
-	display_game("  • Market: Identical items stack in browse view (equipment, tools, structures)")
-	display_game("  • Market: Same-seller listings auto-merge into single entries")
-	display_game("  • Minigame skip: Settings → Game → skip crafting/gathering minigames (~50% rewards)")
-	display_game("  • Roads: Player post roads form automatically through passable terrain")
-	display_game("  • Merchants: 1 courier per road — carries market goods between connected posts")
-	display_game("  • Merchants: Player posts need a Market station to attract merchants")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20278,6 +20468,58 @@ func hide_companion_art_overlay():
 	if companion_art_overlay:
 		companion_art_overlay.visible = false
 
+func update_resource_bars_overlay():
+	"""Update the resource bars overlay in the bottom-right of the game output, left of companion art."""
+	if resource_bars_overlay == null or not has_character:
+		if resource_bars_overlay:
+			resource_bars_overlay.visible = false
+		return
+
+	var current_hp = character_data.get("current_hp", 0)
+	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))
+
+	var path = _get_player_active_path()
+	var res_name = ""
+	var res_current = 0
+	var res_max = 1
+	var res_color = "#C8A96E"
+
+	match path:
+		"warrior":
+			res_name = "Stam"
+			res_current = character_data.get("current_stamina", 0)
+			res_max = max(character_data.get("total_max_stamina", character_data.get("max_stamina", 1)), 1)
+			res_color = "#FFCC00"
+		"mage":
+			res_name = "Mana"
+			res_current = character_data.get("current_mana", 0)
+			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
+			res_color = "#9999FF"
+		"trickster":
+			res_name = "Ener"
+			res_current = character_data.get("current_energy", 0)
+			res_max = max(character_data.get("total_max_energy", character_data.get("max_energy", 1)), 1)
+			res_color = "#66FF66"
+		_:
+			res_name = "Mana"
+			res_current = character_data.get("current_mana", 0)
+			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
+			res_color = "#9999FF"
+
+	var bar_width = 12
+	var text = ""
+	text += _stat_bar("HP:  ", current_hp, max_hp, bar_width, "#FF4444") + "\n"
+	text += _stat_bar("%s: " % res_name, res_current, res_max, bar_width, res_color)
+
+	resource_bars_overlay.clear()
+	resource_bars_overlay.append_text(text)
+	resource_bars_overlay.visible = true
+
+func hide_resource_bars_overlay():
+	"""Hide the resource bars overlay."""
+	if resource_bars_overlay:
+		resource_bars_overlay.visible = false
+
 func _get_companion_art_lines(monster_type: String, companion_name: String) -> Array:
 	"""Get ASCII art lines for a companion by monster type or name.
 	Handles special variants and name mappings."""
@@ -20348,8 +20590,8 @@ func shake_companion_art():
 	companion_shake_tween.tween_property(companion_art_overlay, "offset_left", companion_art_original_offset_left, shake_duration)
 	companion_shake_tween.parallel().tween_property(companion_art_overlay, "offset_right", companion_art_original_offset_right, shake_duration)
 
-func shake_game_output():
-	"""Shake the game output when monster attacks."""
+func shake_game_output(intensity: float = 1.0):
+	"""Shake the game output when monster attacks. intensity scales the shake amount."""
 	if game_output == null:
 		return
 
@@ -20360,7 +20602,7 @@ func shake_game_output():
 		game_output.offset_left = game_output_original_offset_left
 		game_output.offset_right = game_output_original_offset_right
 
-	var shake_amount = 6.0  # Pixels to shake (slightly less than companion)
+	var shake_amount = 6.0 * intensity  # Pixels to shake, scaled by intensity
 	var shake_duration = 0.05  # Duration per shake direction
 
 	game_output_shake_tween = create_tween()
@@ -20376,6 +20618,18 @@ func shake_game_output():
 	# Return to original
 	game_output_shake_tween.tween_property(game_output, "offset_left", game_output_original_offset_left, shake_duration)
 	game_output_shake_tween.parallel().tween_property(game_output, "offset_right", game_output_original_offset_right, shake_duration)
+
+var damage_tint_tween: Tween = null
+
+func _flash_damage_tint():
+	"""Brief red tint flash on game output when taking damage"""
+	if game_output == null:
+		return
+	if damage_tint_tween and damage_tint_tween.is_valid():
+		damage_tint_tween.kill()
+	damage_tint_tween = create_tween()
+	damage_tint_tween.tween_property(game_output, "modulate", Color(1.0, 0.7, 0.7, 1.0), 0.08)
+	damage_tint_tween.tween_property(game_output, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
 
 func _get_egg_display_name(egg_type: String) -> String:
 	"""Get display name for egg type"""
@@ -21659,6 +21913,46 @@ func search_help(search_term: String):
 
 	display_game("[color=#808080]Type /help for full help page | /search <term> to search again[/color]")
 
+# ===== BBCODE HELPER FUNCTIONS =====
+
+func _header(text: String, color: String = "#FFD700") -> String:
+	"""Create a section header with divider lines"""
+	return "[color=%s]────── %s ──────[/color]" % [color, text]
+
+func _subheader(text: String, color: String = "#C8A96E") -> String:
+	"""Create a section divider: ──── Text ────"""
+	return "[color=%s]──── %s ────[/color]" % [color, text]
+
+func _divider(color: String = "#8B7355") -> String:
+	"""Simple horizontal line"""
+	return "[color=%s]────────────────────────────────────[/color]" % color
+
+func _stat_bar(label: String, value: int, max_val: int, width: int = 20, color: String = "#C8A96E") -> String:
+	"""Create a visual stat bar: Label ████████░░░░ value/max"""
+	if max_val <= 0:
+		max_val = 1
+	var filled = int(float(value) / float(max_val) * width)
+	filled = clampi(filled, 0, width)
+	var empty = width - filled
+	var bar = "█".repeat(filled) + "░".repeat(empty)
+	return "[color=%s]%s[/color] [color=%s]%s[/color] %d/%d" % [color, label, color, bar, value, max_val]
+
+func _stat_bar_no_max(label: String, value: int, max_val: int, width: int = 20, color: String = "#C8A96E") -> String:
+	"""Stat bar without showing max value"""
+	if max_val <= 0:
+		max_val = 1
+	var filled = int(float(value) / float(max_val) * width)
+	filled = clampi(filled, 0, width)
+	var empty = width - filled
+	var bar = "█".repeat(filled) + "░".repeat(empty)
+	return "[color=%s]%s[/color] [color=%s]%s[/color]" % [color, label, color, bar]
+
+func _strip_bbcode(text: String) -> String:
+	"""Strip BBCode tags from text for length calculations"""
+	var regex = RegEx.new()
+	regex.compile("\\[.*?\\]")
+	return regex.sub(text, "", true)
+
 func display_game(text: String):
 	if game_output:
 		game_output.append_text(text + "\n")
@@ -21706,15 +22000,26 @@ func _set_game_output_background(color: Color):
 	if game_output:
 		var style = StyleBoxFlat.new()
 		style.bg_color = color
+		style.set_corner_radius_all(4)
+		style.set_content_margin_all(6)
+		style.border_color = THEME_BTN_BORDER
+		style.set_border_width_all(1)
 		game_output.add_theme_stylebox_override("normal", style)
 		_status_background_active = true
 
 func _reset_game_output_background():
-	"""Reset game output background to default black"""
+	"""Reset game output background to default parchment"""
 	if _status_background_active and game_output:
-		var style = StyleBoxFlat.new()
-		style.bg_color = Color(0, 0, 0, 1)
-		game_output.add_theme_stylebox_override("normal", style)
+		if default_game_output_stylebox:
+			game_output.add_theme_stylebox_override("normal", default_game_output_stylebox)
+		else:
+			var style = StyleBoxFlat.new()
+			style.bg_color = THEME_BG
+			style.set_corner_radius_all(4)
+			style.set_content_margin_all(6)
+			style.border_color = THEME_BTN_BORDER
+			style.set_border_width_all(1)
+			game_output.add_theme_stylebox_override("normal", style)
 		_status_background_active = false
 
 func clear_game_output():
@@ -21834,8 +22139,10 @@ func _display_combat_msg(combat_msg: String):
 		shake_companion_art()
 	if "The " in combat_msg and " attacks" in combat_msg:
 		shake_game_output()
+		_flash_damage_tint()
 	elif "strikes" in combat_msg.to_lower() and ("The " in combat_msg or "#FF" in combat_msg):
 		shake_game_output()
+		_flash_damage_tint()
 
 	var damage = parse_damage_dealt(combat_msg)
 	if damage > 0:
@@ -21857,11 +22164,12 @@ func _drain_combat_queue():
 	var raw = entry.raw
 	_display_combat_msg(raw)
 	# Separator lines get a longer pause; regular messages get a short pause
+	# Speed 1 = Fast (2x old normal), Speed 2 = Normal (old speed)
 	var delay: float
 	if "─────────" in raw:
-		delay = 0.6 if combat_speed == 1 else 1.2
+		delay = 0.3 if combat_speed == 1 else 0.6
 	else:
-		delay = 0.15 if combat_speed == 1 else 0.3
+		delay = 0.08 if combat_speed == 1 else 0.15
 	# Always pause after showing a message — process_buffer() delivers all
 	# combat messages in a single frame, so we must block immediate draining
 	# of the next message that arrives from the same buffer batch.
@@ -21881,9 +22189,22 @@ func _cycle_combat_speed():
 	combat_speed = (combat_speed + 1) % 3
 	_save_keybinds()
 	game_output.clear()
-	var labels = ["Instant", "Normal", "Slow"]
-	var colors = ["#FF6666", "#00FF00", "#00BFFF"]
+	var labels = ["Instant", "Fast", "Normal"]
+	var colors = ["#FF6666", "#FFD700", "#00BFFF"]
 	display_game("[color=%s]Combat Speed: %s[/color]" % [colors[combat_speed], labels[combat_speed]])
+	await get_tree().create_timer(1.0).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
+func _toggle_map_legend():
+	"""Toggle map legend display"""
+	show_map_legend = not show_map_legend
+	_save_keybinds()
+	game_output.clear()
+	var status = "ENABLED" if show_map_legend else "DISABLED"
+	var color = "#00FF00" if show_map_legend else "#FF6666"
+	display_game("[color=%s]Map Legend: %s[/color]" % [color, status])
 	await get_tree().create_timer(1.0).timeout
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
@@ -21908,10 +22229,10 @@ func _enhance_combat_message(msg: String) -> String:
 		elif "cast" in msg.to_lower() or "uses" in msg.to_lower() or "summon" in msg.to_lower() or "invoke" in msg.to_lower():
 			enhanced = "[color=#FF6600]<< [/color]" + enhanced
 
-	# Critical hit gets ASCII explosion burst + shaking text
+	# Critical hit gets shaking text + stronger screen shake
 	if "CRITICAL" in upper_msg:
-		var crit_burst = "[color=#FF4500]     *  .  *\n   . _\\|/_ .\n  -==  *  ==-\n   ' /|\\ '\n     *  '  *[/color]\n"
-		enhanced = crit_burst + enhanced
+		# Trigger stronger shake for crits
+		shake_game_output(2.0)
 		# Apply shake to critical text
 		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
 		enhanced = enhanced.replace("Critical Hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
@@ -21919,11 +22240,10 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("Critical!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
 		enhanced = enhanced.replace("CRITICAL!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
 
-	# Devastating/massive damage gets explosion + wave effect
+	# Devastating/massive damage gets wave effect
 	if "DEVASTAT" in upper_msg or "MASSIVE" in upper_msg:
-		var impact_burst = "[color=#FF4500]  ╔═══╗\n  ║ ! ║\n  ╚═══╝[/color] "
-		enhanced = enhanced.replace("Devastating", impact_burst + "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
-		enhanced = enhanced.replace("devastating", impact_burst + "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
+		enhanced = enhanced.replace("Devastating", "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
+		enhanced = enhanced.replace("devastating", "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
 		enhanced = enhanced.replace("Massive", "[wave amp=30 freq=5][color=#FF4500]Massive[/color][/wave]")
 
 	# Monster death gets rainbow effect
@@ -22157,6 +22477,8 @@ func update_map(map_text: String):
 	if map_display:
 		map_display.clear()
 		map_display.append_text(map_text)
+		if show_map_legend:
+			map_display.append_text("\n[color=#8B7355][font_size=10]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
 
 # ===== WANDERING NPC ENCOUNTER FUNCTIONS =====
 
@@ -23014,6 +23336,7 @@ func open_crafting():
 	var back_label = "Back to Trading Post" if at_trading_post else "Back"
 	display_game("[%s] %s" % [get_action_key_name(0), back_label])
 
+	_mode_transition_fade()
 	update_action_bar()
 
 func request_craft_list(skill_name: String):
@@ -25379,13 +25702,12 @@ func handle_quest_turned_in(message: Dictionary):
 		var unlocked_abilities = message.get("unlocked_abilities", [])
 		if unlocked_abilities.size() > 0:
 			display_game("")
-			display_game("[color=#00FFFF]╔══════════════════════════════════════╗[/color]")
-			display_game("[color=#00FFFF]║[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
+			display_game("[color=#00FFFF]────── NEW ABILITY UNLOCKED! ──────[/color]")
 			for ability in unlocked_abilities:
 				var ability_type = "Universal" if ability.get("universal", false) else "Class"
-				display_game("[color=#00FFFF]║[/color]  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.get("display", ability.get("name", "?")), ability_type])
-			display_game("[color=#00FFFF]║[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-			display_game("[color=#00FFFF]╚══════════════════════════════════════╝[/color]")
+				display_game("  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.get("display", ability.get("name", "?")), ability_type])
+			display_game("  [color=#808080]Check Abilities menu to equip![/color]")
+			display_game("[color=#00FFFF]──────────────────────────────────────[/color]")
 
 	# Update UI
 	update_currency_display()
