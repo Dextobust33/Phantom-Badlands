@@ -14,9 +14,14 @@ const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 const PLAYER_POSTS_FILE = "user://data/player_posts.json"
 const MARKET_FILE = "user://data/market_data.json"
 const GUARDS_FILE = "user://data/guards.json"
+const BAN_LIST_FILE = "user://data/ban_list.json"
 
 const MAX_LEADERBOARD_ENTRIES = 100
 const DEFAULT_MAX_CHARACTERS = 6
+
+# Password policy
+const MIN_PASSWORD_LENGTH = 6
+const MAX_PASSWORD_LENGTH = 128
 
 # House upgrade definitions - cost in Baddie Points per level
 const HOUSE_UPGRADES = {
@@ -55,6 +60,7 @@ var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
 var player_posts_data: Dictionary = {}  # {"posts": {username: [{name, center_x, center_y, created_at}]}}
 var market_data: Dictionary = {}  # {"listings": {post_id: [...]}, "next_id": 1}
+var ban_list_data: Dictionary = {}  # {"banned_ips": {ip: {reason, banned_at, banned_by}}}
 
 func _ready():
 	ensure_data_directories()
@@ -68,6 +74,7 @@ func _ready():
 	load_player_posts()
 	load_player_storage()
 	load_market_data()
+	load_ban_list()
 
 # ===== DIRECTORY SETUP =====
 
@@ -218,8 +225,10 @@ func create_account(username: String, password: String) -> Dictionary:
 		return {"success": false, "reason": "Username already exists"}
 
 	# Validate password
-	if password.length() < 4:
-		return {"success": false, "reason": "Password must be at least 4 characters"}
+	if password.length() < MIN_PASSWORD_LENGTH:
+		return {"success": false, "reason": "Password must be at least %d characters" % MIN_PASSWORD_LENGTH}
+	if password.length() > MAX_PASSWORD_LENGTH:
+		return {"success": false, "reason": "Password cannot exceed %d characters" % MAX_PASSWORD_LENGTH}
 
 	# Generate salt and hash password
 	var salt = generate_salt()
@@ -620,8 +629,10 @@ func change_password(account_id: String, old_password: String, new_password: Str
 		return {"success": false, "reason": "Current password is incorrect"}
 
 	# Validate new password
-	if new_password.length() < 4:
-		return {"success": false, "reason": "New password must be at least 4 characters"}
+	if new_password.length() < MIN_PASSWORD_LENGTH:
+		return {"success": false, "reason": "New password must be at least %d characters" % MIN_PASSWORD_LENGTH}
+	if new_password.length() > MAX_PASSWORD_LENGTH:
+		return {"success": false, "reason": "New password cannot exceed %d characters" % MAX_PASSWORD_LENGTH}
 
 	if old_password == new_password:
 		return {"success": false, "reason": "New password must be different from current password"}
@@ -649,8 +660,10 @@ func admin_reset_password(username: String, new_password: String) -> Dictionary:
 	if not accounts_data.username_to_id.has(username_lower):
 		return {"success": false, "reason": "Account not found: %s" % username}
 
-	if new_password.length() < 4:
-		return {"success": false, "reason": "Password must be at least 4 characters"}
+	if new_password.length() < MIN_PASSWORD_LENGTH:
+		return {"success": false, "reason": "Password must be at least %d characters" % MIN_PASSWORD_LENGTH}
+	if new_password.length() > MAX_PASSWORD_LENGTH:
+		return {"success": false, "reason": "Password cannot exceed %d characters" % MAX_PASSWORD_LENGTH}
 
 	var account_id = accounts_data.username_to_id[username_lower]
 	var account = accounts_data.accounts[account_id]
@@ -1709,3 +1722,41 @@ func load_guards() -> Dictionary:
 func save_guards(guards: Dictionary):
 	"""Save active guards to file."""
 	_safe_save(GUARDS_FILE, {"guards": guards})
+
+# ===== IP BAN LIST =====
+
+func load_ban_list():
+	"""Load IP ban list from file."""
+	var data = _safe_load(BAN_LIST_FILE)
+	if data.is_empty():
+		ban_list_data = {"banned_ips": {}}
+	else:
+		ban_list_data = data
+		if not ban_list_data.has("banned_ips"):
+			ban_list_data["banned_ips"] = {}
+	print("Loaded %d banned IPs" % ban_list_data.banned_ips.size())
+
+func save_ban_list():
+	"""Save IP ban list to file."""
+	_safe_save(BAN_LIST_FILE, ban_list_data)
+
+func ban_ip(ip: String, reason: String, banned_by: String):
+	"""Add an IP to the ban list."""
+	ban_list_data.banned_ips[ip] = {
+		"reason": reason,
+		"banned_at": int(Time.get_unix_time_from_system()),
+		"banned_by": banned_by
+	}
+	save_ban_list()
+
+func unban_ip(ip: String) -> bool:
+	"""Remove an IP from the ban list. Returns true if IP was banned."""
+	if ban_list_data.banned_ips.has(ip):
+		ban_list_data.banned_ips.erase(ip)
+		save_ban_list()
+		return true
+	return false
+
+func is_ip_banned(ip: String) -> bool:
+	"""Check if an IP is banned."""
+	return ban_list_data.banned_ips.has(ip)

@@ -16758,7 +16758,8 @@ func send_input():
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
-		"giveconsumable", "spawnwish", "setjob", "givetool"]
+		"giveconsumable", "spawnwish", "setjob", "givetool",
+		"banip", "unbanip"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -17745,6 +17746,17 @@ func process_command(text: String):
 				send_to_server({"type": "gm_givetool", "subtype": parts[1].to_lower(), "tier": tool_tier})
 		"spawnwish":
 			send_to_server({"type": "gm_spawnwish"})
+		"banip":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /banip <ip> [reason][/color]")
+			else:
+				var ban_reason = " ".join(parts.slice(2)) if parts.size() > 2 else "Banned by admin"
+				send_to_server({"type": "gm_banip", "ip": parts[1], "reason": ban_reason})
+		"unbanip":
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /unbanip <ip>[/color]")
+			else:
+				send_to_server({"type": "gm_unbanip", "ip": parts[1]})
 		_:
 			# Check if this is a combat command while in combat
 			if in_combat:
@@ -19731,8 +19743,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.144 changes
+	display_game("[color=#00FF00]v0.9.144[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server Security Hardening[/color]")
+	display_game("  • Login brute-force protection: lockout after repeated failed attempts")
+	display_game("  • Message rate limiting: prevents spam and flooding")
+	display_game("  • Chat message length capped at 500 characters")
+	display_game("  • Buffer overflow protection and message size limits")
+	display_game("  • Password policy: minimum 6 characters required for new accounts")
+	display_game("  • IP ban system for admins (/banip, /unbanip)")
+	display_game("  • Connection cap: server rejects beyond 200 simultaneous connections")
+	display_game("")
+
 	# v0.9.143 changes
-	display_game("[color=#00FF00]v0.9.143[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.143[/color]")
 	display_game("  [color=#FFD700]Resource Bars Overlay[/color]")
 	display_game("  • HP and class resource bars (Mana/Stamina/Energy) now display as a persistent overlay")
 	display_game("  • Bars appear bottom-right of game output, next to companion art")
@@ -19768,22 +19792,6 @@ func display_changelog():
 	display_game("  • Starter post quests now give meaningful XP (minimum floor added)")
 	display_game("  • New quest type: Gather — fish, mine, log, or forage for quest credit")
 	display_game("  • Rescue quests now show dungeon direction hints in quest log")
-	display_game("")
-
-	# v0.9.139 changes
-	display_game("[color=#00FFFF]v0.9.139[/color]")
-	display_game("  [color=#FFD700]Dungeon, Gathering & UI Fixes[/color]")
-	display_game("  • Dungeons: Completed dungeons now properly despawn from the map")
-	display_game("  • Dungeons: Dungeons can no longer stack on the same tile")
-	display_game("  • Dungeons: Rest now requires food (plant/herb/fungus/fish) with selection UI")
-	display_game("  • Dungeons: Monsters move 1 step each time you rest")
-	display_game("  • Dungeons: Escape scrolls now work from both inventory and action bar")
-	display_game("  • Harvest: Wrong picks now give reduced parts instead of ending the session")
-	display_game("  • Harvest: Skip setting added (Settings → Game → Skip Harvest Minigame)")
-	display_game("  • Gathering: Auto-skip now requires appropriate tool equipped")
-	display_game("  • Gathering: Better tools give more resources when auto-skipping")
-	display_game("  • Market: Food items now have their own \"List All Food\" category")
-	display_game("  • Settings: Fixed Game settings button not responding to clicks")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -21989,6 +21997,10 @@ func display_gm_help():
 	display_game("  /completequest [n]   Complete quest (or all)")
 	display_game("  /resetquests         Clear all active quests")
 	display_game("  /broadcast <msg>     Server-wide announcement")
+	display_game("")
+	display_game("[color=#FFD700]Security:[/color]")
+	display_game("  /banip <ip> [reason]  Ban an IP address")
+	display_game("  /unbanip <ip>         Unban an IP address")
 	display_game("")
 	display_game("[color=#808080]All commands are server-gated. Non-admin accounts get 'Admin access required'.[/color]")
 	display_game("[color=#808080]Admin characters are excluded from all leaderboards.[/color]")

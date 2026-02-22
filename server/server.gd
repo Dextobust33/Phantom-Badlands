@@ -152,10 +152,37 @@ var auto_save_timer = 0.0
 const AUTH_TIMEOUT = 90.0  # Kick unauthenticated connections after 90 seconds (time to enter login)
 const MAX_CONNECTIONS_PER_IP = 3  # Max simultaneous connections from one IP
 const CONNECTION_RATE_LIMIT = 5.0  # Seconds between connection attempts from same IP
+const MAX_TOTAL_CONNECTIONS = 200  # Total connection cap
 var ip_connection_times: Dictionary = {}  # IP -> last connection timestamp
 var ip_connection_counts: Dictionary = {}  # IP -> current connection count
 var security_check_timer: float = 0.0
 const SECURITY_CHECK_INTERVAL = 5.0  # Check for stale connections every 5 seconds
+
+# Buffer & message size limits
+const MAX_BUFFER_BYTES = 65536       # 64KB max buffer per peer — disconnect if exceeded
+const MAX_SINGLE_MESSAGE_BYTES = 32768  # 32KB max single message — drop oversized
+const MAX_MESSAGES_PER_FRAME = 10    # Max messages processed per peer per frame
+
+# Login brute-force protection
+const LOGIN_MAX_ATTEMPTS = 5         # Max failed login attempts per IP
+const LOGIN_WINDOW_SECONDS = 300     # Time window for attempt tracking (5 min)
+const LOGIN_LOCKOUT_SECONDS = 900    # Lockout duration after max attempts (15 min)
+var login_attempts: Dictionary = {}  # IP -> {attempts: int, first_attempt: float, locked_until: float}
+
+# Token bucket rate limiting (per peer)
+const RATE_LIMIT_TOKENS_MAX = 30     # Max burst capacity
+const RATE_LIMIT_TOKENS_PER_SEC = 20.0  # Sustained messages/second refill rate
+var peer_rate_limits: Dictionary = {}  # peer_id -> {tokens: float, last_refill: float}
+# Per-type cooldowns (type -> min interval in seconds)
+const MESSAGE_TYPE_COOLDOWNS = {
+	"chat": 0.8,
+	"private_message": 0.8,
+	"register": 5.0
+}
+var peer_type_cooldowns: Dictionary = {}  # peer_id -> {msg_type: last_time}
+
+# Chat message length cap
+const MAX_CHAT_LENGTH = 500
 
 # ===== NETWORK OPTIMIZATION STATE =====
 # Phase 1: Delta character updates
@@ -793,18 +820,30 @@ func _process(delta):
 		var peer_ip = peer.get_connected_host()
 		var current_time = Time.get_unix_time_from_system()
 
+		# Security: Check IP ban list first
+		if persistence.is_ip_banned(peer_ip):
+			log_message("Security: Rejected banned IP %s" % peer_ip)
+			peer.disconnect_from_host()
+			return
+
+		# Security: Total connection cap
+		if peers.size() >= MAX_TOTAL_CONNECTIONS:
+			log_message("Security: Rejected connection from %s (server full: %d/%d)" % [peer_ip, peers.size(), MAX_TOTAL_CONNECTIONS])
+			peer.disconnect_from_host()
+			return
+
 		# Security: Rate limiting - check if IP is connecting too fast
 		if ip_connection_times.has(peer_ip):
 			var last_connect = ip_connection_times[peer_ip]
 			if current_time - last_connect < CONNECTION_RATE_LIMIT:
-				log_message("Rate limit: Rejecting rapid connection from %s" % peer_ip)
+				log_message("Security: Rejecting rapid connection from %s" % peer_ip)
 				peer.disconnect_from_host()
 				return
 
 		# Security: Check max connections per IP
 		var current_count = ip_connection_counts.get(peer_ip, 0)
 		if current_count >= MAX_CONNECTIONS_PER_IP:
-			log_message("Connection limit: Rejecting connection from %s (max %d)" % [peer_ip, MAX_CONNECTIONS_PER_IP])
+			log_message("Security: Rejecting connection from %s (max %d per IP)" % [peer_ip, MAX_CONNECTIONS_PER_IP])
 			peer.disconnect_from_host()
 			return
 
@@ -858,6 +897,12 @@ func _process(delta):
 				var message = data[1].get_string_from_utf8()
 				peer_data.buffer += message
 
+				# Security: Check buffer size limit
+				if peer_data.buffer.length() > MAX_BUFFER_BYTES:
+					log_message("Security: Buffer overflow from peer %d (%s) — %d bytes, disconnecting" % [peer_id, peer_data.get("ip", "?"), peer_data.buffer.length()])
+					disconnected_peers.append(peer_id)
+					continue
+
 				# Try to parse complete JSON messages
 				process_buffer(peer_id)
 
@@ -894,11 +939,22 @@ func _process(delta):
 func process_buffer(peer_id: int):
 	var peer_data = peers[peer_id]
 	var buffer = peer_data.buffer
+	var messages_this_frame = 0
 
 	while "\n" in buffer:
 		var newline_pos = buffer.find("\n")
 		var message_str = buffer.substr(0, newline_pos)
 		buffer = buffer.substr(newline_pos + 1)
+
+		# Security: Per-frame message cap — carry remainder to next frame
+		messages_this_frame += 1
+		if messages_this_frame > MAX_MESSAGES_PER_FRAME:
+			break
+
+		# Security: Drop oversized single messages
+		if message_str.length() > MAX_SINGLE_MESSAGE_BYTES:
+			log_message("Security: Dropped oversized message from peer %d (%d bytes)" % [peer_id, message_str.length()])
+			continue
 
 		var json = JSON.new()
 		var error = json.parse(message_str)
@@ -907,12 +963,16 @@ func process_buffer(peer_id: int):
 			var message = json.data
 			handle_message(peer_id, message)
 		else:
-			print("JSON parse error from peer %d: %s" % [peer_id, message_str])
+			print("JSON parse error from peer %d: %s" % [peer_id, message_str.left(200)])
 
 	peer_data.buffer = buffer
 
 func handle_message(peer_id: int, message: Dictionary):
 	var msg_type = message.get("type", "")
+
+	# Security: Token bucket rate limiting
+	if not _check_rate_limit(peer_id, msg_type):
+		return  # Silently drop
 
 	match msg_type:
 		"register":
@@ -1281,6 +1341,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_setjob(peer_id, message)
 		"gm_givetool":
 			handle_gm_givetool(peer_id, message)
+		"gm_banip":
+			handle_gm_banip(peer_id, message)
+		"gm_unbanip":
+			handle_gm_unbanip(peer_id, message)
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
@@ -1306,6 +1370,11 @@ func handle_message(peer_id: int, message: Dictionary):
 # ===== ACCOUNT HANDLERS =====
 
 func handle_register(peer_id: int, message: Dictionary):
+	# Security: Block registration if already authenticated
+	if peers[peer_id].get("authenticated", false):
+		send_to_peer(peer_id, {"type": "register_failed", "reason": "Already logged in"})
+		return
+
 	var username = message.get("username", "")
 	var password = message.get("password", "")
 
@@ -1326,10 +1395,24 @@ func handle_register(peer_id: int, message: Dictionary):
 func handle_login(peer_id: int, message: Dictionary):
 	var username = message.get("username", "")
 	var password = message.get("password", "")
+	var peer_ip = peers[peer_id].get("ip", "")
+
+	# Security: Check brute-force lockout
+	if _is_login_locked(peer_ip):
+		var lockout_info = login_attempts.get(peer_ip, {})
+		var remaining = int(lockout_info.get("locked_until", 0) - Time.get_unix_time_from_system())
+		send_to_peer(peer_id, {
+			"type": "login_failed",
+			"reason": "Too many failed attempts. Try again in %d minutes." % ceili(remaining / 60.0)
+		})
+		return
 
 	var result = persistence.authenticate(username, password)
 
 	if result.success:
+		# Clear failed attempts on successful login
+		login_attempts.erase(peer_ip)
+
 		peers[peer_id].authenticated = true
 		peers[peer_id].account_id = result.account_id
 		peers[peer_id].username = result.username
@@ -1346,6 +1429,8 @@ func handle_login(peer_id: int, message: Dictionary):
 		# Automatically send character list
 		handle_list_characters(peer_id)
 	else:
+		# Track failed attempt
+		_record_failed_login(peer_ip)
 		send_to_peer(peer_id, {
 			"type": "login_failed",
 			"reason": result.reason
@@ -1793,6 +1878,10 @@ func handle_delete_character(peer_id: int, message: Dictionary):
 		})
 
 func handle_get_leaderboard(peer_id: int, message: Dictionary):
+	# Security: Require authentication
+	if not peers[peer_id].get("authenticated", false):
+		return
+
 	var limit = message.get("limit", 10)
 	limit = clamp(limit, 1, 100)
 
@@ -1805,6 +1894,10 @@ func handle_get_leaderboard(peer_id: int, message: Dictionary):
 
 func handle_get_leaderboard_death(peer_id: int, message: Dictionary):
 	"""Get death screen data for a specific leaderboard entry."""
+	# Security: Require authentication
+	if not peers[peer_id].get("authenticated", false):
+		return
+
 	var char_name = message.get("character_name", "")
 	var died_at = int(message.get("died_at", 0))
 	if char_name.is_empty():
@@ -1827,6 +1920,10 @@ func handle_get_leaderboard_death(peer_id: int, message: Dictionary):
 	})
 
 func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
+	# Security: Require authentication
+	if not peers[peer_id].get("authenticated", false):
+		return
+
 	var limit = message.get("limit", 20)
 	limit = clamp(limit, 1, 100)
 
@@ -1838,6 +1935,10 @@ func handle_get_monster_kills_leaderboard(peer_id: int, message: Dictionary):
 	})
 
 func handle_get_trophy_leaderboard(peer_id: int):
+	# Security: Require authentication
+	if not peers[peer_id].get("authenticated", false):
+		return
+
 	var result = persistence.get_trophy_leaderboard()
 
 	send_to_peer(peer_id, {
@@ -1848,6 +1949,12 @@ func handle_get_trophy_leaderboard(peer_id: int):
 
 func handle_get_players(peer_id: int):
 	"""Get list of all online players"""
+	# Security: Require authentication + active character
+	if not peers[peer_id].get("authenticated", false):
+		return
+	if not characters.has(peer_id):
+		return
+
 	var player_list = []
 
 	for pid in characters.keys():
@@ -2063,6 +2170,10 @@ func handle_chat(peer_id: int, message: Dictionary):
 	if text.is_empty():
 		return
 
+	# Security: Truncate oversized chat messages and strip control characters
+	text = text.left(MAX_CHAT_LENGTH)
+	text = _sanitize_chat_text(text)
+
 	var username = peers[peer_id].username
 	print("Chat from %s: %s" % [username, text])
 
@@ -2101,6 +2212,10 @@ func handle_private_message(peer_id: int, message: Dictionary):
 	if text.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Message cannot be empty!"})
 		return
+
+	# Security: Truncate and sanitize
+	text = text.left(MAX_CHAT_LENGTH)
+	text = _sanitize_chat_text(text)
 
 	# Get sender's character name
 	var sender_name = characters[peer_id].name
@@ -4421,6 +4536,9 @@ func handle_disconnect(peer_id: int):
 	pending_scroll_use.erase(peer_id)
 	# Clear combat command cooldown
 	combat_command_cooldown.erase(peer_id)
+	# Clear rate limit state
+	peer_rate_limits.erase(peer_id)
+	peer_type_cooldowns.erase(peer_id)
 	# Clear station tracking
 	at_player_station.erase(peer_id)
 	# Refund materials from pending craft challenge on disconnect
@@ -4518,6 +4636,99 @@ func _check_stale_connections():
 			if connection:
 				connection.disconnect_from_host()
 			handle_disconnect(peer_id)
+
+	# Cleanup expired login lockouts
+	var expired_ips = []
+	for ip in login_attempts.keys():
+		var info = login_attempts[ip]
+		var locked_until = info.get("locked_until", 0.0)
+		var first_attempt = info.get("first_attempt", 0.0)
+		if locked_until > 0 and current_time > locked_until:
+			expired_ips.append(ip)
+		elif locked_until == 0 and current_time - first_attempt > LOGIN_WINDOW_SECONDS:
+			expired_ips.append(ip)
+	for ip in expired_ips:
+		login_attempts.erase(ip)
+
+# ===== SECURITY HELPER FUNCTIONS =====
+
+func _check_rate_limit(peer_id: int, msg_type: String) -> bool:
+	"""Token bucket rate limiter. Returns true if message should be processed."""
+	var now = Time.get_unix_time_from_system()
+
+	# Initialize bucket for new peers
+	if not peer_rate_limits.has(peer_id):
+		peer_rate_limits[peer_id] = {"tokens": float(RATE_LIMIT_TOKENS_MAX), "last_refill": now}
+
+	var bucket = peer_rate_limits[peer_id]
+
+	# Refill tokens based on elapsed time
+	var elapsed = now - bucket.last_refill
+	bucket.tokens = minf(float(RATE_LIMIT_TOKENS_MAX), bucket.tokens + elapsed * RATE_LIMIT_TOKENS_PER_SEC)
+	bucket.last_refill = now
+
+	# Check per-type cooldown
+	if MESSAGE_TYPE_COOLDOWNS.has(msg_type):
+		if not peer_type_cooldowns.has(peer_id):
+			peer_type_cooldowns[peer_id] = {}
+		var type_cooldowns = peer_type_cooldowns[peer_id]
+		var min_interval = MESSAGE_TYPE_COOLDOWNS[msg_type]
+		var last_time = type_cooldowns.get(msg_type, 0.0)
+		if now - last_time < min_interval:
+			return false  # Silently drop
+		type_cooldowns[msg_type] = now
+
+	# Consume a token
+	if bucket.tokens < 1.0:
+		var peer_ip = peers.get(peer_id, {}).get("ip", "?")
+		log_message("Security: Rate limit hit for peer %d (%s), dropping '%s'" % [peer_id, peer_ip, msg_type])
+		return false
+
+	bucket.tokens -= 1.0
+	return true
+
+func _is_login_locked(ip: String) -> bool:
+	"""Check if an IP is currently locked out from login attempts."""
+	if not login_attempts.has(ip):
+		return false
+	var info = login_attempts[ip]
+	var locked_until = info.get("locked_until", 0.0)
+	if locked_until > 0 and Time.get_unix_time_from_system() < locked_until:
+		return true
+	# If lockout expired, clear it
+	if locked_until > 0:
+		login_attempts.erase(ip)
+	return false
+
+func _record_failed_login(ip: String):
+	"""Record a failed login attempt and trigger lockout if threshold reached."""
+	var now = Time.get_unix_time_from_system()
+	if not login_attempts.has(ip):
+		login_attempts[ip] = {"attempts": 0, "first_attempt": now, "locked_until": 0.0}
+
+	var info = login_attempts[ip]
+
+	# Reset window if expired
+	if now - info.first_attempt > LOGIN_WINDOW_SECONDS:
+		info.attempts = 0
+		info.first_attempt = now
+		info.locked_until = 0.0
+
+	info.attempts += 1
+
+	if info.attempts >= LOGIN_MAX_ATTEMPTS:
+		info.locked_until = now + LOGIN_LOCKOUT_SECONDS
+		log_message("Security: IP %s locked out after %d failed login attempts (lockout %ds)" % [ip, info.attempts, LOGIN_LOCKOUT_SECONDS])
+
+func _sanitize_chat_text(text: String) -> String:
+	"""Strip control characters from chat text (keep printable + newlines)."""
+	var result = ""
+	for i in range(text.length()):
+		var c = text.unicode_at(i)
+		# Allow printable characters and common whitespace (space, tab, newline)
+		if c >= 32 or c == 10 or c == 9:
+			result += text[i]
+	return result
 
 func _exit_tree():
 	print("Server shutting down...")
@@ -22083,6 +22294,53 @@ func handle_gm_givetool(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Gave %s (T%d, %d durability).[/color]" % [tool_item.name, tier, tool_item.durability]})
+
+func handle_gm_banip(peer_id: int, message: Dictionary):
+	"""Ban an IP address. Usage: /banip <ip> [reason]"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+
+	var ip = message.get("ip", "").strip_edges()
+	var reason = message.get("reason", "Banned by admin")
+
+	if ip.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /banip <ip> [reason][/color]"})
+		return
+
+	var admin_name = peers[peer_id].get("username", "admin")
+	persistence.ban_ip(ip, reason, admin_name)
+	log_message("Security: IP %s banned by %s — reason: %s" % [ip, admin_name, reason])
+
+	# Disconnect all peers from the banned IP
+	var kicked = 0
+	for pid in peers.keys():
+		if peers[pid].get("ip", "") == ip and pid != peer_id:
+			var conn = peers[pid].get("connection")
+			if conn:
+				conn.disconnect_from_host()
+			handle_disconnect(pid)
+			kicked += 1
+
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Banned IP %s (%d connections disconnected). Reason: %s[/color]" % [ip, kicked, reason]})
+
+func handle_gm_unbanip(peer_id: int, message: Dictionary):
+	"""Unban an IP address. Usage: /unbanip <ip>"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+
+	var ip = message.get("ip", "").strip_edges()
+
+	if ip.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /unbanip <ip>[/color]"})
+		return
+
+	if persistence.unban_ip(ip):
+		log_message("Security: IP %s unbanned by %s" % [ip, peers[peer_id].get("username", "admin")])
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Unbanned IP %s[/color]" % ip})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFFF00][GM] IP %s was not banned.[/color]" % ip})
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""
