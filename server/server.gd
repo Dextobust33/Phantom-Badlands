@@ -1137,6 +1137,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_harvest_start(peer_id)
 		"harvest_choice":
 			handle_harvest_choice(peer_id, message)
+		"harvest_end":
+			handle_harvest_end(peer_id)
 		# Tool equip/unequip
 		"equip_tool":
 			handle_equip_tool(peer_id, message)
@@ -3924,6 +3926,34 @@ func _check_death_saves_in_combat(peer_id: int, character: Character) -> bool:
 
 	return false  # No death save - player actually dies
 
+func _handle_instant_death_at_combat_start(peer_id: int, monster_name: String):
+	"""Called when a monster kills the player on the very first strike before they get to act.
+	The client already received combat_start showing the encounter; now send permadeath (or
+	combat_end with death_saved=true if a title ability saves them)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var was_saved = _check_death_saves_in_combat(peer_id, character)
+	var combat_data = combat_mgr.get_combat_summary(peer_id)
+	combat_mgr.end_combat(peer_id, false)
+	# Clean up any pending flock state
+	if pending_flock_drops.has(peer_id):
+		pending_flock_drops.erase(peer_id)
+	if pending_flock_gems.has(peer_id):
+		pending_flock_gems.erase(peer_id)
+	if flock_counts.has(peer_id):
+		flock_counts.erase(peer_id)
+	if was_saved:
+		send_to_peer(peer_id, {
+			"type": "combat_end",
+			"victory": false,
+			"death_saved": true,
+			"character": character.to_dict()
+		})
+		send_location_update(peer_id)
+	else:
+		handle_permadeath(peer_id, monster_name, combat_data)
+
 # ===== PERMADEATH =====
 
 func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictionary = {}):
@@ -4844,6 +4874,9 @@ func trigger_encounter(peer_id: int):
 		})
 		# Forward combat start to watchers with monster info for proper art display
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+		# Handle instant death: monster killed player on first strike before they could act
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster_name)
 
 func _trigger_specific_encounter(peer_id: int, monster_name: String, monster_level: int):
 	"""Trigger an encounter with a specific monster (used for summoner abilities like Shrieker)"""
@@ -4870,6 +4903,8 @@ func _trigger_specific_encounter(peer_id: int, monster_name: String, monster_lev
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		forward_combat_start_to_watchers(peer_id, result.message, combat_monster_name, combat_bg_color)
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, combat_monster_name)
 
 func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 	"""Trigger a rare loot find instead of combat"""
@@ -5625,6 +5660,8 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		})
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster.name)
 
 func handle_continue_flock(peer_id: int):
 	"""Handle player continuing into a flock encounter"""
@@ -10780,6 +10817,8 @@ func _start_bounty_combat(peer_id: int, quest_id: String, bounty: Dictionary):
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster_display_name)
 
 func _on_bounty_kill(peer_id: int, quest_id: String):
 	"""Called when a bounty target is killed. Advances quest progress and cleans up."""
@@ -13110,6 +13149,11 @@ func _end_harvest_session(peer_id: int, all_correct: bool = false):
 	active_harvests.erase(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func handle_harvest_end(peer_id: int):
+	"""Handle player voluntarily stopping harvest early. Clears the session so server stops blocking movement."""
+	if active_harvests.has(peer_id):
+		active_harvests.erase(peer_id)
 
 # ===== OLD GATHERING HANDLERS (kept for reference, unreachable) =====
 
@@ -18010,6 +18054,8 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		"use_client_art": true,  # Client renders ASCII art locally
 		"extra_combat_text": result.get("extra_combat_text", "")
 	})
+	if result.get("combat_ended", false):
+		_handle_instant_death_at_combat_start(peer_id, monster.name)
 
 func _open_dungeon_treasure(peer_id: int):
 	"""Open a treasure chest in dungeon"""
@@ -19228,6 +19274,8 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		"use_client_art": true,
 		"extra_combat_text": result.get("extra_combat_text", "")
 	})
+	if result.get("combat_ended", false):
+		_handle_instant_death_at_combat_start(peer_id, monster.name)
 
 func handle_dungeon_rest(peer_id: int, message: Dictionary):
 	"""Handle player resting in a dungeon — costs 1 food material, monsters move"""
@@ -20737,6 +20785,8 @@ func _spawn_crucible_boss(peer_id: int):
 			"special_message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level],
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster.name)
 
 func handle_crucible_victory(peer_id: int):
 	"""Handle player defeating a crucible boss"""
@@ -21959,6 +22009,8 @@ func _start_gm_combat(peer_id: int, monster: Dictionary):
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster_name)
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to start combat.[/color]"})
 
@@ -22193,6 +22245,8 @@ func handle_gm_spawnwish(peer_id: int):
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
+		if result.get("combat_ended", false):
+			_handle_instant_death_at_combat_start(peer_id, monster_name)
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to start combat.[/color]"})
 

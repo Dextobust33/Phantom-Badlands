@@ -56,13 +56,6 @@ The server frequently sends messages (`character_update`, `location`, `text`, et
 - Viewing materials → cleared by inventory refresh
 - Any action with results → can be wiped by incoming messages
 
-**Specific actions that have caused this bug:**
-- Salvaging items (result message wiped)
-- Viewing crafting materials (view cleared immediately)
-- Mapping abilities to slots (confirmation wiped)
-- Using consumables (effect message wiped)
-- Any "view" or "inspect" action in a submenu
-
 ### Mandatory Checklist for New Actions in ANY Mode
 
 When implementing ANY new action that displays something the player needs to read, you MUST:
@@ -136,11 +129,6 @@ if ... and pending_inventory_action not in ["equip_confirm", "sort_select", "sal
 - Player uses potion → "+50 HP!" appears → character_update arrives → combat/inventory refresh → message gone
 - Player maps ability → "Ability assigned to slot 3" → character_update → ability list refreshes → message gone
 - Player changes setting → "Setting saved" → any update → settings redisplay → message gone
-
-**Another common cause - Item Selection Conflict:**
-The `_process()` function (~line 1866) handles item selection with number keys (1-9). If your new `pending_inventory_action` state isn't in the exclusion list, pressing a number key to select an action bar button ALSO triggers item selection handling, which can immediately call `display_inventory()` or other functions.
-
-Example: Player presses "3" for Materials button → action bar processes "view_materials" → BUT _process() also sees key "3" as item selection → processes item at index 3 → calls display_inventory() → materials view immediately replaced
 
 ### How to Verify Your Implementation
 1. Trigger your new action
@@ -232,66 +220,16 @@ The combat simulator tests monster lethality against all 9 character classes to 
 - `docs/simulation_results/YYYY-MM-DD_results.json` - Raw simulation data
 - `docs/simulation_results/YYYY-MM-DD_summary.md` - Human-readable analysis
 
-**Key files:**
-| File | Purpose |
-|------|---------|
-| `simulator.gd` | Main entry point, orchestrates simulation runs |
-| `combat_engine.gd` | Ports damage formulas from combat_manager.gd, implements class abilities |
-| `simulated_character.gd` | Lightweight character for simulation (stats, equipment, abilities) |
-| `gear_generator.gd` | Generates level-appropriate equipment sets |
-| `results_writer.gd` | JSON and Markdown output generation |
-
-**Configuration:**
-- Classes: All 9 (Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja)
-- Levels: [5, 10, 25, 50, 75, 100, 500, 1000, 5000]
-- Gear qualities: poor, average, good (high levels: average + good only)
-- Monster level offsets: [-5, 0, +5, +10, +20]
-- Iterations: 1000 (Lv≤100), 500 (Lv500), 200 (Lv1000), 100 (Lv5000)
-
-**Class abilities implemented:**
-- **Warriors:** Power Strike, War Cry, Shield Bash, Cleave, Fortify, Rally, Berserk, Iron Skin, Devastate
-- **Mages:** Magic Bolt, Forcefield, Haste, Blast, Paralyze, Meteor (damage-first AI)
-- **Tricksters:** Outsmart, Analyze, Ambush, Gambit, Sabotage
-
-**Multi-fight simulations:**
-- **Gauntlet:** 10 same-level fights with regen between (Meditate for mages, flat 2% for others)
-- **Flock:** 2-4 consecutive fights with NO regen (tests pack monsters like Wolves, Gnolls)
+**Key files:** `simulator.gd` (entry point), `combat_engine.gd` (damage formulas + abilities), `simulated_character.gd`, `gear_generator.gd`, `results_writer.gd`
 
 **Expanding the simulator:**
-1. Add new abilities in `combat_engine.gd` - see `WARRIOR_ABILITIES`, `MAGE_ABILITIES`, `TRICKSTER_ABILITIES` constants
+1. Add new abilities in `combat_engine.gd` — see `WARRIOR_ABILITIES`, `MAGE_ABILITIES`, `TRICKSTER_ABILITIES` constants
 2. Update `simulate_single_combat()` AI to use new abilities strategically
-3. Adjust lethality weights in `server/balance_config.json` based on simulation results
-4. The empirical lethality formula: `(1 / win_rate) × (1 + damage_ratio) × 100`
+3. Adjust lethality weights in `server/balance_config.json` based on results
+4. Empirical lethality: `(1 / win_rate) × (1 + damage_ratio) × 100`
+5. Formula: `lethality = (HP×hp_w + STR×str_w + DEF×def_w + Speed×spd_w) × (1 + ability_modifiers)`
 
-**Lethality Formula (balance_config.json):**
-```
-lethality = (HP × hp_weight) + (STR × str_weight) + (DEF × def_weight) + (Speed × speed_weight)
-lethality *= (1 + sum of ability_modifiers)
-```
-
-**Important notes:**
-- Rare variants (2% spawn rate) may have unreliable data due to small sample sizes
-- Corrosive/Sunder effects are not simulated (players can repair at blacksmiths)
-- Run time: ~35 minutes for full simulation (extended levels add significant time)
-- Racial passives included (Dwarf Last Stand, Orc low-HP damage, Halfling dodge/crit, etc.)
-
-**Latest Simulation Results:** `docs/simulation_results/2026-02-06_summary.md`
-
-**Balance Changes Applied (v0.9.70, 2026-02-06):**
-- Monster HP scaling: logarithmic equipment estimation (was linear, caused HP inflation)
-- HP multiplier rarity: 2.0 → 1.3, slot multipliers corrected
-- Enrage: capped at 10 stacks (combat_manager.gd + combat_engine.gd)
-- Mage base mana regen: 2%/round (Sage 3%) in combat_manager.gd line ~958
-- Forcefield: `100 + INT×8` shield value (combat_manager.gd line ~2373)
-- Meteor cost: 12% → 8% mana (combat_manager.gd line ~2987)
-- Blast/Meteor INT scaling: 0.03 → 0.04 (combat_manager.gd lines ~2329, ~2405)
-- Sorcerer backfire: capped at 15% max HP (combat_manager.gd lines ~2269, ~2342, ~2419, ~4027)
-- Outsmart cap: monster INT/2 → INT/3 (combat_manager.gd lines ~1728, ~2727)
-- DEX dodge cap: 20% → 30% (combat_manager.gd line ~3280)
-- Trickster WITS dodge: min(15, WITS/50) bonus (combat_manager.gd line ~3287)
-- Monster intelligence reduced at tiers 5-9 (monster_database.gd `_calculate_monster_intelligence`)
-
-**Simulation Results (Run 10):** All classes 89-96% average win rate, 6.9% spread. Mages 95-96%, Warriors 94%, Tricksters 89-90%. Balance is good at all levels (Lv5 through Lv5000).
+**Latest results:** `docs/simulation_results/2026-02-06_summary.md` — All classes 89-96% win rate, balance good at Lv5-5000.
 
 ## Adding ASCII Art
 
@@ -485,43 +423,14 @@ Players discover monster HP through combat experience, NOT by seeing actual HP v
 
 **Overview:** Account-level persistent home that survives character permadeath. Players see their Sanctuary after login, before character select.
 
-**Data Storage:** `user://data/houses.json` - managed by `persistence_manager.gd`
-
-**House Data Structure:**
-```gdscript
-{
-    "owner_username": String,
-    "created_at": int,
-    "storage": {"slots": 20, "items": [...]},
-    "registered_companions": {"slots": 2, "companions": [...]},
-    "companion_kennel": {"slots": 30, "companions": [...]},  # Kennel for fusion
-    "baddie_points": int,
-    "total_baddie_points_earned": int,
-    "upgrades": {
-        "storage_slots": 0,      # +10 per level, max 8
-        "companion_slots": 0,    # +1 per level, max 8
-        "kennel_capacity": 0,    # 30-500 slots, max 9
-        "flee_chance": 0,        # +2% per level
-        "starting_gold": 0,      # +50 per level
-        "xp_bonus": 0,           # +1% per level
-        "gathering_bonus": 0     # +5% per level
-    },
-    "stats": {...}
-}
-```
+**Data Storage:** `user://data/houses.json` - managed by `persistence_manager.gd`. See code for full data structure.
 
 **Companion Kennel:** Bulk companion storage (30-500 slots) for the Fusion Station. Walk onto K tile.
-**Fusion Station:** Walk onto F tile. 3 same-type companions → 1 higher sub-tier. 8 mixed sub-tier 8 → random T9.
+**Fusion Station:** Walk onto F tile. 3 same-type → 1 higher sub-tier. 8 mixed sub-tier 8 → random T9.
 
 **Game State Flow:** Login → HOUSE_SCREEN → Character Select → Playing
 
-**Baddie Points:** Meta-currency earned on character death. Formula in `persistence.calculate_baddie_points()`:
-- 1 BP per 100 XP earned
-- 1 BP per 500 gold
-- 5 BP per gem
-- 1 BP per 10 monsters killed
-- 10 BP per completed quest
-- Level milestones: +50 (Lv10), +150 (Lv25), +400 (Lv50), +1000 (Lv100)
+**Baddie Points:** Meta-currency earned on character death. Formula in `persistence.calculate_baddie_points()`.
 
 **Registered Companions:** Companions registered to house survive character death:
 - Use Home Stone (Companion) to register active companion
@@ -732,45 +641,3 @@ if not get_meta("mykey_%d_pressed" % i, false):
 var resolved_type = item.get("item_type", item.get("type", ""))
 ```
 
-## Dungeon Combat Issues (Fixed v0.9.31)
-
-**Symptoms reported:**
-1. Stepped on ? tile, enemy HP bar shows but GameOutput is grey/empty
-2. Action bar still showed "Exit N S W E" instead of combat actions
-3. No monster art or encounter text displayed
-
-**Root Causes Found:**
-
-**Issue 1: No monster art/text displayed**
-- Server's `_start_dungeon_encounter()` didn't include `use_client_art: true` in the combat_start message
-- Client checks `message.get("use_client_art", false)` to decide whether to render ASCII art
-- Also needed to add a `message` field with encounter text as fallback
-- **Fix:** Added `use_client_art: true` and `message` to dungeon combat_start (server.gd ~line 16709)
-
-**Issue 2: Action bar showed dungeon navigation during combat**
-- In `update_action_bar()`, `dungeon_mode` check (line ~3464) came before `in_combat` check (line ~3694)
-- When entering combat in dungeon, `dungeon_mode` stayed true, so dungeon actions took precedence
-- **Fix:** Changed condition to `elif dungeon_mode and not in_combat:` (client.gd ~line 5171)
-
-**Key Files:**
-- `server/server.gd` ~line 16709: `_start_dungeon_encounter()` combat_start message
-- `client/client.gd` ~line 5171: `update_action_bar()` dungeon_mode condition
-- `client/client.gd` ~line 15650: combat_start handler checks `use_client_art`
-
-## Player Info Popup (WORKING)
-
-**Status:** WORKING (fixed v0.9.35)
-
-Clicking a player name in the Online Players list opens a popup with their detailed info.
-
-**Working Solution:**
-- Use `push_meta(player_name)` / `pop()` to wrap clickable text (NOT `[url]` BBCode — that doesn't work in Godot 4.6)
-- Connect `meta_clicked` signal to handler
-- Set `selection_enabled = true` (required for meta_clicked to work)
-- Set `meta_underlined = true` for hover feedback
-- **Important Godot 4.6 notes:** `pop_meta()` doesn't exist — use `pop()`. `get_meta_at_position()` doesn't exist either.
-
-**Key Files:**
-- `client/client.gd`: `update_online_players()` uses push_meta/pop, `_on_player_name_clicked()` handler, `show_player_info_popup()`
-- `server/server.gd`: `handle_examine_player()` returns player data
-- `shared/character.gd`: `deaths` property (added for examine)

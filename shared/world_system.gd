@@ -56,8 +56,8 @@ const TOTAL_NODE_WEIGHT = 95  # sum of above (water excluded, added via noise)
 
 # Tile rendering data: char, base color, blocks_move, blocks_los
 const TILE_RENDER = {
-	"empty":         {"char": ".", "color": "#555555", "blocks_move": false, "blocks_los": false},
-	"stone":         {"char": "o", "color": "#888888", "blocks_move": true, "blocks_los": true},
+	"empty":         {"char": ".", "color": "#6B5B45", "blocks_move": false, "blocks_los": false},
+	"stone":         {"char": "o", "color": "#998877", "blocks_move": true, "blocks_los": true},
 	"tree":          {"char": "T", "color": "#228B22", "blocks_move": true, "blocks_los": true},
 	"ore_vein":      {"char": "*", "color": "#8B6914", "blocks_move": true, "blocks_los": true},
 	"herb":          {"char": "\"", "color": "#66CC66", "blocks_move": false, "blocks_los": false},
@@ -171,7 +171,7 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 		return {"type": "water", "tier": 0, "blocks_move": true, "blocks_los": false}
 
 	# Density check — ramps from 50% near origin to 70% at edges
-	var density = 0.50 + 0.20 * clampf(distance / 2000.0, 0.0, 1.0)
+	var density = 0.25 + 0.10 * clampf(distance / 2000.0, 0.0, 1.0)
 	var density_roll = _seeded_hash_float(world_x * 7 + world_y * 13, seed)
 	if density_roll >= density:
 		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}

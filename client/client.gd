@@ -4130,6 +4130,9 @@ func _reset_character_state():
 	pending_market_action = ""
 	market_listings = []
 	market_selected_listing = {}
+	# Close ability popup if open
+	if ability_popup_active:
+		cancel_variable_cost_ability()
 	# Clear monster HP knowledge (per-character, not shared across characters)
 	known_enemy_hp = {}
 	# Clear the character stats HUD so old values don't linger
@@ -9123,8 +9126,8 @@ func execute_local_action(action: String):
 				job_commit_target = ""
 				job_commit_category = ""
 		"gathering_stop":
-			# Voluntarily end gathering chain
-			send_to_server({"type": "gathering_end", "voluntary": true})
+			# Voluntarily end gathering chain — end_gathering() sends to server AND clears local state immediately
+			end_gathering()
 		"gathering_continue":
 			# Continue to next round
 			send_to_server({"type": "gathering_choice", "choice_id": "continue"})
@@ -9142,7 +9145,8 @@ func execute_local_action(action: String):
 			pending_continue = false
 			send_to_server({"type": "harvest_start"})
 		"harvest_stop":
-			# Stop harvest early
+			# Stop harvest early — notify server so it clears the session (else server blocks movement)
+			send_to_server({"type": "harvest_end"})
 			end_harvest()
 		"harvest_done":
 			# Dismiss harvest complete screen
@@ -15183,6 +15187,9 @@ func handle_server_message(message: Dictionary):
 		"permadeath":
 			game_state = GameState.DEAD
 			in_combat = false
+			# Close ability popup if open (e.g., magic bolt dialog open when player died)
+			if ability_popup_active:
+				cancel_variable_cost_ability()
 			last_death_message = message.duplicate(true)
 			play_death_sound()
 			# Show final HP (can be negative) on the bar - visual fill clamped at 0%
@@ -15778,6 +15785,9 @@ func handle_server_message(message: Dictionary):
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
+			# Close ability popup if player opened magic bolt dialog and combat ended before they acted
+			if ability_popup_active:
+				cancel_variable_cost_ability()
 			current_forcefield = 0  # Reset forcefield display
 			stop_low_hp_pulse()  # Stop any HP bar animations
 			update_player_hp_bar()  # Refresh HP bar to hide shield
@@ -15884,6 +15894,17 @@ func handle_server_message(message: Dictionary):
 					display_game("[color=#FFD700]You fled to (%d, %d)![/color]" % [message.new_x, message.new_y])
 				else:
 					display_game("[color=#FFD700]You escaped from combat![/color]")
+				pending_continue = true
+				if dungeon_mode:
+					pending_dungeon_continue = true
+				display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			elif message.get("death_saved", false):
+				# A title ability (Guardian/Eternal/High King) saved the player from instant death
+				# before they could act. The save text was already sent as a "text" message.
+				if message.has("character"):
+					_set_character_data(message.character)
+					update_player_hp_bar()
+					update_resource_bar()
 				pending_continue = true
 				if dungeon_mode:
 					pending_dungeon_continue = true
@@ -19743,8 +19764,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.145 changes
+	display_game("[color=#00FF00]v0.9.145[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Gathering/harvest minigame: fixed input lock after minigame ends")
+	display_game("  • Magic Bolt: fixed stuck popup if combat ended before bolt was fired")
+	display_game("  • Combat: dying to a monster's first strike now correctly shows death screen")
+	display_game("  • World: reduced terrain density for a more open map feel")
+	display_game("")
+
 	# v0.9.144 changes
-	display_game("[color=#00FF00]v0.9.144[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.144[/color]")
 	display_game("  [color=#FFD700]Server Security Hardening[/color]")
 	display_game("  • Login brute-force protection: lockout after repeated failed attempts")
 	display_game("  • Message rate limiting: prevents spam and flooding")
@@ -19782,16 +19812,6 @@ func display_changelog():
 	display_game("  • Quests: Boss Hunt bounties now survive server restarts")
 	display_game("  • Quests: Dungeon quests now ensure matching dungeon exists on reconnect")
 	display_game("  • Crafting: Removed redundant job level display from craft results")
-	display_game("")
-
-	# v0.9.140 changes
-	display_game("[color=#00FFFF]v0.9.140[/color]")
-	display_game("  [color=#FFD700]Quest System Overhaul[/color]")
-	display_game("  • Quests now reward Valor instead of Monster Gems")
-	display_game("  • Each character sees different quests at the same trading post")
-	display_game("  • Starter post quests now give meaningful XP (minimum floor added)")
-	display_game("  • New quest type: Gather — fish, mine, log, or forage for quest credit")
-	display_game("  • Rescue quests now show dungeon direction hints in quest log")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
