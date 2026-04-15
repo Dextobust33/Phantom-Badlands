@@ -14165,26 +14165,14 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	# Calculate crafting XP (scaled by quantity for bulk)
-	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
-	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
-
-	# Award character XP from crafting
-	var craft_char_xp = xp_result.get("char_xp_gained", 0)
-	if craft_char_xp > 0:
-		character.add_experience(craft_char_xp)
-
-	# Award matching specialty job XP (50% of craft XP)
+	# XP variables — awarded after craft, only if craft actually succeeded (not refunded)
+	var xp_gained = 0
+	var xp_result = {"leveled_up": false, "new_level": 0, "char_xp_gained": 0}
+	var craft_char_xp = 0
 	var job_xp_gained = 0
 	var job_leveled_up = false
 	var job_new_level = 0
 	var matching_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "")
-	if matching_job != "" and character.can_gain_job_xp(matching_job):
-		job_xp_gained = int(xp_gained * 0.5)
-		if job_xp_gained > 0:
-			var job_result = character.add_job_xp(matching_job, job_xp_gained)
-			job_leveled_up = job_result.leveled_up
-			job_new_level = job_result.new_level
 
 	# Build result message
 	var result_message = ""
@@ -14566,6 +14554,20 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				character.add_item(crafted_item)
 				var rune_qty = "%dx " % quantity if quantity > 1 else ""
 				result_message = "[color=%s]Created %s%s![/color]" % [quality_color, rune_qty, crafted_item.get("name", recipe.name)]
+
+	# Award XP only if craft succeeded — all failure/refund paths contain "Materials refunded"
+	if "Materials refunded" not in result_message:
+		xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
+		xp_result = character.add_crafting_xp(skill_name, xp_gained)
+		craft_char_xp = xp_result.get("char_xp_gained", 0)
+		if craft_char_xp > 0:
+			character.add_experience(craft_char_xp)
+		if matching_job != "" and character.can_gain_job_xp(matching_job):
+			job_xp_gained = int(xp_gained * 0.5)
+			if job_xp_gained > 0:
+				var job_result = character.add_job_xp(matching_job, job_xp_gained)
+				job_leveled_up = job_result.leveled_up
+				job_new_level = job_result.new_level
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -15220,24 +15222,14 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
-	var xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
-	var xp_result = character.add_crafting_xp(skill_name, xp_gained)
-
-	# Award character XP from crafting
-	var craft_char_xp = xp_result.get("char_xp_gained", 0)
-	if craft_char_xp > 0:
-		character.add_experience(craft_char_xp)
-
+	# XP variables — awarded after craft, only if craft actually succeeded (not refunded)
+	var xp_gained = 0
+	var xp_result = {"leveled_up": false, "new_level": 0, "char_xp_gained": 0}
+	var craft_char_xp = 0
 	var job_xp_gained = 0
 	var job_leveled_up = false
 	var job_new_level = 0
 	var matching_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "")
-	if matching_job != "" and character.can_gain_job_xp(matching_job):
-		job_xp_gained = int(xp_gained * 0.5)
-		if job_xp_gained > 0:
-			var job_result = character.add_job_xp(matching_job, job_xp_gained)
-			job_leveled_up = job_result.leveled_up
-			job_new_level = job_result.new_level
 
 	var result_message = ""
 	var crafted_item = {}
@@ -15549,6 +15541,20 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 					target_item["proc_effects"][proc_type] = proc_data
 			_:
 				result_message = "[color=%s]Crafted %s %s![/color]" % [quality_color, quality_name, recipe.name]
+
+	# Award XP only if craft succeeded — all failure/refund paths contain "Materials refunded"
+	if "Materials refunded" not in result_message:
+		xp_gained = CraftingDatabaseScript.calculate_craft_xp(recipe.difficulty, quality) * quantity
+		xp_result = character.add_crafting_xp(skill_name, xp_gained)
+		craft_char_xp = xp_result.get("char_xp_gained", 0)
+		if craft_char_xp > 0:
+			character.add_experience(craft_char_xp)
+		if matching_job != "" and character.can_gain_job_xp(matching_job):
+			job_xp_gained = int(xp_gained * 0.5)
+			if job_xp_gained > 0:
+				var job_result = character.add_job_xp(matching_job, job_xp_gained)
+				job_leveled_up = job_result.leveled_up
+				job_new_level = job_result.new_level
 
 	send_to_peer(peer_id, {
 		"type": "craft_result",
