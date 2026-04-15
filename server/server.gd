@@ -12014,6 +12014,7 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var auto_chains = base_chains + bonus_chains
 
 	# Roll rewards for each chain
+	var pending_quest_updates: Array = []
 	for i in range(auto_chains):
 		var reward = _roll_gathering_reward(job_type, tier, job_level, false)
 		var qty = reward.get("qty", 1)
@@ -12024,6 +12025,10 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 		_add_gathering_reward(character, reward, qty)
 		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty, "type": reward.get("type", "")})
 		session["chain_count"] += 1
+		# Credit one gather toward quests per chain (mirrors normal gathering flow)
+		var gather_updates = quest_mgr.check_gathering_progress(character, job_type)
+		for update in gather_updates:
+			pending_quest_updates.append(update)
 
 	# Consume tool durability
 	if session.get("has_tool", false):
@@ -12038,6 +12043,9 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var total_job_xp = base_xp_per_round * session["chain_count"]
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	var char_xp = job_result.get("char_xp_gained", 0)
+	if char_xp == 0 and total_job_xp > 0:
+		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
+		char_xp = int(total_job_xp * taper)
 	if char_xp > 0:
 		character.add_experience(char_xp)
 
@@ -12062,6 +12070,24 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 		"character": character.to_dict(),
 		"auto_skipped": true,
 	})
+
+	# Send quest progress updates (send only the last update per quest so the client
+	# sees the final state rather than intermediate counts)
+	var sent_quests: Dictionary = {}
+	for update in pending_quest_updates:
+		sent_quests[update.quest_id] = update
+	for quest_id in sent_quests:
+		var update = sent_quests[quest_id]
+		send_to_peer(peer_id, {
+			"type": "quest_progress",
+			"quest_id": update.quest_id,
+			"progress": update.progress,
+			"target": update.target,
+			"completed": update.completed,
+			"message": update.message
+		})
+	if not sent_quests.is_empty():
+		save_character(peer_id)
 
 	active_gathering.erase(peer_id)
 	gathering_cooldown[peer_id] = true
@@ -12471,6 +12497,12 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var total_job_xp = base_xp_per_round * chain_count
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	var char_xp = job_result.get("char_xp_gained", 0)
+	# Always award character XP for gathering even if job XP is at trial cap.
+	# Job commitment gates job-level progression, not character progression.
+	if char_xp == 0 and total_job_xp > 0:
+		var job_level = character.job_levels.get(job_type, 1)
+		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
+		char_xp = int(total_job_xp * taper)
 	if char_xp > 0:
 		character.add_experience(char_xp)
 

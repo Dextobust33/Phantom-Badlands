@@ -19764,8 +19764,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.146 changes
+	display_game("[color=#00FF00]v0.9.146[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Gathering: character XP now always awarded for gathering, even past job trial cap")
+	display_game("  • Gathering (auto-skip): gather quest tasks now receive credit per chain completed")
+	display_game("")
+
 	# v0.9.145 changes
-	display_game("[color=#00FF00]v0.9.145[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.145[/color]")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
 	display_game("  • Gathering/harvest minigame: fixed input lock after minigame ends")
 	display_game("  • Magic Bolt: fixed stuck popup if combat ended before bolt was fired")
@@ -19799,19 +19806,6 @@ func display_changelog():
 	display_game("  • Delta character updates: only changed fields are sent (~60-85% bandwidth reduction)")
 	display_game("  • Message compression: large messages are gzip-compressed (~60-80% size reduction)")
 	display_game("  • Broadcast throttling: nearby player map updates batched every 300ms")
-	display_game("")
-
-	# v0.9.141 changes
-	display_game("[color=#00FFFF]v0.9.141[/color]")
-	display_game("  [color=#FFD700]Bug Fixes & Comparison Improvements[/color]")
-	display_game("  • Equipment comparison now shows effective stats (HP includes CON, ATK includes STR, etc.)")
-	display_game("  • Tool comparison added — inventory, market, and inspection show durability/reveals/saves diffs")
-	display_game("  • AutoHarvest: Soldier job auto-harvests after combat without pressing Q")
-	display_game("  • Market: Buying multiple tools now correctly gives all purchased items")
-	display_game("  • Market: Sellers now get valor updates immediately when items are purchased")
-	display_game("  • Quests: Boss Hunt bounties now survive server restarts")
-	display_game("  • Quests: Dungeon quests now ensure matching dungeon exists on reconnect")
-	display_game("  • Crafting: Removed redundant job level display from craft results")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
