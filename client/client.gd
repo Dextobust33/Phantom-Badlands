@@ -1525,7 +1525,16 @@ func _ready():
 		if not player_info_content.meta_clicked.is_connected(_on_player_info_meta_clicked):
 			player_info_content.meta_clicked.connect(_on_player_info_meta_clicked)
 
-	# Connect HUD egg indicator — click toggles freeze on that slot
+	# Connect HUD egg indicator — click toggles freeze on that slot.
+	# The egg row now lives inside tool_status_overlay (merged status panel).
+	if tool_status_overlay:
+		tool_status_overlay.selection_enabled = false
+		tool_status_overlay.meta_underlined = true
+		if not tool_status_overlay.meta_clicked.is_connected(_on_status_hud_eggs_meta_clicked):
+			tool_status_overlay.meta_clicked.connect(_on_status_hud_eggs_meta_clicked)
+	# Legacy node — still exists in the scene but hidden; keep the old signal
+	# wired too so any stale content is still interactive until the overlay
+	# takes over on the first update_tool_status_overlay call.
 	if status_hud_eggs:
 		status_hud_eggs.selection_enabled = false
 		status_hud_eggs.meta_underlined = true
@@ -20103,8 +20112,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.178 changes
+	display_game("[color=#00FF00]v0.9.178[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Consolidated Status Panel[/color]")
+	display_game("  • Tools + Backpack + Area + Nearest + Pouch + Quests + Eggs now render in one RichTextLabel on the left side of BottomRow")
+	display_game("  • Old StatusHUD VBox hidden — content lives in the Tools overlay so it fills the available horizontal space")
+	display_game("  • Egg click-to-freeze still works (meta_clicked on the merged overlay)")
+	display_game("")
+
 	# v0.9.177 changes
-	display_game("[color=#00FF00]v0.9.177[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.177[/color]")
 	display_game("  [color=#FFD700]Revert v0.9.176 — StatusHUD back below BottomRow[/color]")
 	display_game("  • The reparent into BottomRow worked in fullscreen but collapsed the minimap into a vertical strip in windowed mode (narrow MapPanel couldn't fit Tools + StatusHUD + Minimap on one row)")
 	display_game("  • StatusHUD is back below BottomRow where the layout is stable across resolutions")
@@ -20943,16 +20960,23 @@ func hide_resource_bars_overlay():
 		resource_bars_overlay.visible = false
 
 func update_tool_status_overlay():
-	"""Show small durability line per equipped gathering tool in the bottom-left of GameOutput."""
+	"""Render the combined left-pane status panel: Tools, Backpack, Area, Compass,
+	Pouch, Quests, and Eggs. Consolidated into one RichTextLabel so the content
+	fills the fullscreen dead space between Tools and Minimap without requiring
+	extra children in BottomRow (which was fragile at narrow widths)."""
 	if tool_status_overlay == null:
 		return
 	if not has_character:
 		tool_status_overlay.visible = false
 		return
+
+	var sections: Array[String] = []
+
+	# --- Tools ---
 	var eq_tools = character_data.get("equipped_tools", {})
 	var slot_order = ["pickaxe", "axe", "sickle", "rod"]
 	var slot_icons = {"pickaxe": "⛏", "axe": "🪓", "sickle": "⚒", "rod": "🎣"}
-	var lines: Array[String] = []
+	var tool_lines: Array[String] = []
 	for slot in slot_order:
 		var t = eq_tools.get(slot, {})
 		if t.is_empty():
@@ -20969,12 +20993,84 @@ func update_tool_status_overlay():
 		if t.has("tier"):
 			tier_str = " T%d" % int(t.get("tier", 1))
 		var icon = slot_icons.get(slot, "*")
-		lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
-	if lines.is_empty():
-		tool_status_overlay.visible = false
-		return
+		tool_lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
+	if not tool_lines.is_empty():
+		sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
+
+	# --- Backpack ---
+	var inv = character_data.get("inventory", [])
+	var inv_size = inv.size()
+	var inv_max = 40
+	var inv_pct = int(float(inv_size) / float(inv_max) * 100.0)
+	var bp_color = "#9ACD32"
+	if inv_pct >= 90:
+		bp_color = "#FF4444"
+	elif inv_pct >= 75:
+		bp_color = "#FFFF00"
+	sections.append("[color=#9ACD32]Backpack:[/color] [color=%s]%d/%d[/color]" % [bp_color, inv_size, inv_max])
+
+	# --- Area level ---
+	if hud_area_is_safe:
+		sections.append("[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]")
+	else:
+		var danger = ""
+		if hud_area_is_hotspot:
+			danger = " [color=#FF0000]!DANGER[/color]"
+		sections.append("[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger])
+
+	# --- Compass to nearest NPC post ---
+	if not hud_nearest_post.is_empty():
+		var name_ = String(hud_nearest_post.get("name", "Post"))
+		var direction = String(hud_nearest_post.get("direction", ""))
+		var distance = int(hud_nearest_post.get("distance", 0))
+		sections.append("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
+
+	# --- Materials pouch total ---
+	var mats = character_data.get("crafting_materials", {})
+	var total_mats = 0
+	for k in mats:
+		total_mats += int(mats[k])
+	sections.append("[color=#9ACD32]Pouch:[/color] [color=#D2B48C]%d[/color] [color=#808080]materials[/color]" % total_mats)
+
+	# --- Active quests (top 3) ---
+	var active_q = character_data.get("active_quests", [])
+	if active_q is Array and active_q.size() > 0:
+		var quest_parts: Array[String] = ["[color=#9ACD32]Quests:[/color]"]
+		var shown = 0
+		for q in active_q:
+			if shown >= 3:
+				break
+			var qname = String(q.get("quest_name", q.get("name", "Quest")))
+			var progress = int(q.get("progress", 0))
+			var target = max(1, int(q.get("target", 1)))
+			var is_done = progress >= target
+			var color = "#00FF00" if is_done else "#FFFF00"
+			quest_parts.append("  [color=%s]%s %d/%d[/color]" % [color, qname, progress, target])
+			shown += 1
+		sections.append("\n".join(quest_parts))
+
+	# --- Incubating eggs (clickable, * = frozen) ---
+	var eggs = character_data.get("incubating_eggs", [])
+	var egg_cap = int(character_data.get("egg_capacity", 3))
+	var egg_parts: Array[String] = ["[color=#9ACD32]Eggs:[/color] "]
+	for i in range(egg_cap):
+		if i < eggs.size():
+			var egg = eggs[i]
+			var frozen = bool(egg.get("frozen", false))
+			var steps = int(egg.get("steps", 0))
+			var hatch_at = max(1, int(egg.get("hatch_steps", 500)))
+			var pct = int(float(steps) / float(hatch_at) * 100.0)
+			var label = "%d" % (i + 1)
+			var color_inner = "#00BFFF" if frozen else "#FFAA00"
+			if frozen:
+				label = "*" + label
+			egg_parts.append("[url=egg_%d][color=%s][%s:%d%%][/color][/url] " % [i, color_inner, label, pct])
+		else:
+			egg_parts.append("[color=#555555][%d:--][/color] " % (i + 1))
+	sections.append("".join(egg_parts))
+
 	tool_status_overlay.clear()
-	tool_status_overlay.append_text("[color=#9ACD32]Tools:[/color]\n" + "\n".join(lines))
+	tool_status_overlay.append_text("\n\n".join(sections))
 	tool_status_overlay.visible = true
 
 func hide_tool_status_overlay():
@@ -20982,105 +21078,14 @@ func hide_tool_status_overlay():
 		tool_status_overlay.visible = false
 
 func update_status_hud():
-	"""Update the Status HUD panel (backpack, area, compass, pouch, quests, eggs)."""
-	if status_hud == null:
-		return
-	if not has_character:
+	"""Status HUD content is now rendered inside tool_status_overlay (see
+	update_tool_status_overlay). The original VBox of labels is hidden so it
+	doesn't duplicate the info below the Tools panel."""
+	if status_hud:
 		status_hud.visible = false
-		return
-	status_hud.visible = true
-
-	# --- Backpack ---
-	if status_hud_backpack:
-		var inv = character_data.get("inventory", [])
-		var inv_size = inv.size()
-		var inv_max = 40
-		var inv_pct = int(float(inv_size) / float(inv_max) * 100.0)
-		var bp_color = "#9ACD32"
-		if inv_pct >= 90:
-			bp_color = "#FF4444"
-		elif inv_pct >= 75:
-			bp_color = "#FFFF00"
-		status_hud_backpack.clear()
-		status_hud_backpack.append_text("[color=#9ACD32]Backpack:[/color] [color=%s]%d/%d[/color]" % [bp_color, inv_size, inv_max])
-
-	# --- Area level ---
-	if status_hud_area:
-		status_hud_area.clear()
-		if hud_area_is_safe:
-			status_hud_area.append_text("[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]")
-		else:
-			var danger = ""
-			if hud_area_is_hotspot:
-				danger = " [color=#FF0000]!DANGER[/color]"
-			status_hud_area.append_text("[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger])
-
-	# --- Compass to nearest NPC post ---
-	if status_hud_compass:
-		status_hud_compass.clear()
-		if hud_nearest_post.is_empty():
-			status_hud_compass.visible = false
-		else:
-			status_hud_compass.visible = true
-			var name_ = String(hud_nearest_post.get("name", "Post"))
-			var direction = String(hud_nearest_post.get("direction", ""))
-			var distance = int(hud_nearest_post.get("distance", 0))
-			status_hud_compass.append_text("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
-
-	# --- Materials pouch total ---
-	if status_hud_pouch:
-		var mats = character_data.get("crafting_materials", {})
-		var total_mats = 0
-		for k in mats:
-			total_mats += int(mats[k])
-		status_hud_pouch.clear()
-		status_hud_pouch.append_text("[color=#9ACD32]Pouch:[/color] [color=#D2B48C]%d[/color] [color=#808080]materials[/color]" % total_mats)
-
-	# --- Active quests (top 3 by progress) pulled from character_data.active_quests ---
-	if status_hud_quests:
-		status_hud_quests.clear()
-		var active_q = character_data.get("active_quests", [])
-		if active_q is Array and active_q.size() > 0:
-			status_hud_quests.visible = true
-			status_hud_quests.append_text("[color=#9ACD32]Quests:[/color]\n")
-			var shown = 0
-			for q in active_q:
-				if shown >= 3:
-					break
-				var qname = String(q.get("quest_name", q.get("name", "Quest")))
-				var progress = int(q.get("progress", 0))
-				var target = max(1, int(q.get("target", 1)))
-				var is_done = progress >= target
-				var color = "#00FF00" if is_done else "#FFFF00"
-				status_hud_quests.append_text("  [color=%s]%s %d/%d[/color]\n" % [color, qname, progress, target])
-				shown += 1
-		else:
-			status_hud_quests.visible = false
-
-	# --- Incubating eggs (clickable, * = frozen) ---
-	if status_hud_eggs:
-		status_hud_eggs.clear()
-		var eggs = character_data.get("incubating_eggs", [])
-		var egg_cap = int(character_data.get("egg_capacity", 3))
-		status_hud_eggs.visible = true
-		var parts: Array[String] = []
-		parts.append("[color=#9ACD32]Eggs:[/color] ")
-		for i in range(egg_cap):
-			if i < eggs.size():
-				var egg = eggs[i]
-				var frozen = bool(egg.get("frozen", false))
-				var steps = int(egg.get("steps", 0))
-				var hatch_at = max(1, int(egg.get("hatch_steps", 500)))
-				var pct = int(float(steps) / float(hatch_at) * 100.0)
-				# Tooltip-ish label inline via BBCode — the digit is clickable to toggle freeze.
-				var label = "%d" % (i + 1)
-				var color_inner = "#00BFFF" if frozen else "#FFAA00"
-				if frozen:
-					label = "*" + label  # asterisk marks frozen slot
-				parts.append("[url=egg_%d][color=%s][%s:%d%%][/color][/url] " % [i, color_inner, label, pct])
-			else:
-				parts.append("[color=#555555][%d:--][/color] " % (i + 1))
-		status_hud_eggs.append_text("".join(parts))
+	# Keep tool overlay content in sync with any status change that used to
+	# drive this function.
+	update_tool_status_overlay()
 
 func hide_status_hud():
 	if status_hud:
