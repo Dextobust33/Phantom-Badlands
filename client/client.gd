@@ -402,6 +402,7 @@ var game_state = GameState.DISCONNECTED
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
+@onready var tool_status_overlay = $RootContainer/TopSection/GameOutputContainer/ToolStatusOverlay
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
@@ -4264,6 +4265,7 @@ func _clear_character_hud():
 		rank_label.text = "--"
 	stop_low_hp_pulse()
 	hide_resource_bars_overlay()
+	hide_tool_status_overlay()
 
 # ===== LEADERBOARD HANDLERS =====
 
@@ -14477,6 +14479,7 @@ func update_player_hp_bar():
 
 	# Update resource bars overlay
 	update_resource_bars_overlay()
+	update_tool_status_overlay()
 
 func update_buff_display():
 	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
@@ -14688,6 +14691,7 @@ func update_resource_bar():
 
 	# Update resource bars overlay
 	update_resource_bars_overlay()
+	update_tool_status_overlay()
 
 func _set_character_data(new_data: Dictionary):
 	"""Replace character_data, preserving account-level fields that to_dict() doesn't include."""
@@ -15390,6 +15394,7 @@ func handle_server_message(message: Dictionary):
 			hide_all_panels()
 			hide_companion_art_overlay()
 			hide_resource_bars_overlay()
+			hide_tool_status_overlay()
 			display_death_screen(message)
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -15807,6 +15812,22 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh Material Pouch when opened from More menu
 				if more_mode and pending_inventory_action == "viewing_materials":
 					pass  # Keep materials display as-is
+
+		"tool_broken":
+			# A gathering tool just broke — surface it prominently so the player notices.
+			var broken_name = message.get("tool_name", "tool")
+			var replacement = message.get("replacement", "")
+			display_game("")
+			display_game("[color=#FF4444]◆◆◆ Your %s has broken! ◆◆◆[/color]" % broken_name)
+			if replacement != "":
+				var rep_dur = int(message.get("replacement_durability", 0))
+				var rep_max = int(message.get("replacement_max", rep_dur))
+				display_game("[color=#FFD700]Auto-equipped replacement: %s (%d/%d)[/color]" % [replacement, rep_dur, rep_max])
+			else:
+				display_game("[color=#FF8800]No replacement in backpack — craft or buy a new one before gathering again.[/color]")
+			display_game("")
+			play_danger_sound()
+			update_tool_status_overlay()
 
 		"server_broadcast":
 			# Server admin broadcast message
@@ -20002,8 +20023,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.158 changes
+	display_game("[color=#00FF00]v0.9.158[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Tool Durability Visibility[/color]")
+	display_game("  • Persistent tool status overlay in the bottom-left of GameOutput — shows equipped gathering tools and their durability at all times")
+	display_game("  • Durability color: green > 50%, yellow 25-50%, red < 25%")
+	display_game("  • Gathering session summary now includes remaining tool durability")
+	display_game("  • Tool break shows a prominent highlighted notification with sound")
+	display_game("  • Broken tool is automatically replaced by the best spare of the same type from your backpack, if one exists")
+	display_game("")
+
 	# v0.9.157 changes
-	display_game("[color=#00FF00]v0.9.157[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.157[/color]")
 	display_game("  [color=#FFD700]Daily Quest Name Mismatch Fix[/color]")
 	display_game("  • Accepting a daily quest now matches what was displayed on the board")
 	display_game("  • Cause: RNG state diverged between quest list generation and quest regeneration when some dailies were already completed or on cooldown — same quest_id mapped to different quest data")
@@ -20032,20 +20063,6 @@ func display_changelog():
 	display_game("  • Floor counter in GameOutput now matches the map when going back a floor")
 	display_game("  • Going back a floor shows \"You ascend back to floor X\" instead of \"descend deeper\"")
 	display_game("  • Mimic, Kobold, Giant, and Young Dragon death messages no longer overpromise treasure")
-	display_game("")
-
-	# v0.9.153 changes
-	display_game("[color=#00FFFF]v0.9.153[/color]")
-	display_game("  [color=#FFD700]Dungeon & Harvest Bug Fixes[/color]")
-	display_game("  • Dungeon: overview redraws immediately after selecting food to rest")
-	display_game("  • Dungeon: Items menu now closes in one press (was requiring two)")
-	display_game("  • Dungeon: movement blocked during flock encounters and harvest minigames")
-	display_game("  • Dungeon: Harvest Complete summary is always gated on Continue so it's readable")
-	display_game("  • Harvest: Stop button clears the prompt screen on exit")
-	display_game("  • Harvest: overworld won't send move requests during the minigame")
-	display_game("  • Quests: turn-in XP now shows the yellow gain highlight on the XP bar")
-	display_game("  • Quests: exploration quest descriptions show which post the distance is measured from")
-	display_game("  • Combat: post-combat Harvest prompt now labels Space as Harvest (was Continue) and Q as Skip")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20781,6 +20798,45 @@ func hide_resource_bars_overlay():
 	"""Hide the resource bars overlay."""
 	if resource_bars_overlay:
 		resource_bars_overlay.visible = false
+
+func update_tool_status_overlay():
+	"""Show small durability line per equipped gathering tool in the bottom-left of GameOutput."""
+	if tool_status_overlay == null:
+		return
+	if not has_character:
+		tool_status_overlay.visible = false
+		return
+	var eq_tools = character_data.get("equipped_tools", {})
+	var slot_order = ["pickaxe", "axe", "sickle", "rod"]
+	var slot_icons = {"pickaxe": "⛏", "axe": "🪓", "sickle": "⚒", "rod": "🎣"}
+	var lines: Array[String] = []
+	for slot in slot_order:
+		var t = eq_tools.get(slot, {})
+		if t.is_empty():
+			continue
+		var dur = int(t.get("durability", 0))
+		var max_dur = int(t.get("max_durability", max(dur, 1)))
+		var pct = int(float(dur) / float(max(max_dur, 1)) * 100.0)
+		var color = "#00FF00"
+		if pct <= 25:
+			color = "#FF4444"
+		elif pct <= 50:
+			color = "#FFFF00"
+		var tier_str = ""
+		if t.has("tier"):
+			tier_str = " T%d" % int(t.get("tier", 1))
+		var icon = slot_icons.get(slot, "*")
+		lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
+	if lines.is_empty():
+		tool_status_overlay.visible = false
+		return
+	tool_status_overlay.clear()
+	tool_status_overlay.append_text("[color=#9ACD32]Tools:[/color]\n" + "\n".join(lines))
+	tool_status_overlay.visible = true
+
+func hide_tool_status_overlay():
+	if tool_status_overlay:
+		tool_status_overlay.visible = false
 
 func _get_companion_art_lines(monster_type: String, companion_name: String) -> Array:
 	"""Get ASCII art lines for a companion by monster type or name.
@@ -23316,6 +23372,19 @@ func handle_gathering_complete(message: Dictionary):
 	if job_leveled:
 		display_game("")
 		display_game("[color=#FFD700]★ %s leveled up to Lv%d! ★[/color]" % [gathering_job_type.capitalize(), new_job_level])
+
+	# Tool durability reminder so the player can gauge replacement timing.
+	var tool_info = message.get("tool_info", {})
+	if tool_info is Dictionary and not tool_info.is_empty():
+		var dur = int(tool_info.get("durability", 0))
+		var max_dur = int(tool_info.get("max_durability", max(dur, 1)))
+		var pct = int(float(dur) / float(max(max_dur, 1)) * 100.0)
+		var dur_color = "#00FF00"
+		if pct <= 25:
+			dur_color = "#FF4444"
+		elif pct <= 50:
+			dur_color = "#FFFF00"
+		display_game("[color=#9ACD32]%s durability:[/color] [color=%s]%d/%d[/color]" % [tool_info.get("name", "Tool"), dur_color, dur, max_dur])
 
 	# Update character data if included
 	if message.has("character"):
