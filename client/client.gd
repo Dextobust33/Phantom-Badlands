@@ -2706,6 +2706,16 @@ func _process(delta):
 						if action.get("enabled", false) and action.get("action_type", "none") != "none":
 							action_triggered_this_frame.append(i)
 							trigger_action(i)
+							# If this action-bar slot shares a keycode with any item-select
+							# key (e.g., slot 5 / KEY_1 also being item_1), lock the
+							# item-select key so the next menu opened by this action
+							# doesn't immediately consume the still-held key as a
+							# selection. This is the permanent fix for cascade across
+							# menus that share number-key bindings.
+							for _item_idx in range(9):
+								if get_item_select_keycode(_item_idx) == key:
+									_consume_item_select_key(_item_idx)
+									break
 						# Note: Pattern-based gathering input is now handled in _input()
 						# with Q, W, E, R keys - no longer uses action bar slots 5-9
 			else:
@@ -19992,8 +20002,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.156 changes
+	display_game("[color=#00FF00]v0.9.156[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Permanent Hotkey Cascade Fix[/color]")
+	display_game("  • When an action bar slot fires on a number key (1-5), the matching item-select key is now locked until released")
+	display_game("  • Fixes: pressing 1 in More menu to open Quests no longer also abandons Quest #1")
+	display_game("  • Applies to all action-bar → item-select menu transitions that share keys")
+	display_game("")
+
 	# v0.9.155 changes
-	display_game("[color=#00FF00]v0.9.155[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.155[/color]")
 	display_game("  [color=#FFD700]Quest Access[/color]")
 	display_game("  • Quests now available in More menu (slot 5) — always accessible even when near a gathering node")
 	display_game("  • New [color=#00FFFF]/quests[/color] chat command opens the quest log from anywhere")
@@ -20028,34 +20046,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Community[/color]")
 	display_game("  • Official Discord server launched — chat, LFG, bug reports, release announcements")
 	display_game("  • /help now includes Discord, website, and GitHub links under the new Community section")
-	display_game("")
-
-	# v0.9.148 changes
-	display_game("[color=#00FFFF]v0.9.148[/color]")
-	display_game("  [color=#FFD700]Major Update — Game Audit & Polish[/color]")
-	display_game("  • Dungeon Hard Mode: clear a dungeon to unlock Hard (+50% stats, -20% steps, +75% XP, bonus loot)")
-	display_game("  • Elite Champions: 1% spawn Lv15+ with gold [ELITE] tag, boosted stats/XP, guaranteed drops")
-	display_game("  • Dungeon bosses now use unique combat abilities (summoning, bleeding, poison, etc.)")
-	display_game("  • Tempered Crafting: gamble extra materials for a guaranteed bonus stat on equipment")
-	display_game("  • Recipe Discovery: advanced recipes (difficulty 50+) require Recipe Scrolls from dungeon treasure")
-	display_game("  • Minimap: zoomed-out terrain overview displayed below the main map")
-	display_game("  • Thematic consumable names (Herbalist's Tincture, Phoenix Essence, etc.)")
-	display_game("  • FLEE now scales with WITS vs monster speed (witty characters escape faster monsters)")
-	display_game("  • Quest rewards scale with player level; distant posts give up to +30% bonus")
-	display_game("  • Rescue quest rewards equalized to match dungeon clear rewards")
-	display_game("  • Stat compare priority: Settings→Game→[9] to pin which stats show in brackets")
-	display_game("  • Gathering chain cap prevents infinite sessions (T1=6 to T6=16 max chains)")
-	display_game("  • Auto-gather rebalanced to ~65% of manual performance (was 100%)")
-	display_game("  • Bridge building: craft wooden bridges to permanently cross water")
-	display_game("  • Diagonal dungeon movement (numpad 1/3/7/9 or arrow combos)")
-	display_game("  • WIT stat now shown in equipment comparison brackets")
-	display_game("  • Hotkey double-trigger permanently fixed across all menus")
-	display_game("  • Persistence fix: recipe knowledge and dungeon completions now saved between restarts")
-	display_game("  • Equipment drops rebalanced: T6-9 now 50-55% equipment (was 35-45%)")
-	display_game("  • Minimum drop rarity by tier: T4+=uncommon, T6+=rare, T8+=epic guaranteed")
-	display_game("  • Inventory full no longer loses drops — items auto-salvaged into materials")
-	display_game("  • Server-wide achievement announcements: close calls, elite kills, underdog victories, milestones")
-	display_game("  • Cooldown-controlled (~2 min global, ~10 min per player) to keep chat engaging")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
