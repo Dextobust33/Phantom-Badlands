@@ -301,7 +301,7 @@ text = "--"
 [node name="TopSection" type="HBoxContainer" parent="RootContainer" unique_id=1151379943]
 layout_mode = 2
 size_flags_vertical = 3
-size_flags_stretch_ratio = 3.0
+size_flags_stretch_ratio = 2.2
 theme_override_constants/separation = 4
 
 [node name="GameOutputContainer" type="Control" parent="RootContainer/TopSection" unique_id=629309873]
@@ -391,9 +391,12 @@ fit_content = true
 scroll_active = false
 visible = false
 
-[node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
+[node name="BottomRowSpacer" type="Control" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341202]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
+layout_mode = 2
 mouse_filter = 2
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
@@ -525,7 +528,7 @@ size_flags_stretch_ratio = 1.5
 theme_override_constants/separation = 2
 
 [node name="ResourceBarsRow" type="RichTextLabel" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1722342001]
-custom_minimum_size = Vector2(0, 32)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 mouse_filter = 2
 theme_override_colors/default_color = Color(1, 1, 1, 1)
@@ -533,37 +536,6 @@ theme_override_font_sizes/normal_font_size = 12
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
-
-[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/BottomStrip/CenterPanel" unique_id=632135015]
-layout_mode = 2
-size_flags_vertical = 3
-focus_mode = 2
-theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
-theme_override_font_sizes/normal_font_size = 14
-bbcode_enabled = true
-scroll_following = true
-selection_enabled = true
-
-[node name="InputRow" type="HBoxContainer" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1832645870]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="InputField" type="LineEdit" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1865768599]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.831, 0.769, 0.627, 1)
-theme_override_colors/font_placeholder_color = Color(0.42, 0.357, 0.271, 1)
-theme_override_font_sizes/font_size = 14
-theme_override_styles/normal = SubResource("StyleBoxFlat_hlfbj")
-placeholder_text = "Type message or command..."
-keep_editing_on_text_submit = true
-caret_blink = true
-
-[node name="SendButton" type="Button" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1586236003]
-custom_minimum_size = Vector2(60, 0)
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Send"
 
 [node name="ActionBar" type="HBoxContainer" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1788229954]
 custom_minimum_size = Vector2(0, 50)
@@ -739,6 +711,37 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 10
 text = "5"
 horizontal_alignment = 1
+
+[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/BottomStrip/CenterPanel" unique_id=632135015]
+layout_mode = 2
+size_flags_vertical = 3
+focus_mode = 2
+theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+scroll_following = true
+selection_enabled = true
+
+[node name="InputRow" type="HBoxContainer" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1832645870]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="InputField" type="LineEdit" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1865768599]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.831, 0.769, 0.627, 1)
+theme_override_colors/font_placeholder_color = Color(0.42, 0.357, 0.271, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_hlfbj")
+placeholder_text = "Type message or command..."
+keep_editing_on_text_submit = true
+caret_blink = true
+
+[node name="SendButton" type="Button" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1586236003]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Send"
 
 [node name="ChatPanel" type="VBoxContainer" parent="RootContainer/BottomStrip" unique_id=507618204]
 layout_mode = 2
