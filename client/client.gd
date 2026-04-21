@@ -20103,8 +20103,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.175 changes
+	display_game("[color=#00FF00]v0.9.175[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Minimap Right-Dock[/color]")
+	display_game("  • Gave Tools overlay EXPAND+FILL so it grows into the empty space in BottomRow, pushing the minimap flush to the right edge")
+	display_game("  • No new nodes — single attribute addition on the existing Tools overlay")
+	display_game("")
+
 	# v0.9.174 changes
-	display_game("[color=#00FF00]v0.9.174[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.174[/color]")
 	display_game("  [color=#FFD700]Minimap Autowrap Fix[/color]")
 	display_game("  • MinimapDisplay without EXPAND collapsed each character into a tall vertical strip — autowrap was re-flowing text")
 	display_game("  • Disabled autowrap_mode on MinimapDisplay so the node's minimum width matches the widest minimap line")
