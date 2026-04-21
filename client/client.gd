@@ -1155,7 +1155,7 @@ const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 # Player name click tracking
 var pending_player_info_request: String = ""  # Track pending popup request
 var player_info_equipped: Dictionary = {}  # Cached equipment for clicked player info
-var player_info_base_bbcode: String = ""  # Cached base text of the Examine popup so item clicks can reset it before showing new details
+var player_info_last_data: Dictionary = {}  # Last data dict passed to show_player_info_popup — used to rebuild the base popup when the player clicks a new item
 var last_death_message: Dictionary = {}  # Cached permadeath data for save-to-file
 var online_players_names: Array = []  # Cache player names for click detection
 var last_online_click_time: float = 0.0  # Track double-click timing
@@ -4548,11 +4548,11 @@ func _show_equipment_detail_in_popup(item: Dictionary, slot: String):
 	base player info + the newly clicked item's details."""
 	if not player_info_content:
 		return
-	# Reset back to the cached base popup content so the new item details
-	# replace any previously displayed ones.
-	if not player_info_base_bbcode.is_empty():
-		player_info_content.clear()
-		player_info_content.append_text(player_info_base_bbcode)
+	# Rebuild the base popup from the cached data dict so previously clicked
+	# item details are cleared. Godot 4's RichTextLabel.text doesn't reflect
+	# append_text content, so rebuilding is the cleanest reset.
+	if not player_info_last_data.is_empty():
+		show_player_info_popup(player_info_last_data)
 	var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 	player_info_content.append_text("\n[color=#FF4444]─── Item Details ───[/color]\n")
 	player_info_content.append_text("[color=%s][b]%s[/b][/color] (Lv%d %s)\n" % [
@@ -4614,6 +4614,11 @@ func show_player_info_popup(data: Dictionary):
 	"""Display player stats in a popup panel"""
 	if not player_info_panel or not player_info_content:
 		return
+
+	# Cache the data so clicking a piece of gear can rebuild the base popup
+	# from scratch (rather than trying to read BBCode back out of the label,
+	# which Godot 4 RichTextLabel does not support after append_text).
+	player_info_last_data = data.duplicate(true)
 
 	var pname = data.get("name", "Unknown")
 	var level = data.get("level", 1)
@@ -4761,11 +4766,6 @@ func show_player_info_popup(data: Dictionary):
 	else:
 		# Location unknown (too far away)
 		player_info_content.append_text("[color=#808080]???[/color]")
-
-	# Snapshot the base popup BBCode so an item click can reset to this state
-	# before rendering the selected item's details. Without this, each click
-	# appended another "Item Details" block to the bottom.
-	player_info_base_bbcode = player_info_content.text
 
 	player_info_panel.visible = true
 
@@ -20281,8 +20281,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.185 changes
+	display_game("[color=#00FF00]v0.9.185[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Examine popup — item details actually reset now[/color]")
+	display_game("  • v0.9.184 tried to cache the popup's BBCode via RichTextLabel.text, but Godot 4's RichTextLabel doesn't update .text after append_text — snapshot was empty and the clear never happened")
+	display_game("  • Now caches the raw player data dict and rebuilds the base popup on each item click")
+	display_game("")
+
 	# v0.9.184 changes
-	display_game("[color=#00FF00]v0.9.184[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.184[/color]")
 	display_game("  [color=#FFD700]Players header + Examine popup cleanup[/color]")
 	display_game("  • Right-side Players panel now has a \"Players Online\" header at the top")
 	display_game("  • Clicking a piece of gear in the Examine popup now clears the previous item details before showing the new one")
