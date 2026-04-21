@@ -1155,6 +1155,7 @@ const PLAYER_LIST_REFRESH_INTERVAL: float = 60.0  # Refresh every 60 seconds
 # Player name click tracking
 var pending_player_info_request: String = ""  # Track pending popup request
 var player_info_equipped: Dictionary = {}  # Cached equipment for clicked player info
+var player_info_base_bbcode: String = ""  # Cached base text of the Examine popup so item clicks can reset it before showing new details
 var last_death_message: Dictionary = {}  # Cached permadeath data for save-to-file
 var online_players_names: Array = []  # Cache player names for click detection
 var last_online_click_time: float = 0.0  # Track double-click timing
@@ -4542,9 +4543,16 @@ func _on_player_info_meta_clicked(meta):
 			_show_equipment_detail_in_popup(player_info_equipped[slot], slot)
 
 func _show_equipment_detail_in_popup(item: Dictionary, slot: String):
-	"""Append item stats to the player info popup"""
+	"""Append item stats to the player info popup, replacing any previously
+	shown item details. Clicking a second piece of gear resets back to the
+	base player info + the newly clicked item's details."""
 	if not player_info_content:
 		return
+	# Reset back to the cached base popup content so the new item details
+	# replace any previously displayed ones.
+	if not player_info_base_bbcode.is_empty():
+		player_info_content.clear()
+		player_info_content.append_text(player_info_base_bbcode)
 	var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 	player_info_content.append_text("\n[color=#FF4444]─── Item Details ───[/color]\n")
 	player_info_content.append_text("[color=%s][b]%s[/b][/color] (Lv%d %s)\n" % [
@@ -4753,6 +4761,11 @@ func show_player_info_popup(data: Dictionary):
 	else:
 		# Location unknown (too far away)
 		player_info_content.append_text("[color=#808080]???[/color]")
+
+	# Snapshot the base popup BBCode so an item click can reset to this state
+	# before rendering the selected item's details. Without this, each click
+	# appended another "Item Details" block to the bottom.
+	player_info_base_bbcode = player_info_content.text
 
 	player_info_panel.visible = true
 
@@ -7596,6 +7609,18 @@ func _move_chat_into_center_panel():
 		online_players_list.visible = true
 	# Ensure chat is always visible (no more tab toggle).
 	chat_output.visible = true
+
+	# Add a header label at the top of the Players panel so the list doesn't
+	# look anonymous.
+	if chat_panel.get_node_or_null("PlayersHeader") == null:
+		var header = Label.new()
+		header.name = "PlayersHeader"
+		header.text = "Players Online"
+		header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		header.add_theme_color_override("font_color", Color(1, 0.84, 0, 1))
+		header.add_theme_font_size_override("font_size", 13)
+		chat_panel.add_child(header)
+		chat_panel.move_child(header, 0)
 
 func _create_status_row_with_mini_bars():
 	"""Add a StatusRow HBox between TopSection and BottomStrip that holds the
@@ -20256,8 +20281,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.184 changes
+	display_game("[color=#00FF00]v0.9.184[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Players header + Examine popup cleanup[/color]")
+	display_game("  • Right-side Players panel now has a \"Players Online\" header at the top")
+	display_game("  • Clicking a piece of gear in the Examine popup now clears the previous item details before showing the new one")
+	display_game("")
+
 	# v0.9.183 changes
-	display_game("[color=#00FF00]v0.9.183[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.183[/color]")
 	display_game("  [color=#FFD700]Combat bar position + Chat relocation[/color]")
 	display_game("  • Mini bars keep their position during combat — the shortcut-button cell now only hides its buttons, not its slot, so the right cell doesn't collapse")
 	display_game("  • Chat + input field moved below the action bar (into CenterPanel) at runtime — fills the dead space below the action buttons")
