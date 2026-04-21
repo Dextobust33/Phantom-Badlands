@@ -430,7 +430,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"description": "A small reptilian humanoid with crude weapons",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
 				"abilities": [ABILITY_GOLD_HOARDER],
-				"death_message": "The kobold drops its treasure pouch as it expires."
+				"death_message": "The kobold squeaks its last, clutching an empty pouch."
 			}
 		MonsterType.SKELETON:
 			return {
@@ -630,7 +630,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"description": "A creature disguised as a treasure chest",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
 				"abilities": [ABILITY_AMBUSHER, ABILITY_DISGUISE, ABILITY_GOLD_HOARDER],
-				"death_message": "The mimic's chest lid closes one final time... revealing actual treasure inside!"
+				"death_message": "The mimic's chest lid slams shut one final time, its lure finally silent."
 			}
 
 		# Tier 3
@@ -796,7 +796,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"description": "A towering humanoid of immense power",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
 				"abilities": [ABILITY_GLASS_CANNON, ABILITY_GOLD_HOARDER],
-				"death_message": "The giant falls like a mighty oak, scattering its treasure."
+				"death_message": "The giant falls like a mighty oak, shaking the ground as it lands."
 			}
 		MonsterType.DRAGON_WYRMLING:
 			return {
@@ -814,7 +814,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"description": "A young but deadly dragon",
 				"class_affinity": ClassAffinity.NEUTRAL,
 				"abilities": [ABILITY_GEM_BEARER, ABILITY_MULTI_STRIKE],
-				"death_message": "The young dragon's hoard is yours... along with its pride."
+				"death_message": "The young dragon collapses, its pride wounded beyond repair."
 			}
 		MonsterType.DEMON:
 			return {
