@@ -20023,8 +20023,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.159 changes
+	display_game("[color=#00FF00]v0.9.159[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotzone on Safe Terrain Fix[/color]")
+	display_game("  • Hotspots on safe terrain (roads, trading posts, safe zones) no longer trigger the DANGER ZONE warning")
+	display_game("  • Fixes the \"Estimated monster level: ~0\" warning appearing on tiles with no ! marker")
+	display_game("")
+
 	# v0.9.158 changes
-	display_game("[color=#00FF00]v0.9.158[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.158[/color]")
 	display_game("  [color=#FFD700]Tool Durability Visibility[/color]")
 	display_game("  • Persistent tool status overlay in the bottom-left of GameOutput — shows equipped gathering tools and their durability at all times")
 	display_game("  • Durability color: green > 50%, yellow 25-50%, red < 25%")
@@ -20053,16 +20060,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Quest Access[/color]")
 	display_game("  • Quests now available in More menu (slot 5) — always accessible even when near a gathering node")
 	display_game("  • New [color=#00FFFF]/quests[/color] chat command opens the quest log from anywhere")
-	display_game("")
-
-	# v0.9.154 changes
-	display_game("[color=#00FFFF]v0.9.154[/color]")
-	display_game("  [color=#FFD700]Dungeon Overview Refresh Fix[/color]")
-	display_game("  • Dungeon overview now refreshes correctly after gathering, treasure, harvest skip, and floor changes")
-	display_game("  • Root cause: awaiting_dungeon_gather_result flag stayed stuck true after the first dungeon gather")
-	display_game("  • Floor counter in GameOutput now matches the map when going back a floor")
-	display_game("  • Going back a floor shows \"You ascend back to floor X\" instead of \"descend deeper\"")
-	display_game("  • Mimic, Kobold, Giant, and Young Dragon death messages no longer overpromise treasure")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
