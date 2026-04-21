@@ -1868,6 +1868,15 @@ func _on_window_resized():
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
 
+	# Scale the merged Tools/Status overlay along with the map (they share the
+	# map panel area). Uses the same ui_scale_map factor so players can make
+	# the status text larger at high resolutions.
+	if tool_status_overlay:
+		var hud_font_size = int(13 * base_scale * ui_scale_map)
+		hud_font_size = clampi(hud_font_size, 10, 28)
+		tool_status_overlay.add_theme_font_size_override("normal_font_size", hud_font_size)
+		tool_status_overlay.add_theme_font_size_override("bold_font_size", hud_font_size)
+
 	# Scale game output (includes monster ASCII art)
 	if game_output:
 		var game_font_size = int(GAME_OUTPUT_BASE_FONT_SIZE * base_scale * ui_scale_game_output)
@@ -20112,8 +20121,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.179 changes
+	display_game("[color=#00FF00]v0.9.179[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Tool/Status HUD polish[/color]")
+	display_game("  • Empty tool slots now show \"(empty)\" in grey instead of disappearing — the slot is always visible")
+	display_game("  • Tools/Status overlay font now scales with resolution and the existing \"Map\" UI scale slider (Settings → UI)")
+	display_game("  • Text is noticeably larger at 1080p / 4K, fills more of the horizontal space")
+	display_game("")
+
 	# v0.9.178 changes
-	display_game("[color=#00FF00]v0.9.178[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.178[/color]")
 	display_game("  [color=#FFD700]Consolidated Status Panel[/color]")
 	display_game("  • Tools + Backpack + Area + Nearest + Pouch + Quests + Eggs now render in one RichTextLabel on the left side of BottomRow")
 	display_game("  • Old StatusHUD VBox hidden — content lives in the Tools overlay so it fills the available horizontal space")
@@ -20972,14 +20989,16 @@ func update_tool_status_overlay():
 
 	var sections: Array[String] = []
 
-	# --- Tools ---
+	# --- Tools (all 4 slots, empty ones shown so the player knows the slot exists) ---
 	var eq_tools = character_data.get("equipped_tools", {})
 	var slot_order = ["pickaxe", "axe", "sickle", "rod"]
 	var slot_icons = {"pickaxe": "⛏", "axe": "🪓", "sickle": "⚒", "rod": "🎣"}
 	var tool_lines: Array[String] = []
 	for slot in slot_order:
+		var icon = slot_icons.get(slot, "*")
 		var t = eq_tools.get(slot, {})
 		if t.is_empty():
+			tool_lines.append("[color=#666666]%s %s  (empty)[/color]" % [icon, slot.capitalize()])
 			continue
 		var dur = int(t.get("durability", 0))
 		var max_dur = int(t.get("max_durability", max(dur, 1)))
@@ -20992,10 +21011,8 @@ func update_tool_status_overlay():
 		var tier_str = ""
 		if t.has("tier"):
 			tier_str = " T%d" % int(t.get("tier", 1))
-		var icon = slot_icons.get(slot, "*")
 		tool_lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
-	if not tool_lines.is_empty():
-		sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
+	sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
 
 	# --- Backpack ---
 	var inv = character_data.get("inventory", [])
