@@ -7556,28 +7556,34 @@ func _create_status_row_with_mini_bars():
 	"""Add a StatusRow HBox between TopSection and BottomStrip that holds the
 	mini HP/resource bars (left) and ultimately the shortcut buttons (right).
 
+	The row is split 2:1 horizontally to mirror TopSection's GameOutput vs
+	MapPanel ratio — so the bars end aligned to the right edge of GameOutput
+	and the buttons end aligned to the right edge of MapPanel.
+
 	Creating the StatusRow + MiniBarsLabel at runtime avoids tscn hierarchy
-	changes, which have been fragile in this scene. The MiniBarsLabel takes
-	over as the resource_bars_overlay target, and the tscn ResourceBarsOverlay
-	node that used to overlap the companion art is hidden."""
+	changes, which have been fragile in this scene."""
 	var root_container = $RootContainer
 	if root_container == null:
 		return
 	if root_container.get_node_or_null("StatusRow") != null:
-		return  # already created (e.g., in a tscn restructure later)
+		return  # already created
 
 	var status_row = HBoxContainer.new()
 	status_row.name = "StatusRow"
 	status_row.custom_minimum_size = Vector2(0, 28)
-	status_row.set("theme_override_constants/separation", 8)
+	status_row.set("theme_override_constants/separation", 4)
 	root_container.add_child(status_row)
 	var bottom_strip = root_container.get_node_or_null("BottomStrip")
 	if bottom_strip:
 		root_container.move_child(status_row, bottom_strip.get_index())
 
+	# Left half — same stretch ratio as GameOutputContainer (2.0). RichText
+	# is right-aligned via BBCode so the HP/Mana bars dock to the right edge
+	# of this cell, which visually lines up with the right edge of GameOutput.
 	var bars_label = RichTextLabel.new()
 	bars_label.name = "MiniBarsLabel"
 	bars_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bars_label.size_flags_stretch_ratio = 2.0
 	bars_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bars_label.bbcode_enabled = true
 	bars_label.fit_content = true
@@ -7586,8 +7592,8 @@ func _create_status_row_with_mini_bars():
 	bars_label.add_theme_font_size_override("normal_font_size", 13)
 	status_row.add_child(bars_label)
 
-	# Redirect the resource_bars_overlay @onready target to this new node.
-	# The old tscn node is hidden so it doesn't compete with the new one.
+	# Redirect resource_bars_overlay to this new node and hide the old tscn
+	# overlay that used to overlap the companion art.
 	var old_overlay = get_node_or_null("RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay")
 	if old_overlay:
 		old_overlay.visible = false
@@ -7598,20 +7604,33 @@ func _create_shortcut_buttons():
 	if not chat_output:
 		return
 
-	# Create a container anchored to top-right of game output area
+	# Create a container for the shortcut buttons. Preferred: go inside the
+	# StatusRow built by _create_status_row_with_mini_bars so the buttons share
+	# a row with the mini HP/Mana bars. Legacy fallback: direct child of
+	# RootContainer just above BottomStrip.
 	shortcut_buttons_container = HBoxContainer.new()
 	shortcut_buttons_container.name = "ShortcutButtons"
 
-	# Add as overlay above the bottom strip in the root container
 	var root_container = $RootContainer
-	root_container.add_child(shortcut_buttons_container)
-	# Move it just before the bottom strip so it overlays above it
-	var bottom_strip = root_container.get_node_or_null("BottomStrip")
-	if bottom_strip:
-		root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
+	var status_row = root_container.get_node_or_null("StatusRow")
+	if status_row:
+		status_row.add_child(shortcut_buttons_container)
+	else:
+		root_container.add_child(shortcut_buttons_container)
+		var bottom_strip = root_container.get_node_or_null("BottomStrip")
+		if bottom_strip:
+			root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
 
 	shortcut_buttons_container.layout_mode = 2
-	shortcut_buttons_container.size_flags_horizontal = Control.SIZE_SHRINK_END
+	# Inside StatusRow we share space 2:1 with the MiniBarsLabel so the buttons'
+	# right edge matches MapPanel's right edge. Outside StatusRow (legacy
+	# fallback) they shrink to their content on the right.
+	if status_row:
+		shortcut_buttons_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		shortcut_buttons_container.size_flags_stretch_ratio = 1.0
+		shortcut_buttons_container.alignment = BoxContainer.ALIGNMENT_END
+	else:
+		shortcut_buttons_container.size_flags_horizontal = Control.SIZE_SHRINK_END
 	shortcut_buttons_container.custom_minimum_size = Vector2(0, 22)
 	shortcut_buttons_container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	shortcut_buttons_container.set("theme_override_constants/separation", 2)
@@ -20183,8 +20202,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.182 changes
+	display_game("[color=#00FF00]v0.9.182[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Mini bars + shortcuts on the same row[/color]")
+	display_game("  • Shortcut buttons now actually go INSIDE the StatusRow (were accidentally a sibling row — which is why they rendered below the mini bars)")
+	display_game("  • Row split 2:1 to mirror GameOutput:MapPanel — bars end where GameOutput ends, shortcut buttons end where MapPanel ends")
+	display_game("  • Both vertically centered in the row so they line up")
+	display_game("")
+
 	# v0.9.181 changes
-	display_game("[color=#00FF00]v0.9.181[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.181[/color]")
 	display_game("  [color=#FFD700]Status panel spacing + mini HP/Mana relocation[/color]")
 	display_game("  • Status lines (Backpack/Area/Nearest/Pouch/Eggs/Quests) are now packed tightly instead of double-spaced")
 	display_game("  • Mini HP/Mana bars moved out of GameOutput onto a new StatusRow between the map/game area and the action bar, sharing the row with the Companions/Eggs/Jobs/... shortcut buttons (bars left, buttons right)")
@@ -21038,12 +21065,13 @@ func update_resource_bars_overlay():
 			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			res_color = "#9999FF"
 
-	# Single-line HP + resource bars, left-aligned inside the StatusRow so they
-	# sit opposite the shortcut buttons (which dock right).
+	# Single-line HP + resource bars, right-aligned inside the 2/3-wide left
+	# cell of StatusRow so they end at the same x as the right edge of the
+	# GameOutput window above.
 	var bar_width = 10
 	var hp_bar = _stat_bar("HP:", current_hp, max_hp, bar_width, "#FF4444")
 	var res_bar = _stat_bar("%s:" % res_name, res_current, res_max, bar_width, res_color)
-	var text = "%s   %s" % [hp_bar, res_bar]
+	var text = "[right]%s   %s[/right]" % [hp_bar, res_bar]
 
 	resource_bars_overlay.clear()
 	resource_bars_overlay.append_text(text)
