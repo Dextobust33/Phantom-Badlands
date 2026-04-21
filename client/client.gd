@@ -20103,8 +20103,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.170 changes
+	display_game("[color=#00FF00]v0.9.170[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Minimap Frame[/color]")
+	display_game("  • Added a lime-green rounded border around the minimap node")
+	display_game("  • Single attribute change on the existing MinimapDisplay node — no layout restructure")
+	display_game("")
+
 	# v0.9.169 changes
-	display_game("[color=#00FF00]v0.9.169[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.169[/color]")
 	display_game("  [color=#FFD700]Minimap Routing Fix[/color]")
 	display_game("  • Client now recognises the server's [right]-wrapped minimap and routes it into the separate MinimapDisplay node")
 	display_game("  • Minimap no longer appears inside the main ASCII map area")

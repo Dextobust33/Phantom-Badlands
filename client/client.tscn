@@ -40,6 +40,22 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_minimap_frame"]
+bg_color = Color(0.08, 0.08, 0.1, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.2, 1, 0.2, 1)
+corner_radius_top_left = 80
+corner_radius_top_right = 80
+corner_radius_bottom_right = 80
+corner_radius_bottom_left = 80
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.15, 0.08, 0.06, 1)
 border_width_left = 1
@@ -420,6 +436,7 @@ mouse_filter = 2
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 9
+theme_override_styles/normal = SubResource("StyleBoxFlat_minimap_frame")
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
