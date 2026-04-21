@@ -2500,7 +2500,7 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 			var wy = (int(wing.get("y0", 0)) + int(wing.get("y1", 0))) / 2
 			post_points.append({"x": wx, "y": wy})
 
-	var output = "[center][font_size=9]"
+	var output = "[right][font_size=9]"
 	for miny in range(MAP_HALF_H, -MAP_HALF_H - 1, -1):
 		var line = ""
 		for minx in range(-MAP_HALF_W, MAP_HALF_W + 1):
@@ -2565,7 +2565,7 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 
 		output += line + "\n"
 
-	output += "[/font_size][/center]"
+	output += "[/font_size][/right]"
 	output += "[center][color=#555555][font_size=8]minimap (±%d tiles)[/font_size][/color][/center]" % [MAP_HALF_W * STEP]
 	return output
 
