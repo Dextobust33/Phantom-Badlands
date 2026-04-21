@@ -6204,11 +6204,11 @@ func update_action_bar():
 				{"label": "Eggs", "action_type": "local", "action_data": "eggs_menu", "enabled": true},
 				{"label": "Jobs", "action_type": "local", "action_data": "jobs_menu", "enabled": true},
 				{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
-				{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
+				{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 				{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
 				{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
+				{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
 				party_action,
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif companions_mode:
 		# Companions viewing mode with pagination and release
@@ -16954,7 +16954,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "debughatch",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -17803,6 +17803,11 @@ func process_command(text: String):
 		"materials", "mats":
 			if has_character:
 				display_materials()
+			else:
+				display_game("You don't have a character yet")
+		"quests", "quest":
+			if has_character:
+				send_to_server({"type": "get_quest_log"})
 			else:
 				display_game("You don't have a character yet")
 		"debughatch":
@@ -19987,8 +19992,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.155 changes
+	display_game("[color=#00FF00]v0.9.155[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quest Access[/color]")
+	display_game("  • Quests now available in More menu (slot 5) — always accessible even when near a gathering node")
+	display_game("  • New [color=#00FFFF]/quests[/color] chat command opens the quest log from anywhere")
+	display_game("")
+
 	# v0.9.154 changes
-	display_game("[color=#00FF00]v0.9.154[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.154[/color]")
 	display_game("  [color=#FFD700]Dungeon Overview Refresh Fix[/color]")
 	display_game("  • Dungeon overview now refreshes correctly after gathering, treasure, harvest skip, and floor changes")
 	display_game("  • Root cause: awaiting_dungeon_gather_result flag stayed stuck true after the first dungeon gather")
@@ -20044,12 +20056,6 @@ func display_changelog():
 	display_game("  • Inventory full no longer loses drops — items auto-salvaged into materials")
 	display_game("  • Server-wide achievement announcements: close calls, elite kills, underdog victories, milestones")
 	display_game("  • Cooldown-controlled (~2 min global, ~10 min per player) to keep chat engaging")
-	display_game("")
-
-	# v0.9.147 changes
-	display_game("[color=#00FFFF]v0.9.147[/color]")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Crafting XP: fixed crafting XP awarded on rejected/refunded recipes")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
