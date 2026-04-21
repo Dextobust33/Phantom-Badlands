@@ -14,14 +14,15 @@ echo "=== Phantom Badlands Server Deploy ==="
 echo "[1/4] Exporting Linux server binary..."
 "$GODOT" --path "$PROJECT" --export-release "Phantom-Badlands-Server-Linux" "builds/server/PhantomBadlandsServer.x86_64" 2>&1 | tail -1
 
-# Step 2: Upload to server
-echo "[2/4] Uploading to server..."
+# Step 2: Stop service, upload, start service (the running binary holds a file lock)
+echo "[2/4] Stopping service and uploading..."
+ssh -i "$SSH_KEY" ${SERVER_USER}@${SERVER_IP} "sudo systemctl stop phantom-badlands"
 scp -i "$SSH_KEY" "$PROJECT/builds/server/PhantomBadlandsServer.x86_64" ${SERVER_USER}@${SERVER_IP}:~/phantom-badlands/
 scp -i "$SSH_KEY" "$PROJECT/server_override.cfg" ${SERVER_USER}@${SERVER_IP}:~/phantom-badlands/override.cfg
 
-# Step 3: Restart service
-echo "[3/4] Restarting server..."
-ssh -i "$SSH_KEY" ${SERVER_USER}@${SERVER_IP} "chmod +x ~/phantom-badlands/PhantomBadlandsServer.x86_64 && sudo systemctl restart phantom-badlands"
+# Step 3: Start service
+echo "[3/4] Starting server..."
+ssh -i "$SSH_KEY" ${SERVER_USER}@${SERVER_IP} "chmod +x ~/phantom-badlands/PhantomBadlandsServer.x86_64 && sudo systemctl start phantom-badlands"
 
 # Step 4: Verify
 echo "[4/4] Verifying..."
