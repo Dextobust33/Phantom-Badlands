@@ -404,6 +404,13 @@ var game_state = GameState.DISCONNECTED
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
 @onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
 @onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
+@onready var status_hud = $RootContainer/TopSection/MapPanel/StatusHUD
+@onready var status_hud_backpack = $RootContainer/TopSection/MapPanel/StatusHUD/BackpackLabel
+@onready var status_hud_area = $RootContainer/TopSection/MapPanel/StatusHUD/AreaLabel
+@onready var status_hud_compass = $RootContainer/TopSection/MapPanel/StatusHUD/CompassLabel
+@onready var status_hud_pouch = $RootContainer/TopSection/MapPanel/StatusHUD/PouchLabel
+@onready var status_hud_quests = $RootContainer/TopSection/MapPanel/StatusHUD/QuestsLabel
+@onready var status_hud_eggs = $RootContainer/TopSection/MapPanel/StatusHUD/EggsLabel
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
@@ -791,6 +798,11 @@ var crafting_entered_via_station: bool = false  # True when opened by bumping a 
 var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
 var crafting_recipes: Array = []  # Available recipes from server
 var crafting_materials: Dictionary = {}  # Player's materials
+var hud_area_level: int = 0  # Last known area level for Status HUD
+var hud_area_is_hotspot: bool = false
+var hud_area_is_safe: bool = true
+var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
+var hud_active_quests: Array = []  # Cached active quests for HUD
 var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
 var crafting_job_bonus: Dictionary = {}  # Specialty job bonus {success_bonus, quality_bonus}
@@ -1066,6 +1078,7 @@ var account_valor: int = 0
 # Tutorial
 var tutorial_active: bool = false
 var tutorial_step: int = 0
+var pending_tutorial_prompt: bool = false  # Awaiting player's choice to start or skip the tutorial
 const TUTORIAL_STEPS = [
 	{"text": "Welcome to the Phantom Badlands! This quick tutorial will show you the basics.", "wait_for": "continue"},
 	{"text": "Use the numpad or arrow keys to move around the world. Try taking a step!", "wait_for": "move"},
@@ -1511,6 +1524,13 @@ func _ready():
 	if player_info_content:
 		if not player_info_content.meta_clicked.is_connected(_on_player_info_meta_clicked):
 			player_info_content.meta_clicked.connect(_on_player_info_meta_clicked)
+
+	# Connect HUD egg indicator — click toggles freeze on that slot
+	if status_hud_eggs:
+		status_hud_eggs.selection_enabled = false
+		status_hud_eggs.meta_underlined = true
+		if not status_hud_eggs.meta_clicked.is_connected(_on_status_hud_eggs_meta_clicked):
+			status_hud_eggs.meta_clicked.connect(_on_status_hud_eggs_meta_clicked)
 
 	# Setup race options
 	if race_option:
@@ -4292,6 +4312,7 @@ func _clear_character_hud():
 	stop_low_hp_pulse()
 	hide_resource_bars_overlay()
 	hide_tool_status_overlay()
+	hide_status_hud()
 
 # ===== LEADERBOARD HANDLERS =====
 
@@ -7312,6 +7333,11 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 
+	# Tutorial opt-in prompt overrides all other actions
+	if pending_tutorial_prompt and current_actions.size() >= 2:
+		current_actions[0] = {"label": "Tutorial", "action_type": "local", "action_data": "tutorial_start_yes", "enabled": true}
+		current_actions[1] = {"label": "Skip", "action_type": "local", "action_data": "tutorial_start_no", "enabled": true}
+
 	# Tutorial overlay: replace first two action bar slots with Next/Skip
 	if tutorial_active and not in_combat and current_actions.size() >= 2:
 		var step_wait = ""
@@ -9958,6 +9984,17 @@ func execute_local_action(action: String):
 			_advance_tutorial()
 		"tutorial_skip":
 			_skip_tutorial()
+		"tutorial_start_yes":
+			pending_tutorial_prompt = false
+			tutorial_active = true
+			tutorial_step = 0
+			_display_tutorial_step()
+			update_action_bar()
+		"tutorial_start_no":
+			pending_tutorial_prompt = false
+			game_output.clear()
+			display_game("[color=#808080]Tutorial skipped. Type /help for a quick reference.[/color]")
+			update_action_bar()
 		# Quest actions
 		"show_quests":
 			send_to_server({"type": "get_quest_log"})
@@ -14506,6 +14543,7 @@ func update_player_hp_bar():
 	# Update resource bars overlay
 	update_resource_bars_overlay()
 	update_tool_status_overlay()
+	update_status_hud()
 
 func update_buff_display():
 	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
@@ -14718,6 +14756,7 @@ func update_resource_bar():
 	# Update resource bars overlay
 	update_resource_bars_overlay()
 	update_tool_status_overlay()
+	update_status_hud()
 
 func _set_character_data(new_data: Dictionary):
 	"""Replace character_data, preserving account-level fields that to_dict() doesn't include."""
@@ -15344,11 +15383,19 @@ func handle_server_message(message: Dictionary):
 			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
-			# Start tutorial for new characters (unless disabled in settings)
+			# Ask if the player wants the tutorial (only if the setting hasn't
+			# turned it off). Previously we auto-started it, which was easy to
+			# miss or dismiss accidentally — the prompt lets players opt in.
 			if not disable_tutorial:
-				tutorial_active = true
+				tutorial_active = false
 				tutorial_step = 0
-				_display_tutorial_step()
+				pending_tutorial_prompt = true
+				display_game("")
+				display_game("[color=#FFD700]═══════ TUTORIAL ═══════[/color]")
+				display_game("Would you like a quick tutorial covering movement, combat, and menus?")
+				display_game("[color=#00FF00][%s] Start Tutorial[/color]   [color=#FF8800][%s] Skip[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+				display_game("[color=#808080](You can re-enable the tutorial prompt in Settings.)[/color]")
+				update_action_bar()
 
 		"character_deleted":
 			display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Character deleted"))
@@ -15421,6 +15468,7 @@ func handle_server_message(message: Dictionary):
 			hide_companion_art_overlay()
 			hide_resource_bars_overlay()
 			hide_tool_status_overlay()
+			hide_status_hud()
 			display_death_screen(message)
 			update_action_bar()
 			show_enemy_hp_bar(false)
@@ -15469,6 +15517,12 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# Cache area + compass info for the Status HUD (visible even after UI updates)
+			hud_area_level = int(message.get("area_level", 0))
+			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
+			hud_area_is_safe = bool(message.get("area_is_safe", true))
+			hud_nearest_post = message.get("nearest_post", {})
+			update_status_hud()
 			# Don't update map when in dungeon - dungeon has its own map display
 			if not dungeon_mode:
 				var desc = message.get("description", "")
@@ -20049,8 +20103,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.161 changes
+	display_game("[color=#00FF00]v0.9.161[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Status HUD + Tutorial Opt-In[/color]")
+	display_game("  • New Status HUD below the minimap: Backpack X/40, Area Lv, Nearest post compass, Materials pouch count, Active quests (top 3), Incubating eggs")
+	display_game("  • Click an egg indicator to toggle freeze (no menu needed)")
+	display_game("  • Egg row shows all upgrade slots, filled and empty")
+	display_game("  • Tutorial is now opt-in: new characters see a prompt \"Start Tutorial / Skip\" instead of auto-launching")
+	display_game("")
+
 	# v0.9.160 changes
-	display_game("[color=#00FF00]v0.9.160[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.160[/color]")
 	display_game("  [color=#FFD700]UI & Movement[/color]")
 	display_game("  • Tool durability display moved out of GameOutput — now below the ASCII map, left of the minimap")
 	display_game("  • Minimap renders in its own node instead of being appended to the main map text")
@@ -20080,14 +20143,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Daily Quest Name Mismatch Fix[/color]")
 	display_game("  • Accepting a daily quest now matches what was displayed on the board")
 	display_game("  • Cause: RNG state diverged between quest list generation and quest regeneration when some dailies were already completed or on cooldown — same quest_id mapped to different quest data")
-	display_game("")
-
-	# v0.9.156 changes
-	display_game("[color=#00FFFF]v0.9.156[/color]")
-	display_game("  [color=#FFD700]Permanent Hotkey Cascade Fix[/color]")
-	display_game("  • When an action bar slot fires on a number key (1-5), the matching item-select key is now locked until released")
-	display_game("  • Fixes: pressing 1 in More menu to open Quests no longer also abandons Quest #1")
-	display_game("  • Applies to all action-bar → item-select menu transitions that share keys")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -20862,6 +20917,121 @@ func update_tool_status_overlay():
 func hide_tool_status_overlay():
 	if tool_status_overlay:
 		tool_status_overlay.visible = false
+
+func update_status_hud():
+	"""Update the Status HUD panel (backpack, area, compass, pouch, quests, eggs)."""
+	if status_hud == null:
+		return
+	if not has_character:
+		status_hud.visible = false
+		return
+	status_hud.visible = true
+
+	# --- Backpack ---
+	if status_hud_backpack:
+		var inv = character_data.get("inventory", [])
+		var inv_size = inv.size()
+		var inv_max = 40
+		var inv_pct = int(float(inv_size) / float(inv_max) * 100.0)
+		var bp_color = "#9ACD32"
+		if inv_pct >= 90:
+			bp_color = "#FF4444"
+		elif inv_pct >= 75:
+			bp_color = "#FFFF00"
+		status_hud_backpack.clear()
+		status_hud_backpack.append_text("[color=#9ACD32]Backpack:[/color] [color=%s]%d/%d[/color]" % [bp_color, inv_size, inv_max])
+
+	# --- Area level ---
+	if status_hud_area:
+		status_hud_area.clear()
+		if hud_area_is_safe:
+			status_hud_area.append_text("[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]")
+		else:
+			var danger = ""
+			if hud_area_is_hotspot:
+				danger = " [color=#FF0000]!DANGER[/color]"
+			status_hud_area.append_text("[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger])
+
+	# --- Compass to nearest NPC post ---
+	if status_hud_compass:
+		status_hud_compass.clear()
+		if hud_nearest_post.is_empty():
+			status_hud_compass.visible = false
+		else:
+			status_hud_compass.visible = true
+			var name_ = String(hud_nearest_post.get("name", "Post"))
+			var direction = String(hud_nearest_post.get("direction", ""))
+			var distance = int(hud_nearest_post.get("distance", 0))
+			status_hud_compass.append_text("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
+
+	# --- Materials pouch total ---
+	if status_hud_pouch:
+		var mats = character_data.get("crafting_materials", {})
+		var total_mats = 0
+		for k in mats:
+			total_mats += int(mats[k])
+		status_hud_pouch.clear()
+		status_hud_pouch.append_text("[color=#9ACD32]Pouch:[/color] [color=#D2B48C]%d[/color] [color=#808080]materials[/color]" % total_mats)
+
+	# --- Active quests (top 3 by progress) pulled from character_data.active_quests ---
+	if status_hud_quests:
+		status_hud_quests.clear()
+		var active_q = character_data.get("active_quests", [])
+		if active_q is Array and active_q.size() > 0:
+			status_hud_quests.visible = true
+			status_hud_quests.append_text("[color=#9ACD32]Quests:[/color]\n")
+			var shown = 0
+			for q in active_q:
+				if shown >= 3:
+					break
+				var qname = String(q.get("quest_name", q.get("name", "Quest")))
+				var progress = int(q.get("progress", 0))
+				var target = max(1, int(q.get("target", 1)))
+				var is_done = progress >= target
+				var color = "#00FF00" if is_done else "#FFFF00"
+				status_hud_quests.append_text("  [color=%s]%s %d/%d[/color]\n" % [color, qname, progress, target])
+				shown += 1
+		else:
+			status_hud_quests.visible = false
+
+	# --- Incubating eggs (clickable, * = frozen) ---
+	if status_hud_eggs:
+		status_hud_eggs.clear()
+		var eggs = character_data.get("incubating_eggs", [])
+		var egg_cap = int(character_data.get("egg_capacity", 3))
+		status_hud_eggs.visible = true
+		var parts: Array[String] = []
+		parts.append("[color=#9ACD32]Eggs:[/color] ")
+		for i in range(egg_cap):
+			if i < eggs.size():
+				var egg = eggs[i]
+				var frozen = bool(egg.get("frozen", false))
+				var steps = int(egg.get("steps", 0))
+				var hatch_at = max(1, int(egg.get("hatch_steps", 500)))
+				var pct = int(float(steps) / float(hatch_at) * 100.0)
+				# Tooltip-ish label inline via BBCode — the digit is clickable to toggle freeze.
+				var label = "%d" % (i + 1)
+				var color_inner = "#00BFFF" if frozen else "#FFAA00"
+				if frozen:
+					label = "*" + label  # asterisk marks frozen slot
+				parts.append("[url=egg_%d][color=%s][%s:%d%%][/color][/url] " % [i, color_inner, label, pct])
+			else:
+				parts.append("[color=#555555][%d:--][/color] " % (i + 1))
+		status_hud_eggs.append_text("".join(parts))
+
+func hide_status_hud():
+	if status_hud:
+		status_hud.visible = false
+
+func _on_status_hud_eggs_meta_clicked(meta):
+	"""Clicking on an egg indicator toggles its freeze state."""
+	var meta_str = String(meta)
+	if meta_str.begins_with("egg_"):
+		var idx = int(meta_str.substr(4))
+		var eggs = character_data.get("incubating_eggs", [])
+		if idx < 0 or idx >= eggs.size():
+			return
+		send_to_server({"type": "toggle_egg_freeze", "index": idx})
 
 func _get_companion_art_lines(monster_type: String, companion_name: String) -> Array:
 	"""Get ASCII art lines for a companion by monster type or name.
