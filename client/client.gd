@@ -20103,11 +20103,12 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.171 changes
-	display_game("[color=#00FF00]v0.9.171[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Minimap Frame Sizing[/color]")
-	display_game("  • Minimap frame now wraps just the minimap content instead of stretching across the whole row")
-	display_game("  • Added a BottomRowSpacer so tools dock to the left and the framed minimap docks to the right")
+	# v0.9.172 changes
+	display_game("[color=#00FF00]v0.9.172[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Rollback v0.9.171[/color]")
+	display_game("  • v0.9.171's Control spacer in BottomRow broke startup rendering — reverted")
+	display_game("  • Important clue: adding a Control child to BottomRow appears to be what repeatedly triggered the blank-screen issue in past attempts")
+	display_game("  • v0.9.170's minimap frame style kept, but the frame width will match v0.9.170 (wrapped around the full-width node — cosmetic issue we'll tackle differently)")
 	display_game("")
 
 	# v0.9.170 changes
