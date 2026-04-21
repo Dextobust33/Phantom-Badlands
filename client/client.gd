@@ -1509,6 +1509,13 @@ func _ready():
 	if close_player_info_button:
 		close_player_info_button.pressed.connect(_on_close_player_info_pressed)
 
+	# Build a dedicated status-row between the map/game section and the bottom
+	# action/chat strip. Mini HP/Mana bars live on the left of this row; the
+	# shortcut buttons (Companions/Eggs/Jobs/...) added next dock to the right
+	# of the same row. Keeps bars out of GameOutput where they overlapped
+	# companion art.
+	_create_status_row_with_mini_bars()
+
 	# Create quick-access shortcut buttons (top-right of chat area)
 	_create_shortcut_buttons()
 
@@ -7544,6 +7551,47 @@ func execute_variable_cost_ability(amount: int):
 	_hide_ability_popup()
 	send_combat_command("%s %d" % [ability, amount])
 	update_action_bar()
+
+func _create_status_row_with_mini_bars():
+	"""Add a StatusRow HBox between TopSection and BottomStrip that holds the
+	mini HP/resource bars (left) and ultimately the shortcut buttons (right).
+
+	Creating the StatusRow + MiniBarsLabel at runtime avoids tscn hierarchy
+	changes, which have been fragile in this scene. The MiniBarsLabel takes
+	over as the resource_bars_overlay target, and the tscn ResourceBarsOverlay
+	node that used to overlap the companion art is hidden."""
+	var root_container = $RootContainer
+	if root_container == null:
+		return
+	if root_container.get_node_or_null("StatusRow") != null:
+		return  # already created (e.g., in a tscn restructure later)
+
+	var status_row = HBoxContainer.new()
+	status_row.name = "StatusRow"
+	status_row.custom_minimum_size = Vector2(0, 28)
+	status_row.set("theme_override_constants/separation", 8)
+	root_container.add_child(status_row)
+	var bottom_strip = root_container.get_node_or_null("BottomStrip")
+	if bottom_strip:
+		root_container.move_child(status_row, bottom_strip.get_index())
+
+	var bars_label = RichTextLabel.new()
+	bars_label.name = "MiniBarsLabel"
+	bars_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bars_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bars_label.bbcode_enabled = true
+	bars_label.fit_content = true
+	bars_label.scroll_active = false
+	bars_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bars_label.add_theme_font_size_override("normal_font_size", 13)
+	status_row.add_child(bars_label)
+
+	# Redirect the resource_bars_overlay @onready target to this new node.
+	# The old tscn node is hidden so it doesn't compete with the new one.
+	var old_overlay = get_node_or_null("RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay")
+	if old_overlay:
+		old_overlay.visible = false
+	resource_bars_overlay = bars_label
 
 func _create_shortcut_buttons():
 	"""Create quick-access shortcut buttons overlaid on top-right of chat area."""
@@ -20135,8 +20183,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.181 changes
+	display_game("[color=#00FF00]v0.9.181[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Status panel spacing + mini HP/Mana relocation[/color]")
+	display_game("  • Status lines (Backpack/Area/Nearest/Pouch/Eggs/Quests) are now packed tightly instead of double-spaced")
+	display_game("  • Mini HP/Mana bars moved out of GameOutput onto a new StatusRow between the map/game area and the action bar, sharing the row with the Companions/Eggs/Jobs/... shortcut buttons (bars left, buttons right)")
+	display_game("  • No tscn restructure — StatusRow is created at runtime alongside the shortcut buttons")
+	display_game("")
+
 	# v0.9.180 changes
-	display_game("[color=#00FF00]v0.9.180[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.180[/color]")
 	display_game("  [color=#FFD700]Independent Status HUD scale slider[/color]")
 	display_game("  • New UI scale slider \"Status HUD\" in Settings → UI — Tools + Backpack + Area + Pouch + Eggs now scale separately from the ASCII map")
 	display_game("  • Keys [A] (increase) / [S] (decrease) on the UI Scale screen")
@@ -20982,12 +21038,12 @@ func update_resource_bars_overlay():
 			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			res_color = "#9999FF"
 
-	# Single-line, right-aligned HP + resource bars docked to the bottom-right
-	# of GameOutput so both are visible at a glance without a line break.
+	# Single-line HP + resource bars, left-aligned inside the StatusRow so they
+	# sit opposite the shortcut buttons (which dock right).
 	var bar_width = 10
 	var hp_bar = _stat_bar("HP:", current_hp, max_hp, bar_width, "#FF4444")
 	var res_bar = _stat_bar("%s:" % res_name, res_current, res_max, bar_width, res_color)
-	var text = "[right]%s   %s[/right]" % [hp_bar, res_bar]
+	var text = "%s   %s" % [hp_bar, res_bar]
 
 	resource_bars_overlay.clear()
 	resource_bars_overlay.append_text(text)
@@ -21108,8 +21164,16 @@ func update_tool_status_overlay():
 			egg_parts.append("[color=#555555][%d:--][/color] " % (i + 1))
 	sections.append("".join(egg_parts))
 
+	# Separate the Tools block from the single-line status items with a blank
+	# line, but keep status items (Backpack/Area/Nearest/Pouch/Quests/Eggs)
+	# packed tightly together with no extra vertical gaps.
+	var combined := ""
+	if sections.size() > 0:
+		combined = sections[0]
+	if sections.size() > 1:
+		combined += "\n\n" + "\n".join(sections.slice(1))
 	tool_status_overlay.clear()
-	tool_status_overlay.append_text("\n\n".join(sections))
+	tool_status_overlay.append_text(combined)
 	tool_status_overlay.visible = true
 
 func hide_tool_status_overlay():
