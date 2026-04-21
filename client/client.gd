@@ -401,7 +401,7 @@ var game_state = GameState.DISCONNECTED
 @onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
-@onready var resource_bars_overlay = $RootContainer/StatusRow/ResourceBarsOverlay
+@onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
 @onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
 @onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
 @onready var status_hud = $RootContainer/TopSection/MapPanel/StatusHUD
@@ -7527,21 +7527,17 @@ func _create_shortcut_buttons():
 	if not chat_output:
 		return
 
-	# Create a container and place it inside the StatusRow so it shares the
-	# row with the mini HP/Mana bars (shortcuts right-aligned, bars left).
+	# Create a container anchored to top-right of game output area
 	shortcut_buttons_container = HBoxContainer.new()
 	shortcut_buttons_container.name = "ShortcutButtons"
 
+	# Add as overlay above the bottom strip in the root container
 	var root_container = $RootContainer
-	var status_row = root_container.get_node_or_null("StatusRow")
-	if status_row:
-		status_row.add_child(shortcut_buttons_container)
-	else:
-		# Fallback to legacy position if StatusRow isn't present
-		root_container.add_child(shortcut_buttons_container)
-		var bottom_strip = root_container.get_node_or_null("BottomStrip")
-		if bottom_strip:
-			root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
+	root_container.add_child(shortcut_buttons_container)
+	# Move it just before the bottom strip so it overlays above it
+	var bottom_strip = root_container.get_node_or_null("BottomStrip")
+	if bottom_strip:
+		root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
 
 	shortcut_buttons_container.layout_mode = 2
 	shortcut_buttons_container.size_flags_horizontal = Control.SIZE_SHRINK_END
@@ -20107,16 +20103,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.167 changes
-	display_game("[color=#00FF00]v0.9.167[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]UI Placement (iteration 2)[/color]")
-	display_game("  • Mini HP/Mana bars moved OUT of the GameOutput window — now on the same row as the Companions/Eggs/Jobs/Pouch shortcut buttons")
-	display_game("  • Minimap split from the main map text into its own node beside the tool display, with a lime green rounded frame")
+	# v0.9.168 changes
+	display_game("[color=#00FF00]v0.9.168[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Rollback of v0.9.167 — blank-screen hotfix[/color]")
+	display_game("  • v0.9.167's StatusRow restructure + minimap lime-green frame broke startup rendering again")
+	display_game("  • Reverted to v0.9.166 working layout: single-line right-aligned mini bars, right-aligned minimap")
+	display_game("  • Will reapproach the moves in smaller, individually-testable steps")
 	display_game("")
 
 	# v0.9.166 changes
 	display_game("[color=#00FFFF]v0.9.166[/color]")
-	display_game("  [color=#FFD700]Small UI Tweaks (cautious iteration)[/color]")
+	display_game("  [color=#FFD700]Small UI Tweaks[/color]")
 	display_game("  • Mini HP/Resource bars: single right-aligned line docked to the bottom-right of GameOutput (was two lines)")
 	display_game("  • Minimap: right-aligned instead of centered — sits against the right edge of the map panel")
 	display_game("")
@@ -20146,6 +20143,15 @@ func display_changelog():
 	display_game("  • Click an egg indicator to toggle freeze (no menu needed)")
 	display_game("  • Egg row shows all upgrade slots, filled and empty")
 	display_game("  • Tutorial is now opt-in: new characters see a prompt \"Start Tutorial / Skip\" instead of auto-launching")
+	display_game("")
+
+	# v0.9.160 changes
+	display_game("[color=#00FFFF]v0.9.160[/color]")
+	display_game("  [color=#FFD700]UI & Movement[/color]")
+	display_game("  • Tool durability display moved out of GameOutput — now below the ASCII map, left of the minimap")
+	display_game("  • Minimap renders in its own node instead of being appended to the main map text")
+	display_game("  • Sanctuary now supports diagonal movement (numpad 1/3/7/9, or two arrow keys together)")
+	display_game("  • Sanctuary movement hint updated to \"Move with numpad or arrows (diagonals supported)\"")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -23021,14 +23027,13 @@ func _get_rarity_color(rarity: String) -> String:
 		_: return "#FFFFFF"
 
 func update_map(map_text: String):
-	# The server appends the minimap after the main ASCII map using a small
-	# font wrapped in either [center] or [right]. Split it off so the minimap
-	# can render in its own node beside the tool overlay.
+	# The server appends the minimap after the main ASCII map using a [font_size=9]
+	# marker inside a centered block. Split it off so the minimap can render in its
+	# own node beside the tool overlay, and the main map stays clean.
 	var main_text = map_text
 	var minimap_text = ""
-	var split_idx = map_text.find("[right][font_size=9]")
-	if split_idx == -1:
-		split_idx = map_text.find("[center][font_size=9]")
+	var minimap_marker = "[center][font_size=9]"
+	var split_idx = map_text.find(minimap_marker)
 	if split_idx != -1:
 		main_text = map_text.substr(0, split_idx).strip_edges(false, true)
 		minimap_text = map_text.substr(split_idx)
