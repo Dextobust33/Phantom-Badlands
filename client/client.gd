@@ -308,6 +308,7 @@ const KEYBIND_CONFIG_PATH = "user://keybinds.json"
 # UI Scale settings (multipliers on top of automatic resolution scaling)
 var ui_scale_monster_art: float = 1.0  # Monster ASCII art in combat
 var ui_scale_map: float = 1.0          # World map display
+var ui_scale_status_hud: float = 1.0   # Tools + Backpack + Area + Pouch + Eggs overlay
 var ui_scale_game_output: float = 1.0  # Main game text output
 var ui_scale_buttons: float = 1.0      # Action bar buttons
 var ui_scale_chat: float = 1.0         # Chat and online players
@@ -1868,11 +1869,11 @@ func _on_window_resized():
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
 
-	# Scale the merged Tools/Status overlay along with the map (they share the
-	# map panel area). Uses the same ui_scale_map factor so players can make
-	# the status text larger at high resolutions.
+	# Scale the merged Tools/Status overlay with its own independent slider so
+	# players can make the status text large without forcing the ASCII map to
+	# grow (and vice versa).
 	if tool_status_overlay:
-		var hud_font_size = int(13 * base_scale * ui_scale_map)
+		var hud_font_size = int(13 * base_scale * ui_scale_status_hud)
 		hud_font_size = clampi(hud_font_size, 10, 28)
 		tool_status_overlay.add_theme_font_size_override("normal_font_size", hud_font_size)
 		tool_status_overlay.add_theme_font_size_override("bold_font_size", hud_font_size)
@@ -3270,6 +3271,10 @@ func _input(event):
 				adjust_ui_scale("right_panel", 0.1)
 			elif keycode == KEY_R:
 				adjust_ui_scale("right_panel", -0.1)
+			elif keycode == KEY_A:
+				adjust_ui_scale("status_hud", 0.1)
+			elif keycode == KEY_S:
+				adjust_ui_scale("status_hud", -0.1)
 			elif keycode == KEY_9:
 				reset_ui_scales()
 			elif keycode == back_key:
@@ -18199,6 +18204,8 @@ func _load_keybinds():
 					ui_scale_chat = clampf(float(data["ui_scale_chat"]), 0.5, 3.0)
 				if data.has("ui_scale_right_panel"):
 					ui_scale_right_panel = clampf(float(data["ui_scale_right_panel"]), 0.5, 3.0)
+				if data.has("ui_scale_status_hud"):
+					ui_scale_status_hud = clampf(float(data["ui_scale_status_hud"]), 0.5, 3.0)
 				# Load sound volume settings
 				if data.has("sfx_volume"):
 					sfx_volume = clampf(float(data["sfx_volume"]), 0.0, 1.0)
@@ -18227,6 +18234,7 @@ func _save_keybinds():
 	save_data["ui_scale_buttons"] = ui_scale_buttons
 	save_data["ui_scale_chat"] = ui_scale_chat
 	save_data["ui_scale_right_panel"] = ui_scale_right_panel
+	save_data["ui_scale_status_hud"] = ui_scale_status_hud
 	# Include sound volume settings
 	save_data["sfx_volume"] = sfx_volume
 	save_data["music_volume"] = music_volume
@@ -18515,6 +18523,9 @@ func display_ui_scale_settings():
 	display_game("[color=#E6CC80]Right Panel[/color] (Level, Valor, Rank, Map Controls, Online Players, Send)")
 	display_game("[E] Increase  [R] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_right_panel * 100))
 	display_game("")
+	display_game("[color=#E6CC80]Status HUD[/color] (Tools, Backpack, Area, Pouch, Eggs)")
+	display_game("[A] Increase  [S] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_status_hud * 100))
+	display_game("")
 	display_game("[9] Reset All to 100%")
 	display_game("[%s] Back to Settings" % get_action_key_name(0))
 
@@ -18533,6 +18544,8 @@ func adjust_ui_scale(element: String, delta: float):
 			ui_scale_chat = clampf(ui_scale_chat + delta, 0.5, 3.0)
 		"right_panel":
 			ui_scale_right_panel = clampf(ui_scale_right_panel + delta, 0.5, 3.0)
+		"status_hud":
+			ui_scale_status_hud = clampf(ui_scale_status_hud + delta, 0.5, 3.0)
 
 	# Save settings and apply
 	_save_keybinds()
@@ -18550,6 +18563,7 @@ func reset_ui_scales():
 	ui_scale_buttons = 1.0
 	ui_scale_chat = 1.0
 	ui_scale_right_panel = 1.0
+	ui_scale_status_hud = 1.0
 
 	# Save and apply
 	_save_keybinds()
@@ -20121,8 +20135,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.180 changes
+	display_game("[color=#00FF00]v0.9.180[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Independent Status HUD scale slider[/color]")
+	display_game("  • New UI scale slider \"Status HUD\" in Settings → UI — Tools + Backpack + Area + Pouch + Eggs now scale separately from the ASCII map")
+	display_game("  • Keys [A] (increase) / [S] (decrease) on the UI Scale screen")
+	display_game("  • Saved and restored like the other scale settings")
+	display_game("")
+
 	# v0.9.179 changes
-	display_game("[color=#00FF00]v0.9.179[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.179[/color]")
 	display_game("  [color=#FFD700]Tool/Status HUD polish[/color]")
 	display_game("  • Empty tool slots now show \"(empty)\" in grey instead of disappearing — the slot is always visible")
 	display_game("  • Tools/Status overlay font now scales with resolution and the existing \"Map\" UI scale slider (Settings → UI)")
