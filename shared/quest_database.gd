@@ -844,9 +844,10 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 				var dest_id = nearby_posts[dest_idx]
 				var dest_coords = TRADING_POST_COORDS.get(dest_id, Vector2i(0, 0))
 				var dest_name = dest_id.replace("_", " ").capitalize()
+				var origin_name = trading_post_id.replace("_", " ").capitalize()
 				var dist_text = _get_distance_text(post_coords, dest_coords)
 				quest_name = "Journey to %s" % dest_name
-				quest_desc = "Travel to %s. It lies %s." % [dest_name, dist_text]
+				quest_desc = "Travel to %s, located %s from %s (%d, %d)." % [dest_name, dist_text, origin_name, post_coords.x, post_coords.y]
 				target = 1
 				extra_fields["destinations"] = [dest_id]
 			else:
