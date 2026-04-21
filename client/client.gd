@@ -20103,8 +20103,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.169 changes
+	display_game("[color=#00FF00]v0.9.169[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Minimap Routing Fix[/color]")
+	display_game("  • Client now recognises the server's [right]-wrapped minimap and routes it into the separate MinimapDisplay node")
+	display_game("  • Minimap no longer appears inside the main ASCII map area")
+	display_game("  • No scene-file changes — pure client function update")
+	display_game("")
+
 	# v0.9.168 changes
-	display_game("[color=#00FF00]v0.9.168[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.168[/color]")
 	display_game("  [color=#FFD700]Rollback of v0.9.167 — blank-screen hotfix[/color]")
 	display_game("  • v0.9.167's StatusRow restructure + minimap lime-green frame broke startup rendering again")
 	display_game("  • Reverted to v0.9.166 working layout: single-line right-aligned mini bars, right-aligned minimap")
@@ -23027,13 +23035,15 @@ func _get_rarity_color(rarity: String) -> String:
 		_: return "#FFFFFF"
 
 func update_map(map_text: String):
-	# The server appends the minimap after the main ASCII map using a [font_size=9]
-	# marker inside a centered block. Split it off so the minimap can render in its
-	# own node beside the tool overlay, and the main map stays clean.
+	# The server appends the minimap after the main ASCII map using a small
+	# font wrapped in either [right] (current) or [center] (older builds).
+	# Split it off so the minimap can render in its own node beside the tool
+	# overlay, and the main map stays clean.
 	var main_text = map_text
 	var minimap_text = ""
-	var minimap_marker = "[center][font_size=9]"
-	var split_idx = map_text.find(minimap_marker)
+	var split_idx = map_text.find("[right][font_size=9]")
+	if split_idx == -1:
+		split_idx = map_text.find("[center][font_size=9]")
 	if split_idx != -1:
 		main_text = map_text.substr(0, split_idx).strip_edges(false, true)
 		minimap_text = map_text.substr(split_idx)
