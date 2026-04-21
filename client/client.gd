@@ -401,7 +401,7 @@ var game_state = GameState.DISCONNECTED
 @onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
-@onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
+@onready var resource_bars_overlay = $RootContainer/BottomStrip/CenterPanel/ResourceBarsRow
 @onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
 @onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
 @onready var status_hud = $RootContainer/TopSection/MapPanel/StatusHUD
@@ -411,11 +411,11 @@ var game_state = GameState.DISCONNECTED
 @onready var status_hud_pouch = $RootContainer/TopSection/MapPanel/StatusHUD/PouchLabel
 @onready var status_hud_quests = $RootContainer/TopSection/MapPanel/StatusHUD/QuestsLabel
 @onready var status_hud_eggs = $RootContainer/TopSection/MapPanel/StatusHUD/EggsLabel
-@onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
+@onready var chat_output = $RootContainer/BottomStrip/CenterPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
-@onready var input_field = $RootContainer/BottomStrip/ChatPanel/InputRow/InputField
-@onready var send_button = $RootContainer/BottomStrip/ChatPanel/InputRow/SendButton
+@onready var input_field = $RootContainer/BottomStrip/CenterPanel/InputRow/InputField
+@onready var send_button = $RootContainer/BottomStrip/CenterPanel/InputRow/SendButton
 @onready var action_bar = $RootContainer/BottomStrip/CenterPanel/ActionBar
 @onready var enemy_health_bar = $RootContainer/EnemyHealthBar
 @onready var player_health_bar = $RootContainer/StatsBar/PlayerHealthBar
@@ -426,11 +426,12 @@ var shortcut_buttons_container: HBoxContainer = null
 @onready var rank_label = $RootContainer/StatsBar/CurrencyDisplay/RankContainer/RankLabel
 @onready var music_toggle = $RootContainer/StatsBar/LevelRow/MusicToggle
 @onready var online_players_list = $RootContainer/BottomStrip/ChatPanel/OnlinePlayersList
-# Chat/Players tab system
-@onready var chat_tab_bar = $RootContainer/BottomStrip/ChatPanel/ChatTabBar
-@onready var chat_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/ChatTab
-@onready var players_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/PlayersTab
-var chat_tab: String = "chat"  # "chat" or "players"
+# Chat/Players tab system (legacy — tabs removed; nodes set to null so existing
+# references compile without guarding each call site.)
+var chat_tab_bar = null
+var chat_tab_button = null
+var players_tab_button = null
+var chat_tab: String = "chat"
 
 # UI References - Login Panel
 @onready var login_panel = $LoginPanel
@@ -3986,16 +3987,9 @@ func _get_title_display_info(title_id: String) -> Dictionary:
 	}
 	return title_data.get(title_id, {"name": title_id.capitalize(), "color": "#FFFFFF", "prefix": ""})
 
-func _on_chat_tab_pressed(tab: String):
-	"""Switch between chat and players tab"""
-	chat_tab = tab
-	if chat_tab == "chat":
-		chat_output.visible = true
-		online_players_list.visible = false
-	else:
-		chat_output.visible = false
-		online_players_list.visible = true
-	_update_chat_tab_style()
+func _on_chat_tab_pressed(_tab: String):
+	"""Legacy — chat and players now have their own dedicated panels, tabs removed."""
+	pass
 
 func _update_chat_tab_style():
 	"""Update chat tab button appearances based on active tab"""
@@ -20103,8 +20097,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.163 changes
+	display_game("[color=#00FF00]v0.9.163[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Layout Cleanup[/color]")
+	display_game("  • Chat moved into the Center Panel above the action bar (where there used to be dead space)")
+	display_game("  • Former chat panel is now a dedicated Players Online panel — no more tabs, both always visible")
+	display_game("  • Mini HP/Resource bars moved to a strip above the action bar (were overlapping the companion art)")
+	display_game("  • Status HUD / tool overlay / minimap no longer leave dead space between them — layout docks to content")
+	display_game("  • Map header no longer duplicates the area level shown in the Status HUD (shows Safe / Wilds / DANGER only)")
+	display_game("")
+
 	# v0.9.162 changes
-	display_game("[color=#00FF00]v0.9.162[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.162[/color]")
 	display_game("  [color=#FFD700]Resource Respawns & Post Variety[/color]")
 	display_game("  • Gathering nodes within 12 tiles of a trading post now respawn after 15 minutes instead of being permanently depleted")
 	display_game("  • Existing permanently-depleted nodes near posts were migrated to the timed respawn schedule on server startup")
@@ -20137,15 +20141,6 @@ func display_changelog():
 	display_game("  • Fixes the \"Estimated monster level: ~0\" warning appearing on tiles with no ! marker")
 	display_game("")
 
-	# v0.9.158 changes
-	display_game("[color=#00FFFF]v0.9.158[/color]")
-	display_game("  [color=#FFD700]Tool Durability Visibility[/color]")
-	display_game("  • Persistent tool status overlay in the bottom-left of GameOutput — shows equipped gathering tools and their durability at all times")
-	display_game("  • Durability color: green > 50%, yellow 25-50%, red < 25%")
-	display_game("  • Gathering session summary now includes remaining tool durability")
-	display_game("  • Tool break shows a prominent highlighted notification with sound")
-	display_game("  • Broken tool is automatically replaced by the best spare of the same type from your backpack, if one exists")
-	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 

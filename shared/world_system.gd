@@ -878,13 +878,15 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 
 	output += "\n"
 
-	# Danger info — enclosures are always safe
+	# Danger marker only — the precise level is shown in the Status HUD to avoid
+	# duplicating the same info above and below the map.
 	if in_enclosure:
 		output += "[color=#00FF00]Safe[/color]"
 	elif not info.safe and level_range.min > 0:
 		if level_range.is_hotspot:
-			output += "[color=#FF0000]!DANGER![/color] "
-		output += "[color=#FF4444]Lv%d-%d[/color]" % [level_range.min, level_range.max]
+			output += "[color=#FF0000]!DANGER![/color]"
+		else:
+			output += "[color=#FF8800]Wilds[/color]"
 	else:
 		output += "[color=#00FF00]Safe[/color]"
 
