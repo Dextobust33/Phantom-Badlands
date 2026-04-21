@@ -20002,8 +20002,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.157 changes
+	display_game("[color=#00FF00]v0.9.157[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Daily Quest Name Mismatch Fix[/color]")
+	display_game("  • Accepting a daily quest now matches what was displayed on the board")
+	display_game("  • Cause: RNG state diverged between quest list generation and quest regeneration when some dailies were already completed or on cooldown — same quest_id mapped to different quest data")
+	display_game("")
+
 	# v0.9.156 changes
-	display_game("[color=#00FF00]v0.9.156[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.156[/color]")
 	display_game("  [color=#FFD700]Permanent Hotkey Cascade Fix[/color]")
 	display_game("  • When an action bar slot fires on a number key (1-5), the matching item-select key is now locked until released")
 	display_game("  • Fixes: pressing 1 in More menu to open Quests no longer also abandons Quest #1")
@@ -20039,13 +20046,6 @@ func display_changelog():
 	display_game("  • Quests: turn-in XP now shows the yellow gain highlight on the XP bar")
 	display_game("  • Quests: exploration quest descriptions show which post the distance is measured from")
 	display_game("  • Combat: post-combat Harvest prompt now labels Space as Harvest (was Continue) and Q as Skip")
-	display_game("")
-
-	# v0.9.152 changes
-	display_game("[color=#00FFFF]v0.9.152[/color]")
-	display_game("  [color=#FFD700]Community[/color]")
-	display_game("  • Official Discord server launched — chat, LFG, bug reports, release announcements")
-	display_game("  • /help now includes Discord, website, and GitHub links under the new Community section")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
