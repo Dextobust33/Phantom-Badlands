@@ -21959,6 +21959,13 @@ func show_help():
 	display_game("  Goblin King summons minions, Alpha Wolf causes bleeding, Lich drains life, etc.")
 	display_game("[color=#00FF00]Bridges:[/color] Craft wooden bridges (Construction Lv3) to cross water permanently. Any player can use them.")
 
+	# Community section
+	display_game("")
+	display_game("[b][color=#FFD700]══ COMMUNITY ══[/color][/b]")
+	display_game("[color=#5865F2]Discord:[/color] [color=#FFFFFF]https://discord.gg/5AuceNN2dZ[/color] — chat, LFG, bug reports, update announcements")
+	display_game("[color=#FFD700]Website:[/color] [color=#FFFFFF]https://phantombadlands.com[/color]")
+	display_game("[color=#AAAAAA]GitHub:[/color] [color=#FFFFFF]https://github.com/Dextobust33/Phantom-Badlands[/color]")
+
 	# Add discovered trading posts section (dynamic per character)
 	var discovered = character_data.get("discovered_posts", [])
 	if discovered.size() > 0:
