@@ -17965,10 +17965,11 @@ func _load_connection_settings():
 						conn.port = int(conn.port)
 				return
 	# Default values if no config
-	server_ip = "localhost"
+	server_ip = "129.213.166.185"
 	server_port = 9080
 	last_username = ""
 	saved_connections = [
+		{"name": "Phantom Badlands", "ip": "129.213.166.185", "port": 9080},
 		{"name": "Local Server", "ip": "localhost", "port": 9080}
 	]
 
