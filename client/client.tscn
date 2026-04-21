@@ -301,7 +301,7 @@ text = "--"
 [node name="TopSection" type="HBoxContainer" parent="RootContainer" unique_id=1151379943]
 layout_mode = 2
 size_flags_vertical = 3
-size_flags_stretch_ratio = 2.2
+size_flags_stretch_ratio = 3.0
 theme_override_constants/separation = 4
 
 [node name="GameOutputContainer" type="Control" parent="RootContainer/TopSection" unique_id=629309873]
@@ -363,26 +363,47 @@ fit_content = true
 scroll_active = false
 autowrap_mode = 0
 
+[node name="ResourceBarsOverlay" type="RichTextLabel" parent="RootContainer/TopSection/GameOutputContainer" unique_id=1970771825]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -490.0
+offset_top = -110.0
+offset_right = -265.0
+offset_bottom = -30.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
 [node name="MapPanel" type="VBoxContainer" parent="RootContainer/TopSection" unique_id=1838908335]
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="MapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel" unique_id=1069693397]
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 11
 bbcode_enabled = true
-fit_content = true
-scroll_active = false
 
 [node name="BottomRow" type="HBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341200]
 layout_mode = 2
-theme_override_constants/separation = 12
+size_flags_vertical = 8
+theme_override_constants/separation = 8
 
 [node name="ToolStatusOverlay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341105]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(180, 110)
 layout_mode = 2
+size_flags_vertical = 8
 mouse_filter = 2
 theme_override_colors/default_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/normal_font_size = 12
@@ -391,12 +412,10 @@ fit_content = true
 scroll_active = false
 visible = false
 
-[node name="BottomRowSpacer" type="Control" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341202]
-layout_mode = 2
-size_flags_horizontal = 3
-
 [node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
 mouse_filter = 2
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
@@ -407,6 +426,7 @@ scroll_active = false
 
 [node name="StatusHUD" type="VBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341300]
 layout_mode = 2
+size_flags_vertical = 8
 theme_override_constants/separation = 2
 
 [node name="BackpackLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341301]
@@ -527,19 +547,10 @@ size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.5
 theme_override_constants/separation = 2
 
-[node name="ResourceBarsRow" type="RichTextLabel" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1722342001]
-custom_minimum_size = Vector2(0, 26)
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/default_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/normal_font_size = 12
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-
 [node name="ActionBar" type="HBoxContainer" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1788229954]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 2
 
 [node name="Action1" type="VBoxContainer" parent="RootContainer/BottomStrip/CenterPanel/ActionBar" unique_id=1430575798]
@@ -712,7 +723,32 @@ theme_override_font_sizes/font_size = 10
 text = "5"
 horizontal_alignment = 1
 
-[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/BottomStrip/CenterPanel" unique_id=632135015]
+[node name="ChatPanel" type="VBoxContainer" parent="RootContainer/BottomStrip" unique_id=507618204]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ChatTabBar" type="HBoxContainer" parent="RootContainer/BottomStrip/ChatPanel" unique_id=775338267]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ChatTab" type="Button" parent="RootContainer/BottomStrip/ChatPanel/ChatTabBar" unique_id=695132965]
+custom_minimum_size = Vector2(60, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Chat"
+
+[node name="PlayersTab" type="Button" parent="RootContainer/BottomStrip/ChatPanel/ChatTabBar" unique_id=366216556]
+custom_minimum_size = Vector2(60, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Players"
+
+[node name="ChatOutput" type="RichTextLabel" parent="RootContainer/BottomStrip/ChatPanel" unique_id=632135015]
 layout_mode = 2
 size_flags_vertical = 3
 focus_mode = 2
@@ -722,11 +758,22 @@ bbcode_enabled = true
 scroll_following = true
 selection_enabled = true
 
-[node name="InputRow" type="HBoxContainer" parent="RootContainer/BottomStrip/CenterPanel" unique_id=1832645870]
+[node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/BottomStrip/ChatPanel" unique_id=549140850]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+focus_mode = 2
+theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
+theme_override_font_sizes/normal_font_size = 11
+bbcode_enabled = true
+text = "[color=#666666]No players online[/color]"
+selection_enabled = true
+
+[node name="InputRow" type="HBoxContainer" parent="RootContainer/BottomStrip/ChatPanel" unique_id=1832645870]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="InputField" type="LineEdit" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1865768599]
+[node name="InputField" type="LineEdit" parent="RootContainer/BottomStrip/ChatPanel/InputRow" unique_id=1865768599]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.831, 0.769, 0.627, 1)
@@ -737,33 +784,11 @@ placeholder_text = "Type message or command..."
 keep_editing_on_text_submit = true
 caret_blink = true
 
-[node name="SendButton" type="Button" parent="RootContainer/BottomStrip/CenterPanel/InputRow" unique_id=1586236003]
+[node name="SendButton" type="Button" parent="RootContainer/BottomStrip/ChatPanel/InputRow" unique_id=1586236003]
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "Send"
-
-[node name="ChatPanel" type="VBoxContainer" parent="RootContainer/BottomStrip" unique_id=507618204]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
-[node name="PlayersHeader" type="Label" parent="RootContainer/BottomStrip/ChatPanel" unique_id=1722343001]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.843, 0, 1)
-theme_override_font_sizes/font_size = 13
-text = "Players Online"
-horizontal_alignment = 1
-
-[node name="OnlinePlayersList" type="RichTextLabel" parent="RootContainer/BottomStrip/ChatPanel" unique_id=549140850]
-layout_mode = 2
-size_flags_vertical = 3
-focus_mode = 2
-theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
-theme_override_font_sizes/normal_font_size = 11
-bbcode_enabled = true
-text = "[color=#666666]No players online[/color]"
-selection_enabled = true
 
 [node name="LoginPanel" type="Panel" parent="." unique_id=693982819]
 visible = false
