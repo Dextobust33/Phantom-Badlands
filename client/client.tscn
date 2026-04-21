@@ -383,24 +383,6 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 
-[node name="ToolStatusOverlay" type="RichTextLabel" parent="RootContainer/TopSection/GameOutputContainer" unique_id=1722341105]
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = -112.0
-offset_right = 206.0
-offset_bottom = -6.0
-grow_vertical = 0
-mouse_filter = 2
-theme_override_colors/default_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/normal_font_size = 12
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-visible = false
-
 [node name="MapPanel" type="VBoxContainer" parent="RootContainer/TopSection" unique_id=1838908335]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -412,6 +394,35 @@ theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 11
 bbcode_enabled = true
+
+[node name="BottomRow" type="HBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341200]
+layout_mode = 2
+size_flags_vertical = 8
+theme_override_constants/separation = 8
+
+[node name="ToolStatusOverlay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341105]
+custom_minimum_size = Vector2(180, 110)
+layout_mode = 2
+size_flags_vertical = 8
+mouse_filter = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+visible = false
+
+[node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+mouse_filter = 2
+theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
+theme_override_fonts/normal_font = ExtResource("2_gdxsl")
+theme_override_font_sizes/normal_font_size = 9
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer" unique_id=1365525555]
 visible = false
