@@ -16931,7 +16931,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip"]
+		"banip", "unbanip", "resetpw"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -17929,6 +17929,11 @@ func process_command(text: String):
 				display_game("[color=#FF0000]Usage: /unbanip <ip>[/color]")
 			else:
 				send_to_server({"type": "gm_unbanip", "ip": parts[1]})
+		"resetpw":
+			if parts.size() < 3:
+				display_game("[color=#FF0000]Usage: /resetpw <username> <newpassword>[/color]")
+			else:
+				send_to_server({"type": "gm_resetpw", "username": parts[1], "password": parts[2]})
 		_:
 			# Check if this is a combat command while in combat
 			if in_combat:

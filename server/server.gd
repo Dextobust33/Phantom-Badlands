@@ -1347,6 +1347,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_banip(peer_id, message)
 		"gm_unbanip":
 			handle_gm_unbanip(peer_id, message)
+		"gm_resetpw":
+			handle_gm_resetpw(peer_id, message)
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
@@ -22781,6 +22783,26 @@ func handle_gm_unbanip(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Unbanned IP %s[/color]" % ip})
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFFF00][GM] IP %s was not banned.[/color]" % ip})
+
+func handle_gm_resetpw(peer_id: int, message: Dictionary):
+	"""Reset a player's password. Usage: /resetpw <username> <newpassword>"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+
+	var username = message.get("username", "").strip_edges()
+	var new_password = message.get("password", "").strip_edges()
+
+	if username.is_empty() or new_password.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: /resetpw <username> <newpassword>[/color]"})
+		return
+
+	var result = persistence.admin_reset_password(username, new_password)
+	if result.get("success", false):
+		log_message("Security: Password reset for '%s' by admin %s" % [username, peers[peer_id].get("username", "admin")])
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Password reset for '%s'[/color]" % username})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed: %s[/color]" % result.get("reason", "Unknown error")})
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""
