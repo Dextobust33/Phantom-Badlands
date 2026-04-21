@@ -47,14 +47,14 @@ border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
 border_color = Color(0.2, 1, 0.2, 1)
-corner_radius_top_left = 80
-corner_radius_top_right = 80
-corner_radius_bottom_right = 80
-corner_radius_bottom_left = 80
-content_margin_left = 6.0
-content_margin_top = 6.0
-content_margin_right = 6.0
-content_margin_bottom = 6.0
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.15, 0.08, 0.06, 1)
@@ -430,7 +430,6 @@ visible = false
 
 [node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
 layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 8
 mouse_filter = 2
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
