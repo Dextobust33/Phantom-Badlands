@@ -965,7 +965,9 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 		return {
 			"min": 0,
 			"max": 0,
-			"is_hotspot": false
+			"base_level": 0,
+			"is_hotspot": false,
+			"distance": sqrt(float(x * x + y * y))
 		}
 
 	# Calculate Euclidean distance from origin (0,0)
@@ -1036,7 +1038,13 @@ func _distance_to_level(distance: float) -> int:
 	return int(4000 + t * 6000)
 
 func get_hotspot_at(x: int, y: int) -> Dictionary:
-	"""Get hotspot info for a location. Returns {in_hotspot: bool, intensity: float}"""
+	"""Get hotspot info for a location. Returns {in_hotspot: bool, intensity: float}.
+	Safe terrain (roads, trading posts, safe zones) suppresses hotspots so the map
+	and the warning agree — both hide hotspot effects on safe tiles."""
+	var terrain = get_terrain_at(x, y)
+	var info = get_terrain_info(terrain)
+	if info.safe or is_safe_zone(x, y):
+		return {"in_hotspot": false, "intensity": 0.0}
 	var in_hotspot = _is_hotspot(x, y)
 	var intensity = 0.0
 	if in_hotspot:
