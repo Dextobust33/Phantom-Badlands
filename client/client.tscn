@@ -424,6 +424,65 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 
+[node name="StatusHUD" type="VBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341300]
+layout_mode = 2
+size_flags_vertical = 8
+theme_override_constants/separation = 2
+
+[node name="BackpackLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341301]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="AreaLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341302]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="CompassLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341303]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="PouchLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341304]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="QuestsLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341305]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="EggsLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/StatusHUD" unique_id=1722341306]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
 [node name="EnemyHealthBar" type="HBoxContainer" parent="RootContainer" unique_id=1365525555]
 visible = false
 custom_minimum_size = Vector2(0, 36)

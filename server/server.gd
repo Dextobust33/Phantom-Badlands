@@ -4313,6 +4313,26 @@ func send_location_update(peer_id: int):
 				if tile_type == "storage":
 					enclosure_has_storage = true
 
+	# Compute area level info once for the status HUD (client shows this as
+	# "Area Lv ~N" without the player having to look above the map).
+	var level_range_hud = world_system.get_monster_level_range(character.x, character.y)
+	var area_level_hud = int(level_range_hud.get("base_level", 0))
+	var is_area_hotspot = bool(level_range_hud.get("is_hotspot", false))
+
+	# Nearest trading post compass so the player always knows direction/distance home.
+	var nearest_post_hud = {}
+	if chunk_manager:
+		var np = chunk_manager.get_nearest_npc_post(character.x, character.y)
+		if not np.is_empty():
+			var dx = int(np.get("x", 0)) - character.x
+			var dy = int(np.get("y", 0)) - character.y
+			var dist = int(sqrt(float(dx * dx + dy * dy)))
+			nearest_post_hud = {
+				"name": np.get("name", "Trading Post"),
+				"direction": _get_direction_text(character.x, character.y, int(np.get("x", 0)), int(np.get("y", 0))),
+				"distance": dist
+			}
+
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -4331,7 +4351,11 @@ func send_location_update(peer_id: int):
 		"at_corpse": not corpse_at_location.is_empty(),
 		"corpse_info": corpse_at_location,
 		"at_bounty": at_bounty,
-		"bounty_quest_id": bounty_quest_id_at_loc
+		"bounty_quest_id": bounty_quest_id_at_loc,
+		"area_level": area_level_hud,
+		"area_is_hotspot": is_area_hotspot,
+		"area_is_safe": area_level_hud <= 0,
+		"nearest_post": nearest_post_hud,
 	}
 	if in_player_post:
 		location_msg["in_own_enclosure"] = player_post_is_own
