@@ -20097,8 +20097,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.164 changes
+	display_game("[color=#00FF00]v0.9.164[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Layout Fixes[/color]")
+	display_game("  • Chat now sits BELOW the action bar (was above)")
+	display_game("  • Mini HP/Resource bars are now a single right-aligned line (was two lines)")
+	display_game("  • Minimap docks to the right side of its row — no more floating in the middle")
+	display_game("  • Rebalanced vertical proportions so GameOutput doesn't overshadow the chat/action area")
+	display_game("")
+
 	# v0.9.163 changes
-	display_game("[color=#00FF00]v0.9.163[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.163[/color]")
 	display_game("  [color=#FFD700]UI Layout Cleanup[/color]")
 	display_game("  • Chat moved into the Center Panel above the action bar (where there used to be dead space)")
 	display_game("  • Former chat panel is now a dedicated Players Online panel — no more tabs, both always visible")
@@ -20133,14 +20142,6 @@ func display_changelog():
 	display_game("  • Sanctuary now supports diagonal movement (numpad 1/3/7/9, or two arrow keys together)")
 	display_game("  • Sanctuary movement hint updated to \"Move with numpad or arrows (diagonals supported)\"")
 	display_game("")
-
-	# v0.9.159 changes
-	display_game("[color=#00FFFF]v0.9.159[/color]")
-	display_game("  [color=#FFD700]Hotzone on Safe Terrain Fix[/color]")
-	display_game("  • Hotspots on safe terrain (roads, trading posts, safe zones) no longer trigger the DANGER ZONE warning")
-	display_game("  • Fixes the \"Estimated monster level: ~0\" warning appearing on tiles with no ! marker")
-	display_game("")
-
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -20862,10 +20863,11 @@ func update_resource_bars_overlay():
 			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			res_color = "#9999FF"
 
-	var bar_width = 12
-	var text = ""
-	text += _stat_bar("HP:  ", current_hp, max_hp, bar_width, "#FF4444") + "\n"
-	text += _stat_bar("%s: " % res_name, res_current, res_max, bar_width, res_color)
+	# Single-line HP + resource, right-aligned so it docks to the right edge
+	var bar_width = 10
+	var hp_bar = _stat_bar("HP:", current_hp, max_hp, bar_width, "#FF4444")
+	var res_bar = _stat_bar("%s:" % res_name, res_current, res_max, bar_width, res_color)
+	var text = "[right]%s   %s[/right]" % [hp_bar, res_bar]
 
 	resource_bars_overlay.clear()
 	resource_bars_overlay.append_text(text)
