@@ -19959,8 +19959,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.152 changes
+	display_game("[color=#00FF00]v0.9.152[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Community[/color]")
+	display_game("  • Official Discord server launched — chat, LFG, bug reports, release announcements")
+	display_game("  • /help now includes Discord, website, and GitHub links under the new Community section")
+	display_game("")
+
 	# v0.9.148 changes
-	display_game("[color=#00FF00]v0.9.148[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.148[/color]")
 	display_game("  [color=#FFD700]Major Update — Game Audit & Polish[/color]")
 	display_game("  • Dungeon Hard Mode: clear a dungeon to unlock Hard (+50% stats, -20% steps, +75% XP, bonus loot)")
 	display_game("  • Elite Champions: 1% spawn Lv15+ with gold [ELITE] tag, boosted stats/XP, guaranteed drops")
@@ -20007,26 +20014,6 @@ func display_changelog():
 	display_game("  • Magic Bolt: fixed stuck popup if combat ended before bolt was fired")
 	display_game("  • Combat: dying to a monster's first strike now correctly shows death screen")
 	display_game("  • World: reduced terrain density for a more open map feel")
-	display_game("")
-
-	# v0.9.144 changes
-	display_game("[color=#00FFFF]v0.9.144[/color]")
-	display_game("  [color=#FFD700]Server Security Hardening[/color]")
-	display_game("  • Login brute-force protection: lockout after repeated failed attempts")
-	display_game("  • Message rate limiting: prevents spam and flooding")
-	display_game("  • Chat message length capped at 500 characters")
-	display_game("  • Buffer overflow protection and message size limits")
-	display_game("  • Password policy: minimum 6 characters required for new accounts")
-	display_game("  • IP ban system for admins (/banip, /unbanip)")
-	display_game("  • Connection cap: server rejects beyond 200 simultaneous connections")
-	display_game("")
-
-	# v0.9.143 changes
-	display_game("[color=#00FFFF]v0.9.143[/color]")
-	display_game("  [color=#FFD700]Resource Bars Overlay[/color]")
-	display_game("  • HP and class resource bars (Mana/Stamina/Energy) now display as a persistent overlay")
-	display_game("  • Bars appear bottom-right of game output, next to companion art")
-	display_game("  • Updates in real-time during combat, ability use, and healing")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
