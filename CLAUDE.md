@@ -259,29 +259,65 @@ The combat simulator tests monster lethality against all 9 character classes to 
 ## Releases & Distribution
 
 **GitHub:** https://github.com/Dextobust33/Phantom-Badlands
+**Website:** https://phantombadlands.com (GitHub Pages from `docs/`)
+**Game Server:** Oracle Cloud VM at `129.213.166.185:9080` (Always Free tier)
 
-**Creating a Release:**
+### Creating a Client Release:
 ```bash
-# 1. Update version
-echo "0.3" > VERSION.txt
+# 1. Bump version (NEVER reuse a version number)
+echo "X.Y.Z" > VERSION.txt
 
-# 2. Export client
+# 2. Commit and push
+git add VERSION.txt && git commit -m "vX.Y.Z: description" && git push
+
+# 3. Export client
 "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantom-Badlands" "builds/PhantomBadlandsClient.exe"
 
-# 3. Create ZIP
-powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'VERSION.txt' -DestinationPath 'releases/phantom-badlands-client-v0.3.zip' -Force"
+# 4. Create ZIPs (client + launcher — BOTH must be in every release)
+cp VERSION.txt builds/VERSION.txt
+powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'builds/VERSION.txt' -DestinationPath 'releases/phantom-badlands-client-vX.Y.Z.zip' -Force"
+powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsLauncher.exe' -DestinationPath 'releases/phantom-badlands-launcher.zip' -Force"
 
-# 4. Upload to GitHub
-"/c/Program Files/GitHub CLI/gh.exe" release create v0.3 releases/phantom-badlands-client-v0.3.zip --title "v0.3" --notes "Description"
+# 5. Create GitHub release (MUST include both ZIPs)
+"/c/Program Files/GitHub CLI/gh.exe" release create vX.Y.Z releases/phantom-badlands-client-vX.Y.Z.zip releases/phantom-badlands-launcher.zip --title "vX.Y.Z" --notes "Description"
+```
 
-# 5. Push code
-git push
+**CRITICAL:** The launcher ZIP must be included in EVERY release because the website download link points to `releases/latest/download/phantom-badlands-launcher.zip`. If missing, new players can't download.
+
+### Deploying Server Updates:
+```bash
+# One-command deploy (exports, uploads, restarts):
+bash deploy_server.sh
+
+# Or manually:
+# 1. Export Linux server
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantom-Badlands-Server-Linux" "builds/server/PhantomBadlandsServer.x86_64"
+
+# 2. Upload and restart
+SSH_KEY="/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
+scp -i "$SSH_KEY" builds/server/PhantomBadlandsServer.x86_64 ubuntu@129.213.166.185:~/phantom-badlands/
+ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "chmod +x ~/phantom-badlands/PhantomBadlandsServer.x86_64 && sudo systemctl restart phantom-badlands"
+```
+
+### Server Management:
+```bash
+SSH_KEY="/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
+# Check status
+ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl status phantom-badlands --no-pager"
+# View logs
+ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo journalctl -u phantom-badlands -n 50 --no-pager"
+# Restart
+ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl restart phantom-badlands"
+# Stop
+ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl stop phantom-badlands"
 ```
 
 ## Maintenance Reminders
 
-- **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 20311)
-- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 18648) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
+- **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 21639)
+- **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 19938) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
+- **Include launcher ZIP:** Every GitHub release MUST include `phantom-badlands-launcher.zip` alongside the client ZIP.
+- **Deploy server:** After server-side changes, run `bash deploy_server.sh` to update the cloud server.
 - **After significant changes:** Remind user to create a release for players
 
 ## Code Conventions
