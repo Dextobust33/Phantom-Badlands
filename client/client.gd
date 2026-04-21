@@ -1519,6 +1519,12 @@ func _ready():
 	# Create quick-access shortcut buttons (top-right of chat area)
 	_create_shortcut_buttons()
 
+	# Move Chat + InputRow from the right-side ChatPanel into the CenterPanel
+	# below the action bar, leaving ChatPanel as a dedicated Players Online
+	# sidebar. Runtime reparent — tscn restructures of this area have been
+	# fragile; the StatusRow approach works, so reuse the pattern.
+	_move_chat_into_center_panel()
+
 	# Create ability input popup
 	_create_ability_popup()
 
@@ -7552,6 +7558,45 @@ func execute_variable_cost_ability(amount: int):
 	send_combat_command("%s %d" % [ability, amount])
 	update_action_bar()
 
+func _move_chat_into_center_panel():
+	"""Relocate ChatOutput + InputRow from the right-side ChatPanel into the
+	CenterPanel below the action bar so chat fills the dead space under the
+	action buttons. ChatPanel becomes a dedicated Players Online sidebar."""
+	var center_panel = get_node_or_null("RootContainer/BottomStrip/CenterPanel")
+	var chat_panel = get_node_or_null("RootContainer/BottomStrip/ChatPanel")
+	if center_panel == null or chat_panel == null:
+		return
+	if chat_output == null or input_field == null:
+		return
+
+	# Move ChatOutput from ChatPanel → CenterPanel
+	var chat_parent = chat_output.get_parent()
+	if chat_parent != center_panel:
+		chat_parent.remove_child(chat_output)
+		center_panel.add_child(chat_output)
+
+	# Move InputRow (the HBox wrapping InputField + SendButton) with it
+	var input_row = input_field.get_parent() if input_field else null
+	if input_row and input_row.get_parent() != center_panel:
+		input_row.get_parent().remove_child(input_row)
+		center_panel.add_child(input_row)
+
+	# Layout: ActionBar stays at the top of CenterPanel, ChatOutput fills the
+	# space below it (expand), InputRow sits at the very bottom.
+	chat_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	if input_row:
+		input_row.size_flags_vertical = Control.SIZE_SHRINK_END
+
+	# Hide the old Chat/Players tab bar — it's pointless now since chat and
+	# players live in separate panels.
+	if chat_tab_bar:
+		chat_tab_bar.visible = false
+	# Players list is always visible in its own ChatPanel now.
+	if online_players_list:
+		online_players_list.visible = true
+	# Ensure chat is always visible (no more tab toggle).
+	chat_output.visible = true
+
 func _create_status_row_with_mini_bars():
 	"""Add a StatusRow HBox between TopSection and BottomStrip that holds the
 	mini HP/resource bars (left) and ultimately the shortcut buttons (right).
@@ -7785,7 +7830,16 @@ func _update_shortcut_buttons_visibility():
 		return
 	# Show during normal gameplay, hide during combat/login/house/etc.
 	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode and not at_guard_post
-	shortcut_buttons_container.visible = should_show
+	# Hide the BUTTONS, not the container — the container still needs to
+	# occupy its 1/3 slice of StatusRow so the mini HP/Mana bars stay aligned
+	# with the GameOutput right edge. Hiding the whole container would collapse
+	# its cell and let the bars extend to the window edge.
+	if shortcut_buttons_container.get_parent() == $RootContainer.get_node_or_null("StatusRow"):
+		shortcut_buttons_container.visible = true
+		for child in shortcut_buttons_container.get_children():
+			child.visible = should_show
+	else:
+		shortcut_buttons_container.visible = should_show
 
 func _scale_shortcut_buttons(base_scale: float):
 	"""Scale shortcut button fonts based on window size and chat scale."""
@@ -20202,8 +20256,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.183 changes
+	display_game("[color=#00FF00]v0.9.183[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat bar position + Chat relocation[/color]")
+	display_game("  • Mini bars keep their position during combat — the shortcut-button cell now only hides its buttons, not its slot, so the right cell doesn't collapse")
+	display_game("  • Chat + input field moved below the action bar (into CenterPanel) at runtime — fills the dead space below the action buttons")
+	display_game("  • Right-side ChatPanel is now a dedicated Players Online sidebar; the old Chat/Players tabs are hidden")
+	display_game("  • Runtime reparent — no tscn restructure, same safe pattern as StatusRow")
+	display_game("")
+
 	# v0.9.182 changes
-	display_game("[color=#00FF00]v0.9.182[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.182[/color]")
 	display_game("  [color=#FFD700]Mini bars + shortcuts on the same row[/color]")
 	display_game("  • Shortcut buttons now actually go INSIDE the StatusRow (were accidentally a sibling row — which is why they rendered below the mini bars)")
 	display_game("  • Row split 2:1 to mirror GameOutput:MapPanel — bars end where GameOutput ends, shortcut buttons end where MapPanel ends")
