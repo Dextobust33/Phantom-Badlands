@@ -694,16 +694,20 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	for i in range(quest_count):
 		var quest_id = "%s_daily_%s_%d" % [trading_post_id, date_str, i]
 
-		# Skip if already active, completed, or on cooldown
+		# ALWAYS generate the quest so the rng advances the same number of times
+		# regardless of whether the index is filtered out. _regenerate_daily_quest
+		# runs for every index 0..N — if we skip generation here but not there, the
+		# same quest_id resolves to different quest data at display vs accept time.
+		var quest = _generate_daily_quest(trading_post_id, quest_id, i, post_distance,
+			player_level, progression_modifier, quest_types, rng, post_coords)
+
+		# Filter out already-active, completed, or on-cooldown quests AFTER generation
 		if quest_id in active_quest_ids or quest_id in completed_quests:
 			continue
 		if daily_cooldowns.has(quest_id):
 			var current_time = Time.get_unix_time_from_system()
 			if current_time < daily_cooldowns[quest_id]:
 				continue
-
-		var quest = _generate_daily_quest(trading_post_id, quest_id, i, post_distance,
-			player_level, progression_modifier, quest_types, rng, post_coords)
 		if quest.is_empty():
 			continue
 
