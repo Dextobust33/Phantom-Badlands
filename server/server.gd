@@ -12651,6 +12651,19 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 			"correct_index": session.get("correct_id", -1),
 		})
 
+	# Report remaining tool durability so the player can gauge replacement timing.
+	var tool_info = {}
+	var tool_subtype_for_job = _get_tool_subtype_for_job(job_type)
+	if tool_subtype_for_job != "":
+		var eq_tool = character.equipped_tools.get(tool_subtype_for_job, {})
+		if not eq_tool.is_empty():
+			tool_info = {
+				"subtype": tool_subtype_for_job,
+				"name": eq_tool.get("name", tool_subtype_for_job.capitalize()),
+				"durability": eq_tool.get("durability", 0),
+				"max_durability": eq_tool.get("max_durability", eq_tool.get("durability", 0)),
+			}
+
 	send_to_peer(peer_id, {
 		"type": "gathering_complete",
 		"total_materials": total_materials,
@@ -12659,6 +12672,7 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 		"job_leveled_up": job_result.get("leveled_up", false),
 		"new_job_level": job_result.get("new_level", 1),
 		"character": character.to_dict(),
+		"tool_info": tool_info,
 	})
 
 	active_gathering.erase(peer_id)
@@ -12842,7 +12856,7 @@ func _find_tool_in_inventory(character, tool_subtype: String) -> Dictionary:
 	return {}
 
 func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
-	"""Reduce durability of a tool by 1. Remove if broken and notify player."""
+	"""Reduce durability of a tool by 1. Remove if broken, auto-equip spare from inventory, notify player."""
 	# Check equipped tool slot first
 	var equipped = character.equipped_tools.get(tool_subtype, {})
 	if not equipped.is_empty():
@@ -12850,9 +12864,9 @@ func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
 		if equipped["durability"] <= 0:
 			var tool_name = equipped.get("name", tool_subtype.capitalize())
 			character.equipped_tools[tool_subtype] = {}
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Your %s has broken![/color]" % tool_name})
+			_auto_equip_tool_replacement(peer_id, character, tool_subtype, tool_name)
 		return
-	# Fallback: check inventory
+	# Fallback: check inventory (legacy path — tools shouldn't normally live here)
 	for i in range(character.inventory.size()):
 		var item = character.inventory[i]
 		if item.get("type", "") == "tool" and item.get("subtype", "") == tool_subtype:
@@ -12860,8 +12874,45 @@ func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
 			if item["durability"] <= 0:
 				var tool_name = item.get("name", tool_subtype.capitalize())
 				character.inventory.remove_at(i)
-				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Your %s has broken![/color]" % tool_name})
+				_auto_equip_tool_replacement(peer_id, character, tool_subtype, tool_name)
 			break
+
+func _auto_equip_tool_replacement(peer_id: int, character, tool_subtype: String, broken_name: String):
+	"""When a tool breaks, search inventory for a replacement of the same subtype and equip it.
+	Sends a prominent break notification either way so the player can react."""
+	# Find the highest-tier intact tool of this subtype in inventory
+	var best_idx = -1
+	var best_tier = -1
+	for i in range(character.inventory.size()):
+		var item = character.inventory[i]
+		if item.get("type", "") != "tool" or item.get("subtype", "") != tool_subtype:
+			continue
+		if item.get("durability", 0) <= 0:
+			continue
+		var tier = int(item.get("tier", 1))
+		if tier > best_tier:
+			best_tier = tier
+			best_idx = i
+
+	if best_idx >= 0:
+		var replacement = character.inventory[best_idx]
+		character.equipped_tools[tool_subtype] = replacement
+		character.inventory.remove_at(best_idx)
+		send_to_peer(peer_id, {
+			"type": "tool_broken",
+			"tool_name": broken_name,
+			"subtype": tool_subtype,
+			"replacement": replacement.get("name", ""),
+			"replacement_durability": replacement.get("durability", 0),
+			"replacement_max": replacement.get("max_durability", replacement.get("durability", 0)),
+		})
+	else:
+		send_to_peer(peer_id, {
+			"type": "tool_broken",
+			"tool_name": broken_name,
+			"subtype": tool_subtype,
+			"replacement": "",
+		})
 
 # ===== SOLDIER HARVEST SYSTEM =====
 
