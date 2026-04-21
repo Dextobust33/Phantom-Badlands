@@ -17955,7 +17955,7 @@ func _load_connection_settings():
 			var result = json.parse(json_str)
 			if result == OK:
 				var data = json.data
-				server_ip = data.get("last_ip", "localhost")
+				server_ip = data.get("last_ip", "129.213.166.185")
 				server_port = int(data.get("last_port", 9080))
 				last_username = data.get("last_username", "")
 				saved_connections = data.get("saved_connections", [])
@@ -17963,6 +17963,18 @@ func _load_connection_settings():
 				for conn in saved_connections:
 					if conn.has("port"):
 						conn.port = int(conn.port)
+				# Migrate existing configs: any non-cloud IP gets updated to cloud server
+				if server_ip != "129.213.166.185":
+					server_ip = "129.213.166.185"
+				# Ensure cloud server is in saved connections
+				var has_cloud = false
+				for conn in saved_connections:
+					if conn.get("ip", "") == "129.213.166.185":
+						has_cloud = true
+						break
+				if not has_cloud:
+					saved_connections.insert(0, {"name": "Phantom Badlands", "ip": "129.213.166.185", "port": 9080})
+					_save_connection_settings()
 				return
 	# Default values if no config
 	server_ip = "129.213.166.185"
