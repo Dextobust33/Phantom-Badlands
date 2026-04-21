@@ -20103,8 +20103,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.171 changes
+	display_game("[color=#00FF00]v0.9.171[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Minimap Frame Sizing[/color]")
+	display_game("  • Minimap frame now wraps just the minimap content instead of stretching across the whole row")
+	display_game("  • Added a BottomRowSpacer so tools dock to the left and the framed minimap docks to the right")
+	display_game("")
+
 	# v0.9.170 changes
-	display_game("[color=#00FF00]v0.9.170[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.170[/color]")
 	display_game("  [color=#FFD700]Minimap Frame[/color]")
 	display_game("  • Added a lime-green rounded border around the minimap node")
 	display_game("  • Single attribute change on the existing MinimapDisplay node — no layout restructure")
