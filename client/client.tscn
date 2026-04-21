@@ -439,6 +439,7 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_minimap_frame")
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
+autowrap_mode = 0
 
 [node name="StatusHUD" type="VBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341300]
 layout_mode = 2
