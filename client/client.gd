@@ -2219,6 +2219,9 @@ func _process(delta):
 						dungeon_food_select = false
 						dungeon_food_list = []
 						send_to_server({"type": "dungeon_rest", "food_id": food.id})
+						# Immediately restore the dungeon overview; the rest result text
+						# will append below it when the server responds.
+						display_dungeon_floor()
 						update_action_bar()
 			else:
 				set_meta("foodkey_%d_pressed" % i, false)
@@ -2718,7 +2721,7 @@ func _process(delta):
 			set_meta("enter_pressed", false)
 
 	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
-	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not dungeon_resource_prompt and not dungeon_food_select and not any_popup_open and not inventory_mode:
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not flock_pending and not harvest_mode and not dungeon_resource_prompt and not dungeon_food_select and not any_popup_open and not inventory_mode and not wish_selection_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -2830,7 +2833,7 @@ func _process(delta):
 				last_move_time = current_time
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, build, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not build_mode and not storage_mode and not market_mode:
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not build_mode and not storage_mode and not market_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -5624,9 +5627,10 @@ func update_action_bar():
 		]
 	elif dungeon_mode and pending_continue:
 		# In dungeon, waiting for player to continue after combat/event
+		var primary_label = "Harvest" if harvest_available else "Continue"
 		current_actions = [
-			{"label": "Continue", "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
-			{"label": "Harvest" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "harvest_start" if harvest_available else "", "enabled": harvest_available},
+			{"label": primary_label, "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
+			{"label": "Skip" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "skip_harvest" if harvest_available else "", "enabled": harvest_available},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6117,9 +6121,10 @@ func update_action_bar():
 		]
 	elif pending_continue:
 		# Waiting for player to acknowledge combat results
+		var primary_label = "Harvest" if harvest_available else "Continue"
 		current_actions = [
-			{"label": "Continue", "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
-			{"label": "Harvest" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "harvest_start" if harvest_available else "", "enabled": harvest_available},
+			{"label": primary_label, "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
+			{"label": "Skip" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "skip_harvest" if harvest_available else "", "enabled": harvest_available},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9240,9 +9245,20 @@ func execute_local_action(action: String):
 			harvest_available = false
 			pending_continue = false
 			send_to_server({"type": "harvest_start"})
+		"skip_harvest":
+			# Decline the harvest offer — just continue without harvesting.
+			# harvest_available is cleared first so the continue path doesn't re-trigger it.
+			harvest_available = false
+			pending_continue = false
+			if dungeon_mode:
+				send_to_server({"type": "dungeon_state"})
+				update_action_bar()
+			else:
+				acknowledge_continue()
 		"harvest_stop":
 			# Stop harvest early — notify server so it clears the session (else server blocks movement)
 			send_to_server({"type": "harvest_end"})
+			game_output.clear()
 			end_harvest()
 		"harvest_done":
 			# Dismiss harvest complete screen
@@ -10511,6 +10527,13 @@ func execute_local_action(action: String):
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
+
+			# If a Soldier harvest is available, the prompt shown to the player was
+			# "Press [Space] to auto-harvest" — honor that by triggering the harvest.
+			if harvest_available:
+				harvest_available = false
+				send_to_server({"type": "harvest_start"})
+				return
 
 			# CRITICAL: Check for queued combat (e.g., egg hatched right before combat started)
 			if not queued_combat_message.is_empty():
@@ -13941,6 +13964,11 @@ func select_inventory_item(index: int):
 func cancel_inventory_action():
 	"""Cancel pending inventory action"""
 	if pending_inventory_action != "":
+		# In-dungeon use-item view opens directly from the main menu — cancelling it
+		# should exit inventory entirely, matching overworld single-back behavior.
+		if dungeon_mode and pending_inventory_action == "use_item":
+			close_inventory()
+			return
 		pending_inventory_action = ""
 		selected_item_index = -1
 		rune_apply_mode = false
@@ -16004,7 +16032,7 @@ func handle_server_message(message: Dictionary):
 					# Require continue press so player can read loot before display refreshes
 					display_game("")
 					if harvest_available:
-						display_game("[color=#FF6600]Press [%s] to auto-harvest...[/color]" % get_action_key_name(0))
+						display_game("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
 					else:
 						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 					pending_continue = true
@@ -19959,8 +19987,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.153 changes
+	display_game("[color=#00FF00]v0.9.153[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon & Harvest Bug Fixes[/color]")
+	display_game("  • Dungeon: overview redraws immediately after selecting food to rest")
+	display_game("  • Dungeon: Items menu now closes in one press (was requiring two)")
+	display_game("  • Dungeon: movement blocked during flock encounters and harvest minigames")
+	display_game("  • Dungeon: Harvest Complete summary is always gated on Continue so it's readable")
+	display_game("  • Harvest: Stop button clears the prompt screen on exit")
+	display_game("  • Harvest: overworld won't send move requests during the minigame")
+	display_game("  • Quests: turn-in XP now shows the yellow gain highlight on the XP bar")
+	display_game("  • Quests: exploration quest descriptions show which post the distance is measured from")
+	display_game("  • Combat: post-combat Harvest prompt now labels Space as Harvest (was Continue) and Q as Skip")
+	display_game("")
+
 	# v0.9.152 changes
-	display_game("[color=#00FF00]v0.9.152[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.152[/color]")
 	display_game("  [color=#FFD700]Community[/color]")
 	display_game("  • Official Discord server launched — chat, LFG, bug reports, release announcements")
 	display_game("  • /help now includes Discord, website, and GitHub links under the new Community section")
@@ -23509,9 +23551,11 @@ func end_harvest():
 	harvest_saves_remaining = 0
 	harvest_mastery_label = ""
 	harvest_mastery_count = 0
-	# After auto-harvest in dungeon, set pending_continue so player can advance
-	if dungeon_mode and pending_dungeon_continue:
+	# After harvest in dungeon, always gate movement behind the Continue prompt so
+	# the HARVEST COMPLETE summary is readable before the next dungeon state clears it.
+	if dungeon_mode:
 		pending_continue = true
+		pending_dungeon_continue = true
 		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 	# Reset combat background
 	reset_combat_background()
@@ -26002,6 +26046,11 @@ func handle_quest_turned_in(message: Dictionary):
 				display_game("  [color=#00FF00]★[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.get("display", ability.get("name", "?")), ability_type])
 			display_game("  [color=#808080]Check Abilities menu to equip![/color]")
 			display_game("[color=#00FFFF]──────────────────────────────────────[/color]")
+
+	# Highlight the quest XP on the bar in yellow (same treatment as combat XP)
+	var xp_reward = rewards.get("xp", 0)
+	if xp_reward > 0:
+		recent_xp_gain = xp_reward
 
 	# Update UI
 	update_currency_display()
