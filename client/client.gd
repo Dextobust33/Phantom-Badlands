@@ -402,7 +402,8 @@ var game_state = GameState.DISCONNECTED
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
-@onready var tool_status_overlay = $RootContainer/TopSection/GameOutputContainer/ToolStatusOverlay
+@onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
+@onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
@@ -2806,13 +2807,25 @@ func _process(delta):
 			var house_dx = 0
 			var house_dy = 0
 
-			# Check numpad keys for 4-direction movement
+			# Numpad — check diagonals first so KP_7 doesn't also match KP_4/KP_8
+			var nw_key = keybinds.get("move_7", default_keybinds.get("move_7", KEY_KP_7))
+			var ne_key = keybinds.get("move_9", default_keybinds.get("move_9", KEY_KP_9))
+			var sw_key = keybinds.get("move_1", default_keybinds.get("move_1", KEY_KP_1))
+			var se_key = keybinds.get("move_3", default_keybinds.get("move_3", KEY_KP_3))
 			var north_key = keybinds.get("move_8", default_keybinds.get("move_8", KEY_KP_8))
 			var south_key = keybinds.get("move_2", default_keybinds.get("move_2", KEY_KP_2))
 			var west_key = keybinds.get("move_4", default_keybinds.get("move_4", KEY_KP_4))
 			var east_key = keybinds.get("move_6", default_keybinds.get("move_6", KEY_KP_6))
 
-			if Input.is_physical_key_pressed(north_key):
+			if Input.is_physical_key_pressed(nw_key):
+				house_dx = -1; house_dy = -1
+			elif Input.is_physical_key_pressed(ne_key):
+				house_dx = 1; house_dy = -1
+			elif Input.is_physical_key_pressed(sw_key):
+				house_dx = -1; house_dy = 1
+			elif Input.is_physical_key_pressed(se_key):
+				house_dx = 1; house_dy = 1
+			elif Input.is_physical_key_pressed(north_key):
 				house_dy = -1
 			elif Input.is_physical_key_pressed(south_key):
 				house_dy = 1
@@ -2821,20 +2834,33 @@ func _process(delta):
 			elif Input.is_physical_key_pressed(east_key):
 				house_dx = 1
 
-			# Check arrow keys as alternative
+			# Arrow keys as alternative — support two-key diagonals
 			if house_dx == 0 and house_dy == 0:
 				var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
 				var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
 				var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
 				var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
 
-				if Input.is_physical_key_pressed(up_key):
+				var arr_n = Input.is_physical_key_pressed(up_key)
+				var arr_s = Input.is_physical_key_pressed(down_key)
+				var arr_w = Input.is_physical_key_pressed(left_key)
+				var arr_e = Input.is_physical_key_pressed(right_key)
+
+				if arr_n and arr_w:
+					house_dx = -1; house_dy = -1
+				elif arr_n and arr_e:
+					house_dx = 1; house_dy = -1
+				elif arr_s and arr_w:
+					house_dx = -1; house_dy = 1
+				elif arr_s and arr_e:
+					house_dx = 1; house_dy = 1
+				elif arr_n:
 					house_dy = -1
-				elif Input.is_physical_key_pressed(down_key):
+				elif arr_s:
 					house_dy = 1
-				elif Input.is_physical_key_pressed(left_key):
+				elif arr_w:
 					house_dx = -1
-				elif Input.is_physical_key_pressed(right_key):
+				elif arr_e:
 					house_dx = 1
 
 			if house_dx != 0 or house_dy != 0:
@@ -20023,8 +20049,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.160 changes
+	display_game("[color=#00FF00]v0.9.160[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI & Movement[/color]")
+	display_game("  • Tool durability display moved out of GameOutput — now below the ASCII map, left of the minimap")
+	display_game("  • Minimap renders in its own node instead of being appended to the main map text")
+	display_game("  • Sanctuary now supports diagonal movement (numpad 1/3/7/9, or two arrow keys together)")
+	display_game("  • Sanctuary movement hint updated to \"Move with numpad or arrows (diagonals supported)\"")
+	display_game("")
+
 	# v0.9.159 changes
-	display_game("[color=#00FF00]v0.9.159[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.159[/color]")
 	display_game("  [color=#FFD700]Hotzone on Safe Terrain Fix[/color]")
 	display_game("  • Hotspots on safe terrain (roads, trading posts, safe zones) no longer trigger the DANGER ZONE warning")
 	display_game("  • Fixes the \"Estimated monster level: ~0\" warning appearing on tiles with no ! marker")
@@ -20053,13 +20088,6 @@ func display_changelog():
 	display_game("  • When an action bar slot fires on a number key (1-5), the matching item-select key is now locked until released")
 	display_game("  • Fixes: pressing 1 in More menu to open Quests no longer also abandons Quest #1")
 	display_game("  • Applies to all action-bar → item-select menu transitions that share keys")
-	display_game("")
-
-	# v0.9.155 changes
-	display_game("[color=#00FFFF]v0.9.155[/color]")
-	display_game("  [color=#FFD700]Quest Access[/color]")
-	display_game("  • Quests now available in More menu (slot 5) — always accessible even when near a gathering node")
-	display_game("  • New [color=#00FFFF]/quests[/color] chat command opens the quest log from anywhere")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22818,11 +22846,30 @@ func _get_rarity_color(rarity: String) -> String:
 		_: return "#FFFFFF"
 
 func update_map(map_text: String):
+	# The server appends the minimap after the main ASCII map using a [font_size=9]
+	# marker inside a centered block. Split it off so the minimap can render in its
+	# own node beside the tool overlay, and the main map stays clean.
+	var main_text = map_text
+	var minimap_text = ""
+	var minimap_marker = "[center][font_size=9]"
+	var split_idx = map_text.find(minimap_marker)
+	if split_idx != -1:
+		main_text = map_text.substr(0, split_idx).strip_edges(false, true)
+		minimap_text = map_text.substr(split_idx)
+
 	if map_display:
 		map_display.clear()
-		map_display.append_text(map_text)
+		map_display.append_text(main_text)
 		if show_map_legend:
 			map_display.append_text("\n[color=#8B7355][font_size=10]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
+
+	if minimap_display:
+		minimap_display.clear()
+		if minimap_text != "":
+			minimap_display.append_text(minimap_text)
+			minimap_display.visible = true
+		else:
+			minimap_display.visible = false
 
 # ===== WANDERING NPC ENCOUNTER FUNCTIONS =====
 
@@ -27236,7 +27283,7 @@ func _render_house_map() -> String:
 			"F": standing_on = "[color=#FFD700]Fusion Station[/color] - Press %s" % _interact_key
 		lines.append("[color=#FFFFFF]Standing on: " + standing_on + "[/color]")
 	else:
-		lines.append("[color=#808080]Move with WASD or arrows[/color]")
+		lines.append("[color=#808080]Move with numpad or arrows (diagonals supported)[/color]")
 
 	return "\n".join(lines)
 
