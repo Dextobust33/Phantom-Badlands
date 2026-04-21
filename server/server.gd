@@ -12530,6 +12530,11 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			})
 		if not gather_updates.is_empty():
 			save_character(peer_id)
+
+		# If the chain cap was reached, end the session so the player gets XP
+		# and the server releases active_gathering (otherwise movement stays blocked).
+		if at_chain_cap:
+			_end_gathering_session(peer_id)
 	else:
 		# Wrong answer — reset logging momentum (even on tool save)
 		if job_type == "logging":
