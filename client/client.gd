@@ -19987,8 +19987,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.154 changes
+	display_game("[color=#00FF00]v0.9.154[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Overview Refresh Fix[/color]")
+	display_game("  • Dungeon overview now refreshes correctly after gathering, treasure, harvest skip, and floor changes")
+	display_game("  • Root cause: awaiting_dungeon_gather_result flag stayed stuck true after the first dungeon gather")
+	display_game("  • Floor counter in GameOutput now matches the map when going back a floor")
+	display_game("  • Going back a floor shows \"You ascend back to floor X\" instead of \"descend deeper\"")
+	display_game("  • Mimic, Kobold, Giant, and Young Dragon death messages no longer overpromise treasure")
+	display_game("")
+
 	# v0.9.153 changes
-	display_game("[color=#00FF00]v0.9.153[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.153[/color]")
 	display_game("  [color=#FFD700]Dungeon & Harvest Bug Fixes[/color]")
 	display_game("  • Dungeon: overview redraws immediately after selecting food to rest")
 	display_game("  • Dungeon: Items menu now closes in one press (was requiring two)")
@@ -20040,22 +20050,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.147[/color]")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
 	display_game("  • Crafting XP: fixed crafting XP awarded on rejected/refunded recipes")
-	display_game("")
-
-	# v0.9.146 changes
-	display_game("[color=#00FFFF]v0.9.146[/color]")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Gathering: character XP now always awarded for gathering, even past job trial cap")
-	display_game("  • Gathering (auto-skip): gather quest tasks now receive credit per chain completed")
-	display_game("")
-
-	# v0.9.145 changes
-	display_game("[color=#00FFFF]v0.9.145[/color]")
-	display_game("  [color=#FFD700]Bug Fixes[/color]")
-	display_game("  • Gathering/harvest minigame: fixed input lock after minigame ends")
-	display_game("  • Magic Bolt: fixed stuck popup if combat ended before bolt was fired")
-	display_game("  • Combat: dying to a monster's first strike now correctly shows death screen")
-	display_game("  • World: reduced terrain density for a more open map feel")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24153,9 +24147,12 @@ func handle_dungeon_state(message: Dictionary):
 	# (e.g., combat victory, treasure found, floor change, gather result, trap)
 	if not pending_continue and not awaiting_dungeon_gather_result and not awaiting_dungeon_trap_ack:
 		display_dungeon_floor()
-	# Clear trap ack flag after dungeon state update (next move will refresh)
+	# Clear one-shot acknowledgement flags so the NEXT state update refreshes
+	# (the current state kept the existing display intact so the player could read it).
 	if awaiting_dungeon_trap_ack:
 		awaiting_dungeon_trap_ack = false
+	if awaiting_dungeon_gather_result:
+		awaiting_dungeon_gather_result = false
 	update_action_bar()
 
 func handle_dungeon_treasure(message: Dictionary):
@@ -24195,11 +24192,20 @@ func handle_dungeon_floor_change(message: Dictionary):
 	var new_floor = message.get("floor", 1)
 	var total_floors = message.get("total_floors", 1)
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
+	var ascending = new_floor < dungeon_data.get("floor", new_floor)
+
+	# Sync the floor number into dungeon_data so display_dungeon_floor uses the new
+	# value instead of the stale pre-change data while the full dungeon_state arrives.
+	dungeon_data["floor"] = new_floor
+	dungeon_data["total_floors"] = total_floors
 
 	game_output.clear()
 	display_game("[color=#FFFF00]===== FLOOR %d =====[/color]" % new_floor)
 	display_game("")
-	display_game("You descend deeper into the %s..." % dungeon_name)
+	if ascending:
+		display_game("You ascend back to floor %d of the %s..." % [new_floor, dungeon_name])
+	else:
+		display_game("You descend deeper into the %s..." % dungeon_name)
 	display_game("")
 
 	if new_floor == total_floors:
