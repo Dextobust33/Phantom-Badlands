@@ -20103,8 +20103,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.166 changes
+	display_game("[color=#00FF00]v0.9.166[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Small UI Tweaks (cautious iteration)[/color]")
+	display_game("  • Mini HP/Resource bars: single right-aligned line docked to the bottom-right of GameOutput (was two lines)")
+	display_game("  • Minimap: right-aligned instead of centered — sits against the right edge of the map panel")
+	display_game("")
+
 	# v0.9.165 changes
-	display_game("[color=#00FF00]v0.9.165[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.165[/color]")
 	display_game("  [color=#FFD700]UI Layout Hotfix[/color]")
 	display_game("  • Reverted v0.9.163 / v0.9.164 UI restructure — the scene-file rewrite broke startup rendering on some setups")
 	display_game("  • Chat, mini HP/Mana bars, minimap, and action bar are all back in their original positions")
@@ -20859,10 +20866,12 @@ func update_resource_bars_overlay():
 			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
 			res_color = "#9999FF"
 
-	var bar_width = 12
-	var text = ""
-	text += _stat_bar("HP:  ", current_hp, max_hp, bar_width, "#FF4444") + "\n"
-	text += _stat_bar("%s: " % res_name, res_current, res_max, bar_width, res_color)
+	# Single-line, right-aligned HP + resource bars docked to the bottom-right
+	# of GameOutput so both are visible at a glance without a line break.
+	var bar_width = 10
+	var hp_bar = _stat_bar("HP:", current_hp, max_hp, bar_width, "#FF4444")
+	var res_bar = _stat_bar("%s:" % res_name, res_current, res_max, bar_width, res_color)
+	var text = "[right]%s   %s[/right]" % [hp_bar, res_bar]
 
 	resource_bars_overlay.clear()
 	resource_bars_overlay.append_text(text)
