@@ -40,6 +40,22 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_minimap_frame"]
+bg_color = Color(0.08, 0.08, 0.1, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.2, 1, 0.2, 1)
+corner_radius_top_left = 200
+corner_radius_top_right = 200
+corner_radius_bottom_right = 200
+corner_radius_bottom_left = 200
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.15, 0.08, 0.06, 1)
 border_width_left = 1
@@ -363,26 +379,6 @@ fit_content = true
 scroll_active = false
 autowrap_mode = 0
 
-[node name="ResourceBarsOverlay" type="RichTextLabel" parent="RootContainer/TopSection/GameOutputContainer" unique_id=1970771825]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -420.0
-offset_top = -28.0
-offset_right = -4.0
-offset_bottom = -4.0
-grow_horizontal = 0
-grow_vertical = 0
-mouse_filter = 2
-theme_override_colors/default_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/normal_font_size = 12
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-
 [node name="MapPanel" type="VBoxContainer" parent="RootContainer/TopSection" unique_id=1838908335]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -412,14 +408,18 @@ fit_content = true
 scroll_active = false
 visible = false
 
-[node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
+[node name="BottomRowSpacer" type="Control" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341202]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="MinimapDisplay" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/BottomRow" unique_id=1722341201]
+layout_mode = 2
 size_flags_vertical = 8
 mouse_filter = 2
 theme_override_colors/default_color = Color(0.831, 0.769, 0.627, 1)
 theme_override_fonts/normal_font = ExtResource("2_gdxsl")
 theme_override_font_sizes/normal_font_size = 9
+theme_override_styles/normal = SubResource("StyleBoxFlat_minimap_frame")
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
@@ -535,6 +535,21 @@ theme_override_font_sizes/font_size = 14
 text = "???"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="StatusRow" type="HBoxContainer" parent="RootContainer" unique_id=1722344001]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResourceBarsOverlay" type="RichTextLabel" parent="RootContainer/StatusRow" unique_id=1970771825]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="BottomStrip" type="HBoxContainer" parent="RootContainer" unique_id=244263821]
 layout_mode = 2
