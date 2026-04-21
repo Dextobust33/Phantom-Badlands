@@ -2796,6 +2796,17 @@ const RECIPES = {
 		"structure_type": "wall",
 		"craft_time": 3.0
 	},
+	"craft_wooden_bridge": {
+		"name": "Wooden Bridge",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 3,
+		"difficulty": 8,
+		"materials": {"wooden_plank": 4, "rope": 2},
+		"output_type": "structure",
+		"structure_type": "bridge",
+		"craft_time": 3.0,
+		"description": "Place over water to create a crossing. Anyone can build this."
+	},
 	"craft_workbench": {
 		"name": "Workbench",
 		"skill": CraftingSkill.CONSTRUCTION,
@@ -3448,6 +3459,34 @@ static func get_skill_enum(skill_name: String) -> int:
 		"scribing": return CraftingSkill.SCRIBING
 		"construction": return CraftingSkill.CONSTRUCTION
 		_: return -1
+
+# Recipe discovery threshold — recipes at or above this difficulty require a recipe scroll
+# to learn before they can be crafted. Lower-difficulty recipes are always available.
+const RECIPE_DISCOVERY_DIFFICULTY = 50
+
+static func requires_discovery(recipe_id: String) -> bool:
+	"""Check if a recipe must be discovered (via recipe scroll) before it can be crafted.
+	Specialist-only recipes do NOT require discovery — the job commitment IS the gate."""
+	var recipe = RECIPES.get(recipe_id, GATHERING_TOOLS.get(recipe_id, {}))
+	if recipe.is_empty():
+		return false
+	if recipe.get("specialist_only", false):
+		return false
+	return recipe.get("difficulty", 0) >= RECIPE_DISCOVERY_DIFFICULTY
+
+static func get_discoverable_recipes_for_tier(tier: int) -> Array:
+	"""Get recipe IDs that require discovery and match a dungeon/loot tier.
+	Tier roughly maps to recipe difficulty brackets."""
+	var tier_difficulty_min = 40 + (tier - 1) * 8  # T1=40, T3=56, T5=72, T9=104
+	var tier_difficulty_max = tier_difficulty_min + 15
+	var result = []
+	for recipe_id in RECIPES:
+		var recipe = RECIPES[recipe_id]
+		var diff = recipe.get("difficulty", 0)
+		if diff >= RECIPE_DISCOVERY_DIFFICULTY and diff >= tier_difficulty_min and diff <= tier_difficulty_max:
+			if not recipe.get("specialist_only", false):
+				result.append(recipe_id)
+	return result
 
 static func get_recipe(recipe_id: String) -> Dictionary:
 	return RECIPES.get(recipe_id, {})

@@ -1462,6 +1462,33 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 				# Sundering monsters hit harder
 				scaled_strength = int(scaled_strength * 1.15)
 
+	# 1% chance for ELITE variant (powerful, rewarding) - Lv15+ only, separate roll
+	var is_elite = false
+	if not is_rare_variant and randf() < 0.01 and target_level >= 15:
+		is_elite = true
+		is_rare_variant = true
+		variant_type = "elite"
+		monster_name = "★ " + base_stats.name + " Champion"
+		# Elite stat bonuses: significantly harder but very rewarding
+		scaled_hp = int(scaled_hp * 1.5)
+		scaled_strength = int(scaled_strength * 1.3)
+		scaled_defense = int(scaled_defense * 1.25)
+		experience_reward = int(experience_reward * 1.5)
+		# Add 2 random abilities from a curated pool (no duplicates)
+		var elite_ability_pool = [
+			ABILITY_REGENERATION, ABILITY_ENRAGE, ABILITY_BERSERKER,
+			ABILITY_MULTI_STRIKE, ABILITY_POISON, ABILITY_BLEED,
+			ABILITY_CURSE, ABILITY_LIFE_STEAL, ABILITY_ARMORED,
+		]
+		elite_ability_pool.shuffle()
+		var added = 0
+		for ea in elite_ability_pool:
+			if ea not in monster_abilities:
+				monster_abilities.append(ea)
+				added += 1
+				if added >= 2:
+					break
+
 	var monster = {
 		"name": monster_name,
 		"base_name": base_stats.name,  # Original name without variant prefix/suffix (for art lookup)
@@ -1475,13 +1502,14 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"experience_reward": experience_reward,
 		"flock_chance": base_stats.get("flock_chance", 0),
 		"drop_table_id": base_stats.get("drop_table_id", "common"),
-		"drop_chance": base_stats.get("drop_chance", 5),
+		"drop_chance": 100 if is_elite else base_stats.get("drop_chance", 5),  # Elite = guaranteed drop
 		"description": base_stats.description,
 		# New fields for ability system
 		"class_affinity": base_stats.get("class_affinity", ClassAffinity.NEUTRAL),
 		"abilities": monster_abilities,
 		"death_message": base_stats.get("death_message", ""),
 		"is_rare_variant": is_rare_variant,
+		"is_elite": is_elite,
 		"lethality": 0  # Placeholder, calculated below
 	}
 

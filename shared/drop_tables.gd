@@ -599,7 +599,7 @@ const CONSUMABLE_DROPS = {
 
 # Chance of equipment vs consumable per tier (%)
 const EQUIPMENT_DROP_CHANCE = {
-	1: 55, 2: 60, 3: 55, 4: 50, 5: 50, 6: 45, 7: 45, 8: 40, 9: 35
+	1: 55, 2: 60, 3: 55, 4: 50, 5: 50, 6: 50, 7: 50, 8: 55, 9: 55
 }
 
 # LEGACY — Drop table definitions by tier (kept for fallback/generate_fallback_item)
@@ -2967,19 +2967,38 @@ static func get_total_for_group(group_key: String, player_materials: Dictionary)
 func _ready():
 	print("Drop Tables initialized")
 
+# Minimum equipment rarity floor by tier — ensures endgame drops feel rewarding
+const TIER_MIN_RARITY = {
+	1: "common", 2: "common", 3: "common",
+	4: "uncommon", 5: "uncommon",
+	6: "rare", 7: "rare",
+	8: "epic", 9: "epic",
+}
+const RARITY_ORDER = ["common", "uncommon", "rare", "epic", "legendary", "artifact"]
+
 func _roll_rarity_for_tier(tier: int) -> String:
-	"""D2-style weighted random rarity selection for a given monster tier."""
+	"""D2-style weighted random rarity selection for a given monster tier.
+	Enforces a minimum rarity floor so endgame gear always feels worthwhile."""
 	var weights = RARITY_WEIGHTS.get(tier, RARITY_WEIGHTS[1])
 	var total = 0.0
 	for r in weights:
 		total += weights[r]
 	var roll = randf() * total
 	var cumulative = 0.0
-	for rarity in ["common", "uncommon", "rare", "epic", "legendary", "artifact"]:
+	var rolled_rarity = "common"
+	for rarity in RARITY_ORDER:
 		cumulative += weights.get(rarity, 0)
 		if roll < cumulative:
-			return rarity
-	return "common"
+			rolled_rarity = rarity
+			break
+
+	# Apply minimum rarity floor for the tier
+	var min_rarity = TIER_MIN_RARITY.get(tier, "common")
+	var rolled_idx = RARITY_ORDER.find(rolled_rarity)
+	var min_idx = RARITY_ORDER.find(min_rarity)
+	if rolled_idx < min_idx:
+		return min_rarity
+	return rolled_rarity
 
 func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> Array:
 	"""Roll for item drops from a monster. Uses D2-style rarity for tier tables."""
@@ -3227,8 +3246,34 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 	return item
 
 func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String:
-	"""Generate display name for tiered consumables (no rarity, just tier)"""
-	# Map item types to base names
+	"""Generate display name for tiered consumables using thematic names."""
+	# Thematic names by tier for common consumable types (more flavorful than "Minor/Lesser")
+	var thematic_health = {
+		"Minor": "Herbalist's Tincture", "Lesser": "Apothecary's Salve",
+		"Standard": "Alchemist's Brew", "Greater": "Healer's Draught",
+		"Superior": "Mystic Elixir", "Master": "Phoenix Essence", "Divine": "Divine Ambrosia",
+	}
+	var thematic_resource = {
+		"Minor": "Apprentice's Tonic", "Lesser": "Focused Brew",
+		"Standard": "Channeling Draft", "Greater": "Adept's Infusion",
+		"Superior": "Arcane Distillate", "Master": "Primordial Extract", "Divine": "Celestial Nectar",
+	}
+	var thematic_elixir = {
+		"Minor": "Hedge Elixir", "Lesser": "Refined Elixir",
+		"Standard": "Potent Elixir", "Greater": "Empowered Elixir",
+		"Superior": "Transcendent Elixir", "Master": "Sovereign Elixir", "Divine": "Godtear Elixir",
+	}
+
+	# Check for thematic override first
+	var normalized = _normalize_consumable_type(item_type)
+	if normalized == "health_potion" and thematic_health.has(tier_name):
+		return thematic_health[tier_name]
+	if normalized in ["mana_potion", "stamina_potion", "energy_potion"] and thematic_resource.has(tier_name):
+		return thematic_resource[tier_name]
+	if normalized == "elixir" and thematic_elixir.has(tier_name):
+		return thematic_elixir[tier_name]
+
+	# Fallback: map item types to base names for non-thematic consumables
 	var base_names = {
 		# Pre-normalized names (original drop table types)
 		"potion_minor": "Health Potion",

@@ -1986,9 +1986,24 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 			var egg_monster = egg_drops[randi() % egg_drops.size()]
 			egg = {"monster": egg_monster, "sub_tier": sub_tier}
 
+	# Roll for recipe scroll (15% chance at tier 4+, teaches a discovery recipe)
+	var recipe_scroll = {}
+	if tier >= 4 and randi() % 100 < 15:
+		var CraftDB = preload("res://shared/crafting_database.gd")
+		var discoverable = CraftDB.get_discoverable_recipes_for_tier(tier)
+		if discoverable.size() > 0:
+			var picked_recipe_id = discoverable[randi() % discoverable.size()]
+			var recipe_data = CraftDB.get_recipe(picked_recipe_id)
+			if not recipe_data.is_empty():
+				recipe_scroll = {
+					"recipe_id": picked_recipe_id,
+					"recipe_name": recipe_data.get("name", picked_recipe_id.replace("_", " ").capitalize()),
+				}
+
 	return {
 		"materials": materials,
-		"egg": egg
+		"egg": egg,
+		"recipe_scroll": recipe_scroll,
 	}
 
 static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1) -> Dictionary:

@@ -424,6 +424,7 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 @export var dungeon_floor_steps: int = 0  # Steps taken on current floor (for step pressure)
 @export var dungeon_cooldowns: Dictionary = {}  # {dungeon_type: timestamp when available}
 @export var dungeons_completed: Dictionary = {}  # {dungeon_type: times_completed}
+@export var hard_dungeons_completed: Dictionary = {}  # {dungeon_type: times_completed_on_hard}
 
 # ===== HOUSE (SANCTUARY) SYSTEM =====
 # House bonuses applied from account-level upgrades
@@ -1345,6 +1346,9 @@ func to_dict() -> Dictionary:
 		"skip_harvest_minigame": skip_harvest_minigame,
 		"using_registered_companion": using_registered_companion,
 		"registered_companion_slot": registered_companion_slot,
+		"known_recipes": known_recipes,
+		"dungeons_completed": dungeons_completed,
+		"hard_dungeons_completed": hard_dungeons_completed,
 		"saved_dungeon_state": {
 			"in_dungeon": in_dungeon,
 			"dungeon_id": current_dungeon_id,
@@ -1416,6 +1420,11 @@ func from_dict(data: Dictionary):
 
 	# Saved combat state for disconnect recovery
 	saved_combat_state = data.get("saved_combat_state", {})
+
+	# Recipe discovery and dungeon tracking
+	known_recipes = data.get("known_recipes", [])
+	dungeons_completed = data.get("dungeons_completed", {})
+	hard_dungeons_completed = data.get("hard_dungeons_completed", {})
 
 	# Saved dungeon state for disconnect recovery
 	var saved_dungeon = data.get("saved_dungeon_state", {})
@@ -3712,3 +3721,13 @@ func record_dungeon_completion(dungeon_type: String):
 func get_dungeon_completions(dungeon_type: String) -> int:
 	"""Get number of times player has completed a dungeon type"""
 	return dungeons_completed.get(dungeon_type, 0)
+
+func record_hard_dungeon_completion(dungeon_type: String):
+	"""Record a hard mode dungeon completion"""
+	if not hard_dungeons_completed.has(dungeon_type):
+		hard_dungeons_completed[dungeon_type] = 0
+	hard_dungeons_completed[dungeon_type] += 1
+
+func has_cleared_dungeon(dungeon_type: String) -> bool:
+	"""Check if player has ever cleared this dungeon (unlocks hard mode)"""
+	return dungeons_completed.get(dungeon_type, 0) > 0

@@ -414,16 +414,23 @@ func get_nearest_npc_post(world_x: int, world_y: int) -> Dictionary:
 	return nearest
 
 func get_npc_post_at(world_x: int, world_y: int) -> Dictionary:
-	"""Get NPC post data if the player is inside a post's bounds. Returns {} if not."""
+	"""Get NPC post data if the tile is inside any room of the post.
+	Uses per-room checks (main room + each wing) rather than the compound bounding box,
+	which over-approximates compound shapes and falsely includes inter-room gaps."""
 	for post in npc_posts:
-		var bounds = post.get("bounds", {})
-		if not bounds.is_empty():
-			# New bounds-based check (compound shapes)
-			if world_x >= int(bounds.get("min_x", 0)) and world_x <= int(bounds.get("max_x", 0)) \
-					and world_y >= int(bounds.get("min_y", 0)) and world_y <= int(bounds.get("max_y", 0)):
+		var main_room = post.get("main_room", {})
+		if not main_room.is_empty():
+			# Check main room (floor area ± 1 tile for walls)
+			if world_x >= int(main_room["x0"]) - 1 and world_x <= int(main_room["x1"]) + 1 \
+					and world_y >= int(main_room["y0"]) - 1 and world_y <= int(main_room["y1"]) + 1:
 				return post
+			# Check each wing room independently
+			for wing in post.get("wing_rooms", []):
+				if world_x >= int(wing["x0"]) - 1 and world_x <= int(wing["x1"]) + 1 \
+						and world_y >= int(wing["y0"]) - 1 and world_y <= int(wing["y1"]) + 1:
+					return post
 		else:
-			# Legacy size-based fallback
+			# Legacy size-based fallback (old posts without main_room data)
 			var px = int(post.get("x", 0))
 			var py = int(post.get("y", 0))
 			var half_size = int(post.get("size", 15)) / 2

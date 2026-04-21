@@ -740,14 +740,18 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	var kill_count = max(3, int(5 + (index * 2) + (capped_level / 20)))
 	var min_monster_level = min(int(effective_level * 0.7 * tier_mult), max_monster_level)
 
-	# Rewards scale with area level using pow() to match monster XP
-	var level_factor = pow(area_level + 1, 2.2)
+	# Rewards scale with effective level (area + player) using pow() to match monster XP
+	# Player-level scaling: high-level players at low-level posts still get reasonable quest XP
+	var effective_reward_level = max(area_level, int(capped_level * 0.8))
+	var level_factor = pow(effective_reward_level + 1, 2.2)
 	var tier_base_xp = 3 + index * 2
-	var base_xp = int(tier_base_xp * level_factor * tier_mult)
+	# Distance bonus: further posts give better rewards to incentivize exploration
+	var distance_bonus_mult = 1.0 + clampf((post_distance - 50.0) / 600.0, 0.0, 0.30)
+	var base_xp = int(tier_base_xp * level_factor * tier_mult * distance_bonus_mult)
 	# Minimum XP floor so starter post quests aren't near-zero
 	var min_xp = int((40 + index * 20) * tier_mult)
 	base_xp = max(base_xp, min_xp)
-	var valor = max(0, int((index - 1 + area_level / 50) * tier_mult))
+	var valor = max(0, int((index - 1 + area_level / 50) * tier_mult * distance_bonus_mult))
 
 	# Pick quest type, cycling through available types
 	var type_index = rng.randi() % quest_types.size()
@@ -829,9 +833,9 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["rescue_npc_type"] = rescue_npc
 			extra_fields["dungeon_type"] = rescue_dungeon.get("type", "")
 			extra_fields["rescue_floor"] = rescue_floor
-			# Rescue quests give enhanced rewards
-			base_xp = int(base_xp * 2.5)
-			valor = max(valor + 2, int(valor * 2.0))
+			# Rescue quests: match dungeon clear rewards (equalized)
+			base_xp = int(base_xp * 2.0)
+			valor = max(valor + 2, int(valor * 1.5))
 
 		QuestType.EXPLORATION:
 			var nearby_posts = _find_nearby_posts(post_coords, 50, 300)

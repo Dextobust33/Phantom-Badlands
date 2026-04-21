@@ -1763,9 +1763,14 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var player_level = character.level
 	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
 
+	# WITS vs monster speed: witty players outsmart faster monsters
+	var player_wits = character.get_effective_stat("wits")
+	var monster_speed_stat = monster.get("speed", 10)
+	var wits_vs_speed = int(float(player_wits - monster_speed_stat) * 0.5)
+
 	# Base 40%, +1% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
-	# -1% per level the monster is above you (diminishing — high-level fights still escapable)
-	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus - level_diff
+	# +WITS vs monster speed, -1% per level the monster is above you
+	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus + wits_vs_speed - level_diff
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
 	# +40% flee success chance
@@ -4775,6 +4780,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_abilities": monster.get("abilities", []),  # For client-side trait display
 		"monster_known": knows_monster,  # Let client know if HP is real or estimated
 		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
+		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
 		"can_act": combat.player_can_act,
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,

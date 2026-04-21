@@ -90,6 +90,10 @@ static func generate_posts(seed: int) -> Array:
 		if too_close:
 			continue
 
+		# Reject locations that are on or near water (posts should not spawn in lakes/rivers)
+		if _location_has_nearby_water(x, y, seed):
+			continue
+
 		posts.append(_generate_post(rng, x, y, false))
 
 	return posts
@@ -479,3 +483,45 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 	_place_station(chunk_manager, ix1, iy0 + 6, "market")
 	if is_crossroads:
 		_place_station(chunk_manager, px, iy1, "throne")
+
+# ===== WATER PROXIMITY CHECK =====
+# Duplicated from WorldSystem so it can run in a static context during post generation.
+# Keep in sync with WorldSystem._is_water_tile_generated / _water_noise / _seeded_hash_float.
+
+static func _location_has_nearby_water(cx: int, cy: int, seed: int) -> bool:
+	"""Return true if any tile within POST_WATER_MARGIN of (cx,cy) is water."""
+	const POST_WATER_MARGIN = 12  # Must be >= max half-size of any post room + walls
+	for dx in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
+		for dy in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
+			if _is_water_static(cx + dx, cy + dy, seed):
+				return true
+	return false
+
+static func _is_water_static(x: int, y: int, seed: int) -> bool:
+	var water_noise = _water_noise_static(x, y, seed)
+	if water_noise > 0.62:
+		return true
+	var pond_hash = _seeded_hash_float_static(x * 173 + y * 251, seed + 500)
+	return pond_hash > 0.997
+
+static func _water_noise_static(x: int, y: int, seed: int) -> float:
+	const FREQ = 0.03
+	var fx = x * FREQ
+	var fy = y * FREQ
+	var ix = floori(fx)
+	var iy = floori(fy)
+	var frac_x = fx - ix
+	var frac_y = fy - iy
+	var v00 = _seeded_hash_float_static(ix * 127 + iy * 311, seed + 100)
+	var v10 = _seeded_hash_float_static((ix + 1) * 127 + iy * 311, seed + 100)
+	var v01 = _seeded_hash_float_static(ix * 127 + (iy + 1) * 311, seed + 100)
+	var v11 = _seeded_hash_float_static((ix + 1) * 127 + (iy + 1) * 311, seed + 100)
+	var sx = frac_x * frac_x * (3.0 - 2.0 * frac_x)
+	var sy = frac_y * frac_y * (3.0 - 2.0 * frac_y)
+	var top = v00 + (v10 - v00) * sx
+	var bottom = v01 + (v11 - v01) * sx
+	return top + (bottom - top) * sy
+
+static func _seeded_hash_float_static(coord_hash: int, seed: int) -> float:
+	var h = abs((coord_hash + seed) * 2654435761) % 1000000
+	return h / 1000000.0

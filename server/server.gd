@@ -3061,6 +3061,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		_handle_party_combat_command(peer_id, command)
 		return
 
+	# Store level before combat for milestone detection
+	var _pre_combat_level = characters[peer_id].level if characters.has(peer_id) else 0
+
 	# Process combat action
 	var result = combat_mgr.process_combat_command(peer_id, command)
 
@@ -3391,8 +3394,18 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 								"level_diff": item.get("level", 1) - player_level
 							})
 					else:
-						# Inventory full - item lost!
-						drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
+						# Inventory full — auto-salvage the drop into materials instead of losing it
+						var overflow_salvage = drop_tables.get_salvage_value(item)
+						var overflow_mats = overflow_salvage.get("materials", {})
+						if not overflow_mats.is_empty():
+							for _of_mat_id in overflow_mats:
+								characters[peer_id].add_crafting_material(_of_mat_id, overflow_mats[_of_mat_id])
+							var of_parts = []
+							for _of_mat_id2 in overflow_mats:
+								of_parts.append("%dx %s" % [overflow_mats[_of_mat_id2], CraftingDatabaseScript.get_material_name(_of_mat_id2)])
+							drop_messages.append("[color=#FF8800]Inventory full! Salvaged %s → %s[/color]" % [item.get("name", "item"), ", ".join(of_parts)])
+						else:
+							drop_messages.append("[color=#FF4444]Inventory full! %s lost (no salvage value)[/color]" % item.get("name", "Unknown Item"))
 
 				# Check if harvest is available for Soldier
 				var _harvest_avail = characters[peer_id].has_meta("pending_harvest") and not characters[peer_id].get_meta("pending_harvest", {}).is_empty()
@@ -3428,6 +3441,53 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"drop_data": drop_data,
 						"harvest_available": _harvest_avail
 					})
+
+				# === ACHIEVEMENT BROADCASTS ===
+				var _achv_char = characters[peer_id]
+				var _achv_name = _achv_char.name
+				var _achv_monster = result.get("monster_name", "")
+				var _achv_mlvl = result.get("monster_level", 1)
+				var _achv_lvl_diff = _achv_mlvl - _achv_char.level
+
+				# Close call: survived with ≤5% HP
+				var _achv_hp_pct = float(_achv_char.current_hp) / float(maxi(1, _achv_char.get_total_max_hp()))
+				if _achv_hp_pct <= 0.05 and _achv_char.current_hp > 0:
+					_broadcast_achievement(_achv_name,
+						"[color=#FF6666]%s[/color] survived combat with a Lv%d %s with only [color=#FF0000]%d HP[/color] remaining!" % [_achv_name, _achv_mlvl, _achv_monster, _achv_char.current_hp], peer_id)
+
+				# Underdog kill: 20+ levels above player
+				elif _achv_lvl_diff >= 20:
+					_broadcast_achievement(_achv_name,
+						"[color=#00FFFF]%s[/color] defeated a Lv%d %s — [color=#FFFF00]%d levels above them[/color]!" % [_achv_name, _achv_mlvl, _achv_monster, _achv_lvl_diff], peer_id)
+
+				# Elite kill
+				elif result.get("is_elite", false):
+					_broadcast_achievement(_achv_name,
+						"[color=#FFD700]%s[/color] defeated an [color=#FFD700]Elite %s[/color] (Lv%d)!" % [_achv_name, _achv_monster, _achv_mlvl], peer_id)
+
+				# Level milestone: 25, 50, 100, 200, 500, 1000
+				var _achv_new_lvl = _achv_char.level
+				if _achv_new_lvl > _pre_combat_level:
+					var milestones = [25, 50, 100, 200, 500, 1000, 2000, 5000]
+					for ms in milestones:
+						if _pre_combat_level < ms and _achv_new_lvl >= ms:
+							_broadcast_achievement(_achv_name,
+								"[color=#00FF00]%s[/color] reached [color=#FFD700]Level %d[/color]!" % [_achv_name, ms], peer_id)
+							break
+
+				# Epic+ equipment drop (check the drop_data we built)
+				for _dd in drop_data:
+					if _dd.get("rarity", "common") in ["epic", "legendary", "artifact"] and not _dd.get("is_egg", false) and not _dd.get("is_material", false):
+						var _rarity_label = _dd.rarity.capitalize()
+						# Find the matching item name from drop_messages
+						for _dm in drop_messages:
+							if _rarity_label.to_lower() in _dm.to_lower() or "epic" in _dm.to_lower() or "legendary" in _dm.to_lower() or "artifact" in _dm.to_lower():
+								# Extract name from the drop message BBCode
+								var _item_name = _dm.strip_edges()
+								_broadcast_achievement(_achv_name,
+									"[color=#A335EE]%s[/color] found a %s item!" % [_achv_name, _rarity_label], peer_id)
+								break
+						break  # Only announce first epic+ drop per combat
 
 				# Check for Elder auto-grant (level 1000)
 				check_elder_auto_grant(peer_id)
@@ -4457,6 +4517,31 @@ func _send_gold_migration_message(peer_id: int, converted_valor: int):
 		"message": "\n[color=#FFD700]══════════════════════════════════════[/color]\n[color=#FFD700]  CURRENCY CHANGE: Gold → Valor[/color]\n[color=#FFD700]══════════════════════════════════════[/color]\n\nGold has been replaced by [color=#FFD700]Valor[/color], an account-level\ncurrency that persists through death.\n\nYour old gold has been converted:\n  [color=#FFD700]→ %d Valor[/color] added to your account\n\nEarn Valor by listing items on the [color=#00FF00]Open Market[/color]\nat any Trading Post (walk to the $ tile).\n" % converted_valor
 	})
 
+# ===== ACHIEVEMENT BROADCAST SYSTEM =====
+# Server-wide announcements for notable player achievements.
+# Cooldown-controlled to avoid spam (~1 every few minutes at most).
+var _last_achievement_time: float = 0.0
+var _player_achievement_cooldowns: Dictionary = {}  # peer_id -> last_broadcast_time
+const ACHIEVEMENT_GLOBAL_COOLDOWN = 120.0   # 2 min between any broadcasts
+const ACHIEVEMENT_PLAYER_COOLDOWN = 600.0   # 10 min between same player's broadcasts
+
+func _broadcast_achievement(player_name: String, message: String, peer_id: int = -1) -> bool:
+	"""Broadcast a notable achievement to all players. Returns false if suppressed by cooldown."""
+	var now = Time.get_unix_time_from_system()
+	# Global cooldown
+	if now - _last_achievement_time < ACHIEVEMENT_GLOBAL_COOLDOWN:
+		return false
+	# Per-player cooldown
+	if peer_id > 0 and _player_achievement_cooldowns.has(peer_id):
+		if now - _player_achievement_cooldowns[peer_id] < ACHIEVEMENT_PLAYER_COOLDOWN:
+			return false
+	# Broadcast it
+	_last_achievement_time = now
+	if peer_id > 0:
+		_player_achievement_cooldowns[peer_id] = now
+	broadcast_chat("[color=#FFD700]★[/color] %s [color=#FFD700]★[/color]" % message)
+	return true
+
 func broadcast_chat(message: String, sender: String = "System"):
 	"""Send a chat message to all connected players with characters"""
 	for peer_id in characters.keys():
@@ -4569,6 +4654,7 @@ func handle_disconnect(peer_id: int):
 	# Clear rate limit state
 	peer_rate_limits.erase(peer_id)
 	peer_type_cooldowns.erase(peer_id)
+	_player_achievement_cooldowns.erase(peer_id)
 	# Clear station tracking
 	at_player_station.erase(peer_id)
 	# Refund materials from pending craft challenge on disconnect
@@ -11888,6 +11974,8 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	# Per-type bonus tracking
 	session["momentum"] = 0          # Logging: consecutive correct picks
 	session["discoveries"] = []      # Foraging: discovered plant names this session
+	# Chain cap: prevents infinite sessions and bounds foraging discoveries per node
+	session["max_chains"] = 4 + tier * 2  # T1=6, T2=8, T3=10, T4=12, T5=14, T6=16
 	active_gathering[peer_id] = session
 
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
@@ -11960,6 +12048,7 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	# Per-type bonus tracking
 	session["momentum"] = 0
 	session["discoveries"] = []
+	session["max_chains"] = 4 + tier * 2  # T1=6, T2=8, T3=10, T4=12, T5=14, T6=16
 	active_gathering[peer_id] = session
 
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
@@ -11990,18 +12079,20 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	})
 
 func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool: Dictionary = {}):
-	"""Auto-resolve gathering without minigame. Rewards scale with tool quality."""
+	"""Auto-resolve gathering without minigame. ~65% of skilled manual performance.
+	Efficiency scales with job skill level (0-100+) and tool quality.
+	Cap: never more than 75% of a perfect manual session, minimum 40% floor."""
 	var job_type = session.get("job_type", "")
 	var tier = session.get("tier", 1)
 	var job_level = character.job_levels.get(job_type, 1)
-	var base_chains = ceili(float(tier) / 2.0) + 1  # T1:2, T2:2, T3:3, T4:3, T5:4, T6:4
 
-	# Tool quality bonus: saves + reveals + max durability give bonus chains
+	# Maximum chains a skilled player could achieve (session chain cap)
+	var max_session_chains = 4 + tier * 2  # T1=6, T2=8, T3=10, T4=12, T5=14, T6=16
+
+	# Tool quality score: saves (0-4) + reveals (0-7) + durability bonus (0-3)
 	var tool_saves = tool.get("max_saves", 0)
 	var tool_reveals = tool.get("tool_bonuses", {}).get("reveals", 0)
 	var tool_max_durability = maxi(tool.get("max_durability", 1), 1)
-	# Quality score: saves (1-4) + reveals (1-7) + durability tiers (0-3)
-	# Durability tiers: 0-50=0, 51-100=1, 101-200=2, 201+=3
 	var durability_bonus = 0
 	if tool_max_durability > 200:
 		durability_bonus = 3
@@ -12009,9 +12100,17 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 		durability_bonus = 2
 	elif tool_max_durability > 50:
 		durability_bonus = 1
-	var quality_score = tool_saves + tool_reveals + durability_bonus
-	var bonus_chains = floori(float(quality_score) / 4.0)  # 0-4 bonus chains
-	var auto_chains = base_chains + bonus_chains
+	var quality_score = tool_saves + tool_reveals + durability_bonus  # 0 to 14
+
+	# Efficiency model: skill (0.0–0.25 from job level) + tool (0.0–0.10) + base 0.40
+	# At lv0, no tool: 40%. At lv100, good tool: ~65%. At lv200+, best tool: capped 75%.
+	var skill_contribution = clampf(float(job_level) / 100.0, 0.0, 1.0) * 0.25
+	var tool_contribution = clampf(float(quality_score) / 14.0, 0.0, 1.0) * 0.10
+	var efficiency = clampf(0.40 + skill_contribution + tool_contribution, 0.40, 0.75)
+
+	# Apply efficiency to max manual chains + small randomness (±1)
+	var auto_chains = roundi(float(max_session_chains) * efficiency) + randi_range(-1, 1)
+	auto_chains = clampi(auto_chains, 1, max_session_chains - 1)
 
 	# Roll rewards for each chain
 	var pending_quest_updates: Array = []
@@ -12150,14 +12249,14 @@ func _generate_gathering_round(job_type: String, tier: int, hint_strength: float
 			"hint": 0.0,
 		})
 
-	# Build client-safe options (no correct/hint data)
+	# Build client-safe options (no correct/hint/known data — players discover plants by memory)
 	var client_options = []
 	for opt in options:
 		var co = {"label": opt["label"], "id": opt["id"]}
 		if opt["risky"]:
 			co["risky"] = true
-		if opt.get("known", false):
-			co["known"] = true
+		# Note: "known" flag intentionally omitted — the discovery bonus (extra qty) still applies
+		# server-side, but the visual hint is removed so players must rely on their own memory.
 		client_options.append(co)
 
 	var result = {
@@ -12378,6 +12477,9 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 		session["chain_count"] += 1
 		session["chain_materials"].append({"id": reward["id"], "name": reward["name"], "qty": qty, "type": reward.get("type", "")})
 
+		# Check chain cap — prevent infinite sessions
+		var at_chain_cap = session["chain_count"] >= session.get("max_chains", 999)
+
 		var msg = "[color=#1EFF00]Correct![/color]"
 		if is_risky:
 			msg = "[color=#FFD700]★ Risky Gamble pays off! Double reward! ★[/color]"
@@ -12386,6 +12488,8 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			msg += "\n[color=#A335EE]%s found extra materials! +1[/color]" % comp_name
 		if pouch_overflow:
 			msg += "\n[color=#FF4444]Pouch full! Some materials lost (cap: 999)[/color]"
+		if at_chain_cap:
+			msg += "\n[color=#FFD700]The node is exhausted — you've gathered all you can here.[/color]"
 
 		var result_msg = {
 			"type": "gathering_result",
@@ -12393,7 +12497,7 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 			"material": {"id": reward["id"], "name": reward["name"], "qty": qty},
 			"chain_count": session["chain_count"],
 			"chain_materials": session["chain_materials"],
-			"continue": true,
+			"continue": not at_chain_cap,
 			"message": msg,
 			"tool_saved": false,
 			"momentum": session.get("momentum", 0),
@@ -13895,6 +13999,35 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		var is_locked = recipe.skill_required > skill_level
 		var is_specialist_only = recipe.get("specialist_only", false)
 		var specialist_gated = is_specialist_only and not character.can_use_specialist_recipe(skill_name)
+
+		# Recipe discovery system: high-difficulty recipes require a recipe scroll
+		var needs_discovery = CraftingDatabaseScript.requires_discovery(recipe_id)
+		var is_discovered = true
+		if needs_discovery:
+			if not is_locked:
+				# Player already has the skill — auto-learn for backward compatibility
+				character.learn_recipe(recipe_id)
+			else:
+				# Player doesn't have the skill yet — check if they found the scroll
+				is_discovered = character.knows_recipe(recipe_id)
+
+		# Undiscovered recipes show as "???" placeholders
+		if needs_discovery and not is_discovered:
+			recipe_list.append({
+				"id": recipe_id,
+				"name": "???",
+				"skill_required": recipe.skill_required,
+				"difficulty": 0,
+				"materials": {},
+				"can_craft": false,
+				"success_chance": 0,
+				"output_type": "",
+				"locked": true,
+				"undiscovered": true,
+				"description": "Find a Recipe Scroll to learn this recipe.",
+			})
+			continue
+
 		var can_craft = not is_locked and not specialist_gated and character.has_crafting_materials(recipe.materials)
 		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, total_success_bonus) if not is_locked and not specialist_gated else 0
 
@@ -14087,20 +14220,52 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Requires %s level %d (you have %d)" % [skill_name.capitalize(), recipe.skill_required, skill_level]})
 		return
 
+	# Check recipe discovery — high-difficulty recipes need a recipe scroll first
+	if CraftingDatabaseScript.requires_discovery(recipe_id) and not character.knows_recipe(recipe_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You haven't discovered this recipe yet! Find a Recipe Scroll."})
+		return
+
 	# Check specialist-only gating
 	if recipe.get("specialist_only", false) and not character.can_use_specialist_recipe(skill_name):
 		var required_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "specialist")
 		send_to_peer(peer_id, {"type": "error", "message": "This recipe requires committing as a %s!" % required_job.capitalize()})
 		return
 
+	# Tempered craft: resource gambling for guaranteed bonus stat
+	var temper_target = message.get("temper_target", "")
+	var is_tempered = temper_target in ["attack", "defense", "hp", "speed"]
+	if is_tempered and recipe.output_type not in ["weapon", "armor"]:
+		is_tempered = false
+		temper_target = ""
+
 	# Bulk crafting: read quantity (only for bulk-craftable types)
 	var quantity = clampi(int(message.get("quantity", 1)), 1, 99)
 	var is_bulk_type = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
 	if quantity > 1 and not is_bulk_type:
 		quantity = 1
+	if is_tempered:
+		quantity = 1  # No bulk tempering
 
-	# Check materials (scaled by quantity for bulk crafting)
-	if quantity > 1:
+	# Material scale factor: tempered crafting costs 50% more materials
+	var material_scale = 1.5 if is_tempered else 1.0
+
+	# Check materials (scaled by quantity and temper factor)
+	if is_tempered:
+		# Manual check: 1.5× materials needed (ceili to round up)
+		var has_all = true
+		for mat_id in recipe.materials:
+			var needed = ceili(recipe.materials[mat_id] * 1.5)
+			if mat_id.begins_with("@"):
+				if DropTables.get_total_for_group(mat_id, character.crafting_materials) < needed:
+					has_all = false
+					break
+			elif character.crafting_materials.get(mat_id, 0) < needed:
+				has_all = false
+				break
+		if not has_all:
+			send_to_peer(peer_id, {"type": "error", "message": "Tempered crafting requires 50%% more materials!"})
+			return
+	elif quantity > 1:
 		if not character.has_crafting_materials_scaled(recipe.materials, quantity):
 			send_to_peer(peer_id, {"type": "error", "message": "You don't have enough materials for %dx!" % quantity})
 			return
@@ -14112,8 +14277,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Consume materials (@ prefixed keys are monster part groups)
 	# Track what was actually consumed for disconnect refund
 	var _consumed_for_refund: Dictionary = {}
+	var consume_multiplier = material_scale * quantity  # Tempered uses 1.5× materials
 	for mat_id in recipe.materials:
-		var consume_amount = recipe.materials[mat_id] * quantity
+		var consume_amount = ceili(recipe.materials[mat_id] * consume_multiplier)
 		if mat_id.begins_with("@"):
 			var group_consumed = character.remove_group_materials(mat_id, consume_amount)
 			for gk in group_consumed:
@@ -14130,6 +14296,8 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		post_bonus = CraftingDatabaseScript.get_post_specialization_bonus(tp_id, skill_name)
 	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
 	var total_bonus = post_bonus + job_bonus.success_bonus
+	# Tempered craft: halve the effective bonus (makes success harder)
+	var tempered_bonus = total_bonus - 15 if is_tempered else total_bonus
 
 	# Check auto-skip: if skill - difficulty >= threshold, skip minigame with score 3
 	# Also skip if player has skip_craft_minigame enabled (with reduced score)
@@ -14145,12 +14313,14 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"skill_name": skill_name,
 			"skill_level": skill_level,
 			"post_bonus": post_bonus,
-			"total_bonus": total_bonus,
+			"total_bonus": tempered_bonus if is_tempered else total_bonus,
 			"correct_answers": challenge["correct_answers"],
 			"is_specialist": is_specialist,
 			"job_level": job_level,
 			"consumed_materials": _consumed_for_refund,
 			"quantity": quantity,
+			"temper_target": temper_target,
+			"is_tempered": is_tempered,
 		}
 		send_to_peer(peer_id, {
 			"type": "craft_challenge",
@@ -14161,7 +14331,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 
 	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
 	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, auto_score)
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, tempered_bonus, auto_score)
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
@@ -14183,14 +14353,44 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"weapon", "armor":
 				crafted_item = _create_crafted_equipment(recipe, quality)
 				if crafted_item.is_empty():
-					# Refund materials on creation failure
-					for mat_id in recipe.materials:
-						character.add_crafting_material(mat_id, recipe.materials[mat_id])
-					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
+					# Refund materials on creation failure (no refund on tempered)
+					if not is_tempered:
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
+					else:
+						result_message = "[color=#FF4444]Tempering failed! The materials were consumed in the attempt.[/color]"
 				else:
+					# Apply temper bonus if tempered craft succeeded
+					if is_tempered and temper_target != "":
+						var temper_labels = {"attack": "ATK", "defense": "DEF", "hp": "HP", "speed": "SPD"}
+						match temper_target:
+							"attack":
+								var base_atk = crafted_item.get("attack", 0)
+								var bonus = maxi(1, int(base_atk * 0.15))
+								crafted_item["attack"] = base_atk + bonus
+								crafted_item["tempered"] = temper_target
+							"defense":
+								var base_def = crafted_item.get("defense", 0)
+								var bonus = maxi(1, int(base_def * 0.15))
+								crafted_item["defense"] = base_def + bonus
+								crafted_item["tempered"] = temper_target
+							"hp":
+								var base_hp = crafted_item.get("hp", 0)
+								var bonus = maxi(2, int(base_hp * 0.20))
+								crafted_item["hp"] = base_hp + bonus
+								crafted_item["tempered"] = temper_target
+							"speed":
+								crafted_item["speed"] = crafted_item.get("speed", 0) + 1
+								crafted_item["tempered"] = temper_target
+						var temper_label = temper_labels.get(temper_target, temper_target.to_upper())
+						crafted_item["name"] = "Tempered " + crafted_item.get("name", recipe.name)
 					crafted_item["crafted_by"] = character.name
 					character.inventory.append(crafted_item)
-					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+					if is_tempered:
+						result_message = "[color=#FF8800]★ Tempered %s %s! (+%s) ★[/color]" % [quality_name, recipe.name, temper_target.to_upper()]
+					else:
+						result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
@@ -14568,6 +14768,11 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				var job_result = character.add_job_xp(matching_job, job_xp_gained)
 				job_leveled_up = job_result.leveled_up
 				job_new_level = job_result.new_level
+
+	# Masterwork craft achievement
+	if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK and not crafted_item.is_empty():
+		_broadcast_achievement(character.name,
+			"[color=#A335EE]%s[/color] crafted a [color=#A335EE]Masterwork %s[/color]!" % [character.name, recipe.name], peer_id)
 
 	# Send result (include updated materials so client can check can_craft_another)
 	send_to_peer(peer_id, {
@@ -15215,9 +15420,11 @@ func handle_craft_challenge_answer(peer_id: int, message: Dictionary):
 
 	# Re-inject into the crafting pipeline by calling the result handler
 	var craft_quantity = craft.get("quantity", 1)
-	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score, craft_quantity)
+	var craft_temper = craft.get("temper_target", "")
+	var craft_is_tempered = craft.get("is_tempered", false)
+	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score, craft_quantity, craft_temper, craft_is_tempered)
 
-func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1, quantity: int = 1):
+func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1, quantity: int = 1, temper_target: String = "", is_tempered: bool = false):
 	"""Finalize a craft after quality is determined. Handles all output types."""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
@@ -15238,13 +15445,35 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 			"weapon", "armor":
 				crafted_item = _create_crafted_equipment(recipe, quality)
 				if crafted_item.is_empty():
-					for mat_id in recipe.materials:
-						character.add_crafting_material(mat_id, recipe.materials[mat_id])
-					result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
+					if not is_tempered:
+						for mat_id in recipe.materials:
+							character.add_crafting_material(mat_id, recipe.materials[mat_id])
+						result_message = "[color=#FF4444]Failed to create item! Materials refunded.[/color]"
+					else:
+						result_message = "[color=#FF4444]Tempering failed! The materials were consumed in the attempt.[/color]"
 				else:
+					# Apply temper bonus if tempered craft succeeded
+					if is_tempered and temper_target != "":
+						match temper_target:
+							"attack":
+								var base_atk = crafted_item.get("attack", 0)
+								crafted_item["attack"] = base_atk + maxi(1, int(base_atk * 0.15))
+							"defense":
+								var base_def = crafted_item.get("defense", 0)
+								crafted_item["defense"] = base_def + maxi(1, int(base_def * 0.15))
+							"hp":
+								var base_hp = crafted_item.get("hp", 0)
+								crafted_item["hp"] = base_hp + maxi(2, int(base_hp * 0.20))
+							"speed":
+								crafted_item["speed"] = crafted_item.get("speed", 0) + 1
+						crafted_item["tempered"] = temper_target
+						crafted_item["name"] = "Tempered " + crafted_item.get("name", recipe.name)
 					crafted_item["crafted_by"] = character.name
 					character.inventory.append(crafted_item)
-					result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
+					if is_tempered:
+						result_message = "[color=#FF8800]★ Tempered %s %s! (+%s) ★[/color]" % [quality_name, recipe.name, temper_target.to_upper()]
+					else:
+						result_message = "[color=%s]Created %s %s![/color]" % [quality_color, quality_name, recipe.name]
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
@@ -15556,6 +15785,11 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				job_leveled_up = job_result.leveled_up
 				job_new_level = job_result.new_level
 
+	# Masterwork craft achievement (_finalize_craft path)
+	if quality == CraftingDatabaseScript.CraftingQuality.MASTERWORK and not crafted_item.is_empty():
+		_broadcast_achievement(character.name,
+			"[color=#A335EE]%s[/color] crafted a [color=#A335EE]Masterwork %s[/color]!" % [character.name, recipe.name], peer_id)
+
 	send_to_peer(peer_id, {
 		"type": "craft_result",
 		"success": true,
@@ -15587,8 +15821,8 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard"]
-const ENCLOSURE_WALL_TYPES = ["wall", "door"]  # Types that form enclosure boundaries
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge"]
+const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
 var player_enclosures: Dictionary = {}
@@ -15678,12 +15912,21 @@ func handle_build_place(peer_id: int, message: Dictionary):
 		return
 	if world_system:
 		var terrain = world_system.get_terrain_at(tx, ty)
-		if terrain in [world_system.Terrain.WATER, world_system.Terrain.DEEP_WATER, world_system.Terrain.VOID]:
-			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on water or void!"})
+		if terrain == world_system.Terrain.VOID:
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on void!"})
+			return
+		var is_water = terrain in [world_system.Terrain.WATER, world_system.Terrain.DEEP_WATER]
+		if structure_type == "bridge":
+			if not is_water:
+				send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Bridges can only be placed on water tiles!"})
+				return
+		elif is_water:
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on water! Craft a Wooden Bridge to cross water."})
 			return
 
-	# Check NPC post proximity (3 tile buffer)
-	if chunk_manager:
+	# Check NPC post proximity (3 tile buffer).
+	# Bridges are exempt — water near a post edge must be crossable.
+	if chunk_manager and structure_type != "bridge":
 		for post in chunk_manager.get_npc_posts():
 			var bounds = post.get("bounds", {})
 			var too_close_to_post = false
@@ -15732,8 +15975,8 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	# Consume item
 	character.inventory.remove_at(item_index)
 
-	# Determine tile properties — stations block movement (interact by bump), doors don't
-	var blocks_move = structure_type != "door"
+	# Determine tile properties — stations block movement (interact by bump), doors/bridges don't
+	var blocks_move = structure_type not in ["door", "bridge"]
 	var blocks_los = structure_type == "wall"
 
 	# Place tile in chunk manager
@@ -15797,6 +16040,12 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 		return
 
 	var tile_type = tile.get("type", "")
+
+	# Bridges that are part of an active road between NPC posts cannot be demolished.
+	# Removing them would sever the road and strand any merchants using that route.
+	if tile_type == "bridge" and world_system and world_system.is_tile_on_path(tx, ty):
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "This bridge is part of an active road between posts and cannot be demolished."})
+		return
 
 	# If demolishing a guard post, remove any active guard
 	if tile_type == "guard":
@@ -16810,6 +17059,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown dungeon type!"})
 		return
 
+	# Hard mode: available after clearing a dungeon at least once
+	var hard_mode = message.get("hard_mode", false)
+	if hard_mode and not character.has_cleared_dungeon(dungeon_type):
+		send_to_peer(peer_id, {"type": "error", "message": "You must clear this dungeon at least once before entering Hard Mode!"})
+		return
+
 	# Always require confirmation — warn about escape-only exit
 	var confirmed = message.get("confirmed", false)
 	if not confirmed:
@@ -16863,6 +17118,9 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		if instance_id == "":
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
 			return
+		# Store hard mode flag on instance
+		if hard_mode and active_dungeons.has(instance_id):
+			active_dungeons[instance_id]["hard_mode"] = true
 		# Track this as a non-quest dungeon run
 		if not player_dungeon_instances.has(peer_id):
 			player_dungeon_instances[peer_id] = {}
@@ -16953,20 +17211,20 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	var dy = 0
 
 	match direction:
-		"n":
-			dy = -1
-		"s":
-			dy = 1
-		"w":
-			dx = -1
-		"e":
-			dx = 1
+		"n":             dy = -1
+		"s":             dy = 1
+		"w":             dx = -1
+		"e":             dx = 1
+		"nw":            dx = -1; dy = -1
+		"ne":            dx = 1;  dy = -1
+		"sw":            dx = -1; dy = 1
+		"se":            dx = 1;  dy = 1
 		"none":
 			# Just refresh state, no movement
 			_send_dungeon_state(peer_id)
 			return
 		_:
-			# Try dx/dy format
+			# Try dx/dy format (legacy / party follower path)
 			dx = message.get("dx", 0)
 			dy = message.get("dy", 0)
 
@@ -17022,6 +17280,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
 	var step_limit = DungeonDatabaseScript.get_step_limit(tier_sp, is_boss_floor_sp)
+	# Hard mode: 20% fewer steps allowed
+	if active_dungeons.has(instance_id) and active_dungeons[instance_id].get("hard_mode", false):
+		step_limit = int(step_limit * 0.8)
 	var step_pct = float(character.dungeon_floor_steps) / float(step_limit)
 
 	# Collect event messages to send AFTER dungeon state (so they don't get cleared)
@@ -17980,13 +18241,21 @@ func _send_dungeon_state(peer_id: int):
 			})
 
 	var inst_sub_tier = instance.get("sub_tier", 1)
+	var is_hard = instance.get("hard_mode", false)
 	var display_name = DungeonDatabaseScript.get_dungeon_display_name(character.current_dungeon_type, dungeon_data.tier, inst_sub_tier)
+	if is_hard:
+		display_name += " [HARD]"
+
+	# Hard mode: 20% fewer steps allowed (more pressure)
+	var base_step_limit = DungeonDatabaseScript.get_step_limit(dungeon_data.tier, character.dungeon_floor >= dungeon_data.floors - 1)
+	var effective_step_limit = int(base_step_limit * 0.8) if is_hard else base_step_limit
 
 	send_to_peer(peer_id, {
 		"type": "dungeon_state",
 		"dungeon_type": character.current_dungeon_type,
 		"dungeon_name": display_name,
 		"sub_tier": inst_sub_tier,
+		"hard_mode": is_hard,
 		"floor": character.dungeon_floor + 1,
 		"total_floors": dungeon_data.floors,
 		"grid": grid,
@@ -18000,7 +18269,7 @@ func _send_dungeon_state(peer_id: int):
 		"monsters": monster_list,
 		"npcs": npc_list,
 		"steps_taken": character.dungeon_floor_steps,
-		"step_limit": DungeonDatabaseScript.get_step_limit(dungeon_data.tier, character.dungeon_floor >= dungeon_data.floors - 1),
+		"step_limit": effective_step_limit,
 		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor)
 	})
 
@@ -18052,6 +18321,17 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		monster = monster_db.generate_monster(monster_info.level, monster_info.level)
 	monster.is_dungeon_monster = true
 
+	# Apply hard mode stat boosts (+50% HP, +30% ATK, +25% DEF, +50% XP)
+	var is_hard_mode = false
+	if active_dungeons.has(instance_id):
+		is_hard_mode = active_dungeons[instance_id].get("hard_mode", false)
+	if is_hard_mode:
+		monster.max_hp = int(monster.max_hp * 1.5)
+		monster.current_hp = monster.max_hp
+		monster.strength = int(monster.strength * 1.3)
+		monster.defense = int(monster.defense * 1.25)
+		monster.experience_reward = int(monster.experience_reward * 1.5)
+
 	# Apply boss multipliers and rename to boss display name
 	if is_boss:
 		monster.max_hp = int(monster.max_hp * monster_info.get("hp_mult", 2.0))
@@ -18060,6 +18340,38 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		monster.is_boss = true
 		# Use boss display name (e.g., "Orc Warlord" instead of just "Orc")
 		monster.name = monster_info.name
+		# Map dungeon boss flavor abilities to functional combat ability constants
+		var boss_ability_map = {
+			"Rally Minions": "summoner", "Swarm Call": "summoner", "Hatchling Fury": "summoner",
+			"Bat Swarm": "summoner", "Raise Dead": "summoner", "Infernal Command": "summoner",
+			"Pack Howl": "pack_leader", "War Cry": "pack_leader", "Pack Tactics": "pack_leader",
+			"Rallying Screech": "pack_leader", "Majestic Roar": "pack_leader",
+			"Ferocious Howl": "pack_leader", "Demonic Roar": "pack_leader",
+			"Savage Bite": "bleed", "Gore Charge": "bleed", "Triple Bite": "bleed",
+			"Plague Bite": "poison", "Plague Touch": "poison", "Venomous Bite": "poison",
+			"Poison Spray": "poison", "Poison Tail": "poison", "Venomous Tail": "poison",
+			"Bone Shield": "armored", "Shield Wall": "armored", "Stone Skin": "armored",
+			"Thick Hide": "armored", "Unyielding": "armored", "Impervious Shell": "armored",
+			"Life Drain": "life_steal", "Soul Drain": "life_steal",
+			"Ethereal Phase": "ethereal",
+			"Regeneration": "regeneration", "Head Regrowth": "regeneration", "Rebirth": "regeneration",
+			"Web Trap": "slow_aura", "Adhesive Trap": "slow_aura", "Soul Freeze": "slow_aura",
+			"Chilling Touch": "slow_aura", "Murky Veil": "slow_aura",
+			"Charm": "charm", "Enchanting Song": "charm", "Seduction": "charm", "Dark Charm": "charm",
+			"Brutal Slam": "multi_strike", "Crushing Blow": "multi_strike",
+			"Ground Slam": "multi_strike", "Triple Maw": "multi_strike",
+			"Multi-Head Strike": "multi_strike", "Colossal Swing": "multi_strike",
+			"Dirty Fighting": "ambusher", "Trap Master": "ambusher",
+			"Vorpal Jaws": "berserker", "Labyrinth Fury": "berserker",
+			"Ancient Fury": "berserker", "Forge Heat": "enrage",
+			"Elemental Storm": "unpredictable", "Unstable Core": "unpredictable",
+			"Petrifying Gaze": "curse", "Spore Cloud": "curse", "Intimidate": "curse",
+			"Dark Pact": "curse", "Terrifying Roar": "curse",
+		}
+		for raw_ability in monster_info.get("abilities", []):
+			var mapped = boss_ability_map.get(raw_ability, "")
+			if mapped != "" and mapped not in monster.abilities:
+				monster.abilities.append(mapped)
 
 	# Party dungeon combat?
 	if _is_party_leader(peer_id):
@@ -18151,6 +18463,20 @@ func _open_dungeon_treasure(peer_id: int):
 			reward_messages.append("[color=#87CEEB]★ %s ★[/color]" % scroll_drop.name)
 		else:
 			reward_messages.append("[color=#808080]%s found but inventory full![/color]" % scroll_drop.name)
+
+	# Recipe scroll drop (from dungeon treasure)
+	var recipe_scroll = treasure.get("recipe_scroll", {})
+	if not recipe_scroll.is_empty():
+		var scroll_recipe_id = recipe_scroll.get("recipe_id", "")
+		var scroll_recipe_name = recipe_scroll.get("recipe_name", "Unknown")
+		if scroll_recipe_id != "":
+			if character.learn_recipe(scroll_recipe_id):
+				reward_messages.append("[color=#FFD700]★ Recipe Scroll: %s! (NEW) ★[/color]" % scroll_recipe_name)
+			else:
+				# Already known — give bonus XP instead
+				var bonus_xp = 50 + dungeon_tier * 25
+				character.add_experience(bonus_xp)
+				reward_messages.append("[color=#808080]Recipe Scroll: %s (already known, +%d XP)[/color]" % [scroll_recipe_name, bonus_xp])
 
 	# Track treasures opened for exploration bonus
 	if active_dungeons.has(instance_id):
@@ -18259,6 +18585,13 @@ func _complete_dungeon(peer_id: int):
 	# Calculate rewards (sub-tier scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
 
+	# Hard mode bonus: +75% XP, +50% materials
+	var is_hard_completion = false
+	if active_dungeons.has(instance_id):
+		is_hard_completion = active_dungeons[instance_id].get("hard_mode", false)
+	if is_hard_completion:
+		rewards["xp"] = int(rewards.get("xp", 0) * 1.75)
+
 	# Enhanced rewards: Flawless run (no collapse) bonus
 	var flawless = true  # If we got here, no collapse happened
 	var bonus_xp = 0
@@ -18309,8 +18642,18 @@ func _complete_dungeon(peer_id: int):
 				boss_egg_lost_to_full = true
 				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
 
+	# Hard mode: +50% boss material drops
+	if is_hard_completion:
+		var extra_mats = _roll_dungeon_gather("ore", resource_tier, tier)
+		for mat in extra_mats:
+			character.add_crafting_material(mat.id, mat.quantity)
+			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
+			bonus_material_msgs.append("[color=#FF8800]+%s%s (Hard)[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
+
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
+	if is_hard_completion:
+		character.record_hard_dungeon_completion(dungeon_type)
 
 	# Check dungeon quest progress
 	var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)
@@ -18375,7 +18718,12 @@ func _complete_dungeon(peer_id: int):
 	character.exit_dungeon()
 
 	# Build completion message
-	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
+	var hard_label = " [HARD]" if is_hard_completion else ""
+	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE!%s =====[/color]\n" % hard_label
+	if is_hard_completion:
+		completion_msg += "[color=#FF8800]★ HARD MODE CONQUERED ★[/color]\n"
+		_broadcast_achievement(character.name,
+			"[color=#FF8800]%s[/color] conquered [color=#FFD700]%s[/color] on [color=#FF8800]Hard Mode[/color]!" % [character.name, dungeon_data.name], peer_id)
 	if flawless:
 		completion_msg += "[color=#00FF00]★ FLAWLESS RUN ★[/color]\n"
 	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name

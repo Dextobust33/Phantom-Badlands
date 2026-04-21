@@ -663,6 +663,10 @@ var boss_border_tween: Tween = null
 
 # Map legend
 var show_map_legend: bool = true
+# Stat comparison priority — pinned stats always show first in equipment comparison brackets.
+# Unpinned stats appear after and may be truncated with "+N more".
+var comparison_pinned_stats: Array = ["ATK", "DEF", "HP", "SPD", "WIT"]
+const ALL_COMPARISON_STATS = ["ATK", "DEF", "HP", "SPD", "WIT", "RES", "MP/rnd", "%Med", "EN/rnd", "%Flee", "STA/rnd"]
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -752,6 +756,9 @@ var bounty_quest_id: String = ""
 var action_triggered_this_frame: Array = []
 # Track which item selection keycodes were consumed this frame (to block action bar for same key)
 var item_selection_consumed_this_frame: Array = []
+# Persistent lock: keycodes consumed by item selection that must be physically released before reuse.
+# Prevents the same keypress from cascading across multiple sequential selection menus.
+var key_hold_lock: Dictionary = {}
 
 # Remember last used amounts for variable cost abilities (e.g., Bolt)
 var last_ability_amounts: Dictionary = {}  # ability_name -> last_amount
@@ -787,6 +794,9 @@ var crafting_post_bonus: int = 0  # Trading post specialization bonus
 var crafting_job_bonus: Dictionary = {}  # Specialty job bonus {success_bonus, quality_bonus}
 var crafting_selected_recipe: int = -1  # Index of selected recipe
 var craft_quantity: int = 1  # Bulk crafting quantity
+var crafting_temper_mode: bool = false  # Selecting a temper target stat
+const TEMPER_TARGETS = ["attack", "defense", "hp", "speed"]
+const TEMPER_TARGET_LABELS = ["ATK +15%", "DEF +15%", "HP +20%", "SPD +1"]
 var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 var last_crafted_recipe_id: String = ""  # Recipe ID of last craft for "craft another"
@@ -1096,6 +1106,7 @@ var current_enemy_level: int = 0
 var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class affinity
 var current_enemy_abilities: Array = []  # Monster abilities for damage calculation
 var current_enemy_is_rare_variant: bool = false  # For visual indicator on rare monsters
+var current_enemy_is_elite: bool = false  # Elite variant — stronger, better loot
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
@@ -1860,6 +1871,10 @@ func _process(delta):
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
 	item_selection_consumed_this_frame.clear()
+	# Release key_hold_lock entries for keys that are no longer physically pressed
+	for kc in key_hold_lock.keys():
+		if not Input.is_physical_key_pressed(kc):
+			key_hold_lock.erase(kc)
 
 	connection.poll()
 	var status = connection.get_status()
@@ -2233,6 +2248,17 @@ func _process(delta):
 					select_craft_recipe(i)  # 0-based index
 			else:
 				set_meta("craftkey_%d_pressed" % i, false)
+
+	# Temper target selection with keybinds (1-4 for target stats)
+	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_temper_mode:
+		for i in range(TEMPER_TARGETS.size()):
+			if is_item_select_key_pressed(i):
+				if not get_meta("temperkey_%d_pressed" % i, false):
+					set_meta("temperkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					_confirm_temper_craft(TEMPER_TARGETS[i])
+			else:
+				set_meta("temperkey_%d_pressed" % i, false)
 
 	# Build mode item selection with keybinds (1-9 for structure items)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and build_mode and not build_direction_mode and not build_demolish_mode and not pending_build_result:
@@ -2698,13 +2724,26 @@ func _process(delta):
 			if current_time - last_move_time >= MOVE_COOLDOWN:
 				var dungeon_dir = ""
 
-				# Check numpad keys for 4-direction movement
+				# Check numpad keys — diagonals first so pressing KP_7 doesn't
+				# also match KP_4 or KP_8 on the cardinal checks below.
+				var nw_key = keybinds.get("move_7", default_keybinds.get("move_7", KEY_KP_7))
+				var ne_key = keybinds.get("move_9", default_keybinds.get("move_9", KEY_KP_9))
+				var sw_key = keybinds.get("move_1", default_keybinds.get("move_1", KEY_KP_1))
+				var se_key = keybinds.get("move_3", default_keybinds.get("move_3", KEY_KP_3))
 				var north_key = keybinds.get("move_8", default_keybinds.get("move_8", KEY_KP_8))
 				var south_key = keybinds.get("move_2", default_keybinds.get("move_2", KEY_KP_2))
 				var west_key = keybinds.get("move_4", default_keybinds.get("move_4", KEY_KP_4))
 				var east_key = keybinds.get("move_6", default_keybinds.get("move_6", KEY_KP_6))
 
-				if Input.is_physical_key_pressed(north_key):
+				if Input.is_physical_key_pressed(nw_key):
+					dungeon_dir = "nw"
+				elif Input.is_physical_key_pressed(ne_key):
+					dungeon_dir = "ne"
+				elif Input.is_physical_key_pressed(sw_key):
+					dungeon_dir = "sw"
+				elif Input.is_physical_key_pressed(se_key):
+					dungeon_dir = "se"
+				elif Input.is_physical_key_pressed(north_key):
 					dungeon_dir = "n"
 				elif Input.is_physical_key_pressed(south_key):
 					dungeon_dir = "s"
@@ -2713,20 +2752,33 @@ func _process(delta):
 				elif Input.is_physical_key_pressed(east_key):
 					dungeon_dir = "e"
 
-				# Check arrow keys as alternative
+				# Arrow key fallback — check two-key diagonal combinations first
 				if dungeon_dir == "":
 					var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
 					var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
 					var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
 					var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
 
-					if Input.is_physical_key_pressed(up_key):
+					var arr_n = Input.is_physical_key_pressed(up_key)
+					var arr_s = Input.is_physical_key_pressed(down_key)
+					var arr_w = Input.is_physical_key_pressed(left_key)
+					var arr_e = Input.is_physical_key_pressed(right_key)
+
+					if arr_n and arr_w:
+						dungeon_dir = "nw"
+					elif arr_n and arr_e:
+						dungeon_dir = "ne"
+					elif arr_s and arr_w:
+						dungeon_dir = "sw"
+					elif arr_s and arr_e:
+						dungeon_dir = "se"
+					elif arr_n:
 						dungeon_dir = "n"
-					elif Input.is_physical_key_pressed(down_key):
+					elif arr_s:
 						dungeon_dir = "s"
-					elif Input.is_physical_key_pressed(left_key):
+					elif arr_w:
 						dungeon_dir = "w"
-					elif Input.is_physical_key_pressed(right_key):
+					elif arr_e:
 						dungeon_dir = "e"
 
 				if dungeon_dir != "":
@@ -3171,6 +3223,26 @@ func _input(event):
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
+		elif settings_submenu == "stat_priority":
+			# Stat comparison priority submenu — toggle stats in/out of pinned list
+			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+			if keycode >= KEY_1 and keycode <= KEY_9:
+				var idx = keycode - KEY_1
+				if idx < ALL_COMPARISON_STATS.size():
+					var stat_key = ALL_COMPARISON_STATS[idx]
+					if stat_key in comparison_pinned_stats:
+						comparison_pinned_stats.erase(stat_key)
+					else:
+						comparison_pinned_stats.append(stat_key)
+					_save_keybinds()  # Persist via local settings
+					game_output.clear()
+					_display_stat_priority_settings()
+			elif keycode == back_key:
+				settings_submenu = "game"
+				game_output.clear()
+				display_game_settings()
+				update_action_bar()
+			get_viewport().set_input_as_handled()
 		elif settings_submenu == "game":
 			# Game settings submenu (minigame skip, swap toggles)
 			var back_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
@@ -3199,6 +3271,10 @@ func _input(event):
 				_cycle_combat_speed()
 			elif keycode == KEY_8:
 				_toggle_map_legend()
+			elif keycode == KEY_9:
+				settings_submenu = "stat_priority"
+				game_output.clear()
+				_display_stat_priority_settings()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -6055,10 +6131,14 @@ func update_action_bar():
 		]
 	elif not pending_dungeon_warning.is_empty():
 		# Dungeon level warning - awaiting confirmation
+		# Check if hard mode is available (player has cleared this dungeon before)
+		var dw_type = pending_dungeon_warning.get("dungeon_type", "")
+		var dw_completions = character_data.get("dungeons_completed", {})
+		var hard_unlocked = dw_completions.get(dw_type, 0) > 0
 		current_actions = [
-			{"label": "Enter Anyway", "action_type": "local", "action_data": "dungeon_warning_confirm", "enabled": true},
+			{"label": "Enter", "action_type": "local", "action_data": "dungeon_warning_confirm", "enabled": true},
 			{"label": "Cancel", "action_type": "local", "action_data": "dungeon_warning_cancel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Hard Mode", "action_type": "local", "action_data": "dungeon_enter_hard", "enabled": hard_unlocked},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6773,8 +6853,22 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif crafting_mode:
+		# Temper target selection sub-mode
+		if crafting_temper_mode:
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "crafting_temper_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		# Crafting sub-menu (works at both trading posts and player stations)
-		if crafting_skill == "":
+		elif crafting_skill == "":
 			# Skill selection
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "crafting_cancel", "enabled": true},
@@ -6806,10 +6900,12 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
+				# Check if this is an equipment recipe that can be tempered
+				var can_temper = sel_recipe.get("can_craft", false) and sel_recipe.get("output_type", "") in ["weapon", "armor"]
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
 					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Temper", "action_type": "local", "action_data": "crafting_temper_select", "enabled": can_temper},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -9912,6 +10008,13 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_game("[color=#808080]Dungeon entry cancelled.[/color]")
 			update_action_bar()
+		"dungeon_enter_hard":
+			# Enter dungeon in hard mode
+			if not pending_dungeon_warning.is_empty():
+				var dungeon_type = pending_dungeon_warning.get("dungeon_type", "")
+				pending_dungeon_warning = {}
+				send_to_server({"type": "dungeon_enter", "dungeon_type": dungeon_type, "confirmed": true, "hard_mode": true})
+			update_action_bar()
 		"hotzone_enter":
 			# Confirm entering hotzone
 			if not pending_hotzone_warning.is_empty():
@@ -10285,6 +10388,15 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"crafting_confirm":
 			confirm_craft()
+		"crafting_temper_select":
+			crafting_temper_mode = true
+			_display_temper_target_selection()
+			update_action_bar()
+		"crafting_temper_cancel":
+			crafting_temper_mode = false
+			game_output.clear()
+			display_craft_recipe_details()
+			update_action_bar()
 		"craft_qty_down":
 			craft_quantity = maxi(1, craft_quantity - 1)
 			display_craft_recipe_details()
@@ -10918,7 +11030,7 @@ func display_shop_inventory():
 				compare_arrow = _get_compare_arrow(item, equipped_item)
 				var diff_parts = _get_item_comparison_parts(item, equipped_item)
 				if diff_parts.size() > 0:
-					compare_text = " [%s]" % ", ".join(diff_parts)
+					compare_text = _format_comparison_bracket(diff_parts)
 				else:
 					compare_text = ""
 
@@ -11530,12 +11642,15 @@ func _get_compare_arrow(new_item: Dictionary, equipped_item) -> String:
 func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	"""Get array of stat difference strings for inline comparison display.
 	   Uses EFFECTIVE derived stats so comparisons account for attribute contributions:
-	   HP includes CON×5, ATK includes STR, DEF includes CON/2, resources include attributes."""
+	   HP includes CON×5, ATK includes STR, DEF includes CON/2, resources include attributes.
+	   Results are ordered by comparison_pinned_stats — pinned stats first, then unpinned."""
 	var new_bonuses = _compute_item_bonuses(new_item)
 	var old_bonuses = {}
 	if old_item != null and old_item is Dictionary:
 		old_bonuses = _compute_item_bonuses(old_item)
-	var diff_parts = []
+
+	# Build all diffs into a keyed dict for priority ordering
+	var all_diffs: Dictionary = {}  # stat_key -> display_string
 
 	# Effective ATK = attack + strength (matches get_total_attack formula)
 	var new_eff_atk = new_bonuses.get("attack", 0) + new_bonuses.get("strength", 0)
@@ -11543,7 +11658,7 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	var atk_diff = new_eff_atk - old_eff_atk
 	if atk_diff != 0:
 		var c = "#FFFF00" if atk_diff > 0 else "#808080"
-		diff_parts.append("[color=%s]%+dATK[/color]" % [c, atk_diff])
+		all_diffs["ATK"] = "[color=%s]%+dATK[/color]" % [c, atk_diff]
 
 	# Effective DEF = defense + constitution/2 (matches get_total_defense formula)
 	var new_eff_def = new_bonuses.get("defense", 0) + int(new_bonuses.get("constitution", 0) / 2)
@@ -11551,7 +11666,7 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	var def_diff = new_eff_def - old_eff_def
 	if def_diff != 0:
 		var c = "#00FF00" if def_diff > 0 else "#808080"
-		diff_parts.append("[color=%s]%+dDEF[/color]" % [c, def_diff])
+		all_diffs["DEF"] = "[color=%s]%+dDEF[/color]" % [c, def_diff]
 
 	# Effective HP = max_hp + constitution×5 (matches get_total_max_hp formula)
 	var new_eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
@@ -11559,18 +11674,21 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	var hp_diff = new_eff_hp - old_eff_hp
 	if hp_diff != 0:
 		var c = "#FF6666" if hp_diff > 0 else "#808080"
-		diff_parts.append("[color=%s]%+dHP[/color]" % [c, hp_diff])
+		all_diffs["HP"] = "[color=%s]%+dHP[/color]" % [c, hp_diff]
 
 	# Speed (no attribute derivation)
 	var spd_diff = new_bonuses.get("speed", 0) - old_bonuses.get("speed", 0)
 	if spd_diff != 0:
 		var c = "#FFA500" if spd_diff > 0 else "#808080"
-		diff_parts.append("[color=%s]%+dSPD[/color]" % [c, spd_diff])
+		all_diffs["SPD"] = "[color=%s]%+dSPD[/color]" % [c, spd_diff]
+
+	# Wits — affects flee chance, outsmart, Trickster energy pool
+	var wits_diff = new_bonuses.get("wits", 0) - old_bonuses.get("wits", 0)
+	if wits_diff != 0:
+		var c = "#FF00FF" if wits_diff > 0 else "#808080"
+		all_diffs["WIT"] = "[color=%s]%+dWIT[/color]" % [c, wits_diff]
 
 	# Effective resource comparison — fold attribute contributions into pool sizes
-	# Mana effective = direct mana + INT×3 + WIS×1.5
-	# Stamina effective = direct stamina + STR + CON
-	# Energy effective = direct energy + (WITS + DEX) × 0.75
 	var new_eff_mana = new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)
 	var new_eff_stam = new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)
 	var new_eff_energy = new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)
@@ -11604,7 +11722,7 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 	var resource_diff = new_scaled - old_scaled
 	if resource_diff != 0:
 		var c = resource_color if resource_diff > 0 else "#808080"
-		diff_parts.append("[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label])
+		all_diffs["RES"] = "[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label]
 
 	# Class-specific gear bonuses comparison (flat bonuses, no attribute derivation)
 	var class_bonuses_to_compare = [
@@ -11624,9 +11742,35 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var diff = new_val - old_val
 		if diff != 0:
 			var c = stat_color if diff > 0 else "#808080"
-			diff_parts.append("[color=%s]%+d%s[/color]" % [c, diff, label])
+			all_diffs[label] = "[color=%s]%+d%s[/color]" % [c, diff, label]
+
+	# Assemble in priority order: pinned stats first, then remaining
+	var diff_parts: Array = []
+	for key in comparison_pinned_stats:
+		if all_diffs.has(key):
+			diff_parts.append(all_diffs[key])
+			all_diffs.erase(key)
+	# Add any remaining unpinned stats
+	for key in all_diffs:
+		diff_parts.append(all_diffs[key])
 
 	return diff_parts
+
+func _format_comparison_bracket(diff_parts: Array, max_shown: int = -1) -> String:
+	"""Format comparison parts into a bracket string, truncating unpinned stats.
+	Parts are already sorted by priority (pinned first) from _get_item_comparison_parts().
+	max_shown: -1 = use pinned count + 1 overflow slot (default), 0 = show all."""
+	if diff_parts.is_empty():
+		return ""
+	if max_shown < 0:
+		# Default: show pinned stats + 1 extra slot for unpinned
+		max_shown = comparison_pinned_stats.size() + 1
+	if max_shown == 0 or diff_parts.size() <= max_shown:
+		return " [%s]" % ", ".join(diff_parts)
+	# Show first max_shown entries + overflow count
+	var shown = diff_parts.slice(0, max_shown)
+	var overflow = diff_parts.size() - max_shown
+	return " [%s [color=#808080]+%d more[/color]]" % [", ".join(shown), overflow]
 
 func _get_compare_stat_label(stat: String) -> String:
 	"""Get display label for a comparison stat"""
@@ -12868,7 +13012,7 @@ func display_inventory():
 				compare_arrow = _get_compare_arrow(item, equipped_item) + " "
 				var diff_parts = _get_item_comparison_parts(item, equipped_item)
 				if diff_parts.size() > 0:
-					compare_text = " [%s]" % ", ".join(diff_parts)
+					compare_text = _format_comparison_bracket(diff_parts)
 
 			# Display number is 1-9 for current page
 			var display_num = (di - start_idx) + 1
@@ -12891,7 +13035,7 @@ func display_inventory():
 				var tool_cmp_parts = _get_tool_comparison_parts(item, eq_tool)
 				var tool_cmp_text = ""
 				if tool_cmp_parts.size() > 0:
-					tool_cmp_text = " [%s]" % ", ".join(tool_cmp_parts)
+					tool_cmp_text = _format_comparison_bracket(tool_cmp_parts)
 				display_game("  %d. %s%s[color=%s]%s[/color] [color=#808080](%s T%d)[/color] [color=%s]%d/%d dur[/color]%s" % [
 					display_num, lock_text, tool_arrow, rarity_color, item.get("name", "Tool"),
 					subtype.capitalize(), item.get("tier", 1), dur_color, dur, max_dur, tool_cmp_text
@@ -13872,7 +14016,7 @@ func _display_equippable_items_page():
 			compare_arrow = _get_compare_arrow(item, equipped_item)
 			var diff_parts = _get_item_comparison_parts(item, equipped_item)
 			if diff_parts.size() > 0:
-				compare_text = " [%s]" % ", ".join(diff_parts)
+				compare_text = _format_comparison_bracket(diff_parts)
 
 		# Display number is 1-9 for current page
 		var display_num = (j - start_idx) + 1
@@ -14616,21 +14760,26 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 
 	if label_node:
 		# Display enemy name with level (color is shown in main combat text)
-		# Add star indicator for rare variants (more XP/drops)
-		if current_enemy_is_rare_variant:
+		# Add visual indicator for special variants
+		if current_enemy_is_elite:
+			label_node.text = "★ %s (Lvl %d) [ELITE]:" % [enemy_name, enemy_level]
+		elif current_enemy_is_rare_variant:
 			label_node.text = "★ %s (Lvl %d):" % [enemy_name, enemy_level]
 		else:
 			label_node.text = "%s (Lvl %d):" % [enemy_name, enemy_level]
-		# Set label color based on class affinity
-		match current_enemy_color:
-			"#FFFF00":  # Yellow - Physical
-				label_node.add_theme_color_override("font_color", Color(1, 1, 0))
-			"#00BFFF":  # Blue - Magical
-				label_node.add_theme_color_override("font_color", Color(0, 0.75, 1))
-			"#00FF00":  # Green - Cunning
-				label_node.add_theme_color_override("font_color", Color(0, 1, 0))
-			_:  # White - Neutral
-				label_node.add_theme_color_override("font_color", Color(1, 1, 1))
+		# Set label color — elite overrides affinity with gold
+		if current_enemy_is_elite:
+			label_node.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))  # Gold
+		else:
+			match current_enemy_color:
+				"#FFFF00":  # Yellow - Physical
+					label_node.add_theme_color_override("font_color", Color(1, 1, 0))
+				"#00BFFF":  # Blue - Magical
+					label_node.add_theme_color_override("font_color", Color(0, 0.75, 1))
+				"#00FF00":  # Green - Cunning
+					label_node.add_theme_color_override("font_color", Color(0, 1, 0))
+				_:  # White - Neutral
+					label_node.add_theme_color_override("font_color", Color(1, 1, 1))
 
 	if not bar_container:
 		return
@@ -15503,7 +15652,7 @@ func handle_server_message(message: Dictionary):
 									compare_arrow = _get_compare_arrow(item, equipped_item)
 									var diff_parts = _get_item_comparison_parts(item, equipped_item)
 									if diff_parts.size() > 0:
-										compare_text = " [%s]" % ", ".join(diff_parts)
+										compare_text = _format_comparison_bracket(diff_parts)
 
 								# Display matching Backpack format
 								display_game("[%d] %s [color=%s]%s[/color] Lv%d %s %s%s" % [j + 1, compare_arrow, color, item_name, level, bonus_text, slot_abbr, compare_text])
@@ -15918,6 +16067,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_name = ""
 			current_enemy_level = 0
 			current_enemy_is_rare_variant = false
+			current_enemy_is_elite = false
 			damage_dealt_to_current_enemy = 0
 			analyze_revealed_max_hp = -1  # Reset Analyze flag
 
@@ -16623,6 +16773,7 @@ func _process_combat_start(message: Dictionary):
 	current_enemy_color = combat_state.get("monster_name_color", "#FFFFFF")
 	current_enemy_abilities = combat_state.get("monster_abilities", [])
 	current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
+	current_enemy_is_elite = combat_state.get("is_elite", false)
 	current_enemy_is_boss = message.get("is_boss", false)
 	damage_dealt_to_current_enemy = 0
 	analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
@@ -17879,6 +18030,8 @@ func _load_keybinds():
 					combat_speed = clampi(int(data["combat_speed"]), 0, 2)
 				if data.has("show_map_legend"):
 					show_map_legend = data["show_map_legend"]
+				if data.has("comparison_pinned_stats") and data["comparison_pinned_stats"] is Array:
+					comparison_pinned_stats = data["comparison_pinned_stats"]
 
 func _save_keybinds():
 	"""Save keybind configuration and settings to config file"""
@@ -17900,6 +18053,7 @@ func _save_keybinds():
 	save_data["sfx_muted"] = sfx_muted
 	save_data["combat_speed"] = combat_speed
 	save_data["show_map_legend"] = show_map_legend
+	save_data["comparison_pinned_stats"] = comparison_pinned_stats
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
@@ -17966,10 +18120,12 @@ func get_item_select_key_name(index: int) -> String:
 
 func _consume_item_select_key(item_index: int):
 	"""Mark an item selection key as consumed to prevent action bar double-trigger.
-	This both prevents same-frame triggers (via consumed array) and next-frame
-	triggers (by marking the corresponding action bar hotkey as already pressed)."""
+	This prevents same-frame triggers (via consumed array), next-frame action bar triggers
+	(by marking the hotkey as already pressed), and cross-mode triggers (via key_hold_lock
+	which keeps the key locked until it is physically released and re-pressed)."""
 	var keycode = get_item_select_keycode(item_index)
 	item_selection_consumed_this_frame.append(keycode)
+	key_hold_lock[keycode] = true  # Lock until physically released — prevents cascade to next menu
 	# Mark corresponding action bar hotkey as pressed so next frame doesn't
 	# see it as a new press (the real fix for cross-frame double-trigger)
 	for ab_slot in range(10):
@@ -18012,8 +18168,12 @@ func is_item_key_blocked_by_action_bar(index: int) -> bool:
 	return false
 
 func is_item_select_key_pressed(index: int) -> bool:
-	"""Check if the item selection key is pressed (index 0-8 for items 1-9)"""
+	"""Check if the item selection key is pressed (index 0-8 for items 1-9).
+	Returns false if the key is in key_hold_lock — meaning it was consumed by a prior
+	selection action and must be released before it can trigger anything new."""
 	var keycode = get_item_select_keycode(index)
+	if key_hold_lock.has(keycode):
+		return false  # Key must be released before it can trigger again
 	return Input.is_physical_key_pressed(keycode) and not Input.is_key_pressed(KEY_SHIFT)
 
 func _key_to_selection_index(key: int) -> int:
@@ -18371,11 +18531,28 @@ func display_game_settings():
 	display_game("[7] Combat Speed: [color=%s]%s[/color]" % [speed_colors[combat_speed], speed_labels[combat_speed]])
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
 	display_game("[8] Map Legend: %s" % legend_status)
+	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
+	display_game("[9] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
 	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
 		display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
+
+func _display_stat_priority_settings():
+	"""Display the stat comparison priority settings submenu."""
+	display_game("[color=#FFD700]===== STAT COMPARE PRIORITY =====[/color]")
+	display_game("[color=#808080]Pinned stats always show first in equipment comparison brackets.[/color]")
+	display_game("[color=#808080]Unpinned stats appear after and may be truncated.[/color]")
+	display_game("")
+	for i in range(ALL_COMPARISON_STATS.size()):
+		var stat_key = ALL_COMPARISON_STATS[i]
+		var is_pinned = stat_key in comparison_pinned_stats
+		var pin_order = comparison_pinned_stats.find(stat_key) + 1 if is_pinned else 0
+		var status = "[color=#00FF00]PINNED (#%d)[/color]" % pin_order if is_pinned else "[color=#555555]unpinned[/color]"
+		display_game("[%d] %s: %s" % [i + 1, stat_key, status])
+	display_game("")
+	display_game("[color=#808080]Press 1-%d to toggle, [%s] to go back[/color]" % [ALL_COMPARISON_STATS.size(), get_action_key_name(0)])
 
 func _toggle_skip_craft_minigame():
 	"""Toggle skip craft minigame setting."""
@@ -19764,8 +19941,42 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.148 changes
+	display_game("[color=#00FF00]v0.9.148[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Major Update — Game Audit & Polish[/color]")
+	display_game("  • Dungeon Hard Mode: clear a dungeon to unlock Hard (+50% stats, -20% steps, +75% XP, bonus loot)")
+	display_game("  • Elite Champions: 1% spawn Lv15+ with gold [ELITE] tag, boosted stats/XP, guaranteed drops")
+	display_game("  • Dungeon bosses now use unique combat abilities (summoning, bleeding, poison, etc.)")
+	display_game("  • Tempered Crafting: gamble extra materials for a guaranteed bonus stat on equipment")
+	display_game("  • Recipe Discovery: advanced recipes (difficulty 50+) require Recipe Scrolls from dungeon treasure")
+	display_game("  • Minimap: zoomed-out terrain overview displayed below the main map")
+	display_game("  • Thematic consumable names (Herbalist's Tincture, Phoenix Essence, etc.)")
+	display_game("  • FLEE now scales with WITS vs monster speed (witty characters escape faster monsters)")
+	display_game("  • Quest rewards scale with player level; distant posts give up to +30% bonus")
+	display_game("  • Rescue quest rewards equalized to match dungeon clear rewards")
+	display_game("  • Stat compare priority: Settings→Game→[9] to pin which stats show in brackets")
+	display_game("  • Gathering chain cap prevents infinite sessions (T1=6 to T6=16 max chains)")
+	display_game("  • Auto-gather rebalanced to ~65% of manual performance (was 100%)")
+	display_game("  • Bridge building: craft wooden bridges to permanently cross water")
+	display_game("  • Diagonal dungeon movement (numpad 1/3/7/9 or arrow combos)")
+	display_game("  • WIT stat now shown in equipment comparison brackets")
+	display_game("  • Hotkey double-trigger permanently fixed across all menus")
+	display_game("  • Persistence fix: recipe knowledge and dungeon completions now saved between restarts")
+	display_game("  • Equipment drops rebalanced: T6-9 now 50-55% equipment (was 35-45%)")
+	display_game("  • Minimum drop rarity by tier: T4+=uncommon, T6+=rare, T8+=epic guaranteed")
+	display_game("  • Inventory full no longer loses drops — items auto-salvaged into materials")
+	display_game("  • Server-wide achievement announcements: close calls, elite kills, underdog victories, milestones")
+	display_game("  • Cooldown-controlled (~2 min global, ~10 min per player) to keep chat engaging")
+	display_game("")
+
+	# v0.9.147 changes
+	display_game("[color=#00FFFF]v0.9.147[/color]")
+	display_game("  [color=#FFD700]Bug Fixes[/color]")
+	display_game("  • Crafting XP: fixed crafting XP awarded on rejected/refunded recipes")
+	display_game("")
+
 	# v0.9.146 changes
-	display_game("[color=#00FF00]v0.9.146[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.146[/color]")
 	display_game("  [color=#FFD700]Bug Fixes[/color]")
 	display_game("  • Gathering: character XP now always awarded for gathering, even past job trial cap")
 	display_game("  • Gathering (auto-skip): gather quest tasks now receive credit per chain completed")
@@ -19798,14 +20009,6 @@ func display_changelog():
 	display_game("  • HP and class resource bars (Mana/Stamina/Energy) now display as a persistent overlay")
 	display_game("  • Bars appear bottom-right of game output, next to companion art")
 	display_game("  • Updates in real-time during combat, ability use, and healing")
-	display_game("")
-
-	# v0.9.142 changes
-	display_game("[color=#00FFFF]v0.9.142[/color]")
-	display_game("  [color=#FFD700]Network Optimization[/color]")
-	display_game("  • Delta character updates: only changed fields are sent (~60-85% bandwidth reduction)")
-	display_game("  • Message compression: large messages are gzip-compressed (~60-80% size reduction)")
-	display_game("  • Broadcast throttling: nearby player map updates batched every 300ms")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -21520,7 +21723,7 @@ func show_help():
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
 [color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
 [color=#00FFFF]Lvl Penalty:[/color] -1.5%%/lvl (max-25%%) for attacks vs higher monsters. [color=#FF4444]Monster +4%%/lvl exponential![/color]
-[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 50%%+DEX×2+spd-lvldiff×3 | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5(max30%%)-spd/2 [40-95%%]
+[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 40%%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5(max30%%)-spd/2 [40-95%%]
 [color=#66FF66]Trickster Dodge:[/color] +WIT/50%% dodge (max 15%%). Combined with DEX dodge, tricksters are harder to hit!
 [color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
 
@@ -21629,7 +21832,10 @@ func show_help():
   Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
 [color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
   Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
-[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~50%% average rewards.
+[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~65%% average rewards.
+[color=#FF8800]Tempered Craft:[/color] Equipment recipes have a "Temper" option — target a bonus stat (+ATK/DEF/HP/SPD).
+  Costs 50%% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
+[color=#FFD700]Recipe Discovery:[/color] Advanced recipes (difficulty 50+) require Recipe Scrolls found in dungeon treasure (T4+).
 [color=#AA66FF]Salvage:[/color] Inventory→Salvage breaks down items into [color=#AA66FF]crafting materials[/color]. Higher rarity = more materials.
 [color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
 [color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
@@ -21641,6 +21847,7 @@ func show_help():
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
+  [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50%% stats, -20%% steps, +75%% XP, bonus loot)!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
 [b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
@@ -21719,6 +21926,20 @@ func show_help():
 [color=#00FFFF]v0.9.83:[/color] Item locking, 53 dungeons (all monsters), 5x blacksmith upgrades, quest scaling, bug fixes.
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
+
+	# New features section (added separately to avoid format string complexity)
+	display_game("")
+	display_game("[b][color=#FFD700]══ NEW FEATURES ══[/color][/b]")
+	display_game("[color=#FF8800]★ Elite Champions:[/color] Rare (1%%) powerful monsters at Lv15+. Gold [ELITE] label, +50%% stats, +50%% XP, guaranteed drop.")
+	display_game("  2 random combat abilities. Worth fighting — but dangerous!")
+	display_game("[color=#FFD700]Minimap:[/color] A zoomed-out overview appears below your main map. Shows terrain, posts, dungeons, and paths.")
+	display_game("[color=#00FFFF]Stat Compare Priority:[/color] Settings→Game→[9] to choose which stats show first in equipment brackets.")
+	display_game("  Pin the stats you care about (ATK, DEF, HP, etc.) — unpinned stats get truncated.")
+	display_game("[color=#87CEEB]Thematic Potions:[/color] Health and resource potions now have unique names per tier:")
+	display_game("  T1: Herbalist's Tincture → T4: Healer's Draught → T6: Phoenix Essence → T7: Divine Ambrosia")
+	display_game("[color=#FF8800]Boss Abilities:[/color] Dungeon bosses now use their unique abilities in combat!")
+	display_game("  Goblin King summons minions, Alpha Wolf causes bleeding, Lich drains life, etc.")
+	display_game("[color=#00FF00]Bridges:[/color] Craft wooden bridges (Construction Lv3) to cross water permanently. Any player can use them.")
 
 	# Add discovered trading posts section (dynamic per character)
 	var discovered = character_data.get("discovered_posts", [])
@@ -23585,6 +23806,32 @@ func _count_group_materials(group_key: String) -> int:
 	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
 	return DropTables.get_total_for_group(group_key, crafting_materials)
 
+func _display_temper_target_selection():
+	"""Display temper target stat options for resource gambling craft."""
+	game_output.clear()
+	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
+		return
+	var recipe = crafting_recipes[crafting_selected_recipe]
+	display_game("[color=#FF8800]═══════ TEMPERED CRAFT: %s ═══════[/color]" % recipe.get("name", "?"))
+	display_game("")
+	display_game("[color=#FFFF00]Tempering guarantees a bonus stat but costs 50%% extra materials[/color]")
+	display_game("[color=#FFFF00]and halves your success chance. Materials are lost on failure![/color]")
+	display_game("")
+	display_game("[color=#87CEEB]Choose a bonus stat to target:[/color]")
+	for i in range(TEMPER_TARGETS.size()):
+		display_game("[%d] %s" % [i + 1, TEMPER_TARGET_LABELS[i]])
+	display_game("")
+	display_game("[%s] Cancel" % get_action_key_name(0))
+
+func _confirm_temper_craft(temper_target: String):
+	"""Send tempered craft request to server."""
+	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
+		return
+	crafting_temper_mode = false
+	var recipe = crafting_recipes[crafting_selected_recipe]
+	var recipe_id = recipe.get("id", "")
+	send_to_server({"type": "craft_item", "recipe_id": recipe_id, "temper_target": temper_target})
+
 func confirm_craft():
 	"""Send craft request to server"""
 	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
@@ -23763,6 +24010,7 @@ func close_crafting():
 	crafting_mode = false
 	crafting_entered_via_station = false
 	crafting_challenge_mode = false
+	crafting_temper_mode = false
 	craft_challenge_data = {}
 	craft_challenge_round = 0
 	craft_challenge_answers = []
@@ -23979,7 +24227,15 @@ func handle_dungeon_level_warning(message: Dictionary):
 	display_game("[color=#FF6666]Recommended Level: %d[/color]" % message.min_level)
 	display_game("[color=#AAAAAA]Your Level: %d[/color]" % message.player_level)
 	display_game("")
-	display_game("[color=#808080]Press [%s] to enter anyway, or [%s] to cancel.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+	# Check if hard mode is available
+	var warn_completions = character_data.get("dungeons_completed", {})
+	var warn_dtype = message.get("dungeon_type", "")
+	if warn_completions.get(warn_dtype, 0) > 0:
+		display_game("[color=#FF8800]★ Hard Mode available! +50%% monster stats, +75%% XP, bonus loot[/color]")
+		display_game("")
+		display_game("[%s] Enter | [%s] Cancel | [%s] [color=#FF8800]Hard Mode[/color]" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
+	else:
+		display_game("[color=#808080]Press [%s] to enter anyway, or [%s] to cancel.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
 	update_action_bar()
 
@@ -24763,7 +25019,7 @@ func display_market_browse():
 					var _parts = _get_item_comparison_parts(item, _equipped_item)
 					compare_text = " %s" % _arrow
 					if _parts.size() > 0:
-						compare_text += " [%s]" % ", ".join(_parts)
+						compare_text += _format_comparison_bracket(_parts)
 				elif _item_type == "tool":
 					# Tool comparison vs equipped tool of same subtype
 					var _eq_tools = character_data.get("equipped_tools", {})
@@ -24772,7 +25028,7 @@ func display_market_browse():
 					var _parts = _get_tool_comparison_parts(item, _eq_tool)
 					compare_text = " %s" % _arrow
 					if _parts.size() > 0:
-						compare_text += " [%s]" % ", ".join(_parts)
+						compare_text += _format_comparison_bracket(_parts)
 				display_game("  [color=#FFFF00]%d)[/color]%s [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, compare_text, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
@@ -25570,7 +25826,7 @@ func _display_home_stone_options():
 					var equipped_item = equipped.get(slot)
 					var diff_parts = _get_item_comparison_parts(itm, equipped_item)
 					if diff_parts.size() > 0:
-						compare_text = " [%s]" % ", ".join(diff_parts)
+						compare_text = _format_comparison_bracket(diff_parts)
 				var wear = itm.get("wear", 0)
 				var wear_text = ""
 				if wear > 0:

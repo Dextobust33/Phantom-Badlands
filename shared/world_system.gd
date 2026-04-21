@@ -68,6 +68,7 @@ const TILE_RENDER = {
 	"dense_brush":   {"char": "%", "color": "#6B8E23", "blocks_move": true, "blocks_los": false},
 	"water":         {"char": "~", "color": "#4488FF", "blocks_move": true, "blocks_los": false},
 	"deep_water":    {"char": "~", "color": "#2244AA", "blocks_move": true, "blocks_los": false},
+	"bridge":        {"char": "=", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
 	"wall":          {"char": "#", "color": "#CCCCCC", "blocks_move": true, "blocks_los": true},
 	"door":          {"char": "+", "color": "#CCAA00", "blocks_move": false, "blocks_los": false},
 	"floor":         {"char": ".", "color": "#D4C4A2", "blocks_move": false, "blocks_los": false},
@@ -838,6 +839,8 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 			output += "[center]"
 			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 			output += "[/center]"
+			# Minimap — zoomed-out overview at small font, appended below the main map
+			output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
 			return output
 
 	# Check legacy Trading Post
@@ -891,13 +894,16 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 
 	output += "\n"
 
-	# Add the map (centered)
+	# Add the main map (centered)
 	output += "[center]"
 	if chunk_manager:
 		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	else:
 		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	output += "[/center]"
+
+	# Minimap — zoomed-out overview at small font, appended below the main map
+	output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
 
 	return output
 
@@ -1450,7 +1456,10 @@ func _get_compass_line(player_x: int, player_y: int, exclude_post: Dictionary = 
 # ===== A* PATHFINDING & ROAD SYSTEM =====
 # Computes roads between NPC posts, stamps path tiles, merchants follow roads.
 
-const ASTAR_MAX_NODES = 50000  # Generous cap — the walkability check is strict, not the cap
+const ASTAR_MAX_NODES = 100000  # Increased to handle longer permissive-mode paths
+# Maximum allowed path length as a multiple of the Manhattan distance between endpoints.
+# Paths that require a longer detour than this are considered blocked and won't auto-form.
+const PATH_MAX_DEVIATION_RATIO = 1.5
 const ASTAR_DIRECTIONS = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]  # N, S, W, E only
 
 # Path graph: computed once on world init, updated when player posts are built
@@ -1472,8 +1481,8 @@ func _is_walkable_for_path(x: int, y: int, permissive: bool = false) -> bool:
 		return true
 	var tile = chunk_manager.get_tile(x, y)
 	var tile_type = tile.get("type", "empty")
-	# NPC post structure tiles and player structure tiles are walkable
-	if tile_type in ["floor", "door", "tower", "storage", "post_marker"]:
+	# NPC post structure tiles, player structure tiles, and bridges are walkable
+	if tile_type in ["floor", "door", "tower", "storage", "post_marker", "bridge"]:
 		return true
 	# Modified empty tiles (explicitly set by chunk system, not procedurally generated)
 	if tile_type == "empty" and chunk_manager.is_tile_modified(x, y):
@@ -1665,8 +1674,16 @@ func try_connect_one_pair() -> Dictionary:
 		var from_exit = _find_post_exit(from_pos.x, from_pos.y)
 		var to_exit = _find_post_exit(to_pos.x, to_pos.y)
 
-		var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y)
+		# Use permissive mode so roads auto-connect through any non-blocking terrain.
+		# Water still blocks (blocks_move = true), so bridges are needed for water crossings.
+		var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true)
 		if waypoints.size() > 0:
+			# Reject paths that deviate too far from a straight line.
+			# Compare actual path length against the Manhattan distance between endpoints.
+			# Diagonal routes have path_length ≈ Manhattan, so 1.5× allows modest detours.
+			var manhattan = absi(to_exit.x - from_exit.x) + absi(to_exit.y - from_exit.y)
+			if waypoints.size() > manhattan * PATH_MAX_DEVIATION_RATIO:
+				continue  # Too much deviation — wait for terrain to change (e.g. a bridge placed)
 			_path_waypoints[path_key] = waypoints
 			if edge.to not in _path_graph.get(edge.from, []):
 				if not _path_graph.has(edge.from):
@@ -1739,7 +1756,7 @@ func stamp_paths_into_chunks(paths: Dictionary) -> void:
 			var existing_type = existing.get("type", "empty")
 			if existing_type in ["floor", "door", "forge", "apothecary", "workbench",
 				"enchant_table", "writing_desk", "market", "inn", "quest_board",
-				"tower", "storage", "post_marker", "blacksmith", "healer", "guard"]:
+				"tower", "storage", "post_marker", "blacksmith", "healer", "guard", "bridge"]:
 				continue
 
 			# Stamp path tile
@@ -1808,6 +1825,14 @@ func connect_new_post(post: Dictionary) -> Dictionary:
 func get_post_connections() -> Dictionary:
 	"""Returns the computed path graph: {post_key: [connected_post_keys]}"""
 	return _path_graph
+
+func is_tile_on_path(x: int, y: int) -> bool:
+	"""Check if a tile coordinate is a waypoint on any active stamped road path."""
+	var pos = Vector2i(x, y)
+	for path_key in _path_waypoints:
+		if pos in _path_waypoints[path_key]:
+			return true
+	return false
 
 func _get_post_key(post: Dictionary) -> String:
 	"""Generate a unique key for a post."""
@@ -2433,6 +2458,106 @@ func find_hotzones_within_distance(x: int, y: int, max_distance: float) -> Array
 				})
 
 	return hotzones
+
+func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = []) -> String:
+	"""Generate a compact zoomed-out minimap centered on the player.
+	Samples every 2 world tiles → each minimap character covers a 2×2 tile area.
+	Coverage: ±40 tiles east/west, ±20 tiles north/south (41×21 chars).
+	Displayed at small font size for compact appearance below the main map."""
+	if not chunk_manager:
+		return ""
+
+	# Sample step: 2 world tiles per minimap char
+	const STEP = 2
+	const MAP_HALF_W = 20  # minimap chars in each direction (x)
+	const MAP_HALF_H = 10  # minimap chars in each direction (y)
+
+	# Build dungeon lookup
+	var dungeon_set: Dictionary = {}
+	for d in dungeon_locations:
+		dungeon_set["%d,%d" % [int(d.x), int(d.y)]] = true
+
+	# Pre-build NPC post bounding boxes for fast lookup
+	# (avoid calling is_npc_post_tile for every tile — that iterates all posts)
+	var posts = chunk_manager.get_npc_posts()
+	# We'll check against post centroids with a generous match radius
+	var post_points: Array = []
+	for p in posts:
+		post_points.append({"x": int(p.get("x", 0)), "y": int(p.get("y", 0))})
+		# Also add wing room centers if present
+		for wing in p.get("wing_rooms", []):
+			var wx = (int(wing.get("x0", 0)) + int(wing.get("x1", 0))) / 2
+			var wy = (int(wing.get("y0", 0)) + int(wing.get("y1", 0))) / 2
+			post_points.append({"x": wx, "y": wy})
+
+	var output = "[center][font_size=9]"
+	for miny in range(MAP_HALF_H, -MAP_HALF_H - 1, -1):
+		var line = ""
+		for minx in range(-MAP_HALF_W, MAP_HALF_W + 1):
+			var wx = center_x + minx * STEP
+			var wy = center_y + miny * STEP
+
+			# Player marker (exact center)
+			if minx == 0 and miny == 0:
+				line += "[color=#FFFF00]@[/color]"
+				continue
+
+			# Dungeon — check nearby world tiles in the 2x2 sample block
+			var has_dungeon = false
+			for dox in range(STEP):
+				for doy in range(STEP):
+					if dungeon_set.has("%d,%d" % [wx + dox, wy + doy]):
+						has_dungeon = true
+						break
+				if has_dungeon:
+					break
+			if has_dungeon:
+				line += "[color=#FF4444]D[/color]"
+				continue
+
+			# NPC post — check if close to any post centroid
+			var near_post = false
+			for pp in post_points:
+				if abs(pp.x - wx) <= STEP + 8 and abs(pp.y - wy) <= STEP + 8:
+					# Confirm with actual tile check (on the sampled tile only)
+					if chunk_manager.is_npc_post_tile(wx, wy):
+						near_post = true
+						break
+			if near_post:
+				line += "[color=#FFD700]P[/color]"
+				continue
+
+			# Tile type from chunk
+			var tile = chunk_manager.get_tile(wx, wy)
+			var tile_type = tile.get("type", "empty")
+
+			match tile_type:
+				"water":
+					line += "[color=#4488FF]~[/color]"
+				"deep_water":
+					line += "[color=#2244AA]~[/color]"
+				"bridge":
+					line += "[color=#C4A882]=[/color]"
+				"path":
+					line += "[color=#8B7355]:[/color]"
+				"wall":
+					line += "[color=#888888]#[/color]"
+				"tree", "dense_brush":
+					line += "[color=#1A6B1A]T[/color]"
+				"stone", "ore_vein":
+					line += "[color=#887766]o[/color]"
+				"floor", "door", "forge", "apothecary", "workbench", "enchant_table",\
+				"writing_desk", "market", "inn", "quest_board", "post_marker",\
+				"blacksmith", "healer", "throne", "storage", "guard":
+					line += "[color=#FFD700].[/color]"
+				_:
+					line += "[color=#3A3028].[/color]"
+
+		output += line + "\n"
+
+	output += "[/font_size][/center]"
+	output += "[center][color=#555555][font_size=8]minimap (±%d tiles)[/font_size][/color][/center]" % [MAP_HALF_W * STEP]
+	return output
 
 func to_dict() -> Dictionary:
 	"""Serialize world system state"""
