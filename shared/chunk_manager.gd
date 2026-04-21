@@ -22,6 +22,8 @@ var _dirty_chunks: Dictionary = {}  # chunk_key -> true
 # Depleted node tracking: "x,y" -> respawn_timestamp (Unix time), or -1 for permanent
 var depleted_nodes: Dictionary = {}
 const NODE_RESPAWN_TIME = 300.0  # 5 minutes (water/fishing only)
+const POST_NODE_RESPAWN_TIME = 900.0  # 15 minutes for all nodes near a trading post
+const POST_RESOURCE_RADIUS = 12  # tiles — nodes within this radius of a post respawn
 const NODE_RESPAWN_CHECK_INTERVAL = 10.0
 const DEPLETED_PERMANENT = -1  # Sentinel for nodes that never respawn
 const DEPLETED_NODES_FILE = "user://data/depleted_nodes.json"
@@ -143,12 +145,27 @@ func is_tile_modified(world_x: int, world_y: int) -> bool:
 
 func deplete_node(world_x: int, world_y: int, tile_type: String = "") -> void:
 	"""Mark a gathering node as depleted.
-	Water nodes respawn after NODE_RESPAWN_TIME. All other nodes are permanent."""
+	Water nodes respawn after NODE_RESPAWN_TIME. Other nodes are normally permanent,
+	EXCEPT nodes close to a trading post — those respawn on POST_NODE_RESPAWN_TIME so
+	beginner areas can't be permanently farmed out."""
 	var coord_key = "%d,%d" % [world_x, world_y]
 	if tile_type == "water":
 		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+	elif _is_near_npc_post(world_x, world_y, POST_RESOURCE_RADIUS):
+		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + POST_NODE_RESPAWN_TIME
 	else:
 		depleted_nodes[coord_key] = DEPLETED_PERMANENT
+
+func _is_near_npc_post(world_x: int, world_y: int, radius: int) -> bool:
+	"""Returns true if (x, y) is within `radius` tiles of any NPC post center."""
+	for post in npc_posts:
+		var px = int(post.get("x", 0))
+		var py = int(post.get("y", 0))
+		var dx = px - world_x
+		var dy = py - world_y
+		if dx * dx + dy * dy <= radius * radius:
+			return true
+	return false
 
 func is_node_depleted(world_x: int, world_y: int) -> bool:
 	"""Check if a gathering node is currently depleted."""
@@ -214,6 +231,29 @@ func load_depleted_nodes() -> void:
 				for key in json.data:
 					depleted_nodes[key] = int(json.data[key])  # Cast float back to int
 				print("Loaded %d depleted nodes" % depleted_nodes.size())
+
+func migrate_permanent_depletions_near_posts() -> void:
+	"""One-time migration: convert permanently-depleted nodes near trading posts
+	into timed respawns so old saves benefit from the resource-near-posts fix
+	without requiring a world reset."""
+	if npc_posts.is_empty():
+		return
+	var now = Time.get_unix_time_from_system()
+	var migrated = 0
+	for coord_key in depleted_nodes.keys():
+		if depleted_nodes[coord_key] != DEPLETED_PERMANENT:
+			continue
+		var parts = coord_key.split(",")
+		if parts.size() != 2:
+			continue
+		var wx = int(parts[0])
+		var wy = int(parts[1])
+		if _is_near_npc_post(wx, wy, POST_RESOURCE_RADIUS):
+			depleted_nodes[coord_key] = now + POST_NODE_RESPAWN_TIME
+			migrated += 1
+	if migrated > 0:
+		print("Migrated %d permanent depletions near posts to timed respawns" % migrated)
+		save_depleted_nodes()
 
 # ===== CHUNK I/O =====
 

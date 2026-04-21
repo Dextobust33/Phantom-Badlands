@@ -283,6 +283,10 @@ func _ready():
 	# so that A* pathfinding can see cleared corridors when connecting player posts)
 	chunk_manager.load_depleted_nodes()
 
+	# Convert previously-permanent depletions near posts into timed respawns so
+	# existing worlds benefit from the resource-near-posts behavior.
+	chunk_manager.migrate_permanent_depletions_near_posts()
+
 	# Rebuild player enclosures from persisted tile data (after roads + depleted nodes
 	# so posts can connect to road network via cleared terrain)
 	_rebuild_all_player_enclosures()
