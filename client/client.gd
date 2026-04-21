@@ -1511,13 +1511,6 @@ func _ready():
 	# Create quick-access shortcut buttons (top-right of chat area)
 	_create_shortcut_buttons()
 
-	# Relocate the StatusHUD into the BottomRow so Backpack/Area/Nearest/etc.
-	# fill the empty middle space between the Tools overlay (left) and the
-	# framed Minimap (right) instead of wasting fullscreen real estate below.
-	# Runtime reparent — tscn-level restructures broke the scene in the past,
-	# while runtime add_child of the shortcut_buttons_container has worked.
-	_relocate_status_hud_into_bottom_row()
-
 	# Create ability input popup
 	_create_ability_popup()
 
@@ -7528,38 +7521,6 @@ func execute_variable_cost_ability(amount: int):
 	_hide_ability_popup()
 	send_combat_command("%s %d" % [ability, amount])
 	update_action_bar()
-
-func _relocate_status_hud_into_bottom_row():
-	"""Reparent StatusHUD from MapPanel (below BottomRow) into BottomRow itself
-	so it fills the horizontal dead space between Tools (left) and Minimap (right).
-
-	We also flip Tools' EXPAND flag off so StatusHUD wins the middle and Minimap
-	stays flush right. Runtime reparent avoids the tscn-restructure pattern that
-	was repeatedly triggering blank-screen breaks."""
-	var bottom_row = get_node_or_null("RootContainer/TopSection/MapPanel/BottomRow")
-	var map_panel = get_node_or_null("RootContainer/TopSection/MapPanel")
-	var status_hud_node = get_node_or_null("RootContainer/TopSection/MapPanel/StatusHUD")
-	var minimap = get_node_or_null("RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay")
-	var tools = get_node_or_null("RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay")
-	if bottom_row == null or map_panel == null or status_hud_node == null:
-		return
-
-	# Move StatusHUD out of MapPanel into BottomRow.
-	map_panel.remove_child(status_hud_node)
-	bottom_row.add_child(status_hud_node)
-	# Position it between Tools (index 0) and Minimap (last). reparent keeps it
-	# at the end; move to index 1 so Tools | StatusHUD | Minimap.
-	bottom_row.move_child(status_hud_node, 1)
-
-	# Now the size-flag juggling: StatusHUD expands into the middle, Tools
-	# shrinks back to its minimum, Minimap stays at content width.
-	status_hud_node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_hud_node.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	if tools:
-		tools.size_flags_horizontal = Control.SIZE_FILL
-	if minimap:
-		# Make sure the minimap width is driven by its content, not expand.
-		minimap.size_flags_horizontal = Control.SIZE_FILL
 
 func _create_shortcut_buttons():
 	"""Create quick-access shortcut buttons overlaid on top-right of chat area."""
@@ -20142,12 +20103,12 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.176 changes
-	display_game("[color=#00FF00]v0.9.176[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Status HUD Fills Dead Space[/color]")
-	display_game("  • StatusHUD (Backpack/Area/Nearest/Pouch/Quests/Eggs) reparented at runtime into the BottomRow between Tools and Minimap")
-	display_game("  • Fills the fullscreen dead space between the Tools overlay and the framed minimap")
-	display_game("  • Pure code change — no tscn edits to avoid the scene-restructure blank-screen pattern")
+	# v0.9.177 changes
+	display_game("[color=#00FF00]v0.9.177[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Revert v0.9.176 — StatusHUD back below BottomRow[/color]")
+	display_game("  • The reparent into BottomRow worked in fullscreen but collapsed the minimap into a vertical strip in windowed mode (narrow MapPanel couldn't fit Tools + StatusHUD + Minimap on one row)")
+	display_game("  • StatusHUD is back below BottomRow where the layout is stable across resolutions")
+	display_game("  • Fullscreen dead space between Tools and Minimap remains — will fill it a different way next")
 	display_game("")
 
 	# v0.9.175 changes
