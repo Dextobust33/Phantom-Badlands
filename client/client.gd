@@ -20103,8 +20103,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.174 changes
+	display_game("[color=#00FF00]v0.9.174[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Minimap Autowrap Fix[/color]")
+	display_game("  • MinimapDisplay without EXPAND collapsed each character into a tall vertical strip — autowrap was re-flowing text")
+	display_game("  • Disabled autowrap_mode on MinimapDisplay so the node's minimum width matches the widest minimap line")
+	display_game("")
+
 	# v0.9.173 changes
-	display_game("[color=#00FF00]v0.9.173[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.173[/color]")
 	display_game("  [color=#FFD700]Minimap Frame Tightening (no new nodes)[/color]")
 	display_game("  • Removed EXPAND flag from MinimapDisplay so the node shrinks to content width — frame wraps only the minimap")
 	display_game("  • Reduced corner radius 80 → 14 and added more inner padding so content no longer clips the rounded corners")
