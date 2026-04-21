@@ -373,13 +373,36 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 	var ix1 = mx1 - 2
 	var iy0 = my0 + 2
 
-	# All stations in placement order
-	var stations = [
-		"forge", "forge", "apothecary", "apothecary", "enchant_table", "enchant_table",
-		"writing_desk", "writing_desk", "workbench", "workbench",
-		"quest_board", "quest_board", "blacksmith", "blacksmith",
-		"inn", "healer", "healer", "market", "market",
+	# Station groups — same-type pairs stay together so clusters feel themed,
+	# but the GROUP order is shuffled per post so layouts vary between trading
+	# posts instead of being identical rows.
+	var station_groups = [
+		["forge", "forge"],
+		["apothecary", "apothecary"],
+		["enchant_table", "enchant_table"],
+		["writing_desk", "writing_desk"],
+		["workbench", "workbench"],
+		["quest_board", "quest_board"],
+		["blacksmith", "blacksmith"],
+		["inn"],
+		["healer", "healer"],
+		["market", "market"],
 	]
+
+	# Deterministic shuffle seeded by post center so every visit sees the same layout.
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash("post_layout_%d_%d" % [px, py])
+	for i in range(station_groups.size() - 1, 0, -1):
+		var j = rng.randi_range(0, i)
+		var tmp = station_groups[i]
+		station_groups[i] = station_groups[j]
+		station_groups[j] = tmp
+
+	# Flatten shuffled groups into the placement list
+	var stations: Array = []
+	for group in station_groups:
+		for s in group:
+			stations.append(s)
 
 	var cur_x = ix0
 	var cur_y = iy0

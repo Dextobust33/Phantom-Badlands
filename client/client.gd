@@ -20103,8 +20103,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.162 changes
+	display_game("[color=#00FF00]v0.9.162[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Resource Respawns & Post Variety[/color]")
+	display_game("  • Gathering nodes within 12 tiles of a trading post now respawn after 15 minutes instead of being permanently depleted")
+	display_game("  • Existing permanently-depleted nodes near posts were migrated to the timed respawn schedule on server startup")
+	display_game("  • Trading post station layouts are now deterministically shuffled per post — forge/market/quest board etc. are in different positions at each post")
+	display_game("  • Note: layout shuffle only affects newly generated posts; existing posts keep their current layout until regenerated")
+	display_game("")
+
 	# v0.9.161 changes
-	display_game("[color=#00FF00]v0.9.161[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.161[/color]")
 	display_game("  [color=#FFD700]Status HUD + Tutorial Opt-In[/color]")
 	display_game("  • New Status HUD below the minimap: Backpack X/40, Area Lv, Nearest post compass, Materials pouch count, Active quests (top 3), Incubating eggs")
 	display_game("  • Click an egg indicator to toggle freeze (no menu needed)")
@@ -20136,13 +20145,6 @@ func display_changelog():
 	display_game("  • Gathering session summary now includes remaining tool durability")
 	display_game("  • Tool break shows a prominent highlighted notification with sound")
 	display_game("  • Broken tool is automatically replaced by the best spare of the same type from your backpack, if one exists")
-	display_game("")
-
-	# v0.9.157 changes
-	display_game("[color=#00FFFF]v0.9.157[/color]")
-	display_game("  [color=#FFD700]Daily Quest Name Mismatch Fix[/color]")
-	display_game("  • Accepting a daily quest now matches what was displayed on the board")
-	display_game("  • Cause: RNG state diverged between quest list generation and quest regeneration when some dailies were already completed or on cooldown — same quest_id mapped to different quest data")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
