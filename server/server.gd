@@ -9730,31 +9730,41 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Unequip the item first."})
 		return
 
-	# Stackable consumables list the whole stack at once — base valor scales with stack size
+	# Stackable consumables can list a partial amount; default lists the whole stack
 	var stack_size = maxi(1, int(item.get("quantity", 1)))
+	var list_qty = int(message.get("quantity", 0))
+	if list_qty <= 0 or list_qty > stack_size:
+		list_qty = stack_size
 
 	# Calculate base valor
 	var per_unit_valor = drop_tables.calculate_base_valor(item)
-	var base_valor = per_unit_valor * stack_size
+	var base_valor = per_unit_valor * list_qty
 
 	# Apply market bonuses (Halfling +15%, Knight +10%)
 	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
 	if bonus > 0:
 		base_valor = int(base_valor * (1.0 + bonus))
 
+	# Listed item reflects only the portion being sold
+	var listed_item = item.duplicate()
+	listed_item["quantity"] = list_qty
+
 	# Create listing
 	var listing = {
 		"account_id": account_id,
 		"seller_name": character.name,
-		"item": item.duplicate(),
+		"item": listed_item,
 		"base_valor": base_valor,
 		"supply_category": drop_tables.get_supply_category(item),
 		"listed_at": int(Time.get_unix_time_from_system()),
-		"quantity": stack_size
+		"quantity": list_qty
 	}
 
-	# Remove item from inventory
-	character.inventory.remove_at(index)
+	# Remove listed portion from inventory
+	if list_qty < stack_size:
+		item["quantity"] = stack_size - list_qty
+	else:
+		character.inventory.remove_at(index)
 
 	# Add listing and award valor
 	var listing_id = persistence.add_market_listing(post_id, listing)
@@ -10105,7 +10115,7 @@ func handle_market_my_listings(peer_id: int, message: Dictionary):
 	})
 
 func handle_market_cancel(peer_id: int, message: Dictionary):
-	"""Cancel own listing and return item to inventory."""
+	"""Cancel own listing and return item to inventory. Supports partial pull for stacks."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -10134,40 +10144,70 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "That's not your listing."})
 		return
 
-	# Check inventory/egg space
+	# Clamp requested pull quantity to what's actually listed (may differ if partially bought)
 	var item = listing.get("item", {})
+	var listed_qty = maxi(1, int(listing.get("quantity", 1)))
+	var pull_qty = int(message.get("quantity", 0))
+	if pull_qty <= 0 or pull_qty > listed_qty:
+		pull_qty = listed_qty
+
+	# Check inventory/egg space
 	if item.get("type", "") == "egg":
 		var egg_cap = persistence.get_egg_capacity(account_id)
 		if character.incubating_eggs.size() >= egg_cap:
 			send_to_peer(peer_id, {"type": "market_error", "message": "Egg incubator full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
 			return
 	elif item.get("type", "") != "material" and character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
-		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
-		return
+		# Stacks that merge into an existing consumable stack don't consume a slot, but
+		# for safety require a free slot if no existing stack is found.
+		var merges_into_existing = false
+		if item.get("is_consumable", false):
+			for inv_item in character.inventory:
+				if inv_item.get("is_consumable", false) \
+						and inv_item.get("name", "") == item.get("name", "") \
+						and inv_item.get("type", "") == item.get("type", "") \
+						and inv_item.get("tier", 1) == item.get("tier", 1) \
+						and inv_item.get("rarity", "common") == item.get("rarity", "common"):
+					merges_into_existing = true
+					break
+		if not merges_into_existing:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
+			return
 
-	# Deduct the valor that was awarded on listing (they got paid upfront)
+	# Calculate pro-rata refund (they were paid upfront on listing)
 	var base_valor = int(listing.get("base_valor", 0))
+	var per_unit_valor = int(base_valor / maxi(listed_qty, 1))
+	var valor_refund = per_unit_valor * pull_qty
 	var current_valor = persistence.get_valor(account_id)
-	if current_valor < base_valor:
-		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor to cancel (you were paid %d on listing)." % base_valor})
+	if current_valor < valor_refund:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor to cancel (you were paid %d)." % valor_refund})
 		return
 
-	persistence.spend_valor(account_id, base_valor)
+	persistence.spend_valor(account_id, valor_refund)
 
-	# Return item
+	# Return the pulled portion
 	if item.get("type", "") == "material":
 		var mat_name = item.get("material_type", item.get("name", ""))
-		var qty = int(listing.get("quantity", 1))
 		if not character.crafting_materials.has(mat_name):
 			character.crafting_materials[mat_name] = 0
-		character.crafting_materials[mat_name] += qty
+		character.crafting_materials[mat_name] += pull_qty
 	elif item.get("type", "") == "egg":
 		character.incubating_eggs.append(item)
 	else:
-		character.inventory.append(item)
+		var returned = item.duplicate()
+		returned["quantity"] = pull_qty
+		if returned.get("is_consumable", false):
+			character.add_item(returned)
+		else:
+			character.inventory.append(returned)
 
-	# Remove listing
-	persistence.remove_market_listing(post_id, listing_id)
+	# Update or remove listing
+	if pull_qty < listed_qty:
+		var remaining_qty = listed_qty - pull_qty
+		var remaining_valor = base_valor - valor_refund
+		persistence.update_market_listing_quantity(post_id, listing_id, remaining_qty, remaining_valor)
+	else:
+		persistence.remove_market_listing(post_id, listing_id)
 
 	save_character(peer_id)
 
@@ -10175,8 +10215,10 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		"type": "market_cancel_success",
 		"item_name": item.get("name", "item"),
 		"item_type": item.get("type", ""),
-		"valor_deducted": base_valor,
-		"total_valor": persistence.get_valor(account_id)
+		"valor_deducted": valor_refund,
+		"total_valor": persistence.get_valor(account_id),
+		"pull_qty": pull_qty,
+		"partial": pull_qty < listed_qty
 	})
 	send_character_update(peer_id)
 
@@ -10193,7 +10235,6 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 		return
 
 	var current_valor = persistence.get_valor(account_id)
-	var free_slots = Character.MAX_INVENTORY_SIZE - character.inventory.size()
 	var egg_cap = persistence.get_egg_capacity(account_id)
 	var free_egg_slots = egg_cap - character.incubating_eggs.size()
 	var pulled_count = 0
@@ -10228,12 +10269,14 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 			character.incubating_eggs.append(item)
 			free_egg_slots -= 1
 		else:
-			# Non-materials need inventory space
-			if free_slots <= 0:
+			# Let add_item handle stacking — consumables merge with existing stacks,
+			# so bulk-pulling matching stacks costs 0 new slots.
+			var listed_qty = maxi(1, int(listing.get("quantity", 1)))
+			var returned = item.duplicate()
+			returned["quantity"] = listed_qty
+			if not character.add_item(returned):
 				skipped_no_space += 1
 				continue
-			character.inventory.append(item)
-			free_slots -= 1
 
 		# Deduct valor and remove listing
 		persistence.spend_valor(account_id, base_valor)
@@ -14083,6 +14126,10 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 	var job_bonus = character.get_specialty_crafting_bonus(skill_name)
 	var total_success_bonus = post_bonus + job_bonus.success_bonus
 
+	# Effective materials = backpack pouch + player's own material listings at this post.
+	# Used below so recipes craftable via market-listed materials still show as available.
+	var effective_mats: Dictionary = _get_effective_craft_materials(peer_id)
+
 	# Build recipe list with player's materials
 	var recipe_list = []
 	for recipe_entry in recipes:
@@ -14120,14 +14167,14 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			})
 			continue
 
-		var can_craft = not is_locked and not specialist_gated and character.has_crafting_materials(recipe.materials)
+		var can_craft = not is_locked and not specialist_gated and _has_materials_in_dict(recipe.materials, effective_mats, character.crafting_materials)
 		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, total_success_bonus) if not is_locked and not specialist_gated else 0
 
 		# Build a description of what this recipe does
 		var description = _get_recipe_description(recipe)
 
 		var is_bulk = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
-		var max_craft = character.max_craftable(recipe.materials) if can_craft and is_bulk else (1 if can_craft else 0)
+		var max_craft = _max_craftable_from_dict(recipe.materials, effective_mats, character.crafting_materials) if can_craft and is_bulk else (1 if can_craft else 0)
 
 		recipe_list.append({
 			"id": recipe_id,
@@ -14153,8 +14200,65 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"post_bonus": post_bonus,
 		"job_bonus": job_bonus,
 		"recipes": recipe_list,
-		"materials": character.crafting_materials
+		"materials": effective_mats,
+		"pouch_materials": character.crafting_materials,
 	})
+
+func _get_effective_craft_materials(peer_id: int) -> Dictionary:
+	"""Return {material_id: qty} of backpack pouch + player's own listings at current post.
+	Used so the crafting UI reflects total owned (pouch + listed) resources."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return {}
+	var character = characters[peer_id]
+	var effective: Dictionary = character.crafting_materials.duplicate()
+	# Only trading posts and player posts have markets; player stations (in enclosures) don't.
+	if at_player_station.has(peer_id) and not at_trading_post.has(peer_id):
+		return effective
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		return effective
+	var account_id = peers[peer_id].account_id
+	for _l in persistence.get_market_listings(post_id):
+		if _l.get("account_id", "") != account_id:
+			continue
+		var _it = _l.get("item", {})
+		if _it.get("type", "") != "material":
+			continue
+		var _mt = str(_it.get("material_type", _it.get("name", "")))
+		if _mt.is_empty():
+			continue
+		var _lq = int(_l.get("quantity", 0))
+		if _lq <= 0:
+			continue
+		effective[_mt] = int(effective.get(_mt, 0)) + _lq
+	return effective
+
+func _has_materials_in_dict(required: Dictionary, effective_mats: Dictionary, pouch_only: Dictionary) -> bool:
+	"""Check required materials against effective_mats (pouch + listings).
+	Group (@) keys always check pouch_only — monster parts aren't pulled from listings."""
+	for mat_id in required:
+		var needed = int(required[mat_id])
+		if str(mat_id).begins_with("@"):
+			if DropTables.get_total_for_group(mat_id, pouch_only) < needed:
+				return false
+		elif int(effective_mats.get(mat_id, 0)) < needed:
+			return false
+	return true
+
+func _max_craftable_from_dict(required: Dictionary, effective_mats: Dictionary, pouch_only: Dictionary) -> int:
+	"""Max craftable given effective material availability. Group keys use pouch_only."""
+	var result = 99
+	for mat_id in required:
+		var per = int(required[mat_id])
+		if per <= 0:
+			continue
+		var owned: int
+		if str(mat_id).begins_with("@"):
+			owned = DropTables.get_total_for_group(mat_id, pouch_only)
+		else:
+			owned = int(effective_mats.get(mat_id, 0))
+		result = mini(result, owned / per)
+	return result
 
 func _get_recipe_description(recipe: Dictionary) -> String:
 	"""Generate a human-readable description of what a recipe produces"""
@@ -14340,6 +14444,95 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 
 	# Material scale factor: tempered crafting costs 50% more materials
 	var material_scale = 1.5 if is_tempered else 1.0
+
+	# Auto-pull from player's own market listings at this post to cover any backpack shortage.
+	# Deducts per-unit Valor from the player (symmetric to cancelling listings).
+	var _listing_pull_cost = 0
+	var _listing_pull_summary: Dictionary = {}  # mat_id -> qty pulled
+	var _listing_pull_plan: Array = []
+	var _craft_post_id = _get_market_post_id(peer_id)
+	var _craft_account_id = peers[peer_id].account_id
+	if not _craft_post_id.is_empty():
+		var _listings_at_post = persistence.get_market_listings(_craft_post_id)
+		var _cmult = material_scale * quantity
+		for mat_id in recipe.materials:
+			if mat_id.begins_with("@"):
+				continue  # Group materials (monster parts) must come from backpack
+			var _needed = ceili(recipe.materials[mat_id] * _cmult)
+			var _in_pouch = int(character.crafting_materials.get(mat_id, 0))
+			if _in_pouch >= _needed:
+				continue
+			var _shortage = _needed - _in_pouch
+			# Collect player's own listings of this material at this post
+			var _candidates: Array = []
+			for _listing in _listings_at_post:
+				if _listing.get("account_id", "") != _craft_account_id:
+					continue
+				var _it = _listing.get("item", {})
+				if _it.get("type", "") != "material":
+					continue
+				if _it.get("material_type", _it.get("name", "")) != mat_id:
+					continue
+				var _lq = int(_listing.get("quantity", 0))
+				if _lq <= 0:
+					continue
+				var _bv = int(_listing.get("base_valor", 0))
+				_candidates.append({
+					"listing_id": _listing.get("listing_id", ""),
+					"qty": _lq,
+					"per_unit": int(_bv / maxi(_lq, 1)),
+					"base_valor": _bv,
+				})
+			# Cheapest per-unit first — fairer to the player
+			_candidates.sort_custom(func(a, b): return a.per_unit < b.per_unit)
+			for _cand in _candidates:
+				if _shortage <= 0:
+					break
+				var _take = mini(_cand.qty, _shortage)
+				var _cost = _cand.per_unit * _take
+				_listing_pull_plan.append({
+					"listing_id": _cand.listing_id,
+					"mat_id": mat_id,
+					"take": _take,
+					"cost": _cost,
+					"remaining_qty": _cand.qty - _take,
+					"remaining_valor": _cand.base_valor - _cost,
+				})
+				_listing_pull_cost += _cost
+				_listing_pull_summary[mat_id] = int(_listing_pull_summary.get(mat_id, 0)) + _take
+				_shortage -= _take
+		# Verify player can afford the pull-back Valor
+		if _listing_pull_cost > 0:
+			var _current_valor = persistence.get_valor(_craft_account_id)
+			if _current_valor < _listing_pull_cost:
+				var _total_qty = 0
+				for _mid in _listing_pull_summary:
+					_total_qty += int(_listing_pull_summary[_mid])
+				send_to_peer(peer_id, {
+					"type": "error",
+					"message": "Crafting would pull %d material from your listings (-%d Valor), but you only have %d Valor." % [
+						_total_qty, _listing_pull_cost, _current_valor
+					]
+				})
+				return
+		# Apply: decrement/remove listings, credit pouch, charge Valor
+		for _plan in _listing_pull_plan:
+			if int(_plan.remaining_qty) > 0:
+				persistence.update_market_listing_quantity(_craft_post_id, _plan.listing_id, int(_plan.remaining_qty), int(_plan.remaining_valor))
+			else:
+				persistence.remove_market_listing(_craft_post_id, _plan.listing_id)
+			character.add_crafting_material(_plan.mat_id, int(_plan.take))
+		if _listing_pull_cost > 0:
+			persistence.spend_valor(_craft_account_id, _listing_pull_cost)
+			var _parts: Array = []
+			for _mid in _listing_pull_summary:
+				_parts.append("%d %s" % [int(_listing_pull_summary[_mid]), str(_mid).replace("_", " ")])
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF8800]Pulled %s from your market listings (-%d Valor).[/color]" % [
+					", ".join(_parts), _listing_pull_cost
+				]
+			})
 
 	# Check materials (scaled by quantity and temper factor)
 	if is_tempered:
@@ -14882,7 +15075,8 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		"skill_name": skill_name,
 		"message": result_message,
 		"crafted_item": crafted_item,
-		"materials": character.crafting_materials,
+		"materials": _get_effective_craft_materials(peer_id),
+		"pouch_materials": character.crafting_materials,
 		"job_xp_gained": job_xp_gained,
 		"job_leveled_up": job_leveled_up,
 		"job_new_level": job_new_level,
@@ -15892,7 +16086,8 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 		"recipe_name": recipe.name,
 		"crafted_item": crafted_item,
 		"message": result_message,
-		"materials": character.crafting_materials,
+		"materials": _get_effective_craft_materials(peer_id),
+		"pouch_materials": character.crafting_materials,
 		"xp_gained": xp_gained,
 		"char_xp_gained": craft_char_xp,
 		"skill_name": skill_name,
@@ -16064,8 +16259,12 @@ func handle_build_place(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Tile limit reached (%d max)!" % MAX_PLAYER_TILES})
 		return
 
-	# Consume item
-	character.inventory.remove_at(item_index)
+	# Consume item (decrement stack by 1; remove if last)
+	var build_stack_qty = int(item.get("quantity", 1))
+	if build_stack_qty > 1:
+		item["quantity"] = build_stack_qty - 1
+	else:
+		character.inventory.remove_at(item_index)
 
 	# Determine tile properties — stations block movement (interact by bump), doors/bridges don't
 	var blocks_move = structure_type not in ["door", "bridge"]
