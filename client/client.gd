@@ -3651,8 +3651,9 @@ func display_death_screen(message: Dictionary):
 		display_game("[color=#FFD700]── Eggs ──[/color]")
 		for egg in incubating_eggs:
 			var egg_name = egg.get("name", "Unknown Egg")
-			var steps = egg.get("steps", 0)
-			var hatch_at = egg.get("hatch_steps", 500)
+			var hatch_at = int(egg.get("hatch_steps", 500))
+			var steps_remaining = int(egg.get("steps_remaining", hatch_at))
+			var steps = maxi(0, hatch_at - steps_remaining)
 			var frozen = egg.get("frozen", false)
 			var frozen_text = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
 			display_game("  %s (%d/%d steps)%s" % [egg_name, steps, hatch_at, frozen_text])
@@ -4474,8 +4475,9 @@ func display_leaderboard_death_screen(message: Dictionary):
 		display_game("[color=#FFD700]── Eggs ──[/color]")
 		for egg in incubating_eggs:
 			var egg_name = egg.get("name", "Unknown Egg")
-			var steps = egg.get("steps", 0)
-			var hatch_at = egg.get("hatch_steps", 500)
+			var hatch_at = int(egg.get("hatch_steps", 500))
+			var steps_remaining = int(egg.get("steps_remaining", hatch_at))
+			var steps = maxi(0, hatch_at - steps_remaining)
 			var frozen = egg.get("frozen", false)
 			var frozen_text = " [color=#00BFFF][FROZEN][/color]" if frozen else ""
 			display_game("  %s (%d/%d steps)%s" % [egg_name, steps, hatch_at, frozen_text])
@@ -20282,8 +20284,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.187 changes
+	display_game("[color=#00FF00]v0.9.187[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Egg status HUD + dungeon complete timing + meditate clarity[/color]")
+	display_game("  • Egg %% on the status HUD was stuck at 0 — it read a non-existent \"steps\" field; now derives from hatch_steps − steps_remaining")
+	display_game("  • Clicking the egg indicator to freeze/unfreeze now actually works — the overlay had mouse_filter=IGNORE so clicks never reached it")
+	display_game("  • Dungeon-complete screen no longer waits until the next combat — after boss → harvest, the queued completion now shows as soon as harvest ends")
+	display_game("  • Sorcerer/Wizard/Sage meditate in dungeon now shows \"(HP already full)\" when at max HP, so you can tell HP isn't healing because it's already topped")
+	display_game("")
+
 	# v0.9.186 changes
-	display_game("[color=#00FF00]v0.9.186[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.186[/color]")
 	display_game("  [color=#FFD700]Bulk crafting — stacked consumables now display the real count[/color]")
 	display_game("  • Crafting 5x Minor Health Potions actually gave you 5 — but the inventory list counted slots, not quantity, so a stack of 5 in one slot showed as \"x1\"")
 	display_game("  • Display now sums each stack's quantity across matching entries (consumables and runes)")
@@ -20359,13 +20370,6 @@ func display_changelog():
 	display_game("  • The reparent into BottomRow worked in fullscreen but collapsed the minimap into a vertical strip in windowed mode (narrow MapPanel couldn't fit Tools + StatusHUD + Minimap on one row)")
 	display_game("  • StatusHUD is back below BottomRow where the layout is stable across resolutions")
 	display_game("  • Fullscreen dead space between Tools and Minimap remains — will fill it a different way next")
-	display_game("")
-
-	# v0.9.174 changes
-	display_game("[color=#00FFFF]v0.9.174[/color]")
-	display_game("  [color=#FFD700]Minimap Autowrap Fix[/color]")
-	display_game("  • MinimapDisplay without EXPAND collapsed each character into a tall vertical strip — autowrap was re-flowing text")
-	display_game("  • Disabled autowrap_mode on MinimapDisplay so the node's minimum width matches the widest minimap line")
 	display_game("")
 
 	# v0.9.173 changes
@@ -21284,9 +21288,10 @@ func update_tool_status_overlay():
 		if i < eggs.size():
 			var egg = eggs[i]
 			var frozen = bool(egg.get("frozen", false))
-			var steps = int(egg.get("steps", 0))
 			var hatch_at = max(1, int(egg.get("hatch_steps", 500)))
-			var pct = int(float(steps) / float(hatch_at) * 100.0)
+			var steps_remaining = int(egg.get("steps_remaining", hatch_at))
+			var steps_taken = maxi(0, hatch_at - steps_remaining)
+			var pct = int(float(steps_taken) / float(hatch_at) * 100.0)
 			var label = "%d" % (i + 1)
 			var color_inner = "#00BFFF" if frozen else "#FFAA00"
 			if frozen:
@@ -24129,14 +24134,24 @@ func end_harvest():
 	harvest_saves_remaining = 0
 	harvest_mastery_label = ""
 	harvest_mastery_count = 0
+	# Reset combat background before any screen change so lingering combat bg
+	# doesn't bleed into the dungeon-complete screen.
+	reset_combat_background()
+	# If a dungeon completion was queued (harvest ran after a boss kill that
+	# cleared dungeon_mode), show it now — otherwise it sits dormant until the
+	# next combat's acknowledge_continue flushes the queue.
+	if not queued_dungeon_complete.is_empty():
+		var complete_msg = queued_dungeon_complete.duplicate(true)
+		queued_dungeon_complete = {}
+		_display_dungeon_complete(complete_msg)
+		update_action_bar()
+		return
 	# After harvest in dungeon, always gate movement behind the Continue prompt so
 	# the HARVEST COMPLETE summary is readable before the next dungeon state clears it.
 	if dungeon_mode:
 		pending_continue = true
 		pending_dungeon_continue = true
 		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-	# Reset combat background
-	reset_combat_background()
 	update_action_bar()
 
 # ===== CRAFTING FUNCTIONS =====
