@@ -20404,8 +20404,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.189 changes
+	display_game("[color=#00FF00]v0.9.189[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Posts: stations now scatter randomly inside the room[/color]")
+	display_game("  • Stations no longer sit on a fixed grid near the top — they're sprinkled across the whole interior, with a 1-tile gap between neighbors so you can always walk around")
+	display_game("  • Tiles next to doors are avoided so entries stay clear")
+	display_game("  • Seed is still post-specific, so each post keeps its own unique layout between visits")
+	display_game("")
+
 	# v0.9.188 changes
-	display_game("[color=#00FF00]v0.9.188[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.188[/color]")
 	display_game("  [color=#FFD700]Market stacks, post corners, station variety, resource respawns, keybind conflicts[/color]")
 	display_game("  • Market: listing a stack of consumables (like 5x Minor Health Potion) now lists the whole stack with the correct x5 qty and 5x valor — old code silently dropped the extras")
 	display_game("  • Post corners now block diagonal walk-through — players must actually use the doors")
@@ -20436,13 +20444,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Examine popup — item details actually reset now[/color]")
 	display_game("  • v0.9.184 tried to cache the popup's BBCode via RichTextLabel.text, but Godot 4's RichTextLabel doesn't update .text after append_text — snapshot was empty and the clear never happened")
 	display_game("  • Now caches the raw player data dict and rebuilds the base popup on each item click")
-	display_game("")
-
-	# v0.9.184 changes
-	display_game("[color=#00FFFF]v0.9.184[/color]")
-	display_game("  [color=#FFD700]Players header + Examine popup cleanup[/color]")
-	display_game("  • Right-side Players panel now has a \"Players Online\" header at the top")
-	display_game("  • Clicking a piece of gear in the Examine popup now clears the previous item details before showing the new one")
 	display_game("")
 
 	# v0.9.182 changes
