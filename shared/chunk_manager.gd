@@ -22,8 +22,8 @@ var _dirty_chunks: Dictionary = {}  # chunk_key -> true
 # Depleted node tracking: "x,y" -> respawn_timestamp (Unix time), or -1 for permanent
 var depleted_nodes: Dictionary = {}
 const NODE_RESPAWN_TIME = 300.0  # 5 minutes (water/fishing only)
-const POST_NODE_RESPAWN_TIME = 900.0  # 15 minutes for all nodes near a trading post
-const POST_RESOURCE_RADIUS = 12  # tiles — nodes within this radius of a post respawn
+const POST_NODE_RESPAWN_TIME = 240.0  # 4 minutes for all nodes near a trading post
+const POST_RESOURCE_RADIUS = 22  # tiles — nodes within this radius of a post respawn
 const NODE_RESPAWN_CHECK_INTERVAL = 10.0
 const DEPLETED_PERMANENT = -1  # Sentinel for nodes that never respawn
 const DEPLETED_NODES_FILE = "user://data/depleted_nodes.json"
