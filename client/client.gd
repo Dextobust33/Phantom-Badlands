@@ -1061,11 +1061,16 @@ var market_listings: Array = []
 var market_page: int = 0
 var market_total_pages: int = 0
 var market_category: String = "all"
-var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_confirm", "buy_confirm", "inspect", "my_listings"
+var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_consumable_qty", "pull_qty", "list_confirm", "buy_confirm", "inspect", "my_listings"
 var market_selected_listing: Dictionary = {}
 var market_inspected_listing: Dictionary = {}
 var market_selected_material: String = ""
 var market_selected_material_qty: int = 0
+var market_selected_inv_index: int = -1
+var market_selected_inv_qty: int = 0
+var market_selected_inv_name: String = ""
+var market_pull_listing: Dictionary = {}
+var market_pull_qty_available: int = 0
 var market_buy_quantity: int = 0  # 0 = buy full stack
 var market_list_page: int = 0
 var market_mat_page: int = 0
@@ -2169,7 +2174,17 @@ func _process(delta):
 						if item.is_empty() or item.get("equipped", false):
 							continue
 						if count == listable_idx:
-							send_to_server({"type": "market_list_item", "index": inv_idx})
+							var stack_qty = int(item.get("quantity", 1))
+							if stack_qty > 1:
+								# Stackable — prompt for how many to list
+								market_selected_inv_index = inv_idx
+								market_selected_inv_qty = stack_qty
+								market_selected_inv_name = item.get("name", "item")
+								pending_market_action = "list_consumable_qty"
+								_display_market_consumable_qty_prompt()
+								update_action_bar()
+							else:
+								send_to_server({"type": "market_list_item", "index": inv_idx})
 							break
 						count += 1
 			else:
@@ -2215,7 +2230,16 @@ func _process(delta):
 					var listing_idx = market_my_page * 9 + i
 					if listing_idx < market_listings.size():
 						var listing = market_listings[listing_idx]
-						send_to_server({"type": "market_cancel", "listing_id": listing.get("listing_id", ""), "post_id": listing.get("post_id", "")})
+						var listing_qty = int(listing.get("quantity", 1))
+						if listing_qty > 1:
+							# Stackable — prompt for how many to pull back
+							market_pull_listing = listing
+							market_pull_qty_available = listing_qty
+							pending_market_action = "pull_qty"
+							_display_market_pull_qty_prompt()
+							update_action_bar()
+						else:
+							send_to_server({"type": "market_cancel", "listing_id": listing.get("listing_id", ""), "post_id": listing.get("post_id", "")})
 			else:
 				set_meta("marketcancelkey_%d_pressed" % i, false)
 
@@ -7172,6 +7196,32 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_market_action == "pull_qty":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_pullqty_back", "enabled": true},
+				{"label": "Pull All", "action_type": "local", "action_data": "market_pullqty_all", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "list_consumable_qty":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_invqty_back", "enabled": true},
+				{"label": "List All", "action_type": "local", "action_data": "market_invqty_all", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_market_action == "list_select":
 			var _inv = character_data.get("inventory", [])
 			var _listable_count = 0
@@ -10072,6 +10122,43 @@ func execute_local_action(action: String):
 				send_to_server({"type": "market_list_material", "material_name": market_selected_material, "quantity": market_selected_material_qty})
 				market_selected_material = ""
 				market_selected_material_qty = 0
+				input_field.placeholder_text = ""
+				input_field.release_focus()
+		"market_invqty_back":
+			pending_market_action = "list_select"
+			market_selected_inv_index = -1
+			market_selected_inv_qty = 0
+			market_selected_inv_name = ""
+			input_field.placeholder_text = ""
+			input_field.release_focus()
+			display_market_list_select()
+			update_action_bar()
+		"market_invqty_all":
+			if market_selected_inv_index >= 0 and market_selected_inv_qty > 0:
+				send_to_server({"type": "market_list_item", "index": market_selected_inv_index, "quantity": market_selected_inv_qty})
+				market_selected_inv_index = -1
+				market_selected_inv_qty = 0
+				market_selected_inv_name = ""
+				input_field.placeholder_text = ""
+				input_field.release_focus()
+		"market_pullqty_back":
+			pending_market_action = "my_listings"
+			market_pull_listing = {}
+			market_pull_qty_available = 0
+			input_field.placeholder_text = ""
+			input_field.release_focus()
+			display_market_my_listings()
+			update_action_bar()
+		"market_pullqty_all":
+			if not market_pull_listing.is_empty() and market_pull_qty_available > 0:
+				send_to_server({
+					"type": "market_cancel",
+					"listing_id": market_pull_listing.get("listing_id", ""),
+					"post_id": market_pull_listing.get("post_id", ""),
+					"quantity": market_pull_qty_available,
+				})
+				market_pull_listing = {}
+				market_pull_qty_available = 0
 				input_field.placeholder_text = ""
 				input_field.release_focus()
 		"market_my_back":
@@ -17194,6 +17281,54 @@ func send_input():
 			display_game("[color=#FF0000]Enter a number (1-%d).[/color]" % market_selected_material_qty)
 		return
 
+	# Consumable stack partial-list quantity input
+	if market_mode and pending_market_action == "list_consumable_qty":
+		if text.is_valid_int():
+			var qty = int(text)
+			if qty <= 0:
+				display_game("[color=#FF0000]Quantity must be at least 1.[/color]")
+				return
+			if qty > market_selected_inv_qty:
+				display_game("[color=#FF0000]You only have %d. Enter a smaller number.[/color]" % market_selected_inv_qty)
+				return
+			if market_selected_inv_index < 0:
+				display_game("[color=#FF0000]No item selected.[/color]")
+				return
+			send_to_server({"type": "market_list_item", "index": market_selected_inv_index, "quantity": qty})
+			market_selected_inv_index = -1
+			market_selected_inv_qty = 0
+			market_selected_inv_name = ""
+			input_field.placeholder_text = ""
+		else:
+			display_game("[color=#FF0000]Enter a number (1-%d).[/color]" % market_selected_inv_qty)
+		return
+
+	# Own-listing partial-pull quantity input
+	if market_mode and pending_market_action == "pull_qty":
+		if text.is_valid_int():
+			var qty = int(text)
+			if qty <= 0:
+				display_game("[color=#FF0000]Quantity must be at least 1.[/color]")
+				return
+			if qty > market_pull_qty_available:
+				display_game("[color=#FF0000]Only %d listed. Enter a smaller number.[/color]" % market_pull_qty_available)
+				return
+			if market_pull_listing.is_empty():
+				display_game("[color=#FF0000]No listing selected.[/color]")
+				return
+			send_to_server({
+				"type": "market_cancel",
+				"listing_id": market_pull_listing.get("listing_id", ""),
+				"post_id": market_pull_listing.get("post_id", ""),
+				"quantity": qty,
+			})
+			market_pull_listing = {}
+			market_pull_qty_available = 0
+			input_field.placeholder_text = ""
+		else:
+			display_game("[color=#FF0000]Enter a number (1-%d).[/color]" % market_pull_qty_available)
+		return
+
 	# Check for market buy partial quantity input
 	if market_mode and pending_market_action == "buy_confirm":
 		if text.is_valid_int():
@@ -20404,8 +20539,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.190 changes
+	display_game("[color=#00FF00]v0.9.190[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market partial qty + craft from listed materials[/color]")
+	display_game("  • Market: listing a stack of consumables now prompts for quantity (or List All) — no more all-or-nothing")
+	display_game("  • Market: pulling your own stack listing prompts for quantity too, with per-unit Valor buy-back shown")
+	display_game("  • Market: bulk Pull All now merges pulled stacks into existing pouch/inventory stacks instead of wasting slots")
+	display_game("  • Crafting: materials you've listed at the current trading post auto-count toward recipe costs. If your pouch is short, the craft pulls the shortfall from your listings and deducts the pro-rata Valor (cheapest listings first)")
+	display_game("  • Crafting: recipe UI now shows total owned (pouch + listed) as the \"have\" count — recipes light up as craftable when the combined total is enough")
+	display_game("  • Building: placing a wall/bridge/station from a stack now consumes only 1, not the entire stack")
+	display_game("")
+
 	# v0.9.189 changes
-	display_game("[color=#00FF00]v0.9.189[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.189[/color]")
 	display_game("  [color=#FFD700]Posts: stations now scatter randomly inside the room[/color]")
 	display_game("  • Stations no longer sit on a fixed grid near the top — they're sprinkled across the whole interior, with a 1-tile gap between neighbors so you can always walk around")
 	display_game("  • Tiles next to doors are avoided so entries stay clear")
@@ -25696,6 +25842,11 @@ func exit_market():
 	market_selected_listing = {}
 	market_selected_material = ""
 	market_selected_material_qty = 0
+	market_selected_inv_index = -1
+	market_selected_inv_qty = 0
+	market_selected_inv_name = ""
+	market_pull_listing = {}
+	market_pull_qty_available = 0
 	market_list_flash = ""
 	market_egg_page = 0
 	input_field.release_focus()
@@ -25876,6 +26027,38 @@ func _display_market_material_qty_prompt():
 	display_game("[color=#87CEEB]Type a quantity in chat, or press [%s] to list all.[/color]" % get_action_key_name(1))
 	display_game("[color=#808080][%s] to go back[/color]" % get_action_key_name(0))
 	input_field.placeholder_text = "Enter quantity (1-%d)..." % market_selected_material_qty
+	input_field.grab_focus()
+
+func _display_market_consumable_qty_prompt():
+	"""Show quantity prompt after selecting a stackable inventory item to list."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
+	display_game("")
+	display_game("  Item: [color=#00FF00]%s[/color]" % market_selected_inv_name)
+	display_game("  Available: [color=#FFFF00]%d[/color]" % market_selected_inv_qty)
+	display_game("")
+	display_game("[color=#87CEEB]Type a quantity in chat, or press [%s] to list all.[/color]" % get_action_key_name(1))
+	display_game("[color=#808080][%s] to go back[/color]" % get_action_key_name(0))
+	input_field.placeholder_text = "Enter quantity (1-%d)..." % market_selected_inv_qty
+	input_field.grab_focus()
+
+func _display_market_pull_qty_prompt():
+	"""Show quantity prompt after selecting one of the player's own stackable listings to pull."""
+	game_output.clear()
+	display_game("[color=#FFD700]===== Pull Listing =====[/color]")
+	display_game("")
+	var item = market_pull_listing.get("item", {})
+	var item_name = item.get("name", "Unknown")
+	var rarity_color = _get_rarity_color(item.get("rarity", "common"))
+	var base_valor = int(market_pull_listing.get("base_valor", 0))
+	var per_unit = int(base_valor / maxi(market_pull_qty_available, 1))
+	display_game("  Item: [color=%s]%s[/color]" % [rarity_color, item_name])
+	display_game("  Listed: [color=#FFFF00]%d[/color]" % market_pull_qty_available)
+	display_game("  Refund per unit: [color=#FF6666]-%s Valor[/color]" % format_number(per_unit))
+	display_game("")
+	display_game("[color=#87CEEB]Type a quantity in chat, or press [%s] to pull all.[/color]" % get_action_key_name(1))
+	display_game("[color=#808080][%s] to go back[/color]" % get_action_key_name(0))
+	input_field.placeholder_text = "Enter quantity (1-%d)..." % market_pull_qty_available
 	input_field.grab_focus()
 
 func display_market_list_materials():
@@ -26179,6 +26362,9 @@ func _handle_market_list_success(message: Dictionary):
 	var was_egg = pending_market_action == "list_egg" or message.get("listed_type", "") == "egg"
 	market_selected_material = ""
 	market_selected_material_qty = 0
+	market_selected_inv_index = -1
+	market_selected_inv_qty = 0
+	market_selected_inv_name = ""
 	input_field.placeholder_text = ""
 	input_field.release_focus()
 	market_list_flash = "[color=#00FF00]Listed %s! +%s Valor[/color]" % [item_name, format_number(valor_earned)]
@@ -26243,14 +26429,29 @@ func _handle_market_list_all_success(message: Dictionary):
 		update_action_bar()
 
 func _handle_market_cancel_success(message: Dictionary):
-	"""Handle successful listing cancellation."""
+	"""Handle successful listing cancellation (full or partial)."""
 	var item_name = message.get("item_name", "item")
-	var refund = int(message.get("refund", 0))
+	var buyback = int(message.get("valor_deducted", message.get("refund", 0)))
 	var item_type = message.get("item_type", "")
+	var pull_qty = int(message.get("pull_qty", 0))
+	var partial = bool(message.get("partial", false))
 	var dest = "incubator" if item_type == "egg" else "inventory"
-	display_game("[color=#00FF00]Listing cancelled! %s returned to %s.[/color]" % [item_name, dest])
-	if refund > 0:
-		display_game("[color=#FF8800]Buy-back cost: %s Valor[/color]" % format_number(refund))
+	var qty_text = ""
+	if pull_qty > 1:
+		qty_text = " x%d" % pull_qty
+	if partial:
+		display_game("[color=#00FF00]Pulled %s%s back to %s.[/color]" % [item_name, qty_text, dest])
+	else:
+		display_game("[color=#00FF00]Listing cancelled! %s%s returned to %s.[/color]" % [item_name, qty_text, dest])
+	if buyback > 0:
+		display_game("[color=#FF8800]Buy-back cost: %s Valor[/color]" % format_number(buyback))
+	# Clear any pending pull-qty state
+	market_pull_listing = {}
+	market_pull_qty_available = 0
+	if pending_market_action == "pull_qty":
+		pending_market_action = "my_listings"
+		input_field.placeholder_text = ""
+		input_field.release_focus()
 	# Refresh my listings
 	send_to_server({"type": "market_my_listings"})
 
