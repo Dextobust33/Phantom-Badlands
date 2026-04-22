@@ -355,7 +355,7 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 			})
 
 	# Step 6: Place stations inside main room
-	_place_stations(chunk_manager, main_room, is_crossroads, px, py)
+	_place_stations(chunk_manager, main_room, is_crossroads, px, py, door_tiles)
 
 	# Step 7: Post marker at center (placed after stations to ensure it wins)
 	chunk_manager.set_tile(px, py, {
@@ -365,69 +365,124 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 
 # ===== STATION PLACEMENT =====
 
-static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads: bool, px: int, py: int) -> void:
-	"""Place all crafting stations, services, and commerce inside the main room.
-	Stations are placed in rows from top-left, wrapping to next row when needed."""
+static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads: bool, px: int, py: int, door_tiles: Dictionary = {}) -> void:
+	"""Scatter all crafting stations, services, and commerce randomly inside the main
+	room. Each station is placed on a unique floor tile such that no two stations are
+	cardinally adjacent (so players can always walk around any station). Placement is
+	seeded by the post center so the layout is stable across visits but varies
+	between posts."""
 	var mx0 = int(main_room["x0"])
 	var my0 = int(main_room["y0"])
 	var mx1 = int(main_room["x1"])
 	var my1 = int(main_room["y1"])
 
-	# Station area: 2 tiles in from main room edges
-	var ix0 = mx0 + 2
-	var ix1 = mx1 - 2
-	var iy0 = my0 + 2
+	# Station area: 1 tile in from main room edges (leaves a 1-tile walkable
+	# corridor along the inner wall perimeter).
+	var ix0 = mx0 + 1
+	var ix1 = mx1 - 1
+	var iy0 = my0 + 1
+	var iy1 = my1 - 1
 
-	# Station groups — same-type pairs stay together so clusters feel themed,
-	# but the GROUP order is shuffled per post so layouts vary between trading
-	# posts instead of being identical rows.
-	var station_groups = [
-		["forge", "forge"],
-		["apothecary", "apothecary"],
-		["enchant_table", "enchant_table"],
-		["writing_desk", "writing_desk"],
-		["workbench", "workbench"],
-		["quest_board", "quest_board"],
-		["blacksmith", "blacksmith"],
-		["inn"],
-		["healer", "healer"],
-		["market", "market"],
+	# Station list — pairs are preserved (2 forges, 2 healers, etc.) but they
+	# no longer have to land near each other on the map.
+	var stations: Array = [
+		"forge", "forge",
+		"apothecary", "apothecary",
+		"enchant_table", "enchant_table",
+		"writing_desk", "writing_desk",
+		"workbench", "workbench",
+		"quest_board", "quest_board",
+		"blacksmith", "blacksmith",
+		"inn",
+		"healer", "healer",
+		"market", "market",
 	]
 
-	# Deterministic shuffle seeded by post center so every visit sees the same layout.
+	# Deterministic RNG so layout is stable per post but varies between posts.
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash("post_layout_%d_%d" % [px, py])
-	for i in range(station_groups.size() - 1, 0, -1):
+
+	# Shuffle station order (which spot each station type ends up in is random).
+	for i in range(stations.size() - 1, 0, -1):
 		var j = rng.randi_range(0, i)
-		var tmp = station_groups[i]
-		station_groups[i] = station_groups[j]
-		station_groups[j] = tmp
+		var tmp = stations[i]
+		stations[i] = stations[j]
+		stations[j] = tmp
 
-	# Flatten shuffled groups into the placement list
-	var stations: Array = []
-	for group in station_groups:
-		for s in group:
-			stations.append(s)
+	# Build the candidate tile list — every interior floor tile except:
+	#  • the post marker at (px, py)
+	#  • tiles that are cardinally adjacent to any door (keep entries clear)
+	#  • the throne spot for crossroads (reserved below)
+	var throne_spot = Vector2i(px, my1 - 1) if is_crossroads else Vector2i(-99999, -99999)
+	var candidates: Array[Vector2i] = []
+	for x in range(ix0, ix1 + 1):
+		for y in range(iy0, iy1 + 1):
+			if x == px and y == py:
+				continue
+			if is_crossroads and x == throne_spot.x and y == throne_spot.y:
+				continue
+			if _tile_touches_door(x, y, door_tiles):
+				continue
+			candidates.append(Vector2i(x, y))
 
-	var cur_x = ix0
-	var cur_y = iy0
+	# Shuffle candidates — Fisher-Yates with the same seeded RNG.
+	for i in range(candidates.size() - 1, 0, -1):
+		var j = rng.randi_range(0, i)
+		var tmp = candidates[i]
+		candidates[i] = candidates[j]
+		candidates[j] = tmp
 
-	for station in stations:
-		if cur_x > ix1:
-			cur_x = ix0
-			cur_y += 2  # Row gap for walkability
-		# Skip center tile (reserved for post_marker)
-		if cur_x == px and cur_y == py:
-			cur_x += 1
-			if cur_x > ix1:
-				cur_x = ix0
-				cur_y += 2
-		_place_station(chunk_manager, cur_x, cur_y, station)
-		cur_x += 1
+	# Greedy placement: walk the shuffled candidates and place a station
+	# whenever the tile has no already-placed station cardinally adjacent.
+	# This guarantees every station has open corridor on at least some side.
+	var placed: Dictionary = {}  # "x,y" -> true
+	var placed_count = 0
+	var total_stations = stations.size()
+	for cand in candidates:
+		if placed_count >= total_stations:
+			break
+		if _has_cardinal_neighbor(cand.x, cand.y, placed):
+			continue
+		_place_station(chunk_manager, cand.x, cand.y, stations[placed_count])
+		placed["%d,%d" % [cand.x, cand.y]] = true
+		placed_count += 1
 
-	# Crossroads: place throne near center-bottom of main room
+	# Fallback: if the spacing constraint was too strict (tiny post), place
+	# leftover stations wherever there's still a free candidate, ignoring the
+	# adjacency rule. Better to have a cramped station than none at all.
+	if placed_count < total_stations:
+		for cand in candidates:
+			if placed_count >= total_stations:
+				break
+			var key = "%d,%d" % [cand.x, cand.y]
+			if placed.has(key):
+				continue
+			_place_station(chunk_manager, cand.x, cand.y, stations[placed_count])
+			placed[key] = true
+			placed_count += 1
+
+	# Crossroads: throne is always dead-center of the south wall so it's easy
+	# to find and anchor the capital visually.
 	if is_crossroads:
-		_place_station(chunk_manager, px, my1 - 1, "throne")
+		_place_station(chunk_manager, throne_spot.x, throne_spot.y, "throne")
+
+static func _tile_touches_door(x: int, y: int, door_tiles: Dictionary) -> bool:
+	"""True if (x,y) or any of its 4 cardinal neighbors is a door tile."""
+	if door_tiles.is_empty():
+		return false
+	var offsets = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]
+	for o in offsets:
+		if door_tiles.has("%d,%d" % [x + o[0], y + o[1]]):
+			return true
+	return false
+
+static func _has_cardinal_neighbor(x: int, y: int, placed: Dictionary) -> bool:
+	"""True if any of the 4 cardinal neighbors of (x,y) is in the placed set."""
+	var offsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+	for o in offsets:
+		if placed.has("%d,%d" % [x + o[0], y + o[1]]):
+			return true
+	return false
 
 static func _place_station(chunk_manager, x: int, y: int, station_type: String) -> void:
 	"""Place a station tile (blocking — interacted via bump)."""
@@ -488,9 +543,17 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 	})
 
 	# Delegate station placement to the shared randomized layout so legacy
-	# posts get the same shuffle-per-post variety as new posts.
+	# posts get the same random-per-post variety as new posts.
 	var synthetic_main = {"x0": min_x, "y0": min_y, "x1": max_x, "y1": max_y}
-	_place_stations(chunk_manager, synthetic_main, is_crossroads, px, py)
+	# Build door coord set for the legacy perimeter doors so stations don't
+	# spawn immediately inside a doorway and block foot traffic.
+	var door_coords: Dictionary = {}
+	for offset in door_offsets:
+		door_coords["%d,%d" % [px + offset, min_y]] = true
+		door_coords["%d,%d" % [px + offset, max_y]] = true
+		door_coords["%d,%d" % [min_x, py + offset]] = true
+		door_coords["%d,%d" % [max_x, py + offset]] = true
+	_place_stations(chunk_manager, synthetic_main, is_crossroads, px, py, door_coords)
 
 # ===== WATER PROXIMITY CHECK =====
 # Duplicated from WorldSystem so it can run in a static context during post generation.
