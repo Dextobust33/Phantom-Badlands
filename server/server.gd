@@ -19902,7 +19902,7 @@ func _handle_dungeon_meditate(peer_id: int, character: Character, food_name: Str
 	if not food_name.is_empty():
 		meditate_msg = "[color=#808080](Consumed 1 %s)[/color]\n" % food_name
 	if at_full_hp:
-		meditate_msg += "[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [mana_regen, bonus_text]
+		meditate_msg += "[color=#66CCCC]You meditate deeply and recover %d Mana.[/color] [color=#00FF00](HP already full)[/color]%s" % [mana_regen, bonus_text]
 	else:
 		var heal_percent = randf_range(0.10, 0.25)
 		var heal_amount = int(character.get_total_max_hp() * heal_percent)
