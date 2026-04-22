@@ -238,9 +238,14 @@ static func _add_rect_tiles(tiles: Dictionary, rect: Dictionary) -> void:
 			tiles["%d,%d" % [x, y]] = true
 
 static func _compute_wall_tiles(floor_tiles: Dictionary) -> Dictionary:
-	"""Compute wall tiles: any non-floor tile adjacent to a floor tile."""
+	"""Compute wall tiles: any non-floor tile 8-way adjacent to a floor tile.
+	Including diagonal neighbors seals off the outer corners of each room so
+	players can't slip into the post diagonally, bypassing the doors."""
 	var wall_tiles = {}
-	var offsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+	var offsets = [
+		[-1, 0], [1, 0], [0, -1], [0, 1],
+		[-1, -1], [-1, 1], [1, -1], [1, 1],
+	]
 	for key in floor_tiles:
 		var parts = key.split(",")
 		var fx = int(parts[0])
@@ -476,36 +481,16 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 					"blocks_move": false, "blocks_los": false,
 				})
 
-	var ix0 = min_x + 2
-	var ix1 = max_x - 2
-	var iy0 = min_y + 2
-	var iy1 = max_y - 2
-
-	_place_station(chunk_manager, ix0, iy0, "forge")
-	_place_station(chunk_manager, ix0 + 1, iy0, "forge")
-	_place_station(chunk_manager, ix0 + 3, iy0, "apothecary")
-	_place_station(chunk_manager, ix0 + 4, iy0, "apothecary")
-	_place_station(chunk_manager, ix0 + 6, iy0, "enchant_table")
-	_place_station(chunk_manager, ix0 + 7, iy0, "enchant_table")
-	_place_station(chunk_manager, ix0, iy0 + 2, "writing_desk")
-	_place_station(chunk_manager, ix0 + 1, iy0 + 2, "writing_desk")
-	_place_station(chunk_manager, ix0 + 3, iy0 + 2, "workbench")
-	_place_station(chunk_manager, ix0 + 4, iy0 + 2, "workbench")
-	_place_station(chunk_manager, ix0, iy0 + 4, "quest_board")
-	_place_station(chunk_manager, ix0 + 2, iy0 + 4, "quest_board")
-	_place_station(chunk_manager, ix0 + 4, iy0 + 4, "blacksmith")
-	_place_station(chunk_manager, ix0 + 5, iy0 + 4, "blacksmith")
+	# Center marker (under the stations grid)
 	chunk_manager.set_tile(px, py, {
 		"type": "post_marker", "tier": 0,
 		"blocks_move": false, "blocks_los": false,
 	})
-	_place_station(chunk_manager, ix0, iy0 + 6, "inn")
-	_place_station(chunk_manager, ix0 + 2, iy0 + 6, "healer")
-	_place_station(chunk_manager, ix0 + 3, iy0 + 6, "healer")
-	_place_station(chunk_manager, ix1 - 1, iy0 + 6, "market")
-	_place_station(chunk_manager, ix1, iy0 + 6, "market")
-	if is_crossroads:
-		_place_station(chunk_manager, px, iy1, "throne")
+
+	# Delegate station placement to the shared randomized layout so legacy
+	# posts get the same shuffle-per-post variety as new posts.
+	var synthetic_main = {"x0": min_x, "y0": min_y, "x1": max_x, "y1": max_y}
+	_place_stations(chunk_manager, synthetic_main, is_crossroads, px, py)
 
 # ===== WATER PROXIMITY CHECK =====
 # Duplicated from WorldSystem so it can run in a static context during post generation.

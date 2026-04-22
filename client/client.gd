@@ -370,6 +370,7 @@ var disable_tutorial: bool = false  # Skip tutorial on new character creation
 var settings_mode: bool = false
 var settings_submenu: String = ""  # "", "action_keys", "movement_keys", "item_keys"
 var rebinding_action: String = ""  # Key being rebound (empty = not rebinding)
+var pending_rebind_conflict: Dictionary = {}  # {new_keycode, action, displacements} — awaiting Y/N confirm
 
 # Combat background color
 var default_game_output_stylebox: StyleBox = null
@@ -3089,6 +3090,20 @@ func _input(event):
 		input_field.placeholder_text = ""
 		display_game("[color=#808080]Bug report cancelled.[/color]")
 		update_action_bar()
+		get_viewport().set_input_as_handled()
+		return
+
+	# Handle key input for rebind conflict confirmation (Y/N prompt)
+	if not pending_rebind_conflict.is_empty() and event is InputEventKey and event.pressed and not event.echo:
+		var ckey = event.keycode
+		if ckey == KEY_Y:
+			_confirm_rebind_conflict()
+			get_viewport().set_input_as_handled()
+			return
+		if ckey == KEY_N or ckey == KEY_ESCAPE:
+			_cancel_rebind_conflict()
+			get_viewport().set_input_as_handled()
+			return
 		get_viewport().set_input_as_handled()
 		return
 
@@ -18567,6 +18582,7 @@ func open_settings():
 	settings_mode = true
 	settings_submenu = ""
 	rebinding_action = ""
+	pending_rebind_conflict = {}
 	game_output.clear()
 	display_settings_menu()
 	_mode_transition_fade()
@@ -18776,22 +18792,50 @@ func complete_rebinding(new_keycode: int):
 	# Check for conflicts
 	var conflicts = get_keybind_conflicts(new_keycode, rebinding_action)
 	if conflicts.size() > 0:
-		display_game("[color=#FFA500]Warning: This key is also bound to: %s[/color]" % ", ".join(conflicts))
-		display_game("[color=#808080]The other binding will be cleared.[/color]")
-		# Clear conflicting bindings
+		# Find a free key for each displaced action instead of silently
+		# unbinding them — otherwise the player loses access to those actions.
+		var displacements = {}
+		var used = _collect_used_keycodes()
+		used[new_keycode] = true
+		used[0] = true  # Don't "assign" to unbound
 		for conflict in conflicts:
-			keybinds[conflict] = 0  # Unbind
+			var free_key = _find_unused_keycode(used)
+			displacements[conflict] = free_key
+			if free_key != 0:
+				used[free_key] = true
+		pending_rebind_conflict = {
+			"new_keycode": new_keycode,
+			"action": rebinding_action,
+			"displacements": displacements,
+		}
+		_display_rebind_conflict_prompt()
+		return
 
-	# Set the new binding
-	keybinds[rebinding_action] = new_keycode
+	_apply_rebind(new_keycode, {})
+
+func _apply_rebind(new_keycode: int, displacements: Dictionary):
+	"""Apply a rebind after any conflict has been resolved."""
+	var action_to_bind = rebinding_action
+	for displaced_action in displacements:
+		var new_key = int(displacements[displaced_action])
+		keybinds[displaced_action] = new_key
+	keybinds[action_to_bind] = new_keycode
 	_save_keybinds()
 
-	display_game("[color=#00FF00]Bound %s to %s[/color]" % [rebinding_action.replace("_", " ").capitalize(), get_key_name(new_keycode)])
+	game_output.clear()
+	display_game("[color=#00FF00]Bound %s to %s[/color]" % [action_to_bind.replace("_", " ").capitalize(), get_key_name(new_keycode)])
+	for displaced_action in displacements:
+		var new_key = int(displacements[displaced_action])
+		var label = displaced_action.replace("_", " ").capitalize()
+		if new_key == 0:
+			display_game("[color=#FFAA00]%s was unbound (no free key available — rebind it manually).[/color]" % label)
+		else:
+			display_game("[color=#87CEEB]%s moved to %s[/color]" % [label, get_key_name(new_key)])
 
-	await get_tree().create_timer(0.5).timeout
+	await get_tree().create_timer(0.8).timeout
 
-	# Return to appropriate submenu
 	rebinding_action = ""
+	pending_rebind_conflict = {}
 	game_output.clear()
 	if settings_submenu == "action_keys":
 		display_action_keybinds()
@@ -18801,6 +18845,82 @@ func complete_rebinding(new_keycode: int):
 		display_item_keybinds()
 	else:
 		display_settings_menu()
+
+func _display_rebind_conflict_prompt():
+	"""Show the conflict warning and ask the player to confirm the auto-displacement."""
+	if pending_rebind_conflict.is_empty():
+		return
+	var action_label = String(pending_rebind_conflict.get("action", "")).replace("_", " ").capitalize()
+	var new_key = int(pending_rebind_conflict.get("new_keycode", 0))
+	var displacements: Dictionary = pending_rebind_conflict.get("displacements", {})
+	game_output.clear()
+	display_game("[color=#FFA500]===== KEY CONFLICT =====[/color]")
+	display_game("")
+	display_game("[color=#FFD700]%s[/color] would be bound to [color=#FFD700]%s[/color]." % [action_label, get_key_name(new_key)])
+	display_game("That key is already used by:")
+	for displaced_action in displacements:
+		var displaced_label = displaced_action.replace("_", " ").capitalize()
+		var free_key = int(displacements[displaced_action])
+		if free_key == 0:
+			display_game("  • [color=#87CEEB]%s[/color] → [color=#FF6666]will be left unbound (no free key found)[/color]" % displaced_label)
+		else:
+			display_game("  • [color=#87CEEB]%s[/color] → [color=#00FF00]will move to %s[/color]" % [displaced_label, get_key_name(free_key)])
+	display_game("")
+	display_game("[color=#00FF00]Y[/color] — Proceed with the changes above")
+	display_game("[color=#FF6666]N[/color] or [color=#FF6666]Escape[/color] — Cancel")
+
+func _confirm_rebind_conflict():
+	"""Player confirmed the conflict — apply the rebind with displacements."""
+	if pending_rebind_conflict.is_empty():
+		return
+	var new_keycode = int(pending_rebind_conflict.get("new_keycode", 0))
+	var displacements: Dictionary = pending_rebind_conflict.get("displacements", {})
+	pending_rebind_conflict = {}
+	_apply_rebind(new_keycode, displacements)
+
+func _cancel_rebind_conflict():
+	"""Player cancelled the conflict prompt — restart the rebinding."""
+	if pending_rebind_conflict.is_empty():
+		return
+	var action = String(pending_rebind_conflict.get("action", ""))
+	pending_rebind_conflict = {}
+	if action != "":
+		rebinding_action = action
+		start_rebinding(action)
+	else:
+		rebinding_action = ""
+		game_output.clear()
+		display_settings_menu()
+
+func _collect_used_keycodes() -> Dictionary:
+	"""Return a dictionary {keycode: true} of every non-zero key currently bound."""
+	var used = {}
+	for action in keybinds:
+		var kc = int(keybinds[action])
+		if kc != 0:
+			used[kc] = true
+	return used
+
+func _find_unused_keycode(used: Dictionary) -> int:
+	"""Find a reasonable unused keycode — prefer letters first, then numpad, then top-row digits.
+	Returns 0 if nothing is available."""
+	# Letters A-Z
+	for c in range(KEY_A, KEY_Z + 1):
+		if not used.has(c) and not is_reserved_key(c):
+			return c
+	# Numpad 0-9
+	for c in [KEY_KP_0, KEY_KP_1, KEY_KP_2, KEY_KP_3, KEY_KP_4, KEY_KP_5, KEY_KP_6, KEY_KP_7, KEY_KP_8, KEY_KP_9]:
+		if not used.has(c) and not is_reserved_key(c):
+			return c
+	# Top-row digits 0-9
+	for c in [KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]:
+		if not used.has(c) and not is_reserved_key(c):
+			return c
+	# Punctuation fallbacks
+	for c in [KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_SEMICOLON, KEY_APOSTROPHE, KEY_BACKSLASH, KEY_SLASH, KEY_COMMA, KEY_PERIOD, KEY_MINUS, KEY_EQUAL]:
+		if not used.has(c) and not is_reserved_key(c):
+			return c
+	return 0
 
 func reset_keybinds_to_defaults():
 	"""Reset all keybinds to default values"""
@@ -20284,8 +20404,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.188 changes
+	display_game("[color=#00FF00]v0.9.188[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market stacks, post corners, station variety, resource respawns, keybind conflicts[/color]")
+	display_game("  • Market: listing a stack of consumables (like 5x Minor Health Potion) now lists the whole stack with the correct x5 qty and 5x valor — old code silently dropped the extras")
+	display_game("  • Post corners now block diagonal walk-through — players must actually use the doors")
+	display_game("  • Legacy posts now use the same shuffled station layout as new posts, so Forge/Blacksmith/Healer/Market positions vary between posts instead of being identical")
+	display_game("  • Resource respawns near trading posts: radius 12→22 tiles, respawn timer 15min→4min, so you don't have to venture far from a post")
+	display_game("  • Keybind conflicts: rebinding a key that's already bound now warns with a Y/N prompt and auto-moves the displaced action to an unused key instead of silently unbinding it")
+	display_game("")
+
 	# v0.9.187 changes
-	display_game("[color=#00FF00]v0.9.187[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.187[/color]")
 	display_game("  [color=#FFD700]Egg status HUD + dungeon complete timing + meditate clarity[/color]")
 	display_game("  • Egg %% on the status HUD was stuck at 0 — it read a non-existent \"steps\" field; now derives from hatch_steps − steps_remaining")
 	display_game("  • Clicking the egg indicator to freeze/unfreeze now actually works — the overlay had mouse_filter=IGNORE so clicks never reached it")
@@ -20313,15 +20443,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Players header + Examine popup cleanup[/color]")
 	display_game("  • Right-side Players panel now has a \"Players Online\" header at the top")
 	display_game("  • Clicking a piece of gear in the Examine popup now clears the previous item details before showing the new one")
-	display_game("")
-
-	# v0.9.183 changes
-	display_game("[color=#00FFFF]v0.9.183[/color]")
-	display_game("  [color=#FFD700]Combat bar position + Chat relocation[/color]")
-	display_game("  • Mini bars keep their position during combat — the shortcut-button cell now only hides its buttons, not its slot, so the right cell doesn't collapse")
-	display_game("  • Chat + input field moved below the action bar (into CenterPanel) at runtime — fills the dead space below the action buttons")
-	display_game("  • Right-side ChatPanel is now a dedicated Players Online sidebar; the old Chat/Players tabs are hidden")
-	display_game("  • Runtime reparent — no tscn restructure, same safe pattern as StatusRow")
 	display_game("")
 
 	# v0.9.182 changes

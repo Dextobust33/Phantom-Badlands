@@ -9730,8 +9730,12 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Unequip the item first."})
 		return
 
+	# Stackable consumables list the whole stack at once — base valor scales with stack size
+	var stack_size = maxi(1, int(item.get("quantity", 1)))
+
 	# Calculate base valor
-	var base_valor = drop_tables.calculate_base_valor(item)
+	var per_unit_valor = drop_tables.calculate_base_valor(item)
+	var base_valor = per_unit_valor * stack_size
 
 	# Apply market bonuses (Halfling +15%, Knight +10%)
 	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
@@ -9746,7 +9750,7 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 		"base_valor": base_valor,
 		"supply_category": drop_tables.get_supply_category(item),
 		"listed_at": int(Time.get_unix_time_from_system()),
-		"quantity": 1
+		"quantity": stack_size
 	}
 
 	# Remove item from inventory
@@ -10332,7 +10336,8 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 			if item.get("item_type", "") == "escape_scroll":
 				continue  # Don't bulk-list escape scrolls
 
-			var base_valor = drop_tables.calculate_base_valor(item)
+			var stack_size = maxi(1, int(item.get("quantity", 1)))
+			var base_valor = drop_tables.calculate_base_valor(item) * stack_size
 			if bonus > 0:
 				base_valor = int(base_valor * (1.0 + bonus))
 			var listing = {
@@ -10342,11 +10347,11 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 				"base_valor": base_valor,
 				"supply_category": drop_tables.get_supply_category(item),
 				"listed_at": now,
-				"quantity": 1
+				"quantity": stack_size
 			}
 			persistence.add_market_listing(post_id, listing)
 			total_valor += base_valor
-			count += 1
+			count += stack_size
 			to_remove.append(i)
 		for i in to_remove:
 			character.inventory.remove_at(i)
@@ -10364,7 +10369,8 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 			if itype == "treasure_chest":
 				continue
 
-			var base_valor = drop_tables.calculate_base_valor(item)
+			var stack_size = maxi(1, int(item.get("quantity", 1)))
+			var base_valor = drop_tables.calculate_base_valor(item) * stack_size
 			if bonus > 0:
 				base_valor = int(base_valor * (1.0 + bonus))
 			var listing = {
@@ -10374,11 +10380,11 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 				"base_valor": base_valor,
 				"supply_category": drop_tables.get_supply_category(item),
 				"listed_at": now,
-				"quantity": 1
+				"quantity": stack_size
 			}
 			persistence.add_market_listing(post_id, listing)
 			total_valor += base_valor
-			count += 1
+			count += stack_size
 			to_remove.append(i)
 		for i in to_remove:
 			character.inventory.remove_at(i)
