@@ -13223,11 +13223,12 @@ func display_inventory():
 		var itm = inventory[idx]
 		if itm.get("is_consumable", false) or itm.get("type", "") == "rune":
 			var cname = itm.get("name", "")
+			var itm_qty = int(itm.get("quantity", 1))
 			if consumable_groups.has(cname):
-				consumable_groups[cname]["count"] += 1
+				consumable_groups[cname]["count"] += itm_qty
 				consumable_groups[cname]["indices"].append(idx)
 			else:
-				consumable_groups[cname] = {"index": idx, "item": itm, "count": 1, "indices": [idx]}
+				consumable_groups[cname] = {"index": idx, "item": itm, "count": itm_qty, "indices": [idx]}
 				consumable_order.append(cname)
 		elif itm.get("type", "") == "tool":
 			tool_items.append({"index": idx, "item": itm})
@@ -20281,8 +20282,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.186 changes
+	display_game("[color=#00FF00]v0.9.186[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bulk crafting — stacked consumables now display the real count[/color]")
+	display_game("  • Crafting 5x Minor Health Potions actually gave you 5 — but the inventory list counted slots, not quantity, so a stack of 5 in one slot showed as \"x1\"")
+	display_game("  • Display now sums each stack's quantity across matching entries (consumables and runes)")
+	display_game("  • Server-side item generation was already correct; this was purely a client display bug")
+	display_game("")
+
 	# v0.9.185 changes
-	display_game("[color=#00FF00]v0.9.185[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.185[/color]")
 	display_game("  [color=#FFD700]Examine popup — item details actually reset now[/color]")
 	display_game("  • v0.9.184 tried to cache the popup's BBCode via RichTextLabel.text, but Godot 4's RichTextLabel doesn't update .text after append_text — snapshot was empty and the clear never happened")
 	display_game("  • Now caches the raw player data dict and rebuilds the base popup on each item click")
@@ -20350,13 +20359,6 @@ func display_changelog():
 	display_game("  • The reparent into BottomRow worked in fullscreen but collapsed the minimap into a vertical strip in windowed mode (narrow MapPanel couldn't fit Tools + StatusHUD + Minimap on one row)")
 	display_game("  • StatusHUD is back below BottomRow where the layout is stable across resolutions")
 	display_game("  • Fullscreen dead space between Tools and Minimap remains — will fill it a different way next")
-	display_game("")
-
-	# v0.9.175 changes
-	display_game("[color=#00FFFF]v0.9.175[/color]")
-	display_game("  [color=#FFD700]Minimap Right-Dock[/color]")
-	display_game("  • Gave Tools overlay EXPAND+FILL so it grows into the empty space in BottomRow, pushing the minimap flush to the right edge")
-	display_game("  • No new nodes — single attribute addition on the existing Tools overlay")
 	display_game("")
 
 	# v0.9.174 changes
