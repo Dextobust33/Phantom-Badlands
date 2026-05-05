@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://client/crafting_panel.gd" id="4_craftpanel"]
 [ext_resource type="Script" path="res://client/market_panel.gd" id="5_marketpanel"]
 [ext_resource type="Script" path="res://client/companions_panel.gd" id="6_comppanel"]
+[ext_resource type="Script" path="res://client/sanctuary_panel.gd" id="7_sanctpanel"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_bg"]
 bg_color = Color(0.1, 0.08, 0.06, 1)
@@ -446,6 +447,17 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("6_comppanel")
+
+[node name="SanctuaryPanel" type="Control" parent="RootContainer/TopSection/GameOutputContainer"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("7_sanctpanel")
 
 [node name="MapPanel" type="VBoxContainer" parent="RootContainer/TopSection" unique_id=1838908335]
 layout_mode = 2
