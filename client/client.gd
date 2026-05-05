@@ -1431,8 +1431,8 @@ func _ready():
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
-	# Start in fullscreen
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	# Start maximized (windowed, not exclusive fullscreen)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 
 	# Load keybind configuration
 	_load_keybinds()
@@ -13309,6 +13309,9 @@ func _panel_use_item(index: int) -> void:
 	if in_combat:
 		send_to_server({"type": "combat_use_item", "index": index})
 	else:
+		# Cache the next text message so display_inventory surfaces it in the
+		# panel's status row (the panel hides game_output, so direct prints aren't seen)
+		awaiting_item_use_result = true
 		send_to_server({"type": "inventory_use", "index": index})
 
 func _panel_equip_item(index: int, item: Dictionary) -> void:
@@ -13657,230 +13660,20 @@ func _toggle_affix_filter_item(index: int):
 	update_action_bar()
 
 func display_inventory():
-	"""Display the player's inventory and equipped items"""
+	# The visual InventoryPanel is the canonical surface — text-output rendering
+	# of the base inventory view was removed in Phase 5. Sub-modes that hide
+	# the panel (sort/salvage/inspect/etc.) write their own content to game_output.
 	if not has_character:
 		return
 
-	# Populate the visual inventory panel (visibility synced in _process based on pending_inventory_action)
 	if inventory_panel:
 		inventory_panel.populate(character_data)
-
-	# Clear output to show fresh inventory view
-	game_output.clear()
-
-	var inventory = character_data.get("inventory", [])
-	var equipped = character_data.get("equipped", {})
-
-	# Show crafting resources summary above inventory header
-	var resources_line = _get_resources_summary()
-	if resources_line != "":
-		display_game(resources_line)
-		display_game("")
-
-	display_game("[color=#FFD700]===== INVENTORY =====[/color]")
-
-	# Show equipped items with level and stats (using themed names)
-	var player_class = character_data.get("class", "")
-	display_game("[color=#00FFFF]Equipped:[/color]")
-	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = equipped.get(slot)
-		var slot_display = _get_themed_slot_name(slot, player_class)
-		if item != null and item is Dictionary:
-			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			var item_level = item.get("level", 1)
-			var bonus_text = _get_item_bonus_summary(item)
-			var themed_name = _get_themed_item_name(item, player_class)
-			# Show wear condition
-			var wear = item.get("wear", 0)
-			var wear_text = ""
-			if wear > 0:
-				var condition_color = _get_condition_color(wear)
-				wear_text = " [color=%s](%d%% worn)[/color]" % [condition_color, wear]
-			display_game("  %s: [color=%s]%s[/color] (Lv%d) %s%s" % [
-				slot_display, rarity_color, themed_name, item_level, bonus_text, wear_text
-			])
+		# Surface cached item-use feedback inside the panel's status row
+		if last_item_use_result != "":
+			inventory_panel.set_status(last_item_use_result)
+			last_item_use_result = ""
 		else:
-			display_game("  %s: [color=#555555](empty)[/color]" % slot_display)
-
-	# Show equipped tools
-	var eq_tools = character_data.get("equipped_tools", {})
-	var tool_names = {"pickaxe": "Pickaxe", "axe": "Axe", "sickle": "Sickle", "rod": "Rod"}
-	var has_any_tool = false
-	for slot in ["pickaxe", "axe", "sickle", "rod"]:
-		var t = eq_tools.get(slot, {})
-		if not t.is_empty():
-			has_any_tool = true
-	if has_any_tool:
-		display_game("[color=#9ACD32]Tools:[/color]")
-		for slot in ["pickaxe", "axe", "sickle", "rod"]:
-			var t = eq_tools.get(slot, {})
-			if not t.is_empty():
-				var dur = t.get("durability", 0)
-				var max_dur = t.get("max_durability", dur)
-				var dur_pct = int(float(dur) / float(max_dur) * 100) if max_dur > 0 else 0
-				var dur_color = "#00FF00" if dur_pct > 50 else "#FFFF00" if dur_pct > 25 else "#FF4444"
-				display_game("  %s: [color=#9ACD32]%s[/color] [color=%s](%d/%d)[/color]" % [tool_names[slot], t.get("name", "?"), dur_color, dur, max_dur])
-
-	# Show total equipment bonuses
-	var bonuses = _calculate_equipment_bonuses(equipped)
-	if bonuses.attack > 0 or bonuses.defense > 0 or bonuses.speed > 0:
-		display_game("")
-		var bonus_text = "[color=#00FF00]Total Gear Bonuses: +%d Attack, +%d Defense" % [bonuses.attack, bonuses.defense]
-		if bonuses.speed > 0:
-			bonus_text += ", +%d Speed" % bonuses.speed
-		bonus_text += "[/color]"
-		display_game(bonus_text)
-
-	# Show inventory items with comparison hints (paginated)
-	# Partition items: equipment first, consumables last
-	display_game("")
-	var equipment_items: Array = []
-	var tool_items: Array = []
-	var consumable_items: Array = []
-	# Group identical consumables by name for stacked display
-	var consumable_groups: Dictionary = {}  # name → {index, item, count, indices}
-	var consumable_order: Array = []  # Preserve first-seen order
-	for idx in range(inventory.size()):
-		var itm = inventory[idx]
-		if itm.get("is_consumable", false) or itm.get("type", "") == "rune":
-			var cname = itm.get("name", "")
-			var itm_qty = int(itm.get("quantity", 1))
-			if consumable_groups.has(cname):
-				consumable_groups[cname]["count"] += itm_qty
-				consumable_groups[cname]["indices"].append(idx)
-			else:
-				consumable_groups[cname] = {"index": idx, "item": itm, "count": itm_qty, "indices": [idx]}
-				consumable_order.append(cname)
-		elif itm.get("type", "") == "tool":
-			tool_items.append({"index": idx, "item": itm})
-		else:
-			equipment_items.append({"index": idx, "item": itm})
-	for cname in consumable_order:
-		consumable_items.append(consumable_groups[cname])
-	var display_order: Array = equipment_items + tool_items + consumable_items
-	set_meta("inventory_display_order", display_order)
-
-	var total_pages = max(1, int(ceil(float(display_order.size()) / INVENTORY_PAGE_SIZE)))
-	# Clamp page to valid range
-	inventory_page = clamp(inventory_page, 0, total_pages - 1)
-
-	display_game("[color=#00FFFF]Backpack (%d/40) - Page %d/%d:[/color]" % [inventory.size(), inventory_page + 1, total_pages])
-	if inventory.is_empty():
-		display_game("  [color=#555555](empty)[/color]")
-	else:
-		var start_idx = inventory_page * INVENTORY_PAGE_SIZE
-		var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, display_order.size())
-		var showed_tools_sep = false
-		var showed_consumables_sep = false
-
-		for di in range(start_idx, end_idx):
-			var entry = display_order[di]
-			var abs_idx = entry.index
-			var item = entry.item
-
-			# Show separator when transitioning between sections
-			if not showed_tools_sep and item.get("type", "") == "tool":
-				if equipment_items.size() > 0 or di > start_idx:
-					display_game("  [color=#808080]--- Tools ---[/color]")
-				showed_tools_sep = true
-			elif not showed_consumables_sep and (item.get("is_consumable", false) or item.get("type", "") == "rune"):
-				if equipment_items.size() > 0 or tool_items.size() > 0:
-					display_game("  [color=#808080]--- Consumables ---[/color]")
-				showed_consumables_sep = true
-
-			var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
-			var item_level = item.get("level", 1)
-			var item_type = item.get("type", "")
-
-			# Show comparison arrow on left and detailed stats on right for equippable items
-			var compare_arrow = ""
-			var compare_text = ""
-			var slot = _get_slot_for_item_type(item_type)
-			if slot != "":
-				var equipped_item = equipped.get(slot)
-				compare_arrow = _get_compare_arrow(item, equipped_item) + " "
-				var diff_parts = _get_item_comparison_parts(item, equipped_item)
-				if diff_parts.size() > 0:
-					compare_text = _format_comparison_bracket(diff_parts)
-
-			# Display number is 1-9 for current page
-			var display_num = (di - start_idx) + 1
-
-			# Lock indicator
-			var lock_text = "[color=#FF4444][L][/color] " if item.get("locked", false) else ""
-
-			# Check if tool (show durability), consumable (show quantity), or equipment (show level + stats)
-			var is_tool = item.get("type", "") == "tool"
-			var is_consumable = item.get("is_consumable", false)
-			if is_tool:
-				var dur = item.get("durability", 0)
-				var max_dur = item.get("max_durability", 1)
-				var dur_pct = float(dur) / float(max_dur) * 100.0 if max_dur > 0 else 0.0
-				var dur_color = "#00FF00" if dur_pct > 50.0 else ("#FFAA00" if dur_pct > 20.0 else "#FF4444")
-				var subtype = item.get("subtype", "tool")
-				# Tool comparison vs equipped tool of same subtype
-				var eq_tool = eq_tools.get(subtype, {})
-				var tool_arrow = _get_tool_compare_arrow(item, eq_tool) + " "
-				var tool_cmp_parts = _get_tool_comparison_parts(item, eq_tool)
-				var tool_cmp_text = ""
-				if tool_cmp_parts.size() > 0:
-					tool_cmp_text = _format_comparison_bracket(tool_cmp_parts)
-				display_game("  %d. %s%s[color=%s]%s[/color] [color=#808080](%s T%d)[/color] [color=%s]%d/%d dur[/color]%s" % [
-					display_num, lock_text, tool_arrow, rarity_color, item.get("name", "Tool"),
-					subtype.capitalize(), item.get("tier", 1), dur_color, dur, max_dur, tool_cmp_text
-				])
-			elif is_consumable:
-				var stack_count = entry.get("count", 1)
-				var qty_text = " [color=#AAAAAA]x%d[/color]" % stack_count if stack_count > 1 else ""
-				display_game("  %d. %s[color=%s]%s[/color]%s" % [
-					display_num, lock_text, rarity_color, item.get("name", "Unknown"), qty_text
-				])
-			elif item_type == "structure":
-				var structure_type = item.get("structure_type", "")
-				var scolor = _get_structure_color(structure_type)
-				display_game("  %d. %s[color=%s]%s[/color] [color=#808080][Structure][/color]" % [
-					display_num, lock_text, scolor, item.get("name", "Unknown")
-				])
-			elif item_type == "rune":
-				var rune_info = ""
-				if item.has("rune_proc"):
-					rune_info = "[color=#808080][%s][/color]" % item.get("rune_proc", "").replace("_", " ").capitalize()
-				else:
-					rune_info = "[color=#808080][+%d %s][/color]" % [item.get("rune_cap", 0), item.get("rune_stat", "").replace("_bonus", "").replace("_", " ")]
-				var rune_stack = entry.get("count", 1)
-				var rune_qty = " [color=#AAAAAA]x%d[/color]" % rune_stack if rune_stack > 1 else ""
-				display_game("  %d. %s[color=#A335EE]%s[/color]%s %s" % [
-					display_num, lock_text, item.get("name", "Rune"), rune_qty, rune_info
-				])
-			else:
-				# Show equipment with arrow on left, stats on right (using themed names)
-				var bonus_text = _get_item_bonus_summary(item)
-				var slot_abbr = _get_slot_abbreviation(item_type)
-				var themed_name = _get_themed_item_name(item, player_class)
-				# Show wear condition if damaged
-				var wear = item.get("wear", 0)
-				var wear_text = ""
-				if wear > 0:
-					var condition_color = _get_condition_color(wear)
-					wear_text = " [color=%s]%d%%[/color]" % [condition_color, wear]
-				display_game("  %d. %s%s[color=%s]%s[/color] Lv%d %s %s%s%s" % [
-					display_num, lock_text, compare_arrow, rarity_color, themed_name, item_level, bonus_text, slot_abbr, wear_text, compare_text
-				])
-
-	display_game("")
-	display_game("[color=#808080]%s=Back  %s=Inspect  %s=Use  %s=Equip  %s=Unequip[/color]" % [
-		get_action_key_name(0), get_action_key_name(1), get_action_key_name(2),
-		get_action_key_name(3), get_action_key_name(4)])
-	display_game("[color=#808080]%s=Sort  %s=Salvage  %s=Lock[/color]" % [
-		get_action_key_name(5), get_action_key_name(6), get_action_key_name(7)])
-	display_game("[color=#808080]↑↓ arrows compare: %s (change in Sort menu)[/color]" % _get_compare_stat_label(inventory_compare_stat))
-	if total_pages > 1:
-		display_game("[color=#808080]%s/%s=Prev/Next Page[/color]" % [get_action_key_name(8), get_action_key_name(9)])
-
-	# Show last item use result if any
-	if last_item_use_result != "":
-		display_game("")
-		display_game(last_item_use_result)
+			inventory_panel.set_status("")
 
 func display_materials():
 	"""Display the player's crafting materials organized by type"""
@@ -20956,8 +20749,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.192 changes
+	display_game("[color=#00FF00]v0.9.192[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Maximized window on launch + dead text-inventory cleanup[/color]")
+	display_game("  • Client now starts maximized in a window instead of exclusive fullscreen — easier to alt-tab and resize")
+	display_game("  • Item-use feedback (\"Used Minor Health Potion: +50 HP\") now shows directly in the visual inventory panel's status row, not the hidden game output")
+	display_game("  • Stripped ~220 lines of dead text-rendering inside the inventory view that were already obscured by the new visual panel — keyboard sub-modes (sort/salvage/inspect) keep their text fallbacks")
+	display_game("")
+
 	# v0.9.191 changes
-	display_game("[color=#00FF00]v0.9.191[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.191[/color]")
 	display_game("  [color=#FFD700]Visual inventory + paper-doll, drag-and-drop equip, fullscreen auto-connect[/color]")
 	display_game("  • Inventory is now a visual panel: paper-doll on the left, item cards on the right with rarity borders, type icons, full stat breakdowns and live comparison deltas vs your equipped gear")
 	display_game("  • Drag any inventory card onto a paper-doll slot to equip; drag from a slot back into the grid to unequip. Locked items can be dragged too — only discard is blocked")
@@ -20994,15 +20795,6 @@ func display_changelog():
 	display_game("  • Legacy posts now use the same shuffled station layout as new posts, so Forge/Blacksmith/Healer/Market positions vary between posts instead of being identical")
 	display_game("  • Resource respawns near trading posts: radius 12→22 tiles, respawn timer 15min→4min, so you don't have to venture far from a post")
 	display_game("  • Keybind conflicts: rebinding a key that's already bound now warns with a Y/N prompt and auto-moves the displaced action to an unused key instead of silently unbinding it")
-	display_game("")
-
-	# v0.9.187 changes
-	display_game("[color=#00FFFF]v0.9.187[/color]")
-	display_game("  [color=#FFD700]Egg status HUD + dungeon complete timing + meditate clarity[/color]")
-	display_game("  • Egg %% on the status HUD was stuck at 0 — it read a non-existent \"steps\" field; now derives from hatch_steps − steps_remaining")
-	display_game("  • Clicking the egg indicator to freeze/unfreeze now actually works — the overlay had mouse_filter=IGNORE so clicks never reached it")
-	display_game("  • Dungeon-complete screen no longer waits until the next combat — after boss → harvest, the queued completion now shows as soon as harvest ends")
-	display_game("  • Sorcerer/Wizard/Sage meditate in dungeon now shows \"(HP already full)\" when at max HP, so you can tell HP isn't healing because it's already topped")
 	display_game("")
 
 	# v0.9.185 changes

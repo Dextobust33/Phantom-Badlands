@@ -49,6 +49,7 @@ var _paperdoll_grid: GridContainer
 var _tools_grid: GridContainer
 var _card_grid: HFlowContainer
 var _empty_label: Label
+var _status_label: RichTextLabel
 
 # Hover tooltip + right-click context menu
 var _tooltip: PanelContainer
@@ -259,9 +260,16 @@ func _build_layout() -> void:
 	action_row.add_child(_make_action_btn("Salvage Junk", _on_salvage_pressed))
 	action_row.add_child(_make_action_btn("Materials", _on_materials_pressed))
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	action_row.add_child(spacer)
+	# Transient feedback (e.g., "Used Minor Health Potion: +50 HP")
+	_status_label = RichTextLabel.new()
+	_status_label.bbcode_enabled = true
+	_status_label.fit_content = true
+	_status_label.scroll_active = false
+	_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_status_label.add_theme_font_size_override("normal_font_size", 13)
+	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_label.text = ""
+	action_row.add_child(_status_label)
 
 	action_row.add_child(_make_action_btn("Close (Space)", _on_close_pressed))
 
@@ -347,6 +355,10 @@ func show_panel() -> void:
 
 func hide_panel() -> void:
 	visible = false
+
+func set_status(text: String) -> void:
+	if _status_label:
+		_status_label.text = text
 
 func populate(character_data: Dictionary) -> void:
 	if not is_inside_tree():
