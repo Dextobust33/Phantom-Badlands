@@ -405,6 +405,7 @@ var game_state = GameState.DISCONNECTED
 @onready var crafting_panel = $RootContainer/TopSection/GameOutputContainer/CraftingPanel
 @onready var market_panel = $RootContainer/TopSection/GameOutputContainer/MarketPanel
 @onready var companions_panel = $RootContainer/TopSection/GameOutputContainer/CompanionsPanel
+@onready var sanctuary_panel = $RootContainer/TopSection/GameOutputContainer/SanctuaryPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1507,6 +1508,19 @@ func _ready():
 		companions_panel.sort_changed.connect(_on_comp_panel_sort_changed)
 		companions_panel.inspect_back_requested.connect(_on_comp_panel_inspect_back)
 
+	# Setup sanctuary panel
+	if sanctuary_panel:
+		sanctuary_panel.client_ref = self
+		sanctuary_panel.close_requested.connect(_on_sanct_panel_close)
+		sanctuary_panel.tab_changed.connect(_on_sanct_panel_tab_changed)
+		sanctuary_panel.storage_withdraw_toggled.connect(_on_sanct_panel_withdraw_toggled)
+		sanctuary_panel.storage_register_requested.connect(_on_sanct_panel_register_requested)
+		sanctuary_panel.storage_discard_requested.connect(_on_sanct_panel_discard_requested)
+		sanctuary_panel.storage_withdraw_confirm_pressed.connect(_on_sanct_panel_withdraw_confirm)
+		sanctuary_panel.storage_withdraw_clear_pressed.connect(_on_sanct_panel_withdraw_clear)
+		sanctuary_panel.upgrade_buy_pressed.connect(_on_sanct_panel_upgrade_buy)
+		sanctuary_panel.upgrade_page_changed.connect(_on_sanct_panel_upgrade_page)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -2033,8 +2047,18 @@ func _process(delta):
 		if companions_panel.visible != _comp_should_show:
 			companions_panel.visible = _comp_should_show
 
+	# Sync sanctuary panel — shows in HOUSE_SCREEN for storage and upgrades sub-modes
+	# (the walkable map view stays as-is for the main mode).
+	var _sanct_should_show: bool = false
+	if sanctuary_panel:
+		_sanct_should_show = (game_state == GameState.HOUSE_SCREEN
+			and house_mode in ["storage", "upgrades"]
+			and pending_house_action in ["", "withdraw_select", "discard_select", "register_select"])
+		if sanctuary_panel.visible != _sanct_should_show:
+			sanctuary_panel.visible = _sanct_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -20826,8 +20850,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.196 changes
+	display_game("[color=#00FF00]v0.9.196[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 5a: Visual Sanctuary (Storage + Upgrades)[/color]")
+	display_game("  • Walk onto the Storage (S) tile in your Sanctuary and you now get a visual panel: capacity bar, item list, right-click any item for Mark for Withdraw / Register as Companion / Discard")
+	display_game("  • Walk onto the Upgrade (U) tile and you get a visual upgrade browser with Base / Combat / Stats sub-tabs — each upgrade is a card showing current/max level, effect, and a Buy button that disables itself when maxed or you're short on Baddie Points")
+	display_game("  • Storage and Upgrades tabs at the top of the panel let you switch between them without walking back to the other tile")
+	display_game("  • Walking around the Sanctuary map still works the same way; Kennel (K) and Fusion (F) tiles are still text-driven for now")
+	display_game("")
+
 	# v0.9.195 changes
-	display_game("[color=#00FF00]v0.9.195[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.195[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 4: Visual Companions + Eggs[/color]")
 	display_game("  • More → Companions is now a visual panel: active companion at the top with XP bar and Dismiss button, hatched companions below as a grid of cards")
 	display_game("  • Click any card to activate it, right-click for Inspect / Release / Activate; Inspect view shows full ability descriptions, in-combat bonuses, damage estimate, and a Release button")
@@ -20862,17 +20895,6 @@ func display_changelog():
 	display_game("  • Client now starts maximized in a window instead of exclusive fullscreen — easier to alt-tab and resize")
 	display_game("  • Item-use feedback (\"Used Minor Health Potion: +50 HP\") now shows directly in the visual inventory panel's status row, not the hidden game output")
 	display_game("  • Stripped ~220 lines of dead text-rendering inside the inventory view that were already obscured by the new visual panel — keyboard sub-modes (sort/salvage/inspect) keep their text fallbacks")
-	display_game("")
-
-	# v0.9.191 changes
-	display_game("[color=#00FFFF]v0.9.191[/color]")
-	display_game("  [color=#FFD700]Visual inventory + paper-doll, drag-and-drop equip, fullscreen auto-connect[/color]")
-	display_game("  • Inventory is now a visual panel: paper-doll on the left, item cards on the right with rarity borders, type icons, full stat breakdowns and live comparison deltas vs your equipped gear")
-	display_game("  • Drag any inventory card onto a paper-doll slot to equip; drag from a slot back into the grid to unequip. Locked items can be dragged too — only discard is blocked")
-	display_game("  • Right-click a card for Inspect / Use / Equip / Lock / Drop; hover for a full tooltip that escapes the panel bounds")
-	display_game("  • Filter chips (All / Weapons / Armor / Accessories / Tools / Consumables / Materials), one-press Salvage Junk, and a Sort menu with 9 modes (level, rarity, type, recently acquired, ...)")
-	display_game("  • Stats only show resources for your class (Sorcerer no longer sees STA/EN regen) and stat tokens stay on a single line — no more \"+3\" wrapping above the stat name")
-	display_game("  • Client now launches in fullscreen and auto-connects to your last server. If you have a saved username, the password field is focused on the login screen so you can start typing immediately")
 	display_game("")
 
 	# v0.9.185 changes
@@ -25215,6 +25237,101 @@ func _on_market_panel_list_action(action_id: String) -> void:
 
 # === Companions panel integration ===
 
+# === Sanctuary panel integration ===
+
+func _populate_sanctuary_panel() -> void:
+	if sanctuary_panel == null:
+		return
+	if house_mode == "storage":
+		var storage = house_data.get("storage", {})
+		var items = storage.get("items", [])
+		var capacity = _get_house_storage_capacity()
+		var bp = int(house_data.get("baddie_points", 0))
+		sanctuary_panel.populate_storage(items, capacity, bp, house_storage_withdraw_items, house_pending_withdraw_indices)
+	elif house_mode == "upgrades":
+		var upgrades = house_data.get("upgrades", {})
+		var costs = house_data.get("upgrade_costs", {})
+		var bp = int(house_data.get("baddie_points", 0))
+		sanctuary_panel.populate_upgrades(upgrades, costs, bp, house_upgrades_page)
+
+func _get_house_upgrade_display(upgrade_id: String) -> Dictionary:
+	return HOUSE_UPGRADE_DISPLAY.get(upgrade_id, {"name": upgrade_id.capitalize(), "desc": "", "icon": ""})
+
+func _on_sanct_panel_close() -> void:
+	# Return to the main house map view
+	house_mode = "main"
+	pending_house_action = ""
+	house_storage_withdraw_items = []
+	house_storage_discard_index = -1
+	house_storage_register_index = -1
+	display_house_main()
+	update_action_bar()
+
+func _on_sanct_panel_tab_changed(tab_id: String) -> void:
+	if tab_id == "storage":
+		house_mode = "storage"
+		pending_house_action = ""
+		house_storage_page = 0
+		display_house_storage()
+		update_action_bar()
+	elif tab_id == "upgrades":
+		house_mode = "upgrades"
+		pending_house_action = ""
+		house_upgrades_page = 0
+		display_house_upgrades()
+		update_action_bar()
+
+func _on_sanct_panel_withdraw_toggled(item_index: int) -> void:
+	if item_index < 0:
+		return
+	if item_index in house_storage_withdraw_items:
+		house_storage_withdraw_items.erase(item_index)
+	else:
+		house_storage_withdraw_items.append(item_index)
+	display_house_storage()
+	update_action_bar()
+
+func _on_sanct_panel_register_requested(item_index: int) -> void:
+	if item_index < 0:
+		return
+	send_to_server({"type": "house_register_from_storage", "index": item_index})
+
+func _on_sanct_panel_discard_requested(item_index: int) -> void:
+	if item_index < 0:
+		return
+	# Confirm via dialog before sending
+	var dialog := ConfirmationDialog.new()
+	dialog.dialog_text = "Discard this stored item permanently?"
+	dialog.title = "Confirm Discard"
+	dialog.confirmed.connect(func():
+		send_to_server({"type": "house_discard_item", "index": item_index})
+		dialog.queue_free())
+	dialog.canceled.connect(func(): dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+func _on_sanct_panel_withdraw_confirm() -> void:
+	# Move queued items into pending list, server stores intent for next character.
+	if house_storage_withdraw_items.size() > 0:
+		house_pending_withdraw_indices = house_storage_withdraw_items.duplicate()
+	house_storage_withdraw_items = []
+	display_house_storage()
+	update_action_bar()
+
+func _on_sanct_panel_withdraw_clear() -> void:
+	house_storage_withdraw_items = []
+	display_house_storage()
+	update_action_bar()
+
+func _on_sanct_panel_upgrade_buy(upgrade_id: String) -> void:
+	if upgrade_id == "":
+		return
+	send_to_server({"type": "house_upgrade", "upgrade_id": upgrade_id})
+
+func _on_sanct_panel_upgrade_page(page_index: int) -> void:
+	house_upgrades_page = page_index
+	display_house_upgrades()
+
 func _populate_companions_panel() -> void:
 	if companions_panel == null:
 		return
@@ -28949,6 +29066,8 @@ func display_house_main():
 
 func display_house_storage():
 	"""Display house storage with items and withdraw options"""
+	# Push state to the visual sanctuary panel; text below stays for fallback
+	_populate_sanctuary_panel()
 	game_output.clear()
 	house_mode = "storage"
 	_update_house_map()
@@ -29319,6 +29438,7 @@ func _toggle_mixed_fusion_companion(page_index: int):
 
 func display_house_upgrades():
 	"""Display available house upgrades with pagination"""
+	_populate_sanctuary_panel()
 	game_output.clear()
 	house_mode = "upgrades"
 	_update_house_map()
