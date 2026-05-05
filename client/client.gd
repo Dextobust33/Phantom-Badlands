@@ -408,6 +408,7 @@ var game_state = GameState.DISCONNECTED
 @onready var sanctuary_panel = $RootContainer/TopSection/GameOutputContainer/SanctuaryPanel
 @onready var kennel_panel = $RootContainer/TopSection/GameOutputContainer/KennelPanel
 @onready var fusion_panel = $RootContainer/TopSection/GameOutputContainer/FusionPanel
+@onready var ability_panel = $RootContainer/TopSection/GameOutputContainer/AbilityPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1544,6 +1545,14 @@ func _ready():
 		fusion_panel.same_fusion_pressed.connect(_on_fusion_panel_same_pressed)
 		fusion_panel.mixed_fusion_pressed.connect(_on_fusion_panel_mixed_pressed)
 
+	# Setup ability panel
+	if ability_panel:
+		ability_panel.client_ref = self
+		ability_panel.close_requested.connect(_on_ability_panel_close)
+		ability_panel.equip_requested.connect(_on_ability_panel_equip)
+		ability_panel.unequip_requested.connect(_on_ability_panel_unequip)
+		ability_panel.rebind_requested.connect(_on_ability_panel_rebind)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -2101,8 +2110,20 @@ func _process(delta):
 		if fusion_panel.visible != _fusion_should_show:
 			fusion_panel.visible = _fusion_should_show
 
+	# Sync ability panel — shows for ability_mode (More → Abilities). Hide for the
+	# keyboard sub-states (press_keybind, choose_ability, etc.) so the text prompt
+	# can take over for the keyboard listening step.
+	var _ability_should_show: bool = false
+	if ability_panel:
+		_ability_should_show = (ability_mode
+			and pending_ability_action == ""
+			and not ability_data.is_empty()
+			and game_state == GameState.PLAYING)
+		if ability_panel.visible != _ability_should_show:
+			ability_panel.visible = _ability_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show or _ability_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -14297,6 +14318,7 @@ func display_ability_menu():
 	"""Display the ability loadout management screen"""
 	if not ability_mode or ability_data.is_empty():
 		return
+	_populate_ability_panel()
 
 	game_output.clear()
 	display_game("[color=#FFD700]===== ABILITY LOADOUT =====[/color]")
@@ -20894,8 +20916,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.198 changes
+	display_game("[color=#00FF00]v0.9.198[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 6: Visual Ability Loadout[/color]")
+	display_game("  • More → Abilities is now a visual panel: 6 combat slot cards across the top, each showing the slot's keybind ([Q]/[W]/[E]/[R]/etc.) and the equipped ability with its cost")
+	display_game("  • Click an empty slot to enter choose-mode — the ability grid below highlights and clicking an unlocked ability assigns it. A Cancel button exits choose-mode")
+	display_game("  • Right-click a slot for Replace / Unequip / Rebind Key — Rebind drops to the existing keyboard prompt for the actual key press")
+	display_game("  • Locked abilities still show at the bottom in a greyed list with their unlock level — useful for planning your loadout as you level")
+	display_game("  • UI Facelift initiative complete — every major menu surface now has a visual panel with keyboard fallback")
+	display_game("")
+
 	# v0.9.197 changes
-	display_game("[color=#00FF00]v0.9.197[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.197[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 5b: Visual Kennel + Fusion[/color]")
 	display_game("  • Walk onto the Kennel (K) tile and your stored companions now appear as a grid of cards — sort cycler (Level / Tier / Sub-Tier / Variant / Name / Type) and asc/desc toggle in the header")
 	display_game("  • Right-click any kennel card for Register as Companion (greyed when registered slots are full) or Release — Release prompts a confirm dialog")
@@ -20932,24 +20964,6 @@ func display_changelog():
 	display_game("  • Listing-creation prompts and partial-quantity buys still use the keyboard for the qty step — the panel slice is browse + buy + cancel")
 	display_game("")
 
-	# v0.9.193 changes
-	display_game("[color=#00FFFF]v0.9.193[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 2: Visual Crafting Panel[/color]")
-	display_game("  • Walk up to a Forge / Apothecary / Enchanting Table / Writing Desk / Workbench and crafting now opens a visual panel: recipe list on the left, full recipe detail on the right")
-	display_game("  • Recipe rows are color-coded: green = craftable, grey = missing materials, dim = locked or specialist-gated")
-	display_game("  • Click a recipe to see materials with have/need counts, quantity stepper for bulk recipes, and a big Craft button — disabled when materials are short")
-	display_game("  • Skill chips at the top let you switch between Forge / Alch / Ench / Scribe / Build when you opened crafting from a menu (station bumps stay locked to that station)")
-	display_game("  • Keyboard shortcuts still work — challenge minigame, temper select, and the result screen continue to use the text view as before")
-	display_game("")
-
-
-	# v0.9.182 changes
-	display_game("[color=#00FFFF]v0.9.182[/color]")
-	display_game("  [color=#FFD700]Mini bars + shortcuts on the same row[/color]")
-	display_game("  • Shortcut buttons now actually go INSIDE the StatusRow (were accidentally a sibling row — which is why they rendered below the mini bars)")
-	display_game("  • Row split 2:1 to mirror GameOutput:MapPanel — bars end where GameOutput ends, shortcut buttons end where MapPanel ends")
-	display_game("  • Both vertically centered in the row so they line up")
-	display_game("")
 
 	# v0.9.181 changes
 	display_game("[color=#00FFFF]v0.9.181[/color]")
@@ -25436,6 +25450,63 @@ func _on_fusion_panel_mixed_pressed(indices: Array) -> void:
 	if indices.size() != 8:
 		return
 	send_to_server({"type": "house_fusion", "fusion_type": "mixed", "indices": indices})
+
+# === Ability panel (More → Abilities) ===
+
+func _populate_ability_panel() -> void:
+	if ability_panel == null:
+		return
+	if ability_data.is_empty():
+		return
+	var equipped = ability_data.get("equipped_abilities", [])
+	# Pad to 6 slots
+	var equipped_padded: Array = []
+	for i in range(6):
+		if i < equipped.size():
+			var v = equipped[i]
+			equipped_padded.append("" if v == null else str(v))
+		else:
+			equipped_padded.append("")
+	var unlocked = ability_data.get("unlocked_abilities", [])
+	var all_abilities = ability_data.get("all_abilities", [])
+	var slot_keys: Array = []
+	for i in range(6):
+		# Combat ability slot i maps to action bar index (4 + i)
+		slot_keys.append(get_action_key_name(4 + i))
+	var path = _get_player_active_path()
+	var path_color = "#FFCC66"
+	if path == "mage":
+		path_color = "#66CCFF"
+	elif path == "trickster":
+		path_color = "#66FF66"
+	var char_class = str(character_data.get("class", "Fighter"))
+	var path_label = "[color=%s]%s[/color]  [color=#888888](%s path)[/color]" % [path_color, char_class, path.capitalize()]
+	var player_level = int(character_data.get("level", 1))
+	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label)
+
+func _on_ability_panel_close() -> void:
+	exit_ability_mode()
+
+func _on_ability_panel_equip(slot: int, ability_name: String) -> void:
+	if slot < 0 or slot > 5 or ability_name == "":
+		return
+	send_to_server({"type": "equip_ability", "slot": slot, "ability": ability_name})
+
+func _on_ability_panel_unequip(slot: int) -> void:
+	if slot < 0 or slot > 5:
+		return
+	send_to_server({"type": "unequip_ability", "slot": slot})
+
+func _on_ability_panel_rebind(slot: int) -> void:
+	if slot < 0 or slot > 5:
+		return
+	# Use the existing keyboard-listening flow: panel hides when pending_ability_action != "",
+	# the text prompt shows and _input() listens for the next key press.
+	selected_ability_slot = slot
+	pending_ability_action = "press_keybind"
+	display_game("")
+	display_game("[color=#FFD700]Press a key for slot %d (any letter), or [%s] to cancel:[/color]" % [slot + 1, get_action_key_name(0)])
+	update_action_bar()
 
 func _populate_companions_panel() -> void:
 	if companions_panel == null:
