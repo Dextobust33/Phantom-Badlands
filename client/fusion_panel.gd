@@ -1,0 +1,531 @@
+extends Control
+class_name FusionPanel
+
+# Visual surface for the F-tile (Fusion Station) sub-mode of the Sanctuary.
+# Two tabs:
+# - Same Type: list of fuseable groups (3 same monster + sub-tier → 1 higher
+#   sub-tier). Click a group → confirm → fuse the first 3 in the group.
+# - Mixed T9: grid of all sub-tier 8 companions. Click cards to toggle
+#   selection (up to 8). Fuse button activates when exactly 8 are selected.
+
+signal close_requested
+signal tab_changed(tab_id: String)
+signal same_fusion_pressed(indices: Array)
+signal mixed_fusion_pressed(indices: Array)
+
+const TAB_SAME := "same"
+const TAB_MIXED := "mixed"
+
+var client_ref = null
+
+var _current_tab: String = TAB_SAME
+var _groups: Array = []
+var _t8_companions: Array = []
+var _mixed_selected: Array = []
+
+var _root_panel: PanelContainer
+var _title_label: Label
+var _tab_same_btn: Button
+var _tab_mixed_btn: Button
+var _summary_label: RichTextLabel
+
+# Same-Type tab nodes
+var _same_tab: VBoxContainer
+var _same_list_vbox: VBoxContainer
+var _same_empty_label: Label
+
+# Mixed T9 tab nodes
+var _mixed_tab: VBoxContainer
+var _mixed_count_label: RichTextLabel
+var _mixed_grid: HFlowContainer
+var _mixed_empty_label: Label
+var _mixed_fuse_btn: Button
+var _mixed_clear_btn: Button
+
+var _same_confirm_dialog: ConfirmationDialog
+var _pending_same_indices: Array = []
+var _pending_same_label: String = ""
+
+var _mixed_confirm_dialog: ConfirmationDialog
+
+
+func _ready() -> void:
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	clip_contents = true
+	_build_layout()
+	visible = false
+
+
+func _build_layout() -> void:
+	_root_panel = PanelContainer.new()
+	_root_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.055, 0.045, 0.97)
+	sb.border_color = Color(0.55, 0.45, 0.33, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 8
+	sb.content_margin_top = 8
+	sb.content_margin_right = 8
+	sb.content_margin_bottom = 8
+	_root_panel.add_theme_stylebox_override("panel", sb)
+	add_child(_root_panel)
+
+	var root_vbox := VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 6)
+	_root_panel.add_child(root_vbox)
+
+	# Header
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 14)
+	root_vbox.add_child(header)
+
+	_title_label = Label.new()
+	_title_label.text = "Sanctuary — Fusion Station"
+	_title_label.add_theme_color_override("font_color", Color(1, 0.84, 0))
+	_title_label.add_theme_font_size_override("font_size", 18)
+	header.add_child(_title_label)
+
+	_summary_label = RichTextLabel.new()
+	_summary_label.bbcode_enabled = true
+	_summary_label.fit_content = true
+	_summary_label.scroll_active = false
+	_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_label.custom_minimum_size = Vector2(0, 22)
+	_summary_label.add_theme_font_size_override("normal_font_size", 13)
+	header.add_child(_summary_label)
+
+	# Tabs
+	var tab_row := HBoxContainer.new()
+	tab_row.add_theme_constant_override("separation", 4)
+	root_vbox.add_child(tab_row)
+
+	_tab_same_btn = _make_tab_button("Same Type", _on_tab_same_pressed)
+	_tab_mixed_btn = _make_tab_button("Mixed T9", _on_tab_mixed_pressed)
+	tab_row.add_child(_tab_same_btn)
+	tab_row.add_child(_tab_mixed_btn)
+
+	var tab_spacer := Control.new()
+	tab_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tab_row.add_child(tab_spacer)
+
+	# Same-Type tab body
+	_same_tab = VBoxContainer.new()
+	_same_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_same_tab.add_theme_constant_override("separation", 6)
+	root_vbox.add_child(_same_tab)
+
+	var same_hint := RichTextLabel.new()
+	same_hint.bbcode_enabled = true
+	same_hint.fit_content = true
+	same_hint.scroll_active = false
+	same_hint.add_theme_font_size_override("normal_font_size", 12)
+	same_hint.text = "[color=#888888]3 same-type companions at the same sub-tier → 1 companion at the next sub-tier (max T9). The 3 inputs are destroyed.[/color]"
+	_same_tab.add_child(same_hint)
+
+	var same_panel := _make_subpanel()
+	same_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	same_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_same_tab.add_child(same_panel)
+
+	var same_scroll := ScrollContainer.new()
+	same_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	same_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	same_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	same_panel.add_child(same_scroll)
+
+	_same_list_vbox = VBoxContainer.new()
+	_same_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_same_list_vbox.add_theme_constant_override("separation", 4)
+	same_scroll.add_child(_same_list_vbox)
+
+	_same_empty_label = Label.new()
+	_same_empty_label.text = "No fuseable groups yet — need 3+ companions of the same type and sub-tier in the kennel."
+	_same_empty_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	_same_empty_label.add_theme_font_size_override("font_size", 13)
+	_same_empty_label.visible = false
+	_same_list_vbox.add_child(_same_empty_label)
+
+	# Mixed T9 tab body
+	_mixed_tab = VBoxContainer.new()
+	_mixed_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_mixed_tab.add_theme_constant_override("separation", 6)
+	root_vbox.add_child(_mixed_tab)
+
+	var mixed_hint := RichTextLabel.new()
+	mixed_hint.bbcode_enabled = true
+	mixed_hint.fit_content = true
+	mixed_hint.scroll_active = false
+	mixed_hint.add_theme_font_size_override("normal_font_size", 12)
+	mixed_hint.text = "[color=#888888]Combine 8 sub-tier 8 companions of any type into 1 random T9 companion. All 8 inputs are destroyed.[/color]"
+	_mixed_tab.add_child(mixed_hint)
+
+	var mixed_count_row := HBoxContainer.new()
+	mixed_count_row.add_theme_constant_override("separation", 8)
+	_mixed_tab.add_child(mixed_count_row)
+
+	_mixed_count_label = RichTextLabel.new()
+	_mixed_count_label.bbcode_enabled = true
+	_mixed_count_label.fit_content = true
+	_mixed_count_label.scroll_active = false
+	_mixed_count_label.add_theme_font_size_override("normal_font_size", 14)
+	_mixed_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mixed_count_row.add_child(_mixed_count_label)
+
+	_mixed_clear_btn = Button.new()
+	_mixed_clear_btn.text = "Clear"
+	_mixed_clear_btn.focus_mode = Control.FOCUS_NONE
+	_mixed_clear_btn.add_theme_font_size_override("font_size", 12)
+	_mixed_clear_btn.custom_minimum_size = Vector2(80, 28)
+	_mixed_clear_btn.pressed.connect(_on_mixed_clear_pressed)
+	mixed_count_row.add_child(_mixed_clear_btn)
+
+	_mixed_fuse_btn = Button.new()
+	_mixed_fuse_btn.text = "Fuse!"
+	_mixed_fuse_btn.focus_mode = Control.FOCUS_NONE
+	_mixed_fuse_btn.add_theme_font_size_override("font_size", 13)
+	_mixed_fuse_btn.custom_minimum_size = Vector2(120, 28)
+	_mixed_fuse_btn.disabled = true
+	_mixed_fuse_btn.pressed.connect(_on_mixed_fuse_pressed)
+	mixed_count_row.add_child(_mixed_fuse_btn)
+
+	var mixed_panel := _make_subpanel()
+	mixed_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mixed_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_mixed_tab.add_child(mixed_panel)
+
+	var mixed_scroll := ScrollContainer.new()
+	mixed_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mixed_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mixed_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	mixed_panel.add_child(mixed_scroll)
+
+	_mixed_grid = HFlowContainer.new()
+	_mixed_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mixed_grid.add_theme_constant_override("h_separation", 6)
+	_mixed_grid.add_theme_constant_override("v_separation", 6)
+	mixed_scroll.add_child(_mixed_grid)
+
+	_mixed_empty_label = Label.new()
+	_mixed_empty_label.text = "No sub-tier 8 companions in the kennel yet."
+	_mixed_empty_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	_mixed_empty_label.add_theme_font_size_override("font_size", 13)
+	_mixed_empty_label.visible = false
+	_mixed_grid.add_child(_mixed_empty_label)
+
+	# Bottom action row
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 8)
+	root_vbox.add_child(action_row)
+
+	var action_spacer := Control.new()
+	action_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(action_spacer)
+
+	var close_btn := Button.new()
+	close_btn.text = "Close (Space)"
+	close_btn.focus_mode = Control.FOCUS_NONE
+	close_btn.add_theme_font_size_override("font_size", 12)
+	close_btn.custom_minimum_size = Vector2(0, 30)
+	close_btn.pressed.connect(_on_close_pressed)
+	action_row.add_child(close_btn)
+
+	# Confirm dialogs
+	_same_confirm_dialog = ConfirmationDialog.new()
+	_same_confirm_dialog.title = "Confirm Fusion"
+	_same_confirm_dialog.confirmed.connect(_on_same_confirm_dialog_confirmed)
+	add_child(_same_confirm_dialog)
+
+	_mixed_confirm_dialog = ConfirmationDialog.new()
+	_mixed_confirm_dialog.title = "Confirm T9 Fusion"
+	_mixed_confirm_dialog.dialog_text = "Fuse 8 selected sub-tier 8 companions into 1 random T9? All 8 inputs will be destroyed."
+	_mixed_confirm_dialog.confirmed.connect(_on_mixed_confirm_dialog_confirmed)
+	add_child(_mixed_confirm_dialog)
+
+	_set_tab(TAB_SAME)
+	_update_tab_styles()
+
+
+func _make_subpanel() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.045, 0.035, 0.025, 0.7)
+	sb.border_color = Color(0.4, 0.34, 0.25, 0.6)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 6
+	sb.content_margin_top = 6
+	sb.content_margin_right = 6
+	sb.content_margin_bottom = 6
+	p.add_theme_stylebox_override("panel", sb)
+	return p
+
+
+func _make_tab_button(label: String, callback: Callable) -> Button:
+	var b := Button.new()
+	b.text = label
+	b.focus_mode = Control.FOCUS_NONE
+	b.toggle_mode = true
+	b.add_theme_font_size_override("font_size", 14)
+	b.custom_minimum_size = Vector2(120, 32)
+	b.pressed.connect(callback)
+	return b
+
+
+# === Public API ===
+
+func populate(groups: Array, t8_companions: Array, current_tab: String) -> void:
+	if not is_inside_tree():
+		return
+	_groups = groups
+	_t8_companions = t8_companions
+	# Drop any selections that no longer exist.
+	var valid_indices := {}
+	for entry in t8_companions:
+		valid_indices[int(entry.get("index", -1))] = true
+	var filtered: Array = []
+	for idx in _mixed_selected:
+		if valid_indices.has(int(idx)):
+			filtered.append(int(idx))
+	_mixed_selected = filtered
+	if current_tab in [TAB_SAME, TAB_MIXED]:
+		_current_tab = current_tab
+	_set_tab(_current_tab)
+	_update_tab_styles()
+	_update_summary()
+	_rebuild_same_list()
+	_rebuild_mixed_grid()
+
+
+# === Internal rendering ===
+
+func _set_tab(tab: String) -> void:
+	_same_tab.visible = (tab == TAB_SAME)
+	_mixed_tab.visible = (tab == TAB_MIXED)
+
+
+func _update_tab_styles() -> void:
+	_tab_same_btn.button_pressed = (_current_tab == TAB_SAME)
+	_tab_mixed_btn.button_pressed = (_current_tab == TAB_MIXED)
+
+
+func _update_summary() -> void:
+	var groups_count := _groups.size()
+	var t8_count := _t8_companions.size()
+	_summary_label.text = "[color=#00FF00]Fuseable groups:[/color] %d   [color=#FF00FF]T8 companions:[/color] %d / 8" % [groups_count, t8_count]
+
+
+func _rebuild_same_list() -> void:
+	for child in _same_list_vbox.get_children():
+		if child == _same_empty_label:
+			continue
+		child.queue_free()
+
+	if _groups.is_empty():
+		_same_empty_label.visible = true
+		return
+	_same_empty_label.visible = false
+
+	for gi in range(_groups.size()):
+		var row := _make_same_group_row(_groups[gi], gi)
+		_same_list_vbox.add_child(row)
+
+
+func _make_same_group_row(group: Dictionary, _group_index: int) -> Button:
+	var btn := Button.new()
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.custom_minimum_size = Vector2(0, 40)
+	btn.add_theme_font_size_override("font_size", 13)
+
+	var monster_type = str(group.get("monster_type", "?"))
+	var tier = int(group.get("tier", 1))
+	var sub_tier = int(group.get("sub_tier", 1))
+	var count = int(group.get("count", 0))
+	var next_st = mini(sub_tier + 1, 9)
+	var indices: Array = group.get("indices", [])
+
+	btn.text = "%s  T%d-%d  ×%d  →  %s T%d-%d" % [monster_type, tier, sub_tier, count, monster_type, tier, next_st]
+
+	# Take first 3 of the available indices.
+	var first_three: Array = []
+	for i in range(mini(3, indices.size())):
+		first_three.append(int(indices[i]))
+
+	var label = "Fuse 3× %s T%d-%d → 1× %s T%d-%d?" % [monster_type, tier, sub_tier, monster_type, tier, next_st]
+	btn.pressed.connect(_on_same_group_pressed.bind(first_three, label))
+	return btn
+
+
+func _on_same_group_pressed(indices: Array, label: String) -> void:
+	if indices.size() != 3:
+		return
+	_pending_same_indices = indices
+	_pending_same_label = label
+	_same_confirm_dialog.dialog_text = label + "\n\nThe 3 input companions will be destroyed."
+	_same_confirm_dialog.popup_centered()
+
+
+func _on_same_confirm_dialog_confirmed() -> void:
+	if _pending_same_indices.size() == 3:
+		emit_signal("same_fusion_pressed", _pending_same_indices.duplicate())
+	_pending_same_indices = []
+	_pending_same_label = ""
+
+
+func _rebuild_mixed_grid() -> void:
+	for child in _mixed_grid.get_children():
+		if child == _mixed_empty_label:
+			continue
+		child.queue_free()
+
+	_update_mixed_count()
+
+	if _t8_companions.is_empty():
+		_mixed_empty_label.visible = true
+		return
+	_mixed_empty_label.visible = false
+
+	for entry in _t8_companions:
+		var comp: Dictionary = entry.get("companion", {})
+		var idx = int(entry.get("index", -1))
+		var card := _make_mixed_card(comp, idx)
+		_mixed_grid.add_child(card)
+
+
+func _update_mixed_count() -> void:
+	var count := _mixed_selected.size()
+	var color := "#00FF00" if count == 8 else ("#FFAA00" if count > 0 else "#AAAAAA")
+	_mixed_count_label.text = "[color=%s]Selected: %d / 8[/color]" % [color, count]
+	_mixed_fuse_btn.disabled = (count != 8)
+	_mixed_clear_btn.disabled = (count == 0)
+
+
+func _make_mixed_card(c: Dictionary, kennel_index: int) -> PanelContainer:
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	var selected := kennel_index in _mixed_selected
+	if selected:
+		sb.bg_color = Color(0.18, 0.08, 0.22, 0.95)
+		sb.border_color = Color(1.0, 0.0, 1.0, 0.9)
+		sb.set_border_width_all(2)
+	else:
+		sb.bg_color = Color(0.06, 0.05, 0.04, 0.95)
+		sb.border_color = Color(0.4, 0.34, 0.25, 0.7)
+		sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 6
+	sb.content_margin_top = 4
+	sb.content_margin_right = 6
+	sb.content_margin_bottom = 4
+	card.add_theme_stylebox_override("panel", sb)
+	card.custom_minimum_size = Vector2(220, 80)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 2)
+	card.add_child(vbox)
+
+	var name_lbl := RichTextLabel.new()
+	name_lbl.bbcode_enabled = true
+	name_lbl.fit_content = true
+	name_lbl.scroll_active = false
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.add_theme_font_size_override("normal_font_size", 13)
+	var name = str(c.get("name", "?"))
+	var variant = str(c.get("variant", "Normal"))
+	var variant_color = str(c.get("variant_color", "#FFFFFF"))
+	var rarity_color = "#FFFFFF"
+	var rarity_tag = ""
+	if client_ref and client_ref.has_method("_get_variant_rarity_info"):
+		var info: Dictionary = client_ref._get_variant_rarity_info(variant)
+		rarity_color = str(info.get("color", "#FFFFFF"))
+		rarity_tag = str(info.get("tier", ""))
+	var rarity_prefix = ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
+	var sel_marker = "[color=#FF00FF]●[/color] " if selected else ""
+	name_lbl.text = "%s%s[color=%s]%s[/color]" % [sel_marker, rarity_prefix, variant_color, name]
+	vbox.add_child(name_lbl)
+
+	var meta := RichTextLabel.new()
+	meta.bbcode_enabled = true
+	meta.fit_content = true
+	meta.scroll_active = false
+	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meta.add_theme_font_size_override("normal_font_size", 12)
+	var level = int(c.get("level", 1))
+	var tier = int(c.get("tier", 1))
+	meta.text = "[color=#AAAAAA]Lv %d  T%d-8[/color]  [color=%s]%s[/color]" % [level, tier, variant_color, variant]
+	vbox.add_child(meta)
+
+	var bonuses := RichTextLabel.new()
+	bonuses.bbcode_enabled = true
+	bonuses.fit_content = true
+	bonuses.scroll_active = false
+	bonuses.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bonuses.add_theme_font_size_override("normal_font_size", 11)
+	var bonus_text := ""
+	if client_ref and client_ref.has_method("_get_companion_card_bonus_summary"):
+		bonus_text = str(client_ref._get_companion_card_bonus_summary(c))
+	bonuses.text = bonus_text
+	vbox.add_child(bonuses)
+
+	card.gui_input.connect(_on_mixed_card_input.bind(kennel_index))
+	return card
+
+
+func _on_mixed_card_input(event: InputEvent, kennel_index: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_toggle_mixed_selection(kennel_index)
+
+
+func _toggle_mixed_selection(kennel_index: int) -> void:
+	if kennel_index in _mixed_selected:
+		_mixed_selected.erase(kennel_index)
+	else:
+		if _mixed_selected.size() >= 8:
+			return  # Cap at 8
+		_mixed_selected.append(kennel_index)
+	_rebuild_mixed_grid()
+
+
+func _on_mixed_clear_pressed() -> void:
+	_mixed_selected.clear()
+	_rebuild_mixed_grid()
+
+
+func _on_mixed_fuse_pressed() -> void:
+	if _mixed_selected.size() == 8:
+		_mixed_confirm_dialog.popup_centered()
+
+
+func _on_mixed_confirm_dialog_confirmed() -> void:
+	if _mixed_selected.size() == 8:
+		emit_signal("mixed_fusion_pressed", _mixed_selected.duplicate())
+		_mixed_selected.clear()
+
+
+# === Tab callbacks ===
+
+func _on_tab_same_pressed() -> void:
+	if _current_tab == TAB_SAME:
+		_tab_same_btn.button_pressed = true
+		return
+	_current_tab = TAB_SAME
+	_set_tab(TAB_SAME)
+	_update_tab_styles()
+	emit_signal("tab_changed", TAB_SAME)
+
+
+func _on_tab_mixed_pressed() -> void:
+	if _current_tab == TAB_MIXED:
+		_tab_mixed_btn.button_pressed = true
+		return
+	_current_tab = TAB_MIXED
+	_set_tab(TAB_MIXED)
+	_update_tab_styles()
+	emit_signal("tab_changed", TAB_MIXED)
+
+
+func _on_close_pressed() -> void:
+	emit_signal("close_requested")

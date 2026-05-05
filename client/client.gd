@@ -406,6 +406,8 @@ var game_state = GameState.DISCONNECTED
 @onready var market_panel = $RootContainer/TopSection/GameOutputContainer/MarketPanel
 @onready var companions_panel = $RootContainer/TopSection/GameOutputContainer/CompanionsPanel
 @onready var sanctuary_panel = $RootContainer/TopSection/GameOutputContainer/SanctuaryPanel
+@onready var kennel_panel = $RootContainer/TopSection/GameOutputContainer/KennelPanel
+@onready var fusion_panel = $RootContainer/TopSection/GameOutputContainer/FusionPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -561,6 +563,11 @@ var house_fusion_type: String = ""  # "", "same", "mixed"
 var house_fusion_selected: Array = []
 var house_fusion_page: int = 0
 var pending_home_stone_choice: bool = false
+
+# KennelPanel + FusionPanel ui state (visual panels for the K/F tile sub-modes)
+var kennel_panel_sort_option: String = "level"
+var kennel_panel_sort_ascending: bool = false
+var fusion_panel_tab: String = "same"  # "same" or "mixed"
 
 # House grid system - player moves in ASCII house
 var house_player_x: int = 4  # Player X position in house grid
@@ -1521,6 +1528,22 @@ func _ready():
 		sanctuary_panel.upgrade_buy_pressed.connect(_on_sanct_panel_upgrade_buy)
 		sanctuary_panel.upgrade_page_changed.connect(_on_sanct_panel_upgrade_page)
 
+	# Setup kennel panel
+	if kennel_panel:
+		kennel_panel.client_ref = self
+		kennel_panel.close_requested.connect(_on_kennel_panel_close)
+		kennel_panel.release_requested.connect(_on_kennel_panel_release)
+		kennel_panel.register_requested.connect(_on_kennel_panel_register)
+		kennel_panel.sort_changed.connect(_on_kennel_panel_sort_changed)
+
+	# Setup fusion panel
+	if fusion_panel:
+		fusion_panel.client_ref = self
+		fusion_panel.close_requested.connect(_on_fusion_panel_close)
+		fusion_panel.tab_changed.connect(_on_fusion_panel_tab_changed)
+		fusion_panel.same_fusion_pressed.connect(_on_fusion_panel_same_pressed)
+		fusion_panel.mixed_fusion_pressed.connect(_on_fusion_panel_mixed_pressed)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -2057,8 +2080,29 @@ func _process(delta):
 		if sanctuary_panel.visible != _sanct_should_show:
 			sanctuary_panel.visible = _sanct_should_show
 
+	# Sync kennel panel — shows in HOUSE_SCREEN when on the K tile (house_mode == "kennel").
+	# Hide for keyboard sub-states (release_select, register_select); panel uses its own
+	# right-click + dialog flow, so those text states stay text-driven for fallback.
+	var _kennel_should_show: bool = false
+	if kennel_panel:
+		_kennel_should_show = (game_state == GameState.HOUSE_SCREEN
+			and house_mode == "kennel"
+			and pending_house_action == "")
+		if kennel_panel.visible != _kennel_should_show:
+			kennel_panel.visible = _kennel_should_show
+
+	# Sync fusion panel — shows on the F tile, but only in the type-picker / picker views,
+	# not the keyboard *_confirm sub-states (those use action bar Fuse! button).
+	var _fusion_should_show: bool = false
+	if fusion_panel:
+		_fusion_should_show = (game_state == GameState.HOUSE_SCREEN
+			and house_mode == "fusion"
+			and pending_house_action == "")
+		if fusion_panel.visible != _fusion_should_show:
+			fusion_panel.visible = _fusion_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -20850,13 +20894,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.197 changes
+	display_game("[color=#00FF00]v0.9.197[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 5b: Visual Kennel + Fusion[/color]")
+	display_game("  • Walk onto the Kennel (K) tile and your stored companions now appear as a grid of cards — sort cycler (Level / Tier / Sub-Tier / Variant / Name / Type) and asc/desc toggle in the header")
+	display_game("  • Right-click any kennel card for Register as Companion (greyed when registered slots are full) or Release — Release prompts a confirm dialog")
+	display_game("  • Walk onto the Fusion (F) tile and you get tabs for Same Type / Mixed T9 — Same lists every fuseable group with a one-click confirm; Mixed shows every sub-tier 8 companion as a card")
+	display_game("  • Mixed T9: click cards to toggle selection (up to 8), counter at the top turns gold/green as you fill it, Fuse! button activates when exactly 8 are selected, Clear empties the selection in one click")
+	display_game("  • Keyboard fallback (action bar Same / Mixed buttons + number keys) still works — Sanctuary UI Facelift is now complete except for the action bar / hotbar pass")
+	display_game("")
+
 	# v0.9.196 changes
-	display_game("[color=#00FF00]v0.9.196[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.196[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 5a: Visual Sanctuary (Storage + Upgrades)[/color]")
 	display_game("  • Walk onto the Storage (S) tile in your Sanctuary and you now get a visual panel: capacity bar, item list, right-click any item for Mark for Withdraw / Register as Companion / Discard")
 	display_game("  • Walk onto the Upgrade (U) tile and you get a visual upgrade browser with Base / Combat / Stats sub-tabs — each upgrade is a card showing current/max level, effect, and a Buy button that disables itself when maxed or you're short on Baddie Points")
 	display_game("  • Storage and Upgrades tabs at the top of the panel let you switch between them without walking back to the other tile")
-	display_game("  • Walking around the Sanctuary map still works the same way; Kennel (K) and Fusion (F) tiles are still text-driven for now")
 	display_game("")
 
 	# v0.9.195 changes
@@ -20889,20 +20942,6 @@ func display_changelog():
 	display_game("  • Keyboard shortcuts still work — challenge minigame, temper select, and the result screen continue to use the text view as before")
 	display_game("")
 
-	# v0.9.192 changes
-	display_game("[color=#00FFFF]v0.9.192[/color]")
-	display_game("  [color=#FFD700]Maximized window on launch + dead text-inventory cleanup[/color]")
-	display_game("  • Client now starts maximized in a window instead of exclusive fullscreen — easier to alt-tab and resize")
-	display_game("  • Item-use feedback (\"Used Minor Health Potion: +50 HP\") now shows directly in the visual inventory panel's status row, not the hidden game output")
-	display_game("  • Stripped ~220 lines of dead text-rendering inside the inventory view that were already obscured by the new visual panel — keyboard sub-modes (sort/salvage/inspect) keep their text fallbacks")
-	display_game("")
-
-	# v0.9.185 changes
-	display_game("[color=#00FFFF]v0.9.185[/color]")
-	display_game("  [color=#FFD700]Examine popup — item details actually reset now[/color]")
-	display_game("  • v0.9.184 tried to cache the popup's BBCode via RichTextLabel.text, but Godot 4's RichTextLabel doesn't update .text after append_text — snapshot was empty and the clear never happened")
-	display_game("  • Now caches the raw player data dict and rebuilds the base popup on each item click")
-	display_game("")
 
 	# v0.9.182 changes
 	display_game("[color=#00FFFF]v0.9.182[/color]")
@@ -25332,6 +25371,72 @@ func _on_sanct_panel_upgrade_page(page_index: int) -> void:
 	house_upgrades_page = page_index
 	display_house_upgrades()
 
+# === Kennel panel (K tile) ===
+
+func _populate_kennel_panel() -> void:
+	if kennel_panel == null:
+		return
+	var kennel = house_data.get("companion_kennel", {})
+	var companions = kennel.get("companions", [])
+	var capacity = _get_house_kennel_capacity()
+	var registered_count = house_data.get("registered_companions", {}).get("companions", []).size()
+	var registered_cap = _get_house_companion_capacity()
+	var can_register = registered_count < registered_cap
+	kennel_panel.populate(companions, capacity, can_register, kennel_panel_sort_option, kennel_panel_sort_ascending)
+
+func _on_kennel_panel_close() -> void:
+	house_mode = "main"
+	pending_house_action = ""
+	display_house_main()
+	update_action_bar()
+
+func _on_kennel_panel_release(index: int) -> void:
+	if index < 0:
+		return
+	send_to_server({"type": "house_kennel_release", "index": index})
+
+func _on_kennel_panel_register(index: int) -> void:
+	if index < 0:
+		return
+	send_to_server({"type": "house_kennel_register", "index": index})
+
+func _on_kennel_panel_sort_changed(sort_option: String, ascending: bool) -> void:
+	kennel_panel_sort_option = sort_option
+	kennel_panel_sort_ascending = ascending
+	_populate_kennel_panel()
+
+# === Fusion panel (F tile) ===
+
+func _populate_fusion_panel() -> void:
+	if fusion_panel == null:
+		return
+	var kennel = house_data.get("companion_kennel", {})
+	var kennel_companions = kennel.get("companions", [])
+	var groups = _get_fuseable_groups(kennel_companions)
+	var t8_companions = _get_t8_companions(kennel_companions)
+	fusion_panel.populate(groups, t8_companions, fusion_panel_tab)
+
+func _on_fusion_panel_close() -> void:
+	house_mode = "main"
+	house_fusion_type = ""
+	house_fusion_selected = []
+	pending_house_action = ""
+	display_house_main()
+	update_action_bar()
+
+func _on_fusion_panel_tab_changed(tab_id: String) -> void:
+	fusion_panel_tab = tab_id
+
+func _on_fusion_panel_same_pressed(indices: Array) -> void:
+	if indices.size() != 3:
+		return
+	send_to_server({"type": "house_fusion", "fusion_type": "same", "indices": indices})
+
+func _on_fusion_panel_mixed_pressed(indices: Array) -> void:
+	if indices.size() != 8:
+		return
+	send_to_server({"type": "house_fusion", "fusion_type": "mixed", "indices": indices})
+
 func _populate_companions_panel() -> void:
 	if companions_panel == null:
 		return
@@ -29196,6 +29301,7 @@ func display_house_companions():
 
 func display_house_kennel():
 	"""Display the companion kennel (bulk storage for fusion)"""
+	_populate_kennel_panel()
 	game_output.clear()
 	house_mode = "kennel"
 	_update_house_map()
@@ -29257,6 +29363,7 @@ func display_house_kennel():
 
 func display_house_fusion():
 	"""Display the fusion station"""
+	_populate_fusion_panel()
 	game_output.clear()
 	house_mode = "fusion"
 	_update_house_map()
