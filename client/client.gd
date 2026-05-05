@@ -402,6 +402,7 @@ var game_state = GameState.DISCONNECTED
 @onready var game_output = $RootContainer/TopSection/GameOutputContainer/GameOutput
 @onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
 @onready var inventory_panel = $RootContainer/TopSection/GameOutputContainer/InventoryPanel
+@onready var crafting_panel = $RootContainer/TopSection/GameOutputContainer/CraftingPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1466,6 +1467,15 @@ func _ready():
 		inventory_panel.salvage_junk_requested.connect(_on_inv_panel_salvage)
 		inventory_panel.materials_requested.connect(_on_inv_panel_materials)
 
+	# Setup crafting panel
+	if crafting_panel:
+		crafting_panel.client_ref = self
+		crafting_panel.close_requested.connect(_on_craft_panel_close)
+		crafting_panel.recipe_selected.connect(_on_craft_panel_recipe_selected)
+		crafting_panel.craft_pressed.connect(_on_craft_panel_craft_pressed)
+		crafting_panel.quantity_changed.connect(_on_craft_panel_qty_changed)
+		crafting_panel.skill_changed.connect(_on_craft_panel_skill_changed)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -1952,14 +1962,31 @@ func _process(delta):
 
 	# Sync visual inventory panel visibility with inventory_mode (panel only shows
 	# during base browsing — text view still handles sub-modes for now)
+	var _inv_should_show: bool = false
+	var _craft_should_show: bool = false
 	if inventory_panel:
-		var _panel_should_show = (inventory_mode
+		_inv_should_show = (inventory_mode
 			and pending_inventory_action == ""
 			and game_state == GameState.PLAYING)
-		if inventory_panel.visible != _panel_should_show:
-			inventory_panel.visible = _panel_should_show
-		if game_output and game_output.visible == _panel_should_show:
-			game_output.visible = not _panel_should_show
+		if inventory_panel.visible != _inv_should_show:
+			inventory_panel.visible = _inv_should_show
+
+	# Sync crafting panel visibility — show when in skill+recipe browsing.
+	# Hide for challenge minigame, temper, awaiting result, and skill picker.
+	if crafting_panel:
+		_craft_should_show = (crafting_mode
+			and crafting_skill != ""
+			and not crafting_challenge_mode
+			and not crafting_temper_mode
+			and not awaiting_craft_result
+			and game_state == GameState.PLAYING)
+		if crafting_panel.visible != _craft_should_show:
+			crafting_panel.visible = _craft_should_show
+
+	# Hide the text game_output whenever a visual panel is showing
+	var _hide_text = _inv_should_show or _craft_should_show
+	if game_output and game_output.visible == _hide_text:
+		game_output.visible = not _hide_text
 
 	connection.poll()
 	var status = connection.get_status()
@@ -20749,8 +20776,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.193 changes
+	display_game("[color=#00FF00]v0.9.193[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 2: Visual Crafting Panel[/color]")
+	display_game("  • Walk up to a Forge / Apothecary / Enchanting Table / Writing Desk / Workbench and crafting now opens a visual panel: recipe list on the left, full recipe detail on the right")
+	display_game("  • Recipe rows are color-coded: green = craftable, grey = missing materials, dim = locked or specialist-gated")
+	display_game("  • Click a recipe to see materials with have/need counts, quantity stepper for bulk recipes, and a big Craft button — disabled when materials are short")
+	display_game("  • Skill chips at the top let you switch between Forge / Alch / Ench / Scribe / Build when you opened crafting from a menu (station bumps stay locked to that station)")
+	display_game("  • Keyboard shortcuts still work — challenge minigame, temper select, and the result screen continue to use the text view as before")
+	display_game("")
+
 	# v0.9.192 changes
-	display_game("[color=#00FF00]v0.9.192[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.192[/color]")
 	display_game("  [color=#FFD700]Maximized window on launch + dead text-inventory cleanup[/color]")
 	display_game("  • Client now starts maximized in a window instead of exclusive fullscreen — easier to alt-tab and resize")
 	display_game("  • Item-use feedback (\"Used Minor Health Potion: +50 HP\") now shows directly in the visual inventory panel's status row, not the hidden game output")
@@ -20785,16 +20822,6 @@ func display_changelog():
 	display_game("  • Stations no longer sit on a fixed grid near the top — they're sprinkled across the whole interior, with a 1-tile gap between neighbors so you can always walk around")
 	display_game("  • Tiles next to doors are avoided so entries stay clear")
 	display_game("  • Seed is still post-specific, so each post keeps its own unique layout between visits")
-	display_game("")
-
-	# v0.9.188 changes
-	display_game("[color=#00FFFF]v0.9.188[/color]")
-	display_game("  [color=#FFD700]Market stacks, post corners, station variety, resource respawns, keybind conflicts[/color]")
-	display_game("  • Market: listing a stack of consumables (like 5x Minor Health Potion) now lists the whole stack with the correct x5 qty and 5x valor — old code silently dropped the extras")
-	display_game("  • Post corners now block diagonal walk-through — players must actually use the doors")
-	display_game("  • Legacy posts now use the same shuffled station layout as new posts, so Forge/Blacksmith/Healer/Market positions vary between posts instead of being identical")
-	display_game("  • Resource respawns near trading posts: radius 12→22 tiles, respawn timer 15min→4min, so you don't have to venture far from a post")
-	display_game("  • Keybind conflicts: rebinding a key that's already bound now warns with a Y/N prompt and auto-moves the displaced action to an unused key instead of silently unbinding it")
 	display_game("")
 
 	# v0.9.185 changes
@@ -24747,6 +24774,8 @@ func handle_craft_list(message: Dictionary):
 
 func display_craft_recipe_list():
 	"""Display the list of available recipes"""
+	# Push state into the visual crafting panel
+	_populate_craft_panel()
 	game_output.clear()
 
 	var skill_display = crafting_skill.capitalize()
@@ -24869,6 +24898,9 @@ func display_craft_recipe_details():
 	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
 		return
 
+	# Sync the visual panel — it pulls recipe + qty + materials from the same state
+	_populate_craft_panel()
+
 	var recipe = crafting_recipes[crafting_selected_recipe]
 	var name = recipe.get("name", "Unknown")
 	var skill_req = recipe.get("skill_required", 1)
@@ -24934,6 +24966,64 @@ func display_craft_recipe_details():
 func _count_group_materials(group_key: String) -> int:
 	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
 	return DropTables.get_total_for_group(group_key, crafting_materials)
+
+func _get_group_material_label(group_key: String) -> String:
+	# Mirror of the inline formatting in display_craft_recipe_details for group keys
+	var parts = group_key.replace("@", "").split(":")
+	var stat_group = parts[0]
+	var tier_group = parts[1] if parts.size() > 1 else "minor"
+	var display = CraftingDatabase.PART_GROUP_DISPLAY.get(stat_group, stat_group)
+	var tier_range = CraftingDatabase.RUNE_TIER_RANGES.get(tier_group, [1, 9])
+	return "%s (T%d-T%d)" % [display, tier_range[0], tier_range[1]]
+
+func _get_simple_material_name(mat_id: String) -> String:
+	return CraftingDatabase.get_material_name(mat_id)
+
+func _populate_craft_panel() -> void:
+	if crafting_panel == null:
+		return
+	# When entered via station the player can't switch skills; otherwise the chips are useful.
+	crafting_panel.set_allow_skill_switch(not crafting_entered_via_station)
+	crafting_panel.populate(
+		crafting_skill,
+		crafting_recipes,
+		crafting_materials,
+		crafting_skill_level,
+		crafting_post_bonus,
+		crafting_job_bonus,
+		crafting_selected_recipe,
+		craft_quantity,
+	)
+
+func _on_craft_panel_close() -> void:
+	close_crafting()
+
+func _on_craft_panel_recipe_selected(index: int) -> void:
+	if index < 0 or index >= crafting_recipes.size():
+		return
+	var recipe = crafting_recipes[index]
+	if recipe.get("locked", false) or recipe.get("specialist_gated", false):
+		return
+	crafting_selected_recipe = index
+	craft_quantity = 1
+	display_craft_recipe_details()
+	update_action_bar()
+
+func _on_craft_panel_qty_changed(qty: int) -> void:
+	craft_quantity = max(1, qty)
+	display_craft_recipe_details()
+
+func _on_craft_panel_craft_pressed(_index: int, qty: int) -> void:
+	craft_quantity = max(1, qty)
+	confirm_craft()
+
+func _on_craft_panel_skill_changed(skill: String) -> void:
+	if skill == "" or skill == crafting_skill:
+		return
+	crafting_skill = skill
+	crafting_selected_recipe = -1
+	craft_quantity = 1
+	request_craft_list(skill)
 
 func _display_temper_target_selection():
 	"""Display temper target stat options for resource gambling craft."""
