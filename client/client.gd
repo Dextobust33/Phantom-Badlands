@@ -404,6 +404,7 @@ var game_state = GameState.DISCONNECTED
 @onready var inventory_panel = $RootContainer/TopSection/GameOutputContainer/InventoryPanel
 @onready var crafting_panel = $RootContainer/TopSection/GameOutputContainer/CraftingPanel
 @onready var market_panel = $RootContainer/TopSection/GameOutputContainer/MarketPanel
+@onready var companions_panel = $RootContainer/TopSection/GameOutputContainer/CompanionsPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1493,6 +1494,19 @@ func _ready():
 		market_panel.refresh_requested.connect(_on_market_panel_refresh)
 		market_panel.list_action_pressed.connect(_on_market_panel_list_action)
 
+	# Setup companions panel
+	if companions_panel:
+		companions_panel.client_ref = self
+		companions_panel.close_requested.connect(_on_comp_panel_close)
+		companions_panel.tab_changed.connect(_on_comp_panel_tab_changed)
+		companions_panel.companion_activated.connect(_on_comp_panel_activated)
+		companions_panel.companion_inspect_requested.connect(_on_comp_panel_inspect)
+		companions_panel.companion_release_requested.connect(_on_comp_panel_release)
+		companions_panel.companion_dismiss_requested.connect(_on_comp_panel_dismiss)
+		companions_panel.egg_freeze_toggled.connect(_on_comp_panel_egg_freeze)
+		companions_panel.sort_changed.connect(_on_comp_panel_sort_changed)
+		companions_panel.inspect_back_requested.connect(_on_comp_panel_inspect_back)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -2010,8 +2024,17 @@ func _process(delta):
 		if market_panel.visible != _market_should_show:
 			market_panel.visible = _market_should_show
 
+	# Sync companions panel — shows for both companions_mode and eggs_mode.
+	# Hide for keyboard sub-states (release confirm flow, etc.).
+	var _comp_should_show: bool = false
+	if companions_panel:
+		_comp_should_show = ((companions_mode and pending_companion_action in ["", "inspect"])
+			or eggs_mode) and game_state == GameState.PLAYING
+		if companions_panel.visible != _comp_should_show:
+			companions_panel.visible = _comp_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -20803,8 +20826,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.195 changes
+	display_game("[color=#00FF00]v0.9.195[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 4: Visual Companions + Eggs[/color]")
+	display_game("  • More → Companions is now a visual panel: active companion at the top with XP bar and Dismiss button, hatched companions below as a grid of cards")
+	display_game("  • Click any card to activate it, right-click for Inspect / Release / Activate; Inspect view shows full ability descriptions, in-combat bonuses, damage estimate, and a Release button")
+	display_game("  • Sort cycler (Level / Tier / Variant / Damage / Name / Type) and an asc/desc toggle in the top-right")
+	display_game("  • More → Eggs (or the Eggs tab on the Companions panel) shows each incubating egg as a card with its ASCII art, tier, progress bar, and frozen status — click to toggle freeze")
+	display_game("  • Sanctuary (Storage / Kennel / Fusion / Upgrades) deferred to its own future phase since it's a separate game state with several sub-modes")
+	display_game("")
+
 	# v0.9.194 changes
-	display_game("[color=#00FF00]v0.9.194[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.194[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 3: Visual Market Panel[/color]")
 	display_game("  • Walk up to a market ($ tile) and the market is now a visual panel — Browse / My Listings tabs, filter chips, sort cycler, listings on the left, item details + Buy button on the right")
 	display_game("  • Click any listing to inspect; click Buy to purchase the full stack — disabled and red when you can't afford it")
@@ -20840,17 +20873,6 @@ func display_changelog():
 	display_game("  • Filter chips (All / Weapons / Armor / Accessories / Tools / Consumables / Materials), one-press Salvage Junk, and a Sort menu with 9 modes (level, rarity, type, recently acquired, ...)")
 	display_game("  • Stats only show resources for your class (Sorcerer no longer sees STA/EN regen) and stat tokens stay on a single line — no more \"+3\" wrapping above the stat name")
 	display_game("  • Client now launches in fullscreen and auto-connects to your last server. If you have a saved username, the password field is focused on the login screen so you can start typing immediately")
-	display_game("")
-
-	# v0.9.190 changes
-	display_game("[color=#00FFFF]v0.9.190[/color]")
-	display_game("  [color=#FFD700]Market partial qty + craft from listed materials[/color]")
-	display_game("  • Market: listing a stack of consumables now prompts for quantity (or List All) — no more all-or-nothing")
-	display_game("  • Market: pulling your own stack listing prompts for quantity too, with per-unit Valor buy-back shown")
-	display_game("  • Market: bulk Pull All now merges pulled stacks into existing pouch/inventory stacks instead of wasting slots")
-	display_game("  • Crafting: materials you've listed at the current trading post auto-count toward recipe costs. If your pouch is short, the craft pulls the shortfall from your listings and deducts the pro-rata Valor (cheapest listings first)")
-	display_game("  • Crafting: recipe UI now shows total owned (pouch + listed) as the \"have\" count — recipes light up as craftable when the combined total is enough")
-	display_game("  • Building: placing a wall/bridge/station from a stack now consumes only 1, not the entire stack")
 	display_game("")
 
 	# v0.9.185 changes
@@ -21170,6 +21192,8 @@ func _get_companion_sort_damage_value(companion: Dictionary) -> int:
 
 func display_companions():
 	"""Display the companions list with level, XP, abilities, and variant info"""
+	# Push state into the visual companions panel; the text below stays for sub-modes.
+	_populate_companions_panel()
 	game_output.clear()
 
 	var active_companion = character_data.get("active_companion", {})
@@ -22505,6 +22529,7 @@ func _format_single_effect(effect: String, value: int, chance: int, damage: int,
 
 func display_eggs():
 	"""Display the eggs page with ASCII art"""
+	_populate_companions_panel()
 	game_output.clear()
 
 	var eggs = character_data.get("incubating_eggs", [])
@@ -25187,6 +25212,243 @@ func _on_market_panel_list_action(action_id: String) -> void:
 			send_to_server({"type": "market_list_all", "list_type": "material"})
 		"bulk_food":
 			send_to_server({"type": "market_list_all", "list_type": "food"})
+
+# === Companions panel integration ===
+
+func _populate_companions_panel() -> void:
+	if companions_panel == null:
+		return
+	if eggs_mode:
+		var eggs = character_data.get("incubating_eggs", [])
+		var cap = int(character_data.get("egg_capacity", 3))
+		companions_panel.populate_eggs(eggs, cap)
+	else:
+		var companions = character_data.get("collected_companions", [])
+		var active = character_data.get("active_companion", {})
+		companions_panel.populate_companions(companions, active, companion_sort_option, companion_sort_ascending)
+
+func _format_companion_abilities_summary(c: Dictionary) -> String:
+	# Compact 1-2 line summary for active companion section
+	var monster_type = str(c.get("monster_type", c.get("name", "")))
+	var level = int(c.get("level", 1))
+	var lines: Array = []
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var ab = COMPANION_MONSTER_ABILITIES[monster_type]
+		if ab.has("passive"):
+			lines.append("[color=#A335EE]Passive:[/color] %s" % str(ab["passive"].get("name", "?")))
+		if ab.has("active"):
+			var a = ab["active"]
+			var unlocked = level >= int(a.get("unlock_level", 5))
+			var color = "#00FF00" if unlocked else "#808080"
+			var lock = "" if unlocked else " (Lv.%d)" % int(a.get("unlock_level", 5))
+			lines.append("[color=%s]Active:[/color] %s%s" % [color, str(a.get("name", "?")), lock])
+		if ab.has("threshold"):
+			var t = ab["threshold"]
+			lines.append("[color=#FFAA00]Threshold:[/color] %s" % str(t.get("name", "?")))
+	return "\n".join(lines)
+
+func _get_companion_card_bonus_summary(c: Dictionary) -> String:
+	# Shorter than the inspector — show top 2 stat bonuses
+	var bonuses = c.get("bonuses", {})
+	var variant = str(c.get("variant", "Normal"))
+	var sub_tier = int(c.get("sub_tier", 1))
+	var mult = _get_variant_multiplier(variant) * _get_sub_tier_multiplier(sub_tier)
+	var parts: Array = []
+	for k in bonuses.keys():
+		var v = int(float(bonuses[k]) * mult)
+		if v == 0:
+			continue
+		parts.append("+%d %s" % [v, _short_bonus_label(str(k))])
+		if parts.size() >= 3:
+			break
+	if parts.is_empty():
+		return ""
+	return "[color=#00FF00]%s[/color]" % "  ".join(parts)
+
+func _short_bonus_label(key: String) -> String:
+	match key:
+		"attack": return "ATK"
+		"defense": return "DEF"
+		"speed": return "SPD"
+		"max_hp": return "HP"
+		"hp_regen": return "HP/r"
+		"mana_regen": return "MP/r"
+		"crit_chance": return "Crit"
+		_: return key.capitalize()
+
+func _get_egg_art_for_panel(variant: String, color1: String, color2: String, pattern: String) -> String:
+	return MonsterArt.get_egg_art(variant, color1, color2, pattern, ui_scale_monster_art)
+
+func _on_comp_panel_close() -> void:
+	# Use whichever close path is currently appropriate
+	if eggs_mode:
+		eggs_mode = false
+		game_output.clear()
+		display_game("[color=#808080]Closed eggs view.[/color]")
+		update_action_bar()
+		return
+	if companions_mode:
+		companions_mode = false
+		pending_companion_action = ""
+		game_output.clear()
+		display_game("[color=#808080]Closed companions view.[/color]")
+		update_action_bar()
+
+func _on_comp_panel_tab_changed(tab_id: String) -> void:
+	if tab_id == "eggs":
+		# Switch to eggs view: turn off companions_mode, turn on eggs_mode
+		companions_mode = false
+		pending_companion_action = ""
+		eggs_mode = true
+		eggs_page = 0
+		display_eggs()
+		update_action_bar()
+	else:
+		eggs_mode = false
+		companions_mode = true
+		pending_companion_action = ""
+		companions_page = 0
+		display_companions()
+		update_action_bar()
+
+func _on_comp_panel_activated(companion_id: String) -> void:
+	if companion_id == "":
+		return
+	send_to_server({"type": "activate_companion", "id": companion_id})
+
+func _on_comp_panel_inspect(companion: Dictionary) -> void:
+	if companion.is_empty() or companions_panel == null:
+		return
+	pending_companion_action = "inspect"
+	# Build the inspect text using the existing helper, but render to a string
+	# for the panel rather than to game_output.
+	var bbcode := _build_companion_inspect_bbcode(companion)
+	companions_panel.show_inspect(companion, bbcode)
+	update_action_bar()
+
+func _on_comp_panel_release(companion: Dictionary) -> void:
+	if companion.is_empty():
+		return
+	# Mirror keyboard release: send straight to server (server handles confirmation
+	# server-side via the existing flow). For locked/registered companions the
+	# server returns an error message that flows through normal text channels.
+	var comp_id = str(companion.get("id", ""))
+	if comp_id == "":
+		return
+	send_to_server({"type": "release_companion", "id": comp_id})
+	# Exit inspect view if we were in it
+	pending_companion_action = ""
+	if companions_panel:
+		companions_panel.clear_inspect()
+
+func _on_comp_panel_dismiss() -> void:
+	send_to_server({"type": "dismiss_companion"})
+
+func _on_comp_panel_egg_freeze(egg_index: int) -> void:
+	if egg_index < 0:
+		return
+	send_to_server({"type": "toggle_egg_freeze", "index": egg_index})
+
+func _on_comp_panel_sort_changed(sort_option: String, ascending: bool) -> void:
+	companion_sort_option = sort_option
+	companion_sort_ascending = ascending
+	display_companions()
+
+func _on_comp_panel_inspect_back() -> void:
+	pending_companion_action = ""
+	display_companions()
+	update_action_bar()
+
+func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
+	# Mirrors display_companion_inspection but returns BBCode text instead of
+	# writing to game_output. Used by the visual companions panel.
+	var lines: Array = []
+	var comp_name = str(companion.get("name", "Unknown"))
+	var level = int(companion.get("level", 1))
+	var xp = int(companion.get("xp", 0))
+	var tier = int(companion.get("tier", 1))
+	var sub_tier = int(companion.get("sub_tier", 1))
+	var variant = str(companion.get("variant", "Normal"))
+	var variant_color = _ensure_readable_color(str(companion.get("variant_color", "#FFFFFF")))
+	var variant_mult = _get_variant_multiplier(variant)
+	var sub_mult = _get_sub_tier_multiplier(sub_tier)
+	var rarity = _get_variant_rarity_info(variant)
+	var bonuses = companion.get("bonuses", {})
+	var monster_type = str(companion.get("monster_type", comp_name))
+
+	var rarity_prefix = "[color=%s][%s][/color] " % [rarity.color, rarity.tier]
+	var variant_bonus = ""
+	if variant_mult > 1.0:
+		variant_bonus = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+	lines.append("%s[color=%s]%s %s[/color]%s" % [rarity_prefix, variant_color, variant, comp_name, variant_bonus])
+	lines.append("[color=#AAAAAA]Level %d  |  Tier %d-%d  (x%.1f stats)[/color]" % [level, tier, sub_tier, sub_mult])
+
+	if level < 10000:
+		var xp_to_next = int(pow(level + 1, 2.0) * 15)
+		var pct = int((float(xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
+		var bar_filled := int(20 * pct / 100)
+		var bar_text := "[" + "█".repeat(bar_filled) + "░".repeat(20 - bar_filled) + "]"
+		lines.append("[color=#00FF00]XP %s %d%%[/color]  [color=#808080](%d / %d)[/color]" % [bar_text, pct, xp, xp_to_next])
+	else:
+		lines.append("[color=#FFD700]MAX LEVEL[/color]")
+
+	lines.append("")
+	lines.append("[color=#FF6666]── Combat Damage ──[/color]")
+	var player_level = int(character_data.get("level", 1))
+	var dmg = _estimate_companion_damage(tier, player_level, bonuses, level, variant_mult, sub_tier)
+	lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [int(dmg.min), int(dmg.max)])
+
+	lines.append("")
+	lines.append("[color=#808080]── In-Combat Bonuses ──[/color]")
+	var effective_mult = variant_mult * sub_mult
+	var total_bonuses = {}
+	for key in bonuses:
+		total_bonuses[key] = int(float(bonuses[key]) * effective_mult)
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var m_ab = COMPANION_MONSTER_ABILITIES[monster_type]
+		if m_ab.has("passive"):
+			var p = m_ab.passive
+			for suffix in ["", "2", "3"]:
+				if p.has("base" + suffix) and p.has("scaling" + suffix) and p.has("effect" + suffix):
+					var sv = int(p["base" + suffix] * effective_mult + (p["scaling" + suffix] * level * effective_mult))
+					var bk = p["effect" + suffix]
+					if bk == "regen":
+						bk = "hp_regen"
+					total_bonuses[bk] = total_bonuses.get(bk, 0) + sv
+	var bonus_parts = _get_companion_bonus_parts_with_variant(total_bonuses, 1.0)
+	if bonus_parts.size() > 0:
+		lines.append("  %s" % ", ".join(bonus_parts))
+	else:
+		lines.append("  [color=#808080]None[/color]")
+
+	lines.append("")
+	lines.append("[color=#A335EE]── Abilities ──[/color]")
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var ab = COMPANION_MONSTER_ABILITIES[monster_type]
+		if ab.has("passive"):
+			var p = ab.passive
+			lines.append("  [color=#A335EE]Passive: %s[/color] - %s" % [str(p.get("name", "?")), str(p.get("description", ""))])
+		if ab.has("active"):
+			var a = ab.active
+			var unlocked = level >= int(a.get("unlock_level", 5))
+			var col = "#00FF00" if unlocked else "#808080"
+			var lock_tag = "" if unlocked else " [color=#666666](Lv.%d)[/color]" % int(a.get("unlock_level", 5))
+			lines.append("  [color=%s]Active: %s[/color]%s - %s" % [col, str(a.get("name", "?")), lock_tag, str(a.get("description", ""))])
+		if ab.has("threshold"):
+			var t = ab.threshold
+			lines.append("  [color=#FFAA00]Threshold: %s[/color] - %s" % [str(t.get("name", "?")), str(t.get("description", ""))])
+	else:
+		# Fall back to tier-based abilities
+		var tier_ab = COMPANION_ABILITIES.get(tier, {})
+		for unlock_lvl in [10, 25, 50]:
+			if tier_ab.has(unlock_lvl):
+				var ability = tier_ab[unlock_lvl]
+				var unlocked = level >= unlock_lvl
+				var col = "#00FF00" if unlocked else "#808080"
+				var lock_tag = "" if unlocked else " [color=#666666](Lv.%d)[/color]" % unlock_lvl
+				lines.append("  [color=%s]%s[/color]%s" % [col, str(ability.get("name", "?")), lock_tag])
+
+	return "\n".join(lines)
 
 func _display_temper_target_selection():
 	"""Display temper target stat options for resource gambling craft."""
