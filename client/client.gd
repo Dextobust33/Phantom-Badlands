@@ -401,6 +401,7 @@ var game_state = GameState.DISCONNECTED
 # UI References - Main game (top-heavy layout)
 @onready var game_output = $RootContainer/TopSection/GameOutputContainer/GameOutput
 @onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
+@onready var inventory_panel = $RootContainer/TopSection/GameOutputContainer/InventoryPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -677,7 +678,7 @@ var show_map_legend: bool = true
 # Stat comparison priority — pinned stats always show first in equipment comparison brackets.
 # Unpinned stats appear after and may be truncated with "+N more".
 var comparison_pinned_stats: Array = ["ATK", "DEF", "HP", "SPD", "WIT"]
-const ALL_COMPARISON_STATS = ["ATK", "DEF", "HP", "SPD", "WIT", "RES", "MP/rnd", "%Med", "EN/rnd", "%Flee", "STA/rnd"]
+const ALL_COMPARISON_STATS = ["ATK", "DEF", "HP", "SPD", "WIT", "RES", "MP/rnd", "%Med", "EN/rnd", "%Flee", "STA/rnd", "%CRIT", "%CDMG", "%DR", "%DDG"]
 
 # Action bar
 var action_buttons: Array[Button] = []
@@ -1430,6 +1431,9 @@ func _ready():
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
+	# Start in fullscreen
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+
 	# Load keybind configuration
 	_load_keybinds()
 
@@ -1453,6 +1457,14 @@ func _ready():
 	# Setup action bar
 	if action_bar:
 		setup_action_bar()
+
+	# Setup inventory panel
+	if inventory_panel:
+		inventory_panel.set_client(self)
+		inventory_panel.close_requested.connect(_on_inv_panel_close)
+		inventory_panel.sort_requested.connect(_on_inv_panel_sort)
+		inventory_panel.salvage_junk_requested.connect(_on_inv_panel_salvage)
+		inventory_panel.materials_requested.connect(_on_inv_panel_materials)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -1621,8 +1633,9 @@ func _ready():
 	# Initialize UI state
 	update_action_bar()
 
-	# Show connection panel instead of auto-connect
-	call_deferred("show_connection_panel")
+	# Auto-connect to last-used server. On failure, connect_to_server() falls
+	# back to showing the connection panel so the player can pick another.
+	call_deferred("connect_to_server")
 
 func _init_sound_players():
 	"""Initialize all sound effect players with WAV files"""
@@ -1936,6 +1949,17 @@ func _process(delta):
 	for kc in key_hold_lock.keys():
 		if not Input.is_physical_key_pressed(kc):
 			key_hold_lock.erase(kc)
+
+	# Sync visual inventory panel visibility with inventory_mode (panel only shows
+	# during base browsing — text view still handles sub-modes for now)
+	if inventory_panel:
+		var _panel_should_show = (inventory_mode
+			and pending_inventory_action == ""
+			and game_state == GameState.PLAYING)
+		if inventory_panel.visible != _panel_should_show:
+			inventory_panel.visible = _panel_should_show
+		if game_output and game_output.visible == _panel_should_show:
+			game_output.visible = not _panel_should_show
 
 	connection.poll()
 	var status = connection.get_status()
@@ -3046,6 +3070,13 @@ func _process(delta):
 		if connected:
 			display_game("[color=#FF0000]Connection error![/color]")
 			reset_connection_state()
+		elif game_state == GameState.DISCONNECTED and (not connection_panel or not connection_panel.visible):
+			# Auto-connect failed before reaching the server — show the panel
+			# so the player can pick a different server or retry.
+			display_game("[color=#FF0000]Could not reach server.[/color]")
+			display_game("[color=#808080]Choose a server below or change settings.[/color]")
+			connection.disconnect_from_host()
+			call_deferred("show_connection_panel")
 
 func _input(event):
 	# Handle numpad input for popup LineEdits (higher priority than other handlers)
@@ -11868,6 +11899,235 @@ func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 
 	return bonuses
 
+func format_item_tooltip_bbcode(item: Dictionary) -> String:
+	"""Build a rich BBCode tooltip body for hover display in the inventory panel.
+	Includes: themed name, type/level/rarity, wear, full per-stat bonus list, comparison vs
+	equipped, crafter/enchanter credits, lock state. Each stat sits on its own line so wide
+	tooltips stay readable; the multi-stat helpers ensure tokens never break mid-stat."""
+	var lines: Array = []
+	var item_type: String = item.get("type", "unknown")
+	var rarity: String = item.get("rarity", "common")
+	var level: int = int(item.get("level", 1))
+	var rarity_color := _get_item_rarity_color(rarity)
+	var themed_name := _get_themed_item_name(item, character_data.get("class", ""))
+
+	# Header — name + type/rarity/level
+	lines.append("[color=%s][b]%s[/b][/color]" % [rarity_color, themed_name])
+	var type_desc := _get_item_type_description(item_type) if has_method("_get_item_type_description") else item_type.capitalize()
+	lines.append("[color=#888]Lv%d • %s • [color=%s]%s[/color][/color]" % [level, type_desc, rarity_color, rarity.capitalize()])
+
+	# Wear / condition (equipment only)
+	var wear: int = int(item.get("wear", 0))
+	if wear > 0 and not item.get("is_consumable", false) and item_type != "tool" and item_type != "rune":
+		var cond_color := _get_condition_color(wear)
+		var cond_text := "Worn"
+		if has_method("_get_condition_string"):
+			cond_text = _get_condition_string(wear)
+		lines.append("[color=%s]%s — %d%% wear[/color]" % [cond_color, cond_text, wear])
+
+	# Lock indicator
+	if item.get("locked", false):
+		lines.append("[color=#FF6666][LOCKED][/color]")
+
+	# Body by item kind
+	if item_type == "tool":
+		var dur: int = int(item.get("durability", 0))
+		var maxd: int = int(item.get("max_durability", 1))
+		var pct: int = 0
+		if maxd > 0:
+			pct = int(float(dur) / float(maxd) * 100.0)
+		var dur_color := "#00FF00"
+		if pct <= 50:
+			dur_color = "#FFAA00"
+		if pct <= 20:
+			dur_color = "#FF4444"
+		var subtype: String = item.get("subtype", "tool")
+		lines.append("")
+		lines.append("[color=#9ACD32]%s • Tier %d[/color]" % [subtype.capitalize(), int(item.get("tier", 1))])
+		lines.append("[color=%s]Durability: %d/%d[/color]" % [dur_color, dur, maxd])
+		var bonuses = item.get("tool_bonuses", {})
+		var reveals: int = int(bonuses.get("reveals", 1 if bonuses.get("reveal", false) else 0))
+		var saves: int = int(item.get("max_saves", 0))
+		if reveals > 0:
+			lines.append("[color=#00FF88]Reveals: %d[/color]" % reveals)
+		if saves > 0:
+			lines.append("[color=#00BFFF]Saves: %d[/color]" % saves)
+	elif item_type == "rune":
+		lines.append("")
+		var target := str(item.get("target_slot", "")).replace(",", ", ")
+		if target != "":
+			lines.append("[color=#888]Target slots:[/color] %s" % target)
+		if item.has("rune_proc"):
+			var proc_name: String = str(item.get("rune_proc", "")).replace("_", " ").capitalize()
+			lines.append("[color=#A335EE]Proc: %s[/color]" % proc_name)
+			var proc_val: int = int(item.get("rune_proc_value", 0))
+			var proc_chance: float = float(item.get("rune_proc_chance", 1.0))
+			lines.append("[color=#E6CC80]+%d (%d%% chance)[/color]" % [proc_val, int(proc_chance * 100)])
+		else:
+			var stat_name: String = str(item.get("rune_stat", "")).replace("_bonus", "").replace("_", " ").capitalize()
+			var rune_cap: int = int(item.get("rune_cap", 0))
+			lines.append("[color=#A335EE]Sets %s to +%d[/color]" % [stat_name, rune_cap])
+	elif item.get("is_consumable", false) or item_type == "consumable":
+		lines.append("")
+		var desc: String = ""
+		if item.has("description"):
+			desc = str(item.get("description", ""))
+		if desc == "" and has_method("_get_item_effect_description"):
+			var resolved_type = item.get("item_type", item_type)
+			desc = _get_item_effect_description(resolved_type, level, rarity)
+		if desc != "":
+			lines.append("[color=#E6CC80]%s[/color]" % desc)
+		var qty: int = int(item.get("quantity", 1))
+		if qty > 1:
+			lines.append("[color=#888]Quantity: %d[/color]" % qty)
+	else:
+		# Equipment — full per-stat absolute bonus list, then delta vs equipped if any
+		var bonuses_bb := get_compact_stats_bbcode(item)
+		if bonuses_bb != "":
+			lines.append("")
+			lines.append("[color=#E6CC80]Bonuses:[/color]")
+			for tok in bonuses_bb.split(" "):
+				if tok != "":
+					lines.append("  " + tok)
+		var slot := _get_slot_for_item_type(item_type)
+		if slot != "":
+			var equipped_dict: Dictionary = character_data.get("equipped", {})
+			var eq = equipped_dict.get(slot)
+			if eq != null and eq is Dictionary and not eq.is_empty():
+				var diff_parts: Array = _get_item_comparison_parts(item, eq)
+				if diff_parts.is_empty():
+					lines.append("")
+					lines.append("[color=#888]Identical to equipped %s[/color]" % str(_get_themed_slot_name(slot, character_data.get("class", ""))).to_lower())
+				else:
+					lines.append("")
+					lines.append("[color=#E6CC80]vs equipped:[/color]")
+					for tok in diff_parts:
+						lines.append("  " + tok)
+			else:
+				lines.append("")
+				lines.append("[color=#00FF88]Slot empty — equipping is a strict upgrade[/color]")
+
+	# Crafter / enchanter
+	var crafted_by: String = str(item.get("crafted_by", ""))
+	var enchanted_by: String = str(item.get("enchanted_by", ""))
+	if crafted_by != "" or enchanted_by != "":
+		lines.append("")
+		if crafted_by != "":
+			lines.append("[color=#888]Crafted by[/color] [color=#E6CC80]%s[/color]" % crafted_by)
+		if enchanted_by != "":
+			lines.append("[color=#888]Enchanted by[/color] [color=#A335EE]%s[/color]" % enchanted_by)
+
+	return "\n".join(lines)
+
+func _get_player_resource_info() -> Dictionary:
+	"""Returns class-resource metadata used to filter and scale resource/regen stat displays.
+	Players only ever use one of {Mana, Stamina, Energy} as their primary resource — show
+	just that one (with cross-resource conversion applied) and only the regens that apply."""
+	var class_type = character_data.get("class", "")
+	match class_type:
+		"Wizard", "Sorcerer", "Sage":
+			return {
+				"label": "MP", "color": "#9999FF",
+				"mana_mult": 1.0, "stam_mult": 2.0, "energy_mult": 2.0,
+				"allowed_regens": ["mana_regen", "meditate_bonus"],
+			}
+		"Fighter", "Barbarian", "Paladin":
+			return {
+				"label": "ST", "color": "#FFCC00",
+				"mana_mult": 0.5, "stam_mult": 1.0, "energy_mult": 1.0,
+				"allowed_regens": ["stamina_regen"],
+			}
+		"Thief", "Ranger", "Ninja", "Trickster":
+			return {
+				"label": "EN", "color": "#66FF66",
+				"mana_mult": 0.5, "stam_mult": 1.0, "energy_mult": 1.0,
+				"allowed_regens": ["energy_regen", "flee_bonus"],
+			}
+		_:
+			return {
+				"label": "RES", "color": "#9999FF",
+				"mana_mult": 1.0, "stam_mult": 1.0, "energy_mult": 1.0,
+				"allowed_regens": ["mana_regen", "meditate_bonus", "energy_regen", "flee_bonus", "stamina_regen"],
+			}
+
+func get_compact_stats_bbcode(item: Dictionary) -> String:
+	"""Compact multi-stat BBCode string for a single item (cards / paper-doll slots)."""
+	var bonuses = _compute_item_bonuses(item)
+	var rb = item.get("rarity_bonuses", {})
+	return _format_stat_totals_bbcode(bonuses, rb)
+
+func get_equipped_totals_bbcode(equipped: Dictionary) -> String:
+	"""Compact multi-stat BBCode string for the sum of all equipped items.
+	Aggregates rarity_bonuses across slots since _calculate_equipment_bonuses skips them."""
+	var totals: Dictionary = _calculate_equipment_bonuses(equipped)
+	var rb_total: Dictionary = {}
+	for slot in equipped.keys():
+		var it = equipped.get(slot)
+		if it == null or not (it is Dictionary):
+			continue
+		var item_rb = it.get("rarity_bonuses", {})
+		for k in item_rb.keys():
+			rb_total[k] = int(rb_total.get(k, 0)) + int(item_rb[k])
+	return _format_stat_totals_bbcode(totals, rb_total)
+
+func _format_stat_totals_bbcode(bonuses: Dictionary, rarity_bonuses: Dictionary = {}) -> String:
+	"""Shared formatter — emits a space-separated colored '+N STAT' string for every nonzero bonus.
+	Used by both per-item displays and equipped-totals displays so colors stay consistent.
+	Uses non-breaking space ( ) inside each token so '+5 WIT' never wraps onto two lines."""
+	var parts: Array = []
+	if int(bonuses.get("attack", 0)) > 0:
+		parts.append("[color=#FF8888]+%d ATK[/color]" % int(bonuses.attack))
+	if int(bonuses.get("defense", 0)) > 0:
+		parts.append("[color=#88DDFF]+%d DEF[/color]" % int(bonuses.defense))
+	if int(bonuses.get("max_hp", 0)) > 0:
+		parts.append("[color=#FF99AA]+%d HP[/color]" % int(bonuses.max_hp))
+	if int(bonuses.get("strength", 0)) > 0:
+		parts.append("[color=#FFAA66]+%d STR[/color]" % int(bonuses.strength))
+	if int(bonuses.get("constitution", 0)) > 0:
+		parts.append("[color=#99FF99]+%d CON[/color]" % int(bonuses.constitution))
+	if int(bonuses.get("dexterity", 0)) > 0:
+		parts.append("[color=#FFFF99]+%d DEX[/color]" % int(bonuses.dexterity))
+	if int(bonuses.get("intelligence", 0)) > 0:
+		parts.append("[color=#9999FF]+%d INT[/color]" % int(bonuses.intelligence))
+	if int(bonuses.get("wisdom", 0)) > 0:
+		parts.append("[color=#88DDFF]+%d WIS[/color]" % int(bonuses.wisdom))
+	if int(bonuses.get("wits", 0)) > 0:
+		parts.append("[color=#FF99FF]+%d WIT[/color]" % int(bonuses.wits))
+	if int(bonuses.get("speed", 0)) > 0:
+		parts.append("[color=#FFCC66]+%d SPD[/color]" % int(bonuses.speed))
+	# Resource pool — collapse all three (mana/stamina/energy) into the player's class-resource
+	# with the same cross-conversion factors used by combat. Only one label ever shown.
+	var ri = _get_player_resource_info()
+	var resource_pool: int = (
+		int(int(bonuses.get("max_mana", 0)) * float(ri.get("mana_mult", 1.0)))
+		+ int(int(bonuses.get("max_stamina", 0)) * float(ri.get("stam_mult", 1.0)))
+		+ int(int(bonuses.get("max_energy", 0)) * float(ri.get("energy_mult", 1.0)))
+	)
+	if resource_pool > 0:
+		parts.append("[color=%s]+%d %s[/color]" % [ri.get("color", "#9999FF"), resource_pool, ri.get("label", "RES")])
+	# Class-specific gear bonuses — only emit ones the player's class can actually use
+	var allowed_regens: Array = ri.get("allowed_regens", [])
+	if "mana_regen" in allowed_regens and int(bonuses.get("mana_regen", 0)) > 0:
+		parts.append("[color=#66CCCC]+%d MP/rnd[/color]" % int(bonuses.mana_regen))
+	if "meditate_bonus" in allowed_regens and int(bonuses.get("meditate_bonus", 0)) > 0:
+		parts.append("[color=#66CCCC]+%d%%Med[/color]" % int(bonuses.meditate_bonus))
+	if "energy_regen" in allowed_regens and int(bonuses.get("energy_regen", 0)) > 0:
+		parts.append("[color=#66FF66]+%d EN/rnd[/color]" % int(bonuses.energy_regen))
+	if "flee_bonus" in allowed_regens and int(bonuses.get("flee_bonus", 0)) > 0:
+		parts.append("[color=#66FF66]+%d%%Flee[/color]" % int(bonuses.flee_bonus))
+	if "stamina_regen" in allowed_regens and int(bonuses.get("stamina_regen", 0)) > 0:
+		parts.append("[color=#FFCC00]+%d STA/rnd[/color]" % int(bonuses.stamina_regen))
+	# Rarity bonuses (crit/dodge/dr) live separately
+	if int(rarity_bonuses.get("crit_chance", 0)) > 0:
+		parts.append("[color=#FFD700]+%d%%CRIT[/color]" % int(rarity_bonuses["crit_chance"]))
+	if int(rarity_bonuses.get("crit_damage", 0)) > 0:
+		parts.append("[color=#FFD700]+%d%%CDMG[/color]" % int(rarity_bonuses["crit_damage"]))
+	if int(rarity_bonuses.get("damage_reduction", 0)) > 0:
+		parts.append("[color=#00FF00]+%d%%DR[/color]" % int(rarity_bonuses["damage_reduction"]))
+	if int(rarity_bonuses.get("dodge", 0)) > 0:
+		parts.append("[color=#00BFFF]+%d%%DDG[/color]" % int(rarity_bonuses["dodge"]))
+	return " ".join(parts)
+
 func _display_computed_item_bonuses(item: Dictionary) -> bool:
 	"""Display all computed bonuses for an item. Returns true if any bonuses were shown."""
 	var bonuses = _compute_item_bonuses(item)
@@ -12095,7 +12355,10 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var c = resource_color if resource_diff > 0 else "#808080"
 		all_diffs["RES"] = "[color=%s]%+d%s[/color]" % [c, resource_diff, resource_label]
 
-	# Class-specific gear bonuses comparison (flat bonuses, no attribute derivation)
+	# Class-specific gear bonuses comparison (flat bonuses, no attribute derivation).
+	# Only emit regens/bonuses relevant to the player's class — a Sorcerer should never see EN/rnd or STA/rnd.
+	var ri_cmp = _get_player_resource_info()
+	var allowed_regens_cmp: Array = ri_cmp.get("allowed_regens", [])
 	var class_bonuses_to_compare = [
 		["mana_regen", "MP/rnd", "#66CCCC"],
 		["meditate_bonus", "%Med", "#66CCCC"],
@@ -12106,6 +12369,8 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 
 	for bonus_info in class_bonuses_to_compare:
 		var stat = bonus_info[0]
+		if not stat in allowed_regens_cmp:
+			continue
 		var label = bonus_info[1]
 		var stat_color = bonus_info[2]
 		var new_val = new_bonuses.get(stat, 0)
@@ -12114,6 +12379,28 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		if diff != 0:
 			var c = stat_color if diff > 0 else "#808080"
 			all_diffs[label] = "[color=%s]%+d%s[/color]" % [c, diff, label]
+
+	# Rarity bonuses (crit/dodge/etc.) live in a separate dict from the main bonuses
+	var new_rb = new_item.get("rarity_bonuses", {})
+	var old_rb = {}
+	if old_item != null and old_item is Dictionary:
+		old_rb = old_item.get("rarity_bonuses", {})
+	var rarity_bonus_compare = [
+		["crit_chance", "%CRIT", "#FFD700"],
+		["crit_damage", "%CDMG", "#FFD700"],
+		["damage_reduction", "%DR", "#00FF00"],
+		["dodge", "%DDG", "#00BFFF"],
+	]
+	for rb_info in rarity_bonus_compare:
+		var rb_key = rb_info[0]
+		var rb_label = rb_info[1]
+		var rb_color = rb_info[2]
+		var nv = int(new_rb.get(rb_key, 0))
+		var ov = int(old_rb.get(rb_key, 0))
+		var rb_diff = nv - ov
+		if rb_diff != 0:
+			var c = rb_color if rb_diff > 0 else "#808080"
+			all_diffs[rb_label] = "[color=%s]%+d%s[/color]" % [c, rb_diff, rb_label]
 
 	# Assemble in priority order: pinned stats first, then remaining
 	var diff_parts: Array = []
@@ -12927,11 +13214,137 @@ func close_inventory():
 	rune_apply_index = -1
 	reset_combat_background()  # Reset to default black background
 	update_action_bar()
+	# Make sure the text view is visible again — _process syncs this too, but
+	# clearing here avoids a one-frame flash of stale inventory text.
+	if game_output and not game_output.visible:
+		game_output.visible = true
+		game_output.clear()
 	if dungeon_mode:
 		display_dungeon_floor()
 	else:
 		display_game("[color=#808080]Inventory closed.[/color]")
 	_check_tutorial_trigger("inventory_close")
+
+# ===== Inventory Panel signal handlers =====
+
+func _on_inv_panel_close() -> void:
+	close_inventory()
+
+func _on_inv_panel_sort() -> void:
+	if not inventory_mode:
+		return
+	open_sort_menu()
+	update_action_bar()
+
+func _on_inv_panel_salvage() -> void:
+	if not inventory_mode:
+		return
+	_show_salvage_junk_confirm()
+
+func _show_salvage_junk_confirm() -> void:
+	"""One-press 'Salvage Junk': count items below (player_level - 5) and show a single
+	confirmation popup. Skips locked/equipped/consumable/tool/rune/structure items
+	(matches the existing server-side filter for mode=below_level)."""
+	var inventory: Array = character_data.get("inventory", [])
+	var player_level: int = int(character_data.get("level", 1))
+	var threshold: int = max(1, player_level - 5)
+	var count := 0
+	for item in inventory:
+		if not (item is Dictionary):
+			continue
+		var itype: String = item.get("type", "")
+		if item.get("locked", false) or item.get("is_title_item", false):
+			continue
+		if _is_consumable_type(itype) or itype == "tool" or itype == "rune" or itype == "structure":
+			continue
+		if int(item.get("level", 1)) < threshold:
+			count += 1
+
+	if count == 0:
+		display_game("[color=#888888]No junk to salvage — nothing in your backpack is below Lv%d.[/color]" % threshold)
+		return
+
+	var dialog: ConfirmationDialog = get_node_or_null("/root/ClientScene/SalvageJunkConfirm")
+	if dialog == null:
+		dialog = ConfirmationDialog.new()
+		dialog.name = "SalvageJunkConfirm"
+		dialog.title = "Salvage Junk"
+		dialog.ok_button_text = "Salvage"
+		dialog.cancel_button_text = "Cancel"
+		dialog.confirmed.connect(_on_salvage_junk_confirmed)
+		add_child(dialog)
+	dialog.dialog_text = "Break down %d unequipped item%s below Lv%d into crafting materials?\n(Locked, equipped, consumable, tool, and rune items are skipped.)" % [count, "s" if count != 1 else "", threshold]
+	dialog.popup_centered()
+
+func _on_salvage_junk_confirmed() -> void:
+	if not inventory_mode:
+		return
+	pending_inventory_action = "awaiting_salvage_result"
+	send_to_server({"type": "inventory_salvage", "mode": "below_level"})
+	display_game("[color=#AA66FF]Salvaging junk...[/color]")
+	update_action_bar()
+
+func _on_inv_panel_materials() -> void:
+	if not inventory_mode:
+		return
+	pending_inventory_action = "viewing_materials"
+	display_materials()
+	update_action_bar()
+
+# ===== Inventory Panel context-menu action handlers =====
+# Each one is the direct path from a right-click menu item to the server message
+# (or local display call). Skips the legacy "select item N" prompt flow.
+
+func _panel_inspect_item(item: Dictionary) -> void:
+	if not inventory_mode:
+		return
+	pending_inventory_action = "inspect_item"
+	display_item_details(item, "in backpack")
+	update_action_bar()
+
+func _panel_use_item(index: int) -> void:
+	if not inventory_mode or index < 0:
+		return
+	# In combat, the server expects combat_use_item; otherwise inventory_use.
+	if in_combat:
+		send_to_server({"type": "combat_use_item", "index": index})
+	else:
+		send_to_server({"type": "inventory_use", "index": index})
+
+func _panel_equip_item(index: int, item: Dictionary) -> void:
+	if not inventory_mode or index < 0:
+		return
+	if item.get("type", "") == "tool":
+		send_to_server({"type": "equip_tool", "index": index})
+	else:
+		send_to_server({"type": "inventory_equip", "index": index})
+
+func _panel_unequip_slot(slot_name: String, slot_kind: String) -> void:
+	if not inventory_mode or slot_name == "":
+		return
+	if slot_kind == "tool":
+		send_to_server({"type": "unequip_tool", "subtype": slot_name})
+	else:
+		send_to_server({"type": "inventory_unequip", "slot": slot_name})
+
+func _panel_toggle_lock(index: int) -> void:
+	if not inventory_mode or index < 0:
+		return
+	send_to_server({"type": "inventory_lock", "index": index})
+
+func _panel_sort_inventory(sort_by: String) -> void:
+	if not inventory_mode or sort_by == "":
+		return
+	send_to_server({"type": "inventory_sort", "sort_by": sort_by})
+
+func _panel_drop_item(index: int, item: Dictionary) -> void:
+	if not inventory_mode or index < 0:
+		return
+	if item.get("locked", false):
+		display_game("[color=#FF6666]Cannot drop a locked item.[/color]")
+		return
+	# Direct discard — confirmation can be added in a later phase if needed.
+	send_to_server({"type": "inventory_discard", "index": index})
 
 func open_sort_menu():
 	"""Open sort submenu for inventory"""
@@ -13247,6 +13660,10 @@ func display_inventory():
 	"""Display the player's inventory and equipped items"""
 	if not has_character:
 		return
+
+	# Populate the visual inventory panel (visibility synced in _process based on pending_inventory_action)
+	if inventory_panel:
+		inventory_panel.populate(character_data)
 
 	# Clear output to show fresh inventory view
 	game_output.clear()
@@ -20539,8 +20956,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.191 changes
+	display_game("[color=#00FF00]v0.9.191[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Visual inventory + paper-doll, drag-and-drop equip, fullscreen auto-connect[/color]")
+	display_game("  • Inventory is now a visual panel: paper-doll on the left, item cards on the right with rarity borders, type icons, full stat breakdowns and live comparison deltas vs your equipped gear")
+	display_game("  • Drag any inventory card onto a paper-doll slot to equip; drag from a slot back into the grid to unequip. Locked items can be dragged too — only discard is blocked")
+	display_game("  • Right-click a card for Inspect / Use / Equip / Lock / Drop; hover for a full tooltip that escapes the panel bounds")
+	display_game("  • Filter chips (All / Weapons / Armor / Accessories / Tools / Consumables / Materials), one-press Salvage Junk, and a Sort menu with 9 modes (level, rarity, type, recently acquired, ...)")
+	display_game("  • Stats only show resources for your class (Sorcerer no longer sees STA/EN regen) and stat tokens stay on a single line — no more \"+3\" wrapping above the stat name")
+	display_game("  • Client now launches in fullscreen and auto-connects to your last server. If you have a saved username, the password field is focused on the login screen so you can start typing immediately")
+	display_game("")
+
 	# v0.9.190 changes
-	display_game("[color=#00FF00]v0.9.190[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.190[/color]")
 	display_game("  [color=#FFD700]Market partial qty + craft from listed materials[/color]")
 	display_game("  • Market: listing a stack of consumables now prompts for quantity (or List All) — no more all-or-nothing")
 	display_game("  • Market: pulling your own stack listing prompts for quantity too, with per-unit Valor buy-back shown")
@@ -20575,14 +21003,6 @@ func display_changelog():
 	display_game("  • Clicking the egg indicator to freeze/unfreeze now actually works — the overlay had mouse_filter=IGNORE so clicks never reached it")
 	display_game("  • Dungeon-complete screen no longer waits until the next combat — after boss → harvest, the queued completion now shows as soon as harvest ends")
 	display_game("  • Sorcerer/Wizard/Sage meditate in dungeon now shows \"(HP already full)\" when at max HP, so you can tell HP isn't healing because it's already topped")
-	display_game("")
-
-	# v0.9.186 changes
-	display_game("[color=#00FFFF]v0.9.186[/color]")
-	display_game("  [color=#FFD700]Bulk crafting — stacked consumables now display the real count[/color]")
-	display_game("  • Crafting 5x Minor Health Potions actually gave you 5 — but the inventory list counted slots, not quantity, so a stack of 5 in one slot showed as \"x1\"")
-	display_game("  • Display now sums each stack's quantity across matching entries (consumables and runes)")
-	display_game("  • Server-side item generation was already correct; this was purely a client display bug")
 	display_game("")
 
 	# v0.9.185 changes
