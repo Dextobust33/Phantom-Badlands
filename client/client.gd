@@ -403,6 +403,7 @@ var game_state = GameState.DISCONNECTED
 @onready var game_output_container = $RootContainer/TopSection/GameOutputContainer
 @onready var inventory_panel = $RootContainer/TopSection/GameOutputContainer/InventoryPanel
 @onready var crafting_panel = $RootContainer/TopSection/GameOutputContainer/CraftingPanel
+@onready var market_panel = $RootContainer/TopSection/GameOutputContainer/MarketPanel
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1476,6 +1477,22 @@ func _ready():
 		crafting_panel.quantity_changed.connect(_on_craft_panel_qty_changed)
 		crafting_panel.skill_changed.connect(_on_craft_panel_skill_changed)
 
+	# Setup market panel
+	if market_panel:
+		market_panel.client_ref = self
+		market_panel.close_requested.connect(_on_market_panel_close)
+		market_panel.tab_changed.connect(_on_market_panel_tab_changed)
+		market_panel.filter_changed.connect(_on_market_panel_filter_changed)
+		market_panel.sort_changed.connect(_on_market_panel_sort_changed)
+		market_panel.listing_clicked.connect(_on_market_panel_listing_clicked)
+		market_panel.buy_pressed.connect(_on_market_panel_buy_pressed)
+		market_panel.page_prev_pressed.connect(_on_market_panel_page_prev)
+		market_panel.page_next_pressed.connect(_on_market_panel_page_next)
+		market_panel.cancel_listing_pressed.connect(_on_market_panel_cancel_listing)
+		market_panel.pull_all_pressed.connect(_on_market_panel_pull_all)
+		market_panel.refresh_requested.connect(_on_market_panel_refresh)
+		market_panel.list_action_pressed.connect(_on_market_panel_list_action)
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -1983,8 +2000,18 @@ func _process(delta):
 		if crafting_panel.visible != _craft_should_show:
 			crafting_panel.visible = _craft_should_show
 
+	# Sync market panel visibility — show for browse, my_listings, inspect, and the
+	# empty/main state. Hide for keyboard sub-states (list flows, qty entry, buy_confirm).
+	var _market_should_show: bool = false
+	if market_panel:
+		_market_should_show = (market_mode
+			and pending_market_action in ["", "browse", "my_listings", "inspect"]
+			and game_state == GameState.PLAYING)
+		if market_panel.visible != _market_should_show:
+			market_panel.visible = _market_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -20776,8 +20803,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.194 changes
+	display_game("[color=#00FF00]v0.9.194[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI Facelift Phase 3: Visual Market Panel[/color]")
+	display_game("  • Walk up to a market ($ tile) and the market is now a visual panel — Browse / My Listings tabs, filter chips, sort cycler, listings on the left, item details + Buy button on the right")
+	display_game("  • Click any listing to inspect; click Buy to purchase the full stack — disabled and red when you can't afford it")
+	display_game("  • My Listings tab shows your active listings grouped by category; click one to cancel, or use Pull All for the bulk pull")
+	display_game("  • A List ▾ menu in the action row launches the existing listing flows (from Inventory, Materials, Egg, plus the five Bulk options)")
+	display_game("  • Listing-creation prompts and partial-quantity buys still use the keyboard for the qty step — the panel slice is browse + buy + cancel")
+	display_game("")
+
 	# v0.9.193 changes
-	display_game("[color=#00FF00]v0.9.193[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.193[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 2: Visual Crafting Panel[/color]")
 	display_game("  • Walk up to a Forge / Apothecary / Enchanting Table / Writing Desk / Workbench and crafting now opens a visual panel: recipe list on the left, full recipe detail on the right")
 	display_game("  • Recipe rows are color-coded: green = craftable, grey = missing materials, dim = locked or specialist-gated")
@@ -20814,14 +20851,6 @@ func display_changelog():
 	display_game("  • Crafting: materials you've listed at the current trading post auto-count toward recipe costs. If your pouch is short, the craft pulls the shortfall from your listings and deducts the pro-rata Valor (cheapest listings first)")
 	display_game("  • Crafting: recipe UI now shows total owned (pouch + listed) as the \"have\" count — recipes light up as craftable when the combined total is enough")
 	display_game("  • Building: placing a wall/bridge/station from a stack now consumes only 1, not the entire stack")
-	display_game("")
-
-	# v0.9.189 changes
-	display_game("[color=#00FFFF]v0.9.189[/color]")
-	display_game("  [color=#FFD700]Posts: stations now scatter randomly inside the room[/color]")
-	display_game("  • Stations no longer sit on a fixed grid near the top — they're sprinkled across the whole interior, with a 1-tile gap between neighbors so you can always walk around")
-	display_game("  • Tiles next to doors are avoided so entries stay clear")
-	display_game("  • Seed is still post-specific, so each post keeps its own unique layout between visits")
 	display_game("")
 
 	# v0.9.185 changes
@@ -25025,6 +25054,140 @@ func _on_craft_panel_skill_changed(skill: String) -> void:
 	craft_quantity = 1
 	request_craft_list(skill)
 
+# === Market panel integration ===
+
+func _populate_market_panel() -> void:
+	if market_panel == null:
+		return
+	var post_name = trading_post_data.get("name", "Trading Post")
+	if pending_market_action == "my_listings":
+		market_panel.populate_my_listings(post_name, account_valor, market_listings)
+	else:
+		# Default to browse for empty/main and "browse"/"inspect" states
+		market_panel.populate_browse(post_name, account_valor, market_listings, market_category, market_sort, market_page, market_total_pages)
+	# When inspecting a specific listing, drive the right-side detail too
+	if pending_market_action == "inspect" and not market_inspected_listing.is_empty():
+		market_panel.populate_inspect(market_inspected_listing, account_valor)
+
+func _on_market_panel_close() -> void:
+	exit_market()
+
+func _on_market_panel_tab_changed(tab_id: String) -> void:
+	if tab_id == "browse":
+		pending_market_action = "browse"
+		market_page = 0
+		market_listings = []
+		send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
+	elif tab_id == "my_listings":
+		pending_market_action = "my_listings"
+		market_my_page = 0
+		market_listings = []
+		send_to_server({"type": "market_my_listings"})
+
+func _on_market_panel_filter_changed(category: String) -> void:
+	market_category = category
+	market_page = 0
+	pending_market_action = "browse"
+	send_to_server({"type": "market_browse", "category": category, "page": 0, "sort": market_sort})
+
+func _on_market_panel_sort_changed(sort_id: String) -> void:
+	market_sort = sort_id
+	market_page = 0
+	pending_market_action = "browse"
+	send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": sort_id})
+
+func _on_market_panel_listing_clicked(listing: Dictionary, _index: int) -> void:
+	# Mirror the keyboard inspect flow but stay on the panel surface
+	market_inspected_listing = listing
+	pending_market_action = "inspect"
+	if market_panel:
+		market_panel.populate_inspect(listing, account_valor)
+
+func _on_market_panel_buy_pressed(listing: Dictionary) -> void:
+	if listing.is_empty():
+		return
+	var item = listing.get("item", {})
+	var qty = int(listing.get("total_quantity", listing.get("quantity", 1)))
+	# For stacked items the keyboard flow prompts for partial qty; the panel slice
+	# always buys the full stack (Buy_All path). Partial buying is a follow-up.
+	market_selected_listing = listing
+	market_buy_quantity = 0  # 0 = full stack
+	var buy_msg = {"type": "market_buy"}
+	var stack_ids = listing.get("stack_listing_ids", [])
+	if stack_ids.size() > 0:
+		buy_msg["listing_ids"] = stack_ids
+	else:
+		buy_msg["listing_id"] = listing.get("listing_id", "")
+	send_to_server(buy_msg)
+	# Optimistically clear inspect state — server response refreshes browse
+	pending_market_action = "browse"
+	market_inspected_listing = {}
+
+func _on_market_panel_page_prev() -> void:
+	if market_page > 0:
+		market_page -= 1
+		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
+
+func _on_market_panel_page_next() -> void:
+	if market_page < market_total_pages - 1:
+		market_page += 1
+		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
+
+func _on_market_panel_cancel_listing(listing: Dictionary, _index: int) -> void:
+	if listing.is_empty():
+		return
+	var qty = int(listing.get("quantity", 1))
+	send_to_server({
+		"type": "market_cancel",
+		"listing_id": listing.get("listing_id", ""),
+		"post_id": listing.get("post_id", ""),
+		"quantity": qty,
+	})
+
+func _on_market_panel_pull_all() -> void:
+	send_to_server({"type": "market_cancel_all"})
+
+func _on_market_panel_refresh() -> void:
+	if pending_market_action == "my_listings":
+		send_to_server({"type": "market_my_listings"})
+	else:
+		pending_market_action = "browse"
+		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
+
+func _on_market_panel_list_action(action_id: String) -> void:
+	match action_id:
+		"list_inventory":
+			pending_market_action = "list_select"
+			market_list_page = 0
+			for i in range(9):
+				if is_item_select_key_pressed(i):
+					set_meta("marketlistkey_%d_pressed" % i, true)
+			display_market_list_select()
+			update_action_bar()
+		"list_material":
+			pending_market_action = "list_material"
+			market_mat_page = 0
+			for i in range(9):
+				if is_item_select_key_pressed(i):
+					set_meta("marketmatkey_%d_pressed" % i, true)
+			display_market_list_materials()
+			update_action_bar()
+		"list_egg":
+			pending_market_action = "list_egg"
+			market_egg_page = 0
+			display_market_list_eggs()
+			update_action_bar()
+		"bulk_equipment":
+			send_to_server({"type": "market_list_all", "list_type": "equipment"})
+		"bulk_consumable":
+			send_to_server({"type": "market_list_all", "list_type": "consumable"})
+		"bulk_tool":
+			send_to_server({"type": "market_list_all", "list_type": "tool"})
+		"bulk_material":
+			send_to_server({"type": "market_list_all", "list_type": "material"})
+		"bulk_food":
+			send_to_server({"type": "market_list_all", "list_type": "food"})
+
 func _display_temper_target_selection():
 	"""Display temper target stat options for resource gambling craft."""
 	game_output.clear()
@@ -26134,6 +26297,10 @@ func enter_market():
 		if Input.is_physical_key_pressed(key):
 			set_meta("hotkey_%d_pressed" % i, true)
 	display_market_main()
+	# Auto-fetch the first page of listings so the visual panel shows content
+	# immediately instead of an empty browse view.
+	pending_market_action = "browse"
+	send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
 	update_action_bar()
 
 func exit_market():
@@ -26159,6 +26326,9 @@ func exit_market():
 
 func display_market_main():
 	"""Display the market main menu."""
+	# Push state into the visual panel — when the player opens the market we land
+	# on Browse by default; the keyboard main menu still renders below for fallback.
+	_populate_market_panel()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	game_output.clear()
@@ -26188,6 +26358,7 @@ func display_market_main():
 
 func display_market_browse():
 	"""Display market browse listings."""
+	_populate_market_panel()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	game_output.clear()
@@ -26445,6 +26616,7 @@ func display_market_list_eggs():
 
 func display_market_inspect():
 	"""Display detailed inspection of a market listing before buying."""
+	_populate_market_panel()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	game_output.clear()
@@ -26574,6 +26746,7 @@ func display_market_buy_confirm():
 
 func display_market_my_listings():
 	"""Display the player's own market listings, sorted by category."""
+	_populate_market_panel()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	game_output.clear()
