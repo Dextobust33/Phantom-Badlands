@@ -478,6 +478,11 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	if not character.has_active_companion():
 		return
 
+	# Phase B1 — KO companions skip their turn (they're at 0 combat HP and
+	# need to be healed at a healer NPC / station before they can fight).
+	if character.is_companion_ko():
+		return
+
 	var companion = character.get_active_companion()
 	var companion_tier = companion.get("tier", 1)
 	var companion_level = companion.get("level", 1)
@@ -3348,8 +3353,11 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 		return base_damage
 	return int(base_damage * (1.0 + damage_bonus / 100.0))
 
-func process_use_item(peer_id: int, item_index: int) -> Dictionary:
-	"""Process using an item during combat. Returns result with messages."""
+func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:
+	"""Process using an item during combat. Returns result with messages.
+	target: 'self' (default) or 'companion' — when 'companion' and the item is
+	a healing potion, the heal lands on the active companion's persistent
+	combat HP instead of the player."""
 	if not active_combats.has(peer_id):
 		return {"success": false, "message": "You are not in combat!"}
 
@@ -3398,23 +3406,39 @@ func process_use_item(peer_id: int, item_index: int) -> Dictionary:
 	# Check for crafted item's own effect data (quality-scaled amounts from recipe)
 	var item_effect = item.get("effect", {})
 	if effect.has("heal"):
+		# Phase B1 — KO'd companion can only be revived by a healer / NPC,
+		# never by potions or natural regen. Reject here with a clear msg
+		# instead of silently consuming the potion.
+		if target == "companion" and character.has_active_companion() and character.is_companion_ko():
+			return {"success": false, "message": "Your companion is knocked out and can only be revived by a healer."}
 		# Healing potion - hybrid flat + % max HP
 		var heal_amount: int
+		# When targeting a companion, use the companion's max HP for the
+		# percentage-based portion so a tier-3 potion heals roughly the same
+		# fraction of the companion as it would the player.
+		var heal_max_hp: int = character.get_total_max_hp()
+		if target == "companion" and character.has_active_companion():
+			heal_max_hp = character.get_companion_max_hp()
 		if effect.get("heal_pct_only", false):
 			# Elixir: pure % max HP heal
 			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
-			heal_amount = int(character.get_total_max_hp() * elixir_pct / 100.0)
+			heal_amount = int(heal_max_hp * elixir_pct / 100.0)
 		elif item_effect.get("type", "") == "heal" and item_effect.has("amount"):
 			# Crafted potion: use item's own quality-scaled amount
 			heal_amount = int(item_effect.get("amount", 0))
 		elif tier_data.has("healing"):
 			# Tier-based: flat + % max HP
-			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
+			heal_amount = tier_data.healing + int(heal_max_hp * tier_data.get("heal_pct", 0) / 100.0)
 		else:
 			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-		var actual_heal = character.heal(heal_amount)
 		var heal_verb = "use" if "scroll" in item_type else "drink"
-		messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
+		if target == "companion" and character.has_active_companion():
+			var actual_heal: int = character.heal_companion(heal_amount)
+			var comp_name: String = str(character.active_companion.get("name", "your companion"))
+			messages.append("[color=#00FF00]You %s %s and your %s recovers %d HP![/color]" % [heal_verb, item_name, comp_name, actual_heal])
+		else:
+			var actual_heal = character.heal(heal_amount)
+			messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		var primary_resource = character.get_primary_resource()
@@ -3832,6 +3856,32 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]The %s drains %d life from you![/color]" % [monster.name, heal])
 
 	if hits > 0:
+		# === Phase B1 — Companion targeting ===
+		# 25% chance per monster turn to swing at the companion instead of
+		# the player. KO'd companions aren't valid targets. Companion-target
+		# attacks short-circuit the player-only post-damage chain (forcefield,
+		# last stand, resurrect, threshold ability) — companions have a
+		# small persistent HP pool that's healed at healers between fights.
+		var target_companion := false
+		var companion_target_name := ""
+		if character.has_active_companion() and not character.is_companion_ko():
+			if randf() < 0.25:
+				target_companion = true
+				companion_target_name = str(character.get_active_companion().get("name", "companion"))
+
+		if target_companion:
+			var comp_hp_before: int = character.get_companion_combat_hp()
+			var comp_new_hp: int = maxi(0, comp_hp_before - total_damage)
+			character.set_companion_combat_hp(comp_new_hp)
+			combat["total_damage_taken"] = combat.get("total_damage_taken", 0)  # companion damage not counted toward player
+			if num_attacks > 1:
+				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, hits, total_damage])
+			else:
+				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, total_damage])
+			if comp_new_hp <= 0 and comp_hp_before > 0:
+				messages.append("[color=#808080]Your %s is knocked out![/color]" % companion_target_name)
+			return {"success": true, "message": "\n".join(messages), "companion_hit": true}
+
 		# Check for Forcefield shield (absorbs damage)
 		var forcefield_shield = combat.get("forcefield_shield", 0)
 		if forcefield_shield > 0:
@@ -4813,7 +4863,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 			"weakness_turns": int(combat.get("monster_weakness_duration", 0)),
 			"slow_value": int(combat.get("monster_slowed", 0)),
 			"slow_turns": int(combat.get("monster_slow_duration", 0)),
-		}
+		},
+		# Phase B1 — Companion combat HP. Additive fields; old clients ignore
+		# them. -1 / false when no active companion.
+		"companion_combat_hp": character.get_companion_combat_hp() if character.has_active_companion() else -1,
+		"companion_combat_max_hp": character.get_companion_max_hp() if character.has_active_companion() else -1,
+		"companion_ko": character.is_companion_ko() if character.has_active_companion() else false,
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:

@@ -2660,6 +2660,73 @@ func get_active_companion() -> Dictionary:
 	"""Get the active companion data."""
 	return active_companion.duplicate(true)
 
+# === Phase B1 — Companion combat HP ===
+
+static func calculate_companion_max_hp(companion: Dictionary) -> int:
+	"""Companion combat-HP pool. 30 base + 5 per level + 10 per sub_tier +
+	any flat hp_bonus from the companion's bonuses dict."""
+	if companion == null or companion.is_empty():
+		return 0
+	var level: int = int(companion.get("level", 1))
+	var sub_tier: int = int(companion.get("sub_tier", companion.get("tier", 1)))
+	var bonuses: Dictionary = companion.get("bonuses", {})
+	var hp_bonus: int = int(bonuses.get("hp_bonus", 0))
+	return 30 + level * 5 + sub_tier * 10 + hp_bonus
+
+func get_companion_max_hp() -> int:
+	return calculate_companion_max_hp(active_companion)
+
+func get_companion_combat_hp() -> int:
+	"""Current persistent companion HP. Defaults to full when not yet set
+	(first combat) or when the field was migrated in from an older save."""
+	if active_companion.is_empty():
+		return 0
+	if not active_companion.has("combat_hp"):
+		# Lazy-init at full HP on first read.
+		active_companion["combat_hp"] = get_companion_max_hp()
+	return int(active_companion.get("combat_hp", 0))
+
+func set_companion_combat_hp(new_hp: int) -> void:
+	"""Clamp + persist companion HP. Used by combat manager + healer logic."""
+	if active_companion.is_empty():
+		return
+	var max_hp: int = get_companion_max_hp()
+	active_companion["combat_hp"] = clampi(new_hp, 0, max_hp)
+
+func heal_companion(amount: int) -> int:
+	"""Heal the active companion's combat HP. Returns the actual amount healed.
+	NOTE: this is a low-level heal — KO'd companions can still be healed
+	through this path. Call from healer/revive flows. Use regen_companion()
+	for natural recovery (rest/meditate/move) which respects KO."""
+	if active_companion.is_empty() or amount <= 0:
+		return 0
+	var current: int = get_companion_combat_hp()
+	var max_hp: int = get_companion_max_hp()
+	var healed: int = mini(amount, max_hp - current)
+	if healed > 0:
+		set_companion_combat_hp(current + healed)
+	return healed
+
+func regen_companion(percent: float) -> int:
+	"""Natural regen of companion combat HP by `percent` of max HP. Skipped
+	when companion is KO'd — once knocked out, only healers / NPC revives
+	bring them back, not rest/meditate/move/potions. Returns amount healed."""
+	if active_companion.is_empty() or is_companion_ko():
+		return 0
+	var max_hp: int = get_companion_max_hp()
+	var current: int = get_companion_combat_hp()
+	if current >= max_hp:
+		return 0
+	var amount: int = maxi(1, int(max_hp * percent))
+	return heal_companion(amount)
+
+func is_companion_ko() -> bool:
+	"""True when companion is knocked out (HP at 0). KO'd companions don't
+	attack and aren't valid targets for monsters."""
+	if active_companion.is_empty():
+		return false
+	return get_companion_combat_hp() <= 0
+
 func get_all_soul_gems() -> Array:
 	"""Get all collected soul gems."""
 	return soul_gems.duplicate(true)

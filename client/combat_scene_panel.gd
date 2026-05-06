@@ -62,11 +62,18 @@ var _player_ascii_label: RichTextLabel
 var _companion_section: VBoxContainer
 var _companion_art: RichTextLabel
 var _companion_name_label: RichTextLabel
-# Tiny XP bar between the companion name and the ASCII art so players see
-# the companion grow in real time during fights. (Companions don't have
-# their own HP pool — Phase B Combat Juice would need to add that.)
+# Tiny XP + HP bars between the companion name and the ASCII art. XP bar
+# fills as the companion gains XP from kills; HP bar (Phase B1) shows the
+# companion's persistent combat HP — it stays low between fights and is
+# healed at healers / via potion target.
 var _companion_xp_bar: ProgressBar
 var _companion_xp_text: Label
+var _companion_hp_bar: ProgressBar
+var _companion_hp_text: Label
+var _companion_hp_row: HBoxContainer
+var _companion_hp: int = -1
+var _companion_max_hp: int = -1
+var _companion_is_ko: bool = false
 
 # Monster column
 var _monster_col: VBoxContainer
@@ -364,6 +371,40 @@ func _build_player_column() -> VBoxContainer:
 	_companion_xp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_companion_xp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	xp_row.add_child(_companion_xp_text)
+
+	# Phase B1 — Companion HP bar. Persistent across fights; shown so the
+	# player sees their companion bleed low and remembers to heal it. Hidden
+	# entirely when there's no active companion or the server hasn't shipped
+	# HP yet (legacy server / out-of-combat).
+	_companion_hp_row = HBoxContainer.new()
+	_companion_hp_row.add_theme_constant_override("separation", 4)
+	_companion_hp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_section.add_child(_companion_hp_row)
+
+	_companion_hp_bar = ProgressBar.new()
+	_companion_hp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_companion_hp_bar.custom_minimum_size = Vector2(0, 8)
+	_companion_hp_bar.show_percentage = false
+	var hp_bar_sb := StyleBoxFlat.new()
+	hp_bar_sb.bg_color = Color(0.1, 0.05, 0.05)
+	hp_bar_sb.border_color = Color(0.3, 0.15, 0.15)
+	hp_bar_sb.set_border_width_all(1)
+	hp_bar_sb.set_corner_radius_all(2)
+	_companion_hp_bar.add_theme_stylebox_override("background", hp_bar_sb)
+	var hp_fill_sb := StyleBoxFlat.new()
+	hp_fill_sb.bg_color = Color("#FF4444")
+	hp_fill_sb.set_corner_radius_all(2)
+	_companion_hp_bar.add_theme_stylebox_override("fill", hp_fill_sb)
+	_companion_hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_hp_row.add_child(_companion_hp_bar)
+
+	_companion_hp_text = Label.new()
+	_companion_hp_text.add_theme_font_size_override("font_size", 10)
+	_companion_hp_text.add_theme_color_override("font_color", Color(0.95, 0.85, 0.85))
+	_companion_hp_text.custom_minimum_size = Vector2(72, 0)
+	_companion_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_companion_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_hp_row.add_child(_companion_hp_text)
 
 	_companion_art = RichTextLabel.new()
 	_companion_art.bbcode_enabled = true
@@ -1134,6 +1175,43 @@ func update_companion_data(data: Dictionary) -> void:
 		_refresh_companion()
 
 
+func update_companion_combat_hp(current_hp: int, max_hp: int, is_ko: bool) -> void:
+	"""Phase B1 — refresh the companion HP bar from the latest combat_state.
+	Hides the bar when current/max < 0 (legacy server / no active companion).
+	Greys out the companion ASCII when KO so the visual matches the chip."""
+	_companion_hp = current_hp
+	_companion_max_hp = max_hp
+	_companion_is_ko = is_ko
+	if _companion_hp_row == null or not is_instance_valid(_companion_hp_row):
+		return
+	if max_hp <= 0:
+		_companion_hp_row.visible = false
+	else:
+		_companion_hp_row.visible = true
+		_companion_hp_bar.max_value = maxi(1, max_hp)
+		_companion_hp_bar.value = clampi(current_hp, 0, max_hp)
+		_companion_hp_text.text = "HP %d / %d" % [maxi(0, current_hp), max_hp]
+	# Grey-out the companion ASCII art when KO.
+	if _companion_art and is_instance_valid(_companion_art):
+		if is_ko:
+			_companion_art.modulate = Color(0.45, 0.45, 0.45, 0.65)
+		else:
+			_companion_art.modulate = Color.WHITE
+
+
+func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
+	"""Phase B1 — floating damage label above the companion ASCII when the
+	monster targets it. Reuses the existing damage-label fan."""
+	if amount <= 0:
+		return
+	var anchor: Control = _companion_art
+	if anchor == null or not is_instance_valid(anchor):
+		return
+	var anchor_global := anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.25)
+	# Pink-red color so companion hits are distinguishable from player hits.
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
+
+
 func _refresh_companion() -> void:
 	if _companion_data == null or _companion_data.is_empty():
 		_companion_section.visible = false
@@ -1157,6 +1235,18 @@ func _refresh_companion() -> void:
 		_companion_xp_bar.max_value = maxi(1, xp_needed)
 		_companion_xp_bar.value = clampi(xp_current, 0, xp_needed)
 		_companion_xp_text.text = "XP %d / %d" % [xp_current, xp_needed]
+
+	# Phase B1 — Initialize HP bar from companion_data so it's visible at
+	# combat_start (before the first combat_update arrives). Mirrors the
+	# server's character.calculate_companion_max_hp formula. combat_update
+	# overrides with authoritative values.
+	if _companion_hp_row and is_instance_valid(_companion_hp_row):
+		var bonuses: Dictionary = _companion_data.get("bonuses", {})
+		var hp_bonus: int = int(bonuses.get("hp_bonus", 0))
+		var comp_max_hp: int = 30 + level * 5 + sub_tier * 10 + hp_bonus
+		var comp_cur_hp: int = int(_companion_data.get("combat_hp", comp_max_hp))
+		comp_cur_hp = clampi(comp_cur_hp, 0, comp_max_hp)
+		update_companion_combat_hp(comp_cur_hp, comp_max_hp, comp_cur_hp <= 0)
 
 	# Companion ASCII art — tiny font, monospaced. No [center] wrapper because
 	# the column is much wider than the art at font_size 2; centering pads with

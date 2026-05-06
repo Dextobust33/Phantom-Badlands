@@ -2408,6 +2408,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	character.current_hp = min(character.get_total_max_hp(), character.current_hp + max(1, int(character.get_total_max_hp() * hp_regen_percent)))
+	# Phase B1 — companion regens at the same rate. KO'd companions don't
+	# regen; player must visit a healer to revive them.
+	character.regen_companion(hp_regen_percent)
 	if not character.cloak_active:
 		# Only regenerate resources when NOT cloaked
 		character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * regen_percent)))
@@ -2841,6 +2844,12 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 		heal_amount = max(1, heal_amount)  # At least 1 HP
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 
+	# Phase B1 — companion recovers a similar % on rest. Skipped when KO'd.
+	var companion_heal_amount: int = 0
+	if character.has_active_companion() and not character.is_companion_ko():
+		var comp_heal_percent: float = randf_range(0.10, 0.25)
+		companion_heal_amount = character.regen_companion(comp_heal_percent)
+
 	# Build rest message with resource info
 	var rest_msg = ""
 	# Include cloak drop message if applicable
@@ -2857,6 +2866,15 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
 		rest_msg += " and %d Energy" % energy_regen
 	rest_msg += ".[/color]"
+	# Phase B1 — surface companion recovery on rest so it's clear that the
+	# rest also brings the pet back. KO'd companions show a clear callout
+	# that they need a healer to revive.
+	if character.has_active_companion():
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		if character.is_companion_ko():
+			rest_msg += "\n[color=#FF6666]Your %s is knocked out and needs a healer to revive.[/color]" % comp_name
+		elif companion_heal_amount > 0:
+			rest_msg += "\n[color=#3DD9FF]Your %s recovers %d HP.[/color]" % [comp_name, companion_heal_amount]
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -2986,6 +3004,18 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 		meditate_msg = "%s[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [cloak_prefix, heal_amount, mana_regen, bonus_text]
+
+	# Phase B1 — companion recovers HP on meditate too. KO'd companions need
+	# a healer; the message tells the player so.
+	if character.has_active_companion():
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		if character.is_companion_ko():
+			meditate_msg += "\n[color=#FF6666]Your %s is knocked out and needs a healer to revive.[/color]" % comp_name
+		else:
+			var comp_meditate_percent: float = randf_range(0.10, 0.25)
+			var comp_heal_amount: int = character.regen_companion(comp_meditate_percent)
+			if comp_heal_amount > 0:
+				meditate_msg += "\n[color=#3DD9FF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal_amount]
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -3668,12 +3698,13 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 		return
 
 	var item_index = message.get("index", -1)
+	var target = str(message.get("target", "self"))
 
 	if item_index < 0:
 		send_to_peer(peer_id, {"type": "error", "message": "Invalid item!"})
 		return
 
-	var result = combat_mgr.process_use_item(peer_id, item_index)
+	var result = combat_mgr.process_use_item(peer_id, item_index, target)
 
 	if not result.success:
 		send_to_peer(peer_id, {"type": "error", "message": result.message})
@@ -5643,6 +5674,17 @@ func _handle_healer_station(peer_id: int, character):
 	else:
 		msg += "'You look healthy! But I'm here if you need me.'"
 
+	# Phase B1 — companion details so the client can show whether the heal
+	# also covers the companion (and whether it'll revive a KO'd one).
+	var companion_payload: Dictionary = {}
+	if character.has_active_companion():
+		companion_payload = {
+			"name": str(character.active_companion.get("name", "your companion")),
+			"current_hp": character.get_companion_combat_hp(),
+			"max_hp": character.get_companion_max_hp(),
+			"ko": character.is_companion_ko(),
+		}
+
 	send_to_peer(peer_id, {
 		"type": "healer_encounter",
 		"message": msg,
@@ -5652,7 +5694,8 @@ func _handle_healer_station(peer_id: int, character):
 		"has_debuffs": has_debuffs,
 		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 		"current_hp": character.current_hp,
-		"max_hp": character.get_total_max_hp()
+		"max_hp": character.get_total_max_hp(),
+		"companion": companion_payload,
 	})
 
 func check_healer_encounter(_peer_id: int) -> bool:
@@ -5710,6 +5753,19 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 	character.current_hp = mini(character.current_hp + heal_amount, total_max_hp)
 
 	var msg = "[color=#00FF00]The Healer channels their magic. You are healed for %d HP! (-%d valor)[/color]" % [heal_amount, valor_cost]
+
+	# Phase B1 — heal active companion's persistent combat HP at the same time.
+	# Healer covers party (player + companion) for the same valor cost since
+	# the alternative is making the player walk back to a healer twice.
+	if character.has_active_companion():
+		var comp_max: int = character.get_companion_max_hp()
+		var comp_cur: int = character.get_companion_combat_hp()
+		if comp_cur < comp_max:
+			var comp_heal: int = mini(comp_max, comp_cur + int(comp_max * heal_percent / 100.0)) - comp_cur
+			if comp_heal > 0:
+				character.set_companion_combat_hp(comp_cur + comp_heal)
+				var comp_name: String = str(character.active_companion.get("name", "your companion"))
+				msg += "\n[color=#00FFFF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal]
 
 	if cure_debuffs:
 		character.persistent_buffs.clear()
@@ -6305,23 +6361,46 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 	# Apply effect
 	if effect.has("heal"):
-		# Healing potion - hybrid flat + % max HP
+		# Healing potion - hybrid flat + % max HP. Phase B1: when target is
+		# 'companion', heal lands on the active companion's persistent
+		# combat HP using the companion's max HP for the percentage portion.
+		var target: String = str(message.get("target", "self"))
+		# Phase B1 — KO'd companions can only be revived by a healer / NPC.
+		# Reject the potion-on-companion attempt with a clear message so the
+		# player knows where to go.
+		if target == "companion" and character.has_active_companion() and character.is_companion_ko():
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "Your companion is knocked out and can only be revived by a healer."
+			})
+			return
+		var heal_max_hp: int = character.get_total_max_hp()
+		if target == "companion" and character.has_active_companion():
+			heal_max_hp = character.get_companion_max_hp()
 		var heal_amount: int
 		if effect.get("heal_pct_only", false):
 			# Elixir: pure % max HP heal
 			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
-			heal_amount = int(character.get_total_max_hp() * elixir_pct / 100.0)
+			heal_amount = int(heal_max_hp * elixir_pct / 100.0)
 		elif tier_data.has("healing"):
 			# Tier-based: flat + % max HP
-			heal_amount = tier_data.healing + int(character.get_total_max_hp() * tier_data.get("heal_pct", 0) / 100.0)
+			heal_amount = tier_data.healing + int(heal_max_hp * tier_data.get("heal_pct", 0) / 100.0)
 		else:
 			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 		heal_amount = int(heal_amount * potency_mult)
-		var actual_heal = character.heal(heal_amount)
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item_name, actual_heal]
-		})
+		if target == "companion" and character.has_active_companion():
+			var actual_heal: int = character.heal_companion(heal_amount)
+			var comp_name: String = str(character.active_companion.get("name", "your companion"))
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]You use %s and your %s recovers %d HP![/color]" % [item_name, comp_name, actual_heal]
+			})
+		else:
+			var actual_heal = character.heal(heal_amount)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#00FF00]You use %s and restore %d HP![/color]" % [item_name, actual_heal]
+			})
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		var primary_resource = character.get_primary_resource()
@@ -17637,6 +17716,8 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	character.current_hp = min(total_max_hp, character.current_hp + max(1, int(total_max_hp * dungeon_hp_regen_percent)))
+	# Phase B1 — companion regens at the same dungeon rate. Skipped when KO'd.
+	character.regen_companion(dungeon_hp_regen_percent)
 	if not character.cloak_active:
 		character.current_mana = min(total_max_mana, character.current_mana + max(1, int(total_max_mana * dungeon_regen_percent)))
 		character.current_stamina = min(total_max_stamina, character.current_stamina + max(1, int(total_max_stamina * dungeon_regen_percent)))

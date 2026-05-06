@@ -753,6 +753,13 @@ var equip_page: int = 0  # Current page for filtered equip list (0-indexed)
 var unequip_page: int = 0  # Current page for unequip slot list (0-indexed)
 var use_page: int = 0  # Current page for filtered usable items list (0-indexed)
 var combat_use_page: int = 0  # Current page for combat usable items list (0-indexed)
+
+# Phase B1 — when the player picks a heal potion in combat with an active
+# companion, we route through a tiny target picker (Self / Companion) before
+# firing combat_use_item to the server.
+var target_select_mode: bool = false
+var target_select_item_index: int = -1
+var target_select_companion_name: String = ""
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 
 # Consumable tier system for display purposes (matches server calculations)
@@ -2712,6 +2719,26 @@ func _process(delta):
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
 
+	# Phase B1 — heal-potion target selection (Self / Companion). Hotkeys 1
+	# and 2 pick the option; Space cancels.
+	if game_state == GameState.PLAYING and not input_field.has_focus() and target_select_mode:
+		for i in range(2):
+			if is_item_select_key_pressed(i):
+				if not get_meta("targetselect_%d_pressed" % i, false):
+					set_meta("targetselect_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					_resolve_target_select(i + 1)
+			else:
+				set_meta("targetselect_%d_pressed" % i, false)
+		var ts_cancel_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+		if Input.is_physical_key_pressed(ts_cancel_key):
+			if not get_meta("targetselect_cancel_pressed", false):
+				set_meta("targetselect_cancel_pressed", true)
+				set_meta("hotkey_0_pressed", true)
+				_cancel_target_select()
+		else:
+			set_meta("targetselect_cancel_pressed", false)
+
 	# Combat item selection with keybinds
 	if game_state == GameState.PLAYING and not input_field.has_focus() and combat_item_mode:
 		for i in range(9):
@@ -3062,7 +3089,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "affix_filter_select"]
@@ -9760,7 +9787,9 @@ func _display_combat_usable_items_page():
 func _on_combat_picker_chosen(slot: int) -> void:
 	"""In-panel picker selected an entry by 1-based slot number. Dispatches
 	based on which mode is currently active."""
-	if combat_item_mode:
+	if target_select_mode:
+		_resolve_target_select(slot)
+	elif combat_item_mode:
 		use_combat_item_by_number(slot)
 	elif monster_select_mode:
 		# Slot is page-relative; select_monster_from_scroll expects 0-based.
@@ -9770,12 +9799,68 @@ func _on_combat_picker_chosen(slot: int) -> void:
 
 
 func _on_combat_picker_canceled() -> void:
-	if combat_item_mode:
+	if target_select_mode:
+		_cancel_target_select()
+	elif combat_item_mode:
 		cancel_combat_item_mode()
 	elif monster_select_mode:
 		cancel_monster_select()
 	elif target_farm_mode:
 		cancel_target_farm()
+
+
+# === Phase B1 — Heal-potion target selection ===
+
+func _is_heal_potion_item(item: Dictionary) -> bool:
+	"""Heuristic to detect items whose primary effect is healing the user's
+	HP — so we know to prompt for self-vs-companion target."""
+	var effect: Dictionary = item.get("effect", {})
+	if str(effect.get("type", "")).to_lower() == "heal":
+		return true
+	var item_type: String = str(item.get("type", "")).to_lower()
+	var item_subtype: String = str(item.get("item_type", "")).to_lower()
+	# Drop-table healing potions land as type "potion_minor" / "healing_potion" etc.
+	if "healing" in item_type or "healing" in item_subtype:
+		return true
+	if item_type.begins_with("potion_") and not ("mana" in item_type or "stamina" in item_type or "energy" in item_type):
+		return true
+	if "elixir" in item_type:
+		return true
+	return false
+
+func _start_combat_target_select(item_index: int) -> void:
+	"""Show an in-panel picker with two entries: Self / Companion. Stores
+	the inventory item index for the post-pick dispatch."""
+	var comp: Dictionary = character_data.get("active_companion", {})
+	var comp_name: String = str(comp.get("name", "your companion"))
+	target_select_mode = true
+	target_select_item_index = item_index
+	target_select_companion_name = comp_name
+	combat_item_mode = false  # leave combat-item mode so input doesn't double-trigger
+	if combat_scene_panel:
+		var entries: Array = [
+			{"name": "Use on yourself", "color": "#FFD93D", "qty": 1},
+			{"name": "Use on " + comp_name, "color": "#3DD9FF", "qty": 1},
+		]
+		combat_scene_panel.show_item_picker("Heal target", entries, 0, 1)
+	update_action_bar()
+
+func _resolve_target_select(slot: int) -> void:
+	var idx: int = target_select_item_index
+	var target: String = "self" if slot == 1 else "companion"
+	target_select_mode = false
+	target_select_item_index = -1
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
+	send_to_server({"type": "combat_use_item", "index": idx, "target": target})
+	update_action_bar()
+
+func _cancel_target_select() -> void:
+	target_select_mode = false
+	target_select_item_index = -1
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
+	update_action_bar()
 
 
 func _on_combat_picker_prev_page() -> void:
@@ -9825,12 +9910,19 @@ func use_combat_item_by_number(number: int):
 		return
 
 	var actual_index = usable_items[absolute_index].index
+	var actual_item: Dictionary = usable_items[absolute_index].get("item", {})
 
 	# Mark the corresponding action bar hotkey as pressed to prevent it from
 	# triggering later in this same _process frame (item 1 = action_5, etc.)
 	var action_index = (number - 1) + 5
 	if action_index < 10:
 		set_meta("hotkey_%d_pressed" % action_index, true)
+
+	# Phase B1 — heal potions can target the active companion. Pop a tiny
+	# Self/Companion picker before firing the use-item server message.
+	if _is_heal_potion_item(actual_item) and character_data.get("active_companion", {}).size() > 0:
+		_start_combat_target_select(actual_index)
+		return
 
 	combat_item_mode = false
 	if combat_scene_panel:
@@ -17110,6 +17202,13 @@ func handle_server_message(message: Dictionary):
 				# updated above, before the summary flush.)
 				if combat_scene_panel and combat_scene_panel.has_method("update_combat_status"):
 					combat_scene_panel.update_combat_status(_last_player_status, _last_monster_status)
+				# Phase B1 — companion HP bar update from combat_state.
+				if combat_scene_panel and combat_scene_panel.has_method("update_companion_combat_hp"):
+					combat_scene_panel.update_companion_combat_hp(
+						int(state.get("companion_combat_hp", -1)),
+						int(state.get("companion_combat_max_hp", -1)),
+						bool(state.get("companion_ko", false))
+					)
 
 		"combat_end":
 			# Flush any remaining phased combat messages before processing end
@@ -21396,8 +21495,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.210 changes
+	display_game("[color=#00FF00]v0.9.210[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Juice Phase B1 — companions can be wounded and KO'd[/color]")
+	display_game("  • Companions now have their own combat HP pool (30 + level*5 + sub_tier*10 + hp_bonus) shown as a red bar under the companion ASCII in the battle scene")
+	display_game("  • 25% chance per monster turn to swing at the companion instead of you — 'The Goblin attacks your Spider for 8 damage!' with a floating damage label over the companion ASCII")
+	display_game("  • When companion HP hits 0 the companion is knocked out: ASCII grays out, the pet stops attacking, and the monster stops targeting it. KO'd state PERSISTS between fights")
+	display_game("  • Knocked-out companions can ONLY be revived by a healer NPC or healer station — not by potions, rest/meditate, or movement regen. The healer menu now shows the companion's HP and a '(revives + heals <name>)' tag when applicable")
+	display_game("  • Healing potions can target the companion in combat: pick a heal potion, then choose 'Use on yourself' or 'Use on <companion>' from the in-panel target picker")
+	display_game("  • Companion HP regenerates passively alongside the player — 1% per step on the overworld, 0.5% per step in dungeons, 10-25% on Rest, and 10-25% on Meditate. Rest/Meditate messages now call out companion recovery (or KO state) explicitly")
+	display_game("  • Healer NPC + station heals the companion at the same valor cost as the player heal — no separate trip required")
+	display_game("")
+
 	# v0.9.209 changes
-	display_game("[color=#00FF00]v0.9.209[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.209[/color]")
 	display_game("  [color=#FFD700]Companion XP bar + cleaner game_output during combat[/color]")
 	display_game("  • Companion now has a tiny cyan XP bar under its name in the battle scene — fills as the companion gains XP from kills mid-fight, so you watch your pet grow in real time instead of finding out post-combat")
 	display_game("  • Companion name line now shows tier alongside level/variant: 'Spider Hatchling Lv 5 T2 Crimson' instead of just 'Lv 5 Crimson'")
@@ -21432,16 +21543,6 @@ func display_changelog():
 	display_game("  • Magic Bolt suggestion now matches the HP bar — uses server's actual max HP when known, so variant monsters (Shield Guardian, Elite, etc.) get accurate suggestions instead of base-name estimates")
 	display_game("  • Magic Bolt buffer dropped from 18% → 5% — the conservative defense/level estimates were already adding margin; the extra 18% was compounding into ~25% overkill")
 	display_game("  • Variant border on monster ASCII: when a monster rolls a special variant (Weapon Master / Shield Guardian / Corrosive / Sundering / Elite), the silhouette outline glows in a variant-specific color (orange-red / steel blue / acid green / rust orange / gold) so you can spot variants at a glance")
-	display_game("")
-
-	# v0.9.205 changes
-	display_game("[color=#00FFFF]v0.9.205[/color]")
-	display_game("  [color=#FFD700]ASCII Battle Art: hand-drawn class sprites in combat[/color]")
-	display_game("  • All 9 classes now use original ASCII battle art instead of the LPC PNG sprites — Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja each get their own art")
-	display_game("  • Companion ASCII and player ASCII share a single row at the bottom of the player column, just above the HP bar — easier to read the whole party formation in one glance")
-	display_game("  • Player ASCII still lunges forward on attack and reacts to flash / level-up / death FX — wrapped the visual in a layout-free Control so the lunge tween doesn't drift after combat messages re-layout the row")
-	display_game("  • Drop-in convention: any `client/sprites/ascii/<Class>.txt` file auto-replaces the PNG; per-class font_size and color overrides in client/class_ascii_art.gd")
-	display_game("  • PNG sprites still ship with the build as a fallback for any class without ASCII art, and they continue to drive the overworld map sprites")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24851,6 +24952,18 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		else:
 			combat_scene_panel.add_companion_damage(damage_to_monster)
 
+	# Phase B1 — Damage TO companion. "The <monster> attacks your <X> for N
+	# damage!" — short-circuit BEFORE the player-damage parser since the
+	# companion-target message uses the same "for N damage" suffix.
+	var comp_hit_re := RegEx.new()
+	comp_hit_re.compile("(?i)The .+? (?:attacks your|hits your) .+? (?:for|\\d+ times for) (?:\\[color=#FF8800\\])?(\\d+)(?:\\[/color\\])? (?:total )?damage")
+	var comp_match = comp_hit_re.search(combat_msg)
+	if comp_match:
+		var comp_dmg := int(comp_match.get_string(1))
+		combat_scene_panel.show_damage_on_companion(comp_dmg, is_crit)
+		combat_scene_panel.lunge_monster_forward()
+		return
+
 	# Damage TO player — monster is attacking.
 	var damage_to_player = parse_damage_to_player(combat_msg)
 	if damage_to_player > 0:
@@ -26076,20 +26189,37 @@ func handle_healer_encounter(message: Dictionary):
 	display_game("")
 	display_game("[color=#00FF00]=== Healing Options ===[/color]")
 	display_game("[color=#808080]Current HP: %d / %d[/color]" % [current_hp, max_hp])
+	# Phase B1 — surface the companion's HP and KO state so it's clear that
+	# the heal also covers them (revival included).
+	var comp_info: Dictionary = message.get("companion", {})
+	var has_companion: bool = not comp_info.is_empty() and int(comp_info.get("max_hp", 0)) > 0
+	if has_companion:
+		var comp_name: String = str(comp_info.get("name", "Companion"))
+		var ccur: int = int(comp_info.get("current_hp", 0))
+		var cmax: int = int(comp_info.get("max_hp", 1))
+		var cko: bool = bool(comp_info.get("ko", false))
+		var ko_tag: String = "  [color=#FF6666](KO'd — will revive)[/color]" if cko else ""
+		display_game("[color=#3DD9FF]%s: %d / %d[/color]%s" % [comp_name, ccur, cmax, ko_tag])
 	display_game("")
+
+	# Suffix that flags companion coverage on each option label.
+	var comp_suffix: String = ""
+	if has_companion:
+		var revive_word: String = "revives + " if bool(comp_info.get("ko", false)) else ""
+		comp_suffix = "  [color=#3DD9FF](%sheals %s)[/color]" % [revive_word, str(comp_info.get("name", "companion"))]
 
 	# Quick heal (25% HP)
 	var quick_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.quick else ""
-	display_game("[%s] Quick Heal (25%% HP) - %d Valor%s" % [get_action_key_name(1), healer_costs.quick, quick_afford])
+	display_game("[%s] Quick Heal (25%% HP) - %d Valor%s%s" % [get_action_key_name(1), healer_costs.quick, quick_afford, comp_suffix])
 
 	# Full heal (100% HP)
 	var full_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.full else ""
-	display_game("[%s] Full Heal (100%% HP) - %d Valor%s" % [get_action_key_name(2), healer_costs.full, full_afford])
+	display_game("[%s] Full Heal (100%% HP) - %d Valor%s%s" % [get_action_key_name(2), healer_costs.full, full_afford, comp_suffix])
 
 	# Cure All (100% HP + remove debuffs)
 	var cure_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.cure_all else ""
 	var debuff_note = " [color=#808080](no active debuffs)[/color]" if not has_debuffs else ""
-	display_game("[%s] Full + Cure All - %d Valor%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note])
+	display_game("[%s] Full + Cure All - %d Valor%s%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note, comp_suffix])
 
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))
