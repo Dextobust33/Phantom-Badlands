@@ -415,6 +415,7 @@ var _combat_scene_was_in_combat: bool = false  # transition tracking
 var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true→false to extend linger across the continue press
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
 var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
+var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1210,6 +1211,13 @@ var combat_msg_queue: Array[Dictionary] = []
 var combat_phase_timer: float = 0.0
 var combat_phase_paused: bool = false
 var combat_speed: int = 1  # 0=instant, 1=normal(0.6s), 2=slow(1.2s)
+
+# Per-turn one-liners (Combat Readability slice #1)
+# Buffered messages between server pulses get folded into one summary per
+# actor at round boundaries / combat end. FX, sounds, and HP tracking still
+# fire on every message — only the *text* output is condensed.
+var condensed_combat_log: bool = true
+var _round_message_buffer: Array[String] = []
 
 # Player list auto-refresh
 var player_list_refresh_timer: float = 0.0
@@ -3738,6 +3746,8 @@ func _input(event):
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
+			elif keycode == KEY_0:
+				_toggle_condensed_combat_log()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -17016,6 +17026,22 @@ func handle_server_message(message: Dictionary):
 		"combat_update":
 			var state = message.get("combat_state", {})
 			if not state.is_empty():
+				# Per-turn condensed log: flush the buffered messages from the
+				# turn that just completed *before* doing anything else, so
+				# the summary appears in chronological order with the divider
+				# below it.
+				if condensed_combat_log:
+					_emit_turn_summary()
+				# Round divider — when the round count goes up, drop a
+				# divider line so the eye chunks the combat log into turns
+				# instead of treating it as one stream.
+				var current_round = int(state.get("round", _last_displayed_round))
+				if current_round > _last_displayed_round and _last_displayed_round > 0:
+					var divider = "[color=#5C4D33]──────── Round %d ────────[/color]" % current_round
+					display_game(divider)
+					if combat_scene_panel:
+						combat_scene_panel.append_log(divider)
+					_last_displayed_round = current_round
 				var new_hp = state.get("player_hp", character_data.get("current_hp", 0))
 				var max_hp = state.get("player_max_hp", character_data.get("max_hp", 1))
 
@@ -17055,6 +17081,10 @@ func handle_server_message(message: Dictionary):
 			# Flush any remaining phased combat messages before processing end
 			if not combat_msg_queue.is_empty():
 				_flush_combat_queue()
+			# Flush any buffered per-turn summary so the final round's
+			# damage totals appear before the victory/defeat output.
+			if condensed_combat_log:
+				_emit_turn_summary()
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
@@ -17866,6 +17896,9 @@ func _process_combat_start(message: Dictionary):
 	# Flush any leftover phased combat messages from previous combat
 	if not combat_msg_queue.is_empty():
 		_flush_combat_queue()
+	# Drop any leftover per-turn summary buffer from the previous fight so it
+	# doesn't bleed into round 1 of the new fight.
+	_round_message_buffer.clear()
 	# Release input field focus immediately so ability hotkeys work
 	# This prevents the bug where typing in chat when combat starts causes abilities to be sent as text
 	if input_field and input_field.has_focus():
@@ -17890,6 +17923,7 @@ func _process_combat_start(message: Dictionary):
 	awaiting_dungeon_trap_ack = false
 	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 	last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
+	_last_displayed_round = 1  # combat starts on round 1; dividers only fire from round 2 onward
 	update_action_bar()
 	update_companion_art_overlay()  # Show companion during combat
 
@@ -18156,7 +18190,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite"]
+		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite", "condensed"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -18887,6 +18921,14 @@ func process_command(text: String):
 			_show_sprite_size_preview()
 		"altsprite":
 			_run_altsprite_test(parts.slice(1))
+		"condensed":
+			condensed_combat_log = not condensed_combat_log
+			# Drop any half-buffered messages when toggling so neither half
+			# leaks into the other display style mid-fight.
+			_round_message_buffer.clear()
+			var status: String = "ON" if condensed_combat_log else "OFF"
+			var color: String = "#00FF00" if condensed_combat_log else "#FF6666"
+			display_game("[color=%s]Condensed combat log: %s[/color]" % [color, status])
 		"who", "players":
 			request_player_list()
 			display_game("[color=#808080]Refreshing player list...[/color]")
@@ -19284,6 +19326,8 @@ func _load_keybinds():
 					sfx_muted = data["sfx_muted"]
 				if data.has("combat_speed"):
 					combat_speed = clampi(int(data["combat_speed"]), 0, 2)
+				if data.has("condensed_combat_log"):
+					condensed_combat_log = bool(data["condensed_combat_log"])
 				if data.has("show_map_legend"):
 					show_map_legend = data["show_map_legend"]
 				if data.has("comparison_pinned_stats") and data["comparison_pinned_stats"] is Array:
@@ -19309,6 +19353,7 @@ func _save_keybinds():
 	save_data["music_volume"] = music_volume
 	save_data["sfx_muted"] = sfx_muted
 	save_data["combat_speed"] = combat_speed
+	save_data["condensed_combat_log"] = condensed_combat_log
 	save_data["show_map_legend"] = show_map_legend
 	save_data["comparison_pinned_stats"] = comparison_pinned_stats
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
@@ -19901,6 +19946,8 @@ func display_game_settings():
 	display_game("[8] Map Legend: %s" % legend_status)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
 	display_game("[9] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	var condensed_status = "[color=#00FF00]ON[/color]" if condensed_combat_log else "[color=#FF6666]OFF[/color]"
+	display_game("[0] Condensed Combat Log: %s" % condensed_status)
 	display_game("")
 	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -21309,8 +21356,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.207 changes
+	display_game("[color=#00FF00]v0.9.207[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat readability: per-turn one-liners[/color]")
+	display_game("  • Each combat turn now collapses to one summary line per actor — 'You: 47 damage (CRIT, +12 heal)' / 'Your Spider Hatchling: 16 damage' / 'The Hobgoblin hits you for 9 damage (Bleed 4)' — instead of a wall of separate lines for every hit, proc, and tick")
+	display_game("  • Damage from procs (Quick Strike, Shock, Execute, lifesteal, vampiric drain) is folded into the actor's total with the proc tagged in parens")
+	display_game("  • DoT damage (bleed, poison, thorns, reflect, charm, curse) gets its own 'DoT on you' / 'DoT on enemy' summary line so it's separated from direct attacks")
+	display_game("  • Important events (deaths, level-ups, XP gains, buff changes, gear wear) still pass through verbatim — only the repetitive damage spam is condensed")
+	display_game("  • New Settings → Game → [0] toggle: 'Condensed Combat Log' — turn it OFF to fall back to the full per-message firehose log if you prefer the old style")
+	display_game("")
+
 	# v0.9.206 changes
-	display_game("[color=#00FF00]v0.9.206[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.206[/color]")
 	display_game("  [color=#FFD700]Death card + Magic Bolt fixes + Variant borders[/color]")
 	display_game("  • In-panel Death Card: when you fall, an eulogy card now shows inside the battle scene panel (name, class, cause of death, damage dealt/taken, baddie points, leaderboard rank). [Space] to continue, [L] for the full legacy eulogy view")
 	display_game("  • Magic Bolt suggestion now matches the HP bar — uses server's actual max HP when known, so variant monsters (Shield Guardian, Elite, etc.) get accurate suggestions instead of base-name estimates")
@@ -21347,17 +21404,6 @@ func display_changelog():
 	display_game("  • Running damage totals strip above the combat log: 'You: N' (yellow), 'Pet: N' (cyan, only shown when companion contributes), 'Foe: N' (red) — resets per fight")
 	display_game("  • Removed duplicate enemy HP bar — the legacy top-of-screen bar hides whenever the battle scene panel is up; only the panel's HP bar shows during combat")
 	display_game("  • HP discovery system properly applied: unknown monsters show '???' from combat start (no more jumping numbers after the first attack), known monsters show the discovered HP, estimates from neighboring levels show as '~N/N'")
-	display_game("")
-
-	# v0.9.202 changes
-	display_game("[color=#00FFFF]v0.9.202[/color]")
-	display_game("  [color=#FFD700]Map Sprites M3: companion trail + hover tooltips + click-to-inspect[/color]")
-	display_game("  • Active companions now appear as a small variant-colored letter (first char of monster type) on the cell the player just moved from — trails behind your facing direction")
-	display_game("  • Hover any sprite or companion letter for a tooltip: player tooltip shows name/class/level (and 'click to examine' for others); companion tooltip shows name/variant/level + a tiny ASCII art preview")
-	display_game("  • Left-click a player sprite to /examine that player; left-click a companion letter to open the visual Inspect screen for that companion (works for your own AND other players' companions)")
-	display_game("  • Companion Inspect screen now properly shows the variant-colored ASCII art on the right (was missing in the visual panel — game_output version had it but was hidden behind the panel)")
-	display_game("  • Bugfix: Inspect via the action bar — pressing a number key after Inspect now actually shows the companion details inside the panel instead of bouncing back to the list")
-	display_game("  • Server sends each visible companion's full data (level / tier / sub-tier / variant / xp / bonuses) so the inspect view is identical whether it's yours or someone else's")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24001,12 +24047,18 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 	return msg
 
 func _display_combat_msg(combat_msg: String):
-	"""Display a single combat message with all visual effects (extracted from combat_message handler)"""
+	"""Display a single combat message with all visual effects (extracted from combat_message handler).
+	In condensed mode the text is buffered for a per-turn summary instead of
+	displayed directly — but FX, sounds, and HP tracking still run."""
 	var enhanced_msg = _enhance_combat_message(combat_msg)
-	display_game(enhanced_msg)
-	# Mirror to combat scene panel log (A1 — Combat Juice)
-	if combat_scene_panel:
-		combat_scene_panel.append_log(enhanced_msg)
+	if condensed_combat_log:
+		# Stash for summary; don't dump to game_output yet.
+		_round_message_buffer.append(combat_msg)
+	else:
+		display_game(enhanced_msg)
+		# Mirror to combat scene panel log (A1 — Combat Juice)
+		if combat_scene_panel:
+			combat_scene_panel.append_log(enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
@@ -24045,6 +24097,350 @@ func _display_combat_msg(combat_msg: String):
 	# during text-mode play.
 	if combat_scene_panel and combat_scene_panel.visible:
 		_dispatch_combat_fx(combat_msg, damage)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Per-turn one-liners (Combat Readability slice #1)
+# ────────────────────────────────────────────────────────────────────
+
+func _strip_bbcode_for_classify(s: String) -> String:
+	"""Strip [color=...] / [/color] / [b] etc. so regex matching is reliable."""
+	var re := RegEx.new()
+	re.compile("\\[/?[^\\]]+\\]")
+	return re.sub(s, "", true)
+
+func _emit_turn_summary() -> void:
+	"""Flush the per-turn message buffer as a condensed summary."""
+	if _round_message_buffer.is_empty():
+		return
+	var lines := _build_turn_summary(_round_message_buffer)
+	_round_message_buffer.clear()
+	for line in lines:
+		display_game(line)
+		if combat_scene_panel:
+			combat_scene_panel.append_log(line)
+
+func _build_turn_summary(buffer: Array) -> Array:
+	"""Walk the buffered raw messages, fold attack lines into per-actor totals,
+	and pass non-attack lines through verbatim. Returns the ordered list of
+	BBCode-formatted strings to emit."""
+	var player := {"damage": 0, "tags": [], "had_attack": false, "missed": false, "ethereal": false}
+	var companion := {"damage": 0, "name": "", "tags": [], "had_attack": false, "missed": false, "second_attack_damage": 0}
+	var monster := {"damage": 0, "name": "", "tags": [], "had_attack": false, "missed": false}
+	var dot_to_you := {"damage": 0, "tags": []}
+	var dot_to_monster := {"damage": 0, "tags": []}
+	var verbatim: Array = []
+
+	for raw in buffer:
+		var stripped: String = _strip_bbcode_for_classify(raw).strip_edges()
+		if stripped == "":
+			continue
+		if stripped.contains("─────"):
+			continue
+		_classify_combat_msg(raw, stripped, player, companion, monster, dot_to_you, dot_to_monster, verbatim)
+
+	# Emit verbatim lines first (DoT pre-ticks, regen, buffs, deaths, XP, etc.)
+	# then per-actor summaries.
+	var output: Array = verbatim.duplicate()
+
+	if player.had_attack:
+		output.append(_format_player_summary(player))
+	elif player.missed:
+		output.append("[color=#FF4444]You miss.[/color]")
+	elif player.ethereal:
+		output.append("[color=#FF00FF]Your attack passes through the ethereal foe.[/color]")
+
+	if companion.had_attack:
+		output.append(_format_companion_summary(companion))
+	elif companion.missed:
+		var cname: String = companion.name if companion.name != "" else "companion"
+		output.append("[color=#00FFFF]Your %s misses.[/color]" % cname)
+
+	if dot_to_monster.damage > 0:
+		var dot_mon_tags := ""
+		if dot_to_monster.tags.size() > 0:
+			dot_mon_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_monster.tags)
+		output.append("[color=#00FF00]DoT on enemy: %d damage[/color]%s" % [dot_to_monster.damage, dot_mon_tags])
+
+	if monster.had_attack:
+		output.append(_format_monster_summary(monster))
+	elif monster.missed:
+		var mname: String = monster.name if monster.name != "" else "Enemy"
+		output.append("[color=#00FF00]The %s misses you.[/color]" % mname)
+
+	if dot_to_you.damage > 0:
+		var dot_you_tags := ""
+		if dot_to_you.tags.size() > 0:
+			dot_you_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_you.tags)
+		output.append("[color=#FF8800]DoT on you: %d damage[/color]%s" % [dot_to_you.damage, dot_you_tags])
+
+	return output
+
+func _classify_combat_msg(raw: String, stripped: String, player: Dictionary, companion: Dictionary, monster: Dictionary, dot_to_you: Dictionary, dot_to_monster: Dictionary, verbatim: Array) -> void:
+	"""Classify a single combat message into actor totals or pass-through."""
+	var num_re := RegEx.new()
+
+	# === Player attack (matches "you {verb} the {monster} for X damage") ===
+	# These are class attack descriptions from character.gd:get_class_attack_description().
+	# All match: "...you VERB the NAME ... for X damage"
+	num_re.compile("(?i)you \\w+ the [^!]+? for (\\d+) damage")
+	var m = num_re.search(stripped)
+	if m:
+		player.had_attack = true
+		player.damage += int(m.get_string(1))
+		# Crit detection — class-specific prefixes from character.gd
+		var crit_phrases := [
+			"with perfect form",
+			"in a blood-fueled frenzy",
+			"divine light guides",
+			"arcane energy surges",
+			"wild magic explodes",
+			"ancient wisdom empowers",
+			"find a gap in their defenses",
+			"arrow finds its mark",
+			"moving like a shadow",
+			"critical!",
+		]
+		var slow := stripped.to_lower()
+		for phrase in crit_phrases:
+			if slow.contains(phrase):
+				if not player.tags.has("CRIT"):
+					player.tags.append("CRIT")
+				break
+		return
+
+	# === Player miss / pass-through ===
+	if stripped.begins_with("You swing at the ") and stripped.ends_with("but miss!"):
+		player.missed = true
+		return
+	if stripped.begins_with("Your attack passes through the ethereal"):
+		player.ethereal = true
+		return
+
+	# === Player damage procs (add to player.damage + tag) ===
+	num_re.compile("(?i)quick strike! \\+(\\d+) bonus damage")
+	m = num_re.search(stripped)
+	if m:
+		player.damage += int(m.get_string(1))
+		player.tags.append("Quick Strike +%d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)shocking strikes for (\\d+) bonus damage")
+	m = num_re.search(stripped)
+	if m:
+		player.damage += int(m.get_string(1))
+		player.tags.append("Shock +%d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)execute strikes for (\\d+) bonus damage")
+	m = num_re.search(stripped)
+	if m:
+		player.damage += int(m.get_string(1))
+		player.tags.append("Execute +%d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)wild magic burns you for (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("backfire %d" % int(m.get_string(1)))
+		return
+
+	# === Player healing procs ===
+	num_re.compile("(?i)lifesteal heals you for (\\d+) hp")
+	m = num_re.search(stripped)
+	if m:
+		player.tags.append("+%d heal" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)vampiric gear drains (\\d+) hp")
+	m = num_re.search(stripped)
+	if m:
+		player.tags.append("+%d drain" % int(m.get_string(1)))
+		return
+
+	# === Companion attack ===
+	# "Your <name> attacks for X damage!"
+	num_re.compile("(?i)your (.+?) attacks for (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		companion.had_attack = true
+		companion.damage += int(m.get_string(2))
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		return
+
+	# "Your <name> lunges but misses!"
+	num_re.compile("(?i)your (.+?) lunges but misses")
+	m = num_re.search(stripped)
+	if m:
+		companion.missed = true
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		return
+
+	# Companion ability bonus damage: "<name> uses <ability> for X bonus damage!"
+	num_re.compile("(?i)^(.+?) uses (.+?) for (\\d+) bonus damage")
+	m = num_re.search(stripped)
+	if m:
+		companion.damage += int(m.get_string(3))
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		companion.tags.append(m.get_string(2))
+		return
+
+	# Companion crit: "<name> lands a critical <ability> for X bonus damage!"
+	num_re.compile("(?i)^(.+?) lands a critical (.+?) for (\\d+) bonus damage")
+	m = num_re.search(stripped)
+	if m:
+		companion.damage += int(m.get_string(3))
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		companion.tags.append("CRIT %s" % m.get_string(2))
+		return
+
+	# Companion multi-hit: "<name> uses <ability>! N hits for X total damage!"
+	num_re.compile("(?i)^(.+?) uses (.+?)! (\\d+) hits for (\\d+) total damage")
+	m = num_re.search(stripped)
+	if m:
+		companion.damage += int(m.get_string(4))
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		companion.tags.append("%s x%s" % [m.get_string(2), m.get_string(3)])
+		return
+
+	# Companion execute: "<name>'s <ability> executes the <monster>!"
+	num_re.compile("(?i)^(.+?)'s (.+?) executes the ")
+	m = num_re.search(stripped)
+	if m:
+		companion.had_attack = true
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		companion.tags.append("EXECUTE %s" % m.get_string(2))
+		return
+
+	# Companion execute fail damage: "<name>'s <ability> deals X damage!"
+	num_re.compile("(?i)^(.+?)'s (.+?) deals (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		companion.damage += int(m.get_string(3))
+		if companion.name == "":
+			companion.name = m.get_string(1)
+		companion.tags.append(m.get_string(2))
+		return
+
+	# === Monster attack ===
+	# "The <monster> attacks and deals X damage!"
+	num_re.compile("(?i)the (.+?) attacks and deals (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		monster.had_attack = true
+		monster.damage += int(m.get_string(2))
+		if monster.name == "":
+			monster.name = m.get_string(1)
+		return
+
+	# "The <monster> attacks and deals a lethal blow!"
+	if stripped.contains("attacks and deals a lethal blow"):
+		monster.had_attack = true
+		monster.tags.append("LETHAL")
+		num_re.compile("(?i)the (.+?) attacks")
+		m = num_re.search(stripped)
+		if m and monster.name == "":
+			monster.name = m.get_string(1)
+		return
+
+	# "The <monster> attacks but misses!"
+	num_re.compile("(?i)the (.+?) attacks but misses")
+	m = num_re.search(stripped)
+	if m:
+		monster.missed = true
+		if monster.name == "":
+			monster.name = m.get_string(1)
+		return
+
+	# "The <monster> attacks multiple times!" → tag, expect damage lines after
+	num_re.compile("(?i)the (.+?) attacks multiple times")
+	m = num_re.search(stripped)
+	if m:
+		monster.tags.append("multi-hit")
+		if monster.name == "":
+			monster.name = m.get_string(1)
+		return
+
+	# === DoT to player ===
+	num_re.compile("(?i)bleeding deals (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Bleed %d" % int(m.get_string(1)))
+		return
+	# "Poison deals X damage! (Y turns remaining)" — TO player
+	# (vs. "Poison deals X damage to the <monster>!" which is to monster)
+	num_re.compile("(?i)^poison deals (\\d+) damage! \\(")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Poison %d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)charmed and attack yourself for (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Charm %d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)thorns deal (\\d+) damage to you")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Thorns %d" % int(m.get_string(1)))
+		return
+	num_re.compile("(?i)reflects (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Reflect %d" % int(m.get_string(1)))
+		return
+	# Death curse: "The <monster>'s death curse deals X damage..."
+	num_re.compile("(?i)death curse deals (\\d+) damage")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_you.damage += int(m.get_string(1))
+		dot_to_you.tags.append("Curse %d" % int(m.get_string(1)))
+		return
+
+	# === DoT on monster (poison applied damage on monster's turn) ===
+	num_re.compile("(?i)poison deals (\\d+) damage to the ")
+	m = num_re.search(stripped)
+	if m:
+		dot_to_monster.damage += int(m.get_string(1))
+		dot_to_monster.tags.append("Poison %d" % int(m.get_string(1)))
+		return
+
+	# === Default: pass through verbatim ===
+	# This catches deaths, level-ups, XP, buffs, regen, status changes, etc.
+	verbatim.append(raw)
+
+func _format_player_summary(player: Dictionary) -> String:
+	var tag_str := ""
+	if player.tags.size() > 0:
+		tag_str = " [color=#808080](%s)[/color]" % ", ".join(player.tags)
+	return "[color=#FFFF00]You: %d damage[/color]%s" % [player.damage, tag_str]
+
+func _format_companion_summary(companion: Dictionary) -> String:
+	var name: String = companion.name if companion.name != "" else "companion"
+	var tag_str := ""
+	if companion.tags.size() > 0:
+		tag_str = " [color=#808080](%s)[/color]" % ", ".join(companion.tags)
+	return "[color=#00FFFF]Your %s: %d damage[/color]%s" % [name, companion.damage, tag_str]
+
+func _format_monster_summary(monster: Dictionary) -> String:
+	var name: String = monster.name if monster.name != "" else "Enemy"
+	var tag_str := ""
+	if monster.tags.size() > 0:
+		tag_str = " [color=#808080](%s)[/color]" % ", ".join(monster.tags)
+	if monster.damage > 0:
+		return "[color=#FF4444]The %s hits you for %d damage[/color]%s" % [name, monster.damage, tag_str]
+	# Had_attack but no damage (e.g., LETHAL with no number — already covered above)
+	if monster.tags.has("LETHAL"):
+		return "[color=#FF0000]The %s lands a lethal blow![/color]" % name
+	return "[color=#FF4444]The %s attacks.[/color]%s" % [name, tag_str]
 
 
 func _show_sprite_size_preview() -> void:
@@ -24512,6 +24908,25 @@ func _toggle_map_legend():
 	var color = "#00FF00" if show_map_legend else "#FF6666"
 	display_game("[color=%s]Map Legend: %s[/color]" % [color, status])
 	await get_tree().create_timer(1.0).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
+func _toggle_condensed_combat_log():
+	"""Toggle the per-turn condensed combat log."""
+	condensed_combat_log = not condensed_combat_log
+	# Drop any half-buffered lines so neither display style leaks into the other.
+	_round_message_buffer.clear()
+	_save_keybinds()
+	game_output.clear()
+	var status = "ON" if condensed_combat_log else "OFF"
+	var color = "#00FF00" if condensed_combat_log else "#FF6666"
+	display_game("[color=%s]Condensed Combat Log: %s[/color]" % [color, status])
+	if condensed_combat_log:
+		display_game("[color=#808080]Each turn shows one summary line per actor with totaled damage and key procs.[/color]")
+	else:
+		display_game("[color=#808080]Showing the full per-message combat log (firehose mode).[/color]")
+	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
 		display_game_settings()
