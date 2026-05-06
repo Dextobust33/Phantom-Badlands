@@ -17249,6 +17249,10 @@ func handle_server_message(message: Dictionary):
 					update_resource_bar()
 					update_player_xp_bar()
 					update_currency_display()
+					# Phase B1 — refresh companion HP shown above the corner
+					# overlay as soon as the fight resolves, so wounded /
+					# KO'd state is visible without waiting for the next move.
+					update_companion_art_overlay()
 				# Check if Soldier harvest is available
 				harvest_available = message.get("harvest_available", false)
 				# Check for incoming flock encounter
@@ -17353,6 +17357,7 @@ func handle_server_message(message: Dictionary):
 					update_resource_bar()
 					update_player_xp_bar()
 					update_currency_display()
+					update_companion_art_overlay()
 				# Check if another monster is incoming (Shrieker summoned replacement)
 				if message.get("flock_incoming", false):
 					flock_pending = true
@@ -17393,6 +17398,7 @@ func handle_server_message(message: Dictionary):
 					_set_character_data(message.character)
 					update_player_hp_bar()
 					update_resource_bar()
+					update_companion_art_overlay()
 				pending_continue = true
 				if dungeon_mode:
 					pending_dungeon_continue = true
@@ -21495,8 +21501,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.212 changes
+	display_game("[color=#00FF00]v0.9.212[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafted scroll fix + actor headers + companion HP visibility[/color]")
+	display_game("  • Crafted buff scrolls now apply the values shown on inspect — a Masterwork Scroll of Rage that says '+18 Attack for 10 rounds' actually gives +18 attack for 10 rounds. Previously combat applied a tier-formula (~10% of attack for 1 battle) that ignored the scroll's recipe data; out-of-combat use had the same bug. Both paths now read item.effect.amount / bonus_pct / duration directly when crafted")
+	display_game("  • Crafted scroll quality scaling extended to bonus_pct fields too — a 25% buff at base quality now scales to 31% Masterwork / 12% Poor instead of staying flat at 25% regardless")
+	display_game("  • Combat panel log now uses color-coded actor glyphs: ▶ (You), ◆ (Pet), ✦ (Foe), ⌘ (DoT) prefixed on per-turn summary lines so the visual rhythm pops when scanning combat history")
+	display_game("  • Companion combat HP now shown above the corner overlay during normal play — color-coded HP, with a 'KO'd — needs healer' callout when at 0. No more hunting through the More menu to check whether your pet needs a healer")
+	display_game("  • HP overlay refreshes immediately at combat-end (victory, fled, death-saved) instead of waiting for the next move/character_update")
+	display_game("")
+
 	# v0.9.211 changes
-	display_game("[color=#00FF00]v0.9.211[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.211[/color]")
 	display_game("  [color=#FFD700]Item quality cleanup[/color]")
 	display_game("  • Dropped potions, scrolls, elixirs and bane potions are now always Common rarity. Previously rarity was rolled (Uncommon / Rare / Epic / Legendary) but didn't change healing or buff strength in combat — only out-of-combat use applied a hidden potency multiplier. The mismatch caused 'Rare Health Potion' to heal the same as 'Common Health Potion' in combat, which read as broken")
 	display_game("  • Tier (Minor / Lesser / Standard / Greater / Major / Superior / Master / Mythic / Primordial) is now the only progression for dropped consumables. What you see is what you get")
@@ -21533,16 +21549,6 @@ func display_changelog():
 	display_game("  • New status-effect strip under each HP bar in the battle scene: shows active buffs, debuffs, and DoT timers as compact tag chips (Bld 4x3T = bleed 4 damage × 3 turns left, Hst 5T = haste 5 turns, FF 30 = forcefield with 30 shield, Stn 1T = stunned 1 turn, etc.)")
 	display_game("  • Player side shows poison, blind, cloak, forcefield, and any active_buffs (haste, fortify, iron skin, war cry, berserk, vampiric, etc.); monster side shows bleed, poison, stun, charm, weakness, slow")
 	display_game("  • Server now ships full status state in every combat_update so the strip stays accurate across rounds (additive fields — old clients ignore them)")
-	display_game("")
-
-	# v0.9.207 changes
-	display_game("[color=#00FFFF]v0.9.207[/color]")
-	display_game("  [color=#FFD700]Combat readability: per-turn one-liners[/color]")
-	display_game("  • Each combat turn now collapses to one summary line per actor — 'You: 47 damage (CRIT, +12 heal)' / 'Your Spider Hatchling: 16 damage' / 'The Hobgoblin hits you for 9 damage (Bleed 4)' — instead of a wall of separate lines for every hit, proc, and tick")
-	display_game("  • Damage from procs (Quick Strike, Shock, Execute, lifesteal, vampiric drain) is folded into the actor's total with the proc tagged in parens")
-	display_game("  • DoT damage (bleed, poison, thorns, reflect, charm, curse) gets its own 'DoT on you' / 'DoT on enemy' summary line so it's separated from direct attacks")
-	display_game("  • Important events (deaths, level-ups, XP gains, buff changes, gear wear) still pass through verbatim — only the repetitive damage spam is condensed")
-	display_game("  • New Settings → Game → [0] toggle: 'Condensed Combat Log' — turn it OFF to fall back to the full per-message firehose log if you prefer the old style")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22205,7 +22211,28 @@ func update_companion_art_overlay():
 
 	# Build overlay text - readable header with variant name
 	var variant_name = active_companion.get("variant", "Normal")
-	var overlay_text = "[center][font_size=14][color=%s]%s[/color] [color=#FFFF00]Lv%d[/color][/font_size]\n[font_size=11][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
+	# Phase B1 — companion combat HP shown at the top of the overlay so it's
+	# visible during normal play (not buried in a menu). Uses the same
+	# formula as the server's calculate_companion_max_hp.
+	var sub_tier_for_hp: int = int(active_companion.get("sub_tier", active_companion.get("tier", 1)))
+	var bonuses_for_hp: Dictionary = active_companion.get("bonuses", {})
+	var hp_bonus_flat: int = int(bonuses_for_hp.get("hp_bonus", 0))
+	var comp_max_hp: int = 30 + level * 5 + sub_tier_for_hp * 10 + hp_bonus_flat
+	var comp_combat_hp: int = int(active_companion.get("combat_hp", comp_max_hp))
+	comp_combat_hp = clampi(comp_combat_hp, 0, comp_max_hp)
+	var hp_color: String
+	var hp_text: String
+	if comp_combat_hp <= 0:
+		hp_color = "#FF6666"
+		hp_text = "KO'd — needs healer"
+	elif comp_combat_hp < comp_max_hp / 3:
+		hp_color = "#FFAA33"
+		hp_text = "HP %d / %d" % [comp_combat_hp, comp_max_hp]
+	else:
+		hp_color = "#FF6666"
+		hp_text = "HP %d / %d" % [comp_combat_hp, comp_max_hp]
+	var hp_header: String = "[center][font_size=10][color=%s]%s[/color][/font_size][/center]\n" % [hp_color, hp_text]
+	var overlay_text = hp_header + "[center][font_size=14][color=%s]%s[/color] [color=#FFFF00]Lv%d[/color][/font_size]\n[font_size=11][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
 
 	if art_lines.size() > 0:
 		# Join all art lines and apply variant color pattern
@@ -24296,15 +24323,15 @@ func _build_turn_summary(buffer: Array) -> Array:
 	if player.had_attack:
 		output.append(_format_player_summary(player))
 	elif player.missed:
-		output.append("[color=#FF4444]You miss.[/color]")
+		output.append("[color=#C9A040]▶[/color] [color=#FF4444]You miss.[/color]")
 	elif player.ethereal:
-		output.append("[color=#FF00FF]Your attack passes through the ethereal foe.[/color]")
+		output.append("[color=#C9A040]▶[/color] [color=#FF00FF]Your attack passes through the ethereal foe.[/color]")
 
 	if companion.had_attack:
 		output.append(_format_companion_summary(companion))
 	elif companion.missed:
 		var cname: String = companion.name if companion.name != "" else "companion"
-		output.append("[color=#00FFFF]Your %s misses.[/color]" % cname)
+		output.append("[color=#3DD9FF]◆[/color] [color=#00FFFF]Your %s misses.[/color]" % cname)
 
 	if dot_to_monster.damage > 0:
 		# Enrich tags with post-tick durations from the cached monster status.
@@ -24312,13 +24339,13 @@ func _build_turn_summary(buffer: Array) -> Array:
 		var dot_mon_tags := ""
 		if dot_to_monster.tags.size() > 0:
 			dot_mon_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_monster.tags)
-		output.append("[color=#00FF00]DoT on enemy: %d damage[/color]%s" % [dot_to_monster.damage, dot_mon_tags])
+		output.append("[color=#66FF66]⌘[/color] [color=#00FF00]DoT on enemy: %d damage[/color]%s" % [dot_to_monster.damage, dot_mon_tags])
 
 	if monster.had_attack:
 		output.append(_format_monster_summary(monster))
 	elif monster.missed:
 		var mname: String = monster.name if monster.name != "" else "Enemy"
-		output.append("[color=#00FF00]The %s misses you.[/color]" % mname)
+		output.append("[color=#FF6666]✦[/color] [color=#00FF00]The %s misses you.[/color]" % mname)
 
 	if dot_to_you.damage > 0:
 		# Enrich tags with post-tick durations from the cached player status.
@@ -24326,7 +24353,7 @@ func _build_turn_summary(buffer: Array) -> Array:
 		var dot_you_tags := ""
 		if dot_to_you.tags.size() > 0:
 			dot_you_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_you.tags)
-		output.append("[color=#FF8800]DoT on you: %d damage[/color]%s" % [dot_to_you.damage, dot_you_tags])
+		output.append("[color=#FF8800]⌘[/color] [color=#FF8800]DoT on you: %d damage[/color]%s" % [dot_to_you.damage, dot_you_tags])
 
 	return output
 
@@ -24598,14 +24625,14 @@ func _format_player_summary(player: Dictionary) -> String:
 	var tag_str := ""
 	if player.tags.size() > 0:
 		tag_str = " [color=#808080](%s)[/color]" % ", ".join(player.tags)
-	return "[color=#FFFF00]You: %d damage[/color]%s" % [player.damage, tag_str]
+	return "[color=#C9A040]▶[/color] [color=#FFFF00]You: %d damage[/color]%s" % [player.damage, tag_str]
 
 func _format_companion_summary(companion: Dictionary) -> String:
 	var name: String = companion.name if companion.name != "" else "companion"
 	var tag_str := ""
 	if companion.tags.size() > 0:
 		tag_str = " [color=#808080](%s)[/color]" % ", ".join(companion.tags)
-	return "[color=#00FFFF]Your %s: %d damage[/color]%s" % [name, companion.damage, tag_str]
+	return "[color=#3DD9FF]◆[/color] [color=#00FFFF]Your %s: %d damage[/color]%s" % [name, companion.damage, tag_str]
 
 func _format_monster_summary(monster: Dictionary) -> String:
 	var name: String = monster.name if monster.name != "" else "Enemy"
@@ -24613,11 +24640,11 @@ func _format_monster_summary(monster: Dictionary) -> String:
 	if monster.tags.size() > 0:
 		tag_str = " [color=#808080](%s)[/color]" % ", ".join(monster.tags)
 	if monster.damage > 0:
-		return "[color=#FF4444]The %s hits you for %d damage[/color]%s" % [name, monster.damage, tag_str]
+		return "[color=#FF6666]✦[/color] [color=#FF4444]The %s hits you for %d damage[/color]%s" % [name, monster.damage, tag_str]
 	# Had_attack but no damage (e.g., LETHAL with no number — already covered above)
 	if monster.tags.has("LETHAL"):
-		return "[color=#FF0000]The %s lands a lethal blow![/color]" % name
-	return "[color=#FF4444]The %s attacks.[/color]%s" % [name, tag_str]
+		return "[color=#FF6666]✦[/color] [color=#FF0000]The %s lands a lethal blow![/color]" % name
+	return "[color=#FF6666]✦[/color] [color=#FF4444]The %s attacks.[/color]%s" % [name, tag_str]
 
 
 func _show_sprite_size_preview() -> void:

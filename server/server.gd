@@ -6466,10 +6466,40 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	elif effect.has("buff"):
 		# Buff scroll - tier-based values
 		var buff_type = effect.buff
-		var buff_value: int
-		var duration: int
+		var buff_value: int = 0
+		var duration: int = 0
+		var crafted_buff_handled: bool = false
 
-		if effect.get("tier_forcefield", false):
+		# Crafted buff scrolls: bypass tier formulas and apply the exact
+		# values shown on inspect. Mirrors the same fix applied in
+		# combat_manager.gd:process_use_item.
+		var item_effect_buff: Dictionary = item.get("effect", {})
+		if item.get("crafted", false) and item_effect_buff.get("type", "") == "buff":
+			buff_type = str(item_effect_buff.get("stat", buff_type))
+			if item_effect_buff.has("bonus_pct"):
+				buff_value = int(item_effect_buff.get("bonus_pct", 0))
+			else:
+				buff_value = int(item_effect_buff.get("amount", 0))
+			var is_battles_buff: bool = item_effect_buff.has("duration_battles")
+			if is_battles_buff:
+				duration = int(item_effect_buff.get("duration_battles", 1))
+			else:
+				duration = int(item_effect_buff.get("duration", 5))
+			var crafted_value_suffix: String = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] or item_effect_buff.has("bonus_pct") else ""
+			if is_battles_buff:
+				character.add_persistent_buff(buff_type, buff_value, duration)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, crafted_value_suffix, buff_type, duration, "s" if duration != 1 else ""]
+				})
+			else:
+				character.add_buff(buff_type, buff_value, duration)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, crafted_value_suffix, buff_type, duration]
+				})
+			crafted_buff_handled = true
+		elif effect.get("tier_forcefield", false):
 			buff_value = tier_data.get("forcefield_value", 1500)
 			duration = tier_data.get("scroll_duration", 1)
 		elif effect.get("stat_pct", false):
@@ -6498,20 +6528,21 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			var duration_per_10 = effect.get("duration_per_10_levels", 1)
 			duration = base_duration + (item_level / 10) * duration_per_10
 
-		var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
+		if not crafted_buff_handled:
+			var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
 
-		if effect.get("battles", false):
-			character.add_persistent_buff(buff_type, buff_value, duration)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""]
-			})
-		else:
-			character.add_buff(buff_type, buff_value, duration)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, value_suffix, buff_type, duration]
-			})
+			if effect.get("battles", false):
+				character.add_persistent_buff(buff_type, buff_value, duration)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""]
+				})
+			else:
+				character.add_buff(buff_type, buff_value, duration)
+				send_to_peer(peer_id, {
+					"type": "text",
+					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, value_suffix, buff_type, duration]
+				})
 	elif effect.has("essence") or effect.has("gold"):
 		# Material Pouch — grants random tier-appropriate materials
 		var tier = clampi(int(item_level / 15), 0, 8)
@@ -15561,10 +15592,15 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 	var effect = recipe.get("effect", {})
 	var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
 
-	# Scale effect by quality
+	# Scale effect by quality. Both `amount` (flat) and `bonus_pct` (percent)
+	# are scaled so the inspect description and the actual applied buff/heal
+	# both reflect quality. Duration is left fixed — quality changes potency,
+	# not how long the effect lasts.
 	var scaled_effect = effect.duplicate()
 	if scaled_effect.has("amount"):
 		scaled_effect["amount"] = int(scaled_effect["amount"] * multiplier)
+	if scaled_effect.has("bonus_pct"):
+		scaled_effect["bonus_pct"] = int(scaled_effect["bonus_pct"] * multiplier)
 
 	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
 
