@@ -21495,8 +21495,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.211 changes
+	display_game("[color=#00FF00]v0.9.211[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Item quality cleanup[/color]")
+	display_game("  • Dropped potions, scrolls, elixirs and bane potions are now always Common rarity. Previously rarity was rolled (Uncommon / Rare / Epic / Legendary) but didn't change healing or buff strength in combat — only out-of-combat use applied a hidden potency multiplier. The mismatch caused 'Rare Health Potion' to heal the same as 'Common Health Potion' in combat, which read as broken")
+	display_game("  • Tier (Minor / Lesser / Standard / Greater / Major / Superior / Master / Mythic / Primordial) is now the only progression for dropped consumables. What you see is what you get")
+	display_game("  • Crafted potion bug fix: out-of-combat use now actually applies the quality-scaled amount shown on hover. A Masterwork Health Potion that says 'Restores 187 HP' on inspect now restores 187 HP when drunk from inventory (previously would heal 0 because the inventory-use path ignored the item's own effect data)")
+	display_game("  • Tomes, Home Stones, and Mysterious Boxes keep their rarity since those are meaningful tiers for those item categories")
+	display_game("")
+
 	# v0.9.210 changes
-	display_game("[color=#00FF00]v0.9.210[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.210[/color]")
 	display_game("  [color=#FFD700]Combat Juice Phase B1 — companions can be wounded and KO'd[/color]")
 	display_game("  • Companions now have their own combat HP pool (30 + level*5 + sub_tier*10 + hp_bonus) shown as a red bar under the companion ASCII in the battle scene")
 	display_game("  • 25% chance per monster turn to swing at the companion instead of you — 'The Goblin attacks your Spider for 8 damage!' with a floating damage label over the companion ASCII")
@@ -21534,15 +21543,6 @@ func display_changelog():
 	display_game("  • DoT damage (bleed, poison, thorns, reflect, charm, curse) gets its own 'DoT on you' / 'DoT on enemy' summary line so it's separated from direct attacks")
 	display_game("  • Important events (deaths, level-ups, XP gains, buff changes, gear wear) still pass through verbatim — only the repetitive damage spam is condensed")
 	display_game("  • New Settings → Game → [0] toggle: 'Condensed Combat Log' — turn it OFF to fall back to the full per-message firehose log if you prefer the old style")
-	display_game("")
-
-	# v0.9.206 changes
-	display_game("[color=#00FFFF]v0.9.206[/color]")
-	display_game("  [color=#FFD700]Death card + Magic Bolt fixes + Variant borders[/color]")
-	display_game("  • In-panel Death Card: when you fall, an eulogy card now shows inside the battle scene panel (name, class, cause of death, damage dealt/taken, baddie points, leaderboard rank). [Space] to continue, [L] for the full legacy eulogy view")
-	display_game("  • Magic Bolt suggestion now matches the HP bar — uses server's actual max HP when known, so variant monsters (Shield Guardian, Elite, etc.) get accurate suggestions instead of base-name estimates")
-	display_game("  • Magic Bolt buffer dropped from 18% → 5% — the conservative defense/level estimates were already adding margin; the extra 18% was compounding into ~25% overkill")
-	display_game("  • Variant border on monster ASCII: when a monster rolls a special variant (Weapon Master / Shield Guardian / Corrosive / Sundering / Elite), the silhouette outline glows in a variant-specific color (orange-red / steel blue / acid green / rust orange / gold) so you can spot variants at a glance")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
