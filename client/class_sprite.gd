@@ -16,8 +16,24 @@ const CELL := 64
 const IDLE_X := 0
 const IDLE_Y := 11 * CELL  # 704 — walk-right row, idle column
 
+# LPC walk-row layout — column 0 of each row is the idle/standing pose
+# for that facing.
+const ROW_UP := 8
+const ROW_LEFT := 9
+const ROW_DOWN := 10
+const ROW_RIGHT := 11
+
+# Direction string constants — used by callers to ask for a specific facing.
+const DIR_UP := "up"
+const DIR_DOWN := "down"
+const DIR_LEFT := "left"
+const DIR_RIGHT := "right"
+
 # Texture cache so we don't reload the same PNG repeatedly.
 static var _texture_cache: Dictionary = {}
+# Per-direction atlas cache so we don't construct new AtlasTexture objects
+# every frame for the same class+direction.
+static var _atlas_cache: Dictionary = {}
 
 # Class display colors used for HP-bar tinting and accent highlights on the
 # combat scene panel. Tunable later — these are first-pass.
@@ -52,15 +68,34 @@ static func _get_full_texture(class_name_in: String) -> Texture2D:
 
 
 static func get_idle_atlas(class_name_in: String) -> AtlasTexture:
-	"""Return an AtlasTexture pointing at the down-facing idle frame for the
-	given class. Returns null if the class sheet is missing — caller should
-	render a placeholder."""
+	"""Return an AtlasTexture pointing at the right-facing idle frame for
+	the given class. Used by the combat scene panel where the player
+	always faces the monster on the right. For map use, prefer
+	get_idle_atlas_for_direction() so the sprite rotates to the
+	movement direction."""
+	return get_idle_atlas_for_direction(class_name_in, DIR_RIGHT)
+
+
+static func get_idle_atlas_for_direction(class_name_in: String, direction: String) -> AtlasTexture:
+	"""Return an AtlasTexture for the given class facing the given direction.
+	Cached per (class, direction) so repeated calls in _process don't churn."""
+	var key := _normalize(class_name_in) + "|" + direction
+	if _atlas_cache.has(key):
+		return _atlas_cache[key]
 	var tex := _get_full_texture(class_name_in)
 	if tex == null:
+		_atlas_cache[key] = null
 		return null
+	var row: int = ROW_RIGHT
+	match direction:
+		DIR_UP: row = ROW_UP
+		DIR_LEFT: row = ROW_LEFT
+		DIR_DOWN: row = ROW_DOWN
+		DIR_RIGHT: row = ROW_RIGHT
 	var atlas := AtlasTexture.new()
 	atlas.atlas = tex
-	atlas.region = Rect2(IDLE_X, IDLE_Y, CELL, CELL)
+	atlas.region = Rect2(IDLE_X, row * CELL, CELL, CELL)
+	_atlas_cache[key] = atlas
 	return atlas
 
 
@@ -75,3 +110,4 @@ static func has_sprite_for(class_name_in: String) -> bool:
 
 static func clear_cache() -> void:
 	_texture_cache.clear()
+	_atlas_cache.clear()
