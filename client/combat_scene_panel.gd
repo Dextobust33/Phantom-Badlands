@@ -60,13 +60,14 @@ var _log_inner: Control
 var _log_label: RichTextLabel
 var _log_scroll: ScrollContainer
 
-# Running damage totals strip (Combat readability #2). Three labels —
-# player damage, companion damage, monster damage to player — displayed
-# in a row above the combat log so players can see the bigger picture
-# without parsing every message.
+# Running damage totals strip (Combat readability #2). Three actor boxes —
+# player, companion, monster — each with a prefix label ("You:" / "Pet:" /
+# "Foe:") in one color and the number in a contrasting color so the digit
+# stands out from the surrounding text.
 var _totals_strip: HBoxContainer
 var _player_total_label: Label
 var _companion_total_label: Label
+var _companion_total_box: HBoxContainer  # parent for visibility toggle
 var _monster_total_label: Label
 var _player_total: int = 0
 var _companion_total: int = 0
@@ -86,6 +87,25 @@ signal picker_item_chosen(slot: int)  # 1-based slot on the current page
 signal picker_canceled
 signal picker_prev_page
 signal picker_next_page
+
+# Flock warning banner — persistent label hovering over the monster art
+# while another fight is queued ("More Goblins approaching! Press [Space]").
+# Players focus on the monster art when reading combat, so the banner sits
+# there rather than in the log section below.
+var _flock_warning_label: Label = null
+
+# Victory card — overlay on the log section showing XP/loot/level-up/prompt
+# after a non-flock victory, so the player reads rewards inside the scene
+# panel instead of being yanked into a wall of text in game_output.
+var _victory_card_overlay: PanelContainer
+var _victory_card_xp_label: RichTextLabel
+var _victory_card_levelup_label: RichTextLabel
+var _victory_card_loot_vbox: VBoxContainer
+var _victory_card_prompt_label: RichTextLabel
+# True from show_victory_card() until hide_victory_card(), independent of
+# whether the player has temporarily swapped to the log view. Drives the
+# panel-stays-visible logic on the client.
+var _victory_interlude_active: bool = false
 
 # A2 — hit feedback. Active tween references so a rapid second hit doesn't
 # stack on top of an in-progress flash/lunge (we kill the previous one).
@@ -216,6 +236,7 @@ func _build_layout() -> void:
 	# rect as _log_scroll so showing it hides the log; the scene above
 	# stays untouched.
 	_build_picker_overlay()
+	_build_victory_card_overlay()
 
 
 func _build_player_column() -> VBoxContainer:
@@ -405,34 +426,58 @@ func _build_shared_hp_strip() -> HBoxContainer:
 
 
 func _build_running_totals_strip() -> HBoxContainer:
-	"""Three small labels in a row showing fight-wide damage totals per
-	actor. Colors mirror the damage-number palette (yellow / cyan / red)."""
+	"""Three actor boxes in a row showing fight-wide damage totals. Each
+	box pairs a prefix label ("You:" / "Pet:" / "Foe:") with the number
+	in a contrasting color so the digit pops."""
 	_totals_strip = HBoxContainer.new()
 	_totals_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_totals_strip.alignment = BoxContainer.ALIGNMENT_CENTER
 	_totals_strip.add_theme_constant_override("separation", 18)
 	_totals_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_player_total_label = _make_total_label("You: 0", Color("#FFD93D"))
-	_totals_strip.add_child(_player_total_label)
+	# Player — muted gold prefix, bright yellow number.
+	var player_box = _make_total_box("You:", Color("#C9A040"), Color("#FFD93D"))
+	_player_total_label = player_box.get_node("Number")
+	_totals_strip.add_child(player_box)
 
-	_companion_total_label = _make_total_label("Pet: 0", Color("#3DD9FF"))
-	_companion_total_label.visible = false  # Hidden until a companion is on-scene
-	_totals_strip.add_child(_companion_total_label)
+	# Companion — warm orange prefix so the cyan number stands out clearly
+	# (was: prefix and number both cyan, hard to read the digit).
+	_companion_total_box = _make_total_box("Pet:", Color("#FF9966"), Color("#3DD9FF"))
+	_companion_total_label = _companion_total_box.get_node("Number")
+	_companion_total_box.visible = false  # Hidden until a companion contributes
+	_totals_strip.add_child(_companion_total_box)
 
-	_monster_total_label = _make_total_label("Foe: 0", Color("#FF6666"))
-	_totals_strip.add_child(_monster_total_label)
+	# Monster — red prefix, orange number, per user's "text red, number
+	# orange" pattern.
+	var monster_box = _make_total_box("Foe:", Color("#FF6666"), Color("#FFA033"))
+	_monster_total_label = monster_box.get_node("Number")
+	_totals_strip.add_child(monster_box)
 
 	return _totals_strip
 
 
-func _make_total_label(text: String, color: Color) -> Label:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", 12)
-	lbl.add_theme_color_override("font_color", color)
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return lbl
+func _make_total_box(prefix: String, prefix_color: Color, number_color: Color) -> HBoxContainer:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var prefix_label := Label.new()
+	prefix_label.name = "Prefix"
+	prefix_label.text = prefix
+	prefix_label.add_theme_font_size_override("font_size", 12)
+	prefix_label.add_theme_color_override("font_color", prefix_color)
+	prefix_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(prefix_label)
+
+	var number_label := Label.new()
+	number_label.name = "Number"
+	number_label.text = "0"
+	number_label.add_theme_font_size_override("font_size", 12)
+	number_label.add_theme_color_override("font_color", number_color)
+	number_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(number_label)
+
+	return box
 
 
 func add_player_damage(amount: int) -> void:
@@ -462,13 +507,26 @@ func reset_running_totals() -> void:
 
 func _refresh_totals() -> void:
 	if _player_total_label:
-		_player_total_label.text = "You: %d" % _player_total
+		_player_total_label.text = "%d" % _player_total
 	if _companion_total_label:
-		# Show companion line only once it's contributed something.
-		_companion_total_label.text = "Pet: %d" % _companion_total
-		_companion_total_label.visible = _companion_total > 0
+		_companion_total_label.text = "%d" % _companion_total
+	if _companion_total_box:
+		# Show companion box only once it's contributed something.
+		_companion_total_box.visible = _companion_total > 0
 	if _monster_total_label:
-		_monster_total_label.text = "Foe: %d" % _monster_total
+		_monster_total_label.text = "%d" % _monster_total
+
+
+func get_totals_summary_bbcode() -> String:
+	"""Return the running totals as a single BBCode line — used to mirror
+	the strip into game_output so the wall-of-text log shows the same
+	at-a-glance totals players see in the panel."""
+	var parts: Array = []
+	parts.append("[color=#C9A040]You: [/color][color=#FFD93D]%d[/color]" % _player_total)
+	if _companion_total > 0:
+		parts.append("[color=#FF9966]Pet: [/color][color=#3DD9FF]%d[/color]" % _companion_total)
+	parts.append("[color=#FF6666]Foe: [/color][color=#FFA033]%d[/color]" % _monster_total)
+	return "   ·   ".join(parts)
 
 
 func _build_picker_overlay() -> void:
@@ -686,6 +744,10 @@ func populate(payload: Dictionary) -> void:
 		_monster_art_label.modulate = Color.WHITE
 		if _monster_art_baseline_captured:
 			_monster_art_label.position = _monster_art_baseline_pos
+	# Clear any flock warning banner / victory card left over from the
+	# previous fight.
+	hide_flock_warning()
+	hide_victory_card()
 
 	_refresh_player()
 	_refresh_companion()
@@ -1222,3 +1284,225 @@ func play_heal_pulse(amount: int) -> void:
 	t.tween_property(label, "position", label.position + Vector2(0, -55), 0.95).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "modulate:a", 0.0, 0.55).set_delay(0.4)
 	t.chain().tween_callback(label.queue_free)
+
+
+# === Flock warning banner ===
+
+func show_flock_warning(text: String) -> void:
+	"""Persistent banner anchored near the monster art that calls out an
+	incoming next fight. Stays visible (with a subtle alpha pulse) until
+	hide_flock_warning() is called."""
+	hide_flock_warning()
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", Color("#FF8888"))
+	label.add_theme_color_override("font_outline_color", Color(0.1, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 6)
+	label.add_theme_font_size_override("font_size", 22)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 115
+	add_child(label)
+	label.reset_size()
+	# Position over the monster art's top edge — falls back to a panel-relative
+	# spot if the art label isn't laid out yet.
+	var target_pos := Vector2(size.x * 0.72, size.y * 0.10)
+	if _monster_art_label and is_instance_valid(_monster_art_label) and _monster_art_label.size != Vector2.ZERO:
+		var art_top_center = _monster_art_label.global_position + Vector2(_monster_art_label.size.x * 0.5, 4)
+		target_pos = art_top_center - global_position
+	label.position = target_pos - label.size * 0.5
+	label.modulate.a = 0.0
+	_flock_warning_label = label
+	# Fade in
+	var fade_in := create_tween()
+	fade_in.tween_property(label, "modulate:a", 1.0, 0.22)
+	# Subtle alpha pulse so the eye keeps coming back to it without it strobing
+	var pulse := create_tween().set_loops()
+	pulse.tween_property(label, "modulate:a", 0.65, 0.7).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(label, "modulate:a", 1.0, 0.7).set_trans(Tween.TRANS_SINE)
+
+
+func hide_flock_warning() -> void:
+	if _flock_warning_label and is_instance_valid(_flock_warning_label):
+		_flock_warning_label.queue_free()
+	_flock_warning_label = null
+
+
+# === Victory card ===
+
+func _build_victory_card_overlay() -> void:
+	"""Card layered over the log section that shows post-fight rewards
+	(XP, level-up, loot) inside the scene panel. Hidden by default; shown
+	via show_victory_card()."""
+	_victory_card_overlay = PanelContainer.new()
+	_victory_card_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var card_sb := StyleBoxFlat.new()
+	card_sb.bg_color = Color(0.05, 0.04, 0.06, 0.97)
+	card_sb.border_color = Color("#FFD700")
+	card_sb.set_border_width_all(2)
+	card_sb.set_corner_radius_all(4)
+	card_sb.content_margin_left = 10
+	card_sb.content_margin_right = 10
+	card_sb.content_margin_top = 6
+	card_sb.content_margin_bottom = 6
+	_victory_card_overlay.add_theme_stylebox_override("panel", card_sb)
+	_victory_card_overlay.visible = false
+	_victory_card_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
+	_log_inner.add_child(_victory_card_overlay)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 2)
+	_victory_card_overlay.add_child(vbox)
+
+	# Header row — small "REWARDS" tag (the big "VICTORY!" banner from
+	# play_victory_fx already announced the outcome, so the card just lists
+	# what was earned).
+	var header := RichTextLabel.new()
+	header.bbcode_enabled = true
+	header.fit_content = true
+	header.scroll_active = false
+	header.add_theme_font_size_override("normal_font_size", 14)
+	header.text = "[b][color=#FFD700]REWARDS[/color][/b]"
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(header)
+
+	_victory_card_xp_label = RichTextLabel.new()
+	_victory_card_xp_label.bbcode_enabled = true
+	_victory_card_xp_label.fit_content = true
+	_victory_card_xp_label.scroll_active = false
+	_victory_card_xp_label.add_theme_font_size_override("normal_font_size", 13)
+	_victory_card_xp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_victory_card_xp_label)
+
+	_victory_card_levelup_label = RichTextLabel.new()
+	_victory_card_levelup_label.bbcode_enabled = true
+	_victory_card_levelup_label.fit_content = true
+	_victory_card_levelup_label.scroll_active = false
+	_victory_card_levelup_label.add_theme_font_size_override("normal_font_size", 14)
+	_victory_card_levelup_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_victory_card_levelup_label.visible = false
+	vbox.add_child(_victory_card_levelup_label)
+
+	# Divider before loot
+	var divider1 := ColorRect.new()
+	divider1.color = Color("#5C4D33")
+	divider1.custom_minimum_size = Vector2(0, 1)
+	divider1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider1)
+
+	# Loot list — scrollable in case there are many drops
+	var loot_scroll := ScrollContainer.new()
+	loot_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	loot_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	loot_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	loot_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	vbox.add_child(loot_scroll)
+
+	_victory_card_loot_vbox = VBoxContainer.new()
+	_victory_card_loot_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_victory_card_loot_vbox.add_theme_constant_override("separation", 1)
+	loot_scroll.add_child(_victory_card_loot_vbox)
+
+	# Divider before prompt
+	var divider2 := ColorRect.new()
+	divider2.color = Color("#5C4D33")
+	divider2.custom_minimum_size = Vector2(0, 1)
+	divider2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider2)
+
+	_victory_card_prompt_label = RichTextLabel.new()
+	_victory_card_prompt_label.bbcode_enabled = true
+	_victory_card_prompt_label.fit_content = true
+	_victory_card_prompt_label.scroll_active = false
+	_victory_card_prompt_label.add_theme_font_size_override("normal_font_size", 13)
+	_victory_card_prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_victory_card_prompt_label)
+
+
+func show_victory_card(rewards: Dictionary) -> void:
+	"""Render the post-fight rewards card. Expected keys:
+	xp_gain (int), old_level (int), new_level (int), did_level_up (bool),
+	loot (Array of preformatted BBCode strings), harvest_available (bool),
+	continue_key (String).
+	The card stays visible until hide_victory_card() is called."""
+	if _victory_card_overlay == null or not is_instance_valid(_victory_card_overlay):
+		return
+
+	var xp_gain = int(rewards.get("xp_gain", 0))
+	if xp_gain > 0:
+		_victory_card_xp_label.text = "[color=#A0E0FF]+%d XP[/color]" % xp_gain
+		_victory_card_xp_label.visible = true
+	else:
+		_victory_card_xp_label.text = ""
+		_victory_card_xp_label.visible = false
+
+	var did_level_up = bool(rewards.get("did_level_up", false))
+	if did_level_up:
+		var old_level = int(rewards.get("old_level", 0))
+		var new_level = int(rewards.get("new_level", 0))
+		_victory_card_levelup_label.text = "[b][color=#FFE066]LEVEL UP![/color][/b]  [color=#FFE066]Lv %d → Lv %d[/color]" % [old_level, new_level]
+		_victory_card_levelup_label.visible = true
+	else:
+		_victory_card_levelup_label.visible = false
+
+	# Replace loot rows
+	for child in _victory_card_loot_vbox.get_children():
+		child.queue_free()
+	var loot: Array = rewards.get("loot", [])
+	if loot.is_empty():
+		var none_row := RichTextLabel.new()
+		none_row.bbcode_enabled = true
+		none_row.fit_content = true
+		none_row.scroll_active = false
+		none_row.add_theme_font_size_override("normal_font_size", 12)
+		none_row.text = "[color=#888888]  No items dropped[/color]"
+		none_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_victory_card_loot_vbox.add_child(none_row)
+	else:
+		for drop_msg in loot:
+			var row := RichTextLabel.new()
+			row.bbcode_enabled = true
+			row.fit_content = true
+			row.scroll_active = false
+			row.add_theme_font_size_override("normal_font_size", 12)
+			row.text = "  " + str(drop_msg)
+			row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_victory_card_loot_vbox.add_child(row)
+
+	var key_name = str(rewards.get("continue_key", "Space"))
+	var primary_prompt = ""
+	if bool(rewards.get("harvest_available", false)):
+		primary_prompt = "[color=#FF6600][b]Press [%s] to harvest[/b][/color]" % key_name
+	else:
+		primary_prompt = "[color=#FFD700]Press [%s] to continue[/color]" % key_name
+	# Secondary hint — let players who want the full play-by-play pop the
+	# legacy detail view (game_output) without pressing continue.
+	_victory_card_prompt_label.text = "%s   [color=#888888]·  Press [L] to view details[/color]" % primary_prompt
+
+	_victory_card_overlay.visible = true
+	if _log_scroll:
+		_log_scroll.visible = false
+	_victory_interlude_active = true
+	# Subtle slide-in: fade from invisible to full alpha
+	_victory_card_overlay.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_property(_victory_card_overlay, "modulate:a", 1.0, 0.18)
+
+
+func hide_victory_card() -> void:
+	if _victory_card_overlay and is_instance_valid(_victory_card_overlay):
+		_victory_card_overlay.visible = false
+	if _log_scroll and is_instance_valid(_log_scroll):
+		_log_scroll.visible = true
+	_victory_interlude_active = false
+
+
+func is_victory_card_visible() -> bool:
+	return _victory_card_overlay != null and is_instance_valid(_victory_card_overlay) and _victory_card_overlay.visible
+
+
+func is_victory_interlude_active() -> bool:
+	"""True while the post-fight rewards interlude is in progress. Drives
+	the panel-stays-visible logic on the client."""
+	return _victory_interlude_active

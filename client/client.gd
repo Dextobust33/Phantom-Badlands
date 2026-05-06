@@ -412,7 +412,9 @@ var game_state = GameState.DISCONNECTED
 @onready var combat_scene_panel = $RootContainer/TopSection/GameOutputContainer/CombatScenePanel
 var _combat_scene_force_visible: bool = false  # /testfx debug override
 var _combat_scene_was_in_combat: bool = false  # transition tracking
+var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true→false to extend linger across the continue press
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
+var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -2185,12 +2187,35 @@ func _process(delta):
 		if _combat_scene_was_in_combat and not _now_in_combat:
 			_combat_scene_linger_until_ms = Time.get_ticks_msec() + 1100
 		_combat_scene_was_in_combat = _now_in_combat
+		# Cover the server roundtrip when the player presses Space to chain
+		# into the next flock fight: flock_pending goes true→false, then
+		# in_combat goes false→true a few frames later. Without this cushion
+		# the panel could blink off for one or two frames in between.
+		if _combat_scene_was_flock_pending and not flock_pending:
+			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 500)
+			# Banner served its purpose — the player has chosen to engage.
+			if combat_scene_panel.has_method("hide_flock_warning"):
+				combat_scene_panel.hide_flock_warning()
+		_combat_scene_was_flock_pending = flock_pending
 		var _is_lingering = Time.get_ticks_msec() < _combat_scene_linger_until_ms
+		# Another fight is queued — keep the scene visible across the
+		# "press Space to continue" interlude so we don't blink through the
+		# non-combat UI between back-to-back encounters.
+		var _next_fight_queued = flock_pending
+		# Rewards interlude is active — keep the scene visible so the player
+		# can read the rewards (or toggle to the log view) until they press
+		# Space. Safety net: if some other path cleared pending_continue
+		# without dismissing the card, hide it now so it doesn't outlive its
+		# purpose.
+		var _victory_card_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active()
+		if _victory_card_up and not pending_continue and not _now_in_combat:
+			combat_scene_panel.hide_victory_card()
+			_victory_card_up = false
 		# Hide the legacy top-of-screen enemy HP bar whenever the combat
 		# scene panel is up — the panel has its own HP bar in the shared
 		# strip, so showing both is duplicate. show_enemy_hp_bar(true)
 		# calls from elsewhere take effect once the panel hides again.
-		if enemy_health_bar and (_now_in_combat or _is_lingering or _combat_scene_force_visible):
+		if enemy_health_bar and (_now_in_combat or _is_lingering or _next_fight_queued or _victory_card_up or _combat_scene_force_visible):
 			if enemy_health_bar.visible:
 				enemy_health_bar.visible = false
 		# Sub-modes that ROUTE through the in-panel picker now (combat_item_mode,
@@ -2198,7 +2223,14 @@ func _process(delta):
 		# hide the scene anymore. Kept the variable in case future modes need
 		# to opt out.
 		var _scene_temporarily_hidden = false
-		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering) and not _scene_temporarily_hidden
+		# Player pressed [L] during the rewards interlude — they want the
+		# legacy full-screen text view, so suppress the panel until they
+		# toggle back or press Space to continue.
+		if _victory_legacy_view and not _now_in_combat and pending_continue and _victory_card_up:
+			_scene_temporarily_hidden = true
+		else:
+			_victory_legacy_view = false
+		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
 
@@ -3428,6 +3460,18 @@ func _input(event):
 			complete_rebinding(keycode)
 		get_viewport().set_input_as_handled()
 		return
+
+	# Handle [L] toggle to the legacy full-screen text view during the
+	# post-fight rewards interlude — players who want the wall-of-text
+	# play-by-play can pop it open before pressing Space to continue. The
+	# flag suppresses the scene panel in _process; pressing L again brings
+	# the panel back.
+	if pending_continue and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
+		if input_field == null or not input_field.has_focus():
+			if combat_scene_panel and combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active():
+				_victory_legacy_view = not _victory_legacy_view
+				get_viewport().set_input_as_handled()
+				return
 
 	# Handle gathering pattern key presses (Q, W, E, R during reaction phase)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -11221,6 +11265,9 @@ func execute_local_action(action: String):
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
+			# Dismiss the rewards card now that the player has acknowledged it.
+			if combat_scene_panel and combat_scene_panel.has_method("hide_victory_card"):
+				combat_scene_panel.hide_victory_card()
 
 			# If a Soldier harvest is available, the prompt shown to the player was
 			# "Press [Space] to auto-harvest" — honor that by triggering the harvest.
@@ -11559,6 +11606,11 @@ func select_wish(index: int):
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
+	# Dismiss the rewards card now that the player has acknowledged it.
+	# The panel will hide via the existing _process visibility logic on the
+	# next frame (no card + no in_combat + linger expired = hide).
+	if combat_scene_panel and combat_scene_panel.has_method("hide_victory_card"):
+		combat_scene_panel.hide_victory_card()
 	# Auto-harvest if available — send request and let harvest flow handle the rest
 	if harvest_available:
 		harvest_available = false
@@ -16980,6 +17032,10 @@ func handle_server_message(message: Dictionary):
 				# Record defeat if damage was dealt OR if Analyze revealed HP (e.g., Outsmart victory after Analyze)
 				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
 					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+				# Capture pre-update level so the rewards card can show the
+				# level-up delta (post-update, character_data already reflects
+				# the new level).
+				var _level_before_victory = character_data.get("level", 1)
 				if message.has("character"):
 					_set_character_data(message.character)
 					update_player_level()
@@ -16993,8 +17049,20 @@ func handle_server_message(message: Dictionary):
 				if message.get("flock_incoming", false):
 					flock_pending = true
 					flock_monster_name = message.get("flock_monster", "enemy")
-					display_game("[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name)
-					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
+					var _flock_warn = "[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name
+					var _flock_prompt = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
+					display_game(_flock_warn)
+					display_game(_flock_prompt)
+					# Mirror to the battle-scene log — the panel stays up during
+					# flock_pending so these prompts must surface there too.
+					if combat_scene_panel:
+						combat_scene_panel.append_log(_flock_warn)
+						combat_scene_panel.append_log(_flock_prompt)
+						# Banner over the monster art — players are looking there,
+						# so the call-to-action lives there too rather than only
+						# in the log.
+						var _flock_banner = "More %ss approaching!\nPress [%s] to fight" % [flock_monster_name, get_action_key_name(0)]
+						combat_scene_panel.show_flock_warning(_flock_banner)
 				else:
 					# Combat chain complete - calculate total XP gain for bar display
 					var current_xp = character_data.get("experience", 0)
@@ -17008,6 +17076,14 @@ func handle_server_message(message: Dictionary):
 					if not discovered_monster_types.has(enemy_key):
 						discovered_monster_types[enemy_key] = true
 						play_combat_victory_sound(true)  # Play for new discovery
+
+					# Mirror the running totals into game_output so the legacy
+					# detail view ([L]) shows the at-a-glance damage tally
+					# right where the combat log ends.
+					if combat_scene_panel and combat_scene_panel.has_method("get_totals_summary_bbcode"):
+						display_game("")
+						display_game("[color=#5C4D33]── Damage totals ──[/color]")
+						display_game(combat_scene_panel.get_totals_summary_bbcode())
 
 					# Victory without flock - show all accumulated drops
 					var flock_drops = message.get("flock_drops", [])
@@ -17045,6 +17121,21 @@ func handle_server_message(message: Dictionary):
 					pending_continue = true
 					if dungeon_mode:
 						pending_dungeon_continue = true
+					# Show in-panel rewards card so the player reads loot/XP
+					# inside the scene panel rather than the wall-of-text
+					# below (Combat-Scene Migration). game_output still gets
+					# the same lines as a fallback / scrollback.
+					if combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
+						var _new_level = character_data.get("level", _level_before_victory)
+						combat_scene_panel.show_victory_card({
+							"xp_gain": recent_xp_gain,
+							"old_level": _level_before_victory,
+							"new_level": _new_level,
+							"did_level_up": _new_level > _level_before_victory,
+							"loot": flock_drops,
+							"harvest_available": harvest_available,
+							"continue_key": get_action_key_name(0),
+						})
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -17058,8 +17149,13 @@ func handle_server_message(message: Dictionary):
 				if message.get("flock_incoming", false):
 					flock_pending = true
 					var flock_msg = message.get("flock_message", "[color=#FF4444]Another enemy approaches![/color]")
+					var _flock_prompt = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
 					display_game(flock_msg)
-					display_game("[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0))
+					display_game(_flock_prompt)
+					if combat_scene_panel:
+						combat_scene_panel.append_log(flock_msg)
+						combat_scene_panel.append_log(_flock_prompt)
+						combat_scene_panel.show_flock_warning("Another enemy approaches!\nPress [%s] to fight" % get_action_key_name(0))
 				else:
 					display_game("[color=#FFD700]The enemy fled! No loot earned.[/color]")
 					pending_continue = true
@@ -21168,8 +21264,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.204 changes
+	display_game("[color=#00FF00]v0.9.204[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat-Scene Migration: victory card + battle continuity[/color]")
+	display_game("  • Battle scene now stays visible between back-to-back flock fights — no more blink-through to the map UI between encounters")
+	display_game("  • Pulsing 'More <enemy>s approaching!' banner appears over the monster art when another fight is queued, so the call-to-action lives where you're already looking")
+	display_game("  • New in-panel Victory Card: after a non-flock kill, an in-scene results card shows XP gain, level-up callout, and the loot list with rarity colors — no more wall-of-text dump in game output")
+	display_game("  • Press [L] during the rewards interlude to drop into the legacy full-screen detail view (combat narration + loot wall) — press [L] again or Space to continue")
+	display_game("  • Running damage totals strip recolored: prefix and number now use contrasting colors (You: muted gold + bright yellow, Pet: warm orange + cyan, Foe: red + orange) so the digit pops")
+	display_game("  • Companion attack lines no longer render in solid cyan — text is warm orange and the damage number is cyan, matching the totals palette")
+	display_game("  • Legacy detail view also gets a 'Damage totals' line right before the loot block, so the at-a-glance summary is available there too")
+	display_game("")
+
 	# v0.9.203 changes
-	display_game("[color=#00FF00]v0.9.203[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.203[/color]")
 	display_game("  [color=#FFD700]Combat readability: in-panel picker, running totals, HP fixes[/color]")
 	display_game("  • Use Item / scroll selection / target farming pickers now render INSIDE the battle scene panel — the scene stays visible the whole fight instead of flickering away to a text list")
 	display_game("  • Running damage totals strip above the combat log: 'You: N' (yellow), 'Pet: N' (cyan, only shown when companion contributes), 'Foe: N' (red) — resets per fight")
@@ -21212,137 +21320,6 @@ func display_changelog():
 	display_game("  • Bugfix: Salvage Junk now properly refreshes the inventory panel after salvaging, with the result text in the panel status row")
 	display_game("")
 
-	# v0.9.199 changes
-	display_game("[color=#00FFFF]v0.9.199[/color]")
-	display_game("  [color=#FFD700]Combat Juice Phase A: Battle Scene + Hit Feedback[/color]")
-	display_game("  • New JRPG-style battle scene panel — when combat starts, your class sprite + companion appear on the left, monster ASCII on the right, with HP bars on a shared strip and a combat log mirror below")
-	display_game("  • 9 class sprites (Fighter / Barbarian / Paladin / Wizard / Sorcerer / Sage / Thief / Ranger / Ninja) under OGA-BY 3.0 — see CREDITS.md")
-	display_game("  • Companion ASCII inherits its variant pattern colors (Crimson, Frost, etc.) just like the corner overlay, sized ~2/3 of the monster art")
-	display_game("  • Hit feedback: floating damage numbers above the target (yellow=you, cyan=companion, red=damage to you), brighter and bigger on crits")
-	display_game("  • Target sprite/art briefly flashes red on each hit; attacker lunges toward the defender — player slides right on attack, monster slides left")
-	display_game("  • Battle scene lingers ~1 second after combat ends so killing-blow feedback plays out before the victory screen")
-	display_game("")
-
-	# v0.9.181 changes
-	display_game("[color=#00FFFF]v0.9.181[/color]")
-	display_game("  [color=#FFD700]Status panel spacing + mini HP/Mana relocation[/color]")
-	display_game("  • Status lines (Backpack/Area/Nearest/Pouch/Eggs/Quests) are now packed tightly instead of double-spaced")
-	display_game("  • Mini HP/Mana bars moved out of GameOutput onto a new StatusRow between the map/game area and the action bar, sharing the row with the Companions/Eggs/Jobs/... shortcut buttons (bars left, buttons right)")
-	display_game("  • No tscn restructure — StatusRow is created at runtime alongside the shortcut buttons")
-	display_game("")
-
-	# v0.9.180 changes
-	display_game("[color=#00FFFF]v0.9.180[/color]")
-	display_game("  [color=#FFD700]Independent Status HUD scale slider[/color]")
-	display_game("  • New UI scale slider \"Status HUD\" in Settings → UI — Tools + Backpack + Area + Pouch + Eggs now scale separately from the ASCII map")
-	display_game("  • Keys [A] (increase) / [S] (decrease) on the UI Scale screen")
-	display_game("  • Saved and restored like the other scale settings")
-	display_game("")
-
-	# v0.9.179 changes
-	display_game("[color=#00FFFF]v0.9.179[/color]")
-	display_game("  [color=#FFD700]Tool/Status HUD polish[/color]")
-	display_game("  • Empty tool slots now show \"(empty)\" in grey instead of disappearing — the slot is always visible")
-	display_game("  • Tools/Status overlay font now scales with resolution and the existing \"Map\" UI scale slider (Settings → UI)")
-	display_game("  • Text is noticeably larger at 1080p / 4K, fills more of the horizontal space")
-	display_game("")
-
-	# v0.9.178 changes
-	display_game("[color=#00FFFF]v0.9.178[/color]")
-	display_game("  [color=#FFD700]Consolidated Status Panel[/color]")
-	display_game("  • Tools + Backpack + Area + Nearest + Pouch + Quests + Eggs now render in one RichTextLabel on the left side of BottomRow")
-	display_game("  • Old StatusHUD VBox hidden — content lives in the Tools overlay so it fills the available horizontal space")
-	display_game("  • Egg click-to-freeze still works (meta_clicked on the merged overlay)")
-	display_game("")
-
-	# v0.9.177 changes
-	display_game("[color=#00FFFF]v0.9.177[/color]")
-	display_game("  [color=#FFD700]Revert v0.9.176 — StatusHUD back below BottomRow[/color]")
-	display_game("  • The reparent into BottomRow worked in fullscreen but collapsed the minimap into a vertical strip in windowed mode (narrow MapPanel couldn't fit Tools + StatusHUD + Minimap on one row)")
-	display_game("  • StatusHUD is back below BottomRow where the layout is stable across resolutions")
-	display_game("  • Fullscreen dead space between Tools and Minimap remains — will fill it a different way next")
-	display_game("")
-
-	# v0.9.173 changes
-	display_game("[color=#00FFFF]v0.9.173[/color]")
-	display_game("  [color=#FFD700]Minimap Frame Tightening (no new nodes)[/color]")
-	display_game("  • Removed EXPAND flag from MinimapDisplay so the node shrinks to content width — frame wraps only the minimap")
-	display_game("  • Reduced corner radius 80 → 14 and added more inner padding so content no longer clips the rounded corners")
-	display_game("")
-
-	# v0.9.172 changes
-	display_game("[color=#00FFFF]v0.9.172[/color]")
-	display_game("  [color=#FFD700]Rollback v0.9.171[/color]")
-	display_game("  • v0.9.171's Control spacer in BottomRow broke startup rendering — reverted")
-	display_game("  • Important clue: adding a Control child to BottomRow appears to be what repeatedly triggered the blank-screen issue in past attempts")
-	display_game("  • v0.9.170's minimap frame style kept, but the frame width will match v0.9.170 (wrapped around the full-width node — cosmetic issue we'll tackle differently)")
-	display_game("")
-
-	# v0.9.170 changes
-	display_game("[color=#00FFFF]v0.9.170[/color]")
-	display_game("  [color=#FFD700]Minimap Frame[/color]")
-	display_game("  • Added a lime-green rounded border around the minimap node")
-	display_game("  • Single attribute change on the existing MinimapDisplay node — no layout restructure")
-	display_game("")
-
-	# v0.9.169 changes
-	display_game("[color=#00FFFF]v0.9.169[/color]")
-	display_game("  [color=#FFD700]Minimap Routing Fix[/color]")
-	display_game("  • Client now recognises the server's [right]-wrapped minimap and routes it into the separate MinimapDisplay node")
-	display_game("  • Minimap no longer appears inside the main ASCII map area")
-	display_game("  • No scene-file changes — pure client function update")
-	display_game("")
-
-	# v0.9.168 changes
-	display_game("[color=#00FFFF]v0.9.168[/color]")
-	display_game("  [color=#FFD700]Rollback of v0.9.167 — blank-screen hotfix[/color]")
-	display_game("  • v0.9.167's StatusRow restructure + minimap lime-green frame broke startup rendering again")
-	display_game("  • Reverted to v0.9.166 working layout: single-line right-aligned mini bars, right-aligned minimap")
-	display_game("  • Will reapproach the moves in smaller, individually-testable steps")
-	display_game("")
-
-	# v0.9.166 changes
-	display_game("[color=#00FFFF]v0.9.166[/color]")
-	display_game("  [color=#FFD700]Small UI Tweaks[/color]")
-	display_game("  • Mini HP/Resource bars: single right-aligned line docked to the bottom-right of GameOutput (was two lines)")
-	display_game("  • Minimap: right-aligned instead of centered — sits against the right edge of the map panel")
-	display_game("")
-
-	# v0.9.165 changes
-	display_game("[color=#00FFFF]v0.9.165[/color]")
-	display_game("  [color=#FFD700]UI Layout Hotfix[/color]")
-	display_game("  • Reverted v0.9.163 / v0.9.164 UI restructure — the scene-file rewrite broke startup rendering on some setups")
-	display_game("  • Chat, mini HP/Mana bars, minimap, and action bar are all back in their original positions")
-	display_game("  • Status HUD (Backpack/Area/Pouch/Quests/Eggs) retained below the minimap")
-	display_game("  • Map header still shows Safe / Wilds / !DANGER without the duplicated Lv range")
-	display_game("")
-
-	# v0.9.162 changes
-	display_game("[color=#00FFFF]v0.9.162[/color]")
-	display_game("  [color=#FFD700]Resource Respawns & Post Variety[/color]")
-	display_game("  • Gathering nodes within 12 tiles of a trading post now respawn after 15 minutes instead of being permanently depleted")
-	display_game("  • Existing permanently-depleted nodes near posts were migrated to the timed respawn schedule on server startup")
-	display_game("  • Trading post station layouts are now deterministically shuffled per post — forge/market/quest board etc. are in different positions at each post")
-	display_game("  • Note: layout shuffle only affects newly generated posts; existing posts keep their current layout until regenerated")
-	display_game("")
-
-	# v0.9.161 changes
-	display_game("[color=#00FFFF]v0.9.161[/color]")
-	display_game("  [color=#FFD700]Status HUD + Tutorial Opt-In[/color]")
-	display_game("  • New Status HUD below the minimap: Backpack X/40, Area Lv, Nearest post compass, Materials pouch count, Active quests (top 3), Incubating eggs")
-	display_game("  • Click an egg indicator to toggle freeze (no menu needed)")
-	display_game("  • Egg row shows all upgrade slots, filled and empty")
-	display_game("  • Tutorial is now opt-in: new characters see a prompt \"Start Tutorial / Skip\" instead of auto-launching")
-	display_game("")
-
-	# v0.9.160 changes
-	display_game("[color=#00FFFF]v0.9.160[/color]")
-	display_game("  [color=#FFD700]UI & Movement[/color]")
-	display_game("  • Tool durability display moved out of GameOutput — now below the ASCII map, left of the minimap")
-	display_game("  • Minimap renders in its own node instead of being appended to the main map text")
-	display_game("  • Sanctuary now supports diagonal movement (numpad 1/3/7/9, or two arrow keys together)")
-	display_game("  • Sanctuary movement hint updated to \"Move with numpad or arrows (diagonals supported)\"")
-	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -24414,6 +24391,22 @@ func _enhance_combat_message(msg: String) -> String:
 	"""Add visual flair and BBCode effects to combat messages"""
 	var enhanced = msg
 	var upper_msg = msg.to_upper()
+
+	# Companion attack messages arrive from the server wrapped in a single
+	# cyan color block ("[color=#00FFFF]Your X attacks for N damage![/color]"),
+	# which makes the damage number disappear into the surrounding text.
+	# Split it into prefix + number with the same palette as the running
+	# totals strip — warm-orange text, cyan number.
+	var _comp_attack_re := RegEx.new()
+	# Case-insensitive on the hex digits, tolerant of the closing [/color] possibly
+	# being absent if the server wrapping ever changes.
+	_comp_attack_re.compile("(?i)\\[color=#00FFFF\\](Your [^\\[]+?) attacks for (\\d+) damage!(?:\\[/color\\])?")
+	var _comp_match = _comp_attack_re.search(enhanced)
+	if _comp_match:
+		var subject = _comp_match.get_string(1)
+		var number_str = _comp_match.get_string(2)
+		var replacement = "[color=#FF9966]%s attacks for [/color][color=#3DD9FF]%s[/color][color=#FF9966] damage![/color]" % [subject, number_str]
+		enhanced = enhanced.substr(0, _comp_match.get_start()) + replacement + enhanced.substr(_comp_match.get_end())
 
 	# Combat direction indicators - add colored prefix for player vs monster actions
 	if msg.begins_with("You ") or msg.begins_with("you "):
