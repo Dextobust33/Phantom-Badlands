@@ -17076,6 +17076,13 @@ func handle_server_message(message: Dictionary):
 				update_player_hp_bar()
 				update_resource_bar()
 				update_action_bar()  # Refresh action bar for ability availability
+				# Status-effect strip — surface buffs/debuffs/DoT timers
+				# under each combatant's HP bar.
+				if combat_scene_panel and combat_scene_panel.has_method("update_combat_status"):
+					combat_scene_panel.update_combat_status(
+						state.get("player_status", {}),
+						state.get("monster_status", {})
+					)
 
 		"combat_end":
 			# Flush any remaining phased combat messages before processing end
@@ -21356,8 +21363,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.208 changes
+	display_game("[color=#00FF00]v0.9.208[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat-Scene Migration: DoT ticks + status strip[/color]")
+	display_game("  • DoT and proc damage now spawns small tag-colored floating numbers above the affected combatant — Bleed (red), Poison (green), Thorns (grey), Reflect (magenta), Charm (pink), Curse (purple), Wild Magic backfire (deep purple) — so you can see ticks land at a glance instead of just reading them in the log")
+	display_game("  • New status-effect strip under each HP bar in the battle scene: shows active buffs, debuffs, and DoT timers as compact tag chips (Bld 4x3T = bleed 4 damage × 3 turns left, Hst 5T = haste 5 turns, FF 30 = forcefield with 30 shield, Stn 1T = stunned 1 turn, etc.)")
+	display_game("  • Player side shows poison, blind, cloak, forcefield, and any active_buffs (haste, fortify, iron skin, war cry, berserk, vampiric, etc.); monster side shows bleed, poison, stun, charm, weakness, slow")
+	display_game("  • Server now ships full status state in every combat_update so the strip stays accurate across rounds (additive fields — old clients ignore them)")
+	display_game("")
+
 	# v0.9.207 changes
-	display_game("[color=#00FF00]v0.9.207[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.207[/color]")
 	display_game("  [color=#FFD700]Combat readability: per-turn one-liners[/color]")
 	display_game("  • Each combat turn now collapses to one summary line per actor — 'You: 47 damage (CRIT, +12 heal)' / 'Your Spider Hatchling: 16 damage' / 'The Hobgoblin hits you for 9 damage (Bleed 4)' — instead of a wall of separate lines for every hit, proc, and tick")
 	display_game("  • Damage from procs (Quick Strike, Shock, Execute, lifesteal, vampiric drain) is folded into the actor's total with the proc tagged in parens")
@@ -21395,15 +21411,6 @@ func display_changelog():
 	display_game("  • Running damage totals strip recolored: prefix and number now use contrasting colors (You: muted gold + bright yellow, Pet: warm orange + cyan, Foe: red + orange) so the digit pops")
 	display_game("  • Companion attack lines no longer render in solid cyan — text is warm orange and the damage number is cyan, matching the totals palette")
 	display_game("  • Legacy detail view also gets a 'Damage totals' line right before the loot block, so the at-a-glance summary is available there too")
-	display_game("")
-
-	# v0.9.203 changes
-	display_game("[color=#00FFFF]v0.9.203[/color]")
-	display_game("  [color=#FFD700]Combat readability: in-panel picker, running totals, HP fixes[/color]")
-	display_game("  • Use Item / scroll selection / target farming pickers now render INSIDE the battle scene panel — the scene stays visible the whole fight instead of flickering away to a text list")
-	display_game("  • Running damage totals strip above the combat log: 'You: N' (yellow), 'Pet: N' (cyan, only shown when companion contributes), 'Foe: N' (red) — resets per fight")
-	display_game("  • Removed duplicate enemy HP bar — the legacy top-of-screen bar hides whenever the battle scene panel is up; only the panel's HP bar shows during combat")
-	display_game("  • HP discovery system properly applied: unknown monsters show '???' from combat start (no more jumping numbers after the first attack), known monsters show the discovered HP, estimates from neighboring levels show as '~N/N'")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24783,10 +24790,66 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		combat_scene_panel.lunge_monster_forward()
 		combat_scene_panel.add_monster_damage(damage_to_player)
 
+	# DoT / proc floating numbers — bleed/poison/thorns/reflect/charm/curse
+	# get small tag-colored ticks above the affected combatant. Routed here
+	# because the existing damage_to_monster / damage_to_player parsers don't
+	# match these patterns.
+	_dispatch_dot_tick_fx(combat_msg)
+
 	# A3 — per-ability VFX dispatch. Uses server color codes + keywords as
 	# the category signal. We deliberately avoid an ability-name lookup so
 	# new abilities pick up the right FX automatically.
 	_dispatch_ability_fx(combat_msg, lower, upper, is_crit)
+
+
+func _dispatch_dot_tick_fx(combat_msg: String) -> void:
+	"""Spawn floating-number FX for DoT / proc damage messages. Uses regex
+	on the raw message — same source-of-truth as the per-turn summary parser."""
+	if combat_scene_panel == null or not combat_scene_panel.visible:
+		return
+	# DoT to player
+	var re := RegEx.new()
+	re.compile("(?i)Bleeding deals (\\d+) damage")
+	var m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "bleed", true)
+		return
+	re.compile("(?i)^\\[?[^\\]]*\\]?Poison deals (\\d+) damage! \\(")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "poison", true)
+		return
+	re.compile("(?i)charmed and attack yourself for (\\d+) damage")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "charm", true)
+		return
+	re.compile("(?i)Thorns deal (\\d+) damage to you")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "thorns", true)
+		return
+	re.compile("(?i)reflects (\\d+) damage")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "reflect", true)
+		return
+	re.compile("(?i)death curse deals (\\d+) damage")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "curse", true)
+		return
+	re.compile("(?i)Wild magic burns you for (\\d+) damage")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "backfire", true)
+		return
+	# DoT to monster: "Poison deals X damage to the <monster>!"
+	re.compile("(?i)Poison deals (\\d+) damage to the ")
+	m = re.search(combat_msg)
+	if m:
+		combat_scene_panel.show_dot_tick(int(m.get_string(1)), "poison", false)
+		return
 
 
 func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_crit: bool) -> void:

@@ -4790,7 +4790,30 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# Outsmart tracking
 		"outsmart_failed": combat.get("outsmart_failed", false),
 		# Forcefield/shield for visual display
-		"forcefield_shield": combat.get("forcefield_shield", 0)
+		"forcefield_shield": combat.get("forcefield_shield", 0),
+		# Status-effect strip (additive — old clients ignore these fields).
+		# Compact dicts grouped by side so the client renders them under each
+		# combatant's HP bar without hunting through scattered top-level keys.
+		"player_status": {
+			"poison_turns": character.poison_turns_remaining if character.poison_active else 0,
+			"poison_damage": character.poison_damage if character.poison_active else 0,
+			"blind_turns": character.blind_turns_remaining if character.blind_active else 0,
+			"cloak": character.cloak_active,
+			"forcefield_shield": int(combat.get("forcefield_shield", 0)),
+			"buffs": character.active_buffs.duplicate(true) if character.active_buffs is Array else [],
+		},
+		"monster_status": {
+			"bleed_damage": int(combat.get("monster_bleed", 0)),
+			"bleed_turns": int(combat.get("monster_bleed_duration", 0)),
+			"poison_damage": int(combat.get("monster_poison", 0)),
+			"poison_turns": int(combat.get("monster_poison_duration", 0)),
+			"stun_turns": int(combat.get("monster_stunned", 0)),
+			"charm_turns": int(combat.get("monster_charmed", 0)),
+			"weakness_value": int(combat.get("monster_weakness", 0)),
+			"weakness_turns": int(combat.get("monster_weakness_duration", 0)),
+			"slow_value": int(combat.get("monster_slowed", 0)),
+			"slow_turns": int(combat.get("monster_slow_duration", 0)),
+		}
 	}
 
 func get_monster_ascii_art(monster_name: String) -> String:

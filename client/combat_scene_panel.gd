@@ -88,6 +88,13 @@ var _player_total: int = 0
 var _companion_total: int = 0
 var _monster_total: int = 0
 
+# Status-effect strip (DoT timers / buffs / debuffs). RichTextLabels with
+# BBCode-rendered compact tags so colors and per-effect timers fit in one
+# row. Hidden when there's nothing active.
+var _status_strip: HBoxContainer
+var _player_status_label: RichTextLabel
+var _monster_status_label: RichTextLabel
+
 # In-panel picker — overlays the log section during combat_item_mode (and
 # eventually monster_select_mode / target_farm_mode) so the scene stays
 # visible while the player chooses an item or target.
@@ -213,6 +220,9 @@ func _build_layout() -> void:
 
 	# === Shared HP strip — player on left, monster on right, same row ===
 	root_vbox.add_child(_build_shared_hp_strip())
+
+	# === Status-effect strip (DoT timers / buffs / debuffs) ===
+	root_vbox.add_child(_build_shared_status_strip())
 
 	# === Running damage totals strip (Combat readability #2) ===
 	root_vbox.add_child(_build_running_totals_strip())
@@ -505,6 +515,143 @@ func _build_shared_hp_strip() -> HBoxContainer:
 	monster_side.add_child(_monster_hp_text)
 
 	return strip
+
+
+func _build_shared_status_strip() -> HBoxContainer:
+	"""Tag-colored row showing active buffs / debuffs / DoT timers under each
+	combatant's HP bar. Mirrors the HP-strip layout (player on left, monster
+	on right) so the eye stays anchored to the same vertical column."""
+	_status_strip = HBoxContainer.new()
+	_status_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_strip.add_theme_constant_override("separation", 12)
+	_status_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_status_strip.custom_minimum_size = Vector2(0, 18)
+
+	_player_status_label = RichTextLabel.new()
+	_player_status_label.bbcode_enabled = true
+	_player_status_label.fit_content = true
+	_player_status_label.scroll_active = false
+	_player_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_player_status_label.size_flags_stretch_ratio = 1.0
+	_player_status_label.add_theme_font_size_override("normal_font_size", 11)
+	_player_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_status_strip.add_child(_player_status_label)
+
+	_monster_status_label = RichTextLabel.new()
+	_monster_status_label.bbcode_enabled = true
+	_monster_status_label.fit_content = true
+	_monster_status_label.scroll_active = false
+	_monster_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monster_status_label.size_flags_stretch_ratio = 1.0
+	_monster_status_label.add_theme_font_size_override("normal_font_size", 11)
+	_monster_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_status_strip.add_child(_monster_status_label)
+
+	return _status_strip
+
+
+# Status-effect tag definitions. Map server status keys to (label, color).
+const _STATUS_TAGS := {
+	"bleed":      {"label": "Bld",  "color": "#FF4444"},
+	"poison":     {"label": "Psn",  "color": "#66FF66"},
+	"blind":      {"label": "Bln",  "color": "#888888"},
+	"stun":       {"label": "Stn",  "color": "#FFD700"},
+	"charm":      {"label": "Chrm", "color": "#FF69B4"},
+	"weakness":   {"label": "Wkn",  "color": "#A0A0A0"},
+	"slow":       {"label": "Slw",  "color": "#6699FF"},
+	"haste":      {"label": "Hst",  "color": "#33CCFF"},
+	"fortify":    {"label": "Frt",  "color": "#AAAAFF"},
+	"iron_skin":  {"label": "IS",   "color": "#CCCCCC"},
+	"war_cry":    {"label": "WC",   "color": "#FFAA33"},
+	"berserk":    {"label": "Brsk", "color": "#FF6633"},
+	"speed":      {"label": "Spd",  "color": "#33CCFF"},
+	"strength":   {"label": "Str+", "color": "#FFAA33"},
+	"defense":    {"label": "Def+", "color": "#AAAAFF"},
+	"cloak":      {"label": "Cl",   "color": "#9999AA"},
+	"forcefield": {"label": "FF",   "color": "#AA66FF"},
+	"vampiric":   {"label": "Vmp",  "color": "#CC33CC"},
+}
+
+func _format_status_chip(key: String, suffix: String) -> String:
+	var tag: Dictionary = _STATUS_TAGS.get(key, {"label": key.substr(0, 3).capitalize(), "color": "#CCCCCC"})
+	if suffix == "":
+		return "[color=%s]%s[/color]" % [tag.color, tag.label]
+	return "[color=%s]%s %s[/color]" % [tag.color, tag.label, suffix]
+
+func update_combat_status(player_status: Dictionary, monster_status: Dictionary) -> void:
+	"""Refresh the status strip from the server's combat_state. Called every
+	combat_update. Empty side becomes blank — strip stays in place so layout
+	doesn't jump."""
+	if _player_status_label == null or not is_instance_valid(_player_status_label):
+		return
+	_player_status_label.text = _build_player_status_bbcode(player_status)
+	_monster_status_label.text = _build_monster_status_bbcode(monster_status)
+
+func _build_player_status_bbcode(s: Dictionary) -> String:
+	if s.is_empty():
+		return ""
+	var chips: Array = []
+	# DoTs (red-tinted, with damage-per-tick × turns or just turns).
+	var poison_turns: int = int(s.get("poison_turns", 0))
+	if poison_turns > 0:
+		var pdmg: int = int(s.get("poison_damage", 0))
+		chips.append(_format_status_chip("poison", "%dx%dT" % [pdmg, poison_turns]))
+	var blind_turns: int = int(s.get("blind_turns", 0))
+	if blind_turns > 0:
+		chips.append(_format_status_chip("blind", "%dT" % blind_turns))
+	# Forcefield shield amount (capacity, not turns).
+	var ff_shield: int = int(s.get("forcefield_shield", 0))
+	if ff_shield > 0:
+		chips.append(_format_status_chip("forcefield", "%d" % ff_shield))
+	# Cloak — no duration; on/off.
+	if bool(s.get("cloak", false)):
+		chips.append(_format_status_chip("cloak", ""))
+	# Generic active_buffs (haste, fortify, iron_skin, war_cry, berserk,
+	# strength, defense, speed, vampiric, etc.). Server passes an array of
+	# {type, value, duration} dicts.
+	var buffs = s.get("buffs", [])
+	if buffs is Array:
+		for b in buffs:
+			if not (b is Dictionary):
+				continue
+			var btype: String = str(b.get("type", "")).to_lower()
+			var bdur: int = int(b.get("duration", 0))
+			if btype == "" or bdur <= 0:
+				continue
+			chips.append(_format_status_chip(btype, "%dT" % bdur))
+	return "  ".join(chips)
+
+func _build_monster_status_bbcode(s: Dictionary) -> String:
+	if s.is_empty():
+		return ""
+	var chips: Array = []
+	var bleed_turns: int = int(s.get("bleed_turns", 0))
+	if bleed_turns > 0:
+		var bdmg: int = int(s.get("bleed_damage", 0))
+		chips.append(_format_status_chip("bleed", "%dx%dT" % [bdmg, bleed_turns]))
+	var poison_turns: int = int(s.get("poison_turns", 0))
+	if poison_turns > 0:
+		var pdmg: int = int(s.get("poison_damage", 0))
+		chips.append(_format_status_chip("poison", "%dx%dT" % [pdmg, poison_turns]))
+	var stun_turns: int = int(s.get("stun_turns", 0))
+	if stun_turns > 0:
+		chips.append(_format_status_chip("stun", "%dT" % stun_turns))
+	var charm_turns: int = int(s.get("charm_turns", 0))
+	if charm_turns > 0:
+		chips.append(_format_status_chip("charm", "%dT" % charm_turns))
+	var weakness_turns: int = int(s.get("weakness_turns", 0))
+	if weakness_turns > 0:
+		var wval: int = int(s.get("weakness_value", 0))
+		chips.append(_format_status_chip("weakness", "-%d%% %dT" % [wval, weakness_turns]))
+	var slow_turns: int = int(s.get("slow_turns", 0))
+	if slow_turns > 0:
+		var sval: int = int(s.get("slow_value", 0))
+		chips.append(_format_status_chip("slow", "-%d%% %dT" % [sval, slow_turns]))
+	if chips.is_empty():
+		return ""
+	# Right-align so the chips read from the inside edge inward, matching the
+	# monster HP-text alignment above.
+	return "[right]%s[/right]" % "  ".join(chips)
 
 
 func _build_running_totals_strip() -> HBoxContainer:
@@ -834,6 +981,8 @@ func populate(payload: Dictionary) -> void:
 	hide_flock_warning()
 	hide_victory_card()
 	hide_death_card()
+	# Status strip starts blank — first combat_update will populate it.
+	update_combat_status({}, {})
 
 	_refresh_player()
 	_refresh_companion()
@@ -1070,6 +1219,59 @@ func show_damage_on_player(amount: int, is_crit: bool) -> void:
 		return
 	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
 	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
+
+
+# DoT floating numbers — small, tag-colored "tick" labels for bleed/poison/
+# thorns/reflect/charm/curse damage. Spawned above the affected combatant.
+const _DOT_COLORS := {
+	"bleed":    "#FF4444",
+	"poison":   "#66FF66",
+	"thorns":   "#AAAAAA",
+	"reflect":  "#FF66FF",
+	"charm":    "#FF69B4",
+	"curse":    "#9966FF",
+	"backfire": "#9400D3",
+}
+
+func show_dot_tick(amount: int, dot_type: String, target_is_player: bool) -> void:
+	"""Spawn a small tag-colored floating number for DoT/proc damage."""
+	if amount <= 0:
+		return
+	var anchor_node: Control = _player_visual_for_fx() if target_is_player else _monster_art_label
+	if anchor_node == null or not is_instance_valid(anchor_node):
+		return
+	var anchor_global := anchor_node.global_position + Vector2(anchor_node.size.x * 0.5, anchor_node.size.y * 0.15)
+	var color_hex: String = _DOT_COLORS.get(dot_type, "#FFAA66")
+	var label := Label.new()
+	# Tag prefix so DoT ticks read distinctly from direct hits.
+	var prefix := dot_type.substr(0, 1).to_upper()
+	label.text = "%s -%d" % [prefix, amount]
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 100
+	label.add_theme_color_override("font_color", Color(color_hex))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 3)
+	label.add_theme_font_size_override("font_size", 14)
+	add_child(label)
+	label.reset_size()
+
+	# Use a separate fan slot (reuse seq counter) so DoT and direct hits don't
+	# stack on the same fixed offsets.
+	var slot: int = (_damage_label_seq + 2) % 5
+	_damage_label_seq += 1
+	var spread_x: float = [-40.0, 38.0, -10.0, 22.0, -28.0][slot]
+	var spread_y: float = [-6.0, 2.0, -14.0, 10.0, -2.0][slot]
+
+	var local_anchor: Vector2 = anchor_global - global_position - label.size * 0.5
+	local_anchor += Vector2(spread_x, spread_y)
+	label.position = local_anchor
+
+	var float_distance := 40.0
+	var lifetime := 0.85
+	var t := create_tween().set_parallel(true)
+	t.tween_property(label, "position", local_anchor + Vector2(0, -float_distance), lifetime).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "modulate:a", 0.0, lifetime * 0.55).set_delay(lifetime * 0.45)
+	t.chain().tween_callback(label.queue_free)
 
 
 func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, source: String, target_is_player: bool) -> void:
