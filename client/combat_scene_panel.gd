@@ -37,11 +37,26 @@ var _log_section: PanelContainer
 
 # Player column
 var _player_col: VBoxContainer
+var _player_sprite_holder: CenterContainer  # parent of the PNG sprite — collapsed when ASCII art is active
 var _player_sprite_rect: TextureRect
 var _player_sprite_placeholder: Label
 var _player_name_label: RichTextLabel
 var _player_hp_bar: ProgressBar
 var _player_hp_text: Label
+
+# Per-class ASCII battle art display. Lives at the BOTTOM of the player
+# column (just above the shared HP bar strip) when active, so it sits near
+# the player HP for easy visual association rather than at the very top.
+#
+# Two-layer structure to keep the lunge / shake tweens free of HBox
+# layout conflicts: `_ascii_outer` is the layout child (HBox positions
+# and sizes it), and `_player_ascii_holder` lives inside it as a plain
+# Panel with a free-floating position. FX tween the Panel; the wrapper's
+# resize signal keeps the Panel's size in lockstep so layout changes
+# never overwrite the FX position.
+var _ascii_outer: Control
+var _player_ascii_holder: Panel
+var _player_ascii_label: RichTextLabel
 
 # Companion column (below player)
 var _companion_section: VBoxContainer
@@ -247,23 +262,39 @@ func _build_player_column() -> VBoxContainer:
 	col.add_theme_constant_override("separation", 4)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# Figures row — companion on the LEFT, player sprite on the RIGHT, both
-	# in the same row at a fixed minimum height so they stand on a shared
-	# baseline like a JRPG party formation.
-	var figures_row := HBoxContainer.new()
-	figures_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	figures_row.custom_minimum_size = Vector2(0, 168)
-	figures_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	figures_row.add_theme_constant_override("separation", 8)
-	figures_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(figures_row)
+	# Player name at the top of the column.
+	_player_name_label = RichTextLabel.new()
+	_player_name_label.bbcode_enabled = true
+	_player_name_label.fit_content = true
+	_player_name_label.scroll_active = false
+	_player_name_label.add_theme_font_size_override("normal_font_size", 14)
+	_player_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_player_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(_player_name_label)
 
-	# === Companion (LEFT of the row) ===
+	# Spacer pushes the battle row down so it sits just above the shared
+	# HP strip below the scene_section.
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(spacer)
+
+	# Battle row — companion on the LEFT, player visual (ASCII or PNG) on
+	# the RIGHT, both on the same row just above the HP bar so the eye
+	# can take in the whole party formation in one glance.
+	var battle_row := HBoxContainer.new()
+	battle_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	battle_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	battle_row.add_theme_constant_override("separation", 8)
+	battle_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(battle_row)
+
+	# === Companion (LEFT of the battle row) ===
 	_companion_section = VBoxContainer.new()
 	_companion_section.add_theme_constant_override("separation", 2)
-	_companion_section.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_companion_section.size_flags_vertical = Control.SIZE_SHRINK_END
 	_companion_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	figures_row.add_child(_companion_section)
+	battle_row.add_child(_companion_section)
 
 	_companion_name_label = RichTextLabel.new()
 	_companion_name_label.bbcode_enabled = true
@@ -289,12 +320,12 @@ func _build_player_column() -> VBoxContainer:
 		_companion_art.add_theme_font_override("mono_font", _mono_font)
 	_companion_section.add_child(_companion_art)
 
-	# === Player sprite (RIGHT of the row) ===
-	var sprite_holder := CenterContainer.new()
-	sprite_holder.custom_minimum_size = Vector2(168, 168)
-	sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	sprite_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	figures_row.add_child(sprite_holder)
+	# === Player PNG sprite (RIGHT of the battle row, used when no ASCII) ===
+	_player_sprite_holder = CenterContainer.new()
+	_player_sprite_holder.custom_minimum_size = Vector2(168, 168)
+	_player_sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_END
+	_player_sprite_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battle_row.add_child(_player_sprite_holder)
 
 	_player_sprite_rect = TextureRect.new()
 	_player_sprite_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -302,7 +333,7 @@ func _build_player_column() -> VBoxContainer:
 	_player_sprite_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_player_sprite_rect.custom_minimum_size = Vector2(160, 160)  # 2.5x scale of the 64px source
 	_player_sprite_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sprite_holder.add_child(_player_sprite_rect)
+	_player_sprite_holder.add_child(_player_sprite_rect)
 
 	_player_sprite_placeholder = Label.new()
 	_player_sprite_placeholder.text = "(no sprite)"
@@ -311,19 +342,58 @@ func _build_player_column() -> VBoxContainer:
 	_player_sprite_placeholder.visible = false
 	_player_sprite_placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_player_sprite_placeholder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sprite_holder.add_child(_player_sprite_placeholder)
+	_player_sprite_holder.add_child(_player_sprite_placeholder)
 
-	# === Player name (below the figures row; HP bar lives in shared strip) ===
-	_player_name_label = RichTextLabel.new()
-	_player_name_label.bbcode_enabled = true
-	_player_name_label.fit_content = true
-	_player_name_label.scroll_active = false
-	_player_name_label.add_theme_font_size_override("normal_font_size", 14)
-	_player_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_player_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_player_name_label)
+	# === Player ASCII art (RIGHT of the battle row). Wrapped in a plain
+	# Control so the FX-target Panel inside has free-floating position
+	# (unaffected by HBox re-layouts when the companion text changes).
+	# The wrapper itself is the HBox child; the Panel inside is what
+	# lunge / shake / death-slump tweens animate.
+	_ascii_outer = Control.new()
+	_ascii_outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ascii_outer.size_flags_vertical = Control.SIZE_SHRINK_END
+	_ascii_outer.custom_minimum_size = Vector2(180, 200)
+	_ascii_outer.clip_contents = true
+	_ascii_outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ascii_outer.visible = false
+	battle_row.add_child(_ascii_outer)
+	_ascii_outer.resized.connect(_sync_ascii_holder_size)
+
+	_player_ascii_holder = Panel.new()
+	var ascii_sb := StyleBoxFlat.new()
+	ascii_sb.bg_color = Color(0, 0, 0, 0)
+	_player_ascii_holder.add_theme_stylebox_override("panel", ascii_sb)
+	_player_ascii_holder.position = Vector2.ZERO
+	_player_ascii_holder.size = Vector2(180, 200)
+	_player_ascii_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ascii_outer.add_child(_player_ascii_holder)
+
+	_player_ascii_label = RichTextLabel.new()
+	_player_ascii_label.bbcode_enabled = true
+	_player_ascii_label.fit_content = false
+	_player_ascii_label.scroll_active = false
+	_player_ascii_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_player_ascii_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_player_ascii_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _mono_font:
+		_player_ascii_label.add_theme_font_override("normal_font", _mono_font)
+		_player_ascii_label.add_theme_font_override("bold_font", _mono_font)
+		_player_ascii_label.add_theme_font_override("italics_font", _mono_font)
+		_player_ascii_label.add_theme_font_override("mono_font", _mono_font)
+	_player_ascii_holder.add_child(_player_ascii_label)
 
 	return col
+
+
+func _sync_ascii_holder_size() -> void:
+	"""Keep the inner Panel's size in lock with its layout-managed wrapper.
+	The Panel's position is manually controlled (so FX tweens don't fight
+	HBox re-layouts), but size needs to follow the wrapper's resize."""
+	if _player_ascii_holder == null or _ascii_outer == null:
+		return
+	if not is_instance_valid(_player_ascii_holder) or not is_instance_valid(_ascii_outer):
+		return
+	_player_ascii_holder.size = _ascii_outer.size
 
 
 func _build_monster_column() -> VBoxContainer:
@@ -734,12 +804,15 @@ func populate(payload: Dictionary) -> void:
 	reset_running_totals()
 
 	# Reset any FX-applied sprite state from the prior fight (death slump,
-	# stealth fade, victory grey-out) so this fight starts clean.
-	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
-		_player_sprite_rect.modulate = Color.WHITE
-		_player_sprite_rect.rotation = 0.0
-		if _player_sprite_baseline_captured:
-			_player_sprite_rect.position = _player_sprite_baseline_pos
+	# stealth fade, victory grey-out) so this fight starts clean. Reset
+	# both the PNG sprite and the ASCII holder since either might have
+	# been the FX target in the previous fight.
+	for node in [_player_sprite_rect, _player_ascii_holder]:
+		if node and is_instance_valid(node):
+			node.modulate = Color.WHITE
+			node.rotation = 0.0
+			if node.has_meta("lunge_baseline"):
+				node.position = node.get_meta("lunge_baseline")
 	if _monster_art_label and is_instance_valid(_monster_art_label):
 		_monster_art_label.modulate = Color.WHITE
 		if _monster_art_baseline_captured:
@@ -794,17 +867,31 @@ func clear_log() -> void:
 # === Internal rendering ===
 
 func _refresh_player() -> void:
-	# Sprite
-	var atlas: AtlasTexture = ClassSprite.get_idle_atlas(_player_class)
-	if atlas != null:
-		_player_sprite_rect.texture = atlas
-		_player_sprite_rect.visible = true
-		_player_sprite_placeholder.visible = false
+	# Class ASCII art takes priority over the PNG sprite when available.
+	# Drop a file at `res://client/sprites/ascii/<Class>.txt` and it shows up
+	# here automatically; classes without one fall back to the LPC PNG.
+	var ascii_art = ClassAsciiArt.get_ascii_art(_player_class)
+	if ascii_art != "":
+		var fsize = ClassAsciiArt.get_font_size(_player_class)
+		var col = ClassAsciiArt.get_color(_player_class)
+		set_player_ascii_art(ascii_art, fsize, col)
 	else:
-		_player_sprite_rect.texture = null
-		_player_sprite_rect.visible = false
-		_player_sprite_placeholder.text = "(no sprite for %s)" % _player_class
-		_player_sprite_placeholder.visible = true
+		# Hide the alt holder if we'd previously been showing ASCII for a
+		# different class, and bring back the PNG slot.
+		if _ascii_outer and is_instance_valid(_ascii_outer):
+			_ascii_outer.visible = false
+		if _player_sprite_holder and is_instance_valid(_player_sprite_holder):
+			_player_sprite_holder.visible = true
+		var atlas: AtlasTexture = ClassSprite.get_idle_atlas(_player_class)
+		if atlas != null:
+			_player_sprite_rect.texture = atlas
+			_player_sprite_rect.visible = true
+			_player_sprite_placeholder.visible = false
+		else:
+			_player_sprite_rect.texture = null
+			_player_sprite_rect.visible = false
+			_player_sprite_placeholder.text = "(no sprite for %s)" % _player_class
+			_player_sprite_placeholder.visible = true
 
 	# Name label — class color tint
 	var class_color := ClassSprite.get_class_color(_player_class)
@@ -895,7 +982,7 @@ func _refresh_log() -> void:
 # === A2 hit feedback ===
 
 func flash_player(is_crit: bool = false) -> void:
-	_flash_node(_player_sprite_rect, _player_flash_tween, is_crit, "_player_flash_tween")
+	_flash_node(_player_visual_for_fx(), _player_flash_tween, is_crit, "_player_flash_tween")
 
 func flash_companion(is_crit: bool = false) -> void:
 	_flash_node(_companion_art, _companion_flash_tween, is_crit, "_companion_flash_tween")
@@ -918,19 +1005,25 @@ func _flash_node(node: CanvasItem, current_tween: Tween, is_crit: bool, tween_fi
 
 
 func lunge_player_forward() -> void:
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
-	if not _player_sprite_baseline_captured:
-		_player_sprite_baseline_pos = _player_sprite_rect.position
-		_player_sprite_baseline_captured = true
+	# Per-node baseline via metadata — works whether the visual is the
+	# PNG sprite or the ASCII holder.
+	var baseline: Vector2
+	if node.has_meta("lunge_baseline"):
+		baseline = node.get_meta("lunge_baseline")
+	else:
+		baseline = node.position
+		node.set_meta("lunge_baseline", baseline)
 	if _player_lunge_tween and _player_lunge_tween.is_valid():
 		_player_lunge_tween.kill()
-		_player_sprite_rect.position = _player_sprite_baseline_pos
+		node.position = baseline
 	# Player is on the left, monster on the right — lunge to the RIGHT.
-	var target_pos = _player_sprite_baseline_pos + Vector2(LUNGE_DISTANCE, 0)
+	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
 	_player_lunge_tween = create_tween()
-	_player_lunge_tween.tween_property(_player_sprite_rect, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_player_lunge_tween.tween_property(_player_sprite_rect, "position", _player_sprite_baseline_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func lunge_monster_forward() -> void:
@@ -959,9 +1052,10 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 
 
 func show_damage_on_player(amount: int, is_crit: bool) -> void:
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
-	var anchor_global = _player_sprite_rect.global_position + Vector2(_player_sprite_rect.size.x * 0.5, _player_sprite_rect.size.y * 0.25)
+	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
 	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
 
 
@@ -1046,11 +1140,12 @@ func play_projectile(glyph: String = "✦", color: Color = Color("#FF66FF")) -> 
 	"""A glyph that flies from the player sprite to the monster art and
 	vanishes in a small flash on impact. Used for ranged spells
 	(Magic Bolt, Blast, Meteor)."""
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var src = _player_visual_for_fx()
+	if src == null or not is_instance_valid(src):
 		return
 	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
 		return
-	var start_global = _player_sprite_rect.global_position + _player_sprite_rect.size * Vector2(0.85, 0.45)
+	var start_global = src.global_position + src.size * Vector2(0.85, 0.45)
 	var end_global = _monster_art_label.global_position + _monster_art_label.size * 0.5
 	var label := Label.new()
 	label.text = glyph
@@ -1098,9 +1193,10 @@ func _play_impact_burst(local_pos: Vector2, color: Color) -> void:
 func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
 	"""Expanding ring of glyphs around the player sprite. Used for self-buffs
 	(Haste, Iron Skin, War Cry, Berserk, Fortify)."""
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
-	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * 0.5
+	var center_global = node.global_position + node.size * 0.5
 	var local_center = center_global - global_position
 	var radius_start := 8.0
 	var radius_end := 80.0
@@ -1129,12 +1225,13 @@ func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
 func play_stealth_fade(duration: float = 2.5) -> void:
 	"""Fade the player sprite to ~40% alpha for a duration, then back. Used
 	for Vanish, Cloak, Teleport."""
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
 	var t := create_tween()
-	t.tween_property(_player_sprite_rect, "modulate:a", 0.4, 0.25)
+	t.tween_property(node, "modulate:a", 0.4, 0.25)
 	t.tween_interval(duration - 0.5)
-	t.tween_property(_player_sprite_rect, "modulate:a", 1.0, 0.25)
+	t.tween_property(node, "modulate:a", 1.0, 0.25)
 
 
 # === A4 outcome FX ===
@@ -1154,19 +1251,21 @@ func play_victory_fx() -> void:
 
 func play_death_fx() -> void:
 	"""Player sprite greys + slumps, DEFEATED banner. About 2 seconds."""
-	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node and is_instance_valid(node):
 		var t := create_tween().set_parallel(true)
-		t.tween_property(_player_sprite_rect, "modulate", Color(0.4, 0.4, 0.4, 0.6), 0.5)
-		t.tween_property(_player_sprite_rect, "rotation", deg_to_rad(15), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		t.tween_property(_player_sprite_rect, "position", _player_sprite_rect.position + Vector2(0, 30), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_property(node, "modulate", Color(0.4, 0.4, 0.4, 0.6), 0.5)
+		t.tween_property(node, "rotation", deg_to_rad(15), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_property(node, "position", node.position + Vector2(0, 30), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	_spawn_outcome_banner("DEFEATED", Color("#FF4444"), 52, 1.8, -30.0)
 
 
 func play_level_up_fx(new_level: int) -> void:
 	"""Golden burst around the player + LEVEL UP banner."""
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
-	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * 0.5
+	var center_global = node.global_position + node.size * 0.5
 	var local_center = center_global - global_position
 	# Two concentric rings of golden sparkles, staggered, plus the banner.
 	var ring_count := 2
@@ -1265,9 +1364,10 @@ func _spawn_outcome_banner(text: String, color: Color, font_size: int, lifetime:
 
 func play_heal_pulse(amount: int) -> void:
 	"""Green +N text floats up from the player. Used for heals/restores."""
-	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+	var node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
 		return
-	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * Vector2(0.5, 0.25)
+	var center_global = node.global_position + node.size * Vector2(0.5, 0.25)
 	var local_anchor = center_global - global_position
 	var label := Label.new()
 	label.text = "+%d" % amount if amount > 0 else "+"
@@ -1327,6 +1427,50 @@ func hide_flock_warning() -> void:
 	if _flock_warning_label and is_instance_valid(_flock_warning_label):
 		_flock_warning_label.queue_free()
 	_flock_warning_label = null
+
+
+# === Alt sprite (ASCII art) — /altsprite test ===
+
+func set_player_ascii_art(text: String, font_size: int = 3, color_hex: String = "#E8E8E8") -> void:
+	"""Render ASCII art at the bottom of the player column. Collapses the
+	PNG sprite holder so the companion stays as the only thing on the
+	left side of the battle row."""
+	if _player_ascii_label == null or not is_instance_valid(_player_ascii_label):
+		return
+	var safe_text = text.replace("[", "[lb]")  # keep stray brackets from being read as BBCode tags
+	_player_ascii_label.text = "[font_size=%d][color=%s]%s[/color][/font_size]" % [font_size, color_hex, safe_text]
+	if _ascii_outer:
+		_ascii_outer.visible = true
+	if _player_sprite_holder:
+		_player_sprite_holder.visible = false
+	if _player_sprite_rect:
+		_player_sprite_rect.visible = false
+	if _player_sprite_placeholder:
+		_player_sprite_placeholder.visible = false
+
+
+func clear_player_ascii_art() -> void:
+	"""Hide the ASCII holder and restore the PNG sprite slot."""
+	if _ascii_outer:
+		_ascii_outer.visible = false
+	if _player_sprite_holder:
+		_player_sprite_holder.visible = true
+	# Re-run the player refresh so the PNG/placeholder visibility resets
+	# correctly based on the current class.
+	_refresh_player()
+
+
+func is_alt_sprite_visible() -> bool:
+	return _ascii_outer != null and is_instance_valid(_ascii_outer) and _ascii_outer.visible
+
+
+func _player_visual_for_fx() -> Control:
+	"""Return whichever player visual is currently visible. For ASCII this
+	is the inner Panel (which has free-floating position so lunge tweens
+	don't fight the HBox layout); for PNG it's the TextureRect."""
+	if _ascii_outer and is_instance_valid(_ascii_outer) and _ascii_outer.visible:
+		return _player_ascii_holder
+	return _player_sprite_rect
 
 
 # === Victory card ===

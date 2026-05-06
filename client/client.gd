@@ -18113,7 +18113,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip", "resetpw", "testfx", "spritesize"]
+		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -18842,6 +18842,8 @@ func process_command(text: String):
 			_run_combat_fx_demo()
 		"spritesize":
 			_show_sprite_size_preview()
+		"altsprite":
+			_run_altsprite_test(parts.slice(1))
 		"who", "players":
 			request_player_list()
 			display_game("[color=#808080]Refreshing player list...[/color]")
@@ -21264,8 +21266,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.205 changes
+	display_game("[color=#00FF00]v0.9.205[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]ASCII Battle Art: hand-drawn class sprites in combat[/color]")
+	display_game("  • All 9 classes now use original ASCII battle art instead of the LPC PNG sprites — Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja each get their own art")
+	display_game("  • Companion ASCII and player ASCII share a single row at the bottom of the player column, just above the HP bar — easier to read the whole party formation in one glance")
+	display_game("  • Player ASCII still lunges forward on attack and reacts to flash / level-up / death FX — wrapped the visual in a layout-free Control so the lunge tween doesn't drift after combat messages re-layout the row")
+	display_game("  • Drop-in convention: any `client/sprites/ascii/<Class>.txt` file auto-replaces the PNG; per-class font_size and color overrides in client/class_ascii_art.gd")
+	display_game("  • PNG sprites still ship with the build as a fallback for any class without ASCII art, and they continue to drive the overworld map sprites")
+	display_game("")
+
 	# v0.9.204 changes
-	display_game("[color=#00FF00]v0.9.204[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.204[/color]")
 	display_game("  [color=#FFD700]Combat-Scene Migration: victory card + battle continuity[/color]")
 	display_game("  • Battle scene now stays visible between back-to-back flock fights — no more blink-through to the map UI between encounters")
 	display_game("  • Pulsing 'More <enemy>s approaching!' banner appears over the monster art when another fight is queued, so the call-to-action lives where you're already looking")
@@ -21305,21 +21317,6 @@ func display_changelog():
 	display_game("  • Server now ships each visible player's class with the position list so other clients know which sprite to draw")
 	display_game("  • Sprites hide automatically during combat (battle scene takes over) and during character select")
 	display_game("")
-
-	# v0.9.200 changes
-	display_game("[color=#00FFFF]v0.9.200[/color]")
-	display_game("  [color=#FFD700]Combat Juice Phase A complete: Ability VFX + Outcome FX[/color]")
-	display_game("  • Ability VFX dispatched from server color codes — no per-ability lookup, so new abilities pick up the right effect automatically")
-	display_game("  • Warrior heavy hits (Power Strike, Cleave, Devastate, Shield Bash, Ambush, Exploit Weakness) now sweep a slash glyph across the monster — red ✗ on crit, orange ／ otherwise")
-	display_game("  • Mage casts (Magic Bolt ✦, Blast ●, Meteor ☄) launch a glyph from the player to the monster with a small impact burst on landing")
-	display_game("  • Self-buffs (War Cry, Iron Skin, Berserk, Haste, Fortify, Forcefield) trigger an expanding ring of sparkles around the player — color shifts by buff type (orange offense, blue defense, cyan speed)")
-	display_game("  • Vanish / Cloak / Teleport fade the player sprite; healing pulses a green +N above you; Trickster outwit/Perfect Heist plays an inward green spiral on the monster")
-	display_game("  • Outcome FX: monster slumps + greys + VICTORY! banner on win; player slumps + DEFEATED on death; LEVEL UP! during combat triggers a golden double-ring burst with the new level above the victory banner")
-	display_game("  • Battle scene linger now extends to ~2.4s on victory/death/level-up so the FX finish before the next screen takes over")
-	display_game("  • Use Item / target picker now temporarily hide the battle scene so you can read the list (will revisit — see combat readability initiative)")
-	display_game("  • Bugfix: Salvage Junk now properly refreshes the inventory panel after salvaging, with the result text in the panel status row")
-	display_game("")
-
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -24093,6 +24090,69 @@ func _show_sprite_size_preview() -> void:
 				rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 				rect.custom_minimum_size = Vector2(size_px, size_px)
 				cell.add_child(rect)
+
+
+func _run_altsprite_test(args: Array) -> void:
+	"""/altsprite [path] [font_size] — load an ASCII art file and display it
+	in place of the player class sprite for a side-by-side test. Calling it
+	again toggles back to the PNG sprite. Defaults to the desktop test path."""
+	if combat_scene_panel == null:
+		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
+		return
+
+	# Toggle off if already showing the alt sprite.
+	if combat_scene_panel.has_method("is_alt_sprite_visible") and combat_scene_panel.is_alt_sprite_visible():
+		combat_scene_panel.clear_player_ascii_art()
+		_combat_scene_force_visible = false
+		display_game("[color=#808080]Alt sprite OFF — back to the PNG class sprite.[/color]")
+		return
+
+	var alt_path = "C:/Users/Dexto/Desktop/sprite_work/Alt-Fighter.txt"
+	var font_size = 2  # Tuned for the 100×52 Alt-Fighter test art — fits in the player column
+	if args.size() >= 1 and not args[0].is_valid_int():
+		alt_path = args[0]
+		if args.size() >= 2 and args[1].is_valid_int():
+			font_size = clampi(int(args[1]), 1, 20)
+	elif args.size() >= 1 and args[0].is_valid_int():
+		font_size = clampi(int(args[0]), 1, 20)
+
+	var f = FileAccess.open(alt_path, FileAccess.READ)
+	if f == null:
+		display_game("[color=#FF6666]Could not open %s — error %d[/color]" % [alt_path, FileAccess.get_open_error()])
+		display_game("[color=#808080]Usage: /altsprite [path] [font_size][/color]")
+		return
+	var contents = f.get_as_text()
+	f.close()
+	if contents.strip_edges() == "":
+		display_game("[color=#FF6666]File at %s was empty.[/color]" % alt_path)
+		return
+
+	# Force the panel visible so the test works outside actual combat.
+	# If we're already in combat, the existing show logic handles it.
+	if not in_combat:
+		_combat_scene_force_visible = true
+		# Also populate the panel with current character data so the rest
+		# of the scene (HP / name / monster slot) has something to show.
+		var pcls = str(character_data.get("class", "Fighter"))
+		var pname = str(character_data.get("name", "Player"))
+		combat_scene_panel.populate({
+			"player_class": pcls,
+			"player_name": pname,
+			"player_hp": int(character_data.get("current_hp", 100)),
+			"player_max_hp": int(character_data.get("max_hp", 100)),
+			"companion_data": {},
+			"monster_name": "",
+			"monster_level": 1,
+			"monster_name_color": "#FFFFFF",
+			"monster_art_bbcode": "",
+			"monster_hp_known": false,
+			"monster_hp": -1,
+			"monster_max_hp": -1,
+		})
+
+	combat_scene_panel.set_player_ascii_art(contents, font_size, "#E8E8E8")
+	display_game("[color=#00FF00]Alt sprite loaded from %s at font_size=%d.[/color]" % [alt_path, font_size])
+	display_game("[color=#808080]Use /altsprite again to toggle back. Pass [path] and/or [font_size] to tweak.[/color]")
 
 
 func _run_combat_fx_demo() -> void:
