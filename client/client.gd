@@ -409,6 +409,10 @@ var game_state = GameState.DISCONNECTED
 @onready var kennel_panel = $RootContainer/TopSection/GameOutputContainer/KennelPanel
 @onready var fusion_panel = $RootContainer/TopSection/GameOutputContainer/FusionPanel
 @onready var ability_panel = $RootContainer/TopSection/GameOutputContainer/AbilityPanel
+@onready var combat_scene_panel = $RootContainer/TopSection/GameOutputContainer/CombatScenePanel
+var _combat_scene_force_visible: bool = false  # /testfx debug override
+var _combat_scene_was_in_combat: bool = false  # transition tracking
+var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1553,6 +1557,10 @@ func _ready():
 		ability_panel.unequip_requested.connect(_on_ability_panel_unequip)
 		ability_panel.rebind_requested.connect(_on_ability_panel_rebind)
 
+	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
+	if combat_scene_panel:
+		combat_scene_panel.client_ref = self
+
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
 	input_field.gui_input.connect(_on_input_gui_input)
@@ -2122,8 +2130,25 @@ func _process(delta):
 		if ability_panel.visible != _ability_should_show:
 			ability_panel.visible = _ability_should_show
 
+	# Sync combat scene panel — shows whenever the player is in combat.
+	# A1 slice: static layout; existing game_output is hidden behind it and
+	# the panel mirrors combat messages into its own log section.
+	var _combat_scene_should_show: bool = false
+	if combat_scene_panel:
+		# Track in_combat transitions: when combat ends, hold the panel visible
+		# for a beat so the killing-blow FX (damage number, flash, lunge) get
+		# to finish playing before the victory screen takes over.
+		var _now_in_combat = in_combat and game_state == GameState.PLAYING
+		if _combat_scene_was_in_combat and not _now_in_combat:
+			_combat_scene_linger_until_ms = Time.get_ticks_msec() + 1100
+		_combat_scene_was_in_combat = _now_in_combat
+		var _is_lingering = Time.get_ticks_msec() < _combat_scene_linger_until_ms
+		_combat_scene_should_show = _now_in_combat or _combat_scene_force_visible or _is_lingering
+		if combat_scene_panel.visible != _combat_scene_should_show:
+			combat_scene_panel.visible = _combat_scene_should_show
+
 	# Hide the text game_output whenever a visual panel is showing
-	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show or _ability_should_show
+	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show or _ability_should_show or _combat_scene_should_show
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
@@ -15166,6 +15191,10 @@ func update_player_hp_bar():
 	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))  # Use equipment-boosted HP
 	var percent = (float(current_hp) / float(max_hp)) * 100.0
 
+	# Mirror to combat scene panel (A1 — Combat Juice)
+	if combat_scene_panel and in_combat:
+		combat_scene_panel.update_player_hp(current_hp, max_hp)
+
 	var fill = player_health_bar.get_node("Fill")
 	var label = player_health_bar.get_node("HPLabel")
 
@@ -15510,6 +15539,10 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	if not enemy_health_bar:
 		return
 
+	# Mirror current monster HP to combat scene panel (A1 — Combat Juice)
+	if combat_scene_panel and in_combat and actual_hp >= 0 and actual_max_hp > 0:
+		combat_scene_panel.update_monster_hp(actual_hp, actual_max_hp, true)
+
 	# Use base name for HP knowledge lookup so variants share data with base type
 	var base_name = _get_base_monster_name(enemy_name)
 	var enemy_key = "%s_%d" % [base_name, enemy_level]
@@ -15753,6 +15786,43 @@ func parse_monster_healing(msg: String) -> int:
 		return int(result.get_string(1))
 
 	return 0
+
+func parse_damage_to_player(msg: String) -> int:
+	"""Parse damage dealt BY a monster TO the player. Mirror of parse_damage_dealt
+	but for the inbound side. Returns 0 if no monster→player damage detected."""
+	var clean_msg = msg
+	var bbcode_regex = RegEx.new()
+	bbcode_regex.compile("\\[/?[a-z]+[^\\]]*\\]")
+	clean_msg = bbcode_regex.sub(clean_msg, "", true)
+
+	var regex = RegEx.new()
+
+	# "The X attacks and deals N damage" (most common monster basic attack)
+	regex.compile("attacks and deals (\\d+) damage")
+	var result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# "X hits N times for Y damage" (multi-hit monster attack)
+	regex.compile("hits \\d+ times for (\\d+) damage")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# "deals N damage to you" (catch-all for monster ability damage)
+	regex.compile("(\\d+) damage to you")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	# "drains N life" (life steal)
+	regex.compile("drains (\\d+) life")
+	result = regex.search(clean_msg)
+	if result:
+		return int(result.get_string(1))
+
+	return 0
+
 
 func parse_damage_dealt(msg: String) -> int:
 	"""Parse damage dealt by PLAYER (and allies) to enemy from combat messages.
@@ -17596,6 +17666,9 @@ func _process_combat_start(message: Dictionary):
 	show_enemy_hp_bar(true)
 	update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0, current_enemy_hp, current_enemy_max_hp)
 
+	# Populate the combat scene panel (A1 — Combat Juice)
+	_populate_combat_scene_panel(combat_state)
+
 # ===== INPUT HANDLING =====
 
 func _on_send_button_pressed():
@@ -17769,7 +17842,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip", "resetpw"]
+		"banip", "unbanip", "resetpw", "testfx"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -18494,6 +18567,8 @@ func process_command(text: String):
 		"clear":
 			game_output.clear()
 			chat_output.clear()
+		"testfx":
+			_run_combat_fx_demo()
 		"who", "players":
 			request_player_list()
 			display_game("[color=#808080]Refreshing player list...[/color]")
@@ -20916,8 +20991,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.199 changes
+	display_game("[color=#00FF00]v0.9.199[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Juice Phase A: Battle Scene + Hit Feedback[/color]")
+	display_game("  • New JRPG-style battle scene panel — when combat starts, your class sprite + companion appear on the left, monster ASCII on the right, with HP bars on a shared strip and a combat log mirror below")
+	display_game("  • 9 class sprites (Fighter / Barbarian / Paladin / Wizard / Sorcerer / Sage / Thief / Ranger / Ninja) under OGA-BY 3.0 — see CREDITS.md")
+	display_game("  • Companion ASCII inherits its variant pattern colors (Crimson, Frost, etc.) just like the corner overlay, sized ~2/3 of the monster art")
+	display_game("  • Hit feedback: floating damage numbers above the target (yellow=you, cyan=companion, red=damage to you), brighter and bigger on crits")
+	display_game("  • Target sprite/art briefly flashes red on each hit; attacker lunges toward the defender — player slides right on attack, monster slides left")
+	display_game("  • Battle scene lingers ~1 second after combat ends so killing-blow feedback plays out before the victory screen")
+	display_game("")
+
 	# v0.9.198 changes
-	display_game("[color=#00FF00]v0.9.198[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.198[/color]")
 	display_game("  [color=#FFD700]UI Facelift Phase 6: Visual Ability Loadout[/color]")
 	display_game("  • More → Abilities is now a visual panel: 6 combat slot cards across the top, each showing the slot's keybind ([Q]/[W]/[E]/[R]/etc.) and the equipped ability with its cost")
 	display_game("  • Click an empty slot to enter choose-mode — the ability grid below highlights and clicking an unlocked ability assigns it. A Cancel button exits choose-mode")
@@ -20952,16 +21038,6 @@ func display_changelog():
 	display_game("  • Sort cycler (Level / Tier / Variant / Damage / Name / Type) and an asc/desc toggle in the top-right")
 	display_game("  • More → Eggs (or the Eggs tab on the Companions panel) shows each incubating egg as a card with its ASCII art, tier, progress bar, and frozen status — click to toggle freeze")
 	display_game("  • Sanctuary (Storage / Kennel / Fusion / Upgrades) deferred to its own future phase since it's a separate game state with several sub-modes")
-	display_game("")
-
-	# v0.9.194 changes
-	display_game("[color=#00FFFF]v0.9.194[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 3: Visual Market Panel[/color]")
-	display_game("  • Walk up to a market ($ tile) and the market is now a visual panel — Browse / My Listings tabs, filter chips, sort cycler, listings on the left, item details + Buy button on the right")
-	display_game("  • Click any listing to inspect; click Buy to purchase the full stack — disabled and red when you can't afford it")
-	display_game("  • My Listings tab shows your active listings grouped by category; click one to cancel, or use Pull All for the bulk pull")
-	display_game("  • A List ▾ menu in the action row launches the existing listing flows (from Inventory, Materials, Egg, plus the five Bulk options)")
-	display_game("  • Listing-creation prompts and partial-quantity buys still use the keyboard for the qty step — the panel slice is browse + buy + cancel")
 	display_game("")
 
 
@@ -23205,6 +23281,18 @@ func show_help():
 			display_game(line)
 		display_game("[color=#808080](%d/%d posts discovered)[/color]" % [discovered.size(), 58])
 
+	# Credits / attribution footer
+	display_game("")
+	display_game("[b][color=#FFD700]══ CREDITS ══[/color][/b]")
+	display_game("Phantom Badlands by [color=#00FFFF]Dextobust33[/color] · Built with [color=#00FFFF]Godot Engine[/color] (MIT)")
+	display_game("Player class sprites composed from [color=#00FFFF]LPC Medieval Fantasy Character Sprites[/color] by [color=#00FFFF]wulax[/color]")
+	display_game("  Source: [color=#888888]opengameart.org/content/lpc-medieval-fantasy-character-sprites[/color]")
+	display_game("  License: [color=#888888]OGA-BY 3.0 (static.opengameart.org/OGA-BY-3.0.txt)[/color]")
+	display_game("Sprite assembly via [color=#00FFFF]Universal LPC Sprite Sheet Character Generator[/color]")
+	display_game("  [color=#888888]liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator[/color]")
+	display_game("Full per-part attribution: see [color=#888888]CREDITS.md[/color] in the install directory")
+	display_game("")
+
 	# Scroll to top after displaying help
 	await get_tree().process_frame
 	game_output.scroll_to_line(0)
@@ -23514,6 +23602,72 @@ func clear_game_output():
 	if game_output:
 		game_output.clear()
 
+func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
+	"""A1 — render the combat scene panel from the current combat_state."""
+	if combat_scene_panel == null:
+		return
+	combat_scene_panel.clear_log()
+
+	var monster_name = combat_state.get("monster_name", "Enemy")
+	var monster_base_name = combat_state.get("monster_base_name", monster_name)
+	var monster_level = combat_state.get("monster_level", 1)
+	var monster_name_color = combat_state.get("monster_name_color", "#FFFFFF")
+	var monster_hp = int(combat_state.get("monster_hp", -1))
+	var monster_max_hp = int(combat_state.get("monster_max_hp", -1))
+	var hp_known = monster_hp >= 0 and monster_max_hp > 0
+
+	# Render monster ASCII via the raw MonsterArt path (no border, no padding).
+	# get_bordered_art_with_font adds 25 spaces of left padding designed to
+	# center the art inside the full-width GameOutput panel — that padding
+	# pushes the art off-screen in our narrow column. Raw art + an explicit
+	# font_size renders cleanly and the parent PanelContainer clips any
+	# horizontal overflow. Right-align so the monster sits on the far side
+	# of the scene like a JRPG enemy formation.
+	var art_bbcode = ""
+	var monster_font_size = MonsterArt.ASCII_ART_FONT_SIZE
+	var monster_art_inst = _get_monster_art()
+	if monster_art_inst:
+		var raw_art = monster_art_inst.get_monster_ascii_art(monster_base_name)
+		if raw_art != "":
+			# Use the original game-output font size — most monsters override
+			# to 3-6. The right column is narrower than full game_output but
+			# wider than half, and clip_contents handles any overflow.
+			if MonsterArt.FONT_SIZE_OVERRIDES.has(monster_base_name):
+				monster_font_size = MonsterArt.FONT_SIZE_OVERRIDES[monster_base_name]
+			art_bbcode = "[right][font_size=%d]%s[/font_size][/right]" % [monster_font_size, raw_art]
+
+	# Companion ASCII renders at ~2/3 of the monster's font size so the two
+	# stay visually proportionate — bigger monster = bigger companion.
+	var companion_font_size = max(2, int(round(monster_font_size * 2.0 / 3.0)))
+
+	combat_scene_panel.populate({
+		"player_class": str(character_data.get("class", "Fighter")),
+		"player_name": str(character_data.get("name", "Player")),
+		"player_hp": int(character_data.get("current_hp", 0)),
+		"player_max_hp": int(character_data.get("total_max_hp", character_data.get("max_hp", 1))),
+		"companion_data": character_data.get("active_companion", {}),
+		"companion_font_size": companion_font_size,
+		"monster_name": monster_name,
+		"monster_level": monster_level,
+		"monster_name_color": monster_name_color,
+		"monster_art_bbcode": art_bbcode,
+		"monster_hp": monster_hp,
+		"monster_max_hp": monster_max_hp,
+		"monster_hp_known": hp_known,
+	})
+
+func _update_combat_scene_hp() -> void:
+	"""Refresh the HP bars on the combat scene panel from the latest data.
+	Called from character_update and other points where HP changes."""
+	if combat_scene_panel == null or not in_combat:
+		return
+	combat_scene_panel.update_player_hp(
+		int(character_data.get("current_hp", 0)),
+		int(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
+	)
+	if current_enemy_hp >= 0 and current_enemy_max_hp > 0:
+		combat_scene_panel.update_monster_hp(current_enemy_hp, current_enemy_max_hp, true)
+
 func start_combat_animation(text: String, color: String = "#FFFF00"):
 	"""Start a combat animation with spinner effect"""
 	combat_animation_active = true
@@ -23608,6 +23762,9 @@ func _display_combat_msg(combat_msg: String):
 	"""Display a single combat message with all visual effects (extracted from combat_message handler)"""
 	var enhanced_msg = _enhance_combat_message(combat_msg)
 	display_game(enhanced_msg)
+	# Mirror to combat scene panel log (A1 — Combat Juice)
+	if combat_scene_panel:
+		combat_scene_panel.append_log(enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
@@ -23640,6 +23797,115 @@ func _display_combat_msg(combat_msg: String):
 	if monster_heal > 0:
 		damage_dealt_to_current_enemy = max(0, damage_dealt_to_current_enemy - monster_heal)
 		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+	# A2 — battle-scene hit feedback. Fire FX after damage parsing so we can
+	# use the same numbers. Only when scene panel is active to avoid cost
+	# during text-mode play.
+	if combat_scene_panel and combat_scene_panel.visible:
+		_dispatch_combat_fx(combat_msg, damage)
+
+
+func _run_combat_fx_demo() -> void:
+	"""/testfx — force the combat scene panel visible and play every FX in
+	sequence so we can verify them outside real combat. Auto-releases when done."""
+	if combat_scene_panel == null:
+		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
+		return
+	display_game("[color=#FFD700]Playing combat FX demo (5s)...[/color]")
+	_combat_scene_force_visible = true
+
+	var mock_companion = character_data.get("active_companion", {})
+	if mock_companion == null or mock_companion.is_empty():
+		mock_companion = {"name": "TestPet", "monster_type": "Wolf", "level": 5, "variant": "Normal", "variant_color": "#88FFAA"}
+	var monster_art_inst = _get_monster_art()
+	var raw = monster_art_inst.get_monster_ascii_art("Goblin") if monster_art_inst else ""
+	var font = MonsterArt.FONT_SIZE_OVERRIDES.get("Goblin", MonsterArt.ASCII_ART_FONT_SIZE)
+	var art_bb = "[right][font_size=%d]%s[/font_size][/right]" % [font, raw]
+
+	combat_scene_panel.clear_log()
+	combat_scene_panel.populate({
+		"player_class": str(character_data.get("class", "Fighter")),
+		"player_name": str(character_data.get("name", "Player")),
+		"player_hp": 100, "player_max_hp": 100,
+		"companion_data": mock_companion,
+		"companion_font_size": max(2, int(round(font * 2.0 / 3.0))),
+		"monster_name": "Demo Goblin", "monster_level": 5,
+		"monster_name_color": "#00FF66",
+		"monster_art_bbcode": art_bb,
+		"monster_hp": 200, "monster_max_hp": 200, "monster_hp_known": true,
+	})
+
+	# Sequence: player hit → companion hit → crit → monster hits player → monster crits player.
+	await get_tree().create_timer(0.4).timeout
+	combat_scene_panel.append_log("[color=#00FF00]>> [/color]You deal 25 damage to the Goblin!")
+	combat_scene_panel.show_damage_on_monster(25, false, "player")
+	combat_scene_panel.flash_monster(false)
+	combat_scene_panel.lunge_player_forward()
+
+	await get_tree().create_timer(0.7).timeout
+	combat_scene_panel.append_log("Your TestPet attacks for 18 damage!")
+	combat_scene_panel.show_damage_on_monster(18, false, "companion")
+	combat_scene_panel.flash_monster(false)
+
+	await get_tree().create_timer(0.7).timeout
+	combat_scene_panel.append_log("[color=#FF0000]CRITICAL HIT![/color] You deal 78 damage!")
+	combat_scene_panel.show_damage_on_monster(78, true, "player")
+	combat_scene_panel.flash_monster(true)
+	combat_scene_panel.lunge_player_forward()
+
+	await get_tree().create_timer(0.9).timeout
+	combat_scene_panel.append_log("[color=#FF4444]<< [/color]The Goblin attacks and deals 12 damage to you!")
+	combat_scene_panel.show_damage_on_player(12, false)
+	combat_scene_panel.flash_player(false)
+	combat_scene_panel.lunge_monster_forward()
+
+	await get_tree().create_timer(0.7).timeout
+	combat_scene_panel.append_log("[color=#FF0000]CRITICAL![/color] The Goblin smashes you for 35 damage!")
+	combat_scene_panel.show_damage_on_player(35, true)
+	combat_scene_panel.flash_player(true)
+	combat_scene_panel.lunge_monster_forward()
+
+	await get_tree().create_timer(1.5).timeout
+	_combat_scene_force_visible = false
+	display_game("[color=#888888]FX demo complete.[/color]")
+
+
+func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
+	"""A2 — parse a combat message and trigger the appropriate visual feedback
+	on the battle scene panel. Reads the same text the player sees, so any
+	server-side formatting tweak that breaks parsing only loses FX, not the
+	underlying combat readout."""
+	var lower = combat_msg.to_lower()
+	var upper = combat_msg.to_upper()
+	var is_crit = "CRITICAL" in upper
+
+	# Damage TO monster — player or companion is attacking.
+	if damage_to_monster > 0:
+		# Companion attack patterns: server wraps companion names in cyan
+		# (#00FFFF) BBCode and uses "Your <X> attacks" or "<X>'s ..." or
+		# "<X> uses <ability>". Match the same heuristics that already
+		# drive shake_companion_art() at line ~23729 so detection stays
+		# consistent across visuals.
+		var src := "player"
+		var has_your = "Your " in combat_msg
+		var has_cyan = "#00FFFF" in combat_msg
+		if has_your and " attacks" in combat_msg:
+			src = "companion"
+		elif has_cyan and (" uses " in combat_msg or "'s " in combat_msg):
+			src = "companion"
+		elif has_cyan and " attacks" in combat_msg:
+			src = "companion"
+		combat_scene_panel.show_damage_on_monster(damage_to_monster, is_crit, src)
+		combat_scene_panel.flash_monster(is_crit)
+		if src == "player":
+			combat_scene_panel.lunge_player_forward()
+
+	# Damage TO player — monster is attacking.
+	var damage_to_player = parse_damage_to_player(combat_msg)
+	if damage_to_player > 0:
+		combat_scene_panel.show_damage_on_player(damage_to_player, is_crit)
+		combat_scene_panel.flash_player(is_crit)
+		combat_scene_panel.lunge_monster_forward()
 
 func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
