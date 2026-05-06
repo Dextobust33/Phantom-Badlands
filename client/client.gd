@@ -449,9 +449,23 @@ var _local_map_facing: String = "right"
 var _remote_facings: Dictionary = {}     # name -> "up"/"down"/"left"/"right"
 var _remote_last_pos: Dictionary = {}    # name -> Vector2i(x, y)
 var _remote_sprite_pool: Array[TextureRect] = []  # Pool of sprite slots reused per location update
+# Companion trail labels — one per sprite slot, positioned just below the
+# sprite. Tiny ASCII art so the player and other players can see who's
+# walking around with which companion.
+var _local_companion_label: RichTextLabel = null
+var _remote_companion_pool: Array[RichTextLabel] = []
 const MAP_SPRITE_PIXEL_SIZE := 32
 const MAP_VIEWPORT_CENTER_CELL := 11  # Player is always at (11, 11) in 23x23 map
 const MAP_REMOTE_SPRITE_POOL_SIZE := 16  # Max remote players we'll show; far enough above typical visible counts
+const MAP_COMPANION_LETTER_FONT_SIZE := 14
+const MAP_COMPANION_LABEL_WIDTH := 28
+const MAP_COMPANION_LABEL_HEIGHT := 22
+const MAP_COMPANION_FONT_PATH := "res://font/Consolas/consolas.ttf"
+static var _map_companion_font: FontFile = null
+# Hover tooltip + selection state for the map sprites overlay.
+var _map_tooltip: PanelContainer = null
+var _map_tooltip_label: RichTextLabel = null
+var _map_tooltip_anchor: Control = null   # Hide tooltip if anchor goes invisible
 @onready var input_field = $RootContainer/BottomStrip/ChatPanel/InputRow/InputField
 @onready var send_button = $RootContainer/BottomStrip/ChatPanel/InputRow/SendButton
 @onready var action_bar = $RootContainer/BottomStrip/CenterPanel/ActionBar
@@ -21063,8 +21077,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.202 changes
+	display_game("[color=#00FF00]v0.9.202[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Map Sprites M3: companion trail + hover tooltips + click-to-inspect[/color]")
+	display_game("  • Active companions now appear as a small variant-colored letter (first char of monster type) on the cell the player just moved from — trails behind your facing direction")
+	display_game("  • Hover any sprite or companion letter for a tooltip: player tooltip shows name/class/level (and 'click to examine' for others); companion tooltip shows name/variant/level + a tiny ASCII art preview")
+	display_game("  • Left-click a player sprite to /examine that player; left-click a companion letter to open the visual Inspect screen for that companion (works for your own AND other players' companions)")
+	display_game("  • Companion Inspect screen now properly shows the variant-colored ASCII art on the right (was missing in the visual panel — game_output version had it but was hidden behind the panel)")
+	display_game("  • Bugfix: Inspect via the action bar — pressing a number key after Inspect now actually shows the companion details inside the panel instead of bouncing back to the list")
+	display_game("  • Server sends each visible companion's full data (level / tier / sub-tier / variant / xp / bonuses) so the inspect view is identical whether it's yours or someone else's")
+	display_game("")
+
 	# v0.9.201 changes
-	display_game("[color=#00FF00]v0.9.201[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.201[/color]")
 	display_game("  [color=#FFD700]Map Sprites: class sprites on the world map[/color]")
 	display_game("  • Your class sprite now stands on your tile on the world map — no more @ — and you can see other visible players' sprites at their grid positions instead of just a colored letter")
 	display_game("  • Sprites face the direction of last movement (north/south/east/west) using the LPC walk-row idle frames; defaults to right-facing")
@@ -21106,16 +21131,6 @@ func display_changelog():
 	display_game("  • Right-click a slot for Replace / Unequip / Rebind Key — Rebind drops to the existing keyboard prompt for the actual key press")
 	display_game("  • Locked abilities still show at the bottom in a greyed list with their unlock level — useful for planning your loadout as you level")
 	display_game("  • UI Facelift initiative complete — every major menu surface now has a visual panel with keyboard fallback")
-	display_game("")
-
-	# v0.9.197 changes
-	display_game("[color=#00FFFF]v0.9.197[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 5b: Visual Kennel + Fusion[/color]")
-	display_game("  • Walk onto the Kennel (K) tile and your stored companions now appear as a grid of cards — sort cycler (Level / Tier / Sub-Tier / Variant / Name / Type) and asc/desc toggle in the header")
-	display_game("  • Right-click any kennel card for Register as Companion (greyed when registered slots are full) or Release — Release prompts a confirm dialog")
-	display_game("  • Walk onto the Fusion (F) tile and you get tabs for Same Type / Mixed T9 — Same lists every fuseable group with a one-click confirm; Mixed shows every sub-tier 8 companion as a card")
-	display_game("  • Mixed T9: click cards to toggle selection (up to 8), counter at the top turns gold/green as you fill it, Fuse! button activates when exactly 8 are selected, Clear empties the selection in one click")
-	display_game("  • Keyboard fallback (action bar Same / Mixed buttons + number keys) still works — Sanctuary UI Facelift is now complete except for the action bar / hotbar pass")
 	display_game("")
 
 	# v0.9.181 changes
@@ -22324,6 +22339,13 @@ func activate_companion_by_index(index: int):
 	if pending_companion_action == "inspect_select":
 		inspecting_companion = companion
 		pending_companion_action = "inspect"
+		# Render INSIDE the visual companions panel — game_output is hidden
+		# behind the panel during companions_mode, so writing to game_output
+		# alone (the legacy path) leaves the user looking at the unchanged
+		# companions list. Match the right-click Inspect path.
+		if companions_panel:
+			var bbcode := _build_companion_inspect_bbcode(companion)
+			companions_panel.show_inspect(companion, bbcode)
 		display_companion_inspection(companion)
 		update_action_bar()
 		return
@@ -24603,16 +24625,78 @@ func _ensure_map_sprites_overlay() -> void:
 	# Local-player slot.
 	var local := _make_map_sprite_slot()
 	local.name = "LocalPlayer"
+	local.set_meta("kind", "player")
+	local.set_meta("is_local", true)
+	local.mouse_entered.connect(_on_map_sprite_hover.bind(local))
+	local.mouse_exited.connect(_on_map_sprite_unhover.bind(local))
+	local.gui_input.connect(_on_map_sprite_input.bind(local))
 	map_sprites_overlay.add_child(local)
+
+	_local_companion_label = _make_map_companion_label()
+	_local_companion_label.name = "LocalCompanion"
+	_local_companion_label.set_meta("kind", "companion")
+	_local_companion_label.set_meta("is_local", true)
+	_local_companion_label.mouse_entered.connect(_on_map_sprite_hover.bind(_local_companion_label))
+	_local_companion_label.mouse_exited.connect(_on_map_sprite_unhover.bind(_local_companion_label))
+	_local_companion_label.gui_input.connect(_on_map_sprite_input.bind(_local_companion_label))
+	map_sprites_overlay.add_child(_local_companion_label)
 
 	# Pool of remote-player slots. Pre-allocated so we don't churn nodes
 	# every map update; unused slots stay invisible.
 	_remote_sprite_pool.clear()
+	_remote_companion_pool.clear()
 	for i in range(MAP_REMOTE_SPRITE_POOL_SIZE):
 		var slot := _make_map_sprite_slot()
 		slot.name = "RemotePlayer%d" % i
+		slot.set_meta("kind", "player")
+		slot.set_meta("is_local", false)
+		slot.mouse_entered.connect(_on_map_sprite_hover.bind(slot))
+		slot.mouse_exited.connect(_on_map_sprite_unhover.bind(slot))
+		slot.gui_input.connect(_on_map_sprite_input.bind(slot))
 		map_sprites_overlay.add_child(slot)
 		_remote_sprite_pool.append(slot)
+		var comp_lbl := _make_map_companion_label()
+		comp_lbl.name = "RemoteCompanion%d" % i
+		comp_lbl.set_meta("kind", "companion")
+		comp_lbl.set_meta("is_local", false)
+		comp_lbl.mouse_entered.connect(_on_map_sprite_hover.bind(comp_lbl))
+		comp_lbl.mouse_exited.connect(_on_map_sprite_unhover.bind(comp_lbl))
+		comp_lbl.gui_input.connect(_on_map_sprite_input.bind(comp_lbl))
+		map_sprites_overlay.add_child(comp_lbl)
+		_remote_companion_pool.append(comp_lbl)
+
+	# Tooltip overlay used by both player sprites and companion letters.
+	_map_tooltip = PanelContainer.new()
+	var tip_sb := StyleBoxFlat.new()
+	tip_sb.bg_color = Color(0.05, 0.04, 0.06, 0.97)
+	tip_sb.border_color = Color(0.55, 0.45, 0.33)
+	tip_sb.set_border_width_all(2)
+	tip_sb.set_corner_radius_all(6)
+	tip_sb.content_margin_left = 8
+	tip_sb.content_margin_right = 8
+	tip_sb.content_margin_top = 6
+	tip_sb.content_margin_bottom = 6
+	_map_tooltip.add_theme_stylebox_override("panel", tip_sb)
+	_map_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_tooltip.top_level = true
+	_map_tooltip.visible = false
+	_map_tooltip.z_index = 200
+	add_child(_map_tooltip)
+	_map_tooltip_label = RichTextLabel.new()
+	_map_tooltip_label.bbcode_enabled = true
+	_map_tooltip_label.fit_content = true
+	_map_tooltip_label.scroll_active = false
+	_map_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_map_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_tooltip_label.add_theme_font_size_override("normal_font_size", 12)
+	# Use Consolas for ASCII-art rows in the tooltip
+	if _map_companion_font == null and ResourceLoader.exists(MAP_COMPANION_FONT_PATH):
+		_map_companion_font = load(MAP_COMPANION_FONT_PATH) as FontFile
+	if _map_companion_font:
+		_map_tooltip_label.add_theme_font_override("normal_font", _map_companion_font)
+		_map_tooltip_label.add_theme_font_override("bold_font", _map_companion_font)
+		_map_tooltip_label.add_theme_font_override("mono_font", _map_companion_font)
+	_map_tooltip.add_child(_map_tooltip_label)
 
 
 func _direction_from_delta(dx: int, dy: int) -> String:
@@ -24690,9 +24774,237 @@ func _make_map_sprite_slot() -> TextureRect:
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	rect.size = Vector2(MAP_SPRITE_PIXEL_SIZE, MAP_SPRITE_PIXEL_SIZE)
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# STOP — capture hover/click for the tooltip + examine flow.
+	rect.mouse_filter = Control.MOUSE_FILTER_STOP
 	rect.visible = false
 	return rect
+
+
+func _make_map_companion_label() -> RichTextLabel:
+	"""A tiny RichTextLabel for rendering a player's companion ASCII art
+	below their map sprite. Monospaced (Consolas) so the art aligns at the
+	small font size, fit_content so the label resizes to whatever the art
+	measures, autowrap_mode OFF so wide art doesn't reflow."""
+	if _map_companion_font == null and ResourceLoader.exists(MAP_COMPANION_FONT_PATH):
+		_map_companion_font = load(MAP_COMPANION_FONT_PATH) as FontFile
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.scroll_active = false
+	rtl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	rtl.size = Vector2(MAP_COMPANION_LABEL_WIDTH, MAP_COMPANION_LABEL_HEIGHT)
+	# STOP — capture hover/click for the tooltip + companion-inspect flow.
+	rtl.mouse_filter = Control.MOUSE_FILTER_STOP
+	rtl.visible = false
+	rtl.clip_contents = true
+	if _map_companion_font:
+		rtl.add_theme_font_override("normal_font", _map_companion_font)
+		rtl.add_theme_font_override("bold_font", _map_companion_font)
+		rtl.add_theme_font_override("italics_font", _map_companion_font)
+		rtl.add_theme_font_override("mono_font", _map_companion_font)
+	return rtl
+
+
+func _on_map_sprite_hover(node: Control) -> void:
+	"""Cursor entered a map sprite or companion letter — show the tooltip
+	with the appropriate content based on the node's stashed meta."""
+	if node == null or not is_instance_valid(node):
+		return
+	var kind = str(node.get_meta("kind", ""))
+	var content = ""
+	if kind == "player":
+		var data: Dictionary = node.get_meta("player_data", {})
+		content = _build_map_player_tooltip(data, bool(node.get_meta("is_local", false)))
+	elif kind == "companion":
+		var cdata: Dictionary = node.get_meta("companion_data", {})
+		content = _build_map_companion_tooltip(cdata)
+	if content == "":
+		return
+	_show_map_tooltip(content, node)
+
+
+func _on_map_sprite_unhover(node: Control) -> void:
+	if _map_tooltip_anchor == node:
+		_hide_map_tooltip()
+
+
+func _on_map_sprite_input(event: InputEvent, node: Control) -> void:
+	"""Left-click on a map sprite/letter triggers the appropriate action:
+	companion letter → open the inspect view in the visual companions panel.
+	player sprite → /examine that player (server message)."""
+	if not (event is InputEventMouseButton):
+		return
+	if event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
+		return
+	var kind = str(node.get_meta("kind", ""))
+	if kind == "player":
+		var data: Dictionary = node.get_meta("player_data", {})
+		var pname = str(data.get("name", ""))
+		if pname != "":
+			send_to_server({"type": "examine_player", "name": pname})
+			display_game("[color=#808080]Examining %s...[/color]" % pname)
+	elif kind == "companion":
+		var cdata: Dictionary = node.get_meta("companion_data", {})
+		if cdata == null or cdata.is_empty():
+			return
+		_open_map_companion_inspect(cdata)
+	_hide_map_tooltip()
+
+
+func _open_map_companion_inspect(companion: Dictionary) -> void:
+	"""Open the companions visual panel with the inspect view active for
+	the clicked companion. Works for both your own active companion and
+	for a remote player's companion (server doesn't ship full data — the
+	inspect view falls back to defaults for missing fields)."""
+	if companions_panel == null:
+		return
+	# Switch into companions_mode + inspect state. Make sure other modes are
+	# closed so the panel actually shows.
+	more_mode = false
+	companions_mode = true
+	eggs_mode = false
+	pending_companion_action = "inspect"
+	inspecting_companion = companion
+	var bbcode := _build_companion_inspect_bbcode(companion)
+	companions_panel.show_inspect(companion, bbcode)
+	update_action_bar()
+
+
+func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
+	if data == null or data.is_empty():
+		return ""
+	var lines: Array = []
+	var pname = str(data.get("name", "?"))
+	var level = int(data.get("level", 0))
+	var cls = str(data.get("class", ""))
+	var party_tag = ""
+	if data.get("in_my_party", false):
+		party_tag = " [color=#00FF00](party)[/color]"
+	lines.append("[b][color=#FFD93D]%s[/color][/b]%s" % [pname, party_tag])
+	if cls != "":
+		lines.append("[color=#AAAAAA]%s[/color]" % cls.capitalize())
+	if level > 0:
+		lines.append("[color=#AAAAAA]Level %d[/color]" % level)
+	if not is_local:
+		lines.append("")
+		lines.append("[color=#808080][i]Click to examine[/i][/color]")
+	return "\n".join(lines)
+
+
+func _build_map_companion_tooltip(companion: Dictionary) -> String:
+	if companion == null or companion.is_empty():
+		return ""
+	var lines: Array = []
+	var cname = str(companion.get("name", "?"))
+	var monster_type = str(companion.get("monster_type", ""))
+	var variant = str(companion.get("variant", ""))
+	var v_color_raw = str(companion.get("variant_color", "#FFFFFF"))
+	var v_color2_raw = str(companion.get("variant_color2", ""))
+	var v_pattern = str(companion.get("variant_pattern", "solid"))
+	var v_color = _ensure_readable_color(v_color_raw)
+	var v_color2 = _ensure_readable_color(v_color2_raw) if v_color2_raw != "" else ""
+	var level = int(companion.get("level", 0))
+	# Header
+	var header = "[b][color=%s]%s[/color][/b]" % [v_color, cname]
+	if variant != "" and variant != "Normal":
+		header += "  [color=#888888](%s)[/color]" % variant
+	lines.append(header)
+	if monster_type != "":
+		lines.append("[color=#AAAAAA]%s[/color]" % monster_type)
+	if level > 0:
+		lines.append("[color=#AAAAAA]Level %d[/color]" % level)
+	# Variant-colored ASCII art
+	var art_lines = _get_companion_art_lines(monster_type, cname)
+	if art_lines.size() > 0:
+		var art_str = "\n".join(art_lines)
+		art_str = _recolor_ascii_art_pattern(art_str, v_color, v_color2, v_pattern)
+		lines.append("")
+		lines.append("[font_size=4]%s[/font_size]" % art_str)
+	lines.append("")
+	lines.append("[color=#808080][i]Click to inspect[/i][/color]")
+	return "\n".join(lines)
+
+
+func _show_map_tooltip(content_bbcode: String, anchor: Control) -> void:
+	if _map_tooltip == null or not is_instance_valid(_map_tooltip):
+		return
+	if not is_instance_valid(_map_tooltip_label):
+		return
+	_map_tooltip_label.text = content_bbcode
+	_map_tooltip.size = Vector2.ZERO
+	_map_tooltip_anchor = anchor
+	_map_tooltip.visible = true
+	# Position next to the anchor — prefer to the right; fall back to left
+	# if it would overflow the viewport. Defer one frame so size is valid.
+	await get_tree().process_frame
+	if not is_instance_valid(_map_tooltip) or not _map_tooltip.visible:
+		return
+	if not is_instance_valid(anchor):
+		_hide_map_tooltip()
+		return
+	_map_tooltip.reset_size()
+	var vp := get_viewport_rect().size
+	var anchor_rect := Rect2(anchor.global_position, anchor.size)
+	var tip_size := _map_tooltip.size
+	var pos := Vector2(anchor_rect.position.x + anchor_rect.size.x + 6, anchor_rect.position.y)
+	if pos.x + tip_size.x > vp.x - 4:
+		pos.x = max(4.0, anchor_rect.position.x - tip_size.x - 6)
+	if pos.y + tip_size.y > vp.y - 4:
+		pos.y = max(4.0, vp.y - tip_size.y - 4)
+	_map_tooltip.global_position = pos
+
+
+func _hide_map_tooltip() -> void:
+	if _map_tooltip and is_instance_valid(_map_tooltip):
+		_map_tooltip.visible = false
+	_map_tooltip_anchor = null
+
+
+func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sprite_top_left: Vector2, facing: String, cell_w: float, line_h: float) -> void:
+	"""Render a single variant-colored letter representing the companion in
+	the cell the player just moved from (opposite of `facing`). Hovering
+	will later expand this into a full tooltip with ASCII art + details;
+	clicking will open the inspect screen."""
+	if label == null or not is_instance_valid(label):
+		return
+	if companion_data == null or companion_data.is_empty():
+		label.visible = false
+		return
+	var monster_type = str(companion_data.get("monster_type", ""))
+	var pname = str(companion_data.get("name", ""))
+	if monster_type == "" and pname == "":
+		label.visible = false
+		return
+	# First letter of monster_type so the marker conveys what KIND of
+	# creature it is (W for wolf, G for goblin, etc.). Fall back to the
+	# companion name if monster_type is missing.
+	var letter = "?"
+	if monster_type.length() > 0:
+		letter = monster_type.substr(0, 1).to_upper()
+	elif pname.length() > 0:
+		letter = pname.substr(0, 1).to_upper()
+	var v_color = str(companion_data.get("variant_color", "#FFFFFF"))
+	if v_color != "":
+		v_color = _ensure_readable_color(v_color)
+	label.text = "[center][color=%s][b]%s[/b][/color][/center]" % [v_color, letter]
+	# Trail position: opposite side of the sprite from the facing direction
+	# (so the companion is in the cell the player just moved from). Offsets
+	# are measured in map cells, not pixels, since cells aren't square.
+	var dx_cells := 0.0
+	var dy_cells := 0.0
+	match facing:
+		"right": dx_cells = -1.0
+		"left":  dx_cells = 1.0
+		"up":    dy_cells = 1.0
+		"down":  dy_cells = -1.0
+		_:       dx_cells = -1.0  # Default to "trailing west" if facing unknown
+	var sprite_center_x = sprite_top_left.x + MAP_SPRITE_PIXEL_SIZE * 0.5
+	var sprite_center_y = sprite_top_left.y + MAP_SPRITE_PIXEL_SIZE * 0.5
+	label.position = Vector2(
+		sprite_center_x + dx_cells * cell_w - MAP_COMPANION_LABEL_WIDTH * 0.5,
+		sprite_center_y + dy_cells * line_h - MAP_COMPANION_LABEL_HEIGHT * 0.5
+	)
+	label.visible = true
 
 
 func _sync_map_sprites_overlay() -> void:
@@ -24710,16 +25022,25 @@ func _sync_map_sprites_overlay() -> void:
 		and not in_combat)
 	if not should_show:
 		local.visible = false
+		if _local_companion_label:
+			_local_companion_label.visible = false
 		for slot in _remote_sprite_pool:
 			slot.visible = false
+		for lbl in _remote_companion_pool:
+			lbl.visible = false
+		_hide_map_tooltip()
 		return
 
 	var font = map_display.get_theme_font("normal_font")
 	var font_size = map_display.get_theme_font_size("normal_font_size")
 	if font == null or font_size <= 0:
 		local.visible = false
+		if _local_companion_label:
+			_local_companion_label.visible = false
 		for slot in _remote_sprite_pool:
 			slot.visible = false
+		for lbl in _remote_companion_pool:
+			lbl.visible = false
 		return
 	var char_w = font.get_char_size(32, font_size).x
 	var line_h = font.get_height(font_size)
@@ -24738,6 +25059,8 @@ func _sync_map_sprites_overlay() -> void:
 	var local_atlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
 	if local_atlas == null:
 		local.visible = false
+		if _local_companion_label:
+			_local_companion_label.visible = false
 	else:
 		var lcx = MAP_VIEWPORT_CENTER_CELL
 		var lcy = MAP_VIEWPORT_CENTER_CELL
@@ -24746,6 +25069,15 @@ func _sync_map_sprites_overlay() -> void:
 		local.position = Vector2(lpx, lpy)
 		local.texture = local_atlas
 		local.visible = true
+		# Stash player data on the slot for hover/click handlers.
+		local.set_meta("player_data", {
+			"name": str(character_data.get("name", "")),
+			"class": local_cls,
+			"level": int(character_data.get("level", 1)),
+		})
+		var local_comp = character_data.get("active_companion", {})
+		_apply_companion_trail(_local_companion_label, local_comp, Vector2(lpx, lpy), _local_map_facing, cell_w, line_h)
+		_local_companion_label.set_meta("companion_data", local_comp)
 
 	# --- Remote players ---
 	# Map-cell coordinates for a remote player at (rx, ry) when the local
@@ -24791,10 +25123,20 @@ func _sync_map_sprites_overlay() -> void:
 		var py = (header_lines + grid_y + 0.5) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
 		slot.position = Vector2(px, py)
 		slot.visible = true
+		slot.set_meta("player_data", {
+			"name": rname,
+			"class": rcls,
+			"level": int(entry.get("level", 0)),
+			"in_my_party": bool(entry.get("in_my_party", false)),
+		})
+		var rcomp = entry.get("companion", {})
+		_apply_companion_trail(_remote_companion_pool[slot_idx], rcomp, Vector2(px, py), rfacing, cell_w, line_h)
+		_remote_companion_pool[slot_idx].set_meta("companion_data", rcomp)
 		slot_idx += 1
 	# Hide unused slots from prior frames.
 	for i in range(slot_idx, _remote_sprite_pool.size()):
 		_remote_sprite_pool[i].visible = false
+		_remote_companion_pool[i].visible = false
 
 
 # ===== WANDERING NPC ENCOUNTER FUNCTIONS =====
@@ -26472,7 +26814,11 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	var tier = int(companion.get("tier", 1))
 	var sub_tier = int(companion.get("sub_tier", 1))
 	var variant = str(companion.get("variant", "Normal"))
-	var variant_color = _ensure_readable_color(str(companion.get("variant_color", "#FFFFFF")))
+	var variant_color_raw = str(companion.get("variant_color", "#FFFFFF"))
+	var variant_color2_raw = str(companion.get("variant_color2", ""))
+	var variant_pattern = str(companion.get("variant_pattern", "solid"))
+	var variant_color = _ensure_readable_color(variant_color_raw)
+	var variant_color2 = _ensure_readable_color(variant_color2_raw) if variant_color2_raw != "" else ""
 	var variant_mult = _get_variant_multiplier(variant)
 	var sub_mult = _get_sub_tier_multiplier(sub_tier)
 	var rarity = _get_variant_rarity_info(variant)
@@ -26551,7 +26897,19 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 				var lock_tag = "" if unlocked else " [color=#666666](Lv.%d)[/color]" % unlock_lvl
 				lines.append("  [color=%s]%s[/color]%s" % [col, str(ability.get("name", "?")), lock_tag])
 
-	return "\n".join(lines)
+	var info_text = "\n".join(lines)
+
+	# Add the variant-colored ASCII art on the right via a 2-column table,
+	# matching the game_output version of this view (display_companion_inspection).
+	var art_lines = _get_companion_art_lines(monster_type, comp_name)
+	if art_lines.size() > 0:
+		var art_str = "\n".join(art_lines)
+		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		var art_font_size = int(5 * ui_scale_monster_art)
+		if art_font_size < 1:
+			art_font_size = 1
+		return "[table=2][cell]%s[/cell][cell][font_size=%d]%s[/font_size][/cell][/table]" % [info_text, art_font_size, art_str]
+	return info_text
 
 func _display_temper_target_selection():
 	"""Display temper target stat options for resource gambling craft."""
