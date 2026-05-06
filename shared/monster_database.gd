@@ -1510,6 +1510,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"death_message": base_stats.get("death_message", ""),
 		"is_rare_variant": is_rare_variant,
 		"is_elite": is_elite,
+		"variant_type": variant_type,  # "" / "weapon_master" / "shield_guardian" / "corrosive" / "sunder" / "elite" — drives client-side border tint on monster ASCII art
 		"lethality": 0  # Placeholder, calculated below
 	}
 

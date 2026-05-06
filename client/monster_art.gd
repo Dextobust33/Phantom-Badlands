@@ -5389,6 +5389,82 @@ static func get_bordered_art_with_font(monster_name: String, scale: float = 1.0)
 
 	return "[font_size=" + str(font_size) + "]" + bordered_art + "[/font_size]"
 
+
+# ===== VARIANT BORDER COLORING =====
+# Wraps the first and last non-whitespace character of each art line in a
+# variant-specific BBCode color so the monster's silhouette glows in the
+# variant's hue while preserving the natural body color of the base art.
+# Used by combat_scene_panel rendering when the server sends a non-empty
+# variant_type for the current monster (Shield Guardian / Weapon Master /
+# Corrosive / Sunder / Elite).
+
+static func apply_variant_border(art: String, border_color_hex: String) -> String:
+	if art == "" or border_color_hex == "":
+		return art
+	var lines = art.split("\n")
+	if lines.size() == 0:
+		return art
+	var out_lines: Array = []
+	for i in range(lines.size()):
+		var line: String = lines[i]
+		# Skip lines that are pure BBCode wrappers (the standard art format
+		# stores the opening [color=...] tag on the first line and the
+		# closing [/color] on the last line as siblings of the art lines).
+		var stripped = line.strip_edges()
+		if stripped.begins_with("[color=") and stripped.ends_with("]") and not _line_has_renderable_chars(line):
+			out_lines.append(line)
+			continue
+		if stripped == "[/color]" or stripped.begins_with("[/color"):
+			if not _line_has_renderable_chars(line):
+				out_lines.append(line)
+				continue
+		out_lines.append(_color_line_edges(line, border_color_hex))
+	return "\n".join(out_lines)
+
+
+static func _line_has_renderable_chars(line: String) -> bool:
+	"""Return true if the line has any non-whitespace, non-BBCode characters
+	that would actually appear on screen."""
+	# Strip all BBCode tags.
+	var bbcode_re := RegEx.new()
+	bbcode_re.compile("\\[/?[^\\]]+\\]")
+	var no_tags = bbcode_re.sub(line, "", true)
+	return no_tags.strip_edges() != ""
+
+
+static func _color_line_edges(line: String, border_color: String) -> String:
+	if line.length() == 0:
+		return line
+	var first_idx = -1
+	for i in range(line.length()):
+		var c = line[i]
+		if c != " " and c != "\t":
+			first_idx = i
+			break
+	if first_idx == -1:
+		return line  # all whitespace
+	var last_idx = -1
+	for i in range(line.length() - 1, -1, -1):
+		var c = line[i]
+		if c != " " and c != "\t":
+			last_idx = i
+			break
+	if first_idx == last_idx:
+		# Only one non-whitespace character on this line.
+		return line.substr(0, first_idx) \
+			+ "[color=%s]%s[/color]" % [border_color, line[first_idx]] \
+			+ line.substr(first_idx + 1)
+	var leading = line.substr(0, first_idx)
+	var first_char = line[first_idx]
+	var middle = line.substr(first_idx + 1, last_idx - first_idx - 1)
+	var last_char = line[last_idx]
+	var trailing = line.substr(last_idx + 1)
+	return leading \
+		+ "[color=%s]%s[/color]" % [border_color, first_char] \
+		+ middle \
+		+ "[color=%s]%s[/color]" % [border_color, last_char] \
+		+ trailing
+
 # ===== EGG ASCII ART SYSTEM =====
 # Eggs display with patterns based on the companion variant they'll hatch into
 

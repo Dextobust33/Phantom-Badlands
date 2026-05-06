@@ -122,6 +122,17 @@ var _victory_card_prompt_label: RichTextLabel
 # panel-stays-visible logic on the client.
 var _victory_interlude_active: bool = false
 
+# Death card — same structure as the victory card, fired from permadeath.
+# Shows the eulogy headline + key stats inside the scene panel so death
+# feels like part of combat instead of a wall-of-text exit.
+var _death_card_overlay: PanelContainer
+var _death_card_header_label: RichTextLabel
+var _death_card_summary_label: RichTextLabel
+var _death_card_combat_label: RichTextLabel
+var _death_card_rewards_label: RichTextLabel
+var _death_card_prompt_label: RichTextLabel
+var _death_interlude_active: bool = false
+
 # A2 — hit feedback. Active tween references so a rapid second hit doesn't
 # stack on top of an in-progress flash/lunge (we kill the previous one).
 var _player_flash_tween: Tween = null
@@ -252,6 +263,7 @@ func _build_layout() -> void:
 	# stays untouched.
 	_build_picker_overlay()
 	_build_victory_card_overlay()
+	_build_death_card_overlay()
 
 
 func _build_player_column() -> VBoxContainer:
@@ -817,10 +829,11 @@ func populate(payload: Dictionary) -> void:
 		_monster_art_label.modulate = Color.WHITE
 		if _monster_art_baseline_captured:
 			_monster_art_label.position = _monster_art_baseline_pos
-	# Clear any flock warning banner / victory card left over from the
-	# previous fight.
+	# Clear any flock warning banner / victory card / death card left over
+	# from the previous fight.
 	hide_flock_warning()
 	hide_victory_card()
+	hide_death_card()
 
 	_refresh_player()
 	_refresh_companion()
@@ -1650,3 +1663,169 @@ func is_victory_interlude_active() -> bool:
 	"""True while the post-fight rewards interlude is in progress. Drives
 	the panel-stays-visible logic on the client."""
 	return _victory_interlude_active
+
+
+# === Death card ===
+
+func _build_death_card_overlay() -> void:
+	"""Card layered over the log section that mirrors the victory card
+	pattern for permadeath. Shows the key eulogy info inside the scene
+	so death is part of combat, not a wall-of-text exit."""
+	_death_card_overlay = PanelContainer.new()
+	_death_card_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var card_sb := StyleBoxFlat.new()
+	card_sb.bg_color = Color(0.08, 0.02, 0.02, 0.97)
+	card_sb.border_color = Color("#FF4444")
+	card_sb.set_border_width_all(2)
+	card_sb.set_corner_radius_all(4)
+	card_sb.content_margin_left = 12
+	card_sb.content_margin_right = 12
+	card_sb.content_margin_top = 8
+	card_sb.content_margin_bottom = 8
+	_death_card_overlay.add_theme_stylebox_override("panel", card_sb)
+	_death_card_overlay.visible = false
+	_death_card_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
+	_log_inner.add_child(_death_card_overlay)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	_death_card_overlay.add_child(vbox)
+
+	_death_card_header_label = RichTextLabel.new()
+	_death_card_header_label.bbcode_enabled = true
+	_death_card_header_label.fit_content = true
+	_death_card_header_label.scroll_active = false
+	_death_card_header_label.add_theme_font_size_override("normal_font_size", 16)
+	_death_card_header_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_death_card_header_label)
+
+	_death_card_summary_label = RichTextLabel.new()
+	_death_card_summary_label.bbcode_enabled = true
+	_death_card_summary_label.fit_content = true
+	_death_card_summary_label.scroll_active = false
+	_death_card_summary_label.add_theme_font_size_override("normal_font_size", 13)
+	_death_card_summary_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_death_card_summary_label)
+
+	# Divider
+	var divider1 := ColorRect.new()
+	divider1.color = Color("#5C2D2D")
+	divider1.custom_minimum_size = Vector2(0, 1)
+	divider1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider1)
+
+	_death_card_combat_label = RichTextLabel.new()
+	_death_card_combat_label.bbcode_enabled = true
+	_death_card_combat_label.fit_content = true
+	_death_card_combat_label.scroll_active = false
+	_death_card_combat_label.add_theme_font_size_override("normal_font_size", 13)
+	_death_card_combat_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_death_card_combat_label)
+
+	# Divider before rewards
+	var divider2 := ColorRect.new()
+	divider2.color = Color("#5C2D2D")
+	divider2.custom_minimum_size = Vector2(0, 1)
+	divider2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider2)
+
+	_death_card_rewards_label = RichTextLabel.new()
+	_death_card_rewards_label.bbcode_enabled = true
+	_death_card_rewards_label.fit_content = true
+	_death_card_rewards_label.scroll_active = false
+	_death_card_rewards_label.add_theme_font_size_override("normal_font_size", 13)
+	_death_card_rewards_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_death_card_rewards_label)
+
+	# Spacer pushes the prompt to the bottom
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(spacer)
+
+	_death_card_prompt_label = RichTextLabel.new()
+	_death_card_prompt_label.bbcode_enabled = true
+	_death_card_prompt_label.fit_content = true
+	_death_card_prompt_label.scroll_active = false
+	_death_card_prompt_label.add_theme_font_size_override("normal_font_size", 13)
+	_death_card_prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_death_card_prompt_label)
+
+
+func show_death_card(payload: Dictionary) -> void:
+	"""Render the in-scene death card. Expected keys:
+	character_name (String), level (int), race (String), class_type (String),
+	cause_of_death (String), rounds_fought (int), total_damage_dealt (int),
+	total_damage_taken (int), baddie_points_earned (int),
+	leaderboard_rank (int), continue_key (String)."""
+	if _death_card_overlay == null or not is_instance_valid(_death_card_overlay):
+		return
+
+	var char_name = str(payload.get("character_name", "Unknown"))
+	var level = int(payload.get("level", 1))
+	var race = str(payload.get("race", ""))
+	var class_type = str(payload.get("class_type", ""))
+	var cause = str(payload.get("cause_of_death", "Unknown"))
+	var rounds = int(payload.get("rounds_fought", 0))
+	var dmg_dealt = int(payload.get("total_damage_dealt", 0))
+	var dmg_taken = int(payload.get("total_damage_taken", 0))
+	var bp = int(payload.get("baddie_points_earned", 0))
+	var rank = int(payload.get("leaderboard_rank", 0))
+	var key_name = str(payload.get("continue_key", "Space"))
+
+	_death_card_header_label.text = "[b][color=#FF4444]%s HAS FALLEN[/color][/b]" % char_name.to_upper()
+	var summary_lines: Array = []
+	var class_line = "Lv %d" % level
+	if race != "" or class_type != "":
+		class_line = "Lv %d %s %s" % [level, race, class_type]
+	summary_lines.append("[color=#CCCCCC]%s[/color]" % class_line.strip_edges())
+	summary_lines.append("[color=#FF8888]Slain by:[/color] %s" % cause)
+	_death_card_summary_label.text = "\n".join(summary_lines)
+
+	var combat_lines: Array = []
+	if rounds > 0:
+		combat_lines.append("[color=#888888]Rounds Fought:[/color] %d" % rounds)
+	if dmg_dealt > 0 or dmg_taken > 0:
+		combat_lines.append("[color=#66FF99]Damage Dealt:[/color] %d   [color=#FF6666]Damage Taken:[/color] %d" % [dmg_dealt, dmg_taken])
+	if combat_lines.is_empty():
+		combat_lines.append("[color=#888888]No combat recorded[/color]")
+	_death_card_combat_label.text = "\n".join(combat_lines)
+
+	var reward_lines: Array = []
+	if bp > 0:
+		reward_lines.append("[color=#FF6600][b]+%d Baddie Points[/b][/color]" % bp)
+		reward_lines.append("[color=#888888]Spend them at your Sanctuary.[/color]")
+	if rank > 0:
+		reward_lines.append("[color=#FFD700]Leaderboard Rank:[/color] #%d" % rank)
+	if reward_lines.is_empty():
+		reward_lines.append("[color=#888888]No rewards earned[/color]")
+	_death_card_rewards_label.text = "\n".join(reward_lines)
+
+	_death_card_prompt_label.text = "[color=#FFD700]Press [%s] to continue[/color]   [color=#888888]·  Press [L] for full eulogy[/color]" % key_name
+
+	_death_card_overlay.visible = true
+	_death_interlude_active = true
+	if _log_scroll:
+		_log_scroll.visible = false
+	# Subtle fade-in
+	_death_card_overlay.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_property(_death_card_overlay, "modulate:a", 1.0, 0.30)
+
+
+func hide_death_card() -> void:
+	if _death_card_overlay and is_instance_valid(_death_card_overlay):
+		_death_card_overlay.visible = false
+	if _log_scroll and is_instance_valid(_log_scroll):
+		_log_scroll.visible = true
+	_death_interlude_active = false
+
+
+func is_death_card_visible() -> bool:
+	return _death_card_overlay != null and is_instance_valid(_death_card_overlay) and _death_card_overlay.visible
+
+
+func is_death_interlude_active() -> bool:
+	"""True while the death card is showing or temporarily swapped out for
+	the legacy eulogy view. Drives panel-stays-visible logic on the client."""
+	return _death_interlude_active
