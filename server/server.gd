@@ -4408,12 +4408,36 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 		# Check if within map view radius
 		if dx <= radius and dy <= radius:
 			var is_party_mate = (my_party_leader != -1 and party_membership.get(other_peer_id, -1) == my_party_leader)
+			# Map Sprites M3 — include active companion data so the client can
+			# render the trailing letter + tooltip + inspect view. Includes
+			# the full set of inspect-relevant fields so a remote-companion
+			# inspect renders identically to your own (level / tier /
+			# sub_tier / variant / xp / bonuses are all needed by the
+			# inspect view to compute damage estimates and level-gated
+			# abilities).
+			var comp_data = {}
+			var active_comp = other_char.get("active_companion", {})
+			if active_comp is Dictionary and not active_comp.is_empty():
+				comp_data = {
+					"name": active_comp.get("name", ""),
+					"monster_type": active_comp.get("monster_type", ""),
+					"level": active_comp.get("level", 1),
+					"xp": active_comp.get("xp", 0),
+					"tier": active_comp.get("tier", 1),
+					"sub_tier": active_comp.get("sub_tier", 1),
+					"variant": active_comp.get("variant", "Normal"),
+					"variant_color": active_comp.get("variant_color", "#FFFFFF"),
+					"variant_color2": active_comp.get("variant_color2", ""),
+					"variant_pattern": active_comp.get("variant_pattern", "solid"),
+					"bonuses": active_comp.get("bonuses", {}),
+				}
 			result.append({
 				"x": other_char.x,
 				"y": other_char.y,
 				"name": other_char.name,
 				"level": other_char.level,
 				"class": other_char.get("class_type", ""),
+				"companion": comp_data,
 				"in_my_party": is_party_mate
 			})
 

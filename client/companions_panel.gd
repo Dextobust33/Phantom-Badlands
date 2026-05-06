@@ -266,6 +266,17 @@ func _build_layout() -> void:
 	_inspect_text.scroll_active = false
 	_inspect_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_inspect_text.add_theme_font_size_override("normal_font_size", 14)
+	# Monospaced font is required so the ASCII art (rendered in the right
+	# column of the inspect view) lines up correctly. Without this the
+	# default proportional font skews each row of the art.
+	var mono_path := "res://font/Consolas/consolas.ttf"
+	if ResourceLoader.exists(mono_path):
+		var mono_font: FontFile = load(mono_path)
+		if mono_font:
+			_inspect_text.add_theme_font_override("normal_font", mono_font)
+			_inspect_text.add_theme_font_override("bold_font", mono_font)
+			_inspect_text.add_theme_font_override("italics_font", mono_font)
+			_inspect_text.add_theme_font_override("mono_font", mono_font)
 	inspect_scroll.add_child(_inspect_text)
 
 	var inspect_action_row := HBoxContainer.new()
