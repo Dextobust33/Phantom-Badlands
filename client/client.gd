@@ -1598,6 +1598,11 @@ func _ready():
 	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
 	if combat_scene_panel:
 		combat_scene_panel.client_ref = self
+		# Combat readability #5 — in-panel item picker signals
+		combat_scene_panel.picker_item_chosen.connect(_on_combat_picker_chosen)
+		combat_scene_panel.picker_canceled.connect(_on_combat_picker_canceled)
+		combat_scene_panel.picker_prev_page.connect(_on_combat_picker_prev_page)
+		combat_scene_panel.picker_next_page.connect(_on_combat_picker_next_page)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -2181,10 +2186,18 @@ func _process(delta):
 			_combat_scene_linger_until_ms = Time.get_ticks_msec() + 1100
 		_combat_scene_was_in_combat = _now_in_combat
 		var _is_lingering = Time.get_ticks_msec() < _combat_scene_linger_until_ms
-		# Sub-modes that print into game_output and need the scene panel out
-		# of the way: combat_item_mode (Use Item list), monster_select_mode
-		# (target picker for AOE / multi-target abilities), target_farm_mode.
-		var _scene_temporarily_hidden = combat_item_mode or monster_select_mode or target_farm_mode
+		# Hide the legacy top-of-screen enemy HP bar whenever the combat
+		# scene panel is up — the panel has its own HP bar in the shared
+		# strip, so showing both is duplicate. show_enemy_hp_bar(true)
+		# calls from elsewhere take effect once the panel hides again.
+		if enemy_health_bar and (_now_in_combat or _is_lingering or _combat_scene_force_visible):
+			if enemy_health_bar.visible:
+				enemy_health_bar.visible = false
+		# Sub-modes that ROUTE through the in-panel picker now (combat_item_mode,
+		# monster_select_mode, target_farm_mode) — none of them temporarily
+		# hide the scene anymore. Kept the variable in case future modes need
+		# to opt out.
+		var _scene_temporarily_hidden = false
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
@@ -9598,38 +9611,105 @@ func show_combat_item_menu():
 	update_action_bar()
 
 func _display_combat_usable_items_page():
-	"""Display current page of combat usable items"""
+	"""Display current page of combat usable items. Renders into the in-panel
+	picker when the combat scene panel is up (so the scene stays visible),
+	with a game_output fallback for any code path where the panel isn't
+	present yet."""
 	var usable_items = get_meta("combat_usable_items", [])
 
-	var total_pages = int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE))
+	var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
 	var start_idx = combat_use_page * INVENTORY_PAGE_SIZE
 	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, usable_items.size())
 
+	# Build the items-on-page payload the panel expects.
+	var items_payload: Array = []
+	for j in range(start_idx, end_idx):
+		var entry = usable_items[j]
+		var item = entry.item
+		items_payload.append({
+			"name": str(item.get("name", "Unknown")),
+			"color": _get_rarity_color(str(item.get("rarity", "common"))),
+			"qty": int(item.get("quantity", 1)),
+		})
+
+	if combat_scene_panel and combat_scene_panel.visible:
+		combat_scene_panel.show_item_picker("Use Item", items_payload, combat_use_page, total_pages)
+		return
+
+	# Fallback (panel not active) — old game_output path.
 	if total_pages > 1:
 		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [combat_use_page + 1, total_pages])
 	else:
 		display_game("[color=#FFD700]===== USABLE ITEMS =====[/color]")
-
 	for j in range(start_idx, end_idx):
-		var entry = usable_items[j]
-		var item = entry.item
-		var item_name = item.get("name", "Unknown")
-		var rarity = item.get("rarity", "common")
+		var entry2 = usable_items[j]
+		var item2 = entry2.item
+		var item_name = item2.get("name", "Unknown")
+		var rarity = item2.get("rarity", "common")
 		var color = _get_rarity_color(rarity)
 		var display_num = (j - start_idx) + 1
-		var qty = item.get("quantity", 1)
+		var qty = item2.get("quantity", 1)
 		var qty_text = " x%d" % qty if qty > 1 else ""
 		display_game("[%d] [color=%s]%s[/color]%s" % [display_num, color, item_name, qty_text])
-
 	var items_on_page = end_idx - start_idx
 	if total_pages > 1:
 		display_game("[color=#808080]%s to use | Prev/Next Page to navigate[/color]" % get_selection_keys_text(items_on_page))
 	else:
 		display_game("[color=#808080]%s to use an item, or %s to cancel.[/color]" % [get_selection_keys_text(items_on_page), get_action_key_name(0)])
 
+func _on_combat_picker_chosen(slot: int) -> void:
+	"""In-panel picker selected an entry by 1-based slot number. Dispatches
+	based on which mode is currently active."""
+	if combat_item_mode:
+		use_combat_item_by_number(slot)
+	elif monster_select_mode:
+		# Slot is page-relative; select_monster_from_scroll expects 0-based.
+		select_monster_from_scroll(slot - 1)
+	elif target_farm_mode:
+		select_target_farm_ability(slot - 1)
+
+
+func _on_combat_picker_canceled() -> void:
+	if combat_item_mode:
+		cancel_combat_item_mode()
+	elif monster_select_mode:
+		cancel_monster_select()
+	elif target_farm_mode:
+		cancel_target_farm()
+
+
+func _on_combat_picker_prev_page() -> void:
+	if combat_item_mode:
+		if combat_use_page > 0:
+			combat_use_page -= 1
+			_display_combat_usable_items_page()
+			update_action_bar()
+	elif monster_select_mode:
+		if monster_select_page > 0:
+			monster_select_page -= 1
+			display_monster_select_page()
+
+
+func _on_combat_picker_next_page() -> void:
+	if combat_item_mode:
+		var usable_items = get_meta("combat_usable_items", [])
+		var total_pages = max(1, int(ceil(float(usable_items.size()) / INVENTORY_PAGE_SIZE)))
+		if combat_use_page < total_pages - 1:
+			combat_use_page += 1
+			_display_combat_usable_items_page()
+			update_action_bar()
+	elif monster_select_mode:
+		var ms_total = max(1, ceili(float(monster_select_list.size()) / MONSTER_SELECT_PAGE_SIZE))
+		if monster_select_page < ms_total - 1:
+			monster_select_page += 1
+			display_monster_select_page()
+
+
 func cancel_combat_item_mode():
 	"""Cancel combat item selection mode."""
 	combat_item_mode = false
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	update_action_bar()
 	display_game("[color=#808080]Item use cancelled.[/color]")
 
@@ -9653,6 +9733,8 @@ func use_combat_item_by_number(number: int):
 		set_meta("hotkey_%d_pressed" % action_index, true)
 
 	combat_item_mode = false
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	update_action_bar()
 
 	send_to_server({"type": "combat_use_item", "index": actual_index})
@@ -15582,13 +15664,54 @@ func update_player_xp_bar():
 		else:
 			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
+func _discover_enemy_hp(enemy_name: String, enemy_level: int, damage_dealt: int) -> Dictionary:
+	"""Resolve which HP values to display per the discovery system.
+	Returns {current, max, known, is_estimate}. The server's actual HP is
+	intentionally ignored — players only know what they've observed (or
+	what an active Analyze has revealed). known=false means the player has
+	no data on this monster type at this level — bar shows ???."""
+	var base_name = _get_base_monster_name(enemy_name)
+	var enemy_key = "%s_%d" % [base_name, enemy_level]
+
+	if analyze_revealed_max_hp > 0:
+		var current = max(0, analyze_revealed_max_hp - damage_dealt)
+		if current == 0 and in_combat:
+			current = 1
+		return {"current": current, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false}
+
+	if known_enemy_hp.has(enemy_key):
+		var max_hp = int(known_enemy_hp[enemy_key])
+		var current2 = max(0, max_hp - damage_dealt)
+		if current2 == 0 and in_combat:
+			current2 = 1
+		return {"current": current2, "max": max_hp, "known": true, "is_estimate": false}
+
+	var est = estimate_enemy_hp(base_name, enemy_level)
+	if est > 0:
+		var current3 = max(0, est - damage_dealt)
+		if current3 == 0 and in_combat:
+			current3 = 1
+		return {"current": current3, "max": est, "known": true, "is_estimate": true}
+
+	return {"current": 0, "max": 0, "known": false, "is_estimate": false}
+
+
 func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int, actual_hp: int = -1, actual_max_hp: int = -1):
 	if not enemy_health_bar:
 		return
 
-	# Mirror current monster HP to combat scene panel (A1 — Combat Juice)
-	if combat_scene_panel and in_combat and actual_hp >= 0 and actual_max_hp > 0:
-		combat_scene_panel.update_monster_hp(actual_hp, actual_max_hp, true)
+	# Resolve what the player should SEE per the discovery system. The
+	# legacy bar and the combat scene panel both use these resolved
+	# values — passing raw server actual_hp directly would leak knowledge
+	# the player hasn't earned yet.
+	var discovered = _discover_enemy_hp(enemy_name, enemy_level, damage_dealt)
+
+	# Mirror to combat scene panel (A1 — Combat Juice)
+	if combat_scene_panel and in_combat:
+		if discovered.known:
+			combat_scene_panel.update_monster_hp(int(discovered.current), int(discovered.max), true)
+		else:
+			combat_scene_panel.update_monster_hp(0, 1, false)
 
 	# Use base name for HP knowledge lookup so variants share data with base type
 	var base_name = _get_base_monster_name(enemy_name)
@@ -15625,51 +15748,19 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	var fill = bar_container.get_node("Fill")
 	var hp_label = bar_container.get_node("HPLabel")
 
-	# DISCOVERY SYSTEM: Player discovers HP by defeating monsters, not from server.
-	# Server actual HP is intentionally ignored - players only know what they've observed.
-	# Only exception: Analyze ability reveals actual HP for the current combat.
-
-	# Check if Analyze revealed actual HP this combat
-	if analyze_revealed_max_hp > 0:
-		# Analyze revealed true HP - use actual values for this combat
-		var current_hp = max(0, analyze_revealed_max_hp - damage_dealt)
-		if current_hp == 0 and in_combat:
-			current_hp = 1  # Monster still alive
-		var percent = (float(current_hp) / float(analyze_revealed_max_hp)) * 100.0
+	# Render the legacy bar using the SAME discovered values mirrored to
+	# the combat scene panel above. Estimates are tagged with a tilde so
+	# the player can tell when the bar is approximate.
+	if discovered.known:
+		var percent = (float(discovered.current) / float(discovered.max)) * 100.0
 		if fill:
 			animate_hp_bar_change(fill, percent, false)
 		if hp_label:
-			hp_label.text = "%d/%d" % [current_hp, analyze_revealed_max_hp]
-		return
-
-	# Use player's discovered knowledge (from previous kills - damage dealt)
-	var suspected_max = 0
-	var is_estimate = false
-	if known_enemy_hp.has(enemy_key):
-		# Player has killed this exact monster+level before
-		suspected_max = known_enemy_hp[enemy_key]
-	else:
-		# Try to estimate based on known data from similar monsters at other levels
-		suspected_max = estimate_enemy_hp(base_name, enemy_level)
-		is_estimate = suspected_max > 0
-
-	if suspected_max > 0:
-		var suspected_current = max(0, suspected_max - damage_dealt)
-		# If estimate shows 0 but monster is still alive (combat hasn't ended),
-		# show at least 1 HP to indicate monster isn't dead yet
-		if suspected_current == 0 and in_combat:
-			suspected_current = 1  # Monster still alive, estimate was too low
-		var percent = (float(suspected_current) / float(suspected_max)) * 100.0
-
-		if fill:
-			animate_hp_bar_change(fill, percent, false)
-		if hp_label:
-			if is_estimate:
-				hp_label.text = "~%d/%d" % [suspected_current, suspected_max]
+			if discovered.is_estimate:
+				hp_label.text = "~%d/%d" % [int(discovered.current), int(discovered.max)]
 			else:
-				hp_label.text = "%d/%d" % [suspected_current, suspected_max]
+				hp_label.text = "%d/%d" % [int(discovered.current), int(discovered.max)]
 	else:
-		# No knowledge at all - show unknown
 		if fill:
 			animate_hp_bar_change(fill, 100.0, false)
 		if hp_label:
@@ -21077,8 +21168,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.203 changes
+	display_game("[color=#00FF00]v0.9.203[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat readability: in-panel picker, running totals, HP fixes[/color]")
+	display_game("  • Use Item / scroll selection / target farming pickers now render INSIDE the battle scene panel — the scene stays visible the whole fight instead of flickering away to a text list")
+	display_game("  • Running damage totals strip above the combat log: 'You: N' (yellow), 'Pet: N' (cyan, only shown when companion contributes), 'Foe: N' (red) — resets per fight")
+	display_game("  • Removed duplicate enemy HP bar — the legacy top-of-screen bar hides whenever the battle scene panel is up; only the panel's HP bar shows during combat")
+	display_game("  • HP discovery system properly applied: unknown monsters show '???' from combat start (no more jumping numbers after the first attack), known monsters show the discovered HP, estimates from neighboring levels show as '~N/N'")
+	display_game("")
+
 	# v0.9.202 changes
-	display_game("[color=#00FF00]v0.9.202[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.202[/color]")
 	display_game("  [color=#FFD700]Map Sprites M3: companion trail + hover tooltips + click-to-inspect[/color]")
 	display_game("  • Active companions now appear as a small variant-colored letter (first char of monster type) on the cell the player just moved from — trails behind your facing direction")
 	display_game("  • Hover any sprite or companion letter for a tooltip: player tooltip shows name/class/level (and 'click to examine' for others); companion tooltip shows name/variant/level + a tiny ASCII art preview")
@@ -21121,16 +21221,6 @@ func display_changelog():
 	display_game("  • Hit feedback: floating damage numbers above the target (yellow=you, cyan=companion, red=damage to you), brighter and bigger on crits")
 	display_game("  • Target sprite/art briefly flashes red on each hit; attacker lunges toward the defender — player slides right on attack, monster slides left")
 	display_game("  • Battle scene lingers ~1 second after combat ends so killing-blow feedback plays out before the victory screen")
-	display_game("")
-
-	# v0.9.198 changes
-	display_game("[color=#00FFFF]v0.9.198[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 6: Visual Ability Loadout[/color]")
-	display_game("  • More → Abilities is now a visual panel: 6 combat slot cards across the top, each showing the slot's keybind ([Q]/[W]/[E]/[R]/etc.) and the equipped ability with its cost")
-	display_game("  • Click an empty slot to enter choose-mode — the ability grid below highlights and clicking an unlocked ability assigns it. A Cancel button exits choose-mode")
-	display_game("  • Right-click a slot for Replace / Unequip / Rebind Key — Rebind drops to the existing keyboard prompt for the actual key press")
-	display_game("  • Locked abilities still show at the bottom in a greyed list with their unlock level — useful for planning your loadout as you level")
-	display_game("  • UI Facelift initiative complete — every major menu surface now has a visual panel with keyboard fallback")
 	display_game("")
 
 	# v0.9.181 changes
@@ -23711,9 +23801,14 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	var monster_base_name = combat_state.get("monster_base_name", monster_name)
 	var monster_level = combat_state.get("monster_level", 1)
 	var monster_name_color = combat_state.get("monster_name_color", "#FFFFFF")
-	var monster_hp = int(combat_state.get("monster_hp", -1))
-	var monster_max_hp = int(combat_state.get("monster_max_hp", -1))
-	var hp_known = monster_hp >= 0 and monster_max_hp > 0
+	# Resolve initial HP through the discovery system so the panel doesn't
+	# show one number at fight start and a different one after the first
+	# attack. damage_dealt is whatever's on this combat session (usually 0
+	# at start, but could be non-zero if combat was reconnected mid-fight).
+	var discovered_init = _discover_enemy_hp(monster_name, monster_level, damage_dealt_to_current_enemy)
+	var monster_hp = int(discovered_init.current) if discovered_init.known else 0
+	var monster_max_hp = int(discovered_init.max) if discovered_init.known else 1
+	var hp_known = bool(discovered_init.known)
 
 	# Render monster ASCII via the raw MonsterArt path (no border, no padding).
 	# get_bordered_art_with_font adds 25 spaces of left padding designed to
@@ -23764,8 +23859,13 @@ func _update_combat_scene_hp() -> void:
 		int(character_data.get("current_hp", 0)),
 		int(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
 	)
-	if current_enemy_hp >= 0 and current_enemy_max_hp > 0:
-		combat_scene_panel.update_monster_hp(current_enemy_hp, current_enemy_max_hp, true)
+	# Mirror enemy HP via the discovery system, not raw server values.
+	if current_enemy_name != "":
+		var discovered = _discover_enemy_hp(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+		if discovered.known:
+			combat_scene_panel.update_monster_hp(int(discovered.current), int(discovered.max), true)
+		else:
+			combat_scene_panel.update_monster_hp(0, 1, false)
 
 func start_combat_animation(text: String, color: String = "#FFFF00"):
 	"""Start a combat animation with spinner effect"""
@@ -24169,6 +24269,9 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		combat_scene_panel.flash_monster(is_crit)
 		if src == "player":
 			combat_scene_panel.lunge_player_forward()
+			combat_scene_panel.add_player_damage(damage_to_monster)
+		else:
+			combat_scene_panel.add_companion_damage(damage_to_monster)
 
 	# Damage TO player — monster is attacking.
 	var damage_to_player = parse_damage_to_player(combat_msg)
@@ -24176,6 +24279,7 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		combat_scene_panel.show_damage_on_player(damage_to_player, is_crit)
 		combat_scene_panel.flash_player(is_crit)
 		combat_scene_panel.lunge_monster_forward()
+		combat_scene_panel.add_monster_damage(damage_to_player)
 
 	# A3 — per-ability VFX dispatch. Uses server color codes + keywords as
 	# the category signal. We deliberately avoid an ability-name lookup so
@@ -28837,11 +28941,29 @@ func _format_wish_description(wish: Dictionary) -> String:
 			return "[color=#808080]Unknown Wish[/color]"
 
 func display_monster_select_page():
-	"""Display current page of monster selection list"""
+	"""Display current page of monster selection list. Renders into the
+	in-panel picker when the combat scene panel is up; falls back to
+	game_output otherwise."""
 	var total_monsters = monster_select_list.size()
 	var total_pages = max(1, ceili(float(total_monsters) / MONSTER_SELECT_PAGE_SIZE))
 	monster_select_page = clamp(monster_select_page, 0, total_pages - 1)
 
+	var start_idx = monster_select_page * MONSTER_SELECT_PAGE_SIZE
+	var end_idx = min(start_idx + MONSTER_SELECT_PAGE_SIZE, total_monsters)
+
+	if combat_scene_panel and combat_scene_panel.visible:
+		var items: Array = []
+		for i in range(start_idx, end_idx):
+			items.append({
+				"name": str(monster_select_list[i]),
+				"color": "#FF00FF",
+				"qty": 1,
+			})
+		combat_scene_panel.show_item_picker("Scroll of Summoning", items, monster_select_page, total_pages)
+		update_action_bar()
+		return
+
+	# Fallback — legacy game_output flow.
 	game_output.clear()
 	display_game("[color=#FF00FF]===== SCROLL OF SUMMONING =====[/color]")
 	display_game("[color=#FFD700]Select a creature to summon for your next encounter![/color]")
@@ -28849,15 +28971,10 @@ func display_monster_select_page():
 	display_game("")
 	display_game("[color=#808080]Page %d/%d (%d monsters available)[/color]" % [monster_select_page + 1, total_pages, total_monsters])
 	display_game("")
-
-	var start_idx = monster_select_page * MONSTER_SELECT_PAGE_SIZE
-	var end_idx = min(start_idx + MONSTER_SELECT_PAGE_SIZE, total_monsters)
-
-	for i in range(start_idx, end_idx):
-		var monster_name = monster_select_list[i]
-		var key_num = i - start_idx + 1
+	for i2 in range(start_idx, end_idx):
+		var monster_name = monster_select_list[i2]
+		var key_num = i2 - start_idx + 1
 		display_game("[color=#FFFF00][%d][/color] %s" % [key_num, monster_name])
-
 	display_game("")
 	display_game("[color=#808080]Press 1-9 or Numpad 1-9 to select a monster[/color]")
 	if total_pages > 1:
@@ -28898,6 +29015,8 @@ func confirm_monster_select():
 	monster_select_confirm_mode = false
 	monster_select_pending = ""
 	monster_select_list = []
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	send_to_server({"type": "monster_select_confirm", "monster_name": monster_name})
 	game_output.clear()
 	display_game("[color=#FF00FF]The scroll glows brightly![/color]")
@@ -28917,21 +29036,37 @@ func cancel_monster_select():
 	monster_select_confirm_mode = false
 	monster_select_pending = ""
 	monster_select_list = []
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	send_to_server({"type": "monster_select_cancel"})
 	display_game("[color=#808080]Scroll cancelled. The scroll has been returned to your inventory.[/color]")
 	update_action_bar()
 
 func display_target_farm_options():
-	"""Display target farming ability options"""
+	"""Display target farming ability options. Uses the in-panel picker
+	when the combat scene panel is visible; otherwise falls back to
+	game_output."""
+	if combat_scene_panel and combat_scene_panel.visible:
+		var items: Array = []
+		for i in range(target_farm_options.size()):
+			var ability = target_farm_options[i]
+			items.append({
+				"name": str(target_farm_names.get(ability, ability)),
+				"color": "#FF00FF",
+				"qty": 1,
+			})
+		combat_scene_panel.show_item_picker("Scroll of Finding (next %d encounters)" % target_farm_encounters, items, 0, 1)
+		return
+
 	display_game("")
 	display_game("[color=#FF00FF]===== SCROLL OF FINDING =====[/color]")
 	display_game("[color=#808080]Choose a trait to hunt for the next %d encounters:[/color]" % target_farm_encounters)
 	display_game("")
 
-	for i in range(target_farm_options.size()):
-		var ability = target_farm_options[i]
-		var display_name = target_farm_names.get(ability, ability)
-		display_game("[color=#FFFF00][%d][/color] %s" % [i + 1, display_name])
+	for i2 in range(target_farm_options.size()):
+		var ability2 = target_farm_options[i2]
+		var display_name = target_farm_names.get(ability2, ability2)
+		display_game("[color=#FFFF00][%d][/color] %s" % [i2 + 1, display_name])
 
 	display_game("")
 	display_game("[color=#808080][%s] Cancel[/color]" % get_action_key_name(0))
@@ -28945,6 +29080,8 @@ func select_target_farm_ability(index: int):
 	target_farm_mode = false
 	target_farm_options = []
 	target_farm_names = {}
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	send_to_server({"type": "target_farm_select", "ability": ability, "encounters": target_farm_encounters})
 	game_output.clear()
 	update_action_bar()
@@ -28954,6 +29091,8 @@ func cancel_target_farm():
 	target_farm_mode = false
 	target_farm_options = []
 	target_farm_names = {}
+	if combat_scene_panel:
+		combat_scene_panel.hide_picker()
 	send_to_server({"type": "target_farm_cancel"})
 	display_game("[color=#808080]Scroll cancelled. The scroll has been returned to your inventory.[/color]")
 	update_action_bar()

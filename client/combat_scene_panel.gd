@@ -56,8 +56,36 @@ var _monster_hp_bar: ProgressBar
 var _monster_hp_text: Label
 
 # Log
+var _log_inner: Control
 var _log_label: RichTextLabel
 var _log_scroll: ScrollContainer
+
+# Running damage totals strip (Combat readability #2). Three labels —
+# player damage, companion damage, monster damage to player — displayed
+# in a row above the combat log so players can see the bigger picture
+# without parsing every message.
+var _totals_strip: HBoxContainer
+var _player_total_label: Label
+var _companion_total_label: Label
+var _monster_total_label: Label
+var _player_total: int = 0
+var _companion_total: int = 0
+var _monster_total: int = 0
+
+# In-panel picker — overlays the log section during combat_item_mode (and
+# eventually monster_select_mode / target_farm_mode) so the scene stays
+# visible while the player chooses an item or target.
+var _picker_overlay: Control
+var _picker_title_label: RichTextLabel
+var _picker_items_vbox: VBoxContainer
+var _picker_pageinfo_label: Label
+var _picker_prev_btn: Button
+var _picker_next_btn: Button
+var _picker_cancel_btn: Button
+signal picker_item_chosen(slot: int)  # 1-based slot on the current page
+signal picker_canceled
+signal picker_prev_page
+signal picker_next_page
 
 # A2 — hit feedback. Active tween references so a rapid second hit doesn't
 # stack on top of an in-progress flash/lunge (we kill the previous one).
@@ -140,6 +168,9 @@ func _build_layout() -> void:
 	# === Shared HP strip — player on left, monster on right, same row ===
 	root_vbox.add_child(_build_shared_hp_strip())
 
+	# === Running damage totals strip (Combat readability #2) ===
+	root_vbox.add_child(_build_running_totals_strip())
+
 	# === Bottom: combat log mirror ===
 	_log_section = PanelContainer.new()
 	var log_sb := StyleBoxFlat.new()
@@ -157,12 +188,20 @@ func _build_layout() -> void:
 	_log_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root_vbox.add_child(_log_section)
 
+	# Wrapper Control inside the log_section so we can stack the scroll
+	# (combat log) and a picker overlay on the same rect, swapping which
+	# is visible based on whether the player is choosing an item/target.
+	_log_inner = Control.new()
+	_log_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_log_inner.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_log_section.add_child(_log_inner)
+
 	_log_scroll = ScrollContainer.new()
-	_log_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_log_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_log_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_log_section.add_child(_log_scroll)
+	_log_inner.add_child(_log_scroll)
 
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
@@ -172,6 +211,11 @@ func _build_layout() -> void:
 	_log_label.add_theme_font_size_override("normal_font_size", 13)
 	_log_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_log_scroll.add_child(_log_label)
+
+	# Build the picker overlay (initially hidden). Lives in the same
+	# rect as _log_scroll so showing it hides the log; the scene above
+	# stays untouched.
+	_build_picker_overlay()
 
 
 func _build_player_column() -> VBoxContainer:
@@ -360,6 +404,215 @@ func _build_shared_hp_strip() -> HBoxContainer:
 	return strip
 
 
+func _build_running_totals_strip() -> HBoxContainer:
+	"""Three small labels in a row showing fight-wide damage totals per
+	actor. Colors mirror the damage-number palette (yellow / cyan / red)."""
+	_totals_strip = HBoxContainer.new()
+	_totals_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_totals_strip.alignment = BoxContainer.ALIGNMENT_CENTER
+	_totals_strip.add_theme_constant_override("separation", 18)
+	_totals_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	_player_total_label = _make_total_label("You: 0", Color("#FFD93D"))
+	_totals_strip.add_child(_player_total_label)
+
+	_companion_total_label = _make_total_label("Pet: 0", Color("#3DD9FF"))
+	_companion_total_label.visible = false  # Hidden until a companion is on-scene
+	_totals_strip.add_child(_companion_total_label)
+
+	_monster_total_label = _make_total_label("Foe: 0", Color("#FF6666"))
+	_totals_strip.add_child(_monster_total_label)
+
+	return _totals_strip
+
+
+func _make_total_label(text: String, color: Color) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return lbl
+
+
+func add_player_damage(amount: int) -> void:
+	if amount <= 0: return
+	_player_total += amount
+	_refresh_totals()
+
+
+func add_companion_damage(amount: int) -> void:
+	if amount <= 0: return
+	_companion_total += amount
+	_refresh_totals()
+
+
+func add_monster_damage(amount: int) -> void:
+	if amount <= 0: return
+	_monster_total += amount
+	_refresh_totals()
+
+
+func reset_running_totals() -> void:
+	_player_total = 0
+	_companion_total = 0
+	_monster_total = 0
+	_refresh_totals()
+
+
+func _refresh_totals() -> void:
+	if _player_total_label:
+		_player_total_label.text = "You: %d" % _player_total
+	if _companion_total_label:
+		# Show companion line only once it's contributed something.
+		_companion_total_label.text = "Pet: %d" % _companion_total
+		_companion_total_label.visible = _companion_total > 0
+	if _monster_total_label:
+		_monster_total_label.text = "Foe: %d" % _monster_total
+
+
+func _build_picker_overlay() -> void:
+	"""Build the in-panel picker UI. Hidden by default; show via
+	show_item_picker() during combat_item_mode."""
+	_picker_overlay = PanelContainer.new()
+	_picker_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var picker_sb := StyleBoxFlat.new()
+	picker_sb.bg_color = Color(0.05, 0.04, 0.06, 0.97)
+	picker_sb.border_color = Color(0.55, 0.45, 0.33)
+	picker_sb.set_border_width_all(2)
+	picker_sb.set_corner_radius_all(4)
+	picker_sb.content_margin_left = 8
+	picker_sb.content_margin_right = 8
+	picker_sb.content_margin_top = 6
+	picker_sb.content_margin_bottom = 6
+	_picker_overlay.add_theme_stylebox_override("panel", picker_sb)
+	_picker_overlay.visible = false
+	_picker_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
+	_log_inner.add_child(_picker_overlay)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	_picker_overlay.add_child(vbox)
+
+	# Title row
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(title_row)
+
+	_picker_title_label = RichTextLabel.new()
+	_picker_title_label.bbcode_enabled = true
+	_picker_title_label.fit_content = true
+	_picker_title_label.scroll_active = false
+	_picker_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_title_label.add_theme_font_size_override("normal_font_size", 14)
+	_picker_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_child(_picker_title_label)
+
+	_picker_pageinfo_label = Label.new()
+	_picker_pageinfo_label.add_theme_font_size_override("font_size", 12)
+	_picker_pageinfo_label.add_theme_color_override("font_color", Color(0.78, 0.74, 0.62))
+	_picker_pageinfo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_child(_picker_pageinfo_label)
+
+	# Items list — fills available vertical space
+	var items_scroll := ScrollContainer.new()
+	items_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	items_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	items_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(items_scroll)
+
+	_picker_items_vbox = VBoxContainer.new()
+	_picker_items_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_items_vbox.add_theme_constant_override("separation", 2)
+	items_scroll.add_child(_picker_items_vbox)
+
+	# Action row (prev / cancel / next)
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(action_row)
+
+	_picker_prev_btn = Button.new()
+	_picker_prev_btn.text = "◀ Prev"
+	_picker_prev_btn.focus_mode = Control.FOCUS_NONE
+	_picker_prev_btn.pressed.connect(func(): emit_signal("picker_prev_page"))
+	action_row.add_child(_picker_prev_btn)
+
+	var spacer_l := Control.new()
+	spacer_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(spacer_l)
+
+	_picker_cancel_btn = Button.new()
+	_picker_cancel_btn.text = "Cancel"
+	_picker_cancel_btn.focus_mode = Control.FOCUS_NONE
+	_picker_cancel_btn.add_theme_color_override("font_color", Color(1, 0.5, 0.5))
+	_picker_cancel_btn.pressed.connect(func(): emit_signal("picker_canceled"))
+	action_row.add_child(_picker_cancel_btn)
+
+	var spacer_r := Control.new()
+	spacer_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(spacer_r)
+
+	_picker_next_btn = Button.new()
+	_picker_next_btn.text = "Next ▶"
+	_picker_next_btn.focus_mode = Control.FOCUS_NONE
+	_picker_next_btn.pressed.connect(func(): emit_signal("picker_next_page"))
+	action_row.add_child(_picker_next_btn)
+
+
+func show_item_picker(title: String, items_on_page: Array, page: int, total_pages: int) -> void:
+	"""Show the in-panel item picker. items_on_page is an array of dicts
+	with keys: name (string), color (hex string), qty (int)."""
+	if _picker_overlay == null or not is_instance_valid(_picker_overlay):
+		return
+	_picker_title_label.text = "[b]%s[/b]" % title
+	if total_pages > 1:
+		_picker_pageinfo_label.text = "Page %d / %d" % [page + 1, total_pages]
+		_picker_prev_btn.disabled = (page <= 0)
+		_picker_next_btn.disabled = (page >= total_pages - 1)
+		_picker_prev_btn.visible = true
+		_picker_next_btn.visible = true
+	else:
+		_picker_pageinfo_label.text = ""
+		_picker_prev_btn.visible = false
+		_picker_next_btn.visible = false
+
+	# Clear previous item rows
+	for child in _picker_items_vbox.get_children():
+		child.queue_free()
+
+	# Build a button per item
+	for i in range(items_on_page.size()):
+		var entry: Dictionary = items_on_page[i]
+		var name = str(entry.get("name", "Unknown"))
+		var color = str(entry.get("color", "#FFFFFF"))
+		var qty = int(entry.get("qty", 1))
+		var qty_text = ("  x%d" % qty) if qty > 1 else ""
+		var slot = i + 1
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.text = "[%d]  %s%s" % [slot, name, qty_text]
+		# Override the text color via a custom theme font color — but Buttons
+		# only support solid color, so prefix the index with the rarity color
+		# isn't possible without BBCode. Just tint the whole label.
+		btn.add_theme_color_override("font_color", Color(color))
+		btn.add_theme_color_override("font_hover_color", Color(color).lightened(0.2))
+		btn.pressed.connect(func(): emit_signal("picker_item_chosen", slot))
+		_picker_items_vbox.add_child(btn)
+
+	_picker_overlay.visible = true
+	if _log_scroll:
+		_log_scroll.visible = false
+
+
+func hide_picker() -> void:
+	if _picker_overlay and is_instance_valid(_picker_overlay):
+		_picker_overlay.visible = false
+	if _log_scroll and is_instance_valid(_log_scroll):
+		_log_scroll.visible = true
+
+
 func _make_hp_bar(fill_color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
@@ -417,8 +670,10 @@ func populate(payload: Dictionary) -> void:
 		_monster_max_hp = maxi(1, int(payload["monster_max_hp"]))
 
 	# New fight — reset the damage label fan position so the first hit lands
-	# at the leftmost slot every time.
+	# at the leftmost slot every time. Also reset the running damage totals
+	# so the strip starts at zero for this fight.
 	_damage_label_seq = 0
+	reset_running_totals()
 
 	# Reset any FX-applied sprite state from the prior fight (death slump,
 	# stealth fade, victory grey-out) so this fight starts clean.
