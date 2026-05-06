@@ -3494,10 +3494,38 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	elif effect.has("buff"):
 		# Buff scroll - tier-based values
 		var buff_type = effect.buff
-		var buff_value: int
-		var duration: int
+		var buff_value: int = 0
+		var duration: int = 0
+		# Set true when the crafted-scroll branch has already applied + emitted
+		# its message — skips the tier-formula apply block at the bottom.
+		var crafted_buff_handled: bool = false
 
-		if effect.get("tier_forcefield", false):
+		# Crafted buff scrolls: bypass tier formulas entirely and apply the
+		# exact values shown on inspect (effect.amount or effect.bonus_pct +
+		# effect.duration or effect.duration_battles). The existing
+		# stat_pct / tier_value branches assume tier_data is populated, which
+		# isn't the case for crafted items. This keeps inspect = applied.
+		if item.get("crafted", false) and item_effect.get("type", "") == "buff":
+			buff_type = str(item_effect.get("stat", buff_type))
+			if item_effect.has("bonus_pct"):
+				buff_value = int(item_effect.get("bonus_pct", 0))
+			else:
+				buff_value = int(item_effect.get("amount", 0))
+			var is_battles_buff: bool = item_effect.has("duration_battles")
+			if is_battles_buff:
+				duration = int(item_effect.get("duration_battles", 1))
+			else:
+				duration = int(item_effect.get("duration", 5))
+			var crafted_verb: String = "use" if "scroll" in item_type else "drink"
+			var crafted_value_suffix: String = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] or item_effect.has("bonus_pct") else ""
+			if is_battles_buff:
+				character.add_persistent_buff(buff_type, buff_value, duration)
+				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration, "s" if duration != 1 else ""])
+			else:
+				character.add_buff(buff_type, buff_value, duration)
+				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration])
+			crafted_buff_handled = true
+		elif effect.get("tier_forcefield", false):
 			# Forcefield: use forcefield_value from tier, duration from scroll_duration
 			buff_value = tier_data.get("forcefield_value", 1500)
 			duration = tier_data.get("scroll_duration", 1)
@@ -3530,15 +3558,16 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 			var duration_per_10 = effect.get("duration_per_10_levels", 1)
 			duration = base_duration + (item_level / 10) * duration_per_10
 
-		var buff_verb = "use" if "scroll" in item_type else "drink"
-		var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
+		if not crafted_buff_handled:
+			var buff_verb = "use" if "scroll" in item_type else "drink"
+			var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
 
-		if effect.get("battles", false):
-			character.add_persistent_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""])
-		else:
-			character.add_buff(buff_type, buff_value, duration)
-			messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration])
+			if effect.get("battles", false):
+				character.add_persistent_buff(buff_type, buff_value, duration)
+				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""])
+			else:
+				character.add_buff(buff_type, buff_value, duration)
+				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration])
 
 	# Remove item from inventory (use stack method for consumables)
 	if item.get("is_consumable", false) and item.get("quantity", 1) > 0:
