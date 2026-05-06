@@ -62,6 +62,11 @@ var _player_ascii_label: RichTextLabel
 var _companion_section: VBoxContainer
 var _companion_art: RichTextLabel
 var _companion_name_label: RichTextLabel
+# Tiny XP bar between the companion name and the ASCII art so players see
+# the companion grow in real time during fights. (Companions don't have
+# their own HP pool — Phase B Combat Juice would need to add that.)
+var _companion_xp_bar: ProgressBar
+var _companion_xp_text: Label
 
 # Monster column
 var _monster_col: VBoxContainer
@@ -326,6 +331,39 @@ func _build_player_column() -> VBoxContainer:
 	_companion_name_label.custom_minimum_size = Vector2(180, 0)
 	_companion_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_companion_section.add_child(_companion_name_label)
+
+	# Tiny XP bar + text under the name. Mirrors the player's level-progress
+	# affordance; gives the companion presence on par with the other
+	# combatants in the panel.
+	var xp_row := HBoxContainer.new()
+	xp_row.add_theme_constant_override("separation", 4)
+	xp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_section.add_child(xp_row)
+
+	_companion_xp_bar = ProgressBar.new()
+	_companion_xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_companion_xp_bar.custom_minimum_size = Vector2(0, 6)
+	_companion_xp_bar.show_percentage = false
+	var xp_bar_sb := StyleBoxFlat.new()
+	xp_bar_sb.bg_color = Color(0.1, 0.1, 0.12)
+	xp_bar_sb.border_color = Color(0.25, 0.22, 0.18)
+	xp_bar_sb.set_border_width_all(1)
+	xp_bar_sb.set_corner_radius_all(2)
+	_companion_xp_bar.add_theme_stylebox_override("background", xp_bar_sb)
+	var xp_fill_sb := StyleBoxFlat.new()
+	xp_fill_sb.bg_color = Color("#3DD9FF")  # cyan, matches Pet damage totals
+	xp_fill_sb.set_corner_radius_all(2)
+	_companion_xp_bar.add_theme_stylebox_override("fill", xp_fill_sb)
+	_companion_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	xp_row.add_child(_companion_xp_bar)
+
+	_companion_xp_text = Label.new()
+	_companion_xp_text.add_theme_font_size_override("font_size", 10)
+	_companion_xp_text.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
+	_companion_xp_text.custom_minimum_size = Vector2(72, 0)
+	_companion_xp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_companion_xp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	xp_row.add_child(_companion_xp_text)
 
 	_companion_art = RichTextLabel.new()
 	_companion_art.bbcode_enabled = true
@@ -1026,6 +1064,22 @@ func clear_log() -> void:
 		_refresh_log()
 
 
+func get_log_lines() -> Array:
+	"""Return a copy of the panel's combat log so the [L] legacy view can
+	replay it into game_output."""
+	return _log_lines.duplicate()
+
+
+func get_monster_header_bbcode() -> Array:
+	"""Return [name_line, art_block] for the [L] legacy view header so the
+	wall-of-text reopens with the monster name + ASCII art at the top, the
+	way the old detail view used to render."""
+	if _monster_name == "":
+		return []
+	var name_line := "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]" % [_monster_name_color, _monster_name, _monster_level]
+	return [name_line, _monster_art_bbcode]
+
+
 # === Internal rendering ===
 
 func _refresh_player() -> void:
@@ -1069,6 +1123,17 @@ func _refresh_player_hp() -> void:
 	_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
 
 
+func update_companion_data(data: Dictionary) -> void:
+	"""Refresh the companion section from a new active_companion dict —
+	called from character_update so XP/level changes during combat reflect
+	in the panel without re-running populate()."""
+	if data == null:
+		return
+	_companion_data = data
+	if is_inside_tree():
+		_refresh_companion()
+
+
 func _refresh_companion() -> void:
 	if _companion_data == null or _companion_data.is_empty():
 		_companion_section.visible = false
@@ -1078,8 +1143,20 @@ func _refresh_companion() -> void:
 	var name := str(_companion_data.get("name", "Companion"))
 	var variant := str(_companion_data.get("variant", "Normal"))
 	var level := int(_companion_data.get("level", 1))
+	var sub_tier := int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
 	var variant_color := str(_companion_data.get("variant_color", "#FFFFFF"))
-	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d %s[/color]" % [variant_color, name, level, variant]
+	# Tier badge inline with the name — gives players a quick "T2 Crimson"
+	# read on the companion's stat presence.
+	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d T%d %s[/color]" % [variant_color, name, level, sub_tier, variant]
+
+	# XP bar shows progress to next companion level. Formula matches
+	# character.gd:get_companion_xp_to_next_level (pow(level+1, 2.0) * 15).
+	if _companion_xp_bar and is_instance_valid(_companion_xp_bar):
+		var xp_current := int(_companion_data.get("xp", 0))
+		var xp_needed := int(pow(level + 1, 2.0) * 15)
+		_companion_xp_bar.max_value = maxi(1, xp_needed)
+		_companion_xp_bar.value = clampi(xp_current, 0, xp_needed)
+		_companion_xp_text.text = "XP %d / %d" % [xp_current, xp_needed]
 
 	# Companion ASCII art — tiny font, monospaced. No [center] wrapper because
 	# the column is much wider than the art at font_size 2; centering pads with

@@ -1218,6 +1218,10 @@ var combat_speed: int = 1  # 0=instant, 1=normal(0.6s), 2=slow(1.2s)
 # fire on every message — only the *text* output is condensed.
 var condensed_combat_log: bool = true
 var _round_message_buffer: Array[String] = []
+# Latest combat_update status payload — stashed so the per-turn summary can
+# enrich DoT tags with duration info ("Bleed 4" → "Bleed 4 dmg / 3T").
+var _last_player_status: Dictionary = {}
+var _last_monster_status: Dictionary = {}
 
 # Player list auto-refresh
 var player_list_refresh_timer: float = 0.0
@@ -3483,7 +3487,25 @@ func _input(event):
 				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active() and pending_continue
 				var _death_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active() and game_state == GameState.DEAD
 				if _victory_up or _death_up:
+					# Toggle into the legacy wall-of-text view. Combat
+					# messages no longer mirror to game_output while the
+					# panel is up, so we replay the panel's log here so the
+					# legacy view actually has content to show. Header is
+					# the monster name + ASCII art so the legacy view opens
+					# with the same visual anchor it always has.
 					_victory_legacy_view = not _victory_legacy_view
+					if _victory_legacy_view and combat_scene_panel.has_method("get_log_lines"):
+						game_output.clear()
+						if combat_scene_panel.has_method("get_monster_header_bbcode"):
+							var header: Array = combat_scene_panel.get_monster_header_bbcode()
+							if header.size() == 2:
+								display_game(header[0])
+								display_game(header[1])
+								display_game("")
+						display_game("[color=#5C4D33]──────── Combat Log ────────[/color]")
+						for line in combat_scene_panel.get_log_lines():
+							display_game(line)
+						display_game("[color=#5C4D33]──────────────────────────[/color]")
 					get_viewport().set_input_as_handled()
 					return
 
@@ -16724,6 +16746,10 @@ func handle_server_message(message: Dictionary):
 				update_player_xp_bar()
 				update_currency_display()
 				update_companion_art_overlay()
+				# Refresh companion section in the battle panel so XP / level
+				# changes (gained from kills mid-combat) show in real time.
+				if combat_scene_panel and in_combat and combat_scene_panel.has_method("update_companion_data"):
+					combat_scene_panel.update_companion_data(character_data.get("active_companion", {}))
 				# Reset forge_available if not at Fire Mountain (-400, 0)
 				if forge_available:
 					var px = character_data.get("x", 0)
@@ -17026,6 +17052,11 @@ func handle_server_message(message: Dictionary):
 		"combat_update":
 			var state = message.get("combat_state", {})
 			if not state.is_empty():
+				# Cache the new status payload BEFORE flushing the per-turn
+				# summary so the summary parser can read post-tick durations
+				# ("Bleed 4 dmg / 3T left") off the freshest server state.
+				_last_player_status = state.get("player_status", {})
+				_last_monster_status = state.get("monster_status", {})
 				# Per-turn condensed log: flush the buffered messages from the
 				# turn that just completed *before* doing anything else, so
 				# the summary appears in chronological order with the divider
@@ -17038,9 +17069,7 @@ func handle_server_message(message: Dictionary):
 				var current_round = int(state.get("round", _last_displayed_round))
 				if current_round > _last_displayed_round and _last_displayed_round > 0:
 					var divider = "[color=#5C4D33]──────── Round %d ────────[/color]" % current_round
-					display_game(divider)
-					if combat_scene_panel:
-						combat_scene_panel.append_log(divider)
+					_combat_text_to_outputs(divider)
 					_last_displayed_round = current_round
 				var new_hp = state.get("player_hp", character_data.get("current_hp", 0))
 				var max_hp = state.get("player_max_hp", character_data.get("max_hp", 1))
@@ -17077,12 +17106,10 @@ func handle_server_message(message: Dictionary):
 				update_resource_bar()
 				update_action_bar()  # Refresh action bar for ability availability
 				# Status-effect strip — surface buffs/debuffs/DoT timers
-				# under each combatant's HP bar.
+				# under each combatant's HP bar. (Status cache was already
+				# updated above, before the summary flush.)
 				if combat_scene_panel and combat_scene_panel.has_method("update_combat_status"):
-					combat_scene_panel.update_combat_status(
-						state.get("player_status", {}),
-						state.get("monster_status", {})
-					)
+					combat_scene_panel.update_combat_status(_last_player_status, _last_monster_status)
 
 		"combat_end":
 			# Flush any remaining phased combat messages before processing end
@@ -17131,13 +17158,11 @@ func handle_server_message(message: Dictionary):
 					flock_monster_name = message.get("flock_monster", "enemy")
 					var _flock_warn = "[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name
 					var _flock_prompt = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
-					display_game(_flock_warn)
-					display_game(_flock_prompt)
-					# Mirror to the battle-scene log — the panel stays up during
-					# flock_pending so these prompts must surface there too.
+					# Routed via _combat_text_to_outputs so it lands in the
+					# panel log only — game_output is hidden during combat.
+					_combat_text_to_outputs(_flock_warn)
+					_combat_text_to_outputs(_flock_prompt)
 					if combat_scene_panel:
-						combat_scene_panel.append_log(_flock_warn)
-						combat_scene_panel.append_log(_flock_prompt)
 						# Banner over the monster art — players are looking there,
 						# so the call-to-action lives there too rather than only
 						# in the log.
@@ -17157,23 +17182,25 @@ func handle_server_message(message: Dictionary):
 						discovered_monster_types[enemy_key] = true
 						play_combat_victory_sound(true)  # Play for new discovery
 
-					# Mirror the running totals into game_output so the legacy
-					# detail view ([L]) shows the at-a-glance damage tally
-					# right where the combat log ends.
+					# Mirror the running totals + loot to the panel log so the
+					# legacy detail view ([L]) — which now replays panel.log
+					# rather than reading game_output — shows the at-a-glance
+					# damage tally and loot list right where the combat log
+					# ends.
 					if combat_scene_panel and combat_scene_panel.has_method("get_totals_summary_bbcode"):
-						display_game("")
-						display_game("[color=#5C4D33]── Damage totals ──[/color]")
-						display_game(combat_scene_panel.get_totals_summary_bbcode())
+						_combat_text_to_outputs("")
+						_combat_text_to_outputs("[color=#5C4D33]── Damage totals ──[/color]")
+						_combat_text_to_outputs(combat_scene_panel.get_totals_summary_bbcode())
 
 					# Victory without flock - show all accumulated drops
 					var flock_drops = message.get("flock_drops", [])
 					if flock_drops.size() > 0:
-						display_game("")
-						display_game("[color=#FFD700]────── LOOT ──────[/color]")
+						_combat_text_to_outputs("")
+						_combat_text_to_outputs("[color=#FFD700]────── LOOT ──────[/color]")
 						for drop_msg in flock_drops:
-							display_game("  " + drop_msg)
-						display_game("[color=#FFD700]─────────────────────[/color]")
-						display_game("")
+							_combat_text_to_outputs("  " + drop_msg)
+						_combat_text_to_outputs("[color=#FFD700]─────────────────────[/color]")
+						_combat_text_to_outputs("")
 
 					# Check for rare drops and play sound effect
 					var drop_value = _calculate_drop_value(message)
@@ -17192,12 +17219,14 @@ func handle_server_message(message: Dictionary):
 					if total_gems > 0:
 						play_gem_gain_sound()
 
-					# Require continue press so player can read loot before display refreshes
-					display_game("")
+					# Require continue press so player can read loot before display refreshes.
+					# Routed through _combat_text_to_outputs so it lands in the
+					# panel log (visible via [L]) instead of cluttering game_output.
+					_combat_text_to_outputs("")
 					if harvest_available:
-						display_game("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
+						_combat_text_to_outputs("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
 					else:
-						display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 					pending_continue = true
 					if dungeon_mode:
 						pending_dungeon_continue = true
@@ -17906,6 +17935,10 @@ func _process_combat_start(message: Dictionary):
 	# Drop any leftover per-turn summary buffer from the previous fight so it
 	# doesn't bleed into round 1 of the new fight.
 	_round_message_buffer.clear()
+	# Reset cached status snapshots so stale buffs/DoT timers from the
+	# previous fight don't enrich this fight's first summary.
+	_last_player_status = {}
+	_last_monster_status = {}
 	# Release input field focus immediately so ability hotkeys work
 	# This prevents the bug where typing in chat when combat starts causes abilities to be sent as text
 	if input_field and input_field.has_focus():
@@ -21363,8 +21396,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.209 changes
+	display_game("[color=#00FF00]v0.9.209[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion XP bar + cleaner game_output during combat[/color]")
+	display_game("  • Companion now has a tiny cyan XP bar under its name in the battle scene — fills as the companion gains XP from kills mid-fight, so you watch your pet grow in real time instead of finding out post-combat")
+	display_game("  • Companion name line now shows tier alongside level/variant: 'Spider Hatchling Lv 5 T2 Crimson' instead of just 'Lv 5 Crimson'")
+	display_game("  • DoT tags in the per-turn summary now include duration: 'Bleed 4 (3T)' / 'Poison 4 (2T)' so you can see how many ticks remain at a glance, pulled from the same server status feed that drives the strip under each HP bar")
+	display_game("  • game_output no longer mirrors combat narrative during a fight — the panel log is the single source of truth while the battle scene is up. After combat ends, game_output stays clean (no wall-of-text scrollback). Press [L] during the victory/death interlude to dump the panel's combat log into game_output for the legacy wall-of-text view")
+	display_game("  • Legacy [L] view header restored: monster name + ASCII art now opens the wall-of-text the same way the old detail view used to render")
+	display_game("")
+
 	# v0.9.208 changes
-	display_game("[color=#00FF00]v0.9.208[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.208[/color]")
 	display_game("  [color=#FFD700]Combat-Scene Migration: DoT ticks + status strip[/color]")
 	display_game("  • DoT and proc damage now spawns small tag-colored floating numbers above the affected combatant — Bleed (red), Poison (green), Thorns (grey), Reflect (magenta), Charm (pink), Curse (purple), Wild Magic backfire (deep purple) — so you can see ticks land at a glance instead of just reading them in the log")
 	display_game("  • New status-effect strip under each HP bar in the battle scene: shows active buffs, debuffs, and DoT timers as compact tag chips (Bld 4x3T = bleed 4 damage × 3 turns left, Hst 5T = haste 5 turns, FF 30 = forcefield with 30 shield, Stn 1T = stunned 1 turn, etc.)")
@@ -21399,18 +21442,6 @@ func display_changelog():
 	display_game("  • Player ASCII still lunges forward on attack and reacts to flash / level-up / death FX — wrapped the visual in a layout-free Control so the lunge tween doesn't drift after combat messages re-layout the row")
 	display_game("  • Drop-in convention: any `client/sprites/ascii/<Class>.txt` file auto-replaces the PNG; per-class font_size and color overrides in client/class_ascii_art.gd")
 	display_game("  • PNG sprites still ship with the build as a fallback for any class without ASCII art, and they continue to drive the overworld map sprites")
-	display_game("")
-
-	# v0.9.204 changes
-	display_game("[color=#00FFFF]v0.9.204[/color]")
-	display_game("  [color=#FFD700]Combat-Scene Migration: victory card + battle continuity[/color]")
-	display_game("  • Battle scene now stays visible between back-to-back flock fights — no more blink-through to the map UI between encounters")
-	display_game("  • Pulsing 'More <enemy>s approaching!' banner appears over the monster art when another fight is queued, so the call-to-action lives where you're already looking")
-	display_game("  • New in-panel Victory Card: after a non-flock kill, an in-scene results card shows XP gain, level-up callout, and the loot list with rarity colors — no more wall-of-text dump in game output")
-	display_game("  • Press [L] during the rewards interlude to drop into the legacy full-screen detail view (combat narration + loot wall) — press [L] again or Space to continue")
-	display_game("  • Running damage totals strip recolored: prefix and number now use contrasting colors (You: muted gold + bright yellow, Pet: warm orange + cyan, Foe: red + orange) so the digit pops")
-	display_game("  • Companion attack lines no longer render in solid cyan — text is warm orange and the damage number is cyan, matching the totals palette")
-	display_game("  • Legacy detail view also gets a 'Damage totals' line right before the loot block, so the at-a-glance summary is available there too")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24062,10 +24093,10 @@ func _display_combat_msg(combat_msg: String):
 		# Stash for summary; don't dump to game_output yet.
 		_round_message_buffer.append(combat_msg)
 	else:
-		display_game(enhanced_msg)
-		# Mirror to combat scene panel log (A1 — Combat Juice)
-		if combat_scene_panel:
-			combat_scene_panel.append_log(enhanced_msg)
+		# Firehose mode — routed through the same helper that the per-turn
+		# summary uses so combat text doesn't clutter game_output during
+		# combat (the panel is up; game_output is hidden anyway).
+		_combat_text_to_outputs(enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
@@ -24123,6 +24154,17 @@ func _emit_turn_summary() -> void:
 	var lines := _build_turn_summary(_round_message_buffer)
 	_round_message_buffer.clear()
 	for line in lines:
+		_combat_text_to_outputs(line)
+
+
+func _combat_text_to_outputs(line: String) -> void:
+	"""Route a combat text line. While the battle scene panel is up, only
+	the panel's log gets it — game_output is hidden during combat anyway,
+	and skipping the mirror keeps post-combat game_output clean. The [L]
+	legacy view replays panel.get_log_lines() into game_output on demand."""
+	if combat_scene_panel and combat_scene_panel.visible:
+		combat_scene_panel.append_log(line)
+	else:
 		display_game(line)
 		if combat_scene_panel:
 			combat_scene_panel.append_log(line)
@@ -24164,6 +24206,8 @@ func _build_turn_summary(buffer: Array) -> Array:
 		output.append("[color=#00FFFF]Your %s misses.[/color]" % cname)
 
 	if dot_to_monster.damage > 0:
+		# Enrich tags with post-tick durations from the cached monster status.
+		_enrich_dot_tags(dot_to_monster.tags, _last_monster_status, true)
 		var dot_mon_tags := ""
 		if dot_to_monster.tags.size() > 0:
 			dot_mon_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_monster.tags)
@@ -24176,12 +24220,37 @@ func _build_turn_summary(buffer: Array) -> Array:
 		output.append("[color=#00FF00]The %s misses you.[/color]" % mname)
 
 	if dot_to_you.damage > 0:
+		# Enrich tags with post-tick durations from the cached player status.
+		_enrich_dot_tags(dot_to_you.tags, _last_player_status, false)
 		var dot_you_tags := ""
 		if dot_to_you.tags.size() > 0:
 			dot_you_tags = " [color=#808080](%s)[/color]" % ", ".join(dot_to_you.tags)
 		output.append("[color=#FF8800]DoT on you: %d damage[/color]%s" % [dot_to_you.damage, dot_you_tags])
 
 	return output
+
+func _enrich_dot_tags(tags: Array, status: Dictionary, is_monster_side: bool) -> void:
+	"""Append post-tick duration info to DoT tags using the cached server
+	status state. Mutates the tags array in place. e.g. 'Bleed 4' becomes
+	'Bleed 4 (3T)' when bleed has 3 turns left after this tick."""
+	if status.is_empty():
+		return
+	for i in range(tags.size()):
+		var tag: String = str(tags[i])
+		var prefix: String = tag.split(" ")[0].to_lower()
+		var duration: int = 0
+		match prefix:
+			"bleed":
+				if is_monster_side:
+					duration = int(status.get("bleed_turns", 0))
+			"poison":
+				duration = int(status.get("poison_turns", 0))
+			"thorns", "reflect", "charm", "curse", "backfire":
+				# These are usually one-off ticks (no persistent timer
+				# tracked server-side), so leave them untagged.
+				continue
+		if duration > 0:
+			tags[i] = "%s (%dT)" % [tag, duration]
 
 func _classify_combat_msg(raw: String, stripped: String, player: Dictionary, companion: Dictionary, monster: Dictionary, dot_to_you: Dictionary, dot_to_monster: Dictionary, verbatim: Array) -> void:
 	"""Classify a single combat message into actor totals or pass-through."""
