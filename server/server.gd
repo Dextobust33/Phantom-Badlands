@@ -6378,7 +6378,12 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		if target == "companion" and character.has_active_companion():
 			heal_max_hp = character.get_companion_max_hp()
 		var heal_amount: int
-		if effect.get("heal_pct_only", false):
+		var item_effect: Dictionary = item.get("effect", {})
+		if item.get("crafted", false) and item_effect.get("type", "") == "heal" and item_effect.has("amount"):
+			# Crafted potion: use the item's own quality-scaled amount so the
+			# heal matches the inspect/hover description.
+			heal_amount = int(item_effect.get("amount", 0))
+		elif effect.get("heal_pct_only", false):
 			# Elixir: pure % max HP heal
 			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
 			heal_amount = int(heal_max_hp * elixir_pct / 100.0)
@@ -6413,7 +6418,13 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 
 		# Hybrid flat + % max resource
 		var resource_amount: int
-		if tier_data.has("resource"):
+		var item_eff_resource: Dictionary = item.get("effect", {})
+		var item_eff_type_resource: String = str(item_eff_resource.get("type", ""))
+		if item.get("crafted", false) and item_eff_type_resource in ["restore_mana", "restore_stamina", "restore_energy"] and item_eff_resource.has("amount"):
+			# Crafted potion: use item's own quality-scaled amount so the
+			# restore matches the inspect/hover description.
+			resource_amount = int(item_eff_resource.get("amount", 0))
+		elif tier_data.has("resource"):
 			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
 		elif tier_data.has("healing"):
 			resource_amount = int(tier_data.healing * 0.6)
