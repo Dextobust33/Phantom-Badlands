@@ -420,6 +420,18 @@ func populate(payload: Dictionary) -> void:
 	# at the leftmost slot every time.
 	_damage_label_seq = 0
 
+	# Reset any FX-applied sprite state from the prior fight (death slump,
+	# stealth fade, victory grey-out) so this fight starts clean.
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		_player_sprite_rect.modulate = Color.WHITE
+		_player_sprite_rect.rotation = 0.0
+		if _player_sprite_baseline_captured:
+			_player_sprite_rect.position = _player_sprite_baseline_pos
+	if _monster_art_label and is_instance_valid(_monster_art_label):
+		_monster_art_label.modulate = Color.WHITE
+		if _monster_art_baseline_captured:
+			_monster_art_label.position = _monster_art_baseline_pos
+
 	_refresh_player()
 	_refresh_companion()
 	_refresh_monster()
@@ -677,4 +689,281 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	var t := create_tween().set_parallel(true)
 	t.tween_property(label, "position", local_anchor + Vector2(0, -float_distance), lifetime).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "modulate:a", 0.0, lifetime * 0.6).set_delay(lifetime * 0.4)
+	t.chain().tween_callback(label.queue_free)
+
+
+# === A3 ability VFX ===
+
+func play_slash_arc(is_crit: bool = false) -> void:
+	"""A diagonal slash glyph swept across the monster art. Used for melee
+	abilities (Cleave, Power Strike, Devastate, Berserk)."""
+	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var center_global = _monster_art_label.global_position + _monster_art_label.size * 0.5
+	var local_center = center_global - global_position
+	var glyph := "✗" if is_crit else "／"
+	var color := Color("#FF3333") if is_crit else Color("#FF9966")
+	var font_size := 64 if is_crit else 56
+	# Slash sweeps diagonally from upper-left to lower-right of the monster.
+	var span = max(80.0, _monster_art_label.size.x * 0.5)
+	var start_pos = local_center + Vector2(-span * 0.5, -span * 0.4)
+	var end_pos = local_center + Vector2(span * 0.5, span * 0.4)
+	var label := Label.new()
+	label.text = glyph
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 110
+	add_child(label)
+	label.reset_size()
+	label.position = start_pos - label.size * 0.5
+	var t := create_tween().set_parallel(true)
+	t.tween_property(label, "position", end_pos - label.size * 0.5, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "modulate:a", 0.0, 0.18).set_delay(0.10)
+	t.chain().tween_callback(label.queue_free)
+
+
+func play_projectile(glyph: String = "✦", color: Color = Color("#FF66FF")) -> void:
+	"""A glyph that flies from the player sprite to the monster art and
+	vanishes in a small flash on impact. Used for ranged spells
+	(Magic Bolt, Blast, Meteor)."""
+	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+		return
+	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var start_global = _player_sprite_rect.global_position + _player_sprite_rect.size * Vector2(0.85, 0.45)
+	var end_global = _monster_art_label.global_position + _monster_art_label.size * 0.5
+	var label := Label.new()
+	label.text = glyph
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_font_size_override("font_size", 36)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 110
+	add_child(label)
+	label.reset_size()
+	label.position = start_global - global_position - label.size * 0.5
+	var end_pos = end_global - global_position - label.size * 0.5
+	# Slight upward arc — pass through a midpoint above the straight line.
+	var mid_pos = (label.position + end_pos) * 0.5 + Vector2(0, -28)
+	var travel := 0.32
+	var t := create_tween()
+	t.tween_property(label, "position", mid_pos, travel * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "position", end_pos, travel * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(_play_impact_burst.bind(end_pos, color))
+	t.tween_callback(label.queue_free)
+
+
+func _play_impact_burst(local_pos: Vector2, color: Color) -> void:
+	# Small radial burst when a projectile lands.
+	var burst := Label.new()
+	burst.text = "✸"
+	burst.add_theme_color_override("font_color", color)
+	burst.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.7))
+	burst.add_theme_constant_override("outline_size", 4)
+	burst.add_theme_font_size_override("font_size", 48)
+	burst.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	burst.z_index = 111
+	add_child(burst)
+	burst.reset_size()
+	burst.position = local_pos
+	burst.scale = Vector2(0.4, 0.4)
+	burst.pivot_offset = burst.size * 0.5
+	var t := create_tween().set_parallel(true)
+	t.tween_property(burst, "scale", Vector2(1.6, 1.6), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(burst, "modulate:a", 0.0, 0.22)
+	t.chain().tween_callback(burst.queue_free)
+
+
+func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
+	"""Expanding ring of glyphs around the player sprite. Used for self-buffs
+	(Haste, Iron Skin, War Cry, Berserk, Fortify)."""
+	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+		return
+	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * 0.5
+	var local_center = center_global - global_position
+	var radius_start := 8.0
+	var radius_end := 80.0
+	var glyph_count := 6
+	for i in range(glyph_count):
+		var angle = (TAU * i) / glyph_count
+		var label := Label.new()
+		label.text = "✦"
+		label.add_theme_color_override("font_color", color)
+		label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		label.add_theme_constant_override("outline_size", 4)
+		label.add_theme_font_size_override("font_size", 28)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.z_index = 105
+		add_child(label)
+		label.reset_size()
+		var dir = Vector2(cos(angle), sin(angle))
+		label.position = local_center + dir * radius_start - label.size * 0.5
+		var end_pos = local_center + dir * radius_end - label.size * 0.5
+		var t := create_tween().set_parallel(true)
+		t.tween_property(label, "position", end_pos, 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		t.tween_property(label, "modulate:a", 0.0, 0.55).set_delay(0.08)
+		t.chain().tween_callback(label.queue_free)
+
+
+func play_stealth_fade(duration: float = 2.5) -> void:
+	"""Fade the player sprite to ~40% alpha for a duration, then back. Used
+	for Vanish, Cloak, Teleport."""
+	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+		return
+	var t := create_tween()
+	t.tween_property(_player_sprite_rect, "modulate:a", 0.4, 0.25)
+	t.tween_interval(duration - 0.5)
+	t.tween_property(_player_sprite_rect, "modulate:a", 1.0, 0.25)
+
+
+# === A4 outcome FX ===
+
+func play_victory_fx() -> void:
+	"""Monster art slumps + greys out, big VICTORY banner across the scene.
+	Roughly 2 seconds total — caller should hold the panel visible at least
+	that long so the animation completes before the victory screen takes over."""
+	if _monster_art_label and is_instance_valid(_monster_art_label):
+		var t := create_tween().set_parallel(true)
+		t.tween_property(_monster_art_label, "modulate", Color(0.45, 0.45, 0.45, 0.55), 0.6)
+		t.tween_property(_monster_art_label, "position", _monster_art_label.position + Vector2(0, 24), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	# Victory takes the lower position so a coincident level-up banner above
+	# can be read alongside it (real combat fires both back-to-back).
+	_spawn_outcome_banner("VICTORY!", Color("#FFD93D"), 56, 1.6, 30.0)
+
+
+func play_death_fx() -> void:
+	"""Player sprite greys + slumps, DEFEATED banner. About 2 seconds."""
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		var t := create_tween().set_parallel(true)
+		t.tween_property(_player_sprite_rect, "modulate", Color(0.4, 0.4, 0.4, 0.6), 0.5)
+		t.tween_property(_player_sprite_rect, "rotation", deg_to_rad(15), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_property(_player_sprite_rect, "position", _player_sprite_rect.position + Vector2(0, 30), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_spawn_outcome_banner("DEFEATED", Color("#FF4444"), 52, 1.8, -30.0)
+
+
+func play_level_up_fx(new_level: int) -> void:
+	"""Golden burst around the player + LEVEL UP banner."""
+	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+		return
+	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * 0.5
+	var local_center = center_global - global_position
+	# Two concentric rings of golden sparkles, staggered, plus the banner.
+	var ring_count := 2
+	var glyph_count := 8
+	var radius_start := 12.0
+	var radius_end := 110.0
+	for ring in range(ring_count):
+		var ring_delay = ring * 0.18
+		for i in range(glyph_count):
+			var angle = (TAU * i) / glyph_count + ring * (TAU / glyph_count) * 0.5
+			var label := Label.new()
+			label.text = "✦"
+			label.add_theme_color_override("font_color", Color("#FFE066"))
+			label.add_theme_color_override("font_outline_color", Color(0.4, 0.2, 0, 0.95))
+			label.add_theme_constant_override("outline_size", 4)
+			label.add_theme_font_size_override("font_size", 30)
+			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			label.z_index = 108
+			add_child(label)
+			label.reset_size()
+			var dir = Vector2(cos(angle), sin(angle))
+			label.position = local_center + dir * radius_start - label.size * 0.5
+			var end_pos = local_center + dir * radius_end - label.size * 0.5
+			var t := create_tween().set_parallel(true)
+			t.tween_property(label, "position", end_pos, 0.85).set_delay(ring_delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			t.tween_property(label, "modulate:a", 0.0, 0.85).set_delay(ring_delay + 0.2)
+			t.chain().tween_callback(label.queue_free)
+	# Level-up banner sits high above center so a victory banner (which
+	# fires immediately after on a killing-blow level-up) can land below it.
+	_spawn_outcome_banner("LEVEL UP!  Lv %d" % new_level, Color("#FFE066"), 44, 1.6, -90.0)
+
+
+func play_outsmart_spiral() -> void:
+	"""A spiral of glyphs winding inward toward the monster — used for
+	Trickster outsmart / Perfect Heist outcomes."""
+	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var center_global = _monster_art_label.global_position + _monster_art_label.size * 0.5
+	var local_center = center_global - global_position
+	var glyph_count := 12
+	var max_radius := 90.0
+	for i in range(glyph_count):
+		var t_along = float(i) / float(glyph_count - 1)  # 0..1 outside-in
+		var angle = TAU * 1.5 * t_along  # 1.5 turns
+		var radius = max_radius * (1.0 - t_along)
+		var label := Label.new()
+		label.text = "✦"
+		label.add_theme_color_override("font_color", Color("#33FF99"))
+		label.add_theme_color_override("font_outline_color", Color(0, 0.2, 0.05, 0.95))
+		label.add_theme_constant_override("outline_size", 4)
+		label.add_theme_font_size_override("font_size", 24)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.z_index = 108
+		add_child(label)
+		label.reset_size()
+		var pos = local_center + Vector2(cos(angle), sin(angle)) * radius - label.size * 0.5
+		label.position = pos
+		label.modulate.a = 0.0
+		var stagger = i * 0.05
+		var t := create_tween()
+		t.tween_interval(stagger)
+		t.tween_property(label, "modulate:a", 1.0, 0.12)
+		t.tween_interval(0.18)
+		t.tween_property(label, "modulate:a", 0.0, 0.30)
+		t.tween_callback(label.queue_free)
+
+
+func _spawn_outcome_banner(text: String, color: Color, font_size: int, lifetime: float, y_offset: float = 0.0) -> void:
+	"""Big centered text banner used by victory / defeat / level-up FX.
+	Pops in with a small overshoot, holds, then fades. y_offset is added
+	to the vertical center so coincident banners can stagger (negative =
+	higher up). Default 0 = exact center."""
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 8)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 120
+	add_child(label)
+	label.reset_size()
+	label.position = (size - label.size) * 0.5 + Vector2(0, y_offset)
+	label.pivot_offset = label.size * 0.5
+	label.scale = Vector2(0.4, 0.4)
+	label.modulate.a = 0.0
+	var t := create_tween().set_parallel(true)
+	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "modulate:a", 1.0, 0.18)
+	t.chain().tween_interval(lifetime)
+	t.chain().tween_property(label, "modulate:a", 0.0, 0.35)
+	t.chain().tween_callback(label.queue_free)
+
+
+func play_heal_pulse(amount: int) -> void:
+	"""Green +N text floats up from the player. Used for heals/restores."""
+	if _player_sprite_rect == null or not is_instance_valid(_player_sprite_rect):
+		return
+	var center_global = _player_sprite_rect.global_position + _player_sprite_rect.size * Vector2(0.5, 0.25)
+	var local_anchor = center_global - global_position
+	var label := Label.new()
+	label.text = "+%d" % amount if amount > 0 else "+"
+	label.add_theme_color_override("font_color", Color("#3DFF6E"))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 4)
+	label.add_theme_font_size_override("font_size", 24)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 100
+	add_child(label)
+	label.reset_size()
+	label.position = local_anchor - label.size * 0.5
+	var t := create_tween().set_parallel(true)
+	t.tween_property(label, "position", label.position + Vector2(0, -55), 0.95).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "modulate:a", 0.0, 0.55).set_delay(0.4)
 	t.chain().tween_callback(label.queue_free)

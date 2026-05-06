@@ -2143,7 +2143,11 @@ func _process(delta):
 			_combat_scene_linger_until_ms = Time.get_ticks_msec() + 1100
 		_combat_scene_was_in_combat = _now_in_combat
 		var _is_lingering = Time.get_ticks_msec() < _combat_scene_linger_until_ms
-		_combat_scene_should_show = _now_in_combat or _combat_scene_force_visible or _is_lingering
+		# Sub-modes that print into game_output and need the scene panel out
+		# of the way: combat_item_mode (Use Item list), monster_select_mode
+		# (target picker for AOE / multi-target abilities), target_farm_mode.
+		var _scene_temporarily_hidden = combat_item_mode or monster_select_mode or target_farm_mode
+		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
 
@@ -15181,6 +15185,11 @@ func update_player_level():
 	# Play level up sound if level increased
 	if last_known_level > 0 and level > last_known_level:
 		play_levelup_sound()
+		# A4 — golden burst on the battle scene if combat is still up.
+		# Extend linger so the burst + banner finish before the panel hides.
+		if combat_scene_panel and combat_scene_panel.visible:
+			combat_scene_panel.play_level_up_fx(level)
+			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
 	last_known_level = level
 
 func update_player_hp_bar():
@@ -16177,6 +16186,12 @@ func handle_server_message(message: Dictionary):
 				cancel_variable_cost_ability()
 			last_death_message = message.duplicate(true)
 			play_death_sound()
+			# A4 — play the death FX in the battle scene before the death
+			# screen takes over. Linger keeps the panel visible past the
+			# game_state transition so the slump animation completes.
+			if combat_scene_panel and combat_scene_panel.visible:
+				combat_scene_panel.play_death_fx()
+				_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
 			# Show final HP (can be negative) on the bar - visual fill clamped at 0%
 			var final_hp = message.get("player_hp", 0)
 			var final_max_hp = message.get("player_max_hp", character_data.get("total_max_hp", character_data.get("max_hp", 1)))
@@ -16357,6 +16372,10 @@ func handle_server_message(message: Dictionary):
 			if awaiting_item_use_result:
 				last_item_use_result = text_msg
 				awaiting_item_use_result = false
+			elif inventory_mode and pending_inventory_action == "awaiting_salvage_result":
+				# Capture the salvage result so display_inventory() can surface it
+				# in the visual panel's status row after the refresh.
+				last_item_use_result = text_msg
 			else:
 				display_game(text_msg)
 			# Sound triggers for text messages
@@ -16508,12 +16527,12 @@ func handle_server_message(message: Dictionary):
 					elif pending_inventory_action == "unequip_item":
 						_show_unequip_slots()
 					elif pending_inventory_action == "awaiting_salvage_result":
-						# Salvage result will be shown via "text" message - don't redisplay inventory yet
-						# Clear the pending action but stay in inventory mode
+						# Salvage finished — refresh the visual inventory panel
+						# (otherwise it keeps showing the pre-salvage items) and
+						# let display_inventory() surface the captured result
+						# text in the panel's status row.
 						pending_inventory_action = ""
-						# Show a prompt to continue
-						display_game("")
-						display_game("[color=#808080]Press [%s] for Backpack or [%s] to exit.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+						display_inventory()
 						update_action_bar()
 					elif pending_inventory_action == "lock_item":
 						# Lock mode - refresh inventory to show updated lock indicators
@@ -16802,6 +16821,12 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
+				# A4 — play victory FX on the battle scene + extend the linger
+				# so the monster slump and VICTORY banner finish before the
+				# panel hides for the loot/level-up screen.
+				if combat_scene_panel and combat_scene_panel.visible:
+					combat_scene_panel.play_victory_fx()
+					_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
 				# Record defeat if damage was dealt OR if Analyze revealed HP (e.g., Outsmart victory after Analyze)
 				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
 					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
@@ -20991,8 +21016,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.200 changes
+	display_game("[color=#00FF00]v0.9.200[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Juice Phase A complete: Ability VFX + Outcome FX[/color]")
+	display_game("  • Ability VFX dispatched from server color codes — no per-ability lookup, so new abilities pick up the right effect automatically")
+	display_game("  • Warrior heavy hits (Power Strike, Cleave, Devastate, Shield Bash, Ambush, Exploit Weakness) now sweep a slash glyph across the monster — red ✗ on crit, orange ／ otherwise")
+	display_game("  • Mage casts (Magic Bolt ✦, Blast ●, Meteor ☄) launch a glyph from the player to the monster with a small impact burst on landing")
+	display_game("  • Self-buffs (War Cry, Iron Skin, Berserk, Haste, Fortify, Forcefield) trigger an expanding ring of sparkles around the player — color shifts by buff type (orange offense, blue defense, cyan speed)")
+	display_game("  • Vanish / Cloak / Teleport fade the player sprite; healing pulses a green +N above you; Trickster outwit/Perfect Heist plays an inward green spiral on the monster")
+	display_game("  • Outcome FX: monster slumps + greys + VICTORY! banner on win; player slumps + DEFEATED on death; LEVEL UP! during combat triggers a golden double-ring burst with the new level above the victory banner")
+	display_game("  • Battle scene linger now extends to ~2.4s on victory/death/level-up so the FX finish before the next screen takes over")
+	display_game("  • Use Item / target picker now temporarily hide the battle scene so you can read the list (will revisit — see combat readability initiative)")
+	display_game("  • Bugfix: Salvage Junk now properly refreshes the inventory panel after salvaging, with the result text in the panel status row")
+	display_game("")
+
 	# v0.9.199 changes
-	display_game("[color=#00FF00]v0.9.199[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.199[/color]")
 	display_game("  [color=#FFD700]Combat Juice Phase A: Battle Scene + Hit Feedback[/color]")
 	display_game("  • New JRPG-style battle scene panel — when combat starts, your class sprite + companion appear on the left, monster ASCII on the right, with HP bars on a shared strip and a combat log mirror below")
 	display_game("  • 9 class sprites (Fighter / Barbarian / Paladin / Wizard / Sorcerer / Sage / Thief / Ranger / Ninja) under OGA-BY 3.0 — see CREDITS.md")
@@ -21030,15 +21069,6 @@ func display_changelog():
 	display_game("  • Storage and Upgrades tabs at the top of the panel let you switch between them without walking back to the other tile")
 	display_game("")
 
-	# v0.9.195 changes
-	display_game("[color=#00FFFF]v0.9.195[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 4: Visual Companions + Eggs[/color]")
-	display_game("  • More → Companions is now a visual panel: active companion at the top with XP bar and Dismiss button, hatched companions below as a grid of cards")
-	display_game("  • Click any card to activate it, right-click for Inspect / Release / Activate; Inspect view shows full ability descriptions, in-combat bonuses, damage estimate, and a Release button")
-	display_game("  • Sort cycler (Level / Tier / Variant / Damage / Name / Type) and an asc/desc toggle in the top-right")
-	display_game("  • More → Eggs (or the Eggs tab on the Companions panel) shows each incubating egg as a card with its ASCII art, tier, progress bar, and frozen status — click to toggle freeze")
-	display_game("  • Sanctuary (Storage / Kennel / Fusion / Upgrades) deferred to its own future phase since it's a separate game state with several sub-modes")
-	display_game("")
 
 
 	# v0.9.181 changes
@@ -23865,7 +23895,64 @@ func _run_combat_fx_demo() -> void:
 	combat_scene_panel.flash_player(true)
 	combat_scene_panel.lunge_monster_forward()
 
-	await get_tree().create_timer(1.5).timeout
+	# === A3 ability FX ===
+	await get_tree().create_timer(1.0).timeout
+	combat_scene_panel.append_log("[color=#FF4444]POWER STRIKE![/color] You deal 95 damage!")
+	combat_scene_panel.play_slash_arc(false)
+	combat_scene_panel.show_damage_on_monster(95, false, "player")
+	combat_scene_panel.flash_monster(false)
+
+	await get_tree().create_timer(0.7).timeout
+	combat_scene_panel.append_log("[color=#FF4444]DEVASTATE![/color] A catastrophic blow deals 180 damage!")
+	combat_scene_panel.play_slash_arc(true)
+	combat_scene_panel.show_damage_on_monster(180, true, "player")
+	combat_scene_panel.flash_monster(true)
+
+	await get_tree().create_timer(0.9).timeout
+	combat_scene_panel.append_log("[color=#FF00FF]You cast Magic Bolt![/color] The bolt deals 60 damage!")
+	combat_scene_panel.play_projectile("✦", Color("#FF66FF"))
+	await get_tree().create_timer(0.35).timeout
+	combat_scene_panel.show_damage_on_monster(60, false, "player")
+	combat_scene_panel.flash_monster(false)
+
+	await get_tree().create_timer(0.7).timeout
+	combat_scene_panel.append_log("[color=#FF00FF]You cast Blast![/color] Burning the target for 75 damage!")
+	combat_scene_panel.play_projectile("●", Color("#FF8833"))
+	await get_tree().create_timer(0.35).timeout
+	combat_scene_panel.show_damage_on_monster(75, false, "player")
+	combat_scene_panel.flash_monster(false)
+
+	await get_tree().create_timer(0.8).timeout
+	combat_scene_panel.append_log("[color=#FF4444]WAR CRY![/color] +35% damage for 4 rounds!")
+	combat_scene_panel.play_buff_aura(Color("#FFAA33"))
+
+	await get_tree().create_timer(0.9).timeout
+	combat_scene_panel.append_log("[color=#00FFFF]You cast Haste! +30% speed for 5 rounds[/color]")
+	combat_scene_panel.play_buff_aura(Color("#33CCFF"))
+
+	await get_tree().create_timer(0.9).timeout
+	combat_scene_panel.append_log("[color=#00FF00]VANISH![/color] You fade into shadow...")
+	combat_scene_panel.play_stealth_fade(2.0)
+
+	await get_tree().create_timer(0.6).timeout
+	combat_scene_panel.append_log("[color=#00FF00]You drink a potion and restore 45 HP![/color]")
+	combat_scene_panel.play_heal_pulse(45)
+
+	# === A4 outcome FX ===
+	await get_tree().create_timer(1.2).timeout
+	combat_scene_panel.append_log("[color=#33FF99]You outwit the Goblin![/color]")
+	combat_scene_panel.play_outsmart_spiral()
+
+	await get_tree().create_timer(1.4).timeout
+	combat_scene_panel.append_log("[color=#FFE066]LEVEL UP![/color] You are now level 7!")
+	combat_scene_panel.play_level_up_fx(7)
+	# Real combat fires victory back-to-back with a coincident level-up,
+	# so demo it the same way to verify the banners stack vertically.
+	await get_tree().create_timer(0.15).timeout
+	combat_scene_panel.append_log("[color=#FFD93D]VICTORY![/color] The Goblin is defeated!")
+	combat_scene_panel.play_victory_fx()
+
+	await get_tree().create_timer(2.5).timeout
 	_combat_scene_force_visible = false
 	display_game("[color=#888888]FX demo complete.[/color]")
 
@@ -23906,6 +23993,80 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		combat_scene_panel.show_damage_on_player(damage_to_player, is_crit)
 		combat_scene_panel.flash_player(is_crit)
 		combat_scene_panel.lunge_monster_forward()
+
+	# A3 — per-ability VFX dispatch. Uses server color codes + keywords as
+	# the category signal. We deliberately avoid an ability-name lookup so
+	# new abilities pick up the right FX automatically.
+	_dispatch_ability_fx(combat_msg, lower, upper, is_crit)
+
+
+func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_crit: bool) -> void:
+	# Heal pulse — green pulse on player when an HP gain message lands.
+	# Patterns: "Healed N HP", "heals you for N HP", "restore N HP",
+	# "regenerates N HP" (player-only — monster regen is "The X regenerates").
+	if not (combat_msg.begins_with("The ") or " The " in combat_msg):
+		var heal_re = RegEx.new()
+		heal_re.compile("(?:Healed|heals you for|restore|regenerates) (\\d+) HP")
+		var heal_match = heal_re.search(combat_msg)
+		if heal_match:
+			combat_scene_panel.play_heal_pulse(int(heal_match.get_string(1)))
+
+	# Stealth/teleport fade — Vanish, Cloak, Teleport.
+	if "VANISH!" in combat_msg or "You cast Cloak" in combat_msg or "You cast Teleport" in combat_msg:
+		combat_scene_panel.play_stealth_fade()
+
+	# Buff aura — self-buffs that grant a percentage stat boost. Cyan #00FFFF
+	# is the canonical buff color (Haste, Fortify); warrior buffs (Iron Skin,
+	# War Cry, Berserk) come through as #FF4444 with a "for N rounds" suffix.
+	var has_self_buff = false
+	if ("#00FFFF" in combat_msg) and (
+		"You cast Haste" in combat_msg
+		or "You fortify" in combat_msg
+		or "Your %s uses" in lower  # rare; companion self-buff
+	):
+		has_self_buff = true
+	elif "WAR CRY!" in combat_msg or "IRON SKIN!" in combat_msg or "BERSERK!" in combat_msg:
+		has_self_buff = true
+	elif "You cast Forcefield" in combat_msg:
+		has_self_buff = true
+	if has_self_buff:
+		var aura_color = Color("#33CCFF")
+		if "BERSERK!" in combat_msg or "WAR CRY!" in combat_msg:
+			aura_color = Color("#FFAA33")  # warmer for damage buffs
+		elif "IRON SKIN!" in combat_msg or "Forcefield" in combat_msg:
+			aura_color = Color("#AAAAFF")  # cool for defense
+		combat_scene_panel.play_buff_aura(aura_color)
+
+	# Projectile — mage spells with "You cast <name>" + #FF00FF (magenta).
+	# We fire the projectile EVEN IF damage was already shown by the A2
+	# pass — the projectile launches first chronologically but tween-wise
+	# it lands at roughly the same time as the damage number.
+	if "You cast" in combat_msg and "#FF00FF" in combat_msg:
+		var glyph = "✦"
+		var color = Color("#FF66FF")
+		if "Magic Bolt" in combat_msg:
+			glyph = "✦"
+			color = Color("#FF66FF")
+		elif "Blast" in combat_msg:
+			glyph = "●"
+			color = Color("#FF8833")
+		elif "Meteor" in combat_msg:
+			glyph = "☄"
+			color = Color("#FF4422")
+		combat_scene_panel.play_projectile(glyph, color)
+
+	# Slash arc — warrior heavy hits. Look for the canonical UPPERCASE
+	# ability bangs.
+	if ("POWER STRIKE!" in combat_msg or "CLEAVE!" in combat_msg
+			or "DEVASTATE!" in combat_msg or "SHIELD BASH!" in combat_msg
+			or "AMBUSH!" in combat_msg or "EXPLOIT WEAKNESS!" in combat_msg):
+		combat_scene_panel.play_slash_arc(is_crit or "DEVASTATE!" in combat_msg)
+
+	# A4 — outsmart spiral. Trickster outwit/Perfect Heist plays a green
+	# spiral inward to the monster as the cue that they've been outplayed.
+	if ("PERFECT HEIST!" in combat_msg or "outwit" in lower
+			or "outsmart" in lower):
+		combat_scene_panel.play_outsmart_spiral()
 
 func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
