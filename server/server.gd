@@ -4369,6 +4369,11 @@ func send_location_update(peer_id: int):
 		location_msg["enclosure_stations"] = enclosure_stations
 		location_msg["enclosure_has_inn"] = enclosure_has_inn
 		location_msg["enclosure_has_storage"] = enclosure_has_storage and player_post_is_own
+	# Map Sprites M2 — forward the nearby_players list (with class info) so the
+	# client can overlay LPC sprites for each visible remote player. The map
+	# text already shows them as letters; the client hides those and draws
+	# sprites in the same cells.
+	location_msg["nearby_players"] = nearby_players
 	send_to_peer(peer_id, location_msg)
 
 	# Forward location/map to watchers
@@ -4408,6 +4413,7 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"y": other_char.y,
 				"name": other_char.name,
 				"level": other_char.level,
+				"class": other_char.get("class_type", ""),
 				"in_my_party": is_party_mate
 			})
 

@@ -428,6 +428,30 @@ var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly aft
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
+# Map Sprites M1 — overlay node holding TextureRect sprites for visible
+# players, attached as a child of map_display so it inherits the map's
+# coordinate space.
+var map_sprites_overlay: Control = null
+var _cached_nearby_players: Array = []  # Latest nearby_players list from server
+# Local player's position from the most recent location message. Cached
+# separately because character_data.x/y is only updated on flee, not on
+# normal movement — using it for sprite math gives stale offsets.
+var _cached_local_x: int = 0
+var _cached_local_y: int = 0
+var _cached_local_pos_valid: bool = false
+# Facing direction the local player is currently displayed as on the map.
+# Defaults to "right" so the first render before any movement matches
+# the previous (single-direction) behavior.
+var _local_map_facing: String = "right"
+# Per-remote-player facing tracking. Keyed by player name. Stores the last
+# known position so the next location update can derive a movement delta
+# and update facing accordingly.
+var _remote_facings: Dictionary = {}     # name -> "up"/"down"/"left"/"right"
+var _remote_last_pos: Dictionary = {}    # name -> Vector2i(x, y)
+var _remote_sprite_pool: Array[TextureRect] = []  # Pool of sprite slots reused per location update
+const MAP_SPRITE_PIXEL_SIZE := 32
+const MAP_VIEWPORT_CENTER_CELL := 11  # Player is always at (11, 11) in 23x23 map
+const MAP_REMOTE_SPRITE_POOL_SIZE := 16  # Max remote players we'll show; far enough above typical visible counts
 @onready var input_field = $RootContainer/BottomStrip/ChatPanel/InputRow/InputField
 @onready var send_button = $RootContainer/BottomStrip/ChatPanel/InputRow/SendButton
 @onready var action_bar = $RootContainer/BottomStrip/CenterPanel/ActionBar
@@ -16259,6 +16283,27 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_nearest_post = message.get("nearest_post", {})
 			update_status_hud()
+			# Map Sprites M2 — cache the nearby_players list (with class info)
+			# so the overlay can place a sprite for each visible remote player.
+			# Also cache the local player's authoritative x/y from this message
+			# (character_data.x/y is only updated on flee, so we can't trust it
+			# for sprite-position math).
+			_cached_nearby_players = message.get("nearby_players", [])
+			if message.has("x") and message.has("y"):
+				var new_local_x = int(message.x)
+				var new_local_y = int(message.y)
+				# Map Sprites M2 — update local facing from this turn's delta
+				# BEFORE overwriting the cache so we have the previous value.
+				if _cached_local_pos_valid:
+					var ldx = new_local_x - _cached_local_x
+					var ldy = new_local_y - _cached_local_y
+					var dir = _direction_from_delta(ldx, ldy)
+					if dir != "":
+						_local_map_facing = dir
+				_cached_local_x = new_local_x
+				_cached_local_y = new_local_y
+				_cached_local_pos_valid = true
+			_update_remote_facings()
 			# Don't update map when in dungeon - dungeon has its own map display
 			if not dungeon_mode:
 				var desc = message.get("description", "")
@@ -17867,7 +17912,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip", "resetpw", "testfx"]
+		"banip", "unbanip", "resetpw", "testfx", "spritesize"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -18594,6 +18639,8 @@ func process_command(text: String):
 			chat_output.clear()
 		"testfx":
 			_run_combat_fx_demo()
+		"spritesize":
+			_show_sprite_size_preview()
 		"who", "players":
 			request_player_list()
 			display_game("[color=#808080]Refreshing player list...[/color]")
@@ -21016,8 +21063,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.201 changes
+	display_game("[color=#00FF00]v0.9.201[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Map Sprites: class sprites on the world map[/color]")
+	display_game("  • Your class sprite now stands on your tile on the world map — no more @ — and you can see other visible players' sprites at their grid positions instead of just a colored letter")
+	display_game("  • Sprites face the direction of last movement (north/south/east/west) using the LPC walk-row idle frames; defaults to right-facing")
+	display_game("  • Sprite is 32×32 pixels, larger than a single map cell — covers the player letter underneath. Cell-position math accounts for the centered map block + header lines so sprites stay locked to their tiles when you move")
+	display_game("  • Server now ships each visible player's class with the position list so other clients know which sprite to draw")
+	display_game("  • Sprites hide automatically during combat (battle scene takes over) and during character select")
+	display_game("")
+
 	# v0.9.200 changes
-	display_game("[color=#00FF00]v0.9.200[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.200[/color]")
 	display_game("  [color=#FFD700]Combat Juice Phase A complete: Ability VFX + Outcome FX[/color]")
 	display_game("  • Ability VFX dispatched from server color codes — no per-ability lookup, so new abilities pick up the right effect automatically")
 	display_game("  • Warrior heavy hits (Power Strike, Cleave, Devastate, Shield Bash, Ambush, Exploit Weakness) now sweep a slash glyph across the monster — red ✗ on crit, orange ／ otherwise")
@@ -21060,16 +21117,6 @@ func display_changelog():
 	display_game("  • Mixed T9: click cards to toggle selection (up to 8), counter at the top turns gold/green as you fill it, Fuse! button activates when exactly 8 are selected, Clear empties the selection in one click")
 	display_game("  • Keyboard fallback (action bar Same / Mixed buttons + number keys) still works — Sanctuary UI Facelift is now complete except for the action bar / hotbar pass")
 	display_game("")
-
-	# v0.9.196 changes
-	display_game("[color=#00FFFF]v0.9.196[/color]")
-	display_game("  [color=#FFD700]UI Facelift Phase 5a: Visual Sanctuary (Storage + Upgrades)[/color]")
-	display_game("  • Walk onto the Storage (S) tile in your Sanctuary and you now get a visual panel: capacity bar, item list, right-click any item for Mark for Withdraw / Register as Companion / Discard")
-	display_game("  • Walk onto the Upgrade (U) tile and you get a visual upgrade browser with Base / Combat / Stats sub-tabs — each upgrade is a card showing current/max level, effect, and a Buy button that disables itself when maxed or you're short on Baddie Points")
-	display_game("  • Storage and Upgrades tabs at the top of the panel let you switch between them without walking back to the other tile")
-	display_game("")
-
-
 
 	# v0.9.181 changes
 	display_game("[color=#00FFFF]v0.9.181[/color]")
@@ -23835,6 +23882,120 @@ func _display_combat_msg(combat_msg: String):
 		_dispatch_combat_fx(combat_msg, damage)
 
 
+func _show_sprite_size_preview() -> void:
+	"""/spritesize — pop up a grid showing all 9 class sprites at several
+	candidate scaled sizes, with the map cell size at Consolas 11pt called
+	out so you can decide whether shrinking sprites to fit a single cell is
+	acceptable. Click anywhere to dismiss."""
+	# Remove any existing preview overlay
+	var existing = get_node_or_null("SpriteSizePreview")
+	if existing:
+		existing.queue_free()
+
+	var classes = ["fighter", "barbarian", "paladin", "wizard", "sorcerer", "sage", "thief", "ranger", "ninja"]
+	var sizes = [7, 12, 16, 24, 32, 48]
+
+	# Compute the actual map cell size for context.
+	var cell_w = 7.0
+	var cell_h = 16.0
+	if map_display:
+		var map_font = map_display.get_theme_font("normal_font")
+		var map_font_size = map_display.get_theme_font_size("normal_font_size")
+		if map_font and map_font_size > 0:
+			cell_w = map_font.get_char_size(32, map_font_size).x
+			cell_h = map_font.get_height(map_font_size)
+
+	# Background overlay
+	var overlay := Control.new()
+	overlay.name = "SpriteSizePreview"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.z_index = 999
+	add_child(overlay)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.85)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_PASS
+	overlay.add_child(bg)
+
+	# Click anywhere to dismiss.
+	overlay.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed:
+			overlay.queue_free()
+	)
+
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.05, 0.03, 0.98)
+	sb.border_color = Color(0.55, 0.45, 0.33)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 12
+	sb.content_margin_bottom = 12
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(0, 0)
+	overlay.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	panel.add_child(vbox)
+
+	# Header
+	var header := RichTextLabel.new()
+	header.bbcode_enabled = true
+	header.fit_content = true
+	header.scroll_active = false
+	header.add_theme_font_size_override("normal_font_size", 14)
+	header.text = "[color=#FFD93D]Sprite size preview[/color] — map cell at Consolas 11pt = [color=#33FF99]%dpx wide × %dpx tall[/color]. Click anywhere to close." % [int(round(cell_w)), int(round(cell_h))]
+	vbox.add_child(header)
+
+	# Grid: rows = sizes, columns = classes
+	var grid := GridContainer.new()
+	grid.columns = classes.size() + 1  # +1 for size label column
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 10)
+	vbox.add_child(grid)
+
+	# Header row: blank + class names
+	var spacer := Label.new()
+	spacer.text = ""
+	grid.add_child(spacer)
+	for cls in classes:
+		var name_label := Label.new()
+		name_label.text = cls
+		name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		name_label.add_theme_font_size_override("font_size", 11)
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		grid.add_child(name_label)
+
+	# One row per candidate size
+	for size_px in sizes:
+		var size_label := Label.new()
+		size_label.text = "%dpx" % size_px
+		var color = Color("#FF6666") if size_px <= int(round(cell_h)) else Color("#FFD93D")
+		size_label.add_theme_color_override("font_color", color)
+		size_label.add_theme_font_size_override("font_size", 13)
+		size_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		grid.add_child(size_label)
+		for cls in classes:
+			var cell := CenterContainer.new()
+			cell.custom_minimum_size = Vector2(max(48, size_px + 8), max(56, size_px + 8))
+			grid.add_child(cell)
+			var atlas = ClassSprite.get_idle_atlas(cls)
+			if atlas:
+				var rect := TextureRect.new()
+				rect.texture = atlas
+				rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+				rect.custom_minimum_size = Vector2(size_px, size_px)
+				cell.add_child(rect)
+
+
 func _run_combat_fx_demo() -> void:
 	"""/testfx — force the combat scene panel visible and play every FX in
 	sequence so we can verify them outside real combat. Auto-releases when done."""
@@ -24402,6 +24563,17 @@ func update_map(map_text: String):
 
 	if map_display:
 		map_display.clear()
+		# Hide the local player's @ marker so the sprite overlay is the only
+		# representation.
+		main_text = main_text.replace("[color=#FFFF00] @[/color]", "[color=#FFFF00]  [/color]")
+		# Hide each visible remote player's letter cell. We construct the
+		# exact BBCode the server emitted from the cached nearby_players
+		# data, so the literal replace() can't false-positive on terrain
+		# that happens to share the same color (e.g. guards in #00FF00
+		# or water tiles in #00FFFF). The only edge case is a player with
+		# a name starting with G or ~ — extremely rare, and worst case
+		# we accidentally hide one guard/water cell on the same screen.
+		main_text = _strip_remote_player_glyphs(main_text)
 		map_display.append_text(main_text)
 		if show_map_legend:
 			map_display.append_text("\n[color=#8B7355][font_size=10]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
@@ -24413,6 +24585,217 @@ func update_map(map_text: String):
 			minimap_display.visible = true
 		else:
 			minimap_display.visible = false
+
+	# Map Sprites M1 — refresh sprite overlay to match the new map.
+	_sync_map_sprites_overlay()
+
+
+func _ensure_map_sprites_overlay() -> void:
+	"""Lazily build the overlay layer once map_display is in the tree."""
+	if map_sprites_overlay or not map_display or not is_instance_valid(map_display):
+		return
+	map_sprites_overlay = Control.new()
+	map_sprites_overlay.name = "MapSpritesOverlay"
+	map_sprites_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	map_sprites_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	map_display.add_child(map_sprites_overlay)
+
+	# Local-player slot.
+	var local := _make_map_sprite_slot()
+	local.name = "LocalPlayer"
+	map_sprites_overlay.add_child(local)
+
+	# Pool of remote-player slots. Pre-allocated so we don't churn nodes
+	# every map update; unused slots stay invisible.
+	_remote_sprite_pool.clear()
+	for i in range(MAP_REMOTE_SPRITE_POOL_SIZE):
+		var slot := _make_map_sprite_slot()
+		slot.name = "RemotePlayer%d" % i
+		map_sprites_overlay.add_child(slot)
+		_remote_sprite_pool.append(slot)
+
+
+func _direction_from_delta(dx: int, dy: int) -> String:
+	"""Convert a (dx, dy) world-space movement delta into a facing string.
+	Returns "" if there's no motion. World +Y is north; LPC sprites have
+	dedicated rows for up/down/left/right. For diagonal moves, prefer the
+	dominant axis (ties → horizontal)."""
+	if dx == 0 and dy == 0:
+		return ""
+	if abs(dx) >= abs(dy):
+		return "right" if dx > 0 else "left"
+	return "up" if dy > 0 else "down"
+
+
+func _update_remote_facings() -> void:
+	"""Diff the latest nearby_players list against last-known remote
+	positions and update each remote player's facing direction. Players
+	who weren't seen last frame keep the default ("right")."""
+	var seen_names: Dictionary = {}
+	for entry in _cached_nearby_players:
+		if not (entry is Dictionary):
+			continue
+		var pname = str(entry.get("name", ""))
+		if pname == "":
+			continue
+		seen_names[pname] = true
+		var rx = int(entry.get("x", 0))
+		var ry = int(entry.get("y", 0))
+		if _remote_last_pos.has(pname):
+			var prev: Vector2i = _remote_last_pos[pname]
+			var dir = _direction_from_delta(rx - prev.x, ry - prev.y)
+			if dir != "":
+				_remote_facings[pname] = dir
+		else:
+			# First time seeing this player — default to right so they
+			# don't render with a stale facing from a prior session.
+			if not _remote_facings.has(pname):
+				_remote_facings[pname] = "right"
+		_remote_last_pos[pname] = Vector2i(rx, ry)
+	# Forget players who left the view so re-entering resets to default.
+	for k in _remote_last_pos.keys().duplicate():
+		if not seen_names.has(k):
+			_remote_last_pos.erase(k)
+			_remote_facings.erase(k)
+
+
+func _strip_remote_player_glyphs(map_text: String) -> String:
+	"""Replace each visible remote player's letter cell with two raw spaces
+	so the sprite overlay is the only representation. Uses literal string
+	replacement constructed from the cached nearby_players data — no regex,
+	so no false positives on terrain that happens to share the player
+	colors (guards in #00FF00, water in #00FFFF)."""
+	var out = map_text
+	for entry in _cached_nearby_players:
+		if not (entry is Dictionary):
+			continue
+		var pname = str(entry.get("name", ""))
+		if pname.length() == 0:
+			continue
+		var letter = pname.substr(0, 1).to_upper()
+		var color = "#00FF00" if entry.get("in_my_party", false) else "#00FFFF"
+		var target = "[color=%s] %s[/color]" % [color, letter]
+		out = out.replace(target, "  ")
+	# Also strip the "*" stacked-player marker (server uses this when
+	# multiple players share a single cell; the sprite handles the first
+	# one, the rest are hidden behind it).
+	out = out.replace("[color=#00FFFF] *[/color]", "  ")
+	out = out.replace("[color=#00FF00] *[/color]", "  ")
+	return out
+
+
+func _make_map_sprite_slot() -> TextureRect:
+	var rect := TextureRect.new()
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	rect.size = Vector2(MAP_SPRITE_PIXEL_SIZE, MAP_SPRITE_PIXEL_SIZE)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.visible = false
+	return rect
+
+
+func _sync_map_sprites_overlay() -> void:
+	"""Position the local-player sprite + a sprite for each visible remote
+	player over the world map cells. Hides everything when not actively
+	playing or when the player has no class (pre-character-creation)."""
+	_ensure_map_sprites_overlay()
+	if map_sprites_overlay == null:
+		return
+	var local: TextureRect = map_sprites_overlay.get_node_or_null("LocalPlayer")
+	if local == null:
+		return
+
+	var should_show = (game_state == GameState.PLAYING and has_character
+		and not in_combat)
+	if not should_show:
+		local.visible = false
+		for slot in _remote_sprite_pool:
+			slot.visible = false
+		return
+
+	var font = map_display.get_theme_font("normal_font")
+	var font_size = map_display.get_theme_font_size("normal_font_size")
+	if font == null or font_size <= 0:
+		local.visible = false
+		for slot in _remote_sprite_pool:
+			slot.visible = false
+		return
+	var char_w = font.get_char_size(32, font_size).x
+	var line_h = font.get_height(font_size)
+
+	# Each cell is 2 chars wide (" X" pattern), map is 23 cells wide and
+	# centered inside map_display, with 2 header lines above the centered
+	# map block (location/danger + compass — see world_system.gd ~line 875).
+	var cell_w = char_w * 2.0
+	var map_diameter = MAP_VIEWPORT_CENTER_CELL * 2 + 1
+	var map_width_px = map_diameter * cell_w
+	var map_x_offset = max(0.0, (map_display.size.x - map_width_px) * 0.5)
+	var header_lines = 2
+
+	# --- Local player at center cell ---
+	var local_cls = str(character_data.get("class", ""))
+	var local_atlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
+	if local_atlas == null:
+		local.visible = false
+	else:
+		var lcx = MAP_VIEWPORT_CENTER_CELL
+		var lcy = MAP_VIEWPORT_CENTER_CELL
+		var lpx = map_x_offset + (lcx + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var lpy = (header_lines + lcy + 0.5) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		local.position = Vector2(lpx, lpy)
+		local.texture = local_atlas
+		local.visible = true
+
+	# --- Remote players ---
+	# Map-cell coordinates for a remote player at (rx, ry) when the local
+	# player is at (mx, my): grid_x = 11 + (rx - mx), grid_y = 11 - (ry - my)
+	# (the world's +Y is north which is up on screen, so screen_y inverts).
+	# Use the cached local position from the location message — character_data
+	# only refreshes on flee, so it's stale during normal movement.
+	if not _cached_local_pos_valid:
+		for slot in _remote_sprite_pool:
+			slot.visible = false
+		return
+	var my_x = _cached_local_x
+	var my_y = _cached_local_y
+	var slot_idx = 0
+	# Group players by cell so we can stack-detect (multiple on one tile —
+	# the map text uses "*" for that case; we'll just show one sprite).
+	var cells_used := {}
+	for entry in _cached_nearby_players:
+		if slot_idx >= _remote_sprite_pool.size():
+			break
+		if not (entry is Dictionary):
+			continue
+		var rcls = str(entry.get("class", ""))
+		var rname = str(entry.get("name", ""))
+		var rfacing = str(_remote_facings.get(rname, "right"))
+		var ratlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(rcls, rfacing)
+		if ratlas == null:
+			continue
+		var rx = int(entry.get("x", 0))
+		var ry = int(entry.get("y", 0))
+		var grid_x = MAP_VIEWPORT_CENTER_CELL + (rx - my_x)
+		var grid_y = MAP_VIEWPORT_CENTER_CELL - (ry - my_y)
+		# Skip out-of-viewport (defensive — server already filters).
+		if grid_x < 0 or grid_x >= map_diameter or grid_y < 0 or grid_y >= map_diameter:
+			continue
+		var cell_key = "%d,%d" % [grid_x, grid_y]
+		if cells_used.has(cell_key):
+			continue  # Multiple on same tile — render only the first
+		cells_used[cell_key] = true
+		var slot = _remote_sprite_pool[slot_idx]
+		slot.texture = ratlas
+		var px = map_x_offset + (grid_x + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var py = (header_lines + grid_y + 0.5) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		slot.position = Vector2(px, py)
+		slot.visible = true
+		slot_idx += 1
+	# Hide unused slots from prior frames.
+	for i in range(slot_idx, _remote_sprite_pool.size()):
+		_remote_sprite_pool[i].visible = false
+
 
 # ===== WANDERING NPC ENCOUNTER FUNCTIONS =====
 
