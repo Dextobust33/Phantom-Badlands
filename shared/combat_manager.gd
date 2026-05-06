@@ -4781,6 +4781,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_known": knows_monster,  # Let client know if HP is real or estimated
 		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
 		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
+		"variant_type": monster.get("variant_type", ""),  # Specific variant ID for client-side border tinting on monster ASCII art
 		"can_act": combat.player_can_act,
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,

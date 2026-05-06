@@ -2211,11 +2211,14 @@ func _process(delta):
 		if _victory_card_up and not pending_continue and not _now_in_combat:
 			combat_scene_panel.hide_victory_card()
 			_victory_card_up = false
+		# Death interlude is active — keep the scene visible while the
+		# in-panel death card is showing.
+		var _death_card_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active()
 		# Hide the legacy top-of-screen enemy HP bar whenever the combat
 		# scene panel is up — the panel has its own HP bar in the shared
 		# strip, so showing both is duplicate. show_enemy_hp_bar(true)
 		# calls from elsewhere take effect once the panel hides again.
-		if enemy_health_bar and (_now_in_combat or _is_lingering or _next_fight_queued or _victory_card_up or _combat_scene_force_visible):
+		if enemy_health_bar and (_now_in_combat or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _combat_scene_force_visible):
 			if enemy_health_bar.visible:
 				enemy_health_bar.visible = false
 		# Sub-modes that ROUTE through the in-panel picker now (combat_item_mode,
@@ -2223,14 +2226,14 @@ func _process(delta):
 		# hide the scene anymore. Kept the variable in case future modes need
 		# to opt out.
 		var _scene_temporarily_hidden = false
-		# Player pressed [L] during the rewards interlude — they want the
-		# legacy full-screen text view, so suppress the panel until they
-		# toggle back or press Space to continue.
-		if _victory_legacy_view and not _now_in_combat and pending_continue and _victory_card_up:
+		# Player pressed [L] during the rewards / death interlude — they
+		# want the legacy full-screen text view, so suppress the panel
+		# until they toggle back or press Space to continue.
+		if _victory_legacy_view and not _now_in_combat and (_victory_card_up or _death_card_up):
 			_scene_temporarily_hidden = true
 		else:
 			_victory_legacy_view = false
-		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up) and not _scene_temporarily_hidden
+		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
 
@@ -3462,16 +3465,19 @@ func _input(event):
 		return
 
 	# Handle [L] toggle to the legacy full-screen text view during the
-	# post-fight rewards interlude — players who want the wall-of-text
+	# rewards / death interlude — players who want the wall-of-text
 	# play-by-play can pop it open before pressing Space to continue. The
 	# flag suppresses the scene panel in _process; pressing L again brings
 	# the panel back.
-	if pending_continue and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
 		if input_field == null or not input_field.has_focus():
-			if combat_scene_panel and combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active():
-				_victory_legacy_view = not _victory_legacy_view
-				get_viewport().set_input_as_handled()
-				return
+			if combat_scene_panel:
+				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active() and pending_continue
+				var _death_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active() and game_state == GameState.DEAD
+				if _victory_up or _death_up:
+					_victory_legacy_view = not _victory_legacy_view
+					get_viewport().set_input_as_handled()
+					return
 
 	# Handle gathering pattern key presses (Q, W, E, R during reaction phase)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -4630,6 +4636,12 @@ func _on_cancel_create_pressed():
 # ===== DEATH PANEL HANDLERS =====
 
 func _on_continue_pressed():
+	# Dismiss the in-panel death card and release the force-visible flag
+	# so the scene panel can hide on the next frame.
+	if combat_scene_panel and combat_scene_panel.has_method("hide_death_card"):
+		combat_scene_panel.hide_death_card()
+	_combat_scene_force_visible = false
+	_victory_legacy_view = false
 	# Reset all game state from the dead character
 	_reset_character_state()
 	# Return to house (Sanctuary) instead of character select
@@ -8377,31 +8389,38 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		"energy":
 			ability_popup_resource_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives
-	# IMPORTANT: Only use client's damage-based HP tracking, not server's actual HP
-	# This ensures suggestions are based on player knowledge (damage dealt in past fights)
+	# For Magic Bolt: auto-suggest mana needed to kill monster based on INT and class passives.
+	# Source priority for target_hp:
+	#  1. Server-sent current_enemy_max_hp (when > 0, the player "knows" the monster
+	#     and the server has sent the ACTUAL max HP for this specific encounter,
+	#     including variant multipliers like Shield Guardian / Elite / etc.). This
+	#     matches what the HP bar shows and accounts for variants the discovery
+	#     system can't track because it keys by base name only.
+	#  2. known_enemy_hp[base_name + level] — exact match from a previous kill.
+	#  3. estimate_enemy_hp(base_name, level) — extrapolated from kills at other
+	#     levels (marked "~" in the popup so the player knows it's an estimate).
 	var suggested_amount = 0
 	var using_estimated_hp = false
 	var target_hp = 0
 
-	# Check client's HP knowledge based on previous kills (damage dealt)
-	# Use base name so variant knowledge is shared with base type
-	if current_enemy_name != "" and current_enemy_level > 0:
+	# 1. Prefer server's actual max HP (covers variants).
+	if current_enemy_max_hp > 0:
+		target_hp = current_enemy_max_hp
+	# 2. Fall back to client's discovered HP (base-name keyed, no variant info).
+	elif current_enemy_name != "" and current_enemy_level > 0:
 		var base_name = _get_base_monster_name(current_enemy_name)
-		# First try exact match (known HP for this monster at this level)
 		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
 		if known_enemy_hp.has(enemy_key):
 			target_hp = known_enemy_hp[enemy_key]
 		else:
-			# Try to estimate from kills at other levels
+			# 3. Estimate from kills at other levels.
 			var estimated = estimate_enemy_hp(base_name, current_enemy_level)
 			if estimated > 0:
 				target_hp = estimated
 				using_estimated_hp = true
 
-	# In party combat, use actual monster HP from server even if target_hp is 0
-	if party_combat_active and current_enemy_hp > 0 and target_hp <= 0:
-		target_hp = current_enemy_max_hp
+	# Note: damage_dealt_to_current_enemy is subtracted further down at the
+	# remaining_hp computation. Don't subtract here too — would double-count.
 
 	if ability == "magic_bolt" and target_hp > 0:
 		# Simulate Magic Bolt damage formula to suggest accurate mana amount
@@ -8512,8 +8531,13 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 		else:
 			remaining_hp = max(1, target_hp - damage_dealt_to_current_enemy)
 
-		# Calculate mana needed with 18% buffer to cover ±15% damage variance
-		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.18)
+		# Calculate mana needed with a small 5% buffer. The client's
+		# multiplier estimate is already conservative (low-balls defense
+		# reductions), so a big extra buffer compounds into ~25% overkill
+		# in practice. 5% covers the worst few rolls of damage variance
+		# without dramatic overspend; player can manually add more if they
+		# want belt-and-suspenders.
+		var mana_needed = ceili(float(remaining_hp) / effective_multiplier * 1.05)
 		suggested_amount = mini(mana_needed, current_resource)
 
 		var bonus_text = " ".join(bonus_parts) if bonus_parts.size() > 0 else ""
@@ -16373,6 +16397,25 @@ func handle_server_message(message: Dictionary):
 			if combat_scene_panel and combat_scene_panel.visible:
 				combat_scene_panel.play_death_fx()
 				_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
+			# Combat-Scene Migration: show the in-panel death card so the
+			# player gets the eulogy headline without being yanked out of
+			# combat into a wall of text. The legacy detail view is still
+			# available via [L] for players who want the full breakdown.
+			if combat_scene_panel and combat_scene_panel.has_method("show_death_card"):
+				_combat_scene_force_visible = true
+				combat_scene_panel.show_death_card({
+					"character_name": message.get("character_name", "Unknown"),
+					"level": int(message.get("level", 1)),
+					"race": message.get("race", ""),
+					"class_type": message.get("class_type", ""),
+					"cause_of_death": message.get("cause_of_death", "Unknown"),
+					"rounds_fought": int(message.get("rounds_fought", 0)),
+					"total_damage_dealt": int(message.get("total_damage_dealt", 0)),
+					"total_damage_taken": int(message.get("total_damage_taken", 0)),
+					"baddie_points_earned": int(message.get("baddie_points_earned", 0)),
+					"leaderboard_rank": int(message.get("leaderboard_rank", 0)),
+					"continue_key": get_action_key_name(0),
+				})
 			# Show final HP (can be negative) on the bar - visual fill clamped at 0%
 			var final_hp = message.get("player_hp", 0)
 			var final_max_hp = message.get("player_max_hp", character_data.get("total_max_hp", character_data.get("max_hp", 1)))
@@ -21266,8 +21309,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.206 changes
+	display_game("[color=#00FF00]v0.9.206[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Death card + Magic Bolt fixes + Variant borders[/color]")
+	display_game("  • In-panel Death Card: when you fall, an eulogy card now shows inside the battle scene panel (name, class, cause of death, damage dealt/taken, baddie points, leaderboard rank). [Space] to continue, [L] for the full legacy eulogy view")
+	display_game("  • Magic Bolt suggestion now matches the HP bar — uses server's actual max HP when known, so variant monsters (Shield Guardian, Elite, etc.) get accurate suggestions instead of base-name estimates")
+	display_game("  • Magic Bolt buffer dropped from 18% → 5% — the conservative defense/level estimates were already adding margin; the extra 18% was compounding into ~25% overkill")
+	display_game("  • Variant border on monster ASCII: when a monster rolls a special variant (Weapon Master / Shield Guardian / Corrosive / Sundering / Elite), the silhouette outline glows in a variant-specific color (orange-red / steel blue / acid green / rust orange / gold) so you can spot variants at a glance")
+	display_game("")
+
 	# v0.9.205 changes
-	display_game("[color=#00FF00]v0.9.205[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.205[/color]")
 	display_game("  [color=#FFD700]ASCII Battle Art: hand-drawn class sprites in combat[/color]")
 	display_game("  • All 9 classes now use original ASCII battle art instead of the LPC PNG sprites — Fighter, Barbarian, Paladin, Wizard, Sorcerer, Sage, Thief, Ranger, Ninja each get their own art")
 	display_game("  • Companion ASCII and player ASCII share a single row at the bottom of the player column, just above the HP bar — easier to read the whole party formation in one glance")
@@ -21306,16 +21358,6 @@ func display_changelog():
 	display_game("  • Companion Inspect screen now properly shows the variant-colored ASCII art on the right (was missing in the visual panel — game_output version had it but was hidden behind the panel)")
 	display_game("  • Bugfix: Inspect via the action bar — pressing a number key after Inspect now actually shows the companion details inside the panel instead of bouncing back to the list")
 	display_game("  • Server sends each visible companion's full data (level / tier / sub-tier / variant / xp / bonuses) so the inspect view is identical whether it's yours or someone else's")
-	display_game("")
-
-	# v0.9.201 changes
-	display_game("[color=#00FFFF]v0.9.201[/color]")
-	display_game("  [color=#FFD700]Map Sprites: class sprites on the world map[/color]")
-	display_game("  • Your class sprite now stands on your tile on the world map — no more @ — and you can see other visible players' sprites at their grid positions instead of just a colored letter")
-	display_game("  • Sprites face the direction of last movement (north/south/east/west) using the LPC walk-row idle frames; defaults to right-facing")
-	display_game("  • Sprite is 32×32 pixels, larger than a single map cell — covers the player letter underneath. Cell-position math accounts for the centered map block + header lines so sprites stay locked to their tiles when you move")
-	display_game("  • Server now ships each visible player's class with the position list so other clients know which sprite to draw")
-	display_game("  • Sprites hide automatically during combat (battle scene takes over) and during character select")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -23765,6 +23807,25 @@ func clear_game_output():
 	if game_output:
 		game_output.clear()
 
+func _get_variant_border_color(variant_type: String) -> String:
+	"""Map a server variant_type to the BBCode color used for the monster
+	ASCII art's border (first/last non-whitespace char of each line). Empty
+	string = no border applied."""
+	match variant_type:
+		"weapon_master":
+			return "#FF7733"  # aggressive orange-red — they hit harder
+		"shield_guardian":
+			return "#5599DD"  # steel blue — defensive variant
+		"corrosive":
+			return "#88FF22"  # acid green — drips/melts
+		"sunder":
+			return "#CC5522"  # rust orange — destroys gear
+		"elite":
+			return "#FFD700"  # gold — rare & dangerous
+		_:
+			return ""
+
+
 func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	"""A1 — render the combat scene panel from the current combat_state."""
 	if combat_scene_panel == null:
@@ -23797,6 +23858,14 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	if monster_art_inst:
 		var raw_art = monster_art_inst.get_monster_ascii_art(monster_base_name)
 		if raw_art != "":
+			# Apply variant border tint when this monster rolled a special
+			# variant (Shield Guardian / Weapon Master / Corrosive / Sunder
+			# / Elite). The first and last non-whitespace char of each line
+			# get re-colored in the variant hue; the natural body color stays.
+			var variant_type = str(combat_state.get("variant_type", ""))
+			var border_color = _get_variant_border_color(variant_type)
+			if border_color != "":
+				raw_art = MonsterArt.apply_variant_border(raw_art, border_color)
 			# Use the original game-output font size — most monsters override
 			# to 3-6. The right column is narrower than full game_output but
 			# wider than half, and clip_contents handles any overflow.
