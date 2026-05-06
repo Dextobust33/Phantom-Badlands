@@ -275,7 +275,8 @@ git add VERSION.txt && git commit -m "vX.Y.Z: description" && git push
 
 # 4. Create ZIPs (client + launcher — BOTH must be in every release)
 cp VERSION.txt builds/VERSION.txt
-powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'builds/VERSION.txt' -DestinationPath 'releases/phantom-badlands-client-vX.Y.Z.zip' -Force"
+cp CREDITS.md builds/CREDITS.md
+powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'builds/VERSION.txt', 'builds/CREDITS.md' -DestinationPath 'releases/phantom-badlands-client-vX.Y.Z.zip' -Force"
 powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsLauncher.exe' -DestinationPath 'releases/phantom-badlands-launcher.zip' -Force"
 
 # 5. Create GitHub release (MUST include both ZIPs)
