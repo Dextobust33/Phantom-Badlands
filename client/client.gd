@@ -1120,6 +1120,12 @@ var harvest_saves_remaining: int = 0
 var harvest_mastery_label: String = ""
 var harvest_mastery_count: int = 0
 
+# Admin menu (visual /admin) — toggled by /admin slash command. Only useful
+# for admin accounts; non-admins still see the menu but server commands fail
+# with the standard "Admin access required" reply.
+var admin_mode: bool = false
+var admin_submenu: String = ""  # "", "test_b2", "items", "combat", "misc"
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -5350,7 +5356,9 @@ func update_action_bar():
 	# Reset status page background if active (gets set in display_character_status)
 	_reset_game_output_background()
 
-	if settings_mode:
+	if admin_mode:
+		current_actions = _build_admin_action_bar()
+	elif settings_mode:
 		# Settings mode - actions handled by _input(), show info only
 		if rebinding_action != "":
 			current_actions = [
@@ -9953,6 +9961,11 @@ func execute_local_action(action: String):
 			send_to_server({"type": "party_appoint_leader", "target": target_name})
 			party_appoint_mode = false
 			update_action_bar()
+		return
+
+	# Handle admin menu actions before match
+	if action.begins_with("admin_"):
+		_handle_admin_action(action)
 		return
 
 	# Handle dynamic egg freeze toggle actions before match
@@ -18335,7 +18348,7 @@ func send_input():
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
-		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite", "condensed"]
+		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite", "condensed", "admin"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
 		# Mage abilities
@@ -18827,6 +18840,10 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	var is_tier_value = level >= 1 and level <= 7
 	var tier_data = CONSUMABLE_TIERS.get(level, CONSUMABLE_TIERS[1]) if is_tier_value else {}
 
+	# Companion Revive Potion — flat-tier item, revives KO'd companion at fixed %.
+	# Must be checked BEFORE generic "potion_*" / "potion in item_type" branches.
+	if item_type == "potion_revive_companion":
+		return "Revives a knocked-out companion at 50% HP. Usable in or out of combat."
 	# Elixirs - pure % max HP healing
 	if is_tier_value and (item_type == "elixir" or item_type.begins_with("elixir_")):
 		var elixir_pcts = {"elixir_minor": 50, "elixir_greater": 70, "elixir_divine": 100}
@@ -19206,6 +19223,8 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		# ===== GM COMMANDS =====
+		"admin":
+			open_admin_menu()
 		"gmhelp":
 			display_gm_help()
 		"setlevel":
@@ -21501,8 +21520,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.213 changes
+	display_game("[color=#00FF00]v0.9.213[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Juice Phase B2 — companion polish + visual admin menu[/color]")
+	display_game("  • Companion damage reduction: tankier sub-tier companions now actually feel tougher. Each sub-tier gives +3%% damage reduction (sub-tier 8 = 24%%, sub-tier 9 = 27%%) on hits taken from monsters. Damage absorbed shows as a cyan log line: 'Sub-tier 8 toughness absorbs 12 damage.'")
+	display_game("  • New consumable: [color=#FFD700]Companion Revive Potion[/color] — drops at tiers 6-9, instantly revives a KO'd companion at 50%% HP. Usable in OR out of combat (in-combat use is a free action). The previous design forced you to walk to a healer to revive a KO'd pet; this gives you a portable option")
+	display_game("  • New /admin slash command opens a visual categorized menu — Test B2, Items, Combat, Misc — with action-bar buttons. Replaces the chore of typing /giveconsumable / /giveall / /spawnmonster commands one at a time")
+	display_game("  • One-click Phase B2 test scenario: /admin → Test B2 → Setup B2 spawns a fresh sub-tier 8 companion, KOs it, and stocks 3x revive potions + 5x healing elixirs so admins can verify the new mechanics end-to-end without grinding setup")
+	display_game("  • Existing /give* / /godmode / /spawnmonster commands still work as fallbacks; /gmhelp now lists /admin alongside the text commands")
+	display_game("")
+
 	# v0.9.212 changes
-	display_game("[color=#00FF00]v0.9.212[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.212[/color]")
 	display_game("  [color=#FFD700]Crafted scroll fix + actor headers + companion HP visibility[/color]")
 	display_game("  • Crafted buff scrolls now apply the values shown on inspect — a Masterwork Scroll of Rage that says '+18 Attack for 10 rounds' actually gives +18 attack for 10 rounds. Previously combat applied a tier-formula (~10% of attack for 1 battle) that ignored the scroll's recipe data; out-of-combat use had the same bug. Both paths now read item.effect.amount / bonus_pct / duration directly when crafted")
 	display_game("  • Crafted scroll quality scaling extended to bonus_pct fields too — a 25% buff at base quality now scales to 31% Masterwork / 12% Poor instead of staying flat at 25% regardless")
@@ -21540,15 +21569,6 @@ func display_changelog():
 	display_game("  • DoT tags in the per-turn summary now include duration: 'Bleed 4 (3T)' / 'Poison 4 (2T)' so you can see how many ticks remain at a glance, pulled from the same server status feed that drives the strip under each HP bar")
 	display_game("  • game_output no longer mirrors combat narrative during a fight — the panel log is the single source of truth while the battle scene is up. After combat ends, game_output stays clean (no wall-of-text scrollback). Press [L] during the victory/death interlude to dump the panel's combat log into game_output for the legacy wall-of-text view")
 	display_game("  • Legacy [L] view header restored: monster name + ASCII art now opens the wall-of-text the same way the old detail view used to render")
-	display_game("")
-
-	# v0.9.208 changes
-	display_game("[color=#00FFFF]v0.9.208[/color]")
-	display_game("  [color=#FFD700]Combat-Scene Migration: DoT ticks + status strip[/color]")
-	display_game("  • DoT and proc damage now spawns small tag-colored floating numbers above the affected combatant — Bleed (red), Poison (green), Thorns (grey), Reflect (magenta), Charm (pink), Curse (purple), Wild Magic backfire (deep purple) — so you can see ticks land at a glance instead of just reading them in the log")
-	display_game("  • New status-effect strip under each HP bar in the battle scene: shows active buffs, debuffs, and DoT timers as compact tag chips (Bld 4x3T = bleed 4 damage × 3 turns left, Hst 5T = haste 5 turns, FF 30 = forcefield with 30 shield, Stn 1T = stunned 1 turn, etc.)")
-	display_game("  • Player side shows poison, blind, cloak, forcefield, and any active_buffs (haste, fortify, iron skin, war cry, berserk, vampiric, etc.); monster side shows bleed, poison, stun, charm, weakness, slow")
-	display_game("  • Server now ships full status state in every combat_update so the strip stays accurate across rounds (additive fields — old clients ignore them)")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -23944,6 +23964,231 @@ func display_game(text: String):
 	if game_output:
 		game_output.append_text(text + "\n")
 
+func open_admin_menu() -> void:
+	"""Open the visual admin menu (/admin). Top-priority chat-mode menu so it
+	overrides whatever the player was doing. Server-side commands are still
+	gated by _is_admin() — non-admin accounts will see the menu but every
+	action will reply with 'Admin access required'."""
+	admin_mode = true
+	admin_submenu = ""
+	display_admin_menu()
+	update_action_bar()
+
+func close_admin_menu() -> void:
+	"""Exit admin mode and return the player to normal play."""
+	admin_mode = false
+	admin_submenu = ""
+	display_game("[color=#808080][Admin menu closed.][/color]")
+	update_action_bar()
+
+func display_admin_menu() -> void:
+	"""Top-level admin menu page."""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]              ADMIN MENU[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("Pick a category. All commands are server-gated — non-admin")
+	display_game("accounts will be rejected with [color=#FF0000]'Admin access required'[/color].")
+	display_game("")
+	display_game("  [color=#3DD9FF]Q[/color]  Test B2 — companion polish (DR + revive items)")
+	display_game("  [color=#3DD9FF]W[/color]  Items   — give items, consumables, mats")
+	display_game("  [color=#3DD9FF]E[/color]  Combat  — spawn monsters, godmode")
+	display_game("  [color=#3DD9FF]R[/color]  Misc    — heal, reset quests, revive companion")
+	display_game("")
+	display_game("  [color=#808080]Space  Close[/color]")
+
+func display_admin_test_b2_menu() -> void:
+	"""Phase B2 test scenario sub-menu."""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]      ADMIN — TEST PHASE B2[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("Test scenarios for the v0.9.213 companion polish bundle:")
+	display_game("companion damage reduction (per sub-tier) and the new")
+	display_game("[color=#FFD700]Companion Revive Potion[/color] consumable.")
+	display_game("")
+	display_game("  [color=#3DD9FF]Q[/color]  [b]Setup B2 Test Scenario[/b]")
+	display_game("       Gives a fresh sub-tier 8 companion (24%% DR), KOs it,")
+	display_game("       and stocks 3x revive potions + 5x healing elixirs.")
+	display_game("")
+	display_game("  [color=#3DD9FF]W[/color]  KO Active Companion (instant)")
+	display_game("  [color=#3DD9FF]E[/color]  Revive Companion to Full HP")
+	display_game("  [color=#3DD9FF]R[/color]  Give 3x Companion Revive Potion")
+	display_game("  [color=#3DD9FF]1[/color]  Spawn Monster (own level) — to fight after setup")
+	display_game("")
+	display_game("  [color=#808080]Space  Back[/color]")
+
+func display_admin_items_menu() -> void:
+	"""Items / consumables sub-menu."""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]         ADMIN — ITEMS[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("  [color=#3DD9FF]Q[/color]  Give Tier 5 Item (random slot)")
+	display_game("  [color=#3DD9FF]W[/color]  Give Tier 8 Item (random slot)")
+	display_game("  [color=#3DD9FF]E[/color]  Give 5x Hedge Elixir (T7)")
+	display_game("  [color=#3DD9FF]R[/color]  Give Starter Kit (/giveall equivalent)")
+	display_game("  [color=#3DD9FF]1[/color]  Give Egg (random monster type)")
+	display_game("  [color=#3DD9FF]2[/color]  Give Companion (random, T5)")
+	display_game("")
+	display_game("  [color=#808080]Space  Back[/color]")
+
+func display_admin_combat_menu() -> void:
+	"""Combat / encounter sub-menu."""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]        ADMIN — COMBAT[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("  [color=#3DD9FF]Q[/color]  Spawn Monster (own level)")
+	display_game("  [color=#3DD9FF]W[/color]  Spawn Wish Granter (1 HP, 100%% wish)")
+	display_game("  [color=#3DD9FF]E[/color]  Toggle Godmode")
+	display_game("")
+	display_game("  [color=#808080]Space  Back[/color]")
+
+func display_admin_misc_menu() -> void:
+	"""Misc / utility sub-menu."""
+	game_output.clear()
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("[color=#FF4444]         ADMIN — MISC[/color]")
+	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
+	display_game("")
+	display_game("  [color=#3DD9FF]Q[/color]  Heal Self (full HP / mana / stamina)")
+	display_game("  [color=#3DD9FF]W[/color]  Revive Companion (full HP)")
+	display_game("  [color=#3DD9FF]E[/color]  Reset Active Quests")
+	display_game("  [color=#3DD9FF]R[/color]  Show /gmhelp text reference")
+	display_game("")
+	display_game("  [color=#808080]Space  Back[/color]")
+
+func _build_admin_action_bar() -> Array:
+	"""Build the action bar slots for the current admin sub-menu. Slot 0 (Space)
+	is always Back/Close, slots 1-4 (Q/W/E/R) are sub-menu options, slots 5-9
+	(1-5) host overflow buttons when needed."""
+	var blank := {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+	if admin_submenu == "":
+		return [
+			{"label": "Close", "action_type": "local", "action_data": "admin_close", "enabled": true},
+			{"label": "Test B2", "action_type": "local", "action_data": "admin_open_test_b2", "enabled": true},
+			{"label": "Items", "action_type": "local", "action_data": "admin_open_items", "enabled": true},
+			{"label": "Combat", "action_type": "local", "action_data": "admin_open_combat", "enabled": true},
+			{"label": "Misc", "action_type": "local", "action_data": "admin_open_misc", "enabled": true},
+			blank, blank, blank, blank, blank,
+		]
+	elif admin_submenu == "test_b2":
+		return [
+			{"label": "Back", "action_type": "local", "action_data": "admin_back_root", "enabled": true},
+			{"label": "Setup B2", "action_type": "local", "action_data": "admin_b2_setup", "enabled": true},
+			{"label": "KO Pet", "action_type": "local", "action_data": "admin_b2_ko_pet", "enabled": true},
+			{"label": "Revive Pet", "action_type": "local", "action_data": "admin_b2_revive_pet", "enabled": true},
+			{"label": "Give Revive x3", "action_type": "local", "action_data": "admin_b2_give_revive", "enabled": true},
+			{"label": "Spawn Mob", "action_type": "local", "action_data": "admin_b2_spawn_mob", "enabled": true},
+			blank, blank, blank, blank,
+		]
+	elif admin_submenu == "items":
+		return [
+			{"label": "Back", "action_type": "local", "action_data": "admin_back_root", "enabled": true},
+			{"label": "T5 Item", "action_type": "local", "action_data": "admin_items_t5", "enabled": true},
+			{"label": "T8 Item", "action_type": "local", "action_data": "admin_items_t8", "enabled": true},
+			{"label": "5x Elixir", "action_type": "local", "action_data": "admin_items_elixirs", "enabled": true},
+			{"label": "Starter Kit", "action_type": "local", "action_data": "admin_items_giveall", "enabled": true},
+			{"label": "Egg", "action_type": "local", "action_data": "admin_items_egg", "enabled": true},
+			{"label": "Companion", "action_type": "local", "action_data": "admin_items_companion", "enabled": true},
+			blank, blank, blank,
+		]
+	elif admin_submenu == "combat":
+		return [
+			{"label": "Back", "action_type": "local", "action_data": "admin_back_root", "enabled": true},
+			{"label": "Spawn Mob", "action_type": "local", "action_data": "admin_combat_spawn", "enabled": true},
+			{"label": "Wish", "action_type": "local", "action_data": "admin_combat_wish", "enabled": true},
+			{"label": "Godmode", "action_type": "local", "action_data": "admin_combat_godmode", "enabled": true},
+			blank, blank, blank, blank, blank, blank,
+		]
+	elif admin_submenu == "misc":
+		return [
+			{"label": "Back", "action_type": "local", "action_data": "admin_back_root", "enabled": true},
+			{"label": "Heal Self", "action_type": "local", "action_data": "admin_misc_heal", "enabled": true},
+			{"label": "Revive Pet", "action_type": "local", "action_data": "admin_misc_revive_pet", "enabled": true},
+			{"label": "Reset Quests", "action_type": "local", "action_data": "admin_misc_reset_quests", "enabled": true},
+			{"label": "/gmhelp", "action_type": "local", "action_data": "admin_misc_gmhelp", "enabled": true},
+			blank, blank, blank, blank, blank,
+		]
+	return [blank, blank, blank, blank, blank, blank, blank, blank, blank, blank]
+
+func _handle_admin_action(action: String) -> void:
+	"""Dispatch admin menu button presses. All server-side commands are
+	gated by _is_admin() — non-admin accounts get a clean rejection."""
+	match action:
+		"admin_close":
+			close_admin_menu()
+		"admin_back_root":
+			admin_submenu = ""
+			display_admin_menu()
+			update_action_bar()
+		"admin_open_test_b2":
+			admin_submenu = "test_b2"
+			display_admin_test_b2_menu()
+			update_action_bar()
+		"admin_open_items":
+			admin_submenu = "items"
+			display_admin_items_menu()
+			update_action_bar()
+		"admin_open_combat":
+			admin_submenu = "combat"
+			display_admin_combat_menu()
+			update_action_bar()
+		"admin_open_misc":
+			admin_submenu = "misc"
+			display_admin_misc_menu()
+			update_action_bar()
+		# ===== Test B2 sub-menu =====
+		"admin_b2_setup":
+			send_to_server({"type": "gm_test_b2"})
+		"admin_b2_ko_pet":
+			send_to_server({"type": "gm_ko_companion"})
+		"admin_b2_revive_pet":
+			send_to_server({"type": "gm_revive_companion"})
+		"admin_b2_give_revive":
+			# 3x potion_revive_companion
+			for i in range(3):
+				send_to_server({"type": "gm_giveconsumable", "item_type": "potion_revive_companion", "tier": 6})
+		"admin_b2_spawn_mob":
+			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
+		# ===== Items sub-menu =====
+		"admin_items_t5":
+			send_to_server({"type": "gm_giveitem", "tier": 5, "slot": ""})
+		"admin_items_t8":
+			send_to_server({"type": "gm_giveitem", "tier": 8, "slot": ""})
+		"admin_items_elixirs":
+			for i in range(5):
+				send_to_server({"type": "gm_giveconsumable", "item_type": "elixir_minor", "tier": 7})
+		"admin_items_giveall":
+			send_to_server({"type": "gm_giveall"})
+		"admin_items_egg":
+			send_to_server({"type": "gm_giveegg", "monster_type": ""})
+		"admin_items_companion":
+			send_to_server({"type": "gm_givecompanion", "monster_type": "", "tier": 5})
+		# ===== Combat sub-menu =====
+		"admin_combat_spawn":
+			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
+		"admin_combat_wish":
+			send_to_server({"type": "gm_spawnwish"})
+		"admin_combat_godmode":
+			send_to_server({"type": "gm_godmode"})
+		# ===== Misc sub-menu =====
+		"admin_misc_heal":
+			send_to_server({"type": "gm_heal"})
+		"admin_misc_revive_pet":
+			send_to_server({"type": "gm_revive_companion"})
+		"admin_misc_reset_quests":
+			send_to_server({"type": "gm_resetquests"})
+		"admin_misc_gmhelp":
+			# Close menu so the gmhelp text isn't immediately overwritten.
+			close_admin_menu()
+			display_gm_help()
+
 func display_gm_help():
 	"""Display all available GM/Admin commands"""
 	game_output.clear()
@@ -23980,6 +24225,10 @@ func display_gm_help():
 	display_game("[color=#FFD700]Security:[/color]")
 	display_game("  /banip <ip> [reason]  Ban an IP address")
 	display_game("  /unbanip <ip>         Unban an IP address")
+	display_game("")
+	display_game("[color=#FFD700]Visual Menu:[/color]")
+	display_game("  /admin                Visual admin menu (categorized buttons)")
+	display_game("                         — includes Test B2 scenario setup")
 	display_game("")
 	display_game("[color=#808080]All commands are server-gated. Non-admin accounts get 'Admin access required'.[/color]")
 	display_game("[color=#808080]Admin characters are excluded from all leaderboards.[/color]")

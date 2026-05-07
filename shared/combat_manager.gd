@@ -3405,7 +3405,21 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	# Apply effect
 	# Check for crafted item's own effect data (quality-scaled amounts from recipe)
 	var item_effect = item.get("effect", {})
-	if effect.has("heal"):
+	if effect.has("revive_companion"):
+		# Companion Revive Potion — instantly revives a KO'd active companion
+		# at revive_pct% of max HP. In-combat path: consumes the player's turn.
+		if not character.has_active_companion():
+			return {"success": false, "message": "You have no active companion to revive."}
+		if not character.is_companion_ko():
+			return {"success": false, "message": "Your companion isn't knocked out — no need to use this."}
+		var revive_pct: int = int(effect.get("revive_pct", 50))
+		var comp_max: int = character.get_companion_max_hp()
+		var revive_hp: int = maxi(1, int(comp_max * revive_pct / 100.0))
+		character.set_companion_combat_hp(revive_hp)
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		messages.append("[color=#FFD700]You use the %s![/color]" % item_name)
+		messages.append("[color=#00FF00]Your %s rises with %d/%d HP![/color]" % [comp_name, revive_hp, comp_max])
+	elif effect.has("heal"):
 		# Phase B1 — KO'd companion can only be revived by a healer / NPC,
 		# never by potions or natural regen. Reject here with a clear msg
 		# instead of silently consuming the potion.
@@ -3900,13 +3914,25 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 		if target_companion:
 			var comp_hp_before: int = character.get_companion_combat_hp()
-			var comp_new_hp: int = maxi(0, comp_hp_before - total_damage)
+			# Per-sub_tier damage reduction so tankier companions feel tougher.
+			# 3% per sub_tier, capped at 27% (sub_tier 9). Tracks the same
+			# sub_tier scaling already used for HP pool / variant bonuses.
+			var comp_sub_tier: int = int(character.get_active_companion().get("sub_tier", 1))
+			var comp_dr_pct: int = clampi(comp_sub_tier * 3, 0, 27)
+			var damage_to_companion: int = total_damage
+			var dr_amount: int = 0
+			if comp_dr_pct > 0:
+				dr_amount = int(total_damage * comp_dr_pct / 100.0)
+				damage_to_companion = maxi(1, total_damage - dr_amount)
+			var comp_new_hp: int = maxi(0, comp_hp_before - damage_to_companion)
 			character.set_companion_combat_hp(comp_new_hp)
 			combat["total_damage_taken"] = combat.get("total_damage_taken", 0)  # companion damage not counted toward player
 			if num_attacks > 1:
-				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, hits, total_damage])
+				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, hits, damage_to_companion])
 			else:
-				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, total_damage])
+				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, damage_to_companion])
+			if dr_amount > 0:
+				messages.append("[color=#3DD9FF]  Sub-tier %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
 			if comp_new_hp <= 0 and comp_hp_before > 0:
 				messages.append("[color=#808080]Your %s is knocked out![/color]" % companion_target_name)
 			return {"success": true, "message": "\n".join(messages), "companion_hit": true}
