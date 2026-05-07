@@ -1353,6 +1353,12 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_unbanip(peer_id, message)
 		"gm_resetpw":
 			handle_gm_resetpw(peer_id, message)
+		"gm_ko_companion":
+			handle_gm_ko_companion(peer_id)
+		"gm_revive_companion":
+			handle_gm_revive_companion(peer_id)
+		"gm_test_b2":
+			handle_gm_test_b2(peer_id)
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
@@ -6645,6 +6651,33 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battles, you deal +%d%% damage to %s creatures![/color]" % [item_name, battles, damage_bonus, type_display]
 		})
+	elif effect.has("revive_companion"):
+		# Companion Revive Potion — instantly revives a KO'd companion at
+		# revive_pct% of max HP. Works in or out of combat.
+		if not character.has_active_companion():
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "You have no active companion to revive."
+			})
+			return
+		if not character.is_companion_ko():
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "Your companion isn't knocked out — no need to use this."
+			})
+			return
+		var revive_pct: int = int(effect.get("revive_pct", 50))
+		var comp_max: int = character.get_companion_max_hp()
+		var revive_hp: int = maxi(1, int(comp_max * revive_pct / 100.0))
+		character.set_companion_combat_hp(revive_hp)
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You use the %s![/color]\n[color=#00FF00]Your %s is revived at %d/%d HP![/color]" % [item_name, comp_name, revive_hp, comp_max]
+		})
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
 	elif effect.has("resurrect"):
 		# Resurrect Scroll - Death prevention
 		var revive_percent = effect.get("revive_percent", 25)
@@ -23250,6 +23283,109 @@ func handle_gm_resetpw(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Password reset for '%s'[/color]" % username})
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed: %s[/color]" % result.get("reason", "Unknown error")})
+
+func handle_gm_ko_companion(peer_id: int):
+	"""Instantly KO the player's active companion for testing revive items."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	if not ch.has_active_companion():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFFF00][GM] No active companion to KO.[/color]"})
+		return
+	ch.set_companion_combat_hp(0)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	var comp_name: String = str(ch.active_companion.get("name", "your companion"))
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] %s is now KO'd. Test revive items / healer revive flow.[/color]" % comp_name})
+
+func handle_gm_revive_companion(peer_id: int):
+	"""Instantly revive the player's active companion to full HP."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	if not ch.has_active_companion():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFFF00][GM] No active companion to revive.[/color]"})
+		return
+	var max_hp: int = ch.get_companion_max_hp()
+	ch.set_companion_combat_hp(max_hp)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	var comp_name: String = str(ch.active_companion.get("name", "your companion"))
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] %s revived to full HP (%d).[/color]" % [comp_name, max_hp]})
+
+func handle_gm_test_b2(peer_id: int):
+	"""One-shot Phase B2 test setup. Gives the player a fresh max-DR
+	companion (sub_tier 8 -> 24% DR), KOs it immediately, and stocks
+	the inventory with revive potions + heal potions for end-to-end
+	testing of the revive item, companion-target heal, and DR display."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+
+	# 1) Build a fresh test companion (sub_tier 8 = 24% DR, level 50, big HP).
+	var monster_type: String = "Wolf"
+	var companion_data: Dictionary = DropTables.COMPANION_DATA.get(monster_type, {})
+	if companion_data.is_empty():
+		# Fall back to any known companion type if Wolf isn't defined
+		var keys: Array = DropTables.COMPANION_DATA.keys()
+		if keys.is_empty():
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No companion data available.[/color]"})
+			return
+		monster_type = keys[0]
+		companion_data = DropTables.COMPANION_DATA.get(monster_type, {})
+	var test_companion: Dictionary = {
+		"id": "gm_test_b2_" + str(randi()),
+		"monster_type": monster_type,
+		"name": "B2 Test " + str(companion_data.get("companion_name", monster_type + " Companion")),
+		"tier": 8,
+		"sub_tier": 8,
+		"level": 50,
+		"xp": 0,
+		"bonuses": companion_data.get("bonuses", {}).duplicate(),
+		"battles_fought": 0,
+		"variant": "Crimson",
+		"variant_color": "#DC143C",
+		"variant_color2": "",
+		"variant_pattern": "solid",
+		"variant_rarity": 10,
+		"obtained_at": int(Time.get_unix_time_from_system()),
+		"combat_hp": 0  # KO'd from the start
+	}
+	ch.collected_companions.append(test_companion)
+	ch.active_companion = test_companion.duplicate(true)
+
+	# 2) Stock the inventory with 3x companion revive potions + 5x elixirs.
+	var revive_drop: Dictionary = {"item_type": "potion_revive_companion", "rarity": "uncommon"}
+	var heal_drop: Dictionary = {"item_type": "elixir_minor", "rarity": "common"}
+	for i in range(3):
+		var revive_item: Dictionary = drop_tables._generate_item(revive_drop, 60)
+		if not revive_item.is_empty():
+			ch.add_item(revive_item)
+	for i in range(5):
+		var heal_item: Dictionary = drop_tables._generate_item(heal_drop, 100)
+		if not heal_item.is_empty():
+			ch.add_item(heal_item)
+
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	var summary: String = "\n".join([
+		"[color=#FFD700][GM] Phase B2 test scenario ready:[/color]",
+		"  • Active companion: [color=#DC143C]B2 Test Companion[/color] (sub-tier 8, ~24%% damage reduction)",
+		"  • Companion is [color=#FF4444]KO'd[/color] — try a revive potion to bring it back.",
+		"  • Inventory: 3x Companion Revive Potion, 5x Hedge Elixir.",
+		"  • Walk into combat (or use /spawnmonster) to see DR in action after reviving."
+	])
+	send_to_peer(peer_id, {"type": "text", "message": summary})
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""

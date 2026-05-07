@@ -542,6 +542,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+		{"weight": 2, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -559,6 +560,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 4, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -574,6 +576,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 	],
 	9: [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
@@ -594,6 +597,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
+		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 	],
 }
 
@@ -880,6 +884,8 @@ const POTION_EFFECTS = {
 	"scroll_resurrect_lesser": {"resurrect": true, "revive_percent": 25, "battles": 1},
 	# Greater Resurrect Scroll - Persists until you actually die, revive at 50% HP
 	"scroll_resurrect_greater": {"resurrect": true, "revive_percent": 50, "battles": -1},  # -1 = until death
+	# Companion Revive Potion - Instantly revives a KO'd companion at 50% HP. Usable in or out of combat.
+	"potion_revive_companion": {"revive_companion": true, "revive_pct": 50},
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
@@ -3322,6 +3328,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"scroll_time_stop": "Scroll of Time Stop",
 		"scroll_resurrect_lesser": "Lesser Scroll of Resurrection",
 		"scroll_resurrect_greater": "Greater Scroll of Resurrection",
+		"potion_revive_companion": "Companion Revive Potion",
 		# Tomes - stat
 		"tome_strength": "Tome of Strength",
 		"tome_constitution": "Tome of Constitution",
@@ -3364,7 +3371,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion":
 		return base_name
 
 	return tier_name + " " + base_name
