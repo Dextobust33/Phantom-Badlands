@@ -1,0 +1,222 @@
+extends Control
+class_name AdminPanel
+
+# Visual admin menu (/admin). Mouse-clickable categorized panel matching
+# the Inventory / Crafting / Market visual style. Replaces the previous
+# chat-mode action-bar menu which was unreachable while the input field
+# held focus.
+#
+# Pattern: each "page" is a vertical stack of big buttons. Clicking a
+# category button drills into a sub-page; clicking an action emits a
+# signal back to client.gd which dispatches the corresponding gm_*
+# server message.
+
+signal close_requested
+signal action_triggered(action_id: String)
+
+var _root_panel: PanelContainer
+var _vbox: VBoxContainer
+var _title_label: Label
+var _subtitle_label: RichTextLabel
+var _button_column: VBoxContainer
+
+var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc"
+
+
+func _ready() -> void:
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_STOP  # Block clicks behind the panel
+	_build_layout()
+	visible = false
+
+
+func open() -> void:
+	_current_page = "root"
+	_render_page()
+	visible = true
+
+
+func close() -> void:
+	visible = false
+
+
+func _build_layout() -> void:
+	# Dim backdrop
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+
+	# Centered panel
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(center)
+
+	_root_panel = PanelContainer.new()
+	_root_panel.custom_minimum_size = Vector2(440, 0)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.055, 0.045, 0.97)
+	sb.border_color = Color(0.85, 0.27, 0.27, 1)  # Red admin border
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 16
+	sb.content_margin_top = 14
+	sb.content_margin_right = 16
+	sb.content_margin_bottom = 14
+	_root_panel.add_theme_stylebox_override("panel", sb)
+	center.add_child(_root_panel)
+
+	_vbox = VBoxContainer.new()
+	_vbox.add_theme_constant_override("separation", 8)
+	_root_panel.add_child(_vbox)
+
+	# Title
+	_title_label = Label.new()
+	_title_label.add_theme_color_override("font_color", Color(0.95, 0.27, 0.27))
+	_title_label.add_theme_font_size_override("font_size", 20)
+	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vbox.add_child(_title_label)
+
+	# Subtitle / description
+	_subtitle_label = RichTextLabel.new()
+	_subtitle_label.bbcode_enabled = true
+	_subtitle_label.fit_content = true
+	_subtitle_label.scroll_active = false
+	_subtitle_label.add_theme_font_size_override("normal_font_size", 13)
+	_subtitle_label.custom_minimum_size = Vector2(0, 24)
+	_vbox.add_child(_subtitle_label)
+
+	# Spacer
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	_vbox.add_child(spacer)
+
+	# Button column (rebuilt per page)
+	_button_column = VBoxContainer.new()
+	_button_column.add_theme_constant_override("separation", 6)
+	_vbox.add_child(_button_column)
+
+
+func _render_page() -> void:
+	# Clear existing buttons
+	for child in _button_column.get_children():
+		child.queue_free()
+
+	match _current_page:
+		"root":
+			_title_label.text = "ADMIN MENU"
+			_subtitle_label.text = "[color=#aaaaaa]All commands are server-gated. Non-admin accounts will be rejected.[/color]"
+			_add_button("Test B2 — companion polish (DR + revive items)", "_page_test_b2", Color(1, 0.84, 0))
+			_add_button("Items — give items, consumables, materials", "_page_items")
+			_add_button("Combat — spawn monsters, godmode", "_page_combat")
+			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
+			_add_separator()
+			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
+		"test_b2":
+			_title_label.text = "ADMIN — TEST PHASE B2"
+			_subtitle_label.text = "[color=#aaaaaa]Test scenarios for the v0.9.213 companion polish bundle: per-sub_tier damage reduction and the new Companion Revive Potion.[/color]"
+			_add_button("Setup B2 Test Scenario  (recommended)", "gm_test_b2", Color(1, 0.84, 0))
+			_subtitle_subline("Gives a fresh sub-tier 8 companion (~24% DR), KOs it, and stocks 3x revive potions + 5x healing elixirs.")
+			_add_button("KO Active Companion (instant)", "gm_ko_companion")
+			_add_button("Revive Companion to Full HP", "gm_revive_companion")
+			_add_button("Give 3x Companion Revive Potion", "give_revive_x3")
+			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"items":
+			_title_label.text = "ADMIN — ITEMS"
+			_subtitle_label.text = "[color=#aaaaaa]Gear, consumables, and starter kit shortcuts.[/color]"
+			_add_button("Give Tier 5 Item (random slot)", "give_item_t5")
+			_add_button("Give Tier 8 Item (random slot)", "give_item_t8")
+			_add_button("Give 5x Hedge Elixir (T7 heal)", "give_elixirs")
+			_add_button("Give Starter Kit (Valor / gems / mats)", "gm_giveall")
+			_add_button("Give Egg (random monster type)", "give_egg")
+			_add_button("Give Companion (random, T5)", "give_companion_t5")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"combat":
+			_title_label.text = "ADMIN — COMBAT"
+			_subtitle_label.text = "[color=#aaaaaa]Force encounters and toggle invincibility.[/color]"
+			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
+			_add_button("Spawn Wish Granter (1 HP, 100% wish)", "gm_spawnwish")
+			_add_button("Toggle Godmode", "gm_godmode")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"misc":
+			_title_label.text = "ADMIN — MISC"
+			_subtitle_label.text = "[color=#aaaaaa]Self-heal, quest reset, companion revive.[/color]"
+			_add_button("Heal Self (full HP / mana / stamina)", "gm_heal")
+			_add_button("Revive Companion (full HP)", "gm_revive_companion")
+			_add_button("Reset Active Quests", "gm_resetquests")
+			_add_button("Show /gmhelp text reference", "show_gmhelp")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+
+
+func _add_button(label: String, action_id: String, font_color: Color = Color(1, 1, 1)) -> void:
+	var btn := Button.new()
+	btn.text = label
+	btn.custom_minimum_size = Vector2(0, 36)
+	btn.focus_mode = Control.FOCUS_NONE  # Don't steal keyboard focus
+	btn.add_theme_color_override("font_color", font_color)
+	btn.add_theme_font_size_override("font_size", 14)
+	var sb_normal := StyleBoxFlat.new()
+	sb_normal.bg_color = Color(0.13, 0.10, 0.08, 1)
+	sb_normal.border_color = Color(0.55, 0.30, 0.20, 1)
+	sb_normal.set_border_width_all(1)
+	sb_normal.set_corner_radius_all(4)
+	sb_normal.content_margin_left = 12
+	sb_normal.content_margin_right = 12
+	var sb_hover := sb_normal.duplicate()
+	sb_hover.bg_color = Color(0.20, 0.14, 0.10, 1)
+	sb_hover.border_color = Color(0.85, 0.50, 0.27, 1)
+	var sb_pressed := sb_normal.duplicate()
+	sb_pressed.bg_color = Color(0.25, 0.15, 0.10, 1)
+	btn.add_theme_stylebox_override("normal", sb_normal)
+	btn.add_theme_stylebox_override("hover", sb_hover)
+	btn.add_theme_stylebox_override("pressed", sb_pressed)
+	btn.pressed.connect(_on_button_pressed.bind(action_id))
+	_button_column.add_child(btn)
+
+
+func _add_separator() -> void:
+	var sep := HSeparator.new()
+	sep.add_theme_constant_override("separation", 6)
+	_button_column.add_child(sep)
+
+
+func _subtitle_subline(text: String) -> void:
+	"""Append a small grey line directly under the most recently added button."""
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.add_theme_font_size_override("normal_font_size", 11)
+	lbl.custom_minimum_size = Vector2(0, 16)
+	lbl.text = "[color=#888888]   " + text + "[/color]"
+	_button_column.add_child(lbl)
+
+
+func _on_button_pressed(action_id: String) -> void:
+	match action_id:
+		"_close":
+			emit_signal("close_requested")
+		"_back_root":
+			_current_page = "root"
+			_render_page()
+		"_page_test_b2":
+			_current_page = "test_b2"
+			_render_page()
+		"_page_items":
+			_current_page = "items"
+			_render_page()
+		"_page_combat":
+			_current_page = "combat"
+			_render_page()
+		"_page_misc":
+			_current_page = "misc"
+			_render_page()
+		_:
+			emit_signal("action_triggered", action_id)
