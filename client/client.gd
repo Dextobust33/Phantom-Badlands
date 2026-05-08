@@ -14351,7 +14351,8 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
-			item_type == "soul_gem" or item_type.begins_with("home_stone_"))
+			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
+			item_type.begins_with("charm_"))
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
@@ -18848,6 +18849,9 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	# Must be checked BEFORE generic "potion_*" / "potion in item_type" branches.
 	if item_type == "potion_revive_companion":
 		return "Revives a knocked-out companion at 50% HP. Usable in or out of combat."
+	# Taunt Charm — companion draws extra aggro for a few monster turns.
+	if item_type == "charm_taunt":
+		return "Companion draws +30% aggro for next 3 monster turns. Combat-only."
 	# Elixirs - pure % max HP healing
 	if is_tier_value and (item_type == "elixir" or item_type.begins_with("elixir_")):
 		var elixir_pcts = {"elixir_minor": 50, "elixir_greater": 70, "elixir_divine": 100}
@@ -21524,11 +21528,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.215 changes
+	display_game("[color=#00FF00]v0.9.215[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Juice Phase B2 — companion aggro + Taunt Charm[/color]")
+	display_game("  • Companions now have an [color=#FF8800]Aggro stat[/color] that controls how often monsters target them instead of you. Tank-archetype companions (Iron Golem 65%%, Giant 60%%, Gargoyle 55%%, Titan 60%%, etc.) draw far more attacks than evasive ones (Wraith 8%%, Goblin / Wight / Siren / Lich / Nazgul / Time Weaver 12%%). Replaces the flat 25%% roll from B1")
+	display_game("  • Aggro is shown on the companion inspect screen with a label: [color=#FFD700]Tank[/color] (50+) / [color=#FFA500]Fighter[/color] (30-49) / [color=#FFFFFF]Default[/color] (20-29) / [color=#87CEEB]Evasive[/color] (<20). Pick a Bear or Golem if you want a meat shield; pick a Wraith or Time Weaver if you want a glass-cannon damage dealer")
+	display_game("  • New consumable: [color=#FF8800]Taunt Charm[/color] (drops T6-9). Combat-only — uses a free action to add +30%% aggro to your companion for the next 3 monster turns. Stacks additively, soft-capped at 80%% aggro")
+	display_game("  • Admin /admin Test B2 scenario now also stocks 3x Taunt Charm and adds a [b]Give 3x Taunt Charm[/b] button under Test B2")
+	display_game("")
+
 	# v0.9.214 changes
-	display_game("[color=#00FF00]v0.9.214[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.214[/color]")
 	display_game("  [color=#FFD700]Visual admin panel hotfix[/color]")
 	display_game("  • The v0.9.213 /admin menu was a chat-mode action-bar popup that didn't actually work — input field kept focus after typing /admin, so QWER keys were typed into chat instead of triggering the buttons. Replaced with a proper visual panel overlay (mouse-clickable category buttons in a dark-red bordered modal) matching the Inventory / Crafting / Market style")
-	display_game("  • Same actions as before: Test B2 setup, Items / Combat / Misc sub-pages, with click navigation. Drill into a category, click an action, click Back. The panel intercepts clicks behind it so you can't accidentally walk while it's open")
 	display_game("")
 
 	# v0.9.213 changes
@@ -21556,18 +21568,6 @@ func display_changelog():
 	display_game("  • Tier (Minor / Lesser / Standard / Greater / Major / Superior / Master / Mythic / Primordial) is now the only progression for dropped consumables. What you see is what you get")
 	display_game("  • Crafted potion bug fix: out-of-combat use now actually applies the quality-scaled amount shown on hover. A Masterwork Health Potion that says 'Restores 187 HP' on inspect now restores 187 HP when drunk from inventory (previously would heal 0 because the inventory-use path ignored the item's own effect data)")
 	display_game("  • Tomes, Home Stones, and Mysterious Boxes keep their rarity since those are meaningful tiers for those item categories")
-	display_game("")
-
-	# v0.9.210 changes
-	display_game("[color=#00FFFF]v0.9.210[/color]")
-	display_game("  [color=#FFD700]Combat Juice Phase B1 — companions can be wounded and KO'd[/color]")
-	display_game("  • Companions now have their own combat HP pool (30 + level*5 + sub_tier*10 + hp_bonus) shown as a red bar under the companion ASCII in the battle scene")
-	display_game("  • 25% chance per monster turn to swing at the companion instead of you — 'The Goblin attacks your Spider for 8 damage!' with a floating damage label over the companion ASCII")
-	display_game("  • When companion HP hits 0 the companion is knocked out: ASCII grays out, the pet stops attacking, and the monster stops targeting it. KO'd state PERSISTS between fights")
-	display_game("  • Knocked-out companions can ONLY be revived by a healer NPC or healer station — not by potions, rest/meditate, or movement regen. The healer menu now shows the companion's HP and a '(revives + heals <name>)' tag when applicable")
-	display_game("  • Healing potions can target the companion in combat: pick a heal potion, then choose 'Use on yourself' or 'Use on <companion>' from the in-panel target picker")
-	display_game("  • Companion HP regenerates passively alongside the player — 1% per step on the overworld, 0.5% per step in dungeons, 10-25% on Rest, and 10-25% on Meditate. Rest/Meditate messages now call out companion recovery (or KO state) explicitly")
-	display_game("  • Healer NPC + station heals the companion at the same valor cost as the player heal — no separate trip required")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -22861,6 +22861,27 @@ func display_companion_inspection(companion: Dictionary):
 		info_lines.append("  %s" % ", ".join(combat_parts))
 	else:
 		info_lines.append("  [color=#808080]None[/color]")
+
+	# Phase B2 — Aggro display. Show the companion's chance to draw monster
+	# attacks instead of the player. Read raw aggro from base bonuses (no
+	# variant/sub_tier mult — the combat_manager uses raw values too).
+	var raw_aggro: int = int(bonuses.get("aggro", 25))
+	var aggro_label: String
+	var aggro_color: String
+	if raw_aggro >= 50:
+		aggro_label = "Tank"
+		aggro_color = "#FFD700"
+	elif raw_aggro >= 30:
+		aggro_label = "Fighter"
+		aggro_color = "#FFA500"
+	elif raw_aggro >= 20:
+		aggro_label = "Default"
+		aggro_color = "#FFFFFF"
+	else:
+		aggro_label = "Evasive"
+		aggro_color = "#87CEEB"
+	info_lines.append("  [color=#FF8800]Aggro:[/color] [color=%s]%d%% (%s)[/color]" % [aggro_color, raw_aggro, aggro_label])
+
 	if gather_parts.size() > 0:
 		info_lines.append("")
 		info_lines.append("[color=#9ACD32]── Gathering Bonuses ──[/color]")
@@ -24002,6 +24023,9 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"give_revive_x3":
 			for i in range(3):
 				send_to_server({"type": "gm_giveconsumable", "item_type": "potion_revive_companion", "tier": 6})
+		"give_taunt_x3":
+			for i in range(3):
+				send_to_server({"type": "gm_giveconsumable", "item_type": "charm_taunt", "tier": 5})
 		"spawn_mob_own_level":
 			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
 		# Items

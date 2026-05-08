@@ -6651,6 +6651,14 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battles, you deal +%d%% damage to %s creatures![/color]" % [item_name, battles, damage_bonus, type_display]
 		})
+	elif effect.has("companion_taunt"):
+		# Taunt Charm — combat-only. Out of combat there's no aggro to
+		# manipulate, so reject the use cleanly instead of consuming.
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Taunt Charm only works during combat — use it when a fight starts."
+		})
+		return
 	elif effect.has("revive_companion"):
 		# Companion Revive Potion — instantly revives a KO'd companion at
 		# revive_pct% of max HP. Works in or out of combat.
@@ -8057,7 +8065,7 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
-			item_type.begins_with("elixir_") or
+			item_type.begins_with("elixir_") or item_type.begins_with("charm_") or
 			item_type == "essence_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
@@ -23363,9 +23371,11 @@ func handle_gm_test_b2(peer_id: int):
 	ch.collected_companions.append(test_companion)
 	ch.active_companion = test_companion.duplicate(true)
 
-	# 2) Stock the inventory with 3x companion revive potions + 5x elixirs.
+	# 2) Stock the inventory with 3x companion revive potions + 5x elixirs +
+	#    3x taunt charms so the new aggro mechanic is testable too.
 	var revive_drop: Dictionary = {"item_type": "potion_revive_companion", "rarity": "uncommon"}
 	var heal_drop: Dictionary = {"item_type": "elixir_minor", "rarity": "common"}
+	var taunt_drop: Dictionary = {"item_type": "charm_taunt", "rarity": "uncommon"}
 	for i in range(3):
 		var revive_item: Dictionary = drop_tables._generate_item(revive_drop, 60)
 		if not revive_item.is_empty():
@@ -23374,16 +23384,21 @@ func handle_gm_test_b2(peer_id: int):
 		var heal_item: Dictionary = drop_tables._generate_item(heal_drop, 100)
 		if not heal_item.is_empty():
 			ch.add_item(heal_item)
+	for i in range(3):
+		var taunt_item: Dictionary = drop_tables._generate_item(taunt_drop, 60)
+		if not taunt_item.is_empty():
+			ch.add_item(taunt_item)
 
 	send_character_update(peer_id)
 	save_character(peer_id)
 
 	var summary: String = "\n".join([
 		"[color=#FFD700][GM] Phase B2 test scenario ready:[/color]",
-		"  • Active companion: [color=#DC143C]B2 Test Companion[/color] (sub-tier 8, ~24%% damage reduction)",
+		"  • Active companion: [color=#DC143C]B2 Test Companion[/color] (sub-tier 8, ~24%% damage reduction, Wolf 25%% aggro)",
 		"  • Companion is [color=#FF4444]KO'd[/color] — try a revive potion to bring it back.",
-		"  • Inventory: 3x Companion Revive Potion, 5x Hedge Elixir.",
-		"  • Walk into combat (or use /spawnmonster) to see DR in action after reviving."
+		"  • Inventory: 3x Companion Revive Potion, 5x Hedge Elixir, 3x Taunt Charm.",
+		"  • Walk into combat (or use /spawnmonster) to see DR in action after reviving.",
+		"  • Use Taunt Charm in-combat to test +30%% aggro for 3 monster turns."
 	])
 	send_to_peer(peer_id, {"type": "text", "message": summary})
 

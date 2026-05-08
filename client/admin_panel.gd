@@ -116,12 +116,13 @@ func _render_page() -> void:
 			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
 		"test_b2":
 			_title_label.text = "ADMIN — TEST PHASE B2"
-			_subtitle_label.text = "[color=#aaaaaa]Test scenarios for the v0.9.213 companion polish bundle: per-sub_tier damage reduction and the new Companion Revive Potion.[/color]"
+			_subtitle_label.text = "[color=#aaaaaa]Test scenarios for the Phase B2 companion polish bundle: per-sub_tier damage reduction, Companion Revive Potion, and the new aggro / Taunt Charm system.[/color]"
 			_add_button("Setup B2 Test Scenario  (recommended)", "gm_test_b2", Color(1, 0.84, 0))
-			_subtitle_subline("Gives a fresh sub-tier 8 companion (~24% DR), KOs it, and stocks 3x revive potions + 5x healing elixirs.")
+			_subtitle_subline("Sub-tier 8 companion (~24% DR), KO'd, +3x revive potions, 5x elixirs, 3x taunt charms.")
 			_add_button("KO Active Companion (instant)", "gm_ko_companion")
 			_add_button("Revive Companion to Full HP", "gm_revive_companion")
 			_add_button("Give 3x Companion Revive Potion", "give_revive_x3")
+			_add_button("Give 3x Taunt Charm", "give_taunt_x3")
 			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
