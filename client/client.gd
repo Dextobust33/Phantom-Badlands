@@ -3967,6 +3967,11 @@ func show_character_select_panel():
 	if char_select_panel:
 		char_select_panel.visible = true
 	update_character_list_display()
+	# Hide leftover map sprites from the previous session — _sync_map_sprites_overlay
+	# only runs on location updates, so without this nudge the prior character's
+	# sprite + companion stay visible to the right of the Sanctuary preview on
+	# the char-select screen.
+	_sync_map_sprites_overlay()
 
 func show_house_panel():
 	"""Show the house/sanctuary screen - roguelite meta-progression hub"""
@@ -5130,7 +5135,9 @@ func show_player_info_popup(data: Dictionary):
 	if v_name != "":
 		player_info_content.append_text("[center][color=%s]●[/color] [color=#888888]%s[/color][/center]\n" % [v_color, v_name])
 	# Variant-recolored class ASCII art so the popup shows the same look the
-	# player sees in combat / on the map.
+	# player sees in combat / on the map. Wrap in a monospace font BBCode tag
+	# because player_info_content uses a proportional font by default — without
+	# this the art skews horizontally as variable-width chars misalign columns.
 	var class_art = ClassAsciiArt.get_ascii_art(cls)
 	if class_art != "":
 		var rendered_art: String
@@ -5140,7 +5147,7 @@ func show_player_info_popup(data: Dictionary):
 		else:
 			rendered_art = "[color=%s]%s[/color]" % [v_color, class_art]
 		var art_font = max(1, ClassAsciiArt.get_font_size(cls) - 1)
-		player_info_content.append_text("[center][font_size=%d]%s[/font_size][/center]\n" % [art_font, rendered_art])
+		player_info_content.append_text("[center][font=res://font/Consolas/consolas.ttf][font_size=%d]%s[/font_size][/font][/center]\n" % [art_font, rendered_art])
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
@@ -21576,8 +21583,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.218 changes
+	display_game("[color=#00FF00]v0.9.218[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Appearance variants follow-up fixes[/color]")
+	display_game("  • Map hover tooltip ASCII art now matches what you see in the battle scene — previously the appearance fields weren't being plumbed through `get_nearby_players` (server) or the local map sprite metadata (client), so the tooltip fell back to a plain non-variant render. Fixed both paths")
+	display_game("  • Player-list popup ASCII art is no longer skewed horizontally — the popup's RichTextLabel uses a proportional font by default, which made variable-width chars break column alignment. Wrapping the art in a `[font=res://font/Consolas/consolas.ttf]` BBCode tag forces the same monospace render the battle scene uses")
+	display_game("  • Returning to character select no longer leaves the previous character's sprite + companion visible to the right of the Sanctuary. `_sync_map_sprites_overlay` is now called when entering CHARACTER_SELECT, hiding stale sprites since they were only being refreshed on world-map location updates")
+	display_game("")
+
 	# v0.9.217 changes
-	display_game("[color=#00FF00]v0.9.217[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.217[/color]")
 	display_game("  [color=#FFD700]Player appearance variants — random palette/pattern per character[/color]")
 	display_game("  • Each new character now rolls a random color palette + pattern from the same EGG_VARIANTS pool companions use (40+ variants spanning solid colors like Crimson/Azure/Verdant/Golden through gradient/pattern-based ones like Sunset/Volcanic/Twilight/Heart). The variant sticks to that character for life. Roll a new character → fresh variant")
 	display_game("  • Variant drives the recolor of your class ASCII art everywhere it shows up: battle scene panel, world-map hover tooltip, inspect/status page, and the player-list popup when someone clicks you")
@@ -21605,14 +21620,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.214[/color]")
 	display_game("  [color=#FFD700]Visual admin panel hotfix[/color]")
 	display_game("  • The v0.9.213 /admin menu was a chat-mode action-bar popup that didn't actually work — input field kept focus after typing /admin, so QWER keys were typed into chat instead of triggering the buttons. Replaced with a proper visual panel overlay (mouse-clickable category buttons in a dark-red bordered modal) matching the Inventory / Crafting / Market style")
-	display_game("")
-
-	# v0.9.213 changes
-	display_game("[color=#00FFFF]v0.9.213[/color]")
-	display_game("  [color=#FFD700]Combat Juice Phase B2 — companion polish + visual admin menu[/color]")
-	display_game("  • Companion damage reduction: tankier sub-tier companions now actually feel tougher. Each sub-tier gives +3%% damage reduction (sub-tier 8 = 24%%, sub-tier 9 = 27%%) on hits taken from monsters. Damage absorbed shows as a cyan log line: 'Sub-tier 8 toughness absorbs 12 damage.'")
-	display_game("  • New consumable: [color=#FFD700]Companion Revive Potion[/color] — drops at tiers 6-9, instantly revives a KO'd companion at 50%% HP. Usable in OR out of combat (in-combat use is a free action). The previous design forced you to walk to a healer to revive a KO'd pet; this gives you a portable option")
-	display_game("  • One-click Phase B2 test scenario for admins: /admin → Test B2 → Setup B2 spawns a fresh sub-tier 8 companion, KOs it, and stocks 3x revive potions + 5x healing elixirs so admins can verify the new mechanics end-to-end without grinding setup")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -26179,6 +26186,10 @@ func _sync_map_sprites_overlay() -> void:
 			"name": str(character_data.get("name", "")),
 			"class": local_cls,
 			"level": int(character_data.get("level", 1)),
+			"appearance_variant": str(character_data.get("appearance_variant", "")),
+			"appearance_color": str(character_data.get("appearance_color", "")),
+			"appearance_color2": str(character_data.get("appearance_color2", "")),
+			"appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 		})
 		var local_comp = character_data.get("active_companion", {})
 		_apply_companion_trail(_local_companion_label, local_comp, Vector2(lpx, lpy), _local_map_facing, cell_w, line_h)
@@ -26233,6 +26244,10 @@ func _sync_map_sprites_overlay() -> void:
 			"class": rcls,
 			"level": int(entry.get("level", 0)),
 			"in_my_party": bool(entry.get("in_my_party", false)),
+			"appearance_variant": str(entry.get("appearance_variant", "")),
+			"appearance_color": str(entry.get("appearance_color", "")),
+			"appearance_color2": str(entry.get("appearance_color2", "")),
+			"appearance_pattern": str(entry.get("appearance_pattern", "solid")),
 		})
 		var rcomp = entry.get("companion", {})
 		_apply_companion_trail(_remote_companion_pool[slot_idx], rcomp, Vector2(px, py), rfacing, cell_w, line_h)
