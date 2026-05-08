@@ -4497,7 +4497,14 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"level": other_char.level,
 				"class": other_char.get("class_type", ""),
 				"companion": comp_data,
-				"in_my_party": is_party_mate
+				"in_my_party": is_party_mate,
+				# Appearance variant — drives the recolor of this player's
+				# class ASCII art in hover tooltips, popup, etc. on the
+				# requesting client.
+				"appearance_variant": other_char.appearance_variant,
+				"appearance_color": other_char.appearance_color,
+				"appearance_color2": other_char.appearance_color2,
+				"appearance_pattern": other_char.appearance_pattern
 			})
 
 	return result
