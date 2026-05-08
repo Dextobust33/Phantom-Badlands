@@ -15,6 +15,12 @@ var client_ref = null
 # Cached state (last populate call)
 var _player_class: String = ""
 var _player_name: String = ""
+# Cosmetic appearance variant rolled at character creation. Drives per-line
+# pattern recolor of the player's class ASCII art so each character gets a
+# unique look. Populated via populate() payload.
+var _player_appearance_color: String = ""
+var _player_appearance_color2: String = ""
+var _player_appearance_pattern: String = "solid"
 var _player_hp: int = 0
 var _player_max_hp: int = 1
 var _companion_data: Dictionary = {}
@@ -1013,6 +1019,12 @@ func populate(payload: Dictionary) -> void:
 		_player_class = str(payload["player_class"])
 	if payload.has("player_name"):
 		_player_name = str(payload["player_name"])
+	if payload.has("player_appearance_color"):
+		_player_appearance_color = str(payload["player_appearance_color"])
+	if payload.has("player_appearance_color2"):
+		_player_appearance_color2 = str(payload["player_appearance_color2"])
+	if payload.has("player_appearance_pattern"):
+		_player_appearance_pattern = str(payload["player_appearance_pattern"])
 	if payload.has("player_hp"):
 		_player_hp = int(payload["player_hp"])
 	if payload.has("player_max_hp"):
@@ -1132,7 +1144,13 @@ func _refresh_player() -> void:
 	if ascii_art != "":
 		var fsize = ClassAsciiArt.get_font_size(_player_class)
 		var col = ClassAsciiArt.get_color(_player_class)
-		set_player_ascii_art(ascii_art, fsize, col)
+		# Player appearance variant overrides the per-class default color when
+		# set. For solid patterns we just swap the single color; for multi-
+		# color patterns (gradient / striped / etc) we delegate to the same
+		# pattern recolor helper companions use, via client_ref.
+		if _player_appearance_color != "":
+			col = _player_appearance_color
+		set_player_ascii_art(ascii_art, fsize, col, _player_appearance_color2, _player_appearance_pattern)
 	else:
 		# Hide the alt holder if we'd previously been showing ASCII for a
 		# different class, and bring back the PNG slot.
@@ -1824,14 +1842,27 @@ func hide_flock_warning() -> void:
 
 # === Alt sprite (ASCII art) — /altsprite test ===
 
-func set_player_ascii_art(text: String, font_size: int = 3, color_hex: String = "#E8E8E8") -> void:
+func set_player_ascii_art(text: String, font_size: int = 3, color_hex: String = "#E8E8E8", color2_hex: String = "", pattern: String = "solid") -> void:
 	"""Render ASCII art at the bottom of the player column. Collapses the
 	PNG sprite holder so the companion stays as the only thing on the
-	left side of the battle row."""
+	left side of the battle row.
+
+	Optional color2_hex + pattern apply per-line variant recoloring (gradient,
+	stripes, middle-band, etc.) using the same helper companions use. Defaults
+	mean the prior behavior (single-color tint) is preserved when no variant
+	data is passed."""
 	if _player_ascii_label == null or not is_instance_valid(_player_ascii_label):
 		return
 	var safe_text = text.replace("[", "[lb]")  # keep stray brackets from being read as BBCode tags
-	_player_ascii_label.text = "[font_size=%d][color=%s]%s[/color][/font_size]" % [font_size, color_hex, safe_text]
+	var bbcode: String
+	if pattern != "solid" and color2_hex != "" and client_ref != null and client_ref.has_method("_recolor_ascii_art_pattern"):
+		# Wrap in placeholder color tags so the helper can re-color per line.
+		var wrapped = "[color=%s]\n%s\n[/color]" % [color_hex, safe_text]
+		var recolored = client_ref._recolor_ascii_art_pattern(wrapped, color_hex, color2_hex, pattern)
+		bbcode = "[font_size=%d]%s[/font_size]" % [font_size, recolored]
+	else:
+		bbcode = "[font_size=%d][color=%s]%s[/color][/font_size]" % [font_size, color_hex, safe_text]
+	_player_ascii_label.text = bbcode
 	if _ascii_outer:
 		_ascii_outer.visible = true
 	if _player_sprite_holder:

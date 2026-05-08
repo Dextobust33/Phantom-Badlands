@@ -1802,6 +1802,16 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
 
+	# Roll cosmetic appearance variant — drives the recolor of the player's
+	# class ASCII art everywhere (battle scene, map hover, inspect, player
+	# popup). Stays on this character forever; their next character rolls
+	# fresh. Reuses the companion EGG_VARIANTS pool and rarity weighting.
+	var appearance: Dictionary = drop_tables._roll_egg_variant()
+	character.appearance_variant = str(appearance.get("name", "Crimson"))
+	character.appearance_color = str(appearance.get("color", "#DC143C"))
+	character.appearance_color2 = str(appearance.get("color2", ""))
+	character.appearance_pattern = str(appearance.get("pattern", "solid"))
+
 	# Give starter gathering tools — equip directly to tool slots
 	var starter_tools = DropTables.generate_starter_tools()
 	for tool in starter_tools:
@@ -1977,7 +1987,13 @@ func handle_get_players(peer_id: int):
 			"name": char.name,
 			"level": char.level,
 			"class": char.class_type,
-			"title": char.title
+			"title": char.title,
+			# Cosmetic appearance variant — lets the requesting client recolor
+			# the target's ASCII art consistently in popup / hover / etc.
+			"appearance_variant": char.appearance_variant,
+			"appearance_color": char.appearance_color,
+			"appearance_color2": char.appearance_color2,
+			"appearance_pattern": char.appearance_pattern
 		})
 
 	send_to_peer(peer_id, {
@@ -2052,7 +2068,13 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"title": char.title,
 				"deaths": char.deaths,
 				"quests_completed": char.completed_quests.size() if char.completed_quests else 0,
-				"play_time": char.played_time_seconds
+				"play_time": char.played_time_seconds,
+				# Cosmetic appearance variant — lets the popup recolor the
+				# target's ASCII art the same way they see it themselves.
+				"appearance_variant": char.appearance_variant,
+				"appearance_color": char.appearance_color,
+				"appearance_color2": char.appearance_color2,
+				"appearance_pattern": char.appearance_pattern
 			}
 
 			# Location visibility: title holders see all (unless cloaked), nearby players see each other
@@ -4657,7 +4679,11 @@ func broadcast_player_list():
 			"name": char.name,
 			"level": char.level,
 			"class": char.class_type,
-			"title": char.title
+			"title": char.title,
+			"appearance_variant": char.appearance_variant,
+			"appearance_color": char.appearance_color,
+			"appearance_color2": char.appearance_color2,
+			"appearance_pattern": char.appearance_pattern
 		})
 
 	for peer_id in characters.keys():
