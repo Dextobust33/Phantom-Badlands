@@ -21528,8 +21528,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.216 changes
+	display_game("[color=#00FF00]v0.9.216[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Flock-encounter freeze hotfix[/color]")
+	display_game("  • Killing a monster that triggered a flock chain (\"More wolves approaching!\") could freeze the client at the Press-Space-to-Continue screen. The flock-warning banner created an infinite-loop alpha pulse tween bound to a label, but `hide_flock_warning()` only freed the label — leaving the tween orphaned. On the next monster turn the tween would step against a freed node, hit the 0-duration infinite-loop guard at scene/animation/tween.cpp:406, and lock the frame. Now the tween is stored as a member and explicitly killed on hide")
+	display_game("  • Bug was pre-existing but became more frequent during long flock chains. Visible symptom: \"ERROR: Infinite loop detected. Check set_loops() description for more info.\" repeated in the client log right before the freeze")
+	display_game("")
+
 	# v0.9.215 changes
-	display_game("[color=#00FF00]v0.9.215[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.215[/color]")
 	display_game("  [color=#FFD700]Combat Juice Phase B2 — companion aggro + Taunt Charm[/color]")
 	display_game("  • Companions now have an [color=#FF8800]Aggro stat[/color] that controls how often monsters target them instead of you. Tank-archetype companions (Iron Golem 65%%, Giant 60%%, Gargoyle 55%%, Titan 60%%, etc.) draw far more attacks than evasive ones (Wraith 8%%, Goblin / Wight / Siren / Lich / Nazgul / Time Weaver 12%%). Replaces the flat 25%% roll from B1")
 	display_game("  • Aggro is shown on the companion inspect screen with a label: [color=#FFD700]Tank[/color] (50+) / [color=#FFA500]Fighter[/color] (30-49) / [color=#FFFFFF]Default[/color] (20-29) / [color=#87CEEB]Evasive[/color] (<20). Pick a Bear or Golem if you want a meat shield; pick a Wraith or Time Weaver if you want a glass-cannon damage dealer")
@@ -21559,15 +21566,6 @@ func display_changelog():
 	display_game("  • Combat panel log now uses color-coded actor glyphs: ▶ (You), ◆ (Pet), ✦ (Foe), ⌘ (DoT) prefixed on per-turn summary lines so the visual rhythm pops when scanning combat history")
 	display_game("  • Companion combat HP now shown above the corner overlay during normal play — color-coded HP, with a 'KO'd — needs healer' callout when at 0. No more hunting through the More menu to check whether your pet needs a healer")
 	display_game("  • HP overlay refreshes immediately at combat-end (victory, fled, death-saved) instead of waiting for the next move/character_update")
-	display_game("")
-
-	# v0.9.211 changes
-	display_game("[color=#00FFFF]v0.9.211[/color]")
-	display_game("  [color=#FFD700]Item quality cleanup[/color]")
-	display_game("  • Dropped potions, scrolls, elixirs and bane potions are now always Common rarity. Previously rarity was rolled (Uncommon / Rare / Epic / Legendary) but didn't change healing or buff strength in combat — only out-of-combat use applied a hidden potency multiplier. The mismatch caused 'Rare Health Potion' to heal the same as 'Common Health Potion' in combat, which read as broken")
-	display_game("  • Tier (Minor / Lesser / Standard / Greater / Major / Superior / Master / Mythic / Primordial) is now the only progression for dropped consumables. What you see is what you get")
-	display_game("  • Crafted potion bug fix: out-of-combat use now actually applies the quality-scaled amount shown on hover. A Masterwork Health Potion that says 'Restores 187 HP' on inspect now restores 187 HP when drunk from inventory (previously would heal 0 because the inventory-use path ignored the item's own effect data)")
-	display_game("  • Tomes, Home Stones, and Mysterious Boxes keep their rarity since those are meaningful tiers for those item categories")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))

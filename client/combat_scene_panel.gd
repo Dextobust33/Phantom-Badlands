@@ -127,6 +127,7 @@ signal picker_next_page
 # Players focus on the monster art when reading combat, so the banner sits
 # there rather than in the log section below.
 var _flock_warning_label: Label = null
+var _flock_warning_pulse_tween: Tween = null
 
 # Victory card — overlay on the log section showing XP/loot/level-up/prompt
 # after a non-flock victory, so the player reads rewards inside the scene
@@ -1799,13 +1800,23 @@ func show_flock_warning(text: String) -> void:
 	# Fade in
 	var fade_in := create_tween()
 	fade_in.tween_property(label, "modulate:a", 1.0, 0.22)
-	# Subtle alpha pulse so the eye keeps coming back to it without it strobing
-	var pulse := create_tween().set_loops()
-	pulse.tween_property(label, "modulate:a", 0.65, 0.7).set_trans(Tween.TRANS_SINE)
-	pulse.tween_property(label, "modulate:a", 1.0, 0.7).set_trans(Tween.TRANS_SINE)
+	# Subtle alpha pulse so the eye keeps coming back to it without it strobing.
+	# Stored as a member so hide_flock_warning() can kill it explicitly —
+	# without that, freeing the label leaves a 0-duration infinite-loop tween
+	# behind and Godot hangs at scene/animation/tween.cpp:406 ("Infinite loop
+	# detected") on the next frame, which has frozen the client during flock
+	# transitions in the past.
+	if _flock_warning_pulse_tween and is_instance_valid(_flock_warning_pulse_tween):
+		_flock_warning_pulse_tween.kill()
+	_flock_warning_pulse_tween = create_tween().set_loops()
+	_flock_warning_pulse_tween.tween_property(label, "modulate:a", 0.65, 0.7).set_trans(Tween.TRANS_SINE)
+	_flock_warning_pulse_tween.tween_property(label, "modulate:a", 1.0, 0.7).set_trans(Tween.TRANS_SINE)
 
 
 func hide_flock_warning() -> void:
+	if _flock_warning_pulse_tween and is_instance_valid(_flock_warning_pulse_tween):
+		_flock_warning_pulse_tween.kill()
+	_flock_warning_pulse_tween = null
 	if _flock_warning_label and is_instance_valid(_flock_warning_label):
 		_flock_warning_label.queue_free()
 	_flock_warning_label = null
