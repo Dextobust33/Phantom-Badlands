@@ -2058,6 +2058,21 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			)
 			dropped_items = drops_result
 
+			# Reclaimer's Lantern — dungeon-only consumable that grants a chance
+			# at an extra drop on dungeon monster kills for N battles. The buff
+			# value IS the chance (e.g. 25 → 25% per kill).
+			if combat.get("is_dungeon_combat", false):
+				var lantern_pct = character.get_buff_value("reclaimer_lantern")
+				if lantern_pct > 0 and (randi() % 100) < lantern_pct:
+					var extra_drop = drop_tables.roll_drops(
+						monster.get("drop_table_id", "tier1"),
+						100,  # Bonus roll always succeeds when chance hit
+						monster.level
+					)
+					if extra_drop.size() > 0:
+						messages.append("[color=#FFD700]The Lantern reveals an extra prize![/color]")
+						extra_drops.append_array(extra_drop)
+
 				# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
 			if ABILITY_WEAPON_MASTER in abilities:
 				if randf() < 0.50:  # 50% chance
@@ -4643,6 +4658,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 			if drop_tables and drop_tables.get_monster_type(monster.name) == bane_type:
 				total = int(total * (1.0 + bane_bonus / 100.0))
 				passive_messages.append("[color=#FF4500]%s Bane: +%d%% damage![/color]" % [bane_type.capitalize(), bane_bonus])
+
+	# === BOSS-SLAYER TONIC ===
+	# Dungeon-exclusive consumable. +damage% against boss-tagged monsters only.
+	var boss_bonus = character.get_buff_value("boss_damage")
+	if boss_bonus > 0 and bool(monster.get("is_boss", false)):
+		total = int(total * (1.0 + boss_bonus / 100.0))
+		passive_messages.append("[color=#FF8800]Boss-Slayer: +%d%% damage![/color]" % boss_bonus)
 
 	# === WEAKNESS DEBUFF ===
 	# Apply -25% damage if the player has the Weakness debuff

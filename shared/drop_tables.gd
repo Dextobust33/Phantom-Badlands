@@ -890,6 +890,13 @@ const POTION_EFFECTS = {
 	"potion_revive_companion": {"revive_companion": true, "revive_pct": 50},
 	# Taunt Charm - Companion draws +30% aggro for next 3 monster turns. Combat-only.
 	"charm_taunt": {"companion_taunt": true, "aggro_bonus": 30, "turns": 3},
+	# === DUNGEON-EXCLUSIVE CONSUMABLES (only drop from dungeon chests) ===
+	# Boss-Slayer Tonic - +30% damage vs boss-tagged monsters, persists 1 battle.
+	"boss_slayer_tonic": {"boss_damage": true, "damage_bonus": 30, "battles": 1},
+	# Reclaimer's Lantern - +25% extra-drop chance on next 5 dungeon monster kills.
+	"reclaimer_lantern": {"reclaimer_lantern": true, "extra_drop_pct": 25, "battles": 5},
+	# Floor Skip Charm - Out-of-combat in dungeon, advances current floor instantly.
+	"floor_skip_charm": {"floor_skip": true},
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
@@ -3169,6 +3176,54 @@ func _roll_item_from_table(table: Array) -> Dictionary:
 
 	return table[-1]  # Fallback to last entry
 
+# Dungeon-chest helpers — extra rolls performed on top of roll_treasure() in
+# server._open_dungeon_treasure so chests carry equipment + dungeon-exclusive
+# consumables. Kept here (instance methods) so they can use _roll_item_from_table
+# / _generate_item / _roll_rarity_for_tier without static-call gymnastics.
+const DUNGEON_CHEST_EQUIPMENT_CHANCE = 55  # % chance any chest yields equipment
+const DUNGEON_CHEST_CONSUMABLE_CHANCE = 25  # % chance any chest yields a dungeon-exclusive consumable
+
+# Items keyed by minimum dungeon tier they can drop at. Lower-tier dungeons
+# only drop the simplest of the three; higher tiers add the rarer ones.
+const DUNGEON_CHEST_CONSUMABLES_BY_TIER = {
+	1: ["floor_skip_charm"],
+	2: ["floor_skip_charm", "reclaimer_lantern"],
+	3: ["floor_skip_charm", "reclaimer_lantern"],
+	4: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	5: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	6: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	7: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	8: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+}
+
+func roll_dungeon_chest_equipment(tier: int, item_level: int) -> Dictionary:
+	"""Roll a tier-appropriate equipment piece for a dungeon chest. Returns {}
+	if the chance fails or no base item is available."""
+	if tier < 1 or tier > 9:
+		return {}
+	if (randi() % 100) >= DUNGEON_CHEST_EQUIPMENT_CHANCE:
+		return {}
+	if not EQUIPMENT_BASES.has(tier):
+		return {}
+	var base_item = _roll_item_from_table(EQUIPMENT_BASES[tier])
+	if base_item.is_empty():
+		return {}
+	var rolled_rarity = _roll_rarity_for_tier(tier)
+	return _generate_item(base_item, item_level, rolled_rarity)
+
+func roll_dungeon_chest_consumable(tier: int, item_level: int) -> Dictionary:
+	"""Roll a dungeon-exclusive consumable for a chest. Returns {} if the
+	chance fails or no item is configured for this tier."""
+	if (randi() % 100) >= DUNGEON_CHEST_CONSUMABLE_CHANCE:
+		return {}
+	var pool: Array = DUNGEON_CHEST_CONSUMABLES_BY_TIER.get(tier, [])
+	if pool.is_empty():
+		return {}
+	var picked_type: String = str(pool[randi() % pool.size()])
+	var entry = {"item_type": picked_type, "rarity": "uncommon"}
+	return _generate_item(entry, item_level)
+
 func _normalize_consumable_type(item_type: String) -> String:
 	"""Normalize consumable type for stacking (e.g., potion_minor -> health_potion)"""
 	# Health potions
@@ -3207,7 +3262,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -3339,6 +3394,10 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"scroll_resurrect_greater": "Greater Scroll of Resurrection",
 		"potion_revive_companion": "Companion Revive Potion",
 		"charm_taunt": "Taunt Charm",
+		# Dungeon-exclusive (chest drops only)
+		"boss_slayer_tonic": "Boss-Slayer Tonic",
+		"reclaimer_lantern": "Reclaimer's Lantern",
+		"floor_skip_charm": "Floor Skip Charm",
 		# Tomes - stat
 		"tome_strength": "Tome of Strength",
 		"tome_constitution": "Tome of Constitution",
@@ -3381,7 +3440,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
 		return base_name
 
 	return tier_name + " " + base_name
