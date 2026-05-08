@@ -1153,7 +1153,16 @@ func _refresh_player() -> void:
 		# pattern recolor helper companions use, via client_ref.
 		if _player_appearance_color != "":
 			col = _player_appearance_color
-		set_player_ascii_art(ascii_art, fsize, col, _player_appearance_color2, _player_appearance_pattern)
+		# Match the readability transform map-hover / player-popup / status-page
+		# use so dark variant palettes don't render dimmer in battle than they
+		# do on the other player surfaces.
+		var col2 = _player_appearance_color2
+		if client_ref != null and client_ref.has_method("_ensure_readable_color"):
+			if col != "":
+				col = client_ref._ensure_readable_color(col)
+			if col2 != "":
+				col2 = client_ref._ensure_readable_color(col2)
+		set_player_ascii_art(ascii_art, fsize, col, col2, _player_appearance_pattern)
 	else:
 		# Hide the alt holder if we'd previously been showing ASCII for a
 		# different class, and bring back the PNG slot.
