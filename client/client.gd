@@ -20614,9 +20614,13 @@ func display_character_status():
 	var player_class_str: String = str(char.get("class", ""))
 	var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
 	if class_art != "":
-		var art_color: String = appearance_color if appearance_color != "" else ClassAsciiArt.get_color(player_class_str)
-		var art_color2: String = str(char.get("appearance_color2", ""))
+		var art_color_raw: String = appearance_color if appearance_color != "" else ClassAsciiArt.get_color(player_class_str)
+		var art_color2_raw: String = str(char.get("appearance_color2", ""))
 		var art_pattern: String = str(char.get("appearance_pattern", "solid"))
+		# Match the readability transform map-hover and player-popup use, so
+		# dark variant palettes render the same on every player surface.
+		var art_color: String = _ensure_readable_color(art_color_raw) if art_color_raw != "" else art_color_raw
+		var art_color2: String = _ensure_readable_color(art_color2_raw) if art_color2_raw != "" else ""
 		var art_font_size: int = max(1, ClassAsciiArt.get_font_size(player_class_str))
 		var rendered_art: String
 		if art_pattern != "solid" and art_color2 != "":
@@ -21587,8 +21591,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.221 changes
+	display_game("[color=#00FF00]v0.9.221[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player variant color consistency fix[/color]")
+	display_game("  • The variant color of your class ASCII art was rendering noticeably different across surfaces — map hover and player-popup looked brighter/more blue than the battle scene and inspect/status page. Cause: the map and popup paths passed the variant color through `_ensure_readable_color` (which lifts dark hues into a readable range against the dark UI background), but the battle and inspect paths used the raw stored color. Now all four surfaces apply the same readability transform so a single variant looks identical everywhere")
+	display_game("")
+
 	# v0.9.220 changes
-	display_game("[color=#00FF00]v0.9.220[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.220[/color]")
 	display_game("  [color=#FFD700]Battle ASCII clipping fix[/color]")
 	display_game("  • The v0.9.219 font-size bump made the player ASCII art too tall for its 200px holder in the battle scene — the bottom 30-50px got clipped behind the shared HP bar below the player column. Bumped `_ascii_outer` and `_player_ascii_holder` heights from 200 → 260 so the larger art fits without overlap")
 	display_game("")
@@ -21616,12 +21626,6 @@ func display_changelog():
 	display_game("  • Common patterns recolor as solid; rarer ones (gradient_down, gradient_up, middle, striped, edges, diagonal_down, etc.) do per-line/per-char recoloring just like rare companions. So a 'Sunset Wizard' actually fades from orange-red to gold across the art")
 	display_game("  • Inspect/status header gets a small variant-color swatch + variant name (e.g., 'Crimson', 'Volcanic'). Map hover and player-list popup use the variant color for the player's name to match the recolored art")
 	display_game("  • Existing characters get a variant rolled on next login (one-time backfill in Character.from_dict). After that it's persisted normally")
-	display_game("")
-
-	# v0.9.216 changes
-	display_game("[color=#00FFFF]v0.9.216[/color]")
-	display_game("  [color=#FFD700]Flock-encounter freeze hotfix[/color]")
-	display_game("  • Killing a monster that triggered a flock chain (\"More wolves approaching!\") could freeze the client at the Press-Space-to-Continue screen. Pre-existing tween-lifetime bug, fixed by storing the alpha-pulse tween and killing it explicitly on hide")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
