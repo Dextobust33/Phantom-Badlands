@@ -65,6 +65,22 @@ content_margin_top = 10.0
 content_margin_right = 12.0
 content_margin_bottom = 10.0
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_region_frame"]
+bg_color = Color(0.05, 0.05, 0.08, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.7, 0.2, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
 bg_color = Color(0.15, 0.08, 0.06, 1)
 border_width_left = 1
@@ -549,6 +565,22 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 autowrap_mode = 0
+
+[node name="RegionLabel" type="RichTextLabel" parent="RootContainer/TopSection/MapPanel/MapDisplay" unique_id=1722341203]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -240.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 60.0
+mouse_filter = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_region_frame")
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="StatusHUD" type="VBoxContainer" parent="RootContainer/TopSection/MapPanel" unique_id=1722341300]
 layout_mode = 2
