@@ -136,6 +136,9 @@ func _render_page() -> void:
 			_add_button("Give Egg (random monster type)", "give_egg")
 			_add_button("Give Companion (random, T5)", "give_companion_t5")
 			_add_separator()
+			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
+			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"combat":
 			_title_label.text = "ADMIN — COMBAT"

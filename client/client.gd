@@ -14386,7 +14386,9 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
-			item_type.begins_with("charm_"))
+			item_type.begins_with("charm_") or
+			item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or
+			item_type == "floor_skip_charm")
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
@@ -18886,6 +18888,13 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	# Taunt Charm — companion draws extra aggro for a few monster turns.
 	if item_type == "charm_taunt":
 		return "Companion draws +30% aggro for next 3 monster turns. Combat-only."
+	# Dungeon-exclusive consumables (only drop from dungeon chests).
+	if item_type == "boss_slayer_tonic":
+		return "Dungeon-exclusive. +30% damage against boss monsters for the next battle."
+	if item_type == "reclaimer_lantern":
+		return "Dungeon-exclusive. +25% chance for an extra item drop on your next 5 dungeon kills."
+	if item_type == "floor_skip_charm":
+		return "Dungeon-exclusive. Out of combat in a dungeon, advances you to the next floor instantly. Useless on the boss floor."
 	# Elixirs - pure % max HP healing
 	if is_tier_value and (item_type == "elixir" or item_type.begins_with("elixir_")):
 		var elixir_pcts = {"elixir_minor": 50, "elixir_greater": 70, "elixir_divine": 100}
@@ -21591,8 +21600,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.222 changes
+	display_game("[color=#00FF00]v0.9.222[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon chests — Slice 1: equipment + 3 dungeon-exclusive consumables[/color]")
+	display_game("  • Treasure chests in dungeons now have a 55% chance to drop a tier-appropriate equipment piece on top of the existing materials/egg/scroll/recipe roll. This is the \"equipment slightly more common in dungeons\" knob — chests are the answer, monster drop tables are unchanged so world fights aren't affected")
+	display_game("  • Three new dungeon-exclusive consumables, only available from chest drops (25% chance per chest, gated by dungeon tier): [color=#FF8800]Boss-Slayer Tonic[/color] (+30% damage vs boss monsters, 1 battle), [color=#FFD700]Reclaimer's Lantern[/color] (+25% chance for an extra item drop on next 5 dungeon kills), [color=#9ACD32]Floor Skip Charm[/color] (advances to next dungeon floor instantly, useless on boss floor). Tier-1 chests only drop the Charm; Lantern unlocks at T2, Tonic at T4")
+	display_game("  • Easier testing: /admin → Items → \"Test Dungeon Chest Drops\" gives one of each new consumable plus a T6 equipment piece, no dungeon-running needed")
+	display_game("  • Final chest at end of dungeon (post-boss, .hack-style) and trap chests are coming in the next slice — Slice 1 ships these without the boss-teleport-defer surgery")
+	display_game("")
+
 	# v0.9.221 changes
-	display_game("[color=#00FF00]v0.9.221[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.221[/color]")
 	display_game("  [color=#FFD700]Player variant color consistency fix[/color]")
 	display_game("  • The variant color of your class ASCII art was rendering noticeably different across surfaces — map hover and player-popup looked brighter/more blue than the battle scene and inspect/status page. Cause: the map and popup paths passed the variant color through `_ensure_readable_color` (which lifts dark hues into a readable range against the dark UI background), but the battle and inspect paths used the raw stored color. Now all four surfaces apply the same readability transform so a single variant looks identical everywhere")
 	display_game("")
@@ -21618,15 +21636,6 @@ func display_changelog():
 	display_game("  • Returning to character select no longer leaves the previous character's sprite + companion visible to the right of the Sanctuary. `_sync_map_sprites_overlay` is now called when entering CHARACTER_SELECT, hiding stale sprites since they were only being refreshed on world-map location updates")
 	display_game("")
 
-	# v0.9.217 changes
-	display_game("[color=#00FFFF]v0.9.217[/color]")
-	display_game("  [color=#FFD700]Player appearance variants — random palette/pattern per character[/color]")
-	display_game("  • Each new character now rolls a random color palette + pattern from the same EGG_VARIANTS pool companions use (40+ variants spanning solid colors like Crimson/Azure/Verdant/Golden through gradient/pattern-based ones like Sunset/Volcanic/Twilight/Heart). The variant sticks to that character for life. Roll a new character → fresh variant")
-	display_game("  • Variant drives the recolor of your class ASCII art everywhere it shows up: battle scene panel, world-map hover tooltip, inspect/status page, and the player-list popup when someone clicks you")
-	display_game("  • Common patterns recolor as solid; rarer ones (gradient_down, gradient_up, middle, striped, edges, diagonal_down, etc.) do per-line/per-char recoloring just like rare companions. So a 'Sunset Wizard' actually fades from orange-red to gold across the art")
-	display_game("  • Inspect/status header gets a small variant-color swatch + variant name (e.g., 'Crimson', 'Volcanic'). Map hover and player-list popup use the variant color for the player's name to match the recolored art")
-	display_game("  • Existing characters get a variant rolled on next login (one-time backfill in Character.from_dict). After that it's persisted normally")
-	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -24100,6 +24109,13 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_giveegg", "monster_type": ""})
 		"give_companion_t5":
 			send_to_server({"type": "gm_givecompanion", "monster_type": "", "tier": 5})
+		"give_chest_test_kit":
+			# v0.9.222 — one of each dungeon-exclusive consumable + a T6 equip
+			# piece so the new chest loot can be exercised without dungeon-running.
+			send_to_server({"type": "gm_giveconsumable", "item_type": "boss_slayer_tonic", "tier": 6})
+			send_to_server({"type": "gm_giveconsumable", "item_type": "reclaimer_lantern", "tier": 6})
+			send_to_server({"type": "gm_giveconsumable", "item_type": "floor_skip_charm", "tier": 6})
+			send_to_server({"type": "gm_giveitem", "tier": 6, "slot": ""})
 		# Combat
 		"gm_spawnwish":
 			send_to_server({"type": "gm_spawnwish"})

@@ -6692,6 +6692,51 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"message": "Taunt Charm only works during combat — use it when a fight starts."
 		})
 		return
+	elif effect.has("boss_damage"):
+		# Boss-Slayer Tonic — +damage_bonus% damage vs boss-tagged monsters
+		# for the next N battles. Fires-and-persists like a monster bane.
+		var bd_bonus = int(effect.get("damage_bonus", 30))
+		var bd_battles = int(effect.get("battles", 1))
+		character.add_persistent_buff("boss_damage", bd_bonus, bd_battles)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battle%s, you deal +%d%% damage against bosses![/color]" % [item_name, bd_battles, "s" if bd_battles != 1 else "", bd_bonus]
+		})
+	elif effect.has("reclaimer_lantern"):
+		# Reclaimer's Lantern — +X% chance for an extra item drop on next N
+		# dungeon monster kills. Persistent buff; combat-victory loot path
+		# checks for it via character.get_buff_value("reclaimer_lantern").
+		var rl_pct = int(effect.get("extra_drop_pct", 25))
+		var rl_battles = int(effect.get("battles", 5))
+		character.add_persistent_buff("reclaimer_lantern", rl_pct, rl_battles)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You light the %s![/color]\n[color=#FFD700]Its glow guides your hand — +%d%% chance for bonus loot on the next %d dungeon kills.[/color]" % [item_name, rl_pct, rl_battles]
+		})
+	elif effect.has("floor_skip"):
+		# Floor Skip Charm — only valid in a dungeon, on a non-boss floor,
+		# out of combat. Triggers _advance_dungeon_floor immediately.
+		if not character.in_dungeon:
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "The Floor Skip Charm only works inside a dungeon."
+			})
+			return
+		var skip_dungeon = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+		var total_floors = int(skip_dungeon.get("floors", 1))
+		if character.dungeon_floor >= total_floors - 1:
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "You're already on the boss floor — nothing to skip to."
+			})
+			return
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]You shatter the %s![/color]\n[color=#9ACD32]A shimmering rift carries you deeper.[/color]" % item_name
+		})
+		_advance_dungeon_floor(peer_id)
+		# Floor Skip Charm consumes through the standard inventory removal at
+		# the end of handle_use_item; no early return needed.
 	elif effect.has("revive_companion"):
 		# Companion Revive Potion — instantly revives a KO'd companion at
 		# revive_pct% of max HP. Works in or out of combat.
@@ -8105,6 +8150,8 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type == "health_potion" or item_type == "mana_potion" or
 			item_type == "stamina_potion" or item_type == "energy_potion" or
 			item_type == "elixir" or
+			item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or
+			item_type == "floor_skip_charm" or
 			item_type == "scroll" or item_type == "area_map" or
 			item_type == "spell_tome" or item_type == "bestiary_page")
 
@@ -19000,6 +19047,28 @@ func _open_dungeon_treasure(peer_id: int):
 				var bonus_xp = 50 + dungeon_tier * 25
 				character.add_experience(bonus_xp)
 				reward_messages.append("[color=#808080]Recipe Scroll: %s (already known, +%d XP)[/color]" % [scroll_recipe_name, bonus_xp])
+
+	# v0.9.222 — Equipment + dungeon-exclusive consumables. The base treasure
+	# roll only handed out materials/eggs/recipes; chests now also have a 55%
+	# shot at a tier-appropriate equipment piece (this is the "more equipment
+	# in dungeons" knob) and a 25% shot at a chest-only consumable.
+	var chest_item_level = max(1, character.level)
+	var chest_equipment = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, chest_item_level)
+	if not chest_equipment.is_empty():
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(chest_equipment)
+			var rarity_color = _get_rarity_color(chest_equipment.get("rarity", "common"))
+			reward_messages.append("[color=%s]★ %s ★[/color]" % [rarity_color, chest_equipment.get("name", "Equipment")])
+		else:
+			reward_messages.append("[color=#808080]%s found but inventory full![/color]" % chest_equipment.get("name", "Equipment"))
+
+	var chest_consumable = drop_tables.roll_dungeon_chest_consumable(dungeon_tier, chest_item_level)
+	if not chest_consumable.is_empty():
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(chest_consumable)
+			reward_messages.append("[color=#FFD700]★ %s ★[/color]" % chest_consumable.get("name", "Consumable"))
+		else:
+			reward_messages.append("[color=#808080]%s found but inventory full![/color]" % chest_consumable.get("name", "Consumable"))
 
 	# Track treasures opened for exploration bonus
 	if active_dungeons.has(instance_id):

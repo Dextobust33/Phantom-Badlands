@@ -387,7 +387,10 @@ func _is_consumable_type(t: String) -> bool:
 		or t.begins_with("scroll_") or t.begins_with("tome_")
 		or t == "gold_pouch" or t.begins_with("gem_")
 		or t == "mysterious_box" or t == "cursed_coin"
-		or t == "soul_gem" or t.begins_with("home_stone_"))
+		or t == "soul_gem" or t.begins_with("home_stone_")
+		or t.begins_with("charm_")
+		or t == "boss_slayer_tonic" or t == "reclaimer_lantern"
+		or t == "floor_skip_charm")
 
 func _rarity_color_hex(r: String) -> String:
 	match r:
