@@ -139,6 +139,11 @@ func _render_page() -> void:
 			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
 			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
 			_add_separator()
+			_add_button("Enter T1 Dungeon (instant)", "enter_dungeon_t1", Color(0.6, 1, 0.6))
+			_add_button("Enter T6 Dungeon (instant)", "enter_dungeon_t6", Color(0.6, 1, 0.6))
+			_add_button("Enter Tier-Appropriate Dungeon (own level)", "enter_dungeon_auto", Color(0.6, 1, 0.6))
+			_subtitle_subline("Skips spawn-and-walk: drops you straight inside a fresh personal dungeon instance.")
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"combat":
 			_title_label.text = "ADMIN — COMBAT"

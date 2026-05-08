@@ -1359,6 +1359,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_revive_companion(peer_id)
 		"gm_test_b2":
 			handle_gm_test_b2(peer_id)
+		"gm_enter_dungeon":
+			handle_gm_enter_dungeon(peer_id, message)
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
@@ -23503,6 +23505,54 @@ func handle_gm_test_b2(peer_id: int):
 		"  • Use Taunt Charm in-combat to test +30%% aggro for 3 monster turns."
 	])
 	send_to_peer(peer_id, {"type": "text", "message": summary})
+
+func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
+	"""Admin shortcut: drop the player straight into a dungeon of the
+	requested tier (or one matching their level if tier is 0/missing). No
+	walking to a 'D' tile, no waiting for spawns."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] You're already in a dungeon."})
+		return
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] Can't enter a dungeon while in combat."})
+		return
+
+	var requested_tier = int(message.get("tier", 0))
+	# Pick a dungeon. When a tier is given, prefer dungeons of that tier
+	# (regardless of player level so admin testing isn't gated). Otherwise
+	# fall back to whatever's appropriate for the current level.
+	var dungeon_type = ""
+	if requested_tier >= 1 and requested_tier <= 9:
+		var tier_matches = []
+		for did in DungeonDatabaseScript.DUNGEON_TYPES:
+			if int(DungeonDatabaseScript.DUNGEON_TYPES[did].get("tier", 0)) == requested_tier:
+				tier_matches.append(did)
+		if not tier_matches.is_empty():
+			dungeon_type = tier_matches[randi() % tier_matches.size()]
+	if dungeon_type == "":
+		var available = DungeonDatabaseScript.get_dungeons_for_level(character.level)
+		if available.is_empty():
+			# Last-ditch fallback so the button always works.
+			dungeon_type = DungeonDatabaseScript.DUNGEON_TYPES.keys()[0]
+		else:
+			dungeon_type = available[randi() % available.size()]
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00][GM] Entering %s (T%d)...[/color]" % [
+			str(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("name", dungeon_type)),
+			int(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("tier", 0))
+		]
+	})
+	# Pre-confirmed so the standard warning popup is skipped — admin path.
+	handle_dungeon_enter(peer_id, {"dungeon_type": dungeon_type, "confirmed": true})
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""
