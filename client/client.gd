@@ -21600,8 +21600,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.223 changes
+	display_game("[color=#00FF00]v0.9.223[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon overlay fix + admin instant-dungeon entry[/color]")
+	display_game("  • Dungeon view no longer shows a stray world-map sprite + companion drawn off to the right of the dungeon grid. The world-map sprite overlay (added with the class-sprite system) wasn't being hidden when entering a dungeon — same class of bug as the v0.9.218/v0.9.219 char-select / Sanctuary fixes. `_sync_map_sprites_overlay()` now also gates on `dungeon_mode`, and is called on dungeon enter, complete, and exit")
+	display_game("  • Reminder: in the dungeon grid, treasure chests are the [color=#FFD700]gold $[/color] tile — that's where the new equipment + dungeon-exclusive consumables drop")
+	display_game("  • New admin shortcut: /admin → Items → \"Enter T1/T6/Tier-Appropriate Dungeon (instant)\" drops you straight into a fresh personal dungeon instance — no walking to a 'D' tile, no waiting for spawns. Pre-confirmed so the warning popup is skipped")
+	display_game("")
+
 	# v0.9.222 changes
-	display_game("[color=#00FF00]v0.9.222[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.222[/color]")
 	display_game("  [color=#FFD700]Dungeon chests — Slice 1: equipment + 3 dungeon-exclusive consumables[/color]")
 	display_game("  • Treasure chests in dungeons now have a 55% chance to drop a tier-appropriate equipment piece on top of the existing materials/egg/scroll/recipe roll. This is the \"equipment slightly more common in dungeons\" knob — chests are the answer, monster drop tables are unchanged so world fights aren't affected")
 	display_game("  • Three new dungeon-exclusive consumables, only available from chest drops (25% chance per chest, gated by dungeon tier): [color=#FF8800]Boss-Slayer Tonic[/color] (+30% damage vs boss monsters, 1 battle), [color=#FFD700]Reclaimer's Lantern[/color] (+25% chance for an extra item drop on next 5 dungeon kills), [color=#9ACD32]Floor Skip Charm[/color] (advances to next dungeon floor instantly, useless on boss floor). Tier-1 chests only drop the Charm; Lantern unlocks at T2, Tonic at T4")
@@ -21628,13 +21636,6 @@ func display_changelog():
 	display_game("  • Player class ASCII art is now larger across all surfaces. Default `DEFAULT_FONT_SIZE` in class_ascii_art.gd bumped from 3 → 4, which propagates to battle scene + inspect/status (4) and player-list popup (3, was 2). Map hover tooltip bumped from 2 → 3 directly. The art reads as a clearer character portrait now instead of a tiny silhouette")
 	display_game("")
 
-	# v0.9.218 changes
-	display_game("[color=#00FFFF]v0.9.218[/color]")
-	display_game("  [color=#FFD700]Appearance variants follow-up fixes[/color]")
-	display_game("  • Map hover tooltip ASCII art now matches what you see in the battle scene — previously the appearance fields weren't being plumbed through `get_nearby_players` (server) or the local map sprite metadata (client), so the tooltip fell back to a plain non-variant render. Fixed both paths")
-	display_game("  • Player-list popup ASCII art is no longer skewed horizontally — the popup's RichTextLabel uses a proportional font by default, which made variable-width chars break column alignment. Wrapping the art in a `[font=res://font/Consolas/consolas.ttf]` BBCode tag forces the same monospace render the battle scene uses")
-	display_game("  • Returning to character select no longer leaves the previous character's sprite + companion visible to the right of the Sanctuary. `_sync_map_sprites_overlay` is now called when entering CHARACTER_SELECT, hiding stale sprites since they were only being refreshed on world-map location updates")
-	display_game("")
 
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24116,6 +24117,15 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_giveconsumable", "item_type": "reclaimer_lantern", "tier": 6})
 			send_to_server({"type": "gm_giveconsumable", "item_type": "floor_skip_charm", "tier": 6})
 			send_to_server({"type": "gm_giveitem", "tier": 6, "slot": ""})
+		"enter_dungeon_t1":
+			close_admin_menu()
+			send_to_server({"type": "gm_enter_dungeon", "tier": 1})
+		"enter_dungeon_t6":
+			close_admin_menu()
+			send_to_server({"type": "gm_enter_dungeon", "tier": 6})
+		"enter_dungeon_auto":
+			close_admin_menu()
+			send_to_server({"type": "gm_enter_dungeon", "tier": 0})
 		# Combat
 		"gm_spawnwish":
 			send_to_server({"type": "gm_spawnwish"})
@@ -26153,7 +26163,7 @@ func _sync_map_sprites_overlay() -> void:
 		return
 
 	var should_show = (game_state == GameState.PLAYING and has_character
-		and not in_combat)
+		and not in_combat and not dungeon_mode)
 	if not should_show:
 		local.visible = false
 		if _local_companion_label:
@@ -28354,6 +28364,11 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_npcs_data = message.get("npcs", [])
 	dungeon_triggered_traps = message.get("triggered_traps", [])
 
+	# Hide world-map sprite overlay (local player + companion + remote players).
+	# The dungeon view is text-grid; the overworld sprite layer was bleeding
+	# through the right-of-map area when entering a dungeon.
+	_sync_map_sprites_overlay()
+
 	# Always update the map display (right panel) so player position is current
 	update_dungeon_map()
 
@@ -28439,6 +28454,9 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+
+	# Bring back the world-map sprite overlay (hidden while in dungeon).
+	_sync_map_sprites_overlay()
 
 	# If player is still viewing combat results or in flock mode, queue this for after they acknowledge
 	# This handles bosses with flock abilities - the dungeon completes when boss dies, but
@@ -28551,6 +28569,9 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_food_select = false
 	awaiting_dungeon_gather_result = false
 	awaiting_dungeon_trap_ack = false
+
+	# Bring back the world-map sprite overlay (hidden while in dungeon).
+	_sync_map_sprites_overlay()
 
 	var reason = message.get("reason", "exit")
 	var dungeon_name = message.get("dungeon_name", "Dungeon")
