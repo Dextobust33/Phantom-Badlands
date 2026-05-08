@@ -460,7 +460,10 @@ func _build_player_column() -> VBoxContainer:
 	_ascii_outer = Control.new()
 	_ascii_outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ascii_outer.size_flags_vertical = Control.SIZE_SHRINK_END
-	_ascii_outer.custom_minimum_size = Vector2(180, 200)
+	# Height bumped from 200 → 260 so ASCII art at the v0.9.219 default font
+	# size (4, was 3) fits without the bottom 30-50px clipping behind the HP
+	# bar below the player column.
+	_ascii_outer.custom_minimum_size = Vector2(180, 260)
 	_ascii_outer.clip_contents = true
 	_ascii_outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ascii_outer.visible = false
@@ -472,7 +475,7 @@ func _build_player_column() -> VBoxContainer:
 	ascii_sb.bg_color = Color(0, 0, 0, 0)
 	_player_ascii_holder.add_theme_stylebox_override("panel", ascii_sb)
 	_player_ascii_holder.position = Vector2.ZERO
-	_player_ascii_holder.size = Vector2(180, 200)
+	_player_ascii_holder.size = Vector2(180, 260)
 	_player_ascii_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ascii_outer.add_child(_player_ascii_holder)
 
