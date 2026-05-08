@@ -5110,14 +5110,37 @@ func show_player_info_popup(data: Dictionary):
 
 	player_info_content.clear()
 
-	# Name with title if present
+	# Variant fields piggyback on the examine_result payload from the server.
+	var v_name = str(data.get("appearance_variant", ""))
+	var v_color_raw = str(data.get("appearance_color", ""))
+	var v_color2_raw = str(data.get("appearance_color2", ""))
+	var v_pattern = str(data.get("appearance_pattern", "solid"))
+	var v_color = _ensure_readable_color(v_color_raw) if v_color_raw != "" else "#FFD700"
+	var v_color2 = _ensure_readable_color(v_color2_raw) if v_color2_raw != "" else ""
+
+	# Name with title if present — name uses variant color so the popup matches
+	# the recolored ASCII art below.
 	if not title.is_empty():
 		var title_display = title.capitalize().replace("_", " ")
-		player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color]\n[color=#FF00FF]%s[/color][/center]\n" % [pname, title_display])
+		player_info_content.append_text("[center][color=%s][b]%s[/b][/color]\n[color=#FF00FF]%s[/color][/center]\n" % [v_color, pname, title_display])
 	else:
-		player_info_content.append_text("[center][color=#FFD700][b]%s[/b][/color][/center]\n" % pname)
+		player_info_content.append_text("[center][color=%s][b]%s[/b][/color][/center]\n" % [v_color, pname])
 
 	player_info_content.append_text("[center]Level %d %s %s[/center]\n" % [level, char_race, cls])
+	if v_name != "":
+		player_info_content.append_text("[center][color=%s]●[/color] [color=#888888]%s[/color][/center]\n" % [v_color, v_name])
+	# Variant-recolored class ASCII art so the popup shows the same look the
+	# player sees in combat / on the map.
+	var class_art = ClassAsciiArt.get_ascii_art(cls)
+	if class_art != "":
+		var rendered_art: String
+		if v_pattern != "solid" and v_color2 != "":
+			var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
+			rendered_art = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
+		else:
+			rendered_art = "[color=%s]%s[/color]" % [v_color, class_art]
+		var art_font = max(1, ClassAsciiArt.get_font_size(cls) - 1)
+		player_info_content.append_text("[center][font_size=%d]%s[/font_size][/center]\n" % [art_font, rendered_art])
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
@@ -20562,11 +20585,36 @@ func display_character_status():
 	var char_title = "%s — %s %s Lv.%d" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
 	text += _header(char_title) + "\n"
 
+	# Variant swatch — small color sample + variant name (e.g. "Crimson", "Volcanic")
+	# rolled at character creation. Empty for legacy characters until they relog.
+	var appearance_variant: String = str(char.get("appearance_variant", ""))
+	var appearance_color: String = str(char.get("appearance_color", ""))
+	if appearance_variant != "" and appearance_color != "":
+		text += "[color=%s]●[/color] [color=#AAAAAA]Appearance:[/color] [color=%s]%s[/color]\n" % [appearance_color, appearance_color, appearance_variant]
+
 	# Class passive
 	var class_passive = _get_class_passive(char.get("class", ""))
 	if class_passive.name != "None":
 		text += "[color=%s]%s:[/color] %s\n" % [class_passive.color, class_passive.name, class_passive.description]
 	text += "\n"
+
+	# Player class ASCII art — recolored using the player's appearance variant
+	# so the inspect page matches what the battle scene shows.
+	var player_class_str: String = str(char.get("class", ""))
+	var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
+	if class_art != "":
+		var art_color: String = appearance_color if appearance_color != "" else ClassAsciiArt.get_color(player_class_str)
+		var art_color2: String = str(char.get("appearance_color2", ""))
+		var art_pattern: String = str(char.get("appearance_pattern", "solid"))
+		var art_font_size: int = max(1, ClassAsciiArt.get_font_size(player_class_str))
+		var rendered_art: String
+		if art_pattern != "solid" and art_color2 != "":
+			# Wrap raw text so the pattern recolor helper has color tags to replace.
+			var wrapped = "[color=%s]\n%s\n[/color]" % [art_color, class_art]
+			rendered_art = _recolor_ascii_art_pattern(wrapped, art_color, art_color2, art_pattern)
+		else:
+			rendered_art = "[color=%s]%s[/color]" % [art_color, class_art]
+		text += "[center][font_size=%d]%s[/font_size][/center]\n\n" % [art_font_size, rendered_art]
 
 	# === RESOURCES (with stat bars) ===
 	text += _subheader("Resources") + "\n"
@@ -21528,11 +21576,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.217 changes
+	display_game("[color=#00FF00]v0.9.217[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player appearance variants — random palette/pattern per character[/color]")
+	display_game("  • Each new character now rolls a random color palette + pattern from the same EGG_VARIANTS pool companions use (40+ variants spanning solid colors like Crimson/Azure/Verdant/Golden through gradient/pattern-based ones like Sunset/Volcanic/Twilight/Heart). The variant sticks to that character for life. Roll a new character → fresh variant")
+	display_game("  • Variant drives the recolor of your class ASCII art everywhere it shows up: battle scene panel, world-map hover tooltip, inspect/status page, and the player-list popup when someone clicks you")
+	display_game("  • Common patterns recolor as solid; rarer ones (gradient_down, gradient_up, middle, striped, edges, diagonal_down, etc.) do per-line/per-char recoloring just like rare companions. So a 'Sunset Wizard' actually fades from orange-red to gold across the art")
+	display_game("  • Inspect/status header gets a small variant-color swatch + variant name (e.g., 'Crimson', 'Volcanic'). Map hover and player-list popup use the variant color for the player's name to match the recolored art")
+	display_game("  • Existing characters get a variant rolled on next login (one-time backfill in Character.from_dict). After that it's persisted normally")
+	display_game("")
+
 	# v0.9.216 changes
-	display_game("[color=#00FF00]v0.9.216[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.216[/color]")
 	display_game("  [color=#FFD700]Flock-encounter freeze hotfix[/color]")
-	display_game("  • Killing a monster that triggered a flock chain (\"More wolves approaching!\") could freeze the client at the Press-Space-to-Continue screen. The flock-warning banner created an infinite-loop alpha pulse tween bound to a label, but `hide_flock_warning()` only freed the label — leaving the tween orphaned. On the next monster turn the tween would step against a freed node, hit the 0-duration infinite-loop guard at scene/animation/tween.cpp:406, and lock the frame. Now the tween is stored as a member and explicitly killed on hide")
-	display_game("  • Bug was pre-existing but became more frequent during long flock chains. Visible symptom: \"ERROR: Infinite loop detected. Check set_loops() description for more info.\" repeated in the client log right before the freeze")
+	display_game("  • Killing a monster that triggered a flock chain (\"More wolves approaching!\") could freeze the client at the Press-Space-to-Continue screen. Pre-existing tween-lifetime bug, fixed by storing the alpha-pulse tween and killing it explicitly on hide")
 	display_game("")
 
 	# v0.9.215 changes
@@ -21556,16 +21613,6 @@ func display_changelog():
 	display_game("  • Companion damage reduction: tankier sub-tier companions now actually feel tougher. Each sub-tier gives +3%% damage reduction (sub-tier 8 = 24%%, sub-tier 9 = 27%%) on hits taken from monsters. Damage absorbed shows as a cyan log line: 'Sub-tier 8 toughness absorbs 12 damage.'")
 	display_game("  • New consumable: [color=#FFD700]Companion Revive Potion[/color] — drops at tiers 6-9, instantly revives a KO'd companion at 50%% HP. Usable in OR out of combat (in-combat use is a free action). The previous design forced you to walk to a healer to revive a KO'd pet; this gives you a portable option")
 	display_game("  • One-click Phase B2 test scenario for admins: /admin → Test B2 → Setup B2 spawns a fresh sub-tier 8 companion, KOs it, and stocks 3x revive potions + 5x healing elixirs so admins can verify the new mechanics end-to-end without grinding setup")
-	display_game("")
-
-	# v0.9.212 changes
-	display_game("[color=#00FFFF]v0.9.212[/color]")
-	display_game("  [color=#FFD700]Crafted scroll fix + actor headers + companion HP visibility[/color]")
-	display_game("  • Crafted buff scrolls now apply the values shown on inspect — a Masterwork Scroll of Rage that says '+18 Attack for 10 rounds' actually gives +18 attack for 10 rounds. Previously combat applied a tier-formula (~10% of attack for 1 battle) that ignored the scroll's recipe data; out-of-combat use had the same bug. Both paths now read item.effect.amount / bonus_pct / duration directly when crafted")
-	display_game("  • Crafted scroll quality scaling extended to bonus_pct fields too — a 25% buff at base quality now scales to 31% Masterwork / 12% Poor instead of staying flat at 25% regardless")
-	display_game("  • Combat panel log now uses color-coded actor glyphs: ▶ (You), ◆ (Pet), ✦ (Foe), ⌘ (DoT) prefixed on per-turn summary lines so the visual rhythm pops when scanning combat history")
-	display_game("  • Companion combat HP now shown above the corner overlay during normal play — color-coded HP, with a 'KO'd — needs healer' callout when at 0. No more hunting through the More menu to check whether your pet needs a healer")
-	display_game("  • HP overlay refreshes immediately at combat-end (victory, fled, death-saved) instead of waiting for the next move/character_update")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -24208,6 +24255,9 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": int(character_data.get("current_hp", 0)),
 		"player_max_hp": int(character_data.get("total_max_hp", character_data.get("max_hp", 1))),
+		"player_appearance_color": str(character_data.get("appearance_color", "")),
+		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 		"companion_data": character_data.get("active_companion", {}),
 		"companion_font_size": companion_font_size,
 		"monster_name": monster_name,
@@ -24923,6 +24973,9 @@ func _run_altsprite_test(args: Array) -> void:
 			"player_name": pname,
 			"player_hp": int(character_data.get("current_hp", 100)),
 			"player_max_hp": int(character_data.get("max_hp", 100)),
+			"player_appearance_color": str(character_data.get("appearance_color", "")),
+			"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+			"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 			"companion_data": {},
 			"monster_name": "",
 			"monster_level": 1,
@@ -24960,6 +25013,9 @@ func _run_combat_fx_demo() -> void:
 		"player_class": str(character_data.get("class", "Fighter")),
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
+		"player_appearance_color": str(character_data.get("appearance_color", "")),
+		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 		"companion_data": mock_companion,
 		"companion_font_size": max(2, int(round(font * 2.0 / 3.0))),
 		"monster_name": "Demo Goblin", "monster_level": 5,
@@ -25904,14 +25960,36 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	var pname = str(data.get("name", "?"))
 	var level = int(data.get("level", 0))
 	var cls = str(data.get("class", ""))
+	# Variant fields piggyback on player_list payloads from the server.
+	var v_name = str(data.get("appearance_variant", ""))
+	var v_color_raw = str(data.get("appearance_color", ""))
+	var v_color2_raw = str(data.get("appearance_color2", ""))
+	var v_pattern = str(data.get("appearance_pattern", "solid"))
+	var v_color = _ensure_readable_color(v_color_raw) if v_color_raw != "" else "#FFD93D"
+	var v_color2 = _ensure_readable_color(v_color2_raw) if v_color2_raw != "" else ""
 	var party_tag = ""
 	if data.get("in_my_party", false):
 		party_tag = " [color=#00FF00](party)[/color]"
-	lines.append("[b][color=#FFD93D]%s[/color][/b]%s" % [pname, party_tag])
+	# Player name uses variant color so the tooltip matches the recolored art.
+	lines.append("[b][color=%s]%s[/color][/b]%s" % [v_color, pname, party_tag])
+	if v_name != "":
+		lines.append("[color=#888888](%s)[/color]" % v_name)
 	if cls != "":
 		lines.append("[color=#AAAAAA]%s[/color]" % cls.capitalize())
 	if level > 0:
 		lines.append("[color=#AAAAAA]Level %d[/color]" % level)
+	# Variant-recolored class ASCII art (small) so other players see the
+	# correct palette/pattern when hovering over them on the map.
+	var class_art = ClassAsciiArt.get_ascii_art(cls)
+	if class_art != "":
+		var art_str: String
+		if v_pattern != "solid" and v_color2 != "":
+			var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
+			art_str = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
+		else:
+			art_str = "[color=%s]%s[/color]" % [v_color, class_art]
+		lines.append("")
+		lines.append("[font_size=2]%s[/font_size]" % art_str)
 	if not is_local:
 		lines.append("")
 		lines.append("[color=#808080][i]Click to examine[/i][/color]")

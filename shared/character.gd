@@ -12,6 +12,16 @@ extends Resource
 @export var experience: int = 0
 @export var experience_to_next_level: int = 100
 
+# Cosmetic appearance variant — random palette + pattern from EGG_VARIANTS rolled at
+# character creation, persisted for the character's entire lifespan. Drives the recolor
+# of the player's class ASCII art everywhere it's drawn (battle scene, map hover,
+# inspect/status page, player-list popup). Existing characters get backfilled in
+# from_dict() the first time they're loaded after this update.
+@export var appearance_variant: String = ""        # e.g. "Crimson", "Sunset", "Volcanic"
+@export var appearance_color: String = "#FFFFFF"   # primary hex
+@export var appearance_color2: String = ""         # secondary hex (gradient/middle); empty for solid
+@export var appearance_pattern: String = "solid"   # solid | gradient_down | gradient_up | middle | striped | etc.
+
 # Primary Stats
 @export var strength: int = 10
 @export var constitution: int = 10
@@ -1241,6 +1251,10 @@ func to_dict() -> Dictionary:
 		"level": level,
 		"experience": experience,
 		"experience_to_next_level": experience_to_next_level,
+		"appearance_variant": appearance_variant,
+		"appearance_color": appearance_color,
+		"appearance_color2": appearance_color2,
+		"appearance_pattern": appearance_pattern,
 		"stats": {
 			"strength": strength,
 			"constitution": constitution,
@@ -1367,6 +1381,23 @@ func from_dict(data: Dictionary):
 	class_type = data.get("class", "Fighter")
 	level = data.get("level", 1)
 	experience = data.get("experience", 0)
+
+	# Cosmetic appearance variant — backfill on first load if missing so legacy
+	# characters get a one-time roll. After this branch the field is non-empty
+	# and persists via to_dict on the next save.
+	appearance_variant = data.get("appearance_variant", "")
+	appearance_color = data.get("appearance_color", "#FFFFFF")
+	appearance_color2 = data.get("appearance_color2", "")
+	appearance_pattern = data.get("appearance_pattern", "solid")
+	if appearance_variant.is_empty():
+		# `_roll_egg_variant` is non-static — instantiate DropTables for the call,
+		# matching the existing pattern at character.gd:3041.
+		var dt_for_variant = preload("res://shared/drop_tables.gd").new()
+		var variant = dt_for_variant._roll_egg_variant()
+		appearance_variant = str(variant.get("name", "Crimson"))
+		appearance_color = str(variant.get("color", "#DC143C"))
+		appearance_color2 = str(variant.get("color2", ""))
+		appearance_pattern = str(variant.get("pattern", "solid"))
 
 	var stats = data.get("stats", {})
 	strength = stats.get("strength", 10)
