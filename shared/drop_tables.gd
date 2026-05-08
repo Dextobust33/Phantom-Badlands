@@ -543,6 +543,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 2, "item_type": "potion_revive_companion", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -561,6 +562,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -886,6 +888,8 @@ const POTION_EFFECTS = {
 	"scroll_resurrect_greater": {"resurrect": true, "revive_percent": 50, "battles": -1},  # -1 = until death
 	# Companion Revive Potion - Instantly revives a KO'd companion at 50% HP. Usable in or out of combat.
 	"potion_revive_companion": {"revive_companion": true, "revive_pct": 50},
+	# Taunt Charm - Companion draws +30% aggro for next 3 monster turns. Combat-only.
+	"charm_taunt": {"companion_taunt": true, "aggro_bonus": 30, "turns": 3},
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
@@ -1097,68 +1101,73 @@ func roll_soul_gem_drop(monster_tier: int) -> Dictionary:
 # Monster to companion name mapping (monster_name -> companion info)
 # All 55+ monsters can become companions with tier-appropriate bonuses
 const COMPANION_DATA = {
+	# Phase B2: each companion has an `aggro` value (0-100) — chance per
+	# monster turn that the monster targets the companion instead of the
+	# player. Default behavior was a flat 25%. Tank-archetype companions
+	# (golems, giants, bulky front-liners) draw more aggro; sneaky/aerial
+	# companions draw less. Taunt Charm consumable adds a temporary boost.
 	# Tier 1 (Levels 1-5) - Basic companions with single stat bonus
-	"Goblin": {"companion_name": "Goblin Sprite", "tier": 1, "bonuses": {"attack": 2}},
-	"Giant Rat": {"companion_name": "Rat Familiar", "tier": 1, "bonuses": {"speed": 3}},
-	"Kobold": {"companion_name": "Kobold Helper", "tier": 1, "bonuses": {"gathering_bonus": 5}},
-	"Skeleton": {"companion_name": "Bone Servant", "tier": 1, "bonuses": {"defense": 2}},
-	"Wolf": {"companion_name": "Wolf Pup", "tier": 1, "bonuses": {"attack": 3}},
+	"Goblin": {"companion_name": "Goblin Sprite", "tier": 1, "bonuses": {"attack": 2, "aggro": 12}},
+	"Giant Rat": {"companion_name": "Rat Familiar", "tier": 1, "bonuses": {"speed": 3, "aggro": 12}},
+	"Kobold": {"companion_name": "Kobold Helper", "tier": 1, "bonuses": {"gathering_bonus": 5, "aggro": 15}},
+	"Skeleton": {"companion_name": "Bone Servant", "tier": 1, "bonuses": {"defense": 2, "aggro": 50}},
+	"Wolf": {"companion_name": "Wolf Pup", "tier": 1, "bonuses": {"attack": 3, "aggro": 25}},
 	# Tier 2 (Levels 6-15) - Stronger single stat or weak dual stat
-	"Orc": {"companion_name": "Orc Grunt", "tier": 2, "bonuses": {"attack": 4}},
-	"Hobgoblin": {"companion_name": "Hobgoblin Scout", "tier": 2, "bonuses": {"attack": 3, "speed": 2}},
-	"Gnoll": {"companion_name": "Gnoll Pup", "tier": 2, "bonuses": {"attack": 5}},
-	"Zombie": {"companion_name": "Zombie Thrall", "tier": 2, "bonuses": {"hp_bonus": 5}},
-	"Giant Spider": {"companion_name": "Spider Hatchling", "tier": 2, "bonuses": {"speed": 4, "attack": 2}},
-	"Wight": {"companion_name": "Wight Wisp", "tier": 2, "bonuses": {"mana_regen": 1}},
-	"Siren": {"companion_name": "Siren Sprite", "tier": 2, "bonuses": {"mana_bonus": 5}},
-	"Kelpie": {"companion_name": "Kelpie Foal", "tier": 2, "bonuses": {"speed": 5}},
-	"Mimic": {"companion_name": "Mimic Trinket", "tier": 2, "bonuses": {"gathering_bonus": 10}},
+	"Orc": {"companion_name": "Orc Grunt", "tier": 2, "bonuses": {"attack": 4, "aggro": 35}},
+	"Hobgoblin": {"companion_name": "Hobgoblin Scout", "tier": 2, "bonuses": {"attack": 3, "speed": 2, "aggro": 25}},
+	"Gnoll": {"companion_name": "Gnoll Pup", "tier": 2, "bonuses": {"attack": 5, "aggro": 35}},
+	"Zombie": {"companion_name": "Zombie Thrall", "tier": 2, "bonuses": {"hp_bonus": 5, "aggro": 50}},
+	"Giant Spider": {"companion_name": "Spider Hatchling", "tier": 2, "bonuses": {"speed": 4, "attack": 2, "aggro": 18}},
+	"Wight": {"companion_name": "Wight Wisp", "tier": 2, "bonuses": {"mana_regen": 1, "aggro": 12}},
+	"Siren": {"companion_name": "Siren Sprite", "tier": 2, "bonuses": {"mana_bonus": 5, "aggro": 12}},
+	"Kelpie": {"companion_name": "Kelpie Foal", "tier": 2, "bonuses": {"speed": 5, "aggro": 18}},
+	"Mimic": {"companion_name": "Mimic Trinket", "tier": 2, "bonuses": {"gathering_bonus": 10, "aggro": 15}},
 	# Tier 3 (Levels 16-30) - Moderate bonuses, more dual stats
-	"Ogre": {"companion_name": "Ogre Youngling", "tier": 3, "bonuses": {"attack": 5, "hp_bonus": 3}},
-	"Troll": {"companion_name": "Troll Runt", "tier": 3, "bonuses": {"hp_regen": 2}},
-	"Wraith": {"companion_name": "Wraith Wisp", "tier": 3, "bonuses": {"mana_bonus": 7, "mana_regen": 1}},
-	"Wyvern": {"companion_name": "Wyvern Hatchling", "tier": 3, "bonuses": {"attack": 6, "speed": 3}},
-	"Minotaur": {"companion_name": "Minotaur Calf", "tier": 3, "bonuses": {"attack": 7}},
-	"Gargoyle": {"companion_name": "Gargoyle Fragment", "tier": 3, "bonuses": {"defense": 6}},
-	"Harpy": {"companion_name": "Harpy Chick", "tier": 3, "bonuses": {"speed": 7}},
-	"Shrieker": {"companion_name": "Shrieker Spore", "tier": 3, "bonuses": {"flee_bonus": 10}},
+	"Ogre": {"companion_name": "Ogre Youngling", "tier": 3, "bonuses": {"attack": 5, "hp_bonus": 3, "aggro": 50}},
+	"Troll": {"companion_name": "Troll Runt", "tier": 3, "bonuses": {"hp_regen": 2, "aggro": 50}},
+	"Wraith": {"companion_name": "Wraith Wisp", "tier": 3, "bonuses": {"mana_bonus": 7, "mana_regen": 1, "aggro": 8}},
+	"Wyvern": {"companion_name": "Wyvern Hatchling", "tier": 3, "bonuses": {"attack": 6, "speed": 3, "aggro": 25}},
+	"Minotaur": {"companion_name": "Minotaur Calf", "tier": 3, "bonuses": {"attack": 7, "aggro": 50}},
+	"Gargoyle": {"companion_name": "Gargoyle Fragment", "tier": 3, "bonuses": {"defense": 6, "aggro": 55}},
+	"Harpy": {"companion_name": "Harpy Chick", "tier": 3, "bonuses": {"speed": 7, "aggro": 15}},
+	"Shrieker": {"companion_name": "Shrieker Spore", "tier": 3, "bonuses": {"flee_bonus": 10, "aggro": 12}},
 	# Tier 4 (Levels 31-50) - Strong bonuses
-	"Giant": {"companion_name": "Giant Sprite", "tier": 4, "bonuses": {"hp_bonus": 10, "attack": 5}},
-	"Dragon Wyrmling": {"companion_name": "Baby Dragon", "tier": 4, "bonuses": {"attack": 8, "defense": 4}},
-	"Demon": {"companion_name": "Demon Imp", "tier": 4, "bonuses": {"attack": 10}},
-	"Vampire": {"companion_name": "Vampire Bat", "tier": 4, "bonuses": {"lifesteal": 3}},
-	"Gryphon": {"companion_name": "Gryphon Hatchling", "tier": 4, "bonuses": {"speed": 8, "attack": 5}},
-	"Chimaera": {"companion_name": "Chimaera Cub", "tier": 4, "bonuses": {"attack": 7, "defense": 5}},
-	"Succubus": {"companion_name": "Succubus Familiar", "tier": 4, "bonuses": {"mana_regen": 2, "energy_regen": 2}},
+	"Giant": {"companion_name": "Giant Sprite", "tier": 4, "bonuses": {"hp_bonus": 10, "attack": 5, "aggro": 60}},
+	"Dragon Wyrmling": {"companion_name": "Baby Dragon", "tier": 4, "bonuses": {"attack": 8, "defense": 4, "aggro": 35}},
+	"Demon": {"companion_name": "Demon Imp", "tier": 4, "bonuses": {"attack": 10, "aggro": 35}},
+	"Vampire": {"companion_name": "Vampire Bat", "tier": 4, "bonuses": {"lifesteal": 3, "aggro": 18}},
+	"Gryphon": {"companion_name": "Gryphon Hatchling", "tier": 4, "bonuses": {"speed": 8, "attack": 5, "aggro": 25}},
+	"Chimaera": {"companion_name": "Chimaera Cub", "tier": 4, "bonuses": {"attack": 7, "defense": 5, "aggro": 35}},
+	"Succubus": {"companion_name": "Succubus Familiar", "tier": 4, "bonuses": {"mana_regen": 2, "energy_regen": 2, "aggro": 12}},
 	# Tier 5 (Levels 51-100) - Very strong bonuses
-	"Ancient Dragon": {"companion_name": "Dragon Whelp", "tier": 5, "bonuses": {"attack": 12, "defense": 6}},
-	"Demon Lord": {"companion_name": "Demon Spawn", "tier": 5, "bonuses": {"attack": 11, "hp_bonus": 7}},
-	"Lich": {"companion_name": "Lich Apprentice", "tier": 5, "bonuses": {"mana_bonus": 15, "mana_regen": 2}},
-	"Titan": {"companion_name": "Titan Spawn", "tier": 5, "bonuses": {"hp_bonus": 15, "defense": 8}},
-	"Balrog": {"companion_name": "Balrog Ember", "tier": 5, "bonuses": {"attack": 12, "crit_chance": 3}},
-	"Cerberus": {"companion_name": "Cerberus Pup", "tier": 5, "bonuses": {"attack": 10, "speed": 6}},
-	"Jabberwock": {"companion_name": "Jabberwock Hatchling", "tier": 5, "bonuses": {"attack": 11, "hp_regen": 2}},
+	"Ancient Dragon": {"companion_name": "Dragon Whelp", "tier": 5, "bonuses": {"attack": 12, "defense": 6, "aggro": 40}},
+	"Demon Lord": {"companion_name": "Demon Spawn", "tier": 5, "bonuses": {"attack": 11, "hp_bonus": 7, "aggro": 45}},
+	"Lich": {"companion_name": "Lich Apprentice", "tier": 5, "bonuses": {"mana_bonus": 15, "mana_regen": 2, "aggro": 12}},
+	"Titan": {"companion_name": "Titan Spawn", "tier": 5, "bonuses": {"hp_bonus": 15, "defense": 8, "aggro": 60}},
+	"Balrog": {"companion_name": "Balrog Ember", "tier": 5, "bonuses": {"attack": 12, "crit_chance": 3, "aggro": 40}},
+	"Cerberus": {"companion_name": "Cerberus Pup", "tier": 5, "bonuses": {"attack": 10, "speed": 6, "aggro": 35}},
+	"Jabberwock": {"companion_name": "Jabberwock Hatchling", "tier": 5, "bonuses": {"attack": 11, "hp_regen": 2, "aggro": 35}},
 	# Tier 6 (Levels 101-500) - Powerful bonuses, often triple stat
-	"Elemental": {"companion_name": "Elemental Core", "tier": 6, "bonuses": {"attack": 12, "defense": 10}},
-	"Iron Golem": {"companion_name": "Golem Fragment", "tier": 6, "bonuses": {"defense": 15, "hp_bonus": 10}},
-	"Sphinx": {"companion_name": "Sphinx Kitten", "tier": 6, "bonuses": {"mana_bonus": 12, "wisdom_bonus": 5}},
-	"Hydra": {"companion_name": "Hydra Sprout", "tier": 6, "bonuses": {"hp_regen": 4, "attack": 10}},
-	"Phoenix": {"companion_name": "Phoenix Chick", "tier": 6, "bonuses": {"hp_regen": 5, "attack": 8}},
-	"Nazgul": {"companion_name": "Nazgul Shadow", "tier": 6, "bonuses": {"attack": 14, "flee_bonus": 15}},
+	"Elemental": {"companion_name": "Elemental Core", "tier": 6, "bonuses": {"attack": 12, "defense": 10, "aggro": 50}},
+	"Iron Golem": {"companion_name": "Golem Fragment", "tier": 6, "bonuses": {"defense": 15, "hp_bonus": 10, "aggro": 65}},
+	"Sphinx": {"companion_name": "Sphinx Kitten", "tier": 6, "bonuses": {"mana_bonus": 12, "wisdom_bonus": 5, "aggro": 18}},
+	"Hydra": {"companion_name": "Hydra Sprout", "tier": 6, "bonuses": {"hp_regen": 4, "attack": 10, "aggro": 50}},
+	"Phoenix": {"companion_name": "Phoenix Chick", "tier": 6, "bonuses": {"hp_regen": 5, "attack": 8, "aggro": 35}},
+	"Nazgul": {"companion_name": "Nazgul Shadow", "tier": 6, "bonuses": {"attack": 14, "flee_bonus": 15, "aggro": 12}},
 	# Tier 7 (Levels 501-2000) - Elite bonuses
-	"Void Walker": {"companion_name": "Void Wisp", "tier": 7, "bonuses": {"attack": 16, "speed": 10, "defense": 8}},
-	"World Serpent": {"companion_name": "Serpent Hatchling", "tier": 7, "bonuses": {"attack": 18, "hp_bonus": 15}},
-	"Elder Lich": {"companion_name": "Elder Shade", "tier": 7, "bonuses": {"mana_bonus": 20, "mana_regen": 4, "attack": 12}},
-	"Primordial Dragon": {"companion_name": "Primordial Whelp", "tier": 7, "bonuses": {"attack": 20, "defense": 12, "hp_bonus": 10}},
+	"Void Walker": {"companion_name": "Void Wisp", "tier": 7, "bonuses": {"attack": 16, "speed": 10, "defense": 8, "aggro": 18}},
+	"World Serpent": {"companion_name": "Serpent Hatchling", "tier": 7, "bonuses": {"attack": 18, "hp_bonus": 15, "aggro": 55}},
+	"Elder Lich": {"companion_name": "Elder Shade", "tier": 7, "bonuses": {"mana_bonus": 20, "mana_regen": 4, "attack": 12, "aggro": 12}},
+	"Primordial Dragon": {"companion_name": "Primordial Whelp", "tier": 7, "bonuses": {"attack": 20, "defense": 12, "hp_bonus": 10, "aggro": 55}},
 	# Tier 8 (Levels 2001-5000) - Legendary bonuses
-	"Cosmic Horror": {"companion_name": "Cosmic Shard", "tier": 8, "bonuses": {"attack": 20, "hp_bonus": 18, "defense": 12}},
-	"Time Weaver": {"companion_name": "Time Fragment", "tier": 8, "bonuses": {"speed": 20, "attack": 15, "crit_chance": 5}},
-	"Death Incarnate": {"companion_name": "Death's Echo", "tier": 8, "bonuses": {"attack": 22, "lifesteal": 5}},
+	"Cosmic Horror": {"companion_name": "Cosmic Shard", "tier": 8, "bonuses": {"attack": 20, "hp_bonus": 18, "defense": 12, "aggro": 55}},
+	"Time Weaver": {"companion_name": "Time Fragment", "tier": 8, "bonuses": {"speed": 20, "attack": 15, "crit_chance": 5, "aggro": 12}},
+	"Death Incarnate": {"companion_name": "Death's Echo", "tier": 8, "bonuses": {"attack": 22, "lifesteal": 5, "aggro": 25}},
 	# Tier 9 (Levels 5001+) - Mythic bonuses
-	"Avatar of Chaos": {"companion_name": "Chaos Spark", "tier": 9, "bonuses": {"attack": 25, "crit_chance": 8, "hp_bonus": 15}},
-	"The Nameless One": {"companion_name": "Nameless Whisper", "tier": 9, "bonuses": {"attack": 22, "defense": 18, "speed": 12}},
-	"God Slayer": {"companion_name": "Godslayer Shard", "tier": 9, "bonuses": {"attack": 28, "crit_damage": 15}},
-	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4}}
+	"Avatar of Chaos": {"companion_name": "Chaos Spark", "tier": 9, "bonuses": {"attack": 25, "crit_chance": 8, "hp_bonus": 15, "aggro": 30}},
+	"The Nameless One": {"companion_name": "Nameless Whisper", "tier": 9, "bonuses": {"attack": 22, "defense": 18, "speed": 12, "aggro": 55}},
+	"God Slayer": {"companion_name": "Godslayer Shard", "tier": 9, "bonuses": {"attack": 28, "crit_damage": 15, "aggro": 30}},
+	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4, "aggro": 30}}
 }
 
 # Per-monster companion abilities - each monster type has unique abilities based on their original monster abilities
@@ -3198,7 +3207,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -3329,6 +3338,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"scroll_resurrect_lesser": "Lesser Scroll of Resurrection",
 		"scroll_resurrect_greater": "Greater Scroll of Resurrection",
 		"potion_revive_companion": "Companion Revive Potion",
+		"charm_taunt": "Taunt Charm",
 		# Tomes - stat
 		"tome_strength": "Tome of Strength",
 		"tome_constitution": "Tome of Constitution",
@@ -3371,7 +3381,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt":
 		return base_name
 
 	return tier_name + " " + base_name

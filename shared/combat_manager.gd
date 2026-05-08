@@ -3405,7 +3405,23 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	# Apply effect
 	# Check for crafted item's own effect data (quality-scaled amounts from recipe)
 	var item_effect = item.get("effect", {})
-	if effect.has("revive_companion"):
+	if effect.has("companion_taunt"):
+		# Taunt Charm — companion draws extra aggro for next N monster turns.
+		# Validate: companion must exist and not be KO'd (no aggro to draw).
+		if not character.has_active_companion():
+			return {"success": false, "message": "You have no active companion to taunt with."}
+		if character.is_companion_ko():
+			return {"success": false, "message": "Your companion is knocked out — revive them first."}
+		var aggro_bonus: int = int(effect.get("aggro_bonus", 30))
+		var taunt_turns: int = int(effect.get("turns", 3))
+		# Apply additively if a charm is already active (stacking caps at the
+		# 80% aggro clamp anyway, so this is safe).
+		combat["companion_taunt_bonus"] = int(combat.get("companion_taunt_bonus", 0)) + aggro_bonus
+		combat["companion_taunt_turns"] = maxi(int(combat.get("companion_taunt_turns", 0)), taunt_turns)
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		messages.append("[color=#FFD700]You crush the %s![/color]" % item_name)
+		messages.append("[color=#FF8800]%s glows with menace — drawing +%d%% aggro for %d turns![/color]" % [comp_name, aggro_bonus, taunt_turns])
+	elif effect.has("revive_companion"):
 		# Companion Revive Potion — instantly revives a KO'd active companion
 		# at revive_pct% of max HP. In-combat path: consumes the player's turn.
 		if not character.has_active_companion():
@@ -3899,18 +3915,36 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FF4444]The %s drains %d life from you![/color]" % [monster.name, heal])
 
 	if hits > 0:
-		# === Phase B1 — Companion targeting ===
-		# 25% chance per monster turn to swing at the companion instead of
-		# the player. KO'd companions aren't valid targets. Companion-target
-		# attacks short-circuit the player-only post-damage chain (forcefield,
-		# last stand, resurrect, threshold ability) — companions have a
-		# small persistent HP pool that's healed at healers between fights.
+		# === Phase B2 — Weighted companion targeting ===
+		# Each companion has an `aggro` value (in COMPANION_DATA bonuses) that
+		# controls how often monsters target it instead of the player. Tank
+		# companions (golems, giants) draw more aggro; sneaky / aerial ones
+		# draw less. Default 25 if a companion lacks an explicit value.
+		# Taunt Charm consumable applies a temporary additive bonus for a
+		# few monster turns. Final aggro is clamped to [0, 80] so even tanks
+		# don't permanently soak every hit.
 		var target_companion := false
 		var companion_target_name := ""
 		if character.has_active_companion() and not character.is_companion_ko():
-			if randf() < 0.25:
+			var comp_dict: Dictionary = character.get_active_companion()
+			var comp_bonuses: Dictionary = comp_dict.get("bonuses", {})
+			var base_aggro: int = int(comp_bonuses.get("aggro", 25))
+			var taunt_bonus: int = int(combat.get("companion_taunt_bonus", 0))
+			var taunt_turns: int = int(combat.get("companion_taunt_turns", 0))
+			var final_aggro: int = base_aggro
+			if taunt_turns > 0:
+				final_aggro += taunt_bonus
+				# Decrement taunt counter each monster turn (regardless of
+				# whether the roll favors companion). The buff shouldn't
+				# survive longer than its declared duration.
+				combat["companion_taunt_turns"] = taunt_turns - 1
+				if combat["companion_taunt_turns"] <= 0:
+					combat.erase("companion_taunt_bonus")
+					combat.erase("companion_taunt_turns")
+			final_aggro = clampi(final_aggro, 0, 80)
+			if randf() * 100.0 < float(final_aggro):
 				target_companion = true
-				companion_target_name = str(character.get_active_companion().get("name", "companion"))
+				companion_target_name = str(comp_dict.get("name", "companion"))
 
 		if target_companion:
 			var comp_hp_before: int = character.get_companion_combat_hp()
