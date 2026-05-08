@@ -10,7 +10,7 @@ extends RefCounted
 # is 2pt (tuned for the 100×52 Alt-Fighter art) on near-white #E8E8E8.
 
 const ASCII_DIR := "res://client/sprites/ascii/"
-const DEFAULT_FONT_SIZE := 3
+const DEFAULT_FONT_SIZE := 4
 const DEFAULT_COLOR := "#E8E8E8"
 
 # Per-class font_size override. Add an entry when a class's art doesn't

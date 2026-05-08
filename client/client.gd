@@ -3976,6 +3976,10 @@ func show_character_select_panel():
 func show_house_panel():
 	"""Show the house/sanctuary screen - roguelite meta-progression hub"""
 	hide_all_panels()
+	# Hide any leftover map sprites from a previous play session — Sanctuary
+	# reuses the main game UI's map area but isn't a PLAYING state, so the
+	# sprite-sync should hide them. Same fix pattern as show_character_select_panel.
+	_sync_map_sprites_overlay()
 	# House uses the main game UI with game_output for display
 	# Note: Don't call show_game_ui() as it sets game_state to PLAYING
 	game_state = GameState.HOUSE_SCREEN
@@ -21583,8 +21587,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.219 changes
+	display_game("[color=#00FF00]v0.9.219[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary stale-sprite + bigger ASCII[/color]")
+	display_game("  • Sanctuary screen no longer shows the previous character's sprite + companion to the right of the home view. Same fix as the v0.9.218 char-select case — `_sync_map_sprites_overlay()` is now called when entering HOUSE_SCREEN, hiding the leftover sprites since `game_state != PLAYING` in Sanctuary mode")
+	display_game("  • Player class ASCII art is now larger across all surfaces. Default `DEFAULT_FONT_SIZE` in class_ascii_art.gd bumped from 3 → 4, which propagates to battle scene + inspect/status (4) and player-list popup (3, was 2). Map hover tooltip bumped from 2 → 3 directly. The art reads as a clearer character portrait now instead of a tiny silhouette")
+	display_game("")
+
 	# v0.9.218 changes
-	display_game("[color=#00FF00]v0.9.218[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.218[/color]")
 	display_game("  [color=#FFD700]Appearance variants follow-up fixes[/color]")
 	display_game("  • Map hover tooltip ASCII art now matches what you see in the battle scene — previously the appearance fields weren't being plumbed through `get_nearby_players` (server) or the local map sprite metadata (client), so the tooltip fell back to a plain non-variant render. Fixed both paths")
 	display_game("  • Player-list popup ASCII art is no longer skewed horizontally — the popup's RichTextLabel uses a proportional font by default, which made variable-width chars break column alignment. Wrapping the art in a `[font=res://font/Consolas/consolas.ttf]` BBCode tag forces the same monospace render the battle scene uses")
@@ -21614,12 +21625,6 @@ func display_changelog():
 	display_game("  • Aggro is shown on the companion inspect screen with a label: [color=#FFD700]Tank[/color] (50+) / [color=#FFA500]Fighter[/color] (30-49) / [color=#FFFFFF]Default[/color] (20-29) / [color=#87CEEB]Evasive[/color] (<20). Pick a Bear or Golem if you want a meat shield; pick a Wraith or Time Weaver if you want a glass-cannon damage dealer")
 	display_game("  • New consumable: [color=#FF8800]Taunt Charm[/color] (drops T6-9). Combat-only — uses a free action to add +30%% aggro to your companion for the next 3 monster turns. Stacks additively, soft-capped at 80%% aggro")
 	display_game("  • Admin /admin Test B2 scenario now also stocks 3x Taunt Charm and adds a [b]Give 3x Taunt Charm[/b] button under Test B2")
-	display_game("")
-
-	# v0.9.214 changes
-	display_game("[color=#00FFFF]v0.9.214[/color]")
-	display_game("  [color=#FFD700]Visual admin panel hotfix[/color]")
-	display_game("  • The v0.9.213 /admin menu was a chat-mode action-bar popup that didn't actually work — input field kept focus after typing /admin, so QWER keys were typed into chat instead of triggering the buttons. Replaced with a proper visual panel overlay (mouse-clickable category buttons in a dark-red bordered modal) matching the Inventory / Crafting / Market style")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -25996,7 +26001,7 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 		else:
 			art_str = "[color=%s]%s[/color]" % [v_color, class_art]
 		lines.append("")
-		lines.append("[font_size=2]%s[/font_size]" % art_str)
+		lines.append("[font_size=3]%s[/font_size]" % art_str)
 	if not is_local:
 		lines.append("")
 		lines.append("[color=#808080][i]Click to examine[/i][/color]")
