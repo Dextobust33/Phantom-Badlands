@@ -13770,23 +13770,13 @@ func open_inventory():
 		if is_item_select_key_pressed(i):
 			set_meta("itemkey_%d_pressed" % i, true)
 
-	# In dungeon (out of combat), auto-enter use mode for quick item access
-	if dungeon_mode and not in_combat:
-		var inventory = character_data.get("inventory", [])
-		var usable_items = []
-		for i in range(inventory.size()):
-			var item = inventory[i]
-			var item_type = item.get("type", "")
-			if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
-				usable_items.append({"index": i, "item": item})
-		if not usable_items.is_empty():
-			pending_inventory_action = "use_item"
-			set_inventory_background("use")
-			use_page = 0
-			set_meta("usable_items", usable_items)
-			_display_usable_items_page()
-			update_action_bar()
-			return
+	# v0.9.225 — Previously the dungeon path auto-entered text-mode "use_item"
+	# (a flat usable-items list) for "quick item access". The visual inventory
+	# panel didn't exist back then. Now it does, and the dungeon experience
+	# should match the overworld — drop the dungeon branch and fall through
+	# to display_inventory(), which both renders the text view and lets
+	# `_process()`'s panel-visibility gate show the visual panel since
+	# `inventory_mode and pending_inventory_action == ""` is now true.
 
 	update_action_bar()
 	display_inventory()
@@ -21622,8 +21612,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.225 changes
+	display_game("[color=#00FF00]v0.9.225[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon inventory matches overworld[/color]")
+	display_game("  • Pressing Items inside a dungeon now opens the same visual inventory panel you get on the overworld — equipment grid, equipment slots, right-click context menu (Use/Equip/Inspect/Lock/Drop). Previously the dungeon path forced a flat text-mode usable-items list, which predated the visual panel and never got migrated. Equipment management, inspection, and item-use all flow through the panel now")
+	display_game("")
+
 	# v0.9.224 changes
-	display_game("[color=#00FF00]v0.9.224[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.224[/color]")
 	display_game("  [color=#FFD700]Dungeon chests — Slice 2: final chest + boss-teleport defer[/color]")
 	display_game("  • Killing the boss no longer auto-teleports you out of the dungeon. Instead, a [color=#FFAA00]final chest[/color] (the orange [b]*[/b] tile) spawns next to where the boss fell, and the dungeon-completion teleport waits for you to claim it (or hit Leave Now)")
 	display_game("  • The final chest is guaranteed and richer than scattered chests: 1 tier-appropriate equipment piece (rolled twice, better-rarity outcome kept), 1-3 monster-themed materials scaled by sub-tier, 1 dungeon-exclusive consumable, and 3-5x typical-fight Valor")
@@ -21654,11 +21650,6 @@ func display_changelog():
 	display_game("  • The variant color of your class ASCII art was rendering noticeably different across surfaces — map hover and player-popup looked brighter/more blue than the battle scene and inspect/status page. Cause: the map and popup paths passed the variant color through `_ensure_readable_color` (which lifts dark hues into a readable range against the dark UI background), but the battle and inspect paths used the raw stored color. Now all four surfaces apply the same readability transform so a single variant looks identical everywhere")
 	display_game("")
 
-	# v0.9.220 changes
-	display_game("[color=#00FFFF]v0.9.220[/color]")
-	display_game("  [color=#FFD700]Battle ASCII clipping fix[/color]")
-	display_game("  • The v0.9.219 font-size bump made the player ASCII art too tall for its 200px holder in the battle scene — the bottom 30-50px got clipped behind the shared HP bar below the player column. Bumped `_ascii_outer` and `_player_ascii_holder` heights from 200 → 260 so the larger art fits without overlap")
-	display_game("")
 
 
 
