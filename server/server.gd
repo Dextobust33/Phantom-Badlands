@@ -115,6 +115,12 @@ var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
 var dungeon_traps: Dictionary = {}  # instance_id -> {floor_num: [{x, y, type, triggered}]}
 var dungeon_gathered_materials: Dictionary = {}  # peer_id -> {material_id: qty} — materials gathered in current dungeon run
 var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
+# v0.9.224 — Boss-teleport defer + final chest. When the boss is killed,
+# _complete_dungeon places a FINAL_CHEST tile in the boss room and adds the
+# peer to this dict instead of teleporting. Walking onto the chest (or
+# pressing "Leave Now") removes the entry and re-runs _complete_dungeon to
+# do the actual teleport + dungeon_complete payload.
+var pending_final_chest: Dictionary = {}  # peer_id -> {instance_id, floor_num, chest_x, chest_y}
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
 const DUNGEON_SPAWN_CHECK_INTERVAL = 30.0  # Check every 30 seconds
@@ -1361,6 +1367,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_test_b2(peer_id)
 		"gm_enter_dungeon":
 			handle_gm_enter_dungeon(peer_id, message)
+		"dungeon_skip_final_chest":
+			handle_dungeon_skip_final_chest(peer_id)
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
@@ -4789,6 +4797,11 @@ func handle_disconnect(peer_id: int):
 	_player_achievement_cooldowns.erase(peer_id)
 	# Clear station tracking
 	at_player_station.erase(peer_id)
+	# Clear pending final-chest state — chest tile is on the in-memory grid
+	# anyway; if the peer reconnects mid-dungeon they'll just see the chest
+	# tile and walking onto it will no-op (handle_dungeon_skip_final_chest
+	# also no-ops). Reconnect persistence for this state is a follow-up.
+	pending_final_chest.erase(peer_id)
 	# Refund materials from pending craft challenge on disconnect
 	if active_crafts.has(peer_id):
 		var craft = active_crafts[peer_id]
@@ -17950,6 +17963,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile_int == int(DungeonDatabaseScript.TileType.RESOURCE):
 		_prompt_dungeon_gather(peer_id)
 		return
+	elif tile_int == int(DungeonDatabaseScript.TileType.FINAL_CHEST):
+		_open_final_chest(peer_id)
+		return
 
 	# Check if player walked onto a rescue NPC
 	var rescue_npc = _get_dungeon_npc_at(instance_id, character.dungeon_floor, new_x, new_y)
@@ -18842,7 +18858,8 @@ func _send_dungeon_state(peer_id: int):
 		"npcs": npc_list,
 		"steps_taken": character.dungeon_floor_steps,
 		"step_limit": effective_step_limit,
-		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor)
+		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor),
+		"awaiting_final_chest": pending_final_chest.has(peer_id)
 	})
 
 func _find_tile_position(grid: Array, tile_type: int) -> Vector2i:
@@ -19163,10 +19180,222 @@ func _advance_dungeon_floor(peer_id: int):
 			_send_dungeon_state(pid)
 			save_character(pid)
 
+func _try_spawn_final_chest(peer_id: int) -> bool:
+	"""Place a FINAL_CHEST tile near the player after a boss kill so the
+	dungeon doesn't auto-teleport. Returns true if a chest was placed (and
+	the caller should defer the rest of completion); false if no chest
+	could be placed (e.g. quest dungeon, party follower) and the caller
+	should run the normal completion flow."""
+	if not characters.has(peer_id):
+		return false
+	var character = characters[peer_id]
+	# Quest / rescue dungeons keep the original auto-teleport — adding chests
+	# would conflict with quest completion flow. Only personal free-run and
+	# world-dungeon entries get the final chest.
+	if character.in_dungeon == false:
+		return false
+	if not _is_party_leader(peer_id) and active_parties.has(_get_party_id(peer_id)):
+		# Party followers don't get their own chest spawn — leader's chest
+		# placement covers the whole party at the same tile.
+		return false
+
+	var instance_id = character.current_dungeon_id
+	if not active_dungeons.has(instance_id):
+		return false
+	var floor_num = character.dungeon_floor
+	if not dungeon_floors.has(instance_id):
+		return false
+	var floor_grid = dungeon_floors[instance_id][floor_num]
+
+	# Find a walkable tile adjacent to the player. Falling back to the
+	# player's own tile is safe — the walk-onto handler keys off the tile
+	# type, not movement, and the player can step off and back on.
+	var px = character.dungeon_x
+	var py = character.dungeon_y
+	var grid_h = floor_grid.size()
+	var grid_w = floor_grid[0].size() if grid_h > 0 else 0
+	var chest_pos = Vector2i(px, py)
+	var deltas = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+	for d in deltas:
+		var nx = px + d.x
+		var ny = py + d.y
+		if nx < 0 or ny < 0 or nx >= grid_w or ny >= grid_h:
+			continue
+		var t = floor_grid[ny][nx]
+		# Plant on a walkable, empty-ish tile so it doesn't overwrite an
+		# unfought encounter or the entrance/exit glyph.
+		if t == DungeonDatabaseScript.TileType.EMPTY or t == DungeonDatabaseScript.TileType.CLEARED:
+			chest_pos = Vector2i(nx, ny)
+			break
+
+	floor_grid[chest_pos.y][chest_pos.x] = DungeonDatabaseScript.TileType.FINAL_CHEST
+	pending_final_chest[peer_id] = {
+		"instance_id": instance_id,
+		"floor_num": floor_num,
+		"chest_x": chest_pos.x,
+		"chest_y": chest_pos.y
+	}
+
+	# Tell the client. Send a banner first so it lands above the refreshed
+	# dungeon map; then push the new dungeon_state with the chest tile in
+	# the grid + an awaiting_final_chest flag so the action bar can show
+	# "Leave Now".
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]The boss falls — but a reliquary stirs deeper in the ruin...[/color]\n[color=#FFAA00]Walk onto the [b]*[/b] to claim its contents, or use the [b]Leave Now[/b] action to depart empty-handed.[/color]"
+	})
+	_send_dungeon_state(peer_id)
+	return true
+
+func _open_final_chest(peer_id: int):
+	"""Roll bonus loot for the final chest, give it to the player, then
+	re-call _complete_dungeon to run the deferred teleport + dungeon_complete
+	flow."""
+	if not characters.has(peer_id):
+		return
+	# Recover from server-restart edge case: tile is on the grid but the
+	# in-memory pending entry was wiped on reconnect. Re-add the entry so
+	# the deferred-completion gate works correctly.
+	if not pending_final_chest.has(peer_id):
+		var ch = characters[peer_id]
+		pending_final_chest[peer_id] = {
+			"instance_id": ch.current_dungeon_id,
+			"floor_num": ch.dungeon_floor,
+			"chest_x": ch.dungeon_x,
+			"chest_y": ch.dungeon_y
+		}
+	var character = characters[peer_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	var dungeon_tier = int(dungeon_data.get("tier", 1))
+	var inst_sub_tier = 1
+	if active_dungeons.has(character.current_dungeon_id):
+		inst_sub_tier = int(active_dungeons[character.current_dungeon_id].get("sub_tier", 1))
+	var item_level = max(1, character.level)
+
+	var reward_lines: Array = []
+
+	# Guaranteed equipment piece — bias toward better-than-tier rarity by
+	# rolling twice and keeping the better outcome (existing helper rolls
+	# rarity internally).
+	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level)
+	if best_eq.is_empty():
+		# roll_dungeon_chest_equipment can fail its 55% gate; force a roll
+		# here since the final chest must always yield equipment.
+		var bases = drop_tables.EQUIPMENT_BASES.get(dungeon_tier, [])
+		if not bases.is_empty():
+			var pick = drop_tables._roll_item_from_table(bases)
+			if not pick.is_empty():
+				best_eq = drop_tables._generate_item(pick, item_level, drop_tables._roll_rarity_for_tier(dungeon_tier))
+	# Roll a second time and keep whichever has a "better" rarity.
+	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level)
+	if not alt.is_empty() and not best_eq.is_empty():
+		if _rarity_rank(str(alt.get("rarity", "common"))) > _rarity_rank(str(best_eq.get("rarity", "common"))):
+			best_eq = alt
+	if not best_eq.is_empty():
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(best_eq)
+			reward_lines.append("[color=%s]★ %s ★[/color]" % [
+				_get_rarity_color(str(best_eq.get("rarity", "common"))),
+				str(best_eq.get("name", "Equipment"))
+			])
+		else:
+			reward_lines.append("[color=#808080]%s found but inventory full![/color]" % str(best_eq.get("name", "Equipment")))
+
+	# 1-3 monster-themed crafting materials, scaled by sub-tier.
+	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(dungeon_tier)
+	var mat_count = 1 + (randi() % 3)
+	if dungeon_tier >= 6:
+		mat_count = 2 + (randi() % 3)
+	for _i in range(mat_count):
+		var mats = _roll_dungeon_gather("ore", resource_tier, dungeon_tier)
+		for m in mats:
+			var qty = int(m.get("quantity", 1) * (1.0 + (inst_sub_tier - 1) * 0.1))
+			character.add_crafting_material(str(m.get("id", "")), qty)
+			var qstr = " x%d" % qty if qty > 1 else ""
+			reward_lines.append("[color=#1EFF00]+%s%s[/color]" % [str(m.get("id", "")).replace("_", " ").capitalize(), qstr])
+
+	# Bonus dungeon-exclusive consumable (always rolls — chest-tier reward).
+	var bonus_consumable = drop_tables.roll_dungeon_chest_consumable(dungeon_tier, item_level)
+	# roll_dungeon_chest_consumable can fail its 25% gate; force a roll for
+	# the final chest so it always carries one.
+	if bonus_consumable.is_empty():
+		var pool: Array = drop_tables.DUNGEON_CHEST_CONSUMABLES_BY_TIER.get(dungeon_tier, [])
+		if not pool.is_empty():
+			var picked = str(pool[randi() % pool.size()])
+			var entry = {"item_type": picked, "rarity": "uncommon"}
+			bonus_consumable = drop_tables._generate_item(entry, item_level)
+	if not bonus_consumable.is_empty():
+		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+			character.inventory.append(bonus_consumable)
+			reward_lines.append("[color=#FFD700]★ %s ★[/color]" % str(bonus_consumable.get("name", "Consumable")))
+		else:
+			reward_lines.append("[color=#808080]%s found but inventory full![/color]" % str(bonus_consumable.get("name", "Consumable")))
+
+	# Bonus valor (3-5x typical fight reward — proxy by tier).
+	var valor_bonus = (3 + randi() % 3) * dungeon_tier * 5
+	if peers.has(peer_id):
+		persistence.add_valor(peers[peer_id].account_id, valor_bonus)
+	reward_lines.append("[color=#FFD700]+%d Valor[/color]" % valor_bonus)
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]You crack the reliquary open![/color]\n%s" % "\n".join(reward_lines)
+	})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+	# Now run the deferred completion (teleport + dungeon_complete msg).
+	_complete_dungeon(peer_id)
+
+func _rarity_rank(rarity: String) -> int:
+	"""Cheap rarity ordering for picking the better of two rolls."""
+	match rarity:
+		"common": return 0
+		"uncommon": return 1
+		"rare": return 2
+		"epic": return 3
+		"legendary": return 4
+		"artifact": return 5
+		_: return 0
+
+func handle_dungeon_skip_final_chest(peer_id: int):
+	"""Player pressed 'Leave Now' on the final-chest prompt — skip the
+	chest and run the deferred dungeon completion."""
+	if not characters.has(peer_id):
+		return
+	if not pending_final_chest.has(peer_id):
+		return
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#808080]You leave the reliquary undisturbed.[/color]"
+	})
+	_complete_dungeon(peer_id)
+
+func _get_party_id(peer_id: int) -> int:
+	"""Helper — returns party_id for a peer, or -1 if not in a party."""
+	for party_id in active_parties:
+		var party = active_parties[party_id]
+		if party.members.has(peer_id):
+			return party_id
+	return -1
+
 func _complete_dungeon(peer_id: int):
 	"""Handle dungeon completion"""
 	if not characters.has(peer_id):
 		return
+
+	# v0.9.224 — Boss teleport defer + final chest. If this is the first call
+	# (post-boss-kill), place a FINAL_CHEST tile and stop here. The player has
+	# to walk onto it (or hit Leave Now) before the actual teleport runs. The
+	# second call comes back through here from _open_final_chest /
+	# handle_dungeon_skip_final_chest with the peer already in
+	# pending_final_chest, and then we run the real completion.
+	if not pending_final_chest.has(peer_id):
+		if _try_spawn_final_chest(peer_id):
+			return  # Chest placed — defer the teleport.
+	else:
+		pending_final_chest.erase(peer_id)
+		# Fall through to the existing completion flow.
 
 	var character = characters[peer_id]
 	var dungeon_type = character.current_dungeon_type

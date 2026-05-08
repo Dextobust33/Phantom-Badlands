@@ -1173,6 +1173,10 @@ const TUTORIAL_STEPS = [
 var dungeon_mode: bool = false
 var dungeon_data: Dictionary = {}  # Current dungeon state from server
 var dungeon_floor_grid: Array = []  # 2D array of tile types
+# v0.9.224 — true while the boss is dead and the final chest hasn't been
+# claimed/skipped yet. When set, the action bar shows "Leave Now" and the
+# player can either walk onto the * tile or hit the button to teleport out.
+var awaiting_final_chest: bool = false
 var dungeon_monsters_data: Array = []  # Monster entities on current floor
 var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
@@ -6252,6 +6256,22 @@ func update_action_bar():
 		current_actions = [
 			{"label": "Gather", "action_type": "local", "action_data": "dungeon_gather", "enabled": true},
 			{"label": "Skip", "action_type": "local", "action_data": "dungeon_skip_gather", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif dungeon_mode and awaiting_final_chest and not in_combat and not pending_continue and not flock_pending and not inventory_mode and not wish_selection_mode:
+		# Boss is dead, final chest tile is on the map waiting to be claimed.
+		# "Leave Now" exits the dungeon without the chest reward; otherwise
+		# walk onto the * tile to open it. Items + Rest still available.
+		current_actions = [
+			{"label": "Leave Now", "action_type": "local", "action_data": "dungeon_skip_final_chest", "enabled": true},
+			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11406,6 +11426,8 @@ func execute_local_action(action: String):
 			send_to_server({"type": "dungeon_exit"})
 		"dungeon_go_back":
 			send_to_server({"type": "dungeon_go_back"})
+		"dungeon_skip_final_chest":
+			send_to_server({"type": "dungeon_skip_final_chest"})
 		"dungeon_rest":
 			# Build food list from crafting materials
 			var food_types = ["plant", "herb", "fungus", "fish"]
@@ -21600,8 +21622,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.224 changes
+	display_game("[color=#00FF00]v0.9.224[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon chests — Slice 2: final chest + boss-teleport defer[/color]")
+	display_game("  • Killing the boss no longer auto-teleports you out of the dungeon. Instead, a [color=#FFAA00]final chest[/color] (the orange [b]*[/b] tile) spawns next to where the boss fell, and the dungeon-completion teleport waits for you to claim it (or hit Leave Now)")
+	display_game("  • The final chest is guaranteed and richer than scattered chests: 1 tier-appropriate equipment piece (rolled twice, better-rarity outcome kept), 1-3 monster-themed materials scaled by sub-tier, 1 dungeon-exclusive consumable, and 3-5x typical-fight Valor")
+	display_game("  • New \"Leave Now\" action bar button while the chest is unclaimed — for when you'd rather bail than risk extra steps walking to it")
+	display_game("  • Edge case: if you reconnect after a server restart with the chest tile still on the grid, walking onto it will now still open it (re-adds the in-memory pending state)")
+	display_game("")
+
 	# v0.9.223 changes
-	display_game("[color=#00FF00]v0.9.223[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.223[/color]")
 	display_game("  [color=#FFD700]Dungeon overlay fix + admin instant-dungeon entry[/color]")
 	display_game("  • Dungeon view no longer shows a stray world-map sprite + companion drawn off to the right of the dungeon grid. The world-map sprite overlay (added with the class-sprite system) wasn't being hidden when entering a dungeon — same class of bug as the v0.9.218/v0.9.219 char-select / Sanctuary fixes. `_sync_map_sprites_overlay()` now also gates on `dungeon_mode`, and is called on dungeon enter, complete, and exit")
 	display_game("  • Reminder: in the dungeon grid, treasure chests are the [color=#FFD700]gold $[/color] tile — that's where the new equipment + dungeon-exclusive consumables drop")
@@ -21629,12 +21660,6 @@ func display_changelog():
 	display_game("  • The v0.9.219 font-size bump made the player ASCII art too tall for its 200px holder in the battle scene — the bottom 30-50px got clipped behind the shared HP bar below the player column. Bumped `_ascii_outer` and `_player_ascii_holder` heights from 200 → 260 so the larger art fits without overlap")
 	display_game("")
 
-	# v0.9.219 changes
-	display_game("[color=#00FFFF]v0.9.219[/color]")
-	display_game("  [color=#FFD700]Sanctuary stale-sprite + bigger ASCII[/color]")
-	display_game("  • Sanctuary screen no longer shows the previous character's sprite + companion to the right of the home view. Same fix as the v0.9.218 char-select case — `_sync_map_sprites_overlay()` is now called when entering HOUSE_SCREEN, hiding the leftover sprites since `game_state != PLAYING` in Sanctuary mode")
-	display_game("  • Player class ASCII art is now larger across all surfaces. Default `DEFAULT_FONT_SIZE` in class_ascii_art.gd bumped from 3 → 4, which propagates to battle scene + inspect/status (4) and player-list popup (3, was 2). Map hover tooltip bumped from 2 → 3 directly. The art reads as a clearer character portrait now instead of a tiny silhouette")
-	display_game("")
 
 
 
@@ -28363,6 +28388,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_monsters_data = message.get("monsters", [])
 	dungeon_npcs_data = message.get("npcs", [])
 	dungeon_triggered_traps = message.get("triggered_traps", [])
+	awaiting_final_chest = bool(message.get("awaiting_final_chest", false))
 
 	# Hide world-map sprite overlay (local player + companion + remote players).
 	# The dungeon view is text-grid; the overworld sprite layer was bleeding
@@ -28454,6 +28480,7 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	awaiting_final_chest = false
 
 	# Bring back the world-map sprite overlay (hidden while in dungeon).
 	_sync_map_sprites_overlay()
@@ -28569,6 +28596,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_food_select = false
 	awaiting_dungeon_gather_result = false
 	awaiting_dungeon_trap_ack = false
+	awaiting_final_chest = false
 
 	# Bring back the world-map sprite overlay (hidden while in dungeon).
 	_sync_map_sprites_overlay()
@@ -28908,6 +28936,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "·", "color": "#303030"}
 		8:  # RESOURCE
 			return {"char": "&", "color": "#00FFCC"}
+		9:  # FINAL_CHEST (post-boss reward, v0.9.224)
+			return {"char": "*", "color": "#FFAA00"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 

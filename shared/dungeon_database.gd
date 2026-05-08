@@ -13,7 +13,8 @@ enum TileType {
 	TREASURE,    # Treasure chest
 	BOSS,        # Boss encounter (final floor only)
 	CLEARED,     # Cleared encounter (was ENCOUNTER or TREASURE)
-	RESOURCE     # Gathering node (ore/herb/crystal)
+	RESOURCE,    # Gathering node (ore/herb/crystal)
+	FINAL_CHEST  # End-of-dungeon reward chest, spawns post-boss
 }
 
 # Tile display characters
@@ -26,7 +27,8 @@ const TILE_CHARS = {
 	TileType.TREASURE: "$",
 	TileType.BOSS: "B",
 	TileType.CLEARED: "·",
-	TileType.RESOURCE: "&"
+	TileType.RESOURCE: "&",
+	TileType.FINAL_CHEST: "*"
 }
 
 # Tile colors for display
@@ -39,7 +41,8 @@ const TILE_COLORS = {
 	TileType.TREASURE: "#FFD700",
 	TileType.BOSS: "#FF0000",
 	TileType.CLEARED: "#303030",
-	TileType.RESOURCE: "#00FFCC"
+	TileType.RESOURCE: "#00FFCC",
+	TileType.FINAL_CHEST: "#FFAA00"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
