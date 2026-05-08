@@ -662,12 +662,94 @@ const POST_MAP_COLORS = {
 	"default":  {"center": "#FFD700", "edge": "#D2B48C", "interior": "#C4A84B"},
 }
 
+# ============================================
+# REGION TIER SYSTEM (post-anchored world model — Slice 1)
+# Each post is classified T1-T7 by its zone. Future slices use this
+# tier as the anchor for local monster difficulty (vs current radial
+# distance-from-origin). Slice 1 is data + visibility only.
+# See memory/project_audit_10_world.md for the full direction.
+# ============================================
+
+const POST_TIERS = {
+	# Core Zone (T1) — starter haven, near 0,0
+	"haven": 1, "crossroads": 1, "south_gate": 1, "east_market": 1, "west_shrine": 1,
+	# Inner Zone (T2)
+	"northeast_farm": 2, "northwest_mill": 2, "southeast_mine": 2, "southwest_grove": 2,
+	"northwatch": 2, "eastern_camp": 2, "western_refuge": 2, "southern_watch": 2,
+	"northeast_tower": 2, "northwest_inn": 2, "southeast_bridge": 2, "southwest_temple": 2,
+	# Mid Zone (T3)
+	"frostgate": 3, "highland_post": 3, "eastwatch": 3, "westhold": 3, "southport": 3,
+	"northeast_bastion": 3, "northwest_lodge": 3, "southeast_outpost": 3, "southwest_camp": 3,
+	# Mid-Outer Zone (T4)
+	"far_east_station": 4, "far_west_haven": 4, "deep_south_port": 4, "high_north_peak": 4,
+	"northeast_frontier": 4, "northwest_citadel": 4, "southeast_garrison": 4, "southwest_fortress": 4,
+	# Outer Zone (T5)
+	"shadowmere": 5, "inferno_outpost": 5, "voids_edge": 5, "frozen_reach": 5,
+	"abyssal_depths": 5, "celestial_spire": 5, "storm_peak": 5, "dragons_rest": 5,
+	# Extreme Zone (T6)
+	"primordial_sanctum": 6, "nether_gate": 6, "eastern_terminus": 6, "western_terminus": 6,
+	"chaos_refuge": 6, "entropy_station": 6, "oblivion_watch": 6, "genesis_point": 6,
+	# World's Edge (T7) — apex content frontier
+	"world_spine_north": 7, "world_spine_south": 7, "eternal_east": 7, "eternal_west": 7,
+	"apex_northeast": 7, "apex_southeast": 7, "apex_northwest": 7, "apex_southwest": 7,
+}
+
+const POST_TIER_NAMES = {
+	1: "Core",
+	2: "Inner",
+	3: "Mid",
+	4: "Mid-Outer",
+	5: "Outer",
+	6: "Extreme",
+	7: "World's Edge",
+}
+
+const POST_TIER_COLORS = {
+	1: "#00FF00",  # green — safe
+	2: "#88FF00",  # yellow-green
+	3: "#FFFF00",  # yellow
+	4: "#FFAA00",  # orange
+	5: "#FF6600",  # red-orange
+	6: "#FF0000",  # red — extreme
+	7: "#AA00FF",  # purple — world's edge
+}
+
 func get_post_category(post_id: String) -> String:
 	return POST_CATEGORIES.get(post_id, "default")
 
 func get_post_map_colors(post_id: String) -> Dictionary:
 	var category = get_post_category(post_id)
 	return POST_MAP_COLORS.get(category, POST_MAP_COLORS["default"])
+
+func get_post_tier(post_id: String) -> int:
+	"""Get tier classification (1-7) for a trading post. Defaults to 1 if unknown."""
+	return POST_TIERS.get(post_id, 1)
+
+func get_nearest_post_tier(x: int, y: int) -> Dictionary:
+	"""Get tier info for the nearest trading post.
+	Returns {tier, post_id, post_name, distance, tier_name, tier_color}."""
+	var nearest_post_id = ""
+	var nearest_post_name = ""
+	var nearest_dist = 999999.0
+
+	for post_id in TRADING_POSTS:
+		var post = TRADING_POSTS[post_id]
+		var center = post.center
+		var dist = sqrt(pow(x - center.x, 2) + pow(y - center.y, 2))
+		if dist < nearest_dist:
+			nearest_dist = dist
+			nearest_post_id = post_id
+			nearest_post_name = post.name
+
+	var tier = POST_TIERS.get(nearest_post_id, 1)
+	return {
+		"tier": tier,
+		"post_id": nearest_post_id,
+		"post_name": nearest_post_name,
+		"distance": nearest_dist,
+		"tier_name": POST_TIER_NAMES.get(tier, "Unknown"),
+		"tier_color": POST_TIER_COLORS.get(tier, "#FFFFFF"),
+	}
 
 func get_post_id_at(x: int, y: int) -> String:
 	if not _initialized:

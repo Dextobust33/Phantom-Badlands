@@ -4406,6 +4406,10 @@ func send_location_update(peer_id: int):
 				"distance": dist
 			}
 
+	# Region tier from nearest trading post (post-anchored world model — Slice 1).
+	# Data + visibility only this slice; monster generation still radial from origin.
+	var region_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
+
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -4429,6 +4433,10 @@ func send_location_update(peer_id: int):
 		"area_is_hotspot": is_area_hotspot,
 		"area_is_safe": area_level_hud <= 0,
 		"nearest_post": nearest_post_hud,
+		"region_tier": region_tier_info.get("tier", 1),
+		"region_tier_name": region_tier_info.get("tier_name", "Core"),
+		"region_tier_color": region_tier_info.get("tier_color", "#00FF00"),
+		"region_post_name": region_tier_info.get("post_name", ""),
 	}
 	if in_player_post:
 		location_msg["in_own_enclosure"] = player_post_is_own

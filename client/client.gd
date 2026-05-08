@@ -421,6 +421,7 @@ var _last_displayed_round: int = 0  # round number we last drew a divider for; r
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
 @onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
 @onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
+@onready var region_label = $RootContainer/TopSection/MapPanel/MapDisplay/RegionLabel
 @onready var status_hud = $RootContainer/TopSection/MapPanel/StatusHUD
 @onready var status_hud_backpack = $RootContainer/TopSection/MapPanel/StatusHUD/BackpackLabel
 @onready var status_hud_area = $RootContainer/TopSection/MapPanel/StatusHUD/AreaLabel
@@ -869,6 +870,11 @@ var hud_area_level: int = 0  # Last known area level for Status HUD
 var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
+# Region tier from nearest trading post (post-anchored world model — Slice 1)
+var hud_region_tier: int = 1
+var hud_region_tier_name: String = "Core"
+var hud_region_tier_color: String = "#00FF00"
+var hud_region_post_name: String = ""
 var hud_active_quests: Array = []  # Cached active quests for HUD
 var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
@@ -16672,6 +16678,11 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_nearest_post = message.get("nearest_post", {})
+			# Region tier from post-anchored world model (Slice 1 — visibility only)
+			hud_region_tier = int(message.get("region_tier", 1))
+			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
+			hud_region_tier_color = String(message.get("region_tier_color", "#00FF00"))
+			hud_region_post_name = String(message.get("region_post_name", ""))
 			update_status_hud()
 			# Map Sprites M2 — cache the nearby_players list (with class info)
 			# so the overlay can place a sprite for each visible remote player.
@@ -19468,8 +19479,10 @@ func _load_connection_settings():
 				for conn in saved_connections:
 					if conn.has("port"):
 						conn.port = int(conn.port)
-				# Migrate existing configs: any non-cloud IP gets updated to cloud server
-				if server_ip != "129.213.166.185":
+				# Migrate existing configs: any non-cloud IP gets updated to cloud server.
+				# Skipped when running from the Godot editor so dev builds can test
+				# against localhost / staging servers.
+				if not OS.has_feature("editor") and server_ip != "129.213.166.185":
 					server_ip = "129.213.166.185"
 				# Ensure cloud server is in saved connections
 				var has_cloud = false
@@ -21612,8 +21625,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.226 changes
+	display_game("[color=#00FF00]v0.9.226[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Region tier indicator + post-anchored world model (Slice 1)[/color]")
+	display_game("  • New label above the ASCII map shows your current Area level and Region tier (T1 Core through T7 World's Edge), color-coded by danger. The Region tier is the tier of the nearest trading post — first piece of the post-anchored world overhaul, so you can see at a glance what tier of monsters to expect in your area")
+	display_game("  • This release is data + visibility only. Monster generation is unchanged for now (still distance-from-origin); the Region label labels the world we already have. Future slices will switch monster level to be anchored to the nearest post, add player-base settler-friendly bubbles, and let new characters spawn at posts they've registered")
+	display_game("")
+
 	# v0.9.225 changes
-	display_game("[color=#00FF00]v0.9.225[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.225[/color]")
 	display_game("  [color=#FFD700]Dungeon inventory matches overworld[/color]")
 	display_game("  • Pressing Items inside a dungeon now opens the same visual inventory panel you get on the overworld — equipment grid, equipment slots, right-click context menu (Use/Equip/Inspect/Lock/Drop). Previously the dungeon path forced a flat text-mode usable-items list, which predated the visual panel and never got migrated. Equipment management, inspection, and item-use all flow through the panel now")
 	display_game("")
@@ -21644,11 +21664,6 @@ func display_changelog():
 	display_game("  • Final chest at end of dungeon (post-boss, .hack-style) and trap chests are coming in the next slice — Slice 1 ships these without the boss-teleport-defer surgery")
 	display_game("")
 
-	# v0.9.221 changes
-	display_game("[color=#00FFFF]v0.9.221[/color]")
-	display_game("  [color=#FFD700]Player variant color consistency fix[/color]")
-	display_game("  • The variant color of your class ASCII art was rendering noticeably different across surfaces — map hover and player-popup looked brighter/more blue than the battle scene and inspect/status page. Cause: the map and popup paths passed the variant color through `_ensure_readable_color` (which lifts dark hues into a readable range against the dark UI background), but the battle and inspect paths used the raw stored color. Now all four surfaces apply the same readability transform so a single variant looks identical everywhere")
-	display_game("")
 
 
 
@@ -22464,14 +22479,7 @@ func update_tool_status_overlay():
 		bp_color = "#FFFF00"
 	sections.append("[color=#9ACD32]Backpack:[/color] [color=%s]%d/%d[/color]" % [bp_color, inv_size, inv_max])
 
-	# --- Area level ---
-	if hud_area_is_safe:
-		sections.append("[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]")
-	else:
-		var danger = ""
-		if hud_area_is_hotspot:
-			danger = " [color=#FF0000]!DANGER[/color]"
-		sections.append("[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger])
+	# Area + Region now render above the minimap (see update_region_label) — not duplicated here.
 
 	# --- Compass to nearest NPC post ---
 	if not hud_nearest_post.is_empty():
@@ -22550,6 +22558,31 @@ func update_status_hud():
 	# Keep tool overlay content in sync with any status change that used to
 	# drive this function.
 	update_tool_status_overlay()
+	update_region_label()
+
+func update_region_label():
+	"""Render Area + Region info into the label above the minimap.
+	Larger font + own surface so the player can spot zone tier at a glance."""
+	if region_label == null:
+		return
+	if not has_character:
+		region_label.visible = false
+		return
+
+	var area_line: String
+	if hud_area_is_safe:
+		area_line = "[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]"
+	else:
+		var danger = ""
+		if hud_area_is_hotspot:
+			danger = " [color=#FF0000]!DANGER[/color]"
+		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger]
+
+	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_tier_name]
+
+	region_label.clear()
+	region_label.append_text(area_line + "\n" + region_line)
+	region_label.visible = true
 
 func hide_status_hud():
 	if status_hud:
