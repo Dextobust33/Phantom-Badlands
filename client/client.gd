@@ -21587,8 +21587,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.220 changes
+	display_game("[color=#00FF00]v0.9.220[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Battle ASCII clipping fix[/color]")
+	display_game("  • The v0.9.219 font-size bump made the player ASCII art too tall for its 200px holder in the battle scene — the bottom 30-50px got clipped behind the shared HP bar below the player column. Bumped `_ascii_outer` and `_player_ascii_holder` heights from 200 → 260 so the larger art fits without overlap")
+	display_game("")
+
 	# v0.9.219 changes
-	display_game("[color=#00FF00]v0.9.219[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.219[/color]")
 	display_game("  [color=#FFD700]Sanctuary stale-sprite + bigger ASCII[/color]")
 	display_game("  • Sanctuary screen no longer shows the previous character's sprite + companion to the right of the home view. Same fix as the v0.9.218 char-select case — `_sync_map_sprites_overlay()` is now called when entering HOUSE_SCREEN, hiding the leftover sprites since `game_state != PLAYING` in Sanctuary mode")
 	display_game("  • Player class ASCII art is now larger across all surfaces. Default `DEFAULT_FONT_SIZE` in class_ascii_art.gd bumped from 3 → 4, which propagates to battle scene + inspect/status (4) and player-list popup (3, was 2). Map hover tooltip bumped from 2 → 3 directly. The art reads as a clearer character portrait now instead of a tiny silhouette")
@@ -21616,15 +21622,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.216[/color]")
 	display_game("  [color=#FFD700]Flock-encounter freeze hotfix[/color]")
 	display_game("  • Killing a monster that triggered a flock chain (\"More wolves approaching!\") could freeze the client at the Press-Space-to-Continue screen. Pre-existing tween-lifetime bug, fixed by storing the alpha-pulse tween and killing it explicitly on hide")
-	display_game("")
-
-	# v0.9.215 changes
-	display_game("[color=#00FFFF]v0.9.215[/color]")
-	display_game("  [color=#FFD700]Combat Juice Phase B2 — companion aggro + Taunt Charm[/color]")
-	display_game("  • Companions now have an [color=#FF8800]Aggro stat[/color] that controls how often monsters target them instead of you. Tank-archetype companions (Iron Golem 65%%, Giant 60%%, Gargoyle 55%%, Titan 60%%, etc.) draw far more attacks than evasive ones (Wraith 8%%, Goblin / Wight / Siren / Lich / Nazgul / Time Weaver 12%%). Replaces the flat 25%% roll from B1")
-	display_game("  • Aggro is shown on the companion inspect screen with a label: [color=#FFD700]Tank[/color] (50+) / [color=#FFA500]Fighter[/color] (30-49) / [color=#FFFFFF]Default[/color] (20-29) / [color=#87CEEB]Evasive[/color] (<20). Pick a Bear or Golem if you want a meat shield; pick a Wraith or Time Weaver if you want a glass-cannon damage dealer")
-	display_game("  • New consumable: [color=#FF8800]Taunt Charm[/color] (drops T6-9). Combat-only — uses a free action to add +30%% aggro to your companion for the next 3 monster turns. Stacks additively, soft-capped at 80%% aggro")
-	display_game("  • Admin /admin Test B2 scenario now also stocks 3x Taunt Charm and adds a [b]Give 3x Taunt Charm[/b] button under Test B2")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
