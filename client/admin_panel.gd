@@ -20,7 +20,7 @@ var _title_label: Label
 var _subtitle_label: RichTextLabel
 var _button_column: VBoxContainer
 
-var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc"
+var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc" | "world"
 
 
 func _ready() -> void:
@@ -109,6 +109,7 @@ func _render_page() -> void:
 			_title_label.text = "ADMIN MENU"
 			_subtitle_label.text = "[color=#aaaaaa]All commands are server-gated. Non-admin accounts will be rejected.[/color]"
 			_add_button("Test B2 — companion polish (DR + revive items)", "_page_test_b2", Color(1, 0.84, 0))
+			_add_button("World — settler bubble + post testing", "_page_world", Color(0.6, 1, 0.6))
 			_add_button("Items — give items, consumables, materials", "_page_items")
 			_add_button("Combat — spawn monsters, godmode", "_page_combat")
 			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
@@ -151,6 +152,17 @@ func _render_page() -> void:
 			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
 			_add_button("Spawn Wish Granter (1 HP, 100% wish)", "gm_spawnwish")
 			_add_button("Toggle Godmode", "gm_godmode")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"world":
+			_title_label.text = "ADMIN — WORLD"
+			_subtitle_label.text = "[color=#aaaaaa]Test the post-anchored world Slice 4 settler-bubble suppression without grinding for build materials.[/color]"
+			_add_button("Build Test Post Here  (5x5 + 2 tower-boosted guards)", "gm_build_test_post", Color(0.6, 1, 0.6))
+			_subtitle_subline("Drops a fresh enclosure at your feet and hires 2 free guards. Monsters in the bubble drop to T1.")
+			_add_button("Hire Free Guard (north of you)", "gm_hire_test_guard")
+			_subtitle_subline("Stacks more suppression on a post. Auto-detects tower adjacency.")
+			_add_button("Diagnose Settler Bubble Here", "gm_settler_diag")
+			_subtitle_subline("Prints wilderness tier, bubble status, guard count, monster level.")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"misc":
@@ -226,6 +238,9 @@ func _on_button_pressed(action_id: String) -> void:
 			_render_page()
 		"_page_misc":
 			_current_page = "misc"
+			_render_page()
+		"_page_world":
+			_current_page = "world"
 			_render_page()
 		_:
 			emit_signal("action_triggered", action_id)

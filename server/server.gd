@@ -1367,6 +1367,12 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gm_test_b2(peer_id)
 		"gm_enter_dungeon":
 			handle_gm_enter_dungeon(peer_id, message)
+		"gm_build_test_post":
+			handle_gm_build_test_post(peer_id, message)
+		"gm_hire_test_guard":
+			handle_gm_hire_test_guard(peer_id, message)
+		"gm_settler_diag":
+			handle_gm_settler_diag(peer_id)
 		"dungeon_skip_final_chest":
 			handle_dungeon_skip_final_chest(peer_id)
 		# Open Market handlers
@@ -23984,6 +23990,265 @@ func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 	})
 	# Pre-confirmed so the standard warning popup is skipped — admin path.
 	handle_dungeon_enter(peer_id, {"dungeon_type": dungeon_type, "confirmed": true})
+
+# ===== ADMIN — POST-ANCHORED WORLD TESTING (Slice 4) =====
+
+func _gm_place_owned_tile(username: String, x: int, y: int, tile_type: String) -> bool:
+	"""Place a player-owned tile at (x, y), bypassing build cost. Returns true
+	if placed; false if the tile was blocked (water/void or another player's
+	owned tile). Used by gm_build_test_post / gm_hire_test_guard so admins can
+	exercise the settler-bubble system without grinding for materials."""
+	var existing = chunk_manager.get_tile(x, y)
+	if existing.get("owner", "") != "" and String(existing.get("owner", "")) != username:
+		return false
+	if existing.get("type", "") in ["water", "deep_water", "void"]:
+		return false
+	if world_system:
+		var terrain = world_system.get_terrain_at(x, y)
+		if terrain == world_system.Terrain.VOID:
+			return false
+		if tile_type != "bridge" and terrain in [world_system.Terrain.WATER, world_system.Terrain.DEEP_WATER]:
+			return false
+	var blocks_move = tile_type not in ["door", "bridge"]
+	var blocks_los = tile_type == "wall"
+	var tile_data = {
+		"type": tile_type,
+		"owner": username,
+		"blocks_move": blocks_move,
+		"blocks_los": blocks_los,
+	}
+	var meta := {}
+	if tile_type == "wall":
+		var now = Time.get_unix_time_from_system()
+		tile_data["placed_at"] = now
+		meta["placed_at"] = now
+	chunk_manager.set_tile(x, y, tile_data)
+	persistence.add_player_tile(username, x, y, tile_type, meta)
+	return true
+
+func _gm_force_hire_guard(username: String, gx: int, gy: int) -> Dictionary:
+	"""Hire a guard at (gx, gy) for free, bypassing valor/food cost. Auto-
+	detects tower adjacency. Returns {success: bool, in_tower: bool,
+	reason: String}."""
+	var pos_key = "%d,%d" % [gx, gy]
+	if active_guards.has(pos_key):
+		return {"success": false, "reason": "already_hired"}
+	var in_tower = _find_nearby_tower(gx, gy, 2)
+	var radius = GUARD_TOWER_RADIUS if in_tower else GUARD_BASE_RADIUS
+	var now = Time.get_unix_time_from_system()
+	active_guards[pos_key] = {
+		"owner": username,
+		"hired_at": now,
+		"last_fed": now,
+		"food_remaining": 999.0,  # admin guards never starve
+		"in_tower": in_tower,
+		"radius": radius,
+	}
+	return {"success": true, "in_tower": in_tower, "reason": ""}
+
+func handle_gm_build_test_post(peer_id: int, message: Dictionary):
+	"""Admin: build a 5x5 enclosure at the player's current position with two
+	tower-boosted guards, fully bypassing material/valor/food costs. Used to
+	test the post-anchored world Slice 4 settler bubble without the manual
+	build grind."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var cx = character.x
+	var cy = character.y
+
+	# Bail out if already inside any enclosure (avoid stamping over an
+	# existing post and confusing the BFS detector).
+	if enclosure_tile_lookup.has(Vector2i(cx, cy)):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][GM] You're already inside an enclosure — move outside first.[/color]"})
+		return
+
+	# 5x5 perimeter walls + south door, player ends up at the interior center.
+	var walls_placed = 0
+	for dx in range(-2, 3):
+		# North row (cy+2) and south row (cy-2). Door on south at (cx, cy-2).
+		if _gm_place_owned_tile(username, cx + dx, cy + 2, "wall"):
+			walls_placed += 1
+		var south_type = "door" if dx == 0 else "wall"
+		if _gm_place_owned_tile(username, cx + dx, cy - 2, south_type):
+			walls_placed += 1
+	for dy in range(-1, 2):
+		# East column (cx+2) and west column (cx-2).
+		if _gm_place_owned_tile(username, cx + 2, cy + dy, "wall"):
+			walls_placed += 1
+		if _gm_place_owned_tile(username, cx - 2, cy + dy, "wall"):
+			walls_placed += 1
+
+	if walls_placed == 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][GM] Couldn't place any walls — terrain or other-player ownership blocks every tile.[/color]"})
+		return
+
+	# Two tower+guard pairs just outside the enclosure, on the east and west
+	# flanks. Both well within the default 25-tile bubble radius.
+	var pairs = [
+		{"tower": Vector2i(cx + 5, cy + 1), "guard": Vector2i(cx + 5, cy)},
+		{"tower": Vector2i(cx - 5, cy - 1), "guard": Vector2i(cx - 5, cy)},
+	]
+	var hired_count = 0
+	for pair in pairs:
+		var t: Vector2i = pair["tower"]
+		var g: Vector2i = pair["guard"]
+		if not _gm_place_owned_tile(username, t.x, t.y, "tower"):
+			continue
+		if not _gm_place_owned_tile(username, g.x, g.y, "guard"):
+			continue
+		var hire = _gm_force_hire_guard(username, g.x, g.y)
+		if hire.get("success", false):
+			hired_count += 1
+
+	chunk_manager.save_dirty_chunks()
+	persistence.save_guards(active_guards)
+
+	# Trigger enclosure detection. _check_enclosures_after_build will append
+	# to player_post_names and send a name_post_prompt.
+	var enc_msg = _check_enclosures_after_build(username, peer_id)
+
+	# Auto-name the most recent post and persist tier/bubble_radius.
+	if player_post_names.has(username) and player_post_names[username].size() > 0:
+		var last_idx = player_post_names[username].size() - 1
+		var last = player_post_names[username][last_idx]
+		if String(last.get("name", "")) == "":
+			last["name"] = "Admin Test Post"
+		persistence.set_player_post(username, last_idx, {
+			"name": last.get("name", "Admin Test Post"),
+			"center_x": int(last.center.x),
+			"center_y": int(last.center.y),
+			"created_at": int(last.get("created_at", Time.get_unix_time_from_system())),
+			"tier": int(last.get("tier", DEFAULT_PLAYER_POST_TIER)),
+			"bubble_radius": int(last.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+		})
+
+	# _update_guard_cache cascades into _update_player_post_bubble_cache, so
+	# suppression is live by the time send_location_update fires.
+	if hired_count > 0:
+		_update_guard_cache()
+
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00][GM] Test post built at (%d, %d) — %d walls placed, %d tower-boosted guards hired.[/color]" % [cx, cy, walls_placed, hired_count],
+	})
+	if enc_msg != "":
+		send_to_peer(peer_id, {"type": "text", "message": enc_msg})
+	send_location_update(peer_id)
+
+func handle_gm_hire_test_guard(peer_id: int, _message: Dictionary):
+	"""Admin: drop a guard tile one tile north of the player and hire it for
+	free. Useful for stacking suppression on an existing post without
+	rebuilding everything."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var gx = character.x
+	var gy = character.y + 1  # one tile north (Godot convention)
+
+	var existing = chunk_manager.get_tile(gx, gy)
+	var existing_type = String(existing.get("type", ""))
+	if String(existing.get("owner", "")) != "" and String(existing.get("owner", "")) != username:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][GM] Tile north is owned by someone else.[/color]"})
+		return
+	if existing_type != "guard":
+		if not _gm_place_owned_tile(username, gx, gy, "guard"):
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][GM] Can't place guard tile north of you (terrain or conflict).[/color]"})
+			return
+		chunk_manager.save_dirty_chunks()
+
+	var hire = _gm_force_hire_guard(username, gx, gy)
+	if not hire.get("success", false):
+		var why = String(hire.get("reason", ""))
+		var nice = "already hired" if why == "already_hired" else why
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800][GM] Hire failed: %s.[/color]" % nice})
+		return
+
+	persistence.save_guards(active_guards)
+	_update_guard_cache()
+
+	var label = "tower-boosted " if hire.get("in_tower", false) else ""
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Hired %sguard at (%d, %d).[/color]" % [label, gx, gy]})
+	send_location_update(peer_id)
+
+func handle_gm_settler_diag(peer_id: int):
+	"""Admin: dump settler bubble math at the player's current position so
+	suppression can be verified without trial-and-error fights."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var x = character.x
+	var y = character.y
+
+	var lines: Array = []
+	lines.append("[color=#FF4444]═══ SETTLER BUBBLE DIAG ═══[/color]")
+	lines.append("Position: (%d, %d)" % [x, y])
+
+	var wilderness_info = trading_post_db.get_nearest_post_tier(x, y)
+	lines.append("Wilderness tier: T%d %s — nearest formal post: %s @ %.0f tiles" % [
+		int(wilderness_info.get("tier", 1)),
+		String(wilderness_info.get("tier_name", "")),
+		String(wilderness_info.get("post_name", "")),
+		float(wilderness_info.get("distance", 0.0)),
+	])
+
+	var bubble = _get_player_post_bubble_at(x, y)
+	if bubble.is_empty():
+		lines.append("[color=#888888]Settler bubble: NONE — wilderness levels apply here.[/color]")
+	else:
+		var nm = String(bubble.get("name", ""))
+		if nm == "":
+			nm = "[unnamed]"
+		var post_owner = String(bubble.get("owner", ""))
+		var center_v = bubble.get("center", Vector2i.ZERO)
+		var radius = int(bubble.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+		lines.append("[color=#88FF88]Inside bubble: \"%s\" (owner: %s)[/color]" % [nm, post_owner])
+		lines.append("  Floor tier (post.tier): T%d" % int(bubble.get("tier", DEFAULT_PLAYER_POST_TIER)))
+		lines.append("  Effective tier: T%d  (after guard suppression, clamped)" % int(bubble.get("effective_tier", 1)))
+		lines.append("  Bubble radius: %d  |  distance from post center: %.1f" % [radius, float(bubble.get("distance", 0.0))])
+
+		var guard_count = 0
+		var tower_count = 0
+		for pk in active_guards:
+			var gd = active_guards[pk]
+			if String(gd.get("owner", "")) != post_owner:
+				continue
+			var parts = String(pk).split(",")
+			if parts.size() != 2:
+				continue
+			var ggx = int(parts[0])
+			var ggy = int(parts[1])
+			var ddx = float(ggx - center_v.x)
+			var ddy = float(ggy - center_v.y)
+			if sqrt(ddx * ddx + ddy * ddy) > float(radius):
+				continue
+			guard_count += 1
+			if bool(gd.get("in_tower", false)):
+				tower_count += 1
+		lines.append("  Guards inside bubble: %d  (%d tower-boosted)" % [guard_count, tower_count])
+		lines.append("  Suppression strength: -%d tiers (1 per guard, 1 extra per tower-guard)" % (guard_count + tower_count))
+
+	var lr = world_system.get_monster_level_range(x, y)
+	lines.append("Monster level here: base %d  (range %d-%d, hotspot=%s)" % [
+		int(lr.get("base_level", 0)),
+		int(lr.get("min", 0)),
+		int(lr.get("max", 0)),
+		"YES" if bool(lr.get("is_hotspot", false)) else "no",
+	])
+
+	for line in lines:
+		send_to_peer(peer_id, {"type": "text", "message": line})
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""
