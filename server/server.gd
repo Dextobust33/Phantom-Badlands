@@ -4410,6 +4410,22 @@ func send_location_update(peer_id: int):
 	# Data + visibility only this slice; monster generation still radial from origin.
 	var region_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
 
+	# Slice 3 — if the player is inside any player-post settler bubble, the
+	# region indicator switches to that post's name and tier (visual override
+	# only; monster generation unchanged). Closest covering bubble wins.
+	var settler_bubble = _get_player_post_bubble_at(character.x, character.y)
+	if not settler_bubble.is_empty():
+		var pp_tier = settler_bubble.get("tier", DEFAULT_PLAYER_POST_TIER)
+		var pp_name = settler_bubble.get("name", "")
+		if pp_name == "":
+			pp_name = "%s's Post" % settler_bubble.get("owner", "")
+		region_tier_info = {
+			"tier": pp_tier,
+			"tier_name": trading_post_db.POST_TIER_NAMES.get(pp_tier, "Core"),
+			"tier_color": trading_post_db.POST_TIER_COLORS.get(pp_tier, "#00FF00"),
+			"post_name": pp_name,
+		}
+
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -16411,6 +16427,13 @@ const MAX_PLAYER_TILES = 200
 const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
+# Post-anchored world Slice 3 — player post settler bubble defaults.
+# tier defaults to T1 so newly-built posts surface as low-level havens (visual
+# indicator only this slice; bubble becomes load-bearing in Slice 4 once
+# guard/tower/food gating is implemented).
+const DEFAULT_PLAYER_POST_TIER: int = 1
+const DEFAULT_PLAYER_POST_BUBBLE_RADIUS: int = 25
+
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
 var player_enclosures: Dictionary = {}
 # Player post naming: {username: [{name, center, created_at}]} — index-aligned with player_enclosures
@@ -16666,6 +16689,46 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
 	send_location_update(peer_id)
 
+func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
+	"""Slice 3 — return the nearest player-post settler bubble covering (x, y),
+	or {} if none. Result fields: owner, post_index, name, center, tier,
+	bubble_radius, distance.
+
+	Visual indicator only this slice; monster levels still come from
+	post-anchored model in shared/world_system.gd. Slice 4 will gate the
+	bubble's effective tier on guard/tower/food maintenance."""
+	var nearest_match = {}
+	var nearest_dist = INF
+	for owner in player_post_names:
+		var posts = player_post_names[owner]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			var radius = int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+			var dx = float(x - cx)
+			var dy = float(y - cy)
+			var d = sqrt(dx * dx + dy * dy)
+			if d <= float(radius) and d < nearest_dist:
+				nearest_dist = d
+				nearest_match = {
+					"owner": owner,
+					"post_index": i,
+					"name": meta.get("name", ""),
+					"center": Vector2i(cx, cy),
+					"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+					"bubble_radius": radius,
+					"distance": d,
+				}
+	return nearest_match
+
 func _is_in_own_enclosure(x: int, y: int, username: String) -> bool:
 	"""Check if a position is inside one of the player's enclosures."""
 	if not player_enclosures.has(username):
@@ -16767,7 +16830,13 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 		_update_enclosure_tile_lookup(enclosure, username, enc_idx)
 		if not player_post_names.has(username):
 			player_post_names[username] = []
-		player_post_names[username].append({"name": "", "center": center, "created_at": int(Time.get_unix_time_from_system())})
+		player_post_names[username].append({
+			"name": "",
+			"center": center,
+			"created_at": int(Time.get_unix_time_from_system()),
+			"tier": DEFAULT_PLAYER_POST_TIER,
+			"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
+		})
 		# Send naming prompt to player
 		if peer_id >= 0:
 			send_to_peer(peer_id, {"type": "name_post_prompt", "enclosure_index": enc_idx})
@@ -16826,7 +16895,13 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 				if idx < old_names.size():
 					remaining_names.append(old_names[idx])
 				else:
-					remaining_names.append({"name": "", "center": _calculate_enclosure_center(still_valid), "created_at": 0})
+					remaining_names.append({
+						"name": "",
+						"center": _calculate_enclosure_center(still_valid),
+						"created_at": 0,
+						"tier": DEFAULT_PLAYER_POST_TIER,
+						"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
+					})
 			else:
 				# Enclosure broken - unmark interior tiles
 				_unmark_enclosure_safe(enclosure)
@@ -16848,7 +16923,9 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 				"name": meta.get("name", ""),
 				"center_x": cx,
 				"center_y": cy,
-				"created_at": int(meta.get("created_at", 0))
+				"created_at": int(meta.get("created_at", 0)),
+				"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 			})
 		var max_posts = _get_max_post_count_for_username(username)
 		return "[color=#FF8800]Enclosure broken! (%d/%d remaining)[/color]" % [remaining.size(), max_posts]
@@ -17026,13 +17103,23 @@ func _rebuild_enclosures_for_player(username: String):
 			var center = _calculate_enclosure_center(enc)
 			var matched_name = ""
 			var matched_at = 0
+			var matched_tier = DEFAULT_PLAYER_POST_TIER
+			var matched_radius = DEFAULT_PLAYER_POST_BUBBLE_RADIUS
 			for sp in saved_posts:
 				var sc = Vector2i(int(sp.get("center_x", sp.get("center", {}).get("x", 0))), int(sp.get("center_y", sp.get("center", {}).get("y", 0))))
 				if abs(center.x - sc.x) <= 1 and abs(center.y - sc.y) <= 1:
 					matched_name = sp.get("name", "")
 					matched_at = int(sp.get("created_at", 0))
+					matched_tier = int(sp.get("tier", DEFAULT_PLAYER_POST_TIER))
+					matched_radius = int(sp.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
 					break
-			rebuilt_names.append({"name": matched_name, "center": center, "created_at": matched_at})
+			rebuilt_names.append({
+				"name": matched_name,
+				"center": center,
+				"created_at": matched_at,
+				"tier": matched_tier,
+				"bubble_radius": matched_radius,
+			})
 		player_post_names[username] = rebuilt_names
 		# Reconnect rebuilt enclosures to road network
 		for rn in rebuilt_names:
@@ -17068,7 +17155,9 @@ func handle_name_post(peer_id: int, message: Dictionary):
 		"name": meta.name,
 		"center_x": int(meta.center.x),
 		"center_y": int(meta.center.y),
-		"created_at": meta.created_at
+		"created_at": meta.created_at,
+		"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+		"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 	})
 	send_to_peer(peer_id, {"type": "post_named", "name": name_text})
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]Post established: %s[/color]" % name_text})
