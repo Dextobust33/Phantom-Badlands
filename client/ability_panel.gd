@@ -26,7 +26,7 @@ var _choose_for_slot: int = -1     # -1 idle; 0-5 panel is in "pick ability for 
 var _ability_uses: Dictionary = {} # Mastery Slice 1: ability_name → use count, drives rank display
 
 # Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*)
-const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]
+const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
 const MASTERY_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644"]
@@ -377,9 +377,11 @@ func _rebuild_slots() -> void:
 			var disp = str(info.get("display", _humanize(ab_name)))
 			name_label.text = "[color=#00FF00]%s[/color]  %s" % [disp, _get_rank_progress_text(ab_name)]
 			cost_label.text = _cost_text_for(ab_name)
+			card.tooltip_text = _tooltip_for(ab_name)
 		else:
 			name_label.text = "[color=#666666]Empty[/color]"
 			cost_label.text = ""
+			card.tooltip_text = "Empty slot — click to assign an ability."
 
 
 func _rebuild_abilities() -> void:
@@ -442,6 +444,8 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	card.add_theme_stylebox_override("panel", sb)
 	card.custom_minimum_size = Vector2(180, 56)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	# Mastery Slice 1 polish — hover tooltip with cost / effect / rank info
+	card.tooltip_text = _tooltip_for(ab_name)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
@@ -490,6 +494,13 @@ func _cost_text_for(ability_name: String) -> String:
 	if client_ref and client_ref.has_method("_get_ability_cost_text"):
 		return str(client_ref._get_ability_cost_text(ability_name))
 	return ""
+
+func _tooltip_for(ability_name: String) -> String:
+	"""Plain-text hover tooltip from the client. Falls back to a humanized
+	display name if the client doesn't expose the helper yet."""
+	if client_ref and client_ref.has_method("_get_ability_tooltip"):
+		return str(client_ref._get_ability_tooltip(ability_name))
+	return _humanize(ability_name)
 
 
 func _find_ability(ab_name: String) -> Dictionary:

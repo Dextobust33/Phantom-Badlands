@@ -245,7 +245,10 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
-const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]
+# Thresholds 3x'd (was 10/50/200/1000) on user feedback to slow the grind. The
+# 200-use backfill still lands at rank 2 with the new curve so no migration
+# needed for existing characters.
+const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_BACKFILL_USES: int = 200

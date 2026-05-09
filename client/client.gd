@@ -2225,7 +2225,7 @@ func _process(delta):
 		if fusion_panel.visible != _fusion_should_show:
 			fusion_panel.visible = _fusion_should_show
 
-	# Sync ability panel — shows for ability_mode (More → Abilities). Hide for the
+	# Sync ability panel — shows for ability_mode (Settings → Abilities). Hide for the
 	# keyboard sub-states (press_keybind, choose_ability, etc.) so the text prompt
 	# can take over for the keyboard listening step.
 	var _ability_should_show: bool = false
@@ -14913,6 +14913,86 @@ func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> D
 			return ability
 	return {}
 
+func _get_ability_description_text(ability_name: String) -> String:
+	"""Plain-text description for an ability — used by AbilityPanel hover
+	tooltips. Mirrors the desc strings in shared/constants.gd MAGE/WARRIOR/
+	TRICKSTER_ABILITIES; kept client-side because tooltip_text needs plain
+	text and these rarely change."""
+	match ability_name:
+		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
+		"shield": return "Alias for Forcefield."
+		"cloak": return "Spend 8% max resource per movement to stay invisible to encounters."
+		"blast": return "Deal INT * 2 damage in a burst."
+		"forcefield": return "Block the next 2 attacks completely."
+		"teleport": return "Guaranteed flee from combat (always succeeds)."
+		"meteor": return "Deal INT * 5 damage. High mana cost."
+		"haste": return "Buff that grants extra actions for several rounds."
+		"paralyze": return "Stun the enemy for 1 turn."
+		"banish": return "Remove a non-boss monster from the fight outright."
+		"power_strike": return "Deal STR * 1.5 damage with a cheap stamina spend."
+		"war_cry": return "+25% damage for 3 rounds."
+		"shield_bash": return "Deal STR damage and stun the enemy for 1 turn."
+		"cleave": return "Deal STR * 2 damage in a sweeping strike."
+		"berserk": return "+100% damage / -50% defense for 3 rounds. High risk."
+		"iron_skin": return "Block 50% of incoming damage for 3 rounds."
+		"devastate": return "Deal STR * 4 damage. Massive stamina cost."
+		"fortify": return "Defensive stance — reduces incoming damage."
+		"rally": return "Restore stamina and refresh buffs."
+		"analyze": return "Reveal monster HP, damage, and intelligence stats."
+		"distract": return "Enemy suffers -50% accuracy on its next attack."
+		"pickpocket": return "Steal WITS * 10 gold; failure means you take a hit instead."
+		"ambush": return "3x WITS-scaled damage with +50% crit chance."
+		"vanish": return "Go invisible — your next attack is guaranteed crit."
+		"exploit": return "Deal 15-35% of the monster's max HP."
+		"perfect_heist": return "Instant win plus double rewards. Massive cost."
+		"sabotage": return "Reduce enemy stats / disrupt their next ability."
+		"gambit": return "4.5x damage and bonus loot on kill — risky on miss."
+		"all_or_nothing": return "Deal massive damage on hit, suffer heavy backlash on miss."
+		_:
+			return ""
+
+func _get_ability_tooltip(ability_name: String) -> String:
+	"""Compose the full hover tooltip for an ability card (plain text):
+	display name, cost summary, effect, current rank + damage modifier,
+	progress to next rank."""
+	if ability_name == "":
+		return ""
+	var display = ability_name.replace("_", " ").capitalize()
+	# Strip BBCode from cost text for tooltip plain text
+	var cost_raw = _get_ability_cost_text(ability_name)
+	var bb_re = RegEx.new()
+	bb_re.compile("\\[.*?\\]")
+	var cost_clean = bb_re.sub(cost_raw, "", true)
+	var desc = _get_ability_description_text(ability_name)
+	var ability_uses = character_data.get("ability_uses", {})
+	var uses = int(ability_uses.get(ability_name, 0))
+	# Inline rank computation (mirrors character.gd MASTERY_RANK_THRESHOLDS)
+	var thresholds = [30, 150, 600, 2400]
+	var rank = 0
+	for t in thresholds:
+		if uses >= int(t): rank += 1
+		else: break
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20]
+	var rank_name = rank_names[rank] if rank < rank_names.size() else "Master"
+	var mult_pct = int((rank_mults[rank] - 1.0) * 100) if rank < rank_mults.size() else 20
+	var mult_str = ("+%d%%" % mult_pct) if mult_pct >= 0 else ("%d%%" % mult_pct)
+	var progress = ""
+	if rank >= thresholds.size():
+		progress = "Mastered"
+	else:
+		progress = "%d / %d to next rank" % [uses, int(thresholds[rank])]
+	var lines: Array = [display]
+	if cost_clean.strip_edges() != "":
+		lines.append("Cost: " + cost_clean.strip_edges())
+	if desc != "":
+		lines.append(desc)
+	lines.append("")
+	lines.append("Rank %d — %s" % [rank, rank_name])
+	lines.append("Damage modifier: %s" % mult_str)
+	lines.append(progress)
+	return "\n".join(lines)
+
 func _get_ability_cost_text(ability_name: String) -> String:
 	"""Get cost text for an ability"""
 	var path = _get_player_active_path()
@@ -21749,11 +21829,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.237 changes
+	display_game("[color=#00FF00]v0.9.237[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Mastery polish — slower grind, hover tooltips, anti-spam cap[/color]")
+	display_game("  • [b]Rank thresholds tripled[/b] (was 10/50/200/1000, now 30/150/600/2400). Existing characters' rank-2 backfill still lands at baseline so no balance shift — just a slower climb to mastered. Use-grind matches the audit's \"earn it\" feel")
+	display_game("  • [b]Hover tooltips[/b] on ability cards in Settings → Abilities. Mouse over any slot or grid card to see the ability's cost, effect, current rank + damage modifier, and progress to the next rank")
+	display_game("  • [b]Anti-spam cap:[/b] only the first 5 uses of any ability per combat now count toward mastery. Casting Magic Bolt at 5 mana 30 times in a single fight no longer earns 30 mastery credits — abilities still resolve normally past the cap, they just don't rank you up. Bridges to the eventual deck-building model where draw-N-per-round naturally bounds uses")
+	display_game("  • Side fix: changelog earlier referred to \"More → Abilities\" — corrected to Settings → Abilities")
+	display_game("")
+
 	# v0.9.236 changes
-	display_game("[color=#00FF00]v0.9.236[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.236[/color]")
 	display_game("  [color=#FFD700]Combat ability mastery — Slice 1[/color]")
 	display_game("  • Major shift: [b]every ability is now accessible from level 1[/b], but effective power scales with how much you use it. 5 ranks per ability (Untrained → Master), unlocked at 10 / 50 / 200 / 1000 cumulative uses. Rank 0 hits at -20% damage; rank 2 (200 uses) is baseline; rank 4 caps at +20%. Existing characters get rank 2 backfilled on their archetype's abilities so they don't take a retroactive nerf")
-	display_game("  • Rank shows up on every ability card in the More → Abilities panel: \"Magic Bolt — R2 Adept (45/200)\". Cross a threshold mid-fight and a chat line drops: \"Mastery rank up! Magic Bolt reached Rank 2 (Adept) — damage modifier now +0%\"")
+	display_game("  • Rank shows up on every ability card in the Settings → Abilities panel: \"Magic Bolt — R2 Adept (45/200)\". Cross a threshold mid-fight and a chat line drops: \"Mastery rank up! Magic Bolt reached Rank 2 (Adept) — damage modifier now +0%\"")
 	display_game("  • [color=#FFAA00]Slice 1 limitations:[/color] damage bonus only applies to Magic Bolt + Power Strike right now (those already had the hook). Other damage abilities still track usage and rank up but the damage mult comes in 1b. Account-level persistence, Sanctuary headstart purchases, deck pruning, and ability modifiers are later slices in this initiative")
 	display_game("")
 
@@ -21778,11 +21867,6 @@ func display_changelog():
 	display_game("  • The Region label now shows what's waiting outside your settler bubble whenever you're inside one. \"Outside: T6 Extreme (Lv ~300)\" — subtle gray when you're deep in the bubble, switches to a red [color=#FF6644]! N tiles to edge[/color] warning when you're within 5 tiles of the boundary so a casual step outside won't suddenly drop you into level-300 monsters")
 	display_game("")
 
-	# v0.9.232 changes
-	display_game("[color=#00FFFF]v0.9.232[/color]")
-	display_game("  [color=#FFD700]Post-anchored world initiative shipped — Slices 1-4 + admin kit + persistent build mode[/color]")
-	display_game("  • Bundled rollup release. Items below cover the five internal slices that landed since v0.9.226")
-	display_game("")
 
 
 

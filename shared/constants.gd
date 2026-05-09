@@ -142,7 +142,7 @@ const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
 # shock. Slay-the-Spire-style deck building (pruning, modifiers, off-affinity
 # counter, account-level persistence, headstart purchase) lands in later
 # slices.
-const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]  # uses needed to reach ranks 1-4 (rank 0 = no uses required)
+const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]  # uses needed to reach ranks 1-4 (rank 0 = no uses required). 3x slower than the v0.9.236 first cut.
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]  # rank 0 → 4
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_BACKFILL_USES: int = 200  # Existing characters get this many uses on archetype abilities at first load — puts them at rank 2 (baseline) so balance doesn't shift retroactively
