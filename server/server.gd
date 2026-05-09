@@ -4414,7 +4414,8 @@ func send_location_update(peer_id: int):
 
 	# Region tier from nearest trading post (post-anchored world model — Slice 1).
 	# Data + visibility only this slice; monster generation still radial from origin.
-	var region_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
+	var wilderness_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
+	var region_tier_info = wilderness_tier_info
 
 	# Slice 3/4 — if the player is inside any player-post settler bubble, the
 	# region indicator switches to that post's name and effective tier. The
@@ -4422,7 +4423,9 @@ func send_location_update(peer_id: int):
 	# an unguarded post just shows the wilderness tier and a fully-invested
 	# post shows T1. Closest covering bubble wins.
 	var settler_bubble = _get_player_post_bubble_at(character.x, character.y)
-	if not settler_bubble.is_empty():
+	var in_bubble = not settler_bubble.is_empty()
+	var bubble_edge_dist = -1
+	if in_bubble:
 		var pp_tier = int(settler_bubble.get("effective_tier", settler_bubble.get("tier", DEFAULT_PLAYER_POST_TIER)))
 		var pp_name = settler_bubble.get("name", "")
 		if pp_name == "":
@@ -4433,6 +4436,19 @@ func send_location_update(peer_id: int):
 			"tier_color": trading_post_db.POST_TIER_COLORS.get(pp_tier, "#00FF00"),
 			"post_name": pp_name,
 		}
+		# Boundary warning support: how many tiles before the player walks out
+		# of the bubble. Uses ceil so "1 tile from edge" reads as 1, not 0.
+		var radius = float(settler_bubble.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+		var dist_from_center = float(settler_bubble.get("distance", 0.0))
+		bubble_edge_dist = max(0, int(ceil(radius - dist_from_center)))
+
+	# Outside-tier info: what the player would face if they exited the
+	# bubble. Always wilderness tier at the current tile (the bubble override
+	# masked it, but it's the level the player will instantly see one tile
+	# outside the bubble). Sent every tick — client only renders the warning
+	# line when in_bubble == true so it doesn't add noise outside.
+	var outside_tier = int(wilderness_tier_info.get("tier", 1))
+	var outside_level = world_system.level_for_tier(outside_tier)
 
 	# Send map display as description
 	var location_msg = {
@@ -4461,6 +4477,15 @@ func send_location_update(peer_id: int):
 		"region_tier_name": region_tier_info.get("tier_name", "Core"),
 		"region_tier_color": region_tier_info.get("tier_color", "#00FF00"),
 		"region_post_name": region_tier_info.get("post_name", ""),
+		# Slice 4 boundary warning — client renders these only when in_bubble
+		# is true, so the player sees the wilderness tier they'd hit on exit
+		# and (when close to the edge) a red warning line.
+		"region_in_bubble": in_bubble,
+		"region_bubble_edge_dist": bubble_edge_dist,
+		"region_outside_tier": outside_tier,
+		"region_outside_tier_name": String(wilderness_tier_info.get("tier_name", "Core")),
+		"region_outside_tier_color": String(wilderness_tier_info.get("tier_color", "#00FF00")),
+		"region_outside_level": outside_level,
 	}
 	if in_player_post:
 		location_msg["in_own_enclosure"] = player_post_is_own
