@@ -21829,8 +21829,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.238 changes
+	display_game("[color=#00FF00]v0.9.238[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — player ASCII art restored in launcher builds[/color]")
+	display_game("  • The 9 class ASCII portraits (Fighter, Wizard, Thief, etc.) weren't being packed into launcher builds, so the battle scene fell back to the LPC sprite and inspect / status / character sheet / hover popup all came back blank. Dev mode read them straight off disk so the bug only showed up on shipped builds. Export filter now explicitly includes the .txt portraits — your class face is back everywhere it should be")
+	display_game("")
+
 	# v0.9.237 changes
-	display_game("[color=#00FF00]v0.9.237[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.237[/color]")
 	display_game("  [color=#FFD700]Mastery polish — slower grind, hover tooltips, anti-spam cap[/color]")
 	display_game("  • [b]Rank thresholds tripled[/b] (was 10/50/200/1000, now 30/150/600/2400). Existing characters' rank-2 backfill still lands at baseline so no balance shift — just a slower climb to mastered. Use-grind matches the audit's \"earn it\" feel")
 	display_game("  • [b]Hover tooltips[/b] on ability cards in Settings → Abilities. Mouse over any slot or grid card to see the ability's cost, effect, current rank + damage modifier, and progress to the next rank")
@@ -21861,11 +21867,6 @@ func display_changelog():
 	display_game("  • Posts created before this update get account ownership stamped on them automatically when their owning character is still alive. Old orphan posts (owner already dead) stay in the world but can't be spawn points")
 	display_game("")
 
-	# v0.9.233 changes
-	display_game("[color=#00FFFF]v0.9.233[/color]")
-	display_game("  [color=#FFD700]Settler bubble — boundary warning[/color]")
-	display_game("  • The Region label now shows what's waiting outside your settler bubble whenever you're inside one. \"Outside: T6 Extreme (Lv ~300)\" — subtle gray when you're deep in the bubble, switches to a red [color=#FF6644]! N tiles to edge[/color] warning when you're within 5 tiles of the boundary so a casual step outside won't suddenly drop you into level-300 monsters")
-	display_game("")
 
 
 
