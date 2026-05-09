@@ -21630,43 +21630,46 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.226 changes
-	display_game("[color=#00FF00]v0.9.226[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Region tier indicator + post-anchored world model (Slice 1)[/color]")
-	display_game("  • New label above the ASCII map shows your current Area level and Region tier (T1 Core through T7 World's Edge), color-coded by danger. The Region tier is the tier of the nearest trading post — first piece of the post-anchored world overhaul, so you can see at a glance what tier of monsters to expect in your area")
-	display_game("  • This release is data + visibility only. Monster generation is unchanged for now (still distance-from-origin); the Region label labels the world we already have. Future slices will switch monster level to be anchored to the nearest post, add player-base settler-friendly bubbles, and let new characters spawn at posts they've registered")
+	# v0.9.232 changes
+	display_game("[color=#00FF00]v0.9.232[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Post-anchored world initiative shipped — Slices 1-4 + admin kit + persistent build mode[/color]")
+	display_game("  • Bundled rollup release. Items below cover the five internal slices that landed since v0.9.226")
 	display_game("")
 
-	# v0.9.225 changes
-	display_game("[color=#00FFFF]v0.9.225[/color]")
-	display_game("  [color=#FFD700]Dungeon inventory matches overworld[/color]")
-	display_game("  • Pressing Items inside a dungeon now opens the same visual inventory panel you get on the overworld — equipment grid, equipment slots, right-click context menu (Use/Equip/Inspect/Lock/Drop). Previously the dungeon path forced a flat text-mode usable-items list, which predated the visual panel and never got migrated. Equipment management, inspection, and item-use all flow through the panel now")
+	# v0.9.231 changes
+	display_game("[color=#00FFFF]v0.9.231[/color]")
+	display_game("  [color=#FFD700]Persistent build mode — chain placements without re-opening menus[/color]")
+	display_game("  • Placing a wall or door no longer kicks you back to the inventory. Build mode stays alive for the same structure type — keep pressing W/A/S/D to lay down more tiles. The mode exits when the stack runs out or you press Cancel. Same loop applies to demolish")
+	display_game("  • Each placement's result is shown inline above the direction prompt (\"+ Placed Wall!\" or \"x Out of bounds!\"), and the count is shown when you first pick a structure. Building a 5x5 enclosure is now a couple presses instead of a couple dozen menu cycles")
 	display_game("")
 
-	# v0.9.224 changes
-	display_game("[color=#00FFFF]v0.9.224[/color]")
-	display_game("  [color=#FFD700]Dungeon chests — Slice 2: final chest + boss-teleport defer[/color]")
-	display_game("  • Killing the boss no longer auto-teleports you out of the dungeon. Instead, a [color=#FFAA00]final chest[/color] (the orange [b]*[/b] tile) spawns next to where the boss fell, and the dungeon-completion teleport waits for you to claim it (or hit Leave Now)")
-	display_game("  • The final chest is guaranteed and richer than scattered chests: 1 tier-appropriate equipment piece (rolled twice, better-rarity outcome kept), 1-3 monster-themed materials scaled by sub-tier, 1 dungeon-exclusive consumable, and 3-5x typical-fight Valor")
-	display_game("  • New \"Leave Now\" action bar button while the chest is unclaimed — for when you'd rather bail than risk extra steps walking to it")
-	display_game("  • Edge case: if you reconnect after a server restart with the chest tile still on the grid, walking onto it will now still open it (re-adds the in-memory pending state)")
+	# v0.9.230 changes
+	display_game("[color=#00FFFF]v0.9.230[/color]")
+	display_game("  [color=#FFD700]Admin testing kit for settler bubbles[/color]")
+	display_game("  • New /admin → World page with three tools: [color=#90EE90]Build Test Post Here[/color] (drops a 5x5 enclosure at your feet with two tower-boosted guards, no cost — instant T1 bubble), [color=#90EE90]Hire Free Guard[/color] (one tile north, auto-detects tower adjacency), [color=#90EE90]Diagnose Settler Bubble[/color] (prints wilderness tier, current bubble state, guard count, monster level at your tile)")
+	display_game("  • Lets you actually exercise the post-anchored world's bubble suppression without grinding for build materials or hunting down a guard post in the world")
 	display_game("")
 
-	# v0.9.223 changes
-	display_game("[color=#00FFFF]v0.9.223[/color]")
-	display_game("  [color=#FFD700]Dungeon overlay fix + admin instant-dungeon entry[/color]")
-	display_game("  • Dungeon view no longer shows a stray world-map sprite + companion drawn off to the right of the dungeon grid. The world-map sprite overlay (added with the class-sprite system) wasn't being hidden when entering a dungeon — same class of bug as the v0.9.218/v0.9.219 char-select / Sanctuary fixes. `_sync_map_sprites_overlay()` now also gates on `dungeon_mode`, and is called on dungeon enter, complete, and exit")
-	display_game("  • Reminder: in the dungeon grid, treasure chests are the [color=#FFD700]gold $[/color] tile — that's where the new equipment + dungeon-exclusive consumables drop")
-	display_game("  • New admin shortcut: /admin → Items → \"Enter T1/T6/Tier-Appropriate Dungeon (instant)\" drops you straight into a fresh personal dungeon instance — no walking to a 'D' tile, no waiting for spawns. Pre-confirmed so the warning popup is skipped")
+	# v0.9.229 changes
+	display_game("[color=#00FFFF]v0.9.229[/color]")
+	display_game("  [color=#FFD700]Active settler bubbles — guards now suppress monster levels (Slice 4)[/color]")
+	display_game("  • Each guard owned by you inside one of your post bubbles drops the local monster tier by 1. Guards adjacent to a tower drop it by 2. Floor at the post's stored tier (default T1), ceiling at the surrounding wilderness tier — extras don't make things harder. When guards starve (food expires), suppression fades back. Public-by-default: anyone in your bubble gets the suppressed monsters")
+	display_game("  • The Region label now shows the [b]effective[/b] tier (post suppression of wilderness), not the floor — an unguarded post in T6 territory still shows T6, a guarded one shows the suppressed value")
+	display_game("  • [color=#FFAA00]Heads up:[/color] the new-player tutorial will need to teach this. Until then, /admin → World is the testing path")
 	display_game("")
 
-	# v0.9.222 changes
-	display_game("[color=#00FFFF]v0.9.222[/color]")
-	display_game("  [color=#FFD700]Dungeon chests — Slice 1: equipment + 3 dungeon-exclusive consumables[/color]")
-	display_game("  • Treasure chests in dungeons now have a 55% chance to drop a tier-appropriate equipment piece on top of the existing materials/egg/scroll/recipe roll. This is the \"equipment slightly more common in dungeons\" knob — chests are the answer, monster drop tables are unchanged so world fights aren't affected")
-	display_game("  • Three new dungeon-exclusive consumables, only available from chest drops (25% chance per chest, gated by dungeon tier): [color=#FF8800]Boss-Slayer Tonic[/color] (+30% damage vs boss monsters, 1 battle), [color=#FFD700]Reclaimer's Lantern[/color] (+25% chance for an extra item drop on next 5 dungeon kills), [color=#9ACD32]Floor Skip Charm[/color] (advances to next dungeon floor instantly, useless on boss floor). Tier-1 chests only drop the Charm; Lantern unlocks at T2, Tonic at T4")
-	display_game("  • Easier testing: /admin → Items → \"Test Dungeon Chest Drops\" gives one of each new consumable plus a T6 equipment piece, no dungeon-running needed")
-	display_game("  • Final chest at end of dungeon (post-boss, .hack-style) and trap chests are coming in the next slice — Slice 1 ships these without the boss-teleport-defer surgery")
+	# v0.9.228 changes
+	display_game("[color=#00FFFF]v0.9.228[/color]")
+	display_game("  [color=#FFD700]Player post settler bubbles (Slice 3) — visual only[/color]")
+	display_game("  • Player posts now have a tier rating (default T1) and a settler bubble (default 25 tiles around the post center). When you walk into your enclosure or the area around it, the Region label switches to your post's name and tier. Persisted across server restarts")
+	display_game("  • This release is purely the data + indicator; v0.9.229 is when the bubble actually starts suppressing monsters")
+	display_game("")
+
+	# v0.9.227 changes
+	display_game("[color=#00FFFF]v0.9.227[/color]")
+	display_game("  [color=#FFD700]Post-anchored monster level model (Slice 2)[/color]")
+	display_game("  • Monster level generation now flows through the post-anchored model: each trading post anchors the local monster level, and tiles between posts blend smoothly between the two nearest anchors. The wilderness radial curve stays as a floor for apex zones beyond the post network")
+	display_game("  • Architectural rewire only — at every post center the level matches what the radial curve produced before, and lerps between posts approximate the same. No balance change in the current world. The visible payoff comes when player posts override anchors (Slice 3+) and when per-tier base levels get tuned (Slice 6+)")
 	display_game("")
 
 
