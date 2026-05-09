@@ -4410,12 +4410,14 @@ func send_location_update(peer_id: int):
 	# Data + visibility only this slice; monster generation still radial from origin.
 	var region_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
 
-	# Slice 3 — if the player is inside any player-post settler bubble, the
-	# region indicator switches to that post's name and tier (visual override
-	# only; monster generation unchanged). Closest covering bubble wins.
+	# Slice 3/4 — if the player is inside any player-post settler bubble, the
+	# region indicator switches to that post's name and effective tier. The
+	# effective tier already reflects guard/tower suppression (Slice 4), so
+	# an unguarded post just shows the wilderness tier and a fully-invested
+	# post shows T1. Closest covering bubble wins.
 	var settler_bubble = _get_player_post_bubble_at(character.x, character.y)
 	if not settler_bubble.is_empty():
-		var pp_tier = settler_bubble.get("tier", DEFAULT_PLAYER_POST_TIER)
+		var pp_tier = int(settler_bubble.get("effective_tier", settler_bubble.get("tier", DEFAULT_PLAYER_POST_TIER)))
 		var pp_name = settler_bubble.get("name", "")
 		if pp_name == "":
 			pp_name = "%s's Post" % settler_bubble.get("owner", "")
@@ -16689,6 +16691,95 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
 	send_location_update(peer_id)
 
+func _compute_effective_post_tier(post_meta: Dictionary) -> int:
+	"""Slice 4 — compute effective settler bubble tier from guard/tower count.
+
+	Moderate suppression formula (per design):
+	- Each guard owned by the post's owner inside the bubble: -1 from
+	  wilderness tier
+	- Each of those guards adjacent to a tower (already flagged in_tower at
+	  hire time): an additional -1 (so a tower-guard subtracts 2 total)
+	- Floor at post_meta.tier (default 1) — represents the best case with
+	  full investment; can never suppress past this
+	- Ceiling at wilderness tier — extra guards never raise difficulty
+
+	Wilderness tier is taken from the nearest formal trading post (Slice 1).
+	post_meta must include `_owner` (added by callers) since active_guards
+	is keyed by position, not by post."""
+	var c = post_meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var radius = int(post_meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
+	var owner = String(post_meta.get("_owner", ""))
+
+	var wilderness_info = trading_post_db.get_nearest_post_tier(cx, cy)
+	var wilderness_tier = int(wilderness_info.get("tier", 1))
+
+	if owner == "":
+		return wilderness_tier
+
+	var suppression = 0
+	for pos_key in active_guards:
+		var guard = active_guards[pos_key]
+		if String(guard.get("owner", "")) != owner:
+			continue
+		var parts = String(pos_key).split(",")
+		if parts.size() != 2:
+			continue
+		var gx = int(parts[0])
+		var gy = int(parts[1])
+		var dx = float(gx - cx)
+		var dy = float(gy - cy)
+		if sqrt(dx * dx + dy * dy) > float(radius):
+			continue
+		suppression += 1
+		if bool(guard.get("in_tower", false)):
+			suppression += 1
+
+	var effective_tier = wilderness_tier - suppression
+	return clamp(effective_tier, floor_tier, wilderness_tier)
+
+func _update_player_post_bubble_cache():
+	"""Build settler bubble cache and push to world_system. Slice 4 — called
+	after every guard hire/feed/decay/dismiss and any enclosure mutation, so
+	get_post_anchored_level reflects the current suppression state."""
+	if not world_system:
+		return
+	var bubbles: Array = []
+	for owner in player_post_names:
+		var posts = player_post_names[owner]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			var radius = int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+			var meta_for_tier = meta.duplicate()
+			meta_for_tier["_owner"] = owner
+			var effective_tier = _compute_effective_post_tier(meta_for_tier)
+			bubbles.append({
+				"x": cx,
+				"y": cy,
+				"radius": radius,
+				"effective_tier": effective_tier,
+				"owner": owner,
+				"post_index": i,
+			})
+	world_system.update_player_post_bubbles(bubbles)
+
 func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
 	"""Slice 3 — return the nearest player-post settler bubble covering (x, y),
 	or {} if none. Result fields: owner, post_index, name, center, tier,
@@ -16718,12 +16809,16 @@ func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
 			var d = sqrt(dx * dx + dy * dy)
 			if d <= float(radius) and d < nearest_dist:
 				nearest_dist = d
+				var meta_for_tier = meta.duplicate()
+				meta_for_tier["_owner"] = owner
+				var effective_tier = _compute_effective_post_tier(meta_for_tier)
 				nearest_match = {
 					"owner": owner,
 					"post_index": i,
 					"name": meta.get("name", ""),
 					"center": Vector2i(cx, cy),
 					"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+					"effective_tier": effective_tier,
 					"bubble_radius": radius,
 					"distance": d,
 				}
@@ -16846,6 +16941,10 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 		_connect_player_post_to_roads(center, username)
 
 	if added > 0:
+		# Slice 4 — new post → refresh settler bubble cache so suppression
+		# applies immediately (even though no guards yet, the bubble entry
+		# must exist for region indicator to find it).
+		_update_player_post_bubble_cache()
 		return "[color=#00FFFF]Enclosure formed! (%d/%d)[/color]" % [current_count + added, max_posts]
 	elif new_enclosures.size() > 0:
 		return "[color=#FF8800]Enclosure limit reached (%d/%d)![/color]" % [max_posts, max_posts]
@@ -16928,6 +17027,9 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 			})
 		var max_posts = _get_max_post_count_for_username(username)
+		# Slice 4 — post broken → refresh bubble cache so vanished bubbles
+		# stop suppressing.
+		_update_player_post_bubble_cache()
 		return "[color=#FF8800]Enclosure broken! (%d/%d remaining)[/color]" % [remaining.size(), max_posts]
 	return ""
 
@@ -17521,6 +17623,9 @@ func _update_guard_cache():
 				"radius": guard.get("radius", GUARD_BASE_RADIUS),
 			})
 	world_system.update_guard_positions(positions)
+	# Slice 4 — guards drive settler bubble suppression, so keep the bubble
+	# cache in sync with every guard mutation.
+	_update_player_post_bubble_cache()
 
 # ===== INN & STORAGE (Player Enclosure Structures) =====
 

@@ -141,6 +141,27 @@ var trading_post_db: Node = null
 # ChunkManager reference — set by server after initialization
 var chunk_manager = null  # ChunkManager
 
+# Post-anchored world Slice 4 — typical distance from origin for each post tier,
+# used to derive a tier→level mapping that stays consistent with the radial
+# curve at every formal trading post. Player post settler bubbles use this to
+# convert their effective tier into a monster level without needing their own
+# distance-from-origin (which would defeat the point of bubble suppression).
+const TIER_REFERENCE_DISTANCE = {
+	1: 10,    # Core (haven cluster)
+	2: 75,    # Inner (northwatch ring)
+	3: 150,   # Mid (eastwatch / highland)
+	4: 250,   # Mid-Outer (far_east_station)
+	5: 350,   # Outer (storm_peak / shadowmere ring)
+	6: 500,   # Extreme (eastern_terminus / primordial_sanctum)
+	7: 700,   # World's Edge (world_spine_north)
+}
+
+# Slice 4 — player post settler bubble cache, pushed by server after every
+# guard hire/feed/decay. Each entry: {x, y, radius, effective_tier}.
+# get_post_anchored_level() checks this first; bubbles override the radial /
+# trading-post anchor when (x, y) is inside one.
+var player_post_bubbles: Array = []
+
 func _ready():
 	print("World System initialized")
 	# Initialize legacy trading post database (kept for transition)
@@ -1003,19 +1024,58 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 		"distance": distance
 	}
 
+func level_for_tier(tier: int) -> int:
+	"""Convert a post tier (1-7) into the monster level it anchors at, using
+	the radial _distance_to_level curve evaluated at each tier's reference
+	distance. Used by player post settler bubbles in Slice 4 — their
+	effective tier feeds into this to produce a level that matches the
+	natural difficulty of trading posts at that tier."""
+	var clamped = clamp(tier, 1, 7)
+	return _distance_to_level(float(TIER_REFERENCE_DISTANCE.get(clamped, 10)))
+
+func update_player_post_bubbles(bubbles: Array):
+	"""Server pushes player post settler bubble cache here after every change
+	(guard hire/feed/decay, post create/destroy). Each bubble:
+	{x: int, y: int, radius: int, effective_tier: int}.
+	Slice 4 of post-anchored world overhaul."""
+	player_post_bubbles = bubbles
+
+func _bubble_level_at(x: int, y: int) -> int:
+	"""Returns the monster level from the closest covering player post settler
+	bubble, or -1 if no bubble covers (x, y). The bubble's effective tier
+	(already accounting for guard/tower suppression on the server) is mapped
+	to a level via level_for_tier(). Returns -1 to signal 'no bubble' so the
+	caller can fall back to the trading-post anchored level."""
+	if player_post_bubbles.is_empty():
+		return -1
+	var nearest_dist = INF
+	var nearest_tier = -1
+	for bubble in player_post_bubbles:
+		var bx = float(bubble.get("x", 0))
+		var by = float(bubble.get("y", 0))
+		var radius = float(bubble.get("radius", 25))
+		var dx = float(x) - bx
+		var dy = float(y) - by
+		var d = sqrt(dx * dx + dy * dy)
+		if d <= radius and d < nearest_dist:
+			nearest_dist = d
+			nearest_tier = int(bubble.get("effective_tier", 1))
+	if nearest_tier < 0:
+		return -1
+	return level_for_tier(nearest_tier)
+
 func get_post_anchored_level(x: int, y: int) -> int:
 	"""Post-anchored monster level for (x, y).
 
-	Each trading post anchors the monster level at the radial-curve value of
-	its own location. Positions between posts blend linearly between the two
-	nearest anchors (weighted by player distance to each). The wilderness
-	radial curve is taken as a floor so apex zones beyond the post network
-	keep their existing difficulty.
-
-	Slice 2 of post-anchored world overhaul (audit #10). At each post center
-	this returns exactly _distance_to_level(post_distance_from_origin), so
-	balance at posts is preserved. Player-built posts will override anchors
-	in a later slice."""
+	Player post settler bubbles take precedence (Slice 4) — when (x, y) is
+	inside any bubble, the bubble's effective tier sets the level. Otherwise
+	each formal trading post anchors the level at the radial-curve value of
+	its own location, and positions between posts blend linearly between the
+	two nearest anchors (Slice 2). The wilderness radial curve is the floor
+	so apex zones beyond the post network keep their existing difficulty."""
+	var bubble_level = _bubble_level_at(x, y)
+	if bubble_level >= 0:
+		return bubble_level
 	var wilderness_level = _distance_to_level(sqrt(float(x * x + y * y)))
 	if not trading_post_db:
 		return wilderness_level
