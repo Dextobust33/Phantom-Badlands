@@ -1598,6 +1598,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
 
+	# Mastery Slice 1 — backfill rank-2 worth of uses on archetype abilities
+	# for existing characters created before mastery shipped, so their
+	# effective damage doesn't drop -20% on first login. One-shot guard.
+	if character.backfill_ability_uses_if_needed():
+		persistence.save_character(account_id, character)
+		log_message("Mastery: backfilled archetype ability uses for %s" % char_name)
+
 	# Restore quest state from saved quests (survives server restart)
 	for quest_data in character.active_quests:
 		if quest_data.get("progress", 0) >= quest_data.get("target", 1):

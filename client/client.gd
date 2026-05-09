@@ -21749,8 +21749,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.236 changes
+	display_game("[color=#00FF00]v0.9.236[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat ability mastery — Slice 1[/color]")
+	display_game("  • Major shift: [b]every ability is now accessible from level 1[/b], but effective power scales with how much you use it. 5 ranks per ability (Untrained → Master), unlocked at 10 / 50 / 200 / 1000 cumulative uses. Rank 0 hits at -20% damage; rank 2 (200 uses) is baseline; rank 4 caps at +20%. Existing characters get rank 2 backfilled on their archetype's abilities so they don't take a retroactive nerf")
+	display_game("  • Rank shows up on every ability card in the More → Abilities panel: \"Magic Bolt — R2 Adept (45/200)\". Cross a threshold mid-fight and a chat line drops: \"Mastery rank up! Magic Bolt reached Rank 2 (Adept) — damage modifier now +0%\"")
+	display_game("  • [color=#FFAA00]Slice 1 limitations:[/color] damage bonus only applies to Magic Bolt + Power Strike right now (those already had the hook). Other damage abilities still track usage and rank up but the damage mult comes in 1b. Account-level persistence, Sanctuary headstart purchases, deck pruning, and ability modifiers are later slices in this initiative")
+	display_game("")
+
 	# v0.9.235 changes
-	display_game("[color=#00FF00]v0.9.235[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.235[/color]")
 	display_game("  [color=#FFD700]Building-template kits[/color]")
 	display_game("  • New craftable: [color=#88FF88]Small Enclosure Kit[/color] (Construction skill 8, Builder specialty). Drops a full 5x5 walled enclosure with a south-facing door in one press, centered on your tile, instead of placing 16 walls and 1 door by hand. Cost: 32 stone block + 4 wooden plank + 2 iron ore (a small tax over the loose-tile materials, paid for the convenience)")
 	display_game("  • The kit is the natural follow-up to last release's Spawn-at-post: claim a build site, pop a kit, hire a couple of guards from the resulting bubble, and your next character can spawn there in a T1 safe zone")
@@ -21776,12 +21784,6 @@ func display_changelog():
 	display_game("  • Bundled rollup release. Items below cover the five internal slices that landed since v0.9.226")
 	display_game("")
 
-	# v0.9.231 changes
-	display_game("[color=#00FFFF]v0.9.231[/color]")
-	display_game("  [color=#FFD700]Persistent build mode — chain placements without re-opening menus[/color]")
-	display_game("  • Placing a wall or door no longer kicks you back to the inventory. Build mode stays alive for the same structure type — keep pressing W/A/S/D to lay down more tiles. The mode exits when the stack runs out or you press Cancel. Same loop applies to demolish")
-	display_game("  • Each placement's result is shown inline above the direction prompt (\"+ Placed Wall!\" or \"x Out of bounds!\"), and the count is shown when you first pick a structure. Building a 5x5 enclosure is now a couple presses instead of a couple dozen menu cycles")
-	display_game("")
 
 
 
@@ -27999,7 +28001,9 @@ func _populate_ability_panel() -> void:
 	var char_class = str(character_data.get("class", "Fighter"))
 	var path_label = "[color=%s]%s[/color]  [color=#888888](%s path)[/color]" % [path_color, char_class, path.capitalize()]
 	var player_level = int(character_data.get("level", 1))
-	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label)
+	# Mastery Slice 1 — pass ability_uses so the panel can render rank + progress.
+	var ability_uses = character_data.get("ability_uses", {})
+	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses)
 
 func _on_ability_panel_close() -> void:
 	exit_ability_mode()

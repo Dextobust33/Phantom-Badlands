@@ -23,6 +23,13 @@ var _slot_keys: Array = ["?", "?", "?", "?", "?", "?"]
 var _player_level: int = 1
 var _path_label: String = ""
 var _choose_for_slot: int = -1     # -1 idle; 0-5 panel is in "pick ability for slot N" state
+var _ability_uses: Dictionary = {} # Mastery Slice 1: ability_name → use count, drives rank display
+
+# Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*)
+const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]
+const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
+const MASTERY_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644"]
 
 var _root_panel: PanelContainer
 var _title_label: Label
@@ -283,7 +290,7 @@ func _make_slot_card(slot_index: int) -> PanelContainer:
 
 # === Public API ===
 
-func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String) -> void:
+func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}) -> void:
 	if not is_inside_tree():
 		return
 	_equipped = equipped
@@ -292,6 +299,7 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_slot_keys = slot_keys
 	_player_level = player_level
 	_path_label = path_label
+	_ability_uses = ability_uses
 	# Reset choose state on data refresh (server sent new abilities → likely an equip/unequip just landed)
 	_choose_for_slot = -1
 	_path_label_node.text = path_label
@@ -299,6 +307,28 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_cancel_choose_btn.visible = false
 	_rebuild_slots()
 	_rebuild_abilities()
+
+func _get_ability_rank(ability_name: String) -> int:
+	"""Compute mastery rank from use count using same thresholds as character.gd."""
+	var uses = int(_ability_uses.get(ability_name, 0))
+	var rank = 0
+	for threshold in MASTERY_RANK_THRESHOLDS:
+		if uses >= int(threshold):
+			rank += 1
+		else:
+			break
+	return rank
+
+func _get_rank_progress_text(ability_name: String) -> String:
+	"""Returns BBCode progress text: 'R2 Adept (45/200)' or 'R4 Master ★' at cap."""
+	var uses = int(_ability_uses.get(ability_name, 0))
+	var rank = _get_ability_rank(ability_name)
+	var name = MASTERY_RANK_NAMES[rank] if rank < MASTERY_RANK_NAMES.size() else "Master"
+	var color = MASTERY_RANK_COLORS[rank] if rank < MASTERY_RANK_COLORS.size() else "#FFFFFF"
+	if rank >= MASTERY_RANK_THRESHOLDS.size():
+		return "[color=%s]R%d %s ★[/color]" % [color, rank, name]
+	var threshold = int(MASTERY_RANK_THRESHOLDS[rank])
+	return "[color=%s]R%d %s (%d/%d)[/color]" % [color, rank, name, uses, threshold]
 
 
 # === Internal rendering ===
@@ -345,7 +375,7 @@ func _rebuild_slots() -> void:
 			var ab_name = str(_equipped[i])
 			var info := _find_ability(ab_name)
 			var disp = str(info.get("display", _humanize(ab_name)))
-			name_label.text = "[color=#00FF00]%s[/color]" % disp
+			name_label.text = "[color=#00FF00]%s[/color]  %s" % [disp, _get_rank_progress_text(ab_name)]
 			cost_label.text = _cost_text_for(ab_name)
 		else:
 			name_label.text = "[color=#666666]Empty[/color]"
@@ -439,9 +469,17 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	meta.add_theme_font_size_override("normal_font_size", 11)
 	if is_unlocked:
-		meta.text = _cost_text_for(ab_name)
+		# Mastery Slice 1 — cost + rank/progress on one line
+		var cost = _cost_text_for(ab_name)
+		var rank_str = _get_rank_progress_text(ab_name)
+		if cost != "":
+			meta.text = "%s    %s" % [cost, rank_str]
+		else:
+			meta.text = rank_str
 	else:
-		meta.text = "[color=#888888]Unlocks at Level %d[/color]" % req_level
+		# Slice 1 removed level gates; the locked branch is now only used
+		# if a future slice gates abilities again (e.g., account unlocks).
+		meta.text = "[color=#888888]Locked[/color]"
 	vbox.add_child(meta)
 
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
