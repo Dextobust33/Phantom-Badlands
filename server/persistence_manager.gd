@@ -321,6 +321,20 @@ func is_first_character_ever(account_id: String) -> bool:
 		return false
 	return true
 
+func find_account_for_character(char_name: String) -> String:
+	"""Return the account_id whose character_slots contains char_name, or
+	"" if no current account owns this character. Used for backfilling
+	account_id on player posts at server start (Slice 5 — spawn at post).
+	Posts owned by characters who have since died (and been cleared from
+	character_slots) won't be findable here and remain orphaned."""
+	if not accounts_data.has("accounts"):
+		return ""
+	for acc_id in accounts_data.accounts:
+		var slots = accounts_data.accounts[acc_id].get("character_slots", [])
+		if char_name in slots:
+			return acc_id
+	return ""
+
 func add_character_to_account(account_id: String, char_name: String):
 	"""Add character name to account's character slots"""
 	if not accounts_data.accounts.has(account_id):

@@ -587,6 +587,10 @@ var username = ""
 var account_id = ""
 var character_list = []
 var can_create_character = true
+# Slice 5 — spawn-at-post: posts on this account, populated from
+# character_list. Each entry: {owner, post_index, name, x, y, tier,
+# effective_tier, bubble_radius}. Empty for fresh accounts.
+var available_spawn_posts: Array = []
 var last_whisper_from = ""  # For /reply command
 
 # House (Sanctuary) data - roguelite meta-progression
@@ -4009,11 +4013,96 @@ func show_character_create_panel():
 	hide_all_panels()
 	if char_create_panel:
 		char_create_panel.visible = true
+		_ensure_spawn_picker_built()
+		_populate_spawn_picker()
 		if new_char_name_field:
 			new_char_name_field.clear()
 			new_char_name_field.grab_focus()
 		if char_create_status:
 			char_create_status.text = ""
+
+# Slice 5 — spawn-at-post UI. The character creation panel is .tscn-defined;
+# we inject the spawn OptionButton + Description programmatically the first
+# time the panel is shown so the new fields don't require scene edits.
+var spawn_option: OptionButton = null
+var spawn_description: RichTextLabel = null
+var _spawn_picker_built: bool = false
+
+func _ensure_spawn_picker_built() -> void:
+	if _spawn_picker_built:
+		return
+	if char_create_panel == null:
+		return
+	var vbox = char_create_panel.get_node_or_null("VBox")
+	if vbox == null:
+		return
+	var class_desc = vbox.get_node_or_null("ClassDescription")
+	var insert_at = -1
+	if class_desc != null:
+		insert_at = class_desc.get_index() + 1
+
+	spawn_option = OptionButton.new()
+	spawn_option.name = "SpawnOption"
+	spawn_option.focus_mode = Control.FOCUS_ALL
+	vbox.add_child(spawn_option)
+	if insert_at >= 0:
+		vbox.move_child(spawn_option, insert_at)
+		insert_at += 1
+
+	spawn_description = RichTextLabel.new()
+	spawn_description.name = "SpawnDescription"
+	spawn_description.bbcode_enabled = true
+	spawn_description.fit_content = true
+	spawn_description.scroll_active = false
+	spawn_description.custom_minimum_size = Vector2(0, 32)
+	spawn_description.add_theme_font_size_override("normal_font_size", 12)
+	vbox.add_child(spawn_description)
+	if insert_at >= 0:
+		vbox.move_child(spawn_description, insert_at)
+
+	spawn_option.item_selected.connect(_on_spawn_post_selected)
+	_spawn_picker_built = true
+
+func _populate_spawn_picker() -> void:
+	if spawn_option == null:
+		return
+	spawn_option.clear()
+	# First entry is always Origin (the default spawn). Slice 5 doesn't change
+	# the default spawn behavior — we just allow opting into a player post.
+	spawn_option.add_item("Origin (Crossroads — default)")
+	spawn_option.set_item_metadata(0, {})
+	for post in available_spawn_posts:
+		var label = "%s — (%d, %d)  T%d" % [
+			String(post.get("name", "Post")),
+			int(post.get("x", 0)),
+			int(post.get("y", 0)),
+			int(post.get("effective_tier", post.get("tier", 1))),
+		]
+		spawn_option.add_item(label)
+		spawn_option.set_item_metadata(spawn_option.item_count - 1, post)
+	spawn_option.select(0)
+	_on_spawn_post_selected(0)
+
+func _on_spawn_post_selected(idx: int) -> void:
+	if spawn_description == null or spawn_option == null:
+		return
+	if idx <= 0:
+		spawn_description.text = "[color=#888888]Spawn at the Crossroads. Standard new-character start.[/color]"
+		return
+	var meta = spawn_option.get_item_metadata(idx)
+	if not (meta is Dictionary):
+		spawn_description.text = ""
+		return
+	var owner = String(meta.get("owner", ""))
+	var tier = int(meta.get("tier", 1))
+	var eff_tier = int(meta.get("effective_tier", tier))
+	var radius = int(meta.get("bubble_radius", 25))
+	var note = ""
+	if eff_tier < tier:
+		note = "  [color=#888888](currently suppressed to T%d by guards)[/color]" % eff_tier
+	elif eff_tier > tier:
+		note = "  [color=#FFAA66](no guards — wilderness T%d showing)[/color]" % eff_tier
+	spawn_description.text = "[color=#9ACD32]Owner:[/color] %s  [color=#9ACD32]Bubble:[/color] %d tiles%s" % [owner, radius, note]
 
 func show_death_panel(char_name: String, level: int, experience: int, cause: String, rank: int, baddie_points: int = 0):
 	hide_all_panels()
@@ -4734,6 +4823,12 @@ func _on_confirm_create_pressed():
 	}
 	if house_checkout_companion_slot >= 0:
 		create_msg["checkout_companion_slot"] = house_checkout_companion_slot
+	# Slice 5 — spawn-at-post: include the chosen post if not Origin.
+	if spawn_option and spawn_option.selected > 0:
+		var meta = spawn_option.get_item_metadata(spawn_option.selected)
+		if meta is Dictionary and meta.has("owner"):
+			create_msg["spawn_post_owner"] = String(meta.get("owner", ""))
+			create_msg["spawn_post_index"] = int(meta.get("post_index", -1))
 	send_to_server(create_msg)
 
 func _on_cancel_create_pressed():
@@ -16467,6 +16562,9 @@ func handle_server_message(message: Dictionary):
 		"character_list":
 			character_list = message.get("characters", [])
 			can_create_character = message.get("can_create", true)
+			# Slice 5 — spawn-at-post: cache the account's posts so the
+			# character-create panel can offer them as spawn options.
+			available_spawn_posts = message.get("available_spawn_posts", [])
 			# Don't switch to character select if we're on death screen or house screen
 			if game_state == GameState.DEAD or game_state == GameState.HOUSE_SCREEN:
 				return
@@ -21647,8 +21745,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.234 changes
+	display_game("[color=#00FF00]v0.9.234[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Spawn at your own posts (Slice 5)[/color]")
+	display_game("  • Character creation now has a Spawn point picker. New characters can choose to spawn at any settler-bubble post owned by your account, instead of always starting at Crossroads. Survives permadeath: if your old character built a post at (250, 0), your next character can spawn right there — useful for keeping a level-friendly home base across deaths")
+	display_game("  • Posts created before this update get account ownership stamped on them automatically when their owning character is still alive. Old orphan posts (owner already dead) stay in the world but can't be spawn points")
+	display_game("")
+
 	# v0.9.233 changes
-	display_game("[color=#00FF00]v0.9.233[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.233[/color]")
 	display_game("  [color=#FFD700]Settler bubble — boundary warning[/color]")
 	display_game("  • The Region label now shows what's waiting outside your settler bubble whenever you're inside one. \"Outside: T6 Extreme (Lv ~300)\" — subtle gray when you're deep in the bubble, switches to a red [color=#FF6644]! N tiles to edge[/color] warning when you're within 5 tiles of the boundary so a casual step outside won't suddenly drop you into level-300 monsters")
 	display_game("")
@@ -21673,13 +21778,6 @@ func display_changelog():
 	display_game("  • Lets you actually exercise the post-anchored world's bubble suppression without grinding for build materials or hunting down a guard post in the world")
 	display_game("")
 
-	# v0.9.229 changes
-	display_game("[color=#00FFFF]v0.9.229[/color]")
-	display_game("  [color=#FFD700]Active settler bubbles — guards now suppress monster levels (Slice 4)[/color]")
-	display_game("  • Each guard owned by you inside one of your post bubbles drops the local monster tier by 1. Guards adjacent to a tower drop it by 2. Floor at the post's stored tier (default T1), ceiling at the surrounding wilderness tier — extras don't make things harder. When guards starve (food expires), suppression fades back. Public-by-default: anyone in your bubble gets the suppressed monsters")
-	display_game("  • The Region label now shows the [b]effective[/b] tier (post suppression of wilderness), not the floor — an unguarded post in T6 territory still shows T6, a guarded one shows the suppressed value")
-	display_game("  • [color=#FFAA00]Heads up:[/color] the new-player tutorial will need to teach this. Until then, /admin → World is the testing path")
-	display_game("")
 
 
 
