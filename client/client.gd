@@ -903,6 +903,7 @@ var build_direction_mode: bool = false  # Selecting direction for placement
 var build_selected_item: int = -1  # Inventory index of item to place
 var build_demolish_mode: bool = false  # Selecting direction for demolish
 var pending_build_result: bool = false  # Waiting for server response
+var build_active_structure_type: String = ""  # Persistent across placements: re-find inventory index by type so the loop survives stack consumption
 
 # Player enclosure/post state (from location updates)
 var in_own_enclosure: bool = false
@@ -10318,18 +10319,21 @@ func execute_local_action(action: String):
 			build_direction_mode = false
 			build_demolish_mode = false
 			build_selected_item = -1
+			build_active_structure_type = ""
 			pending_build_result = false
 			game_output.clear()
 			display_game("[color=#888888]Exited build mode.[/color]")
 			update_action_bar()
 		"build_demolish":
 			build_demolish_mode = true
+			build_active_structure_type = ""
 			display_demolish_direction()
 			update_action_bar()
 		"build_cancel_direction":
 			build_direction_mode = false
 			build_demolish_mode = false
 			build_selected_item = -1
+			build_active_structure_type = ""
 			display_build_items()
 			update_action_bar()
 		# Inn and Storage actions
@@ -18137,6 +18141,7 @@ func _process_combat_start(message: Dictionary):
 	build_mode = false
 	build_direction_mode = false
 	build_demolish_mode = false
+	build_active_structure_type = ""
 	pending_build_result = false
 	storage_mode = false
 	pending_storage_action = ""
@@ -32310,6 +32315,7 @@ func open_build_mode():
 	build_direction_mode = false
 	build_selected_item = -1
 	build_demolish_mode = false
+	build_active_structure_type = ""
 	pending_build_result = false
 	display_build_items()
 	update_action_bar()
@@ -32341,18 +32347,21 @@ func display_build_items():
 	display_game("[%s] Back" % get_action_key_name(0))
 
 func display_build_direction():
-	"""Show direction selection for placing a structure."""
+	"""Show direction selection for placing a structure. The post-placement
+	redraw lives inside handle_build_result; this is just the first-frame
+	display when the player picks an item."""
 	game_output.clear()
 	var item = character_data.inventory[build_selected_item]
-	display_game("[color=#AA7744]===== PLACE: %s =====[/color]" % item.get("name", "Structure"))
+	var remaining = int(item.get("quantity", 1))
+	display_game("[color=#AA7744]===== PLACE: %s (x%d) =====[/color]" % [item.get("name", "Structure"), remaining])
 	display_game("")
-	display_game("Select direction to place:")
+	display_game("Press WASD to place a tile in that direction. Build mode stays active — keep placing until you run out or cancel.")
 	display_game("")
 	display_game("    [W] North")
 	display_game("[A] West    [D] East")
 	display_game("    [S] South")
 	display_game("")
-	display_game("[%s] Cancel" % get_action_key_name(0))
+	display_game("[color=#888888]Press Cancel ([%s]) to stop building, or pick a different structure with number keys.[/color]" % get_action_key_name(0))
 
 func display_demolish_direction():
 	"""Show direction selection for demolishing."""
@@ -32393,36 +32402,71 @@ func _get_build_direction(key_name: String) -> int:
 		_: return 0
 
 func handle_build_result(message: Dictionary):
-	"""Handle build_result message from server."""
+	"""Handle build_result message from server.
+
+	On success we KEEP build mode alive — the player stays in direction mode
+	for the same structure type (or in demolish mode) so they can chain
+	placements without re-opening the build menu for every tile. Exit only
+	when the player explicitly presses Cancel/Back, or when the inventory
+	runs out of the active structure type (handled in
+	_handle_build_direction_key when re-resolving the index)."""
 	pending_build_result = false
 	var success = message.get("success", false)
 	var msg = message.get("message", "")
 
-	game_output.clear()
-	display_game(msg)
-	display_game("")
+	# If build mode was already cancelled while we were waiting on the
+	# server response, just dump the result and bail.
+	if not build_mode:
+		game_output.clear()
+		display_game(msg)
+		update_action_bar()
+		return
 
-	if success:
-		# After successful build/demolish, exit build mode cleanly
-		build_direction_mode = false
-		build_demolish_mode = false
-		build_selected_item = -1
-		build_mode = false
-		# Count remaining structures
-		var remaining = 0
-		for i in range(character_data.get("inventory", []).size()):
-			if character_data.inventory[i].get("type", "") == "structure":
-				remaining += 1
-		if remaining > 0:
-			display_game("[color=#888888]%d structure(s) remaining. Use from inventory to place more.[/color]" % remaining)
-	else:
-		# Failed - return to direction or item selection
-		if build_direction_mode:
-			display_game("[color=#888888]Select another direction or press [%s] to cancel.[/color]" % get_action_key_name(0))
-		elif build_demolish_mode:
-			display_game("[color=#888888]Select another direction or press [%s] to cancel.[/color]" % get_action_key_name(0))
+	if build_direction_mode and build_active_structure_type != "":
+		# Persistent placement loop — re-render the direction prompt with the
+		# recent placement result inlined at the top.
+		game_output.clear()
+		var item = _get_inventory_item_by_structure_type(build_active_structure_type)
+		var label = build_active_structure_type.replace("_", " ").capitalize()
+		if not item.is_empty():
+			label = String(item.get("name", label))
+		display_game("[color=#AA7744]===== PLACE: %s =====[/color]" % label)
+		display_game("")
+		if success:
+			display_game("[color=#00FF00]+ %s[/color]" % msg)
 		else:
-			display_game("[color=#888888]Press [%s] to exit build mode.[/color]" % get_action_key_name(0))
+			display_game("[color=#FF8800]x %s[/color]" % msg)
+		display_game("")
+		display_game("Direction to place next:")
+		display_game("    [W] North")
+		display_game("[A] West    [D] East")
+		display_game("    [S] South")
+		display_game("")
+		display_game("[color=#888888]Press Cancel ([%s]) to stop building, or pick a different structure with number keys.[/color]" % get_action_key_name(0))
+	elif build_demolish_mode:
+		# Same loop for demolish — stay in mode so the player can keep
+		# tearing things down without re-entering demolish.
+		game_output.clear()
+		display_game("[color=#FF8800]===== DEMOLISH =====[/color]")
+		display_game("")
+		if success:
+			display_game("[color=#00FF00]+ %s[/color]" % msg)
+		else:
+			display_game("[color=#FF8800]x %s[/color]" % msg)
+		display_game("")
+		display_game("Direction to demolish next:")
+		display_game("    [W] North")
+		display_game("[A] West    [D] East")
+		display_game("    [S] South")
+		display_game("")
+		display_game("[color=#888888]Press Cancel ([%s]) to stop.[/color]" % get_action_key_name(0))
+	else:
+		# Item-selection mode — show the result and let the player pick
+		# another structure or back out.
+		game_output.clear()
+		display_game(msg)
+		display_game("")
+		display_game("[color=#888888]Press [%s] to exit build mode.[/color]" % get_action_key_name(0))
 	update_action_bar()
 
 func _select_build_item(selection_index: int):
@@ -32434,6 +32478,7 @@ func _select_build_item(selection_index: int):
 		if item.get("type", "") == "structure":
 			if structure_idx == selection_index:
 				build_selected_item = i
+				build_active_structure_type = String(item.get("structure_type", ""))
 				build_direction_mode = true
 				display_build_direction()
 				update_action_bar()
@@ -32441,6 +32486,26 @@ func _select_build_item(selection_index: int):
 			structure_idx += 1
 	# Invalid selection
 	display_game("[color=#FF4444]Invalid selection.[/color]")
+
+func _find_inventory_idx_by_structure_type(stype: String) -> int:
+	"""Return the inventory index of the first structure item matching stype,
+	or -1 if none exist. Used by build mode so each placement re-resolves the
+	index instead of trusting a stale value across stack consumption."""
+	if stype == "":
+		return -1
+	var inventory = character_data.get("inventory", [])
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		if item.get("type", "") == "structure" and String(item.get("structure_type", "")) == stype:
+			return i
+	return -1
+
+func _get_inventory_item_by_structure_type(stype: String) -> Dictionary:
+	"""Return the inventory entry (or {}) for the first matching structure."""
+	var idx = _find_inventory_idx_by_structure_type(stype)
+	if idx < 0:
+		return {}
+	return character_data.inventory[idx]
 
 func _handle_build_direction_key(event: InputEventKey):
 	"""Handle WASD direction input for build/demolish placement."""
@@ -32458,11 +32523,27 @@ func _handle_build_direction_key(event: InputEventKey):
 	if direction == 0:
 		return
 
-	if build_direction_mode and build_selected_item >= 0:
-		# Place structure
+	if build_direction_mode and build_active_structure_type != "":
+		# Re-resolve the inventory index every send so a consumed stack from
+		# the previous placement (character_update may have arrived) doesn't
+		# leave a stale build_selected_item pointing at the wrong slot.
+		var idx = _find_inventory_idx_by_structure_type(build_active_structure_type)
+		if idx < 0:
+			# Out of this structure type — drop back to the item picker.
+			build_direction_mode = false
+			build_selected_item = -1
+			var depleted_type = build_active_structure_type
+			build_active_structure_type = ""
+			game_output.clear()
+			display_game("[color=#FF8800]Out of %s — pick another structure.[/color]" % depleted_type.replace("_", " "))
+			display_game("")
+			display_build_items()
+			update_action_bar()
+			return
+		build_selected_item = idx
 		send_to_server({
 			"type": "build_place",
-			"item_index": build_selected_item,
+			"item_index": idx,
 			"direction": direction
 		})
 		pending_build_result = true
