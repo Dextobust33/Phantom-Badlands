@@ -234,6 +234,22 @@ const MAX_ACTIVE_QUESTS = 5
 const MAX_ABILITY_SLOTS = 6
 const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 
+# Audit #1 mastery — Slice 1: per-ability use counter. Rank derived via
+# Constants.MASTERY_RANK_THRESHOLDS; rank → damage multiplier via
+# Constants.MASTERY_RANK_DAMAGE_MULT. Backfilled to rank 2 (baseline) for
+# existing characters on first load so the rollout doesn't retroactively
+# nerf in-flight characters.
+@export var ability_uses: Dictionary = {}
+@export var ability_uses_backfilled: bool = false  # one-shot guard for archetype backfill
+
+# Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
+# but inlined here so character.gd doesn't have to depend on the global script
+# load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
+const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]
+const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
+const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+const MASTERY_RANK_BACKFILL_USES: int = 200
+
 # Combat action bar customization - swap Attack with first ability
 @export var swap_attack_with_ability: bool = false
 
@@ -1306,6 +1322,8 @@ func to_dict() -> Dictionary:
 		"known_monsters": known_monsters,
 		"equipped_abilities": equipped_abilities,
 		"ability_keybinds": ability_keybinds,
+		"ability_uses": ability_uses,
+		"ability_uses_backfilled": ability_uses_backfilled,
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"title": title,
@@ -1497,6 +1515,8 @@ func from_dict(data: Dictionary):
 	# Ability loadout system
 	equipped_abilities = data.get("equipped_abilities", [])
 	ability_keybinds = data.get("ability_keybinds", DEFAULT_ABILITY_KEYBINDS.duplicate())
+	ability_uses = data.get("ability_uses", {})
+	ability_uses_backfilled = bool(data.get("ability_uses_backfilled", false))
 	# Ensure keybinds has all slots (in case of legacy data)
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
 		if not ability_keybinds.has(slot):
@@ -2437,13 +2457,82 @@ func get_all_available_abilities() -> Array:
 	return abilities
 
 func get_unlocked_abilities() -> Array:
-	"""Get list of abilities this character has unlocked (based on level)"""
-	var all_abilities = get_all_available_abilities()
-	var unlocked = []
-	for ability in all_abilities:
-		if level >= ability.level:
-			unlocked.append(ability)
-	return unlocked
+	"""All abilities are unlocked from L1 — Slice 1 of the ability mastery
+	overhaul replaced fixed level gates with a use-based progression. Each
+	ability's effective power scales with its rank (see get_ability_rank).
+	The .level field on each entry is preserved for legacy displays but
+	no longer gates availability."""
+	return get_all_available_abilities()
+
+func get_ability_rank(ability_name: String) -> int:
+	"""Mastery rank 0-4 derived from ability_uses[ability_name]. Returns 0
+	for unused abilities. Each rank threshold (10/50/200/1000 uses) advances
+	the rank by 1; rank 4 caps at 1000+ uses."""
+	var uses = int(ability_uses.get(ability_name, 0))
+	var rank = 0
+	for threshold in MASTERY_RANK_THRESHOLDS:
+		if uses >= int(threshold):
+			rank += 1
+		else:
+			break
+	return rank
+
+func get_ability_damage_mult(ability_name: String) -> float:
+	"""Damage multiplier from mastery rank. Rank 0 = 0.80, rank 4 = 1.20."""
+	var rank = get_ability_rank(ability_name)
+	if rank < 0 or rank >= MASTERY_RANK_DAMAGE_MULT.size():
+		return 1.0
+	return float(MASTERY_RANK_DAMAGE_MULT[rank])
+
+func get_ability_uses_to_next_rank(ability_name: String) -> Dictionary:
+	"""Returns {current_uses, next_threshold, at_max_rank} so the UI can
+	render progress bars. next_threshold is -1 when already at max rank."""
+	var uses = int(ability_uses.get(ability_name, 0))
+	var rank = get_ability_rank(ability_name)
+	if rank >= MASTERY_RANK_THRESHOLDS.size():
+		return {"current_uses": uses, "next_threshold": -1, "at_max_rank": true}
+	return {"current_uses": uses, "next_threshold": int(MASTERY_RANK_THRESHOLDS[rank]), "at_max_rank": false}
+
+func record_mastery_use(ability_name: String) -> Dictionary:
+	"""Increment mastery use counter and detect rank-up. Returns
+	{previous_rank, new_rank, ranked_up}. Combat manager calls this only
+	on a *successful* ability use (resource cost paid + ability resolved)
+	so failed casts and out-of-combat noise don't inflate the counter.
+	(Note: distinct from record_ability_use() which tracks title-system
+	spam detection — that one carries no args.)"""
+	if ability_name == "":
+		return {"previous_rank": 0, "new_rank": 0, "ranked_up": false}
+	var previous_rank = get_ability_rank(ability_name)
+	var current = int(ability_uses.get(ability_name, 0))
+	ability_uses[ability_name] = current + 1
+	var new_rank = get_ability_rank(ability_name)
+	return {"previous_rank": previous_rank, "new_rank": new_rank, "ranked_up": new_rank > previous_rank}
+
+func backfill_ability_uses_if_needed() -> bool:
+	"""One-shot migration: existing characters created before mastery shipped
+	get rank-2 worth of uses on their archetype's abilities so their effective
+	damage doesn't suddenly drop -20%. Off-archetype abilities stay at rank 0
+	since the character likely never used them with the level-gated system.
+	Returns true if backfill was performed (caller should persist)."""
+	if ability_uses_backfilled:
+		return false
+	# Determine archetype from class_type. Class strings come from the audit:
+	# Warrior path = Fighter / Barbarian / Paladin, etc.
+	var archetype_abilities: Array = []
+	match class_type:
+		"Fighter", "Barbarian", "Paladin":
+			archetype_abilities = ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]
+		"Wizard", "Sage", "Sorcerer":
+			archetype_abilities = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+		"Thief", "Ranger", "Ninja":
+			archetype_abilities = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
+		_:
+			archetype_abilities = []
+	for ab in archetype_abilities:
+		if not ability_uses.has(ab):
+			ability_uses[ab] = MASTERY_RANK_BACKFILL_USES
+	ability_uses_backfilled = true
+	return true
 
 func get_abilities_unlocked_at_level(check_level: int) -> Array:
 	"""Get list of abilities that unlock exactly at the specified level"""

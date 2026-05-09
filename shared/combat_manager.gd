@@ -2298,6 +2298,23 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	else:
 		return {"success": false, "message": "Unknown ability!"}
 
+	# Mastery Slice 1 — track ability use only on successful resolution.
+	# A failed ability path (insufficient resources, requirement check) sets
+	# result.success=false and we skip the counter so failed casts don't
+	# rank up. Rank-up notification piggybacks on the result messages so the
+	# client doesn't need a new message handler for it.
+	if result.get("success", true) != false:
+		var rank_result = combat.character.record_mastery_use(ability_name)
+		if rank_result.get("ranked_up", false):
+			var new_rank = int(rank_result.get("new_rank", 0))
+			var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Master"
+			var rank_bonus_pct = int((combat.character.MASTERY_RANK_DAMAGE_MULT[new_rank] - 1.0) * 100) if new_rank < combat.character.MASTERY_RANK_DAMAGE_MULT.size() else 0
+			var bonus_str = ("+%d%%" % rank_bonus_pct) if rank_bonus_pct >= 0 else ("%d%%" % rank_bonus_pct)
+			var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — damage modifier now %s." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label, bonus_str]
+			if not result.has("messages"):
+				result["messages"] = []
+			result.messages.append(rank_msg)
+
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
@@ -2497,9 +2514,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	if ability_info.is_empty():
 		return {"success": false, "messages": ["[color=#FF4444]Unknown mage ability![/color]"], "combat_ended": false}
 
-	# Check level requirement
-	if character.level < ability_info.level:
-		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
+	# Mastery Slice 1 — all abilities accessible from L1, replacing the
+	# fixed level-unlock gate. Effective power scales with use-rank instead.
 
 	# Calculate mana cost - use percentage of max mana or base cost, whichever is higher
 	# This ensures abilities scale with late-game mana pools
@@ -2818,9 +2834,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	if ability_info.is_empty():
 		return {"success": false, "messages": ["[color=#FF4444]Unknown warrior ability![/color]"], "combat_ended": false}
 
-	# Check level requirement
-	if character.level < ability_info.level:
-		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
+	# Mastery Slice 1 — level gate removed; rank scales effective power.
 
 	var base_stamina_cost = ability_info.cost
 	var stamina_cost = apply_skill_cost_reduction(character, ability_name, base_stamina_cost)
@@ -2987,9 +3001,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	if ability_info.is_empty():
 		return {"success": false, "messages": ["[color=#FF4444]Unknown trickster ability![/color]"], "combat_ended": false}
 
-	# Check level requirement
-	if character.level < ability_info.level:
-		return {"success": false, "messages": ["[color=#FF4444]%s requires level %d![/color]" % [ability_info.name, ability_info.level]], "combat_ended": false}
+	# Mastery Slice 1 — level gate removed; rank scales effective power.
 
 	var base_energy_cost = ability_info.cost
 	var energy_cost = apply_skill_cost_reduction(character, ability_name, base_energy_cost)
@@ -3361,12 +3373,16 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 	return max(1, cost)
 
 func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int) -> int:
-	"""Apply skill enhancement damage bonus to an ability's damage.
-	Returns the boosted damage."""
+	"""Apply mastery + legacy skill_enhancement damage modifier to an
+	ability's damage. Mastery Slice 1 stacks the use-progression damage
+	multiplier (rank 0 = 0.80, rank 4 = 1.20) on top of any legacy
+	skill_enhancements bonus. Returns the modified damage."""
 	var damage_bonus = character.get_skill_damage_bonus(ability_name)
-	if damage_bonus <= 0:
-		return base_damage
-	return int(base_damage * (1.0 + damage_bonus / 100.0))
+	var dmg = float(base_damage)
+	if damage_bonus > 0:
+		dmg = dmg * (1.0 + damage_bonus / 100.0)
+	dmg = dmg * character.get_ability_damage_mult(ability_name)
+	return int(dmg)
 
 func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:
 	"""Process using an item during combat. Returns result with messages.

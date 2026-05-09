@@ -133,6 +133,20 @@ const TRICKSTER_ABILITIES = {
 # Path thresholds (which path is active based on highest stat)
 const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
 
+# ===== ABILITY MASTERY (Slice 1 — use-progression) =====
+# Audit #1: replace fixed level-unlock with use-based mastery. All abilities
+# are accessible from L1, but rank 0 hits at -20% damage. Each rank up adds
+# +10% damage; max rank caps at +20% over baseline. Ranks 1-4 are reached
+# at 10 / 50 / 200 / 1000 cumulative uses; rank 2 (~200 uses) = baseline so
+# existing characters can be backfilled to that point without a balance
+# shock. Slay-the-Spire-style deck building (pruning, modifiers, off-affinity
+# counter, account-level persistence, headstart purchase) lands in later
+# slices.
+const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 200, 1000]  # uses needed to reach ranks 1-4 (rank 0 = no uses required)
+const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]  # rank 0 → 4
+const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+const MASTERY_RANK_BACKFILL_USES: int = 200  # Existing characters get this many uses on archetype abilities at first load — puts them at rank 2 (baseline) so balance doesn't shift retroactively
+
 # Class Descriptions
 const CLASS_DESCRIPTIONS = {
 	# Warrior Path (STR-focused, use Stamina)
