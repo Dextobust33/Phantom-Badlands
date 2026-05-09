@@ -18,6 +18,12 @@ const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry",
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
 const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
 
+# Mastery Slice 1 polish — only the first N uses of an ability per fight
+# count toward rank progress. Stops grind-spam (e.g., 5-mana Magic Bolts
+# repeated 30 times); bridges to deck-building's natural per-round draw
+# limit when that lands.
+const MASTERY_USES_PER_COMBAT_CAP: int = 5
+
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
@@ -2303,17 +2309,29 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# result.success=false and we skip the counter so failed casts don't
 	# rank up. Rank-up notification piggybacks on the result messages so the
 	# client doesn't need a new message handler for it.
+	#
+	# Per-combat cap (Slice 1 polish) — only the first MASTERY_USES_PER_COMBAT_CAP
+	# uses of an ability per fight credit toward mastery. Beyond the cap the
+	# ability still works normally but doesn't rank you up. Bridges to the
+	# eventual deck-building model where draw-3-per-round naturally bounds
+	# uses per fight; until then this prevents grind-spam (e.g., casting
+	# Magic Bolt at 5 mana over and over).
 	if result.get("success", true) != false:
-		var rank_result = combat.character.record_mastery_use(ability_name)
-		if rank_result.get("ranked_up", false):
-			var new_rank = int(rank_result.get("new_rank", 0))
-			var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Master"
-			var rank_bonus_pct = int((combat.character.MASTERY_RANK_DAMAGE_MULT[new_rank] - 1.0) * 100) if new_rank < combat.character.MASTERY_RANK_DAMAGE_MULT.size() else 0
-			var bonus_str = ("+%d%%" % rank_bonus_pct) if rank_bonus_pct >= 0 else ("%d%%" % rank_bonus_pct)
-			var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — damage modifier now %s." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label, bonus_str]
-			if not result.has("messages"):
-				result["messages"] = []
-			result.messages.append(rank_msg)
+		var combat_uses_so_far: Dictionary = combat.get("mastery_uses_this_fight", {})
+		var current_combat_uses = int(combat_uses_so_far.get(ability_name, 0))
+		if current_combat_uses < MASTERY_USES_PER_COMBAT_CAP:
+			combat_uses_so_far[ability_name] = current_combat_uses + 1
+			combat["mastery_uses_this_fight"] = combat_uses_so_far
+			var rank_result = combat.character.record_mastery_use(ability_name)
+			if rank_result.get("ranked_up", false):
+				var new_rank = int(rank_result.get("new_rank", 0))
+				var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Master"
+				var rank_bonus_pct = int((combat.character.MASTERY_RANK_DAMAGE_MULT[new_rank] - 1.0) * 100) if new_rank < combat.character.MASTERY_RANK_DAMAGE_MULT.size() else 0
+				var bonus_str = ("+%d%%" % rank_bonus_pct) if rank_bonus_pct >= 0 else ("%d%%" % rank_bonus_pct)
+				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — damage modifier now %s." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label, bonus_str]
+				if not result.has("messages"):
+					result["messages"] = []
+				result.messages.append(rank_msg)
 
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
