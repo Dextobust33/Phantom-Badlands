@@ -918,6 +918,7 @@ var build_selected_item: int = -1  # Inventory index of item to place
 var build_demolish_mode: bool = false  # Selecting direction for demolish
 var pending_build_result: bool = false  # Waiting for server response
 var build_active_structure_type: String = ""  # Persistent across placements: re-find inventory index by type so the loop survives stack consumption
+var build_active_is_kit: bool = false  # Active item is a building-template kit (drops a whole layout in one press, exits build mode after)
 
 # Player enclosure/post state (from location updates)
 var in_own_enclosure: bool = false
@@ -10425,6 +10426,7 @@ func execute_local_action(action: String):
 			build_demolish_mode = false
 			build_selected_item = -1
 			build_active_structure_type = ""
+			build_active_is_kit = false
 			pending_build_result = false
 			game_output.clear()
 			display_game("[color=#888888]Exited build mode.[/color]")
@@ -10432,6 +10434,7 @@ func execute_local_action(action: String):
 		"build_demolish":
 			build_demolish_mode = true
 			build_active_structure_type = ""
+			build_active_is_kit = false
 			display_demolish_direction()
 			update_action_bar()
 		"build_cancel_direction":
@@ -10439,6 +10442,7 @@ func execute_local_action(action: String):
 			build_demolish_mode = false
 			build_selected_item = -1
 			build_active_structure_type = ""
+			build_active_is_kit = false
 			display_build_items()
 			update_action_bar()
 		# Inn and Storage actions
@@ -21745,8 +21749,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.235 changes
+	display_game("[color=#00FF00]v0.9.235[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Building-template kits[/color]")
+	display_game("  • New craftable: [color=#88FF88]Small Enclosure Kit[/color] (Construction skill 8, Builder specialty). Drops a full 5x5 walled enclosure with a south-facing door in one press, centered on your tile, instead of placing 16 walls and 1 door by hand. Cost: 32 stone block + 4 wooden plank + 2 iron ore (a small tax over the loose-tile materials, paid for the convenience)")
+	display_game("  • The kit is the natural follow-up to last release's Spawn-at-post: claim a build site, pop a kit, hire a couple of guards from the resulting bubble, and your next character can spawn there in a T1 safe zone")
+	display_game("  • Kits validate against world bounds, NPC post proximity (3-tile buffer), and dungeon entrance proximity before placing — fails cleanly with a hint instead of half-placing near a forbidden zone")
+	display_game("")
+
 	# v0.9.234 changes
-	display_game("[color=#00FF00]v0.9.234[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.234[/color]")
 	display_game("  [color=#FFD700]Spawn at your own posts (Slice 5)[/color]")
 	display_game("  • Character creation now has a Spawn point picker. New characters can choose to spawn at any settler-bubble post owned by your account, instead of always starting at Crossroads. Survives permadeath: if your old character built a post at (250, 0), your next character can spawn right there — useful for keeping a level-friendly home base across deaths")
 	display_game("  • Posts created before this update get account ownership stamped on them automatically when their owning character is still alive. Old orphan posts (owner already dead) stay in the world but can't be spawn points")
@@ -21771,12 +21783,6 @@ func display_changelog():
 	display_game("  • Each placement's result is shown inline above the direction prompt (\"+ Placed Wall!\" or \"x Out of bounds!\"), and the count is shown when you first pick a structure. Building a 5x5 enclosure is now a couple presses instead of a couple dozen menu cycles")
 	display_game("")
 
-	# v0.9.230 changes
-	display_game("[color=#00FFFF]v0.9.230[/color]")
-	display_game("  [color=#FFD700]Admin testing kit for settler bubbles[/color]")
-	display_game("  • New /admin → World page with three tools: [color=#90EE90]Build Test Post Here[/color] (drops a 5x5 enclosure at your feet with two tower-boosted guards, no cost — instant T1 bubble), [color=#90EE90]Hire Free Guard[/color] (one tile north, auto-detects tower adjacency), [color=#90EE90]Diagnose Settler Bubble[/color] (prints wilderness tier, current bubble state, guard count, monster level at your tile)")
-	display_game("  • Lets you actually exercise the post-anchored world's bubble suppression without grinding for build materials or hunting down a guard post in the world")
-	display_game("")
 
 
 
@@ -32481,13 +32487,23 @@ func display_build_direction():
 	var remaining = int(item.get("quantity", 1))
 	display_game("[color=#AA7744]===== PLACE: %s (x%d) =====[/color]" % [item.get("name", "Structure"), remaining])
 	display_game("")
-	display_game("Press WASD to place a tile in that direction. Build mode stays active — keep placing until you run out or cancel.")
-	display_game("")
-	display_game("    [W] North")
-	display_game("[A] West    [D] East")
-	display_game("    [S] South")
-	display_game("")
-	display_game("[color=#888888]Press Cancel ([%s]) to stop building, or pick a different structure with number keys.[/color]" % get_action_key_name(0))
+	if build_active_is_kit:
+		# Kits drop a whole layout in one press; direction is ignored —
+		# the layout always anchors at the player's tile.
+		var desc = String(item.get("description", "Drops the kit's layout centered on your tile."))
+		display_game("[color=#88FF88]%s[/color]" % desc)
+		display_game("")
+		display_game("Press [W], [A], [S], or [D] to drop the kit at your feet.")
+		display_game("")
+		display_game("[color=#888888]Press Cancel ([%s]) to back out without placing.[/color]" % get_action_key_name(0))
+	else:
+		display_game("Press WASD to place a tile in that direction. Build mode stays active — keep placing until you run out or cancel.")
+		display_game("")
+		display_game("    [W] North")
+		display_game("[A] West    [D] East")
+		display_game("    [S] South")
+		display_game("")
+		display_game("[color=#888888]Press Cancel ([%s]) to stop building, or pick a different structure with number keys.[/color]" % get_action_key_name(0))
 
 func display_demolish_direction():
 	"""Show direction selection for demolishing."""
@@ -32548,7 +32564,29 @@ func handle_build_result(message: Dictionary):
 		update_action_bar()
 		return
 
-	if build_direction_mode and build_active_structure_type != "":
+	if build_direction_mode and build_active_is_kit:
+		# Kits drop a whole layout in one press. After a successful placement
+		# the player is inside the new enclosure and can't place another
+		# kit there, so we exit build mode rather than redraw the prompt.
+		# A failed kit placement keeps the prompt visible so the player can
+		# try a different anchor or back out.
+		if success:
+			build_direction_mode = false
+			build_demolish_mode = false
+			build_selected_item = -1
+			build_active_structure_type = ""
+			build_active_is_kit = false
+			build_mode = false
+			game_output.clear()
+			display_game("[color=#00FF00]%s[/color]" % msg)
+			display_game("")
+			display_game("[color=#888888]Build mode closed. Settler-bubble metadata is set; hire guards to suppress the local tier.[/color]")
+		else:
+			game_output.clear()
+			display_game("[color=#FF8800]%s[/color]" % msg)
+			display_game("")
+			display_game("[color=#888888]Try a different anchor tile, or press Cancel ([%s]) to back out.[/color]" % get_action_key_name(0))
+	elif build_direction_mode and build_active_structure_type != "":
 		# Persistent placement loop — re-render the direction prompt with the
 		# recent placement result inlined at the top.
 		game_output.clear()
@@ -32605,6 +32643,7 @@ func _select_build_item(selection_index: int):
 			if structure_idx == selection_index:
 				build_selected_item = i
 				build_active_structure_type = String(item.get("structure_type", ""))
+				build_active_is_kit = bool(item.get("is_kit", false))
 				build_direction_mode = true
 				display_build_direction()
 				update_action_bar()
@@ -32660,6 +32699,7 @@ func _handle_build_direction_key(event: InputEventKey):
 			build_selected_item = -1
 			var depleted_type = build_active_structure_type
 			build_active_structure_type = ""
+			build_active_is_kit = false
 			game_output.clear()
 			display_game("[color=#FF8800]Out of %s — pick another structure.[/color]" % depleted_type.replace("_", " "))
 			display_game("")

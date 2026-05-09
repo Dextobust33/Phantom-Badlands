@@ -2817,6 +2817,21 @@ const RECIPES = {
 		"structure_type": "workbench",
 		"craft_time": 4.0
 	},
+	# Building-template kits — drop a fixed layout in one press. Recipe cost
+	# is roughly equivalent to crafting the equivalent loose tiles plus a
+	# small convenience tax. See KIT_LAYOUTS in server.gd for the layout.
+	"craft_enclosure_kit_small": {
+		"name": "Small Enclosure Kit",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 8,
+		"difficulty": 18,
+		"materials": {"stone_block": 32, "wooden_plank": 4, "iron_ore": 2},
+		"output_type": "structure",
+		"structure_type": "enclosure_kit_small",
+		"specialist_only": true,
+		"craft_time": 8.0,
+		"description": "Places a 5x5 walled enclosure with a south-facing door, centered on you. Anchors a settler post with one press."
+	},
 
 	# Builder specialist-only
 	"craft_door": {

@@ -15751,9 +15751,10 @@ func _craft_bestiary(recipe: Dictionary, quality: int) -> Dictionary:
 	}
 
 func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
-	"""Create a structure item for player posts."""
+	"""Create a structure item for player posts. Kits get an `is_kit` flag
+	so the build path knows to drop a whole layout instead of one tile."""
 	var structure_type = recipe.get("structure_type", "workbench")
-	return {
+	var item = {
 		"id": "structure_%d" % randi(),
 		"name": recipe.name,
 		"type": "structure",
@@ -15762,6 +15763,10 @@ func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
 		"quantity": 1,
 		"rarity": "common",
 	}
+	if KIT_LAYOUTS.has(structure_type):
+		item["is_kit"] = true
+		item["description"] = String(recipe.get("description", "Places a fixed structure layout in one shot."))
+	return item
 
 func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 	"""Create a crafted equipment item"""
@@ -16496,6 +16501,19 @@ const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT req
 const DEFAULT_PLAYER_POST_TIER: int = 1
 const DEFAULT_PLAYER_POST_BUBBLE_RADIUS: int = 25
 
+# Building-template kits (post-Slice-5 follow-up). A kit places multiple
+# tiles in a fixed layout when used, replacing the per-tile build grind for
+# common shapes. Coordinates are offsets from the player's current tile.
+const KIT_LAYOUTS: Dictionary = {
+	"enclosure_kit_small": [
+		# 5x5 perimeter, south-facing door, player ends up at center.
+		{"dx": -2, "dy": 2, "type": "wall"}, {"dx": -1, "dy": 2, "type": "wall"}, {"dx": 0, "dy": 2, "type": "wall"}, {"dx": 1, "dy": 2, "type": "wall"}, {"dx": 2, "dy": 2, "type": "wall"},
+		{"dx": -2, "dy": -2, "type": "wall"}, {"dx": -1, "dy": -2, "type": "wall"}, {"dx": 0, "dy": -2, "type": "door"}, {"dx": 1, "dy": -2, "type": "wall"}, {"dx": 2, "dy": -2, "type": "wall"},
+		{"dx": -2, "dy": -1, "type": "wall"}, {"dx": -2, "dy": 0, "type": "wall"}, {"dx": -2, "dy": 1, "type": "wall"},
+		{"dx": 2, "dy": -1, "type": "wall"}, {"dx": 2, "dy": 0, "type": "wall"}, {"dx": 2, "dy": 1, "type": "wall"},
+	],
+}
+
 # In-memory enclosure tracking: {username: [Array of interior tile positions]}
 var player_enclosures: Dictionary = {}
 # Player post naming: {username: [{name, center, created_at}]} — index-aligned with player_enclosures
@@ -16550,6 +16568,12 @@ func handle_build_place(peer_id: int, message: Dictionary):
 		return
 
 	var structure_type = item.get("structure_type", "")
+	# Kits drop a whole layout in one press; route them out before the
+	# single-tile placement validation. Direction is ignored — the kit
+	# always anchors at the player's current tile.
+	if bool(item.get("is_kit", false)) and KIT_LAYOUTS.has(structure_type):
+		_handle_kit_place(peer_id, item_index, structure_type)
+		return
 	if structure_type not in BUILDING_TYPES:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot place that item!"})
 		return
@@ -16953,6 +16977,98 @@ func _has_nearby_guard_post(x: int, y: int, min_distance: int) -> bool:
 				if abs(x - gx) + abs(y - gy) < min_distance:
 					return true
 	return false
+
+func _handle_kit_place(peer_id: int, item_index: int, kit_type: String):
+	"""Place all tiles defined by KIT_LAYOUTS[kit_type] centered on the
+	player's tile. Skips tiles that are blocked by water/void/other-player
+	ownership, but still consumes the kit since the player took the action.
+	Triggers enclosure detection and returns a build_result with the
+	placed/skipped count."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+
+	# Bail if the player is already inside another enclosure — placing a
+	# kit here would either overlap walls or trap them inside two posts.
+	if enclosure_tile_lookup.has(Vector2i(character.x, character.y)):
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "You're already inside an enclosure — step outside before placing a kit."})
+		return
+
+	if not KIT_LAYOUTS.has(kit_type):
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Unknown kit layout!"})
+		return
+
+	var layout: Array = KIT_LAYOUTS[kit_type]
+
+	# Pre-validate the whole layout before touching any tile so we don't
+	# half-place near a forbidden zone (NPC post, dungeon, world edge).
+	var npc_posts = chunk_manager.get_npc_posts() if chunk_manager else []
+	for tile in layout:
+		var tx = character.x + int(tile.get("dx", 0))
+		var ty = character.y + int(tile.get("dy", 0))
+		if tx < -1000 or tx > 1000 or ty < -1000 or ty > 1000:
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Kit extends past world bounds — pick a tile farther from the world edge."})
+			return
+		for post in npc_posts:
+			var bounds = post.get("bounds", {})
+			var too_close = false
+			if not bounds.is_empty():
+				if tx >= int(bounds.get("min_x", 0)) - 3 and tx <= int(bounds.get("max_x", 0)) + 3 \
+						and ty >= int(bounds.get("min_y", 0)) - 3 and ty <= int(bounds.get("max_y", 0)) + 3:
+					too_close = true
+			else:
+				var post_half = int(post.get("size", 15)) / 2 + 3
+				if abs(tx - int(post.get("x", 0))) <= post_half and abs(ty - int(post.get("y", 0))) <= post_half:
+					too_close = true
+			if too_close:
+				send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to a town. Move 3+ tiles away from any post and try again."})
+				return
+		for instance in active_dungeons.values():
+			if abs(tx - int(instance.get("world_x", 0))) <= 3 and abs(ty - int(instance.get("world_y", 0))) <= 3:
+				send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to a dungeon entrance."})
+				return
+
+	var placed = 0
+	var skipped = 0
+	for tile in layout:
+		var tx = character.x + int(tile.get("dx", 0))
+		var ty = character.y + int(tile.get("dy", 0))
+		var ttype = String(tile.get("type", "wall"))
+		if _gm_place_owned_tile(username, tx, ty, ttype):
+			placed += 1
+		else:
+			skipped += 1
+
+	if placed == 0:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Couldn't place any tiles — terrain or other-player ownership blocks every spot."})
+		return
+
+	# Consume one kit from the player's inventory (matches single-tile
+	# build flow at line ~16590). Refresh client inventory afterward.
+	if item_index >= 0 and item_index < character.inventory.size():
+		var item = character.inventory[item_index]
+		var qty = int(item.get("quantity", 1))
+		if qty > 1:
+			item["quantity"] = qty - 1
+		else:
+			character.inventory.remove_at(item_index)
+
+	chunk_manager.save_dirty_chunks()
+	# Trigger enclosure detection so the placed walls/door form a proper
+	# player post (and pick up settler-bubble metadata).
+	var enc_msg = _check_enclosures_after_build(username, peer_id)
+
+	var msg = "[color=#00FF00]Placed kit (%d tiles" % placed
+	if skipped > 0:
+		msg += ", %d blocked and skipped" % skipped
+	msg += ").[/color]"
+	if enc_msg != "":
+		msg += "\n" + enc_msg
+
+	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
+	send_character_update(peer_id)
+	send_location_update(peer_id)
 
 func _check_enclosures_after_build(username: String, peer_id: int = -1) -> String:
 	"""After placing a wall/door, detect any new enclosures. Returns status message."""
