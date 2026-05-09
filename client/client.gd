@@ -875,6 +875,16 @@ var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
 var hud_region_tier_color: String = "#00FF00"
 var hud_region_post_name: String = ""
+# Settler-bubble boundary warning (Slice 4) — fields only render when
+# hud_region_in_bubble is true. Lets the player see the wilderness tier they
+# would face on exit, with a red warning when within the edge threshold.
+var hud_region_in_bubble: bool = false
+var hud_region_bubble_edge_dist: int = -1
+var hud_region_outside_tier: int = 1
+var hud_region_outside_tier_name: String = "Core"
+var hud_region_outside_tier_color: String = "#00FF00"
+var hud_region_outside_level: int = 1
+const REGION_EDGE_WARN_TILES: int = 5
 var hud_active_quests: Array = []  # Cached active quests for HUD
 var crafting_skill_level: int = 1  # Current skill level
 var crafting_post_bonus: int = 0  # Trading post specialization bonus
@@ -16687,6 +16697,13 @@ func handle_server_message(message: Dictionary):
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
 			hud_region_tier_color = String(message.get("region_tier_color", "#00FF00"))
 			hud_region_post_name = String(message.get("region_post_name", ""))
+			# Slice 4 boundary warning — server only stamps these when relevant
+			hud_region_in_bubble = bool(message.get("region_in_bubble", false))
+			hud_region_bubble_edge_dist = int(message.get("region_bubble_edge_dist", -1))
+			hud_region_outside_tier = int(message.get("region_outside_tier", 1))
+			hud_region_outside_tier_name = String(message.get("region_outside_tier_name", "Core"))
+			hud_region_outside_tier_color = String(message.get("region_outside_tier_color", "#00FF00"))
+			hud_region_outside_level = int(message.get("region_outside_level", 1))
 			update_status_hud()
 			# Map Sprites M2 — cache the nearby_players list (with class info)
 			# so the overlay can place a sprite for each visible remote player.
@@ -21630,8 +21647,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.233 changes
+	display_game("[color=#00FF00]v0.9.233[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Settler bubble — boundary warning[/color]")
+	display_game("  • The Region label now shows what's waiting outside your settler bubble whenever you're inside one. \"Outside: T6 Extreme (Lv ~300)\" — subtle gray when you're deep in the bubble, switches to a red [color=#FF6644]! N tiles to edge[/color] warning when you're within 5 tiles of the boundary so a casual step outside won't suddenly drop you into level-300 monsters")
+	display_game("")
+
 	# v0.9.232 changes
-	display_game("[color=#00FF00]v0.9.232[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.232[/color]")
 	display_game("  [color=#FFD700]Post-anchored world initiative shipped — Slices 1-4 + admin kit + persistent build mode[/color]")
 	display_game("  • Bundled rollup release. Items below cover the five internal slices that landed since v0.9.226")
 	display_game("")
@@ -21658,19 +21681,6 @@ func display_changelog():
 	display_game("  • [color=#FFAA00]Heads up:[/color] the new-player tutorial will need to teach this. Until then, /admin → World is the testing path")
 	display_game("")
 
-	# v0.9.228 changes
-	display_game("[color=#00FFFF]v0.9.228[/color]")
-	display_game("  [color=#FFD700]Player post settler bubbles (Slice 3) — visual only[/color]")
-	display_game("  • Player posts now have a tier rating (default T1) and a settler bubble (default 25 tiles around the post center). When you walk into your enclosure or the area around it, the Region label switches to your post's name and tier. Persisted across server restarts")
-	display_game("  • This release is purely the data + indicator; v0.9.229 is when the bubble actually starts suppressing monsters")
-	display_game("")
-
-	# v0.9.227 changes
-	display_game("[color=#00FFFF]v0.9.227[/color]")
-	display_game("  [color=#FFD700]Post-anchored monster level model (Slice 2)[/color]")
-	display_game("  • Monster level generation now flows through the post-anchored model: each trading post anchors the local monster level, and tiles between posts blend smoothly between the two nearest anchors. The wilderness radial curve stays as a floor for apex zones beyond the post network")
-	display_game("  • Architectural rewire only — at every post center the level matches what the radial curve produced before, and lerps between posts approximate the same. No balance change in the current world. The visible payoff comes when player posts override anchors (Slice 3+) and when per-tier base levels get tuned (Slice 6+)")
-	display_game("")
 
 
 
@@ -22588,8 +22598,23 @@ func update_region_label():
 
 	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_tier_name]
 
+	# Slice 4 boundary warning — when inside a settler bubble, surface the
+	# wilderness tier waiting just outside so the player isn't blindsided by
+	# a sudden level jump on exit. Red ⚠ tone when within REGION_EDGE_WARN_TILES.
+	var lines = [area_line, region_line]
+	if hud_region_in_bubble and hud_region_outside_tier > hud_region_tier:
+		var near_edge = hud_region_bubble_edge_dist >= 0 and hud_region_bubble_edge_dist <= REGION_EDGE_WARN_TILES
+		var label_color = "#FF6644" if near_edge else "#888888"
+		var prefix = "[color=%s]Outside:[/color]" % label_color
+		var outside_part = "[color=%s]T%d %s (Lv ~%d)[/color]" % [hud_region_outside_tier_color, hud_region_outside_tier, hud_region_outside_tier_name, hud_region_outside_level]
+		var edge_part = ""
+		if near_edge:
+			var unit = "tile" if hud_region_bubble_edge_dist == 1 else "tiles"
+			edge_part = "  [color=#FF6644]! %d %s to edge[/color]" % [hud_region_bubble_edge_dist, unit]
+		lines.append("%s %s%s" % [prefix, outside_part, edge_part])
+
 	region_label.clear()
-	region_label.append_text(area_line + "\n" + region_line)
+	region_label.append_text("\n".join(lines))
 	region_label.visible = true
 
 func hide_status_hud():
