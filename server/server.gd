@@ -1482,7 +1482,10 @@ func handle_list_characters(peer_id: int):
 		"type": "character_list",
 		"characters": char_list,
 		"can_create": can_create,
-		"max_characters": 6
+		"max_characters": 6,
+		# Slice 5 — spawn-at-post: account-owned posts that the next
+		# character can pick as a spawn point. Empty for fresh accounts.
+		"available_spawn_posts": _get_posts_for_account(account_id),
 	})
 
 func handle_select_character(peer_id: int, message: Dictionary):
@@ -1817,6 +1820,32 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	var character = Character.new()
 	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
+
+	# Slice 5 — spawn-at-post. If the create message specifies a spawn post
+	# (owner + index), validate the post belongs to this account and place
+	# the character there. Otherwise default to whatever character.initialize
+	# set (origin / Crossroads).
+	var spawn_post_owner = String(message.get("spawn_post_owner", ""))
+	var spawn_post_index = int(message.get("spawn_post_index", -1))
+	if spawn_post_owner != "" and spawn_post_index >= 0:
+		var spawn_meta := {}
+		if player_post_names.has(spawn_post_owner) and spawn_post_index < player_post_names[spawn_post_owner].size():
+			var candidate = player_post_names[spawn_post_owner][spawn_post_index]
+			if String(candidate.get("account_id", "")) == account_id:
+				spawn_meta = candidate
+		if spawn_meta.is_empty():
+			send_to_peer(peer_id, {
+				"type": "error",
+				"message": "That spawn post doesn't belong to your account."
+			})
+			return
+		var sc = spawn_meta.get("center", Vector2i.ZERO)
+		if sc is Vector2i:
+			character.x = sc.x
+			character.y = sc.y
+		else:
+			character.x = int(sc.get("x", 0))
+			character.y = int(sc.get("y", 0))
 
 	# Roll cosmetic appearance variant — drives the recolor of the player's
 	# class ASCII art everywhere (battle scene, map hover, inspect, player
@@ -16722,6 +16751,51 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
 	send_location_update(peer_id)
 
+func _get_posts_for_account(account_id: String) -> Array:
+	"""Slice 5 — returns the player posts owned by a given account, formatted
+	for the character-creation spawn picker. Each entry:
+	{owner, post_index, name, x, y, tier, effective_tier, bubble_radius}.
+	Posts created before account_id stamping (without the field, and whose
+	owner is no longer in any account_slot) are skipped — they remain in the
+	world but can't be spawn points until the system has a way to recover
+	their owning account."""
+	var out: Array = []
+	if account_id == "":
+		return out
+	for owner in player_post_names:
+		var posts = player_post_names[owner]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			var meta_account_id = String(meta.get("account_id", ""))
+			if meta_account_id != account_id:
+				continue
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			var meta_for_tier = meta.duplicate()
+			meta_for_tier["_owner"] = owner
+			var effective_tier = _compute_effective_post_tier(meta_for_tier)
+			var display_name = String(meta.get("name", ""))
+			if display_name == "":
+				display_name = "%s's Post" % owner
+			out.append({
+				"owner": owner,
+				"post_index": i,
+				"name": display_name,
+				"x": cx,
+				"y": cy,
+				"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+				"effective_tier": effective_tier,
+				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+			})
+	return out
+
 func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	"""Slice 4 — compute effective settler bubble tier from guard/tower count.
 
@@ -16956,12 +17030,22 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 		_update_enclosure_tile_lookup(enclosure, username, enc_idx)
 		if not player_post_names.has(username):
 			player_post_names[username] = []
+		# Slice 5 — capture account_id at creation so the post can be offered
+		# as a spawn point on later characters of the same account, even
+		# after the creating character permadies and is cleared from
+		# character_slots.
+		var creator_account_id = ""
+		if peer_id >= 0 and peers.has(peer_id):
+			creator_account_id = String(peers[peer_id].get("account_id", ""))
+		if creator_account_id == "":
+			creator_account_id = persistence.find_account_for_character(username)
 		player_post_names[username].append({
 			"name": "",
 			"center": center,
 			"created_at": int(Time.get_unix_time_from_system()),
 			"tier": DEFAULT_PLAYER_POST_TIER,
 			"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
+			"account_id": creator_account_id,
 		})
 		# Send naming prompt to player
 		if peer_id >= 0:
@@ -17031,6 +17115,7 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 						"created_at": 0,
 						"tier": DEFAULT_PLAYER_POST_TIER,
 						"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
+						"account_id": persistence.find_account_for_character(username),
 					})
 			else:
 				# Enclosure broken - unmark interior tiles
@@ -17056,6 +17141,7 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 				"created_at": int(meta.get("created_at", 0)),
 				"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+				"account_id": String(meta.get("account_id", "")),
 			})
 		var max_posts = _get_max_post_count_for_username(username)
 		# Slice 4 — post broken → refresh bubble cache so vanished bubbles
@@ -17232,12 +17318,19 @@ func _rebuild_enclosures_for_player(username: String):
 		# Restore post names from persistence by matching center coordinates
 		var saved_posts = persistence.get_player_posts(username)
 		var rebuilt_names: Array = []
+		# Slice 5 backfill — old posts saved before account_id existed have
+		# no association on disk. Look up the current account that owns
+		# this character_slot so the post becomes selectable as a spawn
+		# point for new characters on that account. Posts whose creator
+		# has since died (no current account_slot) stay orphaned.
+		var fallback_account_id = persistence.find_account_for_character(username)
 		for enc in found_enclosures:
 			var center = _calculate_enclosure_center(enc)
 			var matched_name = ""
 			var matched_at = 0
 			var matched_tier = DEFAULT_PLAYER_POST_TIER
 			var matched_radius = DEFAULT_PLAYER_POST_BUBBLE_RADIUS
+			var matched_account_id = ""
 			for sp in saved_posts:
 				var sc = Vector2i(int(sp.get("center_x", sp.get("center", {}).get("x", 0))), int(sp.get("center_y", sp.get("center", {}).get("y", 0))))
 				if abs(center.x - sc.x) <= 1 and abs(center.y - sc.y) <= 1:
@@ -17245,13 +17338,17 @@ func _rebuild_enclosures_for_player(username: String):
 					matched_at = int(sp.get("created_at", 0))
 					matched_tier = int(sp.get("tier", DEFAULT_PLAYER_POST_TIER))
 					matched_radius = int(sp.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+					matched_account_id = String(sp.get("account_id", ""))
 					break
+			if matched_account_id == "":
+				matched_account_id = fallback_account_id
 			rebuilt_names.append({
 				"name": matched_name,
 				"center": center,
 				"created_at": matched_at,
 				"tier": matched_tier,
 				"bubble_radius": matched_radius,
+				"account_id": matched_account_id,
 			})
 		player_post_names[username] = rebuilt_names
 		# Reconnect rebuilt enclosures to road network
@@ -17291,6 +17388,7 @@ func handle_name_post(peer_id: int, message: Dictionary):
 		"created_at": meta.created_at,
 		"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 		"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+		"account_id": String(meta.get("account_id", peers[peer_id].get("account_id", ""))),
 	})
 	send_to_peer(peer_id, {"type": "post_named", "name": name_text})
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]Post established: %s[/color]" % name_text})
@@ -24150,6 +24248,7 @@ func handle_gm_build_test_post(peer_id: int, message: Dictionary):
 			"created_at": int(last.get("created_at", Time.get_unix_time_from_system())),
 			"tier": int(last.get("tier", DEFAULT_PLAYER_POST_TIER)),
 			"bubble_radius": int(last.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+			"account_id": String(last.get("account_id", peers[peer_id].get("account_id", ""))),
 		})
 
 	# _update_guard_cache cascades into _update_player_post_bubble_cache, so
