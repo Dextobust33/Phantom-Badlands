@@ -24188,6 +24188,16 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"show_gmhelp":
 			close_admin_menu()
 			display_gm_help()
+		# World — settler bubble testing (post-anchored world Slice 4)
+		"gm_build_test_post":
+			close_admin_menu()
+			send_to_server({"type": "gm_build_test_post"})
+		"gm_hire_test_guard":
+			close_admin_menu()
+			send_to_server({"type": "gm_hire_test_guard"})
+		"gm_settler_diag":
+			close_admin_menu()
+			send_to_server({"type": "gm_settler_diag"})
 
 func display_gm_help():
 	"""Display all available GM/Admin commands"""
