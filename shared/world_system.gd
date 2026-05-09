@@ -972,11 +972,12 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 			"distance": sqrt(float(x * x + y * y))
 		}
 
-	# Calculate Euclidean distance from origin (0,0)
+	# Calculate Euclidean distance from origin (0,0) — kept for hotspot info
 	var distance = sqrt(float(x * x + y * y))
 
-	# Get base level from distance formula
-	var base_level = _distance_to_level(distance)
+	# Post-anchored base level: trading posts anchor difficulty, with the
+	# radial distance curve as a floor for wilderness/apex regions.
+	var base_level = get_post_anchored_level(x, y)
 
 	# Check for hot spot (danger zone cluster)
 	var is_hotspot = _is_hotspot(x, y)
@@ -1001,6 +1002,61 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 		"is_hotspot": is_hotspot,
 		"distance": distance
 	}
+
+func get_post_anchored_level(x: int, y: int) -> int:
+	"""Post-anchored monster level for (x, y).
+
+	Each trading post anchors the monster level at the radial-curve value of
+	its own location. Positions between posts blend linearly between the two
+	nearest anchors (weighted by player distance to each). The wilderness
+	radial curve is taken as a floor so apex zones beyond the post network
+	keep their existing difficulty.
+
+	Slice 2 of post-anchored world overhaul (audit #10). At each post center
+	this returns exactly _distance_to_level(post_distance_from_origin), so
+	balance at posts is preserved. Player-built posts will override anchors
+	in a later slice."""
+	var wilderness_level = _distance_to_level(sqrt(float(x * x + y * y)))
+	if not trading_post_db:
+		return wilderness_level
+
+	var posts_dict = trading_post_db.TRADING_POSTS
+	var nearest_dist = INF
+	var nearest_post_origin_dist = 0.0
+	var second_dist = INF
+	var second_post_origin_dist = 0.0
+	for post_id in posts_dict:
+		var post = posts_dict[post_id]
+		var c = post.center
+		var dx = float(x - c.x)
+		var dy = float(y - c.y)
+		var d = sqrt(dx * dx + dy * dy)
+		if d < nearest_dist:
+			second_dist = nearest_dist
+			second_post_origin_dist = nearest_post_origin_dist
+			nearest_dist = d
+			nearest_post_origin_dist = sqrt(float(c.x * c.x + c.y * c.y))
+		elif d < second_dist:
+			second_dist = d
+			second_post_origin_dist = sqrt(float(c.x * c.x + c.y * c.y))
+
+	if nearest_dist == INF:
+		return wilderness_level
+
+	var base_nearest = _distance_to_level(nearest_post_origin_dist)
+	var post_blended: int
+	if second_dist == INF:
+		post_blended = base_nearest
+	else:
+		var base_second = _distance_to_level(second_post_origin_dist)
+		var total = nearest_dist + second_dist
+		if total < 0.001:
+			post_blended = base_nearest
+		else:
+			var t = nearest_dist / total
+			post_blended = int(round(lerp(float(base_nearest), float(base_second), t)))
+
+	return max(post_blended, wilderness_level)
 
 func _distance_to_level(distance: float) -> int:
 	"""Convert distance from origin to monster level (0-2828 -> 1-10000).
