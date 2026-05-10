@@ -1788,6 +1788,20 @@ func get_all_listings_by_account(account_id: String) -> Array:
 				result.append(entry)
 	return result
 
+func get_all_market_listings_with_post() -> Array:
+	# Audit #9 Slice 1 — flat list of every market listing across every post,
+	# annotated with post_id. Server pairs with TRADING_POSTS lookup to add
+	# display name + center, and applies per-post markup.
+	var result = []
+	if not market_data.has("listings"):
+		return result
+	for post_id in market_data.listings.keys():
+		for listing in market_data.listings[post_id]:
+			var entry = listing.duplicate()
+			entry["post_id"] = post_id
+			result.append(entry)
+	return result
+
 func get_supply_count(post_id: String, category: String) -> int:
 	"""Count listings in a supply category at a post."""
 	var listings = get_market_listings(post_id)

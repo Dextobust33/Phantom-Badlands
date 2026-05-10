@@ -1385,6 +1385,8 @@ func handle_message(peer_id: int, message: Dictionary):
 		# Open Market handlers
 		"market_browse":
 			handle_market_browse(peer_id, message)
+		"market_network_browse":
+			handle_market_network_browse(peer_id, message)
 		"market_list_item":
 			handle_market_list_item(peer_id, message)
 		"market_list_material":
@@ -10177,6 +10179,147 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		"category": category,
 		"sort": sort_mode,
 		"post_id": post_id
+	})
+
+func handle_market_network_browse(peer_id: int, message: Dictionary):
+	# Audit #9 Slice 1 — read-only cross-post market index. Walks every post's
+	# listings, applies per-post markup, attaches post name + distance from
+	# player. Player cannot purchase from this view; they must travel to the
+	# post (preserves geographic value of trading posts).
+	if not characters.has(peer_id):
+		return
+
+	# Player still must be at some market location to use the network view —
+	# this gates the feature behind already-engaging-with-the-market.
+	var here_post_id = _get_market_post_id(peer_id)
+	if here_post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post to browse the market network."})
+		return
+
+	var character = characters[peer_id]
+	var category = message.get("category", "all")
+	var sort_mode = message.get("sort", "price_asc")
+	var page = int(message.get("page", 0))
+	var per_page = 9
+
+	var all_entries = persistence.get_all_market_listings_with_post()
+
+	# Filter by category. Player posts (enclosures) are excluded from the
+	# network index — those are geographic discoveries, not official posts.
+	var filtered = []
+	for listing in all_entries:
+		var lpid_check = String(listing.get("post_id", ""))
+		if lpid_check.begins_with("player_"):
+			continue
+		var supply_cat = listing.get("supply_category", "")
+		if category == "all":
+			filtered.append(listing)
+		elif category == "material":
+			if supply_cat.begins_with("material"):
+				filtered.append(listing)
+		elif category == "rune":
+			if supply_cat == "rune":
+				filtered.append(listing)
+		elif category == "egg":
+			if supply_cat == "egg":
+				filtered.append(listing)
+		elif supply_cat == category:
+			filtered.append(listing)
+
+	# Per-post-per-category markup, plus annotate post name + distance.
+	var markup_cache: Dictionary = {}  # "%s|%s" % [post_id, supply_cat] -> markup float
+	for listing in filtered:
+		var lpid = String(listing.get("post_id", ""))
+		var cat = listing.get("supply_category", "equipment")
+		var key = "%s|%s" % [lpid, cat]
+		var markup_v: float
+		if markup_cache.has(key):
+			markup_v = markup_cache[key]
+		else:
+			markup_v = persistence.calculate_markup(lpid, cat)
+			markup_cache[key] = markup_v
+		listing["markup_price"] = int(listing.get("base_valor", 0) * markup_v)
+		listing["markup"] = markup_v
+		var post_info = trading_post_db.get_trading_post_by_id(lpid)
+		if post_info != null and not post_info.is_empty():
+			listing["post_name"] = String(post_info.get("name", lpid))
+			var ctr: Vector2i = post_info.get("center", Vector2i.ZERO)
+			var dx = ctr.x - character.x
+			var dy = ctr.y - character.y
+			listing["post_distance"] = int(round(sqrt(dx * dx + dy * dy)))
+		else:
+			listing["post_name"] = lpid
+			listing["post_distance"] = -1
+		listing["is_here"] = (lpid == here_post_id)
+
+	# Stack within same post + same item + same price + same seller (per-post,
+	# since each post has its own markup; combining across posts would erase
+	# pricing differences that are the whole point of seeing the network).
+	var stacks: Array = []
+	var stack_map: Dictionary = {}
+	for listing in filtered:
+		var supply_cat = listing.get("supply_category", "")
+		var item = listing.get("item", {})
+		var item_type = item.get("type", "")
+		if item_type in ["structure", "door"] and supply_cat == "equipment":
+			supply_cat = "consumable"
+		var display_cat = _get_display_category(supply_cat)
+		var is_unique = supply_cat == "egg"
+		if is_unique:
+			var entry = listing.duplicate()
+			entry["stack_listing_ids"] = [listing.get("listing_id", "")]
+			entry["total_quantity"] = int(listing.get("quantity", 1))
+			entry["display_category"] = display_cat
+			stacks.append(entry)
+		else:
+			var key = "%s|%s|%d|%s" % [String(listing.get("post_id", "")), item.get("name", ""), int(listing.get("markup_price", 0)), listing.get("seller_name", "")]
+			if stack_map.has(key):
+				var idx = stack_map[key]
+				stacks[idx]["stack_listing_ids"].append(listing.get("listing_id", ""))
+				stacks[idx]["total_quantity"] += int(listing.get("quantity", 1))
+			else:
+				var entry = listing.duplicate()
+				entry["stack_listing_ids"] = [listing.get("listing_id", "")]
+				entry["total_quantity"] = int(listing.get("quantity", 1))
+				entry["display_category"] = display_cat
+				stack_map[key] = stacks.size()
+				stacks.append(entry)
+
+	# Sort: default to price_asc (most useful for finding deals across posts).
+	match sort_mode:
+		"price_asc":
+			stacks.sort_custom(func(a, b): return int(a.get("markup_price", 0)) < int(b.get("markup_price", 0)))
+		"price_desc":
+			stacks.sort_custom(func(a, b): return int(a.get("markup_price", 0)) > int(b.get("markup_price", 0)))
+		"name_asc":
+			stacks.sort_custom(func(a, b): return a.get("item", {}).get("name", "") < b.get("item", {}).get("name", ""))
+		"distance":
+			stacks.sort_custom(func(a, b):
+				var ad = int(a.get("post_distance", 99999))
+				var bd = int(b.get("post_distance", 99999))
+				if ad < 0: ad = 99999
+				if bd < 0: bd = 99999
+				return ad < bd)
+		"category":
+			stacks.sort_custom(_sort_stacks_by_category)
+		_:
+			stacks.sort_custom(func(a, b): return int(a.get("markup_price", 0)) < int(b.get("markup_price", 0)))
+
+	var total_pages = max(1, ceili(float(stacks.size()) / per_page))
+	page = clampi(page, 0, total_pages - 1)
+	var start = page * per_page
+	var end_idx = mini(start + per_page, stacks.size())
+	var page_listings = stacks.slice(start, end_idx)
+
+	send_to_peer(peer_id, {
+		"type": "market_network_browse_result",
+		"listings": page_listings,
+		"page": page,
+		"total_pages": total_pages,
+		"total_listings": stacks.size(),
+		"category": category,
+		"sort": sort_mode,
+		"here_post_id": here_post_id,
 	})
 
 func _get_display_category(supply_cat: String) -> String:

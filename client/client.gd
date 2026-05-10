@@ -1179,8 +1179,13 @@ var market_my_page: int = 0
 var market_list_flash: String = ""  # Brief success message shown in listing view
 var market_sort: String = "category"
 var market_egg_page: int = 0
+# Audit #9 Slice 1 — Network browse (cross-post listings index, read-only)
+var market_network_mode: bool = false  # True when viewing the cross-post index instead of local listings
+var market_network_sort: String = "price_asc"
 const MARKET_SORT_LABELS = {"category": "Category", "price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "newest": "Newest"}
 const MARKET_SORT_ORDER = ["category", "price_asc", "price_desc", "name_asc", "newest"]
+const MARKET_NETWORK_SORT_LABELS = {"price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "distance": "Distance ▲", "category": "Category"}
+const MARKET_NETWORK_SORT_ORDER = ["price_asc", "price_desc", "name_asc", "distance", "category"]
 var account_valor: int = 0
 
 # Tutorial
@@ -2528,6 +2533,24 @@ func _process(delta):
 						update_action_bar()
 			else:
 				set_meta("marketbuykey_%d_pressed" % i, false)
+
+	# Audit #9 Slice 1 — Network browse selection (1-9 to inspect remote listing).
+	# Inspect is read-only; player must travel to the post to buy.
+	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "network_browse":
+		for i in range(9):
+			if is_item_select_key_pressed(i):
+				if is_item_key_blocked_by_action_bar(i):
+					continue
+				if not get_meta("marketnetkey_%d_pressed" % i, false):
+					set_meta("marketnetkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					if i < market_listings.size():
+						market_inspected_listing = market_listings[i]
+						pending_market_action = "network_inspect"
+						display_market_network_inspect()
+						update_action_bar()
+			else:
+				set_meta("marketnetkey_%d_pressed" % i, false)
 
 	# Market list item selection with keybinds (1-9 to select inventory item to list)
 	if game_state == GameState.PLAYING and not input_field.has_focus() and market_mode and pending_market_action == "list_select":
@@ -7798,7 +7821,7 @@ func update_action_bar():
 				{"label": "List Item", "action_type": "local", "action_data": "market_list", "enabled": true},
 				{"label": "List Mats", "action_type": "local", "action_data": "market_list_material", "enabled": true},
 				{"label": "My Listings", "action_type": "local", "action_data": "market_my_listings", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Network", "action_type": "local", "action_data": "market_network", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7812,7 +7835,34 @@ func update_action_bar():
 				{"label": "Next Page", "action_type": "local", "action_data": "market_next_page", "enabled": market_page < market_total_pages - 1},
 				{"label": "Filter", "action_type": "local", "action_data": "market_filter", "enabled": true},
 				{"label": "Sort: %s" % sort_label, "action_type": "local", "action_data": "market_sort_cycle", "enabled": true},
-				{"label": "1-9 Buy", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Network", "action_type": "local", "action_data": "market_network", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "network_browse":
+			var net_sort_label = MARKET_NETWORK_SORT_LABELS.get(market_network_sort, "Price ▲")
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_network_back", "enabled": true},
+				{"label": "Prev Page", "action_type": "local", "action_data": "market_network_prev", "enabled": market_page > 0},
+				{"label": "Next Page", "action_type": "local", "action_data": "market_network_next", "enabled": market_page < market_total_pages - 1},
+				{"label": "Filter", "action_type": "local", "action_data": "market_network_filter", "enabled": true},
+				{"label": "Sort: %s" % net_sort_label, "action_type": "local", "action_data": "market_network_sort", "enabled": true},
+				{"label": "Local", "action_type": "local", "action_data": "market_network_to_local", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_market_action == "network_inspect":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "market_network_inspect_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11073,6 +11123,51 @@ func execute_local_action(action: String):
 			market_sort = MARKET_SORT_ORDER[(sort_idx + 1) % MARKET_SORT_ORDER.size()]
 			market_page = 0
 			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
+		# Audit #9 Slice 1 — Network browse (read-only cross-post listing index)
+		"market_network":
+			pending_market_action = "network_browse"
+			market_network_mode = true
+			market_listings = []
+			market_page = 0
+			send_to_server({"type": "market_network_browse", "category": market_category, "page": 0, "sort": market_network_sort})
+		"market_network_back":
+			pending_market_action = ""
+			market_network_mode = false
+			market_listings = []
+			market_inspected_listing = {}
+			display_market_main()
+			update_action_bar()
+		"market_network_to_local":
+			# Switch from network view to current-post Local browse without leaving the market.
+			pending_market_action = "browse"
+			market_network_mode = false
+			market_inspected_listing = {}
+			market_page = 0
+			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
+		"market_network_prev":
+			if market_page > 0:
+				market_page -= 1
+				send_to_server({"type": "market_network_browse", "category": market_category, "page": market_page, "sort": market_network_sort})
+		"market_network_next":
+			if market_page < market_total_pages - 1:
+				market_page += 1
+				send_to_server({"type": "market_network_browse", "category": market_category, "page": market_page, "sort": market_network_sort})
+		"market_network_filter":
+			var net_categories = ["all", "equipment", "egg", "consumable", "tool", "rune", "material", "monster_part"]
+			var net_idx = net_categories.find(market_category)
+			market_category = net_categories[(net_idx + 1) % net_categories.size()]
+			market_page = 0
+			send_to_server({"type": "market_network_browse", "category": market_category, "page": 0, "sort": market_network_sort})
+		"market_network_sort":
+			var ns_idx = MARKET_NETWORK_SORT_ORDER.find(market_network_sort)
+			market_network_sort = MARKET_NETWORK_SORT_ORDER[(ns_idx + 1) % MARKET_NETWORK_SORT_ORDER.size()]
+			market_page = 0
+			send_to_server({"type": "market_network_browse", "category": market_category, "page": 0, "sort": market_network_sort})
+		"market_network_inspect_back":
+			market_inspected_listing = {}
+			pending_market_action = "network_browse"
+			display_market_network_browse()
+			update_action_bar()
 		"market_buy_confirm":
 			if market_selected_listing.is_empty():
 				display_game("[color=#FF0000]No listing selected.[/color]")
@@ -18009,6 +18104,8 @@ func handle_server_message(message: Dictionary):
 		# Market messages
 		"market_browse_result":
 			_handle_market_browse_result(message)
+		"market_network_browse_result":
+			_handle_market_network_browse_result(message)
 		"market_list_success":
 			_handle_market_list_success(message)
 		"market_buy_success":
@@ -21989,8 +22086,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.255 changes
+	display_game("[color=#00FF00]v0.9.255[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market network browse — cross-post listing index (Audit #9 Slice 1)[/color]")
+	display_game("  • [b]New \"Network\" button[/b] in the market: see every listing across every trading post in one view. Each row shows the item, the price-at-that-post (with that post's markup), the seller, and the post name + distance from your current position")
+	display_game("  • [b]Read-only[/b] — to buy, you travel to that post and use Local browse there. Preserves the geographic value of trading posts; the network view is for finding the best deal, not teleport-shopping")
+	display_game("  • Sort by [color=#87CEEB]Price ▲/▼, Name, Distance, Category[/color]. Filter by item type. Pagination across the entire network")
+	display_game("  • From local browse, slot 6 toggles to Network. From network, slot 6 toggles back to Local. Inspect any listing to see full item details + a 'travel to <post>' hint")
+	display_game("")
+
 	# v0.9.254 changes
-	display_game("[color=#00FF00]v0.9.254[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.254[/color]")
 	display_game("  [color=#FFD700]Crafting transparency — material → source hints (Audit #7/#8 Slice)[/color]")
 	display_game("  • [b]Where do I find this?[/b] Open a recipe in any crafting station. Under each ingredient line you'll now see a [color=#808080]from: …[/color] hint listing every place that drops it: Mining T3 (40%), Foraging T2 (10%), T2 Monsters (15%), and so on")
 	display_game("  • Server walks the four gathering tables (Fishing/Mining/Logging/Foraging) plus the monster crafting-drop tables and ships the source map alongside the recipe list — one round trip, all recipes covered")
@@ -22024,13 +22130,6 @@ func display_changelog():
 	display_game("  • Mix of 2-stage and 3-stage chains. Each leads to a different T1/T2 dungeon — completing all four chains (Goblin Menace included) gives a meaningful tour of the early-game roster, with one collected egg from each lineage")
 	display_game("")
 
-	# v0.9.250 changes
-	display_game("[color=#00FFFF]v0.9.250[/color]")
-	display_game("  [color=#FFD700]Quest chains foundation — \"The Goblin Menace\" (Audit #6 Slice 1)[/color]")
-	display_game("  • [b]First quest chain[/b] now offered at Haven: [color=#FFAA00]The Goblin Menace[/color] — 3 stages (kill 5 Goblins → kill 3 Hobgoblins → slay the Goblin King). Each stage's [b]final reward is visible upfront[/b]: 300 total valor + 1 Goblin Egg. No daily reset; chains progress at your pace and persist through permadeath... wait no, it's one-shot per character. New character, new chains")
-	display_game("  • Stages auto-advance: turn in stage 1, stage 2 lands in your active quests immediately with a chat announcement. Reuses the existing quest UI — no new menus to learn. Chain quests show their stage and final reward inline in the quest description")
-	display_game("  • This is the foundation for the audit's full quest rework: target-farm chains replacing daily kill tasks, multi-path completability, title rewards on hard chains. More chains and the bigger systems land in future slices")
-	display_game("")
 
 
 
@@ -29856,6 +29955,60 @@ func display_market_browse():
 	display_game("[color=#808080]Press 1-9 to inspect, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
 	update_action_bar()
 
+func display_market_network_browse():
+	# Audit #9 Slice 1 — cross-post network browse view. Read-only listing index
+	# across all trading posts. Each row shows item, price-at-that-post, seller,
+	# post name, and distance from player. To buy, the player must travel.
+	input_field.release_focus()
+	input_field.placeholder_text = ""
+	game_output.clear()
+	var sort_label = MARKET_NETWORK_SORT_LABELS.get(market_network_sort, "Price ▲")
+	display_game("[color=#FFD700]===== Market Network — All Posts (Page %d/%d) =====[/color]" % [market_page + 1, max(1, market_total_pages)])
+	display_game("[color=#808080]Category: %s | Sort: %s | Read-only — travel to the post to buy.[/color]" % [market_category.capitalize(), sort_label])
+	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
+	display_game("")
+
+	if market_listings.is_empty():
+		display_game("[color=#808080]No listings found across the market network.[/color]")
+	else:
+		for idx in range(market_listings.size()):
+			var listing = market_listings[idx]
+			var item = listing.get("item", {})
+			var item_name = item.get("name", "")
+			if item_name == "" and item.get("type", "") == "egg":
+				var comp_name = item.get("companion_name", "")
+				if comp_name != "":
+					item_name = comp_name + " Egg"
+			if item_name == "":
+				item_name = "Unknown"
+			var rarity = item.get("rarity", "common")
+			var rarity_color = _get_rarity_color(rarity)
+			var price = int(listing.get("markup_price", listing.get("base_valor", 0)))
+			var seller = listing.get("seller_name", "Unknown")
+			var total_qty = int(listing.get("total_quantity", listing.get("quantity", 1)))
+			var qty_text = ""
+			if total_qty > 1:
+				qty_text = " x%d" % total_qty
+			var post_name = String(listing.get("post_name", "?"))
+			var dist = int(listing.get("post_distance", -1))
+			var here = bool(listing.get("is_here", false))
+			var post_tag: String
+			if here:
+				post_tag = "[color=#00FF00]@%s (here)[/color]" % post_name
+			elif dist >= 0:
+				post_tag = "[color=#87CEEB]@%s (%d tiles)[/color]" % [post_name, dist]
+			else:
+				post_tag = "[color=#87CEEB]@%s[/color]" % post_name
+
+			var level_text = ""
+			if item.has("level"):
+				level_text = " Lv%d" % int(item.level)
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] %s [color=#808080](by %s)[/color]" % [idx + 1, rarity_color, item_name, qty_text, level_text, format_number(price), post_tag, seller])
+
+	display_game("")
+	display_game("[color=#808080]Press 1-9 to inspect, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
+	update_action_bar()
+
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
 	input_field.release_focus()
@@ -30090,6 +30243,66 @@ func display_market_inspect():
 	display_game("")
 	display_game("[color=#FFD700]%s[/color] Buy  |  [color=#FFD700]%s[/color] Back" % [get_action_key_name(0), get_action_key_name(1)])
 
+func display_market_network_inspect():
+	# Audit #9 Slice 1 — read-only inspection of a remote (cross-post) listing.
+	# Shows full item details + seller + price-at-that-post + travel hint. No buy button.
+	input_field.release_focus()
+	input_field.placeholder_text = ""
+	game_output.clear()
+
+	var item = market_inspected_listing.get("item", {})
+	var item_name = item.get("name", "Unknown")
+	var price = int(market_inspected_listing.get("markup_price", market_inspected_listing.get("base_valor", 0)))
+	var seller = market_inspected_listing.get("seller_name", "Unknown")
+	var total_qty = int(market_inspected_listing.get("total_quantity", market_inspected_listing.get("quantity", 1)))
+	var item_type = item.get("type", "")
+	var post_name = String(market_inspected_listing.get("post_name", "?"))
+	var dist = int(market_inspected_listing.get("post_distance", -1))
+	var here = bool(market_inspected_listing.get("is_here", false))
+
+	if item_type == "egg":
+		var variant = item.get("variant", "Normal")
+		var variant_color = item.get("variant_color", "#FFAA00")
+		var egg_tier = item.get("tier", 1)
+		var egg_sub = item.get("sub_tier", 1)
+		var rinfo = _get_variant_rarity_info(variant)
+		var monster_name = item.get("companion_name", item_name.replace(" Egg", ""))
+		display_game("[color=#FFD700]===== Network Listing — Egg =====[/color]")
+		display_game("")
+		var color2 = item.get("variant_color2", variant_color)
+		var pattern = item.get("variant_pattern", "solid")
+		var egg_art = MonsterArt.get_egg_art(variant, variant_color, color2, pattern, ui_scale_monster_art)
+		if egg_art != "":
+			display_game(egg_art)
+			display_game("")
+		display_game("[color=#00FFFF]Name:[/color] [color=%s]%s[/color]" % [variant_color, item_name])
+		display_game("[color=#00FFFF]Monster:[/color] %s" % monster_name)
+		display_game("[color=#00FFFF]Variant:[/color] [color=%s][%s] %s[/color]" % [rinfo.color, rinfo.tier, variant])
+		display_game("[color=#00FFFF]Tier:[/color] T%d-%d" % [egg_tier, egg_sub])
+	else:
+		display_item_details(item, "Network Listing")
+
+	display_game("")
+	display_game("[color=#808080]─────────────────────────────────[/color]")
+	display_game("  Seller: %s" % seller)
+	if total_qty > 1:
+		display_game("  Quantity: %d" % total_qty)
+	display_game("  Price: [color=#00FF00]%s Valor[/color]" % format_number(price))
+	if here:
+		display_game("  Listed at: [color=#00FF00]%s (you are here — Local browse to buy)[/color]" % post_name)
+	elif dist >= 0:
+		display_game("  Listed at: [color=#87CEEB]%s[/color] [color=#808080](%d tiles from your position)[/color]" % [post_name, dist])
+	else:
+		display_game("  Listed at: [color=#87CEEB]%s[/color]" % post_name)
+	display_game("  Your Valor: [color=#00FF00]%s[/color]" % format_number(account_valor))
+	display_game("")
+	if here:
+		display_game("[color=#FFD700]Switch to Local browse and buy from this post.[/color]")
+	else:
+		display_game("[color=#808080]Travel to %s and use Browse there to purchase.[/color]" % post_name)
+	display_game("")
+	display_game("[color=#FFD700]%s[/color] Back" % get_action_key_name(0))
+
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
 	game_output.clear()
@@ -30239,6 +30452,17 @@ func _handle_market_browse_result(message: Dictionary):
 	market_sort = message.get("sort", "category")
 	pending_market_action = "browse"
 	display_market_browse()
+	update_action_bar()
+
+func _handle_market_network_browse_result(message: Dictionary):
+	# Audit #9 Slice 1 — handler for the cross-post network browse view.
+	market_listings = message.get("listings", [])
+	market_page = int(message.get("page", 0))
+	market_total_pages = int(message.get("total_pages", 1))
+	market_category = message.get("category", "all")
+	market_network_sort = message.get("sort", "price_asc")
+	pending_market_action = "network_browse"
+	display_market_network_browse()
 	update_action_bar()
 
 func _handle_market_list_success(message: Dictionary):
