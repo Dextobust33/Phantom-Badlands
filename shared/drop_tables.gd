@@ -2454,6 +2454,80 @@ const FORAGING_CATCHES = {
 	]
 }
 
+# Audit #7/#8 transparency layer — material → source lookup. For a given
+# material_id, returns where the player can obtain it across the four
+# gathering systems and monster drops, with within-table percentage chance.
+# Used by the crafting recipe view to surface "where does this come from?".
+func get_material_sources(material_id: String) -> Array:
+	var sources: Array = []
+	if material_id == "":
+		return sources
+
+	# Fishing: shallow / deep
+	for zone in FISHING_CATCHES.keys():
+		var entries: Array = FISHING_CATCHES[zone]
+		var total_w = 0
+		for e in entries:
+			total_w += int(e.get("weight", 0))
+		for e in entries:
+			if String(e.get("item", "")) == material_id:
+				var pct = int(round(float(int(e.get("weight", 0))) / float(max(1, total_w)) * 100.0))
+				sources.append({"source": "Fishing (%s)" % String(zone), "chance": pct, "system": "fishing"})
+				break
+
+	# Mining tiers 1-9
+	for tier in MINING_CATCHES.keys():
+		var entries2: Array = MINING_CATCHES[tier]
+		var total_w2 = 0
+		for e2 in entries2:
+			total_w2 += int(e2.get("weight", 0))
+		for e2 in entries2:
+			if String(e2.get("item", "")) == material_id:
+				var pct2 = int(round(float(int(e2.get("weight", 0))) / float(max(1, total_w2)) * 100.0))
+				sources.append({"source": "Mining T%d" % int(tier), "chance": pct2, "system": "mining"})
+				break
+
+	# Logging tiers 1-?
+	for tier in LOGGING_CATCHES.keys():
+		var entries3: Array = LOGGING_CATCHES[tier]
+		var total_w3 = 0
+		for e3 in entries3:
+			total_w3 += int(e3.get("weight", 0))
+		for e3 in entries3:
+			if String(e3.get("item", "")) == material_id:
+				var pct3 = int(round(float(int(e3.get("weight", 0))) / float(max(1, total_w3)) * 100.0))
+				sources.append({"source": "Logging T%d" % int(tier), "chance": pct3, "system": "logging"})
+				break
+
+	# Foraging tiers 1-?
+	for tier in FORAGING_CATCHES.keys():
+		var entries4: Array = FORAGING_CATCHES[tier]
+		var total_w4 = 0
+		for e4 in entries4:
+			total_w4 += int(e4.get("weight", 0))
+		for e4 in entries4:
+			if String(e4.get("item", "")) == material_id:
+				var pct4 = int(round(float(int(e4.get("weight", 0))) / float(max(1, total_w4)) * 100.0))
+				sources.append({"source": "Foraging T%d" % int(tier), "chance": pct4, "system": "foraging"})
+				break
+
+	# Monster crafting material drops (CRAFTING_MATERIAL_DROPS keyed by tier 1-9)
+	for tier in CRAFTING_MATERIAL_DROPS.keys():
+		var entries5: Array = CRAFTING_MATERIAL_DROPS[tier]
+		var total_w5 = 0
+		for e5 in entries5:
+			total_w5 += int(e5.get("weight", 0))
+		for e5 in entries5:
+			if String(e5.get("material", "")) == material_id:
+				# This is the within-tier weight; the actual drop chance also depends
+				# on the tier-level drop chance. Show within-tier weight only — the
+				# per-fight drop chance is a separate concept (~25-50% by tier).
+				var pct5 = int(round(float(int(e5.get("weight", 0))) / float(max(1, total_w5)) * 100.0))
+				sources.append({"source": "T%d Monsters" % int(tier), "chance": pct5, "system": "monsters"})
+				break
+
+	return sources
+
 # New tier material name mappings (used by redesigned crafting system)
 const MATERIAL_NAMES = {
 	"stone": ["Rough Stone", "Cut Stone", "Granite", "Marble", "Obsidian", "Crystal"],
