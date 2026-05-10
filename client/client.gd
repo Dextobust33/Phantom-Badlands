@@ -21988,8 +21988,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.248 changes
+	display_game("[color=#00FF00]v0.9.248[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Spider Nest gets webbed tiles — theme tags Slice 1[/color]")
+	display_game("  • [b]Spider Nest dungeons[/b] now have [color=#A335EE]w[/color] tiles scattered through the floors — clinging webs that cost an [b]extra step[/b] to wade through. Step pressure was previously easy to ignore; the Spider Nest now has a real mechanical texture distinct from other T2 dungeons. Plan your route around the webs or burn extra steps")
+	display_game("  • This is the first cut of the audit's [b]theme tags[/b] system: each dungeon gets one or two reusable mechanical themes (Forgotten Crypt skeleton revives, Mimic Treasury chests-that-bite, Plague Graveyard poison auras, Harpy Cliffs falling tiles). Future slices add more — pattern is in place")
+	display_game("")
+
 	# v0.9.247 changes
-	display_game("[color=#00FF00]v0.9.247[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.247[/color]")
 	display_game("  [color=#FFD700]Boss signatures Slice 3 — Bloodscent + Festering Bite[/color]")
 	display_game("  • [b]Alpha Wolf[/b] (Wolf Den T1) gets [color=#8B0000]Bloodscent[/color]: when [i]you[/i] drop below 50% HP, the wolf scents the kill and gains +50% damage for the rest of the fight. Mirror of the Orc Warlord's Bloodied Fury, but tied to your HP, not the boss's — pack-hunter flavor")
 	display_game("  • [b]Rat King[/b] (Rat Warrens T1) gets [color=#9ACD32]Festering Bite[/color]: each successful hit adds a stack of festering wound (max 5), each stack ticks 2%% of your max HP per turn. Stacks snowball if the rat king lands many hits — distinct from regular Bleed, which is a fixed value applied once. Drink before you walk in")
@@ -22019,13 +22026,6 @@ func display_changelog():
 	display_game("  • [b]No-target safety:[/b] if no qualifying dungeon is in range, the compass is [color=#88FF88]not consumed[/color] — you get a hint to grab a higher-tier compass instead of a wasted-feel")
 	display_game("")
 
-	# v0.9.243 changes
-	display_game("[color=#00FFFF]v0.9.243[/color]")
-	display_game("  [color=#FFD700]Boss signatures — first cut (Audit #5 Slice 1)[/color]")
-	display_game("  • [b]Skeleton Lord[/b] (Forgotten Crypt T1) gets [color=#FFAA00]Death Defiance[/color]: when defeated for the first time, the boss crumbles to dust, then bones rise once more at 50% HP. Once per fight — kill it again to actually win. Telegraphs in chat so you know to expect a second phase")
-	display_game("  • [b]Spider Queen[/b] (Spider Nest T2) gets [color=#A335EE]Constricting Web[/color] (replacing the old Web Trap slow): 25% chance per hit to ensnare you. Webbed = skip your next turn. WIS softens the chance (floor 10%) — high-wisdom builds get a real edge here. Re-rollable on future hits, so the queen can lock you down repeatedly if you stay in range")
-	display_game("  • Slice 1 deliberately small: 2 bosses, 2 distinct mechanics. The audit's full target is one signature mechanic per boss across the 53 dungeon roster — more land in future slices, prioritized by what players see most")
-	display_game("")
 
 
 
@@ -29367,6 +29367,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "&", "color": "#00FFCC"}
 		9:  # FINAL_CHEST (post-boss reward, v0.9.224)
 			return {"char": "*", "color": "#FFAA00"}
+		10:  # WEBBED — Spider Nest theme tile, costs +1 step (v0.9.248)
+			return {"char": "w", "color": "#A335EE"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
