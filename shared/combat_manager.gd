@@ -63,6 +63,9 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"devastate":    {"ceiling": 50, "floor_ratio": 0.3, "resource": "stamina"},
 	"blast":        {"ceiling": 50, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
 	"meteor":       {"ceiling": 100, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},
+	"ambush":       {"ceiling": 30, "floor_ratio": 0.3, "resource": "energy"},
+	"exploit":      {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
+	"gambit":       {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -3182,16 +3185,28 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 	# Mastery Slice 1 — level gate removed; rank scales effective power.
 
-	var base_energy_cost = ability_info.cost
-	var energy_cost = apply_skill_cost_reduction(character, ability_name, base_energy_cost)
+	# Audit #1 variable-cost rework — abilities in VARIABLE_COST_TABLE (ambush,
+	# exploit, gambit in v0.9.261) take the variable-cost path. Other Trickster
+	# abilities stay on the fixed-cost flow below.
+	var variable_fraction: float = 1.0
+	if VARIABLE_COST_TABLE.has(ability_name):
+		var vc_result = apply_variable_cost(character, ability_name, combat)
+		for vc_msg in vc_result.get("messages", []):
+			messages.append(vc_msg)
+		if not vc_result.get("ok", false):
+			return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+		variable_fraction = float(vc_result.get("fraction", 1.0))
+	else:
+		var base_energy_cost = ability_info.cost
+		var energy_cost = apply_skill_cost_reduction(character, ability_name, base_energy_cost)
 
-	if energy_cost < base_energy_cost and energy_cost > 0:
-		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(character.get_skill_cost_reduction(ability_name)))
-	elif energy_cost == 0 and base_energy_cost > 0:
-		messages.append("[color=#00FFFF]Skill Enhancement: FREE![/color]")
+		if energy_cost < base_energy_cost and energy_cost > 0:
+			messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(character.get_skill_cost_reduction(ability_name)))
+		elif energy_cost == 0 and base_energy_cost > 0:
+			messages.append("[color=#00FFFF]Skill Enhancement: FREE![/color]")
 
-	if not character.use_energy(energy_cost):
-		return {"success": false, "messages": ["[color=#FF4444]Not enough energy! (Need %d)[/color]" % energy_cost], "combat_ended": false, "skip_monster_turn": true}
+		if not character.use_energy(energy_cost):
+			return {"success": false, "messages": ["[color=#FF4444]Not enough energy! (Need %d)[/color]" % energy_cost], "combat_ended": false, "skip_monster_turn": true}
 
 	match ability_name:
 		"analyze":
@@ -3303,13 +3318,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"ambush":
-			# Ambush: 3Ã— multiplier, 50% crit chance, sqrt WITS scaling
+			# Ambush: 3x multiplier, 50% crit chance, sqrt WITS scaling.
+			# Variable cost (v0.9.261): damage scales by spend; crit chance stays 50%
+			# (binary mechanic — partial ambush still has the full crit potential).
 			var wits_stat = character.get_effective_stat("wits")
 			var wits_mult = 1.0 + (sqrt(float(wits_stat)) / 10.0)  # Sqrt scaling for WITS
 			var base_damage = character.get_total_attack()
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3Ã— multiplier
+			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg)
@@ -3335,11 +3352,14 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"exploit":
-			# FIXED: Uses monster's MAX HP, not current HP. Scales with WIT.
+			# Uses monster's MAX HP, scales with WITS (15-35%).
+			# Variable cost (v0.9.261): damage scales by spend AFTER the percent
+			# calc, so a partial exploit on a beefy monster still does a
+			# proportional chunk of max HP.
 			var wits = character.get_effective_stat("wits")
 			var base_percent = 15 + int(wits / 4)  # 15% base + 0.25% per WIT
 			base_percent = min(35, base_percent)  # Cap at 35%
-			var raw_damage = int(monster.max_hp * (base_percent / 100.0))
+			var raw_damage = int(monster.max_hp * (base_percent / 100.0) * variable_fraction)
 			raw_damage = max(10, raw_damage)  # Minimum 10 damage
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var exploit_skill_bonus = character.get_skill_damage_bonus("exploit")
@@ -3465,12 +3485,14 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			success_chance = min(80, success_chance)  # Cap at 80%
 
 			if randf() * 100 < success_chance:
-				# Success - deal big damage with WITS scaling (4.5Ã— multiplier)
+				# Success - deal big damage with WITS scaling (4.5x multiplier).
+				# Variable cost (v0.9.261): damage scales by spend. Success chance
+				# stays constant — partial gambit is "same odds, smaller stakes".
 				var wits_mult = 1.0 + (sqrt(float(wits)) / 10.0)  # Same scaling as Ambush
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
-				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult)
+				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
 				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
 				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg)
@@ -3486,8 +3508,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				if monster.current_hp <= 0:
 					combat["gambit_kill"] = true
 			else:
-				# Failure - take damage yourself
-				var self_damage = max(5, int(character.get_total_max_hp() * 0.15))  # 15% max HP
+				# Failure - take damage yourself (15% max HP, scaled by spend).
+				# Variable cost: smaller gambits hurt proportionally less on miss.
+				var self_damage = max(5, int(character.get_total_max_hp() * 0.15 * variable_fraction))
 				character.current_hp -= self_damage
 				character.current_hp = max(1, character.current_hp)  # Can't kill yourself
 				messages.append("[color=#FF4444][b]GAMBIT FAILED![/b][/color]")

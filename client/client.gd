@@ -10121,16 +10121,16 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"devastate": {"display": "Devastate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"fortify": {"display": "Fortify", "cost": 25, "cost_percent": 0, "resource_type": "stamina"},
 		"rally": {"display": "Rally", "cost": 45, "cost_percent": 0, "resource_type": "stamina"},
-		# Trickster abilities
+		# Trickster abilities. Variable-cost: ambush, exploit, gambit (v0.9.261).
 		"analyze": {"display": "Analyze", "cost": 5, "cost_percent": 0, "resource_type": "energy"},
 		"distract": {"display": "Distract", "cost": 15, "cost_percent": 0, "resource_type": "energy"},
 		"pickpocket": {"display": "Steal", "cost": 20, "cost_percent": 0, "resource_type": "energy"},
-		"ambush": {"display": "Ambush", "cost": 30, "cost_percent": 0, "resource_type": "energy"},
+		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"vanish": {"display": "Vanish", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
-		"exploit": {"display": "Exploit", "cost": 35, "cost_percent": 0, "resource_type": "energy"},
+		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"perfect_heist": {"display": "Heist", "cost": 50, "cost_percent": 0, "resource_type": "energy"},
 		"sabotage": {"display": "Sabotage", "cost": 25, "cost_percent": 0, "resource_type": "energy"},
-		"gambit": {"display": "Gambit", "cost": 35, "cost_percent": 0, "resource_type": "energy"},
+		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
 		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
 		"all_or_nothing": {"display": "A/N %d%%" % int(3.0 + min(25.0, character_data.get("all_or_nothing_uses", 0) * 0.1)), "cost": 1, "cost_percent": 0, "resource_type": resource_type},
@@ -15317,12 +15317,12 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
 		"distract": return "Enemy suffers -50% accuracy on its next attack."
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks."
-		"ambush": return "3× WITS-scaled damage with +50% crit chance."
+		"ambush": return "3× WITS-scaled damage with +50% crit chance. Variable cost 9-30 energy — damage scales with spend (crit chance stays 50%)."
 		"vanish": return "Go invisible — your next attack is a guaranteed crit. Skips enemy turn."
-		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%)."
+		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total."
-		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: take 15% of your max HP as self-damage. Bonus loot if the hit kills."
+		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
 		_:
 			return ""
@@ -15556,7 +15556,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=#9932CC](8%% per move)[/color]"
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -22431,8 +22431,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.261 changes
+	display_game("[color=#00FF00]v0.9.261[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Trickster damage (Audit #1)[/color]")
+	display_game("  • [b]Ambush, Exploit, and Gambit are now variable-cost.[/b] Ambush 9-30 energy, Exploit 10-35, Gambit 10-35. Same auto-spend pattern: press the key, system spends what you have up to the ceiling, damage scales 30%%-100%% with spend")
+	display_game("  • [b]Ambush crit chance stays at 50%%[/b] regardless of spend — a partial ambush still has the full crit potential. Only the base damage scales")
+	display_game("  • [b]Exploit's percentage chunk scales[/b] — a low-spend Exploit still bites a proportional slice of the monster's max HP, but smaller")
+	display_game("  • [b]Gambit: success chance stays constant; both reward AND punishment scale.[/b] Partial gambit = same 55-80%% odds of hitting, but smaller payoff on hit and smaller self-damage on miss. \"Same dice, smaller stakes.\"")
+	display_game("  • 9/23 abilities done. Coming next: Forcefield (shield magnitude scales) → Warrior buffs (the harder design work — partial War Cry / Berserk / Rally / Iron Skin / Fortify)")
+	display_game("")
+
 	# v0.9.260 changes
-	display_game("[color=#00FF00]v0.9.260[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.260[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Mage damage (Audit #1)[/color]")
 	display_game("  • [b]Blast and Meteor are now variable-cost[/b]. Same pattern as Slice 6c — auto-spend max-affordable, floor 30%% of ceiling, partial-cast banner if you spent less than full")
 	display_game("  • [b]Floor scales with your mana pool.[/b] Since Mage abilities have percentage-cost scaling (5%% for Blast, 8%% for Meteor), the floor scales too: an early Mage with 200 max mana has Blast floor ~15 / ceiling 50; a Lv100 Mage with 2000 max mana has Blast floor ~30 / ceiling 100")
@@ -22476,18 +22486,6 @@ func display_changelog():
 	display_game("  • [b]Pending choices survive disconnect[/b] — if you log off mid-combat right after a rank-up, the popup re-appears next time you log in. Choices that aren't picked queue up; chained rank-ups in one fight will pop one after the other")
 	display_game("")
 
-	# v0.9.256 changes
-	display_game("[color=#00FFFF]v0.9.256[/color]")
-	display_game("  [color=#FFD700]Combat ability deck — Slice 6a foundation (Audit #1)[/color]")
-	display_game("  • [b]Cards in combat[/b] — the action bar's ability slots are now drawn from a deck. Combat starts by shuffling all your accessible abilities and dealing 5 cards into your hand. Use a card → it goes to discard and a new one is drawn. When the deck empties, the discard reshuffles back in. Standard actions (Attack/Use Item/Flee/Outsmart) stay always-available outside the deck")
-	display_game("  • [b]Card row in the combat scene[/b] — the 5 drawn cards appear as a strip in the battle panel. Each card shows its hotkey, name, cost, and current mastery rank (Untrained → Master). Castable cards are highlighted; cards you can't afford this turn are dimmed but stay in hand until used")
-	display_game("  • [b]Hover any card[/b] for full details: cost, effect, current rank + damage modifier, progress to next rank, and a [b]preview of what the next rank gives[/b] so you can decide which abilities to invest in")
-	display_game("  • [b]Description audit[/b] — fixed misleading tooltips on Forcefield (was \"blocks 2 attacks\", actually flat-damage shield = 100 + INT × 8), Iron Skin, Berserk, Devastate, Cleave, Rally, Fortify, War Cry, Meteor, Haste, Paralyze, Banish, Cloak, and others. Trickster ability strings still queued for verification in the next pass")
-	display_game("  • [b]All-or-Nothing on R[/b] — A/N is too niche to draw as a card. It now lives permanently on the R action-bar slot when you're in combat with a hand")
-	display_game("  • [b]New characters start at Rank 0[/b] (\"Untrained\", -20% damage). The previous backfill that bumped fresh chars to Rank 2 was an existing-character migration leak — now correctly skipped on creation. Your archetype abilities will rank up through play, matching the locked direction of \"weak at first, grow with use\"")
-	display_game("  • [b]Inventory shortcut[/b] — double-click any inventory item to equip (if equipment) or use (if consumable). Materials/monster parts/locked items fall through silently")
-	display_game("  • [b]Map header fix[/b] — at NPC posts, the player sprite no longer renders one tile too high. The compass line was creating a third header row the sprite overlay didn't account for")
-	display_game("")
 
 
 
