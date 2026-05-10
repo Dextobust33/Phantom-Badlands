@@ -161,7 +161,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.4,
-			"abilities": ["Pack Howl", "Savage Bite"]
+			"abilities": ["Pack Howl", "Savage Bite", "Bloodscent"]
 		},
 		"boss_egg": "Wolf",
 		"floors": 3,
@@ -189,7 +189,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.3,
-			"abilities": ["Plague Bite", "Swarm Call"]
+			"abilities": ["Plague Bite", "Swarm Call", "Festering Bite"]
 		},
 		"boss_egg": "Giant Rat",
 		"floors": 3,
