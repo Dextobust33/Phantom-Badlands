@@ -21988,8 +21988,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.249 changes
+	display_game("[color=#00FF00]v0.9.249[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Boss signatures Slice 4 — Iron Discipline[/color]")
+	display_game("  • [b]Hobgoblin Commander[/b] (Hobgoblin Fortress T2) gets [color=#C0C0C0]Iron Discipline[/color]: every 5 monster turns, the boss steels itself, [b]heals 10% max HP[/b] and shrugs off Sabotage/Weakness debuffs. Distinct from generic regeneration (per-turn flat) — this is a periodic burst that punishes long fights. Reward fast kills; tricksters benefit from front-loading damage")
+	display_game("  • All 5 T1 dungeons + 3 T2 dungeons now have signature boss mechanics. 7 down, ~46 to go")
+	display_game("")
+
 	# v0.9.248 changes
-	display_game("[color=#00FF00]v0.9.248[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.248[/color]")
 	display_game("  [color=#FFD700]Spider Nest gets webbed tiles — theme tags Slice 1[/color]")
 	display_game("  • [b]Spider Nest dungeons[/b] now have [color=#A335EE]w[/color] tiles scattered through the floors — clinging webs that cost an [b]extra step[/b] to wade through. Step pressure was previously easy to ignore; the Spider Nest now has a real mechanical texture distinct from other T2 dungeons. Plan your route around the webs or burn extra steps")
 	display_game("  • This is the first cut of the audit's [b]theme tags[/b] system: each dungeon gets one or two reusable mechanical themes (Forgotten Crypt skeleton revives, Mimic Treasury chests-that-bite, Plague Graveyard poison auras, Harpy Cliffs falling tiles). Future slices add more — pattern is in place")
@@ -22018,13 +22025,6 @@ func display_changelog():
 	display_game("  • Now 4 boss signatures shipped (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic). The full audit target is one signature per boss across the 53 dungeon roster — more land in future slices")
 	display_game("")
 
-	# v0.9.244 changes
-	display_game("[color=#00FFFF]v0.9.244[/color]")
-	display_game("  [color=#FFD700]Dungeon Compass — discoverability Slice 1[/color]")
-	display_game("  • New consumable: [color=#9ACD32]Dungeon Compass[/color]. Use one in the world (not inside a dungeon) and the needle steadies, calling out the [b]nearest qualifying dungeon[/b] by name, tier, and direction (e.g. \"Goblin Caves (T1) lies 47 tiles to the northeast\"). Targets the audit's #1 player pain — finding dungeons in the first place")
-	display_game("  • [b]Three tiers, three ranges:[/b] standard compass covers up to T2, Greater up to T5, Master up to T9. They drop from treasure chests at 18% chance starting at chest tier 2; the compass's range matches the chest tier so you get an appropriately-scoped compass for where you are")
-	display_game("  • [b]No-target safety:[/b] if no qualifying dungeon is in range, the compass is [color=#88FF88]not consumed[/color] — you get a hint to grab a higher-tier compass instead of a wasted-feel")
-	display_game("")
 
 
 

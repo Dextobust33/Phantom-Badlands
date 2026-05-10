@@ -111,6 +111,7 @@ const ABILITY_BOSS_BLOODIED_FURY = "boss_bloodied_fury"  # When boss <30% HP, on
 const ABILITY_BOSS_TREASURE_DECOY = "boss_treasure_decoy"  # First monster attack guaranteed crit at 2x damage
 const ABILITY_BOSS_BLOODSCENT = "boss_bloodscent"        # When player <50% HP, boss gains +50% damage rest of fight (one-shot trigger)
 const ABILITY_BOSS_FESTERING_BITE = "boss_festering_bite"  # Each monster hit adds +1 festering stack (max 5); ticks 2% max HP per stack per player turn
+const ABILITY_BOSS_IRON_DISCIPLINE = "boss_iron_discipline"  # Every 5 monster turns, boss heals 10% max HP and clears its own debuffs
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -4628,6 +4629,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["flee_attack_used"] = true
 			combat["monster_fled"] = true
 			messages.append("[color=#FFA500]The %s strikes one last time and flees into the shadows![/color]" % monster.name)
+
+	# Audit #5 boss signature — Iron Discipline / boss_iron_discipline. Every
+	# 5 monster turns, the boss heals 10% max HP and clears its own debuffs
+	# (sabotage, weakness stacks). Distinct from regeneration (per-turn flat) —
+	# periodic burst that punishes long fights.
+	if ABILITY_BOSS_IRON_DISCIPLINE in abilities and combat.round > 0 and combat.round % 5 == 0 and monster.current_hp < monster.max_hp:
+		var iron_disc_already = int(combat.get("iron_discipline_last_round", -1))
+		if iron_disc_already != int(combat.round):
+			combat["iron_discipline_last_round"] = int(combat.round)
+			var heal_amt = max(1, int(monster.max_hp * 0.10))
+			monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + heal_amt)
+			combat["monster_sabotaged"] = 0
+			combat.erase("monster_weakness")
+			messages.append("[color=#C0C0C0][b]IRON DISCIPLINE![/b][/color] [color=#9ACD32]The %s steels itself, healing %d HP and shrugging off debuffs![/color]" % [monster.name, heal_amt])
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
