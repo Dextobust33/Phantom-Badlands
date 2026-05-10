@@ -15306,15 +15306,15 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"devastate": return "5× attack with sqrt STR scaling. Massive stamina cost."
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds."
 		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds."
-		"analyze": return "Reveal monster HP, max HP, and key stats; persists across this fight."
+		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
 		"distract": return "Enemy suffers -50% accuracy on its next attack."
-		"pickpocket": return "Steal WITS × 10 gold from the monster; failure means it counter-attacks."
+		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks."
 		"ambush": return "3× WITS-scaled damage with +50% crit chance."
-		"vanish": return "Go invisible — your next attack is a guaranteed crit."
-		"exploit": return "Deal 15-35% of the monster's max HP as damage."
-		"perfect_heist": return "Instant win plus double rewards. Massive cost; trickster only at high level."
-		"sabotage": return "Reduce enemy stats / disrupt their next ability (effect varies)."
-		"gambit": return "4.5× damage and bonus loot on kill — risky if you miss."
+		"vanish": return "Go invisible — your next attack is a guaranteed crit. Skips enemy turn."
+		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%)."
+		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks."
+		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total."
+		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: take 15% of your max HP as self-damage. Bonus loot if the hit kills."
 		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
 		_:
 			return ""
@@ -22417,8 +22417,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.258 changes
+	display_game("[color=#00FF00]v0.9.258[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Trickster ability descriptions — corrected against impl (Audit #1)[/color]")
+	display_game("  • [b]Analyze[/b] tooltip now lists its headline effect (was missing): grants [color=#FFFF00]+10%% damage to all attacks for the rest of this combat[/color], and reveals the outsmart chance against this specific monster")
+	display_game("  • [b]Pickpocket[/b] description was wrong — claimed to steal \"WITS × 10 gold\", actually steals [color=#FFD700]1-4 tier-scaled ore[/color] (Copper at T1 up to Primordial at T9). 1-3 pockets per fight; success scales WITS vs monster INT")
+	display_game("  • [b]Perfect Heist[/b] tooltip claimed \"double rewards\" — that was the pre-nerf behavior. Real numbers: 5-60%% success chance, 1.25× XP on hit, [color=#FF4444]enemy counter-attacks on miss[/color]")
+	display_game("  • [b]Sabotage[/b] now states what it actually does: -15-30%% str/def, stacks to a 50%% cap (was vaguely \"effect varies\")")
+	display_game("  • [b]Gambit[/b] now warns about the miss penalty: [color=#FF4444]15%% of your max HP as self-damage[/color]")
+	display_game("  • [b]Vanish[/b] now notes it skips the enemy turn (setup-play key info)")
+	display_game("  • [b]Exploit[/b] tightened to mention the WITS scaling explicitly")
+	display_game("  • Distract / Ambush descriptions verified accurate — no change needed. Combined with v0.9.256's ~19 ability audit, [color=#FFD700]all 24 in-game abilities now have descriptions that match the implementation[/color]")
+	display_game("")
+
 	# v0.9.257 changes
-	display_game("[color=#00FF00]v0.9.257[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.257[/color]")
 	display_game("  [color=#FFD700]Persistent deck + player-choice rank-up — Slice 6b (Audit #1)[/color]")
 	display_game("  • [b]Decks persist across combats[/b] now. Your combat hand is no longer rebuilt fresh each fight — it's drawn from a per-character collection that starts as 1 of each accessible ability and grows from rank-up choices")
 	display_game("  • [b]Rank-up choice popup[/b] — when an ability ranks up mid-combat, a modal pauses input and offers two paths: [color=#87CEEB]+1 Card[/color] (add another copy to your deck, so that ability shows up more often) or [color=#FFB6C1]+10%% Damage[/color] (advance the damage-modifier curve toward Master). Slay-the-Spire-style customization — your Magic Bolt can diverge from another player's Magic Bolt over time")
@@ -22457,14 +22470,6 @@ func display_changelog():
 	display_game("  • Solves a long-standing 'why is this gated behind a material I've never seen?' problem. Specialist crafters can now scan a recipe and immediately know which gathering skill or monster tier to chase")
 	display_game("")
 
-	# v0.9.253 changes
-	display_game("[color=#00FFFF]v0.9.253[/color]")
-	display_game("  [color=#FFD700]Three T2 quest chains — Audit #6 Slice 4[/color]")
-	display_game("  • [b]Hobgoblin Discipline[/b] (South Gate, 3-stage T2): Kill 5 Hobgoblins → Kill 6 Goblins → Slay Hobgoblin Commander. 400 valor + Hobgoblin Egg. Description warns about Iron Discipline (every 5 turns the boss heals + clears debuffs)")
-	display_game("  • [b]Mimic Hunt[/b] (West Shrine, 2-stage T2): Kill 4 Mimics → Slay the Grand Mimic. 400 valor + Mimic Egg. Description telegraphs the Treasure Decoy first-attack crit")
-	display_game("  • [b]Barrow's Curse[/b] (South Gate, 2-stage T2): Kill 5 Wights → Slay the Barrow Wight. 400 valor + Wight Egg")
-	display_game("  • [b]10 chains shipped[/b] across 7 trading posts. Each T2 chain's final stage references its boss's signature mechanic from the dungeon audit slices, so you can plan your build before you walk in")
-	display_game("")
 
 
 
