@@ -1291,6 +1291,9 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_house_fusion(peer_id, message)
 		"request_character_list":
 			handle_list_characters(peer_id)
+		# Slice 3 — Sanctuary mastery headstart purchase
+		"mastery_headstart_set":
+			handle_mastery_headstart_set(peer_id, message)
 		# Party system handlers
 		"pass_through":
 			handle_pass_through(peer_id, message)
@@ -1884,6 +1887,16 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# Apply starting valor bonus
 	if house_bonuses.get("starting_valor", 0) > 0:
 		persistence.add_valor(account_id, house_bonuses.starting_valor)
+
+	# Slice 3 — apply queued mastery headstarts (baddie points already spent
+	# at purchase time). Consumes the queue so it doesn't apply to future
+	# characters. Marks the backfill flag so the existing-character migration
+	# path doesn't override these values on first load.
+	var queued_headstarts = persistence.consume_pending_headstarts(account_id)
+	var applied_headstarts = character.apply_headstart_ranks(queued_headstarts)
+	if applied_headstarts.size() > 0:
+		character.ability_uses_backfilled = true
+		log_message("Applied %d headstart ranks to %s: %s" % [applied_headstarts.size(), char_name, str(applied_headstarts)])
 
 	# Checkout companion from house kennel if requested
 	var checkout_slot = message.get("checkout_companion_slot", -1)
@@ -8996,7 +9009,38 @@ func handle_house_request(peer_id: int):
 	send_to_peer(peer_id, {
 		"type": "house_data",
 		"house": house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
+		"upgrade_costs": persistence.HOUSE_UPGRADES,
+		# Slice 3 — Sanctuary mastery headstart UI consumes these
+		"mastery_records": persistence.get_account_mastery_records(account_id),
+		"pending_headstarts": persistence.get_pending_headstarts(account_id),
+		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
+		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
+	})
+
+func handle_mastery_headstart_set(peer_id: int, message: Dictionary):
+	"""Slice 3 — set queued headstart rank for an ability. Charges/refunds
+	baddie points based on the delta vs current pending."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id = peers[peer_id].account_id
+	var ability_name = String(message.get("ability", ""))
+	var target_rank = int(message.get("rank", 0))
+	var result = persistence.set_pending_headstart_rank(account_id, ability_name, target_rank)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": ("[color=#00FF00]%s[/color]" if result.get("success", false) else "[color=#FF0000]%s[/color]") % result.get("message", "")
+	})
+	# Refresh house data so the client UI updates BP balance + pending state
+	var house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES,
+		"mastery_records": persistence.get_account_mastery_records(account_id),
+		"pending_headstarts": persistence.get_pending_headstarts(account_id),
+		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
+		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
 	})
 
 func handle_house_upgrade(peer_id: int, message: Dictionary):

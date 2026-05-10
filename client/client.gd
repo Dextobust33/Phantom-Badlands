@@ -603,6 +603,7 @@ var house_mode: String = ""  # "", "main", "storage", "companions", "upgrades"
 var pending_house_action: String = ""  # For sub-menus like withdraw_select, checkout_select, etc.
 var house_storage_page: int = 0
 var house_upgrades_page: int = 0  # 0=Base, 1=Combat, 2=Stats
+var house_mastery_page: int = 0  # Slice 3 — pagination for mastery headstart panel (5 abilities per page)
 var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
 var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
 var house_pending_withdraw_indices: Array = []  # Storage item indices to withdraw on character select
@@ -3019,6 +3020,17 @@ func _process(delta):
 						_purchase_house_upgrade(i)
 				else:
 					set_meta("houseupgrade_%d_pressed" % i, false)
+		elif house_mode == "mastery":
+			# Slice 3 — keys 1-5 cycle the row's headstart rank (R0 → R1 → ... → cap → R0).
+			# Reaching cap and pressing again refunds all BP for that ability.
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("housemastery_%d_pressed" % i, false):
+						set_meta("housemastery_%d_pressed" % i, true)
+						_consume_item_select_key(i)
+						_cycle_mastery_headstart(i)
+				else:
+					set_meta("housemastery_%d_pressed" % i, false)
 		elif house_mode == "storage" and pending_house_action == "withdraw_select":
 			# Keys 1-5 to toggle withdraw selection
 			for i in range(5):
@@ -5784,6 +5796,24 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "mastery":
+			# Slice 3 — Sanctuary mastery headstart purchase
+			var mastery_recs: Dictionary = house_data.get("mastery_records", {})
+			var sorted_abilities: Array = mastery_recs.keys()
+			sorted_abilities.sort()
+			var max_page = maxi(0, (sorted_abilities.size() - 1) / 5)
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+				{"label": "< Prev", "action_type": "local", "action_data": "mastery_prev", "enabled": house_mastery_page > 0},
+				{"label": "Next >", "action_type": "local", "action_data": "mastery_next", "enabled": house_mastery_page < max_page},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-5: Cycle", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "rank +1", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "(refund @cap)", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif house_mode == "kennel":
 			var kennel = house_data.get("companion_kennel", {})
 			var kennel_companions = kennel.get("companions", [])
@@ -5948,10 +5978,17 @@ func update_action_bar():
 					interact_action = "house_fusion"
 					interact_enabled = true
 
+			# Slice 3 — Mastery button always visible from main; lights up when account has any record
+			var has_mastery_records: bool = false
+			var hm_records: Dictionary = house_data.get("mastery_records", {})
+			for rk in hm_records.values():
+				if int(rk) > 0:
+					has_mastery_records = true
+					break
 			current_actions = [
 				{"label": interact_label, "action_type": "local", "action_data": interact_action, "enabled": interact_enabled},
 				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Mastery", "action_type": "local", "action_data": "house_mastery", "enabled": has_mastery_records},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11771,6 +11808,21 @@ func execute_local_action(action: String):
 			house_upgrades_page = min(2, house_upgrades_page + 1)
 			display_house_upgrades()
 			update_action_bar()
+		"house_mastery":
+			_pre_mark_held_selection_keys("housemastery_")
+			house_mode = "mastery"
+			pending_house_action = ""
+			house_mastery_page = 0
+			display_house_mastery()
+			update_action_bar()
+		"mastery_prev":
+			house_mastery_page = max(0, house_mastery_page - 1)
+			display_house_mastery()
+			update_action_bar()
+		"mastery_next":
+			house_mastery_page = house_mastery_page + 1
+			display_house_mastery()
+			update_action_bar()
 		"house_main":
 			house_mode = "main"
 			pending_house_action = ""
@@ -16673,6 +16725,11 @@ func handle_server_message(message: Dictionary):
 			var server_upgrade_costs = message.get("upgrade_costs", {})
 			if not server_upgrade_costs.is_empty():
 				house_data["upgrade_costs"] = server_upgrade_costs
+			# Slice 3 — Sanctuary mastery headstart UI consumes these
+			house_data["mastery_records"] = message.get("mastery_records", {})
+			house_data["pending_headstarts"] = message.get("pending_headstarts", {})
+			house_data["headstart_costs"] = message.get("headstart_costs", [0, 25, 100, 500])
+			house_data["headstart_max_rank"] = int(message.get("headstart_max_rank", 3))
 			house_mode = "main"
 			pending_house_action = ""
 			house_storage_page = 0
@@ -16694,6 +16751,15 @@ func handle_server_message(message: Dictionary):
 			var update_upgrade_costs = message.get("upgrade_costs", {})
 			if not update_upgrade_costs.is_empty():
 				house_data["upgrade_costs"] = update_upgrade_costs
+			# Slice 3 — refresh mastery headstart fields if server included them
+			if message.has("mastery_records"):
+				house_data["mastery_records"] = message.get("mastery_records", {})
+			if message.has("pending_headstarts"):
+				house_data["pending_headstarts"] = message.get("pending_headstarts", {})
+			if message.has("headstart_costs"):
+				house_data["headstart_costs"] = message.get("headstart_costs", [0, 25, 100, 500])
+			if message.has("headstart_max_rank"):
+				house_data["headstart_max_rank"] = int(message.get("headstart_max_rank", 3))
 			if game_state == GameState.HOUSE_SCREEN:
 				if house_mode == "storage":
 					display_house_storage()
@@ -16705,6 +16771,8 @@ func handle_server_message(message: Dictionary):
 					display_house_kennel()
 				elif house_mode == "fusion":
 					display_house_fusion()
+				elif house_mode == "mastery":
+					display_house_mastery()
 				else:
 					display_house_main()
 				update_action_bar()
@@ -21915,12 +21983,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.242 changes
+	display_game("[color=#00FF00]v0.9.242[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary mastery headstarts (Slice 3)[/color]")
+	display_game("  • [b]Spend Baddie Points[/b] in the Sanctuary to start your next character with rank already in an ability. New \"Mastery\" button on the Sanctuary main view (lights up once you have any record). Lists every ability you've ranked up on a previous character with the cost to bump it +1 rank for the next life")
+	display_game("  • [b]Steep curve, hard cap:[/b] R1=25 BP, R2=100 BP, R3=500 BP — 625 BP cumulative for one ability fully maxed-headstart. Capped at R3 (Skilled) — R4 (Master) is always earned through play, so dying still has bite")
+	display_game("  • [b]Single-key UX:[/b] press 1-5 to cycle a row's rank (R0 → R1 → R2 → R3 → R0). Hitting cap and pressing again refunds the entire amount paid back to your BP — change your mind without penalty until you create the character. Headstarts are consumed at character creation and applied to ability_uses so the new character starts at the purchased rank")
+	display_game("  • You can only buy ranks you've actually reached — no headstart is offered for an ability you've never ranked up on any character")
+	display_game("")
+
 	# v0.9.241 changes
-	display_game("[color=#00FF00]v0.9.241[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.241[/color]")
 	display_game("  [color=#FFD700]Mastery survives permadeath (Slice 2)[/color]")
 	display_game("  • [b]Highest rank ever[/b] for each ability now persists at the account level. Reach Rank 4 on Magic Bolt — that's recorded forever, even after this character dies. Combat rank-ups update the record live; on death, every ability with non-zero use gets a final snapshot so backfilled ranks aren't lost either")
 	display_game("  • [b]Death screen[/b] now prints a \"Mastery Records Preserved\" section listing each ability + its highest rank — so when permadeath hits, you can see what your account is keeping for the next character")
-	display_game("  • Records are read-only this release — you can't spend them yet. The next slice (Sanctuary headstart purchases) lets you spend baddie points to start a new character at recorded ranks, capped below max so dying still has bite")
 	display_game("")
 
 	# v0.9.240 changes
@@ -21943,14 +22019,6 @@ func display_changelog():
 	display_game("  • The 9 class ASCII portraits (Fighter, Wizard, Thief, etc.) weren't being packed into launcher builds, so the battle scene fell back to the LPC sprite and inspect / status / character sheet / hover popup all came back blank. Dev mode read them straight off disk so the bug only showed up on shipped builds. Export filter now explicitly includes the .txt portraits — your class face is back everywhere it should be")
 	display_game("")
 
-	# v0.9.237 changes
-	display_game("[color=#00FFFF]v0.9.237[/color]")
-	display_game("  [color=#FFD700]Mastery polish — slower grind, hover tooltips, anti-spam cap[/color]")
-	display_game("  • [b]Rank thresholds tripled[/b] (was 10/50/200/1000, now 30/150/600/2400). Existing characters' rank-2 backfill still lands at baseline so no balance shift — just a slower climb to mastered. Use-grind matches the audit's \"earn it\" feel")
-	display_game("  • [b]Hover tooltips[/b] on ability cards in Settings → Abilities. Mouse over any slot or grid card to see the ability's cost, effect, current rank + damage modifier, and progress to the next rank")
-	display_game("  • [b]Anti-spam cap:[/b] only the first 5 uses of any ability per combat now count toward mastery. Casting Magic Bolt at 5 mana 30 times in a single fight no longer earns 30 mastery credits — abilities still resolve normally past the cap, they just don't rank you up. Bridges to the eventual deck-building model where draw-N-per-round naturally bounds uses")
-	display_game("  • Side fix: changelog earlier referred to \"More → Abilities\" — corrected to Settings → Abilities")
-	display_game("")
 
 
 
@@ -32457,6 +32525,123 @@ func display_house_upgrades():
 		display_game("")
 		idx += 1
 
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
+	update_action_bar()
+
+func _cycle_mastery_headstart(slot_index: int):
+	"""Slice 3 — number-key handler in Sanctuary Mastery panel. Bumps the
+	row's pending rank up by 1 if there's headroom, otherwise wraps back to
+	R0 (full refund). Server adjusts BP atomically."""
+	var records: Dictionary = house_data.get("mastery_records", {})
+	var pending: Dictionary = house_data.get("pending_headstarts", {})
+	var max_rank: int = int(house_data.get("headstart_max_rank", 3))
+
+	var sorted_abilities: Array = records.keys()
+	sorted_abilities.sort()
+	var page_size = 5
+	var actual_idx = house_mastery_page * page_size + slot_index
+	if actual_idx >= sorted_abilities.size():
+		return
+	var ab_name: String = sorted_abilities[actual_idx]
+	var ceiling = int(records.get(ab_name, 0))
+	var pending_rank = int(pending.get(ab_name, 0))
+	var allowed_max = mini(max_rank, ceiling)
+
+	var next_rank: int
+	if pending_rank < allowed_max:
+		next_rank = pending_rank + 1
+	else:
+		next_rank = 0  # Wrap: full refund
+
+	send_to_server({
+		"type": "mastery_headstart_set",
+		"ability": ab_name,
+		"rank": next_rank
+	})
+
+func display_house_mastery():
+	"""Slice 3 — Sanctuary mastery headstart purchase. List each ability the
+	account has a record on, with: recorded ceiling, currently queued rank, BP
+	cost to bump one rank. Number keys 1-5 cycle the row's rank
+	(R0 → R1 → … → cap → R0). Server validates and refunds BP on wrap-back."""
+	_populate_sanctuary_panel()
+	game_output.clear()
+	house_mode = "mastery"
+	_update_house_map()
+
+	var records: Dictionary = house_data.get("mastery_records", {})
+	var pending: Dictionary = house_data.get("pending_headstarts", {})
+	var costs: Array = house_data.get("headstart_costs", [0, 25, 100, 500])
+	var max_rank: int = int(house_data.get("headstart_max_rank", 3))
+	var bp = int(house_data.get("baddie_points", 0))
+
+	display_game("[color=#FFD700]═══════ MASTERY HEADSTART ═══════[/color]")
+	display_game("[color=#808080]Spend Baddie Points to start your next character with rank already in an ability.[/color]")
+	display_game("")
+	display_game("[color=#FF6600]Baddie Points: %d[/color]" % bp)
+	display_game("[color=#808080]Max headstart rank: R%d (R%d remains earnable through play)[/color]" % [max_rank, max_rank + 1])
+	display_game("")
+
+	var sorted_abilities: Array = records.keys()
+	sorted_abilities.sort()
+	if sorted_abilities.is_empty():
+		display_game("[color=#808080]No mastery records yet.[/color]")
+		display_game("[color=#808080]Earn ability ranks in combat — they survive permadeath and unlock here.[/color]")
+		display_game("")
+		display_game("[color=#FFD700]══════════════════════════════[/color]")
+		update_action_bar()
+		return
+
+	var page_size = 5
+	var total_pages = maxi(1, int(ceil(float(sorted_abilities.size()) / float(page_size))))
+	house_mastery_page = clampi(house_mastery_page, 0, total_pages - 1)
+	var start_idx = house_mastery_page * page_size
+	var end_idx = mini(start_idx + page_size, sorted_abilities.size())
+
+	if total_pages > 1:
+		display_game("[color=#AAAAAA]Page %d/%d[/color]" % [house_mastery_page + 1, total_pages])
+
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+	var slot = 1
+	for i in range(start_idx, end_idx):
+		var ab_name: String = sorted_abilities[i]
+		var ceiling = int(records[ab_name])
+		var pending_rank = int(pending.get(ab_name, 0))
+		var pretty_name: String = ab_name.replace("_", " ").capitalize()
+		var ceil_label: String = rank_names[ceiling] if ceiling < rank_names.size() else "Master"
+
+		# Headroom: can bump up to min(max_rank, ceiling)
+		var allowed_max = mini(max_rank, ceiling)
+		var can_buy = pending_rank < allowed_max
+		var next_rank = pending_rank + 1 if can_buy else 0
+		var next_cost: int = int(costs[next_rank]) if (can_buy and next_rank < costs.size()) else 0
+		# Cumulative cost paid so far (refundable)
+		var paid_so_far: int = 0
+		for r in range(1, pending_rank + 1):
+			if r < costs.size():
+				paid_so_far += int(costs[r])
+
+		# Build line
+		var pending_label: String = ""
+		if pending_rank > 0:
+			var pname: String = rank_names[pending_rank] if pending_rank < rank_names.size() else "Master"
+			pending_label = " [color=#9ACD32]queued: R%d %s[/color]" % [pending_rank, pname]
+
+		var ceiling_color = "#9ACD32" if ceiling >= 4 else ("#88FF88" if ceiling >= 3 else "#A0A0A0")
+		display_game("[color=#FFD700][%s][/color] [color=#FFFFFF]%s[/color] [color=%s](recorded: R%d %s)[/color]%s" % [get_item_select_key_name(slot - 1), pretty_name, ceiling_color, ceiling, ceil_label, pending_label])
+		if can_buy:
+			var nbuy_label: String = rank_names[next_rank] if next_rank < rank_names.size() else "Master"
+			display_game("    [color=#88FF88]→ Buy R%d %s[/color] for [color=#FF6600]%d BP[/color]" % [next_rank, nbuy_label, next_cost])
+		else:
+			# At cap — next press refunds all
+			if pending_rank > 0:
+				display_game("    [color=#FFAA88]→ At cap; press again to refund all (+%d BP)[/color]" % paid_so_far)
+			elif ceiling == 0:
+				display_game("    [color=#808080]No record yet — earn rank in combat to unlock.[/color]")
+		slot += 1
+
+	display_game("")
+	display_game("[color=#808080]Headstarts apply to your next character at creation. Refund cancels and returns BP.[/color]")
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
 	update_action_bar()
 

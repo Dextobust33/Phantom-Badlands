@@ -246,7 +246,8 @@ func create_account(username: String, password: String) -> Dictionary:
 		"character_slots": [],
 		"max_characters": DEFAULT_MAX_CHARACTERS,
 		"is_admin": false,
-		"mastery_records": {}  # ability_name → highest rank ever achieved on any character (Slice 2)
+		"mastery_records": {},  # ability_name → highest rank ever achieved on any character (Slice 2)
+		"pending_headstarts": {}  # ability_name → rank queued for next character (Slice 3)
 	}
 
 	accounts_data.username_to_id[username_lower] = account_id
@@ -335,6 +336,95 @@ func find_account_for_character(char_name: String) -> String:
 		if char_name in slots:
 			return acc_id
 	return ""
+
+func get_pending_headstarts(account_id: String) -> Dictionary:
+	"""Headstart ranks queued for the next character creation (Slice 3).
+	Returns a duplicate of {ability_name → target_rank}."""
+	if not accounts_data.accounts.has(account_id):
+		return {}
+	var account = accounts_data.accounts[account_id]
+	return account.get("pending_headstarts", {}).duplicate()
+
+# Slice 3 — mirrored from shared/constants.gd. Index = rank, value = BP cost
+# for that step. Cumulative cost to rank 3 = 25 + 100 + 500 = 625 BP.
+const MASTERY_HEADSTART_BP_PER_RANK: Array = [0, 25, 100, 500]
+const MASTERY_HEADSTART_MAX_RANK: int = 3
+
+func _headstart_cumulative_cost(target_rank: int) -> int:
+	"""Sum of MASTERY_HEADSTART_BP_PER_RANK from rank 1 up to target_rank."""
+	if target_rank <= 0:
+		return 0
+	var total = 0
+	for i in range(1, min(target_rank + 1, MASTERY_HEADSTART_BP_PER_RANK.size())):
+		total += int(MASTERY_HEADSTART_BP_PER_RANK[i])
+	return total
+
+func set_pending_headstart_rank(account_id: String, ability_name: String, target_rank: int) -> Dictionary:
+	"""Set the queued headstart rank for an ability (Slice 3). Charges or
+	refunds baddie points based on the difference vs the current pending rank.
+	Validates target_rank ≤ recorded mastery, target_rank ≤ HEADSTART_MAX_RANK,
+	and account has enough baddie points for any net charge.
+	Returns {success, message, current_rank, baddie_points}."""
+	if not accounts_data.accounts.has(account_id):
+		return {"success": false, "message": "Account not found"}
+	if ability_name == "":
+		return {"success": false, "message": "No ability specified"}
+	target_rank = clampi(target_rank, 0, MASTERY_HEADSTART_MAX_RANK)
+
+	var account = accounts_data.accounts[account_id]
+	if not account.has("pending_headstarts"):
+		account["pending_headstarts"] = {}
+	if not account.has("mastery_records"):
+		account["mastery_records"] = {}
+
+	var recorded_rank = int(account.mastery_records.get(ability_name, 0))
+	if recorded_rank <= 0:
+		return {"success": false, "message": "No mastery record for this ability"}
+	if target_rank > recorded_rank:
+		return {"success": false, "message": "Cannot exceed recorded rank (R%d)" % recorded_rank}
+
+	var current_pending = int(account.pending_headstarts.get(ability_name, 0))
+	if current_pending == target_rank:
+		return {"success": true, "message": "No change", "current_rank": current_pending, "baddie_points": _get_house_baddie_points(account_id)}
+
+	var current_cost = _headstart_cumulative_cost(current_pending)
+	var target_cost = _headstart_cumulative_cost(target_rank)
+	var delta_bp = target_cost - current_cost  # positive = pay; negative = refund
+
+	if delta_bp > 0:
+		var bp_available = _get_house_baddie_points(account_id)
+		if bp_available < delta_bp:
+			return {"success": false, "message": "Not enough baddie points (need %d, have %d)" % [delta_bp, bp_available]}
+		spend_baddie_points(account_id, delta_bp)
+	elif delta_bp < 0:
+		add_baddie_points(account_id, -delta_bp)
+
+	if target_rank == 0:
+		account.pending_headstarts.erase(ability_name)
+	else:
+		account.pending_headstarts[ability_name] = target_rank
+	save_accounts()
+
+	return {"success": true, "message": "Headstart rank updated", "current_rank": target_rank, "baddie_points": _get_house_baddie_points(account_id)}
+
+func consume_pending_headstarts(account_id: String) -> Dictionary:
+	"""Read and clear the queued headstarts (Slice 3). Called when a new
+	character is created so the queue applies to that character only."""
+	if not accounts_data.accounts.has(account_id):
+		return {}
+	var account = accounts_data.accounts[account_id]
+	var queued = account.get("pending_headstarts", {}).duplicate()
+	if queued.size() > 0:
+		account["pending_headstarts"] = {}
+		save_accounts()
+	return queued
+
+func _get_house_baddie_points(account_id: String) -> int:
+	"""Helper for Slice 3 — read the house's baddie points balance."""
+	var house = get_house(account_id)
+	if house == null:
+		return 0
+	return int(house.get("baddie_points", 0))
 
 func get_account_mastery_records(account_id: String) -> Dictionary:
 	"""Return account's highest-ever mastery ranks (Slice 2). Survives permadeath.
