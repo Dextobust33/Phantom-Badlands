@@ -21890,8 +21890,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.240 changes
+	display_game("[color=#00FF00]v0.9.240[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Mastery damage modifier now affects all 9 damage abilities (Slice 1b)[/color]")
+	display_game("  • Slice 1 only wired Magic Bolt and Power Strike — and even those silently dropped rank 0/1 (-20% / -10%) because of an old conditional that assumed enhancements only ever increased damage. Now Blast, Meteor, Shield Bash, Cleave, Devastate, Ambush, Exploit, and Gambit all run their damage through the mastery hook, and rank 0 actually deals -20% as the audit intended. Rank 2 baseline (where existing characters land) is unchanged so balance doesn't shift for veterans")
+	display_game("  • Buffs / CC / debuffs (War Cry, Forcefield, Iron Skin, Vanish, Paralyze, Sabotage, etc.) still track usage and rank up — but mastery doesn't multiply their effect for now. Future slices will introduce ability-specific modifiers (e.g. \"Vanish lasts 2 rounds at rank 4\")")
+	display_game("")
+
 	# v0.9.239 changes
-	display_game("[color=#00FF00]v0.9.239[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.239[/color]")
 	display_game("  [color=#FFD700]Combat action bar — strip out non-combat noise[/color]")
 	display_game("  • [b]\"Use Item\" in combat[/b] no longer surfaces out-of-combat utilities. Home Stones, Treasure Chests, building kits, tools, runes, monster-select scrolls — all hidden mid-fight. You'll still see healing potions, resource potions, buff scrolls, escape scrolls, elixirs, gold/gem pouches, tomes — anything that actually does something with the combat tick")
 	display_game("  • [b]Equipped abilities slots[/b] now hide non-combat abilities like Teleport. If you've slotted Teleport in your loadout for the overworld, it won't take up a combat-bar slot anymore — that slot just shows --- during fights and your Teleport popup still works the same outside combat")
@@ -21920,13 +21927,6 @@ func display_changelog():
 	display_game("  • [color=#FFAA00]Slice 1 limitations:[/color] damage bonus only applies to Magic Bolt + Power Strike right now (those already had the hook). Other damage abilities still track usage and rank up but the damage mult comes in 1b. Account-level persistence, Sanctuary headstart purchases, deck pruning, and ability modifiers are later slices in this initiative")
 	display_game("")
 
-	# v0.9.235 changes
-	display_game("[color=#00FFFF]v0.9.235[/color]")
-	display_game("  [color=#FFD700]Building-template kits[/color]")
-	display_game("  • New craftable: [color=#88FF88]Small Enclosure Kit[/color] (Construction skill 8, Builder specialty). Drops a full 5x5 walled enclosure with a south-facing door in one press, centered on your tile, instead of placing 16 walls and 1 door by hand. Cost: 32 stone block + 4 wooden plank + 2 iron ore (a small tax over the loose-tile materials, paid for the convenience)")
-	display_game("  • The kit is the natural follow-up to last release's Spawn-at-post: claim a build site, pop a kit, hire a couple of guards from the resulting bubble, and your next character can spawn there in a T1 safe zone")
-	display_game("  • Kits validate against world bounds, NPC post proximity (3-tile buffer), and dungeon entrance proximity before placing — fails cleanly with a hint instead of half-placing near a forbidden zone")
-	display_game("")
 
 
 
