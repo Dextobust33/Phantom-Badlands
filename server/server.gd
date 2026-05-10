@@ -18417,6 +18417,11 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 
 	# === STEP PRESSURE: Increment and check thresholds ===
 	character.dungeon_floor_steps += 1
+	# Audit #5 theme tag — Spider Nest WEBBED tiles cost +1 extra step.
+	# Note: `tile` was sampled before the move, so this is the destination tile.
+	if tile == DungeonDatabaseScript.TileType.WEBBED:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]You wade through clinging webs (+1 step).[/color]"})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false

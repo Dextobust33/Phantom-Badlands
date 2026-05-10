@@ -14,7 +14,8 @@ enum TileType {
 	BOSS,        # Boss encounter (final floor only)
 	CLEARED,     # Cleared encounter (was ENCOUNTER or TREASURE)
 	RESOURCE,    # Gathering node (ore/herb/crystal)
-	FINAL_CHEST  # End-of-dungeon reward chest, spawns post-boss
+	FINAL_CHEST, # End-of-dungeon reward chest, spawns post-boss
+	WEBBED       # Audit #5 theme tag — clinging webs cost an extra step (Spider Nest)
 }
 
 # Tile display characters
@@ -28,7 +29,8 @@ const TILE_CHARS = {
 	TileType.BOSS: "B",
 	TileType.CLEARED: "·",
 	TileType.RESOURCE: "&",
-	TileType.FINAL_CHEST: "*"
+	TileType.FINAL_CHEST: "*",
+	TileType.WEBBED: "w"
 }
 
 # Tile colors for display
@@ -42,7 +44,8 @@ const TILE_COLORS = {
 	TileType.BOSS: "#FF0000",
 	TileType.CLEARED: "#303030",
 	TileType.RESOURCE: "#00FFCC",
-	TileType.FINAL_CHEST: "#FFAA00"
+	TileType.FINAL_CHEST: "#FFAA00",
+	TileType.WEBBED: "#A335EE"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1714,7 +1717,26 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			if grid[rpos.y][rpos.x] == TileType.EMPTY:
 				grid[rpos.y][rpos.x] = TileType.RESOURCE
 
+	# Audit #5 theme tags — apply per-dungeon environmental flair
+	_apply_theme_tags(grid, dungeon_id, rng)
+
 	return {"grid": grid, "rooms": rooms, "entrance_pos": entrance_pos, "exit_pos": exit_pos}
+
+static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumberGenerator):
+	"""Audit #5 — Slice 1: post-process the floor grid to mark themed
+	environmental tiles. Spider Nest gets webbed tiles that cost an extra
+	step to cross (clinging webs slow movement). Future dungeons gain
+	their own themes here without growing the BSP generator itself."""
+	match dungeon_id:
+		"spider_nest":
+			# Web ~10% of empty tiles. Skip entrance/exit so player can always
+			# cross the spawn area without immediate slowdown.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.WEBBED
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
