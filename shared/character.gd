@@ -215,6 +215,10 @@ static func get_item_slot_from_type(item_type: String) -> String:
 @export var active_quests: Array = []
 # completed_quests: Array of quest IDs that have been turned in
 @export var completed_quests: Array = []
+# Audit #6 Slice 1 — chain IDs the character has completed (final stage turned in).
+# Chain quests are one-shot per character; once a chain is complete, it can't
+# be accepted again on this character.
+@export var completed_chains: Array = []
 # daily_quest_cooldowns: {quest_id: unix_timestamp} - when daily quests can be accepted again
 @export var daily_quest_cooldowns: Dictionary = {}
 # Discovered trading posts: Array of {name: String, x: int, y: int}
@@ -1321,6 +1325,7 @@ func to_dict() -> Dictionary:
 		"persistent_buffs": persistent_buffs,
 		"active_quests": active_quests,
 		"completed_quests": completed_quests,
+		"completed_chains": completed_chains,
 		"daily_quest_cooldowns": daily_quest_cooldowns,
 		"known_monsters": known_monsters,
 		"equipped_abilities": equipped_abilities,
@@ -1509,6 +1514,7 @@ func from_dict(data: Dictionary):
 	# Quest system
 	active_quests = data.get("active_quests", [])
 	completed_quests = data.get("completed_quests", [])
+	completed_chains = data.get("completed_chains", [])
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
 	discovered_posts = data.get("discovered_posts", [])
 

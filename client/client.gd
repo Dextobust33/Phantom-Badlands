@@ -21988,8 +21988,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.250 changes
+	display_game("[color=#00FF00]v0.9.250[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quest chains foundation — \"The Goblin Menace\" (Audit #6 Slice 1)[/color]")
+	display_game("  • [b]First quest chain[/b] now offered at Haven: [color=#FFAA00]The Goblin Menace[/color] — 3 stages (kill 5 Goblins → kill 3 Hobgoblins → slay the Goblin King). Each stage's [b]final reward is visible upfront[/b]: 300 total valor + 1 Goblin Egg. No daily reset; chains progress at your pace and persist through permadeath... wait no, it's one-shot per character. New character, new chains")
+	display_game("  • Stages auto-advance: turn in stage 1, stage 2 lands in your active quests immediately with a chat announcement. Reuses the existing quest UI — no new menus to learn. Chain quests show their stage and final reward inline in the quest description")
+	display_game("  • This is the foundation for the audit's full quest rework: target-farm chains replacing daily kill tasks, multi-path completability, title rewards on hard chains. More chains and the bigger systems land in future slices")
+	display_game("")
+
 	# v0.9.249 changes
-	display_game("[color=#00FF00]v0.9.249[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.249[/color]")
 	display_game("  [color=#FFD700]Boss signatures Slice 4 — Iron Discipline[/color]")
 	display_game("  • [b]Hobgoblin Commander[/b] (Hobgoblin Fortress T2) gets [color=#C0C0C0]Iron Discipline[/color]: every 5 monster turns, the boss steels itself, [b]heals 10% max HP[/b] and shrugs off Sabotage/Weakness debuffs. Distinct from generic regeneration (per-turn flat) — this is a periodic burst that punishes long fights. Reward fast kills; tricksters benefit from front-loading damage")
 	display_game("  • All 5 T1 dungeons + 3 T2 dungeons now have signature boss mechanics. 7 down, ~46 to go")
@@ -22017,13 +22025,6 @@ func display_changelog():
 	display_game("  • Pairs with the [color=#9ACD32]Dungeon Compass[/color] from last release: rumors give names + directions at trading posts (free, gossip-style); compass reveals the nearest qualifying dungeon at your current location (consumable). Two complementary tools for the audit's #1 player pain — finding dungeons in the first place")
 	display_game("")
 
-	# v0.9.245 changes
-	display_game("[color=#00FFFF]v0.9.245[/color]")
-	display_game("  [color=#FFD700]Boss signatures Slice 2 — Bloodied Fury + Treasure Decoy[/color]")
-	display_game("  • [b]Orc Warlord[/b] (Orc Stronghold T2) gets [color=#8B0000]Bloodied Fury[/color]: one-shot trigger when his HP drops below 30%, [b]+75% damage[/b] for the rest of the fight. Telegraphs once on activation. Distinct from generic berserker (which fires at 50% HP for +50%) — sharper threshold, sharper teeth")
-	display_game("  • [b]Grand Mimic[/b] (Mimic Treasury T2) gets [color=#FF6600]Treasure Decoy[/color]: guaranteed 2x first-attack crit. Distinct from ambusher (75% chance, 1.75x). The mimic was hiding as a chest — its first swing is its big one. Telegraphs as the trap it is, not a stealth strike")
-	display_game("  • Now 4 boss signatures shipped (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic). The full audit target is one signature per boss across the 53 dungeon roster — more land in future slices")
-	display_game("")
 
 
 
