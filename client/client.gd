@@ -10121,15 +10121,15 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"devastate": {"display": "Devastate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"fortify": {"display": "Fortify", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"rally": {"display": "Rally", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		# Trickster abilities. Variable-cost: ambush, exploit, gambit (v0.9.261).
+		# Trickster abilities. Analyze + Vanish stay fixed-cost (binary mechanics).
 		"analyze": {"display": "Analyze", "cost": 5, "cost_percent": 0, "resource_type": "energy"},
-		"distract": {"display": "Distract", "cost": 15, "cost_percent": 0, "resource_type": "energy"},
-		"pickpocket": {"display": "Steal", "cost": 20, "cost_percent": 0, "resource_type": "energy"},
+		"distract": {"display": "Distract", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"pickpocket": {"display": "Steal", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"vanish": {"display": "Vanish", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
 		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"perfect_heist": {"display": "Heist", "cost": 50, "cost_percent": 0, "resource_type": "energy"},
-		"sabotage": {"display": "Sabotage", "cost": 25, "cost_percent": 0, "resource_type": "energy"},
+		"perfect_heist": {"display": "Heist", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"sabotage": {"display": "Sabotage", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
 		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
@@ -15315,13 +15315,13 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds. Variable cost 8-25 stamina — defense magnitude scales with spend; duration stays 5 rounds."
 		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds. Variable cost 11-35 stamina — heal amount AND STR buff both scale with spend; duration stays 3 rounds."
 		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
-		"distract": return "Enemy suffers -50% accuracy on its next attack."
-		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks."
+		"distract": return "Enemy suffers -50% accuracy on its next attack. Variable cost 5-15 energy — accuracy debuff magnitude scales with spend; single-attack scope unchanged."
+		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks. Variable cost 6-20 energy — success CHANCE scales with spend; ore quantity stays the same."
 		"ambush": return "3× WITS-scaled damage with +50% crit chance. Variable cost 9-30 energy — damage scales with spend (crit chance stays 50%)."
 		"vanish": return "Go invisible — your next attack is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
-		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks."
-		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total."
+		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks. Variable cost 15-50 energy — success CHANCE scales with spend (floor-cast Heist is almost always a miss; full-cost is the only realistic shot)."
+		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
 		_:
@@ -15556,7 +15556,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=#9932CC](8%% per move)[/color]"
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish", "distract", "pickpocket", "sabotage", "perfect_heist"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -22431,8 +22431,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.265 changes
+	display_game("[color=#00FF00]v0.9.265[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Trickster utility (last batch! 22/23 done)[/color]")
+	display_game("  • [b]Pickpocket, Sabotage, Distract, Perfect Heist[/b] are now variable-cost. Same auto-spend pattern; floors ≈30%% of ceiling")
+	display_game("  • [b]Pickpocket[/b] 6-20 energy. Steal CHANCE scales with spend; ore quantity stays the same on success (pp_max per-fight cap is the limiter)")
+	display_game("  • [b]Sabotage[/b] 8-25 energy. Debuff magnitude scales with spend; the 50%% stack cap is unchanged")
+	display_game("  • [b]Distract[/b] 5-15 energy. Accuracy debuff scales — a partial Distract = -15%% accuracy next attack instead of the full -50%%")
+	display_game("  • [b]Perfect Heist[/b] 15-50 energy. Success CHANCE scales — a floor-cost Heist is almost always a miss. If you're going for the instant-win play, commit fully")
+	display_game("  • [b]Analyze and Vanish stay fixed-cost.[/b] They're binary mechanics that don't make mechanical sense to partial-cast (Analyze reveals or doesn't; Vanish auto-crits or doesn't)")
+	display_game("  • [color=#FFD700]22/23 abilities now variable-cost.[/color] Next: balance pass with the combat simulator → Slice 6c (deck cull)")
+	display_game("")
+
 	# v0.9.264 changes
-	display_game("[color=#00FF00]v0.9.264[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.264[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Mage CC (Audit #1)[/color]")
 	display_game("  • [b]Haste, Paralyze, and Banish are now variable-cost.[/b] New design rule emerges: chance-based abilities scale the CHANCE, not the magnitude. Haste is the odd one out — speed bonus is a magnitude, so it scales like the warrior buffs")
 	display_game("  • [b]Haste[/b] floor ≈30%% mana cost. Speed bonus scales (e.g. +25%% at full → +7%% at floor for INT 25). Duration stays 5 rounds")
@@ -22472,16 +22484,6 @@ func display_changelog():
 	display_game("  • 9/23 abilities done. Coming next: Forcefield (shield magnitude scales) → Warrior buffs (the harder design work — partial War Cry / Berserk / Rally / Iron Skin / Fortify)")
 	display_game("")
 
-	# v0.9.260 changes
-	display_game("[color=#00FFFF]v0.9.260[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Mage damage (Audit #1)[/color]")
-	display_game("  • [b]Blast and Meteor are now variable-cost[/b]. Same pattern as Slice 6c — auto-spend max-affordable, floor 30%% of ceiling, partial-cast banner if you spent less than full")
-	display_game("  • [b]Floor scales with your mana pool.[/b] Since Mage abilities have percentage-cost scaling (5%% for Blast, 8%% for Meteor), the floor scales too: an early Mage with 200 max mana has Blast floor ~15 / ceiling 50; a Lv100 Mage with 2000 max mana has Blast floor ~30 / ceiling 100")
-	display_game("  • [b]Blast burn DoT magnitude scales[/b] with spend. Duration stays 3 rounds")
-	display_game("  • [b]Card UI[/b] shows the cost range (e.g. \"15-50 MAN\") and cards light up when you can afford the floor")
-	display_game("  • Table refactor: VARIABLE_COST_TABLE now uses [code]floor_ratio[/code] (0.3 default) instead of explicit floor — floor derives from the post-modifier ceiling so racial/class/percent-scaling reductions apply automatically to both")
-	display_game("  • 6/23 abilities done. Coming next: Trickster damage (Ambush / Gambit / Exploit), then Warrior buffs (the harder design work — \"weaker for less\" on duration/magnitude)")
-	display_game("")
 
 
 
