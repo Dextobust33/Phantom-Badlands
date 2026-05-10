@@ -77,6 +77,13 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"haste":        {"ceiling": 35, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},
 	"paralyze":     {"ceiling": 60, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},
 	"banish":       {"ceiling": 80, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},
+	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
+	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
+	# (binary mechanics — partial cast doesn't make sense).
+	"distract":     {"ceiling": 15, "floor_ratio": 0.3, "resource": "energy"},
+	"pickpocket":   {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
+	"sabotage":     {"ceiling": 25, "floor_ratio": 0.3, "resource": "energy"},
+	"perfect_heist":{"ceiling": 50, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -3290,9 +3297,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			}
 
 		"distract":
-			combat["enemy_distracted"] = true  # -50% accuracy next attack
+			# Variable cost (v0.9.265): accuracy debuff magnitude scales with spend.
+			# Stored as int percent (was bool flag pre-0.9.265). Consumer in
+			# process_monster_turn reads the int and applies accordingly.
+			var distract_pct = max(1, int(50 * variable_fraction))
+			combat["enemy_distracted"] = distract_pct
 			messages.append("[color=#00FF00]DISTRACT![/color]")
-			messages.append("[color=#808080]The enemy is distracted! (-50%% accuracy)[/color]" % [])
+			messages.append("[color=#808080]The enemy is distracted! (-%d%% accuracy)[/color]" % distract_pct)
 			is_buff_ability = true
 
 		"pickpocket":
@@ -3302,9 +3313,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			if pp_count >= pp_max:
 				messages.append("[color=#808080]The enemy has nothing left to steal![/color]")
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": false}
+			# Variable cost (v0.9.265): success CHANCE scales with spend. Ore
+			# quantity stays as-is — pp_max cap per fight already limits reward.
 			var wits = character.get_effective_stat("wits")
-			var success_chance = 50 + wits - monster.get("intelligence", 15)
-			success_chance = clampi(success_chance, 10, 90)
+			var raw_chance = 50 + wits - monster.get("intelligence", 15)
+			raw_chance = clampi(raw_chance, 10, 90)
+			var success_chance = max(1, int(raw_chance * variable_fraction))
 			var roll = randi() % 100
 			if roll < success_chance:
 				combat["pickpocket_count"] = pp_count + 1
@@ -3391,19 +3405,22 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]You exploit a weakness for %d damage! (%d%% of max HP)[/color]" % [damage, base_percent])
 
 		"perfect_heist":
-			# Chance-based instant win with slight bonus rewards
-			# NERFED: Much harder against higher level monsters, smaller rewards
+			# Chance-based instant win with slight bonus rewards.
+			# Variable cost (v0.9.265): success CHANCE scales with spend.
+			# Already chance-based (5-60% cap), scaling makes floor casts
+			# mostly miss — that's the trickster's high-risk play.
 			var wits = character.get_effective_stat("wits")
 			var monster_int = monster.get("intelligence", 15)
 			var level_diff = monster.level - character.level
 
 			# Base 30% success, +1.5% per wits over monster intelligence
-			var success_chance = 30 + int((wits - monster_int) * 1.5)
+			var raw_heist_chance = 30 + int((wits - monster_int) * 1.5)
 			# Heavy penalty for fighting above your level: -2% per level difference
 			if level_diff > 0:
-				success_chance -= level_diff * 2
+				raw_heist_chance -= level_diff * 2
 			# Cap at 5-60% (was 20-90%)
-			success_chance = clampi(success_chance, 5, 60)
+			raw_heist_chance = clampi(raw_heist_chance, 5, 60)
+			var success_chance = max(1, int(raw_heist_chance * variable_fraction))
 
 			var roll = randi() % 100
 			if roll < success_chance:
@@ -3488,9 +3505,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"sabotage":
-			# Weaken monster - reduce strength and defense
+			# Weaken monster - reduce strength and defense.
+			# Variable cost (v0.9.265): debuff magnitude scales with spend.
+			# 50% stack cap unchanged.
 			var wits = character.get_effective_stat("wits")
-			var debuff_amount = 15 + int(wits / 3)  # 15% base + 0.33% per WITS
+			var debuff_amount = max(1, int((15 + wits / 3) * variable_fraction))
 			# Store debuffs in combat state
 			var existing_sabotage = combat.get("monster_sabotaged", 0)
 			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
@@ -4165,10 +4184,19 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			messages.append("[color=#FF00FF]Your Cloak causes the %s to miss![/color]" % monster.name)
 			return {"success": true, "message": "\n".join(messages)}
 
-	# Distract: -50% accuracy (one time)
-	if combat.get("enemy_distracted", false):
+	# Distract: accuracy debuff (one time, magnitude set by player's spend on
+	# the Distract ability). Pre-v0.9.265 this was a bool flag with hardcoded
+	# -50%; now it's an int percent so partial-cast Distract has weaker effect.
+	# Truthy check tolerates legacy bool values from saved combat states.
+	var distract_raw = combat.get("enemy_distracted", 0)
+	var distract_pct_int: int = 0
+	if typeof(distract_raw) == TYPE_BOOL:
+		distract_pct_int = 50 if distract_raw else 0
+	else:
+		distract_pct_int = int(distract_raw)
+	if distract_pct_int > 0:
 		combat.erase("enemy_distracted")
-		hit_chance = int(hit_chance * 0.5)
+		hit_chance = int(hit_chance * (1.0 - distract_pct_int / 100.0))
 
 	# Companion Distraction ability: causes monster to miss (one time)
 	if combat.get("companion_distraction", false):
