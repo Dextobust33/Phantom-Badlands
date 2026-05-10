@@ -1067,9 +1067,13 @@ func _refresh_hand() -> void:
 			cell.tooltip_text = str(info.get("display", card_name))
 
 		var cost_int = int(info.get("cost", 0))
+		var cost_floor_int = int(info.get("cost_floor", 0))
 		var resource_type = str(info.get("resource_type", ""))
 		if cost_int > 0 and resource_type != "":
-			cost_lbl.text = "%d %s" % [cost_int, _short_resource_label(resource_type)]
+			if cost_floor_int > 0 and cost_floor_int < cost_int:
+				cost_lbl.text = "%d-%d %s" % [cost_floor_int, cost_int, _short_resource_label(resource_type)]
+			else:
+				cost_lbl.text = "%d %s" % [cost_int, _short_resource_label(resource_type)]
 			cost_lbl.add_theme_color_override("font_color", _resource_color(resource_type))
 		else:
 			cost_lbl.text = "Free"
@@ -1110,7 +1114,7 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 	"""Pull display / cost / resource_type / rank / can_afford from client_ref.
 	Returns a dict with safe defaults when client_ref or its helpers aren't
 	available (e.g. if the panel is rendered outside a live client)."""
-	var info := {"display": card_name.replace("_", " ").capitalize(), "cost": 0, "resource_type": "", "rank": 0, "can_afford": true}
+	var info := {"display": card_name.replace("_", " ").capitalize(), "cost": 0, "cost_floor": 0, "resource_type": "", "rank": 0, "can_afford": true}
 	if client_ref == null:
 		return info
 	var path = ""
@@ -1121,6 +1125,10 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 		if ability_info is Dictionary and not ability_info.is_empty():
 			info["display"] = str(ability_info.get("display", info["display"]))
 			info["cost"] = int(ability_info.get("cost", 0))
+			# Slice 6c — variable-cost abilities carry a floor; cards light up if
+			# you can afford the floor, even when below the ceiling. Cost label
+			# displays as "f-c" when floor > 0.
+			info["cost_floor"] = int(ability_info.get("cost_floor", 0))
 			info["resource_type"] = str(ability_info.get("resource_type", ""))
 	# Mastery rank from ability_uses dict (mirrors AbilityPanel logic).
 	if "character_data" in client_ref:
@@ -1138,16 +1146,20 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 		current_stamina = int(client_ref.character_data.get("current_stamina", 0))
 		current_energy = int(client_ref.character_data.get("current_energy", 0))
 	var cost = int(info.get("cost", 0))
+	var cost_floor = int(info.get("cost_floor", 0))
+	# For variable-cost abilities, the affordability threshold is the floor;
+	# for fixed-cost abilities, it's the full cost.
+	var affordability_threshold = cost_floor if cost_floor > 0 else cost
 	var rt = str(info.get("resource_type", ""))
 	var can_afford = true
-	if cost > 0:
+	if affordability_threshold > 0:
 		match rt:
 			"mana":
-				can_afford = current_mana >= cost
+				can_afford = current_mana >= affordability_threshold
 			"stamina":
-				can_afford = current_stamina >= cost
+				can_afford = current_stamina >= affordability_threshold
 			"energy":
-				can_afford = current_energy >= cost
+				can_afford = current_energy >= affordability_threshold
 	info["can_afford"] = can_afford
 	return info
 

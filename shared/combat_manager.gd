@@ -40,6 +40,19 @@ const COMBAT_HAND_SIZE: int = 5
 # slot of the action bar instead, always available outside the deck.
 const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak", "all_or_nothing"]
 
+# Audit #1 variable-cost rework — floor + ceiling per ability. Spending the floor
+# yields VARIABLE_COST_MIN_FRACTION of the full effect; spending the ceiling yields
+# 100%. Linear scaling between. The "auto-spend max-affordable" UX means the player
+# never has a dead card so long as they can afford the floor. Pilot covers Warrior
+# damage abilities (v0.9.259); subsequent slices extend to buffs / mage / trickster.
+const VARIABLE_COST_MIN_FRACTION: float = 0.3
+const VARIABLE_COST_TABLE: Dictionary = {
+	"power_strike": {"floor": 3, "ceiling": 10, "resource": "stamina"},
+	"shield_bash":  {"floor": 6, "ceiling": 20, "resource": "stamina"},
+	"cleave":       {"floor": 9, "ceiling": 30, "resource": "stamina"},
+	"devastate":    {"floor": 15, "ceiling": 50, "resource": "stamina"},
+}
+
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
@@ -2962,30 +2975,42 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	# Mastery Slice 1 — level gate removed; rank scales effective power.
 
-	var base_stamina_cost = ability_info.cost
-	var stamina_cost = apply_skill_cost_reduction(character, ability_name, base_stamina_cost)
-
-	# Show skill enhancement message only if player has skill enhancement (not just racial)
-	var skill_reduction = character.get_skill_cost_reduction(ability_name)
-	if skill_reduction > 0:
-		messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(skill_reduction))
-
+	# Audit #1 variable-cost rework — abilities in VARIABLE_COST_TABLE take the
+	# variable-cost path; everything else stays on the fixed-cost path. Variable
+	# cost auto-spends max-affordable up to ceiling, returns a 0.3-1.0 fraction
+	# that the ability body uses to scale damage + secondary effects.
+	var variable_fraction: float = 1.0
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
+	if VARIABLE_COST_TABLE.has(ability_name):
+		var vc_result = apply_variable_cost(character, ability_name, combat)
+		for vc_msg in vc_result.get("messages", []):
+			messages.append(vc_msg)
+		if not vc_result.get("ok", false):
+			return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+		variable_fraction = float(vc_result.get("fraction", 1.0))
+	else:
+		var base_stamina_cost = ability_info.cost
+		var stamina_cost = apply_skill_cost_reduction(character, ability_name, base_stamina_cost)
 
-	# === CLASS PASSIVE: Fighter Tactical Discipline ===
-	# 20% reduced stamina costs
-	if passive_effects.has("stamina_cost_reduction"):
-		stamina_cost = max(1, int(stamina_cost * (1.0 - passive_effects.get("stamina_cost_reduction", 0))))
-		messages.append("[color=#C0C0C0]Tactical Discipline: Only costs %d stamina![/color]" % stamina_cost)
+		# Show skill enhancement message only if player has skill enhancement (not just racial)
+		var skill_reduction = character.get_skill_cost_reduction(ability_name)
+		if skill_reduction > 0:
+			messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(skill_reduction))
 
-	# === CLASS PASSIVE: Barbarian Blood Rage ===
-	# Abilities cost 25% more
-	if passive_effects.has("stamina_cost_increase"):
-		stamina_cost = int(stamina_cost * (1.0 + passive_effects.get("stamina_cost_increase", 0)))
+		# === CLASS PASSIVE: Fighter Tactical Discipline ===
+		# 20% reduced stamina costs
+		if passive_effects.has("stamina_cost_reduction"):
+			stamina_cost = max(1, int(stamina_cost * (1.0 - passive_effects.get("stamina_cost_reduction", 0))))
+			messages.append("[color=#C0C0C0]Tactical Discipline: Only costs %d stamina![/color]" % stamina_cost)
 
-	if not character.use_stamina(stamina_cost):
-		return {"success": false, "messages": ["[color=#FF4444]Not enough stamina! (Need %d)[/color]" % stamina_cost], "combat_ended": false, "skip_monster_turn": true}
+		# === CLASS PASSIVE: Barbarian Blood Rage ===
+		# Abilities cost 25% more
+		if passive_effects.has("stamina_cost_increase"):
+			stamina_cost = int(stamina_cost * (1.0 + passive_effects.get("stamina_cost_increase", 0)))
+
+		if not character.use_stamina(stamina_cost):
+			return {"success": false, "messages": ["[color=#FF4444]Not enough stamina! (Need %d)[/color]" % stamina_cost], "combat_ended": false, "skip_monster_turn": true}
 
 	# Use total attack (includes weapon) for physical abilities
 	var total_attack = character.get_total_attack()
@@ -2996,10 +3021,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 
 	match ability_name:
 		"power_strike":
-			# Buffed: 2Ã— damage multiplier (was 1.5Ã—), sqrt STR scaling
+			# Buffed: 2x damage multiplier (was 1.5x), sqrt STR scaling.
+			# Variable cost: damage scales linearly with spend (0.3x at floor → 1.0x at ceiling).
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)  # Sqrt scaling
-			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult)  # 2Ã— (was 1.5Ã—)
+			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ps_skill_bonus = character.get_skill_damage_bonus("power_strike")
 			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
@@ -3020,10 +3046,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"shield_bash":
-			# 1.5x damage multiplier, sqrt STR scaling, diminishing stun chance
+			# 1.5x damage multiplier, sqrt STR scaling, diminishing stun chance.
+			# Variable cost: damage AND stun chance scale with spend.
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
+			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var sb_skill_bonus = character.get_skill_damage_bonus("shield_bash")
 			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg)
@@ -3033,9 +3060,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			# Diminishing stun chance: 100% → 75% → 50% → 25% → 20% floor
+			# Diminishing stun chance: 100% → 75% → 50% → 25% → 20% floor, scaled by spend
 			var cc_resist = combat.get("cc_resistance", 0)
-			var stun_chance = maxi(20, 100 - cc_resist * 25)
+			var stun_chance = int(maxi(20, 100 - cc_resist * 25) * variable_fraction)
 			messages.append("[color=#FF4444]SHIELD BASH![/color]")
 			if randi() % 100 < stun_chance:
 				combat["monster_stunned"] = 1  # Enemy skips next turn
@@ -3047,10 +3074,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 25))
 
 		"cleave":
-			# Buffed: 2.5Ã— damage multiplier (was 2Ã—), sqrt STR scaling
+			# Buffed: 2.5x damage multiplier (was 2x), sqrt STR scaling.
+			# Variable cost: damage AND bleed magnitude scale with spend; duration stays 4 rounds.
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult)  # 2.5Ã— (was 2Ã—)
+			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var cleave_skill_bonus = character.get_skill_damage_bonus("cleave")
 			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg)
@@ -3062,8 +3090,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF4444]CLEAVE![/color]")
 			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
-			# Apply bleed DoT (20% of STR per round for 4 rounds)
-			var bleed_damage = max(1, int(str_stat * 0.20))  # Buffed from 15%
+			# Apply bleed DoT (20% of STR per round, scaled by spend, for 4 rounds)
+			var bleed_damage = max(1, int(str_stat * 0.20 * variable_fraction))
 			combat["monster_bleed"] = bleed_damage
 			combat["monster_bleed_duration"] = 4
 			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
@@ -3086,10 +3114,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"devastate":
-			# Buffed: 5Ã— damage (was 4Ã—), sqrt STR scaling
+			# Buffed: 5x damage (was 4x), sqrt STR scaling.
+			# Variable cost: pure damage scaling (no secondary effects).
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult)  # 5Ã— (was 4Ã—)
+			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var dev_skill_bonus = character.get_skill_damage_bonus("devastate")
 			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg)
@@ -3527,6 +3556,88 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 		cost = int(cost * (1.0 - cost_reduction / 100.0))
 
 	return max(1, cost)
+
+func apply_variable_cost(character: Character, ability_name: String, combat: Dictionary) -> Dictionary:
+	"""Audit #1 variable-cost rework — spend max-affordable up to ceiling,
+	fail if below floor. Returns {ok, spent, fraction, messages}.
+	Fraction is VARIABLE_COST_MIN_FRACTION at floor → 1.0 at ceiling (linear).
+	Applies same cost reductions as the fixed-cost path (racial, skill enhancement,
+	class passives) to both floor + ceiling so the curve scales with build.
+	On ok: the resource has already been spent on the character."""
+	var result := {"ok": false, "spent": 0, "fraction": 0.0, "messages": [] as Array}
+	if not VARIABLE_COST_TABLE.has(ability_name):
+		result.messages.append("[color=#FF4444]Ability %s missing from variable-cost table![/color]" % ability_name)
+		return result
+	var entry: Dictionary = VARIABLE_COST_TABLE[ability_name]
+	var base_floor: int = int(entry.get("floor", 1))
+	var base_ceiling: int = int(entry.get("ceiling", 10))
+	var resource_type: String = str(entry.get("resource", "stamina"))
+
+	# Apply skill enhancement + racial reduction proportionally to both
+	var adj_floor = apply_skill_cost_reduction(character, ability_name, base_floor)
+	var adj_ceiling = apply_skill_cost_reduction(character, ability_name, base_ceiling)
+	var skill_reduction = character.get_skill_cost_reduction(ability_name)
+	if skill_reduction > 0:
+		result.messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(skill_reduction))
+
+	# Apply class passive cost modifiers
+	var passive = character.get_class_passive()
+	var passive_effects = passive.get("effects", {})
+	var reduction_key := ""
+	var increase_key := ""
+	match resource_type:
+		"stamina":
+			reduction_key = "stamina_cost_reduction"
+			increase_key = "stamina_cost_increase"
+		"mana":
+			reduction_key = "mana_cost_reduction"
+		"energy":
+			reduction_key = "energy_cost_reduction"
+	if reduction_key != "" and passive_effects.has(reduction_key):
+		var red = passive_effects.get(reduction_key, 0)
+		adj_floor = max(1, int(adj_floor * (1.0 - red)))
+		adj_ceiling = max(1, int(adj_ceiling * (1.0 - red)))
+		result.messages.append("[color=#C0C0C0]Tactical Discipline: -%d%% cost![/color]" % int(red * 100))
+	if increase_key != "" and passive_effects.has(increase_key):
+		var inc = passive_effects.get(increase_key, 0)
+		adj_floor = int(adj_floor * (1.0 + inc))
+		adj_ceiling = int(adj_ceiling * (1.0 + inc))
+
+	# Read available resource
+	var current = 0
+	match resource_type:
+		"stamina": current = character.current_stamina
+		"mana": current = character.current_mana
+		"energy": current = character.current_energy
+		_:
+			result.messages.append("[color=#FF4444]Unknown resource type %s![/color]" % resource_type)
+			return result
+
+	if current < adj_floor:
+		result.messages.append("[color=#FF4444]Not enough %s! (Need at least %d, you have %d)[/color]" % [resource_type, adj_floor, current])
+		return result
+
+	var spend = min(current, adj_ceiling)
+	var fraction: float
+	if adj_ceiling > adj_floor:
+		fraction = VARIABLE_COST_MIN_FRACTION + (1.0 - VARIABLE_COST_MIN_FRACTION) * float(spend - adj_floor) / float(adj_ceiling - adj_floor)
+	else:
+		fraction = 1.0
+	fraction = clamp(fraction, VARIABLE_COST_MIN_FRACTION, 1.0)
+
+	# Spend the resource
+	match resource_type:
+		"stamina": character.use_stamina(spend)
+		"mana": character.use_mana(spend)
+		"energy": character.use_energy(spend)
+
+	result.ok = true
+	result.spent = spend
+	result.fraction = fraction
+	# Partial-cast banner — only when fraction is meaningfully below 1.0
+	if fraction < 0.99:
+		result.messages.append("[color=#FFA500]Partial cast — %d/%d %s (%d%% effect).[/color]" % [spend, adj_ceiling, resource_type, int(fraction * 100)])
+	return result
 
 func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int) -> int:
 	"""Apply mastery + legacy skill_enhancement damage modifier to an
