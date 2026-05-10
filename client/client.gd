@@ -21988,8 +21988,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.252 changes
+	display_game("[color=#00FF00]v0.9.252[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three more quest chains — all T1 bosses now have chains (Audit #6 Slice 3)[/color]")
+	display_game("  • [b]Rat Plague[/b] (Haven, 2-stage): Kill 6 Giant Rats → Slay the Rat King. 200 valor + Giant Rat Egg")
+	display_game("  • [b]Kobold Trouble[/b] (Crossroads, 2-stage): Kill 5 Kobolds → Slay the Kobold Chieftain. 200 valor + Kobold Egg")
+	display_game("  • [b]Orc Threat[/b] (East Market, 3-stage T2): Kill 5 Orcs → Kill 4 Hobgoblins → Slay the Orc Warlord. 400 valor + Orc Egg. The description warns about the Warlord's Bloodied Fury signature, so you can plan around the rage trigger")
+	display_game("  • [b]7 chains shipped total[/b], one per T1 dungeon plus two T2. Distribution: Haven (3), Crossroads (2), East Market (2). Pick a starter route, run its chains, end up with one egg from each major lineage")
+	display_game("")
+
 	# v0.9.251 changes
-	display_game("[color=#00FF00]v0.9.251[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.251[/color]")
 	display_game("  [color=#FFD700]Three more quest chains (Audit #6 Slice 2)[/color]")
 	display_game("  • [b]The Skeleton Lord's Curse[/b] (Haven, 2-stage): Kill 5 Skeletons → Slay the Skeleton Lord. Reward: 200 valor + Skeleton Egg")
 	display_game("  • [b]The Wolf Pack[/b] (Crossroads, 3-stage): Kill 4 Wolves → Kill 3 Giant Rats → Slay the Alpha Wolf. Reward: 250 valor + Wolf Egg")
@@ -22019,13 +22028,6 @@ func display_changelog():
 	display_game("  • This is the first cut of the audit's [b]theme tags[/b] system: each dungeon gets one or two reusable mechanical themes (Forgotten Crypt skeleton revives, Mimic Treasury chests-that-bite, Plague Graveyard poison auras, Harpy Cliffs falling tiles). Future slices add more — pattern is in place")
 	display_game("")
 
-	# v0.9.247 changes
-	display_game("[color=#00FFFF]v0.9.247[/color]")
-	display_game("  [color=#FFD700]Boss signatures Slice 3 — Bloodscent + Festering Bite[/color]")
-	display_game("  • [b]Alpha Wolf[/b] (Wolf Den T1) gets [color=#8B0000]Bloodscent[/color]: when [i]you[/i] drop below 50% HP, the wolf scents the kill and gains +50% damage for the rest of the fight. Mirror of the Orc Warlord's Bloodied Fury, but tied to your HP, not the boss's — pack-hunter flavor")
-	display_game("  • [b]Rat King[/b] (Rat Warrens T1) gets [color=#9ACD32]Festering Bite[/color]: each successful hit adds a stack of festering wound (max 5), each stack ticks 2%% of your max HP per turn. Stacks snowball if the rat king lands many hits — distinct from regular Bleed, which is a fixed value applied once. Drink before you walk in")
-	display_game("  • All 5 T1 dungeons now have signature boss mechanics (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic, Alpha Wolf, Rat King). 6 down, ~47 to go")
-	display_game("")
 
 
 
