@@ -21988,8 +21988,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.246 changes
+	display_game("[color=#00FF00]v0.9.246[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Trading post rumors — discoverability Slice 2[/color]")
+	display_game("  • [b]Trading posts now whisper local rumors[/b] when you walk in. Each post overhears 2 nearby dungeons and tells you where they are: \"They say [color=#88FF88]Spider Nest[/color] (T2) lies 38 tiles southeast.\" Free public knowledge, refreshed at the post every 30 minutes")
+	display_game("  • Pairs with the [color=#9ACD32]Dungeon Compass[/color] from last release: rumors give names + directions at trading posts (free, gossip-style); compass reveals the nearest qualifying dungeon at your current location (consumable). Two complementary tools for the audit's #1 player pain — finding dungeons in the first place")
+	display_game("")
+
 	# v0.9.245 changes
-	display_game("[color=#00FF00]v0.9.245[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.245[/color]")
 	display_game("  [color=#FFD700]Boss signatures Slice 2 — Bloodied Fury + Treasure Decoy[/color]")
 	display_game("  • [b]Orc Warlord[/b] (Orc Stronghold T2) gets [color=#8B0000]Bloodied Fury[/color]: one-shot trigger when his HP drops below 30%, [b]+75% damage[/b] for the rest of the fight. Telegraphs once on activation. Distinct from generic berserker (which fires at 50% HP for +50%) — sharper threshold, sharper teeth")
 	display_game("  • [b]Grand Mimic[/b] (Mimic Treasury T2) gets [color=#FF6600]Treasure Decoy[/color]: guaranteed 2x first-attack crit. Distinct from ambusher (75% chance, 1.75x). The mimic was hiding as a chest — its first swing is its big one. Telegraphs as the trap it is, not a stealth strike")
@@ -22021,12 +22028,6 @@ func display_changelog():
 	display_game("  • You can only buy ranks you've actually reached — no headstart is offered for an ability you've never ranked up on any character")
 	display_game("")
 
-	# v0.9.241 changes
-	display_game("[color=#00FFFF]v0.9.241[/color]")
-	display_game("  [color=#FFD700]Mastery survives permadeath (Slice 2)[/color]")
-	display_game("  • [b]Highest rank ever[/b] for each ability now persists at the account level. Reach Rank 4 on Magic Bolt — that's recorded forever, even after this character dies. Combat rank-ups update the record live; on death, every ability with non-zero use gets a final snapshot so backfilled ranks aren't lost either")
-	display_game("  • [b]Death screen[/b] now prints a \"Mastery Records Preserved\" section listing each ability + its highest rank — so when permadeath hits, you can see what your account is keeping for the next character")
-	display_game("")
 
 
 
@@ -29478,6 +29479,19 @@ func _display_trading_post_ui():
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
 		display_game("[color=#FFD700]%d quest(s) ready to turn in![/color]" % ready_quests)
+
+	# Audit #5 discoverability — rumors heard at the trading post
+	var rumors: Array = trading_post_data.get("rumors", [])
+	if rumors.size() > 0:
+		display_game("")
+		display_game("[color=#FFAA88]You overhear some local rumors:[/color]")
+		for rumor in rumors:
+			var r_name = String(rumor.get("name", "an old ruin"))
+			var r_color = String(rumor.get("color", "#88FF88"))
+			var r_tier = int(rumor.get("tier", 1))
+			var r_dir = String(rumor.get("direction_text", "somewhere"))
+			display_game("  [color=#808080]\"They say[/color] [color=%s]%s[/color] [color=#808080](T%d) lies %s.\"[/color]" % [r_color, r_name, r_tier, r_dir])
+
 	display_game("")
 	display_game("[color=#808080]Walk outside to leave.[/color]")
 
