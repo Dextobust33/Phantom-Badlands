@@ -21988,8 +21988,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.245 changes
+	display_game("[color=#00FF00]v0.9.245[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Boss signatures Slice 2 — Bloodied Fury + Treasure Decoy[/color]")
+	display_game("  • [b]Orc Warlord[/b] (Orc Stronghold T2) gets [color=#8B0000]Bloodied Fury[/color]: one-shot trigger when his HP drops below 30%, [b]+75% damage[/b] for the rest of the fight. Telegraphs once on activation. Distinct from generic berserker (which fires at 50% HP for +50%) — sharper threshold, sharper teeth")
+	display_game("  • [b]Grand Mimic[/b] (Mimic Treasury T2) gets [color=#FF6600]Treasure Decoy[/color]: guaranteed 2x first-attack crit. Distinct from ambusher (75% chance, 1.75x). The mimic was hiding as a chest — its first swing is its big one. Telegraphs as the trap it is, not a stealth strike")
+	display_game("  • Now 4 boss signatures shipped (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic). The full audit target is one signature per boss across the 53 dungeon roster — more land in future slices")
+	display_game("")
+
 	# v0.9.244 changes
-	display_game("[color=#00FF00]v0.9.244[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.244[/color]")
 	display_game("  [color=#FFD700]Dungeon Compass — discoverability Slice 1[/color]")
 	display_game("  • New consumable: [color=#9ACD32]Dungeon Compass[/color]. Use one in the world (not inside a dungeon) and the needle steadies, calling out the [b]nearest qualifying dungeon[/b] by name, tier, and direction (e.g. \"Goblin Caves (T1) lies 47 tiles to the northeast\"). Targets the audit's #1 player pain — finding dungeons in the first place")
 	display_game("  • [b]Three tiers, three ranges:[/b] standard compass covers up to T2, Greater up to T5, Master up to T9. They drop from treasure chests at 18% chance starting at chest tier 2; the compass's range matches the chest tier so you get an appropriately-scoped compass for where you are")
@@ -22020,12 +22028,6 @@ func display_changelog():
 	display_game("  • [b]Death screen[/b] now prints a \"Mastery Records Preserved\" section listing each ability + its highest rank — so when permadeath hits, you can see what your account is keeping for the next character")
 	display_game("")
 
-	# v0.9.240 changes
-	display_game("[color=#00FFFF]v0.9.240[/color]")
-	display_game("  [color=#FFD700]Mastery damage modifier now affects all 9 damage abilities (Slice 1b)[/color]")
-	display_game("  • Slice 1 only wired Magic Bolt and Power Strike — and even those silently dropped rank 0/1 (-20% / -10%) because of an old conditional that assumed enhancements only ever increased damage. Now Blast, Meteor, Shield Bash, Cleave, Devastate, Ambush, Exploit, and Gambit all run their damage through the mastery hook, and rank 0 actually deals -20% as the audit intended. Rank 2 baseline (where existing characters land) is unchanged so balance doesn't shift for veterans")
-	display_game("  • Buffs / CC / debuffs (War Cry, Forcefield, Iron Skin, Vanish, Paralyze, Sabotage, etc.) still track usage and rank up — but mastery doesn't multiply their effect for now. Future slices will introduce ability-specific modifiers (e.g. \"Vanish lasts 2 rounds at rank 4\")")
-	display_game("")
 
 
 
