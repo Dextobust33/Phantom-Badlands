@@ -21988,8 +21988,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.251 changes
+	display_game("[color=#00FF00]v0.9.251[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three more quest chains (Audit #6 Slice 2)[/color]")
+	display_game("  • [b]The Skeleton Lord's Curse[/b] (Haven, 2-stage): Kill 5 Skeletons → Slay the Skeleton Lord. Reward: 200 valor + Skeleton Egg")
+	display_game("  • [b]The Wolf Pack[/b] (Crossroads, 3-stage): Kill 4 Wolves → Kill 3 Giant Rats → Slay the Alpha Wolf. Reward: 250 valor + Wolf Egg")
+	display_game("  • [b]The Web Spreads[/b] (East Market, 2-stage, T2): Kill 4 Giant Spiders → Slay the Spider Queen. Reward: 350 valor + Giant Spider Egg")
+	display_game("  • Mix of 2-stage and 3-stage chains. Each leads to a different T1/T2 dungeon — completing all four chains (Goblin Menace included) gives a meaningful tour of the early-game roster, with one collected egg from each lineage")
+	display_game("")
+
 	# v0.9.250 changes
-	display_game("[color=#00FF00]v0.9.250[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.250[/color]")
 	display_game("  [color=#FFD700]Quest chains foundation — \"The Goblin Menace\" (Audit #6 Slice 1)[/color]")
 	display_game("  • [b]First quest chain[/b] now offered at Haven: [color=#FFAA00]The Goblin Menace[/color] — 3 stages (kill 5 Goblins → kill 3 Hobgoblins → slay the Goblin King). Each stage's [b]final reward is visible upfront[/b]: 300 total valor + 1 Goblin Egg. No daily reset; chains progress at your pace and persist through permadeath... wait no, it's one-shot per character. New character, new chains")
 	display_game("  • Stages auto-advance: turn in stage 1, stage 2 lands in your active quests immediately with a chat announcement. Reuses the existing quest UI — no new menus to learn. Chain quests show their stage and final reward inline in the quest description")
@@ -22018,12 +22027,6 @@ func display_changelog():
 	display_game("  • All 5 T1 dungeons now have signature boss mechanics (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic, Alpha Wolf, Rat King). 6 down, ~47 to go")
 	display_game("")
 
-	# v0.9.246 changes
-	display_game("[color=#00FFFF]v0.9.246[/color]")
-	display_game("  [color=#FFD700]Trading post rumors — discoverability Slice 2[/color]")
-	display_game("  • [b]Trading posts now whisper local rumors[/b] when you walk in. Each post overhears 2 nearby dungeons and tells you where they are: \"They say [color=#88FF88]Spider Nest[/color] (T2) lies 38 tiles southeast.\" Free public knowledge, refreshed at the post every 30 minutes")
-	display_game("  • Pairs with the [color=#9ACD32]Dungeon Compass[/color] from last release: rumors give names + directions at trading posts (free, gossip-style); compass reveals the nearest qualifying dungeon at your current location (consumable). Two complementary tools for the audit's #1 player pain — finding dungeons in the first place")
-	display_game("")
 
 
 
