@@ -854,9 +854,15 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 		var post = chunk_manager.get_npc_post_at(center_x, center_y)
 		if not post.is_empty():
 			output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
-			output += "[color=#00FF00]Safe[/color]\n"
-			# Compass to nearest OTHER post
+			output += "[color=#00FF00]Safe[/color]"
+			# Compass to nearest OTHER post — appended inline with the Safe
+			# marker (matches the wilderness path) so the header is 2 lines
+			# total. Putting the compass on its own line previously made the
+			# map block start a row lower than the client sprite overlay
+			# expected (header_lines=2 in client.gd), drawing the player
+			# figure one tile too high. Inline keeps both layouts consistent.
 			output += _get_compass_line(center_x, center_y, post)
+			output += "\n"
 			output += "[center]"
 			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 			output += "[/center]"

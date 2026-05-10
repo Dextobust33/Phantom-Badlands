@@ -185,6 +185,21 @@ const FLASH_DURATION := 0.18
 const LUNGE_DISTANCE := 16.0
 const LUNGE_DURATION := 0.10  # one direction; total = 2x
 
+# Audit #1 Slice 6a — combat hand row. Five card cells in a horizontal
+# strip plus a small "Deck N · Discard M" indicator on the right. Cells
+# are PanelContainers built once at layout time and rebuilt on each hand
+# update so we don't repeatedly add/remove children mid-combat.
+const COMBAT_HAND_SIZE := 5
+signal card_played(card_name: String)
+var _hand_strip: HBoxContainer
+var _hand_cells: Array = []  # Array of PanelContainers (5)
+var _hand_status_label: Label
+var _combat_hand: Array = []
+var _combat_deck_count: int = 0
+var _combat_discard_count: int = 0
+const HAND_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+const HAND_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644"]
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -245,6 +260,9 @@ func _build_layout() -> void:
 
 	# === Running damage totals strip (Combat readability #2) ===
 	root_vbox.add_child(_build_running_totals_strip())
+
+	# === Audit #1 Slice 6a — combat hand row (cards drawn this combat) ===
+	root_vbox.add_child(_build_hand_strip())
 
 	# === Bottom: combat log mirror ===
 	_log_section = PanelContainer.new()
@@ -845,6 +863,330 @@ func get_totals_summary_bbcode() -> String:
 		parts.append("[color=#FF9966]Pet: [/color][color=#3DD9FF]%d[/color]" % _companion_total)
 	parts.append("[color=#FF6666]Foe: [/color][color=#FFA033]%d[/color]" % _monster_total)
 	return "   ·   ".join(parts)
+
+
+# === Audit #1 Slice 6a — hand strip ============================================
+
+func _build_hand_strip() -> HBoxContainer:
+	"""Five card cells + a deck/discard status counter. Each card is a
+	clickable PanelContainer. Empty hand (combat just ended, or all cards
+	exhausted with empty discard) renders as 5 dim '—' cells.
+
+	Layout: [Card 1][Card 2][Card 3][Card 4][Card 5]   Deck N · Discard M"""
+	var outer := HBoxContainer.new()
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.alignment = BoxContainer.ALIGNMENT_CENTER
+	outer.add_theme_constant_override("separation", 12)
+	outer.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	_hand_strip = HBoxContainer.new()
+	_hand_strip.add_theme_constant_override("separation", 6)
+	_hand_strip.mouse_filter = Control.MOUSE_FILTER_PASS
+	outer.add_child(_hand_strip)
+
+	_hand_cells.clear()
+	for i in range(COMBAT_HAND_SIZE):
+		var cell := _build_hand_cell(i)
+		_hand_cells.append(cell)
+		_hand_strip.add_child(cell)
+
+	_hand_status_label = Label.new()
+	_hand_status_label.text = ""
+	_hand_status_label.add_theme_font_size_override("font_size", 11)
+	_hand_status_label.add_theme_color_override("font_color", Color("#888888"))
+	_hand_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	outer.add_child(_hand_status_label)
+
+	return outer
+
+
+func _build_hand_cell(index: int) -> PanelContainer:
+	"""Build a single 5-wide card cell. Card title row on top, cost row on
+	bottom, mastery rank tag in the corner. Click sends card_played(name).
+	Tooltip text is repopulated each refresh from client_ref._get_ability_tooltip
+	so hover shows full effect / mastery / progress info matching the
+	out-of-combat AbilityPanel."""
+	var cell := PanelContainer.new()
+	cell.name = "HandCell_%d" % index
+	cell.custom_minimum_size = Vector2(108, 54)
+	cell.mouse_filter = Control.MOUSE_FILTER_STOP
+	cell.tooltip_text = ""
+
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.07, 0.09, 0.92)
+	sb.border_color = Color(0.35, 0.30, 0.22, 1)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	cell.add_theme_stylebox_override("panel", sb)
+
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.add_theme_constant_override("separation", 1)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(vbox)
+
+	# Top row: hotkey number + ability name
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 4)
+	top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(top_row)
+
+	var key_label := Label.new()
+	key_label.name = "Key"
+	key_label.text = "%d" % (index + 1)
+	key_label.add_theme_font_size_override("font_size", 11)
+	key_label.add_theme_color_override("font_color", Color("#FFD700"))
+	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(key_label)
+
+	var name_label := Label.new()
+	name_label.name = "Name"
+	name_label.text = "—"
+	name_label.add_theme_font_size_override("font_size", 12)
+	name_label.add_theme_color_override("font_color", Color("#DDDDDD"))
+	name_label.clip_text = true
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(name_label)
+
+	# Bottom row: cost + rank
+	var bottom_row := HBoxContainer.new()
+	bottom_row.add_theme_constant_override("separation", 6)
+	bottom_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(bottom_row)
+
+	var cost_label := Label.new()
+	cost_label.name = "Cost"
+	cost_label.text = ""
+	cost_label.add_theme_font_size_override("font_size", 10)
+	cost_label.add_theme_color_override("font_color", Color("#9ACD32"))
+	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_row.add_child(cost_label)
+
+	var rank_label := Label.new()
+	rank_label.name = "Rank"
+	rank_label.text = ""
+	rank_label.add_theme_font_size_override("font_size", 10)
+	rank_label.add_theme_color_override("font_color", Color("#888888"))
+	rank_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_row.add_child(rank_label)
+
+	# Click handler — pulls the current card name from meta on click.
+	cell.gui_input.connect(_on_hand_cell_input.bind(index))
+	cell.set_meta("card_name", "")
+	cell.set_meta("can_afford", false)
+	return cell
+
+
+func _on_hand_cell_input(event: InputEvent, index: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if index < 0 or index >= _hand_cells.size():
+			return
+		var cell: PanelContainer = _hand_cells[index]
+		var card_name = str(cell.get_meta("card_name", ""))
+		if card_name == "":
+			return
+		# Affordability is enforced server-side too; we just save the click
+		# round-trip when we already know it'll bounce.
+		if not bool(cell.get_meta("can_afford", true)):
+			return
+		emit_signal("card_played", card_name)
+
+
+func update_hand(hand: Array, deck_count: int, discard_count: int) -> void:
+	"""Replace current hand state and rerender the strip. `hand` is an array
+	of canonical ability names (e.g. 'magic_bolt'). Cell metadata reads
+	display name / cost / resource type / mastery rank from client_ref so
+	this panel doesn't have to duplicate the ability tables."""
+	_combat_hand = hand.duplicate() if hand is Array else []
+	_combat_deck_count = max(0, deck_count)
+	_combat_discard_count = max(0, discard_count)
+	if is_inside_tree():
+		_refresh_hand()
+
+
+func _refresh_hand() -> void:
+	if _hand_cells.is_empty():
+		return
+	for i in range(_hand_cells.size()):
+		var cell: PanelContainer = _hand_cells[i]
+		var vbox = cell.get_node("VBox")
+		var top_row = vbox.get_child(0)
+		var bottom_row = vbox.get_child(1)
+		var key_lbl: Label = top_row.get_child(0)
+		var name_lbl: Label = top_row.get_child(1)
+		var cost_lbl: Label = bottom_row.get_child(0)
+		var rank_lbl: Label = bottom_row.get_child(1)
+
+		# Hotkey label reads the live keybind for the action-bar slot this
+		# card sits at. Cards 0-4 land at action_5..action_9 (default keys
+		# 1-5), but the user can rebind those — pull the actual label from
+		# the client so a player who remapped action_5 to Z sees "Z" here.
+		var slot_index = i + 5
+		var key_text = "%d" % (i + 1)
+		if client_ref and client_ref.has_method("get_action_key_name"):
+			var pulled = str(client_ref.get_action_key_name(slot_index))
+			if pulled != "":
+				key_text = pulled
+		key_lbl.text = key_text
+
+		if i >= _combat_hand.size():
+			# Empty slot
+			cell.set_meta("card_name", "")
+			cell.set_meta("can_afford", false)
+			name_lbl.text = "—"
+			name_lbl.add_theme_color_override("font_color", Color("#444444"))
+			key_lbl.add_theme_color_override("font_color", Color("#444444"))
+			cost_lbl.text = ""
+			rank_lbl.text = ""
+			cell.tooltip_text = ""
+			_set_cell_dim(cell, true, false)
+			continue
+
+		var card_name = str(_combat_hand[i])
+		var info = _resolve_card_info(card_name)
+		cell.set_meta("card_name", card_name)
+		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
+
+		name_lbl.text = str(info.get("display", card_name))
+		name_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
+		key_lbl.add_theme_color_override("font_color", Color("#FFD700"))
+
+		# Hover tooltip — full ability detail (effect, cost, mastery rank,
+		# progress to next rank). Mirrors the AbilityPanel hover so players
+		# get the same information surface in and out of combat.
+		if client_ref and client_ref.has_method("_get_ability_tooltip"):
+			cell.tooltip_text = str(client_ref._get_ability_tooltip(card_name))
+		else:
+			cell.tooltip_text = str(info.get("display", card_name))
+
+		var cost_int = int(info.get("cost", 0))
+		var resource_type = str(info.get("resource_type", ""))
+		if cost_int > 0 and resource_type != "":
+			cost_lbl.text = "%d %s" % [cost_int, _short_resource_label(resource_type)]
+			cost_lbl.add_theme_color_override("font_color", _resource_color(resource_type))
+		else:
+			cost_lbl.text = "Free"
+			cost_lbl.add_theme_color_override("font_color", Color("#888888"))
+
+		var rank = int(info.get("rank", 0))
+		if rank >= 0 and rank < HAND_RANK_NAMES.size():
+			rank_lbl.text = "R%d" % rank
+			rank_lbl.add_theme_color_override("font_color", Color(HAND_RANK_COLORS[rank]))
+		else:
+			rank_lbl.text = ""
+
+		_set_cell_dim(cell, false, bool(info.get("can_afford", true)))
+
+	# Status line
+	if _hand_status_label:
+		_hand_status_label.text = "Deck %d  ·  Discard %d" % [_combat_deck_count, _combat_discard_count]
+
+
+func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
+	"""Adjust cell border/bg to convey state. Empty = very muted; uncastable
+	= mid muted; castable = active gold border."""
+	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
+	if sb == null:
+		return
+	if empty:
+		sb.border_color = Color(0.20, 0.18, 0.14, 1)
+		sb.bg_color = Color(0.04, 0.04, 0.05, 0.85)
+	elif not can_afford:
+		sb.border_color = Color(0.35, 0.25, 0.20, 1)
+		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
+	else:
+		sb.border_color = Color(0.70, 0.55, 0.30, 1)
+		sb.bg_color = Color(0.08, 0.07, 0.05, 0.95)
+
+
+func _resolve_card_info(card_name: String) -> Dictionary:
+	"""Pull display / cost / resource_type / rank / can_afford from client_ref.
+	Returns a dict with safe defaults when client_ref or its helpers aren't
+	available (e.g. if the panel is rendered outside a live client)."""
+	var info := {"display": card_name.replace("_", " ").capitalize(), "cost": 0, "resource_type": "", "rank": 0, "can_afford": true}
+	if client_ref == null:
+		return info
+	var path = ""
+	if client_ref.has_method("_get_player_active_path"):
+		path = client_ref._get_player_active_path()
+	if client_ref.has_method("_get_ability_combat_info"):
+		var ability_info = client_ref._get_ability_combat_info(card_name, path)
+		if ability_info is Dictionary and not ability_info.is_empty():
+			info["display"] = str(ability_info.get("display", info["display"]))
+			info["cost"] = int(ability_info.get("cost", 0))
+			info["resource_type"] = str(ability_info.get("resource_type", ""))
+	# Mastery rank from ability_uses dict (mirrors AbilityPanel logic).
+	if "character_data" in client_ref:
+		var char_data = client_ref.character_data
+		if char_data is Dictionary:
+			var uses_dict = char_data.get("ability_uses", {})
+			var uses = int(uses_dict.get(card_name, 0)) if uses_dict is Dictionary else 0
+			info["rank"] = _rank_from_uses(uses)
+	# Affordability: compare cost to current resource on character_data.
+	var current_mana = 0
+	var current_stamina = 0
+	var current_energy = 0
+	if "character_data" in client_ref and client_ref.character_data is Dictionary:
+		current_mana = int(client_ref.character_data.get("current_mana", 0))
+		current_stamina = int(client_ref.character_data.get("current_stamina", 0))
+		current_energy = int(client_ref.character_data.get("current_energy", 0))
+	var cost = int(info.get("cost", 0))
+	var rt = str(info.get("resource_type", ""))
+	var can_afford = true
+	if cost > 0:
+		match rt:
+			"mana":
+				can_afford = current_mana >= cost
+			"stamina":
+				can_afford = current_stamina >= cost
+			"energy":
+				can_afford = current_energy >= cost
+	info["can_afford"] = can_afford
+	return info
+
+
+func _rank_from_uses(uses: int) -> int:
+	# Mirrors MASTERY_RANK_THRESHOLDS = [30, 150, 600, 2400].
+	var thresholds = [30, 150, 600, 2400]
+	var rank = 0
+	for t in thresholds:
+		if uses >= int(t):
+			rank += 1
+		else:
+			break
+	return rank
+
+
+func _short_resource_label(rt: String) -> String:
+	match rt:
+		"mana": return "MP"
+		"stamina": return "SP"
+		"energy": return "EN"
+	return ""
+
+
+func _resource_color(rt: String) -> Color:
+	match rt:
+		"mana": return Color("#7AA8FF")
+		"stamina": return Color("#FFB860")
+		"energy": return Color("#A0E060")
+	return Color("#888888")
+
+
+func clear_hand() -> void:
+	"""Wipe hand state to '—' cells (called between fights / when combat ends)."""
+	_combat_hand = []
+	_combat_deck_count = 0
+	_combat_discard_count = 0
+	if is_inside_tree():
+		_refresh_hand()
 
 
 func _build_picker_overlay() -> void:
