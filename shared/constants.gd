@@ -146,6 +146,12 @@ const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]  # uses needed to re
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]  # rank 0 → 4
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_BACKFILL_USES: int = 200  # Existing characters get this many uses on archetype abilities at first load — puts them at rank 2 (baseline) so balance doesn't shift retroactively
+# Slice 3 — Sanctuary headstart purchases. Baddie-point cost to start a new
+# character at each rank. Index = rank, value = BP cost for that step (R0 free).
+# Cumulative cost to R3 = 25 + 100 + 500 = 625 BP. Capped below max rank so
+# dying still has bite — R4 must always be earned through play.
+const MASTERY_HEADSTART_BP_PER_RANK: Array = [0, 25, 100, 500]
+const MASTERY_HEADSTART_MAX_RANK: int = 3
 
 # Class Descriptions
 const CLASS_DESCRIPTIONS = {

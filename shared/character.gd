@@ -2537,6 +2537,27 @@ func backfill_ability_uses_if_needed() -> bool:
 	ability_uses_backfilled = true
 	return true
 
+func apply_headstart_ranks(headstarts: Dictionary) -> Array:
+	"""Slice 3 — apply Sanctuary-purchased headstart ranks to a freshly created
+	character. For each {ability → target_rank}, set ability_uses[ability] to
+	the threshold for target_rank so get_ability_rank() returns at least the
+	purchased rank. Existing higher uses are preserved. Returns a list of
+	{ability, rank} entries that were actually applied (rank > 0)."""
+	var applied: Array = []
+	if headstarts == null or headstarts.is_empty():
+		return applied
+	for ability_name in headstarts.keys():
+		var target_rank = int(headstarts[ability_name])
+		if target_rank <= 0 or target_rank > MASTERY_RANK_THRESHOLDS.size():
+			continue
+		# Threshold for rank N is the (N-1)th entry — rank 1 needs THRESHOLDS[0] uses, etc.
+		var required_uses = int(MASTERY_RANK_THRESHOLDS[target_rank - 1])
+		var current_uses = int(ability_uses.get(ability_name, 0))
+		if current_uses < required_uses:
+			ability_uses[ability_name] = required_uses
+		applied.append({"ability": ability_name, "rank": target_rank})
+	return applied
+
 func get_abilities_unlocked_at_level(check_level: int) -> Array:
 	"""Get list of abilities that unlock exactly at the specified level"""
 	var all_abilities = get_all_available_abilities()
