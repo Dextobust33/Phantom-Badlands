@@ -109,6 +109,8 @@ const ABILITY_BOSS_REVIVE_ONCE = "boss_revive_once"  # When boss dies, revives a
 const ABILITY_BOSS_WEB_STUN = "boss_web_stun"        # On hit, chance to web the player (skips next player turn)
 const ABILITY_BOSS_BLOODIED_FURY = "boss_bloodied_fury"  # When boss <30% HP, one-shot trigger: +75% damage rest of fight
 const ABILITY_BOSS_TREASURE_DECOY = "boss_treasure_decoy"  # First monster attack guaranteed crit at 2x damage
+const ABILITY_BOSS_BLOODSCENT = "boss_bloodscent"        # When player <50% HP, boss gains +50% damage rest of fight (one-shot trigger)
+const ABILITY_BOSS_FESTERING_BITE = "boss_festering_bite"  # Each monster hit adds +1 festering stack (max 5); ticks 2% max HP per stack per player turn
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1193,6 +1195,16 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp -= total_bleed
 		character.current_hp = max(1, character.current_hp)  # Bleed can't kill either
 		messages.append("[color=#FF4444]Bleeding deals [color=#FF8800]%d[/color] damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
+
+	# === FESTERING BITE TICK (Audit #5 — Rat King boss_festering_bite) ===
+	# Each stack ticks 2% of max HP per player turn. Stacks accumulate from
+	# successful monster hits (capped at 5). Damage cannot kill the player.
+	var fester_stacks = combat.get("player_fester_stacks", 0)
+	if fester_stacks > 0:
+		var fester_dmg = max(1, int(character.get_total_max_hp() * 0.02 * fester_stacks))
+		character.current_hp -= fester_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#9ACD32]Festering wounds tick [color=#FF8800]%d[/color] damage! (%d stacks)[/color]" % [fester_dmg, fester_stacks])
 
 	# === CHARM EFFECT (player attacks themselves) ===
 	if combat.get("player_charmed", false):
@@ -4022,6 +4034,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				if combat.get("bloodied_fury_triggered", false):
 					damage = int(damage * 1.75)
 
+			# Audit #5 — Bloodscent / boss_bloodscent. Mirror of Bloodied Fury but
+			# targeting the PLAYER's HP: when player drops below 50%, the boss
+			# scents the kill and gains +50% damage rest of fight. One-shot trigger.
+			if ABILITY_BOSS_BLOODSCENT in abilities:
+				if not combat.get("bloodscent_triggered", false):
+					var bs_player_hp_pct = float(character.current_hp) / float(character.get_total_max_hp())
+					if bs_player_hp_pct <= 0.5:
+						combat["bloodscent_triggered"] = true
+						messages.append("[color=#8B0000][b]BLOODSCENT![/b][/color] [color=#FFAA00]The %s smells your blood and bares its fangs![/color]" % monster.name)
+				if combat.get("bloodscent_triggered", false):
+					damage = int(damage * 1.5)
+
 			# Enrage stacks
 			var enrage = combat.get("enrage_stacks", 0)
 			if enrage > 0:
@@ -4548,6 +4572,16 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["player_webbed"] = true
 			messages.append("[color=#A335EE]The %s ensnares you in constricting webs![/color]" % monster.name)
 			messages.append("[color=#FFAA00]You are webbed — your next turn is lost struggling free![/color]")
+
+	# Audit #5 boss signature — Festering Bite / boss_festering_bite. Each
+	# successful hit applies +1 stack of festering wound (max 5). Stacks tick
+	# 2% max HP per player turn. Distinct from generic Bleed (fixed-value DoT
+	# applied once) — scales with player's HP pool, accumulates per-hit.
+	if ABILITY_BOSS_FESTERING_BITE in abilities and hits > 0:
+		var current_stacks = int(combat.get("player_fester_stacks", 0))
+		if current_stacks < 5:
+			combat["player_fester_stacks"] = current_stacks + 1
+			messages.append("[color=#9ACD32]The %s's filthy bite festers! (Festering: %d stack%s)[/color]" % [monster.name, current_stacks + 1, "s" if current_stacks + 1 > 1 else ""])
 
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:

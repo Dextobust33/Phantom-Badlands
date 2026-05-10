@@ -21988,8 +21988,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.247 changes
+	display_game("[color=#00FF00]v0.9.247[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Boss signatures Slice 3 — Bloodscent + Festering Bite[/color]")
+	display_game("  • [b]Alpha Wolf[/b] (Wolf Den T1) gets [color=#8B0000]Bloodscent[/color]: when [i]you[/i] drop below 50% HP, the wolf scents the kill and gains +50% damage for the rest of the fight. Mirror of the Orc Warlord's Bloodied Fury, but tied to your HP, not the boss's — pack-hunter flavor")
+	display_game("  • [b]Rat King[/b] (Rat Warrens T1) gets [color=#9ACD32]Festering Bite[/color]: each successful hit adds a stack of festering wound (max 5), each stack ticks 2%% of your max HP per turn. Stacks snowball if the rat king lands many hits — distinct from regular Bleed, which is a fixed value applied once. Drink before you walk in")
+	display_game("  • All 5 T1 dungeons now have signature boss mechanics (Skeleton Lord, Spider Queen, Orc Warlord, Grand Mimic, Alpha Wolf, Rat King). 6 down, ~47 to go")
+	display_game("")
+
 	# v0.9.246 changes
-	display_game("[color=#00FF00]v0.9.246[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.246[/color]")
 	display_game("  [color=#FFD700]Trading post rumors — discoverability Slice 2[/color]")
 	display_game("  • [b]Trading posts now whisper local rumors[/b] when you walk in. Each post overhears 2 nearby dungeons and tells you where they are: \"They say [color=#88FF88]Spider Nest[/color] (T2) lies 38 tiles southeast.\" Free public knowledge, refreshed at the post every 30 minutes")
 	display_game("  • Pairs with the [color=#9ACD32]Dungeon Compass[/color] from last release: rumors give names + directions at trading posts (free, gossip-style); compass reveals the nearest qualifying dungeon at your current location (consumable). Two complementary tools for the audit's #1 player pain — finding dungeons in the first place")
@@ -22019,14 +22027,6 @@ func display_changelog():
 	display_game("  • Slice 1 deliberately small: 2 bosses, 2 distinct mechanics. The audit's full target is one signature mechanic per boss across the 53 dungeon roster — more land in future slices, prioritized by what players see most")
 	display_game("")
 
-	# v0.9.242 changes
-	display_game("[color=#00FFFF]v0.9.242[/color]")
-	display_game("  [color=#FFD700]Sanctuary mastery headstarts (Slice 3)[/color]")
-	display_game("  • [b]Spend Baddie Points[/b] in the Sanctuary to start your next character with rank already in an ability. New \"Mastery\" button on the Sanctuary main view (lights up once you have any record). Lists every ability you've ranked up on a previous character with the cost to bump it +1 rank for the next life")
-	display_game("  • [b]Steep curve, hard cap:[/b] R1=25 BP, R2=100 BP, R3=500 BP — 625 BP cumulative for one ability fully maxed-headstart. Capped at R3 (Skilled) — R4 (Master) is always earned through play, so dying still has bite")
-	display_game("  • [b]Single-key UX:[/b] press 1-5 to cycle a row's rank (R0 → R1 → R2 → R3 → R0). Hitting cap and pressing again refunds the entire amount paid back to your BP — change your mind without penalty until you create the character. Headstarts are consumed at character creation and applied to ability_uses so the new character starts at the purchased rank")
-	display_game("  • You can only buy ranks you've actually reached — no headstart is offered for an ability you've never ranked up on any character")
-	display_game("")
 
 
 
