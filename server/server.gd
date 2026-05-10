@@ -14724,6 +14724,19 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"max_craftable": max_craft
 		})
 
+	# Audit #7/#8 transparency layer — build a material → sources map for every
+	# unique material referenced by these recipes. Sent once with the recipe list
+	# so the client can render "where do I find this?" hints under each ingredient
+	# without round-tripping per material.
+	var sources_map: Dictionary = {}
+	for r in recipe_list:
+		var mat_dict = r.get("materials", {})
+		for m_id in mat_dict.keys():
+			if not sources_map.has(m_id):
+				var srcs = drop_tables.get_material_sources(String(m_id))
+				if srcs.size() > 0:
+					sources_map[m_id] = srcs
+
 	send_to_peer(peer_id, {
 		"type": "craft_list",
 		"skill": skill_name,
@@ -14733,6 +14746,7 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"recipes": recipe_list,
 		"materials": effective_mats,
 		"pouch_materials": character.crafting_materials,
+		"material_sources": sources_map,
 	})
 
 func _get_effective_craft_materials(peer_id: int) -> Dictionary:

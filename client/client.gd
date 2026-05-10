@@ -875,6 +875,7 @@ var crafting_entered_via_station: bool = false  # True when opened by bumping a 
 var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
 var crafting_recipes: Array = []  # Available recipes from server
 var crafting_materials: Dictionary = {}  # Player's materials
+var crafting_material_sources: Dictionary = {}  # Audit #7/#8: material_id -> Array of source dicts (where to find each material)
 var hud_area_level: int = 0  # Last known area level for Status HUD
 var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
@@ -21988,8 +21989,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.254 changes
+	display_game("[color=#00FF00]v0.9.254[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting transparency — material → source hints (Audit #7/#8 Slice)[/color]")
+	display_game("  • [b]Where do I find this?[/b] Open a recipe in any crafting station. Under each ingredient line you'll now see a [color=#808080]from: …[/color] hint listing every place that drops it: Mining T3 (40%), Foraging T2 (10%), T2 Monsters (15%), and so on")
+	display_game("  • Server walks the four gathering tables (Fishing/Mining/Logging/Foraging) plus the monster crafting-drop tables and ships the source map alongside the recipe list — one round trip, all recipes covered")
+	display_game("  • Solves a long-standing 'why is this gated behind a material I've never seen?' problem. Specialist crafters can now scan a recipe and immediately know which gathering skill or monster tier to chase")
+	display_game("")
+
 	# v0.9.253 changes
-	display_game("[color=#00FF00]v0.9.253[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.253[/color]")
 	display_game("  [color=#FFD700]Three T2 quest chains — Audit #6 Slice 4[/color]")
 	display_game("  • [b]Hobgoblin Discipline[/b] (South Gate, 3-stage T2): Kill 5 Hobgoblins → Kill 6 Goblins → Slay Hobgoblin Commander. 400 valor + Hobgoblin Egg. Description warns about Iron Discipline (every 5 turns the boss heals + clears debuffs)")
 	display_game("  • [b]Mimic Hunt[/b] (West Shrine, 2-stage T2): Kill 4 Mimics → Slay the Grand Mimic. 400 valor + Mimic Egg. Description telegraphs the Treasure Decoy first-attack crit")
@@ -22023,12 +22032,6 @@ func display_changelog():
 	display_game("  • This is the foundation for the audit's full quest rework: target-farm chains replacing daily kill tasks, multi-path completability, title rewards on hard chains. More chains and the bigger systems land in future slices")
 	display_game("")
 
-	# v0.9.249 changes
-	display_game("[color=#00FFFF]v0.9.249[/color]")
-	display_game("  [color=#FFD700]Boss signatures Slice 4 — Iron Discipline[/color]")
-	display_game("  • [b]Hobgoblin Commander[/b] (Hobgoblin Fortress T2) gets [color=#C0C0C0]Iron Discipline[/color]: every 5 monster turns, the boss steels itself, [b]heals 10% max HP[/b] and shrugs off Sabotage/Weakness debuffs. Distinct from generic regeneration (per-turn flat) — this is a periodic burst that punishes long fights. Reward fast kills; tricksters benefit from front-loading damage")
-	display_game("  • All 5 T1 dungeons + 3 T2 dungeons now have signature boss mechanics. 7 down, ~46 to go")
-	display_game("")
 
 
 
@@ -27667,6 +27670,8 @@ func handle_craft_list(message: Dictionary):
 	crafting_job_bonus = message.get("job_bonus", {})
 	crafting_recipes = message.get("recipes", [])
 	crafting_materials = message.get("materials", {})
+	# Audit #7/#8 transparency — material → sources map sent with recipes
+	crafting_material_sources = message.get("material_sources", {})
 	crafting_selected_recipe = -1
 	if crafting_preserve_page:
 		# Returning from craft result — stay on same page, clamp if recipes changed
@@ -27859,6 +27864,10 @@ func display_craft_recipe_details():
 			var mat_name = mat_id.capitalize().replace("_", " ")
 			var color = "#00FF00" if owned >= required else "#FF4444"
 			display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+			# Audit #7/#8 transparency — show where to find this material
+			var src_line = _format_material_sources(mat_id)
+			if src_line != "":
+				display_game("    [color=#808080]from: %s[/color]" % src_line)
 
 	display_game("")
 	display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
@@ -27877,6 +27886,25 @@ func display_craft_recipe_details():
 func _count_group_materials(group_key: String) -> int:
 	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
 	return DropTables.get_total_for_group(group_key, crafting_materials)
+
+func _format_material_sources(mat_id: String) -> String:
+	# Audit #7/#8 transparency — render server-supplied source list for one material.
+	var srcs = crafting_material_sources.get(mat_id, [])
+	if srcs == null or srcs.size() == 0:
+		return ""
+	var parts: Array = []
+	for s in srcs:
+		var label = String(s.get("source", ""))
+		var chance = int(s.get("chance", 0))
+		if label == "":
+			continue
+		if chance > 0:
+			parts.append("%s (%d%%)" % [label, chance])
+		else:
+			parts.append(label)
+		if parts.size() >= 4:
+			break
+	return ", ".join(parts)
 
 func _get_group_material_label(group_key: String) -> String:
 	# Mirror of the inline formatting in display_craft_recipe_details for group keys
