@@ -591,6 +591,10 @@ var can_create_character = true
 # character_list. Each entry: {owner, post_index, name, x, y, tier,
 # effective_tier, bubble_radius}. Empty for fresh accounts.
 var available_spawn_posts: Array = []
+# Slice 2 — account-level highest-ever mastery rank per ability. Read from
+# server's character_list payload. Survives permadeath. Future Sanctuary
+# upgrades will spend baddie points to apply these as starting ranks.
+var account_mastery_records: Dictionary = {}
 var last_whisper_from = ""  # For /reply command
 
 # House (Sanctuary) data - roguelite meta-progression
@@ -4260,6 +4264,23 @@ func display_death_screen(message: Dictionary):
 	if baddie_points > 0:
 		display_game("[center][color=#FF6600][b]Baddie Points Earned: %d[/b][/color][/center]" % baddie_points)
 		display_game("[center][color=#808080]Return to your Sanctuary to spend them![/color][/center]")
+	# Slice 2 — show what mastery survives this death (account-level, will outlive future characters too)
+	var mastery_records: Dictionary = message.get("account_mastery_records", {})
+	if mastery_records.size() > 0:
+		display_game("")
+		display_game("[center][color=#9ACD32][b]Mastery Records Preserved[/b][/color][/center]")
+		var rank_names = ["Untrained", "Novice", "Adept", "Skilled", "Master"]
+		var ability_lines: Array = []
+		for ability_name in mastery_records.keys():
+			var rec_rank = int(mastery_records[ability_name])
+			if rec_rank <= 0:
+				continue
+			var rname = rank_names[rec_rank] if rec_rank < rank_names.size() else "Master"
+			ability_lines.append("%s [color=#FFD700]R%d %s[/color]" % [str(ability_name).replace("_", " ").capitalize(), rec_rank, rname])
+		ability_lines.sort()
+		for line in ability_lines:
+			display_game("[center]%s[/center]" % line)
+		display_game("[center][color=#808080]Highest ranks survive permadeath. Future Sanctuary upgrades will let you spend baddie points to start new characters at recorded ranks.[/color][/center]")
 	display_game("[color=#FF6600]═══════════════════════════════════════════════[/color]")
 	display_game("")
 	display_game("[center][color=#FFD700]Press %s to continue  |  %s to save log[/color][/center]" % [get_action_key_name(0), get_action_key_name(1)])
@@ -16710,6 +16731,10 @@ func handle_server_message(message: Dictionary):
 			# Slice 5 — spawn-at-post: cache the account's posts so the
 			# character-create panel can offer them as spawn options.
 			available_spawn_posts = message.get("available_spawn_posts", [])
+			# Slice 2 — cache the account's highest-ever mastery ranks
+			# (per ability). Future Sanctuary headstart UI will read from
+			# this dict to show what's available to spend baddie points on.
+			account_mastery_records = message.get("account_mastery_records", {})
 			# Don't switch to character select if we're on death screen or house screen
 			if game_state == GameState.DEAD or game_state == GameState.HOUSE_SCREEN:
 				return
@@ -21890,8 +21915,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.241 changes
+	display_game("[color=#00FF00]v0.9.241[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Mastery survives permadeath (Slice 2)[/color]")
+	display_game("  • [b]Highest rank ever[/b] for each ability now persists at the account level. Reach Rank 4 on Magic Bolt — that's recorded forever, even after this character dies. Combat rank-ups update the record live; on death, every ability with non-zero use gets a final snapshot so backfilled ranks aren't lost either")
+	display_game("  • [b]Death screen[/b] now prints a \"Mastery Records Preserved\" section listing each ability + its highest rank — so when permadeath hits, you can see what your account is keeping for the next character")
+	display_game("  • Records are read-only this release — you can't spend them yet. The next slice (Sanctuary headstart purchases) lets you spend baddie points to start a new character at recorded ranks, capped below max so dying still has bite")
+	display_game("")
+
 	# v0.9.240 changes
-	display_game("[color=#00FF00]v0.9.240[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.240[/color]")
 	display_game("  [color=#FFD700]Mastery damage modifier now affects all 9 damage abilities (Slice 1b)[/color]")
 	display_game("  • Slice 1 only wired Magic Bolt and Power Strike — and even those silently dropped rank 0/1 (-20% / -10%) because of an old conditional that assumed enhancements only ever increased damage. Now Blast, Meteor, Shield Bash, Cleave, Devastate, Ambush, Exploit, and Gambit all run their damage through the mastery hook, and rank 0 actually deals -20% as the audit intended. Rank 2 baseline (where existing characters land) is unchanged so balance doesn't shift for veterans")
 	display_game("  • Buffs / CC / debuffs (War Cry, Forcefield, Iron Skin, Vanish, Paralyze, Sabotage, etc.) still track usage and rank up — but mastery doesn't multiply their effect for now. Future slices will introduce ability-specific modifiers (e.g. \"Vanish lasts 2 rounds at rank 4\")")
@@ -21919,13 +21952,6 @@ func display_changelog():
 	display_game("  • Side fix: changelog earlier referred to \"More → Abilities\" — corrected to Settings → Abilities")
 	display_game("")
 
-	# v0.9.236 changes
-	display_game("[color=#00FFFF]v0.9.236[/color]")
-	display_game("  [color=#FFD700]Combat ability mastery — Slice 1[/color]")
-	display_game("  • Major shift: [b]every ability is now accessible from level 1[/b], but effective power scales with how much you use it. 5 ranks per ability (Untrained → Master), unlocked at 10 / 50 / 200 / 1000 cumulative uses. Rank 0 hits at -20% damage; rank 2 (200 uses) is baseline; rank 4 caps at +20%. Existing characters get rank 2 backfilled on their archetype's abilities so they don't take a retroactive nerf")
-	display_game("  • Rank shows up on every ability card in the Settings → Abilities panel: \"Magic Bolt — R2 Adept (45/200)\". Cross a threshold mid-fight and a chat line drops: \"Mastery rank up! Magic Bolt reached Rank 2 (Adept) — damage modifier now +0%\"")
-	display_game("  • [color=#FFAA00]Slice 1 limitations:[/color] damage bonus only applies to Magic Bolt + Power Strike right now (those already had the hook). Other damage abilities still track usage and rank up but the damage mult comes in 1b. Account-level persistence, Sanctuary headstart purchases, deck pruning, and ability modifiers are later slices in this initiative")
-	display_game("")
 
 
 

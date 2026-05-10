@@ -2332,6 +2332,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				if not result.has("messages"):
 					result["messages"] = []
 				result.messages.append(rank_msg)
+				# Slice 2 — surface rank-up so server can update account-level
+				# highest-ever record (survives permadeath, feeds future Slice 3
+				# Sanctuary headstart purchases).
+				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
 
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
