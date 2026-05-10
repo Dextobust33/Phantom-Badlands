@@ -10109,14 +10109,15 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "resource_type": "mana"},
-		# Warrior abilities
-		"power_strike": {"display": "Strike", "cost": 10, "cost_percent": 0, "resource_type": "stamina"},
+		# Warrior abilities. Variable-cost abilities (Slice 6c pilot) carry an
+		# extra cost_floor field — affordability check uses floor, display shows range.
+		"power_strike": {"display": "Strike", "cost": 10, "cost_floor": 3, "cost_percent": 0, "resource_type": "stamina"},
 		"war_cry": {"display": "Cry", "cost": 15, "cost_percent": 0, "resource_type": "stamina"},
-		"shield_bash": {"display": "Bash", "cost": 20, "cost_percent": 0, "resource_type": "stamina"},
-		"cleave": {"display": "Cleave", "cost": 30, "cost_percent": 0, "resource_type": "stamina"},
+		"shield_bash": {"display": "Bash", "cost": 20, "cost_floor": 6, "cost_percent": 0, "resource_type": "stamina"},
+		"cleave": {"display": "Cleave", "cost": 30, "cost_floor": 9, "cost_percent": 0, "resource_type": "stamina"},
 		"berserk": {"display": "Berserk", "cost": 40, "cost_percent": 0, "resource_type": "stamina"},
 		"iron_skin": {"display": "Iron", "cost": 35, "cost_percent": 0, "resource_type": "stamina"},
-		"devastate": {"display": "Devastate", "cost": 60, "cost_percent": 0, "resource_type": "stamina"},
+		"devastate": {"display": "Devastate", "cost": 50, "cost_floor": 15, "cost_percent": 0, "resource_type": "stamina"},
 		"fortify": {"display": "Fortify", "cost": 25, "cost_percent": 0, "resource_type": "stamina"},
 		"rally": {"display": "Rally", "cost": 45, "cost_percent": 0, "resource_type": "stamina"},
 		# Trickster abilities
@@ -10148,6 +10149,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 
 	# Apply race and class cost modifiers to match server calculations
 	var final_cost = base_cost
+	var final_floor = int(result.get("cost_floor", 0))  # Slice 6c variable-cost
 	var player_race = character_data.get("race", "")
 	var player_class = character_data.get("class", "")
 	var ability_resource_type = result.resource_type
@@ -10155,25 +10157,37 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	# Gnome racial: -15% ability costs (all resource types)
 	if player_race == "Gnome":
 		final_cost = int(final_cost * 0.85)
+		if final_floor > 0:
+			final_floor = int(final_floor * 0.85)
 
 	# Class-specific cost modifiers
 	if ability_resource_type == "stamina":
 		# Fighter: 20% reduced stamina costs
 		if player_class == "Fighter":
 			final_cost = int(final_cost * 0.80)
+			if final_floor > 0:
+				final_floor = int(final_floor * 0.80)
 		# Barbarian: 25% increased stamina costs
 		elif player_class == "Barbarian":
 			final_cost = int(final_cost * 1.25)
+			if final_floor > 0:
+				final_floor = int(final_floor * 1.25)
 	elif ability_resource_type == "mana":
 		# Sage: 25% reduced mana costs
 		if player_class == "Sage":
 			final_cost = int(final_cost * 0.75)
+			if final_floor > 0:
+				final_floor = int(final_floor * 0.75)
 
 	# Minimum cost of 1 (unless base was 0)
 	if base_cost > 0 and final_cost < 1:
 		final_cost = 1
+	if final_floor > 0 and final_floor < 1:
+		final_floor = 1
 
 	result.cost = final_cost
+	if final_floor > 0:
+		result.cost_floor = final_floor
 	return result
 
 func show_combat_item_menu():
@@ -15297,13 +15311,13 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits."
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish."
-		"power_strike": return "1.5× attack with sqrt STR scaling. Cheap stamina cost."
+		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
 		"war_cry": return "+35% damage for 4 rounds (self buff)."
-		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor)."
-		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round)."
+		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
+		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round). Variable cost 9-30 stamina — damage AND bleed magnitude scale with spend; duration stays 4 rounds."
 		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk."
 		"iron_skin": return "60% damage reduction for 4 rounds."
-		"devastate": return "5× attack with sqrt STR scaling. Massive stamina cost."
+		"devastate": return "5× attack with sqrt STR scaling. Variable cost 15-50 stamina — damage scales linearly with spend."
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds."
 		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds."
 		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
@@ -15512,14 +15526,14 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		"banish":
 			base_cost = 80
 			cost_percent = 10
-		# Warrior abilities
+		# Warrior abilities (devastate aligned 60→50 to match server's ability_info)
 		"power_strike": base_cost = 10
 		"war_cry": base_cost = 15
 		"shield_bash": base_cost = 20
 		"cleave": base_cost = 30
 		"berserk": base_cost = 40
 		"iron_skin": base_cost = 35
-		"devastate": base_cost = 60
+		"devastate": base_cost = 50
 		"fortify": base_cost = 25
 		"rally": base_cost = 45
 		# Trickster abilities
@@ -15546,7 +15560,12 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=%s](variable mana)[/color]" % resource_color
 	elif ability_name == "cloak":
 		return "[color=#9932CC](8%% per move)[/color]"
-	elif cost > 0:
+	# Slice 6c pilot — variable-cost warrior damage abilities show "(f-c sta)".
+	# Floors must mirror combat_manager.gd VARIABLE_COST_TABLE.
+	var variable_floors := {"power_strike": 3, "shield_bash": 6, "cleave": 9, "devastate": 15}
+	if ability_name in variable_floors and cost > 0:
+		return "[color=%s](%d-%d %s)[/color]" % [resource_color, int(variable_floors[ability_name]), cost, resource_type.substr(0, 3)]
+	if cost > 0:
 		return "[color=%s](%d %s)[/color]" % [resource_color, cost, resource_type.substr(0, 3)]
 	return ""
 
@@ -22417,8 +22436,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.259 changes
+	display_game("[color=#00FF00]v0.9.259[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost rework — Warrior damage pilot (Audit #1)[/color]")
+	display_game("  • [b]Power Strike / Shield Bash / Cleave / Devastate are now variable-cost[/b]. Each has a floor and ceiling — Power Strike 3-10 stamina, Shield Bash 6-20, Cleave 9-30, Devastate 15-50. Spend the ceiling for full effect; spend the floor for 30%% effect; linear scaling between")
+	display_game("  • [b]Auto-spend max-affordable.[/b] Press the key, the system spends whatever you can afford up to the ceiling. No new prompt or slider — you don't need to micromanage. The card lights up if you can afford the floor")
+	display_game("  • [b]Secondary effects scale too.[/b] Shield Bash stun chance scales with spend (no more full-power stun on a partial cast). Cleave bleed damage scales with spend (duration stays 4 rounds)")
+	display_game("  • [b]Partial-cast banner.[/b] When you spend below the ceiling, the combat log shows \"Partial cast — N/M stamina (X%% effect).\" so you can see what you got")
+	display_game("  • [b]Card UI[/b] shows the cost range (e.g. \"3-10 SP\") on the card label; hover for the full tooltip explaining what scales. Cards light up if you can afford the floor, not just the ceiling")
+	display_game("  • [b]Goal: no card is ever a brick.[/b] If you've got even 3 stamina, you can fire off a Power Strike. The system spends what you have and gives you proportional effect. Buffs and mage/trickster abilities follow in later slices")
+	display_game("")
+
 	# v0.9.258 changes
-	display_game("[color=#00FF00]v0.9.258[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.258[/color]")
 	display_game("  [color=#FFD700]Trickster ability descriptions — corrected against impl (Audit #1)[/color]")
 	display_game("  • [b]Analyze[/b] tooltip now lists its headline effect (was missing): grants [color=#FFFF00]+10%% damage to all attacks for the rest of this combat[/color], and reveals the outsmart chance against this specific monster")
 	display_game("  • [b]Pickpocket[/b] description was wrong — claimed to steal \"WITS × 10 gold\", actually steals [color=#FFD700]1-4 tier-scaled ore[/color] (Copper at T1 up to Primordial at T9). 1-3 pockets per fight; success scales WITS vs monster INT")
@@ -22462,13 +22492,6 @@ func display_changelog():
 	display_game("  • From local browse, slot 6 toggles to Network. From network, slot 6 toggles back to Local. Inspect any listing to see full item details + a 'travel to <post>' hint")
 	display_game("")
 
-	# v0.9.254 changes
-	display_game("[color=#00FFFF]v0.9.254[/color]")
-	display_game("  [color=#FFD700]Crafting transparency — material → source hints (Audit #7/#8 Slice)[/color]")
-	display_game("  • [b]Where do I find this?[/b] Open a recipe in any crafting station. Under each ingredient line you'll now see a [color=#808080]from: …[/color] hint listing every place that drops it: Mining T3 (40%), Foraging T2 (10%), T2 Monsters (15%), and so on")
-	display_game("  • Server walks the four gathering tables (Fishing/Mining/Logging/Foraging) plus the monster crafting-drop tables and ships the source map alongside the recipe list — one round trip, all recipes covered")
-	display_game("  • Solves a long-standing 'why is this gated behind a material I've never seen?' problem. Specialist crafters can now scan a recipe and immediately know which gathering skill or monster tier to chase")
-	display_game("")
 
 
 
