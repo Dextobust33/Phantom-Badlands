@@ -21983,8 +21983,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.243 changes
+	display_game("[color=#00FF00]v0.9.243[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Boss signatures — first cut (Audit #5 Slice 1)[/color]")
+	display_game("  • [b]Skeleton Lord[/b] (Forgotten Crypt T1) gets [color=#FFAA00]Death Defiance[/color]: when defeated for the first time, the boss crumbles to dust, then bones rise once more at 50% HP. Once per fight — kill it again to actually win. Telegraphs in chat so you know to expect a second phase")
+	display_game("  • [b]Spider Queen[/b] (Spider Nest T2) gets [color=#A335EE]Constricting Web[/color] (replacing the old Web Trap slow): 25% chance per hit to ensnare you. Webbed = skip your next turn. WIS softens the chance (floor 10%) — high-wisdom builds get a real edge here. Re-rollable on future hits, so the queen can lock you down repeatedly if you stay in range")
+	display_game("  • Slice 1 deliberately small: 2 bosses, 2 distinct mechanics. The audit's full target is one signature mechanic per boss across the 53 dungeon roster — more land in future slices, prioritized by what players see most")
+	display_game("")
+
 	# v0.9.242 changes
-	display_game("[color=#00FF00]v0.9.242[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.242[/color]")
 	display_game("  [color=#FFD700]Sanctuary mastery headstarts (Slice 3)[/color]")
 	display_game("  • [b]Spend Baddie Points[/b] in the Sanctuary to start your next character with rank already in an ability. New \"Mastery\" button on the Sanctuary main view (lights up once you have any record). Lists every ability you've ranked up on a previous character with the cost to bump it +1 rank for the next life")
 	display_game("  • [b]Steep curve, hard cap:[/b] R1=25 BP, R2=100 BP, R3=500 BP — 625 BP cumulative for one ability fully maxed-headstart. Capped at R3 (Skilled) — R4 (Master) is always earned through play, so dying still has bite")
@@ -22013,11 +22021,6 @@ func display_changelog():
 	display_game("  • [b]Equipped abilities slots[/b] now hide non-combat abilities like Teleport. If you've slotted Teleport in your loadout for the overworld, it won't take up a combat-bar slot anymore — that slot just shows --- during fights and your Teleport popup still works the same outside combat")
 	display_game("")
 
-	# v0.9.238 changes
-	display_game("[color=#00FFFF]v0.9.238[/color]")
-	display_game("  [color=#FFD700]Hotfix — player ASCII art restored in launcher builds[/color]")
-	display_game("  • The 9 class ASCII portraits (Fighter, Wizard, Thief, etc.) weren't being packed into launcher builds, so the battle scene fell back to the LPC sprite and inspect / status / character sheet / hover popup all came back blank. Dev mode read them straight off disk so the bug only showed up on shipped builds. Export filter now explicitly includes the .txt portraits — your class face is back everywhere it should be")
-	display_game("")
 
 
 

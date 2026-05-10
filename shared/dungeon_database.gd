@@ -243,7 +243,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.4,
-			"abilities": ["Bone Shield", "Rattling Strike"]
+			"abilities": ["Bone Shield", "Rattling Strike", "Death Defiance"]
 		},
 		"boss_egg": "Skeleton",
 		"floors": 3,
@@ -299,7 +299,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.3,
 			"attack_mult": 1.3,
-			"abilities": ["Web Trap", "Venomous Bite"]
+			"abilities": ["Constricting Web", "Venomous Bite"]
 		},
 		"boss_egg": "Giant Spider",
 		"floors": 4,
