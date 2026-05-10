@@ -21988,8 +21988,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.253 changes
+	display_game("[color=#00FF00]v0.9.253[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three T2 quest chains — Audit #6 Slice 4[/color]")
+	display_game("  • [b]Hobgoblin Discipline[/b] (South Gate, 3-stage T2): Kill 5 Hobgoblins → Kill 6 Goblins → Slay Hobgoblin Commander. 400 valor + Hobgoblin Egg. Description warns about Iron Discipline (every 5 turns the boss heals + clears debuffs)")
+	display_game("  • [b]Mimic Hunt[/b] (West Shrine, 2-stage T2): Kill 4 Mimics → Slay the Grand Mimic. 400 valor + Mimic Egg. Description telegraphs the Treasure Decoy first-attack crit")
+	display_game("  • [b]Barrow's Curse[/b] (South Gate, 2-stage T2): Kill 5 Wights → Slay the Barrow Wight. 400 valor + Wight Egg")
+	display_game("  • [b]10 chains shipped[/b] across 7 trading posts. Each T2 chain's final stage references its boss's signature mechanic from the dungeon audit slices, so you can plan your build before you walk in")
+	display_game("")
+
 	# v0.9.252 changes
-	display_game("[color=#00FF00]v0.9.252[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.252[/color]")
 	display_game("  [color=#FFD700]Three more quest chains — all T1 bosses now have chains (Audit #6 Slice 3)[/color]")
 	display_game("  • [b]Rat Plague[/b] (Haven, 2-stage): Kill 6 Giant Rats → Slay the Rat King. 200 valor + Giant Rat Egg")
 	display_game("  • [b]Kobold Trouble[/b] (Crossroads, 2-stage): Kill 5 Kobolds → Slay the Kobold Chieftain. 200 valor + Kobold Egg")
@@ -22021,12 +22030,6 @@ func display_changelog():
 	display_game("  • All 5 T1 dungeons + 3 T2 dungeons now have signature boss mechanics. 7 down, ~46 to go")
 	display_game("")
 
-	# v0.9.248 changes
-	display_game("[color=#00FFFF]v0.9.248[/color]")
-	display_game("  [color=#FFD700]Spider Nest gets webbed tiles — theme tags Slice 1[/color]")
-	display_game("  • [b]Spider Nest dungeons[/b] now have [color=#A335EE]w[/color] tiles scattered through the floors — clinging webs that cost an [b]extra step[/b] to wade through. Step pressure was previously easy to ignore; the Spider Nest now has a real mechanical texture distinct from other T2 dungeons. Plan your route around the webs or burn extra steps")
-	display_game("  • This is the first cut of the audit's [b]theme tags[/b] system: each dungeon gets one or two reusable mechanical themes (Forgotten Crypt skeleton revives, Mimic Treasury chests-that-bite, Plague Graveyard poison auras, Harpy Cliffs falling tiles). Future slices add more — pattern is in place")
-	display_game("")
 
 
 
