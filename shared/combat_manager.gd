@@ -2583,11 +2583,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if damage_buff > 0:
 				base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
-			# Apply skill enhancement damage bonus
-			var enhanced_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage)
-			if enhanced_damage > base_damage:
-				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(character.get_skill_damage_bonus("magic_bolt")))
-				base_damage = enhanced_damage
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var magic_bolt_skill_bonus = character.get_skill_damage_bonus("magic_bolt")
+			base_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage)
+			if magic_bolt_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(magic_bolt_skill_bonus))
 
 			# === CLASS PASSIVE: Wizard Arcane Precision ===
 			# +15% spell damage
@@ -2666,6 +2666,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var blast_skill_bonus = character.get_skill_damage_bonus("blast")
+			base_damage = apply_skill_damage_bonus(character, "blast", base_damage)
+			if blast_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(blast_skill_bonus))
+
 			# === CLASS PASSIVE: Wizard Arcane Precision ===
 			if passive_effects.has("spell_damage_bonus"):
 				base_damage = int(base_damage * (1.0 + passive_effects.get("spell_damage_bonus", 0)))
@@ -2743,6 +2749,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var base_damage = int(100 * int_multiplier * meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
+
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var meteor_skill_bonus = character.get_skill_damage_bonus("meteor")
+			base_damage = apply_skill_damage_bonus(character, "meteor", base_damage)
+			if meteor_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(meteor_skill_bonus))
 
 			# === CLASS PASSIVE: Wizard Arcane Precision ===
 			if passive_effects.has("spell_damage_bonus"):
@@ -2892,11 +2904,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)  # Sqrt scaling
 			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult)  # 2Ã— (was 1.5Ã—)
-			# Apply skill enhancement damage bonus
-			var enhanced_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
-			if enhanced_dmg > base_dmg:
-				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(character.get_skill_damage_bonus("power_strike")))
-				base_dmg = enhanced_dmg
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var ps_skill_bonus = character.get_skill_damage_bonus("power_strike")
+			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
+			if ps_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ps_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2916,6 +2928,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
 			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult)
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var sb_skill_bonus = character.get_skill_damage_bonus("shield_bash")
+			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg)
+			if sb_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(sb_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2938,6 +2955,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
 			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult)  # 2.5Ã— (was 2Ã—)
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var cleave_skill_bonus = character.get_skill_damage_bonus("cleave")
+			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg)
+			if cleave_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(cleave_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -2972,6 +2994,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
 			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult)  # 5Ã— (was 4Ã—)
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var dev_skill_bonus = character.get_skill_damage_bonus("devastate")
+			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg)
+			if dev_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(dev_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
@@ -3149,6 +3176,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
 			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult)  # 3Ã— multiplier
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
+			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg)
+			if ambush_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ambush_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
@@ -3173,8 +3205,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var wits = character.get_effective_stat("wits")
 			var base_percent = 15 + int(wits / 4)  # 15% base + 0.25% per WIT
 			base_percent = min(35, base_percent)  # Cap at 35%
-			var damage = int(monster.max_hp * (base_percent / 100.0))
-			damage = max(10, damage)  # Minimum 10 damage
+			var raw_damage = int(monster.max_hp * (base_percent / 100.0))
+			raw_damage = max(10, raw_damage)  # Minimum 10 damage
+			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			var exploit_skill_bonus = character.get_skill_damage_bonus("exploit")
+			var damage = apply_skill_damage_bonus(character, "exploit", raw_damage)
+			if exploit_skill_bonus > 0:
+				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(exploit_skill_bonus))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#00FF00]EXPLOIT WEAKNESS![/color]")
@@ -3300,6 +3337,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
 				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult)
+				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
+				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg)
+				if gambit_skill_bonus > 0:
+					messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(gambit_skill_bonus))
 				var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 				var damage = apply_damage_variance(mod_dmg)
 				monster.current_hp -= damage
