@@ -36,8 +36,73 @@ enum QuestType {
 #   "prerequisite": String (quest_id that must be completed first, or empty)
 # }
 
-# Legacy static quests removed — all quests are now dynamically generated per-post per-day
-const QUESTS = {}
+# Audit #6 Slice 1 — Quest chains. Each chain is a sequence of static quest
+# definitions linked by `next_in_chain`. Stage 1 quests are offered at the
+# named trading post; later stages are auto-added to active_quests when the
+# previous stage is turned in. Chains are one-shot per character: completing
+# the final stage marks the chain as done in completed_chains.
+#
+# Schema additions for chain quests:
+#   chain_id:    String — chain identifier
+#   chain_stage: int — current stage (1-indexed)
+#   chain_total: int — total stages in the chain
+#   next_in_chain: String — quest_id of the next stage (empty on final)
+#   chain_bonus: Dictionary — extra rewards on top of base, granted only on
+#                final-stage turn-in. Currently {valor, gold, item_type, ...}
+const QUESTS = {
+	"goblin_menace_1": {
+		"id": "goblin_menace_1",
+		"name": "The Goblin Menace I — Cull the Pests",
+		"description": "Goblin scouts have been spotted near Haven. Cull 5 of them to send a message.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 300 valor + Goblin Egg[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"target": 5,
+		"monster_type": "Goblin",
+		"rewards": {"xp": 150, "valor": 25},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "goblin_menace",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "goblin_menace_2",
+		"chain_bonus": {}
+	},
+	"goblin_menace_2": {
+		"id": "goblin_menace_2",
+		"name": "The Goblin Menace II — Break the Vanguard",
+		"description": "The goblins have called in their hobgoblin lieutenants. Defeat 3 hobgoblins to break their vanguard.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 300 valor + Goblin Egg[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "haven",
+		"target": 3,
+		"monster_type": "Hobgoblin",
+		"rewards": {"xp": 280, "valor": 40},
+		"is_daily": false,
+		"prerequisite": "goblin_menace_1",
+		"chain_id": "goblin_menace",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "goblin_menace_3",
+		"chain_bonus": {}
+	},
+	"goblin_menace_3": {
+		"id": "goblin_menace_3",
+		"name": "The Goblin Menace III — Slay the King",
+		"description": "Their king rallies the warbands from the Goblin Caves. Find the dungeon and slay the Goblin King to end the threat.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 300 valor + Goblin Egg[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "haven",
+		"target": 1,
+		"bounty_name": "Goblin King",
+		"rewards": {"xp": 500, "valor": 60},
+		"is_daily": false,
+		"prerequisite": "goblin_menace_2",
+		"chain_id": "goblin_menace",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		# Bonus dispensed on top of base rewards on final-stage turn-in
+		"chain_bonus": {"valor": 240, "egg": "Goblin"}
+	}
+}
 
 # NOTE: ~780 lines of static quest definitions were removed. All quests now dynamically
 # generated per-post per-day. Old enum values KILL_TYPE=1, KILL_LEVEL=2 preserved for
@@ -199,6 +264,34 @@ func _regenerate_dynamic_quest(quest_id: String, player_level: int = -1, quests_
 
 	# Fallback to unscaled version (for backward compatibility)
 	return _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
+
+func get_chain_starters_for_post(trading_post_id: String, completed_chains: Array, active_quest_ids: Array, completed_quests: Array) -> Array:
+	"""Audit #6 Slice 1 — return chain stage-1 quests available at this post.
+	Filters out chains the character has already completed or already started
+	(i.e., is currently doing some stage of the chain)."""
+	var available: Array = []
+	for quest_id in QUESTS:
+		var quest = QUESTS[quest_id]
+		if quest.get("chain_stage", 0) != 1:
+			continue
+		if quest.get("trading_post", "") != trading_post_id:
+			continue
+		var chain_id = String(quest.get("chain_id", ""))
+		if chain_id in completed_chains:
+			continue
+		# Skip if any stage of this chain is currently active or already completed
+		var chain_in_progress = false
+		for other_id in QUESTS:
+			var other = QUESTS[other_id]
+			if String(other.get("chain_id", "")) != chain_id:
+				continue
+			if other_id in active_quest_ids or other_id in completed_quests:
+				chain_in_progress = true
+				break
+		if chain_in_progress:
+			continue
+		available.append(quest.duplicate(true))
+	return available
 
 func get_quests_for_trading_post(trading_post_id: String) -> Array:
 	"""Get all quests offered at a specific Trading Post (with scaled rewards)."""

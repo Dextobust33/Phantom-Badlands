@@ -9764,6 +9764,12 @@ func handle_trading_post_quests(peer_id: int):
 	var available_quests = quest_db.get_available_quests_for_player(
 		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
+	# Audit #6 Slice 1 — append chain starters available at this post
+	var chain_starters = quest_db.get_chain_starters_for_post(
+		tp.id, character.completed_chains, active_quest_ids, character.completed_quests)
+	for chain_quest in chain_starters:
+		available_quests.append(chain_quest)
+
 	# No locked quests with dynamic-only system (no static prerequisite chains)
 	var locked_quests = []
 
@@ -11211,6 +11217,41 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 	if result.success:
 		# Award valor via persistence (quest_manager no longer handles this)
 		var valor_reward = result.rewards.get("valor", 0)
+
+		# Audit #6 Slice 1 — chain bonus on final-stage turn-in
+		var chain_id = String(quest.get("chain_id", ""))
+		var chain_stage = int(quest.get("chain_stage", 0))
+		var chain_total = int(quest.get("chain_total", 0))
+		var next_in_chain = String(quest.get("next_in_chain", ""))
+		var chain_progress_msg = ""
+		var chain_completed = false
+		if chain_id != "":
+			if chain_stage > 0 and chain_stage == chain_total:
+				# Final stage — grant chain bonus on top of base reward
+				var bonus = quest.get("chain_bonus", {})
+				var bonus_valor = int(bonus.get("valor", 0))
+				if bonus_valor > 0:
+					valor_reward += bonus_valor
+					chain_progress_msg += "[color=#FFD700]Chain bonus: +%d valor[/color]\n" % bonus_valor
+				var bonus_egg = String(bonus.get("egg", ""))
+				if bonus_egg != "" and drop_tables:
+					var egg = drop_tables.get_egg_for_monster(bonus_egg)
+					if not egg.is_empty():
+						character.add_item(egg)
+						chain_progress_msg += "[color=#9ACD32]Chain bonus: %s acquired![/color]\n" % egg.get("name", "Egg")
+				if chain_id not in character.completed_chains:
+					character.completed_chains.append(chain_id)
+				chain_completed = true
+				chain_progress_msg += "[color=#FFD700]Chain complete: %s![/color]" % chain_id.replace("_", " ").capitalize()
+			elif next_in_chain != "":
+				# Mid-chain — auto-add the next stage to active quests
+				var next_quest = quest_db.get_quest(next_in_chain)
+				if not next_quest.is_empty():
+					var next_target = int(next_quest.get("target", 1))
+					var ndesc = String(next_quest.get("description", ""))
+					character.add_quest(next_in_chain, next_target, character.x, character.y, ndesc, character.level, 0, {})
+					chain_progress_msg = "[color=#FFAA00]Chain advances! Next: %s[/color]" % next_quest.get("name", "")
+
 		if valor_reward > 0 and peers.has(peer_id):
 			persistence.add_valor(peers[peer_id].account_id, valor_reward)
 
@@ -11219,15 +11260,21 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		if result.leveled_up:
 			unlocked_abilities = character.get_newly_unlocked_abilities(old_level, result.new_level)
 
+		# Stitch chain progress message into the result message
+		var full_msg = result.message
+		if chain_progress_msg != "":
+			full_msg += "\n" + chain_progress_msg
+
 		send_to_peer(peer_id, {
 			"type": "quest_turned_in",
 			"quest_id": quest_id,
 			"quest_name": quest.get("name", "Quest"),
-			"message": result.message,
+			"message": full_msg,
 			"rewards": result.rewards,
 			"leveled_up": result.leveled_up,
 			"new_level": result.new_level,
-			"unlocked_abilities": unlocked_abilities
+			"unlocked_abilities": unlocked_abilities,
+			"chain_completed": chain_completed
 		})
 		# Check for Elder auto-grant (level 1000)
 		check_elder_auto_grant(peer_id)
