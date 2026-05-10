@@ -66,6 +66,7 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"ambush":       {"ceiling": 30, "floor_ratio": 0.3, "resource": "energy"},
 	"exploit":      {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
+	"forcefield":   {"ceiling": 20, "cost_percent": 2, "floor_ratio": 0.3, "resource": "mana"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -2839,11 +2840,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF6600]The target is burning! (%d damage/round for 3 rounds)[/color]" % burn_damage)
 
 		"forcefield":
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			# Forcefield provides flat damage absorption = 100 + INT Ã— 8 (high scaling)
+			# Variable cost (v0.9.262) — apply_variable_cost helper above has
+			# spent the mana and set variable_fraction. Shield magnitude scales
+			# with spend: full = 100 + INT × 8; floor = 30% of that.
 			var int_stat = character.get_effective_stat("intelligence")
-			var shield_value = 100 + (int_stat * 8)
+			var shield_value = int((100 + (int_stat * 8)) * variable_fraction)
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 			is_buff_ability = true

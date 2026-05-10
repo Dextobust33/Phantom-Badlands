@@ -10101,10 +10101,10 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	var ability_defs = {
 		# Mage abilities - use percentage-based scaling
 		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
-		# Slice 6c — blast + meteor are variable-cost (floor = 30% of ceiling)
+		# Variable-cost mage abilities (floor = 30% of ceiling)
 		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
-		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Alias for forcefield
-		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Buffed, replaces Shield
+		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},  # Alias for forcefield
+		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
@@ -15299,7 +15299,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
 		"cloak": return "75% chance to escape combat. Costs 8% of your max class resource. Requires Lv 20."
 		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
-		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until the shield is depleted."
+		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until depleted. Variable cost (≈30% of mana pool max) — shield magnitude scales with spend (partial cast = smaller shield)."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
 		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
 		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits."
@@ -15556,7 +15556,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=#9932CC](8%% per move)[/color]"
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -22431,8 +22431,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.262 changes
+	display_game("[color=#00FF00]v0.9.262[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Forcefield (Audit #1)[/color]")
+	display_game("  • [b]Forcefield is now variable-cost.[/b] Ceiling 20 mana (or 2%% max mana, whichever is higher); floor ≈ 30%% of that. Shield magnitude scales linearly with spend — a partial cast = a smaller shield, but it still soaks something")
+	display_game("  • Useful when you're low on mana mid-fight: instead of skipping Forcefield entirely, you can cast a partial one and still tank the next big hit (just not as much of it)")
+	display_game("  • 10/23 abilities done. Coming next: Warrior buffs (War Cry / Iron Skin / Berserk / Fortify / Rally — the hard design slice, since each buff has to decide between scaling magnitude OR duration on partial cast)")
+	display_game("")
+
 	# v0.9.261 changes
-	display_game("[color=#00FF00]v0.9.261[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.261[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Trickster damage (Audit #1)[/color]")
 	display_game("  • [b]Ambush, Exploit, and Gambit are now variable-cost.[/b] Ambush 9-30 energy, Exploit 10-35, Gambit 10-35. Same auto-spend pattern: press the key, system spends what you have up to the ceiling, damage scales 30%%-100%% with spend")
 	display_game("  • [b]Ambush crit chance stays at 50%%[/b] regardless of spend — a partial ambush still has the full crit potential. Only the base damage scales")
@@ -22476,15 +22484,6 @@ func display_changelog():
 	display_game("  • Distract / Ambush descriptions verified accurate — no change needed. Combined with v0.9.256's ~19 ability audit, [color=#FFD700]all 24 in-game abilities now have descriptions that match the implementation[/color]")
 	display_game("")
 
-	# v0.9.257 changes
-	display_game("[color=#00FFFF]v0.9.257[/color]")
-	display_game("  [color=#FFD700]Persistent deck + player-choice rank-up — Slice 6b (Audit #1)[/color]")
-	display_game("  • [b]Decks persist across combats[/b] now. Your combat hand is no longer rebuilt fresh each fight — it's drawn from a per-character collection that starts as 1 of each accessible ability and grows from rank-up choices")
-	display_game("  • [b]Rank-up choice popup[/b] — when an ability ranks up mid-combat, a modal pauses input and offers two paths: [color=#87CEEB]+1 Card[/color] (add another copy to your deck, so that ability shows up more often) or [color=#FFB6C1]+10%% Damage[/color] (advance the damage-modifier curve toward Master). Slay-the-Spire-style customization — your Magic Bolt can diverge from another player's Magic Bolt over time")
-	display_game("  • [b]Damage is now decoupled from use rank[/b]. The mastery rank (Untrained → Master) still tracks raw uses, but the damage multiplier only advances if you picked the \"+10%% Damage\" branch. Existing characters migrate cleanly: your current rank's damage modifier is preserved")
-	display_game("  • [b]Tooltip preview shows both branches[/b] — hover any card to see what each rank-up will unlock (current deck size → +1, or current damage modifier → next %%). Plan your investments before the popup pops")
-	display_game("  • [b]Pending choices survive disconnect[/b] — if you log off mid-combat right after a rank-up, the popup re-appears next time you log in. Choices that aren't picked queue up; chained rank-ups in one fight will pop one after the other")
-	display_game("")
 
 
 
