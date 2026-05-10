@@ -10107,9 +10107,9 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "cost_floor_ratio": 0.3, "resource_type": "mana"},
-		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
-		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "resource_type": "mana"},
-		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "resource_type": "mana"},
+		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
 		# (floor = ceiling × ratio, after all cost modifiers).
 		"power_strike": {"display": "Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
@@ -15302,9 +15302,9 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until depleted. Variable cost (≈30% of mana pool max) — shield magnitude scales with spend (partial cast = smaller shield)."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
 		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
-		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits."
-		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC."
-		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish."
+		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits. Variable cost (≈30% of mana pool max) — speed magnitude scales with spend; duration stays 5 rounds."
+		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC. Variable cost (≈30% of mana pool max) — stun CHANCE scales with spend (duration stays 1-2 turns if it lands)."
+		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish. Variable cost (≈30% of mana pool max) — banish CHANCE scales with spend; loot-drop chance stays 50% (bonus outcome)."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
 		"war_cry": return "+35% damage for 4 rounds (self buff). Variable cost 5-15 stamina — damage bonus scales with spend; duration stays 4 rounds."
 		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
@@ -15556,7 +15556,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=#9932CC](8%% per move)[/color]"
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -22431,8 +22431,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.264 changes
+	display_game("[color=#00FF00]v0.9.264[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Mage CC (Audit #1)[/color]")
+	display_game("  • [b]Haste, Paralyze, and Banish are now variable-cost.[/b] New design rule emerges: chance-based abilities scale the CHANCE, not the magnitude. Haste is the odd one out — speed bonus is a magnitude, so it scales like the warrior buffs")
+	display_game("  • [b]Haste[/b] floor ≈30%% mana cost. Speed bonus scales (e.g. +25%% at full → +7%% at floor for INT 25). Duration stays 5 rounds")
+	display_game("  • [b]Paralyze[/b] floor ≈30%%. Stun chance scales with spend (still capped 85%%, floored at 10%%). Duration stays 1-2 turns if the stun lands")
+	display_game("  • [b]Banish[/b] floor ≈30%%. Banish chance scales (40-75%% × spend). The 50%% loot-drop chance on successful banish stays constant — bonus outcomes don't scale, only the headline mechanic does")
+	display_game("  • 18/23 abilities done. Coming next: Trickster utility (Pickpocket / Sabotage / Distract / Perfect Heist) — the last batch")
+	display_game("")
+
 	# v0.9.263 changes
-	display_game("[color=#00FF00]v0.9.263[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.263[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Warrior buffs (Audit #1)[/color]")
 	display_game("  • [b]War Cry / Iron Skin / Berserk / Fortify / Rally are all variable-cost now.[/b] Same auto-spend pattern; floors are ≈30%% of ceiling. Locked design choice: [b]magnitude scales with spend, duration stays full[/b] — so a partial buff still feels real for the full round count, just at lower power")
 	display_game("  • [b]War Cry[/b] 5-15 stamina. +35%% damage at full → +10%% damage at floor. Both for 4 rounds")
@@ -22473,16 +22483,6 @@ func display_changelog():
 	display_game("  • 6/23 abilities done. Coming next: Trickster damage (Ambush / Gambit / Exploit), then Warrior buffs (the harder design work — \"weaker for less\" on duration/magnitude)")
 	display_game("")
 
-	# v0.9.259 changes
-	display_game("[color=#00FFFF]v0.9.259[/color]")
-	display_game("  [color=#FFD700]Variable-cost rework — Warrior damage pilot (Audit #1)[/color]")
-	display_game("  • [b]Power Strike / Shield Bash / Cleave / Devastate are now variable-cost[/b]. Each has a floor and ceiling — Power Strike 3-10 stamina, Shield Bash 6-20, Cleave 9-30, Devastate 15-50. Spend the ceiling for full effect; spend the floor for 30%% effect; linear scaling between")
-	display_game("  • [b]Auto-spend max-affordable.[/b] Press the key, the system spends whatever you can afford up to the ceiling. No new prompt or slider — you don't need to micromanage. The card lights up if you can afford the floor")
-	display_game("  • [b]Secondary effects scale too.[/b] Shield Bash stun chance scales with spend (no more full-power stun on a partial cast). Cleave bleed damage scales with spend (duration stays 4 rounds)")
-	display_game("  • [b]Partial-cast banner.[/b] When you spend below the ceiling, the combat log shows \"Partial cast — N/M stamina (X%% effect).\" so you can see what you got")
-	display_game("  • [b]Card UI[/b] shows the cost range (e.g. \"3-10 SP\") on the card label; hover for the full tooltip explaining what scales. Cards light up if you can afford the floor, not just the ceiling")
-	display_game("  • [b]Goal: no card is ever a brick.[/b] If you've got even 3 stamina, you can fire off a Power Strike. The system spends what you have and gives you proportional effect. Buffs and mage/trickster abilities follow in later slices")
-	display_game("")
 
 
 

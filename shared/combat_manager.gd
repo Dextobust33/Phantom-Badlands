@@ -73,6 +73,10 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"iron_skin":    {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
 	"rally":        {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
 	"berserk":      {"ceiling": 40, "floor_ratio": 0.3, "resource": "stamina"},
+	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
+	"haste":        {"ceiling": 35, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},
+	"paralyze":     {"ceiling": 60, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},
+	"banish":       {"ceiling": 80, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -2915,24 +2919,23 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF4444]A massive meteor crashes down for %d damage![/color]" % damage)
 
 		"haste":
-			# Speed buff - reduces monster attacks and increases player dodge
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			var speed_bonus = 20 + int(character.get_effective_stat("intelligence") / 5)
+			# Speed buff - reduces monster attacks and increases player dodge.
+			# Variable cost (v0.9.264): magnitude scales, duration stays 5 rounds.
+			var speed_bonus = max(1, int((20 + character.get_effective_stat("intelligence") / 5) * variable_fraction))
 			character.add_buff("speed", speed_bonus, 5)
 			combat["haste_active"] = true
 			messages.append("[color=#00FFFF]You cast Haste! (+%d%% speed for 5 rounds)[/color]" % speed_bonus)
 			is_buff_ability = true
 
 		"paralyze":
-			# Attempt to stun monster for 1-2 turns, with diminishing returns
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			# Attempt to stun monster for 1-2 turns, with diminishing returns.
+			# Variable cost (v0.9.264): stun CHANCE scales with spend (chance-based
+			# rule). Duration stays 1-2 turns if it lands; floor still has 10% floor.
 			var int_stat = character.get_effective_stat("intelligence")
 			var cc_resist = combat.get("cc_resistance", 0)
 			var resist_penalty = cc_resist * 20  # -20% per prior CC
-			var success_chance = mini(85, 50 + int(int_stat / 2)) - resist_penalty
-			success_chance = maxi(10, success_chance)  # 10% floor for Paralyze
+			var raw_chance = mini(85, 50 + int(int_stat / 2)) - resist_penalty
+			var success_chance = maxi(10, int(raw_chance * variable_fraction))  # 10% floor for Paralyze
 			if randf() * 100 < success_chance:
 				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
 				combat["monster_stunned"] = stun_duration
@@ -2945,12 +2948,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 20))
 
 		"banish":
-			# Attempt to remove monster from combat with 50% loot chance
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
+			# Attempt to remove monster from combat with 50% loot chance.
+			# Variable cost (v0.9.264): banish CHANCE scales with spend. Loot
+			# drop chance stays 50% (binary bonus outcome, not the headline).
 			var int_stat = character.get_effective_stat("intelligence")
-			var success_chance = 40 + int(int_stat / 3)  # 40% base + 0.33% per INT
-			success_chance = min(75, success_chance)  # Cap at 75%
+			var raw_chance = min(75, 40 + int(int_stat / 3))  # 40% base + 0.33% per INT, cap 75%
+			var success_chance = int(raw_chance * variable_fraction)
 			if randf() * 100 < success_chance:
 				messages.append("[color=#FF00FF]You banish the %s to another dimension![/color]" % monster.name)
 				# 50% chance to get loot from banished monster
