@@ -9657,10 +9657,52 @@ func _has_usable_combat_items() -> bool:
 	"""Check if player has any usable items for combat (potions/elixirs)."""
 	var inventory = character_data.get("inventory", [])
 	for item in inventory:
-		var item_type = item.get("type", "")
-		if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type:
+		if _is_combat_usable_item(item):
 			return true
 	return false
+
+func _is_combat_usable_item(item: Dictionary) -> bool:
+	"""True iff this consumable should be offered in the combat 'Use Item' menu.
+	Filters out out-of-combat utilities (home stones, treasure chests, building
+	kits, monster-select scrolls) that pass the broad consumable check but have
+	no combat effect."""
+	var base_type := str(item.get("type", ""))
+	var sub_type := str(item.get("item_type", ""))
+	var is_consumable: bool = bool(item.get("is_consumable", false))
+
+	# Broad allow gate (matches the legacy filter)
+	var passes_consumable_gate: bool = is_consumable \
+		or "potion" in base_type \
+		or "elixir" in base_type \
+		or base_type.begins_with("gold_") \
+		or base_type.begins_with("gem_") \
+		or base_type.begins_with("scroll_") \
+		or base_type.begins_with("mana_") \
+		or base_type.begins_with("stamina_") \
+		or base_type.begins_with("energy_")
+	if not passes_consumable_gate:
+		return false
+
+	# Out-of-combat utilities — deny even though they're "consumable"
+	if sub_type.begins_with("home_stone_") or base_type.begins_with("home_stone_"):
+		return false
+	if base_type == "treasure_chest" or sub_type == "treasure_chest":
+		return false
+	if sub_type == "scroll_monster_select" or base_type == "scroll_monster_select":
+		return false
+	if base_type == "tool" or base_type == "rune" or base_type == "structure":
+		return false
+	if "kit" in sub_type or "kit" in base_type:
+		return false
+	return true
+
+# Abilities marked non_combat in shared/character.gd. Mirrored here so the
+# combat action bar can hide them — equip slots can hold them, but they only
+# fire from the dedicated overworld trigger (e.g. Teleport popup).
+const NON_COMBAT_ABILITIES = ["teleport"]
+
+func _is_non_combat_ability(ability_name: String) -> bool:
+	return ability_name in NON_COMBAT_ABILITIES
 
 func _get_player_active_path() -> String:
 	"""Determine player's active path based on class type."""
@@ -9726,6 +9768,17 @@ func _get_combat_ability_actions() -> Array:
 				var cost = slot[3]
 				var resource_type = slot[4]
 
+				if _is_non_combat_ability(command):
+					abilities.append({
+						"label": "---",
+						"action_type": "none",
+						"action_data": "",
+						"enabled": false,
+						"cost": 0,
+						"resource_type": ""
+					})
+					continue
+
 				if player_level >= required_level:
 					var has_resource = true
 					if resource_type == "mana" and cost > 0:
@@ -9767,6 +9820,17 @@ func _get_combat_ability_actions() -> Array:
 	for i in range(6):
 		if i < equipped_abilities.size() and equipped_abilities[i] != "" and equipped_abilities[i] != null:
 			var ability_name = equipped_abilities[i]
+			# Hide non-combat abilities (e.g. Teleport) from the combat action bar
+			if _is_non_combat_ability(ability_name):
+				abilities.append({
+					"label": "---",
+					"action_type": "none",
+					"action_data": "",
+					"enabled": false,
+					"cost": 0,
+					"resource_type": ""
+				})
+				continue
 			var ability_info = _get_ability_combat_info(ability_name, path)
 
 			if ability_info.is_empty():
@@ -9904,10 +9968,7 @@ func show_combat_item_menu():
 
 	for i in range(inventory.size()):
 		var item = inventory[i]
-		var item_type = item.get("type", "")
-		# Include all consumable types: potions, elixirs, gold pouches, gems, scrolls, resource potions
-		# Also check the is_consumable flag as a fallback
-		if item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_"):
+		if _is_combat_usable_item(item):
 			usable_items.append({"index": i, "item": item})
 
 	if usable_items.is_empty():
@@ -21829,8 +21890,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.239 changes
+	display_game("[color=#00FF00]v0.9.239[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat action bar — strip out non-combat noise[/color]")
+	display_game("  • [b]\"Use Item\" in combat[/b] no longer surfaces out-of-combat utilities. Home Stones, Treasure Chests, building kits, tools, runes, monster-select scrolls — all hidden mid-fight. You'll still see healing potions, resource potions, buff scrolls, escape scrolls, elixirs, gold/gem pouches, tomes — anything that actually does something with the combat tick")
+	display_game("  • [b]Equipped abilities slots[/b] now hide non-combat abilities like Teleport. If you've slotted Teleport in your loadout for the overworld, it won't take up a combat-bar slot anymore — that slot just shows --- during fights and your Teleport popup still works the same outside combat")
+	display_game("")
+
 	# v0.9.238 changes
-	display_game("[color=#00FF00]v0.9.238[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.238[/color]")
 	display_game("  [color=#FFD700]Hotfix — player ASCII art restored in launcher builds[/color]")
 	display_game("  • The 9 class ASCII portraits (Fighter, Wizard, Thief, etc.) weren't being packed into launcher builds, so the battle scene fell back to the LPC sprite and inspect / status / character sheet / hover popup all came back blank. Dev mode read them straight off disk so the bug only showed up on shipped builds. Export filter now explicitly includes the .txt portraits — your class face is back everywhere it should be")
 	display_game("")
@@ -21860,12 +21928,6 @@ func display_changelog():
 	display_game("  • Kits validate against world bounds, NPC post proximity (3-tile buffer), and dungeon entrance proximity before placing — fails cleanly with a hint instead of half-placing near a forbidden zone")
 	display_game("")
 
-	# v0.9.234 changes
-	display_game("[color=#00FFFF]v0.9.234[/color]")
-	display_game("  [color=#FFD700]Spawn at your own posts (Slice 5)[/color]")
-	display_game("  • Character creation now has a Spawn point picker. New characters can choose to spawn at any settler-bubble post owned by your account, instead of always starting at Crossroads. Survives permadeath: if your old character built a post at (250, 0), your next character can spawn right there — useful for keeping a level-friendly home base across deaths")
-	display_game("  • Posts created before this update get account ownership stamped on them automatically when their owning character is still alive. Old orphan posts (owner already dead) stay in the world but can't be spawn points")
-	display_game("")
 
 
 
