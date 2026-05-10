@@ -1021,6 +1021,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
 			handle_combat_use_item(peer_id, message)
+		"rank_choice_response":
+			handle_rank_choice_response(peer_id, message)
 		"wish_select":
 			handle_wish_select(peer_id, message)
 		"continue_flock":
@@ -1618,6 +1620,14 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	if character.backfill_ability_uses_if_needed():
 		persistence.save_character(account_id, character)
 		log_message("Mastery: backfilled archetype ability uses for %s" % char_name)
+
+	# Slice 6b — initialize deck collection + migrate effect ranks for existing
+	# characters so the client tooltip shows the correct damage modifier before
+	# the first combat (the combat init has the same call, but doing it here
+	# means the character_loaded payload already carries the populated dicts).
+	if character.initialize_deck_collection_if_needed():
+		persistence.save_character(account_id, character)
+		log_message("Mastery: initialized combat deck collection for %s" % char_name)
 
 	# Restore quest state from saved quests (survives server restart)
 	for quest_data in character.active_quests:
@@ -3233,6 +3243,19 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if rc_account_id != "":
 			persistence.update_account_mastery_record(rc_account_id, rc.get("ability", ""), int(rc.get("new_rank", 0)))
 
+	# Slice 6b — surface the rank-up choice popup to the client (auto-pause UX).
+	# Client modal blocks input until rank_choice_response is sent. Queue persists
+	# on character.pending_rank_choices so disconnect doesn't drop the choice.
+	if result.has("rank_up_choice_pending"):
+		var rcp = result.rank_up_choice_pending
+		send_to_peer(peer_id, {
+			"type": "rank_up_choice",
+			"ability": rcp.get("ability", ""),
+			"new_rank": int(rcp.get("new_rank", 0)),
+			"current_effect_rank": int(characters[peer_id].ability_effect_ranks.get(rcp.get("ability", ""), 0)) if characters.has(peer_id) else 0,
+			"current_copy_count": int(characters[peer_id].combat_deck_collection.get(rcp.get("ability", ""), 1)) if characters.has(peer_id) else 1,
+		})
+
 	# Accumulate messages in combat log for death screen
 	if combat_mgr.active_combats.has(peer_id):
 		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
@@ -3809,6 +3832,59 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"type": "combat_update",
 			"combat_state": combat_mgr.get_combat_display(peer_id)
 		})
+
+func handle_rank_choice_response(peer_id: int, message: Dictionary):
+	"""Slice 6b — apply the player's rank-up choice. Choice is 'copy'
+	(+1 copy in combat_deck_collection) or 'effect' (+1 ability_effect_ranks).
+	Pops the queued choice. Tolerates client-driven popups for queued choices
+	that were made out-of-combat or replayed after disconnect."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var ability_name = str(message.get("ability", ""))
+	var choice = str(message.get("choice", ""))
+	if ability_name == "" or (choice != "copy" and choice != "effect"):
+		return
+	# Pop the matching queued choice (first entry matching ability+rank). Allow
+	# any matching ability if no rank is provided — robust to client/server lag.
+	var queue: Array = character.pending_rank_choices
+	var matched_idx = -1
+	for i in range(queue.size()):
+		var q = queue[i]
+		if str(q.get("ability", "")) == ability_name:
+			matched_idx = i
+			break
+	if matched_idx < 0:
+		# No queued choice — drop silently. Could be a duplicate response.
+		return
+	character.pending_rank_choices.remove_at(matched_idx)
+	var apply_result = character.apply_rank_choice(ability_name, choice)
+	if not apply_result.get("ok", false):
+		# Choice refused (e.g., ability not currently accessible). Re-queue
+		# isn't safe — just drop and let next rank-up surface a fresh one.
+		send_to_peer(peer_id, {
+			"type": "rank_choice_applied",
+			"ability": ability_name,
+			"choice": choice,
+			"ok": false
+		})
+		return
+	# Send a confirmation event so the client can show the new copy count /
+	# effect rank in the chat log + pop the modal off.
+	send_to_peer(peer_id, {
+		"type": "rank_choice_applied",
+		"ability": ability_name,
+		"choice": choice,
+		"new_copy_count": int(apply_result.get("new_copy_count", 1)),
+		"new_effect_rank": int(apply_result.get("new_effect_rank", 0)),
+		"ok": true,
+		# Pop the next queued choice (if any) so the client can chain popups
+		"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
+	})
+	# Persist immediately so the choice is durable.
+	var rc_account_id = peers.get(peer_id, {}).get("account_id", "")
+	if persistence != null and rc_account_id != "":
+		persistence.save_character(rc_account_id, character)
 
 func handle_combat_use_item(peer_id: int, message: Dictionary):
 	"""Handle using an item during combat"""

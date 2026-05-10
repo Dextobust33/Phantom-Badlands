@@ -15343,7 +15343,11 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20]
 	var rank_name = rank_names[rank] if rank < rank_names.size() else "Master"
-	var mult_pct = int((rank_mults[rank] - 1.0) * 100) if rank < rank_mults.size() else 20
+	# Slice 6b — damage modifier comes from EFFECT rank (player-chosen) not USE rank.
+	# Use rank still drives the rank name + progress bar.
+	var effect_ranks_now = character_data.get("ability_effect_ranks", {})
+	var effective_effect_rank = min(int(effect_ranks_now.get(ability_name, 0)), rank)
+	var mult_pct = int((rank_mults[effective_effect_rank] - 1.0) * 100) if effective_effect_rank < rank_mults.size() else 20
 	var mult_str = ("+%d%%" % mult_pct) if mult_pct >= 0 else ("%d%%" % mult_pct)
 	var progress = ""
 	if rank >= thresholds.size():
@@ -15360,16 +15364,23 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		"power_strike", "shield_bash", "cleave", "devastate",
 		"ambush", "exploit", "gambit"
 	]
+	# Slice 6b — rank-up gives a player choice: +1 deck copy OR +10% damage.
+	# Show both branches in the tooltip preview so players can plan investments.
 	var next_preview = ""
 	if rank < rank_mults.size() - 1:
 		var next_rank = rank + 1
 		var next_name = rank_names[next_rank] if next_rank < rank_names.size() else "Master"
-		var next_mult_pct = int((rank_mults[next_rank] - 1.0) * 100)
+		# Compute the effect-rank delta the player would gain by picking "+10% Damage"
+		var effect_ranks = character_data.get("ability_effect_ranks", {})
+		var cur_effect = int(effect_ranks.get(ability_name, 0))
+		var next_effect = min(cur_effect + 1, rank_mults.size() - 1)
+		var next_mult_pct = int((rank_mults[next_effect] - 1.0) * 100)
 		var next_mult_str = ("+%d%%" % next_mult_pct) if next_mult_pct >= 0 else ("%d%%" % next_mult_pct)
+		var copies = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
 		if ability_name in damage_abilities:
-			next_preview = "Next rank %d (%s): damage modifier %s" % [next_rank, next_name, next_mult_str]
+			next_preview = "Next rank %d (%s) — pick: +1 Card (deck %d→%d) OR damage modifier %s" % [next_rank, next_name, copies, copies + 1, next_mult_str]
 		else:
-			next_preview = "Next rank %d (%s): no direct damage bonus (utility ability)" % [next_rank, next_name]
+			next_preview = "Next rank %d (%s) — pick: +1 Card (deck %d→%d) OR no damage gain (utility)" % [next_rank, next_name, copies, copies + 1]
 	var lines: Array = [display]
 	if cost_clean.strip_edges() != "":
 		lines.append("Cost: " + cost_clean.strip_edges())
@@ -15382,6 +15393,86 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	if next_preview != "":
 		lines.append(next_preview)
 	return "\n".join(lines)
+
+# Slice 6b — rank-up choice popup. Auto-pause UX: modal blocks input until the
+# player picks +1 Copy (deck) or +10% Damage (effect rank). Same node is reused
+# across multiple rank-ups in a session to keep the UI consistent and avoid leaks.
+var _rank_choice_popup: AcceptDialog = null
+var _rank_choice_pending_ability: String = ""
+
+func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int) -> void:
+	if ability_name == "":
+		return
+	# If a popup is already up for the same ability, don't double-stack.
+	if _rank_choice_popup != null and is_instance_valid(_rank_choice_popup) and _rank_choice_popup.visible and _rank_choice_pending_ability == ability_name:
+		return
+	_rank_choice_pending_ability = ability_name
+	# Build / reuse the dialog
+	if _rank_choice_popup == null or not is_instance_valid(_rank_choice_popup):
+		_rank_choice_popup = AcceptDialog.new()
+		_rank_choice_popup.exclusive = true
+		_rank_choice_popup.dialog_hide_on_ok = false
+		_rank_choice_popup.get_ok_button().visible = false
+		add_child(_rank_choice_popup)
+		_rank_choice_popup.custom_action.connect(_on_rank_choice_picked)
+	# Clear any prior custom buttons
+	for child in _rank_choice_popup.get_children():
+		if child is Button and child.get_parent() == _rank_choice_popup and child != _rank_choice_popup.get_ok_button():
+			# Avoid removing structural children — only buttons we added previously
+			if child.has_meta("rank_choice_button"):
+				child.queue_free()
+	var ability_label = ability_name.replace("_", " ").capitalize()
+	var rank_names_local := ["Untrained", "Novice", "Adept", "Expert", "Master"]
+	var rank_label = rank_names_local[new_rank] if new_rank >= 0 and new_rank < rank_names_local.size() else "Master"
+	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20]
+	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
+	var dmg_pct = int((rank_mults_local[next_effect_rank] - 1.0) * 100) if next_effect_rank < rank_mults_local.size() else 20
+	var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
+	_rank_choice_popup.title = "Mastery Rank %d (%s) — %s" % [new_rank, rank_label, ability_label]
+	_rank_choice_popup.dialog_text = (
+		"You've reached a new mastery rank with %s.\n" +
+		"Choose how to invest this rank:\n\n" +
+		"  • +1 Card: add a copy to your combat deck (currently %d).\n" +
+		"  • +10%% Damage: scale damage to %s (effect rank %d → %d)."
+	) % [ability_label, current_copy_count, dmg_str, current_effect_rank, next_effect_rank]
+	# Add the two action buttons
+	var btn_copy = _rank_choice_popup.add_button("+1 Card", true, "copy")
+	btn_copy.set_meta("rank_choice_button", true)
+	var btn_effect = _rank_choice_popup.add_button("+%s Damage" % dmg_str, true, "effect")
+	btn_effect.set_meta("rank_choice_button", true)
+	_rank_choice_popup.popup_centered(Vector2(440, 220))
+
+func _on_rank_choice_picked(action: String) -> void:
+	if _rank_choice_pending_ability == "":
+		return
+	if action != "copy" and action != "effect":
+		return
+	send_to_server({
+		"type": "rank_choice_response",
+		"ability": _rank_choice_pending_ability,
+		"choice": action
+	})
+	if _rank_choice_popup != null and is_instance_valid(_rank_choice_popup):
+		_rank_choice_popup.hide()
+	_rank_choice_pending_ability = ""
+
+func _replay_pending_rank_choice() -> void:
+	"""Slice 6b — when a character logs in / spawns with queued choices (e.g.
+	disconnected mid-combat right after a rank-up), pop the first popup so the
+	player can resolve it before doing anything else."""
+	var queue = character_data.get("pending_rank_choices", [])
+	if queue == null or not (queue is Array) or queue.is_empty():
+		return
+	var first = queue[0]
+	if not (first is Dictionary):
+		return
+	var ability_name = str(first.get("ability", ""))
+	if ability_name == "":
+		return
+	var new_rank = int(first.get("new_rank", 0))
+	var copies = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
+	var effect_rank = int(character_data.get("ability_effect_ranks", {}).get(ability_name, 0))
+	_show_rank_choice_popup(ability_name, new_rank, copies, effect_rank)
 
 func _get_ability_cost_text(ability_name: String) -> String:
 	"""Get cost text for an ability"""
@@ -17097,6 +17188,8 @@ func handle_server_message(message: Dictionary):
 			else:
 				display_character_status()
 			request_player_list()
+			# Slice 6b — replay queued rank-up popups (mid-combat dropout safety)
+			_replay_pending_rank_choice()
 
 		"character_created":
 			# Reset any stale state from previous character
@@ -17830,6 +17923,42 @@ func handle_server_message(message: Dictionary):
 				# Calculate damage dealt from revealed HP
 				damage_dealt_to_current_enemy = max_hp - current_hp
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+		"rank_up_choice":
+			# Slice 6b — server queued a rank-up choice. Show modal so player
+			# picks +1 Copy in Deck or +10% Damage. Auto-pause UX: client modal
+			# blocks input until response sent. Choice survives disconnect via
+			# character.pending_rank_choices.
+			_show_rank_choice_popup(
+				str(message.get("ability", "")),
+				int(message.get("new_rank", 0)),
+				int(message.get("current_copy_count", 1)),
+				int(message.get("current_effect_rank", 0))
+			)
+
+		"rank_choice_applied":
+			# Slice 6b — server confirmed the choice. Pop the next pending if any
+			# (chained rank-ups in one combat).
+			var ra_ability = str(message.get("ability", ""))
+			var ra_choice = str(message.get("choice", ""))
+			if message.get("ok", false):
+				var ra_label = ra_ability.replace("_", " ").capitalize()
+				if ra_choice == "copy":
+					display_game("[color=#87CEEB]%s — added +1 copy to deck (now %d).[/color]" % [ra_label, int(message.get("new_copy_count", 1))])
+				elif ra_choice == "effect":
+					var new_er = int(message.get("new_effect_rank", 0))
+					var ra_mults := [0.80, 0.90, 1.00, 1.10, 1.20]
+					var dmg_pct = int((ra_mults[new_er] - 1.0) * 100) if new_er < ra_mults.size() else 20
+					var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
+					display_game("[color=#FFB6C1]%s — damage modifier now %s.[/color]" % [ra_label, dmg_str])
+			var next_pending = message.get("next_pending", null)
+			if next_pending != null and typeof(next_pending) == TYPE_DICTIONARY:
+				_show_rank_choice_popup(
+					str(next_pending.get("ability", "")),
+					int(next_pending.get("new_rank", 0)),
+					1,
+					0
+				)
 
 		"combat_update":
 			var state = message.get("combat_state", {})
@@ -22288,8 +22417,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.257 changes
+	display_game("[color=#00FF00]v0.9.257[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Persistent deck + player-choice rank-up — Slice 6b (Audit #1)[/color]")
+	display_game("  • [b]Decks persist across combats[/b] now. Your combat hand is no longer rebuilt fresh each fight — it's drawn from a per-character collection that starts as 1 of each accessible ability and grows from rank-up choices")
+	display_game("  • [b]Rank-up choice popup[/b] — when an ability ranks up mid-combat, a modal pauses input and offers two paths: [color=#87CEEB]+1 Card[/color] (add another copy to your deck, so that ability shows up more often) or [color=#FFB6C1]+10%% Damage[/color] (advance the damage-modifier curve toward Master). Slay-the-Spire-style customization — your Magic Bolt can diverge from another player's Magic Bolt over time")
+	display_game("  • [b]Damage is now decoupled from use rank[/b]. The mastery rank (Untrained → Master) still tracks raw uses, but the damage multiplier only advances if you picked the \"+10%% Damage\" branch. Existing characters migrate cleanly: your current rank's damage modifier is preserved")
+	display_game("  • [b]Tooltip preview shows both branches[/b] — hover any card to see what each rank-up will unlock (current deck size → +1, or current damage modifier → next %%). Plan your investments before the popup pops")
+	display_game("  • [b]Pending choices survive disconnect[/b] — if you log off mid-combat right after a rank-up, the popup re-appears next time you log in. Choices that aren't picked queue up; chained rank-ups in one fight will pop one after the other")
+	display_game("")
+
 	# v0.9.256 changes
-	display_game("[color=#00FF00]v0.9.256[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.256[/color]")
 	display_game("  [color=#FFD700]Combat ability deck — Slice 6a foundation (Audit #1)[/color]")
 	display_game("  • [b]Cards in combat[/b] — the action bar's ability slots are now drawn from a deck. Combat starts by shuffling all your accessible abilities and dealing 5 cards into your hand. Use a card → it goes to discard and a new one is drawn. When the deck empties, the discard reshuffles back in. Standard actions (Attack/Use Item/Flee/Outsmart) stay always-available outside the deck")
 	display_game("  • [b]Card row in the combat scene[/b] — the 5 drawn cards appear as a strip in the battle panel. Each card shows its hotkey, name, cost, and current mastery rank (Untrained → Master). Castable cards are highlighted; cards you can't afford this turn are dimmed but stay in hand until used")
@@ -22327,14 +22466,6 @@ func display_changelog():
 	display_game("  • [b]10 chains shipped[/b] across 7 trading posts. Each T2 chain's final stage references its boss's signature mechanic from the dungeon audit slices, so you can plan your build before you walk in")
 	display_game("")
 
-	# v0.9.252 changes
-	display_game("[color=#00FFFF]v0.9.252[/color]")
-	display_game("  [color=#FFD700]Three more quest chains — all T1 bosses now have chains (Audit #6 Slice 3)[/color]")
-	display_game("  • [b]Rat Plague[/b] (Haven, 2-stage): Kill 6 Giant Rats → Slay the Rat King. 200 valor + Giant Rat Egg")
-	display_game("  • [b]Kobold Trouble[/b] (Crossroads, 2-stage): Kill 5 Kobolds → Slay the Kobold Chieftain. 200 valor + Kobold Egg")
-	display_game("  • [b]Orc Threat[/b] (East Market, 3-stage T2): Kill 5 Orcs → Kill 4 Hobgoblins → Slay the Orc Warlord. 400 valor + Orc Egg. The description warns about the Warlord's Bloodied Fury signature, so you can plan around the rage trigger")
-	display_game("  • [b]7 chains shipped total[/b], one per T1 dungeon plus two T2. Distribution: Haven (3), Crossroads (2), East Market (2). Pick a starter route, run its chains, end up with one egg from each major lineage")
-	display_game("")
 
 
 

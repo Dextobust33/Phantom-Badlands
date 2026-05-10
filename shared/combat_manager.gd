@@ -2408,9 +2408,14 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			if rank_result.get("ranked_up", false):
 				var new_rank = int(rank_result.get("new_rank", 0))
 				var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Master"
-				var rank_bonus_pct = int((combat.character.MASTERY_RANK_DAMAGE_MULT[new_rank] - 1.0) * 100) if new_rank < combat.character.MASTERY_RANK_DAMAGE_MULT.size() else 0
-				var bonus_str = ("+%d%%" % rank_bonus_pct) if rank_bonus_pct >= 0 else ("%d%%" % rank_bonus_pct)
-				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — damage modifier now %s." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label, bonus_str]
+				# Slice 6b — rank-up no longer auto-grants the damage bonus.
+				# Player picks between "+1 Copy in Deck" and "+10% Damage" via popup.
+				# Queue persists across disconnect; client pops popup on next event.
+				var queued_choice := {"ability": ability_name, "new_rank": new_rank, "queued_at": Time.get_unix_time_from_system()}
+				if not (combat.character.pending_rank_choices is Array):
+					combat.character.pending_rank_choices = []
+				combat.character.pending_rank_choices.append(queued_choice)
+				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#87CEEB]+1 Card[/color] or [color=#FFB6C1]+10%% Damage[/color]." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label]
 				if not result.has("messages"):
 					result["messages"] = []
 				result.messages.append(rank_msg)
@@ -2418,6 +2423,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# highest-ever record (survives permadeath, feeds future Slice 3
 				# Sanctuary headstart purchases).
 				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
+				result["rank_up_choice_pending"] = queued_choice
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
@@ -5626,19 +5632,42 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 # ===== Audit #1 Slice 6a — Combat deck / hand / discard =====
 
 func _initialize_combat_deck(combat_state: Dictionary) -> void:
-	"""Build a fresh deck for a combat: 1 copy of each accessible combat
-	ability (race + class + path), shuffled. Non-combat abilities (e.g.
-	teleport) are stripped. Discard starts empty. Call once per combat."""
+	"""Build a fresh deck for a combat. Slice 6b: reads
+	character.combat_deck_collection (ability_name → copy_count) so player
+	rank-up choices that grow the deck carry across combats. On first call
+	after the Slice 6b patch, initialize_deck_collection_if_needed populates
+	the collection with 1 copy of each accessible ability and migrates
+	ability_effect_ranks so existing characters don't lose damage. Non-combat
+	abilities (e.g. teleport) are stripped. Discard starts empty."""
 	var character = combat_state.character
+	if character != null and character.has_method("initialize_deck_collection_if_needed"):
+		character.initialize_deck_collection_if_needed()
 	var deck: Array = []
-	var available = character.get_all_available_abilities() if character.has_method("get_all_available_abilities") else []
+	var collection: Dictionary = {}
+	if character != null and "combat_deck_collection" in character:
+		collection = character.combat_deck_collection
+	# Build an "accessible now" set so legacy entries for retired/reclassed
+	# abilities can't appear in a deck — only currently accessible cards count.
+	var accessible := {}
+	var available = character.get_all_available_abilities() if (character != null and character.has_method("get_all_available_abilities")) else []
 	for entry in available:
 		var name = entry.get("name", "")
-		if name == "":
+		if name != "" and not (name in COMBAT_DECK_NON_COMBAT):
+			accessible[name] = true
+	# Pull each ability the player owns in their collection (1+ copies),
+	# clamped to a sane max so a corrupted collection can't generate a 10k deck.
+	for ability_name in collection.keys():
+		if not accessible.has(ability_name):
 			continue
-		if name in COMBAT_DECK_NON_COMBAT:
-			continue
-		deck.append(name)
+		var copies = int(collection.get(ability_name, 1))
+		copies = clamp(copies, 1, 50)
+		for i in range(copies):
+			deck.append(ability_name)
+	# Backstop: if the collection is somehow empty (e.g., a non-player edge case),
+	# fall back to 1-of-each accessible so combat is never card-starved.
+	if deck.is_empty():
+		for name2 in accessible.keys():
+			deck.append(name2)
 	deck.shuffle()
 	combat_state["combat_deck"] = deck
 	combat_state["combat_discard"] = []

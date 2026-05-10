@@ -246,6 +246,19 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 @export var ability_uses: Dictionary = {}
 @export var ability_uses_backfilled: bool = false  # one-shot guard for archetype backfill
 
+# Audit #1 mastery — Slice 6b: player-choice rank-up. Effect rank is decoupled
+# from use-based mastery rank. Each rank-up the player picks: (a) +1 copy in
+# combat_deck_collection, OR (b) +1 to ability_effect_ranks (damage scales).
+# Damage mult comes from effect_rank, NOT get_ability_rank. Migration: existing
+# characters get effect_rank = get_ability_rank() on first load so they don't
+# lose damage. combat_deck_collection defaults to 1 of each accessible ability;
+# rank-up choices grow it. pending_rank_choices queues choices made out-of-combat
+# or while disconnected so popups can pop on next combat.
+@export var ability_effect_ranks: Dictionary = {}
+@export var combat_deck_collection: Dictionary = {}
+@export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
+@export var deck_collection_initialized: bool = false  # one-shot init guard
+
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
@@ -1332,6 +1345,10 @@ func to_dict() -> Dictionary:
 		"ability_keybinds": ability_keybinds,
 		"ability_uses": ability_uses,
 		"ability_uses_backfilled": ability_uses_backfilled,
+		"ability_effect_ranks": ability_effect_ranks,
+		"combat_deck_collection": combat_deck_collection,
+		"pending_rank_choices": pending_rank_choices.duplicate(true),
+		"deck_collection_initialized": deck_collection_initialized,
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"title": title,
@@ -1526,6 +1543,10 @@ func from_dict(data: Dictionary):
 	ability_keybinds = data.get("ability_keybinds", DEFAULT_ABILITY_KEYBINDS.duplicate())
 	ability_uses = data.get("ability_uses", {})
 	ability_uses_backfilled = bool(data.get("ability_uses_backfilled", false))
+	ability_effect_ranks = data.get("ability_effect_ranks", {})
+	combat_deck_collection = data.get("combat_deck_collection", {})
+	pending_rank_choices = data.get("pending_rank_choices", [])
+	deck_collection_initialized = bool(data.get("deck_collection_initialized", false))
 	# Ensure keybinds has all slots (in case of legacy data)
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
 		if not ability_keybinds.has(slot):
@@ -2486,9 +2507,18 @@ func get_ability_rank(ability_name: String) -> int:
 			break
 	return rank
 
+func get_ability_effect_rank(ability_name: String) -> int:
+	"""Slice 6b — damage rank decoupled from use-rank. Bumped only when the
+	player picks the 'Stronger Effect' branch at a rank-up. Capped at the
+	use-based rank ceiling so it can never out-pace mastery. Returns 0-4."""
+	var stored = int(ability_effect_ranks.get(ability_name, 0))
+	var use_rank = get_ability_rank(ability_name)
+	return min(stored, use_rank)
+
 func get_ability_damage_mult(ability_name: String) -> float:
-	"""Damage multiplier from mastery rank. Rank 0 = 0.80, rank 4 = 1.20."""
-	var rank = get_ability_rank(ability_name)
+	"""Damage multiplier from effect rank (Slice 6b — decoupled from use rank).
+	Rank 0 = 0.80, rank 4 = 1.20."""
+	var rank = get_ability_effect_rank(ability_name)
 	if rank < 0 or rank >= MASTERY_RANK_DAMAGE_MULT.size():
 		return 1.0
 	return float(MASTERY_RANK_DAMAGE_MULT[rank])
@@ -2542,6 +2572,67 @@ func backfill_ability_uses_if_needed() -> bool:
 			ability_uses[ab] = MASTERY_RANK_BACKFILL_USES
 	ability_uses_backfilled = true
 	return true
+
+func initialize_deck_collection_if_needed() -> bool:
+	"""Slice 6b one-shot init: populate combat_deck_collection with 1 copy of
+	each accessible ability, and migrate ability_effect_ranks so existing chars
+	don't lose damage (effect_rank starts at current use-based rank). Idempotent.
+	Returns true if anything changed (caller should persist)."""
+	if deck_collection_initialized:
+		return false
+	var available = get_all_available_abilities()
+	for entry in available:
+		var name = entry.get("name", "")
+		if name == "":
+			continue
+		if not combat_deck_collection.has(name):
+			combat_deck_collection[name] = 1
+	# Migrate effect ranks: existing characters keep their current damage level
+	# so the Slice 6b split is non-punitive. New rank-ups must be chosen.
+	for entry2 in available:
+		var ab = entry2.get("name", "")
+		if ab == "":
+			continue
+		var current_use_rank = get_ability_rank(ab)
+		var stored_effect = int(ability_effect_ranks.get(ab, 0))
+		if current_use_rank > stored_effect:
+			ability_effect_ranks[ab] = current_use_rank
+	deck_collection_initialized = true
+	return true
+
+func apply_rank_choice(ability_name: String, choice: String) -> Dictionary:
+	"""Slice 6b — apply a player's rank-up choice. choice is "copy" (+1 to
+	combat_deck_collection) or "effect" (+1 to ability_effect_ranks). Returns
+	{ability, choice, new_copy_count, new_effect_rank, ok}. Refuses choices for
+	abilities not present in the available ability list. Does NOT touch
+	pending_rank_choices — caller is responsible for removing the queued entry."""
+	var result := {"ability": ability_name, "choice": choice, "ok": false, "new_copy_count": 0, "new_effect_rank": 0}
+	if ability_name == "":
+		return result
+	# Verify the ability is accessible (don't let stale queued choices grant power for off-class abilities)
+	var available = get_all_available_abilities()
+	var is_accessible := false
+	for entry in available:
+		if entry.get("name", "") == ability_name:
+			is_accessible = true
+			break
+	if not is_accessible:
+		return result
+	if choice == "copy":
+		var current_copies = int(combat_deck_collection.get(ability_name, 1))
+		combat_deck_collection[ability_name] = current_copies + 1
+		result["new_copy_count"] = combat_deck_collection[ability_name]
+		result["new_effect_rank"] = int(ability_effect_ranks.get(ability_name, 0))
+		result["ok"] = true
+	elif choice == "effect":
+		var current_effect = int(ability_effect_ranks.get(ability_name, 0))
+		var cap = MASTERY_RANK_DAMAGE_MULT.size() - 1
+		var new_effect = min(current_effect + 1, cap)
+		ability_effect_ranks[ability_name] = new_effect
+		result["new_copy_count"] = int(combat_deck_collection.get(ability_name, 1))
+		result["new_effect_rank"] = new_effect
+		result["ok"] = true
+	return result
 
 func apply_headstart_ranks(headstarts: Dictionary) -> Array:
 	"""Slice 3 — apply Sanctuary-purchased headstart ranks to a freshly created
