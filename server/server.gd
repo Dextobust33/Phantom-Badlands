@@ -63,6 +63,10 @@ var player_in_hotzone = {}  # peer_id -> true when player has confirmed hotzone 
 # Persistent merchant inventory storage
 # merchant_id -> {items: Array, generated_at: float, player_level: int}
 var merchant_inventories = {}
+# Audit #5 discoverability — cached rumors per trading post. Refreshes every 30 min.
+# Map: tp_id → {generated_at: unix, rumors: [{name, dungeon_type, distance, direction_text, color}]}
+var trading_post_rumors: Dictionary = {}
+const TRADING_POST_RUMOR_REFRESH_SEC: int = 1800  # 30 min
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading posts
 const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
@@ -9660,7 +9664,11 @@ func trigger_trading_post_encounter(peer_id: int):
 		"quests_to_turn_in": quests_to_turn_in.size(),
 		"recharge_cost": recharge_cost,
 		"x": tp_x,
-		"y": tp_y
+		"y": tp_y,
+		# Audit #5 discoverability — free dungeon rumors per trading post.
+		# Refresh every 30 min via cache. Players still need to travel to
+		# act on them; compass + rumors are the two discoverability tools.
+		"rumors": _get_trading_post_rumors(tp_id, tp_x, tp_y, peer_id)
 	})
 
 func _handle_market_interact(peer_id: int, _character):
@@ -19244,6 +19252,56 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 		direction = ns + ew
 
 	return "%d tiles %s" % [distance, direction]
+
+func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
+	"""Audit #5 — generate up to 2 rumors per trading post pointing to nearby
+	dungeons within ~150 tile radius. Cached for 30 min so players see the
+	same rumors on revisit (per-post identity). Skips other players' personal
+	dungeon instances.
+
+	Each rumor: {name, dungeon_type, tier, distance_text, direction_text, color}.
+	Client formats the chat line."""
+	var current_time = int(Time.get_unix_time_from_system())
+	if trading_post_rumors.has(tp_id):
+		var cached = trading_post_rumors[tp_id]
+		if current_time - int(cached.get("generated_at", 0)) < TRADING_POST_RUMOR_REFRESH_SEC:
+			return cached.get("rumors", [])
+
+	# Generate fresh rumors. Find candidate dungeons within ~150 tiles, pick up to 2.
+	var max_radius = 150
+	var candidates: Array = []
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		if instance.get("completed_at", 0) > 0:
+			continue
+		# Skip personal-instance dungeons owned by other players (rumors should be public)
+		if instance.has("owner_peer_id"):
+			if peer_id < 0 or instance.owner_peer_id != peer_id:
+				continue
+		var dx = instance.world_x - tp_x
+		var dy = instance.world_y - tp_y
+		var dist = int(sqrt(dx * dx + dy * dy))
+		if dist > max_radius:
+			continue
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		candidates.append({
+			"name": dungeon_data.get("name", "Unknown Dungeon"),
+			"dungeon_type": instance.dungeon_type,
+			"tier": int(dungeon_data.get("tier", 1)),
+			"distance": dist,
+			"direction_text": _get_direction_text(tp_x, tp_y, instance.world_x, instance.world_y),
+			"color": dungeon_data.get("color", "#88FF88")
+		})
+
+	# Sort by distance (closest first), seed with tp_id hash so it's stable per cache window
+	candidates.sort_custom(func(a, b): return a.distance < b.distance)
+	var rumors: Array = candidates.slice(0, mini(2, candidates.size()))
+
+	trading_post_rumors[tp_id] = {
+		"generated_at": current_time,
+		"rumors": rumors
+	}
+	return rumors
 
 func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: String, tier: int, peer_id: int = -1) -> Dictionary:
 	"""Find the nearest dungeon matching the quest requirements. Returns {x, y, distance, direction_text} or empty dict.
