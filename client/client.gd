@@ -9748,6 +9748,9 @@ func _is_combat_usable_item(item: Dictionary) -> bool:
 		return false
 	if sub_type == "scroll_monster_select" or base_type == "scroll_monster_select":
 		return false
+	# Audit #5 — Dungeon Compass is an overworld discovery tool, not a combat item
+	if sub_type == "dungeon_compass" or base_type == "dungeon_compass":
+		return false
 	if base_type == "tool" or base_type == "rune" or base_type == "structure":
 		return false
 	if "kit" in sub_type or "kit" in base_type:
@@ -19430,6 +19433,8 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Revive with 25% HP on death (next battle only)"
 	elif item_type == "escape_scroll":
 		return "Safely exit a dungeon without defeating the boss"
+	elif item_type == "dungeon_compass":
+		return "Reveals the nearest dungeon entrance on the world map. Higher-tier compasses cover more territory. (Overworld use only.)"
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
 	# Home Stones
@@ -21983,8 +21988,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.244 changes
+	display_game("[color=#00FF00]v0.9.244[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon Compass — discoverability Slice 1[/color]")
+	display_game("  • New consumable: [color=#9ACD32]Dungeon Compass[/color]. Use one in the world (not inside a dungeon) and the needle steadies, calling out the [b]nearest qualifying dungeon[/b] by name, tier, and direction (e.g. \"Goblin Caves (T1) lies 47 tiles to the northeast\"). Targets the audit's #1 player pain — finding dungeons in the first place")
+	display_game("  • [b]Three tiers, three ranges:[/b] standard compass covers up to T2, Greater up to T5, Master up to T9. They drop from treasure chests at 18% chance starting at chest tier 2; the compass's range matches the chest tier so you get an appropriately-scoped compass for where you are")
+	display_game("  • [b]No-target safety:[/b] if no qualifying dungeon is in range, the compass is [color=#88FF88]not consumed[/color] — you get a hint to grab a higher-tier compass instead of a wasted-feel")
+	display_game("")
+
 	# v0.9.243 changes
-	display_game("[color=#00FF00]v0.9.243[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.243[/color]")
 	display_game("  [color=#FFD700]Boss signatures — first cut (Audit #5 Slice 1)[/color]")
 	display_game("  • [b]Skeleton Lord[/b] (Forgotten Crypt T1) gets [color=#FFAA00]Death Defiance[/color]: when defeated for the first time, the boss crumbles to dust, then bones rise once more at 50% HP. Once per fight — kill it again to actually win. Telegraphs in chat so you know to expect a second phase")
 	display_game("  • [b]Spider Queen[/b] (Spider Nest T2) gets [color=#A335EE]Constricting Web[/color] (replacing the old Web Trap slow): 25% chance per hit to ensnare you. Webbed = skip your next turn. WIS softens the chance (floor 10%) — high-wisdom builds get a real edge here. Re-rollable on future hits, so the queen can lock you down repeatedly if you stay in range")
@@ -22014,12 +22027,6 @@ func display_changelog():
 	display_game("  • Buffs / CC / debuffs (War Cry, Forcefield, Iron Skin, Vanish, Paralyze, Sabotage, etc.) still track usage and rank up — but mastery doesn't multiply their effect for now. Future slices will introduce ability-specific modifiers (e.g. \"Vanish lasts 2 rounds at rank 4\")")
 	display_game("")
 
-	# v0.9.239 changes
-	display_game("[color=#00FFFF]v0.9.239[/color]")
-	display_game("  [color=#FFD700]Combat action bar — strip out non-combat noise[/color]")
-	display_game("  • [b]\"Use Item\" in combat[/b] no longer surfaces out-of-combat utilities. Home Stones, Treasure Chests, building kits, tools, runes, monster-select scrolls — all hidden mid-fight. You'll still see healing potions, resource potions, buff scrolls, escape scrolls, elixirs, gold/gem pouches, tomes — anything that actually does something with the combat tick")
-	display_game("  • [b]Equipped abilities slots[/b] now hide non-combat abilities like Teleport. If you've slotted Teleport in your loadout for the overworld, it won't take up a combat-bar slot anymore — that slot just shows --- during fights and your Teleport popup still works the same outside combat")
-	display_game("")
 
 
 
