@@ -1901,8 +1901,17 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	var queued_headstarts = persistence.consume_pending_headstarts(account_id)
 	var applied_headstarts = character.apply_headstart_ranks(queued_headstarts)
 	if applied_headstarts.size() > 0:
-		character.ability_uses_backfilled = true
 		log_message("Applied %d headstart ranks to %s: %s" % [applied_headstarts.size(), char_name, str(applied_headstarts)])
+	# Slice 6a follow-up — always mark the backfill flag for freshly created
+	# characters, even when no headstarts were applied. The login-path
+	# backfill (server.gd:~1618) was designed to migrate pre-mastery
+	# characters from rank 0 → rank 2 so their effective damage didn't
+	# silently drop -20% when Slice 1 shipped. New characters should NOT get
+	# that migration — Slice 1's locked direction is "weak at first, grow
+	# with use", which means new chars start at rank 0 and earn ranks
+	# through play. Without this flag, new chars hit the login backfill on
+	# first load and start at rank 2.
+	character.ability_uses_backfilled = true
 
 	# Checkout companion from house kennel if requested
 	var checkout_slot = message.get("checkout_companion_slot", -1)

@@ -24,6 +24,22 @@ const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
 # limit when that lands.
 const MASTERY_USES_PER_COMBAT_CAP: int = 5
 
+# Audit #1 Slice 6a — deck/hand/draw runtime. Each combat builds a deck of
+# the character's accessible combat abilities (1 copy each) and draws the
+# top N into a hand. Players may only fire abilities that are currently in
+# hand; using one moves it to discard and refills the hand. When the deck
+# empties the discard reshuffles in. Standard actions (attack/item/flee/
+# outsmart) bypass the hand entirely.
+const COMBAT_HAND_SIZE: int = 5
+# Stripped from the deck. Teleport is a guaranteed-flee non-combat utility.
+# Cloak is a 75%-flee escape with a hard level-20 gate inside _process_universal_ability,
+# which contradicts Slice 1's "all abilities accessible from L1" rule and would
+# otherwise hand low-level players a card that always rejects on cast — confusing
+# UX. If we re-enable it in a later slice we should drop the level gate too.
+# All-or-nothing is too niche to draw — per user 2026-05-10 it lives on the R
+# slot of the action bar instead, always available outside the deck.
+const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak", "all_or_nothing"]
+
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
 
@@ -837,10 +853,18 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"total_damage_taken": 0,
 		"player_hp_at_start": character.current_hp,
 		"pickpocket_count": 0,
-		"pickpocket_max": randi_range(1, 3)  # Monster has 1-3 pockets of materials
+		"pickpocket_max": randi_range(1, 3),  # Monster has 1-3 pockets of materials
+		# Audit #1 Slice 6a — deck/hand/discard. Initialized after
+		# active_combats assignment (the helpers read combat_state by ref).
+		"combat_hand_size": COMBAT_HAND_SIZE,
+		"combat_deck": [],
+		"combat_hand": [],
+		"combat_discard": []
 	}
 
 	active_combats[peer_id] = combat_state
+	_initialize_combat_deck(combat_state)
+	_draw_to_hand(combat_state)
 
 	# Mark character as in combat and reset per-combat flags
 	character.in_combat = true
@@ -2334,6 +2358,19 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		"heist": ability_name = "perfect_heist"
 		"shield": ability_name = "forcefield"  # Shield is now an alias for Forcefield
 
+	# Audit #1 Slice 6a — hand gate. Only abilities currently in hand may
+	# be cast. Standard actions (attack/item/flee/outsmart) bypass this and
+	# don't go through process_ability_command. Reject upfront so resource
+	# costs aren't pre-checked against a card the player doesn't even hold.
+	# Note: server.gd's combat command failure path iterates result.messages
+	# (plural), so we surface the error there as well as in `message` for
+	# any consumer that reads the singular field.
+	var card_name = _ability_alias_to_card(ability_name)
+	var hand: Array = combat.get("combat_hand", [])
+	if not hand.is_empty() and card_name not in hand:
+		var hand_msg = "[color=#FFA500]%s is not in your hand.[/color]" % card_name.replace("_", " ").capitalize()
+		return {"success": false, "message": hand_msg, "messages": [hand_msg]}
+
 	# Universal abilities (available to all classes, use class resource)
 	if ability_name == "cloak" or ability_name == "all_or_nothing":
 		result = _process_universal_ability(combat, ability_name)
@@ -2381,6 +2418,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# highest-ever record (survives permadeath, feeds future Slice 3
 				# Sanctuary headstart purchases).
 				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
+		# Audit #1 Slice 6a — successful ability use moves the card from
+		# hand to discard and refills the hand. Done after mastery tracking
+		# so a rank-up notification still ties to the card just played.
+		_consume_card_from_hand(combat, _ability_alias_to_card(ability_name))
 
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
@@ -5139,6 +5180,13 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
 		"variant_type": monster.get("variant_type", ""),  # Specific variant ID for client-side border tinting on monster ASCII art
 		"can_act": combat.player_can_act,
+		# Audit #1 Slice 6a — deck/hand. Client renders the hand as cards
+		# in the combat scene; deck/discard counts ride along for the
+		# "Deck N · Discard M" status indicator.
+		"combat_hand": combat.get("combat_hand", []).duplicate(),
+		"combat_deck_count": combat.get("combat_deck", []).size(),
+		"combat_discard_count": combat.get("combat_discard", []).size(),
+		"combat_hand_size": int(combat.get("combat_hand_size", COMBAT_HAND_SIZE)),
 		# Combat status effects (now tracked on character for persistence)
 		"poison_active": character.poison_active,
 		"poison_damage": character.poison_damage,
@@ -5575,6 +5623,76 @@ func apply_wish_choice(character: Character, wish: Dictionary) -> String:
 
 # ===== COMBAT PERSISTENCE (for disconnect recovery) =====
 
+# ===== Audit #1 Slice 6a — Combat deck / hand / discard =====
+
+func _initialize_combat_deck(combat_state: Dictionary) -> void:
+	"""Build a fresh deck for a combat: 1 copy of each accessible combat
+	ability (race + class + path), shuffled. Non-combat abilities (e.g.
+	teleport) are stripped. Discard starts empty. Call once per combat."""
+	var character = combat_state.character
+	var deck: Array = []
+	var available = character.get_all_available_abilities() if character.has_method("get_all_available_abilities") else []
+	for entry in available:
+		var name = entry.get("name", "")
+		if name == "":
+			continue
+		if name in COMBAT_DECK_NON_COMBAT:
+			continue
+		deck.append(name)
+	deck.shuffle()
+	combat_state["combat_deck"] = deck
+	combat_state["combat_discard"] = []
+	combat_state["combat_hand"] = []
+
+func _draw_to_hand(combat_state: Dictionary) -> void:
+	"""Refill hand up to combat_hand_size. Pulls from deck; when deck is
+	empty, reshuffles discard into deck and continues. Stops if both deck
+	and discard are exhausted (hand may end smaller than target)."""
+	var hand: Array = combat_state.get("combat_hand", [])
+	var deck: Array = combat_state.get("combat_deck", [])
+	var discard: Array = combat_state.get("combat_discard", [])
+	var target = int(combat_state.get("combat_hand_size", COMBAT_HAND_SIZE))
+	while hand.size() < target:
+		if deck.is_empty():
+			if discard.is_empty():
+				break
+			deck = discard.duplicate()
+			deck.shuffle()
+			discard = []
+		hand.append(deck.pop_back())
+	combat_state["combat_hand"] = hand
+	combat_state["combat_deck"] = deck
+	combat_state["combat_discard"] = discard
+
+func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> bool:
+	"""Move a card from hand to discard and refill the hand. Returns true if
+	the ability was actually in hand and removed."""
+	var hand: Array = combat_state.get("combat_hand", [])
+	var idx = hand.find(ability_name)
+	if idx < 0:
+		return false
+	hand.remove_at(idx)
+	var discard: Array = combat_state.get("combat_discard", [])
+	discard.append(ability_name)
+	combat_state["combat_hand"] = hand
+	combat_state["combat_discard"] = discard
+	_draw_to_hand(combat_state)
+	return true
+
+func _ability_alias_to_card(ability_name: String) -> String:
+	"""Normalize an inbound ability command (which may be an alias like
+	'bolt' or 'shield') to the canonical card name stored in the deck.
+	Mirrors the alias map at the top of process_ability_command."""
+	match ability_name:
+		"bolt": return "magic_bolt"
+		"strike": return "power_strike"
+		"warcry": return "war_cry"
+		"bash": return "shield_bash"
+		"ironskin": return "iron_skin"
+		"heist": return "perfect_heist"
+		"shield": return "forcefield"
+	return ability_name
+
 func serialize_combat_state(peer_id: int) -> Dictionary:
 	"""Serialize combat state for saving when player disconnects.
 	Returns empty dict if not in combat."""
@@ -5612,7 +5730,12 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 		"is_boss_fight": combat.get("is_boss_fight", false),
 		"dungeon_monster_id": combat.get("dungeon_monster_id", -1),
 		"flock_remaining": combat.get("flock_remaining", 0),
-		"cc_resistance": combat.get("cc_resistance", 0)
+		"cc_resistance": combat.get("cc_resistance", 0),
+		# Audit #1 Slice 6a — deck/hand persistence across reconnect.
+		"combat_hand_size": int(combat.get("combat_hand_size", COMBAT_HAND_SIZE)),
+		"combat_deck": combat.get("combat_deck", []).duplicate(),
+		"combat_hand": combat.get("combat_hand", []).duplicate(),
+		"combat_discard": combat.get("combat_discard", []).duplicate()
 	}
 
 func restore_combat(peer_id: int, character: Character, saved_state: Dictionary) -> Dictionary:
@@ -5649,10 +5772,22 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		"is_boss_fight": saved_state.get("is_boss_fight", false),
 		"dungeon_monster_id": saved_state.get("dungeon_monster_id", -1),
 		"flock_remaining": saved_state.get("flock_remaining", 0),
-		"cc_resistance": saved_state.get("cc_resistance", 0)
+		"cc_resistance": saved_state.get("cc_resistance", 0),
+		# Audit #1 Slice 6a — deck/hand restoration. If saved state predates
+		# Slice 6a (legacy disconnect), arrays are empty and we re-initialize
+		# below so the player still has a valid hand.
+		"combat_hand_size": int(saved_state.get("combat_hand_size", COMBAT_HAND_SIZE)),
+		"combat_deck": saved_state.get("combat_deck", []).duplicate() if saved_state.get("combat_deck", []) is Array else [],
+		"combat_hand": saved_state.get("combat_hand", []).duplicate() if saved_state.get("combat_hand", []) is Array else [],
+		"combat_discard": saved_state.get("combat_discard", []).duplicate() if saved_state.get("combat_discard", []) is Array else []
 	}
 
 	active_combats[peer_id] = combat_state
+	# Re-init deck if legacy save (no deck fields). Hand is drawn fresh so
+	# the player isn't stuck with an empty hand on reconnect.
+	if combat_state["combat_deck"].is_empty() and combat_state["combat_hand"].is_empty() and combat_state["combat_discard"].is_empty():
+		_initialize_combat_deck(combat_state)
+		_draw_to_hand(combat_state)
 
 	# Mark character as in combat
 	character.in_combat = true

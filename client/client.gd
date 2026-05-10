@@ -729,6 +729,14 @@ var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
 var combat_outsmart_failed = false  # Track if outsmart already failed this combat
+
+# Audit #1 Slice 6a — combat hand state. Server pushes the hand on every
+# combat_start / combat_update; client mirrors it here so the action bar
+# can route keys 1-5 to the drawn cards and the combat scene panel can
+# render its card row. Empty when not in combat.
+var combat_hand: Array = []
+var combat_deck_count: int = 0
+var combat_discard_count: int = 0
 var pending_variable_ability: String = ""  # Ability waiting for resource amount input
 var pending_variable_resource: String = ""  # Resource type for pending ability (mana/stamina/energy)
 var current_enemy_is_boss: bool = false  # Track boss fights for pulsing border
@@ -1585,6 +1593,11 @@ func _ready():
 		inventory_panel.sort_requested.connect(_on_inv_panel_sort)
 		inventory_panel.salvage_junk_requested.connect(_on_inv_panel_salvage)
 		inventory_panel.materials_requested.connect(_on_inv_panel_materials)
+		# Double-click on a card → equip (if equipment) or use (if consumable).
+		# Items that are neither (materials, monster parts, etc.) are ignored
+		# silently rather than spamming an error toast.
+		if inventory_panel.has_signal("card_double_clicked"):
+			inventory_panel.card_double_clicked.connect(_on_inv_panel_card_double_clicked)
 
 	# Setup crafting panel
 	if crafting_panel:
@@ -1669,6 +1682,9 @@ func _ready():
 		combat_scene_panel.picker_canceled.connect(_on_combat_picker_canceled)
 		combat_scene_panel.picker_prev_page.connect(_on_combat_picker_prev_page)
 		combat_scene_panel.picker_next_page.connect(_on_combat_picker_next_page)
+		# Audit #1 Slice 6a — hand cards (mouse path).
+		if combat_scene_panel.has_signal("card_played"):
+			combat_scene_panel.card_played.connect(_on_combat_card_played)
 
 	# Setup admin panel (visual /admin menu). Instantiated programmatically
 	# rather than placed in client.tscn since it's a developer-only overlay
@@ -9854,7 +9870,15 @@ func _get_ability_slots_for_path(path: String) -> Array:
 	return []
 
 func _get_combat_ability_actions() -> Array:
-	"""Build combat ability actions based on player's equipped abilities."""
+	"""Build combat ability actions based on player's equipped abilities.
+
+	Audit #1 Slice 6a: when we have a server-pushed hand, return that
+	instead — keys 1-5 fire the drawn cards. Slot 0 (R key) is left as a
+	non-functional placeholder; a future slice (6d) may give it a deck
+	mechanic like 'discard hand' or 'draw extra'."""
+	if in_combat and not combat_hand.is_empty():
+		return _get_combat_hand_actions()
+
 	var abilities = []
 	var player_level = character_data.get("level", 1)
 	var path = _get_player_active_path()
@@ -9987,6 +10011,87 @@ func _get_combat_ability_actions() -> Array:
 			})
 
 	return abilities
+
+func _get_combat_hand_actions() -> Array:
+	"""Audit #1 Slice 6a — build the 6 ability-slot entries for the action
+	bar from the server-pushed hand. Layout maps to keys [R, 1, 2, 3, 4, 5]:
+	slot 0 (R) hosts All-or-Nothing as a permanent always-available action
+	(too niche to draw as a card per user 2026-05-10); slots 1-5 host the
+	5 drawn cards. Resource availability is recomputed client-side so a
+	freshly-spent ability greys out immediately on the same frame as the
+	combat update."""
+	var actions: Array = []
+
+	var path = _get_player_active_path()
+	var current_mana = int(character_data.get("current_mana", 0))
+	var current_stamina = int(character_data.get("current_stamina", 0))
+	var current_energy = int(character_data.get("current_energy", 0))
+
+	# Slot 0 (R) — All-or-Nothing, permanent. Pulled through the same info
+	# helper as the hand cards so its label shows the live A/N percent and
+	# cost matches the player's active path (mana / stamina / energy).
+	var aon_info = _get_ability_combat_info("all_or_nothing", path)
+	if aon_info.is_empty():
+		actions.append({"label": "—", "action_type": "none", "action_data": "", "enabled": false, "cost": 0, "resource_type": ""})
+	else:
+		var aon_cost = int(aon_info.get("cost", 1))
+		var aon_rt = str(aon_info.get("resource_type", ""))
+		var aon_can_afford = true
+		if aon_cost > 0:
+			match aon_rt:
+				"mana": aon_can_afford = current_mana >= aon_cost
+				"stamina": aon_can_afford = current_stamina >= aon_cost
+				"energy": aon_can_afford = current_energy >= aon_cost
+		actions.append({
+			"label": str(aon_info.get("display", "A/N")),
+			"action_type": "combat",
+			"action_data": "all_or_nothing",
+			"enabled": aon_can_afford,
+			"cost": aon_cost,
+			"resource_type": aon_rt
+		})
+
+	for i in range(5):
+		if i < combat_hand.size():
+			var card_name = str(combat_hand[i])
+			var info = _get_ability_combat_info(card_name, path)
+			if info.is_empty():
+				actions.append({"label": card_name.replace("_", " ").capitalize(), "action_type": "combat", "action_data": card_name, "enabled": true, "cost": 0, "resource_type": ""})
+				continue
+			var cost = int(info.get("cost", 0))
+			var rt = str(info.get("resource_type", ""))
+			var has_resource = true
+			if cost > 0:
+				match rt:
+					"mana": has_resource = current_mana >= cost
+					"stamina": has_resource = current_stamina >= cost
+					"energy": has_resource = current_energy >= cost
+			actions.append({
+				"label": str(info.get("display", card_name)),
+				"action_type": "combat",
+				"action_data": card_name,
+				"enabled": has_resource,
+				"cost": cost,
+				"resource_type": rt
+			})
+		else:
+			actions.append({"label": "—", "action_type": "none", "action_data": "", "enabled": false, "cost": 0, "resource_type": ""})
+
+	return actions
+
+func _on_combat_card_played(card_name: String) -> void:
+	"""Audit #1 Slice 6a — mouse path for the combat scene's card row.
+	Mirrors the action bar's 'combat' action_type handling so a click and
+	a hotkey press behave identically (variable-cost prompts included)."""
+	if not in_combat or card_name == "":
+		return
+	var path = _get_player_active_path()
+	var info = _get_ability_combat_info(card_name, path)
+	if info is Dictionary and not info.is_empty():
+		if int(info.get("cost", -1)) == 0 and str(info.get("resource_type", "")) != "":
+			prompt_variable_cost_ability(card_name, str(info.get("resource_type", "mana")))
+			return
+	send_combat_command(card_name)
 
 func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	"""Get combat info for an ability (display name, cost, resource type)"""
@@ -14221,6 +14326,35 @@ func _on_inv_panel_materials() -> void:
 	display_materials()
 	update_action_bar()
 
+func _on_inv_panel_card_double_clicked(item: Dictionary, idx: int) -> void:
+	"""Inventory shortcut — double-click an item to equip (if equipment) or
+	use (if consumable). Materials / monster parts / locked items / unknown
+	types fall through silently rather than spamming an error toast.
+
+	Per CLAUDE.md Pitfall #12, items can carry both `type` and `item_type`;
+	the more specific `item_type` wins for slot/consumable detection."""
+	if not inventory_mode or idx < 0 or item.is_empty():
+		return
+	var item_type = str(item.get("item_type", ""))
+	var generic_type = str(item.get("type", ""))
+	# Tools: special equip path (different server message).
+	if generic_type == "tool" or item_type == "tool":
+		_panel_equip_item(idx, item)
+		return
+	# Equipment: any item whose item_type maps to an equipment slot.
+	var slot = _get_slot_for_item_type(item_type) if item_type != "" else _get_slot_for_item_type(generic_type)
+	if slot != "":
+		_panel_equip_item(idx, item)
+		return
+	# Consumable: explicit flag, generic type, or known consumable item_type.
+	var is_consumable = bool(item.get("is_consumable", false)) \
+		or generic_type == "consumable" \
+		or _is_consumable_type(item_type)
+	if is_consumable:
+		_panel_use_item(idx)
+		return
+	# Anything else — let it slide; double-click on a material isn't an error.
+
 # ===== Inventory Panel context-menu action handlers =====
 # Each one is the direct path from a right-click menu item to the server message
 # (or local display call). Skips the legacy "select item N" prompt flow.
@@ -15148,39 +15282,40 @@ func _get_ability_info_from_list(ability_name: String, ability_list: Array) -> D
 
 func _get_ability_description_text(ability_name: String) -> String:
 	"""Plain-text description for an ability — used by AbilityPanel hover
-	tooltips. Mirrors the desc strings in shared/constants.gd MAGE/WARRIOR/
-	TRICKSTER_ABILITIES; kept client-side because tooltip_text needs plain
-	text and these rarely change."""
+	tooltips and the combat hand cards. Reviewed against the implementation
+	in combat_manager.gd to keep descriptions truthful (Audit #1 Slice 6a
+	follow-up). Trickster ability strings still need verification — flagged
+	in project_audit_01_combat.md for the balance pass."""
 	match ability_name:
 		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
-		"shield": return "Alias for Forcefield."
-		"cloak": return "Spend 8% max resource per movement to stay invisible to encounters."
-		"blast": return "Deal INT * 2 damage in a burst."
-		"forcefield": return "Block the next 2 attacks completely."
-		"teleport": return "Guaranteed flee from combat (always succeeds)."
-		"meteor": return "Deal INT * 5 damage. High mana cost."
-		"haste": return "Buff that grants extra actions for several rounds."
-		"paralyze": return "Stun the enemy for 1 turn."
-		"banish": return "Remove a non-boss monster from the fight outright."
-		"power_strike": return "Deal STR * 1.5 damage with a cheap stamina spend."
-		"war_cry": return "+25% damage for 3 rounds."
-		"shield_bash": return "Deal STR damage and stun the enemy for 1 turn."
-		"cleave": return "Deal STR * 2 damage in a sweeping strike."
-		"berserk": return "+100% damage / -50% defense for 3 rounds. High risk."
-		"iron_skin": return "Block 50% of incoming damage for 3 rounds."
-		"devastate": return "Deal STR * 4 damage. Massive stamina cost."
-		"fortify": return "Defensive stance — reduces incoming damage."
-		"rally": return "Restore stamina and refresh buffs."
-		"analyze": return "Reveal monster HP, damage, and intelligence stats."
+		"shield": return "Alias for Forcefield — flat damage absorption shield."
+		"cloak": return "75% chance to escape combat. Costs 8% of your max class resource. Requires Lv 20."
+		"blast": return "INT-scaled burst damage and applies a 3-round burn DoT (20% of INT per round)."
+		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until the shield is depleted."
+		"teleport": return "Out-of-combat travel ability (not used in combat)."
+		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. High mana cost."
+		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits."
+		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC."
+		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish."
+		"power_strike": return "1.5× attack with sqrt STR scaling. Cheap stamina cost."
+		"war_cry": return "+35% damage for 4 rounds (self buff)."
+		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor)."
+		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round)."
+		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk."
+		"iron_skin": return "60% damage reduction for 4 rounds."
+		"devastate": return "5× attack with sqrt STR scaling. Massive stamina cost."
+		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds."
+		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds."
+		"analyze": return "Reveal monster HP, max HP, and key stats; persists across this fight."
 		"distract": return "Enemy suffers -50% accuracy on its next attack."
-		"pickpocket": return "Steal WITS * 10 gold; failure means you take a hit instead."
-		"ambush": return "3x WITS-scaled damage with +50% crit chance."
-		"vanish": return "Go invisible — your next attack is guaranteed crit."
-		"exploit": return "Deal 15-35% of the monster's max HP."
-		"perfect_heist": return "Instant win plus double rewards. Massive cost."
-		"sabotage": return "Reduce enemy stats / disrupt their next ability."
-		"gambit": return "4.5x damage and bonus loot on kill — risky on miss."
-		"all_or_nothing": return "Deal massive damage on hit, suffer heavy backlash on miss."
+		"pickpocket": return "Steal WITS × 10 gold from the monster; failure means it counter-attacks."
+		"ambush": return "3× WITS-scaled damage with +50% crit chance."
+		"vanish": return "Go invisible — your next attack is a guaranteed crit."
+		"exploit": return "Deal 15-35% of the monster's max HP as damage."
+		"perfect_heist": return "Instant win plus double rewards. Massive cost; trickster only at high level."
+		"sabotage": return "Reduce enemy stats / disrupt their next ability (effect varies)."
+		"gambit": return "4.5× damage and bonus loot on kill — risky if you miss."
+		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
 		_:
 			return ""
 
@@ -15214,7 +15349,27 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	if rank >= thresholds.size():
 		progress = "Mastered"
 	else:
-		progress = "%d / %d to next rank" % [uses, int(thresholds[rank])]
+		progress = "%d / %d uses to next rank" % [uses, int(thresholds[rank])]
+	# Rank-up preview — show what the next rank gives so players can decide
+	# whether to invest in this ability vs another (Slice 6a follow-up).
+	# Damage abilities scale by MASTERY_RANK_DAMAGE_MULT; non-damage abilities
+	# (buffs / CC / utility) currently rank up cosmetically only — the
+	# tooltip honestly says so rather than promising a damage bump.
+	var damage_abilities := [
+		"magic_bolt", "blast", "meteor",
+		"power_strike", "shield_bash", "cleave", "devastate",
+		"ambush", "exploit", "gambit"
+	]
+	var next_preview = ""
+	if rank < rank_mults.size() - 1:
+		var next_rank = rank + 1
+		var next_name = rank_names[next_rank] if next_rank < rank_names.size() else "Master"
+		var next_mult_pct = int((rank_mults[next_rank] - 1.0) * 100)
+		var next_mult_str = ("+%d%%" % next_mult_pct) if next_mult_pct >= 0 else ("%d%%" % next_mult_pct)
+		if ability_name in damage_abilities:
+			next_preview = "Next rank %d (%s): damage modifier %s" % [next_rank, next_name, next_mult_str]
+		else:
+			next_preview = "Next rank %d (%s): no direct damage bonus (utility ability)" % [next_rank, next_name]
 	var lines: Array = [display]
 	if cost_clean.strip_edges() != "":
 		lines.append("Cost: " + cost_clean.strip_edges())
@@ -15224,6 +15379,8 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	lines.append("Rank %d — %s" % [rank, rank_name])
 	lines.append("Damage modifier: %s" % mult_str)
 	lines.append(progress)
+	if next_preview != "":
+		lines.append(next_preview)
 	return "\n".join(lines)
 
 func _get_ability_cost_text(ability_name: String) -> String:
@@ -17742,6 +17899,17 @@ func handle_server_message(message: Dictionary):
 						int(state.get("companion_combat_max_hp", -1)),
 						bool(state.get("companion_ko", false))
 					)
+				# Audit #1 Slice 6a — sync hand state from server. Old servers
+				# omit combat_hand; treat as missing data and leave the cached
+				# hand alone so legacy clients-vs-servers don't reset on every
+				# update.
+				if state.has("combat_hand"):
+					combat_hand = state.get("combat_hand", []) if state.get("combat_hand", []) is Array else []
+					combat_deck_count = int(state.get("combat_deck_count", 0))
+					combat_discard_count = int(state.get("combat_discard_count", 0))
+					if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
+						combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+					update_action_bar()
 
 		"combat_end":
 			# Flush any remaining phased combat messages before processing end
@@ -17754,6 +17922,15 @@ func handle_server_message(message: Dictionary):
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
+			# Audit #1 Slice 6a — wipe hand state at end of combat. Cards
+			# don't carry across encounters in 6a (deck is rebuilt fresh
+			# each combat from accessible abilities); the visual panel row
+			# is also cleared so it doesn't linger on the loot screen.
+			combat_hand = []
+			combat_deck_count = 0
+			combat_discard_count = 0
+			if combat_scene_panel and combat_scene_panel.has_method("clear_hand"):
+				combat_scene_panel.clear_hand()
 			# Close ability popup if player opened magic bolt dialog and combat ended before they acted
 			if ability_popup_active:
 				cancel_variable_cost_ability()
@@ -18695,8 +18872,33 @@ func _process_combat_start(message: Dictionary):
 	show_enemy_hp_bar(true)
 	update_enemy_hp_bar(current_enemy_name, current_enemy_level, 0, current_enemy_hp, current_enemy_max_hp)
 
+	# Audit #1 Slice 6a — initial hand for this combat. Server attaches it to
+	# the combat_start payload's combat_state via get_combat_display.
+	if combat_state.has("combat_hand"):
+		combat_hand = combat_state.get("combat_hand", []) if combat_state.get("combat_hand", []) is Array else []
+		combat_deck_count = int(combat_state.get("combat_deck_count", 0))
+		combat_discard_count = int(combat_state.get("combat_discard_count", 0))
+	else:
+		combat_hand = []
+		combat_deck_count = 0
+		combat_discard_count = 0
+
 	# Populate the combat scene panel (A1 — Combat Juice)
 	_populate_combat_scene_panel(combat_state)
+
+	# Slice 6a — push initial hand to the panel after populate (which clears
+	# state). Done here rather than inside _populate_combat_scene_panel so
+	# the populate signature stays focused on scene display data.
+	if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
+		combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+
+	# Slice 6a — refresh the action bar so keys 1-5 bind to the freshly
+	# drawn hand rather than the stale equipped_abilities order. The earlier
+	# update_action_bar() call (line ~18739) ran before combat_state was
+	# parsed and would otherwise leave the very first turn keyed to the
+	# legacy ability loadout, causing key 1 to fire whatever ability was
+	# bound to the equipped slot rather than card 1.
+	update_action_bar()
 
 # ===== INPUT HANDLING =====
 
@@ -22086,8 +22288,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.256 changes
+	display_game("[color=#00FF00]v0.9.256[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat ability deck — Slice 6a foundation (Audit #1)[/color]")
+	display_game("  • [b]Cards in combat[/b] — the action bar's ability slots are now drawn from a deck. Combat starts by shuffling all your accessible abilities and dealing 5 cards into your hand. Use a card → it goes to discard and a new one is drawn. When the deck empties, the discard reshuffles back in. Standard actions (Attack/Use Item/Flee/Outsmart) stay always-available outside the deck")
+	display_game("  • [b]Card row in the combat scene[/b] — the 5 drawn cards appear as a strip in the battle panel. Each card shows its hotkey, name, cost, and current mastery rank (Untrained → Master). Castable cards are highlighted; cards you can't afford this turn are dimmed but stay in hand until used")
+	display_game("  • [b]Hover any card[/b] for full details: cost, effect, current rank + damage modifier, progress to next rank, and a [b]preview of what the next rank gives[/b] so you can decide which abilities to invest in")
+	display_game("  • [b]Description audit[/b] — fixed misleading tooltips on Forcefield (was \"blocks 2 attacks\", actually flat-damage shield = 100 + INT × 8), Iron Skin, Berserk, Devastate, Cleave, Rally, Fortify, War Cry, Meteor, Haste, Paralyze, Banish, Cloak, and others. Trickster ability strings still queued for verification in the next pass")
+	display_game("  • [b]All-or-Nothing on R[/b] — A/N is too niche to draw as a card. It now lives permanently on the R action-bar slot when you're in combat with a hand")
+	display_game("  • [b]New characters start at Rank 0[/b] (\"Untrained\", -20% damage). The previous backfill that bumped fresh chars to Rank 2 was an existing-character migration leak — now correctly skipped on creation. Your archetype abilities will rank up through play, matching the locked direction of \"weak at first, grow with use\"")
+	display_game("  • [b]Inventory shortcut[/b] — double-click any inventory item to equip (if equipment) or use (if consumable). Materials/monster parts/locked items fall through silently")
+	display_game("  • [b]Map header fix[/b] — at NPC posts, the player sprite no longer renders one tile too high. The compass line was creating a third header row the sprite overlay didn't account for")
+	display_game("")
+
 	# v0.9.255 changes
-	display_game("[color=#00FF00]v0.9.255[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.255[/color]")
 	display_game("  [color=#FFD700]Market network browse — cross-post listing index (Audit #9 Slice 1)[/color]")
 	display_game("  • [b]New \"Network\" button[/b] in the market: see every listing across every trading post in one view. Each row shows the item, the price-at-that-post (with that post's markup), the seller, and the post name + distance from your current position")
 	display_game("  • [b]Read-only[/b] — to buy, you travel to that post and use Local browse there. Preserves the geographic value of trading posts; the network view is for finding the best deal, not teleport-shopping")
@@ -22121,14 +22336,6 @@ func display_changelog():
 	display_game("  • [b]7 chains shipped total[/b], one per T1 dungeon plus two T2. Distribution: Haven (3), Crossroads (2), East Market (2). Pick a starter route, run its chains, end up with one egg from each major lineage")
 	display_game("")
 
-	# v0.9.251 changes
-	display_game("[color=#00FFFF]v0.9.251[/color]")
-	display_game("  [color=#FFD700]Three more quest chains (Audit #6 Slice 2)[/color]")
-	display_game("  • [b]The Skeleton Lord's Curse[/b] (Haven, 2-stage): Kill 5 Skeletons → Slay the Skeleton Lord. Reward: 200 valor + Skeleton Egg")
-	display_game("  • [b]The Wolf Pack[/b] (Crossroads, 3-stage): Kill 4 Wolves → Kill 3 Giant Rats → Slay the Alpha Wolf. Reward: 250 valor + Wolf Egg")
-	display_game("  • [b]The Web Spreads[/b] (East Market, 2-stage, T2): Kill 4 Giant Spiders → Slay the Spider Queen. Reward: 350 valor + Giant Spider Egg")
-	display_game("  • Mix of 2-stage and 3-stage chains. Each leads to a different T1/T2 dungeon — completing all four chains (Goblin Menace included) gives a meaningful tour of the early-game roster, with one collected egg from each lineage")
-	display_game("")
 
 
 
