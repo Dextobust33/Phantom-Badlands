@@ -19478,6 +19478,9 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Elemental Storm": "unpredictable", "Unstable Core": "unpredictable",
 			"Petrifying Gaze": "curse", "Spore Cloud": "curse", "Intimidate": "curse",
 			"Dark Pact": "curse", "Terrifying Roar": "curse",
+			# Audit #5 boss signatures (Slice 1)
+			"Death Defiance": "boss_revive_once",
+			"Constricting Web": "boss_web_stun",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

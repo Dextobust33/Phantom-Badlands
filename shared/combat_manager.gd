@@ -102,6 +102,12 @@ const ABILITY_DISGUISE = "disguise"              # Appears as weaker monster, re
 const ABILITY_XP_STEAL = "xp_steal"              # Steals 1-3% of player XP on hit (rare, punishing)
 const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equipped item
 
+# Audit #5 — Boss signature mechanics. Each boss should have ONE distinct
+# mechanic not in its base monster pool. These are wired to flavor names like
+# "Death Defiance" / "Constricting Web" via boss_ability_map in server.gd.
+const ABILITY_BOSS_REVIVE_ONCE = "boss_revive_once"  # When boss dies, revives at 50% HP exactly once per fight
+const ABILITY_BOSS_WEB_STUN = "boss_web_stun"        # On hit, chance to web the player (skips next player turn)
+
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
 	var raw_art_array = _get_raw_monster_ascii_art(monster_name)
@@ -1193,6 +1199,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}
 
+	# === WEB STUN EFFECT (Constricting Web / boss_web_stun) ===
+	# Player struggles free this turn instead of acting. Web clears after one
+	# skipped turn so the boss can re-apply on a future hit.
+	if combat.get("player_webbed", false):
+		combat["player_webbed"] = false
+		messages.append("[color=#A335EE]You struggle free of the webbing — but lose this turn![/color]")
+		combat.player_can_act = false
+		return {"success": true, "messages": messages, "combat_ended": false}
+
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
 	if is_vanished:
@@ -1388,6 +1403,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var character = combat.character
 	var monster = combat.monster
 	var abilities = monster.get("abilities", [])
+
+	# Audit #5 boss signature — Death Defiance / boss_revive_once.
+	# Boss revives once at 50% HP. Suppress the victory cascade and continue
+	# the fight. Tracks via combat["boss_revive_used"] so it triggers exactly
+	# once per encounter.
+	if ABILITY_BOSS_REVIVE_ONCE in abilities and not combat.get("boss_revive_used", false):
+		combat["boss_revive_used"] = true
+		var revive_hp = max(1, int(monster.max_hp * 0.5))
+		monster.current_hp = revive_hp
+		messages.append("[color=#FFD700]The %s crumbles to dust... but bones rise once more![/color]" % monster.name)
+		messages.append("[color=#FFAA00]Death Defiance![/color] [color=#9ACD32]The %s revives at %d HP![/color]" % [monster.name, revive_hp])
+		return {"success": true, "messages": messages, "combat_ended": false}
 
 	# Custom death message
 	var death_msg = monster.get("death_message", "")
@@ -4482,6 +4509,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["charm_applied"] = true
 			combat["player_charmed"] = true
 			messages.append("[color=#FF00FF]The %s charms you! You will attack yourself next turn![/color]" % monster.name)
+
+	# Audit #5 boss signature — Constricting Web / boss_web_stun. On hit, 25%
+	# chance to web the player so their next turn skips. WIS provides
+	# resistance like other CC. Does not stack — re-roll only after the web
+	# expires.
+	if ABILITY_BOSS_WEB_STUN in abilities and hits > 0 and not combat.get("player_webbed", false):
+		var web_resist = int(character.get_effective_stat("wisdom") / 4)  # +0.25% per WIS
+		var web_chance = max(10, 25 - web_resist)  # Floor at 10%
+		if randi() % 100 < web_chance:
+			combat["player_webbed"] = true
+			messages.append("[color=#A335EE]The %s ensnares you in constricting webs![/color]" % monster.name)
+			messages.append("[color=#FFAA00]You are webbed — your next turn is lost struggling free![/color]")
 
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
