@@ -107,6 +107,8 @@ const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equ
 # "Death Defiance" / "Constricting Web" via boss_ability_map in server.gd.
 const ABILITY_BOSS_REVIVE_ONCE = "boss_revive_once"  # When boss dies, revives at 50% HP exactly once per fight
 const ABILITY_BOSS_WEB_STUN = "boss_web_stun"        # On hit, chance to web the player (skips next player turn)
+const ABILITY_BOSS_BLOODIED_FURY = "boss_bloodied_fury"  # When boss <30% HP, one-shot trigger: +75% damage rest of fight
+const ABILITY_BOSS_TREASURE_DECOY = "boss_treasure_decoy"  # First monster attack guaranteed crit at 2x damage
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -820,6 +822,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"curse_applied": false,  # Stat curse active
 		"disarm_applied": false,  # Weapon damage reduced
 		"summoner_triggered": false,  # Already called reinforcements
+		# Audit #5 boss signatures (Slice 2)
+		"treasure_decoy_pending": ABILITY_BOSS_TREASURE_DECOY in monster_abilities,  # First monster attack 2x crit
+		"bloodied_fury_triggered": false,  # One-shot Orc Warlord low-HP buff
 		# Disguise ability tracking
 		"disguise_active": disguise_active,
 		"disguise_true_stats": true_stats,
@@ -3987,6 +3992,15 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 					damage = int(damage * 1.75)  # 1.75x damage (nerfed from 2x)
 					messages.append("[color=#FF0000]AMBUSH! The %s strikes from the shadows![/color]" % monster.name)
 
+			# Audit #5 — Treasure Decoy / boss_treasure_decoy. Guaranteed 2x first
+			# attack telegraphing the boss's deceptive nature. Distinct from
+			# ambusher (75% chance, 1.75x): always triggers, hits harder, and is
+			# announced as a trap rather than a stealth strike.
+			if combat.get("treasure_decoy_pending", false):
+				combat["treasure_decoy_pending"] = false
+				damage = int(damage * 2.0)
+				messages.append("[color=#FF6600]TREASURE DECOY![/color] [color=#FFD700]The %s lashes out from its disguise![/color]" % monster.name)
+
 			# Berserker ability: +50% damage when below 50% HP
 			if ABILITY_BERSERKER in abilities:
 				var hp_percent = float(monster.current_hp) / float(monster.max_hp)
@@ -3994,6 +4008,19 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 					damage = int(damage * 1.5)
 					if attack_num == 0:
 						messages.append("[color=#FF4444]The %s enters a berserker rage![/color]" % monster.name)
+
+			# Audit #5 — Bloodied Fury / boss_bloodied_fury. One-shot trigger when
+			# boss drops below 30% HP: +75% damage permanent for rest of fight.
+			# Distinct from berserker (50% threshold, +50%, every turn) — single
+			# announcement, higher peak, sharper threshold.
+			if ABILITY_BOSS_BLOODIED_FURY in abilities:
+				if not combat.get("bloodied_fury_triggered", false):
+					var bf_hp_percent = float(monster.current_hp) / float(monster.max_hp)
+					if bf_hp_percent <= 0.3:
+						combat["bloodied_fury_triggered"] = true
+						messages.append("[color=#8B0000][b]BLOODIED FURY![/b][/color] [color=#FFAA00]The %s is bleeding heavily and surges into a killing rage![/color]" % monster.name)
+				if combat.get("bloodied_fury_triggered", false):
+					damage = int(damage * 1.75)
 
 			# Enrage stacks
 			var enrage = combat.get("enrage_stacks", 0)

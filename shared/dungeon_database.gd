@@ -272,7 +272,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.2,
 			"attack_mult": 1.4,
-			"abilities": ["War Cry", "Brutal Slam"]
+			"abilities": ["War Cry", "Brutal Slam", "Bloodied Fury"]
 		},
 		"boss_egg": "Orc",
 		"floors": 4,
@@ -489,7 +489,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.3,
 			"attack_mult": 1.4,
-			"abilities": ["Shapeshifter Strike", "Adhesive Trap"]
+			"abilities": ["Shapeshifter Strike", "Adhesive Trap", "Treasure Decoy"]
 		},
 		"boss_egg": "Mimic",
 		"floors": 4,
