@@ -10113,14 +10113,14 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
 		# (floor = ceiling × ratio, after all cost modifiers).
 		"power_strike": {"display": "Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"war_cry": {"display": "Cry", "cost": 15, "cost_percent": 0, "resource_type": "stamina"},
+		"war_cry": {"display": "Cry", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"shield_bash": {"display": "Bash", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"cleave": {"display": "Cleave", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"berserk": {"display": "Berserk", "cost": 40, "cost_percent": 0, "resource_type": "stamina"},
-		"iron_skin": {"display": "Iron", "cost": 35, "cost_percent": 0, "resource_type": "stamina"},
+		"berserk": {"display": "Berserk", "cost": 40, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"iron_skin": {"display": "Iron", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"devastate": {"display": "Devastate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"fortify": {"display": "Fortify", "cost": 25, "cost_percent": 0, "resource_type": "stamina"},
-		"rally": {"display": "Rally", "cost": 45, "cost_percent": 0, "resource_type": "stamina"},
+		"fortify": {"display": "Fortify", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"rally": {"display": "Rally", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		# Trickster abilities. Variable-cost: ambush, exploit, gambit (v0.9.261).
 		"analyze": {"display": "Analyze", "cost": 5, "cost_percent": 0, "resource_type": "energy"},
 		"distract": {"display": "Distract", "cost": 15, "cost_percent": 0, "resource_type": "energy"},
@@ -15306,14 +15306,14 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
-		"war_cry": return "+35% damage for 4 rounds (self buff)."
+		"war_cry": return "+35% damage for 4 rounds (self buff). Variable cost 5-15 stamina — damage bonus scales with spend; duration stays 4 rounds."
 		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
 		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round). Variable cost 9-30 stamina — damage AND bleed magnitude scale with spend; duration stays 4 rounds."
-		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk."
-		"iron_skin": return "60% damage reduction for 4 rounds."
+		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk. Variable cost 12-40 stamina — BOTH damage buff AND defense penalty scale with spend (same risk shape, smaller stakes)."
+		"iron_skin": return "60% damage reduction for 4 rounds. Variable cost 11-35 stamina — reduction magnitude scales with spend; duration stays 4 rounds."
 		"devastate": return "5× attack with sqrt STR scaling. Variable cost 15-50 stamina — damage scales linearly with spend."
-		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds."
-		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds."
+		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds. Variable cost 8-25 stamina — defense magnitude scales with spend; duration stays 5 rounds."
+		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds. Variable cost 11-35 stamina — heal amount AND STR buff both scale with spend; duration stays 3 rounds."
 		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
 		"distract": return "Enemy suffers -50% accuracy on its next attack."
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks."
@@ -15520,7 +15520,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		"banish":
 			base_cost = 80
 			cost_percent = 10
-		# Warrior abilities (devastate aligned 60→50 to match server's ability_info)
+		# Warrior abilities (aligned to server ability_info: devastate 50, rally 35)
 		"power_strike": base_cost = 10
 		"war_cry": base_cost = 15
 		"shield_bash": base_cost = 20
@@ -15529,7 +15529,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		"iron_skin": base_cost = 35
 		"devastate": base_cost = 50
 		"fortify": base_cost = 25
-		"rally": base_cost = 45
+		"rally": base_cost = 35
 		# Trickster abilities
 		"analyze": base_cost = 5
 		"distract": base_cost = 15
@@ -15556,7 +15556,7 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=#9932CC](8%% per move)[/color]"
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -22431,8 +22431,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.263 changes
+	display_game("[color=#00FF00]v0.9.263[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Warrior buffs (Audit #1)[/color]")
+	display_game("  • [b]War Cry / Iron Skin / Berserk / Fortify / Rally are all variable-cost now.[/b] Same auto-spend pattern; floors are ≈30%% of ceiling. Locked design choice: [b]magnitude scales with spend, duration stays full[/b] — so a partial buff still feels real for the full round count, just at lower power")
+	display_game("  • [b]War Cry[/b] 5-15 stamina. +35%% damage at full → +10%% damage at floor. Both for 4 rounds")
+	display_game("  • [b]Iron Skin[/b] 11-35 stamina. 60%% damage reduction → 18%% reduction at floor. Both for 4 rounds")
+	display_game("  • [b]Berserk[/b] 12-40 stamina. Both the damage buff AND the defense penalty scale together. \"Same risk shape, smaller stakes\" — a partial berserk swings smaller AND exposes you less. 4 rounds either way")
+	display_game("  • [b]Fortify[/b] 8-25 stamina. Defense magnitude scales with spend. 5 rounds")
+	display_game("  • [b]Rally[/b] 11-35 stamina. Both heal amount AND STR buff scale with spend. 3-round buff stays full duration")
+	display_game("  • Also fixed pre-existing client/server Rally cost drift (client said 45, server said 35) and aligned client to server")
+	display_game("  • 15/23 abilities done. Coming next: Mage CC (Haste / Paralyze / Banish) — chance-based stuff where the design question is whether to scale the chance or the magnitude")
+	display_game("")
+
 	# v0.9.262 changes
-	display_game("[color=#00FF00]v0.9.262[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.262[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Forcefield (Audit #1)[/color]")
 	display_game("  • [b]Forcefield is now variable-cost.[/b] Ceiling 20 mana (or 2%% max mana, whichever is higher); floor ≈ 30%% of that. Shield magnitude scales linearly with spend — a partial cast = a smaller shield, but it still soaks something")
 	display_game("  • Useful when you're low on mana mid-fight: instead of skipping Forcefield entirely, you can cast a partial one and still tank the next big hit (just not as much of it)")
@@ -22471,18 +22484,6 @@ func display_changelog():
 	display_game("  • [b]Goal: no card is ever a brick.[/b] If you've got even 3 stamina, you can fire off a Power Strike. The system spends what you have and gives you proportional effect. Buffs and mage/trickster abilities follow in later slices")
 	display_game("")
 
-	# v0.9.258 changes
-	display_game("[color=#00FFFF]v0.9.258[/color]")
-	display_game("  [color=#FFD700]Trickster ability descriptions — corrected against impl (Audit #1)[/color]")
-	display_game("  • [b]Analyze[/b] tooltip now lists its headline effect (was missing): grants [color=#FFFF00]+10%% damage to all attacks for the rest of this combat[/color], and reveals the outsmart chance against this specific monster")
-	display_game("  • [b]Pickpocket[/b] description was wrong — claimed to steal \"WITS × 10 gold\", actually steals [color=#FFD700]1-4 tier-scaled ore[/color] (Copper at T1 up to Primordial at T9). 1-3 pockets per fight; success scales WITS vs monster INT")
-	display_game("  • [b]Perfect Heist[/b] tooltip claimed \"double rewards\" — that was the pre-nerf behavior. Real numbers: 5-60%% success chance, 1.25× XP on hit, [color=#FF4444]enemy counter-attacks on miss[/color]")
-	display_game("  • [b]Sabotage[/b] now states what it actually does: -15-30%% str/def, stacks to a 50%% cap (was vaguely \"effect varies\")")
-	display_game("  • [b]Gambit[/b] now warns about the miss penalty: [color=#FF4444]15%% of your max HP as self-damage[/color]")
-	display_game("  • [b]Vanish[/b] now notes it skips the enemy turn (setup-play key info)")
-	display_game("  • [b]Exploit[/b] tightened to mention the WITS scaling explicitly")
-	display_game("  • Distract / Ambush descriptions verified accurate — no change needed. Combined with v0.9.256's ~19 ability audit, [color=#FFD700]all 24 in-game abilities now have descriptions that match the implementation[/color]")
-	display_game("")
 
 
 

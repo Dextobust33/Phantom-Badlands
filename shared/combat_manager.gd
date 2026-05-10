@@ -67,6 +67,12 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"exploit":      {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
 	"forcefield":   {"ceiling": 20, "cost_percent": 2, "floor_ratio": 0.3, "resource": "mana"},
+	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
+	"war_cry":      {"ceiling": 15, "floor_ratio": 0.3, "resource": "stamina"},
+	"fortify":      {"ceiling": 25, "floor_ratio": 0.3, "resource": "stamina"},
+	"iron_skin":    {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
+	"rally":        {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
+	"berserk":      {"ceiling": 40, "floor_ratio": 0.3, "resource": "stamina"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -3052,10 +3058,12 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
 
 		"war_cry":
-			# Buffed: +35% damage (was +25%) for 4 rounds (was 3)
-			character.add_buff("damage", 35, 4)
+			# Variable cost (v0.9.263): damage magnitude scales with spend.
+			# Duration stays 4 rounds so the buff still "feels real" at floor.
+			var war_cry_bonus = max(1, int(35 * variable_fraction))
+			character.add_buff("damage", war_cry_bonus, 4)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
-			messages.append("[color=#FFD700]+35%% damage for 4 rounds![/color]" % [])
+			messages.append("[color=#FFD700]+%d%% damage for 4 rounds![/color]" % war_cry_bonus)
 			is_buff_ability = true
 
 		"shield_bash":
@@ -3110,20 +3118,25 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FF4444]The target is bleeding! (%d damage/round for 4 rounds)[/color]" % bleed_damage)
 
 		"berserk":
-			# Buffed: +75% to +200% damage (was +50% to +150%)
+			# Variable cost (v0.9.263): BOTH buff and penalty scale by spend.
+			# "Same risk shape, smaller stakes" — partial berserk = smaller
+			# damage swing AND smaller defense exposure. Duration stays 4 rounds.
 			var hp_percent = float(character.current_hp) / float(character.get_total_max_hp())
 			var missing_hp_percent = 1.0 - hp_percent
-			var damage_bonus = int(75 + (missing_hp_percent * 125))  # 75-200% (was 50-150%)
-			character.add_buff("damage", damage_bonus, 4)  # 4 rounds (was 3)
-			character.add_buff("defense_penalty", -40, 4)  # Reduced penalty from -50%
+			var damage_bonus = max(1, int((75 + (missing_hp_percent * 125)) * variable_fraction))
+			var defense_penalty = int(-40 * variable_fraction)
+			character.add_buff("damage", damage_bonus, 4)
+			character.add_buff("defense_penalty", defense_penalty, 4)
 			messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), -40%% defense for 4 rounds![/color]" % damage_bonus)
+			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), %d%% defense for 4 rounds![/color]" % [damage_bonus, defense_penalty])
 
 		"iron_skin":
-			# Buffed: 60% damage reduction (was 50%) for 4 rounds (was 3)
-			character.add_buff("damage_reduction", 60, 4)
+			# Variable cost (v0.9.263): reduction magnitude scales with spend.
+			# Duration stays 4 rounds.
+			var iron_skin_reduction = max(1, int(60 * variable_fraction))
+			character.add_buff("damage_reduction", iron_skin_reduction, 4)
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
-			messages.append("[color=#00FF00]Block 60%% damage for 4 rounds![/color]" % [])
+			messages.append("[color=#00FF00]Block %d%% damage for 4 rounds![/color]" % iron_skin_reduction)
 			is_buff_ability = true
 
 		"devastate":
@@ -3145,19 +3158,21 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]A catastrophic blow deals %d damage![/color]" % damage)
 
 		"fortify":
-			# Buffed: Higher base defense, sqrt STR scaling
+			# Variable cost (v0.9.263): defense magnitude scales with spend.
+			# Duration stays 5 rounds.
 			var str_stat = character.get_effective_stat("strength")
-			var defense_bonus = 30 + int(sqrt(float(str_stat)) * 3)  # 30% base + sqrt(STR)Ã—3
+			var defense_bonus = max(1, int((30 + sqrt(float(str_stat)) * 3) * variable_fraction))
 			character.add_buff("defense", defense_bonus, 5)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
 			is_buff_ability = true
 
 		"rally":
-			# Buffed: Better heal scaling with sqrt CON
+			# Variable cost (v0.9.263): heal amount AND STR buff both scale with spend.
+			# Duration stays 3 rounds.
 			var con_stat = character.get_effective_stat("constitution")
-			var heal_amount = 30 + int(sqrt(float(con_stat)) * 10)  # 30 base + sqrt(CON)Ã—10
+			var heal_amount = max(1, int((30 + sqrt(float(con_stat)) * 10) * variable_fraction))
 			var actual_heal = character.heal(heal_amount)
-			var str_bonus = 10 + int(character.get_effective_stat("strength") / 5)
+			var str_bonus = max(1, int((10 + character.get_effective_stat("strength") / 5) * variable_fraction))
 			character.add_buff("strength", str_bonus, 3)
 			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for 3 rounds![/color]" % [actual_heal, str_bonus])
 			is_buff_ability = true
