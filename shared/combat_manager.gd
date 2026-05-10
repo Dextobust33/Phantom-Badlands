@@ -43,14 +43,26 @@ const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak", "all_or_nothing"]
 # Audit #1 variable-cost rework — floor + ceiling per ability. Spending the floor
 # yields VARIABLE_COST_MIN_FRACTION of the full effect; spending the ceiling yields
 # 100%. Linear scaling between. The "auto-spend max-affordable" UX means the player
-# never has a dead card so long as they can afford the floor. Pilot covers Warrior
-# damage abilities (v0.9.259); subsequent slices extend to buffs / mage / trickster.
+# never has a dead card so long as they can afford the floor.
+#
+# Table format (v0.9.260+):
+#   ceiling      — base ceiling cost
+#   floor_ratio  — floor = max(1, int(ceiling * floor_ratio)). Default 0.3.
+#   cost_percent — mage-only: ceiling = max(ceiling, max_mana * cost_percent / 100)
+#                  so high-level mages still see scaling. Same shape used in the
+#                  existing fixed-cost mage flow (_process_mage_ability).
+#   resource     — "stamina" | "mana" | "energy"
+#
+# Pilot covered Warrior damage (v0.9.259). v0.9.260 extends to Mage damage.
+# Subsequent slices add Warrior buffs / Mage CC / Trickster.
 const VARIABLE_COST_MIN_FRACTION: float = 0.3
 const VARIABLE_COST_TABLE: Dictionary = {
-	"power_strike": {"floor": 3, "ceiling": 10, "resource": "stamina"},
-	"shield_bash":  {"floor": 6, "ceiling": 20, "resource": "stamina"},
-	"cleave":       {"floor": 9, "ceiling": 30, "resource": "stamina"},
-	"devastate":    {"floor": 15, "ceiling": 50, "resource": "stamina"},
+	"power_strike": {"ceiling": 10, "floor_ratio": 0.3, "resource": "stamina"},
+	"shield_bash":  {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
+	"cleave":       {"ceiling": 30, "floor_ratio": 0.3, "resource": "stamina"},
+	"devastate":    {"ceiling": 50, "floor_ratio": 0.3, "resource": "stamina"},
+	"blast":        {"ceiling": 50, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
+	"meteor":       {"ceiling": 100, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -2655,6 +2667,20 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
 
+	# Audit #1 variable-cost rework — abilities in VARIABLE_COST_TABLE (blast,
+	# meteor in v0.9.260) auto-spend max-affordable up to ceiling. Magic Bolt
+	# stays on its own existing variable path (arg-driven). Other mage abilities
+	# stay fixed-cost until later slices.
+	var variable_fraction: float = 1.0
+	var on_variable_cost: bool = VARIABLE_COST_TABLE.has(ability_name) and ability_name != "magic_bolt"
+	if on_variable_cost:
+		var vc_result = apply_variable_cost(character, ability_name, combat)
+		for vc_msg in vc_result.get("messages", []):
+			messages.append(vc_msg)
+		if not vc_result.get("ok", false):
+			return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+		variable_fraction = float(vc_result.get("fraction", 1.0))
+
 	match ability_name:
 		"magic_bolt":
 			# Variable mana cost - damage scales with INT
@@ -2756,22 +2782,15 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			is_buff_ability = true
 
 		"blast":
-			# Apply Gnome racial and Sage mana cost reduction
-			var blast_cost = mana_cost
-			var gnome_mult = character.get_ability_cost_multiplier()
-			if gnome_mult < 1.0:
-				blast_cost = int(blast_cost * gnome_mult)
-			if passive_effects.has("mana_cost_reduction"):
-				blast_cost = int(blast_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
-			blast_cost = max(1, blast_cost)
-			if not character.use_mana(blast_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % blast_cost], "combat_ended": false, "skip_monster_turn": true}
-			if blast_cost < mana_cost:
-				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % blast_cost)
-			# Base damage 50, scaled by INT (+4% per point) and multiplied by 2
+			# Variable cost (v0.9.260) — apply_variable_cost helper above has
+			# already spent the mana and computed variable_fraction. The legacy
+			# Gnome/Sage cost reduction was rolled into apply_skill_cost_reduction
+			# inside the helper; the inline block is no longer needed.
+			# Base damage 50, scaled by INT (+4% per point) and multiplied by 2.
+			# Variable-cost: damage AND burn DoT magnitude scale by spend.
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
-			var base_damage = int(50 * int_multiplier * 2)  # Blast = Magic Ã— 2
+			var base_damage = int(50 * int_multiplier * 2 * variable_fraction)
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -2810,8 +2829,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
 			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
-			# Apply burn DoT (20% of INT per round for 3 rounds)
-			var burn_damage = max(1, int(int_stat * 0.2))
+			# Apply burn DoT (20% of INT per round, scaled by spend, for 3 rounds)
+			var burn_damage = max(1, int(int_stat * 0.2 * variable_fraction))
 			combat["monster_burn"] = burn_damage
 			combat["monster_burn_duration"] = 3
 			messages.append("[color=#FF6600]The target is burning! (%d damage/round for 3 rounds)[/color]" % burn_damage)
@@ -2839,23 +2858,13 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			}
 
 		"meteor":
-			# Apply Gnome racial and Sage mana cost reduction
-			var meteor_cost = mana_cost
-			var gnome_mult = character.get_ability_cost_multiplier()
-			if gnome_mult < 1.0:
-				meteor_cost = int(meteor_cost * gnome_mult)
-			if passive_effects.has("mana_cost_reduction"):
-				meteor_cost = int(meteor_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
-			meteor_cost = max(1, meteor_cost)
-			if not character.use_mana(meteor_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % meteor_cost], "combat_ended": false, "skip_monster_turn": true}
-			if meteor_cost < mana_cost:
-				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % meteor_cost)
-			# Base damage 100, scaled by INT (+4% per point), multiplied by 3-4x (random)
+			# Variable cost (v0.9.260) — apply_variable_cost above has spent the
+			# mana and computed variable_fraction. Base damage 100 × INT × 3-4x rng,
+			# scaled by spend.
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
-			var base_damage = int(100 * int_multiplier * meteor_mult)
+			var base_damage = int(100 * int_multiplier * meteor_mult * variable_fraction)
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -3569,9 +3578,18 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 		result.messages.append("[color=#FF4444]Ability %s missing from variable-cost table![/color]" % ability_name)
 		return result
 	var entry: Dictionary = VARIABLE_COST_TABLE[ability_name]
-	var base_floor: int = int(entry.get("floor", 1))
 	var base_ceiling: int = int(entry.get("ceiling", 10))
+	var floor_ratio: float = float(entry.get("floor_ratio", VARIABLE_COST_MIN_FRACTION))
+	var cost_percent: int = int(entry.get("cost_percent", 0))
 	var resource_type: String = str(entry.get("resource", "stamina"))
+
+	# Mage percentage-cost scaling: ceiling = max(base, max_mana * percent / 100).
+	# Matches the existing fixed-cost mage flow so late-game mages still see
+	# scaling. Only applies to mana abilities.
+	if resource_type == "mana" and cost_percent > 0:
+		var percent_cost = int(character.get_total_max_mana() * cost_percent / 100.0)
+		base_ceiling = max(base_ceiling, percent_cost)
+	var base_floor: int = max(1, int(base_ceiling * floor_ratio))
 
 	# Apply skill enhancement + racial reduction proportionally to both
 	var adj_floor = apply_skill_cost_reduction(character, ability_name, base_floor)

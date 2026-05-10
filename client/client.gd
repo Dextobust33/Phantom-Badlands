@@ -10101,23 +10101,24 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	var ability_defs = {
 		# Mage abilities - use percentage-based scaling
 		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
-		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "resource_type": "mana"},
+		# Slice 6c — blast + meteor are variable-cost (floor = 30% of ceiling)
+		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Alias for forcefield
 		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "resource_type": "mana"},  # Buffed, replaces Shield
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
-		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "resource_type": "mana"},
+		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "resource_type": "mana"},
-		# Warrior abilities. Variable-cost abilities (Slice 6c pilot) carry an
-		# extra cost_floor field — affordability check uses floor, display shows range.
-		"power_strike": {"display": "Strike", "cost": 10, "cost_floor": 3, "cost_percent": 0, "resource_type": "stamina"},
+		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
+		# (floor = ceiling × ratio, after all cost modifiers).
+		"power_strike": {"display": "Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"war_cry": {"display": "Cry", "cost": 15, "cost_percent": 0, "resource_type": "stamina"},
-		"shield_bash": {"display": "Bash", "cost": 20, "cost_floor": 6, "cost_percent": 0, "resource_type": "stamina"},
-		"cleave": {"display": "Cleave", "cost": 30, "cost_floor": 9, "cost_percent": 0, "resource_type": "stamina"},
+		"shield_bash": {"display": "Bash", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"cleave": {"display": "Cleave", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"berserk": {"display": "Berserk", "cost": 40, "cost_percent": 0, "resource_type": "stamina"},
 		"iron_skin": {"display": "Iron", "cost": 35, "cost_percent": 0, "resource_type": "stamina"},
-		"devastate": {"display": "Devastate", "cost": 50, "cost_floor": 15, "cost_percent": 0, "resource_type": "stamina"},
+		"devastate": {"display": "Devastate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"fortify": {"display": "Fortify", "cost": 25, "cost_percent": 0, "resource_type": "stamina"},
 		"rally": {"display": "Rally", "cost": 45, "cost_percent": 0, "resource_type": "stamina"},
 		# Trickster abilities
@@ -10149,7 +10150,6 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 
 	# Apply race and class cost modifiers to match server calculations
 	var final_cost = base_cost
-	var final_floor = int(result.get("cost_floor", 0))  # Slice 6c variable-cost
 	var player_race = character_data.get("race", "")
 	var player_class = character_data.get("class", "")
 	var ability_resource_type = result.resource_type
@@ -10157,37 +10157,31 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	# Gnome racial: -15% ability costs (all resource types)
 	if player_race == "Gnome":
 		final_cost = int(final_cost * 0.85)
-		if final_floor > 0:
-			final_floor = int(final_floor * 0.85)
 
 	# Class-specific cost modifiers
 	if ability_resource_type == "stamina":
 		# Fighter: 20% reduced stamina costs
 		if player_class == "Fighter":
 			final_cost = int(final_cost * 0.80)
-			if final_floor > 0:
-				final_floor = int(final_floor * 0.80)
 		# Barbarian: 25% increased stamina costs
 		elif player_class == "Barbarian":
 			final_cost = int(final_cost * 1.25)
-			if final_floor > 0:
-				final_floor = int(final_floor * 1.25)
 	elif ability_resource_type == "mana":
 		# Sage: 25% reduced mana costs
 		if player_class == "Sage":
 			final_cost = int(final_cost * 0.75)
-			if final_floor > 0:
-				final_floor = int(final_floor * 0.75)
 
 	# Minimum cost of 1 (unless base was 0)
 	if base_cost > 0 and final_cost < 1:
 		final_cost = 1
-	if final_floor > 0 and final_floor < 1:
-		final_floor = 1
+
+	# Slice 6c variable-cost: derive floor from the final ceiling so the floor
+	# automatically tracks all racial/class/percent-scaling reductions.
+	var floor_ratio = float(result.get("cost_floor_ratio", 0.0))
+	if floor_ratio > 0.0 and final_cost > 0:
+		result.cost_floor = max(1, int(final_cost * floor_ratio))
 
 	result.cost = final_cost
-	if final_floor > 0:
-		result.cost_floor = final_floor
 	return result
 
 func show_combat_item_menu():
@@ -15304,10 +15298,10 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
 		"cloak": return "75% chance to escape combat. Costs 8% of your max class resource. Requires Lv 20."
-		"blast": return "INT-scaled burst damage and applies a 3-round burn DoT (20% of INT per round)."
+		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
 		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until the shield is depleted."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
-		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. High mana cost."
+		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
 		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits."
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish."
@@ -15560,11 +15554,12 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=%s](variable mana)[/color]" % resource_color
 	elif ability_name == "cloak":
 		return "[color=#9932CC](8%% per move)[/color]"
-	# Slice 6c pilot — variable-cost warrior damage abilities show "(f-c sta)".
-	# Floors must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_floors := {"power_strike": 3, "shield_bash": 6, "cleave": 9, "devastate": 15}
-	if ability_name in variable_floors and cost > 0:
-		return "[color=%s](%d-%d %s)[/color]" % [resource_color, int(variable_floors[ability_name]), cost, resource_type.substr(0, 3)]
+	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
+	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor"]
+	if ability_name in variable_abilities and cost > 0:
+		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
+		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
 	if cost > 0:
 		return "[color=%s](%d %s)[/color]" % [resource_color, cost, resource_type.substr(0, 3)]
 	return ""
@@ -22436,8 +22431,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.260 changes
+	display_game("[color=#00FF00]v0.9.260[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Variable-cost — Mage damage (Audit #1)[/color]")
+	display_game("  • [b]Blast and Meteor are now variable-cost[/b]. Same pattern as Slice 6c — auto-spend max-affordable, floor 30%% of ceiling, partial-cast banner if you spent less than full")
+	display_game("  • [b]Floor scales with your mana pool.[/b] Since Mage abilities have percentage-cost scaling (5%% for Blast, 8%% for Meteor), the floor scales too: an early Mage with 200 max mana has Blast floor ~15 / ceiling 50; a Lv100 Mage with 2000 max mana has Blast floor ~30 / ceiling 100")
+	display_game("  • [b]Blast burn DoT magnitude scales[/b] with spend. Duration stays 3 rounds")
+	display_game("  • [b]Card UI[/b] shows the cost range (e.g. \"15-50 MAN\") and cards light up when you can afford the floor")
+	display_game("  • Table refactor: VARIABLE_COST_TABLE now uses [code]floor_ratio[/code] (0.3 default) instead of explicit floor — floor derives from the post-modifier ceiling so racial/class/percent-scaling reductions apply automatically to both")
+	display_game("  • 6/23 abilities done. Coming next: Trickster damage (Ambush / Gambit / Exploit), then Warrior buffs (the harder design work — \"weaker for less\" on duration/magnitude)")
+	display_game("")
+
 	# v0.9.259 changes
-	display_game("[color=#00FF00]v0.9.259[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.259[/color]")
 	display_game("  [color=#FFD700]Variable-cost rework — Warrior damage pilot (Audit #1)[/color]")
 	display_game("  • [b]Power Strike / Shield Bash / Cleave / Devastate are now variable-cost[/b]. Each has a floor and ceiling — Power Strike 3-10 stamina, Shield Bash 6-20, Cleave 9-30, Devastate 15-50. Spend the ceiling for full effect; spend the floor for 30%% effect; linear scaling between")
 	display_game("  • [b]Auto-spend max-affordable.[/b] Press the key, the system spends whatever you can afford up to the ceiling. No new prompt or slider — you don't need to micromanage. The card lights up if you can afford the floor")
@@ -22483,14 +22489,6 @@ func display_changelog():
 	display_game("  • [b]Map header fix[/b] — at NPC posts, the player sprite no longer renders one tile too high. The compass line was creating a third header row the sprite overlay didn't account for")
 	display_game("")
 
-	# v0.9.255 changes
-	display_game("[color=#00FFFF]v0.9.255[/color]")
-	display_game("  [color=#FFD700]Market network browse — cross-post listing index (Audit #9 Slice 1)[/color]")
-	display_game("  • [b]New \"Network\" button[/b] in the market: see every listing across every trading post in one view. Each row shows the item, the price-at-that-post (with that post's markup), the seller, and the post name + distance from your current position")
-	display_game("  • [b]Read-only[/b] — to buy, you travel to that post and use Local browse there. Preserves the geographic value of trading posts; the network view is for finding the best deal, not teleport-shopping")
-	display_game("  • Sort by [color=#87CEEB]Price ▲/▼, Name, Distance, Category[/color]. Filter by item type. Pagination across the entire network")
-	display_game("  • From local browse, slot 6 toggles to Network. From network, slot 6 toggles back to Local. Inspect any listing to see full item details + a 'travel to <post>' hint")
-	display_game("")
 
 
 
