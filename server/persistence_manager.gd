@@ -245,7 +245,8 @@ func create_account(username: String, password: String) -> Dictionary:
 		"created_at": int(Time.get_unix_time_from_system()),
 		"character_slots": [],
 		"max_characters": DEFAULT_MAX_CHARACTERS,
-		"is_admin": false
+		"is_admin": false,
+		"mastery_records": {}  # ability_name → highest rank ever achieved on any character (Slice 2)
 	}
 
 	accounts_data.username_to_id[username_lower] = account_id
@@ -334,6 +335,30 @@ func find_account_for_character(char_name: String) -> String:
 		if char_name in slots:
 			return acc_id
 	return ""
+
+func get_account_mastery_records(account_id: String) -> Dictionary:
+	"""Return account's highest-ever mastery ranks (Slice 2). Survives permadeath.
+	Empty dict for new accounts or unknown account_id."""
+	if not accounts_data.accounts.has(account_id):
+		return {}
+	var account = accounts_data.accounts[account_id]
+	return account.get("mastery_records", {}).duplicate()
+
+func update_account_mastery_record(account_id: String, ability_name: String, new_rank: int) -> bool:
+	"""Bump the account's highest-ever rank for an ability if new_rank exceeds the
+	stored value. Returns true if the record was updated, false if no change.
+	Called by the server when a character ranks up an ability in combat."""
+	if not accounts_data.accounts.has(account_id):
+		return false
+	var account = accounts_data.accounts[account_id]
+	if not account.has("mastery_records"):
+		account["mastery_records"] = {}
+	var current = int(account["mastery_records"].get(ability_name, 0))
+	if new_rank <= current:
+		return false
+	account["mastery_records"][ability_name] = new_rank
+	save_accounts()
+	return true
 
 func add_character_to_account(account_id: String, char_name: String):
 	"""Add character name to account's character slots"""

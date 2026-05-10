@@ -1486,6 +1486,11 @@ func handle_list_characters(peer_id: int):
 		# Slice 5 — spawn-at-post: account-owned posts that the next
 		# character can pick as a spawn point. Empty for fresh accounts.
 		"available_spawn_posts": _get_posts_for_account(account_id),
+		# Slice 2 — account-level mastery records (highest rank ever per
+		# ability across all characters). Survives permadeath. Future Slice 3
+		# (Sanctuary headstart purchases) will spend baddie points to apply
+		# these records as starting ranks on a new character.
+		"account_mastery_records": persistence.get_account_mastery_records(account_id),
 	})
 
 func handle_select_character(peer_id: int, message: Dictionary):
@@ -3193,6 +3198,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	for msg in result.get("messages", []):
 		send_combat_message(peer_id, msg)
 
+	# Slice 2 — promote ability rank-ups to account-level record (survives permadeath)
+	if result.has("mastery_rank_changed"):
+		var rc = result.mastery_rank_changed
+		var rc_account_id = peers.get(peer_id, {}).get("account_id", "")
+		if rc_account_id != "":
+			persistence.update_account_mastery_record(rc_account_id, rc.get("ability", ""), int(rc.get("new_rank", 0)))
+
 	# Accumulate messages in combat log for death screen
 	if combat_mgr.active_combats.has(peer_id):
 		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
@@ -4276,6 +4288,8 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 	permadeath_msg["type"] = "permadeath"
 	permadeath_msg["leaderboard_rank"] = rank
 	permadeath_msg["baddie_points_earned"] = baddie_points_earned
+	# Slice 2 — show what mastery is preserved for the next character
+	permadeath_msg["account_mastery_records"] = persistence.get_account_mastery_records(account_id)
 	permadeath_msg["message"] = "[color=#FF0000]%s has fallen! Slain by %s.[/color]" % [character.name, cause_of_death]
 	send_to_peer(peer_id, permadeath_msg)
 
@@ -9432,6 +9446,16 @@ func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
 func _award_baddie_points_on_death(peer_id: int, character: Character, account_id: String, cause_of_death: String) -> int:
 	"""Calculate and award baddie points to house on character death"""
 	var bp = persistence.calculate_baddie_points(character)
+
+	# Slice 2 — snapshot ability ranks to the account's permanent mastery record.
+	# Combat-time updates already cover most rank-ups; this is a safety net for
+	# ranks earned before the in-combat hook existed (backfilled rank-2) or for
+	# any ranks the combat hook may have missed.
+	var ability_uses_at_death: Dictionary = character.ability_uses if character.ability_uses != null else {}
+	for ability_name in ability_uses_at_death.keys():
+		var rank = character.get_ability_rank(ability_name)
+		if rank > 0:
+			persistence.update_account_mastery_record(account_id, ability_name, rank)
 
 	if bp > 0:
 		persistence.add_baddie_points(account_id, bp)
