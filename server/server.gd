@@ -6093,6 +6093,27 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	var gold_bonus = randi_range(25 + tier * 25, 100 + tier * 50)
 	character.gold += gold_bonus
 
+	# Audit #5 discoverability — chance for a Dungeon Compass to drop with the
+	# chest contents. Compass tier_max scales with chest tier so a tier-1 chest
+	# only points to T1-2 dungeons (relevant to the player who's opening it).
+	# 18% chance starting at tier 2.
+	var compass_drop = {}
+	if tier >= 2 and randi() % 100 < 18:
+		var compass_tier_max = mini(9, tier + 1)
+		var compass_name = "Dungeon Compass"
+		if compass_tier_max >= 6:
+			compass_name = "Master Dungeon Compass"
+		elif compass_tier_max >= 4:
+			compass_name = "Greater Dungeon Compass"
+		compass_drop = {
+			"name": compass_name,
+			"item_type": "dungeon_compass",
+			"type": "consumable",
+			"tier_max": compass_tier_max,
+			"is_consumable": true
+		}
+		character.add_item(compass_drop)
+
 	# Build result message
 	var msg = "[color=#FFD700]You open the %s![/color]\n" % chest_name
 	msg += "[color=#00FF00]Found:[/color]\n"
@@ -6100,6 +6121,8 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 		var mat_name = mat_id.replace("_", " ").capitalize()
 		msg += "  [color=#00BFFF]%s x%d[/color]\n" % [mat_name, reward_materials[mat_id]]
 	msg += "  [color=#FFD700]%d Gold[/color]" % gold_bonus
+	if not compass_drop.is_empty():
+		msg += "\n  [color=#9ACD32]+1 %s[/color] [color=#808080](use to reveal nearest T%d-or-lower dungeon)[/color]" % [compass_drop.name, compass_drop.tier_max]
 
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 	save_character(peer_id)
@@ -6183,6 +6206,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	# Escape scroll — safe dungeon exit
 	if item_type == "escape_scroll" or item.get("item_type", "") == "escape_scroll":
 		_use_escape_scroll(peer_id, index)
+		return
+
+	# Audit #5 discoverability — Dungeon Compass: reveals nearest world dungeon
+	if item_type == "dungeon_compass" or item.get("item_type", "") == "dungeon_compass":
+		_use_dungeon_compass(peer_id, index)
 		return
 
 	# Treasure chest — open for random materials and gold
@@ -20551,6 +20579,62 @@ func _roll_dungeon_gather(node_type: String, resource_tier: int, dungeon_tier: i
 		materials.append({"id": mat_id, "quantity": randi_range(1, 3)})
 
 	return materials
+
+func _use_dungeon_compass(peer_id: int, item_index: int):
+	"""Audit #5 discoverability tool — Dungeon Compass. Reveals the nearest
+	world dungeon (skips personal-instance dungeons owned by other players).
+	One-shot consumable; reads compass-tier from the item to scope which
+	dungeon tiers are revealed (low-tier compass for low-tier dungeons)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "The compass spins wildly inside a dungeon."})
+		return
+
+	if item_index < 0 or item_index >= character.inventory.size():
+		return
+	var item = character.inventory[item_index]
+	if item.get("item_type", "") != "dungeon_compass" and item.get("type", "") != "dungeon_compass":
+		return
+
+	var compass_tier_max = int(item.get("tier_max", 4))
+	var nearest = _find_nearest_dungeon_for_quest(character.x, character.y, "", compass_tier_max, peer_id)
+
+	if nearest.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFAA00]The compass needle wavers — no qualifying dungeon within range. (Higher-tier compasses cover more territory.)[/color]"
+		})
+		# Compass NOT consumed on no-target — players don't want a wasted feel
+		return
+
+	# Consume the compass
+	character.remove_item(item_index)
+
+	var d_color = "#88FF88"
+	var d_data = DungeonDatabaseScript.get_dungeon(nearest.dungeon_type)
+	if not d_data.is_empty():
+		d_color = d_data.get("color", d_color)
+
+	var msg = "[color=#FFD700]The compass needle steadies and glows![/color]\n"
+	msg += "[color=%s]%s[/color] [color=#808080](T%d)[/color] lies %s." % [d_color, nearest.dungeon_name, int(d_data.get("tier", 1)) if not d_data.is_empty() else 1, nearest.direction_text]
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+
+	# Send a compass_reveal payload so the client can flash a marker on the
+	# map. Time-limited reveal — client decides how long to show it.
+	send_to_peer(peer_id, {
+		"type": "compass_reveal",
+		"x": int(nearest.x),
+		"y": int(nearest.y),
+		"name": nearest.dungeon_name,
+		"dungeon_type": nearest.dungeon_type,
+		"color": d_color
+	})
+
+	save_character(peer_id)
+	send_character_update(peer_id)
 
 func _use_escape_scroll(peer_id: int, item_index: int):
 	"""Use an escape scroll to safely exit a dungeon."""
