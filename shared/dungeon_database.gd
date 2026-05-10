@@ -330,7 +330,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.2,
 			"attack_mult": 1.4,
-			"abilities": ["Shield Wall", "Tactical Strike"]
+			"abilities": ["Shield Wall", "Tactical Strike", "Iron Discipline"]
 		},
 		"boss_egg": "Hobgoblin",
 		"floors": 4,
