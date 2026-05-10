@@ -10059,13 +10059,19 @@ func _get_combat_hand_actions() -> Array:
 				actions.append({"label": card_name.replace("_", " ").capitalize(), "action_type": "combat", "action_data": card_name, "enabled": true, "cost": 0, "resource_type": ""})
 				continue
 			var cost = int(info.get("cost", 0))
+			# Variable-cost abilities (Slice 6c+): hotkey fires as long as the
+			# player can afford the FLOOR — server then scales the effect down
+			# accordingly. Matches the combat_scene_panel.gd click path's
+			# affordability rule so the hotkey and the mouse can't disagree.
+			var cost_floor = int(info.get("cost_floor", 0))
+			var affordability_threshold = cost_floor if cost_floor > 0 else cost
 			var rt = str(info.get("resource_type", ""))
 			var has_resource = true
-			if cost > 0:
+			if affordability_threshold > 0:
 				match rt:
-					"mana": has_resource = current_mana >= cost
-					"stamina": has_resource = current_stamina >= cost
-					"energy": has_resource = current_energy >= cost
+					"mana": has_resource = current_mana >= affordability_threshold
+					"stamina": has_resource = current_stamina >= affordability_threshold
+					"energy": has_resource = current_energy >= affordability_threshold
 			actions.append({
 				"label": str(info.get("display", card_name)),
 				"action_type": "combat",
@@ -22431,8 +22437,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.266 changes
+	display_game("[color=#00FF00]v0.9.266[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — variable-cost hotkey firing[/color]")
+	display_game("  • [b]Fixed: variable-cost ability hotkeys not firing when below the ceiling.[/b] Example: Devastate range 15-50 SP with 35 stamina — the card would light up and clicking worked, but pressing the hotkey did nothing. Action bar's affordability check was still gating on the ceiling cost; click path was already using the floor. Both paths now use the floor (server scales the effect down to match what you actually spent)")
+	display_game("")
+
 	# v0.9.265 changes
-	display_game("[color=#00FF00]v0.9.265[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.265[/color]")
 	display_game("  [color=#FFD700]Variable-cost — Trickster utility (last batch! 22/23 done)[/color]")
 	display_game("  • [b]Pickpocket, Sabotage, Distract, Perfect Heist[/b] are now variable-cost. Same auto-spend pattern; floors ≈30%% of ceiling")
 	display_game("  • [b]Pickpocket[/b] 6-20 energy. Steal CHANCE scales with spend; ore quantity stays the same on success (pp_max per-fight cap is the limiter)")
