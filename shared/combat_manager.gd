@@ -1854,6 +1854,20 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 					var ability = drop_tables.get_companion_ability(tier, ability_level)
 					if not ability.is_empty():
 						messages.append("[color=#FFD700]* New ability unlocked: %s! *[/color]" % ability.get("name", "Unknown"))
+			# Audit #1 Slice 4b — companion-gift ability. When the companion
+			# crosses level 10 this combat AND its monster type has a mapped
+			# gift_ability AND the player's deck doesn't yet contain it, add
+			# 1 copy + announce. One-time per ability per character (we
+			# don't re-gift once it's in the deck). Closes the chassis lock
+			# from Slice 4 — this is the primary cross-class acquisition
+			# path.
+			if drop_tables and 10 in companion_result.abilities_unlocked:
+				var monster_type = companion.get("monster_type", companion.get("name", ""))
+				var gift_ability = drop_tables.get_companion_gift_ability(monster_type)
+				if gift_ability != "" and not character.combat_deck_collection.has(gift_ability):
+					character.combat_deck_collection[gift_ability] = 1
+					var ability_display = gift_ability.capitalize().replace("_", " ")
+					messages.append("[color=#FFD700]* %s teaches you %s! +1 deck card. *[/color]" % [companion.get("name", "Companion"), ability_display])
 
 	# Normal gem drops (from high-level monsters) → Monster Gem material
 	var gems_earned = roll_gem_drops(monster, character)
