@@ -2666,7 +2666,9 @@ func _process(delta):
 					_consume_item_select_key(i)
 					if i < 5:
 						var bulk_types = ["equipment", "consumables", "tools", "materials", "food"]
-						send_to_server({"type": "market_list_all", "list_type": bulk_types[i]})
+						# v0.9.268: ask server for a preview first; on response, show
+						# confirm dialog. Actual listing happens on confirm.
+						send_to_server({"type": "market_list_preview", "list_type": bulk_types[i]})
 					else:
 						# Key 6 = List Egg from Incubator
 						pending_market_action = "list_egg"
@@ -11230,8 +11232,9 @@ func execute_local_action(action: String):
 				market_page += 1
 				send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		"market_filter":
-			# Cycle through categories
-			var categories = ["all", "equipment", "egg", "consumable", "tool", "rune", "material", "monster_part"]
+			# Cycle through categories. v0.9.268: food gets its own filter
+			# (plant/herb/fungus/fish material types).
+			var categories = ["all", "equipment", "egg", "consumable", "food", "tool", "rune", "material", "monster_part"]
 			var idx = categories.find(market_category)
 			market_category = categories[(idx + 1) % categories.size()]
 			market_page = 0
@@ -11272,7 +11275,7 @@ func execute_local_action(action: String):
 				market_page += 1
 				send_to_server({"type": "market_network_browse", "category": market_category, "page": market_page, "sort": market_network_sort})
 		"market_network_filter":
-			var net_categories = ["all", "equipment", "egg", "consumable", "tool", "rune", "material", "monster_part"]
+			var net_categories = ["all", "equipment", "egg", "consumable", "food", "tool", "rune", "material", "monster_part"]
 			var net_idx = net_categories.find(market_category)
 			market_category = net_categories[(net_idx + 1) % net_categories.size()]
 			market_page = 0
@@ -18462,6 +18465,8 @@ func handle_server_message(message: Dictionary):
 			_handle_market_cancel_all_success(message)
 		"market_list_all_success":
 			_handle_market_list_all_success(message)
+		"market_list_preview_result":
+			_handle_market_list_preview_result(message)
 		"market_start":
 			# Server sends this when player bumps $ tile at trading post
 			enter_market()
@@ -22453,8 +22458,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.268 changes
+	display_game("[color=#00FF00]v0.9.268[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market: bulk-list preview + Food filter[/color]")
+	display_game("  • [b]Bulk listing now asks first.[/b] Press 1-5 on the market menu — instead of silently listing, you get a popup: [color=#FFD700]\"Will list N items for X Valor. Proceed?\"[/color] with List / Cancel. Nothing gets listed until you confirm")
+	display_game("  • If the category is empty, the popup is skipped and the log says \"Nothing to list for that category\" — no more guessing whether anything happened")
+	display_game("  • [b]Food has its own market filter category now.[/b] On the browse screen, cycling the filter now includes [color=#9ACD32]Food[/color] between Consumable and Tool. Filters for Plants, Herbs, Fungus, and Fish (cooking inputs). Material filter no longer mixes food in")
+	display_game("  • Same Food filter works on the Network Browse view")
+	display_game("")
+
 	# v0.9.267 changes
-	display_game("[color=#00FF00]v0.9.267[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.267[/color]")
 	display_game("  [color=#FFD700]Cloak / Teleport tooltips show unlock level[/color]")
 	display_game("  • Hovering Cloak or Teleport on the Abilities screen now clearly says when the ability unlocks. Cloak is universal at level 20. Teleport scales by class: Mage 30, Trickster 45, Warrior 60")
 	display_game("  • If you're below the unlock level, the tooltip reads \"Locked — unlocks at level N (you are level M)\". At or above the unlock, it reads \"Unlocked (level N+)\"")
@@ -22488,18 +22502,6 @@ func display_changelog():
 	display_game("  • 18/23 abilities done. Coming next: Trickster utility (Pickpocket / Sabotage / Distract / Perfect Heist) — the last batch")
 	display_game("")
 
-	# v0.9.263 changes
-	display_game("[color=#00FFFF]v0.9.263[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Warrior buffs (Audit #1)[/color]")
-	display_game("  • [b]War Cry / Iron Skin / Berserk / Fortify / Rally are all variable-cost now.[/b] Same auto-spend pattern; floors are ≈30%% of ceiling. Locked design choice: [b]magnitude scales with spend, duration stays full[/b] — so a partial buff still feels real for the full round count, just at lower power")
-	display_game("  • [b]War Cry[/b] 5-15 stamina. +35%% damage at full → +10%% damage at floor. Both for 4 rounds")
-	display_game("  • [b]Iron Skin[/b] 11-35 stamina. 60%% damage reduction → 18%% reduction at floor. Both for 4 rounds")
-	display_game("  • [b]Berserk[/b] 12-40 stamina. Both the damage buff AND the defense penalty scale together. \"Same risk shape, smaller stakes\" — a partial berserk swings smaller AND exposes you less. 4 rounds either way")
-	display_game("  • [b]Fortify[/b] 8-25 stamina. Defense magnitude scales with spend. 5 rounds")
-	display_game("  • [b]Rally[/b] 11-35 stamina. Both heal amount AND STR buff scale with spend. 3-round buff stays full duration")
-	display_game("  • Also fixed pre-existing client/server Rally cost drift (client said 45, server said 35) and aligned client to server")
-	display_game("  • 15/23 abilities done. Coming next: Mage CC (Haste / Paralyze / Banish) — chance-based stuff where the design question is whether to scale the chance or the magnitude")
-	display_game("")
 
 
 
@@ -30922,6 +30924,35 @@ func _handle_market_list_all_success(message: Dictionary):
 	if market_mode:
 		display_market_main()
 		update_action_bar()
+
+func _handle_market_list_preview_result(message: Dictionary) -> void:
+	"""v0.9.268 — server replied to a market_list_preview request. Show a
+	confirm dialog with count + total valor. On accept, fire the real
+	market_list_all. Empty results bail with a clear message."""
+	var list_type = str(message.get("list_type", ""))
+	var count = int(message.get("count", 0))
+	var total_valor = int(message.get("total_valor", 0))
+	if count <= 0:
+		display_game("[color=#FFA500]Nothing to list for that category.[/color]")
+		return
+	var label_map := {
+		"equipment": "Equipment",
+		"consumables": "Consumables",
+		"tools": "Tools & Structures",
+		"materials": "Materials (non-food)",
+		"food": "Food (Plants / Herbs / Fungus / Fish)"
+	}
+	var label = str(label_map.get(list_type, list_type.capitalize()))
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Confirm bulk listing"
+	dialog.dialog_text = "%s\n\nWill list %d items for %s Valor.\n\nProceed?" % [label, count, format_number(total_valor)]
+	dialog.get_ok_button().text = "List"
+	dialog.confirmed.connect(func():
+		send_to_server({"type": "market_list_all", "list_type": list_type})
+		dialog.queue_free())
+	dialog.canceled.connect(func(): dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
 
 func _handle_market_cancel_success(message: Dictionary):
 	"""Handle successful listing cancellation (full or partial)."""
