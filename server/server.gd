@@ -10434,17 +10434,26 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 	# so the client can render a "-15%" badge on discounted rows.
 	# Audit #9 Slice 4 — attach `avg_recent_price` from the rolling history so
 	# the client can render a "(avg X)" badge next to the listing price.
+	# Audit #11 Slice 7 — threat-aware price hike. Applied AFTER specialty
+	# discount so a discounted post still costs more when threatened (the
+	# bandits don't care that the trader is a tin specialist).
+	var threat_info = _get_post_threat_info(peer_id)
+	var threat_mult = float(threat_info.get("multiplier", 1.0)) if threat_info.get("threatened", false) else 1.0
 	for listing in filtered:
 		var cat = listing.get("supply_category", "equipment")
 		var markup = persistence.calculate_markup(post_id, cat)
 		var base_markup_price = int(listing.get("base_valor", 0) * markup)
 		var disc = trading_post_db.get_specialty_discount(post_id, cat)
+		var price_after_disc: int
 		if disc > 0.0:
-			listing["markup_price"] = int(base_markup_price * (1.0 - disc))
+			price_after_disc = int(base_markup_price * (1.0 - disc))
 			listing["specialty_discount"] = disc
 		else:
-			listing["markup_price"] = base_markup_price
+			price_after_disc = base_markup_price
 			listing["specialty_discount"] = 0.0
+		# Stash the pre-threat price so the client can render "(was N)" hints.
+		listing["pre_threat_price"] = price_after_disc
+		listing["markup_price"] = int(price_after_disc * threat_mult)
 		listing["markup"] = markup
 		var item_dict: Dictionary = listing.get("item", {})
 		listing["avg_recent_price"] = _get_avg_recent_price(String(item_dict.get("name", "")))
@@ -10518,7 +10527,10 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		"sort": sort_mode,
 		"post_id": post_id,
 		# Audit #9 Slice 3 — specialty header for the panel ("Specialty: -15% on Materials")
-		"specialty_summary": trading_post_db.get_specialty_summary(post_id)
+		"specialty_summary": trading_post_db.get_specialty_summary(post_id),
+		# Audit #11 Slice 7 — threat_info populates a banner above listings
+		# when prices are hiked. Empty dict when no threat.
+		"threat_info": threat_info,
 	})
 
 func handle_market_network_browse(peer_id: int, message: Dictionary):
@@ -10991,6 +11003,13 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	var specialty_disc = trading_post_db.get_specialty_discount(post_id, cat)
 	if specialty_disc > 0.0:
 		price = int(price * (1.0 - specialty_disc))
+
+	# Audit #11 Slice 7 — threat-aware price hike. Applied last so the buyer
+	# pays the inflated cost the browse view advertised. Server is the
+	# authoritative price-setter; client just renders what we send.
+	var buy_threat_info = _get_post_threat_info(peer_id)
+	if buy_threat_info.get("threatened", false):
+		price = int(price * float(buy_threat_info.get("multiplier", 1.0)))
 
 	# Check buyer has enough valor
 	var buyer_valor = persistence.get_valor(buyer_account_id)
@@ -21351,6 +21370,33 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"direction": nearest.direction,
 		"color": nearest.color,
 		"count": threats.size(),
+	}
+
+const POST_THREAT_PRICE_MULT: float = 1.20
+
+func _get_post_threat_info(peer_id: int) -> Dictionary:
+	"""Audit #11 Slice 7 — threat-aware market modifier.
+
+	Returns either {threatened: false} when no threat is active at the
+	player's current post, or {threatened: true, multiplier, dungeon_name,
+	tier, distance, direction, color} when prices should be inflated. Uses
+	the player's current x,y to query _compute_post_threat_state — the
+	market interaction handlers only fire when the player is at a post, so
+	the player's position is on or adjacent to that post's footprint."""
+	if not characters.has(peer_id):
+		return {"threatened": false}
+	var character = characters[peer_id]
+	var threat = _compute_post_threat_state(character.x, character.y)
+	if not threat.get("threatened", false):
+		return {"threatened": false}
+	return {
+		"threatened": true,
+		"multiplier": POST_THREAT_PRICE_MULT,
+		"dungeon_name": String(threat.get("dungeon_name", "")),
+		"tier": int(threat.get("tier", 0)),
+		"distance": int(threat.get("distance", 0)),
+		"direction": String(threat.get("direction", "nearby")),
+		"color": String(threat.get("color", "#FF6644")),
 	}
 
 func _build_threat_rumor_line(px: int, py: int, quest_giver: String, personality: String = "warm") -> String:
