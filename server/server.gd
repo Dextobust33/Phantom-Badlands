@@ -1191,6 +1191,9 @@ func handle_message(peer_id: int, message: Dictionary):
 		# Audit #7 forward-direction transparency — zone deck preview
 		"request_zone_deck":
 			handle_request_zone_deck(peer_id, message)
+		# Audit #6 Slice 10 — chain title flair listing
+		"request_titles":
+			handle_request_titles(peer_id, message)
 		# Soldier harvest handlers
 		"harvest_start":
 			handle_harvest_start(peer_id)
@@ -1784,6 +1787,11 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	# inventory-resident types take inventory slots; anything that still won't
 	# fit is re-queued at the tail so it isn't lost.
 	_drain_pending_market_deliveries(peer_id)
+
+	# Audit #6 Slice 10 — backfill chain titles for chains the character already
+	# completed BEFORE this slice shipped. Walks completed_chains, looks up the
+	# final-stage quest, reads chain_bonus.chain_title, adds to earned_titles.
+	_backfill_chain_titles(peer_id)
 
 	# Broadcast join message to other players (include title if present)
 	var display_name = char_name
@@ -12346,6 +12354,17 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					if not stone_item.is_empty():
 						character.add_item(stone_item)
 						chain_progress_msg += "[color=#9ACD32]Chain bonus: %s acquired![/color]\n" % stone_item.get("name", "Home Stone")
+				# Audit #6 Slice 10 — chain title reward (cosmetic flair). One
+				# title per chain final-stage; rebuilds character.earned_titles
+				# idempotently so re-grants don't dup.
+				var chain_title_id = String(bonus.get("chain_title", ""))
+				if chain_title_id != "":
+					var title_info = quest_db.get_chain_title(chain_title_id)
+					if not title_info.is_empty() and chain_title_id not in character.earned_titles:
+						character.earned_titles.append(chain_title_id)
+						var t_name = String(title_info.get("name", chain_title_id.capitalize()))
+						var t_color = String(title_info.get("color", "#FFD700"))
+						chain_progress_msg += "[color=%s]New title earned: %s![/color]\n" % [t_color, t_name]
 				if chain_id not in character.completed_chains:
 					character.completed_chains.append(chain_id)
 				chain_completed = true
@@ -14443,6 +14462,60 @@ func handle_gathering_end(peer_id: int, message: Dictionary):
 		_end_gathering_session_no_deplete(peer_id)
 	else:
 		_end_gathering_session(peer_id)
+
+func _backfill_chain_titles(peer_id: int) -> void:
+	"""Audit #6 Slice 10 — migration. For each completed_chains entry, find the
+	final-stage quest in QUESTS, read chain_bonus.chain_title, append to
+	character.earned_titles if missing. Saves character once at end if any
+	title was added. Quiet — no chat output (this is one-time migration)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.completed_chains.is_empty():
+		return
+	var added = false
+	for chain_id in character.completed_chains:
+		for quest_id in quest_db.QUESTS:
+			var q = quest_db.QUESTS[quest_id]
+			if String(q.get("chain_id", "")) != String(chain_id):
+				continue
+			if int(q.get("chain_stage", 0)) != int(q.get("chain_total", 0)):
+				continue
+			var bonus = q.get("chain_bonus", {})
+			var title_id = String(bonus.get("chain_title", ""))
+			if title_id == "":
+				break
+			if title_id not in character.earned_titles:
+				character.earned_titles.append(title_id)
+				added = true
+			break
+	if added:
+		save_character(peer_id)
+
+func handle_request_titles(peer_id: int, _message: Dictionary):
+	"""Audit #6 Slice 10 — list the character's earned chain-completion titles.
+	Pure read-only display; titles are cosmetic flair (no mechanical effect)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var earned: Array = character.earned_titles
+	var lines: Array = []
+	lines.append("[color=#FFD700]═══════ Earned Titles ═══════[/color]")
+	# Realm title (jarl/high_king/elder/eternal) — call it out separately if held.
+	if character.title != "":
+		var realm_color = TitlesScript.get_title_color(character.title)
+		var realm_name = TitlesScript.get_title_name(character.title)
+		lines.append("[color=#888888]Realm:[/color] [color=%s][%s][/color]" % [realm_color, realm_name])
+	if earned.is_empty():
+		lines.append("[color=#808080]No chain titles yet. Complete a quest chain at a trading post to earn one.[/color]")
+	else:
+		lines.append("[color=#888888]Chain titles (%d earned):[/color]" % earned.size())
+		for title_id in earned:
+			var info = quest_db.get_chain_title(String(title_id))
+			if info.is_empty():
+				continue
+			lines.append("  [color=%s]%s[/color]" % [String(info.get("color", "#FFFFFF")), String(info.get("name", title_id))])
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 func handle_request_zone_deck(peer_id: int, _message: Dictionary):
 	"""Audit #7 forward-direction transparency — preview what's in the current
