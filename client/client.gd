@@ -22904,8 +22904,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.293 changes
+	display_game("[color=#00FF00]v0.9.293[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat audit cleanup TWEAKs (Audit #1 Slice 7)[/color]")
+	display_game("  • [b]Ethereal dodge dropped from 50% → 33%.[/b] Ghostly / phasing monsters previously dodged half your swings, which made high-investment fights feel like a coin flip. 33% still rewards accuracy gear without making the fight feel unwinnable. The −10 player hit-chance penalty against ethereal targets is unchanged, so the layered miss math still punishes low accuracy builds.")
+	display_game("  • [b]Removed dead `gold_steal` ability.[/b] Already inert (gold removed from the game in 2026-02) but the constant kept showing up in monster ability lists. Cleanup pass — no behavior change, just dropped a dead reference.")
+	display_game("")
+
 	# v0.9.292 changes
-	display_game("[color=#00FF00]v0.9.292[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.292[/color]")
 	display_game("  [color=#FFD700]New Gnoll Pack quest chain + Soul Siphon teaser (Audit #6 Slice 5)[/color]")
 	display_game("  • [b]New 3-stage chain \"Gnoll Pack Hunt\" at West Shrine[/b]: Kill 5 Gnolls → Kill 4 Wolves → Slay the Gnoll Packmaster. 400 valor + Gnoll Egg. The final-stage description teaches the Pack Frenzy mechanic upfront — so players know to burst the Packmaster down rather than stall the fight.")
 	display_game("  • [b]Barrow's Curse II description updated[/b] to teach Soul Siphon (every third round drains 8% of your max HP and heals the wight for the same). Closes the gap from yesterday's boss-sig drop — all T2 chain final stages now explain their boss's signature mechanic in advance.")
@@ -22928,14 +22935,6 @@ func display_changelog():
 	display_game("  • Rumor pool now rotates between [b]three[/b] types: dungeon hint, biome resource hint, hotzone warning. Random preference order per arrival; types with no nearby data fall through. The same post will say different things across different sessions, and different posts speak about different things in the same session.")
 	display_game("")
 
-	# v0.9.289 changes
-	display_game("[color=#00FFFF]v0.9.289[/color]")
-	display_game("  [color=#FFD700]NPC posts get a second rumor type — biome resource hints (Audit #11 Slice 2)[/color]")
-	display_game("  • [b]Quest givers now alternate between dungeon rumors and biome resource hints[/b] on arrival. A forest post might say \"[color=#A0C8E0]Trader Fenwick[/color]: 'Foragers say [color=#9ACD32]Ashfen Reach[/color] is rich in [color=#FFD700]Pine Resin[/color] this season — worth a look while you're out.'\" instead of always pointing at a dungeon.")
-	display_game("  • Rumor type is randomly preferred per arrival; if the preferred type has no data nearby (e.g., no dungeon in 150 tiles, or post is in the unflavored Plains biome) the other type fires instead. Soft nod is still the final fallback.")
-	display_game("  • Each non-plains biome has its own material pool: Forest → Pine Resin / Oak Acorn / Silverleaf; Mountain → Alpine Lichen / Rock Salt / Crag Thistle; Swamp → Bog Iris / Marsh Reed / Witch Cap; Snow → Frost Lichen / Ice Crystal / Snow Bloom; Desert → Cactus Flesh / Sun Petal / Scorched Root.")
-	display_game("  • Plays into the audit's \"alive posts\" goal — different posts speak about different things, surfacing the biome layer + region naming + dungeon network without the player having to look at the map.")
-	display_game("")
 
 
 

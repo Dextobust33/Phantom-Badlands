@@ -156,7 +156,6 @@ const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff fo
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
-const ABILITY_GOLD_STEAL = "gold_steal"          # Legacy — no effect (gold removed)
 const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
 const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
 const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
@@ -1322,9 +1321,13 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 	hit_chance = clamp(hit_chance, 30, 95)  # 30% minimum (can be reduced by blind), 95% maximum
 
-	# Ethereal ability: 50% dodge chance for monster
+	# Ethereal ability: 33% dodge chance for monster (Audit #1 TWEAK
+	# 2026-05-11 — was 50%, dropped per audit memo so high-investment
+	# fights aren't gated on a coin-flip per swing. Pairs with the −10
+	# player hit-chance penalty against ethereal targets in process_attack,
+	# so the layered miss math still rewards bringing accuracy gear.)
 	var ethereal_dodge = ABILITY_ETHEREAL in abilities and not is_vanished
-	if ethereal_dodge and randi() % 100 < 50:
+	if ethereal_dodge and randi() % 100 < 33:
 		messages.append("[color=#FF00FF]Your attack passes through the ethereal %s![/color]" % monster.name)
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}

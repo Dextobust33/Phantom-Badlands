@@ -212,7 +212,6 @@ flowchart LR
 | `life_steal` | Hit | Heal 50% of damage |
 | `thorns` | Player Attack | Reflect 25% melee |
 | `charm` | Hit | Player attacks self |
-| `gold_steal` | Hit | Steal 5-15% gold |
 | `buff_destroy` | Hit | Remove random buff |
 
 ## Class Affinity System
