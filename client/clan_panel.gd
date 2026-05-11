@@ -10,6 +10,10 @@ class_name ClanPanel
 signal close_requested
 signal create_requested(name: String, tag: String)
 signal leave_requested
+# Audit #14 Slice 2 — invitation flow.
+signal invite_requested(username: String)
+signal accept_requested(clan_id: String)
+signal decline_requested(clan_id: String)
 
 var _root_panel: PanelContainer
 var _vbox: VBoxContainer
@@ -135,8 +139,96 @@ func _render_body() -> void:
 		_render_create_form()
 
 
+func _render_invitations_section() -> void:
+	"""Audit #14 Slice 2 — render pending clan invitations. Skipped when there
+	are none. Each invite is a card with inviter + clan + Accept / Decline."""
+	var invitations: Array = _data.get("invitations", [])
+	if invitations.is_empty():
+		return
+
+	var header := RichTextLabel.new()
+	header.bbcode_enabled = true
+	header.fit_content = true
+	header.scroll_active = false
+	header.add_theme_font_size_override("normal_font_size", 14)
+	header.custom_minimum_size = Vector2(0, 22)
+	header.text = "[color=#FFD700][b]Pending Invitations (%d)[/b][/color]" % invitations.size()
+	_body_container.add_child(header)
+
+	for invite_var in invitations:
+		if not (invite_var is Dictionary):
+			continue
+		var invite: Dictionary = invite_var
+		var clan_id_v: String = String(invite.get("clan_id", ""))
+		var clan_name: String = String(invite.get("clan_name", "(unknown)"))
+		var clan_tag: String = String(invite.get("clan_tag", ""))
+		var inviter: String = String(invite.get("inviter_username", "(unknown)"))
+
+		var row := PanelContainer.new()
+		var row_sb := StyleBoxFlat.new()
+		row_sb.bg_color = Color(0.10, 0.08, 0.14, 0.90)
+		row_sb.border_color = Color(0.55, 0.45, 0.85, 1)
+		row_sb.set_border_width_all(1)
+		row_sb.set_corner_radius_all(4)
+		row_sb.content_margin_left = 10
+		row_sb.content_margin_top = 6
+		row_sb.content_margin_right = 10
+		row_sb.content_margin_bottom = 6
+		row.add_theme_stylebox_override("panel", row_sb)
+		_body_container.add_child(row)
+
+		var row_hbox := HBoxContainer.new()
+		row_hbox.add_theme_constant_override("separation", 8)
+		row.add_child(row_hbox)
+
+		var text_vbox := VBoxContainer.new()
+		text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text_vbox.add_theme_constant_override("separation", 2)
+		row_hbox.add_child(text_vbox)
+
+		var name_label := RichTextLabel.new()
+		name_label.bbcode_enabled = true
+		name_label.fit_content = true
+		name_label.scroll_active = false
+		name_label.add_theme_font_size_override("normal_font_size", 13)
+		name_label.custom_minimum_size = Vector2(0, 20)
+		name_label.text = "[color=#A335EE][b]%s[/b][/color]  [color=#FFD700][%s][/color]" % [clan_name, clan_tag]
+		text_vbox.add_child(name_label)
+
+		var inviter_label := RichTextLabel.new()
+		inviter_label.bbcode_enabled = true
+		inviter_label.fit_content = true
+		inviter_label.scroll_active = false
+		inviter_label.add_theme_font_size_override("normal_font_size", 11)
+		inviter_label.custom_minimum_size = Vector2(0, 16)
+		inviter_label.text = "[color=#A0A0A0]Invited by [color=#FFFFFF]%s[/color][/color]" % inviter
+		text_vbox.add_child(inviter_label)
+
+		var accept_btn := Button.new()
+		accept_btn.text = "Accept"
+		accept_btn.focus_mode = Control.FOCUS_NONE
+		accept_btn.custom_minimum_size = Vector2(90, 32)
+		var clan_id_captured = clan_id_v
+		accept_btn.pressed.connect(func(): accept_requested.emit(clan_id_captured))
+		row_hbox.add_child(accept_btn)
+
+		var decline_btn := Button.new()
+		decline_btn.text = "Decline"
+		decline_btn.focus_mode = Control.FOCUS_NONE
+		decline_btn.custom_minimum_size = Vector2(90, 32)
+		decline_btn.pressed.connect(func(): decline_requested.emit(clan_id_captured))
+		row_hbox.add_child(decline_btn)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	_body_container.add_child(spacer)
+
+
 func _render_create_form() -> void:
-	"""No clan — show create form."""
+	"""No clan — show invitations (if any) + create form."""
+	# Render pending invitations first so they're impossible to miss.
+	_render_invitations_section()
+
 	var intro := RichTextLabel.new()
 	intro.bbcode_enabled = true
 	intro.fit_content = true
@@ -280,6 +372,51 @@ func _render_in_clan_view() -> void:
 			else:
 				row.text = "[color=#DDDDDD]%s[/color]" % username
 			roster_vbox.add_child(row)
+
+	# Audit #14 Slice 2 — Leader-only invite input below roster.
+	if is_leader and member_count < max_members:
+		var invite_spacer := Control.new()
+		invite_spacer.custom_minimum_size = Vector2(0, 4)
+		_body_container.add_child(invite_spacer)
+
+		var invite_label := Label.new()
+		invite_label.text = "Invite Player"
+		invite_label.add_theme_color_override("font_color", Color(0.83, 0.71, 1.0))
+		invite_label.add_theme_font_size_override("font_size", 13)
+		_body_container.add_child(invite_label)
+
+		var invite_hbox := HBoxContainer.new()
+		invite_hbox.add_theme_constant_override("separation", 8)
+		_body_container.add_child(invite_hbox)
+
+		var invite_edit := LineEdit.new()
+		invite_edit.placeholder_text = "Player username"
+		invite_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		invite_hbox.add_child(invite_edit)
+
+		var invite_btn := Button.new()
+		invite_btn.text = "Invite"
+		invite_btn.focus_mode = Control.FOCUS_NONE
+		invite_btn.custom_minimum_size = Vector2(100, 32)
+		var submit_invite = func():
+			var uname: String = invite_edit.text.strip_edges()
+			if uname == "":
+				_set_status("[color=#FF6644]Enter a username.[/color]")
+				return
+			invite_requested.emit(uname)
+			invite_edit.text = ""
+		invite_btn.pressed.connect(submit_invite)
+		invite_edit.text_submitted.connect(func(_t): submit_invite.call())
+		invite_hbox.add_child(invite_btn)
+	elif is_leader and member_count >= max_members:
+		var full_note := RichTextLabel.new()
+		full_note.bbcode_enabled = true
+		full_note.fit_content = true
+		full_note.scroll_active = false
+		full_note.add_theme_font_size_override("normal_font_size", 11)
+		full_note.custom_minimum_size = Vector2(0, 18)
+		full_note.text = "[color=#FF8800]Clan is full — cannot send new invitations.[/color]"
+		_body_container.add_child(full_note)
 
 	# Spacer + leave button
 	var spacer := Control.new()

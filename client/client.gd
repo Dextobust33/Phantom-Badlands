@@ -1810,6 +1810,10 @@ func _ready():
 	clan_panel.close_requested.connect(_on_clan_panel_close)
 	clan_panel.create_requested.connect(_on_clan_panel_create)
 	clan_panel.leave_requested.connect(_on_clan_panel_leave)
+	# Audit #14 Slice 2 — clan invitation signals.
+	clan_panel.invite_requested.connect(_on_clan_panel_invite)
+	clan_panel.accept_requested.connect(_on_clan_panel_accept)
+	clan_panel.decline_requested.connect(_on_clan_panel_decline)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -19144,6 +19148,9 @@ func handle_server_message(message: Dictionary):
 			_handle_clan_info_data(message)
 		"clan_action_result":
 			_handle_clan_action_result(message)
+		# Audit #14 Slice 2 — live invitation alert
+		"clan_invitation_received":
+			_handle_clan_invitation_received(message)
 
 		# Market messages
 		"market_browse_result":
@@ -23282,8 +23289,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.340 changes
+	display_game("[color=#00FF00]v0.9.340[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan invitations (Audit #14 Slice 2)[/color]")
+	display_game("  • [b]Invite players to your clan[/b]: leaders see an [color=#A335EE]Invite Player[/color] input field below the roster in the Clan panel. Type a username, hit Enter (or click [Invite]), and the invitation is delivered.")
+	display_game("  • [b]Live notifications[/b]: when someone invites you, you get a chat alert immediately (\"X invited you to join clan Y. Open the Clan panel to accept or decline.\"). If your Clan panel is already open, it refreshes automatically.")
+	display_game("  • [b]Pending invitations section[/b] appears at the top of the Clan panel listing every invite (clan name + tag, inviter username, [Accept] / [Decline] buttons). Accepting one invite voids all others — you can only be in one clan at a time.")
+	display_game("  • [b]Validations[/b]: only the clan leader can invite (officer/rank system ships in a later slice). Targets must exist and not already be in a clan. Duplicate invites from the same clan are rejected. Clan-is-full check runs at both invite-time and accept-time (race-safe).")
+	display_game("  • [b]Disband cleanup[/b]: if a clan disbands while invites are pending, those invites are pruned automatically.")
+	display_game("  • [b]30-member cap[/b] still applies — the invite input is hidden when the clan is full, with a \"Clan is full\" note in place.")
+	display_game("")
+
 	# v0.9.339 changes
-	display_game("[color=#00FF00]v0.9.339[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.339[/color]")
 	display_game("  [color=#FFD700]Clans foundation (Audit #14 Slice 1)[/color]")
 	display_game("  • [b]New shortcut button: [color=#9ACD32]Clan[/color][/b] — opens the visual clan panel. When you're not in a clan, it shows a create form (Name + Tag). When you're in one, it shows the roster + a [Leave Clan] (or [Disband Clan] if you're the leader) button.")
 	display_game("  • [b]Create a clan[/b] with a 3–24 character Name (letters/numbers/spaces) and a 2–5 character Tag (letters/numbers only). Names and tags are unique across the server. The clan record persists at the account level — survives character permadeath.")
@@ -23312,15 +23330,6 @@ func display_changelog():
 	display_game("  • [b]Part 2 of 4[/b] UI remediation for today's chat-command-only slices. /stats and /spendstat still work as power-user shortcuts. Post status and Feed All panels coming next.")
 	display_game("")
 
-	# v0.9.336 changes
-	display_game("[color=#00FFFF]v0.9.336[/color]")
-	display_game("  [color=#FFD700]Visual NPC Home Stone vendor (UI remediation)[/color]")
-	display_game("  • [b]New shortcut button: [color=#9ACD32]Stones[/color][/b] — sits on the right side of the chat row next to Deck/Inv/Help. One click opens the visual vendor panel from anywhere.")
-	display_game("  • [b]Visual panel[/b] shows all four stone types as rows with name, description, price, how many you've bought, lifetime cap, and a clickable [Buy] button. Buttons disable when at-cap, when you can't afford, or when not at an NPC post.")
-	display_game("  • [b]Real-time refresh[/b] on purchase: buy a stone → panel updates immediately to show new owned-count and remaining valor.")
-	display_game("  • [b]Discovery first[/b]: the user pointed out chat-command-only features are invisible to players. This slice + the next few will retroactively add UI affordances to features I shipped today as chat commands (post status, feedall, stones, stats). Stones first because the vendor is the most likely to be missed without UI.")
-	display_game("  • [b]/stones still works[/b] but now opens the panel AND prints the text summary. /buystone <type> remains as a power-user shortcut.")
-	display_game("")
 
 
 
@@ -26104,6 +26113,18 @@ func _on_clan_panel_create(clan_name: String, clan_tag: String) -> void:
 func _on_clan_panel_leave() -> void:
 	send_to_server({"type": "clan_leave"})
 
+func _on_clan_panel_invite(username: String) -> void:
+	"""Audit #14 Slice 2 — leader invite by username."""
+	send_to_server({"type": "clan_invite", "username": username})
+
+func _on_clan_panel_accept(clan_id: String) -> void:
+	"""Audit #14 Slice 2 — accept a pending clan invitation."""
+	send_to_server({"type": "clan_invite_accept", "clan_id": clan_id})
+
+func _on_clan_panel_decline(clan_id: String) -> void:
+	"""Audit #14 Slice 2 — decline a pending clan invitation."""
+	send_to_server({"type": "clan_invite_decline", "clan_id": clan_id})
+
 func _handle_clan_info_data(message: Dictionary) -> void:
 	"""Push server clan state into the panel if it's open."""
 	if not clan_panel:
@@ -26112,7 +26133,7 @@ func _handle_clan_info_data(message: Dictionary) -> void:
 		clan_panel.refresh(message)
 
 func _handle_clan_action_result(message: Dictionary) -> void:
-	"""Inline feedback under the clan panel title for create/leave results.
+	"""Inline feedback under the clan panel title for create/leave/invite results.
 	Also displays in game_output if the panel is closed."""
 	var success = bool(message.get("success", false))
 	var feedback = String(message.get("message", message.get("reason", "")))
@@ -26120,6 +26141,17 @@ func _handle_clan_action_result(message: Dictionary) -> void:
 		clan_panel.show_action_result(success, feedback)
 	if feedback != "":
 		display_game(feedback)
+
+func _handle_clan_invitation_received(message: Dictionary) -> void:
+	"""Live invitation alert — fires when another player invites you. Shown as
+	a chat notification so you see it without having the panel open; the panel
+	(if open) is auto-refreshed via clan_info_data alongside this push."""
+	var clan_name = String(message.get("clan_name", ""))
+	var clan_tag = String(message.get("clan_tag", ""))
+	var inviter = String(message.get("inviter_username", ""))
+	var line = "[color=#A335EE]%s invited you to join clan [color=#FFD700]%s[/color] [%s]. Open the [color=#9ACD32]Clan[/color] panel to accept or decline.[/color]" % [inviter, clan_name, clan_tag]
+	display_chat(line)
+	display_game(line)
 
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a

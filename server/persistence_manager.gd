@@ -1893,7 +1893,7 @@ func load_clans():
 	"""Load clans data from file."""
 	var data = _safe_load(CLANS_FILE)
 	if data.is_empty():
-		clans_data = {"clans": {}, "next_clan_id": 1}
+		clans_data = {"clans": {}, "next_clan_id": 1, "invitations": {}}
 		save_clans()
 	else:
 		clans_data = data
@@ -1901,6 +1901,8 @@ func load_clans():
 			clans_data["clans"] = {}
 		if not clans_data.has("next_clan_id"):
 			clans_data["next_clan_id"] = 1
+		if not clans_data.has("invitations"):
+			clans_data["invitations"] = {}
 
 func save_clans():
 	"""Save clans data to file."""
@@ -2005,6 +2007,10 @@ func leave_clan(account_id: String) -> Dictionary:
 			if accounts_data["accounts"].has(member_id):
 				accounts_data["accounts"][member_id]["clan_id"] = ""
 		clans_data["clans"].erase(clan_id)
+		# Drop pending invites referencing this clan (Audit #14 Slice 2).
+		var inv_map: Dictionary = clans_data.get("invitations", {})
+		for target_id in inv_map.keys():
+			_remove_invite_record(target_id, clan_id)
 		save_clans()
 		save_accounts()
 		return {"success": true, "disbanded": true, "clan_name": clan_name}
@@ -2033,6 +2039,192 @@ func get_clan_member_summary(clan_id: String) -> Array:
 			"is_leader": member_id == leader_id,
 		})
 	return out
+
+# ===== CLAN INVITATIONS (Audit #14 Slice 2) =====
+# Stored as clans_data.invitations[target_account_id] = [
+#   {clan_id, inviter_account_id, inviter_username, created_at},
+#   ...
+# ]
+# Slice 2 keeps invites per-clan (target may receive invites from many clans).
+# Invites for a clan are pruned when the target joins any clan, when they
+# decline, or when the inviting clan is disbanded.
+
+func find_account_id_by_username(username: String) -> String:
+	"""Lookup account_id by username (case-sensitive match against stored
+	username). Returns "" if not found. Used to resolve invite targets."""
+	if username == "":
+		return ""
+	for account_id in accounts_data.get("accounts", {}):
+		var acc = accounts_data["accounts"][account_id]
+		if String(acc.get("username", "")) == username:
+			return account_id
+	return ""
+
+func get_clan_invitations(account_id: String) -> Array:
+	"""Return list of pending invitations for the account. Each entry has
+	clan_id + clan name/tag + inviter_username + created_at."""
+	if account_id == "":
+		return []
+	var raw: Array = clans_data.get("invitations", {}).get(account_id, [])
+	var out: Array = []
+	for invite_var in raw:
+		if not (invite_var is Dictionary):
+			continue
+		var invite: Dictionary = invite_var
+		var clan_id = String(invite.get("clan_id", ""))
+		var clan = get_clan(clan_id)
+		if clan.is_empty():
+			# Stale invite — clan disbanded. Skip rendering; pruned on next write.
+			continue
+		out.append({
+			"clan_id": clan_id,
+			"clan_name": String(clan.get("name", "")),
+			"clan_tag": String(clan.get("tag", "")),
+			"inviter_account_id": String(invite.get("inviter_account_id", "")),
+			"inviter_username": String(invite.get("inviter_username", "")),
+			"created_at": int(invite.get("created_at", 0)),
+		})
+	return out
+
+func _prune_stale_invitations_for(account_id: String) -> void:
+	"""Drop invitations referencing disbanded clans. Called opportunistically."""
+	if not clans_data.get("invitations", {}).has(account_id):
+		return
+	var raw: Array = clans_data["invitations"][account_id]
+	var kept: Array = []
+	for invite_var in raw:
+		if not (invite_var is Dictionary):
+			continue
+		var invite: Dictionary = invite_var
+		if get_clan(String(invite.get("clan_id", ""))).is_empty():
+			continue
+		kept.append(invite)
+	if kept.is_empty():
+		clans_data["invitations"].erase(account_id)
+	else:
+		clans_data["invitations"][account_id] = kept
+
+func add_clan_invitation(target_account_id: String, clan_id: String, inviter_account_id: String) -> Dictionary:
+	"""Add an invitation. Validates target not in clan, clan exists + has seats,
+	no duplicate invite from same clan. Returns {success, reason, target_username,
+	inviter_username, clan_name, clan_tag}."""
+	if target_account_id == "" or target_account_id == inviter_account_id:
+		return {"success": false, "reason": "Invalid invitation target."}
+	var clan = get_clan(clan_id)
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan no longer exists."}
+	if not accounts_data.get("accounts", {}).has(target_account_id):
+		return {"success": false, "reason": "Player not found."}
+	if get_account_clan_id(target_account_id) != "":
+		return {"success": false, "reason": "Player is already in a clan."}
+	var members: Array = clan.get("member_ids", [])
+	if members.size() >= CLAN_MAX_MEMBERS:
+		return {"success": false, "reason": "Clan is full (%d/%d)." % [members.size(), CLAN_MAX_MEMBERS]}
+	# Prune stale + check for duplicate invite from same clan
+	_prune_stale_invitations_for(target_account_id)
+	var inv_list: Array = clans_data.get("invitations", {}).get(target_account_id, [])
+	for invite_var in inv_list:
+		if not (invite_var is Dictionary):
+			continue
+		var invite: Dictionary = invite_var
+		if String(invite.get("clan_id", "")) == clan_id:
+			return {"success": false, "reason": "That player already has a pending invite from this clan."}
+	# Resolve usernames for the notification payload
+	var inviter_acc = accounts_data["accounts"].get(inviter_account_id, {})
+	var target_acc = accounts_data["accounts"].get(target_account_id, {})
+	var inviter_username = String(inviter_acc.get("username", ""))
+	var target_username = String(target_acc.get("username", ""))
+	# Store
+	var new_invite = {
+		"clan_id": clan_id,
+		"inviter_account_id": inviter_account_id,
+		"inviter_username": inviter_username,
+		"created_at": int(Time.get_unix_time_from_system()),
+	}
+	if not clans_data.has("invitations"):
+		clans_data["invitations"] = {}
+	if not clans_data["invitations"].has(target_account_id):
+		clans_data["invitations"][target_account_id] = []
+	clans_data["invitations"][target_account_id].append(new_invite)
+	save_clans()
+	return {
+		"success": true,
+		"target_account_id": target_account_id,
+		"target_username": target_username,
+		"inviter_username": inviter_username,
+		"clan_id": clan_id,
+		"clan_name": String(clan.get("name", "")),
+		"clan_tag": String(clan.get("tag", "")),
+	}
+
+func _remove_invite_record(target_account_id: String, clan_id: String) -> bool:
+	"""Drop a specific clan invite for target. Returns true if removed."""
+	if not clans_data.get("invitations", {}).has(target_account_id):
+		return false
+	var inv_list: Array = clans_data["invitations"][target_account_id]
+	for i in range(inv_list.size()):
+		if not (inv_list[i] is Dictionary):
+			continue
+		if String(inv_list[i].get("clan_id", "")) == clan_id:
+			inv_list.remove_at(i)
+			if inv_list.is_empty():
+				clans_data["invitations"].erase(target_account_id)
+			else:
+				clans_data["invitations"][target_account_id] = inv_list
+			return true
+	return false
+
+func decline_clan_invitation(account_id: String, clan_id: String) -> Dictionary:
+	"""Player rejects an invite. Just drops the record."""
+	var clan = get_clan(clan_id)
+	var clan_name = String(clan.get("name", "(disbanded)"))
+	var clan_tag = String(clan.get("tag", ""))
+	var removed = _remove_invite_record(account_id, clan_id)
+	if removed:
+		save_clans()
+		return {"success": true, "clan_name": clan_name, "clan_tag": clan_tag}
+	return {"success": false, "reason": "Invitation not found."}
+
+func accept_clan_invitation(account_id: String, clan_id: String) -> Dictionary:
+	"""Player accepts an invite. Adds to clan members, clears every pending
+	invite for this account (joining one clan voids all others), persists.
+	Returns {success, clan, reason}."""
+	if get_account_clan_id(account_id) != "":
+		return {"success": false, "reason": "You're already in a clan."}
+	var clan = get_clan(clan_id)
+	if clan.is_empty():
+		# Stale — clean up any reference and report failure
+		_remove_invite_record(account_id, clan_id)
+		save_clans()
+		return {"success": false, "reason": "Clan no longer exists."}
+	# Verify the invite still exists
+	var inv_list: Array = clans_data.get("invitations", {}).get(account_id, [])
+	var has_invite = false
+	for invite_var in inv_list:
+		if invite_var is Dictionary and String(invite_var.get("clan_id", "")) == clan_id:
+			has_invite = true
+			break
+	if not has_invite:
+		return {"success": false, "reason": "No invitation from that clan."}
+	# Check seats again (someone may have joined since the invite)
+	var members: Array = clan.get("member_ids", [])
+	if members.size() >= CLAN_MAX_MEMBERS:
+		return {"success": false, "reason": "Clan is full (%d/%d)." % [members.size(), CLAN_MAX_MEMBERS]}
+	# Join
+	members.append(account_id)
+	clan["member_ids"] = members
+	accounts_data["accounts"][account_id]["clan_id"] = clan_id
+	# Drop ALL pending invitations for this account — they're moot now.
+	if clans_data.get("invitations", {}).has(account_id):
+		clans_data["invitations"].erase(account_id)
+	save_clans()
+	save_accounts()
+	return {
+		"success": true,
+		"clan_id": clan_id,
+		"clan_name": String(clan.get("name", "")),
+		"clan_tag": String(clan.get("tag", "")),
+	}
 
 # ===== BUY ORDERS (Audit #9 Slice 2) =====
 # Demand-side mirror of listings. Buyer escrows Valor at creation; sellers
