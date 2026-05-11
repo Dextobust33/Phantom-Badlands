@@ -365,6 +365,34 @@ const MATERIALS = {
 	"primordial_fungus": {"name": "Primordial Fungus", "type": "fungus", "tier": 6, "value": 300},
 	"void_blossom": {"name": "Void Blossom", "type": "herb", "tier": 6, "value": 600},
 	"creation_seed": {"name": "Creation Seed", "type": "plant", "tier": 6, "value": 800},
+
+	# Slice 6c — biome-exclusive foraging materials. Each non-plains biome
+	# has two T1 anchors + one T2 standout that only drop when foraging in
+	# that biome. Values lean slightly higher than the equivalent generic
+	# foraging material so the trip is rewarded; rarity is enforced via
+	# their weight in BIOME_FORAGING_BONUS (drop_tables.gd), not their
+	# entry here. The "type" field re-uses existing material categories so
+	# they slot into future crafting recipes without a new dimension.
+	# Forest
+	"pine_resin":      {"name": "Pine Resin", "type": "plant", "tier": 1, "value": 8},
+	"oak_acorn":       {"name": "Oak Acorn", "type": "plant", "tier": 1, "value": 7},
+	"silverleaf":      {"name": "Silverleaf", "type": "herb", "tier": 2, "value": 22},
+	# Highlands (mountain)
+	"alpine_lichen":   {"name": "Alpine Lichen", "type": "herb", "tier": 1, "value": 8},
+	"rock_salt":       {"name": "Rock Salt", "type": "mineral", "tier": 1, "value": 6},
+	"crag_thistle":    {"name": "Crag Thistle", "type": "herb", "tier": 2, "value": 22},
+	# Swamp
+	"bog_iris":        {"name": "Bog Iris", "type": "herb", "tier": 1, "value": 9},
+	"marsh_reed":      {"name": "Marsh Reed", "type": "plant", "tier": 1, "value": 6},
+	"witch_cap":       {"name": "Witch Cap", "type": "fungus", "tier": 2, "value": 24},
+	# Tundra (snow)
+	"frost_lichen":    {"name": "Frost Lichen", "type": "herb", "tier": 1, "value": 9},
+	"ice_crystal":     {"name": "Ice Crystal", "type": "gem", "tier": 1, "value": 12},
+	"snow_bloom":      {"name": "Snow Bloom", "type": "herb", "tier": 2, "value": 26},
+	# Desert
+	"cactus_flesh":    {"name": "Cactus Flesh", "type": "plant", "tier": 1, "value": 8},
+	"sun_petal":       {"name": "Sun Petal", "type": "herb", "tier": 1, "value": 10},
+	"scorched_root":   {"name": "Scorched Root", "type": "herb", "tier": 2, "value": 24},
 }
 
 # ===== RECIPES =====
