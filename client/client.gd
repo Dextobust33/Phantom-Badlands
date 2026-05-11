@@ -23032,8 +23032,29 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.309 changes
+	display_game("[color=#00FF00]v0.9.309[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]T7+T8+T9 boss signatures — ALL BOSS SIGS COMPLETE (Audit #5 Slice 12)[/color]")
+	display_game("  • [b]52 boss signatures shipped across 12 slices.[/b] Every single dungeon boss now has a unique mechanic. Audit #5's headline decision is realized.")
+	display_game("  • [b]T7 (4 sigs):[/b]")
+	display_game("    – [color=#4B0082]Void Walker — Void Step[/color]: every 3 turns next player attack deals 0 damage")
+	display_game("    – [color=#FF6347]Primordial Dragon — Primordial Roar[/color]: every 5 turns 20%% max HP + strips ALL buffs")
+	display_game("    – [color=#2E8B57]World Serpent — Coil Squeeze[/color]: per-turn +1 stack (cap 10), each ticks 1%% max HP per player turn")
+	display_game("    – [color=#9400D3]Elder Lich — Death Mark[/color]: on first hit applies mark, every 3 turns deals 8%% max HP")
+	display_game("  • [b]T8 (3 sigs):[/b]")
+	display_game("    – [color=#9400D3]Cosmic Horror — Madness Aura[/color]: every 4 turns, your next 2 turns have 30%% chance to fizzle")
+	display_game("    – [color=#4169E1]Time Weaver — Temporal Rewind[/color]: every 6 turns, heals 25%% max HP + clears debuffs")
+	display_game("    – [color=#000000]Death Incarnate — Reaper's Touch[/color]: 15%% on-hit chance to mark; marked players lose 15%% max HP next turn")
+	display_game("  • [b]T9 (4 sigs):[/b]")
+	display_game("    – [color=#FF1493]Avatar of Chaos — Chaotic Surge[/color]: each turn picks RANDOMLY from 6 outcomes (heal/burst/strip/stun/+50%%/-50%%)")
+	display_game("    – [color=#A0A0A0]The Nameless One — Unknowable[/color]: 25%% chance your attack is forgotten (deals 0)")
+	display_game("    – [color=#FFD700]God Slayer — Divine Punishment[/color]: every 4 turns deals (player_level × 5%%) max HP — scales with your power")
+	display_game("    – [color=#696969]Entropy — Decay[/color]: every monster turn +1 decay stack (uncapped); each ticks 2%% max HP. Existing in the fight costs HP.")
+	display_game("  • [b]Coverage milestone:[/b] 5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5 + 7 T6 + 4 T7 + 3 T8 + 4 T9 = [b]52 signatures across 53 dungeons[/b]. (Goblin King's pre-existing Rally Minions covers the last.)")
+	display_game("")
+
 	# v0.9.308 changes
-	display_game("[color=#00FF00]v0.9.308[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.308[/color]")
 	display_game("  [color=#FFD700]T6 boss signatures + Phoenix Nest theme tile (Audit #5 Slice 11)[/color]")
 	display_game("  • [b]All 7 T6 boss signatures shipped[/b]:")
 	display_game("    – [color=#FFD700]Ancient Dragon — Dragon's Hoard[/color]: every 5 turns swallows one of your buffs + permanent +5%% damage stack")
@@ -23095,13 +23116,6 @@ func display_changelog():
 	display_game("  • All theme tiles auto-surface on the dungeon warning page legend. All five audit-spec theme dungeons (Spider, Crypt, Mimic, Harpy, Plague Graveyard) now have unique terrain.")
 	display_game("")
 
-	# v0.9.304 changes
-	display_game("[color=#00FFFF]v0.9.304[/color]")
-	display_game("  [color=#FFD700]Theme tiles: Wolf Den blood trails (Audit #5 Slice 3)[/color]")
-	display_game("  • [b]Wolf Den floors now have blood trails[/b] — ~8% of empty tiles render as a dark-red [color=#8B0000][b];[/b][/color] glyph. Stepping onto one heals ~3% of your max HP (min 1, max 60), then the tile is consumed and becomes empty floor. First positive-theme tile — counterbalance to spider webs and miasma.")
-	display_game("  • [b]Theme works thematically with Alpha Wolf's Bloodscent signature[/b]: scavenge from the pack's leftover kills before the boss fight, then commit to the engagement at a smaller HP deficit (so you trigger Bloodscent later).")
-	display_game("  • Third theme tile in the pattern (Spider webs v0.9.248, Plague miasma v0.9.300, Wolf Den blood now). Auto-surfaces on the dungeon warning legend via `DUNGEON_THEME_LEGEND`.")
-	display_game("")
 
 
 
