@@ -30,6 +30,11 @@ extends Resource
 @export var wisdom: int = 10
 @export var wits: int = 10  # Renamed from charisma - used for outsmarting enemies
 @export var wits_training_bonus: int = 0  # Permanent WITS bonus from trading post training (cap: 10)
+# Audit #3 Slice 1 — player-allocated stat agency. Each level-up grants
+# UNSPENT_STAT_POINTS_PER_LEVEL points; player spends them via /spendstat <stat>.
+# Bank persists across saves; spending recomputes derived stats. Sits on top of
+# the existing class-fixed stat scaling (2.5 pts/lv distributed by class).
+@export var unspent_stat_points: int = 0
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -1321,6 +1326,8 @@ func to_dict() -> Dictionary:
 			"wisdom": wisdom,
 			"wits": wits
 		},
+		# Audit #3 Slice 1 — banked stat-allocation points
+		"unspent_stat_points": unspent_stat_points,
 		"current_hp": current_hp,
 		"max_hp": max_hp,
 		"total_max_hp": get_total_max_hp(),  # Equipment-boosted max HP for display
@@ -1472,6 +1479,9 @@ func from_dict(data: Dictionary):
 	intelligence = stats.get("intelligence", 10)
 	wisdom = stats.get("wisdom", 10)
 	wits = stats.get("wits", stats.get("charisma", 10))  # Support legacy save files with charisma
+	# Audit #3 Slice 1 — banked stat-allocation points. Legacy characters
+	# default to 0 (no retroactive grant — only future level-ups award points).
+	unspent_stat_points = int(data.get("unspent_stat_points", 0))
 
 	current_hp = data.get("current_hp", 100)
 	max_hp = data.get("max_hp", 100)
@@ -1881,6 +1891,11 @@ func add_experience(amount: int) -> Dictionary:
 					"wisdom": wisdom += whole_gain
 					"wits": wits += whole_gain
 
+		# Audit #3 Slice 1 — grant 1 unspent stat point per level. Stored on
+		# the character, spent via /spendstat <stat>. Layered on top of the
+		# class-fixed scaling above, not replacing it.
+		unspent_stat_points += UNSPENT_STAT_POINTS_PER_LEVEL
+
 		# Recalculate derived stats with new formulas
 		calculate_derived_stats()
 
@@ -1903,6 +1918,48 @@ func add_experience(amount: int) -> Dictionary:
 		"leveled_up": leveled_up,
 		"levels_gained": levels_gained,
 		"new_level": level
+	}
+
+# Audit #3 Slice 1 — stat-allocation agency.
+const UNSPENT_STAT_POINTS_PER_LEVEL: int = 1
+const ALLOCATABLE_STATS: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+
+func spend_stat_point(stat_name: String) -> Dictionary:
+	"""Audit #3 Slice 1 — apply one banked stat point to the named stat.
+	Returns {success, message, new_value, unspent_remaining} for the server
+	to relay. Recomputes derived stats so the +1 propagates to HP/Mana/etc."""
+	if not ALLOCATABLE_STATS.has(stat_name):
+		return {"success": false, "message": "Unknown stat. Valid: %s" % ", ".join(ALLOCATABLE_STATS)}
+	if unspent_stat_points <= 0:
+		return {"success": false, "message": "No unspent stat points. Level up to earn more."}
+	unspent_stat_points -= 1
+	var new_value: int = 0
+	match stat_name:
+		"strength":
+			strength += 1
+			new_value = strength
+		"constitution":
+			constitution += 1
+			new_value = constitution
+		"dexterity":
+			dexterity += 1
+			new_value = dexterity
+		"intelligence":
+			intelligence += 1
+			new_value = intelligence
+		"wisdom":
+			wisdom += 1
+			new_value = wisdom
+		"wits":
+			wits += 1
+			new_value = wits
+	calculate_derived_stats()
+	return {
+		"success": true,
+		"message": "[color=#00FF00]+1 %s (now %d).[/color]" % [stat_name.capitalize(), new_value],
+		"stat": stat_name,
+		"new_value": new_value,
+		"unspent_remaining": unspent_stat_points,
 	}
 
 func get_experience_progress() -> int:
