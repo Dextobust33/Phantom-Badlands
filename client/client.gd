@@ -19836,7 +19836,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20720,6 +20720,13 @@ func process_command(text: String):
 		"quests", "quest":
 			if has_character:
 				send_to_server({"type": "get_quest_log"})
+			else:
+				display_game("You don't have a character yet")
+		"catches", "deck":
+			# Audit #7 zone deck preview — sends a request to the server; server
+			# resolves zone by current location and replies with a `text` payload.
+			if has_character:
+				send_to_server({"type": "request_zone_deck"})
 			else:
 				display_game("You don't have a character yet")
 		"debughatch":
@@ -23064,8 +23071,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.314 changes
+	display_game("[color=#00FF00]v0.9.314[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Gathering zone deck preview (Audit #7)[/color]")
+	display_game("  • [b]New command: [color=#9ACD32]/catches[/color] (or [color=#9ACD32]/deck[/color])[/b]. While standing on a fishing/mining/logging/foraging tile, shows every possible catch in this zone with weight-normalized percentages, grouped by rarity (Common / Uncommon / Rare / Legendary / Treasure).")
+	display_game("  • [b]Auto-hint on gather start[/b]: when you begin gathering, you'll see a soft reminder that the command is available — no spam, just one line.")
+	display_game("  • [b]Why[/b]: closes the forward-direction loop on transparency. The crafting view already shows \"where do I find this material\" (v0.9.254); this answers the reverse: \"what's in front of me right now?\"")
+	display_game("  • Works at every gathering location, including all 9 mining tiers, all 6 logging tiers, all 6 foraging tiers (incl. biome-locked nodes like cactus / ice_bloom), and both fishing zones (shallow + deep).")
+	display_game("")
+
 	# v0.9.313 changes
-	display_game("[color=#00FF00]v0.9.313[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.313[/color]")
 	display_game("  [color=#FFD700]DELIVER quests — multi-path completability (Audit #6 Slice 9)[/color]")
 	display_game("  • [b]New quest type: DELIVER[/b]. The quest names an item; you can satisfy it ANY way: kill+salvage, buy off the market, [b]fulfill a buy order placed by others[/b] (or place one yourself!), find in chests, craft, or trade. The quest cares about delivery, not method.")
 	display_game("  • [b]3 new chains[/b] (6 quests across 3 starter posts):")
@@ -23110,26 +23126,6 @@ func display_changelog():
 	display_game("  • Procedural assignment at post creation; backfilled for existing saves. Personality is hash-stable per post — the same NPC always greets you the same way across sessions.")
 	display_game("")
 
-	# v0.9.309 changes
-	display_game("[color=#00FFFF]v0.9.309[/color]")
-	display_game("  [color=#FFD700]T7+T8+T9 boss signatures — ALL BOSS SIGS COMPLETE (Audit #5 Slice 12)[/color]")
-	display_game("  • [b]52 boss signatures shipped across 12 slices.[/b] Every single dungeon boss now has a unique mechanic. Audit #5's headline decision is realized.")
-	display_game("  • [b]T7 (4 sigs):[/b]")
-	display_game("    – [color=#4B0082]Void Walker — Void Step[/color]: every 3 turns next player attack deals 0 damage")
-	display_game("    – [color=#FF6347]Primordial Dragon — Primordial Roar[/color]: every 5 turns 20%% max HP + strips ALL buffs")
-	display_game("    – [color=#2E8B57]World Serpent — Coil Squeeze[/color]: per-turn +1 stack (cap 10), each ticks 1%% max HP per player turn")
-	display_game("    – [color=#9400D3]Elder Lich — Death Mark[/color]: on first hit applies mark, every 3 turns deals 8%% max HP")
-	display_game("  • [b]T8 (3 sigs):[/b]")
-	display_game("    – [color=#9400D3]Cosmic Horror — Madness Aura[/color]: every 4 turns, your next 2 turns have 30%% chance to fizzle")
-	display_game("    – [color=#4169E1]Time Weaver — Temporal Rewind[/color]: every 6 turns, heals 25%% max HP + clears debuffs")
-	display_game("    – [color=#000000]Death Incarnate — Reaper's Touch[/color]: 15%% on-hit chance to mark; marked players lose 15%% max HP next turn")
-	display_game("  • [b]T9 (4 sigs):[/b]")
-	display_game("    – [color=#FF1493]Avatar of Chaos — Chaotic Surge[/color]: each turn picks RANDOMLY from 6 outcomes (heal/burst/strip/stun/+50%%/-50%%)")
-	display_game("    – [color=#A0A0A0]The Nameless One — Unknowable[/color]: 25%% chance your attack is forgotten (deals 0)")
-	display_game("    – [color=#FFD700]God Slayer — Divine Punishment[/color]: every 4 turns deals (player_level × 5%%) max HP — scales with your power")
-	display_game("    – [color=#696969]Entropy — Decay[/color]: every monster turn +1 decay stack (uncapped); each ticks 2%% max HP. Existing in the fight costs HP.")
-	display_game("  • [b]Coverage milestone:[/b] 5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5 + 7 T6 + 4 T7 + 3 T8 + 4 T9 = [b]52 signatures across 53 dungeons[/b]. (Goblin King's pre-existing Rally Minions covers the last.)")
-	display_game("")
 
 
 
