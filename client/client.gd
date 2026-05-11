@@ -698,6 +698,23 @@ var character_data = {}
 var has_character = false
 var last_move_time = 0.0
 const MOVE_COOLDOWN = 0.5
+
+# Slice 6g — biome move cooldown modifier. Multipliers on MOVE_COOLDOWN per
+# biome string (matches world_system BIOME_* constants). Plains/Forest = 1.0
+# (baseline), Highlands/Desert = mild penalty, Swamp/Tundra = real slowdown.
+# Reads the live `hud_biome` (sent in the location message) so transitions
+# kick in the moment the player crosses a biome boundary. Client-side only
+# — server doesn't gate per-move cooldown, just rate-limits aggregate spam.
+const BIOME_MOVE_COOLDOWN_MULT := {
+	"plains": 1.0,
+	"forest": 1.0,
+	"mountain": 1.2,
+	"desert": 1.15,
+	"swamp": 1.4,
+	"snow": 1.4,
+}
+# Thresholds the status HUD uses to tag the biome line.
+const BIOME_SLOW_TAG_THRESHOLD := 1.3
 # Dark Parchment Theme Colors
 const THEME_BG = Color(0.102, 0.082, 0.063, 1)         # #1A1510
 const THEME_BG_PANEL = Color(0.12, 0.09, 0.07, 0.97)   # #1F1712
@@ -3405,7 +3422,13 @@ func _process(delta):
 	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
-			if current_time - last_move_time >= MOVE_COOLDOWN:
+			# Slice 6g — biome move-cooldown modifier. Swamp/Tundra slow the
+			# player meaningfully; Highlands/Desert are mild penalties; Plains
+			# and Forest move at baseline. `hud_biome` arrives in the location
+			# message so this updates the moment the player crosses a biome
+			# boundary.
+			var biome_move_mult = float(BIOME_MOVE_COOLDOWN_MULT.get(hud_biome, 1.0))
+			if current_time - last_move_time >= MOVE_COOLDOWN * biome_move_mult:
 				var move_dir = 0
 				var is_hunt = false
 				var build_placement_active = build_mode and (build_direction_mode or build_demolish_mode) and not pending_build_result
@@ -21781,7 +21804,10 @@ func _on_move_button(direction: int):
 		return
 
 	var current_time = Time.get_ticks_msec() / 1000.0
-	if current_time - last_move_time >= MOVE_COOLDOWN:
+	# Slice 6g — same biome cooldown modifier as the keyboard path. Dungeons
+	# bypass biome (handled below) since they're their own indoor zone.
+	var biome_move_mult = 1.0 if dungeon_mode else float(BIOME_MOVE_COOLDOWN_MULT.get(hud_biome, 1.0))
+	if current_time - last_move_time >= MOVE_COOLDOWN * biome_move_mult:
 		# In dungeon mode, convert numpad directions to 4-way dungeon movement
 		if dungeon_mode:
 			var dungeon_dir = ""
@@ -21811,7 +21837,9 @@ func _on_hunt_button():
 		return
 
 	var current_time = Time.get_ticks_msec() / 1000.0
-	if current_time - last_move_time >= MOVE_COOLDOWN:
+	# Slice 6g — biome modifier applies to Hunt too (same overworld action).
+	var biome_move_mult = float(BIOME_MOVE_COOLDOWN_MULT.get(hud_biome, 1.0))
+	if current_time - last_move_time >= MOVE_COOLDOWN * biome_move_mult:
 		clear_game_output()
 		send_to_server({"type": "hunt"})
 		last_move_time = current_time
@@ -22863,8 +22891,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.282 changes
+	display_game("[color=#00FF00]v0.9.282[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome movement modifiers (Audit #10 Slice 6g)[/color]")
+	display_game("  • [b]Different biomes move at different speeds.[/b] Plains and Forest are baseline (0.5s per step). Highlands and Desert apply mild penalties (~+15-20% cooldown). Swamp and Tundra slow you noticeably (~+40% cooldown — 0.7s per step). The biome you're standing in determines the cost — crossing into a Swamp tile immediately starts the slower cadence.")
+	display_game("  • [b]The biome line in the top-right HUD adds a [color=#FF6644](slow)[/color] tag[/b] when you're in a meaningfully slow biome (Swamp / Tundra). Mild biomes (Highlands / Desert) feel slightly slower but don't get tagged.")
+	display_game("  • Trade-off shape: the biomes with the best biome-locked materials (Slice 6e/6f Cactus / Ice Bloom / Swamp Lily) are also the slow ones — the travel cost is the price of farming them.")
+	display_game("  • Dungeons, houses, and other indoor spaces ignore biome cooldown — only overworld movement is affected.")
+	display_game("")
+
 	# v0.9.281 changes
-	display_game("[color=#00FF00]v0.9.281[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.281[/color]")
 	display_game("  [color=#FFD700]Biome-locked nodes guarantee their biome material (Audit #10 Slice 6f)[/color]")
 	display_game("  • [b]Foraging a biome-locked node now drops only that biome's materials.[/b] Walking up to a Cactus and pressing Forage guarantees Cactus Flesh / Sun Petal / Scorched Root — no more rolling Clovers or Wild Berries off a cactus. Same for Ice Bloom (Frost Lichen / Ice Crystal / Snow Bloom), Swamp Lily (Bog Iris / Marsh Reed / Witch Cap), Mountain Herb (Alpine Lichen / Rock Salt / Crag Thistle), Brambleberry (Oak Acorn / Pine Resin / Silverleaf).")
 	display_game("  • Per node: 2 T1 anchors at high weight + 1 T2 standout at lower weight. Tier of the tile still drives Foraging XP gain.")
@@ -22898,13 +22935,6 @@ func display_changelog():
 	display_game("  • Coming next: more biome mechanics (movement modifiers, weather, biome-locked node types) and a starter-resource ring around NPC posts so a Desert-spawn player still has basic materials nearby.")
 	display_game("")
 
-	# v0.9.277 changes
-	display_game("[color=#00FFFF]v0.9.277[/color]")
-	display_game("  [color=#FFD700]Biome-themed encounters (Audit #10 Slice 6b)[/color]")
-	display_game("  • [b]Random overworld monsters now bias toward their biome.[/b] Wolves and goblins favor forests, kobolds prefer mountains, gnolls show up in deserts, wights and wraiths drift through swamps and tundra, and so on. Soft bias (3× weight inside the existing level-appropriate pool) — out-of-biome monsters can still show up, just less often.")
-	display_game("  • Biome never lets a stronger monster spawn early — the tier curve is unchanged. Biome only re-weights the picks inside the pool the tile would already produce.")
-	display_game("  • Dungeon spawns, forced monsters (from selection scrolls), and hunted monsters are unaffected — those code paths already pick a specific monster on purpose.")
-	display_game("")
 
 
 
@@ -23874,9 +23904,17 @@ func update_region_label():
 	# T1 → T6). Hidden when the server hasn't sent biome info (e.g., older
 	# servers, or pre-Slice-6 character state) so we don't render "Biome: "
 	# with nothing after it.
+	# Slice 6g — append a small "(slow)" tag when the biome's move-cooldown
+	# multiplier crosses BIOME_SLOW_TAG_THRESHOLD so the player understands
+	# why they're walking slower. Mild penalties (Highlands 1.2, Desert 1.15)
+	# don't get tagged — players feel them subtly but the label stays clean.
 	var biome_line = ""
 	if hud_biome_name != "":
-		biome_line = "[color=#9ACD32]Biome:[/color] [color=%s]%s[/color]" % [hud_biome_color, hud_biome_name]
+		var biome_mult = float(BIOME_MOVE_COOLDOWN_MULT.get(hud_biome, 1.0))
+		var slow_tag = ""
+		if biome_mult >= BIOME_SLOW_TAG_THRESHOLD:
+			slow_tag = " [color=#FF6644](slow)[/color]"
+		biome_line = "[color=#9ACD32]Biome:[/color] [color=%s]%s[/color]%s" % [hud_biome_color, hud_biome_name, slow_tag]
 
 	# Slice 4 boundary warning — when inside a settler bubble, surface the
 	# wilderness tier waiting just outside so the player isn't blindsided by
