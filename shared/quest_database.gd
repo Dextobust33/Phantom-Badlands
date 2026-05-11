@@ -454,7 +454,7 @@ const QUESTS = {
 	"barrow_curse_2": {
 		"id": "barrow_curse_2",
 		"name": "Barrow's Curse II — The Barrow Wight",
-		"description": "An ancient barrow lord commands the dead from Wight's Vault. Find the dungeon and lay it to rest. Bring healing — its Life Drain will be hungry.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Wight Egg[/color]",
+		"description": "An ancient barrow lord commands the dead from Wight's Vault. Find the dungeon and lay it to rest. Bring healing — every third round its Soul Siphon will drain 8% of your max HP and heal the wight for the same. Plan your bursts around the timer.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Wight Egg[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "south_gate",
 		"target": 1,
@@ -467,6 +467,58 @@ const QUESTS = {
 		"chain_total": 2,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 315, "egg": "Wight"}
+	},
+	# ===== "Gnoll Pack Hunt" — West Shrine, 3 stages, T2 =====
+	"gnoll_pack_hunt_1": {
+		"id": "gnoll_pack_hunt_1",
+		"name": "Gnoll Pack Hunt I — Cull the Scouts",
+		"description": "Gnoll raiding parties have been pressing in from the western marches. Defeat 5 Gnolls to thin their forward scouts before they reach the shrine.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Gnoll Egg[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "west_shrine",
+		"target": 5,
+		"monster_type": "Gnoll",
+		"rewards": {"xp": 380, "valor": 55},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "gnoll_pack_hunt",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "gnoll_pack_hunt_2",
+		"chain_bonus": {}
+	},
+	"gnoll_pack_hunt_2": {
+		"id": "gnoll_pack_hunt_2",
+		"name": "Gnoll Pack Hunt II — Their Hounds",
+		"description": "Wolves run with the pack, flanking ambushes and harrying stragglers. Bring down 4 Wolves to leave the gnolls without their teeth.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Gnoll Egg[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "west_shrine",
+		"target": 4,
+		"monster_type": "Wolf",
+		"rewards": {"xp": 340, "valor": 50},
+		"is_daily": false,
+		"prerequisite": "gnoll_pack_hunt_1",
+		"chain_id": "gnoll_pack_hunt",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "gnoll_pack_hunt_3",
+		"chain_bonus": {}
+	},
+	"gnoll_pack_hunt_3": {
+		"id": "gnoll_pack_hunt_3",
+		"name": "Gnoll Pack Hunt III — Break the Packmaster",
+		"description": "The Packmaster rules the Gnoll Pack Den at the heart of the marches. Find the dungeon and bring the beast down — but strike fast. Pack Frenzy escalates every round: by round 10 the Packmaster hits 45% harder, by round 20 it's nearly double. Stall and die slow.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Gnoll Egg[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "west_shrine",
+		"target": 1,
+		"bounty_name": "Gnoll Packmaster",
+		"rewards": {"xp": 750, "valor": 90},
+		"is_daily": false,
+		"prerequisite": "gnoll_pack_hunt_2",
+		"chain_id": "gnoll_pack_hunt",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 305, "egg": "Gnoll"}
 	}
 }
 
