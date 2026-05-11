@@ -1205,8 +1205,11 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
-	"""Generate complete map display with location info header."""
+func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}) -> String:
+	"""Generate complete map display with location info header.
+	Slice 6j — explored_tiles dict (key: "x,y", value: true) is mutated in
+	place: LOS-visible tiles are marked, and LOS-blocked tiles that were
+	previously seen render as a dim fog version of the static terrain."""
 	var output = ""
 
 	# Check if at NPC post (new system)
@@ -1224,7 +1227,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 			output += _get_compass_line(center_x, center_y, post)
 			output += "\n"
 			output += "[center]"
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
 			output += "[/center]"
 			# Minimap — zoomed-out overview at small font, appended below the main map
 			output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
@@ -1237,7 +1240,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
 		if chunk_manager:
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
 		else:
 			output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 		output += "[/center]"
@@ -1286,7 +1289,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	# Add the main map (centered)
 	output += "[center]"
 	if chunk_manager:
-		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
+		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
 	else:
 		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	output += "[/center]"
@@ -1714,8 +1717,12 @@ func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
 
 # ===== NEW MAP RENDERER (Chunk-based with LOS) =====
 
-func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = []) -> String:
-	"""Generate ASCII map using chunk-based tile data with LOS raycasting."""
+func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}) -> String:
+	"""Generate ASCII map using chunk-based tile data with LOS raycasting.
+	Slice 6j — explored_tiles is mutated in place: any tile that resolves
+	to LOS-visible inside the vision circle is added to the set, and any
+	tile that is LOS-blocked but previously seen renders as fog instead
+	of blank."""
 	var map_lines: PackedStringArray = PackedStringArray()
 
 	# Build lookups
@@ -1755,7 +1762,13 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 			var tx = center_x + dx
 			var ty = center_y + dy
 			var key = "%d,%d" % [tx, ty]
-			visible_tiles[key] = is_tile_visible(center_x, center_y, tx, ty)
+			var visible = is_tile_visible(center_x, center_y, tx, ty)
+			visible_tiles[key] = visible
+			# Slice 6j — record any tile seen in LOS as explored. Blockers
+			# themselves count as visible (you can see the mountain face that
+			# stops your sight) so they get remembered too.
+			if visible:
+				explored_tiles[key] = true
 
 	# Render map
 	for dy in range(radius, -radius - 1, -1):
@@ -1782,9 +1795,14 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				line_parts.append("[color=#FFFF00] @[/color]")
 				continue
 
-			# LOS check — tiles outside line of sight are fully dark
+			# LOS check — tiles outside line of sight are blank, unless the
+			# character has explored them before, in which case render a dim
+			# fog version (Slice 6j map memory).
 			if not visible_tiles.get(pos_key, false):
-				line_parts.append("  ")
+				if explored_tiles.has(pos_key):
+					line_parts.append(_render_fog_tile(x, y))
+				else:
+					line_parts.append("  ")
 				continue
 
 			# Priority: players > dungeons > bounties > corpses > entities > terrain
@@ -1875,6 +1893,28 @@ func _render_tile_bbcode(tile_type: String, tier: int = 1, world_x: int = 0, wor
 		color = get_biome_empty_color(biome)
 
 	return "[color=%s] %s[/color]" % [color, char]
+
+func _render_fog_tile(x: int, y: int) -> String:
+	"""Slice 6j — render the static terrain at (x, y) as a dim 'fog of war'
+	tile. Used for positions outside current LOS that the character has
+	explored before. Strips all transient overlays (players, dungeons,
+	corpses, bounties, depletion, hotzone tint) — those are dynamic and
+	would be stale, so memory only preserves the immobile terrain shape."""
+	if chunk_manager == null:
+		return "  "
+	var tile = chunk_manager.get_tile(x, y)
+	var tile_type = tile.get("type", "empty")
+	var tile_tier = int(tile.get("tier", 1))
+	var render = TILE_RENDER.get(tile_type, TILE_RENDER["empty"])
+	var char = render.char
+	var color = render.color
+	if TIER_COLORS.has(tile_type) and tile_tier >= 1 and tile_tier <= 6:
+		color = TIER_COLORS[tile_type][tile_tier - 1]
+	if tile_type == "empty" or tile_type == "path":
+		var biome_seed = chunk_manager.world_seed if "world_seed" in chunk_manager else 0
+		var biome = get_biome_at(x, y, biome_seed)
+		color = get_biome_empty_color(biome)
+	return "[color=%s] %s[/color]" % [_dim_color(color, 0.35), char]
 
 func _render_guard_tile(x: int, y: int) -> String:
 	"""Render guard post tile with color based on active guard status."""

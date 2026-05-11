@@ -230,6 +230,11 @@ const MAX_ACTIVE_QUESTS = 5
 # Killing a monster reveals HP for that type at or below the killed level (within 20 levels)
 @export var known_monsters: Dictionary = {}
 
+# Slice 6j — Map memory. Set of tiles this character has ever seen in LOS.
+# Key: "x,y" string, Value: true. Used to render dimmed "fog" tiles outside
+# current LOS so the surrounding map remembers what was discovered.
+@export var explored_tiles: Dictionary = {}
+
 # Ability Loadout System - which abilities are equipped and their keybinds
 # equipped_abilities: Array of ability names in slot order (max 5 slots)
 @export var equipped_abilities: Array = []
@@ -1341,6 +1346,7 @@ func to_dict() -> Dictionary:
 		"completed_chains": completed_chains,
 		"daily_quest_cooldowns": daily_quest_cooldowns,
 		"known_monsters": known_monsters,
+		"explored_tiles": explored_tiles,
 		"equipped_abilities": equipped_abilities,
 		"ability_keybinds": ability_keybinds,
 		"ability_uses": ability_uses,
@@ -1537,6 +1543,9 @@ func from_dict(data: Dictionary):
 
 	# Monster knowledge system
 	known_monsters = data.get("known_monsters", {})
+
+	# Slice 6j — map memory. Empty for legacy characters; populated on first login.
+	explored_tiles = data.get("explored_tiles", {})
 
 	# Ability loadout system
 	equipped_abilities = data.get("equipped_abilities", [])

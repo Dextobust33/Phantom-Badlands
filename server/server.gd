@@ -4538,7 +4538,7 @@ func send_location_update(peer_id: int):
 			bounty_locs.append({"x": b.x, "y": b.y})
 
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles)
 
 	# Check for gathering node at this location OR adjacent tiles
 	var gathering_node = get_gathering_node_nearby(character.x, character.y)
@@ -12332,7 +12332,7 @@ func handle_watch_approve(peer_id: int, message: Dictionary):
 	# Send initial map (vision reduced if character is blind)
 	var vision_radius = 2 if character.blind_active else 6
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, [], [], [], [], character.explored_tiles)
 	send_to_peer(requester_peer_id, {
 		"type": "watch_location",
 		"x": character.x,
