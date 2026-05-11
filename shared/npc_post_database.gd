@@ -6,11 +6,14 @@
 class_name NpcPostDatabase
 extends RefCounted
 
-# Post generation parameters
-const POST_COUNT_TARGET = 18
-const MAX_ATTEMPTS = 200
-const POST_PLACEMENT_RADIUS = 450  # Max distance from origin
-const MIN_POST_SPACING = 100  # Minimum distance between posts
+# Post generation parameters — Audit #11 Slice 5 density bump (v0.9.321):
+# 60 posts at 70-spacing across a 600-radius world. Old sparse 18-post layout
+# (450 radius, 100 spacing) left the wilderness too quiet between posts and
+# left T6 distance bands underserved.
+const POST_COUNT_TARGET = 60
+const MAX_ATTEMPTS = 3000
+const POST_PLACEMENT_RADIUS = 600  # Max distance from origin
+const MIN_POST_SPACING = 70  # Minimum distance between posts
 
 # Main room interior dimensions (odd for clean centering)
 const MAIN_ROOM_MIN = 11
@@ -258,6 +261,74 @@ static func _generate_region_name(rng: RandomNumberGenerator) -> String:
 	var prefix = REGION_PREFIXES[rng.randi_range(0, REGION_PREFIXES.size() - 1)]
 	var suffix = REGION_SUFFIXES[rng.randi_range(0, REGION_SUFFIXES.size() - 1)]
 	return "%s %s" % [prefix, suffix]
+
+static func densify_posts(existing_posts: Array, seed: int) -> Array:
+	"""Audit #11 Slice 5 — top up an existing world to POST_COUNT_TARGET posts.
+	Preserves all existing post coordinates + identities and only adds new
+	posts in the remaining space. Same placement rules as generate_posts:
+	min spacing, no near-origin, no near-water. Uses a derived seed so a
+	reload always produces the same densification on a given world.
+
+	Water rejection is the dominant filter — for a typical seed ~95% of
+	candidates land within 12 tiles of water and get rejected. To find ~60
+	posts we need 60 / 0.05 ≈ 1200 attempts in the best case, more for
+	water-heavy seeds. DENSIFY_MAX_ATTEMPTS is sized generously so we
+	always converge before bailing.
+
+	Returns the full merged array (caller should save + stamp the new posts)."""
+	const DENSIFY_MAX_ATTEMPTS = 30000
+	if existing_posts.size() >= POST_COUNT_TARGET:
+		return existing_posts
+
+	var rng = RandomNumberGenerator.new()
+	# Derived seed so densification is stable per world but distinct from
+	# initial generation (avoids re-rolling the first 18 coords).
+	rng.seed = seed ^ 0xD0DEAD11
+
+	var posts = existing_posts.duplicate()
+	var attempts = 0
+	while posts.size() < POST_COUNT_TARGET and attempts < DENSIFY_MAX_ATTEMPTS:
+		attempts += 1
+		var x = rng.randi_range(-POST_PLACEMENT_RADIUS, POST_PLACEMENT_RADIUS)
+		var y = rng.randi_range(-POST_PLACEMENT_RADIUS, POST_PLACEMENT_RADIUS)
+
+		# Don't place too close to origin (starter post)
+		if abs(x) < 30 and abs(y) < 30:
+			continue
+
+		# Check minimum spacing from existing posts
+		var too_close = false
+		for p in posts:
+			var dx = x - int(p.get("x", 0))
+			var dy = y - int(p.get("y", 0))
+			if sqrt(dx * dx + dy * dy) < MIN_POST_SPACING:
+				too_close = true
+				break
+
+		if too_close:
+			continue
+
+		# Reject locations that are on or VERY near water. Densify uses a smaller
+		# margin (6 vs the strict 12) so densely water-flecked worlds can still
+		# reach the target. Posts placed near water still stamp walls/floors over
+		# whatever's under them, so a single fringe tile becoming a wall is fine.
+		if _location_has_water_in_margin(x, y, seed, 6):
+			continue
+
+		posts.append(_generate_post(rng, x, y, false))
+
+	return posts
+
+static func _location_has_water_in_margin(cx: int, cy: int, seed: int, margin: int) -> bool:
+	"""Generalized water check with caller-controlled margin (Audit #11 Slice 5).
+	Mirrors _location_has_nearby_water but lets densify use a smaller bubble
+	for water-heavy seeds where the strict 12-tile margin makes target counts
+	unreachable."""
+	for dx in range(-margin, margin + 1):
+		for dy in range(-margin, margin + 1):
+			if _is_water_static(cx + dx, cy + dy, seed):
+				return true
+	return false
 
 static func backfill_post_fields(posts: Array, seed: int) -> Array:
 	"""Slice 6L — migrate posts saved before tier/region_name existed. Re-uses

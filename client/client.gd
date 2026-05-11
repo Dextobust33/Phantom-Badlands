@@ -23099,8 +23099,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.321 changes
+	display_game("[color=#00FF00]v0.9.321[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC post density bump (Audit #11 Slice 5)[/color]")
+	display_game("  • [b]18 → 60 NPC posts[/b] across the inner world. Same procedural-post system, just denser. The wilderness between posts no longer feels barren; you should be hitting a new post much more often as you travel.")
+	display_game("  • [b]Placement radius 450 → 600[/b] tiles from origin. Some T7 \"World's Edge\" posts now exist where there used to be only wilderness.")
+	display_game("  • [b]Min spacing 100 → 70 tiles[/b], so posts pack tighter without overlapping.")
+	display_game("  • [b]Existing worlds migrate cleanly[/b]: your 18 starter posts keep their exact coords + names + personality + region naming. 42 new posts get topped up on the next server boot using a derived seed (stable, won't shuffle on reload).")
+	display_game("  • [b]Roads form as players reach them[/b] — the new posts join the road graph immediately but pathing tiles only stamp in once a player walks the route. Expect the road network to fill in over the next play session.")
+	display_game("  • [b]Why[/b]: NPC posts are the load-bearing infrastructure for the post-anchored world (quest chains, market, region naming, rumors, personalities). Denser posts = more anchors per square mile = world feels more lived-in. Compounds on Slices 1-4 (greetings, rumors, hotzone warnings, personalities).")
+	display_game("")
+
 	# v0.9.320 changes
-	display_game("[color=#00FF00]v0.9.320[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.320[/color]")
 	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 14)[/color]")
 	display_game("  • Coverage 15 → 21 dungeons themed. Rat Warrens / Kobold Tunnels / Orc Stronghold / Wraith Barrow / Giant Keep / Hydra Swamp now have signature environmental tiles.")
 	display_game("  • [color=#7BA821][b]p[/b][/color] [color=#7BA821]Filthy Puddle[/color] (Rat Warrens) — nicks ~1% HP AND 30% chance to bank a festering stack into your next combat. Cross-system pair with Rat King's Festering Bite signature.")
@@ -23141,14 +23152,6 @@ func display_changelog():
 	display_game("  • [b]Closes the only known v1 limitation[/b] from the buy-order launch in v0.9.311. Audit #9 marker dimension complete — Slices 1+2+2b+3+4 all shipped.")
 	display_game("")
 
-	# v0.9.316 changes
-	display_game("[color=#00FFFF]v0.9.316[/color]")
-	display_game("  [color=#FFD700]Deck variants: Forethought + Tactical Retreat (Audit #1)[/color]")
-	display_game("  • [b]Two new universal deck cards[/b] solve the stuck-hand problem. Every character — Mage, Warrior, Trickster — gets 1 copy of each in their starter deck. Existing characters get them auto-added on next combat.")
-	display_game("  • [color=#9370DB][b]Forethought[/b][/color]: pay 1 of your primary resource (mana / stamina / energy). Discard the rest of your hand and draw a fresh hand. [b]Skips the monster's turn[/b] — a setup card, not a tempo card. Use when you have cards you can't afford and need a do-over.")
-	display_game("  • [color=#87CEEB][b]Tactical Retreat[/b][/color]: free. Discard the rest of your hand and draw a fresh hand. [b]Monster gets a free swing[/b] — this is the panic button when you're out of resource and stuck. The price is the hit you'll eat.")
-	display_game("  • [b]Why[/b]: with a 5-card hand and persistent across rounds, you could previously get stuck holding only high-cost cards you can't afford. Slay-the-Spire-style mulligan cards let you cycle. Forethought is the patient choice; Tactical Retreat is the desperate one.")
-	display_game("")
 
 
 
