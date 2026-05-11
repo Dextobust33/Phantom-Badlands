@@ -67,6 +67,9 @@ var merchant_inventories = {}
 # Map: tp_id → {generated_at: unix, rumors: [{name, dungeon_type, distance, direction_text, color}]}
 var trading_post_rumors: Dictionary = {}
 const TRADING_POST_RUMOR_REFRESH_SEC: int = 1800  # 30 min
+# Audit #11 Slice 1 — per-session "first arrival at NPC post" tracking so the
+# greeting fires once per post per session. Map: peer_id → {"x,y": true}
+var visited_npc_posts_session: Dictionary = {}
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading posts
 const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
@@ -2699,6 +2702,15 @@ func handle_move(peer_id: int, message: Dictionary):
 		at_trading_post.erase(peer_id)
 		send_to_peer(peer_id, {"type": "trading_post_end"})
 
+	# Audit #11 Slice 1 — first-arrival greeting at procedural NPC posts.
+	# Procedural NPC posts don't open a trading-post panel (players just walk
+	# through), so we surface a chat-style greeting once per post per session:
+	# region context + quest giver intro + nearest dungeon rumor.
+	if chunk_manager:
+		var np = chunk_manager.get_npc_post_at(new_pos.x, new_pos.y)
+		if not np.is_empty():
+			_maybe_send_npc_post_greeting(peer_id, np)
+
 	# Check for entering/leaving any player enclosure (own or others)
 	var move_username = _get_username(peer_id)
 	var now_in_enclosure = false
@@ -5096,6 +5108,10 @@ func handle_disconnect(peer_id: int):
 		pending_flocks.erase(peer_id)
 	if flock_counts.has(peer_id):
 		flock_counts.erase(peer_id)
+	# Audit #11 Slice 1 — clear NPC post arrival memory; greeting re-fires
+	# on next session.
+	if visited_npc_posts_session.has(peer_id):
+		visited_npc_posts_session.erase(peer_id)
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
@@ -19879,33 +19895,74 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 
 	return "%d tiles %s" % [distance, direction]
 
-func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
-	"""Audit #5 — generate up to 2 rumors per trading post pointing to nearby
-	dungeons within ~150 tile radius. Cached for 30 min so players see the
-	same rumors on revisit (per-post identity). Skips other players' personal
-	dungeon instances.
+func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
+	"""Audit #11 Slice 1 — fire a one-time per-session arrival greeting when a
+	player walks into an NPC post tile. Surfaces the procedurally-generated
+	quest_giver name (otherwise unused), the region context from Slice 6L, and
+	a single dungeon rumor if anything's nearby. Repeat visits this session
+	stay silent; new session resets via handle_disconnect."""
+	var px = int(post.get("x", 0))
+	var py = int(post.get("y", 0))
+	var post_key = "%d,%d" % [px, py]
+	if not visited_npc_posts_session.has(peer_id):
+		visited_npc_posts_session[peer_id] = {}
+	var visited = visited_npc_posts_session[peer_id]
+	if visited.has(post_key):
+		return
+	visited[post_key] = true
 
-	Each rumor: {name, dungeon_type, tier, distance_text, direction_text, color}.
-	Client formats the chat line."""
-	var current_time = int(Time.get_unix_time_from_system())
-	if trading_post_rumors.has(tp_id):
-		var cached = trading_post_rumors[tp_id]
-		if current_time - int(cached.get("generated_at", 0)) < TRADING_POST_RUMOR_REFRESH_SEC:
-			return cached.get("rumors", [])
+	var post_name = String(post.get("name", "Trading Post"))
+	var region_name = String(post.get("region_name", ""))
+	var quest_giver = String(post.get("quest_giver", "")).strip_edges()
+	var tier = int(post.get("tier", 1))
+	var tier_color = chunk_manager.TIER_COLORS.get(tier, "#FFFFFF") if chunk_manager else "#FFFFFF"
 
-	# Generate fresh rumors. Find candidate dungeons within ~150 tiles, pick up to 2.
-	var max_radius = 150
+	var header_parts: Array = []
+	header_parts.append("[color=#FFD700]═ %s ═[/color]" % post_name)
+	if region_name != "":
+		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
+	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
+
+	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id)
+	if rumors.size() > 0:
+		var r = rumors[0]
+		var rumor_line: String
+		if quest_giver != "":
+			rumor_line = "[color=#A0C8E0]%s[/color]: \"Travelers whisper of a [color=%s]%s[/color] %s of here, about %d tiles out.\"" % [
+				quest_giver,
+				String(r.get("color", "#88FF88")),
+				String(r.get("name", "dungeon")),
+				String(r.get("direction_text", "nearby")),
+				int(r.get("distance", 0))
+			]
+		else:
+			rumor_line = "[color=#A0C8E0]A [color=%s]%s[/color] lies %s of here, about %d tiles out.[/color]" % [
+				String(r.get("color", "#88FF88")),
+				String(r.get("name", "dungeon")),
+				String(r.get("direction_text", "nearby")),
+				int(r.get("distance", 0))
+			]
+		send_to_peer(peer_id, {"type": "text", "message": rumor_line})
+	elif quest_giver != "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0C8E0]%s nods in greeting.[/color]" % quest_giver})
+
+func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1) -> Array:
+	"""Audit #11 Slice 1 — uncached helper used by both legacy trading posts
+	(via _get_trading_post_rumors) and procedural NPC posts (arrival greeting).
+	Returns up to `limit` nearby uncompleted dungeons inside `max_radius`,
+	closest first. Skips other players' personal instances.
+
+	Each rumor: {name, dungeon_type, tier, distance, direction_text, color}."""
 	var candidates: Array = []
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
 		if instance.get("completed_at", 0) > 0:
 			continue
-		# Skip personal-instance dungeons owned by other players (rumors should be public)
 		if instance.has("owner_peer_id"):
 			if peer_id < 0 or instance.owner_peer_id != peer_id:
 				continue
-		var dx = instance.world_x - tp_x
-		var dy = instance.world_y - tp_y
+		var dx = instance.world_x - x
+		var dy = instance.world_y - y
 		var dist = int(sqrt(dx * dx + dy * dy))
 		if dist > max_radius:
 			continue
@@ -19915,14 +19972,23 @@ func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int 
 			"dungeon_type": instance.dungeon_type,
 			"tier": int(dungeon_data.get("tier", 1)),
 			"distance": dist,
-			"direction_text": _get_direction_text(tp_x, tp_y, instance.world_x, instance.world_y),
+			"direction_text": _get_direction_text(x, y, instance.world_x, instance.world_y),
 			"color": dungeon_data.get("color", "#88FF88")
 		})
-
-	# Sort by distance (closest first), seed with tp_id hash so it's stable per cache window
 	candidates.sort_custom(func(a, b): return a.distance < b.distance)
-	var rumors: Array = candidates.slice(0, mini(2, candidates.size()))
+	return candidates.slice(0, mini(limit, candidates.size()))
 
+func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
+	"""Audit #5 — cached rumor list for legacy trading posts. Refreshes every
+	30 min so revisits show the same hints. Delegates discovery to
+	_find_dungeon_rumors_near."""
+	var current_time = int(Time.get_unix_time_from_system())
+	if trading_post_rumors.has(tp_id):
+		var cached = trading_post_rumors[tp_id]
+		if current_time - int(cached.get("generated_at", 0)) < TRADING_POST_RUMOR_REFRESH_SEC:
+			return cached.get("rumors", [])
+
+	var rumors = _find_dungeon_rumors_near(tp_x, tp_y, 150, 2, peer_id)
 	trading_post_rumors[tp_id] = {
 		"generated_at": current_time,
 		"rumors": rumors
