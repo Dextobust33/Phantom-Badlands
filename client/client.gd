@@ -23064,8 +23064,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.313 changes
+	display_game("[color=#00FF00]v0.9.313[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]DELIVER quests — multi-path completability (Audit #6 Slice 9)[/color]")
+	display_game("  • [b]New quest type: DELIVER[/b]. The quest names an item; you can satisfy it ANY way: kill+salvage, buy off the market, [b]fulfill a buy order placed by others[/b] (or place one yourself!), find in chests, craft, or trade. The quest cares about delivery, not method.")
+	display_game("  • [b]3 new chains[/b] (6 quests across 3 starter posts):")
+	display_game("    – [color=#FFAA00]Forge Supplies[/color] at Haven: 8 Iron Ore → 4 Oak Wood. Reward: 250 valor + Iron Longsword.")
+	display_game("    – [color=#FFAA00]Apothecary Restock[/color] at Crossroads: 5 Health Potions → 6 Healing Herb. Reward: 220 valor + Wolf Egg.")
+	display_game("    – [color=#FFAA00]The Trapper's Trade[/color] at East Market: 6 Ragged Leather → 4 Leather Scraps. Reward: 240 valor + Hobgoblin Egg.")
+	display_game("  • [b]Live progress[/b]: quest log shows your current inventory count (\"5/8 Iron Ore\") rather than a tracked cumulative — items aren't \"locked in\" until you turn in. Use them freely, the quest checks again when you visit the giver.")
+	display_game("  • [b]Items consumed on turn-in[/b], not on accept. Walk in with the goods, hand them over.")
+	display_game("  • [b]Synergy with buy orders (v0.9.311)[/b]: place a buy order for the quest item, sit at the post, let other players bring you the goods.")
+	display_game("")
+
 	# v0.9.312 changes
-	display_game("[color=#00FF00]v0.9.312[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.312[/color]")
 	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 13)[/color]")
 	display_game("  • [b]15 of 53 dungeons[/b] now have unique theme tiles (up from 9). New themes span T1-T5 with a mix of positive pickups and persistent hazards:")
 	display_game("    – [color=#DAA520]Goblin Caves — Scattered Loot (c)[/color]: step → +1-5 Valor (consumed). Friendly T1 intro to themed tiles.")
@@ -23118,20 +23131,6 @@ func display_changelog():
 	display_game("  • [b]Coverage milestone:[/b] 5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5 + 7 T6 + 4 T7 + 3 T8 + 4 T9 = [b]52 signatures across 53 dungeons[/b]. (Goblin King's pre-existing Rally Minions covers the last.)")
 	display_game("")
 
-	# v0.9.308 changes
-	display_game("[color=#00FFFF]v0.9.308[/color]")
-	display_game("  [color=#FFD700]T6 boss signatures + Phoenix Nest theme tile (Audit #5 Slice 11)[/color]")
-	display_game("  • [b]All 7 T6 boss signatures shipped[/b]:")
-	display_game("    – [color=#FFD700]Ancient Dragon — Dragon's Hoard[/color]: every 5 turns swallows one of your buffs + permanent +5%% damage stack")
-	display_game("    – [color=#2E8B57]Hydra — Hydra Regen[/color]: when you deal >10%% boss max HP in one hit, boss heals 10%%. Anti-burst.")
-	display_game("    – [color=#FF8C00]Phoenix — Phoenix Rebirth[/color]: revives at 75%% HP once per fight (vs Skeleton Lord's 50%%)")
-	display_game("    – [color=#00BFFF]Primeval Elemental — Element Cycle[/color]: 4-phase rotation (fire / water / earth-shear / air-stun) each round")
-	display_game("    – [color=#CD7F32]Iron Golem Overlord — Forge Heat[/color]: on-hit +1 heat, at 5 stacks deals 10%% max HP + resets")
-	display_game("    – [color=#9370DB]Ancient Sphinx — Riddle Curse[/color]: every 3 turns +1 stack reducing your damage 5%% (cap 5)")
-	display_game("    – [color=#4B0082]Nazgul Lord — Soul Touch[/color]: on-hit +1 stack reducing your defense 2%% each (uncapped)")
-	display_game("  • [b]Phoenix Nest theme tile[/b]: glowing embers ([color=#FFA500][b]o[/b][/color]) heal ~4%% max HP on step (consumed). Pairs with Phoenix's Rebirth signature.")
-	display_game("  • [b]Coverage:[/b] 41 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5 + 7 T6). 9 dungeons themed. T7+ untouched.")
-	display_game("")
 
 
 

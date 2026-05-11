@@ -8345,6 +8345,14 @@ func _send_character_update_immediate(peer_id: int, force_full: bool):
 	char_dict["valor"] = persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
 	# Projected leaderboard rank
 	char_dict["projected_rank"] = _calculate_projected_rank(character)
+	# Audit #6 Slice 9 — DELIVER quests carry their progress as a live count of
+	# inventory/material possession rather than a stored integer. Inject the
+	# live value here so the client UI shows "have / target" accurately without
+	# needing to know quest types.
+	var active_q_serial: Array = char_dict.get("active_quests", [])
+	for q in active_q_serial:
+		if int(q.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+			q["progress"] = quest_mgr.count_delivery_progress(character, q)
 
 	if USE_DELTA_UPDATES and not force_full and last_sent_character_state.has(peer_id):
 		var delta = _compute_character_delta(last_sent_character_state[peer_id], char_dict)
@@ -9878,7 +9886,11 @@ func trigger_trading_post_encounter(peer_id: int):
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
 		if not quest.is_empty() and quest.get("trading_post", "") == tp_id:
-			if quest_data.progress >= quest_data.target:
+			# Audit #6 Slice 9 — DELIVER quests use live inventory count
+			if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+				if quest_mgr.count_delivery_progress(character, quest_data) >= int(quest_data.get("target", 0)):
+					quests_to_turn_in.append(quest_data.quest_id)
+			elif quest_data.progress >= quest_data.target:
 				quests_to_turn_in.append(quest_data.quest_id)
 
 	# Calculate recharge cost to send to client
@@ -10040,7 +10052,11 @@ func handle_trading_post_quests(peer_id: int):
 			if tp.id == dest_post_id:
 				can_turn_in = true
 
-		if can_turn_in and quest_data.progress >= quest_data.target:
+		# Audit #6 Slice 9 — DELIVER quests use live inventory count for completion
+		var meets_target = quest_data.progress >= quest_data.target
+		if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+			meets_target = quest_mgr.count_delivery_progress(character, quest_data) >= int(quest_data.get("target", 0))
+		if can_turn_in and meets_target:
 			var rewards = quest_mgr.calculate_rewards(character, quest_data.quest_id)
 			quests_to_turn_in.append({
 				"quest_id": quest_data.quest_id,

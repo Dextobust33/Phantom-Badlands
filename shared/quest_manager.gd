@@ -105,6 +105,15 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	if quest_type == QuestDatabaseScript.QuestType.GATHER:
 		extra_data["gather_job"] = quest.get("gather_job", "")
 
+	# Audit #6 Slice 9 — DELIVER quests: store delivery item name/type so the
+	# completion check (`is_quest_complete`) doesn't need to re-resolve the
+	# original quest dict on every check. Item name is the lookup key against
+	# crafting_materials (for materials) or inventory.name (for inv-resident
+	# types like consumables/runes/parts).
+	if quest_type == QuestDatabaseScript.QuestType.DELIVER:
+		extra_data["delivery_item_name"] = quest.get("delivery_item_name", "")
+		extra_data["delivery_item_type"] = quest.get("delivery_item_type", "")
+
 	# Store character name for per-character quest regeneration
 	extra_data["character_name"] = character.name
 
@@ -307,7 +316,31 @@ func is_quest_complete(character: Character, quest_id: String) -> bool:
 	var quest_data = character.get_quest_progress(quest_id)
 	if quest_data.is_empty():
 		return false
+	# Audit #6 Slice 9 — DELIVER quests check current inventory/material counts
+	# rather than a tracked progress integer. Players accumulate items by any
+	# means (kill+salvage, buy, fulfill, craft, loot) and the quest unlocks the
+	# moment they're holding enough. Items are consumed on turn-in.
+	if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+		var have = count_delivery_progress(character, quest_data)
+		return have >= int(quest_data.get("target", 0))
 	return quest_data.progress >= quest_data.target
+
+func count_delivery_progress(character: Character, quest_data: Dictionary) -> int:
+	"""Audit #6 Slice 9 — count how many of a delivery target the character
+	currently has. Materials look up crafting_materials by the snake_case key
+	stored in delivery_item_name. Consumables/runes/monster_parts walk the
+	inventory matching by name + type."""
+	var item_name = String(quest_data.get("delivery_item_name", ""))
+	var item_type = String(quest_data.get("delivery_item_type", ""))
+	if item_name.is_empty():
+		return 0
+	if item_type == "material":
+		return int(character.crafting_materials.get(item_name, 0))
+	var count = 0
+	for inv_item in character.inventory:
+		if String(inv_item.get("name", "")) == item_name and String(inv_item.get("type", "")) == item_type:
+			count += 1
+	return count
 
 func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 	"""Calculate quest rewards including hotzone multiplier. Returns {xp, valor, multiplier}"""
@@ -359,6 +392,29 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	var quest_data = character.get_quest_progress(quest_id)
 	var quest_name = quest_data.get("quest_name", "")
 	var is_daily = false
+
+	# Audit #6 Slice 9 — DELIVER quests consume the items on successful turn-in.
+	# Items are removed from inventory or crafting_materials in the exact count
+	# specified by the quest target. is_quest_complete already verified the
+	# player has enough, so this is just bookkeeping.
+	if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+		var item_name = String(quest_data.get("delivery_item_name", ""))
+		var item_type = String(quest_data.get("delivery_item_type", ""))
+		var target_qty = int(quest_data.get("target", 0))
+		if item_type == "material":
+			var current = int(character.crafting_materials.get(item_name, 0))
+			character.crafting_materials[item_name] = max(0, current - target_qty)
+			if character.crafting_materials[item_name] <= 0:
+				character.crafting_materials.erase(item_name)
+		else:
+			var to_remove = target_qty
+			var i = character.inventory.size() - 1
+			while i >= 0 and to_remove > 0:
+				var inv_item = character.inventory[i]
+				if String(inv_item.get("name", "")) == item_name and String(inv_item.get("type", "")) == item_type:
+					character.inventory.remove_at(i)
+					to_remove -= 1
+				i -= 1
 
 	# Regenerate quest with stored params for metadata (is_daily, etc.)
 	var player_level_at_accept = quest_data.get("player_level_at_accept", 1)
@@ -416,6 +472,10 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 
 		var progress = quest_data.progress
 		var target = quest_data.target
+		# Audit #6 Slice 9 — DELIVER quests show current inventory count (dynamic).
+		# The stored `progress` integer is not used for DELIVER — it stays at 0.
+		if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+			progress = count_delivery_progress(character, quest_data)
 		var is_complete = progress >= target
 
 		# Quest header - use stored quest_name if available (prevents regeneration mismatch)

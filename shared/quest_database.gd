@@ -16,7 +16,8 @@ enum QuestType {
 	DUNGEON_CLEAR,      # 6 - Clear a specific dungeon type (defeat boss)
 	KILL_TIER,          # 7 - Kill X monsters of tier N or higher
 	RESCUE,             # 8 - Rescue NPC from dungeon
-	GATHER              # 9 - Gather X materials through fishing/mining/logging/foraging
+	GATHER,             # 9 - Gather X materials through fishing/mining/logging/foraging
+	DELIVER             # 10 - Audit #6 Slice 9: deliver X of an item (loot/craft/buy — any path)
 }
 
 # Quest data structure:
@@ -519,6 +520,123 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 305, "egg": "Gnoll", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+	},
+
+	# Audit #6 Slice 9 — DELIVER chains (multi-path completability).
+	# These quests don't care HOW you get the items: kill + salvage, buy off the
+	# market, fulfill a buy order, find in chests, get someone to trade them in.
+	# The quest cares about delivery, not method — opens crafting/economy/social
+	# paths as legitimate quest verbs.
+
+	"forge_iron_supplies_1": {
+		"id": "forge_iron_supplies_1",
+		"name": "Forge Supplies I — Iron for the Smith",
+		"description": "The Haven smith is restocking. Deliver [b]8 Iron Ore[/b] to her workshop.\n\n[color=#888888]Any path works: mine it, buy it off the market, fulfill a buy order, or find it in dungeon chests.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 250 valor + Iron Longsword[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "haven",
+		"target": 8,
+		"delivery_item_name": "iron_ore",
+		"delivery_item_type": "material",
+		"rewards": {"xp": 180, "valor": 30},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "forge_iron_supplies",
+		"chain_stage": 1,
+		"chain_total": 2,
+		"next_in_chain": "forge_iron_supplies_2",
+		"chain_bonus": {}
+	},
+	"forge_iron_supplies_2": {
+		"id": "forge_iron_supplies_2",
+		"name": "Forge Supplies II — Oak Hilts",
+		"description": "The smith needs hilt material to finish her run. Deliver [b]4 Oak Wood[/b].\n\n[color=#888888]Crafters chop it from dense forests. Or buy it from a market that specializes in wood.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 250 valor + Iron Longsword[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "haven",
+		"target": 4,
+		"delivery_item_name": "oak_wood",
+		"delivery_item_type": "material",
+		"rewards": {"xp": 220, "valor": 40},
+		"is_daily": false,
+		"prerequisite": "forge_iron_supplies_1",
+		"chain_id": "forge_iron_supplies",
+		"chain_stage": 2,
+		"chain_total": 2,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 210, "home_stones": ["home_stone_equipment"]}
+	},
+
+	"apothecary_restock_1": {
+		"id": "apothecary_restock_1",
+		"name": "Apothecary Restock I — Healing Stores",
+		"description": "Crossroads' apothecary has run low on healing draughts. Deliver [b]5 Health Potions[/b].\n\n[color=#888888]Find them in chests, buy from the market, or place a buy order if you don't want to brew.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 220 valor + Wolf Egg[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "crossroads",
+		"target": 5,
+		"delivery_item_name": "Health Potion",
+		"delivery_item_type": "consumable",
+		"rewards": {"xp": 160, "valor": 28},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "apothecary_restock",
+		"chain_stage": 1,
+		"chain_total": 2,
+		"next_in_chain": "apothecary_restock_2",
+		"chain_bonus": {}
+	},
+	"apothecary_restock_2": {
+		"id": "apothecary_restock_2",
+		"name": "Apothecary Restock II — Herb Gathering",
+		"description": "The apothecary now needs herbs for the next batch. Deliver [b]6 Healing Herb[/b].\n\n[color=#888888]Forage them in forest biomes, or buy from a farm-specialty market for a discount.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 220 valor + Wolf Egg[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "crossroads",
+		"target": 6,
+		"delivery_item_name": "healing_herb",
+		"delivery_item_type": "material",
+		"rewards": {"xp": 200, "valor": 38},
+		"is_daily": false,
+		"prerequisite": "apothecary_restock_1",
+		"chain_id": "apothecary_restock",
+		"chain_stage": 2,
+		"chain_total": 2,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 180, "egg": "Wolf"}
+	},
+
+	"trapper_pelts_1": {
+		"id": "trapper_pelts_1",
+		"name": "The Trapper's Trade I — Ragged Pelts",
+		"description": "East Market's trapper is buying pelts in bulk. Deliver [b]6 Ragged Leather[/b].\n\n[color=#888888]Wolves and beasts drop them. Or buy / buy-order from hunters — your call.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 240 valor + Hobgoblin Egg[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "east_market",
+		"target": 6,
+		"delivery_item_name": "ragged_leather",
+		"delivery_item_type": "material",
+		"rewards": {"xp": 170, "valor": 30},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "trapper_pelts",
+		"chain_stage": 1,
+		"chain_total": 2,
+		"next_in_chain": "trapper_pelts_2",
+		"chain_bonus": {}
+	},
+	"trapper_pelts_2": {
+		"id": "trapper_pelts_2",
+		"name": "The Trapper's Trade II — Stronger Hides",
+		"description": "The trapper wants tougher leather now. Deliver [b]4 Leather Scraps[/b] (the tanned variety).\n\n[color=#888888]Crafted from rough hide if you have a Tanner's specialty. Or buy off the market — leather's common at fortresses.[/color]\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 240 valor + Hobgoblin Egg[/color]",
+		"type": QuestType.DELIVER,
+		"trading_post": "east_market",
+		"target": 4,
+		"delivery_item_name": "leather_scraps",
+		"delivery_item_type": "material",
+		"rewards": {"xp": 210, "valor": 40},
+		"is_daily": false,
+		"prerequisite": "trapper_pelts_1",
+		"chain_id": "trapper_pelts",
+		"chain_stage": 2,
+		"chain_total": 2,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 200, "egg": "Hobgoblin"}
 	}
 }
 
