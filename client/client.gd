@@ -23099,8 +23099,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.320 changes
+	display_game("[color=#00FF00]v0.9.320[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 14)[/color]")
+	display_game("  • Coverage 15 → 21 dungeons themed. Rat Warrens / Kobold Tunnels / Orc Stronghold / Wraith Barrow / Giant Keep / Hydra Swamp now have signature environmental tiles.")
+	display_game("  • [color=#7BA821][b]p[/b][/color] [color=#7BA821]Filthy Puddle[/color] (Rat Warrens) — nicks ~1% HP AND 30% chance to bank a festering stack into your next combat. Cross-system pair with Rat King's Festering Bite signature.")
+	display_game("  • [color=#DAA520][b]t[/b][/color] [color=#DAA520]Trinket Pile[/color] (Kobold Tunnels) — 2-4 Valor pickup, consumed.")
+	display_game("  • [color=#FF6347][b]![/b][/color] [color=#FF6347]War Banner[/color] (Orc Stronghold) — touch one for +15% damage for the first 3 rounds of your next combat. Cross-system offensive buff. Consumed.")
+	display_game("  • [color=#9370DB][b]:[/b][/color] [color=#9370DB]Spectral Veil[/color] (Wraith Barrow) — touch one for 20% monster-miss chance for the first 2 rounds of your next combat. Cross-system defensive buff. Consumed.")
+	display_game("  • [color=#A0A0A0][b]r[/b][/color] [color=#A0A0A0]Crushed Rubble[/color] (Giant Keep) — +2 step cost. Densest step-debuff tile so far (12% placement).")
+	display_game("  • [color=#48D1CC][b]/[/b][/color] [color=#48D1CC]Regen Spring[/color] (Hydra Swamp) — strongest heal tile: ~6% max HP. Consumed. Pairs with Hydra's Regen boss signature.")
+	display_game("  • [b]Three new cross-system mechanics[/b]: pending festering, war banner damage buff, spectral veil miss chance. All carry from the dungeon tile through start_combat into combat math.")
+	display_game("")
+
 	# v0.9.319 changes
-	display_game("[color=#00FF00]v0.9.319[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.319[/color]")
 	display_game("  [color=#FFD700]Wear your chain titles in chat (Audit #6 Slice 11)[/color]")
 	display_game("  • [b]New command: [color=#9ACD32]/set_title <id>[/color][/b] — pick which earned chain title to display in chat and join/leave broadcasts. Title ids are shown in parentheses next to each title in [color=#9ACD32]/titles[/color].")
 	display_game("  • [b]/set_title clear[/b] (or /set_title none) removes the prefix.")
@@ -23137,15 +23150,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: with a 5-card hand and persistent across rounds, you could previously get stuck holding only high-cost cards you can't afford. Slay-the-Spire-style mulligan cards let you cycle. Forethought is the patient choice; Tactical Retreat is the desperate one.")
 	display_game("")
 
-	# v0.9.315 changes
-	display_game("[color=#00FFFF]v0.9.315[/color]")
-	display_game("  [color=#FFD700]Crafting quality odds preview (Audit #8 Layer 5)[/color]")
-	display_game("  • [b]Every recipe now shows your odds[/b] of each quality bucket before you craft: [color=#FFFFFF]Poor[/color] / [color=#00FF00]Standard[/color] / [color=#0070DD]Fine[/color] / [color=#A335EE]Masterwork[/color] (with their stat multipliers x0.5 / x1.0 / x1.25 / x1.5).")
-	display_game("  • [b]Computed from your real success chance[/b]: server walks all 100 possible roll values for this skill / difficulty / station combo and tallies which quality each lands on. No estimates — exactly the same buckets the actual craft uses.")
-	display_game("  • Renders in both the visual crafting panel AND the keyboard recipe details view.")
-	display_game("  • Locked / specialist-gated recipes show the old generic line (no odds preview).")
-	display_game("  • [b]Why[/b]: closes Layer 5 of the Audit #8 transparency roadmap. You can now make informed decisions about which recipes to grind, where to craft, and when to push skill before attempting a Masterwork.")
-	display_game("")
 
 
 
@@ -30401,6 +30405,24 @@ const DUNGEON_THEME_LEGEND = {
 	"cerberus_pit": [
 		{"glyph": "s", "color": "#9ACD32", "desc": "Brimstone — sulfur fumes that burn your lungs for ~4% of your max HP on step. Persistent. Plan paths around the acid-green tiles."}
 	],
+	"rat_warrens": [
+		{"glyph": "p", "color": "#7BA821", "desc": "Filthy puddles — pestilent runoff. Stepping nicks ~1% of your max HP AND has a 30% chance to bank a festering stack into your next combat. Persistent."}
+	],
+	"kobold_tunnels": [
+		{"glyph": "t", "color": "#DAA520", "desc": "Trinket piles — kobold magpie hoards. Step on one to pocket 2-4 Valor. One-time per pile (consumed)."}
+	],
+	"orc_stronghold": [
+		{"glyph": "!", "color": "#FF6347", "desc": "War banners — touching one banks +15% damage for the first 3 rounds of your next combat. One-time per banner (consumed). Pairs with the orcs' brutal-direct-combat theme."}
+	],
+	"wraith_barrow": [
+		{"glyph": ":", "color": "#9370DB", "desc": "Spectral veils — touching one banks 20% monster-miss chance for the first 2 rounds of your next combat. One-time per veil (consumed). Defensive companion to the Orc banner."}
+	],
+	"giant_keep": [
+		{"glyph": "r", "color": "#A0A0A0", "desc": "Crushed rubble — scrambling over giant-scale debris costs +2 steps to cross. Persistent. Plan paths around the gray patches."}
+	],
+	"hydra_swamp": [
+		{"glyph": "/", "color": "#48D1CC", "desc": "Regen springs — hydra waters that heal ~6% of your max HP on step. Strongest heal tile to date. One-time per spring (consumed). Pairs with the Hydra's Regen boss signature."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30878,6 +30900,18 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "n", "color": "#CD853F"}
 		24:  # BRIMSTONE — Cerberus Pit theme tile, persistent burn damage (v0.9.312)
 			return {"char": "s", "color": "#9ACD32"}
+		25:  # FILTHY_PUDDLE — Rat Warrens theme tile, nicks HP + festering chance (v0.9.320)
+			return {"char": "p", "color": "#7BA821"}
+		26:  # TRINKET_PILE — Kobold Tunnels theme tile, small valor pickup (v0.9.320)
+			return {"char": "t", "color": "#DAA520"}
+		27:  # WAR_BANNER — Orc Stronghold theme tile, +15% dmg for 3 rounds next combat (v0.9.320)
+			return {"char": "!", "color": "#FF6347"}
+		28:  # SPECTRAL_VEIL — Wraith Barrow theme tile, 20% miss chance 2 rounds next combat (v0.9.320)
+			return {"char": ":", "color": "#9370DB"}
+		29:  # CRUSHED_RUBBLE — Giant Keep theme tile, +2 step cost (v0.9.320)
+			return {"char": "r", "color": "#A0A0A0"}
+		30:  # REGEN_SPRING — Hydra Swamp theme tile, strong heal on step (v0.9.320)
+			return {"char": "/", "color": "#48D1CC"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 

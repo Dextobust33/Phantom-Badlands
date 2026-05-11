@@ -29,7 +29,13 @@ enum TileType {
 	CAVE_MOSS,     # Audit #5 theme tag — moss patch small heal (Troll Den)
 	SACRED_GROUND, # Audit #5 theme tag — blessing buffs next attack (Gargoyle Cathedral)
 	WARM_NEST,     # Audit #5 theme tag — dragon nest heals on step (Dragon Hatchery)
-	BRIMSTONE      # Audit #5 theme tag — sulfur burn ticks HP on step (Cerberus Pit)
+	BRIMSTONE,     # Audit #5 theme tag — sulfur burn ticks HP on step (Cerberus Pit)
+	FILTHY_PUDDLE, # Audit #5 theme tag — rat filth nicks HP + festering chance (Rat Warrens)
+	TRINKET_PILE,  # Audit #5 theme tag — kobold trinket gives a couple valor (Kobold Tunnels)
+	WAR_BANNER,    # Audit #5 theme tag — orc banner buffs next combat damage (Orc Stronghold)
+	SPECTRAL_VEIL, # Audit #5 theme tag — wraith mist buffs next combat dodge (Wraith Barrow)
+	CRUSHED_RUBBLE,# Audit #5 theme tag — giant rubble costs +2 steps (Giant Keep)
+	REGEN_SPRING   # Audit #5 theme tag — hydra spring heals on step (Hydra Swamp)
 }
 
 # Tile display characters
@@ -58,7 +64,13 @@ const TILE_CHARS = {
 	TileType.CAVE_MOSS: "m",
 	TileType.SACRED_GROUND: "T",
 	TileType.WARM_NEST: "n",
-	TileType.BRIMSTONE: "s"
+	TileType.BRIMSTONE: "s",
+	TileType.FILTHY_PUDDLE: "p",
+	TileType.TRINKET_PILE: "t",
+	TileType.WAR_BANNER: "!",
+	TileType.SPECTRAL_VEIL: ":",
+	TileType.CRUSHED_RUBBLE: "r",
+	TileType.REGEN_SPRING: "/"
 }
 
 # Tile colors for display
@@ -87,7 +99,13 @@ const TILE_COLORS = {
 	TileType.CAVE_MOSS: "#3CB371",
 	TileType.SACRED_GROUND: "#F0E68C",
 	TileType.WARM_NEST: "#CD853F",
-	TileType.BRIMSTONE: "#9ACD32"
+	TileType.BRIMSTONE: "#9ACD32",
+	TileType.FILTHY_PUDDLE: "#7BA821",
+	TileType.TRINKET_PILE: "#DAA520",
+	TileType.WAR_BANNER: "#FF6347",
+	TileType.SPECTRAL_VEIL: "#9370DB",
+	TileType.CRUSHED_RUBBLE: "#A0A0A0",
+	TileType.REGEN_SPRING: "#48D1CC"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1923,6 +1941,70 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 10:
 						grid[y][x] = TileType.BRIMSTONE
+		"rat_warrens":
+			# Filthy puddles ~10% of empty tiles. Persistent 1% max HP nick
+			# AND 30% chance to apply pending_dungeon_festering meta — adds a
+			# festering stack to the player's next combat. Cross-system pair
+			# with Rat King's Festering Bite signature.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.FILTHY_PUDDLE
+		"kobold_tunnels":
+			# Trinket piles ~6% of empty tiles. Kobolds are magpies — stepping
+			# picks up 2-4 Valor and consumes the tile. Smaller payout than
+			# Goblin Caves' scattered_loot (1-5) to keep T1 progression varied.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.TRINKET_PILE
+		"orc_stronghold":
+			# War banners ~4% of empty tiles. Rare buff pickup — touching one
+			# sets pending_war_banner meta which buffs first 3 player rounds of
+			# next combat by +15% damage. Cross-system pair with the dungeon's
+			# brutal-direct-combat theme.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 4:
+						grid[y][x] = TileType.WAR_BANNER
+		"wraith_barrow":
+			# Spectral veils ~5% of empty tiles. Touching one sets
+			# pending_dungeon_veil meta — first 2 player rounds of next combat
+			# get a 20% monster-miss chance. Cross-system buff distinct from
+			# WAR_BANNER's offensive payload.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.SPECTRAL_VEIL
+		"giant_keep":
+			# Crushed rubble ~12% of empty tiles. Persistent +2 step cost from
+			# scrambling over giant-scale debris. Same payload as harpy_cliffs'
+			# updraft but at a denser placement, making giant_keep navigation
+			# distinctly slow.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 12:
+						grid[y][x] = TileType.CRUSHED_RUBBLE
+		"hydra_swamp":
+			# Regen springs ~6% of empty tiles. Strongest heal tile — 6% max
+			# HP on step, consumed. Pairs thematically with Hydra's Regen boss
+			# signature (boss heals 10% when player hits hard).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.REGEN_SPRING
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
