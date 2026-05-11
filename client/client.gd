@@ -913,6 +913,7 @@ var hud_area_level: int = 0  # Last known area level for Status HUD
 var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
+var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic post threat state
 # Region tier from nearest trading post (post-anchored world model — Slice 1)
 var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
@@ -17979,6 +17980,8 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_nearest_post = message.get("nearest_post", {})
+			# Slice 6 — threat state of the nearest NPC post (dynamic post state)
+			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
 			# Region tier from post-anchored world model (Slice 1 — visibility only)
 			hud_region_tier = int(message.get("region_tier", 1))
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
@@ -23121,8 +23124,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.326 changes
+	display_game("[color=#00FF00]v0.9.326[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dynamic post state — Under Threat (Audit #11 Slice 6)[/color]")
+	display_game("  • [b]Posts now react to nearby active dungeons.[/b] When a tier-2+ world dungeon is uncleared within 80 tiles of an NPC post, the post is flagged \"Under Threat\". The HUD shows the menacing dungeon's name, tier, direction, and distance below the Nearest Post line.")
+	display_game("  • [b]Real-time updates[/b]: clear that dungeon (any player) and the warning vanishes. New dungeon spawns nearby and it re-appears. The threat indicator reflects the actual world state at every tick.")
+	display_game("  • [b]NPC greetings shift tone[/b] when a post is threatened — your arrival rumor now leads with a warning about the menacing dungeon, in the NPC's personality voice. Gruff: \"Threat 47 tiles north — the Spider Nest. Watch yourself.\" Wary: \"I'd not travel south these days...\" Eccentric: \"the bones whisper of the Plague Graveyard... LOUDLY.\"")
+	display_game("  • [b]Cross-system tie[/b] (#5 × #11): the same dungeons that drop loot and host bosses now have a regional consequence. Posts feel like inhabited places that worry about their neighbors. Clearing a dangerous T3+ dungeon meaningfully \"saves\" the nearest village.")
+	display_game("  • [b]T1 dungeons aren't threats[/b] — newbie content shouldn't make every post panic. Threats start at T2 (Spider Nest, Orc Stronghold, etc).")
+	display_game("  • [b]No mechanical effects yet[/b] — purely informational + narrative for v1. Future slices could add: monsters spawning between dungeon and post, mini-quests to rescue, post tier downgrades, etc.")
+	display_game("")
+
 	# v0.9.325 changes
-	display_game("[color=#00FF00]v0.9.325[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.325[/color]")
 	display_game("  [color=#FFD700]Ability Tomes drop in chests (Audit #1 Slice 4c)[/color]")
 	display_game("  • [b]New rare consumable: \"Tome of [Ability]\"[/b] drops from T3+ chests. Using one adds +1 deck copy of the named ability — permanent. Cross-class friendly: a Mage can find Tome of Power Strike and add it to their deck (then grind the off-affinity penalty down).")
 	display_game("  • [b]Pool: 25 abilities[/b] across all three archetypes (Warrior / Mage / Trickster). Tomes pick uniformly at random — most drops will be cross-class, occasionally a same-archetype tome lands and just bumps your deck density.")
@@ -23165,16 +23179,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: with the deck system live, \"loadout\" was misleading. You don't equip 6 abilities anymore — you draw a hand each round from your deck. The new view matches the mental model.")
 	display_game("")
 
-	# v0.9.321 changes
-	display_game("[color=#00FFFF]v0.9.321[/color]")
-	display_game("  [color=#FFD700]NPC post density bump (Audit #11 Slice 5)[/color]")
-	display_game("  • [b]18 → 60 NPC posts[/b] across the inner world. Same procedural-post system, just denser. The wilderness between posts no longer feels barren; you should be hitting a new post much more often as you travel.")
-	display_game("  • [b]Placement radius 450 → 600[/b] tiles from origin. Some T7 \"World's Edge\" posts now exist where there used to be only wilderness.")
-	display_game("  • [b]Min spacing 100 → 70 tiles[/b], so posts pack tighter without overlapping.")
-	display_game("  • [b]Existing worlds migrate cleanly[/b]: your 18 starter posts keep their exact coords + names + personality + region naming. 42 new posts get topped up on the next server boot using a derived seed (stable, won't shuffle on reload).")
-	display_game("  • [b]Roads form as players reach them[/b] — the new posts join the road graph immediately but pathing tiles only stamp in once a player walks the route. Expect the road network to fill in over the next play session.")
-	display_game("  • [b]Why[/b]: NPC posts are the load-bearing infrastructure for the post-anchored world (quest chains, market, region naming, rumors, personalities). Denser posts = more anchors per square mile = world feels more lived-in. Compounds on Slices 1-4 (greetings, rumors, hotzone warnings, personalities).")
-	display_game("")
 
 
 
@@ -24087,6 +24091,15 @@ func update_tool_status_overlay():
 		var direction = String(hud_nearest_post.get("direction", ""))
 		var distance = int(hud_nearest_post.get("distance", 0))
 		sections.append("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
+		# Slice 6 — dynamic post state. Append "Under Threat" line when the
+		# nearest post is currently menaced by a tier-2+ active dungeon.
+		if hud_post_threat.get("threatened", false):
+			var threat_dungeon = String(hud_post_threat.get("dungeon_name", "dungeon"))
+			var threat_dir = String(hud_post_threat.get("direction", ""))
+			var threat_dist = int(hud_post_threat.get("distance", 0))
+			var threat_tier = int(hud_post_threat.get("tier", 1))
+			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
+			sections.append("[color=#FF6347]⚠ Under Threat:[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
 
 	# --- Materials pouch total ---
 	var mats = character_data.get("crafting_materials", {})

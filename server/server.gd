@@ -4689,6 +4689,7 @@ func send_location_update(peer_id: int):
 
 	# Nearest trading post compass so the player always knows direction/distance home.
 	var nearest_post_hud = {}
+	var nearest_post_threat = {"threatened": false}
 	if chunk_manager:
 		var np = chunk_manager.get_nearest_npc_post(character.x, character.y)
 		if not np.is_empty():
@@ -4700,6 +4701,11 @@ func send_location_update(peer_id: int):
 				"direction": _get_direction_text(character.x, character.y, int(np.get("x", 0)), int(np.get("y", 0))),
 				"distance": dist
 			}
+			# Slice 6 — compute threat state of nearest NPC post. Cheap (iterates
+			# active_dungeons once, ~60 entries max) and ships every tick so the
+			# HUD reflects real-time threat changes when other players clear or
+			# new dungeons spawn nearby.
+			nearest_post_threat = _compute_post_threat_state(int(np.get("x", 0)), int(np.get("y", 0)))
 
 	# Region tier from nearest NPC post (post-anchored world model — Slice 1,
 	# migrated to procedural posts in Slice 6L so it survives map wipes).
@@ -4766,6 +4772,9 @@ func send_location_update(peer_id: int):
 		"area_is_hotspot": is_area_hotspot,
 		"area_is_safe": area_level_hud <= 0,
 		"nearest_post": nearest_post_hud,
+		# Slice 6 — dynamic post state. Client renders an "Under Threat" warning
+		# in the HUD when threatened=true. Always sent; client checks the flag.
+		"nearest_post_threat": nearest_post_threat,
 		"region_tier": region_tier_info.get("tier", 1),
 		"region_tier_name": region_tier_info.get("tier_name", "Core"),
 		"region_tier_color": region_tier_info.get("tier_color", "#00FF00"),
@@ -20948,22 +20957,26 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
 	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
 
-	# Slice 2/3 — pick rumor type with random preference order; falls through
-	# when the chosen type has no data nearby (no dungeon in range / no
-	# biome-flavored materials / no hotzone). Soft nod fallback below.
-	var rumor_line = ""
-	var try_order: Array = ["dungeon", "resource", "hotzone"]
-	try_order.shuffle()
-	for kind in try_order:
-		match kind:
-			"dungeon":
-				rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
-			"resource":
-				rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
-			"hotzone":
-				rumor_line = _build_hotzone_rumor_line(px, py, quest_giver, personality)
-		if rumor_line != "":
-			break
+	# Slice 6 — threat warning takes priority over rotating rumors when the
+	# post is currently menaced by a tier-2+ dungeon. Falls through to the
+	# regular rotation otherwise.
+	var rumor_line = _build_threat_rumor_line(px, py, quest_giver, personality)
+	if rumor_line == "":
+		# Slice 2/3 — pick rumor type with random preference order; falls through
+		# when the chosen type has no data nearby (no dungeon in range / no
+		# biome-flavored materials / no hotzone). Soft nod fallback below.
+		var try_order: Array = ["dungeon", "resource", "hotzone"]
+		try_order.shuffle()
+		for kind in try_order:
+			match kind:
+				"dungeon":
+					rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
+				"resource":
+					rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
+				"hotzone":
+					rumor_line = _build_hotzone_rumor_line(px, py, quest_giver, personality)
+			if rumor_line != "":
+				break
 
 	if rumor_line != "":
 		send_to_peer(peer_id, {"type": "text", "message": rumor_line})
@@ -21089,6 +21102,99 @@ func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giv
 	return "[color=#A0C8E0]Locals mention that [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season.[/color]" % [
 		region_label, mat_name
 	]
+
+func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
+	"""Audit #11 Slice 6 — dynamic post state. A post is 'Under Threat' when
+	a tier-2+ world dungeon is active within 80 tiles. Returns the nearest
+	threatening dungeon info or {threatened: false} if no qualifying
+	dungeons. Threat is shared across all players — the world dungeons that
+	count are the ones without owner_peer_id.
+
+	Returns:
+	  {threatened: false} when nothing in range
+	  {threatened: true, dungeon_name, tier, distance, direction, color, count}"""
+	var threats: Array = []
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		if instance.get("completed_at", 0) > 0:
+			continue
+		if instance.has("owner_peer_id"):
+			continue  # Personal instances don't threaten the world
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		if dungeon_data.is_empty():
+			continue
+		var tier = int(dungeon_data.get("tier", 1))
+		if tier < 2:
+			continue  # T1 dungeons are newbie content — not "threats"
+		var dx = instance.world_x - post_x
+		var dy = instance.world_y - post_y
+		var dist = int(sqrt(dx * dx + dy * dy))
+		if dist > 80:
+			continue
+		threats.append({
+			"name": dungeon_data.get("name", "Unknown Dungeon"),
+			"tier": tier,
+			"distance": dist,
+			"direction": _get_direction_text(post_x, post_y, instance.world_x, instance.world_y),
+			"color": dungeon_data.get("color", "#FF8800"),
+		})
+	if threats.is_empty():
+		return {"threatened": false}
+	threats.sort_custom(func(a, b): return a.distance < b.distance)
+	var nearest = threats[0]
+	return {
+		"threatened": true,
+		"dungeon_name": nearest.name,
+		"tier": nearest.tier,
+		"distance": nearest.distance,
+		"direction": nearest.direction,
+		"color": nearest.color,
+		"count": threats.size(),
+	}
+
+func _build_threat_rumor_line(px: int, py: int, quest_giver: String, personality: String = "warm") -> String:
+	"""Audit #11 Slice 6 — threat rumor. NPCs warn arriving players about
+	the dungeon that's currently menacing this post. Falls through to "" if
+	the post isn't threatened (caller picks a different rumor type).
+	Distinct from the dungeon-direction rumor (Slice 1) by tone: this one
+	is alarmed, not informational."""
+	var threat = _compute_post_threat_state(px, py)
+	if not threat.get("threatened", false):
+		return ""
+	var dungeon_name = String(threat.get("dungeon_name", "dungeon"))
+	var direction = String(threat.get("direction", "nearby"))
+	var distance = int(threat.get("distance", 0))
+	var color = String(threat.get("color", "#FF8800"))
+	# Personality-shaped alarm phrasing. Falls back to gruff if missing.
+	var phrasings = {
+		"warm": "the %s, just %d tiles %s, has been festering — folk here lock the doors at night.",
+		"gruff": "[color=#FF6347]Threat[/color] %d tiles %s — the %s. Watch yourself.",
+		"wary": "I'd not travel %s these days. The %s, %d tiles out, is restless.",
+		"jolly": "ha! you came right past the %s, didn't you? %d tiles %s, full of mean things. Glad you made it.",
+		"scholarly": "Records mark the %s, %d tiles %s, as currently active. Caution advised.",
+		"eccentric": "the bones whisper of the %s... %d tiles %s... they whisper LOUDLY.",
+	}
+	var template = String(phrasings.get(personality, phrasings["gruff"]))
+	var colored_dungeon = "[color=%s]%s[/color]" % [color, dungeon_name]
+	var msg: String
+	match personality:
+		"warm":
+			msg = template % [colored_dungeon, distance, direction]
+		"gruff":
+			msg = template % [distance, direction, colored_dungeon]
+		"wary":
+			msg = template % [direction, colored_dungeon, distance]
+		"jolly":
+			msg = template % [colored_dungeon, distance, direction]
+		"scholarly":
+			msg = template % [colored_dungeon, distance, direction]
+		"eccentric":
+			msg = template % [colored_dungeon, distance, direction]
+		_:
+			msg = template % [distance, direction, colored_dungeon]
+	if quest_giver != "":
+		return "[color=#FF8800]%s[/color]: \"%s\"" % [quest_giver, msg]
+	return "[color=#FF8800]Locals warn: %s[/color]" % msg
 
 func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1) -> Array:
 	"""Audit #11 Slice 1 — uncached helper used by both legacy trading posts
