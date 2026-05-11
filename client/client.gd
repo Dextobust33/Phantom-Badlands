@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.291 changes
+	display_game("[color=#00FF00]v0.9.291[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new T2 boss signatures (Audit #5 Slice 5)[/color]")
+	display_game("  • [b]Barrow Wight (Barrow Mounds) — [color=#9370DB]Soul Siphon[/color][/b]: every 3 monster turns, the wight drains 8% of your max HP and heals itself for the same amount. Vampiric burst — distinct from passive life steal because it's periodic and predictable. Cannot kill you (HP floored at 1) so it shapes the fight rather than ending it. Plan around the rhythm or burst the boss before turn 6.")
+	display_game("  • [b]Gnoll Packmaster (Gnoll Pack Den) — [color=#8B6914]Pack Frenzy[/color][/b]: boss damage scales [b]+5% per round[/b], uncapped. Round 1 = 1.0x, round 5 = 1.20x, round 10 = 1.45x, round 20 = 1.95x. No one-shot trigger — pressure just builds. Hard tempo cap on long fights: stall this boss and you die. Milestone messages at rounds 3 / 6 / 10 so you know how deep the hole is getting.")
+	display_game("  • 9 boss signatures shipped total across 5 slices. Pattern continues: each boss gets one mechanic that doesn't appear on base monsters, replacing the previous generic ability mapping (\"Life Drain → life_steal\" / \"Pack Tactics → pack_leader\" are both retired in favor of these signatures).")
+	display_game("")
+
 	# v0.9.290 changes
-	display_game("[color=#00FF00]v0.9.290[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.290[/color]")
 	display_game("  [color=#FFD700]NPC posts get a third rumor type — hotzone warnings (Audit #11 Slice 3)[/color]")
 	display_game("  • [b]Quest givers now also warn you about nearby [color=#FF4500]![/color] hotzones[/b] when one is within ~80 tiles. Sample: \"[color=#A0C8E0]Trader Fenwick[/color]: 'Watch yourself — the wilds about 47 tiles east are [color=#FF6600]boiling over[/color] lately. Best travel armed.'\"")
 	display_game("  • Warning verb scales with hotspot intensity: \"restless\" for edges, \"stirred up\" for mid-intensity, \"boiling over\" for the dangerous core. Direction is exact (north/east/southwest etc.) and distance is precise — actionable info, not flavor.")
@@ -22930,15 +22938,6 @@ func display_changelog():
 	display_game("  • If no dungeon is nearby, the NPC just nods in greeting. Rumors prefer the closest dungeon you haven't cleared yet.")
 	display_game("")
 
-	# v0.9.287 changes
-	display_game("[color=#00FFFF]v0.9.287[/color]")
-	display_game("  [color=#FFD700]Region naming moved onto procedural posts (Audit #10 Slice 6L)[/color]")
-	display_game("  • [b]Each NPC post now carries its own region name and tier as data on the post itself,[/b] rolled at world-generation time and saved alongside the post. Region names survive a map wipe — a fresh world rolls 18 new posts at new positions, each with a freshly-rolled region name (Ashfen Reach, Stormhollow Moor, Sun-scoured Wastes, etc.) drawn from a procedural pool.")
-	display_game("  • [b]Region tier is now computed from each post's distance from origin[/b] (T1 inside 50 tiles → T7 beyond 500), so any new post placement still gets a sensible tier without hand-authored data.")
-	display_game("  • [b]Monster level anchoring (the post-anchored level model) also switched to the procedural posts,[/b] so the difficulty curve stays consistent with whatever post layout the current world has — not a baked-in legacy layout.")
-	display_game("  • Existing saved posts get backfilled with tier + region_name on first server boot. No action required.")
-	display_game("  • The previous Slice 6k authored region names (Sunhaven Plains, Wyrmrest Moor, etc.) are retired — they were bound to fixed post IDs that don't exist after a wipe.")
-	display_game("")
 
 
 

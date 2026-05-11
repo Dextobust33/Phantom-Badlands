@@ -20340,6 +20340,9 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Festering Bite": "boss_festering_bite",
 			# Audit #5 boss signatures (Slice 4)
 			"Iron Discipline": "boss_iron_discipline",
+			# Audit #5 boss signatures (Slice 5)
+			"Soul Siphon": "boss_soul_siphon",
+			"Pack Frenzy": "boss_pack_frenzy",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")
