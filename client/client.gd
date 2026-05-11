@@ -22863,8 +22863,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.279 changes
+	display_game("[color=#00FF00]v0.9.279[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Starter-resource ring around NPC posts (Audit #10 Slice 6d)[/color]")
+	display_game("  • [b]NPC posts now keep a small balanced-resource zone around them[/b], regardless of biome. Within 25 tiles of any NPC post, terrain generation blends 70% baseline distribution with 30% biome flavor — so a new player who spawns at a Desert or Tundra post can still find some trees, herbs, and mushrooms within walking distance, while the area still feels biome-appropriate.")
+	display_game("  • Past the 25-tile ring, full biome distribution takes over: deserts get truly arid, tundras truly sparse, swamps thick with mushroom and reed. Biome character intact where it matters.")
+	display_game("  • Plains-biome posts skip the blend (their baseline already matches). Player posts also unaffected — building in extreme biomes is still a player choice with consequences.")
+	display_game("  • Applies to newly generated tiles around posts. Already-explored chunks keep their current distribution.")
+	display_game("")
+
 	# v0.9.278 changes
-	display_game("[color=#00FF00]v0.9.278[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.278[/color]")
 	display_game("  [color=#FFD700]Biome-exclusive foraging materials (Audit #10 Slice 6c)[/color]")
 	display_game("  • [b]Each non-plains biome now drops materials that only appear there when you forage in it.[/b] Forests yield Pine Resin, Oak Acorn, and Silverleaf; Highlands give Alpine Lichen, Rock Salt, Crag Thistle; Swamps drop Bog Iris, Marsh Reed, Witch Cap; Tundras yield Frost Lichen, Ice Crystal, Snow Bloom; Deserts give Cactus Flesh, Sun Petal, Scorched Root.")
 	display_game("  • Biome-exclusive entries slot into the existing foraging table at tiers 1-2 — you'll see them mixed in with the generic catches when foraging inside the matching biome, and you'll [b]never[/b] see them when foraging outside. Skill bonuses (rare-boost on the tail of the list) still apply.")
@@ -22899,13 +22908,6 @@ func display_changelog():
 	display_game("  • [b]You can walk while the build menu is open.[/b] Previously you had to position your character, open the menu, exit, reposition, then re-open before every placement. Now arrow keys and numpad keep moving the character while build mode is active; WASD still picks the placement direction. Reposition and place without breaking flow.")
 	display_game("")
 
-	# v0.9.274 changes
-	display_game("[color=#00FFFF]v0.9.274[/color]")
-	display_game("  [color=#FFD700]Combat cards show planned spend + damage estimate[/color]")
-	display_game("  • [b]Ability cards now show one cost number, not a range.[/b] The middle row used to read e.g. \"30-50 MP\" for variable-cost spells — now it shows the actual amount that will be spent if you press the card right now (server auto-casts at min(current, ceiling); Magic Bolt uses the popup's smart suggestion)")
-	display_game("  • [b]New third row on each card: a damage / effect estimate at that spend.[/b] For damage abilities (Blast, Meteor, Power Strike, Cleave, Devastate, Ambush, etc.) you'll see \"~N dmg\" so you can pick the strongest option at a glance. For buffs, CC, and utility (Iron Skin, Paralyze, Forcefield, Distract, Heist, …) you get a short effect tag (\"-60% dmg in\", \"55% stun\", \"Shield 240\", \"30% kill\", etc.)")
-	display_game("  • Estimates factor in the multipliers you can read off your sheet (INT/STR/WITS scaling, damage buffs, Wizard's Arcane Precision, mastery damage rank, the current enemy's level-based defense, level penalty, class affinity). Random rolls (crits, Chaos Magic) are excluded so the number reflects the typical case, not a best-case spike")
-	display_game("")
 
 
 

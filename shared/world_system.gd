@@ -269,6 +269,54 @@ const BIOME_NODE_WEIGHTS = {
 	},
 }
 
+# Slice 6d — starter-resource ring around NPC posts. Inside this radius (in
+# tiles) of any NPC post centroid, generate_tile blends the biome's weight
+# table back toward the baseline NODE_WEIGHTS so a new player who spawns at
+# (say) a Desert NPC post can still find trees / herbs / mushrooms for
+# starter materials. Outside the ring, biome distribution applies as
+# before. Vision radius is 11 tiles, so 25 covers the screen + ~one more
+# screen of walking around the post.
+const NPC_STARTER_RING_RADIUS = 25
+# Blend weight when inside the ring: 70% baseline, 30% biome. Keeps some
+# biome flavor (a Desert post's surrounding tiles still lean toward cactus /
+# sun_petal in the foraging table via Slice 6c) while ensuring every node
+# type has real representation. Pure baseline would feel sterile and erase
+# biome character; pure biome would leave Desert starters with no trees.
+const NPC_STARTER_RING_BASELINE_WEIGHT = 0.7
+
+func _is_in_npc_starter_ring(world_x: int, world_y: int) -> bool:
+	"""True if (x, y) is within NPC_STARTER_RING_RADIUS of any NPC post
+	centroid. Linear scan; npc_posts is ~18-100 entries which is cheap per
+	tile (generate_tile is the per-tile hot path; it's already paying I/O
+	and chunk-load costs that dwarf this lookup)."""
+	if chunk_manager == null:
+		return false
+	var posts = chunk_manager.npc_posts if "npc_posts" in chunk_manager else []
+	if posts.is_empty():
+		return false
+	var r2 = NPC_STARTER_RING_RADIUS * NPC_STARTER_RING_RADIUS
+	for post in posts:
+		var dx = int(post.get("x", 0)) - world_x
+		var dy = int(post.get("y", 0)) - world_y
+		if dx * dx + dy * dy <= r2:
+			return true
+	return false
+
+func _blend_starter_ring_weights(biome_weights: Dictionary) -> Dictionary:
+	"""Linear-interpolate between baseline NODE_WEIGHTS and the biome's
+	weight table. Returns a dict the modulo roll can sum and use. Every
+	node type gets at least weight 1 so a starter ring always has some
+	chance of every gatherable type (Desert post still produces an
+	occasional tree)."""
+	var blended := {}
+	var b = NPC_STARTER_RING_BASELINE_WEIGHT
+	var ib = 1.0 - b
+	for k in NODE_WEIGHTS:
+		var baseline = float(NODE_WEIGHTS[k])
+		var biome_val = float(biome_weights.get(k, 0))
+		blended[k] = max(1, int(baseline * b + biome_val * ib))
+	return blended
+
 func get_biome_at(world_x: int, world_y: int, world_seed: int = 0) -> String:
 	"""Return the biome string for a world tile. Whittaker-style assignment
 	from two perpendicular noise layers: temperature (cold→hot) and humidity
@@ -375,6 +423,12 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 	# mountain = stone/ore-heavy, etc.).
 	var biome = get_biome_at(world_x, world_y, seed)
 	var weights = BIOME_NODE_WEIGHTS.get(biome, NODE_WEIGHTS)
+	# Slice 6d — starter ring around NPC posts blends biome weights back
+	# toward baseline so a new player at a Desert / Tundra post can still
+	# find every starter material within walking distance. Plains posts skip
+	# the blend (biome weights == baseline already).
+	if biome != BIOME_PLAINS and _is_in_npc_starter_ring(world_x, world_y):
+		weights = _blend_starter_ring_weights(weights)
 	var total_weight = _biome_total_weight(weights)
 	if total_weight <= 0:
 		total_weight = TOTAL_NODE_WEIGHT
