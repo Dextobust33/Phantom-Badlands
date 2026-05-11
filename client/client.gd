@@ -22863,8 +22863,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.278 changes
+	display_game("[color=#00FF00]v0.9.278[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome-exclusive foraging materials (Audit #10 Slice 6c)[/color]")
+	display_game("  • [b]Each non-plains biome now drops materials that only appear there when you forage in it.[/b] Forests yield Pine Resin, Oak Acorn, and Silverleaf; Highlands give Alpine Lichen, Rock Salt, Crag Thistle; Swamps drop Bog Iris, Marsh Reed, Witch Cap; Tundras yield Frost Lichen, Ice Crystal, Snow Bloom; Deserts give Cactus Flesh, Sun Petal, Scorched Root.")
+	display_game("  • Biome-exclusive entries slot into the existing foraging table at tiers 1-2 — you'll see them mixed in with the generic catches when foraging inside the matching biome, and you'll [b]never[/b] see them when foraging outside. Skill bonuses (rare-boost on the tail of the list) still apply.")
+	display_game("  • Same Foraging skill, same XP curve, same Forage button. No new tools, no new node types — just region-specific drops in the existing herb/flower/mushroom/bush/reed nodes.")
+	display_game("  • Coming next: more biome mechanics (movement modifiers, weather, biome-locked node types) and a starter-resource ring around NPC posts so a Desert-spawn player still has basic materials nearby.")
+	display_game("")
+
 	# v0.9.277 changes
-	display_game("[color=#00FF00]v0.9.277[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.277[/color]")
 	display_game("  [color=#FFD700]Biome-themed encounters (Audit #10 Slice 6b)[/color]")
 	display_game("  • [b]Random overworld monsters now bias toward their biome.[/b] Wolves and goblins favor forests, kobolds prefer mountains, gnolls show up in deserts, wights and wraiths drift through swamps and tundra, and so on. Soft bias (3× weight inside the existing level-appropriate pool) — out-of-biome monsters can still show up, just less often.")
 	display_game("  • Biome never lets a stronger monster spawn early — the tier curve is unchanged. Biome only re-weights the picks inside the pool the tile would already produce.")
@@ -22898,19 +22907,6 @@ func display_changelog():
 	display_game("  • Estimates factor in the multipliers you can read off your sheet (INT/STR/WITS scaling, damage buffs, Wizard's Arcane Precision, mastery damage rank, the current enemy's level-based defense, level penalty, class affinity). Random rolls (crits, Chaos Magic) are excluded so the number reflects the typical case, not a best-case spike")
 	display_game("")
 
-	# v0.9.273 changes
-	display_game("[color=#00FFFF]v0.9.273[/color]")
-	display_game("  [color=#FFD700]Trading posts now specialize — buy local for a discount (Slice 3)[/color]")
-	display_game("  • [b]Each trading post category gives a buy discount on a specific kind of item.[/b] Travel to the right post and save valor on what you're buying:")
-	display_game("    [color=#CD853F]Mine[/color] posts: [b]-15%[/b] on Materials (ore, gems, monster parts material drops)")
-	display_game("    [color=#90EE90]Farm[/color] posts: [b]-15%[/b] on Consumables (food, herbs, fungus, potions)")
-	display_game("    [color=#E6E6FA]Shrine[/color] posts: [b]-15%[/b] on Runes")
-	display_game("    [color=#C0C0C0]Fortress[/color] posts: [b]-10%[/b] on Equipment (weapons, armor)")
-	display_game("    [color=#FF8C00]Market[/color] posts: [b]-5%[/b] on Equipment, Consumables, and Materials (generalist)")
-	display_game("    Camp, Tower, Exotic, Haven posts: no specialty (yet)")
-	display_game("  • The Market panel shows the post's specialty in a header line. Discounted listings get a [color=#FFD700]★-N%[/color] badge next to the price")
-	display_game("  • [b]Sellers get full valor[/b] — the discount comes out of the server's markup spread, not the seller. List wherever you want; buy where it's cheapest")
-	display_game("")
 
 
 

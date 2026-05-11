@@ -2537,13 +2537,79 @@ const MATERIAL_NAMES = {
 	"water": ["Minnow", "Trout", "Pike", "Swordfish", "Leviathan", "Abyssal Eel"],
 }
 
-static func roll_foraging_catch(forage_tier: int, foraging_skill: int) -> Dictionary:
-	"""Roll a random catch from the foraging table for the given tier."""
+# Slice 6c — biome-exclusive foraging bonuses. Per (biome, tier), a small set
+# of entries that get added to the regular FORAGING_CATCHES roll when the
+# player is foraging inside that biome. These materials NEVER drop outside
+# their biome — they're the per-region "go forage in the swamp / desert / etc.
+# if you want this material" payoff. Weights are tuned so a foraging session
+# in-biome has roughly a 30-40% chance of yielding at least one biome
+# exclusive over a few rounds, without crowding out the generic catches.
+const BIOME_FORAGING_BONUS = {
+	"forest": {
+		1: [
+			{"weight": 18, "item": "pine_resin", "name": "Pine Resin", "type": "plant", "value": 8},
+			{"weight": 14, "item": "oak_acorn", "name": "Oak Acorn", "type": "plant", "value": 7},
+		],
+		2: [
+			{"weight": 12, "item": "silverleaf", "name": "Silverleaf", "type": "herb", "value": 22},
+		],
+	},
+	"mountain": {
+		1: [
+			{"weight": 16, "item": "alpine_lichen", "name": "Alpine Lichen", "type": "herb", "value": 8},
+			{"weight": 14, "item": "rock_salt", "name": "Rock Salt", "type": "mineral", "value": 6},
+		],
+		2: [
+			{"weight": 12, "item": "crag_thistle", "name": "Crag Thistle", "type": "herb", "value": 22},
+		],
+	},
+	"swamp": {
+		1: [
+			{"weight": 16, "item": "bog_iris", "name": "Bog Iris", "type": "herb", "value": 9},
+			{"weight": 14, "item": "marsh_reed", "name": "Marsh Reed", "type": "plant", "value": 6},
+		],
+		2: [
+			{"weight": 12, "item": "witch_cap", "name": "Witch Cap", "type": "fungus", "value": 24},
+		],
+	},
+	"snow": {
+		1: [
+			{"weight": 16, "item": "frost_lichen", "name": "Frost Lichen", "type": "herb", "value": 9},
+			{"weight": 10, "item": "ice_crystal", "name": "Ice Crystal", "type": "gem", "value": 12},
+		],
+		2: [
+			{"weight": 10, "item": "snow_bloom", "name": "Snow Bloom", "type": "herb", "value": 26},
+		],
+	},
+	"desert": {
+		1: [
+			{"weight": 16, "item": "cactus_flesh", "name": "Cactus Flesh", "type": "plant", "value": 8},
+			{"weight": 12, "item": "sun_petal", "name": "Sun Petal", "type": "herb", "value": 10},
+		],
+		2: [
+			{"weight": 12, "item": "scorched_root", "name": "Scorched Root", "type": "herb", "value": 24},
+		],
+	},
+}
+
+static func roll_foraging_catch(forage_tier: int, foraging_skill: int, biome: String = "") -> Dictionary:
+	"""Roll a random catch from the foraging table for the given tier.
+	Slice 6c — optional biome splices the biome's exclusive entries from
+	BIOME_FORAGING_BONUS into the candidate pool. Empty biome string keeps
+	the legacy roll exactly. Biome-exclusive materials NEVER appear outside
+	their biome."""
 	var tier = clampi(forage_tier, 1, 6)
 	if not FORAGING_CATCHES.has(tier):
 		tier = 1
 
-	var catches = FORAGING_CATCHES[tier]
+	# Build the effective pool — base catches + biome bonus entries when in-biome.
+	var catches: Array = FORAGING_CATCHES[tier].duplicate()
+	if biome != "" and BIOME_FORAGING_BONUS.has(biome):
+		var biome_tiers = BIOME_FORAGING_BONUS[biome]
+		if biome_tiers.has(tier):
+			for bonus in biome_tiers[tier]:
+				catches.append(bonus)
+
 	var total_weight = 0
 	for c in catches:
 		total_weight += c.weight
