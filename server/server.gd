@@ -19112,6 +19112,24 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.current_hp = min(max_hp, character.current_hp + trail_heal)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B0000]You scavenge from a fresh pack-kill ([color=#00FF00]+%d HP[/color]).[/color]" % trail_heal})
+	# Audit #5 Slice 4 theme tag — Forgotten Crypt BONE_SCATTER nicks HP on
+	# step. 1% of max HP, min 1 max 25. Persistent (bones don't clear).
+	elif tile == DungeonDatabaseScript.TileType.BONE_SCATTER:
+		var bone_dmg = clamp(int(character.get_total_max_hp() * 0.01), 1, 25)
+		character.current_hp = max(1, character.current_hp - bone_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#D8D8C8]Bone shards nick you ([color=#FF4444]-%d HP[/color]).[/color]" % bone_dmg})
+	# Audit #5 Slice 4 theme tag — Mimic Treasury FALSE_CHEST snaps on step
+	# (consumed). 4% of max HP, min 1 max 50. The mimic disguise is broken.
+	elif tile == DungeonDatabaseScript.TileType.FALSE_CHEST:
+		var mimic_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 50)
+		character.current_hp = max(1, character.current_hp - mimic_dmg)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]The chest snaps shut on your hand — it was a mimic! ([color=#FF4444]-%d HP[/color]).[/color]" % mimic_dmg})
+	# Audit #5 Slice 4 theme tag — Harpy Cliffs UPDRAFT costs +2 steps to
+	# cross. Persistent. Strong negative — stacks two of Spider's web cost.
+	elif tile == DungeonDatabaseScript.TileType.UPDRAFT:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]A wind shear pushes against you (+2 steps).[/color]"})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
@@ -20427,6 +20445,15 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Lullaby": "boss_lullaby",
 			# Audit #5 boss signatures (Slice 7) — closes T2 coverage
 			"Drowning": "boss_drowning",
+			# Audit #5 boss signatures (Slice 8) — T3 layer (8 sigs)
+			"Trollish Regrowth": "boss_troll_regrowth",
+			"Aerial Dive": "boss_aerial_dive",
+			"Concussive Slam": "boss_concussive_slam",
+			"Phase Mirror": "boss_phase_mirror",
+			"Labyrinth Charge": "boss_labyrinth_charge",
+			"Stoneform": "boss_stoneform",
+			"Wind Shear": "boss_wind_shear",
+			"Sonic Echo": "boss_sonic_echo",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")
