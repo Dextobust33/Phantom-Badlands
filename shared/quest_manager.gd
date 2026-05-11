@@ -490,7 +490,68 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 		output += "\n"
 		index += 1
 
+	# Audit #6 Slice 7 — Chain Atlas. Append an overview of all defined chains
+	# so players can see which they've completed, which they're mid-way through,
+	# and where to find the rest. Reads `QuestDatabase.QUESTS` for stage-1
+	# entries (chain starters) and joins against `completed_chains` /
+	# `active_quests`.
+	output += _format_chain_atlas(character)
+
 	return output
+
+
+func _format_chain_atlas(character: Character) -> String:
+	"""Render the Chain Atlas section appended to the quest log. One line per
+	chain — completed chains are dimmed with a checkmark, in-progress chains
+	show the current stage, and available chains name the post where you can
+	pick them up."""
+	var lines: Array = []
+	var completed: Array = character.completed_chains
+	# Build active-chain map: chain_id -> current stage number for fast lookup.
+	var active_chain_stage: Dictionary = {}
+	for aq in character.active_quests:
+		var aq_id = aq.get("quest_id", "")
+		if aq_id == "":
+			continue
+		var aq_def = QuestDatabaseScript.QUESTS.get(aq_id, {})
+		if aq_def.is_empty():
+			continue
+		var aq_chain_id = String(aq_def.get("chain_id", ""))
+		if aq_chain_id == "":
+			continue
+		active_chain_stage[aq_chain_id] = int(aq_def.get("chain_stage", 1))
+	# Iterate stage-1 starters in their declaration order — gives stable output.
+	for qid in QuestDatabaseScript.QUESTS.keys():
+		var q = QuestDatabaseScript.QUESTS[qid]
+		if int(q.get("chain_stage", 0)) != 1:
+			continue
+		var chain_id = String(q.get("chain_id", ""))
+		if chain_id == "":
+			continue
+		var chain_total = int(q.get("chain_total", 1))
+		var post_id = String(q.get("trading_post", ""))
+		var post_name = post_id.replace("_", " ").capitalize() if post_id != "" else "Unknown"
+		# Strip the " I — Subtitle" suffix from the stage-1 name for a clean
+		# chain title.
+		var stage1_name = String(q.get("name", chain_id))
+		var sep_idx = stage1_name.find(" I —")
+		var chain_title = stage1_name.substr(0, sep_idx) if sep_idx > 0 else chain_id.replace("_", " ").capitalize()
+		var line: String
+		if chain_id in completed:
+			line = "  [color=#5C8050]✓ %s[/color] [color=#404040](completed)[/color]" % chain_title
+		elif active_chain_stage.has(chain_id):
+			var cur_stage = active_chain_stage[chain_id]
+			line = "  [color=#FFAA00]▶ %s[/color] [color=#FFFF00](stage %d/%d)[/color]" % [chain_title, cur_stage, chain_total]
+		else:
+			line = "  [color=#A0A0A0]○ %s[/color] [color=#808080](available at %s, %d stages)[/color]" % [chain_title, post_name, chain_total]
+		lines.append(line)
+	if lines.is_empty():
+		return ""
+	var atlas := "\n[color=#FFD700]===== Chain Atlas =====[/color]\n"
+	atlas += "\n".join(lines)
+	atlas += "\n"
+	return atlas
+
 
 func format_available_quests(quests: Array, character: Character) -> String:
 	"""Format available quests for display at a Trading Post"""

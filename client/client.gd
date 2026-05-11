@@ -23032,8 +23032,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.302 changes
+	display_game("[color=#00FF00]v0.9.302[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Chain Atlas in quest log (Audit #6 Slice 7)[/color]")
+	display_game("  • [b]Quest log now shows a Chain Atlas[/b] under your active quests, listing all 11 chain campaigns and their status: [color=#5C8050]✓ completed[/color], [color=#FFAA00]▶ in-progress (stage X/Y)[/color], or [color=#A0A0A0]○ available at [Post Name][/color]. One line per chain, alphabetized by declaration order.")
+	display_game("  • [b]Why it matters[/b]: chains exist across five starter posts, and 'what have I done, what's left' was invisible — players had to remember which chains they finished and walk to each post to check. The atlas makes the whole campaign legible at a glance from the quest log.")
+	display_game("  • Pure read-only display — no new commands, no new UI mode. Server-side `format_quest_log` appends the atlas section after the active quest list. Reads `QUESTS` dict for stage-1 entries, joins against `completed_chains` and `active_quests` for status.")
+	display_game("")
+
 	# v0.9.301 changes
-	display_game("[color=#00FF00]v0.9.301[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.301[/color]")
 	display_game("  [color=#FFD700]Home Stones come home (Audit #6 Slice 6)[/color]")
 	display_game("  • [b]Permadeath protection no longer late-game gated.[/b] Home Stone (Companion) — the one that registers a companion to your Sanctuary so it survives your death — used to first drop at monster level 251+. New players spent their entire formative ~250 levels unable to protect anything. That gap is closed.")
 	display_game("  • [b]Quest chain rewards now hand out Home Stones[/b]: every T1 starter chain (Goblin Menace, Skeleton Lord's Curse, Wolf Pack, Rat Plague, Kobold Trouble) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Companion)[/color] on chain completion. Every T2 chain (Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Equipment)[/color]. The boss egg you just earned is immediately bankable.")
@@ -23065,13 +23073,6 @@ func display_changelog():
 	display_game("  • The toast is opt-in per-message — server sends a new \"toast\" message type or `\"toast\": true` flag. Easy to extend: any future hint that wants the corner-fade treatment just uses the new type.")
 	display_game("")
 
-	# v0.9.297 changes
-	display_game("[color=#00FFFF]v0.9.297[/color]")
-	display_game("  [color=#FFD700]Dungeon warning page — recovery info + map legend[/color]")
-	display_game("  • [b]Recovery section[/b]: every dungeon-entry warning now shows your current food stockpile (plant + herb + fungus + fish materials, the ones the dungeon-rest action accepts). Color-coded: red at 0, yellow at 1-5, green at 6+. Breakdown by type when present. Soft warning when you have none — \"you can't rest inside without food.\" Plus advice on how to stock up: forage overworld herb/flower/mushroom/bush tiles, fish at water, forest biome is herb-rich, market consumables.")
-	display_game("  • [b]Map legend section[/b]: when the dungeon has unusual terrain glyphs, the warning page now lists them by symbol + color + meaning. First entry: Spider Nest [color=#A335EE][b]w[/b][/color] tiles — \"Spider webs — costs +1 step to cross.\" Players were finding the purple w glyphs with no key; now they know upfront. Easy to extend as more theme tags ship (just add an entry to DUNGEON_THEME_LEGEND).")
-	display_game("  • Both sections render on every dungeon entry, not just under-level entries. The warning has always fired for all dungeon entries — it just used to only talk about the no-free-exit caveat.")
-	display_game("")
 
 
 
