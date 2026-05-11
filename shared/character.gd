@@ -1328,6 +1328,10 @@ func to_dict() -> Dictionary:
 		},
 		# Audit #3 Slice 1 — banked stat-allocation points
 		"unspent_stat_points": unspent_stat_points,
+		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
+		# lifetime). Pushed to client so the visual vendor panel can render
+		# owned-vs-cap rows.
+		"npc_stones_bought": npc_stones_bought.duplicate(),
 		"current_hp": current_hp,
 		"max_hp": max_hp,
 		"total_max_hp": get_total_max_hp(),  # Equipment-boosted max HP for display
@@ -1482,6 +1486,13 @@ func from_dict(data: Dictionary):
 	# Audit #3 Slice 1 — banked stat-allocation points. Legacy characters
 	# default to 0 (no retroactive grant — only future level-ups award points).
 	unspent_stat_points = int(data.get("unspent_stat_points", 0))
+	# Audit #4 Slice 1 — NPC stone purchase counts per character lifetime.
+	# Empty dict for legacy characters.
+	var stones_raw = data.get("npc_stones_bought", {})
+	if stones_raw is Dictionary:
+		npc_stones_bought = stones_raw.duplicate()
+	else:
+		npc_stones_bought = {}
 
 	current_hp = data.get("current_hp", 100)
 	max_hp = data.get("max_hp", 100)
