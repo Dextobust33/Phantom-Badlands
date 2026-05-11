@@ -5,17 +5,18 @@ class_name DungeonDatabase
 
 # Dungeon tile types
 enum TileType {
-	EMPTY,       # Walkable, nothing special
-	WALL,        # Impassable
-	ENTRANCE,    # Where player starts
-	EXIT,        # Leads to next floor (or out if last floor)
-	ENCOUNTER,   # Monster encounter (? on map)
-	TREASURE,    # Treasure chest
-	BOSS,        # Boss encounter (final floor only)
-	CLEARED,     # Cleared encounter (was ENCOUNTER or TREASURE)
-	RESOURCE,    # Gathering node (ore/herb/crystal)
-	FINAL_CHEST, # End-of-dungeon reward chest, spawns post-boss
-	WEBBED       # Audit #5 theme tag — clinging webs cost an extra step (Spider Nest)
+	EMPTY,         # Walkable, nothing special
+	WALL,          # Impassable
+	ENTRANCE,      # Where player starts
+	EXIT,          # Leads to next floor (or out if last floor)
+	ENCOUNTER,     # Monster encounter (? on map)
+	TREASURE,      # Treasure chest
+	BOSS,          # Boss encounter (final floor only)
+	CLEARED,       # Cleared encounter (was ENCOUNTER or TREASURE)
+	RESOURCE,      # Gathering node (ore/herb/crystal)
+	FINAL_CHEST,   # End-of-dungeon reward chest, spawns post-boss
+	WEBBED,        # Audit #5 theme tag — clinging webs cost an extra step (Spider Nest)
+	POISON_MIASMA  # Audit #5 theme tag — toxic ground ticks HP on step (Plague Graveyard)
 }
 
 # Tile display characters
@@ -30,7 +31,8 @@ const TILE_CHARS = {
 	TileType.CLEARED: "·",
 	TileType.RESOURCE: "&",
 	TileType.FINAL_CHEST: "*",
-	TileType.WEBBED: "w"
+	TileType.WEBBED: "w",
+	TileType.POISON_MIASMA: ","
 }
 
 # Tile colors for display
@@ -45,7 +47,8 @@ const TILE_COLORS = {
 	TileType.CLEARED: "#303030",
 	TileType.RESOURCE: "#00FFCC",
 	TileType.FINAL_CHEST: "#FFAA00",
-	TileType.WEBBED: "#A335EE"
+	TileType.WEBBED: "#A335EE",
+	TileType.POISON_MIASMA: "#7FBF3F"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1723,10 +1726,11 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 	return {"grid": grid, "rooms": rooms, "entrance_pos": entrance_pos, "exit_pos": exit_pos}
 
 static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumberGenerator):
-	"""Audit #5 — Slice 1: post-process the floor grid to mark themed
+	"""Audit #5 — Slice 1/2: post-process the floor grid to mark themed
 	environmental tiles. Spider Nest gets webbed tiles that cost an extra
-	step to cross (clinging webs slow movement). Future dungeons gain
-	their own themes here without growing the BSP generator itself."""
+	step to cross (clinging webs slow movement). Plague Graveyard gets
+	poison miasma tiles that tick a small % of max HP on step. Future
+	dungeons gain their own themes here without growing the BSP generator."""
 	match dungeon_id:
 		"spider_nest":
 			# Web ~10% of empty tiles. Skip entrance/exit so player can always
@@ -1737,6 +1741,16 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 10:
 						grid[y][x] = TileType.WEBBED
+		"plagued_graveyard":
+			# Poison miasma over ~12% of empty tiles. Each crossing ticks a small
+			# % of player max HP — felt but not crushing; punishes inefficient
+			# pathing through the graveyard.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 12:
+						grid[y][x] = TileType.POISON_MIASMA
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

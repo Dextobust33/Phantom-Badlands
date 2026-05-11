@@ -23032,8 +23032,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.300 changes
+	display_game("[color=#00FF00]v0.9.300[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Theme tiles: Plague Graveyard miasma (Audit #5 Slice 2)[/color]")
+	display_game("  • [b]Plagued Graveyard now has poison miasma tiles[/b]: ~12% of empty floor tiles render as a sickly green [color=#7FBF3F][b],[/b][/color] glyph. Stepping onto one ticks ~2% of your max HP (min 1, max 40 damage, can't kill outright — floored at 1 HP). The boss already has Contagion Aura wearing you down; now the floor itself does too. Plan paths around the green patches when you can.")
+	display_game("  • Same pattern as Spider Nest webbed tiles (v0.9.248): post-processor inside `_apply_theme_tags`, new TileType enum value, server move handler ticks HP on step, client tile-display knows the glyph + color.")
+	display_game("  • [b]Map legend auto-surfaces it[/b]: the dungeon warning page (v0.9.297) reads `DUNGEON_THEME_LEGEND`, so the new entry shows up automatically whenever you enter Plagued Graveyard. No more wondering what the green commas mean.")
+	display_game("")
+
 	# v0.9.299 changes
-	display_game("[color=#00FF00]v0.9.299[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.299[/color]")
 	display_game("  [color=#FFD700]Flock encounter log history[/color]")
 	display_game("  • [b]Flock fight logs no longer evaporate when the next fight starts.[/b] Each cleared log is now archived into the panel's flock history when the chain is continuing, and the [L] legacy log view replays every fight in the encounter — earlier fights labeled \"── Fight 1 ──\", \"── Fight 2 ──\", current fight last — with each fight's monster name + ASCII art header above its lines.")
 	display_game("  • [b]Why it matters[/b]: flock encounters could chain 3-5 fights and players had no way to scroll back to \"what hit me on the second monster.\" Press [L] during the victory or death interlude to see the whole chain.")
@@ -23062,14 +23070,6 @@ func display_changelog():
 	display_game("  • [b]Elder Kelpie (Kelpie Marsh) — [color=#1E90FF]Drowning[/color][/b]: each successful hit applies +1 drowning stack (cap 3). Each stack does TWO things — [b]ticks 2% of your max HP[/b] at start of your turn AND [b]reduces your damage output by 10%[/b]. At 3 stacks you're taking 6% per turn AND swinging for 70% damage. The only boss signature that's both a DoT and an offensive debuff at the same time.")
 	display_game("  • Counterplay: dodge gear matters (stacks come from hits), or burst the boss before stacks build. Damage debuff stays while drowning persists — there's no expire timer.")
 	display_game("  • [b]12 boss signatures shipped across 7 slices.[/b] T2 coverage is now [b]8 of 8 — complete[/b]. All 5 T1 and 8 T2 bosses now have unique mechanics distinct from base monsters. T3+ untouched.")
-	display_game("")
-
-	# v0.9.295 changes
-	display_game("[color=#00FFFF]v0.9.295[/color]")
-	display_game("  [color=#FFD700]Two more T2 boss signatures (Audit #5 Slice 6)[/color]")
-	display_game("  • [b]Plague Zombie (Plagued Graveyard) — [color=#6B8E23]Contagion Aura[/color][/b]: passive aura applies +1 contagion stack to you every 2 monster turns (cap 5). Each stack ticks [b]1% of your max HP[/b] at the start of your turn. No hit required — distinct from Festering Bite's on-hit stacking. The zombie doesn't need to land a blow to wear you down. End the fight fast or accept the cumulative burn.")
-	display_game("  • [b]Siren Enchantress (Siren's Cove) — [color=#00CED1]Lullaby[/color][/b]: every 4 monster turns the siren's song forces you to [b]skip your next turn[/b]. Deterministic timer, no resist roll, no on-hit dependency. Distinct from Web Stun (chance-based, on-hit). Mind the round count or get caught flat-footed.")
-	display_game("  • 11 boss signatures shipped across 6 slices. T2 coverage is now [b]5 of 8[/b] (Spider Queen, Orc Warlord, Grand Mimic, Hobgoblin Commander, Barrow Wight, Gnoll Packmaster, Plague Zombie, Siren Enchantress) — Elder Kelpie remains the only T2 boss without a signature.")
 	display_game("")
 
 
@@ -30193,6 +30193,9 @@ const DUNGEON_THEME_LEGEND = {
 	"spider_nest": [
 		{"glyph": "w", "color": "#A335EE", "desc": "Spider webs — costs +1 step to cross. Wading through clinging silk slows you down."}
 	],
+	"plagued_graveyard": [
+		{"glyph": ",", "color": "#7FBF3F", "desc": "Toxic miasma — stepping onto it ticks ~2% of your max HP. Plan paths around the green patches when possible."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30642,6 +30645,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "*", "color": "#FFAA00"}
 		10:  # WEBBED — Spider Nest theme tile, costs +1 step (v0.9.248)
 			return {"char": "w", "color": "#A335EE"}
+		11:  # POISON_MIASMA — Plague Graveyard theme tile, ticks HP on step (v0.9.300)
+			return {"char": ",", "color": "#7FBF3F"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
