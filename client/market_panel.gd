@@ -661,6 +661,12 @@ func _make_listing_row(listing: Dictionary, index: int, is_my_listing: bool) -> 
 	var disc := float(listing.get("specialty_discount", 0.0))
 	if disc > 0.0 and not is_my_listing:
 		price_text += "  ★-%d%%" % int(disc * 100)
+	# Audit #9 Slice 4 — rolling avg recent paid price (post-markup). Lets
+	# buyers spot deals and sellers price competitively at a glance. Server
+	# emits 0 when there's no history; suppress the badge in that case.
+	var avg_recent := int(listing.get("avg_recent_price", 0))
+	if avg_recent > 0 and not is_my_listing:
+		price_text += "  (avg %s)" % _format_number(avg_recent)
 	if is_my_listing:
 		var post_name = listing.get("post_name", "")
 		if str(post_name) != "":

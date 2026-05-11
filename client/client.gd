@@ -22904,8 +22904,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.294 changes
+	display_game("[color=#00FF00]v0.9.294[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market shows rolling average recent price (Audit #9 Slice 4)[/color]")
+	display_game("  • [b]Each market listing now shows the typical recent sale price[/b] next to its current price, so you can tell a deal from a markup at a glance. Sample row: \"[b]Iron Longsword[/b] — 320 V  ★-15%  (avg 287)\".")
+	display_game("  • Server tracks the [b]last 50 sales per item name[/b] across the network, post-markup and post-specialty-discount (so the average reflects what players actually paid). Listings with no sale history yet hide the badge.")
+	display_game("  • Helps both sides: buyers spot deals, sellers price competitively. Doesn't affect the actual buy flow — just adds context.")
+	display_game("  • Caveat: history is session-warm. Server restart resets it; the window rebuilds as new sales land. Persistence can come later if needed.")
+	display_game("")
+
 	# v0.9.293 changes
-	display_game("[color=#00FF00]v0.9.293[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.293[/color]")
 	display_game("  [color=#FFD700]Combat audit cleanup TWEAKs (Audit #1 Slice 7)[/color]")
 	display_game("  • [b]Ethereal dodge dropped from 50% → 33%.[/b] Ghostly / phasing monsters previously dodged half your swings, which made high-investment fights feel like a coin flip. 33% still rewards accuracy gear without making the fight feel unwinnable. The −10 player hit-chance penalty against ethereal targets is unchanged, so the layered miss math still punishes low accuracy builds.")
 	display_game("  • [b]Removed dead `gold_steal` ability.[/b] Already inert (gold removed from the game in 2026-02) but the constant kept showing up in monster ability lists. Cleanup pass — no behavior change, just dropped a dead reference.")
@@ -22927,13 +22936,6 @@ func display_changelog():
 	display_game("  • 9 boss signatures shipped total across 5 slices. Pattern continues: each boss gets one mechanic that doesn't appear on base monsters, replacing the previous generic ability mapping (\"Life Drain → life_steal\" / \"Pack Tactics → pack_leader\" are both retired in favor of these signatures).")
 	display_game("")
 
-	# v0.9.290 changes
-	display_game("[color=#00FFFF]v0.9.290[/color]")
-	display_game("  [color=#FFD700]NPC posts get a third rumor type — hotzone warnings (Audit #11 Slice 3)[/color]")
-	display_game("  • [b]Quest givers now also warn you about nearby [color=#FF4500]![/color] hotzones[/b] when one is within ~80 tiles. Sample: \"[color=#A0C8E0]Trader Fenwick[/color]: 'Watch yourself — the wilds about 47 tiles east are [color=#FF6600]boiling over[/color] lately. Best travel armed.'\"")
-	display_game("  • Warning verb scales with hotspot intensity: \"restless\" for edges, \"stirred up\" for mid-intensity, \"boiling over\" for the dangerous core. Direction is exact (north/east/southwest etc.) and distance is precise — actionable info, not flavor.")
-	display_game("  • Rumor pool now rotates between [b]three[/b] types: dungeon hint, biome resource hint, hotzone warning. Random preference order per arrival; types with no nearby data fall through. The same post will say different things across different sessions, and different posts speak about different things in the same session.")
-	display_game("")
 
 
 
