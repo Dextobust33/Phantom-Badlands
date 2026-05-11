@@ -1673,6 +1673,7 @@ func _ready():
 		ability_panel.equip_requested.connect(_on_ability_panel_equip)
 		ability_panel.unequip_requested.connect(_on_ability_panel_unequip)
 		ability_panel.rebind_requested.connect(_on_ability_panel_rebind)
+		ability_panel.cull_requested.connect(_on_ability_panel_cull)
 
 	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
 	if combat_scene_panel:
@@ -17999,6 +18000,36 @@ func handle_server_message(message: Dictionary):
 					0
 				)
 
+		"cull_ability_card_result":
+			# Slice 6c — server processed (or rejected) a cull request.
+			# Update the in-memory character_data so subsequent populates use
+			# fresh counts, refresh the ability panel UI, and notify the player.
+			var cull_ok = bool(message.get("ok", false))
+			var cull_ability = str(message.get("ability", ""))
+			var cull_label = cull_ability.replace("_", " ").capitalize()
+			if cull_ok:
+				var fresh_collection = message.get("collection", {})
+				if fresh_collection is Dictionary:
+					character_data["combat_deck_collection"] = fresh_collection.duplicate()
+				var new_count = int(message.get("new_count", 1))
+				display_game("[color=#9ACD32]Culled one copy of %s — deck now × %d.[/color]" % [cull_label, new_count])
+				if ability_panel and ability_panel.has_method("update_deck_collection"):
+					ability_panel.update_deck_collection(character_data.get("combat_deck_collection", {}))
+			else:
+				var reason = str(message.get("reason", "Cull rejected"))
+				# Reason like "Cannot cull below 1 copy" — surface in popup if
+				# ability panel is up (game_output is hidden behind it).
+				if ability_panel != null and is_instance_valid(ability_panel) and ability_panel.visible:
+					var dlg := AcceptDialog.new()
+					dlg.title = "Cull rejected"
+					dlg.dialog_text = "%s\n\n%s" % [cull_label, reason]
+					dlg.confirmed.connect(func(): dlg.queue_free())
+					dlg.canceled.connect(func(): dlg.queue_free())
+					add_child(dlg)
+					dlg.popup_centered()
+				else:
+					display_game("[color=#FFA500]Cull rejected: %s[/color]" % reason)
+
 		"combat_update":
 			var state = message.get("combat_state", {})
 			if not state.is_empty():
@@ -22458,8 +22489,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.272 changes
+	display_game("[color=#00FF00]v0.9.272[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Deck cull — trim unwanted ability copies (Slice 6c)[/color]")
+	display_game("  • [b]Your combat deck is now editable.[/b] Open Settings → Abilities. Each ability card shows \"Deck × N\" — the number of copies in your shuffled combat deck. When a card has more than 1 copy, a \"− Cull\" button appears on it.")
+	display_game("  • [b]Click \"− Cull\" to permanently remove one copy[/b] from your deck. You decide which abilities should weight your hand. Useful for trimming extra copies you earned from \"+1 Card\" rank-up choices but no longer want")
+	display_game("  • [b]Minimum 1 copy per ability is locked in.[/b] You can't fully remove an ability — every accessible ability keeps a baseline copy so you never end up unable to draw any cards. Rationale: empty deck → can't use ability → can't rank up → soft-lock")
+	display_game("  • Cull is disabled during combat; cull rejection (e.g., already at 1) pops a clear popup")
+	display_game("")
+
 	# v0.9.271 changes
-	display_game("[color=#00FF00]v0.9.271[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.271[/color]")
 	display_game("  [color=#FFD700]Rescue quests — auto-route + distinct NPC glyph[/color]")
 	display_game("  • [b]Rescue quest NPCs no longer require you to enter the \"correct\" dungeon.[/b] If you have an active Rescue the Merchant / Healer / Blacksmith / Scholar / Breeder quest and walk into [b]any[/b] dungeon 'D' tile, you'll be routed into the rescue instance and get a notice: \"Following your rescue quest — you enter [Dungeon Name]. The [merchant] is on floor N (look for [color=#4DD0FF]R[/color]).\"")
 	display_game("  • [b]Rescue NPCs now render as a bright cyan [color=#4DD0FF]R[/color][/b] (was a green [color=#00FF00]?[/color] that blended with the red [color=#FF4444]?[/color] encounter tiles — players were walking right past them)")
@@ -22494,12 +22534,6 @@ func display_changelog():
 	display_game("  • Same Food filter works on the Network Browse view")
 	display_game("")
 
-	# v0.9.267 changes
-	display_game("[color=#00FFFF]v0.9.267[/color]")
-	display_game("  [color=#FFD700]Cloak / Teleport tooltips show unlock level[/color]")
-	display_game("  • Hovering Cloak or Teleport on the Abilities screen now clearly says when the ability unlocks. Cloak is universal at level 20. Teleport scales by class: Mage 30, Trickster 45, Warrior 60")
-	display_game("  • If you're below the unlock level, the tooltip reads \"Locked — unlocks at level N (you are level M)\". At or above the unlock, it reads \"Unlocked (level N+)\"")
-	display_game("")
 
 
 
@@ -28789,7 +28823,9 @@ func _populate_ability_panel() -> void:
 	var player_level = int(character_data.get("level", 1))
 	# Mastery Slice 1 — pass ability_uses so the panel can render rank + progress.
 	var ability_uses = character_data.get("ability_uses", {})
-	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses)
+	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
+	var deck_collection = character_data.get("combat_deck_collection", {})
+	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses, deck_collection)
 
 func _on_ability_panel_close() -> void:
 	exit_ability_mode()
@@ -28814,6 +28850,15 @@ func _on_ability_panel_rebind(slot: int) -> void:
 	display_game("")
 	display_game("[color=#FFD700]Press a key for slot %d (any letter), or [%s] to cancel:[/color]" % [slot + 1, get_action_key_name(0)])
 	update_action_bar()
+
+func _on_ability_panel_cull(ability_name: String) -> void:
+	"""Slice 6c — user clicked the "− Cull" button on an ability card. The card
+	is min 1 (enforced server-side), so this is a one-click action — no confirm
+	dialog needed since the player can never accidentally lose an ability
+	entirely. Server validates and responds with the updated collection."""
+	if ability_name == "":
+		return
+	send_to_server({"type": "cull_ability_card", "ability": ability_name})
 
 func _populate_companions_panel() -> void:
 	if companions_panel == null:
