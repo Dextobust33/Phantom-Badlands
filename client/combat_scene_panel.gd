@@ -761,15 +761,36 @@ func _build_monster_status_bbcode(s: Dictionary) -> String:
 	return "[right]%s[/right]" % "  ".join(chips)
 
 
-func _build_running_totals_strip() -> HBoxContainer:
+func _build_running_totals_strip() -> Control:
 	"""Three actor boxes in a row showing fight-wide damage totals. Each
 	box pairs a prefix label ("You:" / "Pet:" / "Foe:") with the number
-	in a contrasting color so the digit pops."""
+	in a contrasting color so the digit pops.
+
+	v0.9.270 — wrapped the strip in a bordered PanelContainer with much
+	larger fonts (was 12pt, now 20pt) so the running totals draw the eye
+	at a glance. Player feedback: previous totals were easy to miss in
+	the bottom of the scene above the cards."""
+	var frame := PanelContainer.new()
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.08, 0.06, 0.85)
+	sb.border_color = Color(0.78, 0.65, 0.42, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	frame.add_theme_stylebox_override("panel", sb)
+
 	_totals_strip = HBoxContainer.new()
 	_totals_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_totals_strip.alignment = BoxContainer.ALIGNMENT_CENTER
-	_totals_strip.add_theme_constant_override("separation", 18)
+	_totals_strip.add_theme_constant_override("separation", 36)
 	_totals_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(_totals_strip)
 
 	# Player — muted gold prefix, bright yellow number.
 	var player_box = _make_total_box("You:", Color("#C9A040"), Color("#FFD93D"))
@@ -789,18 +810,18 @@ func _build_running_totals_strip() -> HBoxContainer:
 	_monster_total_label = monster_box.get_node("Number")
 	_totals_strip.add_child(monster_box)
 
-	return _totals_strip
+	return frame
 
 
 func _make_total_box(prefix: String, prefix_color: Color, number_color: Color) -> HBoxContainer:
 	var box := HBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
+	box.add_theme_constant_override("separation", 6)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var prefix_label := Label.new()
 	prefix_label.name = "Prefix"
 	prefix_label.text = prefix
-	prefix_label.add_theme_font_size_override("font_size", 12)
+	prefix_label.add_theme_font_size_override("font_size", 20)
 	prefix_label.add_theme_color_override("font_color", prefix_color)
 	prefix_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(prefix_label)
@@ -808,7 +829,7 @@ func _make_total_box(prefix: String, prefix_color: Color, number_color: Color) -
 	var number_label := Label.new()
 	number_label.name = "Number"
 	number_label.text = "0"
-	number_label.add_theme_font_size_override("font_size", 12)
+	number_label.add_theme_font_size_override("font_size", 22)
 	number_label.add_theme_color_override("font_color", number_color)
 	number_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(number_label)
@@ -880,7 +901,7 @@ func _build_hand_strip() -> HBoxContainer:
 	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	_hand_strip = HBoxContainer.new()
-	_hand_strip.add_theme_constant_override("separation", 6)
+	_hand_strip.add_theme_constant_override("separation", 10)
 	_hand_strip.mouse_filter = Control.MOUSE_FILTER_PASS
 	outer.add_child(_hand_strip)
 
@@ -908,37 +929,41 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	out-of-combat AbilityPanel."""
 	var cell := PanelContainer.new()
 	cell.name = "HandCell_%d" % index
-	cell.custom_minimum_size = Vector2(108, 54)
+	# Audit #1 Slice 6c — doubled card size for legibility. Player feedback:
+	# cards were easy to miss at the old 108x54. Bumped to 190x108 (~3.3x area)
+	# with proportionally larger fonts. Cards may now visually overlap the
+	# scene_section above; that's intended — they should draw the eye.
+	cell.custom_minimum_size = Vector2(190, 108)
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	cell.tooltip_text = ""
 
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.07, 0.07, 0.09, 0.92)
-	sb.border_color = Color(0.35, 0.30, 0.22, 1)
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(4)
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	sb.content_margin_top = 4
-	sb.content_margin_bottom = 4
+	sb.border_color = Color(0.55, 0.45, 0.30, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
 	cell.add_theme_stylebox_override("panel", sb)
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
-	vbox.add_theme_constant_override("separation", 1)
+	vbox.add_theme_constant_override("separation", 4)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cell.add_child(vbox)
 
 	# Top row: hotkey number + ability name
 	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 4)
+	top_row.add_theme_constant_override("separation", 6)
 	top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(top_row)
 
 	var key_label := Label.new()
 	key_label.name = "Key"
 	key_label.text = "%d" % (index + 1)
-	key_label.add_theme_font_size_override("font_size", 11)
+	key_label.add_theme_font_size_override("font_size", 16)
 	key_label.add_theme_color_override("font_color", Color("#FFD700"))
 	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(key_label)
@@ -946,7 +971,7 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	var name_label := Label.new()
 	name_label.name = "Name"
 	name_label.text = "—"
-	name_label.add_theme_font_size_override("font_size", 12)
+	name_label.add_theme_font_size_override("font_size", 17)
 	name_label.add_theme_color_override("font_color", Color("#DDDDDD"))
 	name_label.clip_text = true
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -955,14 +980,14 @@ func _build_hand_cell(index: int) -> PanelContainer:
 
 	# Bottom row: cost + rank
 	var bottom_row := HBoxContainer.new()
-	bottom_row.add_theme_constant_override("separation", 6)
+	bottom_row.add_theme_constant_override("separation", 8)
 	bottom_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(bottom_row)
 
 	var cost_label := Label.new()
 	cost_label.name = "Cost"
 	cost_label.text = ""
-	cost_label.add_theme_font_size_override("font_size", 10)
+	cost_label.add_theme_font_size_override("font_size", 14)
 	cost_label.add_theme_color_override("font_color", Color("#9ACD32"))
 	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom_row.add_child(cost_label)
@@ -970,7 +995,7 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	var rank_label := Label.new()
 	rank_label.name = "Rank"
 	rank_label.text = ""
-	rank_label.add_theme_font_size_override("font_size", 10)
+	rank_label.add_theme_font_size_override("font_size", 13)
 	rank_label.add_theme_color_override("font_color", Color("#888888"))
 	rank_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

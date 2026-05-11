@@ -22458,8 +22458,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.270 changes
+	display_game("[color=#00FF00]v0.9.270[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat readability — bigger cards, bigger totals, louder YOU line[/color]")
+	display_game("  • [b]Ability cards are now ~3.3x bigger.[/b] Hand row in the combat panel went from 108x54 cells to 190x108 with larger fonts. They were easy to miss before; now they draw the eye")
+	display_game("  • [b]Running damage totals are bordered and large.[/b] The You/Pet/Foe strip above the cards is wrapped in a styled panel and the numbers are 22pt (up from 12pt) — at-a-glance score of the fight without reading the log")
+	display_game("  • [b]Your damage line is louder.[/b] The per-turn \"YOU [N] dmg\" summary in the combat log is now 18pt with a bright triangle and bold YOU label, so it stands out from monster turns when scrolling the log")
+	display_game("  • Bulk-list success now also writes to the chat log (in addition to the popup), so you can spot the result via [L] history if the popup got dismissed")
+	display_game("  • Inventory panel auto-refreshes after a bulk-list, so opening Inventory after listing always shows the current state")
+	display_game("")
+
 	# v0.9.269 changes
-	display_game("[color=#00FF00]v0.9.269[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.269[/color]")
 	display_game("  [color=#FFD700]Hotfix — visual Market panel bulk + Food chip[/color]")
 	display_game("  • [b]Visual Market panel's \"List ▾\" Bulk options now actually work[/b]. Three of them (Bulk: All Consumables / Tools / Materials) were silently failing since the panel shipped — sending singular list_type values the server didn't recognize. The errors were going to game_output behind the visible panel, so it looked like \"nothing happens\"")
 	display_game("  • The visual panel's bulk buttons now go through the [b]same preview-and-confirm flow[/b] introduced in v0.9.268 — \"Will list N items for X Valor. Proceed?\"")
@@ -22489,17 +22499,6 @@ func display_changelog():
 	display_game("  • [b]Fixed: variable-cost ability hotkeys not firing when below the ceiling.[/b] Example: Devastate range 15-50 SP with 35 stamina — the card would light up and clicking worked, but pressing the hotkey did nothing. Action bar's affordability check was still gating on the ceiling cost; click path was already using the floor. Both paths now use the floor (server scales the effect down to match what you actually spent)")
 	display_game("")
 
-	# v0.9.265 changes
-	display_game("[color=#00FFFF]v0.9.265[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Trickster utility (last batch! 22/23 done)[/color]")
-	display_game("  • [b]Pickpocket, Sabotage, Distract, Perfect Heist[/b] are now variable-cost. Same auto-spend pattern; floors ≈30%% of ceiling")
-	display_game("  • [b]Pickpocket[/b] 6-20 energy. Steal CHANCE scales with spend; ore quantity stays the same on success (pp_max per-fight cap is the limiter)")
-	display_game("  • [b]Sabotage[/b] 8-25 energy. Debuff magnitude scales with spend; the 50%% stack cap is unchanged")
-	display_game("  • [b]Distract[/b] 5-15 energy. Accuracy debuff scales — a partial Distract = -15%% accuracy next attack instead of the full -50%%")
-	display_game("  • [b]Perfect Heist[/b] 15-50 energy. Success CHANCE scales — a floor-cost Heist is almost always a miss. If you're going for the instant-win play, commit fully")
-	display_game("  • [b]Analyze and Vanish stay fixed-cost.[/b] They're binary mechanics that don't make mechanical sense to partial-cast (Analyze reveals or doesn't; Vanish auto-crits or doesn't)")
-	display_game("  • [color=#FFD700]22/23 abilities now variable-cost.[/color] Next: balance pass with the combat simulator → Slice 6c (deck cull)")
-	display_game("")
 
 
 
@@ -25473,9 +25472,9 @@ func _build_turn_summary(buffer: Array) -> Array:
 	if player.had_attack:
 		output.append(_format_player_summary(player))
 	elif player.missed:
-		output.append("[color=#C9A040]▶[/color] [color=#FF4444]You miss.[/color]")
+		output.append("[font_size=18][color=#FFD93D]►[/color] [color=#FFD93D]YOU[/color] [color=#FF4444]miss.[/color][/font_size]")
 	elif player.ethereal:
-		output.append("[color=#C9A040]▶[/color] [color=#FF00FF]Your attack passes through the ethereal foe.[/color]")
+		output.append("[font_size=18][color=#FFD93D]►[/color] [color=#FFD93D]YOU[/color] [color=#FF00FF]pass through the ethereal foe.[/color][/font_size]")
 
 	if companion.had_attack:
 		output.append(_format_companion_summary(companion))
@@ -25772,10 +25771,14 @@ func _classify_combat_msg(raw: String, stripped: String, player: Dictionary, com
 	verbatim.append(raw)
 
 func _format_player_summary(player: Dictionary) -> String:
+	# v0.9.270 — player damage line bumped to font_size 18 with a bright "YOU"
+	# label so it pops out of the wall-of-text. The bigger glyph + larger word
+	# is what the eye lands on after a turn — easier to tell what your hit did
+	# vs. the monster's response.
 	var tag_str := ""
 	if player.tags.size() > 0:
 		tag_str = " [color=#808080](%s)[/color]" % ", ".join(player.tags)
-	return "[color=#C9A040]▶[/color] [color=#FFFF00]You: %d damage[/color]%s" % [player.damage, tag_str]
+	return "[font_size=18][color=#FFD93D]►[/color] [color=#FFD93D]YOU[/color] [color=#FFFF00]%d dmg[/color]%s[/font_size]" % [player.damage, tag_str]
 
 func _format_companion_summary(companion: Dictionary) -> String:
 	var name: String = companion.name if companion.name != "" else "companion"
@@ -30921,6 +30924,18 @@ func _handle_market_list_all_success(message: Dictionary):
 	var total_valor = int(message.get("total_valor", 0))
 	var new_valor = int(message.get("new_valor", 0))
 	account_valor = new_valor
+	# Always mirror to game_output too — that way the [L] history view shows the
+	# result even when the user dismissed/missed the popup.
+	display_game("[color=#00FF00]Bulk listed %d items for %s Valor (Total Valor: %s).[/color]" % [count, format_number(total_valor), format_number(new_valor)])
+	# v0.9.270: the visual InventoryPanel caches its rendered cards on populate().
+	# After a bulk-list, character_update arrives and clears character_data.inventory,
+	# but the InventoryPanel won't repaint until something calls populate(). If the
+	# player later closes the market and opens inventory, display_inventory() does
+	# the repopulate then — but the player might also check inventory via
+	# something that doesn't trigger populate, leading to "items still there"
+	# confusion. Force the populate now so the panel stays current regardless.
+	if inventory_panel and inventory_panel.has_method("populate"):
+		inventory_panel.populate(character_data)
 	# v0.9.269: when the visual market panel is up, the success message can't
 	# go to game_output (panel sits on top, player can't see it). Show a popup
 	# dialog instead and refresh the panel so the new valor reflects.
