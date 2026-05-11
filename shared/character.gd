@@ -2451,6 +2451,11 @@ func get_all_available_abilities() -> Array:
 	# Universal abilities available to all classes
 	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true})
 	abilities.append({"name": "all_or_nothing", "level": 1, "display": "All or Nothing", "universal": true})
+	# Audit #1 deck variants — utility cards that manipulate the hand itself.
+	# Forethought: pay 1 resource, mulligan the hand, keep your turn.
+	# Tactical Retreat: free skip — discard + redraw + end turn, no damage swing.
+	abilities.append({"name": "forethought", "level": 1, "display": "Forethought", "universal": true})
+	abilities.append({"name": "tactical_retreat", "level": 1, "display": "Tactical Retreat", "universal": true})
 
 	# Teleport unlocks at different levels per class path
 	var teleport_level = 60  # Default (warrior)
@@ -2585,19 +2590,26 @@ func backfill_ability_uses_if_needed() -> bool:
 func initialize_deck_collection_if_needed() -> bool:
 	"""Slice 6b one-shot init: populate combat_deck_collection with 1 copy of
 	each accessible ability, and migrate ability_effect_ranks so existing chars
-	don't lose damage (effect_rank starts at current use-based rank). Idempotent.
-	Returns true if anything changed (caller should persist)."""
-	if deck_collection_initialized:
-		return false
+	don't lose damage (effect_rank starts at current use-based rank).
+
+	Now also runs a smaller idempotent backfill on every call so newly-added
+	universal abilities (forethought / tactical_retreat etc.) land in existing
+	characters' decks on next combat without a separate migration step.
+	Returns true if anything was added/changed (caller should persist)."""
+	var changed = false
 	var available = get_all_available_abilities()
+	# Always-on additive backfill: any newly-shipped accessible ability the
+	# character doesn't yet have gets 1 copy. Doesn't shrink the collection.
 	for entry in available:
 		var name = entry.get("name", "")
 		if name == "":
 			continue
 		if not combat_deck_collection.has(name):
 			combat_deck_collection[name] = 1
-	# Migrate effect ranks: existing characters keep their current damage level
-	# so the Slice 6b split is non-punitive. New rank-ups must be chosen.
+			changed = true
+	if deck_collection_initialized:
+		return changed
+	# First-time init: migrate effect ranks too (only once).
 	for entry2 in available:
 		var ab = entry2.get("name", "")
 		if ab == "":
