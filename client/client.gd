@@ -23032,8 +23032,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.304 changes
+	display_game("[color=#00FF00]v0.9.304[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Theme tiles: Wolf Den blood trails (Audit #5 Slice 3)[/color]")
+	display_game("  • [b]Wolf Den floors now have blood trails[/b] — ~8% of empty tiles render as a dark-red [color=#8B0000][b];[/b][/color] glyph. Stepping onto one heals ~3% of your max HP (min 1, max 60), then the tile is consumed and becomes empty floor. First positive-theme tile — counterbalance to spider webs and miasma.")
+	display_game("  • [b]Theme works thematically with Alpha Wolf's Bloodscent signature[/b]: scavenge from the pack's leftover kills before the boss fight, then commit to the engagement at a smaller HP deficit (so you trigger Bloodscent later).")
+	display_game("  • Third theme tile in the pattern (Spider webs v0.9.248, Plague miasma v0.9.300, Wolf Den blood now). Auto-surfaces on the dungeon warning legend via `DUNGEON_THEME_LEGEND`.")
+	display_game("")
+
 	# v0.9.303 changes
-	display_game("[color=#00FF00]v0.9.303[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.303[/color]")
 	display_game("  [color=#FFD700]Chain Atlas shows rewards (Audit #6 Slice 8)[/color]")
 	display_game("  • [b]The Chain Atlas (v0.9.302) now shows what each chain pays[/b]. Every available or in-progress chain line gets a terse reward summary appended: \"→ 240 valor + Goblin Egg + Stones (Egg, Companion)\". Completed chains stay terse (you already got the loot).")
 	display_game("  • [b]Why it matters[/b]: the v0.9.302 atlas told you which chains existed but not what they paid. Decisions like \"do I chase the Wolf Pack chain for a Wolf Egg or the Skeleton Lord for a Companion stone?\" are now visible at the atlas level instead of requiring a walk to each post.")
@@ -23065,13 +23073,6 @@ func display_changelog():
 	display_game("  • [b]Map legend auto-surfaces it[/b]: the dungeon warning page (v0.9.297) reads `DUNGEON_THEME_LEGEND`, so the new entry shows up automatically whenever you enter Plagued Graveyard. No more wondering what the green commas mean.")
 	display_game("")
 
-	# v0.9.299 changes
-	display_game("[color=#00FFFF]v0.9.299[/color]")
-	display_game("  [color=#FFD700]Flock encounter log history[/color]")
-	display_game("  • [b]Flock fight logs no longer evaporate when the next fight starts.[/b] Each cleared log is now archived into the panel's flock history when the chain is continuing, and the [L] legacy log view replays every fight in the encounter — earlier fights labeled \"── Fight 1 ──\", \"── Fight 2 ──\", current fight last — with each fight's monster name + ASCII art header above its lines.")
-	display_game("  • [b]Why it matters[/b]: flock encounters could chain 3-5 fights and players had no way to scroll back to \"what hit me on the second monster.\" Press [L] during the victory or death interlude to see the whole chain.")
-	display_game("  • History resets cleanly when a fresh encounter starts, so non-flock fights still show only their own log (no stale history bleeding in).")
-	display_game("")
 
 
 
@@ -30200,6 +30201,9 @@ const DUNGEON_THEME_LEGEND = {
 	"plagued_graveyard": [
 		{"glyph": ",", "color": "#7FBF3F", "desc": "Toxic miasma — stepping onto it ticks ~2% of your max HP. Plan paths around the green patches when possible."}
 	],
+	"wolf_den": [
+		{"glyph": ";", "color": "#8B0000", "desc": "Blood trails — fresh pack-kill scraps. Step on one to heal ~3% of your max HP. The tile is consumed (one-time per trail)."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30651,6 +30655,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "w", "color": "#A335EE"}
 		11:  # POISON_MIASMA — Plague Graveyard theme tile, ticks HP on step (v0.9.300)
 			return {"char": ",", "color": "#7FBF3F"}
+		12:  # BLOOD_TRAIL — Wolf Den theme tile, heals once on step (v0.9.304)
+			return {"char": ";", "color": "#8B0000"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
