@@ -23147,8 +23147,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.331 changes
+	display_game("[color=#00FF00]v0.9.331[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 15)[/color]")
+	display_game("  • [b]Coverage 21 → 27/53 dungeons.[/b] Six new themed dungeons, one new TileType each:")
+	display_game("    • [color=#B22222]x[/color] [b]Caltrops[/b] — Hobgoblin Fortress (T2). Persistent -2% HP on step. Tactical traps.")
+	display_game("    • [color=#BDB76B]d[/color] [b]Grave Dust[/b] — Barrow Mounds (T2). Persistent -3% HP on step. Necrotic burn.")
+	display_game("    • [color=#8B4513]g[/color] [b]Bull-runes[/b] — Minotaur Labyrinth (T4). +1 step cost. Scrambles bearings.")
+	display_game("    • [color=#4169E1]q[/color] [b]Prism Shards[/b] — Elemental Nexus (T7). Pickup: +15% damage 3 rounds next combat.")
+	display_game("    • [color=#F4A460]b[/color] [b]Sphinx Sand[/b] — Sphinx Riddle Hall (T8). Pickup: 20%% monster-miss 2 rounds next combat.")
+	display_game("    • [color=#ADD8E6]i[/color] [b]Frost Shards[/b] — Void Walker Rift (T8). Persistent -4% HP on step. Strongest persistent damage in the pool.")
+	display_game("  • [b]Pipeline hardened[/b]: standard 5-step recipe — TileType enum, TILE_CHARS, TILE_COLORS, _apply_theme_tags, server step handler, client legend. Adding more themes from here is mechanical.")
+	display_game("  • [b]Cross-system reuse[/b]: Prism Shards reuse the pending_war_banner buff from Orc Stronghold (different flavor, same engine); Sphinx Sand reuses pending_dungeon_veil from Wraith Barrow. No new combat-side metas to plumb.")
+	display_game("  • [b]Why[/b]: dungeons should each feel different to traverse. 21 themed felt thin against 53 total — this batch pushes coverage past half (27/53) and hits the previously-untouched T7/T8 spectrum.")
+	display_game("")
+
 	# v0.9.330 changes
-	display_game("[color=#00FF00]v0.9.330[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.330[/color]")
 	display_game("  [color=#FFD700]Threat services degrade (Audit #11 Slice 7)[/color]")
 	display_game("  • [b]Posts Under Threat now have +20% market prices.[/b] When a tier-2+ uncleared dungeon is within 80 tiles of the post you're browsing, every listing in that market costs 1.20× normal. Clear the dungeon → prices snap back. The /post warning you saw before now has real teeth.")
 	display_game("  • [b]Market panel banner[/b]: opening the browse view at a threatened post shows \"⚠ Under Threat — prices +20% (Spider Nest, 38 tiles N)\" above the listing grid. You see the cost going in, not as a surprise at checkout.")
@@ -23186,16 +23201,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: with the post-anchored world, guards needed to be load-bearing rather than decoration. Now the food-economy cost (guards eat food) directly translates into how much safe territory you control. Foundation for #12 design work — future slices will explore tier formulas, decay timelines, and more buildable structures.")
 	display_game("")
 
-	# v0.9.326 changes
-	display_game("[color=#00FFFF]v0.9.326[/color]")
-	display_game("  [color=#FFD700]Dynamic post state — Under Threat (Audit #11 Slice 6)[/color]")
-	display_game("  • [b]Posts now react to nearby active dungeons.[/b] When a tier-2+ world dungeon is uncleared within 80 tiles of an NPC post, the post is flagged \"Under Threat\". The HUD shows the menacing dungeon's name, tier, direction, and distance below the Nearest Post line.")
-	display_game("  • [b]Real-time updates[/b]: clear that dungeon (any player) and the warning vanishes. New dungeon spawns nearby and it re-appears. The threat indicator reflects the actual world state at every tick.")
-	display_game("  • [b]NPC greetings shift tone[/b] when a post is threatened — your arrival rumor now leads with a warning about the menacing dungeon, in the NPC's personality voice. Gruff: \"Threat 47 tiles north — the Spider Nest. Watch yourself.\" Wary: \"I'd not travel south these days...\" Eccentric: \"the bones whisper of the Plague Graveyard... LOUDLY.\"")
-	display_game("  • [b]Cross-system tie[/b] (#5 × #11): the same dungeons that drop loot and host bosses now have a regional consequence. Posts feel like inhabited places that worry about their neighbors. Clearing a dangerous T3+ dungeon meaningfully \"saves\" the nearest village.")
-	display_game("  • [b]T1 dungeons aren't threats[/b] — newbie content shouldn't make every post panic. Threats start at T2 (Spider Nest, Orc Stronghold, etc).")
-	display_game("  • [b]No mechanical effects yet[/b] — purely informational + narrative for v1. Future slices could add: monsters spawning between dungeon and post, mini-quests to rescue, post tier downgrades, etc.")
-	display_game("")
 
 
 
@@ -30494,6 +30499,24 @@ const DUNGEON_THEME_LEGEND = {
 	],
 	"hydra_swamp": [
 		{"glyph": "/", "color": "#48D1CC", "desc": "Regen springs — hydra waters that heal ~6% of your max HP on step. Strongest heal tile to date. One-time per spring (consumed). Pairs with the Hydra's Regen boss signature."}
+	],
+	"hobgoblin_fortress": [
+		{"glyph": "x", "color": "#B22222", "desc": "Caltrops — hobgoblin traps that nick ~2% of your max HP on step. Persistent (the caltrops don't clear). Plan paths around the red marks."}
+	],
+	"barrow_mounds": [
+		{"glyph": "d", "color": "#BDB76B", "desc": "Grave dust — necrotic residue that burns your lungs for ~3% of your max HP on step. Persistent. Stronger than caltrops; the barrow remembers its dead."}
+	],
+	"minotaur_labyrinth": [
+		{"glyph": "g", "color": "#8B4513", "desc": "Bull-runes — minotaur maze glyphs that scramble your bearings. Costs +1 step to cross. Persistent."}
+	],
+	"elemental_nexus": [
+		{"glyph": "q", "color": "#4169E1", "desc": "Prism shards — fractured elemental crystals. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per shard (consumed)."}
+	],
+	"sphinx_riddle_hall": [
+		{"glyph": "b", "color": "#F4A460", "desc": "Sphinx sand — riddle dust you can fling. Touching one banks 20% monster-miss chance for the first 2 rounds of your next combat. One-time per pile (consumed)."}
+	],
+	"void_walker_rift": [
+		{"glyph": "i", "color": "#ADD8E6", "desc": "Frost shards — void cold that bites through your boots for ~4% of your max HP on step. Persistent. Strongest persistent damage tile in the pool — plan T8 paths carefully."}
 	],
 }
 

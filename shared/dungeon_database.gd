@@ -35,7 +35,13 @@ enum TileType {
 	WAR_BANNER,    # Audit #5 theme tag — orc banner buffs next combat damage (Orc Stronghold)
 	SPECTRAL_VEIL, # Audit #5 theme tag — wraith mist buffs next combat dodge (Wraith Barrow)
 	CRUSHED_RUBBLE,# Audit #5 theme tag — giant rubble costs +2 steps (Giant Keep)
-	REGEN_SPRING   # Audit #5 theme tag — hydra spring heals on step (Hydra Swamp)
+	REGEN_SPRING,  # Audit #5 theme tag — hydra spring heals on step (Hydra Swamp)
+	CALTROPS,      # Audit #5 Slice 15 — hobgoblin caltrops nick HP on step (Hobgoblin Fortress)
+	GRAVE_DUST,    # Audit #5 Slice 15 — barrow grave dust nicks HP on step (Barrow Mounds)
+	MAZE_GLYPH,    # Audit #5 Slice 15 — minotaur maze glyphs cost +1 step (Minotaur Labyrinth)
+	PRISM_SHARD,   # Audit #5 Slice 15 — elemental prism buffs next combat (Elemental Nexus)
+	BLINDING_SAND, # Audit #5 Slice 15 — sphinx sand grants monster-miss next combat (Sphinx Riddle Hall)
+	FROST_SHARD    # Audit #5 Slice 15 — void frost shards bite HP on step (Void Walker Rift)
 }
 
 # Tile display characters
@@ -70,7 +76,13 @@ const TILE_CHARS = {
 	TileType.WAR_BANNER: "!",
 	TileType.SPECTRAL_VEIL: ":",
 	TileType.CRUSHED_RUBBLE: "r",
-	TileType.REGEN_SPRING: "/"
+	TileType.REGEN_SPRING: "/",
+	TileType.CALTROPS: "x",
+	TileType.GRAVE_DUST: "d",
+	TileType.MAZE_GLYPH: "g",
+	TileType.PRISM_SHARD: "q",
+	TileType.BLINDING_SAND: "b",
+	TileType.FROST_SHARD: "i"
 }
 
 # Tile colors for display
@@ -105,7 +117,13 @@ const TILE_COLORS = {
 	TileType.WAR_BANNER: "#FF6347",
 	TileType.SPECTRAL_VEIL: "#9370DB",
 	TileType.CRUSHED_RUBBLE: "#A0A0A0",
-	TileType.REGEN_SPRING: "#48D1CC"
+	TileType.REGEN_SPRING: "#48D1CC",
+	TileType.CALTROPS: "#B22222",
+	TileType.GRAVE_DUST: "#BDB76B",
+	TileType.MAZE_GLYPH: "#8B4513",
+	TileType.PRISM_SHARD: "#4169E1",
+	TileType.BLINDING_SAND: "#F4A460",
+	TileType.FROST_SHARD: "#ADD8E6"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -2005,6 +2023,68 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 6:
 						grid[y][x] = TileType.REGEN_SPRING
+		"hobgoblin_fortress":
+			# Caltrops ~10% of empty tiles. Persistent -2% max HP nick. T2
+			# damage tile, sits between miasma (2% T2) and bone scatter (1%).
+			# Hobgoblins are tactical — they leave traps.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.CALTROPS
+		"barrow_mounds":
+			# Grave dust ~8% of empty tiles. Persistent -3% max HP nick. T2
+			# damage tile slightly stronger than caltrops — barrow dust is
+			# thematically necrotic, more sinister.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.GRAVE_DUST
+		"minotaur_labyrinth":
+			# Maze glyphs ~8% of empty tiles. Persistent +1 step cost (same
+			# payload as Spider Nest WEBBED). Thematically the minotaur's
+			# bull-rune markings throw off your sense of direction.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.MAZE_GLYPH
+		"elemental_nexus":
+			# Prism shards ~5% of empty tiles. Pickup (consumed). Reuses
+			# pending_war_banner meta — +15% damage for 3 rounds in next
+			# combat. T7 dungeon, so the buff matches WAR_BANNER's payload
+			# (orc T2) but at a much rarer tile rate to keep pacing.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.PRISM_SHARD
+		"sphinx_riddle_hall":
+			# Blinding sand ~5% of empty tiles. Pickup (consumed). Reuses
+			# pending_dungeon_veil meta — 20% monster-miss for 2 rounds in
+			# next combat. T8 sphinx riddles end with sand-in-the-eyes for
+			# the monster.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.BLINDING_SAND
+		"void_walker_rift":
+			# Frost shards ~10% of empty tiles. Persistent -4% max HP nick.
+			# T8 damage tile — strongest persistent damage in the pool, fits
+			# the void/cold theme and the deep-tier difficulty curve.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.FROST_SHARD
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
