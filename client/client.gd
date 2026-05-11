@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.292 changes
+	display_game("[color=#00FF00]v0.9.292[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New Gnoll Pack quest chain + Soul Siphon teaser (Audit #6 Slice 5)[/color]")
+	display_game("  • [b]New 3-stage chain \"Gnoll Pack Hunt\" at West Shrine[/b]: Kill 5 Gnolls → Kill 4 Wolves → Slay the Gnoll Packmaster. 400 valor + Gnoll Egg. The final-stage description teaches the Pack Frenzy mechanic upfront — so players know to burst the Packmaster down rather than stall the fight.")
+	display_game("  • [b]Barrow's Curse II description updated[/b] to teach Soul Siphon (every third round drains 8% of your max HP and heals the wight for the same). Closes the gap from yesterday's boss-sig drop — all T2 chain final stages now explain their boss's signature mechanic in advance.")
+	display_game("  • 11 chains total across 5 starter trading posts. West Shrine now has 2 chains (was 1) — distribution rebalanced. Quest descriptions paired tightly with boss signatures: pick up the chain, read the warning, fight the boss, see the mechanic exactly as advertised.")
+	display_game("")
+
 	# v0.9.291 changes
-	display_game("[color=#00FF00]v0.9.291[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.291[/color]")
 	display_game("  [color=#FFD700]Two new T2 boss signatures (Audit #5 Slice 5)[/color]")
 	display_game("  • [b]Barrow Wight (Barrow Mounds) — [color=#9370DB]Soul Siphon[/color][/b]: every 3 monster turns, the wight drains 8% of your max HP and heals itself for the same amount. Vampiric burst — distinct from passive life steal because it's periodic and predictable. Cannot kill you (HP floored at 1) so it shapes the fight rather than ending it. Plan around the rhythm or burst the boss before turn 6.")
 	display_game("  • [b]Gnoll Packmaster (Gnoll Pack Den) — [color=#8B6914]Pack Frenzy[/color][/b]: boss damage scales [b]+5% per round[/b], uncapped. Round 1 = 1.0x, round 5 = 1.20x, round 10 = 1.45x, round 20 = 1.95x. No one-shot trigger — pressure just builds. Hard tempo cap on long fights: stall this boss and you die. Milestone messages at rounds 3 / 6 / 10 so you know how deep the hole is getting.")
@@ -22929,14 +22937,6 @@ func display_changelog():
 	display_game("  • Plays into the audit's \"alive posts\" goal — different posts speak about different things, surfacing the biome layer + region naming + dungeon network without the player having to look at the map.")
 	display_game("")
 
-	# v0.9.288 changes
-	display_game("[color=#00FFFF]v0.9.288[/color]")
-	display_game("  [color=#FFD700]NPC posts come alive — arrival greetings + rumors (Audit #11 Slice 1)[/color]")
-	display_game("  • [b]The first time you walk into an NPC post each session, the post's quest giver greets you[/b] with a chat line — post name, region, and a dungeon rumor pointing to the nearest active dungeon within ~150 tiles. Format: \"[color=#FFD700]═ Ironhold Lodge ═[/color] — [color=#FFFF00]T2 Ashfen Reach[/color]\" then \"[color=#A0C8E0]Trader Fenwick[/color]: 'Travelers whisper of a [color=#88FF88]Kobold Warren[/color] west of here, about 47 tiles out.'\"")
-	display_game("  • [b]Procedurally-generated quest givers are no longer dead data[/b] — each NPC post has had a quest giver name assigned at world-gen since Phase 6, but until now they were never surfaced. Now they greet you and deliver rumors.")
-	display_game("  • Repeat visits this session stay silent; reconnect to hear them again. Walk into 5 posts, get 5 different rumors pointing in different directions — a free way to discover dungeons across the world.")
-	display_game("  • If no dungeon is nearby, the NPC just nods in greeting. Rumors prefer the closest dungeon you haven't cleared yet.")
-	display_game("")
 
 
 
