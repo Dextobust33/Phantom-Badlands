@@ -20285,6 +20285,47 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.current_hp = min(max_hp_rs, character.current_hp + spring_heal)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#48D1CC]Hydra waters mend your wounds ([color=#00FF00]+%d HP[/color]).[/color]" % spring_heal})
+	# Audit #5 Slice 15 theme tag — Hobgoblin Fortress CALTROPS nick HP on step.
+	# Persistent. 2% max HP, min 1 max 30. T2 damage tile; hobgoblins are
+	# tactical and leave traps behind.
+	elif tile == DungeonDatabaseScript.TileType.CALTROPS:
+		var caltrop_dmg = clamp(int(character.get_total_max_hp() * 0.02), 1, 30)
+		character.current_hp = max(1, character.current_hp - caltrop_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#B22222]Caltrops jab your feet ([color=#FF4444]-%d HP[/color]).[/color]" % caltrop_dmg})
+	# Audit #5 Slice 15 theme tag — Barrow Mounds GRAVE_DUST nicks HP on step.
+	# Persistent. 3% max HP, min 1 max 40. T2 damage tile slightly stronger
+	# than caltrops — necrotic grave dust feels worse than tactical traps.
+	elif tile == DungeonDatabaseScript.TileType.GRAVE_DUST:
+		var dust_dmg = clamp(int(character.get_total_max_hp() * 0.03), 1, 40)
+		character.current_hp = max(1, character.current_hp - dust_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#BDB76B]Grave dust burns in your lungs ([color=#FF4444]-%d HP[/color]).[/color]" % dust_dmg})
+	# Audit #5 Slice 15 theme tag — Minotaur Labyrinth MAZE_GLYPH +1 step cost.
+	# Persistent. Same payload as Spider Nest WEBBED. Minotaur bull-runes
+	# scramble your sense of direction.
+	elif tile == DungeonDatabaseScript.TileType.MAZE_GLYPH:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B4513]Bull-runes scramble your bearings (+1 step).[/color]"})
+	# Audit #5 Slice 15 theme tag — Elemental Nexus PRISM_SHARD (consumed buff).
+	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next
+	# combat. Rare pickup (5% placement) befitting T7 power.
+	elif tile == DungeonDatabaseScript.TileType.PRISM_SHARD:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#4169E1]A prism shard fractures into your hand — elemental fury surges. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 15 theme tag — Sphinx Riddle Hall BLINDING_SAND (consumed buff).
+	# Reuses pending_dungeon_veil meta — 20% monster-miss for 2 rounds in
+	# next combat. Sphinx riddles end with sand-in-the-monster's-eyes.
+	elif tile == DungeonDatabaseScript.TileType.BLINDING_SAND:
+		character.set_meta("pending_dungeon_veil", 2)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#F4A460]You pocket a fistful of sphinx sand — your next foes will struggle to see you. [color=#00FFFF]20% miss chance for 2 rounds.[/color][/color]"})
+	# Audit #5 Slice 15 theme tag — Void Walker Rift FROST_SHARD nicks HP on step.
+	# Persistent. 4% max HP, min 1 max 80. T8 damage tile — strongest
+	# persistent damage in the pool, fits the void cold theme.
+	elif tile == DungeonDatabaseScript.TileType.FROST_SHARD:
+		var frost_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
+		character.current_hp = max(1, character.current_hp - frost_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#ADD8E6]Void frost bites through your boots ([color=#FF4444]-%d HP[/color]).[/color]" % frost_dmg})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
