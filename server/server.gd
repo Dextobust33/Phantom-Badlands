@@ -19102,6 +19102,16 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		var miasma_dmg = clamp(int(character.get_total_max_hp() * 0.02), 1, 40)
 		character.current_hp = max(1, character.current_hp - miasma_dmg)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#7FBF3F]Toxic miasma sears your lungs ([color=#FF4444]-%d HP[/color]).[/color]" % miasma_dmg})
+	# Audit #5 Slice 3 theme tag — Wolf Den BLOOD_TRAIL heals on first step,
+	# then the tile is consumed (mutates to EMPTY so a second crossing gets
+	# nothing). 3% of max HP, min 1 max 60, capped at full HP. First
+	# positive theme tile — counterbalance to web/miasma.
+	elif tile == DungeonDatabaseScript.TileType.BLOOD_TRAIL:
+		var trail_heal = clamp(int(character.get_total_max_hp() * 0.03), 1, 60)
+		var max_hp = character.get_total_max_hp()
+		character.current_hp = min(max_hp, character.current_hp + trail_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B0000]You scavenge from a fresh pack-kill ([color=#00FF00]+%d HP[/color]).[/color]" % trail_heal})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false

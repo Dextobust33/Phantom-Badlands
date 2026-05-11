@@ -16,7 +16,8 @@ enum TileType {
 	RESOURCE,      # Gathering node (ore/herb/crystal)
 	FINAL_CHEST,   # End-of-dungeon reward chest, spawns post-boss
 	WEBBED,        # Audit #5 theme tag — clinging webs cost an extra step (Spider Nest)
-	POISON_MIASMA  # Audit #5 theme tag — toxic ground ticks HP on step (Plague Graveyard)
+	POISON_MIASMA, # Audit #5 theme tag — toxic ground ticks HP on step (Plague Graveyard)
+	BLOOD_TRAIL    # Audit #5 theme tag — scavenged kill heals on first step (Wolf Den)
 }
 
 # Tile display characters
@@ -32,7 +33,8 @@ const TILE_CHARS = {
 	TileType.RESOURCE: "&",
 	TileType.FINAL_CHEST: "*",
 	TileType.WEBBED: "w",
-	TileType.POISON_MIASMA: ","
+	TileType.POISON_MIASMA: ",",
+	TileType.BLOOD_TRAIL: ";"
 }
 
 # Tile colors for display
@@ -48,7 +50,8 @@ const TILE_COLORS = {
 	TileType.RESOURCE: "#00FFCC",
 	TileType.FINAL_CHEST: "#FFAA00",
 	TileType.WEBBED: "#A335EE",
-	TileType.POISON_MIASMA: "#7FBF3F"
+	TileType.POISON_MIASMA: "#7FBF3F",
+	TileType.BLOOD_TRAIL: "#8B0000"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1751,6 +1754,17 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 12:
 						grid[y][x] = TileType.POISON_MIASMA
+		"wolf_den":
+			# Blood trails over ~8% of empty tiles — leftover scraps from pack
+			# kills. Stepping onto one heals a small % of max HP, then the
+			# tile is consumed (becomes EMPTY). First positive-theme tile in
+			# the pattern: encourages opportunistic detours through the den.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.BLOOD_TRAIL
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
